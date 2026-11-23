@@ -182,6 +182,9 @@ desktop/packaging/install-user.sh          # binary, menu entry and icon in ~/.l
 ost-desktop
 ```
 
+`ost-desktop --version` prints the version and `ost-desktop --help` the
+options; neither starts the app.
+
 The first start shows the sign-in page (Microsoft's device-code sign-in,
 the same as `teams-cli login`). Tokens are kept in the system keyring.
 
@@ -190,7 +193,8 @@ Files OST keeps:
 | Path | What |
 | --- | --- |
 | `$XDG_CONFIG_HOME/ost/desktop.json` | Settings |
-| `$XDG_STATE_HOME/ost/drafts.json` | Unsent drafts, with their formatting |
+| `$XDG_STATE_HOME/ost/drafts.json` | Unsent drafts, with their formatting (another account's profile: `drafts-<profile>.json`) |
+| `$XDG_STATE_HOME/ost/outbox.json` | Messages being sent, failed or queued offline (another account's profile: `outbox-<profile>.json`) |
 | `$XDG_CACHE_HOME/ost/photos/` | Profile and team pictures (refreshed daily) |
 | `$XDG_DOWNLOAD_DIR` (else `~/Downloads`) | Downloaded attachments |
 | `$XDG_CONFIG_HOME/autostart/ost-desktop.desktop` | Only with "Start with the computer" on |

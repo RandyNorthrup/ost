@@ -24,9 +24,6 @@ struct Conversation {
     last_message: Option<NativeMessage>,
     /// Your own properties for the chat (`alerts`, `consumptionhorizon`…).
     properties: Option<std::collections::HashMap<String, serde_json::Value>>,
-    /// Your membership (`interest`, `memberExpirationTime`, `role`…).
-    #[serde(rename = "memberProperties")]
-    member_properties: Option<serde_json::Value>,
 }
 
 /// Whether Teams' chat list leaves a chat out (checked against Teams'
@@ -35,16 +32,36 @@ struct Conversation {
 /// - an empty one-on-one chat;
 /// - a meeting's lobby chat (`threadSubType` LobbyChat);
 /// - a breakout room's chat (a meeting thread with no `meetingChatPolicy`);
-/// - a chat you aren't an interested member of (you left it, or were only
-///   in its lobby: no `interest` "Interested").
-fn unlisted(thread: &std::collections::HashMap<String, serde_json::Value>, member: Option<&serde_json::Value>, empty: bool, one_on_one: bool) -> bool {
+/// - a chat you aren't a member of any more (see `left`).
+///
+/// Your membership's `interest` doesn't count: someone added to a new chat
+/// has none (OST Test 3 in "OST 0.2.0 release", 2026-11-23, even after
+/// reading it), and Teams lists the chat for them.
+fn unlisted(thread: &std::collections::HashMap<String, serde_json::Value>, empty: bool, one_on_one: bool) -> bool {
     let s = |k: &str| thread.get(k).and_then(|v| v.as_str()).unwrap_or_default();
     let meeting = s("threadType") == "meeting";
-    let interested = member.and_then(|m| m.get("interest")).and_then(|i| i.as_str()) == Some("Interested");
     (empty && one_on_one)
         || s("threadSubType") == "LobbyChat"
         || (meeting && !thread.contains_key("meetingChatPolicy"))
-        || (member.is_some() && !interested)
+        || left(thread)
+}
+
+/// Whether you left the chat (or were only let in for a while, as into a
+/// meeting's lobby): Teams' isCurrentUserMember for a chat whose roster it
+/// doesn't hold (worker 3398 `sn`): you last left it after you last
+/// joined it.
+fn left(thread: &std::collections::HashMap<String, serde_json::Value>) -> bool {
+    let ms = |k: &str| {
+        thread
+            .get(k)
+            .and_then(|v| v.as_str().and_then(|s| s.trim().parse::<i64>().ok()).or_else(|| v.as_i64()))
+            .filter(|t| *t > 0)
+    };
+    match (ms("lastleaveat"), ms("lastjoinat")) {
+        (Some(leave), Some(join)) => join < leave,
+        (Some(_), None) => true,
+        _ => false,
+    }
 }
 
 /// Whether you muted the chat: its `alerts` property is "false".
@@ -442,10 +459,198 @@ fn has_topic(conv: &Conversation) -> bool {
         .is_some_and(|t| !t.is_empty())
 }
 
+/// Someone in a chat, as a group chat's generated name needs them (their
+/// short profile).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ChatPerson {
+    pub mri: String,
+    pub display: String,
+    pub given: String,
+    pub surname: String,
+}
+
+/// The longest name list a generated chat name shows before "+N" (Teams'
+/// 99234 `p`).
+const TITLE_MAX: usize = 26;
+
+/// Text length as JavaScript counts it (UTF-16 units), as Teams measures
+/// its chat names.
+fn js_len(s: &str) -> usize {
+    s.encode_utf16().count()
+}
+
+/// The name Teams gives a group chat that has none of its own (its chat
+/// list and header; worker 98382 `O`/`q` and 99234 `JR`): the people sorted
+/// by name, the first three others (not you) by their short names (given
+/// names, see `directory::short_name`), as many as fit in 24 characters
+/// joined by ", ", or, when they all fit, as a list ("A and B", "A, B, and
+/// C", if that is at most 26 long), then ", +N" for the rest (N counting
+/// one more than are left out, as Teams does). "Just me" when you're its
+/// only member, "Unknown" when nobody's name is known.
+/// `members` are the chat's member MRIs; `people` their known profiles.
+pub fn generated_title(members: &[String], people: &[ChatPerson], me: &str, locale: &str) -> String {
+    use crate::i18n::tr_id;
+    let unknown = || tr_id("Unknown", "messaging:k7k6gmhup");
+    if members.len() == 1 && members[0].eq_ignore_ascii_case(me) {
+        return tr_id("Just me", "messaging:kaie41xa2");
+    }
+    // The profiles in name order (Teams' collator); with three or more, the
+    // first three others who have a name, else everyone but you.
+    let mut sorted: Vec<&ChatPerson> = people.iter().collect();
+    sorted.sort_by(|a, b| a.display.to_lowercase().cmp(&b.display.to_lowercase()).then_with(|| a.display.cmp(&b.display)));
+    let shown: Vec<&ChatPerson> = if sorted.len() <= 2 {
+        sorted.into_iter().filter(|p| !p.mri.eq_ignore_ascii_case(me)).collect()
+    } else {
+        sorted.into_iter().filter(|p| !p.mri.eq_ignore_ascii_case(me) && !p.display.is_empty()).take(3).collect()
+    };
+    if shown.is_empty() {
+        return unknown();
+    }
+    let others = members.iter().filter(|m| !m.eq_ignore_ascii_case(me)).count();
+    let names: Vec<String> = shown
+        .iter()
+        .map(|p| {
+            let n = super::directory::short_name(locale, &p.surname, &p.given, &p.display);
+            if n.is_empty() { unknown() } else { n }
+        })
+        .collect();
+    // As many names as fit (99234 `S`).
+    let mut text = names[0].clone();
+    let mut fit = 1;
+    while fit < names.len() && js_len(&text) + js_len(&names[fit]) <= TITLE_MAX - 2 {
+        text = format!("{text}, {}", names[fit]);
+        fit += 1;
+    }
+    let mut more = (fit < others).then(|| others - fit + 1);
+    // All of them: as a list when that fits (99234 `JR`).
+    if more.is_none() && fit > 1 {
+        let list = super::app_details::list_format(&names[..fit]);
+        if js_len(&list) <= TITLE_MAX {
+            text = list;
+        } else {
+            text = names[..fit - 1].join(", ");
+            more = Some(2);
+        }
+    }
+    match more {
+        Some(n) => format!("{text}, +{n}"),
+        None => text,
+    }
+}
+
+/// Group chats' members by chat (with the roster version they were read
+/// at), and people's short profiles by MRI (with when they were read), for
+/// the generated chat names.
+type MemberCache = std::collections::HashMap<String, (String, Vec<String>)>;
+type ProfileCache = std::collections::HashMap<String, (std::time::Instant, ChatPerson)>;
+static TITLE_MEMBERS: std::sync::Mutex<Option<MemberCache>> = std::sync::Mutex::new(None);
+static TITLE_PROFILES: std::sync::Mutex<Option<ProfileCache>> = std::sync::Mutex::new(None);
+/// How long a short profile is used for names before it's read again.
+const TITLE_PROFILE_TTL: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// The generated names of the group chats `chats` (id, roster version)
+/// that have none of their own. Chats whose members can't be read are left
+/// out.
+async fn generated_titles(client: &TeamsClient, chats: &[(String, String)], me: &str) -> std::collections::HashMap<String, String> {
+    let mut members: std::collections::HashMap<String, Vec<String>> = Default::default();
+    let mut need: Vec<(String, String)> = Vec::new();
+    {
+        let cache = TITLE_MEMBERS.lock().unwrap_or_else(|e| e.into_inner());
+        for (id, roster) in chats {
+            match cache.as_ref().and_then(|c| c.get(id)).filter(|(r, _)| r == roster) {
+                Some((_, m)) => {
+                    members.insert(id.clone(), m.clone());
+                }
+                None => need.push((id.clone(), roster.clone())),
+            }
+        }
+    }
+    // A few at a time; the chat service throttles the burst of requests
+    // at start (429), so those are asked again after a pause.
+    for attempt in 0..3 {
+        if need.is_empty() {
+            break;
+        }
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_secs(3 * attempt)).await;
+        }
+        let mut again = Vec::new();
+        for chunk in need.chunks(4) {
+            let read = futures::future::join_all(chunk.iter().map(|(id, _)| thread_member_ids(client, id))).await;
+            let mut cache = TITLE_MEMBERS.lock().unwrap_or_else(|e| e.into_inner());
+            let cache = cache.get_or_insert_with(Default::default);
+            for ((id, roster), m) in chunk.iter().zip(read) {
+                match m {
+                    Ok(m) if !m.is_empty() => {
+                        cache.insert(id.clone(), (roster.clone(), m.clone()));
+                        members.insert(id.clone(), m);
+                    }
+                    Ok(_) => {}
+                    Err(e) if e.to_string().contains("HTTP 429") => again.push((id.clone(), roster.clone())),
+                    Err(e) => tracing::debug!("chat members for its name: {e:#}"),
+                }
+            }
+        }
+        need = again;
+    }
+    // Their short profiles (one request per 50 people not known lately).
+    let mut wanted: Vec<String> = members.values().flatten().filter(|m| m.starts_with("8:")).cloned().collect();
+    wanted.sort();
+    wanted.dedup();
+    let missing: Vec<String> = {
+        let cache = TITLE_PROFILES.lock().unwrap_or_else(|e| e.into_inner());
+        wanted
+            .iter()
+            .filter(|m| cache.as_ref().and_then(|c| c.get(*m)).is_none_or(|(at, _)| at.elapsed() > TITLE_PROFILE_TTL))
+            .cloned()
+            .collect()
+    };
+    for chunk in missing.chunks(50) {
+        // (Once more after a moment: right after start the middle tier's
+        // token can still be on its way.)
+        let read = match super::directory::short_profile_records(client, chunk).await {
+            Ok(r) => Ok(r),
+            Err(_) => {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                super::directory::short_profile_records(client, chunk).await
+            }
+        };
+        match read {
+            Ok(records) => {
+                let mut cache = TITLE_PROFILES.lock().unwrap_or_else(|e| e.into_inner());
+                let cache = cache.get_or_insert_with(Default::default);
+                for r in records {
+                    let s = |k: &str| r.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                    let mri = s("mri").to_ascii_lowercase();
+                    if mri.is_empty() {
+                        continue;
+                    }
+                    let person = ChatPerson { mri: mri.clone(), display: s("displayName"), given: s("givenName"), surname: s("surname") };
+                    cache.insert(mri, (std::time::Instant::now(), person));
+                }
+            }
+            Err(e) => tracing::debug!("short profiles for chat names: {e:#}"),
+        }
+    }
+    let locale = crate::i18n::locale();
+    let cache = TITLE_PROFILES.lock().unwrap_or_else(|e| e.into_inner());
+    members
+        .into_iter()
+        .map(|(id, m)| {
+            let people: Vec<ChatPerson> = m
+                .iter()
+                .filter_map(|mri| cache.as_ref().and_then(|c| c.get(&mri.to_ascii_lowercase())).map(|(_, p)| p.clone()))
+                .collect();
+            let title = generated_title(&m, &people, me, &locale);
+            (id, title)
+        })
+        .collect()
+}
+
 /// The other participant of a 1:1 chat, from its id
 /// `19:<oid>_<oid>@unq.gbl.spaces`. None if the id is not that shape or
 /// does not include `me`.
-fn other_member_oid(chat_id: &str, me: &str) -> Option<String> {
+pub(crate) fn other_member_oid(chat_id: &str, me: &str) -> Option<String> {
     let inner = chat_id
         .strip_prefix("19:")?
         .strip_suffix("@unq.gbl.spaces")?;
@@ -1216,6 +1421,22 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
         kinds.extend(futures::future::join_all(chunk.iter().map(|id| meeting_backroom(client, id))).await);
     }
     let backrooms: std::collections::HashMap<String, String> = meeting_ids.into_iter().zip(kinds).collect();
+    // Group chats without a name of their own are named after their
+    // members, as Teams names them (never their thread id).
+    let untitled: Vec<(String, String)> = conversations
+        .iter()
+        .filter(|c| !has_topic(c))
+        .filter_map(|c| {
+            let id = c.id.as_deref()?;
+            let p = c.thread_properties.as_ref()?;
+            let chat = p.extra.get("threadType").and_then(|t| t.as_str()) == Some("chat");
+            (chat && id.starts_with("19:") && id.ends_with("@thread.v2") && !id.starts_with("19:meeting_")).then(|| {
+                let roster = p.extra.get("rosterVersion").or_else(|| p.extra.get("version")).map(|v| v.to_string()).unwrap_or_default();
+                (id.to_string(), roster)
+            })
+        })
+        .collect();
+    let titles = generated_titles(client, &untitled, &me).await;
     let mut chats = Vec::new();
     for (i, conv) in conversations.iter().enumerate() {
         let id = conv.id.as_deref().unwrap_or("").to_string();
@@ -1227,7 +1448,12 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
             .is_some_and(|c| super::messages::is_unread(c, &me));
 
         let is_group = id.contains("thread") || id.contains("meeting");
-        let mut name = conversation_name(conv);
+        let mut name = match titles.get(&id) {
+            Some(t) => t.clone(),
+            // (Its members unreadable: never the thread id.)
+            None if untitled.iter().any(|(u, _)| u == &id) => crate::i18n::tr_id("Unknown", "messaging:k7k6gmhup"),
+            None => conversation_name(conv),
+        };
         let mut backroom = conv.thread_properties.as_ref().map(|p| backroom_kind(&p.extra)).unwrap_or_default().to_string();
         if backroom.is_empty() && id.starts_with("19:meeting_") && has_topic(conv) {
             backroom = backrooms.get(&id).cloned().unwrap_or_default();
@@ -1357,7 +1583,7 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
                     .and_then(|p| p.get("isemptyconversation"))
                     .and_then(|e| e.as_str())
                     .is_some_and(|e| e.eq_ignore_ascii_case("true"));
-                unlisted(&p.extra, conv.member_properties.as_ref(), empty, !is_group)
+                unlisted(&p.extra, empty, !is_group)
             }),
         });
     }
@@ -1756,22 +1982,71 @@ mod list_preview_tests {
     }
 
     #[test]
+    fn unnamed_group_chats_are_named_after_their_members_as_teams_does() {
+        use super::{generated_title, ChatPerson};
+        let p = |mri: &str, display: &str, given: &str, surname: &str| ChatPerson {
+            mri: mri.into(),
+            display: display.into(),
+            given: given.into(),
+            surname: surname.into(),
+        };
+        let me = "8:orgid:3";
+        let ids = |n: usize| (1..=n).map(|i| format!("8:orgid:{i}")).collect::<Vec<_>>();
+        // OST Test 3's chats with OST Test 1 and 2: their given names, as a list.
+        let test = vec![
+            p("8:orgid:1", "OST Test 1", "OST", "Test 1"),
+            p("8:orgid:2", "OST Test 2", "OST", "Test 2"),
+            p("8:orgid:3", "OST Test 3", "OST", "Test 3"),
+        ];
+        assert_eq!(generated_title(&ids(3), &test, me, ""), "OST and OST");
+        assert_eq!(generated_title(&[me.to_string()], &test[2..], me, ""), "Just me");
+        assert_eq!(generated_title(&ids(3), &[], me, ""), "Unknown");
+        // As many as fit in 24, then "+N" (one more than are left out).
+        let long = vec![
+            p("8:orgid:1", "Alexandra Smith", "Alexandra", "Smith"),
+            p("8:orgid:2", "Bartholomew Jones", "Bartholomew", "Jones"),
+            p("8:orgid:3", "Me", "", ""),
+            p("8:orgid:4", "Christopher Lee", "Christopher", "Lee"),
+        ];
+        assert_eq!(generated_title(&ids(6), &long, me, ""), "Alexandra, Bartholomew, +4");
+        // All fit, but not as a list: the last one drops out.
+        let pair = vec![
+            p("8:orgid:1", "Maximiliana Ortiz", "Maximiliana", "Ortiz"),
+            p("8:orgid:2", "Bartholomew Jones", "Bartholomew", "Jones"),
+            p("8:orgid:3", "Me", "", ""),
+        ];
+        assert_eq!(generated_title(&ids(3), &pair, me, ""), "Bartholomew, +2");
+        // Three short names fit as a list.
+        let short = vec![
+            p("8:orgid:1", "Ann Lee", "Ann", "Lee"),
+            p("8:orgid:2", "Bo Kim", "Bo", "Kim"),
+            p("8:orgid:3", "Me", "", ""),
+            p("8:orgid:4", "Cy Young", "Cy", "Young"),
+        ];
+        assert_eq!(generated_title(&ids(4), &short, me, ""), "Ann, Bo, and Cy");
+    }
+
+    #[test]
     fn teams_leaves_out_lobby_breakout_and_left_chats() {
         use super::unlisted;
         let props = |v: serde_json::Value| v.as_object().unwrap().clone().into_iter().collect::<std::collections::HashMap<_, _>>();
-        let interested = serde_json::json!({"interest": "Interested", "role": "Admin"});
-        let left = serde_json::json!({"memberExpirationTime": 1794433626919_i64, "role": "Admin"});
-        let group = props(serde_json::json!({"threadType": "chat", "productThreadType": "Chat"}));
-        let meet_now = props(serde_json::json!({"threadType": "meeting", "meetingChatPolicy": "ChatEnabled"}));
+        let group = props(serde_json::json!({"threadType": "chat", "productThreadType": "Chat", "lastjoinat": "1795446459494"}));
+        let meet_now = props(serde_json::json!({"threadType": "meeting", "meetingChatPolicy": "ChatEnabled", "lastjoinat": "1795446831604"}));
         let breakout = props(serde_json::json!({"threadType": "meeting", "ongoingCallChatEnforcement": "true"}));
-        let lobby = props(serde_json::json!({"threadType": "meeting", "threadSubType": "LobbyChat", "meetingChatPolicy": "ChatEnabledAnonymousDisabled"}));
-        // An empty group chat and an empty Meet now chat are listed.
-        assert!(!unlisted(&group, Some(&interested), true, false));
-        assert!(!unlisted(&meet_now, Some(&interested), true, false));
+        let lobby = props(serde_json::json!({"threadType": "meeting", "threadSubType": "LobbyChat", "meetingChatPolicy": "ChatEnabledAnonymousDisabled", "lastjoinat": "1795144247449", "lastleaveat": "1795144349966"}));
+        // OST Test 3's room camera meeting: joined, then left.
+        let left = props(serde_json::json!({"threadType": "meeting", "meetingChatPolicy": "ChatEnabled", "lastjoinat": "1795224007677", "lastleaveat": "1795230311398"}));
+        let back = props(serde_json::json!({"threadType": "chat", "lastjoinat": "1795230311399", "lastleaveat": "1795230311398"}));
+        // An empty group chat and an empty Meet now chat are listed, and so
+        // is a chat you were added to (no `interest`) or came back to.
+        assert!(!unlisted(&group, true, false));
+        assert!(!unlisted(&meet_now, true, false));
+        assert!(!unlisted(&group, false, false));
+        assert!(!unlisted(&back, false, false));
         // An empty one-on-one, a breakout room, a lobby and a left chat aren't.
-        assert!(unlisted(&group, Some(&interested), true, true));
-        assert!(unlisted(&breakout, Some(&interested), false, false));
-        assert!(unlisted(&lobby, Some(&interested), false, false));
-        assert!(unlisted(&meet_now, Some(&left), false, false));
+        assert!(unlisted(&group, true, true));
+        assert!(unlisted(&breakout, false, false));
+        assert!(unlisted(&lobby, false, false));
+        assert!(unlisted(&left, false, false));
     }
 }

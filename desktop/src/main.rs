@@ -102,7 +102,40 @@ fn hand_over_to_running_instance() -> bool {
     false
 }
 
+/// What `ost-desktop --help` prints.
+const USAGE: &str = "\
+Usage: ost-desktop [OPTION]
+
+OST, a desktop client for Microsoft Teams. Started without options, it
+opens its window (or brings back the one already running).
+
+Options:
+  -h, --help       Show this help and exit
+  -V, --version    Show the version and exit
+      --room       Run as a Teams Rooms device (also OST_ROOM=1)
+
+Environment:
+  OST_PROFILE=<name>   Use another signed-in account's profile, side by side
+  OST_NO_KEYRING=1     Keep tokens in the config file, not the system keyring
+  OST_SYSTEM_FRAME=1   Use the desktop's own window frame
+
+More in docs/desktop.md.
+";
+
+/// `--version` / `--help`: print and exit before anything starts.
+fn print_and_exit_for(arg: Option<&str>) -> bool {
+    match arg {
+        Some("-V" | "--version") => println!("ost-desktop {}", env!("CARGO_PKG_VERSION")),
+        Some("-h" | "--help") => print!("{USAGE}"),
+        _ => return false,
+    }
+    true
+}
+
 fn main() {
+    if print_and_exit_for(std::env::args().nth(1).as_deref()) {
+        return;
+    }
     // A plain launch (no test arguments) keeps one instance.
     if std::env::args().len() <= 1 && hand_over_to_running_instance() {
         return;

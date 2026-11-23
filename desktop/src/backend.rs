@@ -5729,20 +5729,32 @@ fn emoticon_files() -> &'static std::sync::Mutex<HashMap<String, String>> {
     M.get_or_init(Default::default)
 }
 
+/// An account's own state file: `$XDG_STATE_HOME/ost/<stem>.json` for the
+/// first account, `<stem>-<profile>.json` for another account's profile
+/// (`OST_PROFILE`), as its log is. Accounts share chats (both sides of a
+/// 1:1 have the same id), so what one keeps per chat mustn't show in
+/// another's.
+fn state_file(stem: &str) -> std::path::PathBuf {
+    let base = std::env::var_os("XDG_STATE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state")))
+        .unwrap_or_else(std::env::temp_dir);
+    profile_state_path(&base, stem, teams_cli::config::profile().as_deref())
+}
+
+fn profile_state_path(base: &std::path::Path, stem: &str, profile: Option<&str>) -> std::path::PathBuf {
+    match profile {
+        Some(p) => base.join("ost").join(format!("{stem}-{p}.json")),
+        None => base.join("ost").join(format!("{stem}.json")),
+    }
+}
+
 /// Messages being sent (Teams' send pipeline and offline queue), kept in
-/// `$XDG_STATE_HOME/ost/outbox.json` so failed and queued sends survive a
-/// restart.
+/// the account's `outbox.json` (`state_file`) so failed and queued sends
+/// survive a restart.
 fn outbox() -> &'static std::sync::Arc<api::outbox::Outbox> {
     static OUTBOX: OnceLock<std::sync::Arc<api::outbox::Outbox>> = OnceLock::new();
-    OUTBOX.get_or_init(|| {
-        let base = std::env::var_os("XDG_STATE_HOME")
-            .map(std::path::PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state"))
-            })
-            .unwrap_or_else(std::env::temp_dir);
-        api::outbox::Outbox::open(Some(base.join("ost").join("outbox.json")))
-    })
+    OUTBOX.get_or_init(|| api::outbox::Outbox::open(Some(state_file("outbox"))))
 }
 
 /// Each chat's last timeline from the service, so the messages being sent
@@ -8316,16 +8328,12 @@ async fn cached_image(
     Ok(path)
 }
 
-/// Where drafts are kept: $XDG_STATE_HOME/ost/drafts.json (owner-only).
-/// Teams keeps drafts on the device too, and roams them to the chat
-/// service only where `enableRoamMessageDraft` is on (api::drafts).
+/// Where drafts are kept: the account's drafts.json (`state_file`,
+/// owner-only). Teams keeps drafts on the device too, per account, and
+/// roams them to the chat service only where `enableRoamMessageDraft` is
+/// on (api::drafts).
 fn drafts_path() -> Option<std::path::PathBuf> {
-    std::env::var_os("XDG_STATE_HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state"))
-        })
-        .map(|b| b.join("ost").join("drafts.json"))
+    Some(state_file("drafts"))
 }
 
 /// A chat's unsent draft, as Teams keeps it: with its formatting.
@@ -19520,6 +19528,12 @@ impl qobject::Backend {
             channel_id.to_string(),
             channel_name.to_string(),
         );
+        // Only a channel has a channel's tabs (Posts, Shared, its own): a
+        // load asked for a chat (the conversation switching from a channel
+        // to a chat) would give the chat those.
+        if !(channel.ends_with("@thread.tacv2") || channel.ends_with("@thread.skype")) {
+            return;
+        }
         self.as_mut().rust_mut().channel_tabs_name = name.clone();
         let qt = self.qt_thread();
         runtime().spawn(async move {
@@ -19529,8 +19543,8 @@ impl qobject::Backend {
             .await;
             let _ = qt.queue(move |mut this| {
                 let text = match result {
-                    Ok(tabs) => json!({ "channel": channel, "tabs": tabs }).to_string(),
-                    Err(e) => json!({ "channel": channel, "error": short_error(&e) }).to_string(),
+                    Ok(tabs) => json!({ "channel": channel, "kind": "channel", "tabs": tabs }).to_string(),
+                    Err(e) => json!({ "channel": channel, "kind": "channel", "error": short_error(&e) }).to_string(),
                 };
                 this.as_mut()
                     .set_channel_tabs_json(QString::from(text.as_str()));
@@ -21386,8 +21400,8 @@ impl qobject::Backend {
             let result = async { api::tab_add::chat_tabs(&TeamsClient::new().await?, &chat).await }.await;
             let _ = qt.queue(move |mut this| {
                 let text = match result {
-                    Ok(tabs) => json!({ "channel": chat, "tabs": tabs }).to_string(),
-                    Err(e) => json!({ "channel": chat, "tabs": [], "error": short_error(&e) }).to_string(),
+                    Ok(tabs) => json!({ "channel": chat, "kind": "chat", "tabs": tabs }).to_string(),
+                    Err(e) => json!({ "channel": chat, "kind": "chat", "tabs": [], "error": short_error(&e) }).to_string(),
                 };
                 this.as_mut().set_channel_tabs_json(QString::from(text.as_str()));
             });
@@ -25914,6 +25928,14 @@ impl qobject::Backend {
 #[cfg(test)]
 mod draft_tests {
     use super::*;
+
+    #[test]
+    fn each_account_keeps_its_own_outbox_and_drafts() {
+        let base = std::path::Path::new("/s");
+        assert_eq!(profile_state_path(base, "outbox", None), std::path::Path::new("/s/ost/outbox.json"));
+        assert_eq!(profile_state_path(base, "outbox", Some("test2")), std::path::Path::new("/s/ost/outbox-test2.json"));
+        assert_eq!(profile_state_path(base, "drafts", Some("test3")), std::path::Path::new("/s/ost/drafts-test3.json"));
+    }
 
     #[test]
     fn plain_drafts_from_older_versions_still_load() {

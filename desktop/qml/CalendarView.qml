@@ -14,7 +14,7 @@ import QtCore
 //   right, 4 between); an event crossing midnight is drawn in each day. In
 //   the week that holds today, today takes 30 % of the width and past days
 //   11 %; the other days share the rest (a day gets at least what its
-//   overlapping events need). Past days and hours outside 8–17 are #FAFAFA,
+//   overlapping events need). Past days and hours outside 8–17 are #FAFAFA (dark #242424, calOff),
 //   a day under an all-day busy event #EEEFF9;
 // - Month: 28 px day names, 163 px cells, events 24 tall 26 apart from 31.6
 //   down (time 12/400, title 12/600; all-day ones centred), "+N" when the
@@ -671,6 +671,14 @@ Item {
     function colX(i) { let x = gutter; for (let k = 0; k < i; k++) x += colWidths[k] || 0; return x }
     function colW(i) { return colWidths[i] || 0 }
 
+    // The hosted calendar's palette, light and dark (Teams' Outlook calendar
+    // frame, measured on winpc 2026-11-23): days on neutralPrimarySurface,
+    // past days and the hours outside the working day on
+    // neutralLighterAlt, its lines neutralTertiaryAlt.
+    readonly property color calDay: theme.pick("#FFFFFF", "#292929", "#000000")
+    readonly property color calOff: theme.pick("#FAFAFA", "#242424", "#000000")
+    readonly property color calLine: theme.pick("#D1D1D1", "#5C5C5C", "#FFFFFF")
+
     // How an event's left bar and fill look for its show-as and your answer.
     function isTentative(e) { return e.show_as === "tentative" || (!e.is_organizer && (e.response === "notResponded" || e.response === "none" || e.response === "tentativelyAccepted")) }
     function fillOf(e) { return (e.show_as === "busy" || e.show_as === "oof" || e.show_as === "workingElsewhere") && !isTentative(e) ? theme.hc("#C7C9EE", "#000000") : theme.hc("#E1E1F6", "#000000") }
@@ -1060,7 +1068,7 @@ Item {
                     required property int index
                     x: root.colX(index * root.days); width: root.colX((index + 1) * root.days) - x; height: root.splitHead
                     color: theme.surface
-                    Rectangle { width: 1; height: parent.height; color: theme.hc("#D1D1D1", "#FFFFFF") }
+                    Rectangle { width: 1; height: parent.height; color: root.calLine }
                     Text {
                         x: 13; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 13 - 40; elide: Text.ElideRight
                         text: blk.modelData.name; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
@@ -1082,11 +1090,11 @@ Item {
                     readonly property date day: root.dayAt(dayIndex)
                     readonly property bool today: dayIndex === root.todayIndex
                     x: root.colX(index); width: root.colW(index); y: root.splitHead; height: heads.height - y
-                    color: root.busyDay(dayIndex) ? theme.hc("#EEEFF9", "#000000") : root.pastDay(dayIndex) ? theme.hc("#FAFAFA", "#000000") : theme.surface
+                    color: root.busyDay(dayIndex) ? theme.hc("#EEEFF9", "#000000") : root.pastDay(dayIndex) ? root.calOff : root.calDay
                     Rectangle { visible: parent.today; width: parent.width; height: 3; color: theme.brand }
                     Text { x: 13; y: 8; text: parent.day.getDate(); font.family: theme.font; font.pixelSize: 20; color: parent.today ? theme.brand : theme.text }
                     Text { x: 13; y: 33; text: theme.fmtDate(parent.day, root.wideLayout ? "dddd" : "ddd"); font.family: theme.font; font.pixelSize: theme.small; color: parent.today ? theme.brand : theme.textSecondary }
-                    Rectangle { width: 1; height: parent.height; color: theme.hc("#D1D1D1", "#FFFFFF") }
+                    Rectangle { width: 1; height: parent.height; color: root.calLine }
                     Rectangle { y: 54; width: parent.width; height: 1; color: theme.hc("#E0E0E0", "#FFFFFF") }
                 }
             }
@@ -1114,7 +1122,7 @@ Item {
                     Accessible.name: qsTr("%1, all day event").arg(ev.subject || qsTr("Event"))
                 }
             }
-            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.hc("#D1D1D1", "#FFFFFF") }
+            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: root.calLine }
         }
 
         Flickable {
@@ -1139,10 +1147,10 @@ Item {
                     readonly property int d: root.dayOfCol(index)
                     readonly property bool weekend: [0, 6].indexOf(root.dayAt(d).getDay()) >= 0
                     x: root.colX(index); width: root.colW(index); height: grid.contentHeight
-                    Rectangle { anchors.fill: parent; color: root.busyDay(parent.d) ? theme.hc("#EEEFF9", "#000000") : root.pastDay(parent.d) || parent.weekend ? theme.hc("#FAFAFA", "#000000") : theme.surface }
-                    Rectangle { visible: !root.busyDay(parent.d) && !root.pastDay(parent.d) && !parent.weekend; width: parent.width; height: 8 * root.hourHeight; color: theme.hc("#FAFAFA", "#000000") }
-                    Rectangle { visible: !root.busyDay(parent.d) && !root.pastDay(parent.d) && !parent.weekend; y: 17 * root.hourHeight; width: parent.width; height: 7 * root.hourHeight; color: theme.hc("#FAFAFA", "#000000") }
-                    Rectangle { width: 1; height: parent.height; color: theme.hc("#D1D1D1", "#FFFFFF") }
+                    Rectangle { anchors.fill: parent; color: root.busyDay(parent.d) ? theme.hc("#EEEFF9", "#000000") : root.pastDay(parent.d) || parent.weekend ? root.calOff : root.calDay }
+                    Rectangle { visible: !root.busyDay(parent.d) && !root.pastDay(parent.d) && !parent.weekend; width: parent.width; height: 8 * root.hourHeight; color: root.calOff }
+                    Rectangle { visible: !root.busyDay(parent.d) && !root.pastDay(parent.d) && !parent.weekend; y: 17 * root.hourHeight; width: parent.width; height: 7 * root.hourHeight; color: root.calOff }
+                    Rectangle { width: 1; height: parent.height; color: root.calLine }
                 }
             }
             Repeater {
@@ -1156,7 +1164,7 @@ Item {
                         text: index < 12 ? qsTr("%1 AM").arg(index % 12 === 0 ? 12 : index % 12) : qsTr("%1 PM").arg(index % 12 === 0 ? 12 : index % 12)
                         font.family: theme.font; font.pixelSize: 11; color: theme.textSecondary
                     }
-                    Rectangle { x: root.gutter; width: parent.width - root.gutter; height: 1; color: theme.hc("#D1D1D1", "#FFFFFF") }
+                    Rectangle { x: root.gutter; width: parent.width - root.gutter; height: 1; color: root.calLine }
                     // The time scale's slots: a dashed line at each, the hour solid.
                     Repeater {
                         model: Math.max(0, Math.round(60 / root.timeScale) - 1)
@@ -1318,7 +1326,7 @@ Item {
             model: [qsTr("Sunday"), qsTr("Monday"), qsTr("Tuesday"), qsTr("Wednesday"), qsTr("Thursday"), qsTr("Friday"), qsTr("Saturday")]
             Text { required property int index; required property string modelData; x: index * monthArea.cellW + 8; y: 8; text: modelData; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
         }
-        Rectangle { y: 28; width: parent.width; height: 1; color: theme.hc("#D1D1D1", "#FFFFFF") }
+        Rectangle { y: 28; width: parent.width; height: 1; color: root.calLine }
         /// Per week row: bars [{ev, c0, c1, row, multi}] and, per cell, how many didn't fit.
         readonly property var weeksLaid: {
             const out = []
@@ -2086,7 +2094,7 @@ Item {
         id: owaItemLayer
         visible: false
         anchors.fill: parent
-        color: theme.hc("#FAFAFA", "#000000")
+        color: root.calOff
         z: 11
         property string url: ""
         property string route: ""
@@ -2514,7 +2522,7 @@ Item {
         NavButton { x: parent.width - 48; y: 20; icon: "dismiss-20"; tip: qsTr("Close Copilot Chat"); onClicked: root.copilotOpen = false }
         Rectangle {
             anchors { top: parent.top; topMargin: 59.33; left: parent.left; right: parent.right; bottom: parent.bottom }
-            color: theme.hc("#FAFAFA", "#000000")
+            color: root.calOff
             Loader {
                 id: copilotHost
                 anchors.fill: parent
@@ -2552,14 +2560,14 @@ Item {
         id: composeLayer
         visible: false
         anchors.fill: parent
-        color: theme.hc("#FAFAFA", "#000000")
+        color: root.calOff
         z: 11
         onVisibleChanged: if (!visible) { composeHost.active = false; root.refreshAfterCompose() }
         Rectangle {
             id: composeBar
             width: parent.width; height: 48
             color: theme.surface
-            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.hc("#D1D1D1", "#FFFFFF") }
+            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: root.calLine }
             Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: qsTr("New event"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
             // Open in new window (Teams' stage view pop-out of the same page).
             Rectangle {
@@ -2608,7 +2616,7 @@ Item {
             title: qsTr("New event | Calendar")
             width: root.Window.window ? root.Window.window.width : 1280
             height: root.Window.window ? root.Window.window.height : 680
-            color: theme.hc("#FAFAFA", "#000000")
+            color: root.calOff
             onClosing: Qt.callLater(() => cw.destroy())
             WebApp {
                 anchors.fill: parent

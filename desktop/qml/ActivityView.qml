@@ -192,17 +192,27 @@ Rectangle {
             Rectangle {
                 // An app's activity by a person: the app's icon here (Teams'
                 // customIconUrl); by the app itself: none.
+                // A reaction: Teams' emoticon itself (the client's id, so the
+                // service's like is the thumbs-up "yes"), 20 px in a 24 px
+                // circle of the pane's colour, 18 right and 14 down from the
+                // picture (measured on winpc 2026-11-23).
+                readonly property bool reaction: !!it.modelData.reaction
                 visible: it.modelData.kind !== "app" || (it.fromPerson && !!it.modelData.icon)
-                x: 20.7 + 32 - 14; y: 10.7 + 32 - 14
-                width: 18; height: 18; radius: 9
-                color: theme.surface
+                x: reaction ? 20.7 + 18 : 20.7 + 32 - 14; y: reaction ? 10.7 + 14 : 10.7 + 32 - 14
+                width: reaction ? 24 : 18; height: width; radius: width / 2
+                color: reaction ? theme.pane : theme.surface
+                Emoticon {
+                    visible: parent.reaction
+                    anchors.centerIn: parent; size: 20; named: "large"
+                    key: parent.reaction ? it.modelData.reaction : ""
+                }
                 AppIcon {
                     visible: it.modelData.kind === "app"
                     anchors.centerIn: parent; width: 14; height: 14
                     source: visible ? it.modelData.icon : ""
                 }
                 Text {
-                    visible: it.modelData.emoji.length > 0
+                    visible: it.modelData.emoji.length > 0 && !parent.reaction
                     anchors.centerIn: parent
                     text: it.modelData.emoji
                     font.pixelSize: 12

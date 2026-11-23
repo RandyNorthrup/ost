@@ -40,8 +40,11 @@ pub struct ActivityItem {
     /// Where to go: the chat or channel thread, and the message in it.
     pub thread_id: String,
     pub message_id: String,
-    /// For reactions: the emoji (Teams shows it on the picture).
+    /// For reactions: the emoji as text (for plain-text places).
     pub emoji: String,
+    /// For reactions: Teams' emoticon (its client id: the service's `like`
+    /// is the thumbs-up `yes`), which Teams shows on the picture.
+    pub reaction: String,
     /// An app's activity: the app and its icon (Teams' picture for it).
     pub app_id: String,
     pub icon: String,
@@ -558,10 +561,11 @@ fn item_of(m: &serde_json::Value) -> Option<ActivityItem> {
         thread_id: s("sourceThreadId"),
         message_id,
         emoji: if kind == "reaction" {
-            super::messages::reaction_emoji(&sub).to_string()
+            super::messages::reaction_emoji(super::emoticons::client_key(&sub)).to_string()
         } else {
             String::new()
         },
+        reaction: if kind == "reaction" { super::emoticons::client_key(&sub).to_string() } else { String::new() },
         app_id: if graph { c("teamsAppId") } else { String::new() },
         icon: if graph { super::tabs::https_only(&super::app_details::evergreen_asset_url(&c("iconUrl"))) } else { String::new() },
         link: if graph { s("customTapAction") } else { String::new() },

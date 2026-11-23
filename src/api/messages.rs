@@ -1637,6 +1637,7 @@ pub async fn read_timeline_page(
         .into_iter()
         .flatten()
         .filter_map(|m| view_of(m, &me, &own_name))
+        .filter(|m| !hidden_control(chat_id, m))
         .collect();
     sort_by_arrival(&mut out);
     if let Some(raw) = v.get("messages").and_then(|m| m.as_array()) {
@@ -1648,6 +1649,13 @@ pub async fn read_timeline_page(
         messages: out,
         older,
     })
+}
+
+/// Control messages Teams doesn't show in a chat: in a 1:1, the members
+/// being added (the service records both when the chat is created; worker
+/// `getCtrlMsgFilter(isOneOnOneChat, [AddMember])`).
+pub fn hidden_control(chat_id: &str, m: &MessageView) -> bool {
+    chat_id.ends_with("@unq.gbl.spaces") && m.event.as_ref().is_some_and(|e| e.kind == "AddMember")
 }
 
 /// People's display names by MRI, learnt from messages, events and Graph
@@ -6405,6 +6413,15 @@ mod paging_and_event_tests {
         // (winpc: "OST Test 1 added OST Test 3 to the chat.")
         let added = ChatEvent { actor_added: false, history_days: Some(0), ..with };
         assert_eq!(backroom_event_text(&added, &names, "event", t).unwrap(), "Ann added Bo to the chat.");
+    }
+
+    #[test]
+    fn a_one_on_one_does_not_show_its_members_being_added() {
+        let add = MessageView { event: Some(ChatEvent { kind: "AddMember".into(), ..Default::default() }), ..Default::default() };
+        let text = MessageView::default();
+        assert!(hidden_control("19:a_b@unq.gbl.spaces", &add));
+        assert!(!hidden_control("19:a_b@unq.gbl.spaces", &text));
+        assert!(!hidden_control("19:abc@thread.v2", &add));
     }
 
     #[test]

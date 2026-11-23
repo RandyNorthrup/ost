@@ -256,6 +256,8 @@ Rectangle {
         if (!backend.channelTabsJson) return []
         const r = JSON.parse(backend.channelTabsJson)
         if (r.channel !== chatId || !r.tabs) return []
+        // Only a chat's own tabs in a chat, a channel's in a channel.
+        if ((r.kind === "channel") !== isChannel) return []
         if (!isChannel) return r.tabs
         // In the channel's own order (Graph's sortOrderIndex); a dropped
         // tab shows in its new place until the list reloads.
@@ -518,7 +520,9 @@ Rectangle {
     // Attendance view): {organizer, message, call}.
     property var channelAttendance: null
     // Load a channel's tabs once it's known which team it's in.
-    readonly property string tabsKey: isChannel && teamId && chatId ? teamId + "|" + chatId : ""
+    // (By the id itself: while the conversation switches, isChannel can
+    // still hold the last one's.)
+    readonly property string tabsKey: chatId.endsWith("@thread.tacv2") && teamId ? teamId + "|" + chatId : ""
     onTabsKeyChanged: if (tabsKey) backend.channelTabsLoad(teamId, chatId, chatName)
     // A chat's own tabs (Add a tab's): its thread properties.
     readonly property string chatTabsKey: !isChannel && !isSelf && !pane && !popout && chatId.indexOf("19:") === 0 ? chatId : ""

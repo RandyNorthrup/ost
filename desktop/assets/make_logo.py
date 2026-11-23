@@ -14,10 +14,11 @@ behind it to the right. OST keeps the trade dress apart. Its plate is a
 wide "OST" wordmark plate with no "T" shape, the letters are the largest
 element, and nothing is traced from or copied out of Teams' artwork. There
 are two layouts (see LAYOUTS):
-  b (default, the user's choice on 2026-11-16) the plate at the front lower
-               left with two people behind it to the upper right;
-  a            three people standing symmetrically behind a wide, centred
-               plate (one in the middle, one at each side).
+  a (default, the user's choice on 2026-11-19) three people standing
+               symmetrically behind a wide, centred plate (one in the
+               middle, one at each side);
+  b            the plate at the front lower left with two people behind it
+               to the upper right.
 The wordmark is Selawik Bold (OFL, desktop/assets/fonts), outlined so the
 SVG renders anywhere.
 

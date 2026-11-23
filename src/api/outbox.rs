@@ -549,6 +549,7 @@ pub async fn post(o: &Outgoing) -> PostResult {
     let body = post_body(o);
     let mut counts = Counts::default();
     let mut attempt = 0;
+    let mut created = false;
     loop {
         let url = format!(
             "{}/v1/users/ME/conversations/{}/messages",
@@ -591,6 +592,22 @@ pub async fn post(o: &Outgoing) -> PostResult {
             }
             Err(_) => (None, None, String::new()),
         };
+        // A new 1:1 chat (opened with someone you've never chatted with)
+        // doesn't exist until its first message: Teams creates it then
+        // (createThread with a fixed, unique roster) and sends into it.
+        if status == Some(404)
+            && !created
+            && let Some(other) = one_on_one_other(&o.conversation_id, &o.sender_mri)
+        {
+            created = true;
+            match super::chat::ensure_one_on_one_chat(&client, &o.sender_mri, &other).await {
+                Ok(_) => {
+                    tracing::info!("created the new 1:1 chat for its first message");
+                    continue;
+                }
+                Err(e) => tracing::warn!("new 1:1 chat not created: {e:#}"),
+            }
+        }
         let Some(wait) = transport_retry(attempt, status, &mut counts, retry_after) else {
             return PostResult::Failed { status, body: text };
         };
@@ -624,6 +641,13 @@ async fn delivered_copy(o: &Outgoing) -> Option<(String, i64)> {
             Some((id, at))
         })?
     })
+}
+
+/// The other person of a 1:1 chat the sender is in (`8:orgid:<oid>`), from
+/// its id (`19:<oid>_<oid>@unq.gbl.spaces`).
+fn one_on_one_other(conversation_id: &str, sender_mri: &str) -> Option<String> {
+    let me = sender_mri.strip_prefix("8:orgid:")?;
+    super::chat::other_member_oid(conversation_id, me).map(|o| format!("8:orgid:{o}"))
 }
 
 /// Plain text as Teams sends it: one paragraph, line breaks as `<br>`.
@@ -975,6 +999,18 @@ impl Outbox {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_one_on_one_is_created_with_the_other_person() {
+        let t2 = "9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5";
+        let t3 = "01c4860d-5776-4b16-8736-6a739fcc8b34";
+        let chat = format!("19:{t3}_{t2}@unq.gbl.spaces");
+        assert_eq!(one_on_one_other(&chat, &format!("8:orgid:{t2}")), Some(format!("8:orgid:{t3}")));
+        assert_eq!(one_on_one_other(&chat, &format!("8:orgid:{t3}")), Some(format!("8:orgid:{t2}")));
+        // Not a 1:1, or not the sender's.
+        assert_eq!(one_on_one_other("19:abc@thread.v2", &format!("8:orgid:{t2}")), None);
+        assert_eq!(one_on_one_other(&chat, "8:orgid:4287e791-1b98-4963-8b94-281c50472683"), None);
+    }
 
     #[test]
     fn client_message_ids_are_teams_shape() {
