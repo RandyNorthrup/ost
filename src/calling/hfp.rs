@@ -19,9 +19,9 @@
 //!
 //! On Linux the audio gateway is PipeWire's native HFP backend. It takes a
 //! headset's call commands to the calls of a ModemManager modem (Voice
-//! API); OST offers its calls that way on the session bus (desktop's
-//! `hfp_calls`; PipeWire's `bluez5.hfphsp-backend-native-modem-bus =
-//! "session"`). PipeWire turns AT+VGM into the headset microphone's volume
+//! API); OST offers its calls that way (desktop's `hfp_calls`): on the
+//! system bus for stock PipeWire (desktop/packaging/install-hfp-calls.sh)
+//! and on the session bus for contrib/pipewire's patch. PipeWire turns AT+VGM into the headset microphone's volume
 //! and its volume into +VGM, so this module watches and sets that volume
 //! for the mute.
 

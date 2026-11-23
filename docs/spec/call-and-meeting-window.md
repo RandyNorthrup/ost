@@ -1713,13 +1713,19 @@ The chosen layout is saved through `updateUserExperiencePreferences{stageSetting
 - Teams acts on them only with Sync device buttons on (isHFPDeviceSyncEnabled), with a Bluetooth hands-free
   microphone selected (its connection type Bluetooth) and with one such device present (multi-device mode off);
   otherwise it fails the action and the gateway answers ERROR. Mute from the device acts on a call.
-- OST: PipeWire's native HFP backend is the gateway. It takes ATA and AT+CHUP to the calls of a ModemManager modem;
-  OST offers its calls as one (ModemManager's Modem, Modem3gpp, Voice and Call interfaces) on the session bus, with
-  PipeWire's `bluez5.hfphsp-backend-native-modem-bus = "session"` (contrib/pipewire: a small bluez5 patch and the
-  WirePlumber setting). PipeWire turns AT+VGM into the headset microphone's volume and a route volume into +VGM, so
-  OST's mute zeroes that gain and unmuting puts it back. Only the OST that has the headset's buttons ("Transfer
-  controls to this app") offers its calls.
-- Stock PipeWire never reads OST's modem (its org.pipewire.Telephony service is for PipeWire as a phone's hands-free
-  side). Then answer and hang-up aren't offered and nothing is shown, as Teams shows nothing where the platform lacks
-  call control ("Platform not supported" in its log); the gain-based mute still works.
+- OST: PipeWire's native HFP backend is the gateway. It takes ATA and AT+CHUP to the calls of a ModemManager modem
+  at ModemManager's name on the system bus; OST offers its calls as one (ModemManager's Modem, Modem3gpp, Voice and
+  Call interfaces). On stock PipeWire that takes desktop/packaging/install-hfp-calls.sh: WirePlumber's
+  `bluez5.hfphsp-backend-native-modem = "ost"` (default "none"), a D-Bus system policy letting the user own
+  `org.freedesktop.ModemManager1`, and ModemManager not running (it holds the name for good; the script disables it
+  when it has no modem, after asking). OST shows the modem, and takes Accept/Hangup, only from the user's own
+  PipeWire gateway (WirePlumber, by its connection's uid and process); other system clients see a ModemManager
+  without modems. contrib/pipewire's patch (`bluez5.hfphsp-backend-native-modem-bus = "session"`) is the other way;
+  OST offers its calls on both buses. PipeWire turns AT+VGM into the headset microphone's volume and a route volume
+  into +VGM, so OST's mute zeroes that gain and unmuting puts it back. Only the OST that has the headset's buttons
+  ("Transfer controls to this app") offers its calls.
+- Without that setup PipeWire never reads OST's modem (its org.pipewire.Telephony service is for PipeWire as a
+  phone's hands-free side). Then answer and hang-up aren't offered and nothing is shown, as Teams shows nothing where
+  the platform lacks call control ("Platform not supported" in its log); OST logs why, and the gain-based mute still
+  works.
 

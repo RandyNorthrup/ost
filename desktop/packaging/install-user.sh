@@ -8,3 +8,4 @@ install -Dm644 "$here/ost-desktop.desktop" "$HOME/.local/share/applications/ost-
 install -Dm644 "$here/ost-desktop.png" "$HOME/.local/share/icons/hicolor/256x256/apps/ost-desktop.png"
 command -v update-desktop-database >/dev/null && update-desktop-database "$HOME/.local/share/applications" || true
 echo "Installed. Launch OST from your app launcher or run ost-desktop."
+echo "Bluetooth headset answer and hang-up buttons: sh $here/install-hfp-calls.sh (uses sudo once)."
