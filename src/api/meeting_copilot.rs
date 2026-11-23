@@ -235,9 +235,235 @@ pub fn launch_search(m: &Meeting, search_session: &str, query: &str, cmmid: &str
     v
 }
 
+/// Teams' built-in CMM ids for the chat and channel entry points
+/// (`copilotEntryPointsCMMIds`, when ECS doesn't set them).
+pub const CHAT_PANEL_CMMID: &str = "cmmnho609kr";
+pub const MEETING_CHAT_PANEL_CMMID: &str = "cmm4p9gchbg";
+pub const MEETING_CHAT_NO_TRANSCRIPT_CMMID: &str = "cmm72vlwwfw";
+pub const CHANNEL_L2_CMMID: &str = "cmmce9gzagp";
+
+/// Who opened the pane, as Teams' launch payload names it
+/// (`createSubPageEntityIdForBizChat`, module 539064).
+struct Caller<'a> {
+    scope: &'a str,
+    entry_point: &'a str,
+    sub_entry_point: Option<&'a str>,
+    reference: String,
+}
+
+/// The subEntityId Teams gives the app for a pane opened from a
+/// conversation: the host settings, the context attributes (module 36414:
+/// SupportedScenario for a chat or channel, HasUnreadMessageTime when the
+/// conversation's unread time is known) and the base64 launch payload.
+fn conversation_sub_entity(caller: &Caller, cmmid: &str, variants: &[String], attributes: &Value) -> String {
+    let mut info = json!({ "scope": caller.scope, "entryPoint": caller.entry_point, "copilotReferenceId": caller.reference });
+    if let Some(s) = caller.sub_entry_point {
+        info["subEntryPoint"] = json!(s);
+    }
+    let mut payload = json!({ "id": "", "scenario": "Default", "chatType": "", "properties": {}, "version": 1 });
+    if !cmmid.is_empty() {
+        payload["referral"] = json!({ "cmmid": cmmid });
+    }
+    payload["callerInfo"] = info;
+    payload["serverVariants"] = json!(variants);
+    let mut sub = json!({ "hostSettings": { "enableDeeplinks": "true", "focusOnLoad": "Compose" } });
+    if attributes.as_array().is_some_and(|a| !a.is_empty()) {
+        sub["contextAttributes"] = attributes.clone();
+    }
+    sub["launchOptionPayload"] = json!(base64::engine::general_purpose::STANDARD.encode(payload.to_string()));
+    sub.to_string()
+}
+
+/// Teams' context attributes for a chat ("ViewChat") or a channel thread
+/// ("ViewChannel"); HasUnreadMessageTime says whether the conversation had
+/// unread messages when the pane opened (its unread time, when known).
+pub fn context_attributes(scenario: &str, unread_ms: Option<i64>) -> Value {
+    let mut a = vec![json!({ "key": "SupportedScenario", "value": scenario })];
+    if let Some(t) = unread_ms {
+        a.push(json!({ "key": "HasUnreadMessageTime", "value": if t > 0 { "true" } else { "false" } }));
+    }
+    Value::Array(a)
+}
+
+/// The pane's address: the chat page anchored on the conversation's
+/// reference (`chat/sessionanchor/<reference>`, as Teams opens it).
+fn anchored_url(m: &Meeting, reference: &str) -> String {
+    content_url(m).replacen("/chat?", &format!("/chat/sessionanchor/{reference}?"), 1)
+}
+
+/// Copilot from a chat's header (Teams' CopilotFromChatHeader with
+/// copilot.enableBizChatCopilotInChatLicensed: the Microsoft 365 Copilot
+/// app as the chat's side pane; measured on winpc 2026-11-23). The launch
+/// payload names scope "Chat", entry point "ChatPanel" and the chat's
+/// reference (SHA-256 of its id); once the app is up the host tells it the
+/// chat (`contextualChatChanged`, with the chat's unread time when it had
+/// unread messages) and `updateCapabilities` [disableGPT5].
+pub fn launch_chat(m: &Meeting, chat_id: &str, unread_ms: Option<i64>, cmmid: &str, variants: &[String]) -> Value {
+    let caller = Caller { scope: "Chat", entry_point: "ChatPanel", sub_entry_point: None, reference: reference_id(chat_id) };
+    let attributes = context_attributes("ViewChat", unread_ms);
+    let mut v = launch(m);
+    v["url"] = json!(anchored_url(m, &caller.reference));
+    v["context"]["subEntityId"] = json!(conversation_sub_entity(&caller, cmmid, variants, &attributes));
+    let mut chat = json!({ "context": "Chat", "chatId": chat_id });
+    if let Some(t) = unread_ms.filter(|t| *t > 0) {
+        chat["unreadMessageTime"] = json!(t);
+    }
+    v["contextualChat"] = json!({
+        "contentType": "teams",
+        "contentItems": [{ "contextType": "Chat", "chatContext": chat }],
+        "contextAttributes": attributes,
+    });
+    v["capabilities"] = json!([{ "name": "disableGPT5" }]);
+    v
+}
+
+/// A channel thread, as Copilot's pane names it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ChannelThread {
+    /// The team's thread (`19:…@thread.tacv2`).
+    pub team_id: String,
+    pub channel_id: String,
+    /// The thread's first message.
+    pub reply_chain_id: String,
+    /// The team's group (AAD) id.
+    pub group_id: String,
+    pub tenant_id: String,
+}
+
+/// Copilot from a channel thread's header (Teams' CopilotFromChannelsL2Header
+/// with copilot.enableBizChatCopilotInChannelLicensed, measured on winpc
+/// 2026-11-23): scope "Channel", entry point "ChannelL2", the reference the
+/// SHA-256 of "{team}-{channel}-{thread}" with the team left empty as Teams
+/// parses it from the thread's key; the host then tells the app the thread
+/// (`channelContext`, "ViewChannel") and [disableGPT5].
+pub fn launch_channel(m: &Meeting, t: &ChannelThread, cmmid: &str, variants: &[String]) -> Value {
+    let reference = reference_id(&format!("-{}-{}", t.channel_id, t.reply_chain_id));
+    let caller = Caller { scope: "Channel", entry_point: "ChannelL2", sub_entry_point: None, reference };
+    let attributes = context_attributes("ViewChannel", None);
+    let mut v = launch(m);
+    v["url"] = json!(anchored_url(m, &caller.reference));
+    v["context"]["subEntityId"] = json!(conversation_sub_entity(&caller, cmmid, variants, &attributes));
+    v["contextualChat"] = json!({
+        "contentType": "teams",
+        "contentItems": [{ "contextType": "Channel", "channelContext": {
+            "context": "Channel", "channelId": t.channel_id, "replyChainId": t.reply_chain_id,
+            "groupId": t.group_id, "teamId": t.team_id, "tenantId": t.tenant_id,
+        } }],
+        "contextAttributes": attributes,
+    });
+    v["capabilities"] = json!([{ "name": "disableGPT5" }]);
+    v
+}
+
+/// Copilot from a meeting chat's header (Teams' CopilotFromMeetingChatHeader
+/// with meetingCollaboration.enableBizChatCopilotForMeetingChat and
+/// enableAlwaysOpenMeetingCopilotInChatSwitch, measured on winpc
+/// 2026-11-23 with OST TEST 240 recap meeting): the app reads the meeting
+/// (its transcript and recap) rather than the chat. Scope "Meeting", entry
+/// point "ChatPanel" when the meeting has a transcript, else
+/// "MeetingChatNoTranscript" (also its sub entry point), the reference the
+/// SHA-256 of the call id; the meeting context's session is the live
+/// meeting's (PrivateViewDuringMeeting) or "Recap", with the recording as
+/// its vroomId, and no capabilities.
+pub fn launch_meeting_chat(m: &Meeting, vroom_id: &str, live: bool, transcript: bool, cmmid: &str, variants: &[String]) -> Value {
+    let entry = if transcript { "ChatPanel" } else { "MeetingChatNoTranscript" };
+    let caller = Caller { scope: "Meeting", entry_point: entry, sub_entry_point: (!transcript).then_some(entry), reference: reference_id(&m.call_id) };
+    let mut v = launch(m);
+    v["url"] = json!(anchored_url(m, &caller.reference));
+    v["context"]["subEntityId"] = json!(conversation_sub_entity(&caller, cmmid, variants, &json!([])));
+    v["contextualChat"] = json!({
+        "contentType": "teams",
+        "contentItems": [{
+            "contextType": "Meeting",
+            "meetingContext": {
+                "context": "Meeting",
+                "callId": m.call_id,
+                "organizerId": format!("{}@{}", m.organizer_id, m.organizer_tenant),
+                "threadId": m.thread_id,
+                "iCalUid": m.ical_uid,
+                "sessionType": if live { "PrivateViewDuringMeeting" } else { "Recap" },
+                "exchangeEventId": "",
+                "vroomId": vroom_id,
+                "subject": m.subject,
+                "eventId": "",
+            },
+            "scenarioName": "TeamsMeetingSidepaneWorkCopilot",
+        }],
+    });
+    v["capabilities"] = json!([]);
+    v
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn decode_sub(v: &Value) -> (Value, Value) {
+        let sub: Value = serde_json::from_str(v["context"]["subEntityId"].as_str().unwrap()).unwrap();
+        let payload: Value = serde_json::from_slice(&base64::engine::general_purpose::STANDARD.decode(sub["launchOptionPayload"].as_str().unwrap()).unwrap()).unwrap();
+        (sub, payload)
+    }
+
+    #[test]
+    fn chat_launch_is_teams_own() {
+        // Measured: OST TEST group call's header Copilot on winpc.
+        let variants: Vec<String> = ["feature.enableChatPrefetch", "cdxteamsimplicitlong"].iter().map(|s| s.to_string()).collect();
+        let v = launch_chat(&meeting(), "19:0786033da79d46d5969877f18eb9bcc1@thread.v2", Some(1795036427598), CHAT_PANEL_CMMID, &variants);
+        let r = "caec159e3cf54080815034f4a13c3ecdd10201400fb79874b77c80a3af339be1";
+        assert!(v["url"].as_str().unwrap().starts_with(&format!("https://m365copilotapp.svc.cloud.microsoft/chat/sessionanchor/{r}?OID=")));
+        let (sub, payload) = decode_sub(&v);
+        assert_eq!(sub["contextAttributes"], json!([{ "key": "SupportedScenario", "value": "ViewChat" }, { "key": "HasUnreadMessageTime", "value": "true" }]));
+        assert_eq!(payload, json!({ "id": "", "scenario": "Default", "chatType": "", "properties": {}, "version": 1, "referral": { "cmmid": "cmmnho609kr" },
+            "callerInfo": { "scope": "Chat", "entryPoint": "ChatPanel", "copilotReferenceId": r }, "serverVariants": variants }));
+        assert_eq!(v["contextualChat"]["contentItems"][0]["chatContext"], json!({ "context": "Chat", "chatId": "19:0786033da79d46d5969877f18eb9bcc1@thread.v2", "unreadMessageTime": 1795036427598_i64 }));
+        assert_eq!(v["capabilities"], json!([{ "name": "disableGPT5" }]));
+        // Nothing unread: no unread time.
+        let v = launch_chat(&meeting(), "19:x@thread.v2", None, CHAT_PANEL_CMMID, &[]);
+        assert_eq!(v["contextualChat"]["contextAttributes"], json!([{ "key": "SupportedScenario", "value": "ViewChat" }]));
+        assert!(v["contextualChat"]["contentItems"][0]["chatContext"].get("unreadMessageTime").is_none());
+    }
+
+    #[test]
+    fn channel_launch_anchors_on_the_thread() {
+        let t = ChannelThread {
+            team_id: "19:ekCPvoD9glVOIeBqbQQXdfV-vTnBPkGFtas97c_IYnA1@thread.tacv2".into(),
+            channel_id: "19:327472fdfc5b4b6da9cf41c04467868c@thread.tacv2".into(),
+            reply_chain_id: "1794312901896".into(),
+            group_id: "1fac3ae3-c9c0-4ddb-90bb-58f52209c181".into(),
+            tenant_id: "2716d134-5614-4856-a48d-2002edd9a570".into(),
+        };
+        let v = launch_channel(&meeting(), &t, CHANNEL_L2_CMMID, &[]);
+        // Measured: the frame's anchor for OST threads test's OST TEST 81 thread.
+        assert!(v["url"].as_str().unwrap().contains("/chat/sessionanchor/73c5697eb7fd8d3af336cb8d0c86fc7e53d9b4d960f7fc8ada3a0952ae2bef74?"));
+        let (sub, payload) = decode_sub(&v);
+        assert_eq!(sub["contextAttributes"], json!([{ "key": "SupportedScenario", "value": "ViewChannel" }]));
+        assert_eq!((payload["callerInfo"]["scope"].as_str(), payload["callerInfo"]["entryPoint"].as_str()), (Some("Channel"), Some("ChannelL2")));
+        let c = &v["contextualChat"]["contentItems"][0];
+        assert_eq!(c["contextType"], "Channel");
+        assert_eq!(c["channelContext"]["teamId"], t.team_id.as_str());
+        assert_eq!(c["channelContext"]["replyChainId"], "1794312901896");
+    }
+
+    #[test]
+    fn meeting_chat_reads_the_meeting() {
+        let mut m = meeting();
+        m.call_id = "26943b81-750d-4061-abcb-3681fb8b4122".into();
+        let v = launch_meeting_chat(&m, "SPO_x_01T", false, true, MEETING_CHAT_PANEL_CMMID, &[]);
+        assert!(v["url"].as_str().unwrap().contains("/chat/sessionanchor/2bc77d8763fe657bdef3fe99bbaa30cb3ba852aa44d0b674c90f7a28992063dc?"));
+        let (sub, payload) = decode_sub(&v);
+        assert!(sub.get("contextAttributes").is_none());
+        assert_eq!(payload["callerInfo"], json!({ "scope": "Meeting", "entryPoint": "ChatPanel", "copilotReferenceId": reference_id(&m.call_id) }));
+        assert_eq!(payload["serverVariants"], json!([]));
+        let mc = &v["contextualChat"]["contentItems"][0]["meetingContext"];
+        assert_eq!((mc["sessionType"].as_str(), mc["vroomId"].as_str(), mc["eventId"].as_str()), (Some("Recap"), Some("SPO_x_01T"), Some("")));
+        assert!(mc.get("isTranscriptRunningDuringMeeting").is_none());
+        assert_eq!(v["capabilities"], json!([]));
+        let v = launch_meeting_chat(&m, "", true, false, MEETING_CHAT_NO_TRANSCRIPT_CMMID, &[]);
+        let (_, payload) = decode_sub(&v);
+        assert_eq!(payload["callerInfo"]["subEntryPoint"], "MeetingChatNoTranscript");
+        assert_eq!(v["contextualChat"]["contentItems"][0]["meetingContext"]["sessionType"], "PrivateViewDuringMeeting");
+    }
 
     fn meeting() -> Meeting {
         Meeting {

@@ -1458,7 +1458,9 @@ Item {
         { id: "expand-compose", icon: "format-20", label: root.formatting ? qsTr("Hide Formatting options") : qsTr("Show Formatting options"), pressed: root.formatting },
         { id: "UnifiedFunPicker", icon: "emoji-20", label: qsTr("Emoji, GIFs and Stickers"), hidden: root.textOnly },
         { id: "FilePicker", icon: "attach-20", label: qsTr("Attach files") + " (Alt+Shift+O)", hidden: root.editing || root.textOnly },
-        { id: "open-compose-copilot", icon: "pen-sparkle-20", label: qsTr("Write with Copilot") + " (Alt+A)", hidden: root.editing || root.textOnly || !root.copilotAllowed, pressed: copilotPopover.opened },
+        // (Also while editing a sent message: Teams' edit box keeps Write
+        // with Copilot, its popover over the edit box, measured 2026-11-23.)
+        { id: "open-compose-copilot", icon: "pen-sparkle-20", label: qsTr("Write with Copilot") + " (Alt+A)", hidden: root.textOnly || !root.copilotAllowed, pressed: copilotPopover.opened },
         { id: "popup-semo", icon: "loop-page-20", label: qsTr("Loop components"), hidden: root.editing || root.textOnly || !root.loopAllowed, pressed: !!root.loop },
         { id: "message-extension-flyout-command", icon: "add-20", label: qsTr("Actions and apps"), hidden: root.editing || root.textOnly }
     ].filter(t => !t.hidden)

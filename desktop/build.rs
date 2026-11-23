@@ -232,6 +232,7 @@ fn main() {
         "qml/FileViewer.qml",
         "qml/PreviewBody.qml",
         "qml/ThreadsPane.qml",
+        "qml/CopilotPane.qml",
         "qml/FindPane.qml",
         "qml/FeedbackWindow.qml",
         "qml/HelpView.qml",

@@ -475,6 +475,48 @@ Rectangle {
     // 640 its channel details move to the ··· menu (Teams, measured).
     readonly property int contextInline: pane ? 2 : threadsLayout ? (width >= 640 ? 2 : 1) : isChannel ? 2 : width >= 640 ? 2 : width >= 480 ? 1 : 0
     readonly property int threadsButton: threadsLayout && !pane && tab === "" ? 1 : 0
+    // Open Copilot (chat-copilot-button, TASK-0260; measured on winpc
+    // 2026-11-23): the first of a chat's context buttons, before Find, for
+    // Teams' bizChat experience (a Microsoft 365 Copilot licence and the
+    // chat's or meeting chat's flag; never for a channel's own header, nor
+    // in a thread pane). Alt+C toggles it; the pane (CopilotPane, the
+    // window's) shows `copilotRequest`, and it closes when another chat
+    // opens or Find or the details pane take its place.
+    readonly property var copilotState: { try { return JSON.parse(backend.composeCopilotJson || "{}") } catch (e) { return {} } }
+    readonly property int copilotButton: !pane && !isChannel && !readOnly && chatId !== "" && (isMeetingChat ? !!copilotState.meetingChat : !!copilotState.chat) ? 1 : 0
+    property bool copilotOpen: false
+    onCopilotButtonChanged: if (!copilotButton) copilotOpen = false
+    function toggleCopilot() {
+        if (!copilotButton) return
+        copilotOpen = !copilotOpen
+        if (copilotOpen) { finding = false; participants.visible = false; copilotUnread = unreadTime() }
+        console.info("COPILOT chat pane", copilotOpen, isMeetingChat ? "meeting" : "chat")
+    }
+    onFindingChanged: if (finding) copilotOpen = false
+    // The chat's unread time when Copilot opened (Teams'
+    // unreadMessageTime, only while the chat had unread messages): the
+    // message before the first unread one.
+    property real copilotUnread: 0
+    function unreadTime() {
+        const ms = root.messages || []
+        const i = ms.findIndex(m => m.first_unread === true)
+        if (i < 0) return 0
+        const prev = i > 0 ? ms[i - 1] : null
+        return prev ? new Date(prev.time).getTime() : new Date(ms[i].time).getTime() - 1
+    }
+    // A meeting chat's Copilot reads the meeting: its latest recap card's
+    // recording and meeting (with the transcript when it has one).
+    readonly property var copilotRequest: {
+        if (!copilotButton) return null
+        if (isMeetingChat) {
+            const m = (root.messages || []).filter(m => m.kind === "call" && m.call_state === "ended" && !!m.recap).pop()
+            const ref = m ? root.recapRef(m, m.recap) : { thread_id: root.chatId, subject: root.chatTopic || root.chatName, tenant_id: (root.meeting || {}).tenant_id || backend.tenantId(),
+                                                          organizer_id: (root.meeting || {}).organizer_id || "", ical_uid: (root.meeting || {}).ical_uid || "" }
+            return { kind: "meeting", chat: root.chatId, recap: ref, transcript: !!(m && m.recap.transcript), live: !!root.liveCall }
+        }
+        return root.copilotUnread > 0 ? { kind: "chat", chat: root.chatId, unread: root.copilotUnread } : { kind: "chat", chat: root.chatId }
+    }
+    Shortcut { sequence: "Alt+C"; enabled: root.visible && root.copilotButton > 0 && root.chatName.length > 0; onActivated: root.toggleCopilot() }
     /// Whether this channel's threads pane is open (Main), and its toggle.
     property bool threadsOpen: false
     /// The chat's scheduled messages (backend.scheduledJson), shown after
@@ -487,7 +529,7 @@ Rectangle {
     signal toggleThreads()
     // Right to left from ···: the inline context buttons (32 each), a
     // 16 px divider, then the action items.
-    readonly property real contextLeft: width - 43 - 32 * (contextInline + threadsButton)
+    readonly property real contextLeft: width - 43 - 32 * (contextInline + threadsButton + copilotButton)
     // A meeting chat's Meeting details (inline from 640 wide, else in ···);
     // not while the tabs are hidden (a pop-out without its tab row: Teams'
     // chat header gives it only with enableChatHeaderMeetingDetailsButton
@@ -769,7 +811,11 @@ Rectangle {
         // (Teams' Shared files list the meeting's attendance report.)
         const w = recapWindow.createObject(null, { recap: root.recapRef(m, recap), startTab: part === "transcript" ? "transcript" : "", hasAttendance: root.hasAttendanceReport || !!m.call_id })
         w.goToChat.connect(() => {})
-        w.openAttendance.connect(() => root.openAttendance(m.call_id || ""))
+        // Its Attendance opens the meeting chat in a window of its own on
+        // the report, as from Meeting Recaps (Teams on winpc 2026-11-23,
+        // OST TEST 240 recap meeting's card: openAttendanceTabInMeetingRecapOfChat
+        // while the recap is in a window), not in this chat (TASK-0261).
+        w.openAttendance.connect(() => root.attendanceOf(w.recap.thread_id || root.chatId, w.recap.subject || root.chatTopic || root.chatName))
         // Its toasts (Share's "Prompt copied", Manage's expiration) show as the app's.
         w.toast.connect(d => root.toastRequested(d))
         w.show(); w.raise(); w.requestActivate()
@@ -917,6 +963,8 @@ Rectangle {
         tabConversationTab = null
         openedAt = new Date()
         tab = ""; finding = false; findMark = { id: "", terms: [] }; seekId = ""; participants.visible = false; posting = false
+        // (Teams closes a chat's Copilot when another chat opens.)
+        copilotOpen = false; copilotUnread = 0
         editingId = ""
         // A thread view keeps its reply's draft as Teams does (its post's
         // reply chain, "{channel};messageid={post}"), roamed with it.
@@ -1944,16 +1992,29 @@ Rectangle {
             HoverHandler { id: threadsHover }
             Accessible.name: root.threadsOpen ? qsTr("Close threads") : qsTr("Open threads")
         }
+        // Open / Close Copilot (chat-copilot-button): Copilot's mark, filled
+        // brand while its pane shows.
+        HeaderAction {
+            visible: root.copilotButton > 0
+            x: root.contextLeft
+            icon: root.copilotOpen ? "copilot-filled-48" : "ai-copilot"
+            iconColor: root.copilotOpen ? theme.brand : root.hdrStrong
+            onClicked: root.toggleCopilot()
+            ToolTip.visible: copilotHover.hovered; ToolTip.delay: 500
+            ToolTip.text: (root.copilotOpen ? qsTr("Close Copilot") : qsTr("Open Copilot")) + " (Alt+C)"
+            HoverHandler { id: copilotHover }
+            Accessible.name: root.copilotOpen ? qsTr("Close Copilot") : qsTr("Open Copilot")
+        }
         // In a channel, Find and Channel details show only on Posts (Teams).
         HeaderAction {
             visible: root.contextInline >= 1 && !(root.isChannel && root.tab !== "")
-            x: root.contextLeft + 32 * root.threadsButton; icon: "search-20"; Accessible.name: root.isChannel ? qsTr("Find in channel") : qsTr("Find in chat")
+            x: root.contextLeft + 32 * (root.threadsButton + root.copilotButton); icon: "search-20"; Accessible.name: root.isChannel ? qsTr("Find in channel") : qsTr("Find in chat")
             iconColor: root.finding ? theme.brand : root.hdrStrong
             onClicked: root.toggleFind()
         }
         HeaderAction {
             visible: root.contextInline >= 2 && !(root.isChannel && root.tab !== "")
-            x: root.contextLeft + 32 * (1 + root.threadsButton); icon: root.isChannel ? "panel-right-expand-20" : "panel-left-20"; Accessible.name: root.isChannel ? qsTr("Open channel details") : qsTr("Open chat details")
+            x: root.contextLeft + 32 * (1 + root.threadsButton + root.copilotButton); icon: root.isChannel ? "panel-right-expand-20" : "panel-left-20"; Accessible.name: root.isChannel ? qsTr("Open channel details") : qsTr("Open chat details")
             onClicked: participants.visible = !participants.visible
         }
         // More channel options (more-apps-button-tid, 32 x 31.3, ··· at the
@@ -4517,6 +4578,7 @@ Rectangle {
     Item {
         id: participants
         visible: false
+        onVisibleChanged: if (visible) root.copilotOpen = false
         z: 50
         anchors { top: header.bottom; right: parent.right; topMargin: 4; rightMargin: 16 }
         width: 251.3

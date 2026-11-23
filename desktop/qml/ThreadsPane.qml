@@ -40,6 +40,28 @@ Rectangle {
     signal openImageViewer(var images, int index, var message)
     signal jumpTo(string id)
     signal popOut(string rootId)
+    /// A link Copilot's pane opened (its Sources).
+    signal openLink(string url)
+    // Open Copilot in a thread's header (Teams' CopilotFromChannelsL2Header,
+    // TASK-0260; measured on winpc 2026-11-23): before More, Follow moving
+    // one place left. Open, the thread takes the conversation's place (a
+    // 61 tall header across: Back at 20.7, "Thread: {first message}"
+    // 14/600 at 68.7, then Follow, Close Copilot and More, 32 apart and 16
+    // from the right) with Copilot's pane (CopilotPane) at its right under
+    // that header; closing Copilot puts the thread back in this pane.
+    readonly property bool copilotAvailable: { try { return !!JSON.parse(backend.composeCopilotJson || "{}").channel } catch (e) { return false } }
+    property bool copilotOpen: false
+    onRootIdChanged: copilotOpen = false
+    onChannelIdChanged: copilotOpen = false
+    onCopilotAvailableChanged: if (!copilotAvailable) copilotOpen = false
+    /// The thread as Copilot's pane names it: the team's thread, the
+    /// channel, the thread's first message, the team's group.
+    readonly property var copilotRequest: {
+        if (!copilotOpen || !rootId) return null
+        const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+        const t = teams.find(t => t.id === pane.teamId) || teams.find(t => (t.channels || []).some(c => c.id === pane.channelId)) || {}
+        return { kind: "channel", thread: { teamId: t.thread_id || "", channelId: pane.channelId, replyChainId: pane.rootId, groupId: t.id || pane.teamId, tenantId: backend.tenantId() } }
+    }
     color: theme.surface
     // The header's 32 px icon buttons (the conversation header's).
     component PaneAction: Rectangle {
@@ -83,6 +105,7 @@ Rectangle {
     function applySuggestion(action) { pendingSuggestion = action; suggestionTimer.restart() }
     property var pendingSuggestion: null
     function threadForTest() { return thread }
+    function copilotForTest() { return copilot }
     Timer {
         id: suggestionTimer; interval: 150; repeat: true
         property int tries: 0
@@ -96,13 +119,14 @@ Rectangle {
         title = m ? (m.text || "").split("\n")[0] : ""
         rootId = id
     }
-    Rectangle { z: 3; width: 0.67; height: parent.height; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
+    Rectangle { z: 3; visible: !pane.copilotOpen; width: 0.67; height: parent.height; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
 
     Conversation {
         id: thread
         visible: !!pane.rootId
         anchors.fill: parent
-        anchors.leftMargin: 0.67
+        anchors.leftMargin: pane.copilotOpen ? 0 : 0.67
+        anchors.rightMargin: pane.copilotOpen ? copilot.width : 0
         pane: true
         threadPane: true
         paneTitle: ""
@@ -150,7 +174,23 @@ Rectangle {
             visible: !!pane.rootId
             anchors.fill: parent
             readonly property bool following: !!pane.rootMessage && pane.rootMessage.following === true
+            // (Copilot open: Back and "Thread: …" in the breadcrumb's place.)
+            PaneAction {
+                visible: pane.copilotOpen
+                x: 20 - 0.67; height: 31.3
+                icon: "arrow-left-20"; Accessible.name: qsTr("Back")
+                onClicked: pane.copilotOpen = false
+            }
             Text {
+                visible: pane.copilotOpen
+                x: 68.7 - 0.67; anchors.verticalCenter: parent.verticalCenter
+                width: followButton.x - x - 12; elide: Text.ElideRight
+                text: qsTr("Thread: %1").arg(pane.title)
+                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
+                Accessible.role: Accessible.Heading
+            }
+            Text {
+                visible: !pane.copilotOpen
                 x: 20 - 0.67; anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("Threads")
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
@@ -159,8 +199,9 @@ Rectangle {
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("Go to thread list")
             }
-            FluentIcon { x: 80 - 0.67; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-16"; size: 16; color: theme.text }
+            FluentIcon { visible: !pane.copilotOpen; x: 80 - 0.67; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-16"; size: 16; color: theme.text }
             Text {
+                visible: !pane.copilotOpen
                 x: 100 - 0.67; anchors.verticalCenter: parent.verticalCenter
                 width: followButton.x - x - 12; elide: Text.ElideRight
                 text: pane.title
@@ -168,7 +209,7 @@ Rectangle {
             }
             PaneAction {
                 id: followButton
-                x: parent.width - 112.7 + 0.67; height: 31.3
+                x: pane.copilotOpen ? parent.width - 112 : parent.width - (pane.copilotAvailable ? 144.7 : 112.7) + 0.67; height: 31.3
                 icon: threadHead.following ? "chat-multiple-minus-20" : "chat-multiple-20"
                 Accessible.name: threadHead.following ? qsTr("Unfollow thread") : qsTr("Follow thread")
                 onClicked: backend.setThreadFollowing(pane.rootId, !threadHead.following)
@@ -177,8 +218,21 @@ Rectangle {
                 HoverHandler { id: followHover }
             }
             PaneAction {
+                id: copilotButton
+                visible: pane.copilotAvailable
+                x: pane.copilotOpen ? parent.width - 80 : parent.width - 112.7 + 0.67; height: 31.3
+                icon: pane.copilotOpen ? "copilot-filled-48" : "ai-copilot"
+                iconColor: pane.copilotOpen ? theme.brand : theme.textStrong
+                Accessible.name: pane.copilotOpen ? qsTr("Close Copilot") : qsTr("Open Copilot")
+                onClicked: { pane.copilotOpen = !pane.copilotOpen; console.info("COPILOT thread pane", pane.copilotOpen) }
+                ToolTip.visible: copilotHover.hovered; ToolTip.delay: 500
+                ToolTip.text: Accessible.name + " (Alt+C)"
+                HoverHandler { id: copilotHover }
+            }
+            Shortcut { sequence: "Alt+C"; enabled: pane.visible && pane.copilotAvailable && !!pane.rootId; onActivated: copilotButton.clicked() }
+            PaneAction {
                 id: threadMore
-                x: parent.width - 80.7 + 0.67; height: 31.3
+                x: pane.copilotOpen ? parent.width - 48 : parent.width - 80.7 + 0.67; height: 31.3
                 icon: "more-horizontal-20"
                 iconColor: threadMenu.opened ? theme.brand : theme.textStrong
                 Accessible.name: qsTr("More thread options")
@@ -203,11 +257,23 @@ Rectangle {
                 }
             }
             PaneAction {
+                visible: !pane.copilotOpen
                 x: parent.width - 48.7 + 0.67; height: 31.3
                 icon: "dismiss-20"; Accessible.name: qsTr("Close threads")
                 onClicked: pane.closed()
             }
         }
+        Rectangle { visible: pane.copilotOpen; anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF") }
+    }
+    CopilotPane {
+        id: copilot
+        z: 1
+        open: pane.copilotOpen && !!pane.rootId
+        request: pane.copilotRequest
+        x: parent.width - width; y: theme.headerHeight
+        width: open ? 360 : 0; height: parent.height - y
+        onClosed: pane.copilotOpen = false
+        onOpenLink: url => pane.openLink(url)
     }
 
     // The list.

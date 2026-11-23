@@ -60,9 +60,24 @@ Window {
         pinned: win.pinned
         onTogglePin: win.pinned = !win.pinned
     }
+    // Open Copilot here too (Teams' pop-out chat header has it): its pane
+    // at the window's right.
+    CopilotPane {
+        id: copilot
+        open: chat.copilotOpen
+        request: chat.copilotRequest
+        anchors { top: titleRow.bottom; right: parent.right; bottom: parent.bottom }
+        width: open ? 360 : 0
+        onClosed: chat.copilotOpen = false
+        onOpenLink: url => {
+            const m = /^https:\/\/teams\.microsoft\.com\/l\/message\/([^/?#]+)\/([0-9]+)(?:\?(.*))?/.exec(url)
+            if (m && decodeURIComponent(m[1]) === win.chatId) chat.showFound(m[2], [], "")
+            else if (!m) chat.openLink(url)
+        }
+    }
     Conversation {
         id: chat
-        anchors { top: titleRow.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+        anchors { top: titleRow.bottom; left: parent.left; right: copilot.left; bottom: parent.bottom }
         popout: true
         chatId: win.chatId
         chatName: win.chatName

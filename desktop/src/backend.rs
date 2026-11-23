@@ -6034,6 +6034,15 @@ pub fn compose_copilot_state(license: Option<&serde_json::Value>) -> serde_json:
         "search": licensed && on("autosuggest", "enableSerpCatalystEntrySuggestion", false),
         "chatList": (on("chatList", "enableBizChatMetaOSChatListEntryPoint", true) || on("simpleCollab", "enableBizChatMetaOSSimpleCollabEntryPoint", true)),
         "settingsToggle": licensed && on("messaging", "enableMetaOSCopilotToggleInSettings", true),
+        // Open Copilot in chat and channel-thread headers (TASK-0260,
+        // Teams' copilotExperience for CopilotFromChatHeader,
+        // CopilotFromChannelsL2Header and CopilotFromMeetingChatHeader,
+        // module 63020): the Microsoft 365 Copilot app ("bizChat") for a
+        // licensed user where the licensed flag is on, for others where the
+        // unlicensed one is (off on this tenant, so no button).
+        "chat": if licensed { on("copilot", "enableBizChatCopilotInChatLicensed", true) } else { on("copilot", "enableBizChatCopilotInChatUnlicensed", false) },
+        "channel": if licensed { on("copilot", "enableBizChatCopilotInChannelLicensed", true) } else { on("copilot", "enableBizChatCopilotInChannelUnlicensed", false) },
+        "meetingChat": if licensed { on("meetingCollaboration", "enableBizChatCopilotForMeetingChat", true) } else { on("meetingCollaboration", "enableBizChatCopilotForMeetingUnlicensed", false) },
     })
 }
 
@@ -22430,6 +22439,92 @@ impl qobject::Backend {
                             .unwrap_or_else(|| "cmmi7lmhneb".into());
                         Ok(api::meeting_copilot::launch_search(&m, &s("session"), &s("query"), &cmmid))
                     }
+                    // Open Copilot in a chat's or a channel thread's header
+                    // (TASK-0260): the Microsoft 365 Copilot app beside the
+                    // conversation, told the chat, the thread or (a meeting
+                    // chat) the meeting.
+                    "chatCopilot" => {
+                        let oid = client.object_id().unwrap_or_default();
+                        let tid = client.tenant_id().unwrap_or_default();
+                        let site = api::app_host::sharepoint_host(&client).await;
+                        let mut m = api::meeting_copilot::Meeting {
+                            user_oid: oid.clone(),
+                            tenant_id: tid.clone(),
+                            my_site: site.strip_suffix(".sharepoint.com").map(|t| format!("{t}-my.sharepoint.com")).unwrap_or_default(),
+                            culture: "en-us".into(),
+                            theme: s("theme"),
+                            app_session: uuid::Uuid::new_v4().to_string(),
+                            host_session: uuid::Uuid::new_v4().to_string(),
+                            ..Default::default()
+                        };
+                        let cmm = |key: &str, dflt: &str| {
+                            ["copilot", "Copilot"]
+                                .iter()
+                                .find_map(|ns| api::ecs::setting(ns, "copilotEntryPointsCMMIds"))
+                                .and_then(|v| v.get(key).and_then(|x| x.as_str()).map(str::to_string))
+                                .unwrap_or_else(|| dflt.to_string())
+                        };
+                        let variants = |key: &str| -> Vec<String> {
+                            api::ecs::setting("copilot", key)
+                                .and_then(|v| v.as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()))
+                                .unwrap_or_default()
+                        };
+                        match s("kind").as_str() {
+                            "channel" => {
+                                let mut t: api::meeting_copilot::ChannelThread =
+                                    serde_json::from_value(p.get("thread").cloned().unwrap_or_default()).unwrap_or_default();
+                                if t.tenant_id.is_empty() {
+                                    t.tenant_id = tid;
+                                }
+                                Ok(api::meeting_copilot::launch_channel(
+                                    &m,
+                                    &t,
+                                    &cmm("channelL2", api::meeting_copilot::CHANNEL_L2_CMMID),
+                                    &variants("sydneyChannelVariants"),
+                                ))
+                            }
+                            "meeting" => {
+                                let mut r: api::recaps::RecapRef = serde_json::from_value(p.get("recap").cloned().unwrap_or_default()).unwrap_or_default();
+                                let transcript = p.get("transcript").and_then(|v| v.as_bool()).unwrap_or(false);
+                                let live = p.get("live").and_then(|v| v.as_bool()).unwrap_or(false);
+                                // (A meeting with only a transcript: its recap,
+                                // Copilot's vroomId, is the transcript's file,
+                                // which the artifacts service names.)
+                                if r.start_ms > 0
+                                    && r.item_id.is_empty()
+                                    && r.recap_id.is_empty()
+                                    && let Err(e) = api::recaps::resolve(&notes_region(&client), &mut r).await
+                                {
+                                    tracing::info!("meeting chat Copilot's recap: {}", short_error(&e));
+                                }
+                                m.thread_id = if r.thread_id.is_empty() { s("chat") } else { r.thread_id.clone() };
+                                // (Teams falls back on the thread for a meeting
+                                // it has no call of.)
+                                m.call_id = if r.call_id.is_empty() { m.thread_id.clone() } else { r.call_id.clone() };
+                                m.organizer_id = if r.organizer_id.is_empty() { oid } else { r.organizer_id.clone() };
+                                m.organizer_tenant = if r.tenant_id.is_empty() { tid } else { r.tenant_id.clone() };
+                                m.ical_uid = r.ical_uid.clone();
+                                m.subject = r.subject.clone();
+                                let vroom = r.recap_id();
+                                let cmmid = if transcript {
+                                    cmm("meetingChatPanel", api::meeting_copilot::MEETING_CHAT_PANEL_CMMID)
+                                } else {
+                                    cmm("chatMeetingChatNoTranscript", api::meeting_copilot::MEETING_CHAT_NO_TRANSCRIPT_CMMID)
+                                };
+                                Ok(api::meeting_copilot::launch_meeting_chat(&m, &vroom, live, transcript, &cmmid, &[]))
+                            }
+                            _ => {
+                                let unread = p.get("unread").and_then(|v| v.as_i64());
+                                Ok(api::meeting_copilot::launch_chat(
+                                    &m,
+                                    &s("chat"),
+                                    unread,
+                                    &cmm("chatChatPanel", api::meeting_copilot::CHAT_PANEL_CMMID),
+                                    &variants("sydneyChatVariants"),
+                                ))
+                            }
+                        }
+                    }
                     // Copilot in the recap: the Microsoft 365 Copilot app as
                     // a side pane (Teams' bizChat variant from a recap card:
                     // entryPoint "Recap", session "Recap").
@@ -26280,6 +26375,24 @@ mod mark_all_tests {
         assert_eq!(super::mark_all_targets("channel", &unread, &channels), vec!["19:c@thread.tacv2", "19:old@thread.skype"]);
         assert_eq!(super::mark_all_targets("split_channel", &unread, &channels).len(), 2);
         assert!(super::mark_all_targets("engage_community", &unread, &channels).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod chat_copilot_gate_tests {
+    // Open Copilot in chat, meeting chat and channel-thread headers: shown
+    // for a Copilot licence; without one only where Teams' unlicensed flags
+    // are on (off unless ECS sets them).
+    #[test]
+    fn licence_decides_open_copilot() {
+        let licensed = serde_json::json!({ "isCopilot": true });
+        let s = super::compose_copilot_state(Some(&licensed));
+        assert_eq!((s["chat"].as_bool(), s["channel"].as_bool(), s["meetingChat"].as_bool()), (Some(true), Some(true), Some(true)));
+        let unlicensed = serde_json::json!({ "isCopilot": false });
+        let s = super::compose_copilot_state(Some(&unlicensed));
+        assert_eq!((s["chat"].as_bool(), s["channel"].as_bool(), s["meetingChat"].as_bool()), (Some(false), Some(false), Some(false)));
+        let s = super::compose_copilot_state(None);
+        assert_eq!(s["chat"].as_bool(), Some(false));
     }
 }
 

@@ -1870,6 +1870,76 @@ the channel again, or **Go to channel**, returns to its posts).
   - At most 5, then +N. Shown from 834 px wide.
 - **Group call pill:** its 24 px avatars come from the same roster (before, it showed only who started the call).
 
+### 7.9d Open Copilot (winpc, 2026-11-23, ost-test1 with a Microsoft 365 Copilot licence; TASK-0260)
+
+- **Who sees it.** Teams' `copilotExperience` (module 63020) per entry point:
+  a licensed user (`isCopilot`) gets the Microsoft 365 Copilot app
+  ("bizChat") when the entry point's licensed flag is on, else Teams' own
+  "personal Copilot"; an unlicensed user gets bizChat only where the
+  unlicensed flag is on, else nothing.
+  - Chats (CopilotFromChatHeader): `copilot.enableBizChatCopilotInChatLicensed`
+    (ECS on) / `…Unlicensed` (unset, off).
+  - Meeting chats (CopilotFromMeetingChatHeader):
+    `meetingCollaboration.enableBizChatCopilotForMeetingChat` (built-in on) /
+    `enableBizChatCopilotForMeetingUnlicensed` (off).
+  - Channel threads (CopilotFromChannelsL2Header):
+    `copilot.enableBizChatCopilotInChannelLicensed` (ECS on) / unlicensed off.
+    A channel's own header (L1) shows **no** Copilot here (live: Posts and
+    Threads channels alike).
+- **Chat header** (`chat-copilot-button`, 32 x 32): the first context
+  button after the divider, before Find in chat, in 1:1, group, self and
+  meeting chats, and in pop-out chat windows. The outline Copilot mark;
+  open, the filled mark in brand and "Close Copilot". Alt+C toggles it
+  (Teams' ToggleCopilotPane hotkey).
+- **The pane** (the end slot, 360 wide, a 0.67 px #E0E0E0 line on its
+  left): a 61 tall white header (the colour Copilot mark 20 px at 24.7,
+  "Copilot" 14/600 at 49.7, Close Copilot 32 x 31.3 at W−56, 14.5 down)
+  over a 0.67 px #E0E0E0 line, then the app in its `copilotSidePanel`
+  surface. The chat narrows to 532 (Meet now shrinks to its icon, the
+  roster count and chat details move into ···). Opening another chat
+  closes it; Find and chat details take the same slot.
+- **What the host tells the app** (captured from the frame, read only):
+  - the address `https://m365copilotapp.svc.cloud.microsoft/chat/sessionanchor/<reference>?OID=…&renderingSurface=copilotSidePanel&…`;
+  - the context's subEntityId: `hostSettings {enableDeeplinks "true",
+    focusOnLoad "Compose"}`, `contextAttributes` [SupportedScenario
+    ViewChat (ViewChannel), HasUnreadMessageTime "true" when the chat had
+    unread messages], and the base64 launch payload `{id "", scenario
+    Default, chatType "", properties {}, version 1, referral {cmmid},
+    callerInfo {scope, entryPoint, copilotReferenceId}, serverVariants}`;
+  - on ChatReady: `contextualChatChanged {contentType "teams",
+    contentItems [{contextType, chatContext | channelContext |
+    meetingContext}], contextAttributes}` and `updateCapabilities`.
+
+  | entry | scope / entryPoint | reference (SHA-256 hex of) | cmmid | context | capabilities |
+  |---|---|---|---|---|---|
+  | chat | Chat / ChatPanel | the chat id | chatChatPanel `cmmnho609kr` | `chatContext {context "Chat", chatId, unreadMessageTime?}` | [disableGPT5] |
+  | channel thread | Channel / ChannelL2 | `-{channel}-{thread}` (the team part empty, as Teams parses it) | channelL2 `cmmce9gzagp` | `channelContext {context "Channel", channelId, replyChainId, groupId, teamId, tenantId}` | [disableGPT5] |
+  | meeting chat | Meeting / ChatPanel (no transcript: MeetingChatNoTranscript, also its subEntryPoint) | the call id | meetingChatPanel `cmm4p9gchbg` / chatMeetingChatNoTranscript `cmm72vlwwfw` | `meetingContext {context "Meeting", callId, organizerId "oid@tid", threadId, iCalUid, sessionType "Recap" (live: PrivateViewDuringMeeting), exchangeEventId "", vroomId (the recap id), subject, eventId ""}`, scenario TeamsMeetingSidepaneWorkCopilot | [] |
+
+  The server variants are ECS `copilot.sydneyChatVariants` /
+  `sydneyChannelVariants` (none for a meeting).
+- **What the app shows** (its own UI): "Hi, how can I help?", suggested
+  prompts (a chat: Summarize this chat, Summarize unread messages in this
+  chat, What are open items?; a thread: Summarize this thread, What are
+  open items?, What decisions were made?; a meeting chat: Recap the
+  meeting, Highlights from meeting chat, List action items from the
+  meeting), answers with Sources chips, copy, thumbs up/down, "AI-generated
+  content may be incorrect". A Source calls `app.openLink`
+  (`executeDeepLink`) with the message's `/l/message/{thread}/{id}?context=…`
+  link: Teams scrolls to the message and keeps the pane open.
+- **Channel thread** (Threads channels): the thread pane's header gains
+  Open Copilot (Follow at W−144, Copilot W−112, More W−80, Close W−48).
+  Open, the thread takes the channel's place: a 61 tall header across the
+  view and the pane (Back at 20.7, "Thread: {first message}" 14/600 at
+  68.7; Follow W−112, Close Copilot W−80, More W−48), the thread under it
+  at the left and Copilot's pane (with its own header) at the right.
+  Closing Copilot puts the thread back in its 360 pane.
+- **Compose Copilot in edits**: the in-place edit box's tools are Format,
+  Emoji, Attach files, Write with Copilot, Actions and apps, Cancel, Done;
+  Write with Copilot's popover (602 wide) sits over the edit box, its right
+  edge on the box's, 4 above it, with the same Rewrite / Proofread /
+  Adjust.
+
 ### 7.10 Header TODOs
 - Live 1:1, group and meeting headers (code + live flags only so far).
 - Labels for header Mark as read/unread (708158) and Manage
