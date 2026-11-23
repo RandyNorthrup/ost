@@ -33,7 +33,7 @@
 "%1, collapsed"		KeyboardShortcuts.qml:272	
 "%1, currently: %2"		ProfileCard.qml:527 ProfileCard.qml:556	
 "%1, expanded"		KeyboardShortcuts.qml:272	
-"%1, open thread"		Conversation.qml:3212	
+"%1, open thread"		Conversation.qml:3352	
 "%1, removed"		DownloadsFlyout.qml:176	
 "%1, sorted ascending"		OneDriveView.qml:1221	
 "%1, sorted descending"		OneDriveView.qml:1221	
@@ -155,7 +155,7 @@
 "Draft to %1"		DraftsView.qml:116	
 "Drag and drop files here or paste an image from your clipboard"		FeedbackWindow.qml:134	
 "Duplicate menu."		ClipEditOverlay.qml:319	
-"Earlier post"		ChannelPosts.qml:227	
+"Earlier post"		ChannelPosts.qml:271	
 "Edit on GitHub"		HelpView.qml:343	
 "Editor content"		PreviewBody.qml:106	
 "Editor settings..."		EditorCard.qml:98	
@@ -176,7 +176,7 @@
 "Find your way around OST"		HelpView.qml:47	
 "Finish on GitHub: check the issue, then select Create."		FeedbackWindow.qml:283	
 "Finish on GitHub: paste your screenshot (Ctrl+V), drop in any other files from the folder that opened, and select Create."		FeedbackWindow.qml:282	
-"Finish on GitHub: select Create to send your feedback."		Conversation.qml:3508	
+"Finish on GitHub: select Create to send your feedback."		Conversation.qml:3648	
 "First aid"		CalendarView.qml:260	
 "Flip menu."		ClipEditOverlay.qml:318	
 "Folder %1"		ChannelFiles.qml:159 FileActions.qml:1970 FileActions.qml:2031	
@@ -243,7 +243,7 @@
 "No file chosen"		TeamAppsView.qml:233	
 "No icon"		CalendarView.qml:260 CalendarView.qml:2416	
 "No matches yet"		TitleBar.qml:261	
-"No posts yet. Start the conversation."		ChannelPosts.qml:685	
+"No posts yet. Start the conversation."		ChannelPosts.qml:791	
 "No preview available"		PreviewBody.qml:165	
 "No shortcuts match"		KeyboardShortcuts.qml:321	
 "No, don't contact me"		FeedbackWindow.qml:228	
@@ -310,9 +310,9 @@
 "See more %1"		ClipEffectPanels.qml:203	
 "See who has access"		ChannelPageTab.qml:84 LoopCard.qml:112 LoopChromeBar.qml:150	
 "Select a Date"		FindPane.qml:496	
-"Select a chat to start messaging"		Conversation.qml:1943	
+"Select a chat to start messaging"		Conversation.qml:1982	
 "Select a role, %1"		OneDriveShare.qml:562	
-"Send reply"		ChannelPosts.qml:671	
+"Send reply"		ChannelPosts.qml:777	
 "Sending update…"		backend.rs:23579	
 "Sending your proposal…"		backend.rs:23581	
 "Sending your response…"		backend.rs:23577	
@@ -340,7 +340,7 @@
 "Submit feedback to OST"		FeedbackWindow.qml:76	
 "Symbols"		EmojiPicker.qml:59	
 "TV"		CalendarView.qml:263	
-"Tab %1"		Conversation.qml:3148	
+"Tab %1"		Conversation.qml:3288	
 "Table"		WebApp.qml:610	
 "Task list"		WebApp.qml:613	
 "Teams (%1)"		ManageChannel.qml:310	
@@ -353,7 +353,7 @@
 "The version wasn't deleted"		FileActions.qml:441	
 "The version wasn't restored"		FileActions.qml:441	
 "This Loop component is temporarily not available."		LoopCard.qml:152	
-"This app isn't available in OST yet."		Main.qml:14881	
+"This app isn't available in OST yet."		Main.qml:14957	
 "This camera has no settings to change."		CameraSettingsDialog.qml:64	
 "This file can't be opened"		FileViewer.qml:40	
 "This file has not been shared with a group yet."		OneDriveShare.qml:798	
@@ -384,7 +384,7 @@
 "Work hours: %1 - %2"		ProfileCard.qml:88	
 "Yes, share"		FeedbackWindow.qml:218	
 "Yes, you may contact me"		FeedbackWindow.qml:227	
-"Yesterday %1"		Conversation.qml:933 SearchView.qml:188	
+"Yesterday %1"		Conversation.qml:972 SearchView.qml:188	
 "You and %1 others are using Interpreter. Your interpretation language is %2."		CallWindow.qml:1847	
 "You are using Interpreter. Your interpretation language is %1."		CallWindow.qml:1846	
 "You can't view this app right now."		AppDetailsDialog.qml:669	
