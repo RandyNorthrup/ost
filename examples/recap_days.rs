@@ -23,6 +23,18 @@ async fn main() -> anyhow::Result<()> {
         let rows = teams_cli::api::recaps::meetings(&region, i, 1).await?;
         let recs = teams_cli::api::recaps::catch_up_range(&f(a.with_timezone(&chrono::Utc)), &f(b.with_timezone(&chrono::Utc))).await;
         println!("== {day}");
+        // RECAP_RAW=1: each thread's resources (type, the fields it has).
+        if std::env::var_os("RECAP_RAW").is_some() {
+            let v = teams_cli::api::recaps::day_contents(&region, a.with_timezone(&chrono::Utc), b.with_timezone(&chrono::Utc)).await?;
+            for t in v["value"].as_array().into_iter().flatten() {
+                println!("  raw  {} | event {}", t["threadInfo"]["subject"].as_str().unwrap_or_default(), !t["threadInfo"]["eventId"].as_str().unwrap_or_default().is_empty());
+                for res in t["resources"].as_array().into_iter().flatten() {
+                    let keys = |o: &serde_json::Value| o.as_object().map(|m| m.keys().cloned().collect::<Vec<_>>().join(",")).unwrap_or_default();
+                    let kind = |v: &serde_json::Value| match v { serde_json::Value::String(s) => format!("str({})", s.len()), serde_json::Value::Null => "null".into(), o => o.to_string().chars().take(20).collect() };
+                    println!("       {} | {} | metadata {} | id {} location {}", res["type"].as_str().unwrap_or_default(), keys(res), keys(&res["metadata"]), kind(&res["id"]), kind(&res["location"]));
+                }
+            }
+        }
         for d in rows["days"].as_array().into_iter().flatten() {
             for m in d["meetings"].as_array().into_iter().flatten() {
                 println!(
@@ -34,6 +46,16 @@ async fn main() -> anyhow::Result<()> {
                     m["actionItemCount"],
                     m["mentionEventCount"],
                     m["transcript"]
+                );
+                // Home's row (TASK-0252): who spoke, the files, the
+                // thumbnail's recording, whether you may open it.
+                println!(
+                    "       speakers {:?} | files {:?} | thumb {} | access {} | reasons {}",
+                    m["speakers"].as_array().into_iter().flatten().map(|p| p["displayName"].as_str().unwrap_or_default()).collect::<Vec<_>>(),
+                    m["files"].as_array().into_iter().flatten().map(|f| f["type"].as_str().unwrap_or_default()).collect::<Vec<_>>(),
+                    !m["thumb"].is_null(),
+                    m["access"].as_str().unwrap_or_default(),
+                    m["reasons"]
                 );
             }
         }

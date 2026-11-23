@@ -475,12 +475,76 @@ been pinned."; once pinned the header has no Pin app (the app bar's Unpin
 takes it off).
 
 **Meeting Recaps** (View audio recaps): header (28 px tile, "Meeting Recaps"
-16 bold, Home / Audio recaps, Pin to app bar); Home "Good evening, {first
-name}", All / Mentions / Missed / Followed, Search for meetings, list / grid,
-days of meetings (`GET {mcps}/user/meetings/contents?top=20&startDateTime=
-&endDateTime=&includeTypes=Recording,TranscriptV2,MeetingChat,MeetingStage,
-Notes` per local day) with Recap; Audio recaps (`GET {mcps}/podcasts?top=10`)
-or "Get started on your first audio recap" / Generate audio recap.
+16 bold, Home / Audio recaps, Pin to app bar); Home (below), its meetings from
+`GET {mcps}/user/meetings/contents?top=20&startDateTime=&endDateTime=&
+includeTypes=Recording,TranscriptV2,MeetingChat,MeetingStage,Notes` per local
+day; Audio recaps (`GET {mcps}/podcasts?top=10`) or "Get started on your first
+audio recap" / Generate audio recap.
+
+**Home** is Teams' Recap Home V2 (ECS MeetingRecap `enableRecapHomeV2`; bundle
+meeting-recap-home, measured on winpc 2026-11-23 at 1280 x 680, TASK-0252):
+- The page: a brand wash (color-mix(BrandBackground2 34%, NeutralBackground1)
+  under two radial glows: 640 x 320 at 88% -4%, BrandForegroundInverted 30% →
+  InvertedHover 12% at 44% → none at 62%; 420 x 200 at 74% 24%, Lilac
+  Background2 12% → 6% at 46% → none at 66%; on a box at least 1373 wide). The
+  greeting 32/40 semibold at 48, 36 down: "Good morning/afternoon/evening,
+  {first name}" from 5, 12 and 17 o'clock, "Hello, {first name}" from 22 to 5
+  (Teams' `tr`). The filter pills (33.3 tall, radius 16; the chosen one
+  #E8EBFA, brand border, #4F52B2) 107 down; Search for meetings (280 x 32) and
+  list / grid (36 x 32 each) 48 from the right. The list in a white card
+  (radius 12, a 0.67 #E0E0E0 line) 156 down, 48 in, 12 from the bottom, that
+  scrolls by itself (14 kept for the scroll bar).
+- Groups as the Generate dialog (`Ye`, the same as `ka`): This week, Last week,
+  else each older day ("Friday, November 6"); 44 tall headers (2 4 around, a
+  13 px filled caret at 10, the label 14/600 at 31). "Loaded all meetings in
+  the last 30 days." (12/16 #616161, 16 in) at the end.
+- A row (84 + a subtle line; hovered #F5F5F5, radius 8; 12 in): with a Copilot
+  licence a checkbox at 4 on hover (picks meetings for an audio recap: Home's
+  selection bar, not built yet); the preview at 44 (104 x 60, #E8EBFA, radius
+  8, a 0.67 #E0E0E0 line): the recording's thumbnail (`So`/`Mn`: the
+  recording the catch-up names, else the first; Graph c126x72) with the date
+  tile 36 x 36 at 4.67 over it (#F5F5F5, radius 6, Fluent shadow 4, the day
+  14/16 600 over the weekday 11/12, brand; tooltip "Friday, November 20");
+  without a thumbnail a 16 px badge 4.67 from the bottom right: slide text for
+  a meeting with only a transcript, a lock when you may open none of its
+  recordings and transcripts (`ot.t`: NoPermission / Good / TranscriptOnly).
+  From 160: the title (14/20 600 #424242), "Friday, November 20 · 8:23 PM -
+  9:02 PM, OST Test 1" (12/16 #616161; Today / Yesterday), and the catch-up's
+  speakers (`recommendationData.speakers` with an id and a name; 16 px
+  avatars with a 2 px ring, three, else two and "+n" with a "View more
+  people" popover) 4 below. From 60% of the row the chips (20 tall pills on
+  #F5F5F5, 0 6 padding, a 16 px brand glyph and the count 12/20 #616161, 8
+  apart): files (`meetingFiles`: the meeting's MeetingChat, MeetingStage and
+  Notes resources with an id and an address, once each; none without
+  permission), mentions and tasks (the counts are the catch-up's items, so a
+  meeting whose day has no recommendation shows none), then a reason tag
+  (Missed, Followed, Joined late, Left early). On the right, 12 in: Go to chat
+  (32 x 31.3, shown on hover; `enableRecapHomeChatIcon`), 5 apart the
+  headphones (24 x 24; with a transcript you may read) and Recap (50 x 24,
+  outlined #D1D1D1, 12/16 600), 8 apart.
+- What it opens: the title, the thumbnail and Recap open the recap window
+  (Teams' own window "{subject} | Microsoft Teams", on AI summary). A chip
+  opens its popover below it (28 right, 16 down; above when there's no room):
+  tasks / mentions (321 wide: "3 tasks for people to follow up on" 12/20 600
+  #616161, "AI-generated content may be incorrect" 12/16 on #FAFAFA, the
+  items 12/20 ("Updated Project Plan: Send the updated project plan to the
+  team. (OST Test 1)", the headline bold; a mention: who · when over the words
+  with your name), lines between, "Are these tasks useful?" with Like and
+  Dislike; an item opens the recap, a mention on Mentions); files ("Attached"
+  14/20 600, each file 32 tall: its glyph, the name 12/20, ··· with Open in
+  Browser and Copy link; a meeting note is "Agenda and notes"). Go to chat
+  opens the meeting's chat; the headphones make an audio recap of the meeting
+  with your saved style (Teams' `yo` → generateAndPopoutPodcast; a first-run
+  dialog first when ECS Podcast `enableAudioRecapFreDialog` is on and it
+  wasn't seen; unset for ost-test1). Teams draws the row's glyphs from the 20 px Fluent set at 16 (attach, mention, checkmark circle, slide text, lock).
+- Filters and search are Teams' own (client side): Mentions has mentions of
+  you, Missed a MISSED_MEETING reason, Followed a followed meeting; the search
+  matches the subject, organizer, speakers, mentions, tasks and files.
+- OST: api::recaps::row_from carries `actionItems`, `mentions`, `speakers`,
+  `reasons`, `recapFile`, `recordings`, `thumb`, `access` and `files`
+  (`meeting_files`); MeetingRecapsView's Home, `weekGroups` shared with the
+  dialog; the recap window opens on Mentions or Notes when asked
+  (Conversation.openRecapRef(ref, tab)).
 
 ## TASK-0212 leftovers (Teams desktop 26304 bundles and Teams on winpc, 2026-11-19)
 

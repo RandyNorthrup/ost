@@ -27,12 +27,13 @@ Window {
     id: win
     /// The recap card's recap (api::recaps::RecapRef as JSON).
     property var recap: ({})
-    /// "transcript" or "" (AI summary).
+    /// "transcript", "mentions" (a mention on Meeting Recaps' Home), "notes"
+    /// (a meeting note there) or "" (AI summary).
     property string startTab: ""
     property bool hasAttendance: false
     property var data_: null
     property bool loading: true
-    property string rightPill: startTab === "transcript" ? "Transcript" : "AINotes"
+    property string rightPill: startTab === "transcript" ? "Transcript" : startTab === "mentions" ? "Mentions" : startTab === "notes" ? "Notes" : "AINotes"
     property string leftPill: "Speakers"
     signal goToChat()
     signal openAttendance()
@@ -158,6 +159,8 @@ Window {
                 // from the meeting's artifacts).
                 if (!win.extras && win.recap.item_id) backend.eventsRequest("recapExtras", win.tag + "extras", JSON.stringify({ recap: win.recap }))
                 if (win.rightPill === "AINotes" && win.aiNotes === null) win.loadAiNotes()
+                // (Opened on Mentions from Meeting Recaps' Home.)
+                if (win.rightPill === "Mentions" && win.mentions === null) backend.eventsRequest("recapMentions", win.tag + "mentions", JSON.stringify({ recap: win.recap }))
                 console.info("RECAP open", !!v.player, (v.transcript || []).length, v.recap ? v.recap.thread_id : "")
             } else if (what === "extras") {
                 if (!v.error) win.extras = v

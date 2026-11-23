@@ -743,12 +743,12 @@ Rectangle {
     }
     // A recap opened from elsewhere (Events' Highlights ▸ View recap): the
     // meeting's thread and recording; the window looks up the rest.
-    function openRecapRef(ref) {
-        const w = recapWindow.createObject(null, { recap: Object.assign({ tenant_id: backend.tenantId(), ical_uid: "", organizer_id: "", call_id: "", file_url: "" }, ref), startTab: "" })
+    function openRecapRef(ref, tab) {
+        const w = recapWindow.createObject(null, { recap: Object.assign({ tenant_id: backend.tenantId(), ical_uid: "", organizer_id: "", call_id: "", file_url: "" }, ref), startTab: tab || "" })
         w.toast.connect(d => root.toastRequested(d))
         w.show(); w.raise(); w.requestActivate()
         root.lastRecapWindow = w
-        console.info("RECAPCARD open", "highlights")
+        console.info("RECAPCARD open", tab || "highlights")
     }
     property var lastRecapWindow: null
     Component { id: recapWindow; RecapWindow {} }

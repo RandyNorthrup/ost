@@ -10904,6 +10904,31 @@ Window {
             // its chapters, a chapter played for 10 s, then its transcript
             // (RECAPS detail lines, recaps-detail-{chapters,playing,transcript}.png).
             else if (step === 10 && Qt.application.arguments.indexOf("--recaps-detail") >= 0) { recapsView.openTab("audio"); step = 300 }
+            // --recaps-home[=<subject start>] (~ for spaces; default "OST
+            // TEST 240"): Home's row as Teams' V2 (TASK-0252): drawn hovered
+            // (recaps-home-hover.png), its tasks popover, its mentions and
+            // files popovers (RECAPS home popup lines, recaps-home-{task,
+            // mention,files}.png), then Recap opens its recap window (RECAPS
+            // home recap: the ref; recaps-home-recap.png) and Go to chat its
+            // chat (RECAPS home chat).
+            else if (step === 10 && Qt.application.arguments.some(a => a.startsWith("--recaps-home"))) step = 400
+            else if (step >= 401 && step <= 420) {
+                const subj = ((Qt.application.arguments.find(a => a.startsWith("--recaps-home=")) || "").slice(14) || "OST TEST 240").replace(/~/g, " ")
+                const v = recapsView.item
+                if (step === 401) v.hotForTest = subj
+                else if (step === 402) cap("home-hover")
+                else if (step === 403) console.warn("RECAPS home chip", v.homeChipForTest(subj, "task"))
+                else if (step === 404) { console.warn("RECAPS home popup", v.homePopupForTest()); cap("home-task") }
+                else if (step === 405) { v.closeHomePopups(); console.warn("RECAPS home chip", v.homeChipForTest(subj, "mention")) }
+                else if (step === 406) { console.warn("RECAPS home popup", v.homePopupForTest()); cap("home-mention") }
+                else if (step === 407) { v.closeHomePopups(); console.warn("RECAPS home chip", v.homeChipForTest(subj, "files")) }
+                else if (step === 408) { console.warn("RECAPS home popup", v.homePopupForTest()); cap("home-files") }
+                else if (step === 409) { v.closeHomePopups(); v.hotForTest = "" }
+                else if (step === 410) console.warn("RECAPS home recap", v.homeOpenForTest(subj, (Qt.application.arguments.find(a => a.startsWith("--recaps-home-tab=")) || "").slice(18) || "recap"))
+                else if (step === 414) { const w = conversation.lastRecapWindow; if (w) { console.warn("RECAPS home recap window", w.title, w.stateForTest()); w.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-recaps-home-recap.png"))) } }
+                else if (step === 416) { const w = conversation.lastRecapWindow; if (w) w.close(); console.warn("RECAPS home chat", v.homeOpenForTest(subj, "chat")) }
+                else if (step === 418) { console.warn("RECAPS home chat open", rail.current, backend.currentChatId); Qt.quit() }
+            }
             else if (step === 303) { console.warn("RECAPS detail chosen", recapsView.item.chooseDoneForTest()); }
             // Listen on mobile (its QR dialog), then the chapters.
             else if (step === 304) { console.warn("RECAPS listen", recapsView.item.audioPlayerStateForTest()); cap("detail-header"); recapsView.item.openListenForTest() }
@@ -15815,6 +15840,9 @@ Window {
             tab: recapsView.startTab
             onToast: d => window.showToast(d)
             onOpenRecap: (id, title) => { if (id) { rail.current = "chat"; window.composing = false; backend.selectChat(id, title) } }
+            // Home's rows: the meeting's chat (Go to chat) and its recap window.
+            onOpenChat: (id, title) => { if (id) { rail.current = "chat"; window.composing = false; backend.selectChat(id, title) } }
+            onOpenRecapWindow: (ref, tab) => conversation.openRecapRef(ref, tab)
         }
     }
     // A message's file, as Teams opens it: over the chat list and the

@@ -11,15 +11,13 @@ import QtQuick.Controls.Basic
 //   "Meeting Recaps" 16 bold, the tabs Home and Audio recaps (14/20, the
 //   chosen one semibold with the brand line), Pin to app bar (outlined,
 //   140 x 30) on the right;
-// - Home (#F5F5F5): "Good evening, {first name}" (32/40 semibold, 116 in,
-//   59 under the header), the filter pills All / Mentions / Missed /
-//   Followed (32 tall, radius 16; All chosen: brand tint), Search for
-//   meetings (280 x 30) and the list / grid switch on the right; then a
-//   white card (radius 8) of days ("Friday, November 6", 14 semibold with a
-//   caret) with their meetings: a 104 x 60 date tile (#E8EBFA, the day and
-//   weekday), the subject 14 semibold, "Friday, November 6 · 3:00 PM -
-//   3:30 PM, OST Test 1" 12 #616161, the headphones and Recap (outlined,
-//   24 tall) on the right; "Loading more meetings..." while it loads;
+// - Home (Teams' Recap Home V2, measured 2026-11-23): "Hello, {first
+//   name}" (by the hour), the filter pills All / Mentions / Missed /
+//   Followed, Search for meetings and the list / grid switch, then a white
+//   card that scrolls the meetings grouped This week / Last week / each
+//   older day, each row the recording's thumbnail under the date tile, the
+//   title, when and who spoke, the files, mentions and tasks chips, Go to
+//   chat, the headphones and Recap (see "---- Home ----");
 // - Audio recaps: your audio recaps, else "Get started on your first audio
 //   recap" (18 semibold), "Catch up on meetings with AI-generated audio
 //   recaps—they’ll appear here." (14, #424242) and Generate audio recap
@@ -49,21 +47,13 @@ Rectangle {
             const counts = m.catchUp || !h.catchUp ? m : h
             byId.set(id, Object.assign({}, h, m, { transcripts: (m.transcripts || []).length ? m.transcripts : h.transcripts,
                                                   transcript: m.transcript || h.transcript, recording: m.recording || h.recording,
-                                                  catchUp: counts.catchUp, actionItemCount: counts.actionItemCount, mentionEventCount: counts.mentionEventCount }))
+                                                  catchUp: counts.catchUp, actionItemCount: counts.actionItemCount, mentionEventCount: counts.mentionEventCount,
+                                                  actionItems: counts.actionItems, mentions: counts.mentions, speakers: counts.speakers, reasons: counts.reasons,
+                                                  recapFile: counts.recapFile, thumb: counts.catchUp ? counts.thumb : (m.thumb || h.thumb),
+                                                  recordings: (m.recordings || []).length ? m.recordings : h.recordings, files: m.files || h.files }))
         }
         return Array.from(byId.values()).filter(m => !isNaN(Date.parse(m.start)) && !isNaN(Date.parse(m.end)))
                     .sort((a, b) => Date.parse(b.start) - Date.parse(a.start))
-    }
-    // Home's days: the meetings by the local day they start on.
-    readonly property var homeDays: {
-        const out = []
-        for (const m of meetingList) {
-            const d = new Date(Date.parse(m.start))
-            const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0")
-            const last = out.length ? out[out.length - 1] : null
-            if (last && last.day === key) last.meetings.push(m); else out.push({ day: key, meetings: [m] })
-        }
-        return out
     }
     property int next: 0
     property bool loading: false
@@ -73,7 +63,10 @@ Rectangle {
     property bool grid: false
     signal openRecap(string threadId, string title)
     signal toast(var d)
-    function openTab(t) { tab = t; if (t === "audio") loadPodcasts(); else if (days.length === 0) loadMore() }
+    function openTab(t) { tab = t; if (t === "audio") loadPodcasts(); else if (days.length === 0) loadMore(); else homeFill() }
+    // Home asks for more days while its list doesn't fill the card (Teams'
+    // IntersectionObserver sentinel at the list's end).
+    function homeFill() { if (tab === "home" && !loading && next <= maxDays && homeList.contentHeight <= homeList.height + 20) loadMore() }
     property int seq: 0
     property var pending: ({})
     property var progressHandlers: ({})
@@ -110,18 +103,21 @@ Rectangle {
             loading = false
             if (v.error) return
             days = days.concat(v.days || []); next = v.next || next + 14
-            // The Generate dialog lists the whole 30 days.
-            if (genDialog.opened) loadMore()
+            // The Generate dialog lists the whole 30 days; Home goes on while
+            // its list doesn't fill the card (Teams' IntersectionObserver
+            // sentinel at the list's end).
+            if (genDialog.opened) loadMore(); else homeFill()
         })
     }
     function loadPodcasts() { call("podcasts", {}, v => { podcasts = v.error ? [] : (v.items || []); autoPlayIfMade(); chapterProgress() }) }
     function greeting() {
-        const h = new Date().getHours()
-        return (h < 12 ? qsTr("Good morning, %1") : h < 18 ? qsTr("Good afternoon, %1") : qsTr("Good evening, %1")).arg(String(backend.userName || "").split(" ")[0])
-    }
-    function line(m) {
-        const a = new Date(m.start), b = new Date(m.end)
-        return theme.fmtDate(a, "dddd, MMMM d") + " · " + theme.time(a) + " - " + theme.time(b) + (m.organizer ? ", " + m.organizer : "")
+        // (Teams' recap home tr: 5-12 morning, 12-17 afternoon, 17-22
+        // evening, otherwise "Hello"; without a first name no name.)
+        const h = new Date().getHours(), first = String(backend.userName || "").split(" ")[0]
+        if (!first) return h >= 5 && h < 12 ? qsTr("Good morning", "meetingRecap:k5x0b4t6k") : h >= 12 && h < 17 ? qsTr("Good afternoon", "meetingRecap:k8jzrdqy8")
+                         : h >= 17 && h < 22 ? qsTr("Good evening", "meetingRecap:kcig42dx8") : qsTr("Hello", "meetingRecap:k9t2zyg6d")
+        return (h >= 5 && h < 12 ? qsTr("Good morning, %1", "meetingRecap:k3ifa8ubh") : h >= 12 && h < 17 ? qsTr("Good afternoon, %1", "meetingRecap:k8pmm56kx")
+                : h >= 17 && h < 22 ? qsTr("Good evening, %1", "meetingRecap:kbaplhscd") : qsTr("Hello, %1", "meetingRecap:k6mh2kbv2")).arg(first)
     }
     Component.onCompleted: openTab(tab)
 
@@ -152,104 +148,563 @@ Rectangle {
     }
 
     // ---- Home ----
-    Flickable {
+    // Teams' Recap Home V2 (enableRecapHomeV2; meeting-recap-home 26304,
+    // measured on winpc 2026-11-23 at 1280 x 680): the greeting (32/40
+    // semibold, 48 in, 36 down), the filter pills and Search for meetings /
+    // list and grid on the right (107 down), then a white card (radius 12,
+    // 48 in, 12 from the bottom) that scrolls the meetings, grouped as the
+    // Generate dialog (This week, Last week, else each day). Behind it all,
+    // the brand wash (two radial glows top right over the brand tint).
+    Item {
         id: home
         visible: root.tab === "home"
         anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
-        contentHeight: homeCard.y + homeCard.height + 16
         clip: true
-        boundsBehavior: Flickable.StopAtBounds
-        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-        onAtYEndChanged: if (atYEnd && visible) root.loadMore()
-        Text { x: 48; y: 40; text: root.greeting(); font.family: theme.font; font.pixelSize: 32; font.weight: Font.DemiBold; color: theme.text }
+        // Teams' backdrop: color-mix(BrandBackground2 34%, NeutralBackground1)
+        // under radial-gradient(ellipse 640px 320px at 88% -4%,
+        // BrandForegroundInverted 30% → InvertedHover 12% at 44% → 0 at 62%)
+        // and radial-gradient(ellipse 420px 200px at 74% 24%, Lilac
+        // Background2 12% → 6% at 46% → 0 at 66%), on a box at least 1373
+        // wide.
+        Canvas {
+            id: wash
+            anchors.fill: parent
+            visible: !theme.highContrast
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+            Connections { target: theme; function onDarkChanged() { wash.requestPaint() } }
+            onPaint: {
+                const ctx = getContext("2d")
+                ctx.reset()
+                const mix = (a, b, p) => Qt.rgba(a.r * p + b.r * (1 - p), a.g * p + b.g * (1 - p), a.b * p + b.b * (1 - p), 1)
+                const brand2 = theme.dark ? Qt.color("#2B2B40") : Qt.color("#E8EBFA"), bg1 = theme.dark ? Qt.color("#292929") : Qt.color("#FFFFFF")
+                ctx.fillStyle = mix(brand2, bg1, 0.34)
+                ctx.fillRect(0, 0, width, height)
+                const w = Math.max(width, 1373)
+                const glow = (cx, cy, rx, ry, stops) => {
+                    ctx.save()
+                    ctx.translate(cx, cy); ctx.scale(1, ry / rx)
+                    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rx)
+                    for (const s of stops) g.addColorStop(s[0], s[1])
+                    ctx.fillStyle = g
+                    ctx.fillRect(-cx, -cy * rx / ry, width, height * rx / ry)
+                    ctx.restore()
+                }
+                const inv = theme.dark ? Qt.color("#5B5FC7") : Qt.color("#7F85F5"), invHover = theme.dark ? Qt.color("#4F52B2") : Qt.color("#9299F7")
+                const lilac = theme.dark ? Qt.color("#63276D") : Qt.color("#E6BFED")
+                const a = (c, x) => Qt.rgba(c.r, c.g, c.b, x)
+                glow(w * 0.88, -0.04 * height, 640, 320, [[0, a(inv, 0.3)], [0.44, a(invHover, 0.12)], [0.62, a(invHover, 0)]])
+                glow(w * 0.74, 0.24 * height, 420, 200, [[0, a(lilac, 0.12)], [0.46, a(lilac, 0.06)], [0.66, a(lilac, 0)]])
+            }
+        }
+        Text { x: 48; y: 36; text: root.greeting(); font.family: theme.font; font.pixelSize: 32; lineHeight: 40; lineHeightMode: Text.FixedHeight; font.weight: Font.DemiBold; color: theme.text; Accessible.role: Accessible.Heading }
+        // The filters (Teams' meeting-filters-tablist: 33.3 tall pills, 6 12
+        // padding, radius 16; the chosen one #E8EBFA with a brand border and
+        // #4F52B2 text).
         Row {
-            x: 48; y: 108; spacing: 8
+            x: 48; y: 107.3; spacing: 8
             Repeater {
                 model: [["all", qsTr("All")], ["mentions", qsTr("Mentions")], ["missed", qsTr("Missed")], ["followed", qsTr("Followed")]]
                 Rectangle {
                     required property var modelData
                     readonly property bool chosen: root.filter === modelData[0]
-                    height: 32; radius: 16; width: pl.implicitWidth + 24
-                    color: chosen ? theme.brandTint : theme.surface; border.color: chosen ? theme.pick("#C5CBFA", "#444791", "#FFFFFF") : theme.stroke; border.width: 1
-                    Text { id: pl; anchors.centerIn: parent; text: parent.modelData[1]; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    height: 33.3; radius: 16; width: pl.implicitWidth + 25.3
+                    color: chosen ? theme.brandTint : pfh.hovered ? theme.menuHover : theme.surface
+                    border.color: chosen ? theme.brand : theme.stroke; border.width: 0.67
+                    Text { id: pl; anchors.centerIn: parent; text: parent.modelData[1]; font.family: theme.font; font.pixelSize: 14; color: parent.chosen ? theme.brandForeground1 : theme.text }
+                    HoverHandler { id: pfh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.filter = parent.modelData[0] }
                     Accessible.role: Accessible.RadioButton; Accessible.name: modelData[1]; Accessible.checked: chosen
                 }
             }
         }
         Row {
-            anchors.right: parent.right; anchors.rightMargin: 48; y: 109; spacing: 8
-            Rectangle { width: 280; height: 30; radius: 4; color: theme.input; border.color: theme.stroke; border.width: 1
+            anchors.right: parent.right; anchors.rightMargin: 48; y: 108; spacing: 8
+            Rectangle { width: 280; height: 32; radius: 4; color: theme.input; border.color: theme.stroke; border.width: 0.67
+                Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: 1; color: theme.pick("#616161", "#ADADAD", "#FFFFFF") }
                 TextInput { id: search; x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter; font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
                     onTextChanged: root.query = text
                     Text { visible: !search.text; text: qsTr("Search for meetings"); font: search.font; color: theme.textSecondary }
                     Accessible.role: Accessible.EditableText; Accessible.name: qsTr("Search for meetings") } }
-            Rectangle { width: 36; height: 32; radius: 4; color: !root.grid ? theme.brandTint : "transparent"; border.color: theme.stroke; border.width: 1
-                FluentIcon { anchors.centerIn: parent; name: "text-bullet-list-20"; size: 20; color: !root.grid ? theme.brand : theme.textStrong }
-                TapHandler { onTapped: root.grid = false }
-                Accessible.role: Accessible.Button; Accessible.name: qsTr("List view") }
-            Rectangle { width: 36; height: 32; radius: 4; color: root.grid ? theme.brandTint : "transparent"; border.color: theme.stroke; border.width: 1
-                FluentIcon { anchors.centerIn: parent; name: "grid-20"; size: 20; color: root.grid ? theme.brand : theme.textStrong }
-                TapHandler { onTapped: root.grid = true }
-                Accessible.role: Accessible.Button; Accessible.name: qsTr("Grid view") }
+            Row {
+                Repeater {
+                    model: [[false, "text-bullet-list-20", qsTr("List view")], [true, "grid-20", qsTr("Grid view")]]
+                    Rectangle { required property var modelData; required property int index
+                        readonly property bool on: root.grid === modelData[0]
+                        width: 36; height: 32; radius: 4; color: on ? theme.brandTint : theme.surface; border.color: on ? theme.brand : theme.stroke; border.width: 0.67
+                        FluentIcon { anchors.centerIn: parent; name: parent.modelData[1]; size: 20; color: parent.on ? theme.brand : theme.textStrong }
+                        TapHandler { onTapped: root.grid = parent.modelData[0] }
+                        Accessible.role: Accessible.Button; Accessible.name: modelData[2] } } }
         }
         Rectangle {
             id: homeCard
-            x: 48; y: 157; width: parent.width - 96; height: Math.max(home.height - y - 12, homeCol.height + 24)
-            radius: 8; color: theme.surface; border.color: theme.dividerSoft; border.width: 1
-            Column {
-                id: homeCol
-                x: 16; y: 12; width: parent.width - 32
-                Repeater {
-                    model: root.homeDays
-                    Column {
-                        id: dayCol
-                        required property var modelData
-                        property bool open: true
-                        readonly property var items: modelData.meetings.filter(m => !root.query || m.subject.toLowerCase().indexOf(root.query.toLowerCase()) >= 0)
-                        visible: items.length > 0
-                        width: homeCol.width
-                        Item {
-                            width: parent.width; height: 48
-                            Row { anchors.verticalCenter: parent.verticalCenter; spacing: 8
-                                FluentIcon { name: dayCol.open ? "chevron-down-12" : "chevron-right-12"; size: 12; color: theme.text; anchors.verticalCenter: parent.verticalCenter }
-                                Text { text: theme.fmtDate(new Date(dayCol.modelData.day + "T12:00:00"), "dddd, MMMM d"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text } }
-                            TapHandler { onTapped: dayCol.open = !dayCol.open }
-                        }
-                        Repeater {
-                            model: dayCol.open ? dayCol.items : []
+            x: 48; y: 156; width: parent.width - 96; height: parent.height - y - 12
+            radius: 12; color: theme.surface; border.color: theme.divider; border.width: 0.67
+            Flickable {
+                id: homeList
+                x: 0.67; y: 0.67; width: parent.width - 1.33; height: parent.height - 1.33
+                contentHeight: homeCol.height
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                onAtYEndChanged: if (atYEnd && home.visible) root.loadMore()
+                onHeightChanged: root.homeFill()
+                onContentYChanged: root.closeHomePopups()
+                Column {
+                    id: homeCol
+                    // (Teams keeps 14 for the scroll bar on the right.)
+                    width: homeList.width - 14
+                    Repeater {
+                        model: root.homeGroups
+                        Column {
+                            id: dayCol
+                            required property var modelData
+                            readonly property bool open: root.homeCollapsed.indexOf(modelData.key) < 0
+                            width: homeCol.width
+                            topPadding: 2
+                            // The group's header (Teams' accordion: 44 tall, 2
+                            // 4 around it, a 13 px filled caret at 10, the label
+                            // 14/600 at 31).
                             Item {
-                                id: row
-                                required property var modelData
-                                width: dayCol.width; height: 80
-                                Rectangle { x: 40; y: 10; width: 104; height: 60; radius: 6; color: theme.pick("#E8EBFA", "#2F2F4A", "#000000")
-                                    Rectangle { x: 4; y: 4; width: 36; height: 38; radius: 4; color: theme.surface; border.color: theme.dividerSoft
-                                        Text { anchors.horizontalCenter: parent.horizontalCenter; y: 3; text: new Date(row.modelData.start).getDate(); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.brand }
-                                        Text { anchors.horizontalCenter: parent.horizontalCenter; y: 22; text: theme.fmtDate(new Date(row.modelData.start), "ddd").toUpperCase(); font.family: theme.font; font.pixelSize: 9; color: theme.brand } } }
-                                Column { x: 156; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 156 - 120
-                                    Text { width: parent.width; elide: Text.ElideRight; text: row.modelData.subject; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                                    Text { width: parent.width; elide: Text.ElideRight; text: root.line(row.modelData); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
-                                Row { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; spacing: 12
-                                    FluentIcon { name: "headphones-20"; size: 20; color: theme.textStrong; anchors.verticalCenter: parent.verticalCenter }
-                                    Rectangle { width: 50; height: 24; radius: 4; color: rh.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke; border.width: 1
-                                        Text { anchors.centerIn: parent; text: qsTr("Recap"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
-                                        HoverHandler { id: rh; cursorShape: Qt.PointingHandCursor }
-                                        TapHandler { onTapped: root.openRecap(row.modelData.threadId, row.modelData.subject) }
-                                        Accessible.role: Accessible.Button; Accessible.name: qsTr("Recap") } }
-                                Rectangle { anchors.bottom: parent.bottom; x: 24; width: parent.width - 48; height: 1; color: theme.dividerSoft }
+                                x: 4; width: parent.width - 8; height: 46
+                                Rectangle { width: parent.width; height: 44; radius: 4; color: hh.hovered ? theme.menuHover : "transparent" }
+                                FluentIcon { x: 10; y: 22 - 6.5; name: dayCol.open ? "caret-down-12-filled" : "caret-right-12-filled"; size: 13; color: theme.text }
+                                Text { x: 31; height: 44; verticalAlignment: Text.AlignVCenter; text: dayCol.modelData.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                                HoverHandler { id: hh; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: { const c = root.homeCollapsed.filter(k => k !== dayCol.modelData.key); if (dayCol.open) c.push(dayCol.modelData.key); root.homeCollapsed = c } }
+                                Accessible.role: Accessible.Button; Accessible.name: dayCol.modelData.label; Accessible.checked: dayCol.open
+                            }
+                            Repeater {
+                                model: dayCol.open ? dayCol.modelData.items : []
+                                Rectangle {
+                                    x: 12; width: dayCol.width - 24
+                                    id: hr
+                                    required property var modelData
+                                    readonly property var m: modelData
+                                    readonly property bool hot: rowHover.hovered || root.hotForTest === m.subject || chipPop.row === hr || filesPop.row === hr || peoplePop.row === hr
+                                    readonly property real mainW: (width - 12) * 0.6
+                                    readonly property bool canRecap: !!m.threadId && !!m.iCalUid && !(m.threadId.endsWith("@thread.tacv2"))
+                                    height: 84.7; radius: 8
+                                    color: hot ? theme.menuHover : "transparent"
+                                    HoverHandler { id: rowHover }
+                                    Component.onCompleted: root.homeRows[m.subject] = hr
+                                    Accessible.role: Accessible.ListItem; Accessible.name: m.subject + ", " + root.homeSubtitle(m)
+                                    // The preview (Teams' recap-preview-card: #E8EBFA, radius 8, a 0.67
+                                    // #E0E0E0 line; the recording's thumbnail filling it, the date tile
+                                    // 36 x 36 at 4.67 (#F5F5F5, radius 6, the day 14/600 over the
+                                    // weekday 11, brand); without a thumbnail a 16 px badge 4 from the
+                                    // bottom right: the transcript for a meeting with only one, a lock
+                                    // when you may open nothing).
+                                    Rectangle {
+                                        id: preview
+                                        x: 44; y: 12; width: 104; height: 60; radius: 8
+                                        color: theme.brandTint; border.color: theme.divider; border.width: 0.67
+                                        readonly property string thumb: hr.m.thumb && hr.m.access !== "NoPermission" ? (root.thumbs[hr.m.thumb.itemId] || "") : ""
+                                        Component.onCompleted: if (hr.m.access !== "NoPermission") root.wantThumb(hr.m.thumb)
+                                        Image { id: thumbImg; visible: !!preview.thumb; x: 0.67; y: 0.67; width: parent.width - 1.33; height: parent.height - 1.33; fillMode: Image.PreserveAspectCrop; asynchronous: true; source: preview.thumb
+                                            RoundedCorners { anchors.fill: parent; radius: 7.33; background: hr.color.a > 0 ? hr.color : theme.surface }
+                                            HoverHandler { cursorShape: hr.canRecap ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                                            TapHandler { enabled: hr.canRecap; onTapped: root.openRecapOf(hr.m, "") } }
+                                        FluentSurface { x: 4.67; y: 4.67; width: 36; height: 36; radius: 6; depth: 4; color: theme.pick("#F5F5F5", "#292929", "#000000"); borderColor: theme.divider
+                                            Text { anchors.horizontalCenter: parent.horizontalCenter; y: 3; text: new Date(Date.parse(hr.m.start)).getDate(); font.family: theme.font; font.pixelSize: 14; lineHeight: 16; lineHeightMode: Text.FixedHeight; font.weight: Font.DemiBold; color: theme.brand }
+                                            Text { anchors.horizontalCenter: parent.horizontalCenter; y: 19; text: theme.fmtDate(new Date(Date.parse(hr.m.start)), "ddd").toUpperCase(); font.family: theme.font; font.pixelSize: 11; lineHeight: 12; lineHeightMode: Text.FixedHeight; color: theme.brand }
+                                            ToolTip.visible: dth.hovered; ToolTip.text: theme.fmtDate(new Date(Date.parse(hr.m.start)), "dddd, MMMM d")
+                                            HoverHandler { id: dth } }
+                                        FluentIcon { visible: !preview.thumb && (hr.m.access === "NoPermission" || hr.m.access === "TranscriptOnly"); anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 4.67
+                                                     name: hr.m.access === "NoPermission" ? "lock-closed-20" : "slide-text-20"; size: 16; color: theme.textSecondary }
+                                    }
+                                    // The title (14/20 600 #424242; opens the recap), when (12/16
+                                    // #616161: "Yesterday · 11:45 PM - 12:15 AM, OST Test 1") and who
+                                    // spoke (16 px, three at most, else two and "+n").
+                                    Column {
+                                        x: 160; anchors.verticalCenter: parent.verticalCenter; width: hr.mainW - 160
+                                        Text { width: Math.min(implicitWidth, parent.width); elide: Text.ElideRight; text: hr.m.subject; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; font.weight: Font.DemiBold; color: theme.textStrong
+                                            font.underline: tth.hovered && hr.canRecap
+                                            HoverHandler { id: tth; cursorShape: hr.canRecap ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                                            TapHandler { enabled: hr.canRecap; onTapped: root.openRecapOf(hr.m, "") }
+                                            ToolTip.visible: tth.hovered && truncated; ToolTip.text: hr.m.subject
+                                            Accessible.role: hr.canRecap ? Accessible.Button : Accessible.StaticText; Accessible.name: hr.m.subject }
+                                        Text { width: parent.width; elide: Text.ElideRight; text: root.homeSubtitle(hr.m); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+                                        Item { visible: hr.speakers.length > 0; width: 1; height: 4 }
+                                        Row {
+                                            id: speakerRow
+                                            visible: hr.speakers.length > 0
+                                            spacing: -2
+                                            Repeater {
+                                                model: hr.speakers.length <= 3 ? hr.speakers : hr.speakers.slice(0, 2)
+                                                Rectangle { required property var modelData; width: 20; height: 20; radius: 10; color: hr.hot ? theme.menuHover : theme.surface
+                                                    Avatar { anchors.centerIn: parent; size: 16; name: parent.modelData.displayName; photoId: parent.modelData.objectId
+                                                             ToolTip.visible: avh.hovered; ToolTip.text: parent.modelData.displayName; HoverHandler { id: avh } } }
+                                            }
+                                            Rectangle { id: moreBtn; visible: hr.speakers.length > 3; width: 20; height: 20; radius: 10; color: hr.hot ? theme.menuHover : theme.surface
+                                                Rectangle { anchors.centerIn: parent; width: 16; height: 16; radius: 8; color: theme.surface; border.color: theme.stroke; border.width: 0.67
+                                                    Text { anchors.centerIn: parent; text: "+" + (hr.speakers.length - 2); font.family: theme.font; font.pixelSize: 8; font.weight: Font.DemiBold; color: theme.text } }
+                                                HoverHandler { id: mbh; cursorShape: Qt.PointingHandCursor }
+                                                ToolTip.visible: mbh.hovered && !peoplePop.opened; ToolTip.text: qsTr("View more people", "meetingRecap:k3lujacqz")
+                                                TapHandler { onTapped: peoplePop.openFor(hr, moreBtn, hr.speakers.slice(2)) }
+                                                Accessible.role: Accessible.Button; Accessible.name: qsTr("View more people", "meetingRecap:k3lujacqz") }
+                                        }
+                                    }
+                                    /// Who spoke (Teams' Nn: the catch-up's speakers with an id and a
+                                    /// name, once each).
+                                    readonly property var speakers: {
+                                        const seen = {}
+                                        return (m.speakers || []).filter(p => { const k = String(p.objectId || "").toLowerCase(); if (!k || !p.displayName || seen[k]) return false; seen[k] = true; return true })
+                                    }
+                                    // The chips (Teams' tagList: 20 tall pills on #F5F5F5, 0 6 padding,
+                                    // a 16 px brand glyph and the count 12/20 #616161, 8 apart; brand
+                                    // and filled while their popover is open).
+                                    Row {
+                                        x: hr.mainW; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                                        Repeater {
+                                            model: [["files", (hr.m.files || []).length], ["mention", (hr.m.mentions || []).length], ["task", (hr.m.actionItems || []).length]].filter(c => c[1] > 0)
+                                            Rectangle {
+                                                id: chip
+                                                required property var modelData
+                                                objectName: "homeChip-" + modelData[0]
+                                                readonly property bool open: (modelData[0] === "files" ? filesPop.row === hr : chipPop.row === hr && chipPop.mode === modelData[0])
+                                                readonly property string label: modelData[0] === "files" ? qsTr("%n attached files", "meetingRecap:k4i0b12j9_mf", modelData[1])
+                                                                               : modelData[0] === "mention" ? qsTr("%n mentions of you", "meetingRecap:kaqlkw5gl_mf", modelData[1])
+                                                                               : qsTr("%n tasks for people to follow up on", "meetingRecap:kise79q0_mf", modelData[1])
+                                                height: 20; radius: 10; width: hchipRow.implicitWidth + 12
+                                                color: theme.pick("#F5F5F5", "#292929", "#000000")
+                                                Row { id: hchipRow; x: 6; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                                                    Item { width: 20; height: 20
+                                                        FluentIcon { anchors.centerIn: parent; size: 16; color: theme.brand
+                                                                     name: chip.modelData[0] === "files" ? (chip.open ? "attach-20-filled" : "attach-20") : chip.modelData[0] === "mention" ? (chip.open ? "mention-20-filled" : "mention-20") : (chip.open ? "checkmark-circle-20-filled" : "checkmark-circle-20") } }
+                                                    Text { anchors.verticalCenter: parent.verticalCenter; text: String(chip.modelData[1]); font.family: theme.font; font.pixelSize: 12; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: chip.open ? theme.brand : theme.textSecondary } }
+                                                HoverHandler { id: hchip; cursorShape: Qt.PointingHandCursor }
+                                                ToolTip.visible: hchip.hovered && !chip.open; ToolTip.text: label
+                                                TapHandler { onTapped: chip.modelData[0] === "files" ? filesPop.openFor(hr, chip) : chipPop.openFor(hr, chip, chip.modelData[0]) }
+                                                Accessible.role: Accessible.Button; Accessible.name: label
+                                            }
+                                        }
+                                        // Why it's recommended (Teams' tn: Missed, Followed, Joined late,
+                                        // Left early; "Followed | …" when both).
+                                        Repeater {
+                                            model: root.reasonTags(hr.m)
+                                            Rectangle { required property string modelData; height: 20; radius: 10; width: rt.implicitWidth + 12; color: theme.pick("#F5F5F5", "#292929", "#000000")
+                                                Text { id: rt; anchors.centerIn: parent; text: parent.modelData; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                                        }
+                                    }
+                                    // The actions (Go to chat 32 x 31.3 on hover, 5 apart; the
+                                    // headphones 24 x 24 and Recap (50 x 24, outlined #D1D1D1, 12/16
+                                    // 600), 8 apart; 12 from the right).
+                                    Row {
+                                        anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; spacing: 5
+                                        Rectangle { width: 32; height: 31.3; radius: 4; opacity: hr.hot ? 1 : 0; color: gch.hovered ? theme.hover : "transparent"
+                                            FluentIcon { anchors.centerIn: parent; name: "chat-20"; size: 20; color: theme.text }
+                                            HoverHandler { id: gch; cursorShape: Qt.PointingHandCursor }
+                                            ToolTip.visible: gch.hovered; ToolTip.text: qsTr("Go to chat", "meetingRecap:k45b9m0c6")
+                                            TapHandler { onTapped: { console.info("RECAPS home chat", hr.m.subject); root.openChat(hr.m.threadId, hr.m.subject) } }
+                                            Accessible.role: Accessible.Button; Accessible.name: qsTr("Go to chat", "meetingRecap:k45b9m0c6") }
+                                        Row {
+                                            anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                                            Rectangle { visible: !!hr.m.transcript && hr.m.access !== "NoPermission"; width: 24; height: 24; radius: 4; color: arh.hovered ? theme.hover : "transparent"
+                                                FluentIcon { anchors.centerIn: parent; name: "headphones-20"; size: 20; color: theme.text }
+                                                HoverHandler { id: arh; cursorShape: Qt.PointingHandCursor }
+                                                ToolTip.visible: arh.hovered; ToolTip.text: qsTr("Audio recap", "podcast:k969y5cag")
+                                                TapHandler { onTapped: root.audioRecapOf(hr.m) }
+                                                Accessible.role: Accessible.Button; Accessible.name: qsTr("Audio recap", "podcast:k969y5cag") }
+                                            Rectangle { visible: hr.canRecap; width: 50; height: 24; radius: 4; color: rbh.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke; border.width: 0.67
+                                                Text { anchors.centerIn: parent; text: qsTr("Recap"); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; font.weight: Font.DemiBold; color: theme.text }
+                                                HoverHandler { id: rbh; cursorShape: Qt.PointingHandCursor }
+                                                TapHandler { onTapped: root.openRecapOf(hr.m, "") }
+                                                Accessible.role: Accessible.Button; Accessible.name: qsTr("Recap") }
+                                        }
+                                    }
+                                    // (Teams' subtle divider: 0.67 px, one device pixel on its 1.5x screen.)
+                                    Rectangle { anchors.bottom: parent.bottom; x: 0; width: parent.width; height: 1; color: theme.pick("#F0F0F0", "#3D3D3D", "#FFFFFF") }
+                                }
                             }
                         }
                     }
+                    Column {
+                        visible: root.loading
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        topPadding: 24; bottomPadding: 16; spacing: 8
+                        BusyIndicator { anchors.horizontalCenter: parent.horizontalCenter; running: root.loading; width: 32; height: 32 }
+                        Text { text: qsTr("Loading more meetings..."); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    }
+                    // Teams' end of the list (12/16 #616161, 16 in, 8 around).
+                    Text { visible: root.allLoaded; x: 16; topPadding: 8; bottomPadding: 8; text: qsTr("Loaded all meetings in the last 30 days."); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
                 }
-                Column {
-                    visible: root.loading
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    topPadding: 24; spacing: 8
-                    BusyIndicator { anchors.horizontalCenter: parent.horizontalCenter; running: root.loading; width: 32; height: 32 }
-                    Text { text: qsTr("Loading more meetings..."); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            }
+        }
+    }
+    property var homeCollapsed: []
+    // (The harness: Home's rows by subject, a row drawn as hovered.)
+    property var homeRows: ({})
+    property string hotForTest: ""
+    function findNamed(item, name) {
+        if (!item) return null
+        if (item.objectName === name) return item
+        for (const c of item.children) { const f = findNamed(c, name); if (f) return f }
+        return null
+    }
+    function homeRowFor(prefix) { const k = Object.keys(homeRows).find(s => s.indexOf(prefix) === 0); return k ? homeRows[k] : null }
+    function homeChipForTest(prefix, kind) {
+        const r = homeRowFor(prefix), c = r ? findNamed(r, "homeChip-" + kind) : null
+        if (!c) return "no " + kind + " chip"
+        if (kind === "files") filesPop.openFor(r, c); else chipPop.openFor(r, c, kind)
+        return "open"
+    }
+    function homePopupForTest() {
+        return JSON.stringify({ chip: chipPop.opened ? { mode: chipPop.mode, x: Math.round(chipPop.x), y: Math.round(chipPop.y), w: chipPop.width, h: Math.round(chipPop.height),
+                                                       items: (chipPop.mode === "task" ? chipPop.m.actionItems : chipPop.m.mentions || []).map(t => (chipPop.mode === "task" ? taskLine(t) : mentionLine(t)).replace(/<[^>]*>/g, "")) } : null,
+                                files: filesPop.opened ? { x: Math.round(filesPop.x), y: Math.round(filesPop.y), h: Math.round(filesPop.height), files: (filesPop.m.files || []).map(f => fileName(f)) } : null })
+    }
+    function homeOpenForTest(prefix, what) {
+        const r = homeRowFor(prefix)
+        if (!r) return "no row"
+        if (what === "chat") root.openChat(r.m.threadId, r.m.subject); else openRecapOf(r.m, what === "recap" ? "" : what)
+        return JSON.stringify(recapRefOf(r.m))
+    }
+    // Home's meetings: the filter (Teams: Mentions has mentions of you,
+    // Missed a MISSED_MEETING reason, Followed a followed meeting) and the
+    // search (the subject, organizer, speakers, mentions, tasks and files).
+    readonly property var homeMeetings: {
+        const q = root.query.trim().toLowerCase()
+        const has = s => String(s || "").toLowerCase().indexOf(q) >= 0
+        return meetingList.filter(m => {
+            const reasons = m.reasons || []
+            if (root.filter === "missed" && reasons.indexOf("MISSED_MEETING") < 0) return false
+            if (root.filter === "mentions" && !(m.mentionEventCount > 0)) return false
+            if (root.filter === "followed" && m.attendanceStatus !== "Follow" && reasons.indexOf("FOLLOWED") < 0) return false
+            if (!q) return true
+            return has(m.subject) || has(m.organizer) || (m.speakers || []).some(p => has(p.displayName)) || (m.mentions || []).some(x => has(x.utteranceContainingTheMention))
+                || (m.actionItems || []).some(t => has(t.actionItemTitle) || has(t.displayCleanContent)) || (m.files || []).some(f => has(f.fileTitle))
+        })
+    }
+    readonly property var homeGroups: weekGroups(homeMeetings)
+    /// Meetings grouped as Teams' Home and Generate dialog (Teams' Ye / ka:
+    /// by day, newest first; this week's days and last week's each make one
+    /// group, an older day its own: "Friday, November 6", with the year when
+    /// it isn't this year's).
+    function weekGroups(meetings) {
+        const weekStart = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - x.getDay()); return x }
+        const thisWeek = weekStart(new Date()).getTime(), lastWeek = new Date(thisWeek - 3 * 86400000)
+        const lastWeekStart = weekStart(lastWeek).getTime()
+        const out = []
+        for (const m of meetings) {
+            const d = new Date(Date.parse(m.start))
+            const day = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+            const w = weekStart(day).getTime()
+            const key = w === thisWeek ? "this-week" : w === lastWeekStart ? "last-week" : String(day.getTime())
+            let g = out.find(x => x.key === key)
+            if (!g) {
+                const label = key === "this-week" ? qsTr("This week") : key === "last-week" ? qsTr("Last week")
+                            : day.toLocaleDateString(Qt.locale(), day.getFullYear() === new Date().getFullYear() ? "dddd, MMMM d" : "dddd, MMMM d, yyyy")
+                g = { key: key, label: label, items: [], at: key === "this-week" ? thisWeek + 7 * 86400000 : key === "last-week" ? thisWeek : day.getTime() }; out.push(g)
+            }
+            g.items.push(m)
+        }
+        out.sort((a, b) => b.at - a.at)
+        return out
+    }
+    // A recording's thumbnail (Teams' Graph c126x72), shared by Home and
+    // the Generate dialog.
+    property var thumbs: ({})
+    function wantThumb(r) {
+        if (!r || !r.itemId || thumbs[r.itemId] !== undefined) return
+        const t = Object.assign({}, thumbs); t[r.itemId] = ""; thumbs = t
+        call("recordingThumb", { driveId: r.driveId, itemId: r.itemId }, v => { if (v.path) { const u = Object.assign({}, root.thumbs); u[r.itemId] = "file://" + v.path; root.thumbs = u } })
+    }
+    /// What a meeting's recap opens with (api::recaps::RecapRef): the
+    /// catch-up's file, else a transcript or recording you may open
+    /// (Teams' Wt), its thread, iCalUid and organizer.
+    function recapRefOf(m) {
+        const rf = m.recapFile && m.recapFile.itemId ? m.recapFile : null
+        const tr = (m.transcripts || [])[0]
+        const rec = (m.recordings || []).find(r => r.hasPermission !== false) || (m.recordings || [])[0]
+        const file = rf || (tr && tr.drive_id ? { driveId: tr.drive_id, itemId: tr.item_id } : null) || rec || {}
+        const isRec = (m.recordings || []).some(r => r.itemId === file.itemId)
+        return { thread_id: m.threadId || "", ical_uid: m.iCalUid || "", organizer_id: m.organizerId || "", drive_id: file.driveId || "", item_id: file.itemId || "",
+                 file_url: isRec ? (file.url || "") : "", subject: m.subject || "", start_ms: Date.parse(m.start) || 0, end_ms: Date.parse(m.end) || 0,
+                 recap_type: (m.recordings || []).length && m.transcript ? "RecordingAndTranscript" : m.transcript ? "Transcript" : "Recording" }
+    }
+    // What Home's rows open (Teams' RecapHome): the recap window (the
+    // title, the thumbnail, Recap, a task; a mention on Mentions; a meeting
+    // note on Notes), the meeting's chat (Go to chat), an audio recap of
+    // the meeting (the headphones).
+    signal openRecapWindow(var ref, string tab)
+    signal openChat(string threadId, string title)
+    function openRecapOf(m, tab) { console.info("RECAPS home open", m.subject, tab || "recap"); root.openRecapWindow(recapRefOf(m), tab || "") }
+    function closeHomePopups() { chipPop.close(); filesPop.close(); peoplePop.close() }
+
+    // Home's row (Teams' podcast-meeting-item V2, 84 tall and a subtle line;
+    // hovered #F5F5F5 with radius 8): the preview (44 in, 104 x 60), the
+    // title and when (160 in), who spoke; from 60% of the row the files,
+    // mentions and tasks chips and the reason tag; at the right Go to chat
+    // (on hover), the headphones and Recap.
+    function homeSubtitle(m) {
+        const a = new Date(Date.parse(m.start)), b = new Date(Date.parse(m.end))
+        const t = x => x.toLocaleTimeString(Qt.locale(), "h:mm AP")
+        const s = friendlyDay(a) + " · " + t(a) + " - " + t(b)
+        return m.organizer ? s + ", " + m.organizer : s
+    }
+    function reasonTags(m) {
+        const followed = m.attendanceStatus === "Follow"
+        const reason = (m.reasons || [])[0]
+        const f = qsTr("Followed")
+        const r = reason === "MISSED_MEETING" ? qsTr("Missed") : reason === "FOLLOWED" ? f : reason === "JOINED_LATE" ? qsTr("Joined late", "meetingRecap:k3u2c59tx")
+                : reason === "LEFT_EARLY" ? qsTr("Left early", "meetingRecap:k6vyisa9u") : ""
+        const tag = r || (followed ? f : "")
+        if (!tag) return []
+        return [followed && tag !== f ? f + " | " + tag : tag]
+    }
+    // The headphones (Teams' yo): an audio recap of the meeting, made with
+    // your saved style, then Audio recaps shows it being made.
+    function audioRecapOf(m) {
+        console.info("RECAPS home audio", m.subject)
+        generateRows([m], genDialog.style)
+    }
+    // A row's popover place (Teams: below the chip, 28 right and 16 down,
+    // else above when there's no room).
+    function popPlace(pop, anchor) {
+        const p = anchor.mapToItem(root, 0, 0)
+        pop.x = Math.min(p.x + 28, root.width - pop.width - 8)
+        const below = p.y + anchor.height + 16
+        pop.y = below + pop.height <= root.height - 8 ? below : Math.max(8, p.y - 16 - pop.height)
+    }
+    // The tasks and mentions popover (Teams' catch-up chiclet, simplified:
+    // 321 wide; the title 12/20 600 #616161, "AI-generated content may be
+    // incorrect" on #FAFAFA, the items (a task: "Title: what (owner)",
+    // 12/20, the title bold; a mention: who and when over the words with
+    // your name in brand), lines between, "Are these tasks useful?" with
+    // Like and Dislike; an item opens the recap).
+    Popup {
+        id: chipPop
+        property var row: null
+        property string mode: "task"
+        property var m: ({})
+        function openFor(r, anchor, md) {
+            if (opened && row === r && mode === md) { close(); return }
+            row = r; mode = md; m = r.m; open(); root.popPlace(chipPop, anchor)
+            console.info("RECAPS home chip", md, (md === "task" ? m.actionItems : m.mentions).length)
+        }
+        onClosed: row = null
+        width: 321.3; padding: 0.67
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        contentItem: Column {
+            topPadding: 4; bottomPadding: 4
+            Item { width: 320; height: 35
+                Text { x: 12; y: 7; text: chipPop.mode === "task" ? qsTr("%n tasks for people to follow up on", "meetingRecap:kise79q0_mf", (chipPop.m.actionItems || []).length)
+                                                                 : qsTr("%n mentions of you", "meetingRecap:kaqlkw5gl_mf", (chipPop.m.mentions || []).length)
+                       font.family: theme.font; font.pixelSize: 12; lineHeight: 20; lineHeightMode: Text.FixedHeight; font.weight: Font.DemiBold; color: theme.textSecondary } }
+            Item { width: 1; height: 8 }
+            Rectangle { width: 320; height: 32; color: theme.pick("#FAFAFA", "#1F1F1F", "#000000")
+                Text { x: 12; anchors.verticalCenter: parent.verticalCenter; text: qsTr("AI-generated content may be incorrect", "meetingRecap:kadz8jklh"); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary } }
+            Column {
+                x: 4; width: 312
+                Repeater {
+                    model: chipPop.mode === "task" ? (chipPop.m.actionItems || []) : (chipPop.m.mentions || [])
+                    Column {
+                        id: clip
+                        required property var modelData
+                        width: 312
+                        Rectangle { width: 312; height: clipText.implicitHeight + 16; radius: 4; color: cph.hovered ? theme.menuHover : "transparent"
+                            Text { id: clipText; x: 12; y: 8; width: 288; wrapMode: Text.Wrap; textFormat: Text.StyledText; font.family: theme.font; font.pixelSize: 12; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.textStrong
+                                   text: chipPop.mode === "task" ? root.taskLine(clip.modelData) : root.mentionLine(clip.modelData) }
+                            HoverHandler { id: cph; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: { const md = chipPop.mode, mt = chipPop.m; chipPop.close(); root.openRecapOf(mt, md === "mention" ? "mentions" : "") } }
+                            Accessible.role: Accessible.Button; Accessible.name: clipText.text.replace(/<[^>]*>/g, "") }
+                        Rectangle { width: 312; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF") }
+                    }
                 }
-                // Teams' end of the list (12/16 #616161, 16 in, 16 above).
-                Text { visible: root.allLoaded; topPadding: 16; text: qsTr("Loaded all meetings in the last 30 days."); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+            }
+            Item { width: 320; height: 35.3
+                Row { anchors.right: parent.right; anchors.rightMargin: 4; y: 4; spacing: 0
+                    Text { anchors.verticalCenter: parent.verticalCenter; rightPadding: 0; text: chipPop.mode === "task" ? qsTr("Are these tasks useful?", "meetingRecap:k1w9rhbwl") : qsTr("Are these mentions useful?", "meetingRecap:kcvntbrgv")
+                           font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                    Repeater { model: [["thumb-like-16", qsTr("Like")], ["thumb-dislike-16", qsTr("Dislike")]]
+                        Rectangle { required property var modelData; width: 32; height: 31.3; radius: 4; color: fbh.hovered ? theme.hover : "transparent"
+                            FluentIcon { anchors.centerIn: parent; name: parent.modelData[0]; size: 16; color: theme.text }
+                            HoverHandler { id: fbh; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: chipPop.close() }
+                            Accessible.role: Accessible.Button; Accessible.name: modelData[1] } } } }
+        }
+    }
+    function esc(t) { return String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
+    /// A task as Teams' le writes it: "Headline: text (owner)", the headline bold.
+    function taskLine(t) {
+        const head = t.actionItemTitle ? "<b>" + esc(t.actionItemTitle + ":") + "</b> " : ""
+        return head + esc(t.displayCleanContent) + (t.ownerName ? esc(" (" + t.ownerName + ")") : "")
+    }
+    /// A mention as Teams' te writes it: who · when, then the words with
+    /// your name in brand.
+    function mentionLine(x) {
+        const when = x.dateTimeUtc ? " · " + theme.time(new Date(Date.parse(x.dateTimeUtc))) : ""
+        const s = String(x.utteranceContainingTheMention || "")
+        const a = Number(x.mentionOffsetInUtterance), n = Number(x.nameLength)
+        const words = a >= 0 && n > 0 && a + n <= s.length ? esc(s.slice(0, a)) + "<b><font color=\"" + theme.brand + "\">" + esc(s.slice(a, a + n)) + "</font></b>" + esc(s.slice(a + n)) : esc(s)
+        return "<b>" + esc(x.mentionedByUserDisplayName) + "</b>" + esc(when) + "<br>" + words
+    }
+    // The files popover (Teams' RecapFilesPopover: 249 wide, "Attached"
+    // 14/20 600 at 14, then each file 32 tall: its 20 px glyph, the name
+    // 12/20, ··· (Open in Browser, Copy link) at the right). A meeting
+    // note opens the recap on Notes.
+    Popup {
+        id: filesPop
+        property var row: null
+        property var m: ({})
+        function openFor(r, anchor) {
+            if (opened && row === r) { close(); return }
+            row = r; m = r.m; open(); root.popPlace(filesPop, anchor)
+            console.info("RECAPS home files", (m.files || []).map(f => f.type).join(","))
+        }
+        onClosed: row = null
+        width: 249.3; padding: 0.67
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        contentItem: Column {
+            x: 2; topPadding: 8; bottomPadding: 0; spacing: 8
+            Text { leftPadding: 12; text: qsTr("Attached", "meetingRecap:k2nja8nir"); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; font.weight: Font.DemiBold; color: theme.text }
+            Column {
+                Repeater {
+                    model: filesPop.m.files || []
+                    Rectangle {
+                        id: fileRow
+                        required property var modelData
+                        width: 244; height: 32; radius: 4; color: frh.hovered ? theme.menuHover : theme.surface
+                        FluentIcon { x: 10.7; anchors.verticalCenter: parent.verticalCenter; size: 20; color: theme.text
+                                     name: fileRow.modelData.type === "Notes" ? "ft-loop-20" : "document-20" }
+                        Text { x: 44.7; width: parent.width - 44.7 - 40; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 12; color: theme.text
+                               text: root.fileName(fileRow.modelData) }
+                        Rectangle { id: fmore; anchors.right: parent.right; anchors.rightMargin: 7.7; anchors.verticalCenter: parent.verticalCenter; width: 32; height: 21.3; radius: 4; color: fmh.hovered ? theme.hover : "transparent"
+                            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-16"; size: 16; color: theme.text }
+                            HoverHandler { id: fmh; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: { fileMenu.file = fileRow.modelData; fileMenu.popup(fmore, 0, fmore.height + 4) } }
+                            Accessible.role: Accessible.Button; Accessible.name: qsTr("More options for note") }
+                        HoverHandler { id: frh; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: { const mt = filesPop.m; filesPop.close(); root.openRecapOf(mt, "notes") } }
+                        Accessible.role: Accessible.Button; Accessible.name: root.fileName(fileRow.modelData)
+                    }
+                }
+            }
+        }
+    }
+    function fileName(f) { return f.fileTitle || (f.type === "Notes" ? qsTr("Agenda and notes", "artifactsPlatform:k2yefijek") : String(f.location || "").split("/").pop()) }
+    Menu {
+        id: fileMenu
+        property var file: null
+        MenuItem { text: qsTr("Copy link"); onTriggered: { if (fileMenu.file) backend.copyToClipboard(fileMenu.file.location); root.toast({ text: qsTr("Link copied") }) } }
+    }
+    // Who else spoke (Teams' AvatarGroupPopover: "View more people").
+    Popup {
+        id: peoplePop
+        property var row: null
+        property var people: []
+        function openFor(r, anchor, list) { if (opened && row === r) { close(); return } row = r; people = list; open(); root.popPlace(peoplePop, anchor) }
+        onClosed: row = null
+        width: 220; padding: 8
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        contentItem: Column {
+            spacing: 4
+            Repeater {
+                model: peoplePop.people
+                Row { required property var modelData; spacing: 8; height: 32
+                    Avatar { anchors.verticalCenter: parent.verticalCenter; size: 24; name: parent.modelData.displayName; photoId: parent.modelData.objectId }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.displayName; font.family: theme.font; font.pixelSize: 14; color: theme.text } }
             }
         }
     }
@@ -924,7 +1379,7 @@ Rectangle {
         return "done"
     }
     function noInsightPodcast(p) { return /NoValidMeeting(Insight|Found)/.test(p.statusMessage || "") }
-    function stateForTest() { return JSON.stringify({ tab: tab, days: days.length, meetings: meetingList.length, home: homeDays.map(d => [d.day, d.meetings.map(m => m.subject)]), podcasts: podcasts ? podcasts.length : null, loading: loading }) }
+    function stateForTest() { return JSON.stringify({ tab: tab, days: days.length, meetings: meetingList.length, home: homeGroups.map(g => [g.label, g.items.map(m => [m.subject, homeSubtitle(m), { files: (m.files || []).length, mentions: (m.mentions || []).length, tasks: (m.actionItems || []).length, speakers: (m.speakers || []).map(p => p.displayName), reasons: reasonTags(m) }, m.access, m.thumb && m.thumb.itemId ? (root.thumbs[m.thumb.itemId] ? "thumb" : "no thumb yet") : "no recording"])]), greeting: greeting(), podcasts: podcasts ? podcasts.length : null, loading: loading }) }
     // Generate audio recap (Teams 26304, measured on winpc 2026-11-19): a
     // dialog (the window less 32 each side): Style (Executive, Newscast,
     // Casual, each with its description) and Language, "Select up to 8
@@ -964,42 +1419,13 @@ Rectangle {
         }
         /// The weeks (Teams' grouping by the start of the week, newest
         /// first: "This week", "Last week", else the week's first day).
-        readonly property var groups: {
-            const weekStart = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - x.getDay()); return x }
-            const thisWeek = weekStart(new Date()).getTime(), lastWeek = thisWeek - 7 * 86400000
-            const out = []
-            // Teams' ka: the meetings by day; this week's days and last
-            // week's each make one group, an older day its own ("Friday,
-            // November 6", with the year when it isn't this year's; seen on
-            // winpc 2026-11-22).
-            for (const m of meetings) {
-                const d = new Date(Date.parse(m.start))
-                const day = new Date(d.getFullYear(), d.getMonth(), d.getDate())
-                const w = weekStart(day).getTime()
-                const key = w === thisWeek ? "this-week" : w === lastWeek ? "last-week" : String(day.getTime())
-                let g = out.find(x => x.key === key)
-                if (!g) {
-                    const label = key === "this-week" ? qsTr("This week") : key === "last-week" ? qsTr("Last week")
-                                : day.toLocaleDateString(Qt.locale(), day.getFullYear() === new Date().getFullYear() ? "dddd, MMMM d" : "dddd, MMMM d, yyyy")
-                    g = { key: key, label: label, items: [], at: key === "this-week" ? thisWeek + 7 * 86400000 : key === "last-week" ? thisWeek : day.getTime() }; out.push(g)
-                }
-                g.items.push(m)
-            }
-            out.sort((a, b) => b.at - a.at)
-            return out
-        }
+        readonly property var groups: root.weekGroups(meetings)
         property var collapsed: []
-        property var thumbs: ({})
         function subtitle(m) {
             const a = new Date(Date.parse(m.start)), b = new Date(Date.parse(m.end))
             const t = x => x.toLocaleTimeString(Qt.locale(), "h:mm AP")
             const s = root.friendlyDay(a) + " · " + t(a) + " - " + t(b)
             return m.organizer ? s + " , " + m.organizer : s
-        }
-        function wantThumb(r) {
-            if (!r || !r.itemId || thumbs[r.itemId] !== undefined) return
-            const t = Object.assign({}, thumbs); t[r.itemId] = ""; thumbs = t
-            root.call("recordingThumb", { driveId: r.driveId, itemId: r.itemId }, v => { if (v.path) { const u = Object.assign({}, genDialog.thumbs); u[r.itemId] = "file://" + v.path; genDialog.thumbs = u } })
         }
         contentItem: Column {
             spacing: 0
@@ -1128,10 +1554,10 @@ Rectangle {
                                             HoverHandler { id: chh } } }
                                 }
                                 Image { visible: !!source.toString(); anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: 84; height: 48; fillMode: Image.PreserveAspectCrop; asynchronous: true
-                                        source: genDialog.thumbs[(mrow.modelData.recording || {}).itemId || ""] || "" }
+                                        source: root.thumbs[(mrow.modelData.recording || {}).itemId || ""] || "" }
                                 HoverHandler { id: mrh; cursorShape: mrow.blocked ? Qt.ArrowCursor : Qt.PointingHandCursor }
                                 TapHandler { enabled: !mrow.blocked; onTapped: { const p = genDialog.picked.filter(t => t !== mrow.modelData.threadId); if (!mrow.on) p.push(mrow.modelData.threadId); genDialog.picked = p } }
-                                Component.onCompleted: genDialog.wantThumb(modelData.recording)
+                                Component.onCompleted: root.wantThumb(modelData.recording)
                                 Accessible.role: Accessible.CheckBox; Accessible.name: modelData.subject; Accessible.checked: on
                                 Rectangle { visible: mrow.index < grp.modelData.items.length - 1; width: parent.width; height: 0.67; anchors.bottom: parent.bottom; color: theme.dividerSoft }
                             }
@@ -1161,6 +1587,9 @@ Rectangle {
         const rows = genDialog.meetings.filter(m => genDialog.picked.indexOf(m.threadId) >= 0)
         if (rows.length === 0 || rows.length > 8) return
         genDialog.close()
+        generateRows(rows, genDialog.style)
+    }
+    function generateRows(rows, style) {
         const temp = { id: "generating-" + Date.now(), generating: true, createdDateTime: new Date().toISOString() }
         podcasts = [temp].concat(podcasts || [])
         chosenPodcast = temp.id
@@ -1168,9 +1597,9 @@ Rectangle {
         // is picked meanwhile.
         autoPlayId = temp.id
         tab = "audio"
-        console.info("RECAPS generate", rows.length, genDialog.style)
+        console.info("RECAPS generate", rows.length, style)
         let made = temp.id
-        call("podcastGenerate", { meetings: rows, style: genDialog.style, language: "en-US" }, v => {
+        call("podcastGenerate", { meetings: rows, style: style, language: "en-US" }, v => {
             console.info("RECAPS generated", v.status || "", v.message || "", v.error || "", v.podcast && v.podcast.id ? v.podcast.id : "")
             root.lastGenerated = v
             // The new recap stays chosen; one not started yet plays once
@@ -1207,7 +1636,7 @@ Rectangle {
         return genDialog.picked.length
     }
     function generateForTest() { generate() }
-    function genMeetingsForTest() { return genDialog.groups.map(g => ({ group: g.label, rows: g.items.map(m => [m.subject, genDialog.subtitle(m), { actionItemCount: m.actionItemCount || 0, mentionEventCount: m.mentionEventCount || 0 }, !!(m.recording && m.recording.itemId), genDialog.thumbs[(m.recording || {}).itemId || ""] ? "thumb" : ""]) })) }
+    function genMeetingsForTest() { return genDialog.groups.map(g => ({ group: g.label, rows: g.items.map(m => [m.subject, genDialog.subtitle(m), { actionItemCount: m.actionItemCount || 0, mentionEventCount: m.mentionEventCount || 0 }, !!(m.recording && m.recording.itemId), root.thumbs[(m.recording || {}).itemId || ""] ? "thumb" : ""]) })) }
     function audioPlayerStateForTest() { const p = recapsPanes.chosen; return JSON.stringify({ chosen: p ? (p.title || "") : null, state: p ? podcastState(p) : "", rows: (podcasts || []).map(x => podcastState(x)),
                                                                                        playing: recapAudio.playbackState === MediaPlayer.PlayingState, position: Math.round(root.playPos / 1000), autoPlay: autoPlayId,
                                                                                        chapter: chapterPlaying, chapterWait: chapterWait, chapterStates: p ? (p.chapters || []).map(c => c.status) : [],

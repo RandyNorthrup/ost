@@ -36,6 +36,12 @@ async fn get(url: &str) -> Result<Value> {
     r.json().await.context("The meeting artifacts service's reply")
 }
 
+/// A day's meeting artifacts as the service gives them (debugging aid:
+/// examples/recap_days).
+pub async fn day_contents(region: &str, start: chrono::DateTime<chrono::Utc>, end: chrono::DateTime<chrono::Utc>) -> Result<Value> {
+    get(&format!("{}/{}", base(region), day_query(start, end))).await
+}
+
 /// Audio recaps (Teams' podcasts), newest first.
 pub async fn podcasts(region: &str) -> Result<Value> {
     let v = get(&format!("{}/podcasts?top=10", base(region))).await?;
@@ -83,6 +89,35 @@ pub fn row_from(m: &Value) -> Option<Value> {
     let resources = || m.get("resources").and_then(Value::as_array).into_iter().flatten();
     let rec = t.get("recommendationData").filter(|r| r.is_object());
     let count = |k: &str| rec.and_then(|r| r.get(k)).and_then(Value::as_u64).unwrap_or(0);
+    let list = |k: &str| rec.and_then(|r| r.get(k)).and_then(Value::as_array).cloned().unwrap_or_default();
+    let of = |ty: &str| resources().filter(|r| r.get("type").and_then(Value::as_str) == Some(ty)).collect::<Vec<_>>();
+    let meta = |r: &Value, k: &str| r.pointer(&format!("/metadata/{k}")).or_else(|| r.get(k)).and_then(Value::as_str).unwrap_or_default().to_string();
+    let (recordings, transcripts) = (of("Recording"), of("TranscriptV2"));
+    // Whether you can open what the meeting has (Teams' ot.t): none of
+    // its recordings and transcripts for you, a recording, or only a
+    // transcript.
+    let refused = |v: &[&Value]| v.iter().all(|r| r.get("hasPermission").and_then(Value::as_bool) == Some(false));
+    let access = if (!recordings.is_empty() || !transcripts.is_empty()) && (transcripts.is_empty() || refused(&transcripts)) && (recordings.is_empty() || refused(&recordings)) {
+        "NoPermission"
+    } else if recordings.is_empty() && !transcripts.is_empty() {
+        "TranscriptOnly"
+    } else {
+        "Good"
+    };
+    let recording_list: Vec<Value> = recordings
+        .iter()
+        .map(|r| json!({ "driveId": meta(r, "driveId"), "itemId": meta(r, "driveItemId"), "url": r.get("location").and_then(Value::as_str).unwrap_or_default(),
+                         "hasPermission": r.get("hasPermission").cloned().unwrap_or(Value::Null) }))
+        .collect();
+    // Home's thumbnail (Teams' xn): the recording the catch-up names, else
+    // the first.
+    let (rd, ri) = (rec.and_then(|r| r["driveId"].as_str()).unwrap_or_default(), rec.and_then(|r| r["driveItemId"].as_str()).unwrap_or_default());
+    let thumb = recording_list
+        .iter()
+        .find(|r| !ri.is_empty() && r["itemId"] == ri && (rd.is_empty() || r["driveId"] == rd))
+        .or_else(|| recording_list.first())
+        .cloned()
+        .unwrap_or(Value::Null);
     Some(json!({
         "threadId": s("/threadId"),
         // The meeting's calendar event (Teams' node id).
@@ -113,7 +148,50 @@ pub fn row_from(m: &Value) -> Option<Value> {
         "catchUp": rec.is_some(),
         "actionItemCount": count("actionItemCount"),
         "mentionEventCount": count("mentionEventCount"),
+        // Home's row (Teams' Recap Home V2): what the catch-up found (its
+        // tasks, your mentions, who spoke, why it's recommended), the
+        // recordings, the thumbnail's recording, whether you can open the
+        // recap, the meeting's files (its notes, stage and chat files).
+        "actionItems": list("actionItems"),
+        "mentions": list("atMentionEvents"),
+        "speakers": list("speakers"),
+        "reasons": list("recommendationReasons"),
+        "recapFile": rec.map(|r| json!({ "driveId": r["driveId"].as_str().unwrap_or_default(), "itemId": r["driveItemId"].as_str().unwrap_or_default(), "url": r["url"].as_str().unwrap_or_default() })).unwrap_or(Value::Null),
+        "recordings": recording_list,
+        "thumb": thumb,
+        "access": access,
+        "attendanceStatus": s("/attendanceStatus"),
+        "files": if access == "NoPermission" { Vec::new() } else { meeting_files(m) },
     }))
+}
+
+/// A meeting's files for Home's files chip (Teams' worker `le`): its
+/// MeetingChat, MeetingStage and Notes resources that have an id, a type
+/// and an address, once each.
+pub fn meeting_files(m: &Value) -> Vec<Value> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for r in m.get("resources").and_then(Value::as_array).into_iter().flatten() {
+        let ty = r.get("type").and_then(Value::as_str).unwrap_or_default();
+        if !matches!(ty.to_ascii_lowercase().as_str(), "meetingchat" | "meetingstage" | "notes") {
+            continue;
+        }
+        let g = |k: &str| r.get(k).or_else(|| r.pointer(&format!("/metadata/{k}"))).and_then(Value::as_str).unwrap_or_default().to_string();
+        let location = [g("location"), g("objectUrl"), g("shareUrl")].into_iter().find(|s| !s.is_empty()).unwrap_or_default();
+        // (The service leaves a note's id empty; Teams then has its
+        // mcoResourceId, as seen on winpc.)
+        let id = [g("id"), g("mcoResourceId")].into_iter().find(|s| !s.is_empty()).unwrap_or_default();
+        if id.is_empty() || location.is_empty() {
+            continue;
+        }
+        let key = [g("fileId"), g("listItemUniqueId"), g("objectUrl"), location.clone(), id.clone()].into_iter().find(|s| !s.is_empty()).unwrap_or_default().to_lowercase();
+        if !seen.insert(key) {
+            continue;
+        }
+        let ty = if ty.eq_ignore_ascii_case("notes") { "Notes" } else if ty.eq_ignore_ascii_case("meetingstage") { "MeetingStage" } else if ty.eq_ignore_ascii_case("meetingchat") { "MeetingChat" } else { ty };
+        out.push(json!({ "id": id, "type": ty, "location": location, "fileType": g("fileType"), "fileTitle": g("fileTitle"), "fileId": g("fileId"), "webUrl": g("webUrl") }));
+    }
+    out
 }
 
 /// Home's rows of a contents reply as it came (no catch-up merged).
@@ -199,10 +277,72 @@ pub fn recommendation_threads(v: &Value) -> Vec<Value> {
                 "eventId": g("/MeetingId"), "subject": g("/MeetingSubject"),
                 "start": { "dateTime": g("/MeetingStartTime"), "timeZone": "UTC" }, "end": { "dateTime": g("/MeetingEndTime"), "timeZone": "UTC" },
                 "organizer": { "emailAddress": { "name": g("/Organizer/DisplayName"), "address": "" }, "objectId": g("/MeetingRecording/OrganizerId") },
-                "recommendationData": { "actionItemCount": n("ActionItems"), "mentionEventCount": n("MentionEvents"), "driveId": g("/DriveId"), "driveItemId": g("/DriveItemId") },
+                "recommendationData": { "actionItemCount": n("ActionItems"), "mentionEventCount": n("MentionEvents"), "driveId": g("/DriveId"), "driveItemId": g("/DriveItemId"),
+                    "url": g("/Url"),
+                    "recommendationReasons": s.get("RecommendationsReasonList").and_then(Value::as_array).into_iter().flatten().filter_map(|r| r["Type"].as_str()).map(reason_key).collect::<Vec<_>>(),
+                    "actionItems": action_items(s.pointer("/PointsOfInterest/ActionItems")),
+                    "atMentionEvents": mention_events(s.pointer("/PointsOfInterest/MentionEvents")),
+                    "speakers": s.get("Speakers").and_then(Value::as_array).into_iter().flatten().map(|p| json!({
+                        "displayName": p["DisplayName"].as_str().unwrap_or_default(), "objectId": p["ObjectId"].as_str().unwrap_or_default(), "tenantId": p["TenantId"].as_str().unwrap_or_default(),
+                    })).collect::<Vec<_>>() },
             },
             "resources": resources,
         })
+    }).collect()
+}
+
+/// A recommendation reason as Teams' list compares it ("Attended" →
+/// ATTENDED, "MissedMeeting" → MISSED_MEETING; seen on winpc 2026-11-23).
+fn reason_key(t: &str) -> String {
+    let mut out = String::new();
+    for (i, c) in t.chars().enumerate() {
+        if c.is_ascii_uppercase() && i > 0 && !out.ends_with('_') {
+            out.push('_');
+        }
+        out.push(if c == ' ' || c == '-' { '_' } else { c.to_ascii_uppercase() });
+    }
+    out
+}
+
+/// A recommendation's tasks as Teams keeps them (its `i`: Headline as the
+/// title, DisplayCleanContent, OwnerDisplayName as the owner).
+fn action_items(v: Option<&Value>) -> Vec<Value> {
+    v.and_then(Value::as_array).into_iter().flatten().map(|d| {
+        let s = |k: &str| d[k].as_str().unwrap_or_default();
+        json!({ "actionItemTitle": s("Headline"), "displayCleanContent": s("DisplayCleanContent"), "ownerName": s("OwnerDisplayName"), "language": s("Language") })
+    }).collect()
+}
+
+/// A recommendation's mentions of you as Teams keeps them (its `p`): who
+/// spoke, when, and the words with your name in them (the Snippet when it
+/// has one, the name found in it again).
+fn mention_events(v: Option<&Value>) -> Vec<Value> {
+    v.and_then(Value::as_array).into_iter().flatten().map(|e| {
+        let s = |k: &str| e[k].as_str().unwrap_or_default().to_string();
+        let num = |k: &str| e[k].as_i64().or_else(|| e[k].as_str().and_then(|x| x.parse().ok()));
+        let mut text = s("UtteranceFromTranscript");
+        let mut at = num("MentionOffsetInUtterance").unwrap_or(-1);
+        let len = num("NameLength").unwrap_or(-1);
+        let chars: Vec<char> = text.chars().collect();
+        let ok = len > 0 && !text.is_empty() && at >= 0 && (at as usize) < chars.len();
+        if !ok {
+            at = -1;
+        }
+        let snippet = s("Snippet");
+        if !snippet.is_empty() {
+            if ok {
+                let name: String = chars.iter().skip(at as usize).take(len as usize).collect();
+                let cap = name.chars().next().map(|c| c.to_uppercase().collect::<String>() + &name[c.len_utf8()..]).unwrap_or_default();
+                let found = snippet.find(&name).or_else(|| if name.is_empty() { None } else { snippet.find(&cap) });
+                if let Some(b) = found {
+                    at = snippet[..b].chars().count() as i64;
+                }
+            }
+            text = snippet;
+        }
+        let when = if s("EventDateTime").is_empty() { s("EventDateTimeUtc") } else { s("EventDateTime") };
+        json!({ "dateTimeUtc": when, "mentionedByUserId": s("SpeakerObjectId"), "mentionedByUserDisplayName": s("SpeakerName"),
+                "utteranceContainingTheMention": text, "mentionOffsetInUtterance": at, "nameLength": len, "language": s("Language") })
     }).collect()
 }
 
@@ -1371,6 +1511,54 @@ mod tests {
         // No catch-up: the artifacts as they are, without counts.
         let rows = day_rows(Some(&json!({"value": [json!({"threadInfo": {"iCalUid": "abc", "eventId": "ev1"}, "resources": [{"type": "TranscriptV2"}]})]})), None);
         assert_eq!(rows[0]["actionItemCount"], 0);
+    }
+
+    #[test]
+    fn home_rows_as_teams() {
+        // A day's recommendation with its tasks, a mention and a speaker
+        // (the fields Teams' catch-up reply has), and the meeting's
+        // artifacts: two recordings, a transcript and its notes twice.
+        let v = json!({"EntitySets": [{"ResultSets": [{"Results": [{"Source": {
+            "MeetingId": "ev1", "MeetingSubject": "OST TEST 240 recap meeting", "MeetingStartTime": "2026-11-21T04:23:00Z", "MeetingEndTime": "2026-11-21T05:02:00Z",
+            "MeetingRecording": {"TeamsThreadId": "19:meeting_a@thread.v2", "ICalUid": "ABC"}, "DriveId": "b!d", "DriveItemId": "rec2", "Url": "https://x/r",
+            "RecommendationsReasonList": [{"Type": "Attended"}, {"Type": "MissedMeeting"}],
+            "Speakers": [{"DisplayName": "OST Test 3", "ObjectId": "01c4", "TenantId": "t"}, {"DisplayName": "", "ObjectId": "x"}],
+            "PointsOfInterest": {
+                "ActionItems": [{"Headline": "Q2 Budget Review", "DisplayCleanContent": "Check the second-quarter budget numbers.", "OwnerDisplayName": "OST Test 1"}],
+                "MentionEvents": [{"SpeakerName": "OST Test 3", "SpeakerObjectId": "01c4", "EventDateTime": "2026-11-21T04:30:00Z",
+                                   "UtteranceFromTranscript": "thanks ost for the plan", "MentionOffsetInUtterance": 7, "NameLength": 3, "Snippet": "Thanks OST for the plan."}]}}}]}]}]});
+        let note = json!({"type": "notes", "id": "", "mcoResourceId": "n1", "location": "https://x/:fl:/p/u/abc", "metadata": {"state": "Enabled"}});
+        let artifact = json!({"threadInfo": {"threadId": "19:meeting_a@thread.v2", "iCalUid": "abc", "eventId": "ev1", "subject": "OST TEST 240 recap meeting",
+            "start": {"dateTime": "2026-11-21T04:23:00.0000000"}, "end": {"dateTime": "2026-11-21T05:02:00.0000000"}},
+            "resources": [{"type": "Recording", "location": "https://x/v1", "hasPermission": true, "metadata": {"driveId": "b!d", "driveItemId": "rec1"}},
+                          {"type": "Recording", "location": "https://x/v2", "hasPermission": true, "metadata": {"driveId": "b!d", "driveItemId": "rec2"}},
+                          {"type": "TranscriptV2", "location": "https://x/transcripts/t1/content"}, note.clone(), note,
+                          {"type": "MeetingChat", "id": "", "location": "https://x/nofile"}]});
+        let rows = day_rows(Some(&json!({"value": [artifact.clone()]})), Some(&v));
+        let r = &rows[0];
+        assert_eq!(r["actionItems"][0]["actionItemTitle"], "Q2 Budget Review");
+        assert_eq!(r["actionItems"][0]["ownerName"], "OST Test 1");
+        // The mention's words are the snippet's, the name found in it again.
+        assert_eq!(r["mentions"][0]["utteranceContainingTheMention"], "Thanks OST for the plan.");
+        assert_eq!(r["mentions"][0]["mentionOffsetInUtterance"], 7);
+        assert_eq!(r["mentions"][0]["mentionedByUserDisplayName"], "OST Test 3");
+        assert_eq!(r["speakers"][0]["displayName"], "OST Test 3");
+        assert_eq!(r["reasons"][0], "ATTENDED");
+        assert_eq!(r["reasons"][1], "MISSED_MEETING");
+        // The thumbnail is the catch-up's recording; the notes once; a
+        // file without an id isn't listed.
+        assert_eq!(r["thumb"]["itemId"], "rec2");
+        assert_eq!(r["files"].as_array().map(Vec::len), Some(1));
+        assert_eq!(r["files"][0]["type"], "Notes");
+        assert_eq!(r["access"], "Good");
+        // Only a transcript; nothing you may open (and then no files).
+        let mut t = artifact.clone();
+        t["resources"] = json!([{"type": "TranscriptV2", "location": "https://x/transcripts/t1/content"}]);
+        assert_eq!(row_from(&t).unwrap()["access"], "TranscriptOnly");
+        t["resources"] = json!([{"type": "TranscriptV2", "hasPermission": false, "location": "https://x/transcripts/t1/content"}, {"type": "Notes", "id": "n", "location": "https://x/n"}]);
+        let r = row_from(&t).unwrap();
+        assert_eq!(r["access"], "NoPermission");
+        assert_eq!(r["files"].as_array().map(Vec::len), Some(0));
     }
 
     #[test]
