@@ -361,14 +361,14 @@
 "The version wasn't deleted"		FileActions.qml:441	
 "The version wasn't restored"		FileActions.qml:441	
 "This Loop component is temporarily not available."		LoopCard.qml:181	
-"This app isn't available in OST yet."		Main.qml:15499	
+"This app isn't available in OST yet."		Main.qml:15509	
 "This camera has no settings to change."		CameraSettingsDialog.qml:64	
 "This file can't be opened"		FileViewer.qml:40	
 "This file has not been shared with a group yet."		OneDriveShare.qml:798	
 "This page is temporarily not available."		ChannelPageTab.qml:133	
 "This will turn off Interpreter for everyone."		CallWindow.qml:1057	
 "Thumbnail Preview"		FileCard.qml:148	
-"Today %1"		Main.qml:16532	
+"Today %1"		Main.qml:16542	
 "Todo"		CalendarView.qml:266	
 "Transcriptions of Teams meetings are retained by default for 90 days unless manually deleted earlier by the meeting organizer. The generated audio recap is exclusively accessible to you and will expire after 60 days. You can manage your audio recaps in OneDrive, where you have the option to delete any audio recap that is no longer needed. Please note that once an audio recap is deleted from OneDrive, it will no longer be available on your Teams audio recap listing page."		MeetingRecapsView.qml:1383	
 "Transfer to %1"		CallWindow.qml:5258 CallWindow.qml:5332	
