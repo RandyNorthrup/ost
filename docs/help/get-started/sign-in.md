@@ -8,13 +8,14 @@ description: Use your work or school account.
 OST signs in with your Microsoft work or school account, the same account
 you use for Teams.
 
-1. Start OST. If it isn't signed in yet, it shows a code and the address
-   **microsoft.com/devicelogin**.
-2. Open that address in any browser, on this computer or another one.
-3. Enter the code, then sign in with your account (and its second step,
-   if your organisation uses one).
-4. OST finishes signing in on its own. It keeps you signed in, storing its
-   sign-in in your system's keyring.
+1. Start OST. If it isn't signed in yet, it shows Microsoft's sign-in page
+   in its window.
+2. Pick your account, or select **Use another account** and sign in with
+   your e-mail address and password.
+3. Complete your organisation's second step, if it uses one.
+4. OST opens and keeps you signed in, storing its sign-in in your system's
+   keyring.
 
-To use another account, sign out from your picture in the top-right corner
+To add another account, select your picture in the top-right corner, then
+**Add another account**. To use a different account instead, sign out there
 and sign in again.

@@ -1,273 +1,231 @@
 <p align="center"><img src="docs/banner.png" alt="OST banner: the OST logo and a mouse whose body is a computer mouse, with a USB cable for a tail, sniffing a wedge of cheese" width="100%"></p>
 
-# OST client := Open Source Teams client
+# OST
 
-A command-line client for Microsoft Teams written in Rust.
+**OST is a native Linux clone of the Microsoft Teams desktop app for
+Windows.** It looks and works like Teams, one to one: the same app bar,
+chat list, conversations, channels, calendar, call and meeting windows,
+settings and dialogs, measured from Teams itself. Only the name and the
+logo differ. It is written in Rust with a Qt Quick interface, has its own
+calling and media engine, and also includes the original terminal client,
+`teams-cli`.
+
+OST is an independent open-source project. It is **not affiliated with,
+endorsed by or supported by Microsoft.** You sign in with your own Microsoft
+work or school account.
 
 *Ost* means cheese in Danish.
 
-![TUI Screenshot](docs/tui-screenshot.svg)
+![OST: a group chat with formatting, a file, reactions and a code block](docs/screenshots/chat.png)
+
+**Documentation:** the [OST wiki](https://github.com/RandyNorthrup/ost/wiki)
+has installation, a feature tour with screenshots, configuration,
+troubleshooting and the list of differences from Teams.
 
 ## Features
 
-- **TUI**: Interactive terminal interface with teams, channels, chats, and per-user message colors
-- **Authentication**: OAuth2 device code flow for work/school and personal accounts
-- **Messaging**: List chats, read messages, send messages (stable)
-- **Teams**: List joined teams and channels (stable)
-- **Real-time**: WebSocket connection for push notifications (Trouter)
-- **Calling**: Audio and video calls with RTP/SRTP media
-- **Audio** (optional): Microphone capture and speaker playback (working)
-- **Video** (optional): Camera capture via V4L2 and SDL2 display (WIP)
+- **Chat:** 1:1, group and meeting chats with Teams' formatting, code
+  blocks, emoji, GIFs, reactions, files from your computer or OneDrive,
+  Loop components, video clips, scheduled messages, @mentions, read
+  receipts, drafts, find in chat and search.
+- **Teams and channels:** posts and threads layouts, replies, announcements,
+  channel tabs (Shared, Page, Notes, apps), shared and private channels,
+  managing teams and channels.
+- **Activity:** Teams' activity feed, live and synced with Teams.
+- **Calendar:** day, work week, week and month views, event cards and pages,
+  RSVP, Teams' scheduling form, Meet now and Join with an ID.
+- **Calls and meetings:** 1:1 and group calls, meetings with video and
+  background effects, screen and window sharing, raise hand, reactions,
+  live captions, recording and transcripts, breakout rooms, town halls and
+  webinars, hold, transfer and park, voicemail, recaps.
+- **Files:** OneDrive (Home, My files, Shared, Libraries, Recycle bin),
+  channel files, previews, sharing, and Teams' cloud file picker.
+- **Apps:** Teams' app bar and Store; People, Events and Meeting Recaps drawn
+  natively; Planner, OneNote, Whiteboard, Copilot and other apps hosted as
+  Teams hosts them.
+- **Settings, notifications, presence:** Teams' Settings pages synced with
+  your account, Teams' notification banners with quick reply, status and
+  status messages, light, dark and high-contrast themes, Teams' keyboard
+  shortcuts (Ctrl+. lists them), built-in Help (F1).
+- **Room mode:** run OST as a Teams Rooms device.
+- **Translations:** every Teams app language, with Teams' own strings
+  downloaded on first use (none of Microsoft's translations are in this
+  repository).
 
-## Status
+<table>
+  <tr>
+    <td><img src="docs/screenshots/meeting.png" alt="A meeting with video, a raised hand and the People pane"></td>
+    <td><img src="docs/screenshots/calendar.png" alt="The calendar's work week view"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/channel.png" alt="A channel post with replies"></td>
+    <td><img src="docs/screenshots/activity-dark.png" alt="Activity and a chat in the dark theme"></td>
+  </tr>
+</table>
 
-| Feature | Status |
-|---------|--------|
-| TUI | Working |
-| Authentication | Stable |
-| Chat / Messaging | Stable |
-| Teams / Channels | Stable |
-| Trouter (push) | Stable |
-| Audio calls | Working |
-| Video calls | WIP - may cause audio issues |
+What OST knowingly does differently from Teams (Linux-specific sign-in, the
+desktop's screen-share picker, feedback going to GitHub, no telemetry and
+so on) is listed in
+[Differences from Teams](https://github.com/RandyNorthrup/ost/wiki/Differences-from-Teams).
 
-**Note**: Video support is work-in-progress. Building with `--features video-capture` may interfere with audio functionality. For reliable audio calls, use `--features audio` only.
+## Install
 
-## Requirements
-
-- Rust 1.70+ (some dependencies are pinned for compatibility with older rustc versions)
-- Linux (for audio/video features)
-- Nix (recommended) or manual dependency installation
-- [just](https://github.com/casey/just) command runner (optional, for convenience recipes)
-
-### Dependencies
-
-- **Audio**: ALSA development libraries
-- **Video**: V4L2, SDL2, OpenH264
-
-## Installation
-
-### Using Nix (recommended)
-
-The `shell.nix` provides all required dependencies. The `just` command runner executes recipes from the `Justfile`.
+Download `ost-<version>-linux-x86_64.tar.gz` and `SHA256SUMS` from the
+[latest release](https://github.com/RandyNorthrup/ost/releases/latest), then:
 
 ```bash
-nix-shell
-just build
+sha256sum -c SHA256SUMS
+tar xf ost-*-linux-x86_64.tar.gz
+cd ost-*-linux-x86_64
+sh packaging/install-user.sh ./ost-desktop   # ~/.local/bin, menu entry and icon
+ost-desktop
 ```
 
-### Manual
+The release binaries are built on **Ubuntu 26.04** and need its libraries or
+newer compatible ones: glibc 2.43, Qt 6.10 (Qt Quick, Quick Controls, Shapes,
+Effects, Dialogs, SVG, Multimedia and WebEngine), FFmpeg 8, ALSA, OpenSSL,
+WebRTC audio processing (`webrtc-audio-processing-1`), PipeWire with
+WirePlumber, a Secret Service keyring (GNOME Keyring or KWallet), and
+xdg-desktop-portal with your desktop's backend for screen sharing;
+`layer-shell-qt` is optional (Teams-style banners on Wayland). The
+[Installation](https://github.com/RandyNorthrup/ost/wiki/Installation) page
+has the Ubuntu package list. On other distributions (Arch Linux, for
+example, which has FFmpeg 9) build from source as below.
 
-Install dependencies, then:
+On first start OST shows Microsoft's sign-in page; sign in with your work or
+school account. Settings ▸ About OST checks GitHub for newer releases.
+
+**Bluetooth headsets:** mute works out of the box. Answering and ending
+calls with the headset's button needs a one-time PipeWire setup:
+`sh packaging/install-hfp-calls.sh` (it asks before changing anything that
+needs `sudo`; `--uninstall` undoes it). See
+[Bluetooth headsets](https://github.com/RandyNorthrup/ost/wiki/Bluetooth-headsets).
+
+## Build from source
+
+Requirements: Rust stable (edition 2024), Qt 6.9 or newer with Qt Quick,
+Quick Controls, Multimedia, WebEngine and the shader tools, a C++ compiler,
+CMake, FFmpeg's development libraries, the ALSA and PipeWire development
+files, clang, NASM, pkg-config, and the OpenSSL and WebRTC audio
+processing (`webrtc-audio-processing-1`) development files.
 
 ```bash
-cargo build
+# Arch
+sudo pacman -S qt6-base qt6-declarative qt6-svg qt6-multimedia qt6-webengine qt6-shadertools ffmpeg alsa-lib cmake nasm \
+  pipewire clang xdg-desktop-portal openssl webrtc-audio-processing-1 pkgconf
+# Debian / Ubuntu
+sudo apt install qt6-base-dev qt6-declarative-dev qml6-module-qtquick-controls \
+  qml6-module-qtquick-window qml6-module-qtquick-shapes qml6-module-qtquick-effects qml6-module-qtquick-dialogs libqt6svg6 qml6-module-qtmultimedia qt6-webengine-dev qml6-module-qtwebengine qt6-shader-baker \
+  libavfilter-dev libavformat-dev libavcodec-dev libavutil-dev libswscale-dev \
+  libasound2-dev cmake nasm libpipewire-0.3-dev clang xdg-desktop-portal \
+  libssl-dev libwebrtc-audio-processing-dev pkg-config
+
+cargo build --release -p ost-desktop       # target/release/ost-desktop
+desktop/packaging/install-user.sh          # installs target/release/ost-desktop for your user
 ```
 
-For audio support:
-```bash
-cargo build --features audio
-```
+The C++ parts are heavy; on machines with little memory use
+`cargo build -j 2 --release -p ost-desktop`. More in
+[Building from source](https://github.com/RandyNorthrup/ost/wiki/Building-from-source)
+and [docs/desktop.md](docs/desktop.md).
 
-For video support:
-```bash
-cargo build --features video-capture
-```
+## Terminal client
 
-For full A/V support:
-```bash
-cargo build --features "audio,video-capture"
-```
+`teams-cli` is OST's terminal client: a full-screen terminal interface for
+teams, channels and chats, plus commands for scripts. It shares the engine,
+account profiles and sign-in storage with the desktop app.
 
-## Desktop app
-
-`ost-desktop` is a native Qt 6 client laid out and behaving like the
-Teams desktop app: chats, channels, activity, 1:1 calls, calendar,
-presence and notifications. Build it with
-`cargo build --release -p ost-desktop` (Qt 6.8+ and CMake needed), install
-it with `desktop/packaging/install-user.sh`. See
-[docs/desktop.md](docs/desktop.md) for features, requirements,
-environment variables, keyboard shortcuts and the built-in test harness.
-
-## Usage
-
-### TUI (Terminal User Interface)
-
-Launch the interactive TUI for browsing teams, channels, and chats:
+![The terminal client](docs/screenshots/tui.png)
 
 ```bash
-teams-cli tui
-```
-
-### Authentication
-
-Login with device code flow:
-
-```bash
-teams-cli login
-```
-
-Force re-authentication (ignores cached token):
-
-```bash
-teams-cli login --force
-```
-
-Check authentication status:
-
-```bash
-teams-cli status
-teams-cli whoami
-```
-
-### Messaging
-
-List recent chats:
-
-```bash
-teams-cli chats
-```
-
-Read messages from a chat:
-
-```bash
+cargo build --release --bin teams-cli                    # or --features audio for calls with sound
+teams-cli login            # device-code sign-in (skipped when already signed in)
+teams-cli tui              # the terminal interface (? for its keys)
+teams-cli chats            # recent chats and their ids
 teams-cli read <chat-id> --limit 20
+teams-cli send --to <chat-id> "Hello from the terminal"
+teams-cli teams            # teams and channels
+teams-cli presence --set busy
+teams-cli call-test --echo --duration 20                 # test call with Teams' echo bot
 ```
 
-Send a message:
-
-```bash
-teams-cli send --to <chat-id> "Hello from CLI!"
-```
-
-### Teams
-
-List joined teams and channels:
-
-```bash
-teams-cli teams
-```
-
-### Real-time Notifications
-
-Connect to Trouter for push notifications:
-
-```bash
-teams-cli trouter
-```
-
-### Calling
-
-Test microphone (requires `--features audio`):
-
-```bash
-teams-cli mic-test
-```
-
-Test camera (requires `--features video-capture`):
-
-```bash
-teams-cli cam-test
-```
-
-Place a test call to Echo bot:
-
-```bash
-teams-cli call-test --echo --duration 20
-```
-
-## CLI Reference
+`teams-cli --help` lists every command:
 
 ```
-teams-cli [OPTIONS] <COMMAND>
-
-Options:
-  -v, --verbose  Enable debug logging
-
-Commands:
-  login      OAuth2 device code authentication
-             --force    Force re-login even if cached token exists
-  logout     Clear stored credentials
-  status     Show token expiry status
-  whoami     Verify authentication
-  chats      List recent chats
-             --limit N  Number of chats to show
-  read       Read messages from a chat
-             --limit N  Number of messages to show
-  send       Send a message
-             --to ID    Chat ID to send to
-  teams      List joined teams and channels
-  tui        Launch interactive terminal user interface
-  presence   Get/set presence status
-  trouter    Connect to push notification service
-  call-test  Place a test call
-             --echo       Call the Echo bot (call quality tester)
-             --duration N Call duration in seconds (default: 30)
-             --thread ID  1:1 chat thread ID to call
-             --record     Enable call recording
-             --camera     Enable camera capture (video-capture feature)
-             --display    Enable video display window (video-capture feature)
-             --tone       Use test tone instead of microphone
-  mic-test   Test microphone (audio feature)
-  cam-test   Test camera (video-capture feature)
+login      Authenticate with Microsoft Teams (--force to sign in again)
+logout     Log out and clear cached credentials
+status     Show current authentication status
+chats      List recent chats (--limit N, default 20)
+read       Read messages from a chat (<chat-id>, --limit N)
+send       Send a message (--to <chat-id> <message>)
+teams      List joined teams and their channels
+whoami     Show current user info (verify auth works)
+trouter    Connect to Trouter WebSocket push service
+presence   Get/set presence status (--set available|busy|dnd|away|offline)
+call-test  Place a test call (--echo, --thread <id>, --duration N (default 15),
+           --record, --tone, --camera, --display)
+mic-test   Test microphone capture (builds with the audio feature)
+cam-test   Test camera capture (builds with the video-capture feature)
+tui        Launch the terminal user interface
 ```
 
-## Testing
-
-### Unit Tests
-
-Run the test suite:
-
-```bash
-just test
-# or
-cargo test
-```
-
-### End-to-End Tests
-
-E2E tests require a valid login session. Run all e2e tests:
-
-```bash
-just e2e
-```
-
-Individual e2e tests:
-
-| Test | Description |
-|------|-------------|
-| `tests/e2e_trouter.sh` | Trouter WebSocket connection |
-| `tests/e2e_chats.sh` | Chat listing |
-| `tests/e2e_read.sh` | Message reading |
-| `tests/e2e_teams.sh` | Teams/channels listing |
-| `tests/e2e_echo123.sh` | Echo bot call test |
-
-### Quality Checks
-
-```bash
-just check    # Run fmt-check, lint, and compile tests
-just lint     # Run clippy lints
-just fmt      # Format code
-```
+See [Terminal client](https://github.com/RandyNorthrup/ost/wiki/Terminal-client).
 
 ## Configuration
 
-Tokens are stored in the desktop keyring (Secret Service, e.g. GNOME Keyring or KWallet), so `~/.config/teams-cli/config.toml` holds only non-secret settings. Without a keyring (or with `OST_NO_KEYRING=1`), tokens are written to that file, created owner-only (0600).
+Settings live in OST's Settings (Ctrl+,). On disk: `~/.config/ost/desktop.json`
+(this computer's settings), `~/.config/teams-cli/config.toml` (account
+settings, no secrets), the log in `~/.local/state/ost/ost-desktop.log`, and
+caches under `~/.cache/ost/`. Sign-in tokens are kept in the system keyring
+(Secret Service); without one, or with `OST_NO_KEYRING=1`, they go to
+`config.toml`, readable only by you. `OST_PROFILE=<name>` runs another
+account. All files and environment variables:
+[Configuration](https://github.com/RandyNorthrup/ost/wiki/Configuration).
+
+## Testing
+
+```bash
+cargo test --workspace     # unit tests: engine, desktop backend, video effects
+just check                 # rustfmt check, clippy, and compile the tests
+just e2e                   # terminal client end-to-end tests (needs a signed-in test account)
+```
+
+The desktop app is also its own end-to-end test driver: given a PNG path and
+a test flag it drives itself against the signed-in account, captures
+pictures and quits. Use a test account; these tests send real messages and
+schedule real meetings. The flags are listed in
+[docs/desktop.md](docs/desktop.md#test-harness).
 
 ## Documentation
 
-- [Architecture Diagrams](docs/architecture.md) - Visual diagrams of authentication, messaging, calling, and media flows
-- [Terminology Index](docs/terminology_index.md) - Glossary of protocols and terms (RTP, SRTP, ICE, SDP, etc.)
-- [GUIDs Reference](docs/GUIDs.md) - Known Microsoft GUIDs (OAuth client IDs, tenant IDs, SEI UUIDs, bot MRIs)
+- [OST wiki](https://github.com/RandyNorthrup/ost/wiki): installation, feature tour, configuration, troubleshooting, FAQ
+- [docs/desktop.md](docs/desktop.md): the desktop app's features, environment variables, keyboard shortcuts and test harness
+- [docs/spec](docs/spec): measured specifications of the Teams surfaces OST follows
+- [docs/help](docs/help): the built-in Help articles
+- [docs/architecture.md](docs/architecture.md), [docs/terminology_index.md](docs/terminology_index.md), [docs/GUIDs.md](docs/GUIDs.md): protocols and the engine
+
+## Feedback and privacy
+
+In OST, Settings and more ▸ Feedback (Report a problem, Give a compliment,
+Suggest a feature) opens a pre-filled public issue or discussion on this
+repository, which you review and submit yourself. OST has no telemetry and
+sends nothing to the project. See [SUPPORT.md](SUPPORT.md) and
+[PRIVACY.md](PRIVACY.md).
 
 ## License
 
-MIT License - see LICENSE file.
+MIT License, see [LICENSE](LICENSE). Third-party assets and their licences
+are listed in [desktop/assets/NOTICE.md](desktop/assets/NOTICE.md) and
+[desktop/THIRD-PARTY-NOTICES.md](desktop/THIRD-PARTY-NOTICES.md).
 
 ## Disclaimer
 
-This is an unofficial client. Use at your own risk. Not affiliated with Microsoft.
+OST is an unofficial client, provided as is; use it at your own risk and
+within your organization's policies. It is not affiliated with, endorsed by
+or supported by Microsoft. Microsoft, Microsoft Teams, Microsoft 365,
+OneDrive, Outlook, Loop and Copilot are trademarks of the Microsoft group of
+companies.
 
-## Related Projects
+## Related projects
 
-- [purple-teams](https://github.com/EionRobb/purple-teams/) - Teams plugin for libpurple (Pidgin, Finch, etc.)
+- [purple-teams](https://github.com/EionRobb/purple-teams/): Teams plugin for libpurple (Pidgin, Finch, etc.)

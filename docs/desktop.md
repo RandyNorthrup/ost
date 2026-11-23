@@ -146,8 +146,8 @@ Microsoft branding.
   posted for you. Suggest a feature opens the repo's Ideas discussions (see
   docs/spec/feedback-and-help.md).
 
-Not yet: video in meetings and in calls you place, screen sharing, raising hands and reactions in
-meetings, transfer, hold and the dial pad. Their buttons are shown disabled rather than hidden or faked.
+The [OST wiki](https://github.com/RandyNorthrup/ost/wiki) has a feature tour
+with screenshots, and lists what OST knowingly does differently from Teams.
 
 ## Build
 
@@ -157,17 +157,20 @@ Qt WebEngine (embedded apps), FFmpeg's libraries (editing recorded clips,
 playing video backgrounds), a C++ compiler and CMake (for CXX-Qt),
 the ALSA development files (calls), NASM (openh264, video), and the
 PipeWire development files plus clang (screen sharing; at run time an
-xdg-desktop-portal backend for your desktop).
+xdg-desktop-portal backend for your desktop), OpenSSL, the WebRTC audio
+processing library (`webrtc-audio-processing-1`, for echo cancellation and
+noise suppression in calls) and pkg-config.
 
 ```bash
 # Arch
 sudo pacman -S qt6-base qt6-declarative qt6-svg qt6-multimedia qt6-webengine qt6-shadertools ffmpeg alsa-lib cmake nasm \
-  pipewire clang xdg-desktop-portal
+  pipewire clang xdg-desktop-portal openssl webrtc-audio-processing-1 pkgconf
 # Debian / Ubuntu
 sudo apt install qt6-base-dev qt6-declarative-dev qml6-module-qtquick-controls \
   qml6-module-qtquick-window qml6-module-qtquick-shapes qml6-module-qtquick-effects qml6-module-qtquick-dialogs libqt6svg6 qml6-module-qtmultimedia qt6-webengine-dev qml6-module-qtwebengine qt6-shader-baker \
   libavfilter-dev libavformat-dev libavcodec-dev libavutil-dev libswscale-dev \
-  libasound2-dev cmake nasm libpipewire-0.3-dev clang xdg-desktop-portal
+  libasound2-dev cmake nasm libpipewire-0.3-dev clang xdg-desktop-portal \
+  libssl-dev libwebrtc-audio-processing-dev pkg-config
 
 cargo build --release -p ost-desktop
 ```
@@ -185,8 +188,9 @@ ost-desktop
 `ost-desktop --version` prints the version and `ost-desktop --help` the
 options; neither starts the app.
 
-The first start shows the sign-in page (Microsoft's device-code sign-in,
-the same as `teams-cli login`). Tokens are kept in the system keyring.
+The first start shows Microsoft's sign-in page in OST's window, as Teams on
+the web signs in (`teams-cli login` uses the device-code sign-in instead).
+Tokens are kept in the system keyring.
 
 Files OST keeps:
 
