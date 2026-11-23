@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-23T02:49:00Z'
+updated_date: '2026-11-23T04:04:00Z'
 labels:
   - desktop
 dependencies: []
@@ -21,7 +21,7 @@ What TASK-0209 left (docs/spec/events.md, docs/spec/call-and-meeting-window.md):
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Events' remaining pages, actions and pickers work as in Teams (publishing only to test accounts)
+- [x] #1 Events' remaining pages, actions and pickers work as in Teams (publishing only to test accounts)
 - [x] #2 Meeting Notes opens or makes the notes in every kind of meeting as Teams, and its ··· menu matches
 <!-- AC:END -->
 
@@ -134,4 +134,25 @@ What TASK-0209 left (docs/spec/events.md, docs/spec/call-and-meeting-window.md):
   - Select from OneDrive in OST: CloudPicker on Home with only the .mp4 (as Teams), Confirm / Cancel. A Home pick has no drive/item ids: the draft then 400'd; now resolved from the file's address (Graph shares) before the draft (retest pending).
   - Audio recap detail in OST for Teams' recap: chapters at Teams' times (Intro 00:00 … Outro 05:28), the meeting group with Recap, Meeting overview played (brand 600, pause glyph, "5m 23s left", 00:22 / 05:44), transcript 41 lines "Speaker 1 · 00:02" as Teams. Fixed on the way: Graph's download address (absent under $select), the transcript header's height, the total from the recap's own length (Teams 05:38).
   - OST's Generate dialog: week groups, Today/Yesterday subtitles, the 3-task chip on OST TEST 240, thumbnails. Open: the long meeting is listed by its chat's topic ("Recording of OST TEST 212 recap long is now available"); Teams lists calendar names (its AugLoop teams_recap_podcast_event_list); OST now asks the calendar by iCalUId (3 of 3 found) but the names still don't replace (debugging).
+
+- 2026-11-22 (meetK) finished:
+  - Select from OneDrive in OST, again: the Home pick's drive and item came from Graph shares, the draft saved (Draft, the town hall preview video), then "Generate new AI highlights?" (not confirmed).
+  - OST's own Generate audio recap for the long meeting: COMPLETED, 5 min 51 s, chapters Intro / Meeting overview / Contingency and accessibility funding / Permit ownership and timelines / Plot assignments and workshop planning / Launch date and local promotion / Timeline and volunteer risk mitigation / Accessible layout and compost placement / Two-week progress check, shown in OST's two panes. The meeting shows under the artifacts' subject "Recording of OST TEST 212 recap long is now available": its calendar item has that subject too (checked over Graph by iCalUId), so Teams' name comes from its AugLoop event list (teams_recap_podcast_event_list) — not built.
+  - Tests on linuxlt: 916 lib + 29 desktop pass. String ids regenerated.
+  - Cleanup: both test audio recaps deleted (Teams' and OST's; podcastCleanup now also takes "Recording of OST TEST …" meetings); "OST TEST 212 recap long" cancelled with --events-test=uninvite --events-unpin (Events unpinned again for ost-test1); OST Test 3's "Canceled: Recording of OST TEST 212 recap long is now available" removed (calclean now matches that form); ost-test1 had no Canceled: copy; both recordings (12:45 and the 16 s one) moved to ost-test1's OneDrive recycle bin; the fake mics, speaker sink and test camera were stopped after the call. Left in place: the highlights Loop file in Teams' SharePoint Embedded storage (users can't delete it), the meeting chats of the event and of "OST TEST 246 facilitator" (meeting chats stay), OST Test 3 signed in again on linuxlt.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Events' remaining pages, actions and pickers as Teams 26304, checked live against Teams on winpc with a 12-minute recorded and transcribed test event.
+
+Changes (this round):
+- Highlights: the event's session recording (GET events/{id}/sessions) as Teams' activeRecording; the first meeting recording picked and saved as a draft on a first visit, then generated (once per visit); picking another file saves its draft and asks "Generate new AI highlights?"; Publish with "Ready to publish highlights?" (600 wide, Preview email) sends POST …/sessions/{sid}/recordings with whole-millisecond duration and, for Recording + text highlights, the Loop component's ComponentSerializable.serialize() (new loop_host "serialize"); Teams' status bars (generating, generation error with Retry, draft event, publish alerts, publishing with Cancel publish, published with Expires and Extend for 60 days, failed, expired); Remove highlights / Cancel publish reset to a draft; Select from OneDrive opens OneDrive's picker (Home, .mp4/.mov, one file, Confirm), ids looked up over Graph shares when the pick lacks them; Teams' picker groups.
+- Audio recaps: Generate audio recap's rows grouped by week (accordion), Today / Yesterday subtitles, task and mention chips from the MeetingCatchUp recommendations, 84 x 48 recording thumbnails, "n/8 selected"; the finished recap's detail as Teams (header, Learn more and Delete, chapters grouped by meeting with Recap, transcript from the caption file with Speaker n · mm:ss, player with speed / ±10 s / chapter seek, "… left").
+- ConfirmDialog leading action; CloudPicker single / extensions / confirm label; harness --events-hl-odsp / -publish / -remove / --events-stay, --recaps-detail, --call-notes-subject / --call-notes-stay=<s>; cleanup flags match "Recording of OST TEST …".
+
+Tests: 916 lib + 29 desktop pass on linuxlt.
+
+Open: Generate audio recap's meeting list from the meeting artifacts (Teams uses its AugLoop event list, so names can differ and cancelled meetings with transcripts are missing); Listen on mobile and the New badge; Teams auto-plays a recap it just made.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@chatJ'
 created_date: '2026-11-22T22:44:00Z'
-updated_date: '2026-11-23T01:24:00Z'
+updated_date: '2026-11-23T03:28:00Z'
 labels:
   - desktop
   - messages
@@ -49,6 +49,12 @@ Found in TASK-0206: OST's posts-channel list draws no images in posts (Teams sho
   - Tests: 911 lib + 29 desktop pass.
 
 - 2026-11-22 (review on merge 9c31293c): AC1 and AC2 verified live. AC3 reopened: plan, Planner task, Schedule Meeting and reasoning were live; the Facilitator's agendaTimer and questionsList are built from Teams' code with unit tests only and still need live examples in a Facilitator meeting.
+
+- 2026-11-22 (meetK) Facilitator live, for AC3's agendaTimer / questionsList: a solo meeting "OST TEST 246 facilitator" made and joined by OST (ost-test1, linuxlt, --call-notes-test --call-notes-subject=… --call-notes-stay=1200); Teams on winpc (ost-test1) joined it ("Add this device", mic and camera off), More ▸ Facilitator ▸ "Start transcription to use Facilitator" ▸ Start ▸ English (US) ▸ Confirm: "Facilitator has been turned on and is taking notes." and its welcome ("Add agenda").
+  - "@Facilitator here's the agenda: Budget review 2 minutes, Permit timeline 2 minutes, Volunteer plan 1 minute. Please start the agenda timer." → "I'll start tracking this agenda now." with the three topics; the meeting's agenda timer started (Teams' strip: Budget review / Permit timeline / Volunteer plan / Open discussion 22:00, labels 12/600 truncated "B…", "P…"). OST's call window drew the same strip from the meeting's shared state at once (four segments, Open discussion 22:00), but without the topics' truncated labels in the short segments.
+  - "@Facilitator please track these open questions: …" → "I can't track open questions separately here."; "@Facilitator what questions have people asked in this meeting so far?" → a plain answer with a citation (Teams: a "1" chip; OST: "[1]").
+  - The Facilitator's messages carried only `reasoning` ODSL statements (OST's --see-more-test on the meeting chat: kinds manage_agenda.ingest_agenda / respond_directly, statements reasoning ×3): no agendaTimer and no questionsList command came, so those two renderers still have no live example in this tenant (the agent starts the agenda server-side instead of offering a Start-timer action). OST drew the chat as Teams (quotes, "Reasoned for n seconds", feedback).
+  - Teams turned Facilitator off again (More ▸ Facilitator: "Facilitator has been turned off", transcription stopped) and left; OST left (Leave): its log shows "MEETINGNOTES after" with no call. OST then deleted the meeting ("event still there false") and its notes ("OST TEST 246 facilitator.loop"). The organizer deleted it, so no "Canceled:" copy exists.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
