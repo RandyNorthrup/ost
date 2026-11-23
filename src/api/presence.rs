@@ -724,6 +724,12 @@ pub struct UserPresence {
     /// Where they work today (`workLocation.location`: "Office", "Remote"
     /// or "TimeOff"), or "".
     pub work_location: String,
+    /// How it was set (`workLocation.locationSource`): "VerifiedLocation"
+    /// (workplace check-in), "ForcedLocation" (set by hand),
+    /// "ScheduledLocation" (the work plan), or "".
+    pub work_location_source: String,
+    /// The building it names (`workLocation.approximateDetails.name`), or "".
+    pub work_location_building: String,
     /// When they were last active (`lastActiveTime`, ISO), or "".
     pub last_active: String,
     /// Out of office (`calendarData.isOutOfOffice`).
@@ -793,6 +799,12 @@ fn parse_presences(v: &serde_json::Value) -> Vec<UserPresence> {
                     .filter(|l| *l != "Unknown")
                     .unwrap_or_default()
                     .to_string(),
+                work_location_source: p.pointer("/workLocation/locationSource").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
+                work_location_building: p
+                    .pointer("/workLocation/approximateDetails/name")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
             })
         })
         .collect()
@@ -811,6 +823,22 @@ mod presence_tests {
         assert!(p.note_pinned);
         assert_eq!(p.note_text, "OST probe OST Test 1");
         assert!(p.note_html.contains("class=\"mention\"") && p.note_html.contains("OST Test 1"), "{}", p.note_html);
+    }
+
+    #[test]
+    fn reads_checked_in_work_locations() {
+        // Workplace check-in's shape (Teams' getWorkLocationFrom): Office,
+        // VerifiedLocation, the building in approximateDetails.
+        let v = serde_json::json!([{"mri": "8:orgid:a", "presence": {"availability": "Available", "workLocation": {
+            "location": "Office", "locationSource": "VerifiedLocation",
+            "approximateDetails": {"id": "a93350e7", "idType": "Directory", "name": "OST Test Building"}}}}]);
+        let p = &parse_presences(&v)[0];
+        assert_eq!(p.work_location, "Office");
+        assert_eq!(p.work_location_source, "VerifiedLocation");
+        assert_eq!(p.work_location_building, "OST Test Building");
+        let v = serde_json::json!([{"mri": "8:orgid:a", "presence": {"workLocation": {"location": "Remote"}}}]);
+        let p = &parse_presences(&v)[0];
+        assert_eq!((p.work_location_source.as_str(), p.work_location_building.as_str()), ("", ""));
     }
 
     #[test]

@@ -823,6 +823,26 @@ to buildings with `Add-WifiDevices` (MicrosoftPlaces module), 24–48 h to propa
 happens within your working hours. OST reads the network from NetworkManager over D-Bus
 (desktop/src/work_location.rs).
 
+Details read from Teams 26304's worker (WifiAutoLocationHelper, IC3LocationService):
+- The endpoint id is the presence endpoint's (else a new one); the allow-list GET adds
+  x-ms-client-os / x-ms-client-os-ver. The reply is `{SSIDList}`; it doesn't depend on those
+  headers (checked with linux, windows and mac values: same list).
+- Guests and anonymous users are skipped (USER_ROLE_NOT_ALLOWED). There is no client-side
+  working-hours check: the service applies your Outlook working hours.
+- Switch on: `PUT …/location/network` (above). Switch never set and the first-run banner not
+  seen (Ask mode): `GET …/location/wifiNetwork?bssid=…` instead, then Teams' first-run banner
+  (not built in OST).
+- Checking out on a non-office network only happens with ECS places.adlCheckout, a non-empty
+  SSID, and a work location that a check-in set (presence `workLocation.locationSource`
+  "VerifiedLocation"); OST follows that. Teams also has a wired-connection checkout tied to a
+  device's home building (not built).
+- A check-in's work location is `{location: "Office", locationSource: "VerifiedLocation",
+  approximateDetails: {id, idType: "Directory", name}}`. Teams' profile flyout then reads
+  "In <building>" ("Planned in <building>" for the work plan); OST does the same.
+- Live (2026-11-23, test tenant): with the BSSID mapped, the service answered 200 with the
+  building on most reports but 404 on about one in three, for the same access point and
+  endpoint.
+
 ## OST status
 
 - Built: the left pane and header, General (System, opening content, Out of office, keyboard

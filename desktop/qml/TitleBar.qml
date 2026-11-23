@@ -610,6 +610,8 @@ Rectangle {
     property string statusUntil: ""
     /// Where you work today ("Office", "Remote" or "").
     property string workLocation: ""
+    /// Its building and how it was set ({building, source}, JSON).
+    property string workLocationDetail: ""
     signal setWorkLocation(string location)
     signal pauseUntil(string iso)
     signal openNotificationSettings()
@@ -812,9 +814,16 @@ Rectangle {
             FlyoutRow {
                 id: workRow
                 readonly property string loc: root.workLocation
+                // A check-in's (or a building you picked) names its
+                // building: Teams' status string "In <building>", or
+                // "Planned in <building>" from the work plan.
+                readonly property var detail: { try { return JSON.parse(root.workLocationDetail || "{}") } catch (e) { return {} } }
+                readonly property string building: loc ? (detail.building || "") : ""
                 icon: loc === "Office" ? "building-checkmark-20-filled" : loc === "Remote" ? "home-20-filled" : "location-add-20"
                 iconColor: loc === "Office" || loc === "Remote" || workMenu.opened ? theme.brand : theme.textStrong
-                label: loc === "Office" ? qsTr("In the office") : loc === "Remote" ? qsTr("Working remotely") : qsTr("Set work location")
+                label: building && (detail.source === "VerifiedLocation" || detail.source === "ForcedLocation") ? qsTr("In %1").arg(building)
+                    : building && detail.source === "ScheduledLocation" ? qsTr("Planned in %1").arg(building)
+                    : loc === "Office" ? qsTr("In the office") : loc === "Remote" ? qsTr("Working remotely") : qsTr("Set work location")
                 active: workMenu.opened
                 onClicked: workMenu.opened ? workMenu.close() : workMenu.open()
                 Accessible.name: qsTr("Your current work location: %1").arg(label)

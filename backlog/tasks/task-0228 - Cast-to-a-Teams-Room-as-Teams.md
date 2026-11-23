@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-20T01:10:00Z'
-updated_date: '2026-11-20T15:35:00Z'
+updated_date: '2026-11-23T04:48:00Z'
 labels:
   - calls
 dependencies: []
@@ -57,4 +57,12 @@ Built so far: the Cast wizard (rooms with presence and nearby mark, meetings, co
 - 2026-11-20 winpc Bluetooth (linuxlt 3 ft away): linuxlt hci0 is the real Realtek radio (USB, HCI 5.1), not a virtual one; its room beacon was legacy ADV_NONCONN_IND, 0 dBm, non-resolvable random address, the same type and address kind as Windows' own Microsoft (0x0006) beacons that winpc does receive. Plain test adverts from linuxlt hci0 (OSTTEST non-connectable, OSTTESTC connectable on the public address) were heard by this PC but never by winpc's watcher (active scan, ssh session and interactive session alike). A Windows beacon nearby (2C:AC:1D:90:C7:85) reads -41 dBm at linuxlt and -82 dBm at winpc; an advert published from winpc (0xFFFF test data, status Started) was heard by neither linuxlt nor this PC. winpc's Intel AX201 Bluetooth (8087:0026, driver 23.40, LE/central/extended advertising supported) is on; its Wi-Fi side reads 99%. So winpc's Bluetooth radio path is about 40 dB down in both directions: an antenna/hardware problem, not a Windows setting or a beacon format. Teams on winpc can't list any room until that is fixed (antenna leads on the AX201, or a USB Bluetooth adapter). All winpc helpers, tasks and linuxlt test adverts removed.
 
 Built so far: the Cast wizard and Teams' cast flow; the room accepts and shows a cast window or PowerPoint Live (verified live with OST in room mode, including casting a window via the portal's restore token); the room's auto-exit matches Teams Rooms. Missing: Teams' own Cast to the room live on winpc — winpc's Bluetooth radio is about 40 dB weak in both directions (likely an antenna lead), so it never hears the room's beacon; needs the antenna reseated or a USB Bluetooth adapter.
+
+- 2026-11-22 (agent wifiM) winpc Bluetooth, software side (no hardware bought or moved):
+  - Driver: AX201 Bluetooth (USB 8087:0026) was on Intel 23.40.0.2 (Feb 2024); Windows Update offered no Bluetooth driver. Installed Intel's current package BT 24.80.0 (driver 24.80.0.2, ibtusb.sys 24.40.13.1; from downloadmirror.intel.com, SHA512 = Intel's page, Intel-signed), only the AX201 INF, with pnputil /add-driver /install (oem186.inf). Windows registered it but needs a reboot to load it ("pending system reboot"; restart-device refused). Not rebooted (no auto-logon, someone has to sign in at the console); it loads at winpc's next restart.
+  - Power saving: USB selective suspend for the radio turned off (Enum\USB\VID_8087&PID_0026\...\Device Parameters DeviceSelectiveSuspended 1 -> 0; applies at the same restart). The device has no "allow the computer to turn off" entry; the power plan's USB selective suspend is already off on AC.
+  - Coexistence: the AX201's Wi-Fi side is not connected (winpc is on Ethernet), so there is no Wi-Fi traffic competing with Bluetooth; the driver offers no Bluetooth collaboration setting (Wi-Fi transmit power already Highest).
+  - linuxlt beacon: the Realtek controller (hci0, HCI 5.1, extended advertising, LEAdvertisingManager CanSetTxPower, range -20..+22 reported) always selects 0 dBm for advertising: asked for +20 dBm through BlueZ TxPower it answered "TX power (selected): 0 dBm" (btmon). The advertising interval can be shortened from BlueZ's 1280 ms to 100 ms (MinInterval/MaxInterval).
+  - Measured from winpc (WinRT BLE watcher over ssh, active scan, 30 s): linuxlt test beacon (legacy ADV_NONCONN_IND, 0 dBm, 100 ms) heard 4 times out of ~300 at -104..-106 dBm (before: never heard at 1280 ms). For comparison the strongest other beacons at winpc read -84..-95 dBm. Teams lists a room only at -75 dBm or better: ~30 dB short, which a driver update is very unlikely to close.
+  - Left for the user: Teams' own Cast to the room on winpc needs a working radio near winpc (AX201 antenna leads reseated, or a USB Bluetooth adapter). Then run Settings and more > Cast on winpc with OST in room mode on linuxlt and compare with OST's Cast. Left in place: BT driver 24.80 pending restart and selective suspend off on winpc (to undo: roll back to oem150.inf 23.40.0.2 and set DeviceSelectiveSuspended 1).
 <!-- SECTION:NOTES:END -->

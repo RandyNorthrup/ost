@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-15T04:40:00Z'
-updated_date: '2026-11-21T19:20:00Z'
+updated_date: '2026-11-23T05:13:00Z'
 labels:
   - settings
   - presence
@@ -52,4 +52,14 @@ When the tenant's work-location detection policy is on (ECS places.enableWorkLoc
 - 2026-11-21 live check on linuxlt (ost-test1, Wi-Fi Condor Cave): OST turned detection on with the policy and switch, read the network from NetworkManager and asked the location service; the SSID allow list still came back empty ~30 min after the change (Places says up to 12 h for settings, 24–48 h for BSSIDs), so it correctly treated the network as not an office network. Next check: once the list has "Condor Cave", run with RUST_LOG=warn,ost_desktop::work_location=info and --setf-test --setf-worklocation during ost-test1's working hours (Mon–Fri 8–5 PT); expect "WORKLOC network change: Building { name: OST Test Building }" and the work location in the profile flyout.
 
 - 2026-11-21 (agent setH) re-checked ~10 h after the Places Wi-Fi change: GET {iC3LocationService}/v1/me/ssid-allowlist (examples/ic3_location, OST Test 2, who has the same work-location policy) still returns 0 entries. linuxlt is on Condor Cave (BSSID F4:92:BF:78:C4:67, the one mapped to OST Test Building), so the setting hasn't reached the location service yet (Places says up to 12 h for settings, 24–48 h for BSSIDs). Today is Saturday, outside ost-test1's working hours, so a check-in couldn't happen anyway. Next: a weekday 8–5 PT, once the list has 'Condor Cave'; run --setf-test --setf-worklocation with RUST_LOG=warn,ost_desktop::work_location=info.
+
+- 2026-11-23 (agent wifiM):
+  - Allow list: GET {iC3LocationService}/v1/me/ssid-allowlist now returns {"SSIDList":["Condor Cave"]} for ost-test1, ~33 h after the 11-21 setting. It was empty at ~10 h. Nothing in the tenant had been wrong: Get-PlacesSettings -Collection Presence shows WorkplaceWifiNetworkSSIDList Default "Condor Cave" (the 'Default:' prefix is the scope, not part of the value), and Get-PlaceDevice shows BSSID F4:92:BF:78:C4:67 -> OST Test Building. The reply doesn't depend on the client headers (x-ms-client-os linux/windows/mac and both client versions give the same list).
+  - Places settings (read only): Places.EnableBuildings, PlacesEnabled, PlacesFinderEnabled and Entitlement are all false. Microsoft's Set-PlacesSettings page says OID (group) scoping works only for PlacesFinderEnabled, and PlacesEnabled can no longer be set. So buildings can't be turned on for the test accounts alone, and they were left off (turning them on tenant-wide would change real users' work-location pickers). Workplace check-in is a Places "core" feature (Business Basic is enough).
+  - Tenant change: Entra security group "OST workplace check-in test" (8c63fcbc-9d15-4382-a013-171f0a4897da; ost-test1 and ost-test2) was created for scoped Places settings. It turned out not to be usable for that (see above).
+  - Graph Command Line Tools consent: Group.ReadWrite.All and User.Read.All, for Randy only, not org-wide.
+  - Working hours: ost-test1's Outlook working hours were Mon-Fri 08:00-17:00 Pacific Standard Time. Set temporarily to every day 00:00-23:59 PST (PATCH /me/mailboxSettings) for the Sunday test; to be put back at the end.
+  - Teams (26304 worker): there is no client-side working-hours check; the service applies the working hours. Teams checks out on a non-office network only with ECS places.adlCheckout (unset for ost-test1, so Teams doesn't check out), a non-empty SSID and a VerifiedLocation work location. Ask-mode first run uses GET .../location/wifiNetwork plus a banner (not built).
+  - Live on linuxlt (spatest, Condor Cave): OST turned detection on (policy, ECS enableAutoDetectPlaceWifi, switch Enabled), found Condor Cave on the list and reported the BSSID. The same report gives 200 {OST Test Building} most of the time but 404 about one time in three (6 tries with OST's endpoint: 4x 200, 2x 404). OST's own start-up reports happened to get 404 three times out of three. The service side is still settling.
+  - Even after 200s, the presence service (getpresence) showed no workLocation for ost-test1 (05:00-05:12 UTC, Sunday 21:00 PT). Either the working-hours change hasn't reached it yet, or a manual set/clear of the work location earlier today blocks check-ins for the rest of the day, as Microsoft documents.
 <!-- SECTION:NOTES:END -->

@@ -5,7 +5,9 @@
 //! the tenant's office networks (the SSID allow list, kept a day). On one
 //! of them the access point is reported and the location service checks
 //! you in (at its building, or "In the office"); on another network you
-//! are checked out. Teams reads Windows' WLAN API; OST reads the network
+//! are checked out where Teams does that (its adlCheckout flight, and only
+//! from a check-in's work location). Teams reads Windows' WLAN API; OST
+//! reads the network
 //! from NetworkManager over D-Bus. Wired connections are not used (Teams'
 //! workplace check-in is Wi-Fi only).
 
@@ -86,14 +88,13 @@ pub fn set_enabled(on: bool, runtime: &tokio::runtime::Runtime) {
 async fn watch() {
     let mut last: Option<Option<(String, String)>> = None;
     let mut allow: Option<(Instant, Vec<String>)> = None;
-    let mut checked_in = false;
     loop {
         if ENABLED.load(Ordering::SeqCst) {
             let now = current_wifi().await;
             if last.as_ref() != Some(&now) {
                 last = Some(now.clone());
                 if let Some((ssid, bssid)) = now {
-                    match process(&ssid, &bssid, &mut allow, &mut checked_in).await {
+                    match process(&ssid, &bssid, &mut allow).await {
                         Ok(r) => tracing::info!("WORKLOC network change: {r}"),
                         Err(e) => tracing::warn!("WORKLOC network change failed: {e:#}"),
                     }
@@ -108,7 +109,7 @@ async fn watch() {
     }
 }
 
-async fn process(ssid: &str, bssid: &str, allow: &mut Option<(Instant, Vec<String>)>, checked_in: &mut bool) -> anyhow::Result<String> {
+async fn process(ssid: &str, bssid: &str, allow: &mut Option<(Instant, Vec<String>)>) -> anyhow::Result<String> {
     let client = TeamsClient::new().await?;
     let epid = api::presence::changes().borrow().epid.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     // Teams keeps the tenant's list a day (DEFAULT_SSID_ALLOW_LIST_TTL).
@@ -117,10 +118,12 @@ async fn process(ssid: &str, bssid: &str, allow: &mut Option<(Instant, Vec<Strin
     }
     let list = &allow.as_ref().map(|(_, l)| l.clone()).unwrap_or_default();
     if !list.iter().any(|s| s == ssid) {
-        // Not an office network: check out if this app checked you in.
-        if *checked_in {
+        // Not an office network. Teams checks out (its processCheckout)
+        // only with the adlCheckout flight and only a work location a
+        // check-in set (presence locationSource VerifiedLocation).
+        let checkout = api::ecs::setting("places", "adlCheckout").and_then(|v| v.as_bool()).unwrap_or(false);
+        if checkout && !ssid.is_empty() && checked_in_now(&client).await {
             places::report_remote(&client, &epid).await?;
-            *checked_in = false;
             return Ok("checked out (not an office network)".into());
         }
         return Ok(format!("not an office network ({} listed)", list.len()));
@@ -128,6 +131,16 @@ async fn process(ssid: &str, bssid: &str, allow: &mut Option<(Instant, Vec<Strin
     let with_ssid = api::ecs::setting("places", "useSSIDForIC3LSNetworkApiRequest").and_then(|v| v.as_bool()).unwrap_or(false);
     let body = places::network_body(bssid, with_ssid.then_some(ssid), chrono::Utc::now());
     let r = places::report_network(&client, &epid, &body).await?;
-    *checked_in = !matches!(r, places::Detected::NotFound);
     Ok(format!("{r:?}"))
+}
+
+/// Whether your work location now is a check-in's (Teams'
+/// hasVerifiedLocationPresence).
+async fn checked_in_now(client: &TeamsClient) -> bool {
+    let Some(oid) = client.object_id() else { return false };
+    api::presence::get_presences(client.http(), &[format!("8:orgid:{oid}")])
+        .await
+        .ok()
+        .and_then(|l| l.into_iter().next())
+        .is_some_and(|p| p.work_location_source == "VerifiedLocation")
 }

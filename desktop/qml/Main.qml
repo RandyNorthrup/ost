@@ -14611,6 +14611,7 @@ Window {
         onSetStatusNote: (msg, pinned, clearAfter) => backend.setStatusNote(msg, pinned, clearAfter, "")
         statusUntil: backend.myStatusEnds
         workLocation: backend.myWorkLocation
+        workLocationDetail: backend.myWorkLocationDetail
         onSetWorkLocation: loc => backend.setWorkLocationToday(loc)
         onPauseUntil: iso => backend.setMyStatusUntil("DoNotDisturb", "Custom", iso)
         // Pause notifications ▸ Notifications settings: Teams' openSettingPage

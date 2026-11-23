@@ -233,6 +233,10 @@ pub mod qobject {
         #[qproperty(QString, settings_error)]
         /// Where you work today ("Office", "Remote", or "").
         #[qproperty(QString, my_work_location)]
+        /// Its building and how it was set: {"building": name or "",
+        /// "source": "VerifiedLocation" (workplace check-in),
+        /// "ForcedLocation", "ScheduledLocation" or ""}.
+        #[qproperty(QString, my_work_location_detail)]
         /// Teams' Write with Copilot in compose: {"allowed": a Microsoft 365
         /// Copilot licence and Teams' compose Copilot settings,
         /// "proofread": Proofread offered}.
@@ -3166,6 +3170,7 @@ pub struct BackendRust {
     next_schedule_ms: Option<i64>,
     settings_error: QString,
     my_work_location: QString,
+    my_work_location_detail: QString,
     compose_copilot_json: QString,
     thread_windows_json: QString,
     channel_action_result: QString,
@@ -14236,6 +14241,11 @@ impl qobject::Backend {
                                     if this.rust().my_work_location.to_string() != p.work_location {
                                         this.as_mut().set_my_work_location(QString::from(p.work_location.as_str()));
                                     }
+                                    let detail = json!({ "building": p.work_location_building, "source": p.work_location_source }).to_string();
+                                    if this.rust().my_work_location_detail.to_string() != detail {
+                                        tracing::info!("work location {} {}", p.work_location, detail);
+                                        this.as_mut().set_my_work_location_detail(QString::from(detail.as_str()));
+                                    }
                                 }
                                 let note = json!({ "text": p.note_text, "html": p.note_html, "pinned": p.note_pinned, "ooo": p.out_of_office });
                                 this.as_mut().rust_mut().peer_notes.insert(p.mri.clone(), note);
@@ -17232,14 +17242,20 @@ impl qobject::Backend {
     pub fn set_work_location_today(mut self: Pin<&mut Self>, location: &QString) {
         let location = location.to_string();
         let before = self.rust().my_work_location.clone();
+        let before_detail = self.rust().my_work_location_detail.clone();
         self.as_mut().set_my_work_location(QString::from(location.as_str()));
+        // Set by hand: no check-in's building any more.
+        self.as_mut().set_my_work_location_detail(QString::from(json!({ "building": "", "source": "ForcedLocation" }).to_string().as_str()));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let http = reqwest::Client::new();
             let loc = (!location.is_empty()).then_some(location.as_str());
             if let Err(e) = teams_cli::api::presence::set_work_location(&http, loc).await {
                 tracing::warn!("set work location failed: {}", short_error(&e));
-                let _ = qt.queue(move |mut this| this.as_mut().set_my_work_location(before));
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut().set_my_work_location(before);
+                    this.as_mut().set_my_work_location_detail(before_detail);
+                });
             }
         });
     }
