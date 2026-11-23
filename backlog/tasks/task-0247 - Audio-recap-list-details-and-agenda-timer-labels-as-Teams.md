@@ -1,10 +1,10 @@
 ---
 id: TASK-0247
 title: Audio recap list details and agenda timer labels as Teams
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-23T04:05:00Z'
-updated_date: '2026-11-23T06:49:00Z'
+updated_date: '2026-11-23T07:06:00Z'
 labels:
   - desktop
   - calls
@@ -19,8 +19,8 @@ Left from TASK-0212 and TASK-0246: the Generate audio recap dialog names meeting
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The audio recap dialog and list show Teams' meeting names, New badge and Listen on mobile, and a just-made recap auto-plays as in Teams
-- [ ] #2 The agenda timer shows Teams' shortened labels in narrow segments
+- [x] #1 The audio recap dialog and list show Teams' meeting names, New badge and Listen on mobile, and a just-made recap auto-plays as in Teams
+- [x] #2 The agenda timer shows Teams' shortened labels in narrow segments
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -38,4 +38,12 @@ Left from TASK-0212 and TASK-0246: the Generate audio recap dialog names meeting
 - Tests: 917 lib + 30 desktop pass on linuxlt.
 - Cleanup: Facilitator turned off in Teams in all three meetings, Teams left (survey dismissed); OST left each call (logs: callState empty, audio devices closed). Deleted: "OST TEST 247 agenda" (--call-notes-cleanup), "OST TEST 247 agenda 2" and "3" (harness), their notes (OST TEST 247 agenda.loop, agenda 3.loop, and "Meeting Notes.loop" made for agenda 2), both test audio recaps (247 and an earlier failed one, deletePodcasts 2 of 2), the meetL PipeWire devices. Left: the meetings' chats and their transcripts (stay with the chats).
 - Seen, not in scope: after Teams turned Facilitator off, OST kept showing the agenda strip while Teams switched to the ad-hoc timer; OST named agenda 2's notes "Meeting Notes" instead of the subject.
+
+- 2026-11-22 merged (323715c9). Start-on-first-chapters moved to TASK-0248.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Audio recap list details and agenda timer labels as Teams: the Generate dialog and Home list come from the same meeting artifacts by subject over 30 days (cached per day) with Teams' grouping (weeks, then days) and footer; recaps show the New badge (14 days), Listen on mobile with Teams' QR dialog (same link as Teams), and a just-generated recap starts by itself. The agenda strip lays topics out as Teams (37 px minimum, centred over gaps) with Chrome-style label cut-offs and Teams' rounded fill. Verified live against Teams on winpc in three Facilitator test meetings and a 9-minute generated recap (deleted).
+<!-- SECTION:FINAL_SUMMARY:END -->
