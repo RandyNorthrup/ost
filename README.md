@@ -70,27 +70,35 @@ so on) is listed in
 
 ## Install
 
-Download `ost-<version>-linux-x86_64.tar.gz` and `SHA256SUMS` from the
-[latest release](https://github.com/RandyNorthrup/ost/releases/latest), then:
+OST ships as an **AppImage**: one file with Qt, QtWebEngine, FFmpeg and the
+WebRTC audio processing library inside. Download `OST-<version>-x86_64.AppImage`
+from the [latest release](https://github.com/RandyNorthrup/ost/releases/latest)
+and run it:
 
 ```bash
-sha256sum -c SHA256SUMS
+chmod +x OST-*-x86_64.AppImage
+./OST-*-x86_64.AppImage
+```
+
+To add OST to your app menu, use the release's
+`ost-<version>-linux-x86_64.tar.gz` (the same AppImage with the install
+scripts):
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
 tar xf ost-*-linux-x86_64.tar.gz
 cd ost-*-linux-x86_64
-sh packaging/install-user.sh ./ost-desktop   # ~/.local/bin, menu entry and icon
+sh packaging/install-user.sh ./OST-*-x86_64.AppImage   # ~/.local/bin/ost-desktop, menu entry and icon
 ost-desktop
 ```
 
-The release binaries are built on **Ubuntu 26.04** and need its libraries or
-newer compatible ones: glibc 2.43, Qt 6.10 (Qt Quick, Quick Controls, Shapes,
-Effects, Dialogs, SVG, Multimedia and WebEngine), FFmpeg 8, ALSA, OpenSSL,
-WebRTC audio processing (`webrtc-audio-processing-1`), PipeWire with
-WirePlumber, a Secret Service keyring (GNOME Keyring or KWallet), and
-xdg-desktop-portal with your desktop's backend for screen sharing;
-`layer-shell-qt` is optional (Teams-style banners on Wayland). The
-[Installation](https://github.com/RandyNorthrup/ost/wiki/Installation) page
-has the Ubuntu package list. On other distributions (Arch Linux, for
-example, which has FFmpeg 9) build from source as below.
+**Supported systems:** 64-bit x86 Linux with glibc 2.43 or newer, on Wayland
+or X11 (tested on Ubuntu 26.04 and Arch Linux). Your system provides the
+graphics drivers, PipeWire for audio, a Secret Service keyring (GNOME
+Keyring or KWallet), FUSE 3 (`fuse3`) to mount the AppImage and, for screen
+sharing, xdg-desktop-portal with your desktop's backend. On older systems,
+build from source as below. More in
+[Installation](https://github.com/RandyNorthrup/ost/wiki/Installation).
 
 On first start OST shows Microsoft's sign-in page; sign in with your work or
 school account. Settings ▸ About OST checks GitHub for newer releases.
@@ -125,7 +133,9 @@ desktop/packaging/install-user.sh          # installs target/release/ost-desktop
 ```
 
 The C++ parts are heavy; on machines with little memory use
-`cargo build -j 2 --release -p ost-desktop`. More in
+`cargo build -j 2 --release -p ost-desktop`. To package your build as an
+AppImage, also build `teams-cli` (`cargo build --release --bin teams-cli
+--features audio`) and run `sh desktop/packaging/build-appimage.sh <version>`. More in
 [Building from source](https://github.com/RandyNorthrup/ost/wiki/Building-from-source)
 and [docs/desktop.md](docs/desktop.md).
 
@@ -138,6 +148,7 @@ account profiles and sign-in storage with the desktop app.
 ![The terminal client](docs/screenshots/tui.png)
 
 ```bash
+./OST-*-x86_64.AppImage teams-cli tui                    # from the AppImage, or build it:
 cargo build --release --bin teams-cli                    # or --features audio for calls with sound
 teams-cli login            # device-code sign-in (skipped when already signed in)
 teams-cli tui              # the terminal interface (? for its keys)
