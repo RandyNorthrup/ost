@@ -263,7 +263,7 @@ Item {
             property string parentStyle
             readonly property string sz: card.lc(e.size, "default")
             width: parent ? parent.width : 0
-            text: card.markdown(e.text)
+            text: theme.linkCss(linkColor) + card.markdown(e.text)
             textFormat: Text.RichText
             wrapMode: e.wrap === true ? Text.Wrap : Text.NoWrap
             elide: e.wrap === true ? Text.ElideNone : Text.ElideRight
@@ -292,7 +292,7 @@ Item {
             color: theme.text
             linkColor: theme.brandForeground1
             horizontalAlignment: card.lc(e.horizontalAlignment, "left") === "center" ? Text.AlignHCenter : card.lc(e.horizontalAlignment, "left") === "right" ? Text.AlignRight : Text.AlignLeft
-            text: (e.inlines || []).map(r => {
+            text: theme.linkCss(linkColor) + (e.inlines || []).map(r => {
                 if (typeof r === "string") return card.markdown(r)
                 let t = String(r.text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
                 const st = []
@@ -639,7 +639,7 @@ Item {
                         }
                         Text {
                             width: fs.width - fs.titleW - 16; wrapMode: Text.Wrap
-                            text: card.markdown(modelData.value); textFormat: Text.RichText
+                            text: theme.linkCss(linkColor) + card.markdown(modelData.value); textFormat: Text.RichText
                             lineHeight: 20; lineHeightMode: Text.FixedHeight
                             font.family: theme.font; font.pixelSize: 14; color: theme.text
                             linkColor: theme.brandForeground1

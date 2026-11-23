@@ -465,3 +465,82 @@ extern "C" void ost_dev_qml_dir(void *engine, const char *dir)
         return;
     static_cast<QQmlEngine *>(engine)->addUrlInterceptor(new QmlDirInterceptor(QString::fromUtf8(dir)));
 }
+
+// FluentIcon's pictures ("image://fluent/<name>?c=<colour>&s=<from>,<to>;…"):
+// a bundled single-colour Fluent SVG with its #212121 (or currentColor)
+// swapped for the wanted colour, then any other colour swaps (a folder's
+// colour), drawn here as the item is made. A data: URL would load in the
+// background and leave the icon blank for a frame or more (the app bar's
+// Chat and Calendar after start), where Teams shows its icons at once.
+// Swapping the colour in the SVG text keeps the picture the same on GPU,
+// software and offscreen backends.
+#include <QtCore/QBuffer>
+#include <QtCore/QHash>
+#include <QtCore/QMutex>
+#include <QtCore/QUrlQuery>
+#include <QtQuick/QQuickImageProvider>
+
+namespace {
+class FluentIconProvider : public QQuickImageProvider
+{
+public:
+    FluentIconProvider() : QQuickImageProvider(QQuickImageProvider::Image) {}
+
+    QImage requestImage(const QString &id, QSize *size, const QSize &requestedSize) override
+    {
+        const qsizetype q = id.indexOf(QLatin1Char('?'));
+        const QUrlQuery query(q < 0 ? QString() : id.mid(q + 1));
+        QByteArray svg = text(q < 0 ? id : id.left(q));
+        if (svg.isEmpty()) {
+            if (size)
+                *size = QSize();
+            return QImage();
+        }
+        const QByteArray colour = query.queryItemValue(QStringLiteral("c"), QUrl::FullyDecoded).toUtf8();
+        if (!colour.isEmpty()) {
+            svg.replace("#212121", colour);
+            svg.replace("currentColor", colour);
+        }
+        const QString swaps = query.queryItemValue(QStringLiteral("s"), QUrl::FullyDecoded);
+        for (const QString &pair : swaps.split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
+            const QStringList p = pair.split(QLatin1Char(','));
+            if (p.size() == 2)
+                svg.replace(p[0].toUtf8(), p[1].toUtf8());
+        }
+        QBuffer buffer(&svg);
+        buffer.open(QIODevice::ReadOnly);
+        QImageReader reader(&buffer, "svg");
+        if (requestedSize.width() > 0 && requestedSize.height() > 0)
+            reader.setScaledSize(requestedSize);
+        const QImage image = reader.read();
+        if (size)
+            *size = image.size();
+        return image;
+    }
+
+private:
+    // Each icon's SVG text, read from the bundle once.
+    QByteArray text(const QString &name)
+    {
+        QMutexLocker lock(&m_lock);
+        const auto it = m_files.constFind(name);
+        if (it != m_files.constEnd())
+            return *it;
+        QFile file(QStringLiteral(":/qt/qml/com/ost/desktop/assets/icons/") + name + QStringLiteral(".svg"));
+        const QByteArray t = file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+        if (t.isEmpty())
+            qWarning("icon failed: %s", qPrintable(name));
+        m_files.insert(name, t);
+        return t;
+    }
+
+    QMutex m_lock;
+    QHash<QString, QByteArray> m_files;
+};
+} // namespace
+
+extern "C" void ost_add_icon_provider(void *engine)
+{
+    if (engine)
+        static_cast<QQmlEngine *>(engine)->addImageProvider(QStringLiteral("fluent"), new FluentIconProvider);
+}

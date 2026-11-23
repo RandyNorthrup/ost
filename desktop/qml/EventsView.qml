@@ -2882,7 +2882,7 @@ Rectangle {
                             id: titleCol
                             x: 20; y: 20; width: parent.width - 40; spacing: 24
                             Text { width: parent.width; wrapMode: Text.Wrap; text: eventPage.ev.title || ""; font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold; color: theme.text }
-                            Text { visible: !!eventPage.ev.description; width: parent.width; wrapMode: Text.Wrap; textFormat: Text.RichText; text: eventPage.ev.description || ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                            Text { visible: !!eventPage.ev.description; width: parent.width; wrapMode: Text.Wrap; textFormat: Text.RichText; text: eventPage.ev.description ? theme.linkCss(theme.link) + eventPage.ev.description : ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                         }
                     }
                     // Presenter cards (48 px avatar, the name 14/20 semibold).

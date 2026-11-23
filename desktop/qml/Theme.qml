@@ -164,6 +164,11 @@ QtObject {
     /// date fields).
     readonly property string shortYearPattern: regional.shortDate.replace("yyyy", "yy")
     function dateShortYear(d) { return fmtDate(d, shortYearPattern) }
+    /// A style sheet giving rich text's links `c`: Text's linkColor works
+    /// for StyledText only, and Qt's rich text otherwise draws links
+    /// #0000FF. Put it ahead of the HTML (and keep fragment markers out:
+    /// Qt then imports only what lies between them).
+    function linkCss(c, plain) { return "<style>a { color: " + c + (plain ? "; text-decoration: none" : "") + "; }</style>" }
     // Message HTML as shown: a shared contact's card icon in brand colour.
     // Headings as paragraphs of class h1-h3: Qt adds its own heading size on
     // top of a stylesheet's, so only Teams' measured sizes apply this way.

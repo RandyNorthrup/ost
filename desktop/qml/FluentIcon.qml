@@ -2,7 +2,10 @@ import QtQuick
 
 // A Fluent UI System Icon in any colour. The SVGs are single-colour glyphs
 // filled with #212121, so the colour is swapped in the SVG text itself:
-// this renders identically on GPU, software and offscreen backends.
+// this renders identically on GPU, software and offscreen backends. The
+// picture comes from src/native.cpp's "fluent" image provider, which draws
+// it as the item is made: an icon is there in its first frame, and one that
+// changes (an app bar icon turning filled) never blanks, as in Teams.
 Image {
     id: root
     property string name
@@ -19,39 +22,11 @@ Image {
     readonly property bool ostMirrorsItself: true
     mirror: theme.rtl && !theme.iconFlips(name)
 
-    property string svgText: ""
-    onNameChanged: load()
-    Component.onCompleted: load()
-
-    function load() {
-        if (!name) { svgText = ""; return }
-        const url = Qt.resolvedUrl("../assets/icons/" + name + ".svg")
-        const cached = IconCache.get(url)
-        if (cached !== undefined) { svgText = cached; return }
-        const xhr = new XMLHttpRequest()
-        xhr.onreadystatechange = function() {
-            if (xhr.readyState !== XMLHttpRequest.DONE) return
-            // The icon may be gone by the time its file arrives.
-            if (!root) return
-            if (xhr.responseText) {
-                IconCache.put(url, xhr.responseText)
-                // A reply for a name we've since changed from (the mic
-                // turning off while its "on" glyph still loads) mustn't
-                // replace the newer glyph.
-                if (Qt.resolvedUrl("../assets/icons/" + root.name + ".svg") === url)
-                    root.svgText = xhr.responseText
-            } else {
-                console.warn("icon failed:", url)
-            }
-        }
-        xhr.open("GET", url)
-        xhr.send()
-    }
-
     /// Colours to swap in the SVG ({"#FFDD57": "#9FDAFF"}): a coloured
     /// folder (OneDrive's Folder color).
     property var swaps: ({})
-    source: svgText
-        ? "data:image/svg+xml;utf8," + encodeURIComponent(Object.keys(swaps).reduce((t, k) => t.split(k).join(swaps[k]), svgText.replace(/#212121|currentColor/g, root.color.toString())))
+    source: name
+        ? "image://fluent/" + encodeURIComponent(name) + "?c=" + encodeURIComponent(root.color.toString())
+          + (Object.keys(swaps).length ? "&s=" + encodeURIComponent(Object.keys(swaps).map(k => k + "," + swaps[k]).join(";")) : "")
         : ""
 }

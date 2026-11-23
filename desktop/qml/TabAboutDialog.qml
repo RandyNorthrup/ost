@@ -63,7 +63,7 @@ Popup {
                         // Teams' converted description; its own links keep
                         // the browser default (#0000EE), as Teams shows them.
                         textFormat: Text.RichText
-                        text: aboutDialog.about ? aboutDialog.about.description : ""
+                        text: aboutDialog.about ? theme.linkCss(linkColor) + aboutDialog.about.description : ""
                         font.family: theme.font; font.pixelSize: theme.base; color: theme.text
                         linkColor: theme.hc("#0000EE", "#FFFF00")
                         onLinkActivated: link => { if (/^https:/.test(link)) Qt.openUrlExternally(link) }

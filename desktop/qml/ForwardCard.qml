@@ -49,7 +49,8 @@ Rectangle {
         id: bodyText
         x: 16; y: 40
         width: Math.min(implicitWidth, root.maxWidth - 32)
-        text: !root.forward ? "" : root.forward.deleted ? "<i>" + qsTr("This message was deleted.") + "</i>" : (root.forward.html || root.forward.text)
+        // Links as in the chat (MessageText).
+        text: !root.forward ? "" : root.forward.deleted ? "<i>" + qsTr("This message was deleted.") + "</i>" : theme.linkCss(theme.link, true) + (root.forward.html || root.forward.text)
         textFormat: Text.RichText
         wrapMode: Text.Wrap
         lineHeight: 20; lineHeightMode: Text.FixedHeight

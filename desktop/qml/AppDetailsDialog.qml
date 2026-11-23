@@ -422,7 +422,7 @@ Popup {
                         x: 56; y: shortDesc.y + 44; width: 771
                         wrapMode: Text.Wrap
                         textFormat: Text.RichText
-                        text: root.d ? root.d.description : ""
+                        text: root.d ? theme.linkCss(linkColor) + root.d.description : ""
                         font.family: theme.font; font.pixelSize: 14; color: theme.textStrong
                         lineHeight: 20; lineHeightMode: Text.FixedHeight
                         linkColor: theme.brandLink

@@ -97,7 +97,23 @@ Item {
 
     onRequiredChanged: if (!loading) { dirty = true; availabilityWanted(allMails()) }
     onOptionalChanged: if (!loading) { dirty = true; availabilityWanted(allMails()) }
-    onDetailChanged: if (existing && detail && detail.body_html !== undefined) { loading = true; editor.text = detail.body_html || ""; loading = false }
+    onDetailChanged: if (existing && detail && detail.body_html !== undefined) { loading = true; setBody(detail.body_html); loading = false }
+
+    // Links in the details as Teams' event page draws them (Outlook's
+    // editor, measured 2026-11-23): the browser's #0000EE in light, #BA7CFF
+    // in dark and in high contrast (whose event page is dark), underlined.
+    // Qt's rich text would draw #0000FF, so a style sheet goes ahead of the
+    // HTML, and bodyHtml() takes the colour out again so the saved body
+    // keeps its links as they came.
+    readonly property color bodyLink: theme.pick("#0000EE", "#BA7CFF", "#BA7CFF")
+    property string bodyLinkSet: ""
+    function setBody(html) {
+        bodyLinkSet = bodyLink.toString()
+        // (Qt imports only what lies between fragment markers, which would
+        // leave the style sheet out; a browser ignores them.)
+        editor.text = html ? "<style>a { color: " + bodyLinkSet + "; }</style>" + String(html).replace(/<!--(Start|End)Fragment-->/g, "") : ""
+    }
+    onBodyLinkChanged: if (bodyLinkSet && editor.length > 0) { const was = loading; loading = true; setBody(bodyHtml()); loading = was }
 
     function allMails() { return required.concat(optional).map(p => (p.address || "").toLowerCase()).filter(m => m) }
     function fmtTime(d) { return theme.fmtTime(d, "h:mm AP") }
@@ -233,9 +249,13 @@ Item {
     // ── the form, as submit() sends it ──────────────────────────────
     function bodyHtml() {
         if (editor.getText(0, editor.length).trim().length === 0) return ""
-        const html = editor.getFormattedText(0, editor.length)
+        let html = editor.getFormattedText(0, editor.length)
         const m = /<body[^>]*>([\s\S]*)<\/body>/i.exec(html)
-        return (m ? m[1] : html).trim()
+        html = (m ? m[1] : html).replace(/<!--(Start|End)Fragment-->/g, "").trim()
+        // The link colour setBody() gave the links (Qt writes it on each
+        // link's span).
+        const c = (bodyLinkSet || bodyLink.toString()).toLowerCase()
+        return html.replace(/(<a [^>]*><span style="(?:[^"]*?[\s;])?)color:(#[0-9a-f]{6});/gi, (all, head, col) => col.toLowerCase() === c ? head : all)
     }
     function form(send) {
         let s = new Date(startAt), e = new Date(endAt)
@@ -1190,7 +1210,8 @@ Item {
         const t = editor.getText(s, e).trim()
         if (!/^https?:\/\//.test(t)) return
         editor.remove(s, e)
-        editor.insert(s, "<a href=\"" + escapeHtml(t) + "\">" + escapeHtml(t) + "</a>")
+        bodyLinkSet = bodyLink.toString()
+        editor.insert(s, "<a href=\"" + escapeHtml(t) + "\" style=\"color: " + bodyLinkSet + "\">" + escapeHtml(t) + "</a>")
         markDirty()
     }
     function pickRepeat(i) {
@@ -1589,7 +1610,7 @@ Item {
     function addAttendeeForTest(mail, name) { addPerson({ address: mail, name: name || mail }, false) }
     function setTimesForTest(s, e) { startAt = new Date(s); endAt = new Date(e); markDirty() }
     /// A suggested meeting's title and details (an agent's Edit).
-    function prefill(subject, body) { titleInput.text = subject || ""; editor.text = body || ""; markDirty() }
+    function prefill(subject, body) { titleInput.text = subject || ""; setBody(body || ""); markDirty() }
     function pickRepeatForTest(i) { pickRepeat(i) }
     function saveRecurrenceForTest(end) { if (end) recDialog.end = new Date(end); root.recurrence = recDialog.draft; markDirty(); recDialog.close() }
     function pickChannelForTest(teamName, channelName) {
@@ -1600,7 +1621,7 @@ Item {
         return true
     }
     function setLocationForTest(t) { locationInput.text = t; commitLocation() }
-    function typeBodyForTest(t) { editor.text = t; markDirty() }
+    function typeBodyForTest(t) { setBody(t); markDirty() }
     function submitForTest() { primaryAction() }
     function openCancelForTest() { cancelDialog.open() }
     function confirmCancelForTest(note) { cancelMeeting(note || ""); cancelDialog.close() }

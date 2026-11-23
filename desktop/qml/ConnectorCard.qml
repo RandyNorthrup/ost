@@ -118,7 +118,7 @@ Item {
                     visible: !parent.modelData.list
                     width: parent.width; wrapMode: Text.Wrap
                     textFormat: Text.RichText
-                    text: parent.modelData.para || ""
+                    text: parent.modelData.para ? theme.linkCss(linkColor) + parent.modelData.para : ""
                     lineHeight: 20; lineHeightMode: Text.FixedHeight
                     font.family: theme.font; font.pixelSize: 14; font.weight: md.strong ? Font.DemiBold : Font.Normal
                     color: theme.textStrong; linkColor: theme.brandLink
@@ -140,7 +140,7 @@ Item {
                                 id: li
                                 width: parent.width; wrapMode: Text.Wrap
                                 textFormat: Text.RichText
-                                text: parent.modelData
+                                text: theme.linkCss(linkColor) + parent.modelData
                                 lineHeight: 20; lineHeightMode: Text.FixedHeight
                                 font.family: theme.font; font.pixelSize: 14; color: theme.textStrong; linkColor: theme.brandLink
                                 onLinkActivated: link => card.open(link)

@@ -28,6 +28,8 @@ unsafe extern "C" {
     fn ost_webengine_initialize();
     /// Development: load QML from a directory (src/native.cpp).
     fn ost_dev_qml_dir(engine: *mut core::ffi::c_void, dir: *const core::ffi::c_char);
+    /// FluentIcon's pictures, "image://fluent/…" (src/native.cpp).
+    fn ost_add_icon_provider(engine: *mut core::ffi::c_void);
 }
 
 /// OST's log file (what Help › Collect Support Files packs up):
@@ -171,9 +173,10 @@ fn main() {
             .init();
     }
 
-    // FluentIcon reads the bundled SVGs (qrc:/) with XMLHttpRequest to
-    // recolour them. All QML here is compiled into the binary, so no
-    // untrusted script can use this to read files.
+    // QML reads local files with XMLHttpRequest: bundled ones (qrc:/:
+    // Loop's glyphs, the sticker catalog, Qt's web channel script) and the
+    // emoji category pictures. All QML here is compiled into the binary, so
+    // no untrusted script can use this to read files.
     // SAFETY: set before Qt or the Tokio runtime start, while main is the
     // only thread.
     unsafe { std::env::set_var("QML_XHR_ALLOW_FILE_READ", "1") };
@@ -215,6 +218,8 @@ fn main() {
             // only the pointer is passed.
             unsafe { ost_dev_qml_dir(engine.as_mut().get_unchecked_mut() as *mut QQmlApplicationEngine as *mut core::ffi::c_void, dir.as_ptr()) };
         }
+        // SAFETY: the engine is alive and takes ownership of the provider.
+        unsafe { ost_add_icon_provider(engine.as_mut().get_unchecked_mut() as *mut QQmlApplicationEngine as *mut core::ffi::c_void) };
         engine.load(&QUrl::from("qrc:/qt/qml/com/ost/desktop/qml/Main.qml"));
     }
     if let Some(app) = app.as_mut() {

@@ -15,7 +15,7 @@ import QtCore
 //   the week that holds today, today takes 30 % of the width and past days
 //   11 %; the other days share the rest (a day gets at least what its
 //   overlapping events need). Past days and hours outside 8–17 are #FAFAFA (dark #242424, calOff),
-//   a day under an all-day busy event #EEEFF9;
+//   a day under an all-day busy event the calendar colour at 10 % over it;
 // - Month: 28 px day names, 163 px cells, events 24 tall 26 apart from 31.6
 //   down (time 12/400, title 12/600; all-day ones centred), "+N" when the
 //   cell is full; multi-day events span the week's cells;
@@ -689,8 +689,9 @@ Item {
     readonly property color cardEdge: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
     readonly property color calLink: theme.pick("#4F52B2", "#7F85F5", "#1AEBFF")
     /// A day under an all-day busy event: the calendar colour at 10 % over
-    /// the day (#EEEFF9 in light, as measured).
-    readonly property color busyFill: theme.highContrast ? "#000000" : over(calPrimary, .1, calDay)
+    /// the day, its hours outside the working day and its header (measured
+    /// 2026-11-23: light #EEEFF9 and #EAEBF5, dark #32323E and #2D2D39).
+    function dayFill(busy, under) { return busy && !theme.highContrast ? tint(calPrimary, under) : under }
 
     // ── Event colours, as Outlook's hosted calendar works them out (its
     // bundle: the calendar's colour scheme, the tile fill, edge and text,
@@ -719,6 +720,12 @@ Item {
     }
     function shade(name) { return calShades[["lighterAlt", "lighter", "light", "tertiary", "secondary"].indexOf(name)] }
     function alpha(c, a) { const q = Qt.color(c); return Qt.rgba(q.r, q.g, q.b, a) }
+    /// `top` at 10 % opacity over the opaque `under`, as the hosted
+    /// calendar's layer composites it (alpha 26/255, rounded).
+    function tint(top, under) {
+        const t = Qt.color(top), u = Qt.color(under), a = 26 / 255, f = (x, y) => Math.round(255 * (y + a * (x - y))) / 255
+        return Qt.rgba(f(t.r, u.r), f(t.g, u.g), f(t.b, u.b), 1)
+    }
     /// `top` at `a` over the opaque `under`, as the bundle composites (floored).
     function over(top, a, under) {
         const t = Qt.color(top), u = Qt.color(under), f = (x, y) => Math.floor(a * x * 255 + (1 - a) * y * 255) / 255
@@ -1184,7 +1191,7 @@ Item {
                     readonly property date day: root.dayAt(dayIndex)
                     readonly property bool today: dayIndex === root.todayIndex
                     x: root.colX(index); width: root.colW(index); y: root.splitHead; height: heads.height - y
-                    color: root.busyDay(dayIndex) ? root.busyFill : root.pastDay(dayIndex) ? root.calOff : root.calDay
+                    color: root.dayFill(root.busyDay(dayIndex), root.pastDay(dayIndex) ? root.calOff : root.calDay)
                     Rectangle { visible: parent.today; width: parent.width; height: 3; color: theme.brand }
                     Text { x: 13; y: 8; text: parent.day.getDate(); font.family: theme.font; font.pixelSize: 20; color: theme.brand }
                     Text { x: 13; y: 33; text: theme.fmtDate(parent.day, root.wideLayout ? "dddd" : "ddd"); font.family: theme.font; font.pixelSize: theme.small; color: parent.today ? theme.brand : theme.textSecondary }
@@ -1241,9 +1248,10 @@ Item {
                     readonly property int d: root.dayOfCol(index)
                     readonly property bool weekend: [0, 6].indexOf(root.dayAt(d).getDay()) >= 0
                     x: root.colX(index); width: root.colW(index); height: grid.contentHeight
-                    Rectangle { anchors.fill: parent; color: root.busyDay(parent.d) ? root.busyFill : root.pastDay(parent.d) || parent.weekend ? root.calOff : root.calDay }
-                    Rectangle { visible: !root.busyDay(parent.d) && !root.pastDay(parent.d) && !parent.weekend; width: parent.width; height: 8 * root.hourHeight; color: root.calOff }
-                    Rectangle { visible: !root.busyDay(parent.d) && !root.pastDay(parent.d) && !parent.weekend; y: 17 * root.hourHeight; width: parent.width; height: 7 * root.hourHeight; color: root.calOff }
+                    readonly property bool busy: root.busyDay(d)
+                    Rectangle { anchors.fill: parent; color: root.dayFill(parent.busy, root.pastDay(parent.d) || parent.weekend ? root.calOff : root.calDay) }
+                    Rectangle { visible: !root.pastDay(parent.d) && !parent.weekend; width: parent.width; height: 8 * root.hourHeight; color: root.dayFill(parent.busy, root.calOff) }
+                    Rectangle { visible: !root.pastDay(parent.d) && !parent.weekend; y: 17 * root.hourHeight; width: parent.width; height: 7 * root.hourHeight; color: root.dayFill(parent.busy, root.calOff) }
                     Rectangle { width: 1; height: parent.height; color: root.calLine }
                 }
             }
@@ -1515,7 +1523,7 @@ Item {
                     visible: n > 0
                     x: 0; y: 31.6 + (monthArea.rowsPerCell - 1) * 26
                     width: parent.width - 8; height: 24; radius: 4
-                    color: moreH.hovered ? theme.pick("#E0E0E0", "#3D3D3D", "#1AEBFF") : theme.pick("#F0F0F0", "#141414", "#000000")
+                    color: moreH.hovered ? theme.pick("#EBEBEB", "#5C5C5C", "#1AEBFF") : theme.pick("#F0F0F0", "#141414", "#000000")
                     Text { anchors.centerIn: parent; text: "+" + parent.n; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                     HoverHandler { id: moreH; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { root.view = "day"; root.start = root.startFor(cell.day) } }
