@@ -1,11 +1,11 @@
 ---
 id: TASK-0149
 title: Automatic work location (Privacy) where the tenant allows it, as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-15T04:40:00Z'
-updated_date: '2026-11-23T08:33:00Z'
+updated_date: '2026-11-23T08:35:00Z'
 labels:
   - settings
   - presence
@@ -23,7 +23,7 @@ When the tenant's work-location detection policy is on (ECS places.enableWorkLoc
 <!-- AC:BEGIN -->
 - [x] #1 With the policy on, the card shows Teams' automatic work location toggle and Learn more dialog
 - [x] #2 The toggle is saved where Teams keeps it (placesSettings.autoUpdateLocationPreference)
-- [ ] #3 With it on, OST sets the work location from the detected place as Teams does
+- [x] #3 With it on, OST sets the work location from the detected place as Teams does
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -76,4 +76,12 @@ When the tenant's work-location detection policy is on (ECS places.enableWorkLoc
   - Restored: placesSettings autoUpdateLocationPreference back to Disabled; ost-test1 working hours back to Mon-Fri 08:00-17:00 Pacific Standard Time. The checked-in work location expires on its own at 17:00 PT; it was not cleared by hand, which would block check-ins for the day.
   - Tenant: the Entra group "OST workplace check-in test" was deleted again. The Graph CLI consent Group.ReadWrite.All (Randy only) remains.
   - Tests: 917 lib + 30 desktop pass (linuxlt).
+
+- 2026-11-23 merged (8bbadba3, 055819c2). Banners moved to TASK-0249.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Automatic work location (Privacy) as Teams: the card, toggle (placesSettings.autoUpdateLocationPreference) and Learn more dialog where the policy allows it; on each network change OST follows Teams' check-in strategy — the allowed Wi-Fi list (cached a day), reporting the access point and network name, check-out on another Wi-Fi, wired or location-off as Teams' defaults say — and shows the checked-in building in the profile flyout with Teams' icon. Verified live: OST on linuxlt checked ost-test1 in at "OST Test Building" and Teams on winpc showed the same. Test tenant: Places Wi-Fi list "Condor Cave" mapped to OST Test Building. Follow-up TASK-0249.
+<!-- SECTION:FINAL_SUMMARY:END -->
