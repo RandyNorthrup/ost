@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-22T21:24:00Z'
+updated_date: '2026-11-23T02:49:00Z'
 labels:
   - desktop
 dependencies: []
@@ -128,4 +128,10 @@ What TASK-0209 left (docs/spec/events.md, docs/spec/call-and-meeting-window.md):
   - OST's first draft save answered 400. Teams' own draft (captured over CDP when Teams then opened the tab): POST …/sessions/{sid}/recordings {name: the artifact id "…-Recording", webUrl: the recording's /:v:/p/ share link, duration 766144 (ms), expirationDurationDays 30, driveId, itemId, isDraft true} → 201, read back as recordings[0] {status Draft, duration "00:12:46.144", hostType SPE}. Teams then generated its own highlights (Generating bar, then "Highlights aren't published yet.").
   - Teams' recording picker: "Current recording" (checked), "Select another recording" (info), a line, "Select from OneDrive" (OneDrive colour mark) → OneDrive's FilePicker.aspx in a 973 x 558 dialog on Home, videos only, Confirm / Cancel (cancelled). Publish → "Ready to publish highlights?" 600 wide with Preview email, Cancel, Publish highlights (cancelled).
   - An OST loop bug (a failed draft re-picked and re-generated) was caught after one extra generation and fixed (once per visit, as Teams).
+
+- 2026-11-22 (meetK) OST live (linuxlt, default profile = ost-test1), "OST TEST 212 recap long":
+  - Publish from OST: the session's draft published with highlightsContent (the Loop component's ComponentSerializable.serialize(), 17008 chars) → Scheduled → Published; OST showed "Highlights published to event page. Expires December 22, 2026 Extend for 60 days" and Remove highlights; Remove highlights (confirmed) reset it to a draft (DELETE + POST isDraft). The earlier 400s were OST sending the duration as 766144.0: the service wants whole milliseconds (Teams sends 766144).
+  - Select from OneDrive in OST: CloudPicker on Home with only the .mp4 (as Teams), Confirm / Cancel. A Home pick has no drive/item ids: the draft then 400'd; now resolved from the file's address (Graph shares) before the draft (retest pending).
+  - Audio recap detail in OST for Teams' recap: chapters at Teams' times (Intro 00:00 … Outro 05:28), the meeting group with Recap, Meeting overview played (brand 600, pause glyph, "5m 23s left", 00:22 / 05:44), transcript 41 lines "Speaker 1 · 00:02" as Teams. Fixed on the way: Graph's download address (absent under $select), the transcript header's height, the total from the recap's own length (Teams 05:38).
+  - OST's Generate dialog: week groups, Today/Yesterday subtitles, the 3-task chip on OST TEST 240, thumbnails. Open: the long meeting is listed by its chat's topic ("Recording of OST TEST 212 recap long is now available"); Teams lists calendar names (its AugLoop teams_recap_podcast_event_list); OST now asks the calendar by iCalUId (3 of 3 found) but the names still don't replace (debugging).
 <!-- SECTION:NOTES:END -->

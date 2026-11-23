@@ -688,7 +688,7 @@ Rectangle {
         function loadEventInfo() {
             const ids = []
             for (const d of root.days) for (const m of (d.meetings || [])) if (m.iCalUid && eventInfo[m.iCalUid] === undefined && ids.indexOf(m.iCalUid) < 0) ids.push(m.iCalUid)
-            if (ids.length) root.call("recapEventSubjects", { ids: ids }, v => { console.warn("RECAPS event names", ids.length, v.error || Object.keys(v).length); if (!v.error) genDialog.eventInfo = Object.assign({}, genDialog.eventInfo, v) })
+            if (ids.length) root.call("recapEventSubjects", { ids: ids }, v => { console.warn("RECAPS event names", ids.length, v.error || JSON.stringify(v).slice(0, 400)); if (!v.error) genDialog.eventInfo = Object.assign({}, genDialog.eventInfo, v) })
         }
         Connections { target: root; function onDaysChanged() { if (genDialog.opened) genDialog.loadEventInfo() } }
         /// The weeks (Teams' grouping by the start of the week, newest
