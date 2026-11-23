@@ -3,11 +3,11 @@ id: TASK-0246
 title: >-
   Posts-channel images, agent answer Loop cards and agent command renderers as
   Teams
-status: Done
+status: In Progress
 assignee:
   - '@chatJ'
 created_date: '2026-11-22T22:44:00Z'
-updated_date: '2026-11-23T01:23:00Z'
+updated_date: '2026-11-23T01:24:00Z'
 labels:
   - desktop
   - messages
@@ -24,7 +24,7 @@ Found in TASK-0206: OST's posts-channel list draws no images in posts (Teams sho
 <!-- AC:BEGIN -->
 - [x] #1 Posts in posts-layout channels show their images as Teams does, with see more extended to include an image
 - [x] #2 An agent's answer with a Loop page shows the Loop card inline as Teams
-- [x] #3 Agent commands Teams renders (tasks, plan, createMeeting, agendaTimer, questionsList, …) show as Teams, verified with live examples
+- [ ] #3 Agent commands Teams renders (tasks, plan, createMeeting, agendaTimer, questionsList, …) show as Teams, verified with live examples
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -47,6 +47,8 @@ Found in TASK-0206: OST's posts-channel list draws no images in posts (Teams sho
   - Not clicked live (they would create a meeting or a Planner plan): Schedule Meeting, Save to Planner; Discard / Ask for changes / Edit were not sent either. agendaTimer / questionsList: from Teams' code with unit tests (the Facilitator's in a meeting).
   - Test content removed: the post "OST TEST 246 image post" (and an earlier copy with joined lines) deleted with --delete-test-messages; team "OST TEST 246 agent" deleted with --team-live=delete (its Planner task / plan and Loop page went with it). Nothing was scheduled.
   - Tests: 911 lib + 29 desktop pass.
+
+- 2026-11-22 (review on merge 9c31293c): AC1 and AC2 verified live. AC3 reopened: plan, Planner task, Schedule Meeting and reasoning were live; the Facilitator's agendaTimer and questionsList are built from Teams' code with unit tests only and still need live examples in a Facilitator meeting.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
