@@ -819,8 +819,12 @@ Rectangle {
                 // "Planned in <building>" from the work plan.
                 readonly property var detail: { try { return JSON.parse(root.workLocationDetail || "{}") } catch (e) { return {} } }
                 readonly property string building: loc ? (detail.building || "") : ""
-                icon: loc === "Office" ? "building-checkmark-20-filled" : loc === "Remote" ? "home-20-filled" : "location-add-20"
-                iconColor: loc === "Office" || loc === "Remote" || workMenu.opened ? theme.brand : theme.textStrong
+                // A check-in (VerifiedLocation) shows the regular
+                // building-checkmark in the row's text colour (Teams 26304 on
+                // winpc, 2026-11-23: #424242).
+                readonly property bool verified: loc === "Office" && detail.source === "VerifiedLocation"
+                icon: verified ? "building-checkmark-20" : loc === "Office" ? "building-checkmark-20-filled" : loc === "Remote" ? "home-20-filled" : "location-add-20"
+                iconColor: (loc === "Office" && !verified) || loc === "Remote" || workMenu.opened ? theme.brand : theme.textStrong
                 label: building && (detail.source === "VerifiedLocation" || detail.source === "ForcedLocation") ? qsTr("In %1").arg(building)
                     : building && detail.source === "ScheduledLocation" ? qsTr("Planned in %1").arg(building)
                     : loc === "Office" ? qsTr("In the office") : loc === "Remote" ? qsTr("Working remotely") : qsTr("Set work location")

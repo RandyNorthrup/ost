@@ -730,6 +730,8 @@ pub struct UserPresence {
     pub work_location_source: String,
     /// The building it names (`workLocation.approximateDetails.name`), or "".
     pub work_location_building: String,
+    /// That building's Places id (`approximateDetails.id`), or "".
+    pub work_location_building_id: String,
     /// When they were last active (`lastActiveTime`, ISO), or "".
     pub last_active: String,
     /// Out of office (`calendarData.isOutOfOffice`).
@@ -805,6 +807,11 @@ fn parse_presences(v: &serde_json::Value) -> Vec<UserPresence> {
                     .and_then(|x| x.as_str())
                     .unwrap_or_default()
                     .to_string(),
+                work_location_building_id: p
+                    .pointer("/workLocation/approximateDetails/id")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
             })
         })
         .collect()
@@ -836,6 +843,7 @@ mod presence_tests {
         assert_eq!(p.work_location, "Office");
         assert_eq!(p.work_location_source, "VerifiedLocation");
         assert_eq!(p.work_location_building, "OST Test Building");
+        assert_eq!(p.work_location_building_id, "a93350e7");
         let v = serde_json::json!([{"mri": "8:orgid:a", "presence": {"workLocation": {"location": "Remote"}}}]);
         let p = &parse_presences(&v)[0];
         assert_eq!((p.work_location_source.as_str(), p.work_location_building.as_str()), ("", ""));

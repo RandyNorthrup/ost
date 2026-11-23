@@ -12818,6 +12818,7 @@ Window {
         running: Qt.application.arguments.some(a => a.startsWith("--pause-test")) && backend.signedIn && backend.userMail.length > 0
         interval: 2500; repeat: true
         property int step: 0
+        property int waitedForWl: 0
         onTriggered: {
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
@@ -12825,6 +12826,14 @@ Window {
             // --pause-test=hold: pause 10 minutes and quit; =resume: resume and quit.
             const mode = (Qt.application.arguments.find(a => a.startsWith("--pause-test=")) || "").slice(13)
             if (mode === "hold") { if (step === 1) titleBar.pauseForTest("10 minutes"); else if (step === 4) { log("held"); Qt.quit() } step++; return }
+            // =wl-show: the profile flyout as it is (a workplace check-in's
+            // "In <building>"), without changing the work location.
+            if (mode === "wl-show") {
+                // Wait (up to ~100 s) for your presence to name a building.
+                if (step === 1 && backend.myWorkLocationDetail.indexOf("\"building\":\"\"") >= 0 && waitedForWl++ < 40) return
+                if (step === 1) titleBar.pauseForTest("flyout"); else if (step === 3) { console.warn("WL show", backend.myWorkLocation, backend.myWorkLocationDetail); shot("wl-show") } else if (step === 4) Qt.quit()
+                step++; return
+            }
             // =work: Set work location: the menu (wl-menu), Office (wl-office
             // and its menu wl-office-menu), Remote (wl-remote), then clear.
             if (mode === "work") {

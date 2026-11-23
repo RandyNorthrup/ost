@@ -832,10 +832,21 @@ Details read from Teams 26304's worker (WifiAutoLocationHelper, IC3LocationServi
 - Switch on: `PUT …/location/network` (above). Switch never set and the first-run banner not
   seen (Ask mode): `GET …/location/wifiNetwork?bssid=…` instead, then Teams' first-run banner
   (not built in OST).
-- Checking out on a non-office network only happens with ECS places.adlCheckout, a non-empty
-  SSID, and a work location that a check-in set (presence `workLocation.locationSource`
-  "VerifiedLocation"); OST follows that. Teams also has a wired-connection checkout tied to a
-  device's home building (not built).
+- Flights at Teams' bundled defaults (config-prod; ECS only overrides): adlCheckout,
+  adlWiredCheckout, useSSIDForIC3LSNetworkApiRequest (the SSID goes in the report) and
+  useUserStateForWiFiUpdate (only an unlocked, active machine reports) are all on;
+  staleNetworkInfoThresholdMilliSeconds 60000.
+- The ADL job's action strategy (adlWiredCheckout): empty allow list → stop; OS location
+  permission off → check out (OS_CONSENT_DISABLED); Wi-Fi on a listed SSID → report; Wi-Fi on
+  another SSID → check out (SSID_MISMATCH); wired and online → check out (WIRED_CONNECTION);
+  offline → nothing. A check-out (`DELETE …/location/wifiNetwork`) only happens from a work
+  location a check-in set (presence `workLocation.locationSource` "VerifiedLocation"), and a
+  wired one not when the device's stationary building (Privacy ▸ Stationary device location,
+  deviceHomeBuildingId) is that building. Teams then shows a banner: your work location was
+  cleared because the device is no longer on Wi-Fi, with Open settings and Don't show again
+  (seen live on winpc, which is wired with Windows location off; OST doesn't show it yet).
+  OST follows the strategy (desktop/src/work_location.rs), apart from the OS location
+  permission, which Linux doesn't have for Wi-Fi.
 - A check-in's work location is `{location: "Office", locationSource: "VerifiedLocation",
   approximateDetails: {id, idType: "Directory", name}}`. Teams' profile flyout then reads
   "In <building>" ("Planned in <building>" for the work plan); OST does the same.

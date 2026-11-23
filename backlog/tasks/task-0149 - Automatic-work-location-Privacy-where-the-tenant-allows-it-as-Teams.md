@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-15T04:40:00Z'
-updated_date: '2026-11-23T05:13:00Z'
+updated_date: '2026-11-23T08:33:00Z'
 labels:
   - settings
   - presence
@@ -62,4 +62,18 @@ When the tenant's work-location detection policy is on (ECS places.enableWorkLoc
   - Teams (26304 worker): there is no client-side working-hours check; the service applies the working hours. Teams checks out on a non-office network only with ECS places.adlCheckout (unset for ost-test1, so Teams doesn't check out), a non-empty SSID and a VerifiedLocation work location. Ask-mode first run uses GET .../location/wifiNetwork plus a banner (not built).
   - Live on linuxlt (spatest, Condor Cave): OST turned detection on (policy, ECS enableAutoDetectPlaceWifi, switch Enabled), found Condor Cave on the list and reported the BSSID. The same report gives 200 {OST Test Building} most of the time but 404 about one time in three (6 tries with OST's endpoint: 4x 200, 2x 404). OST's own start-up reports happened to get 404 three times out of three. The service side is still settling.
   - Even after 200s, the presence service (getpresence) showed no workLocation for ost-test1 (05:00-05:12 UTC, Sunday 21:00 PT). Either the working-hours change hasn't reached it yet, or a manual set/clear of the work location earlier today blocks check-ins for the rest of the day, as Microsoft documents.
+
+- 2026-11-23 08:00 UTC onward (agent wifiM), AC3 verified live:
+  - OST on linuxlt (spatest, Condor Cave), started just after midnight PT: "WORKLOC network change: Building { OST Test Building }". Presence (getpresence, both the classic and the presenceUPS host) then read {location Office, locationSource VerifiedLocation, approximateDetails {id a93350e7-..., idType Directory, name OST Test Building}, isForced true, expiry 2026-11-24T01:00Z = 17:00 PT, maxShared Specific}. OST's flyout shows "In OST Test Building" (harness --pause-test=wl-show, picture wl-show), and so does Teams on winpc (regular building-checkmark icon in #424242; OST now matches).
+  - Why Sunday never worked: the 200s on Sunday set nothing. The expiry above is the old Mon-Fri 8-5 working hours, so the service was still using those hours (my all-day change hadn't reached it). Microsoft also documents that a manual set or clear blocks check-ins for the rest of that day.
+  - Teams' rules found (26304 ADL job action strategy and worker), now followed by OST (desktop/src/work_location.rs):
+    - Flights at Teams' bundled defaults: adlCheckout, adlWiredCheckout, useSSIDForIC3LSNetworkApiRequest (the SSID goes in the report) and useUserStateForWiFiUpdate. OST had read these as off when ECS was silent.
+    - Empty allow list: nothing. Listed Wi-Fi: report. Other Wi-Fi: SSID_MISMATCH. Wired and online: WIRED_CONNECTION, kept when the device's stationary building is the checked-in one. Offline: nothing.
+    - A check-out is a DELETE, and only from a VerifiedLocation. Nothing happens while the machine is locked.
+  - Seen live on winpc: Teams there (wired, Windows location Deny) checked ost-test1 out and showed the banner "Your work location was cleared because your device is no longer connected to Wi-Fi. If this is a stationary device, set a permanent location to prevent this." with Open settings / Don't show again. OST doesn't show that banner yet; nor Teams' Ask-mode first-run banner. Both are follow-ups.
+  - The 404 flakiness on reports (about one in three) was still seen before midnight. After midnight OST's reports got 200.
+  - The winpc Ethernet-off test of Teams' own Wi-Fi check-in was not run. OST's check-in already showed identically in Teams, and Teams on winpc, being wired with location off, checks out by design. Nothing was changed on winpc for it.
+  - Restored: placesSettings autoUpdateLocationPreference back to Disabled; ost-test1 working hours back to Mon-Fri 08:00-17:00 Pacific Standard Time. The checked-in work location expires on its own at 17:00 PT; it was not cleared by hand, which would block check-ins for the day.
+  - Tenant: the Entra group "OST workplace check-in test" was deleted again. The Graph CLI consent Group.ReadWrite.All (Randy only) remains.
+  - Tests: 917 lib + 30 desktop pass (linuxlt).
 <!-- SECTION:NOTES:END -->
