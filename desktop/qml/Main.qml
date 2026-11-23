@@ -10911,6 +10911,26 @@ Window {
             // mention,files}.png), then Recap opens its recap window (RECAPS
             // home recap: the ref; recaps-home-recap.png) and Go to chat its
             // chat (RECAPS home chat).
+            // --recaps-home-pick=<subject start>[,…] (~ for spaces; TASK-0253):
+            // Home's checkboxes and audio recap bar as Teams': the first row
+            // drawn hovered (its checkbox shown; recaps-home-pick-hover.png),
+            // those meetings ticked (RECAPS home pick / bar lines,
+            // recaps-home-picked.png). With --recaps-home-generate the bar's
+            // Generate audio recap then makes one audio recap of them, followed
+            // as --recaps-generate (and --recaps-delete deletes it after);
+            // without, "✕ n/8 selected" clears them again.
+            else if (step === 10 && Qt.application.arguments.some(a => a.startsWith("--recaps-home-pick="))) step = 500
+            else if (step >= 501 && step <= 520) {
+                const want = Qt.application.arguments.find(a => a.startsWith("--recaps-home-pick=")).slice(19).replace(/~/g, " ").split(",")
+                const v = recapsView.item
+                if (step === 501) { console.warn("RECAPS home", v.stateForTest()); v.hotForTest = v.homeRowFor(want[0]) ? v.homeRowFor(want[0]).m.subject : "" }
+                else if (step === 502) { console.warn("RECAPS home bar", v.homeBarForTest()); cap("home-pick-hover") }
+                else if (step === 503) { v.hotForTest = ""; console.warn("RECAPS home pick", v.homePickForTest(want)) }
+                else if (step === 504) { console.warn("RECAPS home bar", v.homeBarForTest()); cap("home-picked") }
+                else if (step === 505 && Qt.application.arguments.indexOf("--recaps-home-generate") >= 0) { v.homeGenerateForTest(); step = 17 }
+                else if (step === 505) v.clearPicks()
+                else if (step === 506) { console.warn("RECAPS home bar", v.homeBarForTest()); cap("home-cleared"); Qt.quit() }
+            }
             else if (step === 10 && Qt.application.arguments.some(a => a.startsWith("--recaps-home"))) step = 400
             else if (step >= 401 && step <= 420) {
                 const subj = ((Qt.application.arguments.find(a => a.startsWith("--recaps-home=")) || "").slice(14) || "OST TEST 240").replace(/~/g, " ")
@@ -10926,8 +10946,16 @@ Window {
                 else if (step === 409) { v.closeHomePopups(); v.hotForTest = "" }
                 else if (step === 410) console.warn("RECAPS home recap", v.homeOpenForTest(subj, (Qt.application.arguments.find(a => a.startsWith("--recaps-home-tab=")) || "").slice(18) || "recap"))
                 else if (step === 414) { const w = conversation.lastRecapWindow; if (w) { console.warn("RECAPS home recap window", w.title, w.stateForTest()); w.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-recaps-home-recap.png"))) } }
-                else if (step === 416) { const w = conversation.lastRecapWindow; if (w) w.close(); console.warn("RECAPS home chat", v.homeOpenForTest(subj, "chat")) }
-                else if (step === 418) { console.warn("RECAPS home chat open", rail.current, backend.currentChatId); Qt.quit() }
+                // (The recap window's Attendance, when it lists one: the
+                // meeting chat on its Attendance tab.)
+                else if (step === 415) { const w = conversation.lastRecapWindow; if (w && w.hasAttendance) { w.openAttendance(); console.warn("RECAPS home attendance pressed") } }
+                else if (step === 416) { console.warn("RECAPS home attendance", rail.current, backend.currentChatId, conversation.tab); window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-recaps-home-attendance.png"))) }
+                else if (step === 417) {
+                    console.warn("RECAPS home attendance report", conversation.meeting ? conversation.meeting.organizer_id : "-", conversation.lastRecapWindow ? conversation.lastRecapWindow.recap.organizer_id : "-", backend.attendanceJson.slice(0, 300))
+                    window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-recaps-home-attendance-report.png")))
+                }
+                else if (step === 418) { const w = conversation.lastRecapWindow; if (w) w.close(); console.warn("RECAPS home chat", v.homeOpenForTest(subj, "chat")) }
+                else if (step === 419) { console.warn("RECAPS home chat open", rail.current, backend.currentChatId); Qt.quit() }
             }
             else if (step === 303) { console.warn("RECAPS detail chosen", recapsView.item.chooseDoneForTest()); }
             // Listen on mobile (its QR dialog), then the chapters.
@@ -10972,13 +11000,19 @@ Window {
             else if (step === 202) { console.warn("RECAPS audio after", recapsView.item.stateForTest(), recapsView.item.audioPlayerStateForTest()); cap("audio-after") }
             else if (step === 204) console.warn("RECAPS auto-play", recapsView.item.audioPlayerStateForTest())
             else if (step === 203 && Qt.application.arguments.indexOf("--recaps-delete") >= 0) backend.eventsRequest("podcastCleanup", "recapsclean", "{}")
+            // --recaps-delete-made: only the audio recap this run made.
+            else if (step === 203 && Qt.application.arguments.indexOf("--recaps-delete-made") >= 0) {
+                const made = recapsView.item.lastGenerated && recapsView.item.lastGenerated.podcast ? recapsView.item.lastGenerated.podcast.id || "" : ""
+                console.warn("RECAPS delete made", made)
+                if (made) backend.eventsRequest("podcastDelete", "recapsclean", JSON.stringify({ ids: [made] }))
+            }
             else if (step === 207) Qt.quit()
             step++
         }
     }
     Connections {
         target: backend
-        enabled: Qt.application.arguments.indexOf("--recaps-delete") >= 0
+        enabled: Qt.application.arguments.some(a => a.startsWith("--recaps-delete"))
         function onEventsReply(id, json) { if (id === "recapsclean") console.warn("RECAPS cleanup", json) }
     }
 
@@ -16318,6 +16352,7 @@ Window {
         onOpenFileRequested: f => fileViewer.show(f)
         onOpenAppDetails: id => appDetails.show(id)
         onOpenEventHighlights: (title, startMs) => eventsView.openEventHighlights(title, startMs)
+        onOpenChatForAttendance: (id, title) => { rail.current = "chat"; window.composing = false; backend.selectChat(id, title) }
         onShareApp: id => appShare.start(id)
         // Meeting details: the meeting in the calendar.
         onOpenMeetingDetails: (url, ical, start) => { rail.current = "calendar"; calendarView.showMeeting(url, ical, start) }

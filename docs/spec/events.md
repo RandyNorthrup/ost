@@ -500,7 +500,7 @@ meeting-recap-home, measured on winpc 2026-11-23 at 1280 x 680, TASK-0252):
   the last 30 days." (12/16 #616161, 16 in) at the end.
 - A row (84 + a subtle line; hovered #F5F5F5, radius 8; 12 in): with a Copilot
   licence a checkbox at 4 on hover (picks meetings for an audio recap: Home's
-  selection bar, not built yet); the preview at 44 (104 x 60, #E8EBFA, radius
+  audio recap bar, below); the preview at 44 (104 x 60, #E8EBFA, radius
   8, a 0.67 #E0E0E0 line): the recording's thumbnail (`So`/`Mn`: the
   recording the catch-up names, else the first; Graph c126x72) with the date
   tile 36 x 36 at 4.67 over it (#F5F5F5, radius 6, Fluent shadow 4, the day
@@ -540,6 +540,49 @@ meeting-recap-home, measured on winpc 2026-11-23 at 1280 x 680, TASK-0252):
 - Filters and search are Teams' own (client side): Mentions has mentions of
   you, Missed a MISSED_MEETING reason, Followed a followed meeting; the search
   matches the subject, organizer, speakers, mentions, tasks and files.
+- **Picking meetings for an audio recap** (TASK-0253; meeting-recap-home `ns`
+  / `ts` / `jn`, the V2 bar `Yi` in `Ki`; measured on winpc 2026-11-23,
+  ticking and unticking only): with Copilot (`recapEntitlement` COPILOT;
+  without it neither the checkboxes nor the headphones show) each row has a
+  32 x 32 Fluent square checkbox 4 in (the 16 px box at 8, radius 2, a 0.67
+  #616161 line; ticked #5B5FC7, #4F52B2 hovered, a white 12 px check), its
+  opacity 0 until the row is hovered or focused and 1 while ticked (120 ms
+  ease). Only the checkbox ticks; a ticked row is #EBEBEB
+  (NeutralBackground1Selected) hovered or not. The picks are the meetings by
+  id in the order ticked (PodcastGenerateProvider, Home's own: going to Audio
+  recaps and back clears them; they survive the filters and search). A
+  meeting can't be ticked (aria-disabled, opacity 0.45, not-allowed cursor,
+  a tooltip on hover or click) when it has only a recording or no transcript
+  you may read ("Audio recap couldn't be generated for this meeting."), nor
+  once ECS Calling `podcastMaxMeetingSelectionCount` (8) are picked ("Select
+  up to eight meetings."); a ticked one can always be unticked. Screen
+  readers hear "Select this meeting to include it with other meetings when
+  generating an audio recap."
+- With one or more picked the filters, search and list / grid give way to the
+  bar (`audioRecapGenerationBar`, at the filters' place: 48 in, 100.3 down
+  in a 48 slot, the page's width less 96, 48 tall, white, radius 8, a 0.67
+  #D1D1D1 line, Fluent shadow 8, padding 8 12): Generate audio recap (a
+  transparent button 31.3 tall, padding 5 12, the headphones 20 and the text
+  14/20 600 #424242 6 apart; hovered brand with the filled headphones) and at
+  the right "✕ 1/8 selected" (a circular outlined button 31.3 tall: white, a
+  0.67 #D1D1D1 line, #F5F5F5 and #C7C7C7 hovered; dismiss 20, 14/600
+  #242424), which clears the picks. Ask Copilot comes first only with ECS
+  MeetingRecap `enableRecapHomeCopilot` (off for ost-test1). Generate is
+  generateAndPopoutPodcast with every picked meeting's event and transcripts
+  (range from the earliest start to the latest end, your saved host, format
+  and language, origin RecapHome; the Podcast first-run dialog first when it
+  is on), so Audio recaps shows the new recap being made; the V1 bar's "pick
+  at least one meeting" warning can't happen here (the bar shows only with
+  picks). Opened from a notification Home also picks the last day's missed,
+  followed and mentioning meetings by itself (not in OST: it has no recap
+  notification).
+- A recap window opened from Home lists **Attendance** under Shared files as
+  Teams does (its artifacts platform adds an AttendanceReport item when
+  `meetingThreadProperties.hasAttendanceReport`; OST asks the meeting's
+  attendance report history, which answers the organizer and co-organizers).
+  Teams' Attendance there opens the meeting chat in a window of its own on
+  Attendance (the chat header, then the report); OST opens the meeting chat on
+  its Attendance tab in the main window.
 - OST: api::recaps::row_from carries `actionItems`, `mentions`, `speakers`,
   `reasons`, `recapFile`, `recordings`, `thumb`, `access` and `files`
   (`meeting_files`); MeetingRecapsView's Home, `weekGroups` shared with the

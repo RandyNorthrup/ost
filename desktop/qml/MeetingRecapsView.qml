@@ -119,7 +119,16 @@ Rectangle {
         return (h >= 5 && h < 12 ? qsTr("Good morning, %1", "meetingRecap:k3ifa8ubh") : h >= 12 && h < 17 ? qsTr("Good afternoon, %1", "meetingRecap:k8pmm56kx")
                 : h >= 17 && h < 22 ? qsTr("Good evening, %1", "meetingRecap:kbaplhscd") : qsTr("Hello, %1", "meetingRecap:k6mh2kbv2")).arg(first)
     }
-    Component.onCompleted: openTab(tab)
+    Component.onCompleted: {
+        openTab(tab)
+        call("recapEntitlement", {}, v => { root.copilot = !!v.copilot })
+    }
+    /// You have Copilot (Teams' recapEntitlement COPILOT): Home's
+    /// checkboxes and the headphones.
+    property bool copilot: false
+    // Home's picks live while Home is shown (Teams' PodcastGenerateProvider
+    // is Home's own, so another tab starts it afresh).
+    onTabChanged: if (tab !== "home") homePicked = []
 
     // ---- header ----
     Rectangle {
@@ -203,6 +212,7 @@ Rectangle {
         // #4F52B2 text).
         Row {
             x: 48; y: 107.3; spacing: 8
+            visible: root.homePicked.length === 0
             Repeater {
                 model: [["all", qsTr("All")], ["mentions", qsTr("Mentions")], ["missed", qsTr("Missed")], ["followed", qsTr("Followed")]]
                 Rectangle {
@@ -220,6 +230,7 @@ Rectangle {
         }
         Row {
             anchors.right: parent.right; anchors.rightMargin: 48; y: 108; spacing: 8
+            visible: root.homePicked.length === 0
             Rectangle { width: 280; height: 32; radius: 4; color: theme.input; border.color: theme.stroke; border.width: 0.67
                 Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: 1; color: theme.pick("#616161", "#ADADAD", "#FFFFFF") }
                 TextInput { id: search; x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter; font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
@@ -235,6 +246,44 @@ Rectangle {
                         FluentIcon { anchors.centerIn: parent; name: parent.modelData[1]; size: 20; color: parent.on ? theme.brand : theme.textStrong }
                         TapHandler { onTapped: root.grid = parent.modelData[0] }
                         Accessible.role: Accessible.Button; Accessible.name: modelData[2] } } }
+        }
+        // With meetings picked, the audio recap bar takes the filters' place
+        // (Teams' audioRecapGenerationBar, measured on winpc 2026-11-23: 48
+        // tall, white, radius 8, a 0.67 #D1D1D1 line, Fluent shadow 8,
+        // padding 8 12): Generate audio recap (a transparent button: the
+        // headphones 20 and the text 14/600 #424242, brand with the filled
+        // glyph when hovered) and at the right "✕ 1/8 selected" (a circular
+        // outlined button, 31.3 tall) that clears the picks.
+        FluentSurface {
+            id: homeBar
+            visible: root.homePicked.length > 0
+            x: 48; y: 100.3; width: parent.width - 96; height: 48; radius: 8; depth: 8
+            color: theme.surface; borderColor: theme.stroke
+            Rectangle {
+                id: barGenerate
+                x: 12.7; anchors.verticalCenter: parent.verticalCenter; height: 31.3; width: bgRow.implicitWidth + 24; radius: 4
+                color: "transparent"
+                Row { id: bgRow; x: 12; anchors.verticalCenter: parent.verticalCenter; spacing: 6
+                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: bgh.hovered ? "headphones-20-filled" : "headphones-20"; size: 20; color: bgh.hovered ? theme.brand : theme.textStrong }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Generate audio recap"); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; font.weight: Font.DemiBold; color: bgh.hovered ? theme.brand : theme.textStrong } }
+                HoverHandler { id: bgh; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.generatePicked() }
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Generate audio recap")
+                Accessible.onPressAction: root.generatePicked()
+            }
+            Rectangle {
+                id: barClear
+                anchors.right: parent.right; anchors.rightMargin: 12.7; anchors.verticalCenter: parent.verticalCenter
+                height: 31.3; width: bcRow.implicitWidth + 25.3; radius: height / 2
+                color: bch.hovered ? theme.menuHover : theme.surface; border.color: bch.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67
+                Row { id: bcRow; x: 12.7; anchors.verticalCenter: parent.verticalCenter; spacing: 6
+                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "dismiss-20"; size: 20; color: theme.text }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: root.pickedLabel; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; font.weight: Font.DemiBold; color: theme.text } }
+                HoverHandler { id: bch; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.clearPicks() }
+                Accessible.role: Accessible.Button; Accessible.name: root.pickedLabel
+                Accessible.onPressAction: root.clearPicks()
+            }
         }
         Rectangle {
             id: homeCard
@@ -284,11 +333,44 @@ Rectangle {
                                     readonly property bool hot: rowHover.hovered || root.hotForTest === m.subject || chipPop.row === hr || filesPop.row === hr || peoplePop.row === hr
                                     readonly property real mainW: (width - 12) * 0.6
                                     readonly property bool canRecap: !!m.threadId && !!m.iCalUid && !(m.threadId.endsWith("@thread.tacv2"))
+                                    readonly property bool picked: root.isPicked(m)
+                                    readonly property string block: root.pickBlock(m, picked)
                                     height: 84.7; radius: 8
-                                    color: hot ? theme.menuHover : "transparent"
+                                    // (Picked: NeutralBackground1Selected, hovered or not.)
+                                    color: picked ? theme.pick("#EBEBEB", "#383838", "#000000") : hot ? theme.menuHover : "transparent"
                                     HoverHandler { id: rowHover }
                                     Component.onCompleted: root.homeRows[m.subject] = hr
                                     Accessible.role: Accessible.ListItem; Accessible.name: m.subject + ", " + root.homeSubtitle(m)
+                                    // The pick (Teams' recap-item-checkbox-slot, with Copilot: a
+                                    // 32 x 32 square checkbox 4 in, shown while the row is hovered
+                                    // or picked, fading in 120 ms; its 16 px box at 8, radius 2, a
+                                    // 0.67 #616161 line, picked brand with a white check, darker
+                                    // hovered; faded to 0.45 when it can't be picked, saying why).
+                                    Item {
+                                        id: pickBox
+                                        objectName: "homePick"
+                                        visible: root.copilot
+                                        x: 4; anchors.verticalCenter: parent.verticalCenter; width: 32; height: 32
+                                        opacity: hr.picked || hr.hot || pbh.hovered || activeFocus ? (hr.block ? 0.45 : 1) : 0
+                                        Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.InOutQuad } }
+                                        activeFocusOnTab: root.copilot
+                                        Rectangle {
+                                            x: 8; y: 8; width: 16; height: 16; radius: 2
+                                            color: hr.picked ? (pbh.hovered ? theme.brandHover : theme.brand) : "transparent"
+                                            border.width: 0.67; border.color: hr.picked ? color : pbh.hovered && !hr.block ? theme.pick("#575757", "#C7C7C7", "#1AEBFF") : theme.textSecondary
+                                            FluentIcon { visible: hr.picked; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.pick("#FFFFFF", "#000000", "#000000") }
+                                        }
+                                        Rectangle { visible: pickBox.activeFocus; anchors.fill: parent; anchors.margins: 4; radius: 4; color: "transparent"; border.width: 2; border.color: theme.text }
+                                        HoverHandler { id: pbh; cursorShape: hr.block ? Qt.ForbiddenCursor : Qt.PointingHandCursor }
+                                        TapHandler { onTapped: root.togglePick(hr.m) }
+                                        Keys.onSpacePressed: root.togglePick(hr.m)
+                                        ToolTip.visible: !!hr.block && pbh.hovered; ToolTip.text: hr.block
+                                        Accessible.role: Accessible.CheckBox; Accessible.checkable: true; Accessible.checked: hr.picked
+                                        Accessible.name: hr.block ? hr.m.subject + ". " + hr.block : hr.m.subject
+                                        Accessible.description: qsTr("Select this meeting to include it with other meetings when generating an audio recap.")
+                                        Accessible.onToggleAction: root.togglePick(hr.m)
+                                        Accessible.onPressAction: root.togglePick(hr.m)
+                                    }
                                     // The preview (Teams' recap-preview-card: #E8EBFA, radius 8, a 0.67
                                     // #E0E0E0 line; the recording's thumbnail filling it, the date tile
                                     // 36 x 36 at 4.67 (#F5F5F5, radius 6, the day 14/600 over the
@@ -400,7 +482,7 @@ Rectangle {
                                             Accessible.role: Accessible.Button; Accessible.name: qsTr("Go to chat", "meetingRecap:k45b9m0c6") }
                                         Row {
                                             anchors.verticalCenter: parent.verticalCenter; spacing: 8
-                                            Rectangle { visible: !!hr.m.transcript && hr.m.access !== "NoPermission"; width: 24; height: 24; radius: 4; color: arh.hovered ? theme.hover : "transparent"
+                                            Rectangle { visible: root.copilot && !!hr.m.transcript && hr.m.access !== "NoPermission"; width: 24; height: 24; radius: 4; color: arh.hovered ? theme.hover : "transparent"
                                                 FluentIcon { anchors.centerIn: parent; name: "headphones-20"; size: 20; color: theme.text }
                                                 HoverHandler { id: arh; cursorShape: Qt.PointingHandCursor }
                                                 ToolTip.visible: arh.hovered; ToolTip.text: qsTr("Audio recap", "podcast:k969y5cag")
@@ -433,6 +515,41 @@ Rectangle {
         }
     }
     property var homeCollapsed: []
+    // Home's picks for an audio recap (Teams' selectedMeetings: the picked
+    // meetings by id, in the order picked; up to podcastMaxMeetingSelection
+    // Count, 8). A meeting can't be picked when its audio recap couldn't be
+    // made (only a recording, or no transcript you may read), nor once 8
+    // are picked; its checkbox is then faded (0.45) and says why.
+    property var homePicked: []
+    readonly property int maxPicks: { const n = Number(ecsValue("podcastMaxMeetingSelectionCount", 8)); return n > 0 ? n : 8 }
+    readonly property string pickedLabel: qsTr("%1/%2 selected").arg(homePicked.length).arg(maxPicks)
+    function pickKey(m) { return m.eventId || m.threadId || "" }
+    function isPicked(m) { const k = pickKey(m); return homePicked.some(x => pickKey(x) === k) }
+    /// Why a meeting can't be picked ("" when it can; Teams' jn).
+    function pickBlock(m, picked) {
+        if (!m.transcript && (m.recordings || []).length) return qsTr("Audio recap couldn't be generated for this meeting.")
+        if (m.transcript && m.access === "NoPermission") return qsTr("Audio recap couldn't be generated for this meeting.")
+        if (!picked && homePicked.length >= maxPicks) return qsTr("Select up to eight meetings.")
+        return ""
+    }
+    function togglePick(m) {
+        const picked = isPicked(m)
+        if (pickBlock(m, picked)) return false
+        const k = pickKey(m)
+        homePicked = picked ? homePicked.filter(x => pickKey(x) !== k) : homePicked.concat([m])
+        console.info("RECAPS home pick", m.subject, !picked, homePicked.length)
+        return true
+    }
+    function clearPicks() { homePicked = []; console.info("RECAPS home picks cleared") }
+    // The bar's Generate audio recap (Teams' Yi → generateAndPopoutPodcast,
+    // origin RecapHome): one audio recap of the picked meetings with your
+    // saved style; Audio recaps then shows it being made.
+    function generatePicked() {
+        if (homePicked.length === 0) return
+        const rows = homePicked.slice()
+        console.info("RECAPS home generate", rows.map(m => m.subject).join(" | "))
+        generateRows(rows, genDialog.style)
+    }
     // (The harness: Home's rows by subject, a row drawn as hovered.)
     property var homeRows: ({})
     property string hotForTest: ""
@@ -454,6 +571,26 @@ Rectangle {
                                                        items: (chipPop.mode === "task" ? chipPop.m.actionItems : chipPop.m.mentions || []).map(t => (chipPop.mode === "task" ? taskLine(t) : mentionLine(t)).replace(/<[^>]*>/g, "")) } : null,
                                 files: filesPop.opened ? { x: Math.round(filesPop.x), y: Math.round(filesPop.y), h: Math.round(filesPop.height), files: (filesPop.m.files || []).map(f => fileName(f)) } : null })
     }
+    // (The harness: Home's picks as a person makes them, through each row's
+    // checkbox; the bar's state; its Generate.)
+    function homePickForTest(prefixes) {
+        const out = []
+        for (const p of prefixes) {
+            const r = homeRowFor(p), box = r ? findNamed(r, "homePick") : null
+            if (!box) { out.push([p, "no checkbox"]); continue }
+            out.push([r.m.subject, root.togglePick(r.m), r.block])
+        }
+        return JSON.stringify(out)
+    }
+    function homeBarForTest() {
+        const rows = Object.keys(homeRows).map(k => homeRows[k]).filter(r => r && r.visible !== undefined)
+        return JSON.stringify({ bar: homeBar.visible, label: pickedLabel, picked: homePicked.map(m => m.subject), filters: !homeBar.visible,
+                                geometry: homeBar.visible ? [homeBar.x, homeBar.y, homeBar.width, homeBar.height] : null,
+                                generate: homeBar.visible ? [barGenerate.x, barGenerate.width, barGenerate.height] : null,
+                                clear: homeBar.visible ? [Math.round(barClear.x * 10) / 10, Math.round(barClear.width * 10) / 10] : null,
+                                rows: rows.map(r => { const b = findNamed(r, "homePick"); return [r.m.subject, r.picked, b ? Math.round(b.opacity * 100) / 100 : null, String(r.color)] }) })
+    }
+    function homeGenerateForTest() { generatePicked() }
     function homeOpenForTest(prefix, what) {
         const r = homeRowFor(prefix)
         if (!r) return "no row"

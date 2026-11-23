@@ -31,6 +31,9 @@ Window {
     /// (a meeting note there) or "" (AI summary).
     property string startTab: ""
     property bool hasAttendance: false
+    /// Look up whether the meeting has an attendance report (a recap
+    /// opened from Meeting Recaps' Home, where no meeting chat says so).
+    property bool findAttendance: false
     property var data_: null
     property bool loading: true
     property string rightPill: startTab === "transcript" ? "Transcript" : startTab === "mentions" ? "Mentions" : startTab === "notes" ? "Notes" : "AINotes"
@@ -161,7 +164,12 @@ Window {
                 if (win.rightPill === "AINotes" && win.aiNotes === null) win.loadAiNotes()
                 // (Opened on Mentions from Meeting Recaps' Home.)
                 if (win.rightPill === "Mentions" && win.mentions === null) backend.eventsRequest("recapMentions", win.tag + "mentions", JSON.stringify({ recap: win.recap }))
+                if (win.findAttendance && !win.hasAttendance && win.recap.thread_id && win.recap.organizer_id)
+                    backend.eventsRequest("recapAttendance", win.tag + "attendance", JSON.stringify({ thread: win.recap.thread_id, organizer: win.recap.organizer_id }))
                 console.info("RECAP open", !!v.player, (v.transcript || []).length, v.recap ? v.recap.thread_id : "")
+            } else if (what === "attendance") {
+                win.hasAttendance = (v.reports || 0) > 0
+                console.info("RECAP attendance", v.error || "", v.reports || 0)
             } else if (what === "extras") {
                 if (!v.error) win.extras = v
                 console.info("RECAP extras", v.error || "", v.clipchamp ? "clipchamp" : "", v.remainingDays, v.copilot)
@@ -1180,6 +1188,6 @@ Window {
         for (const b of [audioButton]) if (b.visible) { const p = b.mapToItem(win.contentItem, 0, 0); out.push({ label: b.label, x: p.x, y: p.y, w: b.width, h: b.height }) }
         return JSON.stringify({ band: out, recording: win.recording, pills: right.shown.map(p => p.k), hidden: right.hidden.map(p => p.k), clipchamp: !!(win.extras && win.extras.clipchamp), files: { x: files.x, w: files.width } })
     }
-    function stateForTest() { return JSON.stringify({ loading: win.loading, pill: win.rightPill, player: !!(win.data_ && win.data_.player), recording: win.recording, audio: !!(win.data_ && win.data_.audioRecap), transcript: win.data_ ? (win.data_.transcript || []).length : -1, thread: win.recap.thread_id || "", link: win.data_ ? win.data_.link : "" }) }
+    function stateForTest() { return JSON.stringify({ loading: win.loading, pill: win.rightPill, attendance: win.hasAttendance, player: !!(win.data_ && win.data_.player), recording: win.recording, audio: !!(win.data_ && win.data_.audioRecap), transcript: win.data_ ? (win.data_.transcript || []).length : -1, thread: win.recap.thread_id || "", link: win.data_ ? win.data_.link : "" }) }
     function shareDialogForTest() { return shareDialog }
 }

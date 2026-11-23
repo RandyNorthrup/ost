@@ -744,14 +744,28 @@ Rectangle {
     // A recap opened from elsewhere (Events' Highlights ▸ View recap): the
     // meeting's thread and recording; the window looks up the rest.
     function openRecapRef(ref, tab) {
-        const w = recapWindow.createObject(null, { recap: Object.assign({ tenant_id: backend.tenantId(), ical_uid: "", organizer_id: "", call_id: "", file_url: "" }, ref), startTab: tab || "" })
+        // (Its Shared files list Attendance when the meeting has a report,
+        // as Teams' meetingThreadProperties.hasAttendanceReport: looked up
+        // once the window knows the meeting's organizer.)
+        const w = recapWindow.createObject(null, { recap: Object.assign({ tenant_id: backend.tenantId(), ical_uid: "", organizer_id: "", call_id: "", file_url: "" }, ref), startTab: tab || "", findAttendance: true })
         w.toast.connect(d => root.toastRequested(d))
+        w.openAttendance.connect(() => root.attendanceOf(w.recap.thread_id || "", w.recap.subject || ""))
         w.show(); w.raise(); w.requestActivate()
         root.lastRecapWindow = w
         console.info("RECAPCARD open", tab || "highlights")
     }
     property var lastRecapWindow: null
     Component { id: recapWindow; RecapWindow {} }
+    // A recap window's Attendance (opened from Meeting Recaps' Home): the
+    // meeting's chat on its Attendance tab.
+    signal openChatForAttendance(string threadId, string title)
+    property string attendanceWanted: ""
+    function attendanceOf(thread, title) {
+        if (!thread) return
+        if (root.chatId === thread) { openAttendance(""); return }
+        attendanceWanted = thread
+        root.openChatForAttendance(thread, title)
+    }
     // Share on the card: Teams' menu (Share recap access, Copy link).
     function openRecapShare(m, recap, anchor) {
         recapShareMenu.ref = root.recapRef(m, recap)
@@ -862,6 +876,7 @@ Rectangle {
         postViewRoot = ""
         channelAttendance = null
         attendanceTab = false; attendanceCall = ""
+        if (attendanceWanted && attendanceWanted === chatId) { attendanceWanted = ""; Qt.callLater(() => root.openAttendance("")) }
         qnaTabLoader.url = ""; whiteboardTabLoader.url = ""
         landing = true
         manageApps = false

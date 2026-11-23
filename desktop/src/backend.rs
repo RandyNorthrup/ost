@@ -21924,6 +21924,19 @@ impl qobject::Backend {
                         let link = api::podcast::mobile_link(&id);
                         Ok(json!({ "link": link, "rows": crate::room_host::qr_rows_at(&link, qrcode::EcLevel::L) }))
                     }
+                    // Whether you have Copilot (Teams' recapEntitlement
+                    // COPILOT): Home's checkboxes and audio recaps.
+                    "recapEntitlement" => {
+                        let copilot = api::ecs::license(&client).await.and_then(|l| l["isCopilot"].as_bool()).unwrap_or(false);
+                        Ok(json!({ "copilot": copilot }))
+                    }
+                    // How many attendance reports a meeting has (a recap
+                    // window's Shared files list Attendance when it has
+                    // one; Teams' meetingThreadProperties.hasAttendanceReport).
+                    "recapAttendance" => {
+                        let reports = api::attendance::history(&client, &s("thread"), &s("organizer"), None).await?;
+                        Ok(json!({ "reports": reports.len() }))
+                    }
                     // A recording's 126 x 72 thumbnail (Teams' Graph
                     // `drives/{d}/items/{i}/thumbnails/0/c126x72/content`),
                     // cached; its local path.
