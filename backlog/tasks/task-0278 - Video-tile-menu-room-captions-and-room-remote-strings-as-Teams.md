@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@tilB'
 created_date: '2026-11-24T15:00:00Z'
-updated_date: '2026-11-24T17:40:00Z'
+updated_date: '2026-11-24T18:05:00Z'
 labels: []
 dependencies: []
 ---
@@ -38,4 +38,7 @@ From TASK-0273: Teams has a ··· menu on video tiles (one of the places it off
 - Not live: a guest's tile (Teams' menu code has no guest branch; the old guest join tool is gone), and OST running in another language showing the remote's fetched strings (de-de chunk fetched and parsed at generation: Controlling -> Steuerung).
 - Tests: lib 965 passed, desktop 37 passed.
 - Cleanup: every OST instance left its call (hung up / Call end 202 in its log) before it stopped; room, relay, btvirt, virtual mic and camera feeds stopped (hci0 advertising 0); test meetings deleted; linuxlt helper files removed (v4l2loopback test cameras reloaded after the crash, left loaded as before). winpc: Teams ost-test1 on Calendar, in no call, Cast closed; test window, scheduled task and script removed.
+
+- 2026-11-24 (tilB, follow-up after merge 6963b1af) guest tile live: Teams on winpc started a Meet now "OST TEST 278 guest tile"; an anonymous Chrome guest on linuxlt ("OST Test Guest 278", fake camera, CDP-driven join) waited in the lobby and was admitted by OST (spatest, --join-admit --join-admit-notbot). Teams' menu for the guest: Mute participant, Pin for me, Spotlight for everyone, Fill frame, divider, Report (the same as anyone else's). OST matched apart from Fit/Fill: Teams fits the video of the one person filling the stage while you float over it (automaticFor1x1call, until you choose), so its menu offered Fill frame. Fixed (CallWindow scaleChoices: chosen per tile, else fit for that 1x1 person); rerun showed Mute participant, Pin for me, Spotlight for everyone, Fill frame, divider, Report. Guest actions all worked (fit/fill, pin/unpin, spotlight ask/confirm/stop, own pin/hide). Guest left with its Leave button (Rejoin page), OST runs hung up, Teams left; Chrome guest and its tunnel stopped.
+- German live: OST spatest with an isolated config (XDG_CONFIG_HOME copy with appLanguage de-de, regionalFollowOs false; the shared desktop.json untouched) built the de-de catalogue (5371 strings, ids fingerprint changed so it rebuilt) and, controlling OST Test Room over the relayed beacon, showed the room remote in German from x.roomremote: Steuerung, Video aus, Mikro ein, Untertitel ausschalten, Layout, Raum trennen ("Room Remote" stays English in Teams' German too). Disconnect room -> the room left (Call end 202), controller hung up; room, relay, btvirt stopped; isolated config removed.
 <!-- SECTION:NOTES:END -->
