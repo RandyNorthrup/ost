@@ -1638,6 +1638,38 @@ Item {
             if (e) details.ev = e
         }
     }
+    /// Your meeting's attendee tracking line on the card, as Outlook's
+    /// peek writes it (its AttendeeTrackingDetails): one or two attendees
+    /// by name ("OST Test 2 didn't respond.", "A and B accepted.", two
+    /// different answers side by side), more as counts in Outlook's order
+    /// ("Accepted 1, Didn't respond 2"). The organizer and rooms don't count.
+    function trackingLine(e) {
+        const org = (e.organizer_address || "").toLowerCase()
+        const meMail = (root.me.mail || "").toLowerCase()
+        const people = (e.attendees || []).filter(a => a.kind !== "resource" && (a.address || "").toLowerCase() !== org)
+        const answer = a => ({ accepted: "a", tentativelyAccepted: "t", declined: "d", following: "f" })[a.response] || "n"
+        const nameOf = a => (a.address || "").toLowerCase() === meMail ? qsTr("You") : a.name || a.address
+        const named = people.filter(a => !!a.name)
+        // You first, as Outlook lists them.
+        named.sort((a, b) => ((b.address || "").toLowerCase() === meMail) - ((a.address || "").toLowerCase() === meMail))
+        const one = a => ({ a: qsTr("%1 accepted."), t: qsTr("%1 tentatively accepted."), d: qsTr("%1 declined."), f: qsTr("%1 is following.") })[answer(a)] || qsTr("%1 didn't respond.")
+        if (named.length === 1) return one(named[0]).arg(nameOf(named[0]))
+        if (named.length === 2) {
+            const [a, b] = named
+            if (answer(a) !== answer(b)) return one(a).arg(nameOf(a)) + " " + one(b).arg(nameOf(b))
+            const two = ({ a: qsTr("%1 and %2 accepted."), t: qsTr("%1 and %2 tentatively accepted."), d: qsTr("%1 and %2 declined."), f: qsTr("%1 and %2 are following.") })[answer(a)] || qsTr("%1 and %2 didn't respond.")
+            return two.arg(nameOf(a)).arg(nameOf(b))
+        }
+        const n = { a: 0, f: 0, t: 0, d: 0, n: 0 }
+        for (const a of people) n[answer(a)]++
+        const parts = []
+        if (n.a) parts.push(qsTr("Accepted %1").arg(n.a))
+        if (n.f) parts.push(qsTr("Following %1").arg(n.f))
+        if (n.t) parts.push(qsTr("Tentative %1").arg(n.t))
+        if (n.d) parts.push(qsTr("Declined %1").arg(n.d))
+        if (n.n) parts.push(qsTr("Didn't respond %1").arg(n.n))
+        return parts.length ? parts.reduce((x, y) => qsTr("%1, %2").arg(x).arg(y)) : ""
+    }
     function responseLine(r) {
         return ({ accepted: qsTr("You accepted"), tentativelyAccepted: qsTr("You tentatively accepted"), declined: qsTr("You declined"), following: qsTr("You are following") })[r] || qsTr("You didn't respond")
     }
@@ -1785,6 +1817,32 @@ Item {
                     font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
                 }
                 Text { x: 36; y: 38; text: root.responseLine(details.ev.response); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+            }
+            // Your meeting: "You're the organizer." with your picture, and
+            // who answered under it (Outlook's PeekEventOrganizerRow, for a
+            // meeting that isn't a draft; the tracking while it asks for
+            // answers and isn't canceled). Measured on winpc 2026-11-23:
+            // 13 under the line, the 24 px picture and 14 px text in a 24
+            // row, the tracking 12/16 under it, 12 above the next line.
+            Item {
+                id: orgRow
+                readonly property string tracking: details.ev.response_requested !== false && !details.ev.is_cancelled ? root.trackingLine(details.ev) : ""
+                visible: !!details.ev.id && details.ev.is_organizer === true && root.evIsMeeting(details.ev) && !details.ev.is_draft
+                width: 358; height: visible ? (tracking ? 67 : 50) : 0
+                Rectangle { y: 0; x: 34; width: 324; height: 1; color: root.cardLine }
+                Avatar { x: 0; y: 14; size: 24; name: root.me.name || ""; photoId: "me" }
+                Text {
+                    x: 36; y: 14; width: 322; height: 24; elide: Text.ElideRight
+                    text: qsTr("You're the organizer.")
+                    font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                }
+                Text {
+                    visible: !!orgRow.tracking
+                    x: 36; y: 38; width: 322; height: 16; elide: Text.ElideRight
+                    text: orgRow.tracking
+                    font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                    Accessible.name: qsTr("Attendee tracking") + ": " + text
+                }
             }
             DetailRow {
                 visible: !!(details.ev.preview || "").trim()
@@ -2828,7 +2886,8 @@ Item {
                     attendees: f.attendees || [], location: f.location || "", bodyHtml: f.bodyHtml || "", online: !!f.online,
                     channel: f.channel && f.channel.channelId ? f.channel : null, showAs: f.showAs || "Busy",
                     editingId: f.editingId || "", sendPersonalInvites: !!f.sendPersonalInvites, timeZone: root.mtTimeZone,
-                    templateId: f.templateId || "", guests: f.guests || [], bodyChanged: !!f.bodyChanged
+                    templateId: f.templateId || "", guests: f.guests || [], bodyChanged: !!f.bodyChanged,
+                    recurrenceChanged: !!f.recurrenceChanged, targetAudience: f.targetAudience || 0
                 }
                 if (f.recurrence) {
                     const r = f.recurrence, pattern = { patternType: r.patternType }

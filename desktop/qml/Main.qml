@@ -4816,6 +4816,30 @@ Window {
             else if (arg("cal-edit") && step === 4) calendarView.formForTest.typeTitleForTest(arg("cal-edit").split("|")[1])
             else if (arg("cal-edit") && step === 5) { cap("edit"); calendarView.formForTest.submitForTest() }
             else if (arg("cal-edit") && step === 11) { console.warn("CALTEST edited", !!ev(arg("cal-edit").split("|")[1])); Qt.quit() }
+            // --cal-buttons=<subject>: the event page's primary button as it
+            // opens, once changed, and on a new form before and after an
+            // attendee (nothing sent).
+            else if (arg("cal-buttons") && step === 2) console.warn("CALTEST buttons page", calendarView.pageForTest(arg("cal-buttons")))
+            else if (arg("cal-buttons") && step === 4) { const f = calendarView.formForTest; console.warn("CALTEST buttons opened", JSON.stringify(f.primaryLabel), f.wasMeeting); cap("buttons-opened") }
+            else if (arg("cal-buttons") && step === 5) calendarView.formForTest.typeTitleForTest(arg("cal-buttons") + " x")
+            else if (arg("cal-buttons") && step === 6) { console.warn("CALTEST buttons changed", JSON.stringify(calendarView.formForTest.primaryLabel)); cap("buttons-changed") }
+            else if (arg("cal-buttons") && step === 7) { calendarView.formOpen = false; calendarView.newMeeting() }
+            else if (arg("cal-buttons") && step === 8) { const f = calendarView.formForTest; console.warn("CALTEST buttons new", JSON.stringify(f.primaryLabel)); f.addAttendeeForTest("ost-test3@scnetsolutions.com", "OST Test 3") }
+            else if (arg("cal-buttons") && step === 9) { console.warn("CALTEST buttons new-attendee", JSON.stringify(calendarView.formForTest.primaryLabel)); calendarView.formOpen = false; Qt.quit() }
+            // --cal-repeat=<subject>|<weekdays, 0 = Sunday, e.g. 2,5>: your
+            // series' page, a new weekly repeat, Send ▸ Edit series ▸ Save.
+            else if (arg("cal-repeat") && step === 2) console.warn("CALTEST repeat page", calendarView.pageForTest(arg("cal-repeat").split("|")[0]))
+            else if (arg("cal-repeat") && step === 5) { const f = calendarView.formForTest; console.warn("CALTEST repeat loaded", f.summary(f.recurrence), JSON.stringify(f.primaryLabel)); f.setWeeklyDaysForTest(arg("cal-repeat").split("|")[1].split(",").map(Number)) }
+            else if (arg("cal-repeat") && step === 6) { const f = calendarView.formForTest; console.warn("CALTEST repeat set", f.summary(f.recurrence), f.recurrenceChanged, JSON.stringify(f.primaryLabel)); cap("repeat-form"); f.submitForTest() }
+            else if (arg("cal-repeat") && step === 7) { console.warn("CALTEST repeat dialog", calendarView.formForTest.editSeriesOpen); cap("repeat-edit-series"); calendarView.formForTest.confirmEditSeriesForTest() }
+            else if (arg("cal-repeat") && step === 12) { console.warn("CALTEST repeat done", calendarView.formOpen); Qt.quit() }
+            // --cal-audience=<subject>|<address>|<name>|<1 all, 2 only added/removed>:
+            // add an attendee on your event's page, Send ▸ Send update.
+            else if (arg("cal-audience") && step === 2) console.warn("CALTEST audience page", calendarView.pageForTest(arg("cal-audience").split("|")[0]))
+            else if (arg("cal-audience") && step === 4) { const p = arg("cal-audience").split("|"); calendarView.formForTest.addAttendeeForTest(p[1], p[2]) }
+            else if (arg("cal-audience") && step === 5) { const f = calendarView.formForTest; console.warn("CALTEST audience asks", f.asksAudience(), JSON.stringify(f.primaryLabel)); f.submitForTest() }
+            else if (arg("cal-audience") && step === 6) { console.warn("CALTEST audience dialog", calendarView.formForTest.audienceOpen); cap("audience-dialog"); calendarView.formForTest.chooseAudienceForTest(Number(arg("cal-audience").split("|")[3] || 2)) }
+            else if (arg("cal-audience") && step === 11) { console.warn("CALTEST audience done", calendarView.formOpen); Qt.quit() }
             // --cal-channel-header=<team>/<channel>: that channel's header ▸
             // Schedule a meeting; the form it opens (never sent).
             else if (arg("cal-channel-header") && step === 2) {
@@ -4967,7 +4991,7 @@ Window {
                 ]
                 if (step >= 1 && step - 1 < seq.length) seq[step - 1]()
             }
-            else if (!arg("cal-respond") && !arg("cal-schedule") && !arg("cal-cancel") && !arg("cal-joinid") && !arg("cal-edit") && !arg("cal-channel-header") && !arg("cal-rsvp-note") && !arg("cal-propose") && !arg("cal-proposals") && args.indexOf("--cal-event-form") < 0 && args.indexOf("--cal-live") < 0) {
+            else if (!arg("cal-respond") && !arg("cal-schedule") && !arg("cal-cancel") && !arg("cal-joinid") && !arg("cal-edit") && !arg("cal-buttons") && !arg("cal-repeat") && !arg("cal-audience") && !arg("cal-channel-header") && !arg("cal-rsvp-note") && !arg("cal-propose") && !arg("cal-proposals") && args.indexOf("--cal-event-form") < 0 && args.indexOf("--cal-live") < 0) {
                 // Pictures: the views, the card and page of --cal-peek, the form and dialogs.
                 const peek = arg("cal-peek")
                 const seq = [

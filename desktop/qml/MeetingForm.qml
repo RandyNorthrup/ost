@@ -8,7 +8,7 @@ import QtQuick.Controls.Basic
 //   20, the title 18/700 at 60, then the tabs (56 tall, 14 px, the picked
 //   one 600 with a 3 px brand line under it): Details, Scheduling
 //   Assistant (an existing meeting: Chat, Details, Scheduling Assistant);
-//   at the right Save / Send / Send update (or Join) 96 x 32 brand, then
+//   at the right Save / Send (or Join) 96 x 32 brand, then
 //   Close 96 x 32 white with a #D1D1D1 border, both 14/600, 8 apart, 8 in;
 // - the command bar, 40 tall with a divider: "Show as: Busy ▾",
 //   "Category: None ▾" (greyed with a channel), "…"; an existing meeting
@@ -84,20 +84,56 @@ Item {
     readonly property bool readOnly: mode === "view"
     readonly property bool hasInvitees: required.length + optional.length > 0 || !!channel
     readonly property bool isSeries: ["occurrence", "exception", "seriesMaster"].indexOf(event.event_type || "") >= 0
+    /// It was sent as a meeting (attendees or a Teams meeting), not saved as
+    /// an appointment.
+    readonly property bool wasMeeting: existing && (event.is_meeting === true || !!event.join_url || !!event.channel_id
+        || (event.attendees || []).some(a => a.kind !== "resource" && (a.address || "").toLowerCase() !== (event.organizer_address || "").toLowerCase()))
+    // The primary button, as Teams' event page (Outlook's form, its
+    // ComposeSendSaveButton; measured on winpc 2026-11-23) shows it:
+    // - a new event: Save, Send once it has attendees;
+    // - your event: nothing (a Teams meeting: Join) until something
+    //   changes, then Send for a meeting (also once its attendees are
+    //   gone) or an appointment given attendees, Save for an appointment.
     readonly property string primaryKind: mode === "view" ? "join"
-        : existing ? (dirty ? "update" : (event.join_url ? "join" : "update"))
-        : (hasInvitees || virtualAppointment ? "send" : "save")
-    readonly property string primaryLabel: ({ join: qsTr("Join"), update: qsTr("Send update"), send: qsTr("Send"), save: qsTr("Save") })[primaryKind]
+        : !existing ? (hasInvitees || virtualAppointment ? "send" : "save")
+        : dirty ? (wasMeeting || hasInvitees ? "send" : "save")
+        : event.join_url ? "join" : ""
+    readonly property string primaryLabel: ({ join: qsTr("Join"), send: qsTr("Send"), save: qsTr("Save") })[primaryKind] || ""
     // A virtual appointment sends once it has a title and its guests.
     readonly property bool primaryEnabled: primaryKind === "join" ? !!event.join_url
-        : primaryKind === "update" ? dirty
-        : virtualAppointment && !existing ? guestsReady && titleInput.text.trim().length > 0 : true
+        : virtualAppointment && !existing ? guestsReady && titleInput.text.trim().length > 0 : !!primaryKind
     readonly property int durationMin: Math.max(0, Math.round((endAt - startAt) / 60000))
     readonly property var showAsLabels: ({ Free: qsTr("Free"), WorkingElsewhere: qsTr("Working elsewhere"), Tentative: qsTr("Tentative"), Busy: qsTr("Busy"), Oof: qsTr("Away") })
 
     onRequiredChanged: if (!loading) { dirty = true; availabilityWanted(allMails()) }
     onOptionalChanged: if (!loading) { dirty = true; availabilityWanted(allMails()) }
-    onDetailChanged: if (existing && detail && detail.body_html !== undefined) { loading = true; setBody(detail.body_html); bodyAtLoad = bodyHtml(); loading = false }
+    onDetailChanged: if (existing && detail && detail.body_html !== undefined) {
+        loading = true
+        setBody(detail.body_html); bodyAtLoad = bodyHtml()
+        // A series' repeat (an occurrence shows its series').
+        if (detail.recurrence && !dirty) { recurrence = fromGraph(detail.recurrence, startAt); recurrenceAtLoad = recurrenceKey(recurrence) }
+        loading = false
+    }
+    /// The repeat as the form opened it (an update sends it to the series
+    /// only when it changed, as Outlook's Edit series does).
+    property string recurrenceAtLoad: ""
+    function recurrenceKey(r) { return r ? JSON.stringify([r.unit, r.interval, r.days, fmtDate(r.start), r.end ? fmtDate(r.end) : ""]) : "" }
+    readonly property bool recurrenceChanged: existing && recurrenceKey(recurrence) !== recurrenceAtLoad
+    /// The attendees, title, times and place as the form opened them.
+    property string attendeesAtLoad: ""
+    property var atLoad: ({})
+    function attendeeKey() {
+        const k = l => l.map(p => (p.address || "").toLowerCase()).sort()
+        return JSON.stringify([k(required), k(optional)])
+    }
+    /// Outlook's "Send update" prompt: only the attendees changed (the
+    /// title, times, place and repeat as they were), and there were and
+    /// still are attendees.
+    function asksAudience() {
+        return existing && attendeesAtLoad !== JSON.stringify([[], []]) && required.length + optional.length > 0
+            && attendeeKey() !== attendeesAtLoad && titleInput.text.trim() === atLoad.subject
+            && startAt.getTime() === atLoad.start && endAt.getTime() === atLoad.end && location === atLoad.location && !recurrenceChanged
+    }
     /// The details as the form opened them (an update sends the body only
     /// when it changed).
     property string bodyAtLoad: ""
@@ -190,6 +226,9 @@ Item {
         location = (ev.location && !(online && ev.location === "Microsoft Teams Meeting")) ? ev.location : ""
         channel = ev.channel_id ? { teamId: ev.team_id || "", teamName: ev.team_name || "", channelId: ev.channel_id, channelName: ev.channel_name || "" } : null
         recurrence = fromGraph(ev.recurrence, startAt)
+        recurrenceAtLoad = recurrenceKey(recurrence)
+        attendeesAtLoad = attendeeKey()
+        atLoad = { subject: titleInput.text.trim(), start: startAt.getTime(), end: endAt.getTime(), location: location }
         showAs = ({ free: "Free", tentative: "Tentative", busy: "Busy", oof: "Oof", workingElsewhere: "WorkingElsewhere" })[ev.show_as] || "Busy"
         dirty = false
         loading = false
@@ -260,7 +299,7 @@ Item {
         const c = (bodyLinkSet || bodyLink.toString()).toLowerCase()
         return html.replace(/(<a [^>]*><span style="(?:[^"]*?[\s;])?)color:(#[0-9a-f]{6});/gi, (all, head, col) => col.toLowerCase() === c ? head : all)
     }
-    function form(send) {
+    function form(send, audience) {
         let s = new Date(startAt), e = new Date(endAt)
         if (allDay) { s = dayStart(startAt); e = dayStart(endAt); e.setDate(e.getDate() + 1) }
         return {
@@ -271,6 +310,8 @@ Item {
             location: location,
             bodyHtml: bodyHtml(),
             bodyChanged: bodyHtml() !== bodyAtLoad,
+            recurrenceChanged: recurrenceChanged,
+            targetAudience: audience || 0,
             online: channel ? true : online,
             channel: channel,
             recurrence: recurrence ? { patternType: recurrence.patternType, daily: recurrence.daily, weekly: recurrence.weekly, monthly: recurrence.monthly, yearly: recurrence.yearly, range: { startDate: recurrence.start, endDate: recurrence.end } } : null,
@@ -287,7 +328,13 @@ Item {
     function primaryAction() {
         if (primaryKind === "join") { if (event.join_url) root.join(); return }
         if (!primaryEnabled) return
-        submit(form(primaryKind !== "save"))
+        // A new repeat for a series asks first (Outlook's "Edit series").
+        if (existing && isSeries && recurrenceChanged) { editSeriesDialog.open(); return }
+        sendNow()
+    }
+    function sendNow() {
+        if (asksAudience()) { audienceDialog.open(); return }
+        submit(form(primaryKind !== "save", 0))
     }
     Shortcut { sequence: "Ctrl+S"; enabled: root.visible && !root.readOnly; onActivated: root.primaryAction() }
 
@@ -382,9 +429,9 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 8
             FormButton {
-                visible: root.primaryKind !== "join" || !!root.event.join_url
+                visible: !!root.primaryKind && (root.primaryKind !== "join" || !!root.event.join_url)
                 primary: true; label: root.primaryLabel; enabledState: root.primaryEnabled
-                icon: root.primaryKind === "join" ? "video-20" : ""
+                icon: ({ join: "video-20", send: "send-20", save: "save-20" })[root.primaryKind] || ""
                 onClicked: root.primaryAction()
             }
             FormButton { label: qsTr("Close"); onClicked: root.closed() }
@@ -1560,6 +1607,64 @@ Item {
         }
     }
 
+    // Send with only the attendees changed: Outlook's "Send update" prompt
+    // (Teams' event page, measured on winpc 2026-11-23: 600 wide, "Only
+    // added/removed attendees" primary, "All attendees"; Escape sends
+    // nothing).
+    Popup {
+        id: audienceDialog
+        parent: Overlay.overlay
+        anchors.centerIn: Overlay.overlay
+        modal: true; focus: true
+        width: 600; padding: 24
+        closePolicy: Popup.CloseOnEscape
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
+        contentItem: Column {
+            spacing: 8
+            Text { width: 552; text: qsTr("Send update"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+            Text {
+                width: 552; wrapMode: Text.Wrap
+                text: qsTr("You've made changes to the attendee list. Do you want to send updates to only added/removed attendees or all of them?")
+                font.family: theme.font; font.pixelSize: 14; color: theme.text
+            }
+            Item { width: 1; height: 16 }
+            Row {
+                anchors.right: parent.right; spacing: 8
+                FormButton { primary: true; label: qsTr("Only added/removed attendees"); onClicked: { audienceDialog.close(); root.submit(root.form(true, 2)) } }
+                FormButton { label: qsTr("All attendees"); onClicked: { audienceDialog.close(); root.submit(root.form(true, 1)) } }
+            }
+        }
+    }
+
+    // Send with a new repeat for a series: Outlook's "Edit series" (Save,
+    // Cancel; measured on winpc 2026-11-23).
+    Popup {
+        id: editSeriesDialog
+        parent: Overlay.overlay
+        anchors.centerIn: Overlay.overlay
+        modal: true; focus: true
+        width: 340; padding: 24
+        closePolicy: Popup.CloseOnEscape
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
+        contentItem: Column {
+            spacing: 8
+            Text { width: 292; text: qsTr("Edit series"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+            Text {
+                width: 292; wrapMode: Text.Wrap
+                text: qsTr("If you changed specific events in the series, your changes will be canceled and those events will match the series again.")
+                font.family: theme.font; font.pixelSize: 14; color: theme.text
+            }
+            Item { width: 1; height: 16 }
+            Row {
+                anchors.right: parent.right; spacing: 8
+                FormButton { primary: true; label: qsTr("Save"); onClicked: { editSeriesDialog.close(); root.sendNow() } }
+                FormButton { label: qsTr("Cancel"); onClicked: editSeriesDialog.close() }
+            }
+        }
+    }
+
     // RSVP to <title> with note (600 wide).
     Popup {
         id: rsvpDialog
@@ -1617,6 +1722,16 @@ Item {
     function prefill(subject, body) { titleInput.text = subject || ""; setBody(body || ""); markDirty() }
     function pickRepeatForTest(i) { pickRepeat(i) }
     function saveRecurrenceForTest(end) { if (end) recDialog.end = new Date(end); root.recurrence = recDialog.draft; markDirty(); recDialog.close() }
+    /// A weekly repeat on these weekdays (0 = Sunday), keeping its start and end.
+    function setWeeklyDaysForTest(days) {
+        const r = recurrence
+        recurrence = makeRecurrence("week", r ? r.interval : 1, days, r ? r.start : dayStart(startAt), r ? r.end : null)
+        markDirty()
+    }
+    readonly property bool editSeriesOpen: editSeriesDialog.opened
+    function confirmEditSeriesForTest() { if (editSeriesDialog.opened) { editSeriesDialog.close(); sendNow() } }
+    readonly property bool audienceOpen: audienceDialog.opened
+    function chooseAudienceForTest(n) { if (audienceDialog.opened) { audienceDialog.close(); submit(form(true, n === 1 ? 1 : 2)) } }
     function pickChannelForTest(teamName, channelName) {
         const t = (teams || []).find(x => x.name === teamName)
         const c = t ? (t.channels || []).find(x => x.name === channelName) : null
