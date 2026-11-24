@@ -25,6 +25,13 @@ pub struct QuickItem {
     pub preview: String,
     /// Followed threads: the root post's preview and the reply count.
     pub parent_preview: String,
+    /// Followed threads: the root post's subject (Teams' row shows it in
+    /// place of the preview when it has one).
+    pub parent_subject: String,
+    /// Followed threads: the glyph before the root post's line, as Teams'
+    /// thread slice (`getMessageType`): "deleted" (a deleted post) or
+    /// "meeting" (a channel meeting's post); empty otherwise.
+    pub parent_icon: String,
     pub replies: u64,
     pub time: String,
     pub unread: bool,
@@ -44,10 +51,28 @@ fn items_from(v: &serde_json::Value, saved: bool) -> Vec<QuickItem> {
         if thread.is_empty() || !seen.insert(key) {
             continue;
         }
+        // A deleted thread's newest record (activityReason "deleted", with
+        // deleteActivityTimestamp and no preview): Teams drops the thread.
+        if !saved && (s("activityReason") == "deleted" || !a["deleteActivityTimestamp"].is_null()) {
+            continue;
+        }
         if saved && s("activitySubtype") != "saved" {
             continue;
         }
         let ctx = &a["activityContext"];
+        let c = |k: &str| ctx[k].as_str().unwrap_or_default().to_string();
+        // A record for the root post itself carries no parent: Teams uses
+        // the message's own preview, with no subject or glyph.
+        let root = !saved && n("sourceMessageId") == n("sourceReplyChainId");
+        let parent_icon = if root {
+            String::new()
+        } else if c("parentMessagePreviewTemplateOption").eq_ignore_ascii_case("deleted") {
+            "deleted".to_string()
+        } else if c("parentMessageType").eq_ignore_ascii_case("meeting") {
+            "meeting".to_string()
+        } else {
+            String::new()
+        };
         out.push(QuickItem {
             channel: thread.ends_with("@thread.tacv2") || s("sourceThreadType") == "space",
             thread_id: thread,
@@ -57,7 +82,9 @@ fn items_from(v: &serde_json::Value, saved: bool) -> Vec<QuickItem> {
             sender: s("sourceUserImDisplayName"),
             sender_mri: s("sourceUserId"),
             preview: s("messagePreview"),
-            parent_preview: ctx["parentMessagePreview"].as_str().unwrap_or_default().to_string(),
+            parent_preview: if root { s("messagePreview") } else { c("parentMessagePreview") },
+            parent_subject: if root { String::new() } else { c("parentMessageSubject") },
+            parent_icon,
             replies: ctx["repliesCount"].as_str().and_then(|r| r.parse().ok()).or_else(|| ctx["repliesCount"].as_u64()).unwrap_or(0),
             time: m["originalarrivaltime"].as_str().unwrap_or_default().to_string(),
             unread: m["properties"]["isread"].as_bool() == Some(false) || m["properties"]["isread"].as_str() == Some("false"),
@@ -125,5 +152,33 @@ mod tests {
         assert_eq!(f.iter().map(|i| i.preview.as_str()).collect::<Vec<_>>(), vec!["72", "71"]);
         assert!(f[0].channel);
         assert_eq!((f[0].replies, f[0].parent_preview.as_str()), (3, "root"));
+    }
+
+    #[test]
+    fn followed_marks_meeting_and_deleted_roots() {
+        let mut meeting = rec("2026-11-24T18:00:00Z", "reply", "19:c@thread.tacv2", 2, 1, "reply");
+        let ctx = &mut meeting["properties"]["activity"]["activityContext"];
+        ctx["parentMessageType"] = "Meeting".into();
+        ctx["parentMessageSubject"] = "OST TEST 272 channel meeting".into();
+        let mut deleted = rec("2026-11-24T17:00:00Z", "reply", "19:c@thread.tacv2", 4, 3, "reply");
+        deleted["properties"]["activity"]["activityContext"]["parentMessagePreviewTemplateOption"] = "deleted".into();
+        let root = rec("2026-11-24T16:00:00Z", "reply", "19:c@thread.tacv2", 5, 5, "the post");
+        let f = followed_from(&serde_json::json!({"messages": [meeting, deleted, root]}));
+        let got: Vec<_> = f.iter().map(|i| (i.parent_icon.as_str(), i.parent_subject.as_str(), i.parent_preview.as_str())).collect();
+        assert_eq!(got, vec![("meeting", "OST TEST 272 channel meeting", "root"), ("deleted", "", "root"), ("", "", "the post")]);
+    }
+
+    #[test]
+    fn followed_drops_deleted_threads() {
+        // As 48:threads had "OST TEST 272 channel meeting" once its post was
+        // deleted: a "deleted" record newer than the thread's reply.
+        let reply = rec("2026-11-24T10:04:00Z", "reply", "19:c@thread.tacv2", 2, 1, "reply");
+        let deleted = serde_json::json!({"originalarrivaltime": "2026-11-24T10:04:47.573Z", "properties": {"isread": true, "activity": {
+            "activityReason": "deleted", "activityType": "threads", "deleteActivityTimestamp": 1795518032624_i64,
+            "sourceMessageId": 1, "sourceReplyChainId": 1, "sourceThreadId": "19:c@thread.tacv2", "sourceThreadType": "topic",
+            "activityContext": {"parentMessagePreviewTemplateOption": "deleted", "repliesCount": "0"}}}});
+        let other = rec("2026-11-17T12:41:16Z", "reply", "19:c@thread.tacv2", 4, 3, "kept");
+        let f = followed_from(&serde_json::json!({"messages": [reply, deleted, other]}));
+        assert_eq!(f.iter().map(|i| i.preview.as_str()).collect::<Vec<_>>(), vec!["kept"]);
     }
 }

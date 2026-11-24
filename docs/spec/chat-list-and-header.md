@@ -1374,6 +1374,25 @@ OST Guest accounts; all were removed afterwards.
   preview (parentMessagePreview, 12/16 #424242), then "picture Name: text"
   of the newest reply (two lines). Hover: Unfollow thread, More options.
   (Teams' time follows the thread's last edit; OST shows the record's.)
+- The root line (TASK-0272, winpc 2026-11-24; Teams' thread slice
+  `getMessageType` / `cn`): parentMessageSubject when it isn't empty, else
+  parentMessagePreview (a record for the root itself: its own
+  messagePreview, no glyph). Before it, 6 apart, a 16 px glyph in the
+  text's colour, top-aligned: CalendarRegular when
+  activityContext.parentMessageType is "Meeting" (a channel meeting's
+  post, cancelled or not; its preview is the meeting's title),
+  DeleteRegular when parentMessagePreviewTemplateOption is "deleted".
+  Unread threads: the channel and the root line 700, and a 4 px #242424
+  dot 22 in whose bottom meets the root line's top.
+- Deleting a thread's post turns its 48:threads record into
+  activityReason "deleted" (deleteActivityTimestamp, no subtype or
+  preview, repliesCount 0); Teams drops the thread. Teams also drops a
+  thread whose conversation it doesn't know (the slice item needs one:
+  `withMandatedConversation`), e.g. channels of teams you left; OST skips
+  channel threads whose channel isn't in its team list.
+- A channel meeting's banner in the 512 wide view (420 at a 452 card):
+  the flex row's 10 px gap leaves the text 190.7 wide, so the title and
+  the start both wrap (105.3 tall, card 253).
 - Saved from `48:saved/messages` (savedMessage records; a later unSaved
   record removes one): the chat or channel, then "picture Name: text";
   Unsave this message (filled bookmark) and More options at 292 / 324.

@@ -21,6 +21,11 @@ import QtQuick.Controls.Basic
 //   it, Join (at least 96 x 31.3, white, a #D1D1D1 line, 14/600) 20.7 from
 //   the right. Teams opens the meeting's own page (the organizer's
 //   editable form); OST opens it in Calendar.
+// - Narrow (a 420 banner in Followed threads' 512 view, measured on winpc
+//   2026-11-24, TASK-0272): the banner is a flex row with a 10 px gap, so
+//   the text column ends 10 before More options (190.7 wide there); the
+//   title wraps to two lines and the start wraps too (no clamp), and the
+//   banner grows (105.3 tall) with the icon and buttons centred.
 Rectangle {
     id: root
     /// The message's `scheduled_meeting`.
@@ -65,7 +70,7 @@ Rectangle {
     Column {
         id: info
         x: iconBox.x + 32 + 10
-        width: (buttons.visible ? buttons.x - 8 : root.width - 20.7) - x
+        width: (buttons.visible ? buttons.x - 10 : root.width - 20.7) - x
         anchors.verticalCenter: parent.verticalCenter
         Row {
             width: parent.width
@@ -88,7 +93,7 @@ Rectangle {
         }
         Text {
             visible: root.when !== ""
-            width: parent.width; elide: Text.ElideRight
+            width: parent.width; wrapMode: Text.Wrap
             text: root.when
             font.family: theme.font; font.pixelSize: 12
             lineHeight: 16; lineHeightMode: Text.FixedHeight

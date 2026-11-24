@@ -11,7 +11,11 @@ import QtQuick.Controls.Basic
 //   at 32 and, 48 after it:
 //   - Followed threads: the channel (14/20) and "· N replies" (12/16
 //     #424242), the time at the right (12, #424242); the root post's line
-//     (12/16 #424242); then the newest reply: its writer's 20 px picture,
+//     (12/16 #424242: its subject, else its preview; a deleted post's or a
+//     channel meeting's after Teams' 16 px delete / calendar glyph, 6
+//     before the text; an unread thread's channel and root line bold
+//     (700) with a 4 px #242424 dot 22 in, its bottom on the root line's top;
+//     TASK-0272); then the newest reply: its writer's 20 px picture,
 //     "Name: text" (14/20, up to two lines).
 //   - Saved: the chat or channel (14/20); then the writer's picture and
 //     "Name: text" (14/20, up to two lines); Unsave this message (filled
@@ -41,8 +45,12 @@ Rectangle {
     signal backRequested()
     readonly property bool followed: kind === "followed"
     readonly property var teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
-    readonly property var shown: items.filter(i => !chip
+    // (Teams drops a thread whose conversation it doesn't know — its slice
+    // item needs one — so a followed thread of a channel you're no longer
+    // in, or one that was deleted, isn't listed.)
+    readonly property var shown: items.filter(i => (!chip
         || (chip === "unread" ? i.unread : chip === "channels" ? i.channel : !i.channel))
+        && (!followed || !i.channel || !teams.length || !!channelOf(i.thread_id)))
     color: theme.surface
     // Up / Down / Home / End through the rows, as Teams' (ListKeys).
     property alias enterToOpen: keys.enterToOpen
@@ -164,6 +172,14 @@ Rectangle {
                     x: 8; width: parent.width - 16; height: parent.height - 4; radius: theme.radius
                     color: "transparent"; border.width: 2; border.color: theme.text
                 }
+                // Followed threads: an unread thread's 4 px dot left of the
+                // picture (Teams' unread indicator).
+                Rectangle {
+                    objectName: "followedUnreadDot"
+                    visible: root.followed && row.modelData.unread === true
+                    x: 22; y: 28; width: 4; height: 4; radius: 2
+                    color: theme.onFill(hcFill1, theme.text)
+                }
                 Avatar {
                     x: 32; y: 12; size: 36; square: !!row.modelData.channel; squareRadius: 4
                     name: row.ch ? row.ch.team.name : (row.modelData.topic || "?")
@@ -173,7 +189,7 @@ Rectangle {
                 }
                 Row {
                     x: 80; y: 10; spacing: 6
-                    Text { text: root.titleOf(row.modelData); width: Math.min(implicitWidth, root.paneWidth - 190, root.paneWidth - 80 - 32 - 64 - (repliesLabel.visible ? repliesLabel.implicitWidth + 6 : 0)); elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(hcFill1, theme.text) }
+                    Text { text: root.titleOf(row.modelData); font.weight: root.followed && row.modelData.unread ? Font.Bold : Font.Normal; width: Math.min(implicitWidth, root.paneWidth - 190, root.paneWidth - 80 - 32 - 64 - (repliesLabel.visible ? repliesLabel.implicitWidth + 6 : 0)); elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(hcFill1, theme.text) }
                     Text {
                         id: repliesLabel
                         visible: root.followed
@@ -188,12 +204,31 @@ Rectangle {
                     text: root.stamp(row.modelData.time)
                     font.family: theme.font; font.pixelSize: 12; lineHeight: 19; lineHeightMode: Text.FixedHeight; color: theme.onFill(hcFill1, theme.textStrong)
                 }
-                Text {
+                // The root post's line: its subject, else its preview, after
+                // Teams' glyph for a deleted post or a channel meeting's.
+                Item {
+                    id: parentLine
+                    objectName: "followedParentLine"
                     visible: root.followed
-                    x: 80; y: 32; width: parent.width - 80 - 32
-                    text: row.modelData.parent_preview
-                    elide: Text.ElideRight; maximumLineCount: 1
-                    font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.onFill(hcFill1, theme.textStrong)
+                    readonly property string iconName: row.modelData.parent_icon === "meeting" ? "calendar-20" : row.modelData.parent_icon === "deleted" ? "delete-20" : ""
+                    readonly property string lineText: row.modelData.parent_subject || row.modelData.parent_preview || ""
+                    readonly property Item iconItem: parentIcon
+                    readonly property Item textItem: parentText
+                    x: 80; y: 32; width: parent.width - 80 - 32; height: 16
+                    FluentIcon {
+                        id: parentIcon
+                        visible: parentLine.iconName !== ""
+                        size: 16; name: parentLine.iconName
+                        color: theme.onFill(hcFill1, theme.textStrong)
+                    }
+                    Text {
+                        id: parentText
+                        x: parentIcon.visible ? 16 + 6 : 0; width: parent.width - x
+                        text: parentLine.lineText
+                        elide: Text.ElideRight; maximumLineCount: 1
+                        font.weight: root.followed && row.modelData.unread ? Font.Bold : Font.Normal
+                        font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.onFill(hcFill1, theme.textStrong)
+                    }
                 }
                 Avatar { x: 80; y: row.bodyY + 1.8; size: 20; name: row.modelData.sender || "?"; photoId: row.modelData.sender_mri || "" }
                 Text {

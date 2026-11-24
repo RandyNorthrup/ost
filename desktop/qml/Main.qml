@@ -17367,8 +17367,12 @@ Window {
     // that meeting by default) and logs its calendar card there and in its
     // post view (header's second line); "followed" picks the newest
     // followed thread of OST threads test (Teams' chat-style thread under
-    // the post header: header, More, the chat and its compose); "cancel"
-    // cancels the meeting and deletes its post and the cancel reply.
+    // the post header: header, More, the chat and its compose); "reply"
+    // replies to the meeting's post and follows it (TASK-0272);
+    // "followed-meeting" logs Followed threads' rows (the root line's icon
+    // and text) and opens the meeting's thread there (its card in the 512
+    // wide view); "cancel" cancels the meeting and deletes its post and
+    // your replies.
     // MEETPOST lines; -meeting-post-*.png.
     Timer {
         id: meetPostTest
@@ -17464,6 +17468,55 @@ Window {
                 } else if (step === 10) {
                     log("more open", followedPost.moreItemsForTest())
                     quickView.backRequested()
+                    Qt.quit(); return
+                }
+            } else if (phase === "reply") {
+                if (step === 0) { rail.current = "chat"; backend.selectChat(channel.id, channel.name) }
+                else if (step === 2) {
+                    target = pick()
+                    if (!target && waited++ < 15) return
+                    waited = 0
+                    if (!target) { log("no meeting post"); Qt.quit(); return }
+                    log("reply to", target.id, target.meeting_title)
+                    backend.sendThreadReply(channel.id, target.id, "<p>" + subjectArg + " reply</p>", "[]", "", false)
+                } else if (step === 5) {
+                    backend.setThreadFollowing(target.id, true)
+                    log("follow", target.id)
+                } else if (step === 8) {
+                    const t = (conversation.messages || []).find(m => m.id === target.id)
+                    log("following", t ? [t.following, t.follow_explicit] : null, "replies", (conversation.messages || []).filter(m => m.root_id === target.id && !m.deleted).map(m => [m.id, (m.text || "").slice(0, 40)]))
+                    Qt.quit(); return
+                }
+            } else if (phase === "followed-meeting") {
+                if (step === 0) { rail.current = "chat"; chatList.quickOpen = "followed" }
+                else if (step === 2) {
+                    const items = (quickView.items || []).filter(i => channel && i.thread_id === channel.id)
+                    const it = items.find(i => i.parent_icon === "meeting" && (i.parent_subject || i.parent_preview) === subjectArg)
+                        || items.find(i => i.parent_icon === "meeting")
+                    if (!it && waited++ < 10) return
+                    waited = 0
+                    if (!it) { log("no meeting thread", items.map(i => [i.reply_chain, i.parent_icon, i.parent_subject, i.parent_preview])); Qt.quit(); return }
+                    target = it
+                    log("item", it)
+                    // --meeting-post-show-unread: draw that row as unread
+                    // (once read in Teams the record stays read).
+                    if (Qt.application.arguments.indexOf("--meeting-post-show-unread") >= 0 && !it.unread) {
+                        quickView.items = quickView.items.map(i => i === it ? Object.assign({}, i, { unread: true }) : i)
+                        target = quickView.items.find(i => i.reply_chain === it.reply_chain && i.thread_id === it.thread_id)
+                        waited = 0; return
+                    }
+                    const rows = findAll(quickView, c => c.visible && c.objectName === "followedParentLine", [])
+                    log("rows", rows.slice(0, 4).map(r => ({ line: geo(r), text: r.lineText.slice(0, 40), icon: r.iconName, iconGeo: geo(r.iconItem), textGeo: geo(r.textItem), bold: r.textItem.font.bold })))
+                    log("unread dots", findAll(quickView, c => c.visible && c.objectName === "followedUnreadDot", []).map(d => geo(d)))
+                    shot("followed-list")
+                    quickView.selectedKey = quickView.key(it)
+                    quickView.openItem(it)
+                } else if (step === 6) {
+                    const v = followedPost
+                    log("view", geo(v), "headerTitle", v.headerTitle, "header", named(v, []).filter(n => n[1].y < 61 + geo(v).y))
+                    log("view cards", cards(v).map(c => ({ geo: geo(c), title: c.title, when: c.when, named: named(c, []) })), "card", geo(v.postItemForTest()))
+                    shot("followed-meeting")
+                } else if (step === 7) {
                     Qt.quit(); return
                 }
             } else if (phase === "cancel") {
