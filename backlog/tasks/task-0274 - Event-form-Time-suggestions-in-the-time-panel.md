@@ -1,9 +1,10 @@
 ---
 id: TASK-0274
 title: 'Event form: Time suggestions in the time panel'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-24T10:07:00Z'
+updated_date: '2026-11-24T10:54:00Z'
 labels:
   - desktop
   - calendar

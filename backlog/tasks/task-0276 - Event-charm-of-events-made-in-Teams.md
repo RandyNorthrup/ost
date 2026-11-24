@@ -1,9 +1,10 @@
 ---
 id: TASK-0276
 title: Event charm of events made in Teams
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-24T10:07:00Z'
+updated_date: '2026-11-24T10:54:00Z'
 labels:
   - desktop
   - calendar

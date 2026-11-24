@@ -1,9 +1,10 @@
 ---
 id: TASK-0275
 title: 'Event form: Outlook''s remaining switches and editor tools natively'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-24T10:07:00Z'
+updated_date: '2026-11-24T10:54:00Z'
 labels:
   - desktop
   - calendar
