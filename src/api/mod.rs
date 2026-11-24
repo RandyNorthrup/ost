@@ -10,6 +10,7 @@ pub mod biometric;
 pub mod blurhash;
 pub mod breakout_rooms;
 pub mod calendar;
+pub mod event_form;
 pub mod call_delegation;
 pub mod call_forwarding;
 mod chat;

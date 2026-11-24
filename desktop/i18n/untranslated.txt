@@ -8,20 +8,22 @@
 "%1 / Email"		LoopChromeBar.qml:84	
 "%1 / Page"		LoopChromeBar.qml:85	
 "%1 / Workspace"		LoopChromeBar.qml:85	
-"%1 PM"		CalendarView.qml:1304 CalendarView.qml:1410	
+"%1 KB"		CloudPicker.qml:1371 DetailsPane.qml:630 FileActions.qml:2219	
+"%1 MB"		CloudPicker.qml:1372 DetailsPane.qml:631 FileActions.qml:2220	
+"%1 PM"		CalendarView.qml:1316 CalendarView.qml:1422	
 "%1 ago"		ManageTeam.qml:169	
 "%1 and"		AppDetailsDialog.qml:576	
 "%1 by %2"		FindPane.qml:762	
 "%1 channels selected"		CrossPostDialog.qml:163	
 "%1 checkbox, press spacebar to select all."		StoreView.qml:604	
-"%1 didn't open: %2"		backend.rs:25761	
+"%1 didn't open: %2"		backend.rs:25866	
 "%1 hour"		BreakoutSettingsDialog.qml:115	
 "%1 is presenting"		CallWindow.qml:3263 CallWindow.qml:3346	
 "%1 isn't available in OST yet."		TabWindow.qml:161	
 "%1 left"		MeetingRecapsView.qml:925	
 "%1 mentioned you: %2"		MentionsView.qml:152	
 "%1 minute"		BreakoutSettingsDialog.qml:116	
-"%1 minutes before"		MeetingForm.qml:859	
+"%1 minutes before"		MeetingForm.qml:889	
 "%1 months"		ManageTeam.qml:154	
 "%1 replied: %2 %3"		DetailsPane.qml:431	
 "%1 stars"		AppDetailsDialog.qml:102	
@@ -30,7 +32,7 @@
 "%1 years"		ManageTeam.qml:155	
 "%1, %2, +%3"		LoopChromeBar.qml:81	
 "%1, %2, and %3"		LoopChromeBar.qml:80	
-"%1, all day event"		CalendarView.qml:1261	
+"%1, all day event"		CalendarView.qml:1273	
 "%1, and %2"		AppDetailsDialog.qml:575	
 "%1, change year"		DatePickerField.qml:139	
 "%1, collapsed"		KeyboardShortcuts.qml:272	
@@ -42,48 +44,59 @@
 "%1, sorted descending"		OneDriveView.qml:1221	
 "%1: %2. %3: %4."		AgendaTimerRow.qml:469	
 "%1m %2s"		MeetingRecapsView.qml:1277	
+"%n bytes"		MeetingForm.qml:3378	
+"%n days before"		OutlookEmailReminder.qml:42	
+"%n hours before"		OutlookEmailReminder.qml:41	
 "%n mention(s) of you"		MeetingRecapsView.qml:1690	
+"%n minutes before"		OutlookEmailReminder.qml:40	
+"%n weeks before"		OutlookEmailReminder.qml:43	
 "(Source)"		CrossPostDialog.qml:123	
 "(no subject)"		LoopChromeBar.qml:75	
 ", collapsed"		ChatList.qml:1513 ChatList.qml:1582	
 ", expanded"		ChatList.qml:1513 ChatList.qml:1582	
 "1 channel selected"		CrossPostDialog.qml:163	
-"1 day before"		MeetingForm.qml:858	
-"1 hour before"		MeetingForm.qml:857	
+"1 day before"		MeetingForm.qml:888	
+"1 hour before"		MeetingForm.qml:887	
 "1 month"		ManageTeam.qml:154	
 "1 participant"		BreakoutTab.qml:300	
 "1 report"		ProfileCard.qml:462 ProfileCard.qml:468	
-"1 week before"		MeetingForm.qml:858	
+"1 week before"		MeetingForm.qml:888	
 "1 year"		ManageTeam.qml:155	
-"12 hours before"		MeetingForm.qml:857	
-"15 minutes before"		MeetingForm.qml:856	
-"2 hours before"		MeetingForm.qml:857	
-"30 minutes before"		MeetingForm.qml:857	
+"12 hours before"		MeetingForm.qml:887	
+"15 minutes before"		MeetingForm.qml:886	
+"2 hours before"		MeetingForm.qml:887	
+"30 minutes before"		MeetingForm.qml:887	
 "5 minutes - Most space for details"		CalendarView.qml:257	
-"5 minutes before"		MeetingForm.qml:856	
+"5 minutes before"		MeetingForm.qml:886	
 "60 minutes - Least space for details"		CalendarView.qml:257	
 "<0>Early Access</0> through"		SettingsView.qml:4935	
 "About to leave meeting ..."		RoomAutoExit.qml:91	
-"Accept the proposed time"		CalendarView.qml:1868	
+"Accept the proposed time"		CalendarView.qml:1880	
+"Accessibility checker"		OutlookFormPane.qml:39	
 "Add %1 backdrop."		ClipEffectPanels.qml:252	
 "Add %1 sticker. Sticker %2 of %3 in the category %4"		ClipEffectPanels.qml:283	
 "Add a message"		OneDriveShare.qml:376 OneDriveShare.qml:378	
 "Add a name, group, or email"		OneDriveShare.qml:273 OneDriveShare.qml:275	
+"Add an email reminder to stay on top of this event."		OutlookEmailReminder.qml:62	
+"Add email reminder"		MeetingForm.qml:728 OutlookEmailReminder.qml:162 OutlookEmailReminder.qml:166	
+"Add header row"		OutlookFormPane.qml:247	
 "Add more"		OneDriveShare.qml:273	
 "Add more details"		FeedbackWindow.qml:133	
 "Add music Selected %1"		VideoClipRecorder.qml:1318	
 "Add someone"		CallsView.qml:403	
 "Add to %1 workspace"		LoopChromeBar.qml:217 LoopChromeBar.qml:223	
 "Add to Dictionary"		EditorCard.qml:60	
-"Added a shortcut in your OneDrive"		backend.rs:23186	
+"Added a shortcut in your OneDrive"		backend.rs:23199	
 "Adding people…"		backend.rs:17142	
 "Adding this component will link it to a workspace so you can start organizing and collecting content."		LoopChromeBar.qml:222	
 "Additional people: %1"		LoopAccessPopover.qml:73	
+"Afternoon (after 1:00 PM)"		OutlookAcceptableTimes.qml:127	
 "Alt + 0 to 9 number keys"		VideoClipCard.qml:508	
 "Alt + down arrow key"		VideoClipCard.qml:503	
 "Alt + left arrow key"		VideoClipCard.qml:507	
 "Alt + right arrow key"		VideoClipCard.qml:507	
 "Alt + up arrow key"		VideoClipCard.qml:503	
+"Alt text is used by screen readers to describe inline images to people who can't see the screen. Good alt text helps visually impaired people understand the information shown in inline images."		OutlookFormPane.qml:246	
 "An AI-powered tool that answers, routes, and filters calls on your behalf."		SettingsView.qml:3385 SettingsView.qml:3987	
 "An office building on a desk"		AutoLocationDialog.qml:45	
 "Animals"		EmojiPicker.qml:35	
@@ -93,15 +106,18 @@
 "Are you sure you want to delete the <0>%1</0> channel? All conversations will be deleted."		ChannelMenu.qml:315	
 "Ask a question"		EventStagePreview.qml:128	
 "Ask me about call quality after calls"		SettingsView.qml:2394	
+"At time of event"		MeetingForm.qml:886 OutlookEmailReminder.qml:39	
 "Attach my last message to help OST analyze my feedback. It will be public."		SmartReplyFeedback.qml:153	
 "Audio recap deleted"		MeetingRecapsView.qml:1394	
 "Audio recap is available for Teams Enterprise users with Microsoft Copilot license. This feature captures and summarizes key topics discussed in your Teams meetings based on transcripts from the selected time period. Summaries are provided in audio formats, enabling efficient review of the highlights without going through individual recaps."		MeetingRecapsView.qml:1381	
 "Audio recap is capable of processing a maximum of eight (8) meetings with transcription."		MeetingRecapsView.qml:1382	
 "Auto %1"		CameraSettingsDialog.qml:106	
 "Backward menu."		ClipEditOverlay.qml:321	
+"Beige"		OutlookNewCategory.qml:42	
 "Bike"		CalendarView.qml:264	
 "Blur options"		EffectTile.qml:84	
 "Books"		CalendarView.qml:263	
+"Bronze"		OutlookNewCategory.qml:33	
 "Browse all help"		HelpView.qml:191	
 "Bus"		CalendarView.qml:265	
 "By pressing \"Send feedback\", Report a problem opens with your answers and the call's technical details, to post as a public issue on GitHub (%1). Nothing is sent before you do."		CallQualitySurvey.qml:221	
@@ -112,22 +128,27 @@
 "Calls merged"		backend.rs:14049	
 "Camera settings"		CameraSettingsDialog.qml:37	
 "Cameras"		ContentCameraDialog.qml:450	
-"Canceled: %1"		ScheduledMeetingCard.qml:81	
-"Cancelled."		ScheduledMeetingCard.qml:140	
-"Cancelling…"		backend.rs:24201	
+"Canceled: %1"		ScheduledMeetingCard.qml:76	
+"Cancelled."		ScheduledMeetingCard.qml:135	
+"Cancelling…"		backend.rs:24214	
+"Capitalize 'I' (English only)"		OutlookEditorSettings.qml:68	
 "Capture screenshot"		FeedbackWindow.qml:153	
 "Car"		CalendarView.qml:262	
 "Cast to this room with:"		RoomHome.qml:86 RoomHome.qml:292	
 "Change Camera settings"		VideoClipRecorder.qml:828	
 "Change Mic settings"		VideoClipRecorder.qml:841	
 "Channel, %1"		CrossPostDialog.qml:157	
+"Charcoal"		OutlookNewCategory.qml:44	
+"Check again"		OutlookFormPane.qml:288 OutlookFormPane.qml:292	
 "Checklist"		WebApp.qml:621	
 "Choose File"		TeamAppsView.qml:227 TeamAppsView.qml:231	
 "Choose a download location"		SettingsView.qml:4834	
 "Choose an image"		EventsView.qml:3833	
+"Clarity"		OutlookEditorSettings.qml:93	
 "Class"		CalendarView.qml:265	
 "Clipchamp"		AppRail.qml:57 AppRail.qml:408	
 "Close Music"		VideoClipRecorder.qml:1394	
+"Conciseness"		OutlookEditorSettings.qml:93	
 "Connected without audio"		CallWindow.qml:3378	
 "Consult: %1"		backend.rs:13917	
 "Consult: not someone you can call"		backend.rs:13872	
@@ -136,6 +157,7 @@
 "Copilot uses your data to generate responses during the meeting and an Intelligent recap after the meeting. Interactions and summaries with Copilot might be retained due to the host organization’s policy."		CallWindow.qml:1737	
 "Copy component"		ChannelPageTab.qml:83 LoopCard.qml:127 LoopCard.qml:136	
 "Copy email"		HoverCard.qml:229 PeopleView.qml:162	
+"Corrections"		OutlookEditorSettings.qml:90	
 "Couldn't attach the file. Please try again."		CloudAttach.qml:60	
 "Couldn't cancel the event."		EventsView.qml:4417	
 "Couldn't cancel your registration."		EventsView.qml:896	
@@ -151,7 +173,7 @@
 "Couldn't publish the event."		EventsView.qml:4260	
 "Couldn't report the review"		backend.rs:20626	
 "Couldn't save your setting. Try again."		SettingsView.qml:4988	
-"Couldn't send the picture: %1"		backend.rs:26217	
+"Couldn't send the picture: %1"		backend.rs:26322	
 "Couldn't share to Outlook."		ShareToOutlookDialog.qml:35	
 "Couldn't start the call: %1"		backend.rs:9975	
 "Couldn't update the link settings. Please try again."		CloudAttach.qml:66	
@@ -159,35 +181,43 @@
 "Create a team from %1"		CreateTeamPage.qml:234	
 "Credit card"		CalendarView.qml:264	
 "Custom files (*.png *.jpeg *.jpg *.bmp)"		VideoEffectsPane.qml:530	
+"Dark brown"		OutlookNewCategory.qml:35	
 "Dark pink"		Theme.qml:61	
 "Date, %1"		DatePickerField.qml:64	
 "Decrement value"		BreakoutRoomsPane.qml:212 BreakoutTab.qml:346 TimerSpin.qml:56	
 "Default microphone"		PreJoin.qml:237	
 "Default speaker"		CallsView.qml:211 CallsView.qml:224 CallsView.qml:228	
 "Delete menu."		ClipEditOverlay.qml:317	
-"Delete this event?"		CalendarView.qml:2119	
+"Delete this event?"		CalendarView.qml:2131	
 "Dial %1"		CallWindow.qml:5322	
 "Dial pad: %1"		backend.rs:14099	
 "Do not include any private or sensitive information."		FeedbackWindow.qml:111	
 "Domains"		ChannelEmailDialog.qml:147	
 "Download failed. Please try again."		EventsView.qml:442	
-"Downloaded %1"		backend.rs:25536	
+"Downloaded %1"		backend.rs:25641	
 "Downloading %1…"		backend.rs:10480	
 "Draft to %1"		DraftsView.qml:116	
 "Drag and drop files here or paste an image from your clipboard"		FeedbackWindow.qml:134	
 "Duplicate menu."		ClipEditOverlay.qml:319	
 "Earlier post"		ChannelPosts.qml:293	
+"Edit email reminder"		MeetingForm.qml:728 OutlookEmailReminder.qml:78	
 "Edit on GitHub"		HelpView.qml:343	
 "Editor content"		PreviewBody.qml:106	
 "Editor settings..."		EditorCard.qml:98	
 "Email address"		ChannelEmailDialog.qml:116	
+"Email reminder"		OutlookEmailReminder.qml:53 OutlookEmailReminder.qml:96	
+"Enable auto capitalization"		OutlookEditorSettings.qml:68	
+"Enable auto correct"		OutlookEditorSettings.qml:68	
 "End consult"		CallWindow.qml:5420	
+"Enter a reminder message here (optional)"		OutlookEmailReminder.qml:122 OutlookEmailReminder.qml:123	
 "Event Banner Image\n(Appears here in actual email)"		EventsView.qml:3732	
 "Event Date Time"		EventsView.qml:3540 EventsView.qml:3540	
 "Event Invite Card"		EventsView.qml:3542	
-"Event instance"		MeetingForm.qml:492	
+"Event instance"		MeetingForm.qml:519	
 "Exam"		CalendarView.qml:266	
-"Facilitator is off for this meeting."		MeetingForm.qml:1906	
+"Facilitator is off for this meeting."		MeetingForm.qml:1983	
+"Facilitator is on for this meeting."		MeetingForm.qml:1983	
+"Favoriting adds the category to your folder pane"		OutlookNewCategory.qml:69 OutlookNewCategory.qml:71	
 "Featured topics"		HelpView.qml:219	
 "File %1"		ChannelFiles.qml:159 FileActions.qml:2031 FileActions.qml:2203	
 "Files from %1"		OneDriveView.qml:598	
@@ -195,24 +225,33 @@
 "Files people share with you will show up here"		OneDriveView.qml:1051	
 "Files shared with you will show up here"		OneDriveView.qml:1048	
 "Find anything in a chat"		HelpView.qml:45	
-"Find my next one-on-one with"		CalendarView.qml:1048	
+"Find my next one-on-one with"		CalendarView.qml:1060	
 "Find your way around OST"		HelpView.qml:47	
 "Finish on GitHub: check the issue, then select Create."		FeedbackWindow.qml:283	
 "Finish on GitHub: paste your screenshot (Ctrl+V), drop in any other files from the folder that opened, and select Create."		FeedbackWindow.qml:282	
 "Finish on GitHub: select Create to send your feedback."		Conversation.qml:3808	
 "First aid"		CalendarView.qml:260	
+"Fix the issues listed above, then check for accessibility issues again."		OutlookFormPane.qml:280	
 "Flip menu."		ClipEditOverlay.qml:318	
 "Folder %1"		ChannelFiles.qml:159 FileActions.qml:1970 FileActions.qml:2031	
 "Folders from %1"		FileActions.qml:1817	
 "Fork knife"		CalendarView.qml:262	
+"Formality"		OutlookEditorSettings.qml:93	
 "Forward menu."		ClipEditOverlay.qml:320	
 "From filter"		FindPane.qml:434	
-"Go to next day"		CalendarView.qml:1074 CalendarView.qml:2382	
-"Go to previous day"		CalendarView.qml:1073 CalendarView.qml:2381	
+"Go premium"		OutlookEditorSettings.qml:114	
+"Go to next day"		CalendarView.qml:1086 CalendarView.qml:2394	
+"Go to next month"		CalendarView.qml:1086 CalendarView.qml:2394 DatePickerField.qml:85	
+"Go to previous day"		CalendarView.qml:1085 CalendarView.qml:2393	
+"Go to previous month"		CalendarView.qml:1085 CalendarView.qml:2393 DatePickerField.qml:83	
 "Goal"		CalendarView.qml:266	
+"Gold"		ClipEffectsState.qml:126 OutlookNewCategory.qml:35	
+"Grammar"		OutlookEditorSettings.qml:92	
 "Grant access is not available because this person can already view this item."		OneDriveShare.qml:950	
+"Graphics"		OutlookFormPane.qml:39	
 "Group chat %1"		SearchView.qml:999 SearchView.qml:1093	
 "Gym"		CalendarView.qml:265	
+"Header rows are used by screen readers to describe the information inside a table to people who can't see the screen. Header rows help visually impaired people understand which column a cell belongs to."		OutlookFormPane.qml:247	
 "Help articles for OST, built into the app so they work offline. They're written by the OST project; you can read and improve them on %1."		HelpView.qml:367	
 "Help for OST"		HelpView.qml:160 HelpView.qml:362	
 "High Tech"		VideoClipRecorder.qml:1367	
@@ -221,15 +260,17 @@
 "If your contact is based in the European Economic Area or Switzerland, they may need to change the LinkedIn Digital Markets Act %1 for you and others to see their LinkedIn profile here."		ProfileCard.qml:633	
 "Ignore all"		EditorCard.qml:60	
 "Images (*.png *.jpeg *.gif)"		CustomEmojiAdd.qml:33	
-"Images (*.png *.jpg *.jpeg *.gif *.bmp)"		MeetingForm.qml:2940 TeamPictureDialog.qml:42	
+"Images (*.png *.jpg *.jpeg *.gif *.bmp)"		MeetingForm.qml:3410 TeamPictureDialog.qml:42	
 "Images (*.png *.jpg *.jpeg *.svg *.webp *.gif)"		ClipEffectPanels.qml:628	
 "Images and videos (*.png *.jpg *.jpeg *.svg *.webp *.gif *.webm *.mp4)"		VideoClipRecorder.qml:340	
 "In a conference call"		CastWindow.qml:493	
 "In some situations, AI isn't able to generate chapters."		RecapWindow.qml:394	
 "In some situations, AI isn't able to generate topics."		RecapWindow.qml:394	
+"Inclusiveness"		OutlookEditorSettings.qml:93	
 "Increment value"		BreakoutRoomsPane.qml:212 BreakoutTab.qml:346 TimerSpin.qml:56	
 "Info, View file details"		FilePreview.qml:196	
 "Information"		AudioSettingsPane.qml:455	
+"Inline images must have alt text"		OutlookFormPane.qml:246 OutlookFormPane.qml:316	
 "Interpreter will simulate your voice when interpreting your speech. Your voice sample won't be stored."		AiInterpreterDialog.qml:249	
 "Inviting this room to a meeting"		RoomHome.qml:245	
 "Island"		CalendarView.qml:265	
@@ -240,33 +281,40 @@
 "Light orange"		Theme.qml:52	
 "Light pink"		Theme.qml:62	
 "Light red"		Theme.qml:50	
+"Lime"		OutlookNewCategory.qml:36	
 "List of search result folders"		FileActions.qml:1900	
 "Live event video"		LiveStreamPlayer.qml:125	
 "Luggage"		CalendarView.qml:261	
 "Manage access (%1 people) Select to manage access."		OneDriveShare.qml:410	
 "Manage languages..."		EditorCard.qml:98	
 "May we contact you about your feedback?"		FeedbackWindow.qml:224	
-"Meeting - Calendar"		MeetingForm.qml:492	
+"Meeting - Calendar"		MeetingForm.qml:519	
 "Member team"		ManageChannel.qml:347	
 "Members and guests (%1)"		ManageChannel.qml:309	
 "Mic is off"		VideoClipRecorder.qml:835	
 "Mic is on"		VideoClipRecorder.qml:835	
+"Microsoft Editor Settings"		OutlookEditorSettings.qml:51	
+"Midday (12:00 PM - 1:00 PM)"		OutlookAcceptableTimes.qml:127	
+"Mink"		OutlookNewCategory.qml:43	
 "More (%1)"		SearchView.qml:296	
 "More calls options"		CallsView.qml:106	
-"More join options"		CalendarView.qml:1806	
-"More new options"		CalendarView.qml:1171	
+"More join options"		CalendarView.qml:1818	
+"More new options"		CalendarView.qml:1183	
 "More ways to share"		ManageChannel.qml:284	
+"Morning (before 12:00 PM)"		OutlookAcceptableTimes.qml:127	
 "Moved %1 item"		FileActions.qml:297	
 "Moved %1 items"		FileActions.qml:297	
 "Movie"		CalendarView.qml:263	
 "Music"		CalendarView.qml:261	
 "Mute speaker"		AudioFlyout.qml:101 AudioSettingsPane.qml:174	
-"New event | Calendar"		CalendarView.qml:3081 CalendarView.qml:3100	
+"Name your category"		OutlookNewCategory.qml:58 OutlookNewCategory.qml:59	
+"New event | Calendar"		CalendarView.qml:3093 CalendarView.qml:3112	
 "New group chat"		backend.rs:19467	
 "Next decade"		DatePickerField.qml:144	
 "No calls match this filter."		CallsView.qml:363	
 "No file chosen"		TeamAppsView.qml:233	
-"No icon"		CalendarView.qml:260 CalendarView.qml:2898	
+"No icon"		CalendarView.qml:260 CalendarView.qml:2910	
+"No issues were found"		OutlookFormPane.qml:274	
 "No matches yet"		TitleBar.qml:261	
 "No posts yet. Start the conversation."		ChannelPosts.qml:856	
 "No preview available"		PreviewBody.qml:165	
@@ -281,9 +329,9 @@
 "OST asks after some calls. If a call had issues, Report a problem opens with its technical details (no one's name) for you to post as a public issue on GitHub."		SettingsView.qml:2395	
 "OST notifications"		NotificationBanners.qml:33	
 "Objects"		EmojiPicker.qml:54	
-"Occurs day %1 of every month"		MeetingForm.qml:2930	
-"Occurs every %1 %2"		MeetingForm.qml:2931	
-"Occurs every %1 weeks on %2"		MeetingForm.qml:2929	
+"Occurs day %1 of every month"		MeetingForm.qml:3400	
+"Occurs every %1 %2"		MeetingForm.qml:3401	
+"Occurs every %1 weeks on %2"		MeetingForm.qml:3399	
 "Older"		FindPane.qml:158	
 "OneDrive"		AppRail.qml:103 AppRail.qml:156 AppRail.qml:162	
 "OneNote"		AppRail.qml:55 AppRail.qml:406 FindPane.qml:363	
@@ -296,7 +344,7 @@
 "Open chat with %1"		CallWindow.qml:5380	
 "Open component in"		LoopChromeBar.qml:187 MeetingNotesPane.qml:134	
 "Opens list of active windows"		CastWindow.qml:342 ShareTray.qml:209	
-"Optional attendee"		MeetingForm.qml:2308	
+"Optional attendee"		MeetingForm.qml:2513	
 "Organization Name"		EventsView.qml:3541 EventsView.qml:3541	
 "Organizer Name"		EventsView.qml:3541	
 "Other location"		LoopChromeBar.qml:87	
@@ -315,43 +363,55 @@
 "Plane"		CalendarView.qml:260	
 "Planner"		AppRail.qml:53 AppRail.qml:405	
 "Play %1"		VideoClipRecorder.qml:1458	
+"Plum"		OutlookNewCategory.qml:42	
 "Powered by"		DeviceDetailsDialog.qml:284	
 "Prevent suspected spam calls from disturbing you"		SettingsView.qml:4089	
 "Previous decade"		DatePickerField.qml:141	
 "Production view"		CallWindow.qml:2844	
+"Proofing language"		OutlookEditorSettings.qml:78 OutlookEditorSettings.qml:85	
 "Public Team"		TeamSettingsView.qml:108	
+"Punctuation Conventions"		OutlookEditorSettings.qml:94	
 "React with %1"		NotificationBanners.qml:376	
+"Refinements"		OutlookEditorSettings.qml:108	
+"Remind me:"		OutlookEmailReminder.qml:97 OutlookEmailReminder.qml:112	
+"Remind me: %1"		OutlookEmailReminder.qml:75	
 "Reminder amount"		EventsView.qml:3794	
 "Reminder unit"		EventsView.qml:3796	
-"Remove channel"		MeetingForm.qml:1314	
+"Remove channel"		MeetingForm.qml:1344	
+"Remove email reminder"		OutlookEmailReminder.qml:78	
 "Remove music"		VideoClipRecorder.qml:1504	
 "Remove the card"		ShareForm.qml:238	
-"Repeat unit"		MeetingForm.qml:2578	
-"Required attendee"		MeetingForm.qml:2308	
+"Repeat unit"		MeetingForm.qml:2783	
+"Required attendee"		MeetingForm.qml:2513	
 "Resize %1"		OneDriveView.qml:859	
 "Restore defaults"		CameraSettingsDialog.qml:156	
 "Results for “%1”"		HelpView.qml:262	
 "Save as"		Main.qml:592	
 "Saved %1 to %2"		backend.rs:10097 backend.rs:10491	
-"Schedule 1 hour of focus time"		CalendarView.qml:1049	
-"Scheduled %1"		backend.rs:24432	
+"Schedule 1 hour of focus time"		CalendarView.qml:1061	
+"Scheduled %1"		backend.rs:24537	
 "Search all files"		DownloadsFlyout.qml:90 DownloadsFlyout.qml:93	
 "Search emoji"		EmojiPicker.qml:89 EmojiPicker.qml:90	
 "Search for participants"		MeetingOptionsDialog.qml:445 MeetingPeoplePicker.qml:27	
 "Search help"		HelpView.qml:137 HelpView.qml:139	
 "Search here"		ComposeAppPanel.qml:101 ComposeAppPanel.qml:105	
+"Searching for suggestions..."		MeetingForm.qml:3853	
 "See all %1"		FunPicker.qml:205 StoreView.qml:318	
 "See more %1"		ClipEffectPanels.qml:203	
 "See who has access"		ChannelPageTab.qml:84 LoopCard.qml:128 LoopCard.qml:136	
 "Select a Date"		FindPane.qml:496	
 "Select a chat to start messaging"		Conversation.qml:2135	
 "Select a role, %1"		OneDriveShare.qml:562	
-"Select an event charm button, %1 icon selected"		MeetingForm.qml:1644	
+"Select acceptable day(s):"		OutlookAcceptableTimes.qml:56	
+"Select acceptable time(s):"		OutlookAcceptableTimes.qml:125	
+"Select an event charm button, %1 icon selected"		MeetingForm.qml:1674	
 "Send reply"		ChannelPosts.qml:842	
-"Sending update…"		backend.rs:24200	
-"Sending your proposal…"		backend.rs:24202	
-"Sending your response…"		backend.rs:24198	
-"Sent on %1 at %2"		MeetingForm.qml:2178	
+"Send to attendees"		OutlookEmailReminder.qml:134 OutlookEmailReminder.qml:137	
+"Sending update…"		backend.rs:24213	
+"Sending your proposal…"		backend.rs:24215	
+"Sending your response…"		backend.rs:24211	
+"Sensitive Geopolitical References"		OutlookEditorSettings.qml:94	
+"Sent on %1 at %2"		MeetingForm.qml:2383	
 "Share \"%1\""		OneDriveShare.qml:221	
 "Share relevant content samples and additional log files?"		FeedbackWindow.qml:189	
 "Share with a group"		OneDriveShare.qml:806	
@@ -361,15 +421,20 @@
 "Show %1"		CallsView.qml:265	
 "Signed in as %1."		FeedbackWindow.qml:237	
 "Signing in…"		SignIn.qml:74	
+"Silver"		OutlookNewCategory.qml:43	
 "Smilies"		EmojiPicker.qml:17	
 "Snooze"		RoomAutoExit.qml:132	
 "Soccer"		CalendarView.qml:263	
+"Some issues were found"		OutlookFormPane.qml:274	
 "Speaker"	calling:kp3u3qpn	AudioFlyout.qml:79 SettingsView.qml:2741 SettingsView.qml:2748	unknown id
 "Specific people with the link can edit"		ShareFileDialog.qml:140	
 "Specific people with the link can view"		ShareFileDialog.qml:140	
+"Spelling"		OutlookEditorSettings.qml:92	
 "Split Clip"		VideoClipRecorder.qml:1303	
 "Sprint"		CalendarView.qml:266	
 "Start a call with %1"		CallWindow.qml:5390	
+"Steel"		OutlookNewCategory.qml:39	
+"Stock images"		OutlookFormPane.qml:100 OutlookFormPane.qml:168	
 "Stop consulting and resume"		CallWindow.qml:5472	
 "Stroke menu."		ClipEditOverlay.qml:306	
 "Submit an app to your IT admin for approval and check the status of your submissions."		ManageAppsView.qml:273	
@@ -378,11 +443,15 @@
 "TV"		CalendarView.qml:263	
 "Tab %1"		Conversation.qml:3448	
 "Table"		WebApp.qml:619	
+"Tables must use header rows"		OutlookFormPane.qml:247	
 "Task list"		WebApp.qml:622	
 "Team, %1"		CrossPostDialog.qml:157	
 "Teams (%1)"		ManageChannel.qml:310	
 "Teams / Chat"		MeetingNotesPane.qml:137	
 "Teams Cast"		RoomHome.qml:86 RoomHome.qml:296	
+"Text becomes difficult to read when its color is too similar to the color behind it. Increasing contrast makes text easier to read, especially when viewing documents in bright light. You can increase the contrast by changing the color of the font or by changing the color behind it."		OutlookFormPane.qml:248	
+"Text color contrast is too low"		OutlookFormPane.qml:248	
+"The best options in a 5-day window"		MeetingForm.qml:3846 MeetingForm.qml:3848	
 "The file couldn't be opened"		FileActions.qml:289	
 "The folder color wasn't changed"		FileActions.qml:278	
 "The folder wasn't created"		FileActions.qml:1338	
@@ -391,7 +460,7 @@
 "The version wasn't deleted"		FileActions.qml:441	
 "The version wasn't restored"		FileActions.qml:441	
 "This Loop component is temporarily not available."		LoopCard.qml:185	
-"This app isn't available in OST yet."		Main.qml:15676	
+"This app isn't available in OST yet."		Main.qml:15689	
 "This camera has no settings to change."		CameraSettingsDialog.qml:64	
 "This file can't be opened"		FileViewer.qml:40	
 "This file has not been shared with a group yet."		OneDriveShare.qml:798	
@@ -399,12 +468,13 @@
 "This will turn off Interpreter for everyone."		CallWindow.qml:1120	
 "Thread: %1"		ThreadsPane.qml:188	
 "Thumbnail Preview"		FileCard.qml:148	
-"Today %1"		Main.qml:16809	
+"Today %1"		Main.qml:16822	
 "Todo"		CalendarView.qml:266	
 "Transcriptions of Teams meetings are retained by default for 90 days unless manually deleted earlier by the meeting organizer. The generated audio recap is exclusively accessible to you and will expire after 60 days. You can manage your audio recaps in OneDrive, where you have the option to delete any audio recap that is no longer needed. Please note that once an audio recap is deleted from OneDrive, it will no longer be available on your Teams audio recap listing page."		MeetingRecapsView.qml:1383	
 "Transfer to %1"		CallWindow.qml:5390 CallWindow.qml:5464	
 "Travel"		EmojiPicker.qml:46	
 "Trophy"		CalendarView.qml:260	
+"Try Editor's advanced writing suggestions."		OutlookEditorSettings.qml:113	
 "Turn off all attendee notifications"		EventsView.qml:3051	
 "Turn on all attendee notifications"		EventsView.qml:3051	
 "USA"		StoreView.qml:616	
@@ -414,6 +484,7 @@
 "Updating link settings..."		ComposeBox.qml:1395 LoopCard.qml:110	
 "Useful"		RecapWindow.qml:969	
 "Uses credits"		AiInterpreterModeDialog.qml:113	
+"Vocabulary"		OutlookEditorSettings.qml:94	
 "Voting table"		WebApp.qml:623	
 "We couldn't create your team. Please try again."		CreateTeamDialog.qml:126 CreateTeamPage.qml:245	
 "We couldn't find any help for “%1”. Try other words, or browse all help."		HelpView.qml:270	
@@ -427,10 +498,11 @@
 "Yes, you may contact me"		FeedbackWindow.qml:227	
 "Yesterday %1"		Conversation.qml:1112 SearchView.qml:188	
 "You and %1 others are using Interpreter. Your interpretation language is %2."		CallWindow.qml:1960	
+"You and attendees will be notified if Copilot automatically reschedules this event."		OutlookAcceptableTimes.qml:55	
 "You are using Interpreter. Your interpretation language is %1."		CallWindow.qml:1959	
 "You can't view this app right now."		AppDetailsDialog.qml:669	
 "You'll be able to chat separately with the co-organizers and presenters in the planning group. Once saved access it from chat list or Calendar"		MeetingOptionsDialog.qml:348 MeetingOptionsDialog.qml:357	
-"You're following"		MeetingForm.qml:2193	
+"You're following"		MeetingForm.qml:2398	
 "You're presenting"		CallWindow.qml:3364	
 "You've hit the %1-person limit for group chats. You'll need to remove someone before you send your message."		NewChat.qml:392	
 "You've invited %1 to edit"		OneDriveShare.qml:667	
@@ -438,6 +510,7 @@
 "You, %1 and %2"		SearchView.qml:1012	
 "Your app was submitted to your IT admin for approval."		ManageAppsView.qml:293	
 "Your calls will show up here."		CallsView.qml:363	
+"Your content passes all checks for accessibility issues."		OutlookFormPane.qml:280	
 "Your current status message: %1"		TitleBar.qml:916	
 "Your favorite files will show up here"		OneDriveView.qml:1049	
 "Your feedback opens as a public issue on GitHub (%1)."		SmartReplyFeedback.qml:143	

@@ -245,11 +245,16 @@ fn merge_outlook_items(events: &mut [CalendarEvent], items: &std::collections::H
             .and_then(|c| c.as_array())
             .is_some_and(|c| c.iter().any(|x| x.as_str() == Some("DeskBooking")));
         e.attendance_mode = i.get("RequestedAttendanceMode").and_then(|m| m.as_str()).unwrap_or_default().to_string();
-        e.charm = match i.get("Charm") {
-            Some(serde_json::Value::String(c)) if c != "None" => c.clone(),
-            Some(serde_json::Value::Number(n)) if n.as_i64() != Some(0) => n.to_string(),
-            _ => String::new(),
+        // The charm is `CharmId` in Outlook's view (a number: an event made
+        // in Outlook's form, as Teams' New event form, gets the one its
+        // title suggests, e.g. 57 Exam for "test", and its `Charm` stays
+        // "None"); the tile menu's charm is `Charm`.
+        let charm = |v: Option<&serde_json::Value>| match v {
+            Some(serde_json::Value::String(c)) if c != "None" && !c.is_empty() && c != "0" => Some(c.clone()),
+            Some(serde_json::Value::Number(n)) if n.as_i64().is_some_and(|n| n > 0) => Some(n.to_string()),
+            _ => None,
         };
+        e.charm = charm(i.get("CharmId")).or_else(|| charm(i.get("Charm"))).unwrap_or_default();
     }
 }
 
@@ -416,7 +421,7 @@ pub async fn event_body(client: &TeamsClient, id: &str) -> Result<String> {
 }
 
 /// Graph event ids are base64url-ish; refuse anything else in a path.
-fn event_path_id(id: &str) -> Result<&str> {
+pub(crate) fn event_path_id(id: &str) -> Result<&str> {
     if id.is_empty()
         || !id
             .bytes()
@@ -783,7 +788,7 @@ fn respond_body(ews_id: &str, response: &str, attendance: u8, send_response: boo
 
 /// Graph's URL-safe immutable id as Exchange writes it (standard base64,
 /// padded).
-fn ews_id(rest_id: &str) -> String {
+pub(crate) fn ews_id(rest_id: &str) -> String {
     let mut s = rest_id.replace('-', "/").replace('_', "+");
     while s.len() % 4 != 0 {
         s.push('=');
@@ -797,7 +802,7 @@ pub const HOSTED_CALENDAR_APP: &str = "ceb96695-e468-48ba-ba21-35e2a242d396";
 
 /// A browser's User-Agent, as the hosted calendar's web view sends (Outlook
 /// on the web fails every action without one).
-const OWA_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36 Edg/134.0.0.0";
+pub(crate) const OWA_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36 Edg/134.0.0.0";
 
 /// One Outlook on the web service action as Teams' hosted calendar sends
 /// it: the request JSON URL-encoded in `x-owa-urlpostdata`, an empty body,
@@ -1220,6 +1225,11 @@ pub struct MeetingForm {
     /// following events) or "series" (all events in the series); "" for
     /// an event that isn't a series'.
     pub scope: String,
+    /// What else Outlook's form sends with it (only what changed):
+    /// Response options, Rebook declined rooms, the Copilot reschedule
+    /// switch, Loop components' links ([`super::event_form::form_updates`]).
+    #[serde(default)]
+    pub outlook: serde_json::Value,
 }
 
 /// Teams' Virtual appointment template (Calendar ▸ New ▸ Virtual
@@ -1726,6 +1736,7 @@ fn update_event_request(ews: &str, cur: &serde_json::Value, form: &MeetingForm, 
         b.insert("RemovedOptionalAttendees".into(), diff(&had, &want, "Optional").into());
         b.insert("RemovedResources".into(), serde_json::json!([]));
     }
+    updates.extend(super::event_form::form_updates(&form.outlook));
     if updates.is_empty() {
         // Nothing the form shows changed: send the title again, so the
         // attendees still get the update.
@@ -2340,6 +2351,14 @@ mod older_tests {
         assert!(e.is_desk_booking);
         assert_eq!(e.attendance_mode, "InPersonRequired");
         assert_eq!(e.charm, "Plane");
+        // An event made in Outlook's form (Teams' New event): its view's
+        // CharmId, Charm "None" (GetCalendarView, 2026-11-24).
+        items.insert(ews_id("AAkALg_x-y"), serde_json::json!({"Charm": "None", "CharmId": 57}));
+        merge_outlook_items(&mut events, &items);
+        assert_eq!(events[0].charm, "57");
+        items.insert(ews_id("AAkALg_x-y"), serde_json::json!({"Charm": "None", "CharmId": 0}));
+        merge_outlook_items(&mut events, &items);
+        assert_eq!(events[0].charm, "");
     }
 
     #[test]

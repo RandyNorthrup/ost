@@ -4840,7 +4840,20 @@ Window {
             else if (arg("cal-page") && args.indexOf("--cal-page-popout") >= 0 && step === 11) { const w = calendarView.popoutForTest; console.warn("CALTEST page popout", !!w, w ? w.visible + " " + w.width + "x" + w.height : "", calendarView.formForTest.poppedOut, calendarView.formOpen); if (w) w.contentItem.grabToImage(r => r.saveToFile(dir + "cal-page-popout.png")) }
             else if (arg("cal-page") && args.indexOf("--cal-page-popout") >= 0 && step === 12) { const w = calendarView.popoutForTest; if (w) w.close() }
             else if (arg("cal-page") && args.indexOf("--cal-page-popout") >= 0 && step === 13) console.warn("CALTEST page popin", calendarView.formForTest.poppedOut, calendarView.formForTest.parent === null ? "none" : "back")
-            else if (arg("cal-page") && step === Math.max(10, arg("cal-page-menus") ? 10 + arg("cal-page-menus").split(",").length * 2 : 0, arg("cal-page-set") || args.indexOf("--cal-page-popout") >= 0 ? 14 : 0)) Qt.quit()
+            // --cal-page-steps=<step>;;<step>…: from step 10, one a tick:
+            // "cap:<name>" captures, "log:<expression>" logs it, "wait"
+            // waits, anything else runs with f (the page) and cv (the
+            // calendar) (Outlook's form's parts, TASK-0274..0276).
+            else if (arg("cal-page") && arg("cal-page-steps") && step >= 10 && step < 10 + arg("cal-page-steps").split(";;").length) {
+                const f = calendarView.formForTest, s = arg("cal-page-steps").split(";;")[step - 10]
+                try {
+                    if (s.startsWith("cap:")) cap(s.slice(4))
+                    else if (s.startsWith("log:")) console.warn("CALTEST page log", s.slice(4), JSON.stringify(Function("f", "cv", "return (" + s.slice(4) + ")")(f, calendarView)))
+                    else if (s !== "wait") Function("f", "cv", s)(f, calendarView)
+                } catch (e) { console.warn("CALTEST page step failed", s, e) }
+            }
+            else if (arg("cal-page") && step === Math.max(10, arg("cal-page-menus") ? 10 + arg("cal-page-menus").split(",").length * 2 : 0, arg("cal-page-set") || args.indexOf("--cal-page-popout") >= 0 ? 14 : 0,
+                                                        arg("cal-page-steps") ? 10 + arg("cal-page-steps").split(";;").length : 0)) Qt.quit()
             else if (arg("cal-page-cancel") && step === 5) console.warn("CALTEST page-cancel page", calendarView.pageForTest(arg("cal-page-cancel").split("|")[0]))
             else if (arg("cal-page-cancel") && step === 6) { console.warn("CALTEST page-cancel layout", JSON.stringify(calendarView.layoutForTest(calendarView.formForTest, calendarView.formForTest).slice(0, 160))); cap("pagecancel-page") }
             else if (arg("cal-page-cancel") && step === 7) { const f = calendarView.formForTest; console.warn("CALTEST page-cancel menu", f.seriesScoped, JSON.stringify(f.pageCancelItemsForTest())); f.openCancelForTest(arg("cal-page-cancel").split("|")[1]) }

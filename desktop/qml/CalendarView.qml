@@ -473,6 +473,12 @@ Item {
         form.detail = ({})
         form.openEvent(ev, !!ev.is_organizer, scope || "")
         calendarAction("detail", JSON.stringify({ id: ev.id }))
+        // Outlook's form reads the rest from Outlook (GetCalendarEvent) and
+        // a Teams meeting's options (Facilitator).
+        if (ev.is_organizer && !ev.channel_id) {
+            calendarAction("outlookEvent", JSON.stringify({ id: ev.id }))
+            if (ev.join_url) calendarAction("eventOptions", JSON.stringify({ id: ev.id, joinUrl: ev.join_url }))
+        }
     }
     /// A channel meeting's team and channel names, from the teams list.
     function withTeam(e) {
@@ -489,6 +495,12 @@ Item {
     function actionDone(op, result, error) {
         const r = result ? JSON.parse(result) : {}
         if (op === "detail" && !error && formLayer.visible && form.event && r.id === form.event.id) form.detail = r
+        else if (op === "outlookEvent") { if (!error && form.event && r.id === form.event.id) form.outlookInfo = r }
+        else if (["findTimes", "attachFile", "deleteAttachment", "attachmentFile", "eventOptions", "setEventOptions", "eventFacilitator",
+                  "uploadShare", "shareLink", "graphics", "graphicsFile", "emailReminders", "newCategory"].indexOf(op) >= 0) {
+            form.actionDone(op, r, error)
+            if (op === "newCategory" && !error) loadPrefs()
+        }
         else if (op === "prefs" && !error) applyPrefs(r)
         else if (op === "calendars" && !error) { calendarList = r.calendars || []; otherSelected = otherSelected.filter(id => calendarList.some(c => c.id === id)); loadExtraEvents() }
         else if (op === "calendarEvents" && !error) { if (r.start === rangeStartIso) extraEvents = r.events || [] }
@@ -3125,6 +3137,7 @@ Item {
             categories: root.categories
             categoryTagOf: c => root.categoryTag(c)
             onCommand: act => root.formAct(act)
+            onCalendarCall: (op, args) => root.calendarAction(op, JSON.stringify(Object.assign({ id: form.event.id || "" }, args || {})))
             onCopilotPrompt: label => { if (label) root.openCopilotWith(label, true); else root.copilotOpen = !root.copilotOpen }
             onSearchPeople: q => root.searchPeople(q)
             onClosed: formLayer.visible = false
@@ -3139,7 +3152,8 @@ Item {
                     channel: f.channel && f.channel.channelId ? f.channel : null, showAs: f.showAs || "Busy",
                     editingId: f.editingId || "", sendPersonalInvites: !!f.sendPersonalInvites, timeZone: root.mtTimeZone,
                     templateId: f.templateId || "", guests: f.guests || [], bodyChanged: !!f.bodyChanged,
-                    recurrenceChanged: !!f.recurrenceChanged, targetAudience: f.targetAudience || 0, scope: f.scope || ""
+                    recurrenceChanged: !!f.recurrenceChanged, targetAudience: f.targetAudience || 0, scope: f.scope || "",
+                    outlook: f.outlook || {}
                 }
                 if (f.recurrence) {
                     const r = f.recurrence, pattern = { patternType: r.patternType }
@@ -3180,8 +3194,7 @@ Item {
         else if (a.startsWith("patch:")) calendarAction("patchEvent", JSON.stringify({ id: e.id, patch: JSON.parse(a.slice(6)) }))
         else if (a.startsWith("csv:")) calendarAction("saveCsv", JSON.stringify({ name: (e.subject || "Tracking") + ".csv", rows: JSON.parse(a.slice(4)) }))
         else if (a === "delete") { formLayer.visible = false; tileAct(e, "delete") }
-        else if (["apps", "options", "facilitator", "attach", "emoji", "editor", "loop", "accessibility"].indexOf(a) >= 0)
-            openOwaItem(e, ({ apps: "", options: "Options", facilitator: "Turn on", attach: "Attach", emoji: "Insert emoji, images and stickers.", editor: "Editor", loop: "Insert Loop component", accessibility: "Check for accessibility issues" })[a])
+        else if (a === "apps") openOwaItem(e, "")
         else tileAct(e, a)
     }
     /// The event page in a window of its own (Outlook's form's Open in new

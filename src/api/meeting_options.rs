@@ -179,9 +179,13 @@ pub fn post_option(o: &Value, value: Option<&Value>) -> Value {
 
 /// Apply's body: every option, with `changes` (name, new value) applied.
 pub fn post_body(options: &[Value], changes: &[(&str, Value)]) -> Value {
+    // An option the reply lists twice (MeetingSpokenLanguage, seen
+    // 2026-11-24) goes once: the service refuses a repeated key.
+    let mut seen = std::collections::HashSet::new();
     json!({
         "options": options
             .iter()
+            .filter(|o| seen.insert(o["name"].as_str().unwrap_or_default().to_string()))
             .map(|o| {
                 let change = changes.iter().find(|(n, _)| o["name"].as_str() == Some(*n)).map(|(_, v)| v);
                 post_option(o, change)
@@ -209,17 +213,19 @@ pub async fn set(
         }
     }
     let (base, token) = super::tabs::middle_tier(client).await?;
-    let v: Value = client
+    let resp = client
         .http()
         .post(format!("{base}{}", options_path(tenant, organizer, thread, message)))
         .bearer_auth(&token)
         .json(&post_body(&options, changes))
         .send()
-        .await?
-        .error_for_status()
-        .context("Meeting options")?
-        .json()
         .await?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        bail!("Meeting options: {status} {}", text.chars().take(300).collect::<String>());
+    }
+    let v: Value = serde_json::from_str(&text).context("Meeting options")?;
     if v["success"] != json!(true) {
         bail!("Meeting options weren't saved");
     }
@@ -249,6 +255,15 @@ mod tests {
             options_path("t", "o", "19:ekCP@thread.tacv2", "1794372973956"),
             "/beta/meetings/v1/options/t/o/19_ekCP@thread.tacv2/1794372973956/1794372973956?monarch=true"
         );
+    }
+
+    #[test]
+    fn a_repeated_option_goes_once() {
+        let got = vec![
+            json!({"values":["en-us"],"currentValue":"en-us","name":"MeetingSpokenLanguage","type":"List"}),
+            json!({"values":["en-us"],"currentValue":"en-us","name":"MeetingSpokenLanguage","type":"List"}),
+        ];
+        assert_eq!(post_body(&got, &[])["options"].as_array().map(|a| a.len()), Some(1));
     }
 
     #[test]

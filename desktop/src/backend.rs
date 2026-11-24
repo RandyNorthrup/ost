@@ -21784,9 +21784,22 @@ impl qobject::Backend {
                             // files folder (a channel's folder in a
                             // channel), no share link yet; Teams makes the
                             // organization link once it exists.
-                            let t = api::loop_page::compose_target(&client, &s("channel")).await?;
-                            cfg["create"] = json!({ "siteUrl": t.site_url, "driveId": t.drive_id, "filePath": t.file_path,
-                                                    "fileName": "Loop paragraph.loop", "blueprintId": "paragraph", "noShareLink": true });
+                            let channel = s("channel");
+                            if let Some(subject) = channel.strip_prefix("event:") {
+                                // Outlook's event form (Insert Loop
+                                // component, captured 2026-11-24): your
+                                // OneDrive's Attachments folder, the file
+                                // named after the event.
+                                let t = api::loop_page::compose_target(&client, "").await?;
+                                let name: String = subject.chars().filter(|c| !"\\/:*?\"<>|#%".contains(*c)).collect::<String>().trim().to_string();
+                                let name = if name.is_empty() { "Loop component".to_string() } else { name };
+                                cfg["create"] = json!({ "siteUrl": t.site_url, "driveId": t.drive_id, "filePath": "Attachments",
+                                                        "fileName": format!("{name}.loop"), "blueprintId": "paragraph", "noShareLink": true });
+                            } else {
+                                let t = api::loop_page::compose_target(&client, &channel).await?;
+                                cfg["create"] = json!({ "siteUrl": t.site_url, "driveId": t.drive_id, "filePath": t.file_path,
+                                                        "fileName": "Loop paragraph.loop", "blueprintId": "paragraph", "noShareLink": true });
+                            }
                         } else if s("mode") == "create" {
                             let t = api::loop_page::channel_page_target(&client, &s("channel")).await?;
                             cfg["create"] = json!({ "siteUrl": t.site_url, "driveId": t.drive_id, "filePath": t.file_path,
@@ -24213,6 +24226,98 @@ impl qobject::Backend {
                 let client = TeamsClient::new().await?;
                 match op.as_str() {
                     "detail" => api::calendar::event_detail(&client, &s("id")).await,
+                    // Outlook's event form: what it reads of the event
+                    // beyond Graph, its time suggestions, and what it saves
+                    // at once (email reminders, a new category,
+                    // attachments).
+                    "outlookEvent" => {
+                        let mut v = api::event_form::outlook_event(&s("id")).await?;
+                        v["id"] = s("id").into();
+                        Ok(v)
+                    }
+                    "findTimes" => {
+                        let mut v = api::event_form::find_meeting_times(&args).await?;
+                        v["key"] = args["key"].clone();
+                        Ok(v)
+                    }
+                    "emailReminders" => {
+                        let list = args["reminders"].as_array().cloned().unwrap_or_default();
+                        let field = api::event_form::set_field("InboxReminders", api::event_form::inbox_reminders(&list));
+                        api::event_form::save_now(&s("id"), vec![field]).await?;
+                        Ok(json!({}))
+                    }
+                    "newCategory" => {
+                        api::event_form::add_master_category(&s("name"), args["color"].as_i64().unwrap_or(-1)).await?;
+                        let cats = args["categories"].clone();
+                        api::event_form::save_now(&s("id"), vec![api::event_form::set_field("Categories", cats)]).await?;
+                        Ok(json!({ "name": s("name") }))
+                    }
+                    "attachFile" => {
+                        let path = s("path");
+                        // (QML hands a local path, decoded.)
+                        let path = std::path::PathBuf::from(path.strip_prefix("file://").unwrap_or(&path));
+                        api::event_form::attach_file(&s("id"), &path).await
+                    }
+                    "deleteAttachment" => {
+                        api::event_form::delete_attachment(&s("id"), &s("attachmentId")).await?;
+                        Ok(json!({ "attachmentId": s("attachmentId") }))
+                    }
+                    // The Teams meeting row's Options (the meeting's
+                    // options dialog) and Facilitator's Turn on, for the
+                    // event's meeting (its join link).
+                    "eventOptions" | "setEventOptions" | "eventFacilitator" => {
+                        let link = outgoing::MeetingLink::parse(&s("joinUrl"))
+                            .filter(|l| l.tenant_id.is_some() && l.organizer_id.is_some())
+                            .ok_or_else(|| anyhow::anyhow!("Not a Teams meeting"))?;
+                        let (tenant, organizer) = (link.tenant_id.clone().unwrap_or_default(), link.organizer_id.clone().unwrap_or_default());
+                        if op == "eventFacilitator" {
+                            let on = api::meeting_options::set_facilitator(&client, &tenant, &organizer, &link.thread_id, &link.message_id, args["on"].as_bool().unwrap_or(true)).await?;
+                            return Ok(json!({ "facilitator": on, "joinUrl": s("joinUrl") }));
+                        }
+                        let o = if op == "setEventOptions" {
+                            let changes: Vec<(String, serde_json::Value)> = args["changes"].as_object().map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect()).unwrap_or_default();
+                            let c: Vec<(&str, serde_json::Value)> = changes.iter().map(|(n, v)| (n.as_str(), v.clone())).collect();
+                            api::meeting_options::set(&client, &tenant, &organizer, &link.thread_id, &link.message_id, &c).await?
+                        } else {
+                            api::meeting_options::get(&client, &tenant, &organizer, &link.thread_id, &link.message_id).await?
+                        };
+                        let (people, organizer_person) = picker_people(&o, &tenant, &organizer).await;
+                        let facilitator = o.options.iter().find(|x| x["name"] == "IsGroupCopilotEnabled").and_then(|x| x["currentValue"].as_bool());
+                        Ok(json!({
+                            "options": o.options, "invitees": o.invitees, "people": people, "organizer": organizer_person,
+                            "tenantId": tenant, "translations": o.translations, "facilitator": facilitator, "joinUrl": s("joinUrl"),
+                        }))
+                    }
+                    // Attach ▸ OneDrive (Share link) and Upload and share:
+                    // the file's link for the body.
+                    "shareLink" => {
+                        let url = api::event_form::share_link(&client, &s("driveId"), &s("itemId")).await?;
+                        Ok(json!({ "url": url, "name": s("name") }))
+                    }
+                    "uploadShare" => {
+                        let path = s("path");
+                        api::event_form::upload_and_share(&client, std::path::Path::new(path.strip_prefix("file://").unwrap_or(&path))).await
+                    }
+                    // The Graphics pane's Stock images and Stickers, and a
+                    // picked one's local copy.
+                    "graphics" => {
+                        let mut v = api::event_form::graphics(&s("pivot"), &s("search"), args["top"].as_u64().unwrap_or(30) as u32).await?;
+                        v["key"] = args["key"].clone();
+                        Ok(v)
+                    }
+                    "graphicsFile" => {
+                        let path = api::event_form::graphics_file(&s("url")).await?;
+                        Ok(json!({ "path": path.display().to_string(), "url": s("url") }))
+                    }
+                    // An attachment's Preview (opened) and Download (saved
+                    // in Downloads).
+                    "attachmentFile" => {
+                        let bytes = api::event_form::attachment_bytes(&client, &s("id"), &s("attachmentId")).await?;
+                        let download = args["download"].as_bool().unwrap_or(false);
+                        let dir = if download { download_dir().ok_or_else(|| anyhow::anyhow!("No Downloads folder"))? } else { std::env::temp_dir() };
+                        let path = teams_cli::api::files::save_unique(&dir, &s("name"), &bytes)?;
+                        Ok(json!({ "path": path.display().to_string(), "download": download }))
+                    }
                     // Tracking's Download as CSV (Outlook's event form): the
                     // rows as a CSV file in Downloads.
                     "saveCsv" => {
@@ -24379,7 +24484,7 @@ impl qobject::Backend {
                         (String::new(), short_error(&e))
                     }
                 };
-                if ["respond", "schedule", "update", "cancel", "propose", "charm", "patchEvent"].contains(&op2.as_str()) {
+                if ["respond", "schedule", "update", "cancel", "propose", "charm", "patchEvent", "emailReminders", "newCategory"].contains(&op2.as_str()) {
                     this.as_mut().set_status_text(QString::from(error.as_str()));
                     if error.is_empty() {
                         this.as_mut().refresh_calendar();

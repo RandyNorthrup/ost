@@ -178,7 +178,7 @@ Item {
     //   gone) or an appointment given attendees, Save for an appointment.
     readonly property string primaryKind: mode === "view" ? "join"
         : !existing ? (hasInvitees || virtualAppointment ? "send" : "save")
-        : dirty ? (wasMeeting || hasInvitees ? "send" : "save")
+        : dirty || outlookChanged ? (wasMeeting || hasInvitees ? "send" : "save")
         : event.join_url ? "join" : ""
     readonly property string primaryLabel: ({ join: qsTr("Join"), send: qsTr("Send"), save: qsTr("Save") })[primaryKind] || ""
     // A virtual appointment sends once it has a title and its guests.
@@ -189,11 +189,22 @@ Item {
     readonly property var outlookShowAs: ({ Free: qsTr("Free"), WorkingElsewhere: qsTr("Working elsewhere"), Tentative: qsTr("Tentative"), Busy: qsTr("Busy"), Oof: qsTr("Out of office") })
     readonly property var showAsLabels: ({ Free: qsTr("Free"), WorkingElsewhere: qsTr("Working elsewhere"), Tentative: qsTr("Tentative"), Busy: qsTr("Busy"), Oof: qsTr("Away") })
 
-    onRequiredChanged: if (!loading) { dirty = true; availabilityWanted(allMails()) }
-    onOptionalChanged: if (!loading) { dirty = true; availabilityWanted(allMails()) }
+    onRequiredChanged: { if (!loading) { dirty = true; availabilityWanted(allMails()) } if (timeOpen) suggestTimer.restart() }
+    onOptionalChanged: { if (!loading) { dirty = true; availabilityWanted(allMails()) } if (timeOpen) suggestTimer.restart() }
     onDetailChanged: if (existing && detail && detail.body_html !== undefined) {
         loading = true
-        setBody(detail.body_html); bodyAtLoad = bodyHtml()
+        // A Loop component in the body (Outlook's embedded Loop link)
+        // shows as its card under the text, as Outlook's form shows it.
+        let html = detail.body_html || ""
+        if (outlookEdit) {
+            const m = /<a\b[^>]*data-loopstyle="embedded"[^>]*>[\s\S]*?<\/a>/i.exec(html)
+            const href = m ? /href="([^"]+)"/i.exec(m[0]) : null
+            if (href) {
+                bodyLoop = { key: "evloop" + Date.now().toString(36), url: href[1].replace(/&amp;/g, "&"), title: m[0].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim(), description: "", linking: false, existing: true }
+                html = html.replace(m[0], "")
+            }
+        }
+        setBody(html); bodyAtLoad = bodyHtml()
         // A series' repeat (an occurrence shows its series').
         if (detail.recurrence && !dirty) { recurrence = scopedRecurrence(fromGraph(detail.recurrence, startAt)); recurrenceAtLoad = recurrenceKey(recurrence) }
         if (detail.reminder !== undefined) reminder = detail.reminder
@@ -250,6 +261,11 @@ Item {
         const d = Math.floor(min / 1440), h = Math.floor(min % 1440 / 60), m = min % 60
         return [d ? qsTr("%1d", "calendar:k1fh6unlv").arg(d) : "", h ? qsTr("%1h", "calendar:k4xp2r11v").arg(h) : "",
                 m || !d && !h ? qsTr("%1m", "calendar:kdur9xdkr").arg(m) : ""].filter(t => t).join(" ")
+    }
+    // Outlook's suggestion length: "30 min", "1 hr", "1 hr 30 min".
+    function durLabelLong(min) {
+        const h = Math.floor(min / 60), m = min % 60
+        return [h ? qsTr("%1 hr").arg(h) : "", m || !h ? qsTr("%1 min").arg(m) : ""].filter(t => t).join(" ")
     }
     function durSpoken(min) {
         const d = Math.floor(min / 1440), h = Math.floor(min % 1440 / 60), m = min % 60
@@ -322,6 +338,9 @@ Item {
         eventCategories = (ev.categories || []).slice()
         reminder = 15; responseRequested = ev.response_requested !== false; hideAttendees = false
         timeOpen = false; formatOpen = false; moreSuggestions = false; trackSort = 0; trackQuery = ""; trackSearching = false
+        outlookInfo = ({}); outlookAtLoad = ({}); allowForwarding = true; rebookRooms = false; copilotReschedule = false
+        acceptDays = defaultAcceptDays(); acceptTimes = [[0, 720], [720, 780], [780, 1440]]; emailReminders = []; attachments = []
+        docLinks = []; timeSuggestions = []; suggestionsKey = ""; facilitatorOn = null; sidePane = ""; bodyLoop = null; stockImages = ({})
         paneOpen = true
         dirty = false
         // Outlook's form opens with the title focused (its brand line).
@@ -392,7 +411,14 @@ Item {
         // The link colour setBody() gave the links (Qt writes it on each
         // link's span).
         const c = (bodyLinkSet || bodyLink.toString()).toLowerCase()
-        return html.replace(/(<a [^>]*><span style="(?:[^"]*?[\s;])?)color:(#[0-9a-f]{6});/gi, (all, head, col) => col.toLowerCase() === c ? head : all)
+        html = html.replace(/(<a [^>]*><span style="(?:[^"]*?[\s;])?)color:(#[0-9a-f]{6});/gi, (all, head, col) => col.toLowerCase() === c ? head : all)
+        // Stock images and stickers go as their pictures' addresses.
+        for (const local in stockImages) html = html.split(local).join(stockImages[local])
+        // The body's Loop component: Outlook's embedded Loop link.
+        if (bodyLoop && bodyLoop.url && html.indexOf(bodyLoop.url) < 0)
+            html += "<a href=\"" + bodyLoop.url.replace(/&/g, "&amp;") + "\" class=\"OWAAutoLink none\" data-loopstyle=\"embedded\" style=\"display: block;\">"
+                  + String(bodyLoop.title || titleInput.text.trim()).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</a>"
+        return html
     }
     function form(send, audience) {
         let s = new Date(startAt), e = new Date(endAt)
@@ -418,6 +444,7 @@ Item {
             lobbyBypass: lobbyBypass,
             recordAutomatically: recordAuto === "On",
             templateId: virtualAppointment ? "firstparty_e514e598-fba6-4e1f-b8b3-138dd3bca748" : "",
+            outlook: outlookPage ? outlookDiff : ({}),
             guests: virtualAppointment ? guests.map(g => ({ displayName: g.name.trim(), emailAddress: g.email.trim() })) : []
         }
     }
@@ -698,8 +725,11 @@ Item {
                         y: obReminder.height + 1
                         radioColumn: true; radioLabelX: 26
                         items: root.reminderChoices.map(m => ({ label: root.reminderLabel(m), checked: root.reminder === m }))
-                            .concat([{ separator: true }, { label: qsTr("Add email reminder"), enabled: false }])
-                        onPicked: i => { if (i < root.reminderChoices.length) { root.reminder = root.reminderChoices[i]; root.command("reminder:" + root.reminder) } }
+                            .concat([{ separator: true }, { label: root.emailReminders.length ? qsTr("Edit email reminder") : qsTr("Add email reminder") }])
+                        onPicked: i => {
+                            if (i < root.reminderChoices.length) { root.reminder = root.reminderChoices[i]; root.command("reminder:" + root.reminder) }
+                            else emailReminderDialog.openFor(root.emailReminders)
+                        }
                     }
                 }
                 OutlookBarButton {
@@ -711,10 +741,10 @@ Item {
                         y: obCats.height + 1
                         radioColumn: true; radioLabelX: 50
                         items: (root.categories || []).map(c => ({ label: c.name, tag: root.categoryTagOf ? root.categoryTagOf(c.color) : undefined, checked: root.eventCategories.indexOf(c.name) >= 0, persist: true }))
-                            .concat([{ separator: true }, { label: qsTr("New category"), enabled: false }])
+                            .concat([{ separator: true }, { label: qsTr("New category") }])
                         onPicked: i => {
                             const c = (root.categories || [])[i]
-                            if (!c) return
+                            if (!c) { newCategoryDialog.openNew(); return }
                             const l = root.eventCategories.slice(), k = l.indexOf(c.name)
                             if (k >= 0) l.splice(k, 1); else l.push(c.name)
                             root.eventCategories = l
@@ -1761,12 +1791,17 @@ Item {
                             OutlookSwitchMenu {
                                 id: respMenu2
                                 y: respOpts.height + 1
+                                // (Sent with Send, as Outlook's form does:
+                                // CalendarIsResponseRequested,
+                                // DoNotForwardMeeting, HideAttendees.)
                                 rows: [{ label: qsTr("Request responses"), on: root.responseRequested },
+                                       { label: qsTr("Allow forwarding"), on: root.allowForwarding },
                                        { label: qsTr("Hide attendee list"), on: root.hideAttendees }]
                                 tail: qsTr("Add optional attendees")
                                 onToggled: i => {
-                                    if (i === 0) { root.responseRequested = !root.responseRequested; root.command("patch:" + JSON.stringify({ responseRequested: root.responseRequested })) }
-                                    else { root.hideAttendees = !root.hideAttendees; root.command("patch:" + JSON.stringify({ hideAttendees: root.hideAttendees })) }
+                                    if (i === 0) root.responseRequested = !root.responseRequested
+                                    else if (i === 1) root.allowForwarding = !root.allowForwarding
+                                    else root.hideAttendees = !root.hideAttendees
                                 }
                                 onTailPicked: { root.showOptional = true; oPeople.forceActiveFocus() }
                             }
@@ -1811,24 +1846,66 @@ Item {
                     // a 40 x 20 switch at 64 (greyed on one event, a one-off
                     // and before a series is sent), the label at 112,
                     // Acceptable times ▾ 6 after it, ⓘ 8 after that.
+                    // Live when Outlook allows it (one other attendee at
+                    // most, not all day, busy, an hour or less, a weekly or
+                    // daily repeat); otherwise greyed with ⓘ "Why can't I
+                    // use this feature?" and the reason. Saved with Send
+                    // (CopilotManagedEventType, Intent).
                     Item {
+                        id: rescheduleRow
                         visible: root.outlookEdit
                         width: parent.width; height: 40
-                        readonly property bool live: false
+                        readonly property bool live: root.rescheduleSwitchLive
                         FluentIcon { x: 18; y: 10; name: "calendar-sparkle-20"; size: 20; color: theme.textSecondary }
-                        OutlookSwitch { x: 64; y: 10; on: root.copilotReschedule; enabledState: parent.live; onToggled: root.copilotReschedule = !root.copilotReschedule }
-                        Text { id: conflictText; x: 116; height: 40; verticalAlignment: Text.AlignVCenter; text: qsTr("If conflicts arise, let Copilot reschedule this event."); font.family: theme.font; font.pixelSize: 14; color: parent.live ? theme.text : theme.disabled }
+                        OutlookSwitch {
+                            x: 64; y: 10; on: root.copilotReschedule && (parent.live || root.isSeries); enabledState: parent.live
+                            accessible: conflictText.text
+                            onToggled: root.copilotReschedule = !root.copilotReschedule
+                            HoverHandler { id: reschedHover }
+                            ToolTip.visible: reschedHover.hovered && parent.live
+                            ToolTip.text: qsTr("If you accept or create another event during this time, Copilot will help resolve conflicts by rescheduling this event.")
+                            ToolTip.delay: 600
+                        }
+                        Text { id: conflictText; x: 116; height: 40; verticalAlignment: Text.AlignVCenter; text: qsTr("If conflicts arise, let Copilot reschedule this event."); font.family: theme.font; font.pixelSize: 14; color: parent.live ? theme.text : theme.disabled
+                               TapHandler { enabled: rescheduleRow.live; onTapped: root.copilotReschedule = !root.copilotReschedule } }
                         Row {
                             id: acceptable
                             x: Math.max(conflictText.x + conflictText.implicitWidth + 10, 433.59); height: 40; spacing: 2
-                            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Acceptable times"); font.family: theme.font; font.pixelSize: 14; color: parent.parent.live ? theme.brand : theme.disabled }
-                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: parent.parent.live ? theme.textSecondary : theme.disabled }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Acceptable times"); font.family: theme.font; font.pixelSize: 14; color: root.acceptableLive ? theme.brand : theme.disabled }
+                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: root.acceptableLive ? theme.textSecondary : theme.disabled }
+                            HoverHandler { enabled: root.acceptableLive; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { enabled: root.acceptableLive; onTapped: acceptPop.open() }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: qsTr("Acceptable times")
+                            OutlookAcceptableTimes {
+                                id: acceptPop
+                                x: 64 - acceptable.x - 12; y: 40
+                                form: root
+                            }
                         }
                         Item {
+                            id: reschedInfo
+                            visible: !!root.rescheduleBlock
                             x: Math.max(acceptable.x + acceptable.width + 8, 569.22); y: 8; width: 24; height: 24
-                            FluentIcon { x: 4; y: 4; name: "info-16-regular"; size: 16; color: theme.textStrong }
+                            FluentIcon { x: 4; y: 4; name: reschedInfoTap.pressed || reschedWhy.opened ? "info-16" : "info-16-regular"; size: 16; color: reschedWhy.opened ? theme.brand : theme.textStrong }
+                            TapHandler { id: reschedInfoTap; onTapped: reschedWhy.opened ? reschedWhy.close() : reschedWhy.open() }
+                            HoverHandler { cursorShape: Qt.PointingHandCursor; onHoveredChanged: if (hovered) reschedWhy.open() }
                             Accessible.role: Accessible.Button
-                            Accessible.name: qsTr("If you accept or create another event during this time, Copilot will help resolve conflicts by rescheduling this event.")
+                            Accessible.name: qsTr("Why can't I use this feature?")
+                            // "Why can't I use this feature?" and the reason
+                            // (a 240 wide tooltip over the ⓘ).
+                            Popup {
+                                id: reschedWhy
+                                width: 240; padding: 12
+                                x: 12 - width / 2; y: -height - 8
+                                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                                background: FluentSurface { depth: 8; radius: 4; color: theme.surface }
+                                contentItem: Column {
+                                    spacing: 4
+                                    Text { width: 216; text: qsTr("Why can't I use this feature?"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text; wrapMode: Text.Wrap }
+                                    Text { width: 216; text: root.rescheduleBlock; font.family: theme.font; font.pixelSize: 12; color: theme.text; wrapMode: Text.Wrap; lineHeight: 16; lineHeightMode: Text.FixedHeight }
+                                }
+                            }
                         }
                     }
 
@@ -1876,7 +1953,7 @@ Item {
                             OutlookSwitchMenu {
                                 id: locMenu
                                 y: locSettings.height + 1
-                                rows: [{ label: qsTr("Rebook declined rooms"), on: root.rebookRooms, info: true }]
+                                rows: [{ label: qsTr("Rebook declined rooms"), on: root.rebookRooms, info: qsTr("Copilot will rebook a similar room if there are room declines or the meeting is rescheduled") }]
                                 onToggled: i => root.rebookRooms = !root.rebookRooms
                             }
                         }
@@ -1903,18 +1980,24 @@ Item {
                             id: facText
                             visible: facIcon.visible
                             x: facIcon.x + 18; y: 10.67; height: 18.67; verticalAlignment: Text.AlignVCenter
-                            text: qsTr("Facilitator is off for this meeting."); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                            text: root.facilitatorOn ? qsTr("Facilitator is on for this meeting.") : qsTr("Facilitator is off for this meeting."); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
                         }
+                        // Turn on / Turn off: the meeting's Facilitator
+                        // option (POST …/facilitator/options/…
+                        // IsGroupCopilotEnabled, as Outlook's form sends).
                         LinkButton {
                             visible: facIcon.visible
-                            x: Math.max(facText.x + facText.implicitWidth + 8, 512.63); y: 10.67; height: 18.67; verticalAlignment: Text.AlignVCenter
-                            label: qsTr("Turn on"); color: theme.brand; onClicked: root.command("facilitator")
+                            x: Math.max(facText.x + facText.implicitWidth + 8, root.facilitatorOn ? 0 : 512.63); y: 10.67; height: 18.67; verticalAlignment: Text.AlignVCenter
+                            label: root.facilitatorOn ? qsTr("Turn off") : qsTr("Turn on"); color: theme.brand
+                            onClicked: root.calendarCall("eventFacilitator", { joinUrl: root.event.join_url, on: !root.facilitatorOn })
                         }
+                        // Options: Teams' Meeting options dialog for the
+                        // meeting (the same dialog Teams opens over the page).
                         OutlookFieldButton {
                             visible: root.outlookEdit && parent.teams
                             x: ofields.fieldEnd - width; y: 4.33
                             icon: "settings-20"; label: qsTr("Options"); accessible: qsTr("Button that opens the a dialog to change the online meeting options.")
-                            onClicked: root.command("options")
+                            onClicked: { root.optionsWanted = true; root.calendarCall("eventOptions", { joinUrl: root.event.join_url }) }
                         }
                     }
                 }
@@ -1949,26 +2032,131 @@ Item {
                     id: edBox
                     visible: root.outlookEdit
                     x: 53; y: 12; width: parent.width - 65
-                    readonly property real area: Math.max(71.83, editor.contentHeight + 24)
-                    height: 6.67 + area + strip.height + 0.67
+                    // The attachments over the text (Outlook's file
+                    // chips, 11.67 down) and the Loop component under it.
+                    readonly property real chipsH: root.attachments.length ? attachFlow.height + 11.67 : 0
+                    readonly property real loopH: bodyLoopCard.visible ? bodyLoopCard.height + 12 : 0
+                    readonly property real area: Math.max(71.83, editor.contentHeight + 24 + loopH)
+                    height: 6.67 + chipsH + area + strip.height + 0.67
                     radius: 4; color: theme.surface
                     border.width: 0.67; border.color: editor.activeFocus ? theme.brand : theme.stroke
-                    Item { id: oBodySlot; x: 9.67; y: 6.67; width: parent.width - 19.34; height: edBox.area }
+                    // A file chip (Outlook's: 260 x 48, radius 4, a 0.67
+                    // #F0F0F0 edge; the type glyph 20 at 7.67, 13.67; the
+                    // name 14 #424242 at 34.67, 6.17; its size 10/600
+                    // #707070 at 34.67, 27.83; More actions ▾ 32 x 46.67 at
+                    // 228.33: Preview, Download, Remove attachment), 4 apart.
+                    Flow {
+                        id: attachFlow
+                        visible: root.attachments.length > 0
+                        x: 6.67; y: 11.67; width: parent.width - 13.34; spacing: 4
+                        Repeater {
+                            model: root.attachments
+                            Rectangle {
+                                id: achip
+                                required property var modelData
+                                width: 260; height: 48; radius: 4
+                                color: achipHover.hovered ? theme.rowHover : theme.surface
+                                border.width: 0.67; border.color: theme.pick("#F0F0F0", "#3D3D3D", "#FFFFFF")
+                                FluentIcon { x: 7.67; y: 13.67; name: /^image\//.test(achip.modelData.contentType || "") ? "image-20" : "document-20"; size: 20; color: theme.textSecondary }
+                                Text { x: 34.67; y: 6.17; width: 191; height: 22.67; verticalAlignment: Text.AlignVCenter; elide: Text.ElideMiddle; text: achip.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
+                                Text { x: 34.67; y: 27.83; height: 13.33; verticalAlignment: Text.AlignVCenter; text: root.sizeLabel(achip.modelData.size); font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
+                                HoverHandler { id: achipHover }
+                                TapHandler { onTapped: root.calendarCall("attachmentFile", { attachmentId: achip.modelData.id, name: achip.modelData.name, download: false }) }
+                                Rectangle {
+                                    id: achipMore
+                                    x: 228.33; y: 0.67; width: 32; height: 46.67
+                                    color: achipMoreHover.hovered || achipMenu.opened ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : "transparent"
+                                    FluentIcon { anchors.centerIn: parent; name: "chevron-down-12"; size: 12; color: theme.pick("#8A8A8A", "#ADADAD", "#FFFFFF") }
+                                    HoverHandler { id: achipMoreHover; cursorShape: Qt.PointingHandCursor }
+                                    TapHandler { onTapped: achipMenu.open() }
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: qsTr("More actions")
+                                    MenuPopup {
+                                        id: achipMenu
+                                        x: -60; y: achipMore.height + 6
+                                        items: [{ label: qsTr("Preview"), icon: "eye-20" }, { label: qsTr("Download"), icon: "arrow-download-20" }, { label: qsTr("Remove attachment"), icon: "dismiss-20" }]
+                                        onPicked: i => {
+                                            const a = achip.modelData
+                                            if (i < 2) root.calendarCall("attachmentFile", { attachmentId: a.id, name: a.name, download: i === 1 })
+                                            else root.calendarCall("deleteAttachment", { attachmentId: a.id })
+                                        }
+                                    }
+                                }
+                                Accessible.role: Accessible.ListItem
+                                Accessible.name: achip.modelData.name + " " + root.sizeLabel(achip.modelData.size)
+                            }
+                        }
+                    }
+                    Item { id: oBodySlot; x: 9.67; y: 6.67 + edBox.chipsH; width: parent.width - 19.34; height: edBox.area - edBox.loopH }
+                    // Insert Loop component: a Loop component in the body
+                    // (made in your OneDrive's Attachments folder, named
+                    // after the event; Send puts its link in the body and
+                    // DocLinks, as Outlook does).
+                    LoopCard {
+                        id: bodyLoopCard
+                        visible: !!root.bodyLoop
+                        x: 9.67; y: 6.67 + edBox.chipsH + editor.contentHeight + 12
+                        width: parent.width - 19.34
+                        mode: root.bodyLoop && root.bodyLoop.existing ? "edit" : "compose"
+                        live: visible
+                        loopKey: root.bodyLoop ? root.bodyLoop.key : ""
+                        conversation: "event:" + (titleInput.text.trim() || qsTr("Loop component"))
+                        componentUrl: root.bodyLoop ? root.bodyLoop.url || "" : ""
+                        name: root.bodyLoop && root.bodyLoop.title ? root.bodyLoop.title : (titleInput.text.trim() || qsTr("Loop component"))
+                        description: root.bodyLoop ? root.bodyLoop.description || "" : ""
+                        linking: !!root.bodyLoop && !!root.bodyLoop.linking
+                        onCreated: info => {
+                            if (!root.bodyLoop) return
+                            root.bodyLoop = Object.assign({}, root.bodyLoop, { driveId: info.driveId || "", itemId: info.itemId || "", linking: true })
+                            backend.loopHostRequest("composeLink", root.bodyLoop.key + ":link", JSON.stringify({ driveId: info.driveId, itemId: info.itemId, url: info.componentUrl }))
+                        }
+                        onTitleChanged: t => { if (root.bodyLoop) root.bodyLoop = Object.assign({}, root.bodyLoop, { title: t }) }
+                        onDiscardRequested: {
+                            const l = root.bodyLoop
+                            root.bodyLoop = null; root.docLinks = []
+                            if (l && l.itemId) backend.loopHostRequest("composeDiscard", "compose-discard", JSON.stringify({ driveId: l.driveId, itemId: l.itemId }))
+                        }
+                    }
+                    Connections {
+                        target: backend
+                        function onLoopHostReply(id, json) {
+                            const l = root.bodyLoop
+                            if (!l || id !== l.key + ":link") return
+                            let r = {}
+                            try { r = JSON.parse(json) } catch (e) {}
+                            if (r.componentUrl) { root.bodyLoop = Object.assign({}, l, { url: r.componentUrl, description: r.description || "", linking: false }); root.docLinks = [r.componentUrl]; root.markDirty() }
+                            else root.bodyLoop = Object.assign({}, l, { linking: false })
+                        }
+                    }
                     Rectangle {
                         id: strip
-                        x: 0.67; y: 6.67 + edBox.area; width: parent.width - 1.34
+                        x: 0.67; y: 6.67 + edBox.chipsH + edBox.area; width: parent.width - 1.34
                         height: 46.5 + (root.formatOpen ? 40 : 0)
                         radius: 4; color: theme.inputFilled
                         Item { id: oFmtSlot; visible: root.formatOpen; x: 7; y: 8; width: parent.width - 14; height: 32 }
                         Row {
                             x: 7; y: (root.formatOpen ? 40 : 0) + 8.5; spacing: 4
-                            OutlookToolButton { icon: "attach-20"; chevron: true; tip: qsTr("Attach"); onClicked: root.command("attach") }
+                            // Attach ▾ (Outlook's "Attach from": Browse this
+                            // computer, OneDrive, Upload and share).
+                            OutlookToolButton {
+                                id: attachBtn
+                                icon: "attach-20"; chevron: true; tip: qsTr("Attach"); checked: attachMenu.opened
+                                onClicked: attachMenu.open()
+                                MenuPopup {
+                                    id: attachMenu
+                                    y: -height - 2
+                                    header: Component { Text { leftPadding: 8; topPadding: 6; bottomPadding: 6; text: qsTr("Attach from"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textStrong } }
+                                    items: [{ label: qsTr("Browse this computer"), icon: "folder-20" }, { label: qsTr("OneDrive"), icon: "onedrive-color" },
+                                            { label: qsTr("Upload and share"), icon: "cloud-arrow-up-20" }]
+                                    onPicked: i => { if (i === 0) attachDialog.open(); else if (i === 1) root.pickOneDrive(); else uploadFileDialog.open() }
+                                }
+                            }
                             OutlookToolButton { icon: "image-20"; tip: qsTr("Insert pictures inline"); onClicked: pictureDialog.open() }
-                            OutlookToolButton { icon: "sticker-20"; glyph: 22; iconColor: theme.brand; tip: qsTr("Insert emoji, images and stickers."); onClicked: root.command("emoji") }
+                            OutlookToolButton { icon: "sticker-20"; glyph: 22; iconColor: theme.brand; checked: root.sidePane === "graphics"; tip: qsTr("Insert emoji, images and stickers."); onClicked: root.sidePane = root.sidePane === "graphics" ? "" : "graphics" }
                             OutlookToolButton { icon: "text-edit-style-20"; checked: root.formatOpen; tip: qsTr("Show formatting options"); onClicked: root.formatOpen = !root.formatOpen }
-                            OutlookToolButton { icon: "text-proofing-tools-20"; tip: qsTr("Editor"); onClicked: root.command("editor") }
-                            OutlookToolButton { icon: "loop-page-20"; iconColor: theme.brand; tip: qsTr("Insert Loop component"); onClicked: root.command("loop") }
-                            OutlookToolButton { icon: "accessibility-checkmark-20"; tip: qsTr("Check for accessibility issues"); onClicked: root.command("accessibility") }
+                            OutlookToolButton { icon: "text-proofing-tools-20"; tip: qsTr("Editor"); onClicked: editorSettings.open() }
+                            OutlookToolButton { icon: "loop-page-20"; iconColor: theme.brand; tip: qsTr("Insert Loop component"); onClicked: root.insertBodyLoop() }
+                            OutlookToolButton { icon: "accessibility-checkmark-20"; checked: root.sidePane === "accessibility"; tip: qsTr("Check for accessibility issues"); onClicked: { root.sidePane = "accessibility"; accessibilityPane.check() } }
                         }
                     }
                 }
@@ -2027,6 +2215,23 @@ Item {
             }
         }
     }
+
+    // Graphics / Accessibility checker in Tracking's place (Outlook's
+    // flex pane: the same 351 wide card).
+    OutlookFormPane {
+        id: formPane
+        z: 4
+        visible: root.outlookEdit && root.sidePane !== "" && root.width >= 1000
+        mode: root.sidePane || "graphics"
+        form: root
+        editor: editor
+        x: root.width - 16 - 351
+        y: header.height + 58
+        height: Math.min(510, root.height - y - 16)
+        onClosed: root.sidePane = ""
+    }
+    property alias graphicsPane: formPane
+    property alias accessibilityPane: formPane
 
     // ── Options / Tracking pane ─────────────────────────────────────
     Item {
@@ -2903,9 +3108,40 @@ Item {
     readonly property bool cancelOpenForTest: outlookCancel.opened || cancelDialog.opened
     function pageCancelItemsForTest() { return pageCancelMenu.items.map(x => x.label) }
     /// Outlook's page's menus by name (the harness opens and captures them).
+    /// The time panel's suggestions as laid out (relative to the panel):
+    /// the heading's parts and each row with its texts.
+    function suggestionsLayoutForTest() {
+        const box = timePanel.suggestItem, out = []
+        const g = (it, tag) => { const p = it.mapToItem(timePanel, 0, 0); return [tag, Math.round(p.x * 100) / 100, Math.round(p.y * 100) / 100, Math.round(it.width * 100) / 100, Math.round(it.height * 100) / 100] }
+        const walk = (it, depth) => {
+            for (const c of it.children) {
+                if (!c.visible) continue
+                if (c.text !== undefined) out.push(g(c, "text:" + c.text).concat([Math.round(c.implicitWidth * 100) / 100]))
+                else if (c.name !== undefined && c.size !== undefined) out.push(g(c, "icon:" + c.name))
+                else if (c.radius !== undefined && c.width > 600) out.push(g(c, "row"))
+                if (depth < 3) walk(c, depth + 1)
+            }
+        }
+        out.push(g(timePanel, "panel"), g(box, "box"))
+        walk(box, 0)
+        return out
+    }
+    /// The page's Outlook parts for the harness.
+    function outlookStateForTest() {
+        return { info: outlookInfo, diff: outlookDiff, primary: primaryKind, allowForwarding: allowForwarding, responseRequested: responseRequested,
+                 hideAttendees: hideAttendees, rebookRooms: rebookRooms, reschedule: copilotReschedule, rescheduleBlock: rescheduleBlock,
+                 acceptDays: acceptDays, acceptTimes: acceptTimes, emailReminders: emailReminders, attachments: attachments,
+                 facilitator: facilitatorOn, sidePane: sidePane, loop: bodyLoop, suggestions: timeSuggestions, categories: eventCategories, charm: charm }
+    }
+    function emailReminderDialogForTest() { return emailReminderDialog }
+    function newCategoryDialogForTest() { return newCategoryDialog }
+    function editorSettingsForTest() { return editorSettings }
+    function meetingOptionsForTest() { return meetingOptions }
+    function acceptableTimesForTest() { return acceptPop }
+    function formPaneForTest() { return formPane }
     function pageMenuForTest(name) {
         return ({ share: obShareMenu, busy: obShowAsMenu, reminder: obReminderMenu, categories: obCatsMenu, private: obPrivateMenu, more: obMoreMenu,
-                  cancel: pageCancelMenu2, response: respMenu2, location: locMenu, tracking: trackMoreMenu, respmore: obRespMoreMenu, charm: charmPop })[name] || null
+                  cancel: pageCancelMenu2, response: respMenu2, location: locMenu, tracking: trackMoreMenu, respmore: obRespMoreMenu, charm: charmPop, attach: attachMenu })[name] || null
     }
     function pickReminderForTest(m) { reminder = m; command("reminder:" + m) }
     function pickShowAsForTest(k) { showAs = k; command("showAs:" + ({ Free: "free", WorkingElsewhere: "workingElsewhere", Tentative: "tentative", Busy: "busy", Oof: "oof" })[k]) }
@@ -2917,6 +3153,243 @@ Item {
     // ── Outlook's form: its parts ───────────────────────────────────
     property bool copilotReschedule: false
     property bool rebookRooms: false
+    /// Response options' Allow forwarding (Outlook's DoNotForwardMeeting).
+    property bool allowForwarding: true
+    /// What Outlook's form reads of the event beyond Graph (GetCalendarEvent,
+    /// event_form::outlook_event), set by the calendar as the page opens.
+    property var outlookInfo: ({})
+    /// The switches as Outlook had them: Send carries only what changed
+    /// (Response options, Rebook declined rooms, the Copilot reschedule
+    /// switch with its acceptable times), as Outlook's form does (winpc,
+    /// 2026-11-24: toggling one back takes Send away again).
+    property var outlookAtLoad: ({})
+    /// Acceptable times: the days ("yyyy-MM-dd") and the times of day
+    /// ([from, to] minutes: Morning 0..720, Midday 720..780, Afternoon
+    /// 780..1440, Custom).
+    property var acceptDays: []
+    property var acceptTimes: []
+    /// Reminder ▸ Add email reminder: [{id, offset, message, sendOption}].
+    property var emailReminders: []
+    /// The event's attachments ([{id, name, size, contentType}]) and the
+    /// Loop components put in the body (their links, Send's DocLinks).
+    property var attachments: []
+    property var docLinks: []
+    /// Time suggestions ([{start, end, available, total, confidence}]) for
+    /// the panel's times and attendees (suggestionsKey).
+    property var timeSuggestions: []
+    property string suggestionsKey: ""
+    property bool suggestionsLoading: false
+    /// The meeting's Facilitator option (null until read).
+    property var facilitatorOn: null
+    /// The right column's pane instead of Tracking: "graphics" (Insert
+    /// emoji, images and stickers) or "accessibility".
+    property string sidePane: ""
+    onSidePaneChanged: if (sidePane) paneOpen = true
+    /// The Loop component put in the body: {key, url, driveId, itemId, title}.
+    property var bodyLoop: null
+    /// Stock images and stickers put in the body: their local copy → the
+    /// picture's address (the body sends the address).
+    property var stockImages: ({})
+    /// A calendar request of the page ("outlookEvent", "findTimes",
+    /// "emailReminders", "newCategory", "attachFile", "deleteAttachment",
+    /// "attachmentFile", "eventOptions", "setEventOptions",
+    /// "eventFacilitator", "uploadShare", "shareLink", "graphics"); the
+    /// answer comes back in actionDone().
+    signal calendarCall(string op, var args)
+    onOutlookInfoChanged: {
+        const o = outlookInfo || {}
+        if (o.allowForwarding === undefined) return
+        allowForwarding = o.allowForwarding
+        responseRequested = o.requestResponses !== false
+        hideAttendees = !!o.hideAttendees
+        rebookRooms = !!o.rebookRooms
+        copilotReschedule = o.managed === 1
+        if ((o.intentDays || []).length) acceptDays = o.intentDays.slice()
+        if ((o.intentTimes || []).length) acceptTimes = o.intentTimes.map(t => [t[0], t[1]])
+        emailReminders = (o.inboxReminders || []).slice()
+        attachments = (o.attachments || []).slice()
+        outlookAtLoad = { allowForwarding: allowForwarding, requestResponses: responseRequested, hideAttendees: hideAttendees,
+                          rebookRooms: rebookRooms, managed: copilotReschedule, intent: intentJson() }
+    }
+    /// What Send carries beyond the form's fields (event_form::form_updates).
+    function outlookChanges() {
+        const a = outlookAtLoad, c = {}
+        if (a.allowForwarding === undefined) return c
+        if (allowForwarding !== a.allowForwarding) c.allowForwarding = allowForwarding
+        if (responseRequested !== a.requestResponses) c.requestResponses = responseRequested
+        if (hideAttendees !== a.hideAttendees) c.hideAttendees = hideAttendees
+        if (rebookRooms !== a.rebookRooms) c.rebookRooms = rebookRooms
+        const intent = intentJson()
+        if (copilotReschedule !== a.managed || (copilotReschedule && intent !== a.intent)) c.managed = { on: copilotReschedule, intent: copilotReschedule ? intent : "" }
+        if (docLinks.length) c.docLinks = docLinks
+        return c
+    }
+    readonly property var outlookDiff: outlookChanges()
+    readonly property bool outlookChanged: Object.keys(outlookDiff).length > 0
+    function isoDay(d) { const p = n => (n < 10 ? "0" : "") + n; return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) }
+    /// Acceptable days as Outlook's form starts them: the next five
+    /// weekdays from today (winpc 2026-11-24: Tue 24 to Fri 27 and Mon 30).
+    function defaultAcceptDays() {
+        const out = [], d = new Date(); d.setHours(0, 0, 0, 0)
+        while (out.length < 5) { if (d.getDay() > 0 && d.getDay() < 6) out.push(isoDay(d)); d.setDate(d.getDate() + 1) }
+        return out
+    }
+    /// Outlook's Intent (event_form::intent_json): days as Date filters (a
+    /// run "a..b", a single day alone), times as TimeOfDay minute ranges.
+    function intentJson() {
+        const days = acceptDays.slice().sort(), runs = []
+        const next = s => { const d = new Date(s + "T00:00:00"); d.setDate(d.getDate() + 1); return isoDay(d) }
+        for (let i = 0; i < days.length;) {
+            let j = i
+            while (j + 1 < days.length && days[j + 1] === next(days[j])) j++
+            runs.push({ FilterType: "Date", FilterValue: i === j ? days[i] : days[i] + ".." + days[j] })
+            i = j + 1
+        }
+        const times = acceptTimes.map(t => ({ FilterType: "TimeOfDay", FilterValue: t[0] + ".." + t[1] }))
+        const group = l => l.length === 0 ? null : l.length === 1 ? l[0] : { ConstraintType: "OR", Constraints: l }
+        const parts = [group(runs), group(times)].filter(x => x)
+        return JSON.stringify({ IntentConstraint: { ConstraintType: "AND", Constraints: parts }, Version: 1 })
+    }
+    /// Why "If conflicts arise, let Copilot reschedule this event." is
+    /// greyed (Outlook's reasons, in its order); "" when it can be used.
+    /// An occurrence keeps the switch but not Acceptable times.
+    readonly property string rescheduleBlock: {
+        const r = recurrence
+        if (r && !(isSeries && scope === "occurrence") && (r.unit === "year" || r.unit === "month" || r.interval > 1))
+            return r.unit === "month" ? qsTr("Events that happen on a specific date of the month can't be automatically rescheduled.")
+                                      : qsTr("This event doesn't occur regularly enough to be automatically rescheduled.")
+        const me = (event.organizer_address || root.me.mail || "").toLowerCase()
+        const others = required.concat(optional).filter(p => (p.address || "").toLowerCase() !== me)
+        if (others.length > 1) return qsTr("This feature currently works for personal events or events with just one other attendee in your organization.")
+        if (allDay) return qsTr("All day events can't be automatically rescheduled.")
+        if (showAs === "Oof") return qsTr("Out of office events can't be automatically rescheduled.")
+        if (showAs === "Free") return qsTr("Events marked as Free can't be automatically rescheduled.")
+        if (showAs === "Tentative") return qsTr("Events marked as Tentative can't be automatically rescheduled.")
+        if (durationMin > 60) return qsTr("Events that are longer than 1 hour can’t be automatically rescheduled.")
+        if (isSeries && scope === "occurrence") return qsTr("You can turn automatic rescheduling on or off for this occurrence, but to make other changes, edit the event series.")
+        return ""
+    }
+    readonly property bool rescheduleSwitchLive: outlookEdit && (!rescheduleBlock || (isSeries && scope === "occurrence"))
+    readonly property bool acceptableLive: outlookEdit && !rescheduleBlock
+
+    // ── Time suggestions ────────────────────────────────────────────
+    /// What the suggestions are for: the attendees, the times and the
+    /// repeat (a new key asks again while the panel is open).
+    function suggestionsWant() {
+        const series = !!recurrence && !(isSeries && scope === "occurrence")
+        return JSON.stringify([allMails(), startAt.getTime(), endAt.getTime(), series ? recurrenceKey(recurrence) : ""])
+    }
+    function askSuggestions() {
+        if (!outlookEdit || !timeOpen || allDay || required.length + optional.length === 0) { if (required.length + optional.length === 0) timeSuggestions = []; return }
+        const key = suggestionsWant()
+        if (key === suggestionsKey) return
+        suggestionsKey = key; suggestionsLoading = true
+        const p = n => (n < 10 ? "0" : "") + n
+        const local = d => isoDay(d) + "T" + p(d.getHours()) + ":" + p(d.getMinutes()) + ":00"
+        const args = { key: key, existing: existing, duration: durationMin,
+                       attendees: required.map(a => ({ address: a.address })).concat(optional.map(a => ({ address: a.address, optional: true }))) }
+        const r = recurrence
+        if (r && !(isSeries && scope === "occurrence")) {
+            const off = -r.start.getTimezoneOffset(), sign = off >= 0 ? "+" : "-", ao = Math.abs(off)
+            const zone = sign + p(Math.floor(ao / 60)) + ":" + p(ao % 60)
+            const pattern = { type: ({ day: "daily", week: "weekly", month: "absoluteMonthly", year: "absoluteYearly" })[r.unit], interval: r.interval, firstDayofWeek: "Sunday" }
+            if (r.unit === "week") pattern.daysOfWeek = r.days.slice()
+            if (r.unit === "month" || r.unit === "year") pattern.dayOfMonth = r.start.getDate()
+            if (r.unit === "year") pattern.month = r.start.getMonth() + 1
+            args.recurrence = { pattern: pattern, range: r.end ? { type: "endDate", startDate: isoDay(r.start) + "T00:00:00" + zone, endDate: isoDay(r.end) + "T00:00:00" + zone }
+                                                         : { type: "noEnd", startDate: isoDay(r.start) + "T00:00:00" + zone } }
+        } else {
+            // From the event's start: 9 days to look in, the best of 5.
+            const to = new Date(startAt); to.setDate(to.getDate() + 9)
+            const last = new Date(startAt); last.setDate(last.getDate() + 5)
+            args.from = local(startAt); args.to = local(to); args.query = "Date:" + isoDay(startAt) + ".." + isoDay(last)
+        }
+        calendarCall("findTimes", args)
+    }
+    onTimeOpenChanged: if (timeOpen) askSuggestions()
+    Timer { id: suggestTimer; interval: 400; onTriggered: root.askSuggestions() }
+    onStartAtChanged: if (timeOpen) suggestTimer.restart()
+    onEndAtChanged: if (timeOpen) suggestTimer.restart()
+    onRecurrenceChanged: if (timeOpen) suggestTimer.restart()
+    /// Picking a suggestion: its times (a series keeps its repeat).
+    /// A suggestion's time: UTC ("…Z") or the zone's wall time.
+    function slotTime(t) {
+        const m = /^(\d+)-(\d+)-(\d+)[T ](\d+):(\d+)(?::(\d+))?(Z?)/.exec(t || "")
+        if (!m) return null
+        return m[7] ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5])) : new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5])
+    }
+    function pickSuggestion(s) {
+        const a = slotTime(s.start), b = slotTime(s.end)
+        if (!a || !b) return
+        if (recurrence && !(isSeries && scope === "occurrence")) {
+            const n = new Date(startAt); n.setHours(a.getHours(), a.getMinutes(), 0, 0)
+            startAt = n; endAt = new Date(n.getTime() + (b - a))
+        } else { startAt = a; endAt = b }
+        markDirty()
+    }
+
+    /// A calendar answer for the page (CalendarView forwards them).
+    function actionDone(op, r, error) {
+        if (op === "findTimes") {
+            if (r.key !== undefined && r.key !== suggestionsKey) return
+            suggestionsLoading = false
+            timeSuggestions = error ? [] : (r.suggestions || [])
+        } else if (op === "attachFile" && !error && r.id) { attachments = attachments.concat([r]); markDirty() }
+        else if (op === "deleteAttachment" && !error) { attachments = attachments.filter(a => a.id !== r.attachmentId); markDirty() }
+        else if (op === "attachmentFile" && !error && r.path) { if (!r.download) Qt.openUrlExternally("file://" + r.path) }
+        else if ((op === "eventOptions" || op === "setEventOptions") && !error) {
+            if (r.facilitator !== undefined && r.facilitator !== null) facilitatorOn = r.facilitator
+            // (The dialog takes the options by name.)
+            const byName = {}
+            for (const o of r.options || []) byName[o.name] = o
+            if (optionsWanted) { optionsWanted = false; meetingOptions.options = byName; meetingOptions.people = r; meetingOptions.open() }
+            else if (op === "setEventOptions") { meetingOptions.options = byName; meetingOptions.people = r }
+        }
+        else if (op === "eventFacilitator" && !error) facilitatorOn = !!r.facilitator
+        else if ((op === "uploadShare" || op === "shareLink") && !error && r.url) insertFileLink(r.url, r.name || "")
+        else if (op === "graphics") graphicsPane.answer(r, error)
+        else if (op === "graphicsFile" && !error && r.path) insertStockImage(r.path, r.url)
+    }
+    property bool optionsWanted: false
+    /// A OneDrive file's link at the cursor, as Outlook's Share link puts it
+    /// (`<a class="OWAAutoLink" data-loopstyle="linkonly">` with the file's
+    /// name).
+    function insertFileLink(url, name) {
+        editor.forceActiveFocus()
+        const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;")
+        editor.insert(editor.cursorPosition, "<a href=\"" + esc(url) + "\" class=\"OWAAutoLink\" data-loopstyle=\"linkonly\">" + esc(name || url) + "</a>&nbsp;")
+        markDirty()
+    }
+    /// A stock image or sticker in the body (its local copy shows; the
+    /// body sends the picture's address).
+    function insertStockImage(path, url) {
+        const local = "file://" + path
+        const m = Object.assign({}, stockImages); m[local] = url; stockImages = m
+        editor.forceActiveFocus()
+        const size = (formPane.sizes || {})[url]
+        editor.insert(editor.cursorPosition, "<img src=\"" + local + "\"" + (size ? " width=\"" + size[0] + "\" height=\"" + size[1] + "\"" : "") + " />")
+        markDirty()
+    }
+    function insertEmoji(e) {
+        editor.forceActiveFocus()
+        editor.insert(editor.cursorPosition, e)
+        markDirty()
+    }
+    /// "20 bytes", "12 KB", "3.4 MB", as Outlook's file chip.
+    function sizeLabel(n) {
+        n = Number(n || 0)
+        if (n < 1024) return qsTr("%n bytes", "", n)
+        if (n < 1024 * 1024) return qsTr("%1 KB").arg(Math.round(n / 1024))
+        return qsTr("%1 MB").arg((n / 1024 / 1024).toFixed(1))
+    }
+    function pickOneDrive() { oneDrivePicker.entry = "home"; oneDrivePicker.open() }
+    /// Insert Loop component: one Loop component under the text (Outlook
+    /// puts one at a time at the cursor; OST keeps it under the text).
+    function insertBodyLoop() {
+        if (bodyLoop) return
+        bodyLoop = { key: "evloop" + Date.now().toString(36), url: "", driveId: "", itemId: "", title: "", description: "", linking: false }
+        markDirty()
+    }
     /// The time row's text: "Wed 12/2/2026 9:00 PM - 9:30 PM", or for a
     /// series Outlook's sentence ("Occurs every Monday from 9:00 PM to
     /// 9:30 PM effective Mon 11/30/2026 until Mon 5/17/2027").
@@ -2940,6 +3413,91 @@ Item {
         nameFilters: [qsTr("Images (*.png *.jpg *.jpeg *.gif *.bmp)")]
         onAccepted: { editor.insert(editor.cursorPosition, "<img src=\"" + selectedFile + "\" />"); root.markDirty() }
     }
+    function localPath(url) { return decodeURIComponent(String(url).replace(/^file:\/\//, "")) }
+    // Attach ▸ Browse this computer: the file goes to the event at once
+    // (Outlook's CreateAttachmentFromLocalFile).
+    FileDialog {
+        id: attachDialog
+        title: qsTr("Browse this computer")
+        onAccepted: root.calendarCall("attachFile", { path: root.localPath(selectedFile) })
+    }
+    // Attach ▸ Upload and share: the file, then "Upload to" (OneDrive ▸
+    // Attachments), then its link in the body.
+    FileDialog {
+        id: uploadFileDialog
+        title: qsTr("Upload and share")
+        onAccepted: uploadTo.openFor(root.localPath(selectedFile))
+    }
+    // "Upload to" (Outlook's, winpc 2026-11-24): 384 wide, "Upload to"
+    // 20/600, Close 32 at 341.33, 18.67; the place (336 x 56 at 22.67,
+    // 78.67, a 0.67 #F0F0F0 edge): OneDrive's cloud (32) and "OneDrive -
+    // <org>" 14/600 #616161 at 72.67 over "Attachments" (a folder glyph) 26
+    // under it; Upload (96 x 31.33 brand) and Cancel 182.67 down.
+    Popup {
+        id: uploadTo
+        parent: Overlay.overlay
+        modal: true; padding: 0
+        x: (parent.width - width) / 2; y: (parent.height - height) / 2
+        width: 384; height: 236.67
+        property string path: ""
+        function openFor(p) { path = p; open() }
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        Text { x: 22.67; y: 6.67; height: 72; verticalAlignment: Text.AlignVCenter; text: qsTr("Upload to"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+        Rectangle {
+            x: 341.33; y: 18.67; width: 32; height: 32; radius: 4; color: utClose.hovered ? theme.rowHover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+            HoverHandler { id: utClose; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: uploadTo.close() }
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Close")
+        }
+        Rectangle {
+            x: 22.67; y: 78.67; width: 336; height: 56; color: "transparent"; border.width: 0.67; border.color: theme.pick("#F0F0F0", "#3D3D3D", "#FFFFFF")
+            FluentIcon { x: 4; y: 12; name: "onedrive-color"; size: 32 }
+            Text { x: 50; y: 5; width: 274; height: 20; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; text: qsTr("OneDrive"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textSecondary }
+            FluentIcon { x: 50; y: 33; name: "folder-16"; size: 16; color: theme.textSecondary }
+            Text { x: 70; y: 31; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Attachments"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+        }
+        Row {
+            x: 136.67; y: 182.67; spacing: 14
+            OutlookButton { primary: true; label: qsTr("Upload"); width: 96; onClicked: { root.calendarCall("uploadShare", { path: uploadTo.path }); uploadTo.close() } }
+            OutlookButton { label: qsTr("Cancel"); width: 96; onClicked: uploadTo.close() }
+        }
+    }
+    // Attach ▸ OneDrive: OneDrive's picker; Share link puts the file's link
+    // in the body.
+    CloudPicker {
+        id: oneDrivePicker
+        single: true
+        confirmLabel: qsTr("Share link")
+        onAttached: files => {
+            const f = files && files[0]
+            if (f) root.calendarCall("shareLink", { driveId: f.drive_id || "", itemId: f.id || "", name: f.name || "" })
+        }
+    }
+    // Options: Teams' Meeting options dialog for the event's meeting.
+    MeetingOptionsDialog {
+        id: meetingOptions
+        onApply: changes => root.calendarCall("setEventOptions", { joinUrl: root.event.join_url, changes: changes })
+    }
+    // Reminder ▸ Add email reminder (Outlook's "Email reminder" dialog).
+    OutlookEmailReminder {
+        id: emailReminderDialog
+        meeting: root.hasInvitees
+        onSaved: list => { root.emailReminders = list; root.calendarCall("emailReminders", { reminders: list }) }
+    }
+    // Categories ▸ New category (Outlook's "Create new category").
+    OutlookNewCategory {
+        id: newCategoryDialog
+        existing: (root.categories || []).map(c => c.name)
+        onCreated: (name, color) => {
+            const l = root.eventCategories.concat([name])
+            root.eventCategories = l
+            root.calendarCall("newCategory", { name: name, color: color, categories: l })
+        }
+    }
+    // Editor: Microsoft Editor Settings (the AugLoop proofing options OST
+    // keeps for Teams' Editor).
+    OutlookEditorSettings { id: editorSettings }
     // A person in the attendees row (Outlook's pill: 34 tall, a 0.67
     // #D1D1D1 edge; the 28 px picture 2.67 in, the name 12 px 40.67 in, a
     // 20 px ✕ 8 after it, 10.67 to the edge).
@@ -3033,7 +3591,14 @@ Item {
                     width: 6 + osm.labelW + 6 + 40 + 8; height: modelData.info ? 36.5 : 32; radius: 4
                     color: osmHover.hovered ? theme.menuHover : "transparent"
                     Text { x: 6; anchors.verticalCenter: parent.verticalCenter; text: osmRow.modelData.label; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(osmRow, theme.textStrong) }
-                    FluentIcon { visible: !!osmRow.modelData.info; x: osmRow.width - 8 - 40 - 6 - 24 + 4; anchors.verticalCenter: parent.verticalCenter; name: "info-16-regular"; size: 16; color: theme.textStrong }
+                    FluentIcon {
+                        visible: !!osmRow.modelData.info; x: osmRow.width - 8 - 40 - 6 - 24 + 4; anchors.verticalCenter: parent.verticalCenter; name: "info-16-regular"; size: 16; color: theme.textStrong
+                        HoverHandler { id: osmInfoHover }
+                        ToolTip.visible: osmInfoHover.hovered && typeof osmRow.modelData.info === "string"
+                        ToolTip.text: typeof osmRow.modelData.info === "string" ? osmRow.modelData.info : ""
+                        Accessible.role: Accessible.StaticText
+                        Accessible.name: ToolTip.text
+                    }
                     OutlookSwitch { x: osmRow.width - 8 - 40; anchors.verticalCenter: parent.verticalCenter; on: osmRow.modelData.on; accessible: osmRow.modelData.label; onToggled: osm.toggled(osmRow.index) }
                     HoverHandler { id: osmHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: osm.toggled(osmRow.index) }
@@ -3092,8 +3657,28 @@ Item {
         depth: 16; radius: 4; color: theme.surface
         readonly property bool seriesForm: root.seriesScoped && root.scope !== "occurrence"
         readonly property real repeatY: seriesForm ? 91.67 : 141
-        height: (root.recurrence && !(root.seriesScoped && root.scope === "occurrence") ? repeatY + 35 : 93.67 + 32) + 16
+        readonly property bool repeatShown: !!root.recurrence && !(root.seriesScoped && root.scope === "occurrence")
+        property alias suggestItem: suggestBox
+        readonly property real fieldsBottom: repeatShown ? repeatY + 35 : 93.67 + 32
+        // Time suggestions (winpc 2026-11-24): the heading 12 under All
+        // day (15 under a repeat), its rows 44 under the heading.
+        readonly property bool suggestionsShown: root.required.length + root.optional.length > 0 && !root.allDay
+        readonly property real suggestY: fieldsBottom + (repeatShown ? 15 : 12)
+        readonly property real fullHeight: suggestionsShown ? suggestY + 44 + Math.max(1, root.timeSuggestions.length) * 48 - 8 + 16 : fieldsBottom + 16
+        // Outlook's panel shows what fits (245 tall for one event, 289
+        // for a series as measured) and scrolls the rest.
+        height: Math.min(fullHeight, suggestionsShown ? (repeatShown ? 289 : 245) : fullHeight)
         TapHandler {}
+        Flickable {
+            id: otpFlick
+            anchors.fill: parent
+            contentHeight: otp.fullHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            interactive: contentHeight > height
+            ScrollBar.vertical: ScrollBar { policy: otpFlick.interactive ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
+        Item {
+            width: otp.width; height: otp.fullHeight
         Repeater {
             model: [[qsTr("Start date"), 16.67, 200.67], [qsTr("Start time"), 244.33, 120], [qsTr("End time"), 379.33, 120]]
             Item {
@@ -3240,6 +3825,94 @@ Item {
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("Remove end date")
             }
+        }
+        // Time suggestions: the calendar glyph (20) at 16.67, "Time
+        // suggestions" 12/600 at 44.67, ⓘ (18, "The best options in a 5-day
+        // window") at 147.73; rows 715.67 x 40, 48 apart, from 44 under it
+        // (radius 4, a 0.67 #D1D1D1 edge): one event "Tue 12/1" 12/600 at
+        // 16.67, its times and "(30 min)" 12 px 16 after it, and how many
+        // are free (a 14 px green person-available and the count, 14 px, 16.67
+        // from the right); a series the repeat glyph (16) at 16.67, "Occurs
+        // every Thursday" 12/600 at 48.67, the times, and "100% available"
+        // (the glyph, the share 12/600, "available" 12).
+        Item {
+            id: suggestBox
+            visible: otp.suggestionsShown
+            x: 16.67; y: otp.suggestY; width: 715.67; height: 44 + Math.max(1, root.timeSuggestions.length) * 48 - 8
+            FluentIcon { x: 0; y: 6; name: "calendar-ltr-20"; size: 20; color: theme.text }
+            Text { id: tsHead; x: 28; y: 8; height: 16; verticalAlignment: Text.AlignVCenter; text: qsTr("Time suggestions"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
+            Item {
+                x: 131.06; y: 2; width: 18; height: 28
+                FluentIcon { x: 0; y: 6; name: "info-16-regular"; size: 18; color: theme.text }
+                HoverHandler { id: tsInfoHover }
+                ToolTip.visible: tsInfoHover.hovered
+                ToolTip.text: qsTr("The best options in a 5-day window")
+                Accessible.role: Accessible.StaticText
+                Accessible.name: qsTr("The best options in a 5-day window")
+            }
+            Text {
+                visible: root.timeSuggestions.length === 0
+                x: 0; y: 44; height: 40; verticalAlignment: Text.AlignVCenter
+                text: root.suggestionsLoading ? qsTr("Searching for suggestions...") : qsTr("No suggestions found")
+                font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+            }
+            Repeater {
+                model: root.timeSuggestions
+                Rectangle {
+                    id: tsRow
+                    required property var modelData
+                    required property int index
+                    readonly property bool series: otp.repeatShown
+                    readonly property date from: root.slotTime(modelData.start) || new Date()
+                    readonly property date to: root.slotTime(modelData.end) || new Date()
+                    y: 44 + index * 48; width: 715.67; height: 40; radius: 4
+                    color: tsHover.hovered ? theme.rowHover : theme.surface
+                    border.width: 0.67; border.color: theme.stroke
+                    FluentIcon { visible: tsRow.series; x: 16.67; y: 12; name: "arrow-repeat-all-16"; size: 16; color: theme.text }
+                    Text {
+                        id: tsDay
+                        x: tsRow.series ? 48.67 : 16.67; y: 12; height: 16; verticalAlignment: Text.AlignVCenter
+                        text: tsRow.series ? qsTr("Occurs every %1").arg(root.dayLabels[tsRow.from.getDay()]) : theme.fmtDate(tsRow.from, "ddd M/d")
+                        font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text
+                    }
+                    Text {
+                        id: tsTime
+                        x: tsDay.x + tsDay.implicitWidth + 16; y: 12; height: 16; verticalAlignment: Text.AlignVCenter
+                        text: root.fmtTime(tsRow.from) + " - " + root.fmtTime(tsRow.to)
+                        font.family: theme.font; font.pixelSize: 12; color: theme.text
+                    }
+                    Text {
+                        x: tsTime.x + tsTime.implicitWidth + 4; y: 12; height: 16; verticalAlignment: Text.AlignVCenter
+                        text: "(" + root.durLabelLong(Math.round((tsRow.to - tsRow.from) / 60000)) + ")"
+                        font.family: theme.font; font.pixelSize: 12; color: theme.text
+                    }
+                    Row {
+                        anchors.right: parent.right; anchors.rightMargin: 16.67; y: 12; height: 16; spacing: 2
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "person-available-20"; size: 14; color: theme.hc("#0E700E", "#3FF23F") }
+                        Text {
+                            visible: !tsRow.series
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: String(tsRow.modelData.available); font.family: theme.font; font.pixelSize: 14; color: theme.textStrong
+                        }
+                        Text {
+                            visible: tsRow.series
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: Math.round(tsRow.modelData.confidence) + "%"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text
+                        }
+                        Text {
+                            visible: tsRow.series
+                            anchors.verticalCenter: parent.verticalCenter; leftPadding: 2
+                            text: qsTr("available"); font.family: theme.font; font.pixelSize: 12; color: theme.text
+                        }
+                    }
+                    HoverHandler { id: tsHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.pickSuggestion(tsRow.modelData) }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: tsDay.text + " " + tsTime.text + (tsRow.series ? ", " + Math.round(tsRow.modelData.confidence) + "% " + qsTr("available") : ", " + qsTr("%1 Available").arg(tsRow.modelData.available))
+                }
+            }
+        }
+        }
         }
     }
 
