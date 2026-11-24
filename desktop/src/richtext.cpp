@@ -1428,6 +1428,34 @@ extern "C" char *ost_rich_code_runs(void *helper, const char *family_utf8, doubl
                + parts.join(QLatin1Char(',')) + QStringLiteral("]}"));
 }
 
+// Each position's baseline below the top of its line (QTextLine's ascent,
+// with the leading when the line includes it), as a JSON array, null where
+// the text isn't laid out: a line holding a taller inline picture sets its
+// text lower than the line's height alone tells. Free it with ost_rich_free.
+extern "C" char *ost_rich_line_ascents(void *helper, const char *positions_utf8)
+{
+    QQuickItem *edit = receivedEdit(helper);
+    auto *qdoc = edit ? edit->property("textDocument").value<QQuickTextDocument *>() : nullptr;
+    QTextDocument *doc = qdoc ? qdoc->textDocument() : nullptr;
+    const QJsonArray positions = QJsonDocument::fromJson(QByteArray(positions_utf8)).array();
+    QJsonArray out;
+    for (const QJsonValue &v : positions) {
+        const int pos = v.toInt(-1);
+        const QTextBlock b = doc && pos >= 0 ? doc->findBlock(pos) : QTextBlock();
+        // (Laying the block out if it isn't yet.)
+        if (b.isValid())
+            doc->documentLayout()->blockBoundingRect(b);
+        const QTextLayout *tl = b.isValid() ? b.layout() : nullptr;
+        const QTextLine line = tl ? tl->lineForTextPosition(pos - b.position()) : QTextLine();
+        if (!line.isValid()) {
+            out.append(QJsonValue());
+            continue;
+        }
+        out.append(line.ascent() + (line.leadingIncluded() ? qMax<qreal>(0, line.leading()) : 0));
+    }
+    return dup(QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Compact)));
+}
+
 // Build a draft's blocks (compose_blocks JSON) into the empty box, with
 // mentions in `mention_color`.
 extern "C" void ost_rich_import(void *helper, const char *blocks_utf8, const char *mention_utf8)

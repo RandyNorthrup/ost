@@ -10,7 +10,8 @@ import QtQuick.Controls.Basic
 // 11/25/2026 at 9:15 AM") 14 px at 60 with its message under it (#8A8A8A,
 // "(No Message)" when none) and Edit / Remove (16 px brand) at 574 and 606;
 // "+ Add email reminder" (brand) under them. Adding or editing one: the
-// mail glyph at 30, "Remind me:" and its dropdown (a list 129.73 wide 5
+// mail glyph at 30, "Remind me:" and its dropdown, underlined together
+// (0.67 #F0F0F0, 39.67 down, 1 px past the dropdown) (a list 129.73 wide 5
 // under it, rows 36 tall, the text 7.67 in, the picked one #DCDFFA: At time
 // of event, 5, 15, 30 minutes, 1, 2, 12 hours, 1 day, 1 week before, a 1 px
 // #F0F0F0 divider, Custom); Custom adds a date (157 x 32 at 30, 58.17, a
@@ -48,6 +49,12 @@ Popup {
     property bool toAll: false
     readonly property var offsets: [0, 5, 15, 30, 60, 120, 720, 1440, 10080]
     function presetLabel(m) {
+        // Outlook's list words them as its Reminder menu does ("1 hour
+        // before", not "1 hours before").
+        const l = { "0": qsTr("At time of event"), "5": qsTr("5 minutes before"), "15": qsTr("15 minutes before"), "30": qsTr("30 minutes before"),
+            "60": qsTr("1 hour before"), "120": qsTr("2 hours before"), "720": qsTr("12 hours before"), "1440": qsTr("1 day before"),
+            "10080": qsTr("1 week before") }[String(m)]
+        if (l) return l
         if (m === 0) return qsTr("At time of event")
         if (m < 60) return qsTr("%n minutes before", "", m)
         if (m < 1440) return qsTr("%n hours before", "", m / 60)
@@ -135,12 +142,33 @@ Popup {
             width: 600; height: visible ? (dlg.meeting ? 199.33 : 163.33) + shift : 0
             FluentIcon { x: 0; y: 16.34; name: "mail-20"; size: 17; color: theme.textSecondary; Accessible.name: qsTr("Email reminder") }
             Text { id: remindLabel; x: 30; y: 14.67; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Remind me:"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+            // Outlook's underline under "Remind me:" and its dropdown (the
+            // pair's 0.67 #F0F0F0 bottom edge, 1 px past the dropdown; the
+            // same while hovered, focused or open).
+            Rectangle { x: remindLabel.x; y: 39.67; width: remindLabel.implicitWidth + offsetBox.width + 1; height: 0.67; color: dlg.underline }
             Rectangle {
                 id: offsetBox
                 x: remindLabel.x + remindLabel.implicitWidth; y: 14.67; width: offsetText.implicitWidth + 34; height: 20
                 color: theme.surface
                 Text { id: offsetText; x: 6; anchors.verticalCenter: parent.verticalCenter; text: dlg.custom ? qsTr("Custom") : dlg.presetLabel(dlg.offset); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
-                FluentIcon { x: parent.width - 22; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.textSecondary }
+                // Fabric's thin ChevronDown (12 px, in a box 20 from the
+                // end): a 45° chevron 10.8 wide and 5.4 deep, 0.77 thick
+                // (measured on winpc).
+                Canvas {
+                    x: parent.width - 20; y: 5; width: 12; height: 9
+                    readonly property color ink: theme.textSecondary
+                    onInkChanged: requestPaint()
+                    onPaint: {
+                        const ctx = getContext("2d")
+                        ctx.reset()
+                        ctx.strokeStyle = ink
+                        ctx.lineWidth = 0.77
+                        ctx.beginPath()
+                        ctx.moveTo(1.05, 1.93); ctx.lineTo(6.45, 7.33); ctx.lineTo(11.85, 1.93)
+                        ctx.stroke()
+                    }
+                }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: offsetList.open() }
                 Accessible.role: Accessible.ComboBox
                 Accessible.name: qsTr("Remind me:") + " " + offsetText.text

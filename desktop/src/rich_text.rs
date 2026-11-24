@@ -72,6 +72,12 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "chipBoxes"]
         fn chip_boxes(self: Pin<&mut RichText>) -> QString;
+        /// Where a spelling mark's wavy line runs under the text at each
+        /// of `positions` (JSON numbers): its centre below the top of the
+        /// position's line, as JSON (null where the text isn't laid out).
+        #[qinvokable]
+        #[cxx_name = "spellingMarkLines"]
+        fn spelling_mark_lines(self: Pin<&mut RichText>, positions: &QString) -> QString;
     }
 
     impl cxx_qt::Constructor<()> for RichText {}
@@ -103,6 +109,7 @@ unsafe extern "C" {
     fn ost_rich_chips_raw(helper: *mut core::ffi::c_void) -> *mut core::ffi::c_char;
     fn ost_rich_chip_boxes(helper: *mut core::ffi::c_void) -> *mut core::ffi::c_char;
     fn ost_rich_dpr(helper: *mut core::ffi::c_void) -> f64;
+    fn ost_rich_line_ascents(helper: *mut core::ffi::c_void, positions: *const core::ffi::c_char) -> *mut core::ffi::c_char;
     fn ost_rich_code_runs(
         helper: *mut core::ffi::c_void,
         family: *const core::ffi::c_char,
@@ -211,6 +218,23 @@ impl qobject::RichText {
         take(unsafe { ost_rich_chip_boxes(me) })
     }
 
+    pub fn spelling_mark_lines(self: Pin<&mut Self>, positions: &QString) -> QString {
+        let Ok(positions) = CString::new(positions.to_string()) else {
+            return QString::from("[]");
+        };
+        let me = self.this();
+        // SAFETY: `me` is this live item.
+        let dpr = unsafe { ost_rich_dpr(me) };
+        // SAFETY: `me` is this live item; `positions` outlives the call.
+        let ascents = take(unsafe { ost_rich_line_ascents(me, positions.as_ptr()) });
+        let lines: Vec<serde_json::Value> = serde_json::from_str::<Vec<Option<f64>>>(&ascents.to_string())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|a| a.map_or(serde_json::Value::Null, |a| serde_json::json!(spelling_mark_centre(a, dpr))))
+            .collect();
+        QString::from(serde_json::Value::Array(lines).to_string().as_str())
+    }
+
     pub fn export_html(self: Pin<&mut Self>) -> QString {
         let me = self.this();
         // SAFETY: `me` is this live item.
@@ -304,9 +328,36 @@ fn code_boxes_json(runs: &str, dpr: f64) -> String {
     serde_json::json!({ "border": code_border(dpr), "boxes": boxes, "dpr": dpr, "settled": settled }).to_string()
 }
 
+/// Where Chromium draws a spelling mark (Windows: a wavy line 1 px thick at
+/// the page's zoom, which includes the display scale): the underline sits
+/// a gap of max(1, ceil(thickness / 2)) device pixels below the baseline,
+/// and the wave's centre thickness + 1 device pixels below that (blink's
+/// text_decoration_offset.cc and text_decoration_info.cc). It follows the
+/// baseline alone, so a line an inline picture makes taller leaves it
+/// where it is (Outlook's event body in Teams on winpc, 2026-11-24: 2.33
+/// below the baseline at 150 %). `base`: the baseline below the line's
+/// top; the result too, in logical pixels.
+fn spelling_mark_centre(base: f64, dpr: f64) -> f64 {
+    let dpr = if dpr > 0.0 { dpr } else { 1.0 };
+    let thickness = dpr;
+    let gap = (thickness / 2.0).ceil().max(1.0);
+    base + (gap + thickness + 1.0) / dpr
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spelling_mark_sits_below_the_baseline_as_chromium_draws_it() {
+        // Outlook's body at 150 %: the baseline 15.33 below the line's
+        // top, the wave's centre at 17.67 (its rows 16.0 to 19.33).
+        assert!(close(spelling_mark_centre(15.333, 1.5), 17.667));
+        assert!(close(spelling_mark_centre(15.0, 1.0), 18.0));
+        assert!(close(spelling_mark_centre(15.0, 2.0), 17.0));
+        assert!(close(spelling_mark_centre(15.0, 3.0), 17.0));
+        assert!(close(spelling_mark_centre(15.0, 0.0), 18.0));
+    }
 
     fn run(x0: f64, x1: f64, open_start: bool, open_end: bool) -> CodeRun {
         CodeRun { x0, x1, base: 16.0, ascent: 12.99, descent: 3.28, open_start, open_end }

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Dialogs
+import com.ost.desktop
 
 // Teams' own scheduling form ("calv2": New meeting, a channel meeting, the
 // organizer's meeting details) and the attendee's event page, measured in
@@ -274,7 +275,9 @@ Item {
     Component.onDestruction: backend.editorClose(bodyDoc)
     function keepBodyParts(html) {
         const links = {}, pics = {}
-        html = html.replace(/<span class="entityDelimiterBefore">[^<]*<\/span>\s*<span class="_Entity[^"]*"[^>]*>\s*<span>\s*(<a\b[^>]*data-loopstyle="linkonly"[^>]*>[\s\S]*?<\/a>)\s*<\/span>\s*<\/span>\s*<span class="entityDelimiterAfter">[^<]*<\/span>/g, (all, a) => {
+        // (As Outlook saves it, the delimiters carry the text's font and
+        // the link sits in two spans: Teams on winpc, 2026-11-24.)
+        html = html.replace(/<span class="entityDelimiterBefore"[^>]*>[^<]*<\/span>\s*<span class="_Entity[^"]*"[^>]*>\s*(?:<span>\s*)+(<a\b[^>]*data-loopstyle="linkonly"[^>]*>[\s\S]*?<\/a>)\s*(?:<\/span>\s*)+<span class="entityDelimiterAfter"[^>]*>[^<]*<\/span>/g, (all, a) => {
             const href = /\bhref="([^"]*)"/.exec(a)
             if (!href) return all
             links[unescapeHtml(href[1])] = all.replace(/\s+data-imagetype="[^"]*"/g, "")
@@ -309,13 +312,18 @@ Item {
     /// A file link as the editor shows it: just its address, the icon 16 px
     /// (Qt draws the width attribute, Outlook its style's) and the name on
     /// the chip's #FAFAFA (Qt would turn the entity's id into a named
-    /// anchor that splits the link).
+    /// anchor that splits the link). Outlook sets the icon in the middle
+    /// and its text stays where it is on the line (its Aptos 12pt line
+    /// grows 0.53 below): the icon here is centred on the line without
+    /// making it taller (on the baseline it would push the text down; Qt
+    /// sizes a middle picture by the x-height of its own font, so a large
+    /// one keeps it inside the line).
     readonly property string linkChip: theme.pick("#FAFAFA", "#292929", "#000000")
     function fileLinkShown(a) {
         const href = (/\bhref="([^"]*)"/i.exec(a) || [])[1] || ""
         const icon = (/<img\b[^>]*\bsrc="([^"]*)"/i.exec(a) || [])[1] || ""
         const name = a.replace(/^<a\b[^>]*>/i, "").replace(/<\/a>\s*$/i, "").replace(/<img\b[^>]*>/gi, "")
-        return "<a href=\"" + href + "\" style=\"background-color:" + linkChip + "\">" + (icon ? "<img src=\"" + icon + "\" width=\"16\" height=\"16\" />" : "") + name + "</a>"
+        return "<a href=\"" + href + "\" style=\"background-color:" + linkChip + "\">" + (icon ? "<img src=\"" + icon + "\" width=\"16\" height=\"16\" style=\"vertical-align: middle; font-size: 40px\" />" : "") + name + "</a>"
     }
     /// A data: picture's size from its PNG, GIF or JPEG header.
     function dataImageSize(u) {
@@ -1604,8 +1612,11 @@ Item {
                         // spellchecker does once the body is first focused
                         // (Teams desktop on winpc, 2026-11-24: a wavy #FF0000
                         // line, a 6 px period 2.67 high and 1.33 thick, its
-                        // middle 0.67 above the line's bottom; no card on a
-                        // click). OST finds them with Teams' Editor.
+                        // centre below the word's baseline as Chromium puts
+                        // it, 2.33 at 150 %, also on a line a file link makes
+                        // taller; no card on a click). OST finds them with
+                        // Teams' Editor.
+                        RichText { id: bodyRich }
                         Repeater {
                             model: root.spellingOn ? root.bodyCritiques : []
                             Item {
@@ -1613,8 +1624,10 @@ Item {
                                 required property var modelData
                                 readonly property rect a: { editor.text; editor.width; return editor.positionToRectangle(modelData.start) }
                                 readonly property rect b: { editor.text; editor.width; return editor.positionToRectangle(modelData.start + modelData.length) }
+                                // The wave's centre below the line's top.
+                                readonly property real mid: { editor.text; editor.width; const m = JSON.parse(bodyRich.spellingMarkLines(JSON.stringify([modelData.start])))[0]; return typeof m === "number" ? m : a.height - 0.33 }
                                 z: 1
-                                x: a.x; y: a.y + a.height - 2
+                                x: a.x; y: a.y + mid - 1.67
                                 width: Math.max(1, (b.y === a.y ? b.x : editor.width) - a.x); height: 3.34
                                 Canvas {
                                     anchors.fill: parent
