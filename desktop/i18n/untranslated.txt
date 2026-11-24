@@ -18,7 +18,7 @@
 "%1 checkbox, press spacebar to select all."		StoreView.qml:604	
 "%1 didn't open: %2"		backend.rs:26036	
 "%1 hour"		BreakoutSettingsDialog.qml:115	
-"%1 is presenting"		CallWindow.qml:3384 CallWindow.qml:3467	
+"%1 is presenting"		CallWindow.qml:3392 CallWindow.qml:3475	
 "%1 isn't available in OST yet."		TabWindow.qml:161	
 "%1 left"		MeetingRecapsView.qml:925	
 "%1 mentioned you: %2"		MentionsView.qml:152	
@@ -126,7 +126,7 @@
 "By pressing \"Send feedback\", Report a problem opens with your answers and the call's technical details, to post as a public issue on GitHub (%1). Nothing is sent before you do."		CallQualitySurvey.qml:221	
 "CSV files (*.csv)"		BreakoutCsvDialog.qml:133	
 "Call %1"		CallsView.qml:353	
-"Calling %1…"		CallWindow.qml:5557	
+"Calling %1…"		CallWindow.qml:5565	
 "Calls are available in 1:1 chats"		backend.rs:9736	
 "Calls merged"		backend.rs:14190	
 "Camera settings"		CameraSettingsDialog.qml:37	
@@ -156,7 +156,7 @@
 "Clipchamp"		AppRail.qml:57 AppRail.qml:408	
 "Close Music"		VideoClipRecorder.qml:1394	
 "Conciseness"		OutlookEditorSettings.qml:102	
-"Connected without audio"		CallWindow.qml:3499	
+"Connected without audio"		CallWindow.qml:3507	
 "Consult: %1"		backend.rs:14058	
 "Consult: not someone you can call"		backend.rs:14013	
 "Content"	x.roomremote:app_remote_layout_option_content	RoomRemotePane.qml:57	unknown id
@@ -164,7 +164,7 @@
 "Controlling"	x.roomremote:app_header_connected_to	RoomRemotePane.qml:126	unknown id
 "Copied %1 item"		FileActions.qml:298 FileActions.qml:299	
 "Copied %1 items"		FileActions.qml:298 FileActions.qml:299	
-"Copilot uses your data to generate responses during the meeting and an Intelligent recap after the meeting. Interactions and summaries with Copilot might be retained due to the host organization’s policy."		CallWindow.qml:1796	
+"Copilot uses your data to generate responses during the meeting and an Intelligent recap after the meeting. Interactions and summaries with Copilot might be retained due to the host organization’s policy."		CallWindow.qml:1804	
 "Copy component"		ChannelPageTab.qml:83 LoopCard.qml:127 LoopCard.qml:136	
 "Copy email"		HoverCard.qml:229 PeopleView.qml:162	
 "Corrections"		OutlookEditorSettings.qml:99	
@@ -200,7 +200,7 @@
 "Default speaker"		CallsView.qml:211 CallsView.qml:224 CallsView.qml:228	
 "Delete menu."		ClipEditOverlay.qml:317	
 "Delete this event?"		CalendarView.qml:2132	
-"Dial %1"		CallWindow.qml:5469	
+"Dial %1"		CallWindow.qml:5477	
 "Dial pad: %1"		backend.rs:14240	
 "Disconnect room"	x.roomremote:app_remote_end_call	RoomRemotePane.qml:229 RoomRemotePane.qml:236	unknown id
 "Do not include any private or sensitive information."		FeedbackWindow.qml:111	
@@ -220,7 +220,7 @@
 "Email reminder"		OutlookEmailReminder.qml:98 OutlookEmailReminder.qml:143	
 "Enable auto capitalization"		OutlookEditorSettings.qml:77	
 "Enable auto correct"		OutlookEditorSettings.qml:77	
-"End consult"		CallWindow.qml:5567	
+"End consult"		CallWindow.qml:5575	
 "Enter a reminder message here (optional)"		OutlookEmailReminder.qml:334 OutlookEmailReminder.qml:335	
 "Enter your folder name"		CloudPicker.qml:1186 OneDriveView.qml:1328 OutlookUploadTo.qml:213	
 "Event Banner Image\n(Appears here in actual email)"		EventsView.qml:3732	
@@ -365,7 +365,7 @@
 "Only the people you specified can edit."		OneDriveShare.qml:132	
 "Only the people you specified can view"		FileActions.qml:1148 OneDriveShare.qml:854	
 "Only the people you specified can view."		OneDriveShare.qml:132	
-"Open chat with %1"		CallWindow.qml:5527	
+"Open chat with %1"		CallWindow.qml:5535	
 "Open component in"		LoopChromeBar.qml:187 MeetingNotesPane.qml:134	
 "Open hands"		OutlookFormPane.qml:113	
 "Opens list of active windows"		CastWindow.qml:342 ShareTray.qml:209	
@@ -396,7 +396,7 @@
 "Prevent suspected spam calls from disturbing you"		SettingsView.qml:4089	
 "Previous decade"		DatePickerField.qml:141	
 "Prioritize video"	x.roomremote:app_remote_layout_option_prioritize_video_view	RoomRemotePane.qml:56	unknown id
-"Production view"		CallWindow.qml:2965	
+"Production view"		CallWindow.qml:2973	
 "Proofing language"		OutlookEditorSettings.qml:87 OutlookEditorSettings.qml:94	
 "Public Team"		TeamSettingsView.qml:108	
 "Punctuation Conventions"		OutlookEditorSettings.qml:103	
@@ -464,10 +464,10 @@
 "Spelling"		OutlookEditorSettings.qml:101	
 "Split Clip"		VideoClipRecorder.qml:1303	
 "Sprint"		CalendarView.qml:266	
-"Start a call with %1"		CallWindow.qml:5537	
+"Start a call with %1"		CallWindow.qml:5545	
 "Steel"		OutlookNewCategory.qml:39	
 "Stock images"		OutlookFormPane.qml:142 OutlookFormPane.qml:268	
-"Stop consulting and resume"		CallWindow.qml:5619	
+"Stop consulting and resume"		CallWindow.qml:5627	
 "Stroke menu."		ClipEditOverlay.qml:306	
 "Submit an app to your IT admin for approval and check the status of your submissions."		ManageAppsView.qml:273	
 "Submit feedback to OST"		FeedbackWindow.qml:76	
@@ -498,7 +498,7 @@
 "This file has not been shared with a group yet."		OneDriveShare.qml:798	
 "This folder name is already in use."		OutlookUploadTo.qml:63	
 "This page is temporarily not available."		ChannelPageTab.qml:133	
-"This will turn off Interpreter for everyone."		CallWindow.qml:1179	
+"This will turn off Interpreter for everyone."		CallWindow.qml:1187	
 "Thread: %1"		ThreadsPane.qml:188	
 "Thumbnail Preview"		FileCard.qml:148	
 "Thumbs up"		OutlookFormPane.qml:112	
@@ -506,7 +506,7 @@
 "Todo"		CalendarView.qml:266	
 "Together mode"	x.roomremote:app_remote_layout_option_together_mode	RoomRemotePane.qml:60	unknown id
 "Transcriptions of Teams meetings are retained by default for 90 days unless manually deleted earlier by the meeting organizer. The generated audio recap is exclusively accessible to you and will expire after 60 days. You can manage your audio recaps in OneDrive, where you have the option to delete any audio recap that is no longer needed. Please note that once an audio recap is deleted from OneDrive, it will no longer be available on your Teams audio recap listing page."		MeetingRecapsView.qml:1383	
-"Transfer to %1"		CallWindow.qml:5537 CallWindow.qml:5611	
+"Transfer to %1"		CallWindow.qml:5545 CallWindow.qml:5619	
 "Travel"		EmojiPicker.qml:46	
 "Travel and places"		OutlookFormPane.qml:115	
 "Trophy"		CalendarView.qml:260	
@@ -539,13 +539,13 @@
 "Yes, share"		FeedbackWindow.qml:218	
 "Yes, you may contact me"		FeedbackWindow.qml:227	
 "Yesterday %1"		Conversation.qml:1112 SearchView.qml:188	
-"You and %1 others are using Interpreter. Your interpretation language is %2."		CallWindow.qml:2019	
+"You and %1 others are using Interpreter. Your interpretation language is %2."		CallWindow.qml:2027	
 "You and attendees will be notified if Copilot automatically reschedules this event."		OutlookAcceptableTimes.qml:59	
-"You are using Interpreter. Your interpretation language is %1."		CallWindow.qml:2018	
+"You are using Interpreter. Your interpretation language is %1."		CallWindow.qml:2026	
 "You can't view this app right now."		AppDetailsDialog.qml:669	
 "You'll be able to chat separately with the co-organizers and presenters in the planning group. Once saved access it from chat list or Calendar"		MeetingOptionsDialog.qml:348 MeetingOptionsDialog.qml:357	
 "You're following"		MeetingForm.qml:2555	
-"You're presenting"		CallWindow.qml:3485	
+"You're presenting"		CallWindow.qml:3493	
 "You've hit the %1-person limit for group chats. You'll need to remove someone before you send your message."		NewChat.qml:392	
 "You've invited %1 to edit"		OneDriveShare.qml:667	
 "You've invited %1 to view"		OneDriveShare.qml:667	
