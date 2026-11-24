@@ -983,6 +983,26 @@ impl OutgoingCall {
         Ok(())
     }
 
+    /// After adding a nearby Teams Room (Cast, Room audio), say we joined
+    /// in it, as Teams' endpoint does: `PUT updateEndpointMetadata` with
+    /// our participant and `meetingRoom` {email, mri} (seen in the room's
+    /// roster when Teams cast to OST Test Room, 2026-11-23). Everyone's
+    /// roster then nests us under the room and counts us in the room.
+    pub async fn publish_meeting_room(&self, room_mri: &str, room_email: &str) -> Result<()> {
+        let link = self.metadata_link.clone().context("No endpoint metadata link")?;
+        let mut from = self.me.0.clone();
+        if let Some(o) = from.as_object_mut() {
+            o.entry("languageId").or_insert_with(|| "en-us".into());
+        }
+        let body = serde_json::json!({
+            "participants": { "from": from },
+            "endpointMetadata": { "holographicCapabilities": 3, "meetingRoom": { "email": room_email, "mri": room_mri } },
+        });
+        cc_send(&self.http, reqwest::Method::PUT, &self.skype_token, &link, &body, "Endpoint metadata").await?;
+        tracing::info!(room = room_mri, "joined in the room (endpoint metadata)");
+        Ok(())
+    }
+
     /// The meeting's stored transcript and transcript starts and stops
     /// (Teams' Transcript pane, on opening).
     pub async fn transcript_history(&self) -> Result<Vec<super::transcript::Entry>> {

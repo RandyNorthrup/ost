@@ -91,6 +91,20 @@ Rectangle {
             return (a.name || "").localeCompare(b.name || "")
         })
     }
+    // Teams' roster sub-items: whoever joined in a Teams Room in the list
+    // (mappedToMeetingRoom) nests under that room, the room drawn with a
+    // ring and a line down to them.
+    function nested(list) {
+        const rooms = list.filter(p => !!p.room).map(p => p.id)
+        const subOf = p => !p.room && !!p.meetingRoom && rooms.indexOf(p.meetingRoom) >= 0
+        const out = []
+        sorted(list.filter(p => !subOf(p))).forEach(p => {
+            const subs = p.room ? sorted(list.filter(s => subOf(s) && s.meetingRoom === p.id)) : []
+            out.push({ kind: "person", p: p, level: 1, parentWithSub: subs.length > 0 })
+            subs.forEach((s, i) => out.push({ kind: "person", p: s, level: 1, sub: true, lastSub: i === subs.length - 1 }))
+        })
+        return out
+    }
     /// Your id in handOrder.
     property string selfKey: ""
 
@@ -132,15 +146,15 @@ Rectangle {
         if (anyAttendees) {
             if (presenters.length > 0) {
                 out.push({ kind: "section", key: "here", title: qsTr("Presenters (%1)").arg(presenters.length), action: muteAll, level: 0 })
-                if (!collapsed.here) sorted(presenters).forEach(p => out.push({ kind: "person", p: p, level: 1 }))
+                if (!collapsed.here) nested(presenters).forEach(r => out.push(r))
             }
             if (attendees.length > 0) {
                 out.push({ kind: "section", key: "attendees", title: qsTr("Attendees (%1)").arg(attendees.length), action: "", level: 0 })
-                if (!collapsed.attendees) sorted(attendees).forEach(p => out.push({ kind: "person", p: p, level: 1 }))
+                if (!collapsed.attendees) nested(attendees).forEach(r => out.push(r))
             }
         } else {
             out.push({ kind: "section", key: "here", title: qsTr("%1 (%2)", "calling:k63z7tn13").arg(meeting ? qsTr("In this meeting", "calling:k7zs2oxna") : qsTr("Currently in this call")).arg(here.length), action: muteAll, level: 0 })
-            if (!collapsed.here) sorted(here).forEach(p => out.push({ kind: "person", p: p, level: 1 }))
+            if (!collapsed.here) nested(here).forEach(r => out.push(r))
         }
         const inCall = people.map(p => (p.id || "").toLowerCase())
         const away = chatMembers.filter(m => !m.me && inCall.indexOf((m.mri || "").toLowerCase()) < 0 && matches(m.name))
@@ -371,11 +385,28 @@ Rectangle {
             property var entry: ({ p: {} })
             readonly property var p: entry.p || ({})
             height: 48
-            Avatar { visible: !p.suspected; x: 21.7; y: 8; size: 32; name: p.name || ""; photoId: p.id || ""; presence: p.presence || "" }
-            GuestAvatar { visible: !!p.suspected; x: 21.7; y: 8; personId: p.id || "" }
+            // Under a Teams Room (measured on winpc 2026-11-23): sub-items
+            // 36.3 further in; the room's avatar in a 2 px brand ring 1 px
+            // out (38 across), a 2 px brand line from it down to a 10 px
+            // brand circle beside the last one in the room.
+            readonly property real indent: entry.sub ? 36.3 : 0
+            Rectangle {
+                visible: !!entry.parentWithSub
+                x: 18.7; y: 5; width: 38; height: 38; radius: 19
+                color: "transparent"; border.width: 2; border.color: theme.brand
+            }
+            Rectangle { visible: !!entry.parentWithSub; x: 36.7; y: 43; width: 2; height: 5; color: theme.brand }
+            Rectangle { visible: !!entry.sub; x: 36.7; y: 0; width: 2; height: entry.lastSub ? 23 : 48; color: theme.brand }
+            Rectangle {
+                visible: !!entry.lastSub
+                x: 32.7; y: 23; width: 10; height: 10; radius: 5
+                color: "transparent"; border.width: 2; border.color: theme.brand
+            }
+            Avatar { visible: !p.suspected; x: 21.7 + indent; y: 8; size: 32; name: p.name || ""; photoId: p.id || ""; presence: p.presence || "" }
+            GuestAvatar { visible: !!p.suspected; x: 21.7 + indent; y: 8; personId: p.id || "" }
             Column {
-                x: 65.7; anchors.verticalCenter: parent.verticalCenter
-                width: parent.width - 65.7 - 46
+                x: 65.7 + parent.indent; anchors.verticalCenter: parent.verticalCenter
+                width: parent.width - x - 46
                 // The name, and for an anonymous guest Teams' 16 px
                 // Unverified trust icon 4 px after it.
                 Row {

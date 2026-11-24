@@ -4938,6 +4938,23 @@ async fn room_incoming(
 /// Teams Rooms' title for a call in `thread` from `caller`: the thread's
 /// topic and kind (chat service thread properties), else its other
 /// members' names ([`teams_cli::calling::room_mode::call_title`]).
+/// After making a Meet now, Teams updates its chat without waiting for it
+/// (instantMeetingService.updateInstantMeetingInfo): the subject, and for a
+/// meeting being started its start and end time, which Teams Rooms' auto
+/// exit goes by.
+fn update_instant_meeting(join_url: String, title: String, started: bool) {
+    runtime().spawn(async move {
+        let result = match TeamsClient::new().await {
+            Ok(client) => api::calendar::update_instant_meeting(&client, &join_url, &title, started).await,
+            Err(e) => Err(e),
+        };
+        match result {
+            Ok(()) => tracing::info!(started, "Meet now chat updated"),
+            Err(e) => tracing::warn!("Meet now chat update failed: {}", short_error(&e)),
+        }
+    });
+}
+
 async fn room_call_title(thread: Option<&str>, caller: &str, caller_id: &str) -> (String, Option<api::ThreadMeeting>) {
     use teams_cli::calling::room_mode::{call_title, conversation_kind, CallConversation, ConversationKind};
     let mut conv = CallConversation { others: vec![caller.to_string()], ..Default::default() };
@@ -24212,7 +24229,13 @@ impl qobject::Backend {
                         api::calendar::propose_new_time(&client, &target, &s("response"), &s("start"), &s("end"), args["send"].as_bool().unwrap_or(true), &s("note")).await?;
                         Ok(json!({}))
                     }
-                    "meetNow" => Ok(json!({ "joinUrl": api::calendar::meet_now(&client, &s("subject")).await?, "subject": s("subject") })),
+                    // "start": Start meeting (joined now) rather than Get a
+                    // link to share.
+                    "meetNow" => {
+                        let link = api::calendar::meet_now(&client, &s("subject")).await?;
+                        update_instant_meeting(link.clone(), s("subject"), args["start"].as_bool().unwrap_or(true));
+                        Ok(json!({ "joinUrl": link, "subject": s("subject") }))
+                    }
                     // Cast's meetings step: your Teams meetings from an hour
                     // ago to an hour ahead (Teams' cast wizard).
                     "castMeetings" => {
@@ -24228,7 +24251,11 @@ impl qobject::Backend {
                     }
                     // Cast's "Just cast": an instant meeting (Teams'
                     // createAndGetInstantMeetingEventJoinInfo, a Meet now).
-                    "castMeetNow" => Ok(json!({ "joinUrl": api::calendar::meet_now(&client, &s("subject")).await?, "subject": s("subject") })),
+                    "castMeetNow" => {
+                        let link = api::calendar::meet_now(&client, &s("subject")).await?;
+                        update_instant_meeting(link.clone(), s("subject"), true);
+                        Ok(json!({ "joinUrl": link, "subject": s("subject") }))
+                    }
                     // As Teams: the calling service finds the meeting from
                     // its ID and passcode (meetingData); then its join link.
                     "joinById" => {
@@ -24692,12 +24719,27 @@ impl qobject::Backend {
             .or_else(|| crate::room_ble::snapshot().1.into_iter().find(|b| b.mri == mri).and_then(|b| b.code));
         let qt = self.qt_thread();
         runtime().spawn(async move {
+            // The room's address for our endpoint's meetingRoom (Teams
+            // publishes {email, mri} once it adds the room).
+            let email = match TeamsClient::new().await {
+                Ok(client) => api::directory::short_profile_records(&client, std::slice::from_ref(&mri))
+                    .await
+                    .ok()
+                    .and_then(|r| r.into_iter().next())
+                    .and_then(|r| r.get("email").or_else(|| r.get("userPrincipalName")).and_then(|e| e.as_str()).map(str::to_string))
+                    .unwrap_or_default(),
+                Err(_) => String::new(),
+            };
             let mut slot = call_slot().lock().await;
             let Some(call) = slot.outgoing.as_mut() else { return };
             if let Err(e) = call.add_room(&mri, &name, code, false).await {
                 tracing::warn!("adding the room: {}", short_error(&e));
                 let text = short_error(&e);
                 let _ = qt.queue(move |mut this| this.as_mut().room_add_result(false, QString::from(text.as_str())));
+                return;
+            }
+            if let Err(e) = call.publish_meeting_room(&mri, &email).await {
+                tracing::warn!("joined in the room: {}", short_error(&e));
             }
         });
     }

@@ -78,6 +78,11 @@ pub struct Participant {
     /// A Teams Rooms device: an endpoint with `deviceType: "room"` (Teams'
     /// participant deviceType Room).
     pub room: bool,
+    /// The Teams Room they joined in (an endpoint's
+    /// `endpointMetadata.meetingRoom.mri`, which the laptop that added a
+    /// nearby room publishes): Teams' mappedToMeetingRoom, which nests them
+    /// under the room in People and makes them in-room attendees.
+    pub meeting_room: Option<String>,
     /// A guest Teams' join shield flagged as a bot (Teams keeps the app
     /// avatar for them).
     pub suspected: bool,
@@ -359,6 +364,7 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                         .get("endpoints")
                         .and_then(|e| e.as_object())
                         .is_some_and(|eps| eps.values().any(|ep| ep.get("deviceType").and_then(|d| d.as_str()) == Some(super::room_mode::ROOM_DEVICE_TYPE))),
+                    meeting_room: meeting_room_of(p),
                     suspected: mri.starts_with("8:teamsvisitor:")
                         && p.pointer("/details/propertyBag/participantScreening/value/isBot")
                             .and_then(|b| b.as_bool())
@@ -645,12 +651,25 @@ fn call_endpoint(p: &serde_json::Value) -> (String, String) {
         .unwrap_or_default()
 }
 
+/// The Teams Room a participant joined in: the first endpoint whose
+/// metadata names one (Teams' Mv: `endpointMetadata.meetingRoom.mri`).
+fn meeting_room_of(p: &serde_json::Value) -> Option<String> {
+    p.get("endpoints")?
+        .as_object()?
+        .values()
+        .find_map(|ep| ep.pointer("/endpointMetadata/meetingRoom/mri")?.as_str())
+        .filter(|m| !m.is_empty())
+        .map(str::to_string)
+}
+
 /// Apply a delta to a roster kept in join order.
 pub fn apply(roster: &mut Vec<Participant>, delta: Vec<Participant>) {
     for mut p in delta {
         match roster.iter_mut().find(|x| x.id == p.id) {
             Some(x) => {
                 if !p.streams_known {
+                    p.room = x.room;
+                    p.meeting_room = x.meeting_room.take();
                     p.video_source = x.video_source;
                     p.share_source = x.share_source;
                     p.audio_source = x.audio_source;
@@ -747,6 +766,31 @@ mod tests {
         assert_eq!(d.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), vec!["A"]);
         assert!(is_blacklisted_bot("28:e32c9418-a835-4eb1-bfb9-733fa74dd6e8"));
         assert!(!is_blacklisted_bot("8:orgid:a"));
+    }
+
+    #[test]
+    fn the_room_a_laptop_joined_in_is_kept() {
+        // Teams' caster after adding OST Test Room by Cast (the room's
+        // attach roster, 2026-11-23): its endpoint names the room.
+        let ev = serde_json::json!({"callAgentPath": "conversation/rosterUpdate/", "body": {"participants": {
+            "8:orgid:caster": {"state": "active", "details": {"displayName": "OST Test 1"},
+                "endpoints": {"e": {"call": {"mediaStreams": []}, "endpointMetadata": {"holographicCapabilities": 3,
+                    "meetingRoom": {"email": "room@example.com", "mri": "8:orgid:room"}}}}},
+            "8:orgid:room": {"state": "active", "details": {"displayName": "OST Test Room"},
+                "endpoints": {"r": {"call": {"mediaStreams": []}, "deviceType": "room"}}}
+        }}});
+        let mut roster = roster_delta(&ev.to_string()).unwrap();
+        let caster = roster.iter().find(|p| p.id == "8:orgid:caster").unwrap();
+        assert_eq!(caster.meeting_room.as_deref(), Some("8:orgid:room"));
+        assert!(roster.iter().find(|p| p.id == "8:orgid:room").unwrap().room);
+        // An update without endpoints keeps both.
+        let names_only = serde_json::json!({"callAgentPath": "conversation/rosterUpdate/", "body": {"participants": {
+            "8:orgid:caster": {"state": "active", "details": {"displayName": "OST Test 1"}},
+            "8:orgid:room": {"state": "active", "details": {"displayName": "OST Test Room"}}
+        }}});
+        apply(&mut roster, roster_delta(&names_only.to_string()).unwrap());
+        assert_eq!(roster.iter().find(|p| p.id == "8:orgid:caster").unwrap().meeting_room.as_deref(), Some("8:orgid:room"));
+        assert!(roster.iter().find(|p| p.id == "8:orgid:room").unwrap().room);
     }
 
     #[test]

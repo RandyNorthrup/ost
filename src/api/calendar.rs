@@ -1445,6 +1445,50 @@ pub async fn meet_now(client: &TeamsClient, subject: &str) -> Result<String> {
         .context("Meet now gave no join link")
 }
 
+/// The meeting chat's `meeting` property after Teams'
+/// instantMeetingService.updateInstantMeetingInfo: the subject, meetingType
+/// "MeetNow" and, for a Meet now that is being started (not only a link to
+/// share), its start and end both set to `started_at` (Teams'
+/// `startTime = endTime = new Date`). Teams Rooms reads that end: a room
+/// left alone in it leaves once its auto exit applies.
+pub fn instant_meeting_property(meeting: &serde_json::Value, title: &str, started_at: Option<&str>) -> serde_json::Value {
+    let mut m = meeting.clone();
+    if !m.is_object() {
+        m = serde_json::json!({});
+    }
+    m["subject"] = title.into();
+    m["meetingType"] = "MeetNow".into();
+    if let Some(t) = started_at {
+        m["startTime"] = t.into();
+        m["endTime"] = t.into();
+    }
+    m
+}
+
+/// Teams' update of a Meet now's chat right after making it
+/// (updateInstantMeetingInfo): the chat's topic, then its `meeting`
+/// property (`PUT {chatsvc}/v1/threads/{id}/properties?name=meeting`, the
+/// property as JSON text). `started` is a Meet now being joined now (Start
+/// meeting, Cast's Just cast), not "Get a link to share".
+pub async fn update_instant_meeting(client: &TeamsClient, join_url: &str, title: &str, started: bool) -> Result<()> {
+    let thread = crate::calling::breakout::thread_of_join_url(join_url).context("Not a meeting link")?;
+    let url = format!("{}/v1/threads/{}?view=msnp24Equivalent", client.chat_service_url(), thread);
+    let v: serde_json::Value = client.chat_get(&url).await?.json().await.context("Thread reply")?;
+    let meeting: serde_json::Value = match v.pointer("/properties/meeting") {
+        Some(serde_json::Value::String(s)) => serde_json::from_str(s).context("The chat's meeting property")?,
+        Some(o @ serde_json::Value::Object(_)) => o.clone(),
+        _ => bail!("The chat has no meeting property"),
+    };
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+    let updated = instant_meeting_property(&meeting, title, started.then_some(now.as_str()));
+    super::msgactions::set_chat_topic(client, &thread, title.trim()).await?;
+    let prop_url = format!("{}/v1/threads/{}/properties?name=meeting", client.chat_service_url(), thread);
+    client
+        .chat_request(reqwest::Method::PUT, &prop_url, &serde_json::json!({ "meeting": updated.to_string() }))
+        .await?;
+    Ok(())
+}
+
 /// A team's group mailbox (its calendar's `smtp:` address).
 async fn group_mail(client: &TeamsClient, team_id: &str) -> Result<String> {
     if team_id.is_empty() || !team_id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
@@ -2103,6 +2147,23 @@ mod tests {
         assert_eq!(b["Body"]["Notes"]["Value"], "<div>a &lt; b</div>");
         assert!(super::respond_body("x", "Accept", 0, false, " ", "UTC")["Body"].get("Notes").is_none());
         assert_eq!(super::ews_id("AAkAL-Q_xyz"), "AAkAL/Q+xyz=");
+    }
+
+    #[test]
+    fn instant_meeting_property_is_teams_update() {
+        // A Meet now chat as the scheduling service makes it, and as Teams'
+        // Cast left it (startTime = endTime = when it was started).
+        let made = serde_json::json!({"subject": "Meeting", "startTime": "0001-01-01T00:00:00", "endTime": "0001-01-01T00:00:00", "meetingType": "MeetNow", "isCancelled": false, "eventType": "Single"});
+        let started = super::instant_meeting_property(&made, "OST Test Room", Some("2026-11-24T04:11:50.707Z"));
+        assert_eq!(started["subject"], "OST Test Room");
+        assert_eq!(started["meetingType"], "MeetNow");
+        assert_eq!(started["startTime"], "2026-11-24T04:11:50.707Z");
+        assert_eq!(started["endTime"], "2026-11-24T04:11:50.707Z");
+        assert_eq!(started["eventType"], "Single");
+        // Get a link to share: subject and type only.
+        let link = super::instant_meeting_property(&made, "Sync", None);
+        assert_eq!(link["subject"], "Sync");
+        assert_eq!(link["endTime"], "0001-01-01T00:00:00");
     }
 
     #[test]

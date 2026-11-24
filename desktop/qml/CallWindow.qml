@@ -263,6 +263,33 @@ Window {
     /// remove).
     signal participantAction(string action, string id, string name, string stateId)
     readonly property var others: roster.filter(p => p.id !== selfId)
+    // In-room attendees (Teams' hybrid companion join): once you add a
+    // nearby Teams Room (Cast, Room audio), your endpoint names it
+    // (meetingRoom) and everyone in the room with you, the room too, is
+    // in the same room (Teams' isInSameRoom).
+    readonly property string myRoom: (roster.find(p => p.id === selfId) || {}).meeting_room || ""
+    /// The room you added, by name, until the roster names it.
+    property string addedRoomName: ""
+    readonly property string myRoomName: (roster.find(p => p.id === myRoom) || {}).name || addedRoomName
+    /// Teams' Hide Attendees (shouldHideSameRoomParticipants): kept for
+    /// the call only.
+    property bool hideSameRoom: false
+    function inSameRoom(p) { return !!myRoom && !!p && p.id !== selfId && (p.id === myRoom || p.meeting_room === myRoom) }
+    /// The others the stage shows (Hide Attendees leaves the room's out).
+    readonly property var shownOthers: hideSameRoom ? others.filter(p => !inSameRoom(p)) : others
+    // Teams' "Joined in room" alert (UnhideRoomParticipantsUfd): once a
+    // call, when you're mapped to a room, unless you are the room
+    // (ECS Host enableHideSameRoomParticipants, Calling
+    // enableHybridCompanionJoinUfd).
+    property bool roomUfdShown: false
+    onMyRoomChanged: {
+        if (!myRoom) { hideSameRoom = false; roomUfdShown = false; joinedInRoom.visible = false; return }
+        if (roomUfdShown || backend.roomMode) return
+        if (backend.ecsSetting("host", "enableHideSameRoomParticipants") === "false" || backend.ecsSetting("calling", "enableHybridCompanionJoinUfd") === "false") return
+        roomUfdShown = true
+        joinedInRoom.visible = true
+        console.warn("ROOMUFD shown", myRoom, myRoomName)
+    }
     // The stage's tiles changing leaves the side pane's web page showing
     // black until it draws again: ask it for a new frame.
     onOthersChanged: { stageRefresh.round = 0; stageRefresh.restart() }
@@ -508,8 +535,9 @@ Window {
     readonly property var hands: roster.filter(p => !!p.hand).map(p => p.id)
     readonly property var people: meeting
         ? [{ name: selfName || qsTr("You"), id: "me", you: true, mutedNow: muted || !hasAudio, hand: handRaised,
-             role: (roster.find(p => p.id === selfId) || {}).role || "" }]
-          .concat(others.map(p => ({ name: p.name, id: p.id, you: false, mutedNow: p.muted, role: p.role, hand: !!p.hand, guest: !!p.guest, suspected: !!p.suspected, spotlight: p.spotlight || "", signLine: signLine(p), signFirst: signMode && (iSign ? p.sign_role === "signLanguageInterpreter" : p.sign_role === "dhhSigner") })))
+             role: (roster.find(p => p.id === selfId) || {}).role || "", meetingRoom: myRoom }]
+          .concat(others.map(p => ({ name: p.name, id: p.id, you: false, mutedNow: p.muted, role: p.role, hand: !!p.hand, guest: !!p.guest, suspected: !!p.suspected, spotlight: p.spotlight || "", signLine: signLine(p), signFirst: signMode && (iSign ? p.sign_role === "signLanguageInterpreter" : p.sign_role === "dhhSigner"),
+                                     room: !!p.room, meetingRoom: p.meeting_room || "" })))
         : [{ name: selfName || qsTr("You"), id: "me", you: true, mutedNow: muted || !hasAudio },
            { name: peer, id: backend.callPeerId, you: false, mutedNow: false }]
     /// Hold: you put the call on hold, or the other person did.
@@ -643,7 +671,8 @@ Window {
     /// The others in gallery order (Sign language mode's people first,
     /// then videos first, when asked).
     readonly property var othersOrdered: {
-        const rest = others.filter(p => signFirst.indexOf(p) < 0)
+        // Hide Attendees leaves the in-room attendees out of the gallery.
+        const rest = others.filter(p => signFirst.indexOf(p) < 0 && !(hideSameRoom && inSameRoom(p)))
         return signFirst.concat(videosFirst ? rest.filter(p => hasVideo(p)).concat(rest.filter(p => !hasVideo(p))) : rest)
     }
     /// Meetings: Teams' meeting options page (Controls) and the meeting
@@ -672,9 +701,13 @@ Window {
     function toggleFullScreen() { visibility = visibility === Window.FullScreen ? Window.Windowed : Window.FullScreen }
     /// The open side pane: "", "chat" or "people".
     property string side: ""
-    /// Leave, asking first when Settings ▸ General says to (meetings).
+    /// Leave, asking first as Teams' hang-up speed bump does (ECS
+    /// enableHangupSpeedbumpMode "Always"): always while you're sharing
+    /// ("SharingOnly", seen on winpc leaving a Cast), otherwise when
+    /// Settings ▸ General says to (meetings).
     function leaveAsked() {
-        if (win.meeting && backend.setting("leaveConfirmation") === "true") leaveConfirm.open()
+        leaveConfirm.whileSharing = win.sharing
+        if (win.sharing || (win.meeting && backend.setting("leaveConfirmation") === "true")) leaveConfirm.open()
         else win.leave()
     }
     /// The effects pane's "Green screen settings" (Main shows Settings ▸
@@ -1575,6 +1608,55 @@ Window {
             }
         }
     }
+    // Teams' "Joined in room" alert (UnhideRoomParticipantsUfd, the same
+    // calling alert card; seen on winpc 2026-11-23 casting to OST Test
+    // Room): the title, Close, "You've joined <room>. To focus on remote
+    // participants, hide in-room attendees in the gallery", Dismiss and
+    // Hide Attendees.
+    Rectangle {
+        id: joinedInRoom
+        visible: false
+        z: 50
+        x: ((win.width - (sidePane.visible ? sidePane.width : 0)) - width) / 2; y: bar.height + 10.7
+        width: 320; height: roomUfdText.y + roomUfdText.implicitHeight + 12 + 31.3 + 12.7; radius: 8
+        color: theme.pick("#FAFAFA", "#292929", "#000000")
+        border.width: theme.highContrast ? 1 : 0
+        border.color: "#FFFFFF"
+        Accessible.role: Accessible.AlertMessage
+        Accessible.name: roomUfdTitle.text
+        Text {
+            id: roomUfdTitle
+            x: 12.7; y: 12.7; height: 20; verticalAlignment: Text.AlignVCenter
+            text: qsTr("Joined in room")
+            font.family: theme.font; font.pixelSize: 12; color: theme.text
+        }
+        FluentIcon {
+            x: 291.3; y: 14.7; size: 16; name: "dismiss-16"; color: roomUfdClose.hovered ? theme.text : theme.textSecondary
+            HoverHandler { id: roomUfdClose; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: joinedInRoom.visible = false }
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("Close")
+        }
+        Text {
+            id: roomUfdText
+            x: 12.7; y: 40.7; width: 296.7
+            text: win.myRoomName ? qsTr("You've joined %1. To focus on remote participants, hide in-room attendees in the gallery").arg(win.myRoomName)
+                                 : qsTr("To focus on remote participants, hide in-room attendees in the gallery")
+            wrapMode: Text.Wrap
+            font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+            color: theme.textSecondary
+        }
+        SettingsParts.Button {
+            x: 12.7; y: roomUfdText.y + roomUfdText.implicitHeight + 12; width: 143.3
+            label: qsTr("Dismiss")
+            onClicked: joinedInRoom.visible = false
+        }
+        SettingsParts.Button {
+            x: 164; y: roomUfdText.y + roomUfdText.implicitHeight + 12; width: 143.3; primary: true
+            label: qsTr("Hide Attendees")
+            onClicked: { joinedInRoom.visible = false; win.hideSameRoom = true; console.warn("ROOMUFD hide attendees") }
+        }
+    }
     onCopilotRunningChanged: {
         if (copilotLaunch && copilotLoader.item && copilotLoader.item.hostEvents.indexOf("ChatReady") >= 0) sendCopilotContext()
         if (!copilotRunning) { copilotOnNotice.visible = false; return }
@@ -2028,11 +2110,14 @@ Window {
         // General; measured on winpc 2026-11-14): a 287.3 x 156 surface
         // right-aligned under Leave, 5.3 below it, padding 23.7: "Are you
         // sure you want to leave?" (14 px), then Stay (secondary) and Leave
-        // (#C50F1F), 240 x 31.3 each, 8 apart.
+        // (#C50F1F), 240 x 31.3 each, 8 apart. While you're sharing:
+        // "You're currently sharing. Are you sure you want to leave?" on
+        // two lines.
         Popup {
             id: leaveConfirm
+            property bool whileSharing: false
             parent: Overlay.overlay
-            width: 287.3; height: 156; padding: 23.7
+            width: 287.3; height: 136 + leaveAskText.height; padding: 23.7
             background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
             onAboutToShow: {
                 const p = leaveButton.mapToItem(Overlay.overlay, leaveButton.width, leaveButton.height)
@@ -2041,8 +2126,10 @@ Window {
             Column {
                 spacing: 0
                 Text {
-                    width: 240; height: 20; verticalAlignment: Text.AlignVCenter
-                    text: qsTr("Are you sure you want to leave?")
+                    id: leaveAskText
+                    width: 240; wrapMode: Text.Wrap
+                    lineHeight: 20; lineHeightMode: Text.FixedHeight
+                    text: leaveConfirm.whileSharing ? qsTr("You’re currently sharing. Are you sure you want to leave?") : qsTr("Are you sure you want to leave?")
                     font.family: theme.font; font.pixelSize: 14
                     color: theme.text
                 }
@@ -2822,7 +2909,7 @@ Window {
             readonly property bool speakerView: !win.stageOnly && (win.layout === "speaker" || !!featured)
             readonly property var speaker: {
                 if (featured) return featured
-                const pool = win.speakerMeInGallery && !win.hideMe ? win.others.concat([win.selfEntry]) : win.others
+                const pool = win.speakerMeInGallery && !win.hideMe ? win.shownOthers.concat([win.selfEntry]) : win.shownOthers
                 // Teams (813237 onActiveSignerChanged, 937485 xB): people
                 // actively signing come before the dominant speakers.
                 const signer = win.signMode ? win.others.find(p => win.signingIds.indexOf(p.id) >= 0) : null
@@ -2836,7 +2923,7 @@ Window {
             // Teams (updateShouldMeBeInOverlay, live): with at most two
             // people tiles, the other person fills the stage and you float
             // over it, bottom right.
-            readonly property bool meOverlay: !content && win.others.length === 1 && !win.hideMe && !win.stageOnly
+            readonly property bool meOverlay: !content && win.shownOthers.length === 1 && !win.hideMe && !win.stageOnly
             // (With content on the stage, the side lists the focused and
             // pinned people first.)
             readonly property var side: win.stageOnly ? (content && win.layout !== "focus" ? win.shownOnly : [])

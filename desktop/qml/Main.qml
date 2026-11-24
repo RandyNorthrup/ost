@@ -158,7 +158,7 @@ Window {
             if (inCall) backend.startShare("window")
             else {
                 window.presentAfterJoin = true
-                backend.calendarAction("meetNow", JSON.stringify({ subject: "Meeting with " + backend.userName }))
+                backend.calendarAction("meetNow", JSON.stringify({ subject: "Meeting with " + backend.userName, start: true }))
             }
         }
     }
@@ -2101,6 +2101,7 @@ Window {
                 const r = window.tenantRoomOnJoin
                 window.tenantRoomOnJoin = null
                 console.warn("ROOM adding", r.mri, r.label, "code", r.code)
+                callWindow.addedRoomName = r.label || ""
                 backend.addRoomToMeeting(r.mri, r.label, r.code === undefined ? -1 : r.code)
             }
             if (backend.callState === "ended" || backend.callState === "") {
@@ -14963,6 +14964,7 @@ Window {
                 callWindow.shareIncludeSound = !!c.includeSound
                 backend.startShare(k)
             }
+            callWindow.addedRoomName = c.room.name || ""
             backend.addRoomToMeeting(c.room.mri, c.room.name, -1)
         }
     }
@@ -14987,7 +14989,7 @@ Window {
             step++
             const st = castWindow.stateForTest()
             if (step === 2) { castWindow.start(); console.warn("CAST opened"); return }
-            if (castWindow.visible) {
+            if (castWindow.visible && !castWindow.started) {
                 console.warn("CAST", step, JSON.stringify(st))
                 // Each step is captured, then left on the next tick.
                 if (st.step === "rooms" && step === 4) shot("searching")

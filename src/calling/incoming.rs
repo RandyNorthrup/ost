@@ -876,6 +876,7 @@ async fn attach(
         .map(|o| o.keys().collect())
         .unwrap_or_default();
     tracing::info!(?shape, "attach reply");
+    debug_dump("attach-reply", &reply.to_string());
     let invitation = reply
         .get("callInvitation")
         .cloned()

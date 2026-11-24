@@ -2587,13 +2587,13 @@ Item {
             Item { visible: !!meetNowDialog.link; width: 1; height: 12 }
             Row {
                 anchors.right: parent.right; spacing: 8
-                CardButton { primary: true; icon: "video-20"; label: qsTr("Start meeting"); onClicked: { meetNowDialog.linkOnly = false; root.calendarAction("meetNow", JSON.stringify({ subject: meetName.text.trim() || "Meeting" })) } }
+                CardButton { primary: true; icon: "video-20"; label: qsTr("Start meeting"); onClicked: { meetNowDialog.linkOnly = false; root.calendarAction("meetNow", JSON.stringify({ subject: meetName.text.trim() || "Meeting", start: true })) } }
                 CardButton {
                     icon: "link-20"; label: meetNowDialog.link ? qsTr("Copy link") : qsTr("Get a link to share")
                     onClicked: {
                         if (meetNowDialog.link) { textCopy.text = meetNowDialog.link; textCopy.selectAll(); textCopy.copy(); return }
                         meetNowDialog.linkOnly = true
-                        root.calendarAction("meetNow", JSON.stringify({ subject: meetName.text.trim() || "Meeting" }))
+                        root.calendarAction("meetNow", JSON.stringify({ subject: meetName.text.trim() || "Meeting", start: false }))
                     }
                 }
             }

@@ -16,10 +16,10 @@ import QtQuick.Controls.Basic
 // 1. "Select a nearby Teams Room" (16/22, centred at 104), then, 15
 //    under it: the Teams Rooms heard over Bluetooth (the same beacons as
 //    Room audio's Nearby, strongest first) as 536 x 80 cards 8 apart (the
-//    room glyph in a 36 px circle 14 in, its name and its presence:
+//    TV glyph in a 44 px #666666 circle 20 in, its name and its presence:
 //    Available, In a call, In a conference call, In a meeting, Presenting
-//    or Offline; the cast glyph after the name when the room is right
-//    there, a round check at the end), one room picked by itself; while
+//    or Offline; the nearby glyph after the presence when the room is
+//    adjacent, a round check at the end), one room picked by itself; while
 //    none is heard "Searching for nearby Teams Rooms..." for 20 s, then
 //    "Didn't find any Teams Rooms nearby that we can cast to."; with
 //    Bluetooth off "Turn on Bluetooth to automatically detect nearby
@@ -30,9 +30,11 @@ import QtQuick.Controls.Basic
 //    join", "<start> | <subject>"). Without such meetings the step is
 //    left out.
 // 3. "What do you want to cast?" over Teams' share tray in its Cast mode
-//    (448 x 480, scrolling): Include sound, Screen and Window (on Linux the
-//    desktop's picker then asks which), and PowerPoint Live's recent files.
-// Cast closes the window and starts the cast (Main.qml: a Meet now, or
+//    (a 448-wide card, up to 480 and scrolling): "Share content" with
+//    Include sound, Screen and Window (on Linux the desktop's picker then
+//    asks which), and PowerPoint Live when it has recent files.
+// Cast starts the cast and leaves the window open on its last step, as
+// Teams' wizard does (Main.qml: a Meet now, or
 // the picked meeting, joined without audio, the content shared once in,
 // and the room added with its beacon's code, as Teams' cast does).
 Window {
@@ -63,8 +65,10 @@ Window {
     readonly property bool lastStep: stepIndex === steps.length - 1
     readonly property bool canNext: step === "rooms" ? !!room : step === "meetings" ? true : !!content
 
+    /// Cast was pressed (the harness's wizard part is over).
+    property bool started: false
     function start() {
-        step = "rooms"; room = null; meeting = null; content = null; includeSound = false; meetings = []
+        step = "rooms"; room = null; meeting = null; content = null; includeSound = false; meetings = []; started = false
         searching = true; searchTimer.restart()
         refresh()
         backend.calendarAction("castMeetings", "{}")
@@ -85,7 +89,9 @@ Window {
         if (lastStep) {
             const spec = { room: room, meeting: meeting, content: content, includeSound: includeSound }
             console.warn("CAST start", JSON.stringify({ room: room.name, meeting: meeting ? meeting.subject : "", content: content.kind }))
-            close()
+            // Teams' wizard only fires the calling intent: the Cast window
+            // stays open on its last step (seen on winpc 2026-11-23).
+            started = true
             win.cast(spec)
             return
         }
@@ -203,8 +209,14 @@ Window {
                     required property var modelData
                     header: modelData.name || ""
                     content: win.presenceLabel(modelData)
-                    icon: "conference-room-24"
-                    nearbyMark: !!modelData.code
+                    // Teams' presence line: Text "smaller" (10), measured
+                    // near white on winpc.
+                    contentSize: 10
+                    contentColor: "#E8E8E8"
+                    icon: "tv-20"
+                    // Teams' isNearby: the room is adjacent (its beacon's
+                    // proximity), not merely heard.
+                    nearbyMark: !!modelData.adjacent
                     selected: !!win.room && win.room.mri === modelData.mri
                     onPicked: win.room = modelData
                 }
@@ -261,127 +273,152 @@ Window {
                 Accessible.role: Accessible.Heading
                 Accessible.name: text
             }
-            // Teams' isCastShareTrayWrapper: 448 x 480, scrolling.
-            Flickable {
-                id: trayFlick
+            // Teams' share tray in Cast mode (measured on winpc 2026-11-23,
+            // Cast with OST in room mode): a 448-wide #292929 card (radius 4)
+            // 15 under the title, 244 tall with the screens and windows and
+            // up to 480 (scrolling) with PowerPoint Live's files: "Share
+            // content" (16 bold) 24 in with Include sound (12) and its 40 x 20
+            // switch 27 from the end; "Screen" and "Window" (14/600) 82 down
+            // over 144 x 80 tiles 24 apart; PowerPoint Live only when it has
+            // recent files.
+            Rectangle {
+                id: trayCard
                 anchors.horizontalCenter: parent.horizontalCenter
-                y: 37; width: 448; height: Math.min(480, parent.height - y)
-                contentHeight: trayCol.height + 16
-                clip: true
-                boundsBehavior: Flickable.StopAtBounds
-                ScrollBar.vertical: ScrollBar { policy: trayFlick.contentHeight > trayFlick.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
-                Column {
-                    id: trayCol
-                    x: 8; width: parent.width - 16; spacing: 12
+                y: 37; width: 448; height: Math.min(win.pptFiles.length > 0 ? 480 : 244, parent.height - y)
+                radius: 4
+                color: theme.hc("#292929", "#000000")
+                border.width: theme.highContrast ? 1 : 0; border.color: "#FFFFFF"
+                Item {
+                    id: trayHead
+                    width: parent.width; height: 70
+                    Text {
+                        x: 24; y: 34; height: 22; verticalAlignment: Text.AlignVCenter
+                        text: qsTr("Share content")
+                        font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: "#FFFFFF"
+                        Accessible.role: Accessible.Heading
+                        Accessible.name: text
+                    }
                     // Include sound (Teams' system-audio-checkbox; casting:
                     // the computer's sound plays in the room, not here).
-                    Item {
-                        width: parent.width; height: 32
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("Include sound")
-                            font.family: theme.font; font.pixelSize: 14; color: "#FFFFFF"
-                        }
+                    Text {
+                        anchors.right: soundSwitch.left; anchors.rightMargin: 13
+                        anchors.verticalCenter: soundSwitch.verticalCenter
+                        text: qsTr("Include sound")
+                        font.family: theme.font; font.pixelSize: 12; color: "#FFFFFF"
+                    }
+                    Rectangle {
+                        id: soundSwitch
+                        x: parent.width - 27 - width; y: 37
+                        width: 40; height: 20; radius: 10
+                        color: win.includeSound ? "#7F85F5" : "transparent"
+                        border.width: win.includeSound ? 0 : 1; border.color: "#ADADAD"
                         Rectangle {
-                            id: soundSwitch
-                            anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                            width: 40; height: 20; radius: 10
-                            color: win.includeSound ? "#7F85F5" : "transparent"
-                            border.width: win.includeSound ? 0 : 1; border.color: "#ADADAD"
-                            Rectangle {
-                                width: 14; height: 14; radius: 7; anchors.verticalCenter: parent.verticalCenter
-                                x: win.includeSound ? parent.width - width - 3 : 3
-                                color: win.includeSound ? "#1F1F1F" : "#ADADAD"
-                            }
-                            HoverHandler { cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: win.includeSound = !win.includeSound }
-                            Accessible.role: Accessible.CheckBox
-                            Accessible.name: qsTr("Include sound")
-                            Accessible.checked: win.includeSound
+                            width: 14; height: 14; radius: 7; anchors.verticalCenter: parent.verticalCenter
+                            x: win.includeSound ? parent.width - width - 3 : 3
+                            color: win.includeSound ? "#1F1F1F" : "#ADADAD"
                         }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: win.includeSound = !win.includeSound }
+                        Accessible.role: Accessible.CheckBox
+                        Accessible.name: qsTr("Include sound")
+                        Accessible.checked: win.includeSound
                     }
-                    // Screen and Window (the desktop's picker asks which).
-                    Row {
-                        spacing: 16
-                        Repeater {
-                            model: [{ kind: "screen", title: qsTr("Screen"), name: qsTr("Screen %1").arg(1) },
-                                    { kind: "window", title: qsTr("Window"), name: qsTr("Opens list of active windows") }]
-                            Column {
-                                id: tileCol
-                                required property var modelData
-                                readonly property bool chosen: !!win.content && win.content.kind === modelData.kind
-                                spacing: 4
-                                Text { text: tileCol.modelData.title; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "#FFFFFF" }
-                                Rectangle {
-                                    width: 154; height: 90; radius: 4
-                                    color: "transparent"
-                                    border.width: tileCol.chosen || tileHover.hovered ? 2 : 0
-                                    border.color: "#7F85F5"
-                                    Rectangle {
-                                        anchors.fill: parent; anchors.margins: 4.67; radius: 4
-                                        color: tileCol.modelData.kind === "screen" ? "#1F1F1F" : "#292929"
-                                        border.width: tileCol.modelData.kind === "screen" ? 0.67 : 0; border.color: "#3D3D3D"
-                                        Text {
-                                            visible: tileCol.modelData.kind === "screen"
-                                            anchors.centerIn: parent
-                                            text: qsTr("Screen %1").arg(1)
-                                            font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "#D6D6D6"
-                                        }
-                                        Image {
-                                            visible: tileCol.modelData.kind === "window"
-                                            x: 10; y: 7; width: 124; height: 75
-                                            source: "../assets/illustrations/share-window.svg"
-                                            sourceSize: Qt.size(248, 150)
-                                            fillMode: Image.PreserveAspectFit
-                                        }
-                                    }
-                                    HoverHandler { id: tileHover; cursorShape: Qt.PointingHandCursor }
-                                    TapHandler { onTapped: win.content = { kind: tileCol.modelData.kind } }
-                                    Accessible.role: Accessible.RadioButton
-                                    Accessible.name: tileCol.modelData.name
-                                    Accessible.checked: tileCol.chosen
-                                }
-                            }
-                        }
-                    }
-                    // PowerPoint Live and its recent files.
+                }
+                Flickable {
+                    id: trayFlick
+                    y: 82; width: parent.width; height: parent.height - y
+                    contentHeight: trayCol.height + 24
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+                    ScrollBar.vertical: ScrollBar { policy: trayFlick.contentHeight > trayFlick.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
                     Column {
-                        width: parent.width; spacing: 2
-                        Text { text: qsTr("PowerPoint Live"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "#FFFFFF" }
-                        Text {
-                            width: parent.width; wrapMode: Text.Wrap
-                            text: qsTr("See your notes, slides, and audience while you present.")
-                            font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: "#ADADAD"
-                        }
-                        Item { width: 1; height: 6 }
-                        Text {
-                            visible: win.pptFiles.length === 0
-                            text: qsTr("No files available")
-                            font.family: theme.font; font.pixelSize: 12; color: "#ADADAD"
-                        }
-                        Repeater {
-                            model: win.pptFiles
-                            Rectangle {
-                                id: fileRow
-                                required property var modelData
-                                readonly property bool chosen: !!win.content && win.content.kind === "ppt" && !!win.content.file && win.content.file.url === modelData.url
-                                width: parent.width; height: 36; radius: 4
-                                color: chosen ? "#3D3D3D" : fileHover.hovered ? "#2E2E2E" : "transparent"
-                                border.width: chosen ? 1 : 0; border.color: "#7F85F5"
-                                Image {
-                                    x: 8; anchors.verticalCenter: parent.verticalCenter; width: 20; height: 20
-                                    source: "../assets/icons/ft-pptx-20.svg"; sourceSize: Qt.size(40, 40)
+                        id: trayCol
+                        x: 24; width: parent.width - 48; spacing: 16
+                        // Screen and Window (the desktop's picker asks which).
+                        Row {
+                            spacing: 24
+                            Repeater {
+                                model: [{ kind: "screen", title: qsTr("Screen"), name: qsTr("Screen %1").arg(1) },
+                                        { kind: "window", title: qsTr("Window"), name: qsTr("Opens list of active windows") }]
+                                Column {
+                                    id: tileCol
+                                    required property var modelData
+                                    readonly property bool chosen: !!win.content && win.content.kind === modelData.kind
+                                    spacing: 9
+                                    Text { height: 20; verticalAlignment: Text.AlignVCenter; text: tileCol.modelData.title; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "#FFFFFF" }
+                                    // The 144 x 80 tile; picked or hovered, a
+                                    // 2 px ring 4.67 around it.
+                                    Item {
+                                        width: 144; height: 80
+                                        Rectangle {
+                                            anchors.fill: parent; anchors.margins: -4.67; radius: 4
+                                            color: "transparent"
+                                            border.width: tileCol.chosen || tileHover.hovered ? 2 : 0
+                                            border.color: "#7F85F5"
+                                        }
+                                        Rectangle {
+                                            anchors.fill: parent; radius: 4
+                                            color: tileCol.modelData.kind === "screen" ? "#1F1F1F" : "#292929"
+                                            border.width: tileCol.modelData.kind === "screen" ? 0.67 : 0; border.color: "#3D3D3D"
+                                            Text {
+                                                visible: tileCol.modelData.kind === "screen"
+                                                anchors.centerIn: parent
+                                                text: qsTr("Screen %1").arg(1)
+                                                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "#D6D6D6"
+                                            }
+                                            Image {
+                                                visible: tileCol.modelData.kind === "window"
+                                                x: 10; y: 3; width: 124; height: 75
+                                                source: "../assets/illustrations/share-window.svg"
+                                                sourceSize: Qt.size(248, 150)
+                                                fillMode: Image.PreserveAspectFit
+                                            }
+                                        }
+                                        HoverHandler { id: tileHover; cursorShape: Qt.PointingHandCursor }
+                                        TapHandler { onTapped: win.content = { kind: tileCol.modelData.kind } }
+                                        Accessible.role: Accessible.RadioButton
+                                        Accessible.name: tileCol.modelData.name
+                                        Accessible.checked: tileCol.chosen
+                                    }
                                 }
-                                Text {
-                                    x: 40; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 48; elide: Text.ElideRight
-                                    text: fileRow.modelData.name || ""
-                                    font.family: theme.font; font.pixelSize: 14; color: "#FFFFFF"
+                            }
+                        }
+                        // PowerPoint Live and its recent files (left out
+                        // without any, as in Teams' Cast tray).
+                        Column {
+                            visible: win.pptFiles.length > 0
+                            width: parent.width; spacing: 2
+                            Text { text: qsTr("PowerPoint Live"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "#FFFFFF" }
+                            Text {
+                                width: parent.width; wrapMode: Text.Wrap
+                                text: qsTr("See your notes, slides, and audience while you present.")
+                                font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: "#ADADAD"
+                            }
+                            Item { width: 1; height: 6 }
+                            Repeater {
+                                model: win.pptFiles
+                                Rectangle {
+                                    id: fileRow
+                                    required property var modelData
+                                    readonly property bool chosen: !!win.content && win.content.kind === "ppt" && !!win.content.file && win.content.file.url === modelData.url
+                                    width: parent.width; height: 36; radius: 4
+                                    color: chosen ? "#3D3D3D" : fileHover.hovered ? "#2E2E2E" : "transparent"
+                                    border.width: chosen ? 1 : 0; border.color: "#7F85F5"
+                                    Image {
+                                        x: 8; anchors.verticalCenter: parent.verticalCenter; width: 20; height: 20
+                                        source: "../assets/icons/ft-pptx-20.svg"; sourceSize: Qt.size(40, 40)
+                                    }
+                                    Text {
+                                        x: 40; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 48; elide: Text.ElideRight
+                                        text: fileRow.modelData.name || ""
+                                        font.family: theme.font; font.pixelSize: 14; color: "#FFFFFF"
+                                    }
+                                    HoverHandler { id: fileHover; cursorShape: Qt.PointingHandCursor }
+                                    TapHandler { onTapped: win.content = { kind: "ppt", file: fileRow.modelData } }
+                                    Accessible.role: Accessible.RadioButton
+                                    Accessible.name: fileRow.modelData.name || ""
+                                    Accessible.checked: fileRow.chosen
                                 }
-                                HoverHandler { id: fileHover; cursorShape: Qt.PointingHandCursor }
-                                TapHandler { onTapped: win.content = { kind: "ppt", file: fileRow.modelData } }
-                                Accessible.role: Accessible.RadioButton
-                                Accessible.name: fileRow.modelData.name || ""
-                                Accessible.checked: fileRow.chosen
                             }
                         }
                     }
@@ -469,52 +506,56 @@ Window {
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
     }
-    // Teams' isCastOptionListItem: 536 x 80, radius 2, a 1 px edge, the
-    // glyph in a 36 px circle 14 in, the header and its line, and the round
-    // check 14 from the end (brand with a check when picked).
+    // Teams' isCastOptionListItem (measured on winpc 2026-11-23): 536 x 80,
+    // radius 2, #242424 with a #0F0F0F hairline (Teams' border2; the pick
+    // shows only in the check, a white ring only with keyboard focus);
+    // the glyph (20) in Fluent's large avatar (44, #666666) 20 in; the
+    // header (14/20, regular) at 79 and under it the line (12, or a room's
+    // presence at 10 with the nearby glyph after it); the round check (16)
+    // 19 from the end (brand with a check when picked).
     component OptionItem: Rectangle {
         id: oi
         property string header
         property string content
+        property int contentSize: 12
+        property color contentColor: "#ADADAD"
         property string icon
         property bool nearbyMark: false
         property bool selected: false
         signal picked()
         width: 536; height: 80; radius: 2
-        color: oiHover.hovered ? "#2E2E2E" : "#292929"
-        border.width: 1; border.color: oi.selected ? "#7F85F5" : "#141414"
+        color: oiHover.hovered ? "#2E2E2E" : "#242424"
+        border.width: 0.67; border.color: "#0F0F0F"
         Rectangle {
-            x: 14; anchors.verticalCenter: parent.verticalCenter
-            width: 36; height: 36; radius: 18
-            color: "#3D3D3D"
+            x: 20; anchors.verticalCenter: parent.verticalCenter
+            width: 44; height: 44; radius: 22
+            color: "#666666"
             FluentIcon { anchors.centerIn: parent; name: oi.icon; size: 20; color: "#FFFFFF" }
         }
-        Column {
-            x: 64; anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - 64 - 44
-            spacing: 2
-            Row {
-                spacing: 6
-                Text {
-                    width: Math.min(implicitWidth, oi.width - 64 - 44 - (oi.nearbyMark ? 22 : 0)); elide: Text.ElideRight
-                    text: oi.header
-                    font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "#FFFFFF"
-                }
-                FluentIcon { visible: oi.nearbyMark; anchors.verticalCenter: parent.verticalCenter; name: "cast-20"; size: 16; color: "#ADADAD" }
-            }
+        Text {
+            x: 79; y: 22; height: 20; verticalAlignment: Text.AlignVCenter
+            width: parent.width - x - 44; elide: Text.ElideRight
+            text: oi.header
+            font.family: theme.font; font.pixelSize: 14; color: "#FFFFFF"
+        }
+        Row {
+            x: 79; y: 42; height: 14
+            spacing: 4
             Text {
                 visible: oi.content !== ""
-                width: parent.width; elide: Text.ElideRight
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.min(implicitWidth, oi.width - 79 - 44 - (oi.nearbyMark ? 16 : 0)); elide: Text.ElideRight
                 text: oi.content
-                font.family: theme.font; font.pixelSize: 12; color: "#ADADAD"
+                font.family: theme.font; font.pixelSize: oi.contentSize; color: oi.contentColor
             }
+            FluentIcon { visible: oi.nearbyMark; anchors.verticalCenter: parent.verticalCenter; name: "cast-20"; size: 12; color: oi.contentColor }
         }
         Rectangle {
-            anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter
+            anchors.right: parent.right; anchors.rightMargin: 19; anchors.verticalCenter: parent.verticalCenter
             width: 16; height: 16; radius: 8
             color: oi.selected ? "#7F85F5" : "transparent"
             border.width: oi.selected ? 0 : 1; border.color: "#D6D6D6"
-            FluentIcon { anchors.centerIn: parent; visible: oi.selected; name: "checkmark-12"; size: 12; color: "#1F1F1F" }
+            FluentIcon { anchors.centerIn: parent; visible: oi.selected; name: "checkmark-12"; size: 12; color: "#292929" }
         }
         HoverHandler { id: oiHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: oi.picked() }
