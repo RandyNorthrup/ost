@@ -1,0 +1,309 @@
+import QtQuick
+import QtQuick.Controls.Basic
+import QtQuick.Dialogs
+
+// Manage team ▸ Apps (Teams' tab, measured on winpc 2026-11-09;
+// docs/spec/chat-list-and-header.md §5.6.7). Offsets from the tab area:
+// - Get more apps (outlined, the add glyph, 140.8 x 31.3) at 44, 28.6;
+//   Create an outgoing webhook (transparent, the webhook glyph) at 199.8;
+//   Sort (transparent, A-Z / Z-A) at 531; Find by name (filled, 210 x 32, a
+//   search glyph) 40 from the right (re-measured from Teams' DOM).
+// - The apps from 68.3 down, 21 in, 836 wide: 65 tall rows with a line
+//   between them: the icon (36) at 89, the name (14/20 bold) and publisher
+//   (14/16 #616161) at 132, ··· (Copy link | Remove) at the right.
+// - Create an outgoing webhook: Teams' dialog (Name *, Callback URL *,
+//   Description *, a 30 KB PNG profile picture; Cancel / Create).
+Item {
+    id: view
+    property string teamId: ""
+    property string teamThread: ""
+    property bool owner: false
+    /// A chat's apps (its menu's Manage apps; Teams shows them in the chat's
+    /// place): no webhooks; Get more apps 24 in, the list 1 in and 890 wide,
+    /// 49 down.
+    property string chatId: ""
+    readonly property bool chatMode: chatId.length > 0
+    readonly property string scope: chatMode ? chatId : teamThread
+    property var apps: []
+    property bool descending: false
+    property bool sorted: false
+    signal getMoreApps()
+    readonly property string query: find.text.trim().toLowerCase()
+    readonly property var shown: {
+        const list = apps.filter(a => !query || (a.name || "").toLowerCase().indexOf(query) >= 0).slice()
+        list.sort((a, b) => (a.name || "").toLowerCase().localeCompare((b.name || "").toLowerCase()))
+        return descending ? list.reverse() : list
+    }
+
+    function load() {
+        if (chatMode) backend.channelAction("chat-apps", "", chatId, "")
+        else if (teamThread) backend.channelAction("team-apps", teamId, teamThread, "")
+    }
+    onScopeChanged: { apps = []; find.text = ""; descending = false; sorted = false; load() }
+    Component.onCompleted: load()
+    Connections {
+        target: backend
+        function onChannelActionResultChanged() {
+            const r = JSON.parse(backend.channelActionResult || "{}")
+            if (r.channel !== view.scope) return
+            if ((r.op === "team-apps" || r.op === "chat-apps") && r.ok) view.apps = r.data.apps || []
+            else if (r.op === "team-app-remove" || r.op === "chat-app-remove" || r.op === "team-webhook") {
+                if (!r.ok) backend.toast(qsTr("Something went wrong on our end. Please try again."), "error")
+                view.load()
+            }
+        }
+    }
+
+    Rectangle {
+        id: hcFill1
+        x: view.chatMode ? 24 : 44; y: view.chatMode ? 13.3 : 28.6; width: 140.8; height: view.chatMode ? 21.3 : 31.3; radius: 4
+        color: moreHover.hovered ? theme.menuHover : theme.surface
+        border.color: theme.stroke; border.width: 0.67
+        Row {
+            x: 10; anchors.verticalCenter: parent.verticalCenter
+            spacing: 6
+            FluentIcon { name: "add-20"; size: 20; color: theme.onFill(hcFill1, theme.text) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Get more apps"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
+        }
+        HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: view.getMoreApps() }
+        Accessible.role: Accessible.Button
+        Accessible.name: qsTr("Get more apps")
+    }
+    Plain {
+        visible: view.owner && !view.chatMode
+        x: 199.8; y: 28.6
+        icon: "webhook-20"; text: qsTr("Create an outgoing webhook")
+        onClicked: webhook.start()
+    }
+    Plain {
+        x: view.chatMode ? 551 : 531; y: view.chatMode ? 8 : 28.3
+        icon: "arrow-sort-20"; text: qsTr("Sort")
+        active: view.sorted
+        onClicked: { if (view.sorted) view.descending = !view.descending; view.sorted = true }
+    }
+    Rectangle {
+        x: view.chatMode ? 662 : parent.width - 40 - width; y: view.chatMode ? 8 : 28.3; width: 210; height: 32; radius: 4
+        color: theme.inputFilled; border.color: theme.transparentStroke
+        Rectangle { visible: find.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
+        TextInput {
+            id: find
+            x: 12; width: parent.width - 44; anchors.verticalCenter: parent.verticalCenter
+            font.family: theme.font; font.pixelSize: 14
+            color: theme.text
+            clip: true
+            selectByMouse: true
+            Text { visible: !find.text; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Find by name"); font: find.font; color: theme.textSecondary }
+            Accessible.role: Accessible.EditableText
+            Accessible.name: qsTr("Find by name")
+        }
+        FluentIcon { x: parent.width - 30; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 20; color: theme.textSecondary }
+    }
+
+    Flickable {
+        x: view.chatMode ? 1 : 21; y: view.chatMode ? 49 : 68.3
+        width: view.chatMode ? Math.min(890, parent.width - 2) : Math.min(836, parent.width - 56); height: parent.height - y
+        contentHeight: list.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        Column {
+            id: list
+            width: parent.width
+            Rectangle { width: parent.width; height: 0.67; color: theme.divider }
+            Repeater {
+                model: view.shown
+                Rectangle {
+                    id: row
+                    required property var modelData
+                    width: list.width; height: 65
+                    color: rowHover.hovered ? theme.menuHover : "transparent"
+                    HoverHandler { id: rowHover }
+                    AppIcon {
+                        x: 48; y: 14.4; width: 36; height: 36
+                        source: /^(https|file):\/\//.test(row.modelData.icon || "") ? row.modelData.icon : ""
+                    }
+                    Text {
+                        x: 91; y: 16.4; width: parent.width - 160; elide: Text.ElideRight
+                        text: row.modelData.name || row.modelData.id
+                        font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold
+                        lineHeight: 20; lineHeightMode: Text.FixedHeight
+                        color: theme.onFill(row, theme.text)
+                    }
+                    Text {
+                        x: 91; y: 36.4; width: parent.width - 160; elide: Text.ElideRight
+                        text: row.modelData.publisher || ""
+                        font.family: theme.font; font.pixelSize: 14
+                        lineHeight: 16; lineHeightMode: Text.FixedHeight
+                        color: theme.onFill(row, theme.textSecondary)
+                    }
+                    Rectangle {
+                        id: more
+                        x: 758.7 - (836 - list.width); y: 17; width: 32; height: 31.3; radius: 4
+                        color: moreH.hovered ? theme.hover : "transparent"
+                        FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(more, theme.textStrong) }
+                        HoverHandler { id: moreH; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: { rowMenu.app = row.modelData; rowMenu.parent = more; rowMenu.x = more.width - rowMenu.implicitWidth; rowMenu.y = more.height + 4; rowMenu.open() } }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("More options")
+                    }
+                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
+                }
+            }
+        }
+    }
+
+    MenuPopup {
+        id: rowMenu
+        property var app: null
+        margins: 8
+        items: [{ key: "link", label: qsTr("Copy link"), icon: "link-20" }].concat(view.owner ? [{ key: "remove", label: qsTr("Remove"), icon: "delete-20" }] : [])
+        onPicked: i => {
+            const k = items[i].key
+            if (k === "link") backend.copyText("https://teams.microsoft.com/l/app/" + rowMenu.app.id + "?source=manage-apps-copy-link")
+            else if (k === "remove") backend.channelAction(view.chatMode ? "chat-app-remove" : "team-app-remove", view.teamId, view.scope, rowMenu.app.id)
+        }
+    }
+
+    // Create an outgoing webhook.
+    Popup {
+        id: webhook
+        property string icon: ""
+        function start() { nameField.text = ""; urlField.text = ""; descField.text = ""; icon = ""; open(); nameField.forceActiveFocus() }
+        readonly property bool valid: nameField.text.trim().length > 0 && /^https:\/\//i.test(urlField.text.trim()) && descField.text.trim().length > 0
+        anchors.centerIn: Overlay.overlay
+        modal: true; width: 600; height: 561.8; padding: 24
+        closePolicy: Popup.CloseOnEscape
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        Overlay.modal: Rectangle { color: theme.pick(Qt.rgba(0, 0, 0, 0.4), Qt.rgba(0, 0, 0, 0.5)) }
+        FileDialog {
+            id: iconFile
+            title: qsTr("Profile picture")
+            nameFilters: [qsTr("PNG (*.png)")]
+            onAccepted: webhook.icon = selectedFile.toString()
+        }
+        Item {
+            anchors.fill: parent
+            Text { y: 0.7; text: qsTr("Create an outgoing webhook"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 28; lineHeightMode: Text.FixedHeight; color: theme.text }
+            Text {
+                y: 36.6; width: parent.width; wrapMode: Text.Wrap
+                textFormat: Text.StyledText
+                text: qsTr("Outgoing webhooks allow you to send commands to services that respond with messages and rich cards. While you control whether data is sent to or received from third parties, Microsoft recommends that you only integrate with trusted systems. <0>%1</0> about outgoing webhooks.").arg(qsTr("Click to learn more")).replace("<0>", "<a href=\"https://docs.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/add-outgoing-webhook\">").replace("</0>", "</a>")
+                linkColor: theme.brandForeground1
+                font.family: theme.font; font.pixelSize: 14
+                lineHeight: 20; lineHeightMode: Text.FixedHeight
+                color: theme.text
+                onLinkActivated: link => Qt.openUrlExternally(link)
+                HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            }
+            FieldLabel { y: 148; text: qsTr("Name") }
+            Field { id: nameField; y: 170.6 }
+            FieldLabel { y: 219; text: qsTr("Callback URL") }
+            Field { id: urlField; y: 241.6 }
+            FieldLabel { y: 290; text: qsTr("Description*") }
+            Rectangle {
+                y: 312.6; width: parent.width; height: 76.7; radius: 4
+                color: theme.inputFilled; border.color: theme.transparentStroke
+                TextEdit {
+                    id: descField
+                    x: 12; y: 6; width: parent.width - 24; height: parent.height - 12
+                    wrapMode: TextEdit.Wrap
+                    font.family: theme.font; font.pixelSize: 14
+                    color: theme.text
+                    clip: true
+                    Accessible.role: Accessible.EditableText
+                    Accessible.name: qsTr("Description")
+                }
+                Rectangle { visible: descField.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
+            }
+            Text { y: 407; text: qsTr("Profile picture (optional) - 30kb max, png only"); font.family: theme.font; font.pixelSize: 12; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+            Row {
+                y: 431; spacing: 8
+                Rectangle {
+                    id: hcFill2
+                    width: chooseText.implicitWidth + 16; height: 22; radius: 2
+                    color: chooseHover.hovered ? theme.pick("#E5E5E5", "#3D3D3D", "#1AEBFF") : theme.pick("#EFEFEF", "#333333", "#000000")
+                    border.color: theme.pick("#767676", "#999999", "#FFFFFF"); border.width: 1
+                    Text { id: chooseText; anchors.centerIn: parent; text: qsTr("Choose File"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, theme.text) }
+                    HoverHandler { id: chooseHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: iconFile.open() }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("Choose File")
+                }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: webhook.icon ? webhook.icon.split("/").pop() : qsTr("No file chosen"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            }
+            Row {
+                anchors.right: parent.right; y: 479.1
+                spacing: 10
+                Btn { text: qsTr("Cancel"); onClicked: webhook.close() }
+                Btn {
+                    text: qsTr("Create"); primary: true; enabled: webhook.valid
+                    onClicked: {
+                        backend.channelAction("team-webhook", view.teamId, view.teamThread, JSON.stringify({ name: nameField.text.trim(), url: urlField.text.trim(), description: descField.text.trim(), icon: webhook.icon.replace(/^file:\/\//, "") }))
+                        webhook.close()
+                    }
+                }
+            }
+        }
+    }
+
+    component FieldLabel: Row {
+        property string text
+        spacing: 4
+        Text { text: parent.text; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+        Text { text: "*"; font.family: theme.font; font.pixelSize: 12; color: theme.redForeground3 }
+    }
+    component Field: Rectangle {
+        property alias text: input.text
+        function forceActiveFocus() { input.forceActiveFocus() }
+        width: parent.width; height: 32; radius: 4
+        color: theme.inputFilled; border.color: theme.transparentStroke
+        TextInput {
+            id: input
+            x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter
+            font.family: theme.font; font.pixelSize: 14
+            color: theme.text
+            clip: true
+            selectByMouse: true
+        }
+        Rectangle { visible: input.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
+    }
+    component Plain: Rectangle {
+        id: pb
+        property string icon
+        property string text
+        property bool active: false
+        signal clicked()
+        width: pbRow.implicitWidth + 24; height: 31.3; radius: 4
+        color: pbHover.hovered ? theme.menuHover : "transparent"
+        Row {
+            id: pbRow
+            x: 12; anchors.verticalCenter: parent.verticalCenter
+            spacing: 6
+            FluentIcon { name: pb.icon; size: 20; color: theme.onFill(pb, pb.active ? theme.brand : theme.textStrong) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: pb.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(pb, pb.active ? theme.brand : theme.textStrong) }
+        }
+        HoverHandler { id: pbHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: pb.clicked() }
+        Accessible.role: Accessible.Button
+        Accessible.name: text
+    }
+    component Btn: Rectangle {
+        id: btn
+        property string text
+        property bool primary: false
+        signal clicked()
+        width: 96; height: 31.3; radius: 4
+        color: !enabled ? theme.bgDisabled : primary ? (btnHover.hovered ? theme.brandHover : theme.brandFill) : (btnHover.hovered ? theme.menuHover : theme.surface)
+        border.color: primary || !enabled ? "transparent" : theme.stroke; border.width: 0.67
+        Text { anchors.centerIn: parent; text: btn.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(btn, !btn.enabled ? theme.disabled : btn.primary ? theme.textOnBrand : theme.text) }
+        HoverHandler { id: btnHover; enabled: btn.enabled; cursorShape: Qt.PointingHandCursor }
+        TapHandler { enabled: btn.enabled; onTapped: btn.clicked() }
+        Accessible.role: Accessible.Button
+        Accessible.name: text
+    }
+
+    // Test hooks.
+    function webhookForTest() { return webhook }
+    function rowMenuForTest() { return rowMenu }
+}

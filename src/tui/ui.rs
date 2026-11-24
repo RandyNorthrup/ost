@@ -1,12 +1,12 @@
 //! UI rendering for the TUI
 
 use ratatui::{
+    Frame,
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Paragraph, Widget},
-    Frame,
 };
 
 use super::app::{App, Pane};
@@ -109,7 +109,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 
     // Render help popup overlay (on top of everything else)
     if app.show_help {
-        help::render_help_popup(frame);
+        help::render_help_popup(frame, main_area);
     }
 }
 

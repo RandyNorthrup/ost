@@ -5,14 +5,14 @@
 //! 2. Start transcription via call recorder service
 //! 3. Start recording via call recorder service
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use chrono::Utc;
 use std::time::Duration;
 
 use super::call_test::extract_call_payload;
 use super::signaling::{
-    self, trouter_callback, ConversationCallParams, SKYPE_CLIENT_HEADER, TEAMS_PARTITION,
-    TEAMS_REGION, TEAMS_RING,
+    self, ConversationCallParams, SKYPE_CLIENT_HEADER, TEAMS_PARTITION, TEAMS_REGION, TEAMS_RING,
+    trouter_callback,
 };
 use crate::trouter::websocket::TrouterSocket;
 
@@ -22,8 +22,7 @@ const RECORDER_BOT_MRI: &str = "28:bdd75849-e0a6-4cce-8fc1-d7c0d4da43e5";
 /// FlightProxy recorder service base URL.
 /// Captured from USEA region; other regions use different hostnames
 /// (e.g. aks-prod-euwe-* for West Europe). TODO: derive from region config.
-const RECORDER_SERVICE_BASE: &str =
-    "https://api.flightproxy.teams.microsoft.com/api/v2/ep/aks-prod-usea-p08-api.callrecorder.teams.cloud.microsoft:23444";
+const RECORDER_SERVICE_BASE: &str = "https://api.flightproxy.teams.microsoft.com/api/v2/ep/aks-prod-usea-p08-api.callrecorder.teams.cloud.microsoft:23444";
 
 /// Delay between transcription start and recording start.
 /// Teams web client waits ~11s, but we use 2s to race against solo-call teardown.
@@ -303,23 +302,44 @@ async fn start_recording_at(
 /// After adding the recorder bot, waits for the `addParticipantSuccess` Trouter
 /// callback which contains the recorder service URL and recording session ID.
 /// These are dynamically assigned per call and cannot be hardcoded.
+/// The call a recording is started in, and the tokens it needs.
+pub struct RecordingRequest<'a> {
+    pub conversation_controller: &'a str,
+    pub caller_mri: &'a str,
+    pub participant_id: &'a str,
+    pub endpoint_id: &'a str,
+    pub chain_id: &'a str,
+    pub message_id: &'a str,
+    pub thread_id: &'a str,
+    pub display_name: &'a str,
+    pub trouter_surl: &'a str,
+    pub ic3_token: &'a str,
+    pub recorder_token: &'a str,
+    pub skype_token: &'a str,
+    /// The epconv response's exact addParticipant URL, when it gave one.
+    pub add_participant_url_override: Option<&'a str>,
+}
+
 pub async fn start_call_recording(
     http: &reqwest::Client,
     ws: &mut TrouterSocket,
-    conversation_controller: &str,
-    caller_mri: &str,
-    participant_id: &str,
-    endpoint_id: &str,
-    chain_id: &str,
-    message_id: &str,
-    thread_id: &str,
-    display_name: &str,
-    trouter_surl: &str,
-    ic3_token: &str,
-    recorder_token: &str,
-    skype_token: &str,
-    add_participant_url_override: Option<&str>,
+    req: &RecordingRequest<'_>,
 ) -> Result<RecordingSession> {
+    let RecordingRequest {
+        conversation_controller,
+        caller_mri,
+        participant_id,
+        endpoint_id,
+        chain_id,
+        message_id,
+        thread_id,
+        display_name,
+        trouter_surl,
+        ic3_token,
+        recorder_token,
+        skype_token,
+        add_participant_url_override,
+    } = *req;
     // Use the exact addParticipant URL from the epconv response if available,
     // otherwise derive it from conversationController as a fallback.
     let add_url = match add_participant_url_override {
@@ -574,7 +594,7 @@ async fn wait_for_recorder_info(
                                     Duration::from_secs(5),
                                     signaling::acknowledge_call_acceptance(http, ack_url, conv_params),
                                 ).await {
-                                    Ok(Ok(())) => {},
+                                    Ok(Ok(_)) => {},
                                     Ok(Err(e)) => tracing::warn!("Failed to acknowledge callAcceptance: {:#}", e),
                                     Err(_) => tracing::warn!("Timed out acknowledging callAcceptance (5s)"),
                                 }
@@ -639,7 +659,7 @@ fn extract_recorder_from_payload(payload: &serde_json::Value) -> Option<(String,
         if let Some(host_start) = before.rfind("aks-prod-") {
             let after = &payload_str[idx..];
             // Find end of port (next / or " or space)
-            if let Some(port_end) = after.find(|c: char| c == '/' || c == '"' || c == ' ') {
+            if let Some(port_end) = after.find(['/', '"', ' ']) {
                 let hostname_port = &payload_str[host_start..idx + port_end];
                 let recorder_base = format!(
                     "https://api.flightproxy.teams.microsoft.com/api/v2/ep/{}",
@@ -697,9 +717,7 @@ fn extract_recorder_conv_id(payload: &str) -> Option<String> {
     // Look for /v2/oncommand/{uuid} pattern
     if let Some(idx) = payload.find("/v2/oncommand/") {
         let after = &payload[idx + "/v2/oncommand/".len()..];
-        let end = after
-            .find(|c: char| c == '"' || c == '/' || c == '?' || c == ' ')
-            .unwrap_or(after.len());
+        let end = after.find(['"', '/', '?', ' ']).unwrap_or(after.len());
         let conv_id = &after[..end];
         if !conv_id.is_empty() {
             tracing::debug!("Found recorder conv ID from oncommand URL: {}", conv_id);
@@ -748,9 +766,7 @@ fn extract_conversation_id(url: &str) -> Option<String> {
     let idx = url.find(conv_marker)?;
     let after = &url[idx + conv_marker.len()..];
     // Take until next '/' or '?' or end
-    let end = after
-        .find(|c: char| c == '/' || c == '?')
-        .unwrap_or(after.len());
+    let end = after.find(['/', '?']).unwrap_or(after.len());
     let b64_id = &after[..end];
     if b64_id.is_empty() {
         return None;
@@ -764,8 +780,8 @@ fn extract_conversation_id(url: &str) -> Option<String> {
 /// The conversation controller URL contains a base64url-encoded GUID where the bytes
 /// are in Windows/COM little-endian format (first 3 groups byte-swapped).
 fn decode_base64_uuid(b64: &str) -> Option<String> {
-    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
     let bytes = URL_SAFE_NO_PAD.decode(b64).ok()?;
     if bytes.len() != 16 {
@@ -774,11 +790,22 @@ fn decode_base64_uuid(b64: &str) -> Option<String> {
     // UUID from little-endian bytes (Data1=LE u32, Data2=LE u16, Data3=LE u16, rest=big-endian)
     Some(format!(
         "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        bytes[3], bytes[2], bytes[1], bytes[0],
-        bytes[5], bytes[4],
-        bytes[7], bytes[6],
-        bytes[8], bytes[9],
-        bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+        bytes[3],
+        bytes[2],
+        bytes[1],
+        bytes[0],
+        bytes[5],
+        bytes[4],
+        bytes[7],
+        bytes[6],
+        bytes[8],
+        bytes[9],
+        bytes[10],
+        bytes[11],
+        bytes[12],
+        bytes[13],
+        bytes[14],
+        bytes[15]
     ))
 }
 

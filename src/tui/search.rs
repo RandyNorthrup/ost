@@ -1,12 +1,12 @@
 //! Global search overlay: Ctrl+K activated search across channels, chats, and messages.
 
 use ratatui::{
+    Frame,
     buffer::Buffer,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Widget},
-    Frame,
 };
 
 use super::messages::MessagesState;

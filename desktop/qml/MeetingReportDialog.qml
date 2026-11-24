@@ -1,0 +1,254 @@
+import QtQuick
+import QtQuick.Controls.Basic
+
+// Teams' "Report a security concern" for a meeting (More ▸ Report a
+// concern; measured on winpc, 2026-11-09): 600 x 460.67, radius 8,
+// padding 24:
+// - the title (20/28 semibold) and Close (32 x 31.33);
+// - the meeting card, y 64, 550.67 x 76, #E8EBFA with a 6 px #5B5FC7 bar:
+//   its title (14/20 semibold), start ("Nov 6, 3:00 PM", 12/20 #424242)
+//   and organizer, 18 in;
+// - "Enter an explanation (optional)", 4 rows (92 tall) filled #F5F5F5,
+//   with "{n}/250 maximum characters" (12/20 #616161) under it;
+// - "Report participants (optional)" (14/20 semibold) over a 32 px
+//   picker: everyone in the meeting or its chat but you; chosen people
+//   show as pills (16 px avatar, 12/16 name) before "Search participants";
+// - "This message will be shared for review. The review process is fully
+//   determined by your organization." (12/16 #616161);
+// - Cancel and Report (96 x 31.33). Sent: "Your report was sent"; failed:
+//   "Failed to submit report. Please try again." (14/20 PaletteRedForeground1,
+//   12 below it) right under the card, moving the rest 48 down.
+// Report this person (the participant menu's Report; the same dialog in
+// its "person" mode, 600 x 359.33): "Report this person", a 48 px card
+// (#F5F5F5, radius 4, padding 8 x 12: their 32 px avatar and their name
+// 14/20 semibold) instead of the meeting card, and no picker; the report
+// names that one person.
+Popup {
+    id: root
+    /// {title, start, organizer}
+    property var meeting: ({})
+    /// [{id, name}] who can be reported.
+    property var people: []
+    /// {id, name}: Report this person (the participant menu) instead.
+    property var person: null
+    /// A meeting chat's thread (the chat list's Report a concern) and its
+    /// meeting's iCalUId: the report names the chat, not a call.
+    property string chatThread: ""
+    property string chatIcal: ""
+    readonly property bool personMode: !!person
+    // Where the explanation starts, and what's below it (Teams' layout).
+    readonly property real errorShift: failed ? 48 : 0
+    readonly property real textTop: (personMode ? 128.67 : 156.67) + errorShift
+    readonly property real counterTop: textTop + 102.67
+    readonly property real disclaimerTop: personMode ? counterTop + 48 : counterTop + 121.33
+    readonly property real buttonsTop: disclaimerTop + 24
+    signal reported()
+    modal: true; focus: true
+    width: 600; height: buttonsTop + 56
+    padding: 0
+    anchors.centerIn: Overlay.overlay
+    closePolicy: Popup.CloseOnEscape
+    background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+    Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
+    readonly property bool sending: backend.reportResult === "sending"
+    readonly property bool failed: backend.reportResult === "error" && opened
+    property var chosen: []
+    function openListForTest() { search.forceActiveFocus(); list.open() }
+    function chooseFirstForTest() { if (list.matches.length) { chosen = chosen.concat([list.matches[0]]); list.close() } }
+    onOpened: { why.text = ""; chosen = personMode ? [person] : []; search.text = ""; why.forceActiveFocus() }
+    Connections {
+        target: backend
+        function onReportResultChanged() {
+            if (root.opened && backend.reportResult === "ok") { root.close(); root.reported() }
+        }
+    }
+
+    Text { x: 24.67; y: 24.67; height: 31.33; verticalAlignment: Text.AlignVCenter; text: root.personMode ? qsTr("Report this person") : qsTr("Report a security concern"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+    Rectangle {
+        id: hcFill1
+        x: 543.33; y: 24.67; width: 32; height: 31.33; radius: 4
+        color: closeHover.hovered ? theme.menuHover : "transparent"
+        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
+        HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: root.close() }
+        Accessible.role: Accessible.Button
+        Accessible.name: qsTr("Close")
+    }
+    // The cards carry Fluent's shadow2 (measured from Teams' styles).
+    FluentSurface {
+        x: 24.67; y: 64; width: 550.67; height: root.personMode ? 48 : 76
+        depth: 2; radius: 4
+        color: root.personMode ? theme.pick("#F5F5F5", "#1F1F1F", "#000000") : theme.pick("#E8EBFA", "#2B2B40", "#000000")
+    }
+    // The person reported.
+    Rectangle {
+        visible: root.personMode
+        x: 24.67; y: 64; width: 550.67; height: 48; radius: 4
+        color: "transparent"
+        Avatar {
+            x: 12; y: 8; size: 32
+            name: root.person ? root.person.name || "" : ""
+            photoId: root.person ? root.person.id || "" : ""
+        }
+        Text {
+            x: 52; y: 14; height: 20; width: parent.width - 64
+            verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
+            text: root.person ? root.person.name || "" : ""
+            font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+            color: theme.text
+        }
+    }
+    // The meeting.
+    Rectangle {
+        visible: !root.personMode
+        x: 24.67; y: 64; width: 550.67; height: 76; radius: 4
+        color: theme.pick("#E8EBFA", "#2B2B40", "#000000")
+        clip: true
+        Rectangle { width: 6; height: parent.height; color: theme.brandFill }
+        Column {
+            x: 18; y: 8
+            Text { width: 500; elide: Text.ElideRight; height: 20; verticalAlignment: Text.AlignVCenter; text: root.meeting.title || ""; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            Text { height: 20; verticalAlignment: Text.AlignVCenter; text: root.meeting.start || ""; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
+            Text { height: 20; verticalAlignment: Text.AlignVCenter; text: root.meeting.organizer || ""; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
+        }
+    }
+    // Sending failed: Teams says so under the card.
+    Text {
+        visible: root.failed
+        x: 24.67; y: (root.personMode ? 112 : 140) + 16; height: 20; width: 550.67
+        verticalAlignment: Text.AlignVCenter
+        text: qsTr("Failed to submit report. Please try again.")
+        font.family: theme.font; font.pixelSize: 14
+        color: theme.redForeground1
+    }
+    // The explanation.
+    Rectangle {
+        x: 25.33; y: root.textTop; width: 549.33; height: 92; radius: 4
+        color: theme.inputFilled; border.color: theme.transparentStroke
+        clip: true
+        TextEdit {
+            id: why
+            x: 12; y: 6; width: parent.width - 24; height: parent.height - 12
+            wrapMode: TextEdit.Wrap
+            font.family: theme.font; font.pixelSize: 14; color: theme.text
+            selectByMouse: true
+            onTextChanged: if (length > 250) remove(250, length)
+            Text { visible: !why.text; text: qsTr("Enter an explanation (optional)"); font: why.font; color: theme.textSecondary }
+            Accessible.role: Accessible.EditableText
+            Accessible.name: qsTr("Enter an explanation (optional)")
+        }
+        Rectangle { visible: why.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; color: theme.brand }
+    }
+    Text { x: 24.67; y: root.counterTop; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("%1/%2 maximum characters").arg(why.length).arg(250); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+    Text { visible: !root.personMode; x: 24.67; y: root.counterTop + 36; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Report participants (optional)"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+    // The participant picker.
+    Rectangle {
+        id: picker
+        visible: !root.personMode
+        x: 24.67; y: root.counterTop + 60.67; width: 550.67; height: 32; radius: 4
+        color: theme.surface
+        border.color: theme.stroke; border.width: 0.67
+        Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: 0.67; color: theme.textSecondary }
+        Row {
+            x: 12.67; anchors.verticalCenter: parent.verticalCenter
+            spacing: 2
+            Repeater {
+                model: root.chosen
+                Rectangle {
+                    id: hcFill2
+                    required property var modelData
+                    height: 20; radius: 10
+                    width: pillRow.implicitWidth + 4
+                    color: theme.menuHover
+                    Row {
+                        id: pillRow
+                        x: 1.67; anchors.verticalCenter: parent.verticalCenter
+                        spacing: 6
+                        Avatar { size: 16; name: modelData.name; photoId: modelData.id || "" }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: modelData.name; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill2, theme.textStrong) }
+                    }
+                    TapHandler { onTapped: root.chosen = root.chosen.filter(p => p.id !== modelData.id) }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("Remove %1").arg(modelData.name)
+                }
+            }
+            TextInput {
+                id: search
+                width: picker.width - 12.67 - 30 - x
+                anchors.verticalCenter: parent.verticalCenter
+                font.family: theme.font; font.pixelSize: 14; color: theme.text
+                clip: true
+                onTextChanged: if (activeFocus) list.open()
+                onActiveFocusChanged: if (activeFocus) list.open()
+                Text { visible: !search.text; text: qsTr("Search participants"); font: search.font; color: theme.textSecondary }
+                Accessible.role: Accessible.ComboBox
+                Accessible.name: qsTr("Search participants")
+            }
+        }
+        FluentIcon { x: parent.width - 28; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 16; color: theme.textSecondary }
+        TapHandler { onTapped: { search.forceActiveFocus(); list.visible ? list.close() : list.open() } }
+        Popup {
+            id: list
+            y: picker.height + 3; x: 0
+            width: picker.width; padding: 4
+            height: Math.min(300, col.implicitHeight + 8)
+            background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+            readonly property var matches: root.people.filter(p => !root.chosen.some(c => c.id === p.id)
+                && p.name.toLowerCase().indexOf(search.text.toLowerCase()) >= 0)
+            Flickable {
+                anchors.fill: parent
+                contentHeight: col.implicitHeight
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                Column {
+                    id: col
+                    width: parent.width
+                    Repeater {
+                        model: list.matches
+                        Rectangle {
+                            id: opt
+                            required property var modelData
+                            width: col.width; height: 32; radius: 4
+                            color: oh.hovered ? theme.menuHover : "transparent"
+                            Text { x: 8; anchors.verticalCenter: parent.verticalCenter; text: opt.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(opt, theme.text) }
+                            HoverHandler { id: oh; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: { root.chosen = root.chosen.concat([opt.modelData]); search.text = ""; list.close() } }
+                            Accessible.role: Accessible.ListItem
+                            Accessible.name: opt.modelData.name
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Text {
+        x: 24.67; y: root.disclaimerTop; width: 550.67
+        wrapMode: Text.Wrap
+        lineHeight: 16; lineHeightMode: Text.FixedHeight
+        text: qsTr("This message will be shared for review. The review process is fully determined by your organization.")
+        font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+    }
+    Row {
+        x: 375.33; y: root.buttonsTop; spacing: 8
+        Rectangle {
+            id: hcFill3
+            width: 96; height: 31.33; radius: 4
+            color: cancelHover.hovered && !root.sending ? theme.menuHover : theme.surface; border.color: theme.stroke; border.width: 0.67
+            Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, root.sending ? theme.disabled : theme.text) }
+            HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { enabled: !root.sending; onTapped: root.close() }
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("Cancel")
+        }
+        Rectangle {
+            id: hcFill4
+            width: 96; height: 31.33; radius: 4
+            color: root.sending ? theme.bgDisabled : reportHover.hovered ? theme.brandHover : theme.brandFill
+            Text { anchors.centerIn: parent; text: qsTr("Report"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, root.sending ? theme.disabled : "white") }
+            HoverHandler { id: reportHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { enabled: !root.sending; onTapped: root.chatThread ? backend.reportMeetingChat(root.chatThread, root.chatIcal, why.text, JSON.stringify(root.chosen.map(p => p.id))) : backend.reportMeeting(why.text, JSON.stringify(root.chosen.map(p => p.id))) }
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("Report")
+        }
+    }
+}

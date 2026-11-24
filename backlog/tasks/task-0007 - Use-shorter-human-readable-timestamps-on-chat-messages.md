@@ -3,8 +3,8 @@ id: TASK-0007
 title: Use shorter human-readable timestamps on chat messages
 status: Done
 assignee: []
-created_date: '2026-02-05 23:20'
-updated_date: '2026-02-05 23:50'
+created_date: 2026-02-05 23:20
+updated_date: '2026-11-20T01:22:00Z'
 labels:
   - tui
   - ux
@@ -20,11 +20,17 @@ Chat messages currently display raw ISO 8601 timestamps like `2026-01-29T14:34:2
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Messages from today show time only (e.g. '14:34')
-- [ ] #2 Messages from this week show day and time (e.g. 'Mon 14:34')
-- [ ] #3 Older messages show date in short form (e.g. 'Jan 29')
-- [ ] #4 No raw ISO 8601 timestamps visible in the messages pane
+- [x] #1 Messages from today show time only (e.g. '14:34')
+- [x] #2 Messages from this week show day and time (e.g. 'Mon 14:34')
+- [x] #3 Older messages show date in short form (e.g. 'Jan 29')
+- [x] #4 No raw ISO 8601 timestamps visible in the messages pane
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-19 audit: criteria checked to match the Done status and final summary.
+<!-- SECTION:NOTES:END -->
 
 ## Final Summary
 

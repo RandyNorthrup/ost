@@ -27,14 +27,100 @@ pub struct Config {
     pub recorder_token: Option<StoredToken>,
     /// Regional endpoint URLs from authsvc response (JSON stored as string for TOML compat)
     pub region_gtms: Option<String>,
+    /// How the stored tokens were signed in: None for the device code (Teams
+    /// desktop's client), "teams-web" for the browser sign-in (Teams on the
+    /// web's client). Not a secret.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_flow: Option<String>,
+    /// Teams' authz `licenseDetails` (JSON as a string, like region_gtms).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license_details: Option<String>,
+    /// True when the tokens above live in the desktop keyring instead of
+    /// this file; the file then holds no secrets.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub tokens_in_keyring: bool,
+}
+
+/// Every secret in [`Config`], stored as one keyring entry.
+#[derive(Default, Serialize, Deserialize)]
+struct Secrets {
+    access_token: Option<StoredToken>,
+    refresh_token: Option<String>,
+    skype_token: Option<StoredToken>,
+    graph_token: Option<StoredToken>,
+    ic3_token: Option<StoredToken>,
+    recorder_token: Option<StoredToken>,
+}
+
+const KEYRING_SERVICE: &str = "ost";
+const KEYRING_ACCOUNT: &str = "teams-tokens";
+
+/// A second account's profile (`OST_PROFILE=name`): its own config folder
+/// and keyring entry, so two accounts can be signed in side by side.
+pub fn profile() -> Option<String> {
+    std::env::var("OST_PROFILE")
+        .ok()
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+}
+
+/// The keyring account the tokens live under ("teams-tokens", or
+/// "teams-tokens:{profile}").
+fn keyring_account() -> String {
+    match profile() {
+        Some(p) => format!("{KEYRING_ACCOUNT}:{p}"),
+        None => KEYRING_ACCOUNT.to_string(),
+    }
+}
+
+/// The keyring is skipped when OST_NO_KEYRING is set (CI, headless use).
+fn keyring_entry() -> Option<keyring::Entry> {
+    if std::env::var_os("OST_NO_KEYRING").is_some() {
+        return None;
+    }
+    keyring::Entry::new(KEYRING_SERVICE, &keyring_account()).ok()
 }
 
 impl Config {
+    /// The signed-in tenant: the recorded one, or failing that the `tid` of
+    /// the stored access token (configs written before it was recorded).
+    pub fn tenant_id(&self) -> Option<String> {
+        self.tenant_id.clone().or_else(|| {
+            self.access_token
+                .as_ref()
+                .and_then(|t| tenant_id_from_jwt(&t.token))
+        })
+    }
+
+    /// The signed-in user's display name (`name` claim of the access token).
+    pub fn display_name(&self) -> Option<String> {
+        let token = self.access_token.as_ref()?;
+        jwt_claim(&token.token, "name").filter(|n| !n.trim().is_empty())
+    }
+
+    /// The signed-in user's sign-in name (`upn`, else `unique_name`).
+    pub fn user_principal_name(&self) -> Option<String> {
+        let token = self.access_token.as_ref()?;
+        jwt_claim(&token.token, "upn")
+            .or_else(|| jwt_claim(&token.token, "unique_name"))
+            .filter(|n| n.contains('@'))
+    }
+
+    /// The signed-in user's Entra object id (`oid` claim), validated as a GUID.
+    pub fn object_id(&self) -> Option<String> {
+        let token = self.access_token.as_ref()?;
+        jwt_claim(&token.token, "oid").filter(|o| is_guid(o))
+    }
+
     /// Get config directory path
-    fn config_dir() -> Result<PathBuf> {
+    pub fn config_dir() -> Result<PathBuf> {
         let proj_dirs = ProjectDirs::from("com", "teams-cli", "teams-cli")
             .context("Could not determine config directory")?;
-        Ok(proj_dirs.config_dir().to_path_buf())
+        let base = proj_dirs.config_dir().to_path_buf();
+        Ok(match profile() {
+            Some(p) => base.join("profiles").join(p),
+            None => base,
+        })
     }
 
     /// Get config file path
@@ -42,7 +128,7 @@ impl Config {
         Ok(Self::config_dir()?.join("config.toml"))
     }
 
-    /// Load configuration from disk
+    /// Load configuration from disk, and the tokens from the keyring.
     pub fn load() -> Result<Self> {
         let path = Self::config_path()?;
 
@@ -51,27 +137,81 @@ impl Config {
         }
 
         let content = fs::read_to_string(&path).context("Failed to read config file")?;
-        toml::from_str(&content).context("Failed to parse config file")
+        let mut config: Self = toml::from_str(&content).context("Failed to parse config file")?;
+        if config.tokens_in_keyring {
+            match keyring_entry().map(|e| e.get_password()) {
+                Some(Ok(json)) => config.apply_secrets(
+                    serde_json::from_str(&json).context("Keyring entry is not valid")?,
+                ),
+                Some(Err(keyring::Error::NoEntry)) => {
+                    tracing::warn!("Tokens were in the keyring but are gone; sign in again");
+                }
+                Some(Err(e)) => return Err(anyhow::anyhow!("Could not read the keyring: {e}")),
+                None => tracing::warn!("Tokens are in the keyring, but the keyring is disabled"),
+            }
+        }
+        Ok(config)
     }
 
-    /// Save configuration to disk
+    /// Save configuration. Tokens go to the desktop keyring when one is
+    /// available, so the file on disk holds no secrets; without a keyring
+    /// they are written to the file, which is created owner-only (0600).
     pub fn save(&self) -> Result<()> {
         let dir = Self::config_dir()?;
         fs::create_dir_all(&dir).context("Failed to create config directory")?;
 
-        let path = Self::config_path()?;
-        let content = toml::to_string_pretty(self).context("Failed to serialize config")?;
-        fs::write(&path, content).context("Failed to write config file")?;
-
-        // Set restrictive permissions on config file (contains tokens)
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let perms = fs::Permissions::from_mode(0o600);
-            fs::set_permissions(&path, perms).context("Failed to set config permissions")?;
+        let secrets = self.secrets();
+        let mut on_disk = self.clone_settings();
+        match keyring_entry() {
+            Some(entry) => {
+                let json = serde_json::to_string(&secrets).context("Failed to encode tokens")?;
+                match entry.set_password(&json) {
+                    Ok(()) => on_disk.tokens_in_keyring = true,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Keyring unavailable ({e}); storing tokens in the config file"
+                        );
+                        on_disk.apply_secrets(secrets);
+                    }
+                }
+            }
+            None => on_disk.apply_secrets(secrets),
         }
 
-        Ok(())
+        let path = Self::config_path()?;
+        let content = toml::to_string_pretty(&on_disk).context("Failed to serialize config")?;
+        write_private(&path, content.as_bytes())
+    }
+
+    fn secrets(&self) -> Secrets {
+        Secrets {
+            access_token: self.access_token.clone(),
+            refresh_token: self.refresh_token.clone(),
+            skype_token: self.skype_token.clone(),
+            graph_token: self.graph_token.clone(),
+            ic3_token: self.ic3_token.clone(),
+            recorder_token: self.recorder_token.clone(),
+        }
+    }
+
+    fn apply_secrets(&mut self, s: Secrets) {
+        self.access_token = s.access_token;
+        self.refresh_token = s.refresh_token;
+        self.skype_token = s.skype_token;
+        self.graph_token = s.graph_token;
+        self.ic3_token = s.ic3_token;
+        self.recorder_token = s.recorder_token;
+    }
+
+    /// Everything except the tokens.
+    fn clone_settings(&self) -> Self {
+        Self {
+            tenant_id: self.tenant_id.clone(),
+            region_gtms: self.region_gtms.clone(),
+            license_details: self.license_details.clone(),
+            auth_flow: self.auth_flow.clone(),
+            ..Self::default()
+        }
     }
 
     pub fn get_skype_token(&self) -> Option<StoredToken> {
@@ -88,6 +228,16 @@ impl Config {
 
     pub fn get_region_gtms(&self) -> Option<serde_json::Value> {
         self.region_gtms
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok())
+    }
+
+    pub fn set_license_details(&mut self, l: serde_json::Value) {
+        self.license_details = Some(l.to_string());
+    }
+
+    pub fn get_license_details(&self) -> Option<serde_json::Value> {
+        self.license_details
             .as_deref()
             .and_then(|s| serde_json::from_str(s).ok())
     }
@@ -123,6 +273,12 @@ impl TokenStore for Config {
     }
 
     fn set_access_token(&mut self, token: String, expires_in: Option<u64>) {
+        // Calling needs the tenant id, and nothing else records it: take it
+        // from the token's `tid` claim each time the token is stored, so both
+        // a fresh login and a refresh keep it current.
+        if let Some(tid) = tenant_id_from_jwt(&token) {
+            self.tenant_id = Some(tid);
+        }
         self.access_token = Some(StoredToken::new(token, expires_in));
     }
 
@@ -135,6 +291,13 @@ impl TokenStore for Config {
     }
 
     fn clear_tokens(&mut self) {
+        if let Some(entry) = keyring_entry() {
+            match entry.delete_credential() {
+                Ok(()) | Err(keyring::Error::NoEntry) => {}
+                Err(e) => tracing::warn!("Could not remove tokens from the keyring: {e}"),
+            }
+        }
+        self.tokens_in_keyring = false;
         self.access_token = None;
         self.refresh_token = None;
         self.skype_token = None;
@@ -142,5 +305,299 @@ impl TokenStore for Config {
         self.ic3_token = None;
         self.recorder_token = None;
         self.region_gtms = None;
+        self.license_details = None;
+        self.auth_flow = None;
+    }
+}
+
+/// Write a file readable only by its owner, without a window in which it is
+/// briefly world-readable (create with 0600 rather than chmod afterwards).
+fn write_private(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
+    use std::io::Write;
+    let tmp = path.with_extension("toml.tmp");
+    let mut opts = fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut f = opts.open(&tmp).context("Failed to write config file")?;
+    f.write_all(bytes).context("Failed to write config file")?;
+    f.sync_all().ok();
+    fs::rename(&tmp, path).context("Failed to replace config file")?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+            .context("Failed to set config permissions")?;
+    }
+    Ok(())
+}
+
+/// Read one string claim from a JWT payload without verifying the token.
+///
+/// Tokens here were issued to us by Azure AD over TLS; claims read this way
+/// are used only for display and routing, never for authorization.
+fn jwt_claim(token: &str, claim: &str) -> Option<String> {
+    use base64::Engine;
+    let payload = token.split('.').nth(1)?;
+    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload.trim_end_matches('='))
+        .ok()?;
+    let json: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
+    Some(json.get(claim)?.as_str()?.to_string())
+}
+
+fn is_guid(s: &str) -> bool {
+    s.len() == 36
+        && s.chars().enumerate().all(|(i, c)| {
+            matches!(i, 8 | 13 | 18 | 23) == (c == '-') && (c == '-' || c.is_ascii_hexdigit())
+        })
+}
+
+/// Read the `tid` (tenant id) claim, accepting only a GUID.
+fn tenant_id_from_jwt(token: &str) -> Option<String> {
+    jwt_claim(token, "tid").filter(|t| is_guid(t))
+}
+
+/// An account signed in on this device (Teams' "Accounts and orgs" list):
+/// each lives in its own profile, with its own tokens and windows.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct Account {
+    /// The profile ("" for the first account, else `OST_PROFILE`).
+    pub profile: String,
+    pub upn: String,
+    pub name: String,
+    #[serde(default)]
+    pub object_id: String,
+    /// The account's last presence, as its window last saw it.
+    #[serde(default)]
+    pub availability: String,
+    /// Its organisation's name (Teams' Accounts and orgs list).
+    #[serde(default)]
+    pub org: String,
+}
+
+fn accounts_path() -> Result<PathBuf> {
+    let proj_dirs = ProjectDirs::from("com", "teams-cli", "teams-cli").context("Could not determine config directory")?;
+    Ok(proj_dirs.config_dir().join("accounts.json"))
+}
+
+/// Every account signed in on this device, the first one first.
+pub fn accounts() -> Vec<Account> {
+    accounts_path()
+        .ok()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// The list with `a` recorded (by profile), the first profile first.
+pub fn with_account(mut list: Vec<Account>, a: Account) -> Vec<Account> {
+    match list.iter_mut().find(|x| x.profile == a.profile) {
+        Some(x) => *x = a,
+        None => list.push(a),
+    }
+    list.sort_by_key(|x| !x.profile.is_empty());
+    list
+}
+
+/// Records this profile's account (at sign-in and as its presence
+/// changes); `None` removes it (signed out).
+pub fn record_account(a: Option<Account>) -> Result<()> {
+    let me = profile().unwrap_or_default();
+    let list: Vec<Account> = accounts().into_iter().filter(|x| x.profile != me || a.is_some()).collect();
+    let list = match a {
+        Some(a) => with_account(list, Account { profile: me, ..a }),
+        None => list,
+    };
+    let path = accounts_path()?;
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    write_private(&path, serde_json::to_string_pretty(&list)?.as_bytes())
+}
+
+/// A profile name for the next account ("account2", "account3", …) that
+/// no account or profile folder uses yet.
+pub fn new_profile_name(list: &[Account], taken: &[String]) -> String {
+    (2..)
+        .map(|n| format!("account{n}"))
+        .find(|p| !list.iter().any(|a| &a.profile == p) && !taken.contains(p))
+        .expect("a free name")
+}
+
+/// A profile's config folder ("" is the first account's).
+pub fn profile_dir(profile: &str) -> Result<PathBuf> {
+    let base = ProjectDirs::from("com", "teams-cli", "teams-cli")
+        .context("Could not determine config directory")?
+        .config_dir()
+        .to_path_buf();
+    Ok(if profile.is_empty() { base } else { base.join("profiles").join(profile) })
+}
+
+/// What each account's window last published for Teams' "Activity in
+/// other accounts and orgs" (its missed count and recent activity and
+/// chats), read by the other accounts' windows.
+pub fn hub_summary(profile: &str) -> Option<serde_json::Value> {
+    let text = fs::read_to_string(profile_dir(profile).ok()?.join("hub.json")).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+/// Publish this account's summary (written only when it changed).
+pub fn write_hub_summary(json: &str) -> Result<()> {
+    let path = Config::config_dir()?.join("hub.json");
+    if fs::read_to_string(&path).is_ok_and(|old| old == json) {
+        return Ok(());
+    }
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    write_private(&path, json.as_bytes())
+}
+
+/// Teams lets at most two orgs be pinned to the app bar (its hub's
+/// pinningDisabled at two pinned tenants).
+pub const MAX_PINNED_ORGS: usize = 2;
+
+fn hub_pins_path() -> Result<PathBuf> {
+    let proj_dirs = ProjectDirs::from("com", "teams-cli", "teams-cli").context("Could not determine config directory")?;
+    Ok(proj_dirs.config_dir().join("hub-pins.json"))
+}
+
+/// The orgs pinned to the app bar from "Activity in other accounts and
+/// orgs" ("Pin this org"), in the order they were pinned: each account's
+/// address, lower-case (each OST account is one org). One list for the
+/// device, as Teams keeps it for its one app.
+pub fn hub_pins() -> Vec<String> {
+    hub_pins_path()
+        .ok()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// The list with `upn` pinned (added at the end, at most
+/// MAX_PINNED_ORGS) or unpinned.
+pub fn with_hub_pin(mut list: Vec<String>, upn: &str, on: bool) -> Vec<String> {
+    let upn = upn.to_lowercase();
+    list.retain(|u| u != &upn);
+    if on && !upn.is_empty() && list.len() < MAX_PINNED_ORGS {
+        list.push(upn);
+    }
+    list
+}
+
+/// Pin or unpin an account's org.
+pub fn set_hub_pin(upn: &str, on: bool) -> Result<()> {
+    let list = with_hub_pin(hub_pins(), upn, on);
+    let path = hub_pins_path()?;
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    write_private(&path, serde_json::to_string_pretty(&list)?.as_bytes())
+}
+
+/// The profile folders that already exist.
+pub fn profile_folders() -> Vec<String> {
+    ProjectDirs::from("com", "teams-cli", "teams-cli")
+        .and_then(|d| fs::read_dir(d.config_dir().join("profiles")).ok())
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect()
+}
+
+#[cfg(test)]
+mod account_tests {
+    use super::*;
+
+    #[test]
+    fn accounts_keep_one_per_profile_first_account_first() {
+        let a = Account { profile: "account2".into(), upn: "b@x".into(), ..Default::default() };
+        let first = Account { profile: String::new(), upn: "a@x".into(), ..Default::default() };
+        let list = with_account(with_account(vec![], a.clone()), first.clone());
+        assert_eq!(list[0].upn, "a@x");
+        let again = with_account(list, Account { availability: "Busy".into(), ..a });
+        assert_eq!(again.len(), 2);
+        assert_eq!(again[1].availability, "Busy");
+        assert_eq!(new_profile_name(&again, &["account3".into()]), "account4");
+    }
+
+    #[test]
+    fn pinned_orgs_keep_their_order_up_to_two() {
+        let l = with_hub_pin(vec![], "B@x", true);
+        let l = with_hub_pin(l, "a@x", true);
+        assert_eq!(l, ["b@x", "a@x"]);
+        // A third waits (Teams disables Pin this org at two).
+        assert_eq!(with_hub_pin(l.clone(), "c@x", true), ["b@x", "a@x"]);
+        assert_eq!(with_hub_pin(l, "b@x", false), ["a@x"]);
+    }
+}
+
+#[cfg(test)]
+mod tenant_id_tests {
+    use super::*;
+    use base64::Engine;
+
+    fn jwt_with(payload: &str) -> String {
+        let enc = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        format!(
+            "{}.{}.sig",
+            enc.encode(b"{\"alg\":\"none\"}"),
+            enc.encode(payload)
+        )
+    }
+
+    #[test]
+    fn reads_tid_claim() {
+        let t = jwt_with(r#"{"tid":"2716d134-5614-4856-a48d-2002edd9a570","oid":"x"}"#);
+        assert_eq!(
+            tenant_id_from_jwt(&t).as_deref(),
+            Some("2716d134-5614-4856-a48d-2002edd9a570")
+        );
+    }
+
+    #[test]
+    fn rejects_missing_or_malformed_tid() {
+        assert_eq!(tenant_id_from_jwt(&jwt_with(r#"{"oid":"x"}"#)), None);
+        assert_eq!(
+            tenant_id_from_jwt(&jwt_with(r#"{"tid":"../../etc"}"#)),
+            None
+        );
+        assert_eq!(tenant_id_from_jwt("not-a-jwt"), None);
+    }
+
+    #[test]
+    fn identity_claims_come_from_the_access_token() {
+        let mut c = Config::default();
+        assert_eq!(c.display_name(), None);
+        c.set_access_token(
+            jwt_with(r#"{"name":"OST Test 1","oid":"4287e791-1b98-4963-8b94-281c50472683"}"#),
+            Some(3600),
+        );
+        assert_eq!(c.display_name().as_deref(), Some("OST Test 1"));
+        assert_eq!(
+            c.object_id().as_deref(),
+            Some("4287e791-1b98-4963-8b94-281c50472683")
+        );
+        c.set_access_token(jwt_with(r#"{"name":"  ","oid":"nope"}"#), None);
+        assert_eq!(c.display_name(), None);
+        assert_eq!(c.object_id(), None);
+    }
+
+    #[test]
+    fn set_access_token_records_tenant() {
+        let mut c = Config::default();
+        c.set_access_token(
+            jwt_with(r#"{"tid":"09a28c80-30f0-4c4d-98ba-0f7f8d19b780"}"#),
+            Some(3600),
+        );
+        assert_eq!(
+            c.tenant_id.as_deref(),
+            Some("09a28c80-30f0-4c4d-98ba-0f7f8d19b780")
+        );
     }
 }

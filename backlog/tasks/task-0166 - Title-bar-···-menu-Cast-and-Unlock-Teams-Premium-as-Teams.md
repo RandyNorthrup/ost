@@ -1,0 +1,77 @@
+---
+id: TASK-0166
+title: >-
+  Title bar ··· menu as Teams: every item (Premium, Cast, Downloads, Zoom, Get
+  the mobile app)
+status: Done
+assignee:
+  - '@claude'
+created_date: '2026-11-16T00:26:00Z'
+updated_date: '2026-11-16T02:20:00Z'
+labels:
+  - desktop
+  - shell
+dependencies: []
+priority: low
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Teams' title bar Settings and more menu (measured 2026-11-15): 229 wide with 32-tall rows. Its items are Unlock Teams Premium, (separator), Pin window on top, Settings, Cast, Downloads, (separator), the Zoom row (— (100)% + and reset), (separator), Help, Feedback ›, Keyboard shortcuts, and Get the mobile app (New pill). OST's menu is 360 wide with 36-tall rows and has only Pin, Settings, Help, Feedback and Keyboard shortcuts.
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [x] #1 OST's ··· menu has Teams' items, order, separators and geometry
+- [x] #2 Zoom out, Zoom in and reset scale OST's whole window as Teams does, with Teams' steps and Ctrl+-, Ctrl+= and Ctrl+0
+- [x] #3 Downloads, Get the mobile app, Cast and Unlock Teams Premium open what Teams' open, measured on winpc
+<!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- 2026-11-15: built and checked against Teams on winpc (docs/spec/settings-and-more.md).
+  - Menu: Teams' items, order, dividers and geometry. The popover is 238.47 wide and centred under ···, with 32-tall rows, the Zoom row and the New pill. Icons premium-20, cast-20 and page-fit-20 were added from Fluent.
+  - Zoom: 60–400% in 5% steps, measured. Ctrl+- / Ctrl+= / Ctrl+0. The whole window scales (root item scale with the layout size divided by the zoom; checked at 150% with a screen capture). Kept in zoomPercent.
+  - Unlock Teams Premium: shown while the authsvc lfts/TeamsPremium self-serve policy and eligibility allow it (api::premium; ost-test1: ENABLED, eligible). The dialog matches Teams'. Start trial POSTs …/acquire/ and uses Teams' strings for the steps; their own dialogs aren't measured (no trial started).
+  - Cast: Teams' dark Cast window, searching for 20 s (measured 20.3 s), then "Didn't find any Teams Rooms nearby…". Room beacons belong to TASK-0161.
+  - Downloads: Teams shows WebView2's downloads hub; OST's flyout matches it (header buttons, rows, Removed, search, Clear all with its confirmation, empty text), listing OST's own downloads (api::downloads, recorded by files::save_unique and the biometric export).
+  - Get the mobile app: dialog with Teams' QR code and store badges.
+  - Teams' download history on winpc was cleared while measuring the empty state.
+  - Left (AC3): measure Start trial's pending, success and error dialogs (needs a Premium trial started on a test account).
+
+- 2026-11-15: with the user's OK, a Teams Premium trial was started on ost-test1 from Teams on winpc, every page was measured, and the trial was cancelled from Teams (the cancel was captured: POST …/cancel, state 2).
+  - OST now has the trial's whole flow: Getting your trial ready (acquire, then the trial until state 1, then a licence refresh), "now active", the trial home (N days left, three cards, Cancel trial / Buy now / Request a license), Your benefits with Premium, the cancel confirmation, and "You've got Teams Premium!" after cancelling.
+  - The ··· button becomes the "N days left" / "Get Premium" button, and its menu changes by mode.
+  - OST shows ost-test1 as Teams does now (mode canceled, "Get Premium").
+  - Teams' Request a license sent a request at once (Centro app); it was rejected in the admin center. OST opens that app in the browser.
+  - Re-check after 2026-11-16, once the cancellation finishes, for the state after Premium ends.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Settings and more (the title bar ···) now matches Teams: every item, Zoom, Teams Premium's trial, Cast, Downloads and Get the mobile app.
+
+Changes:
+- Menu: Teams' items, order, dividers and geometry (238.47 wide, 32-tall rows, the Zoom row, the New pill).
+- Zoom: 60–400% in 5% steps, Ctrl+- / Ctrl+= / Ctrl+0, with the whole window scaling; kept across restarts.
+- Teams Premium:
+  - Unlock Teams Premium, its offer dialog, and Start trial with the wait and "now active" pages.
+  - The trial's "N days left" button and home, Your benefits with Premium, Cancel trial and its confirmation.
+  - "Get Premium" and You've got Teams Premium! after cancelling.
+  - All on the auth service's lfts/TeamsPremium (api::premium).
+- Cast: Teams' dark Cast window, searching for 20 s, then nothing found.
+- Downloads: the WebView2 downloads hub Teams shows, over OST's own download history (api::downloads).
+- Get the mobile app: Teams' QR code and store badges.
+
+Tests:
+- 554 library tests pass.
+- Harnesses --menu-test, --zoom-test and --premium-test, with pictures compared to Teams on winpc and a 150% zoom screen capture.
+
+Notes:
+- A Premium trial was started and then cancelled on ost-test1 to measure it.
+- Teams' Request a license sent a request at once; it was rejected in the admin center.
+- Re-check the state after the cancellation finishes (from 2026-11-16).
+<!-- SECTION:FINAL_SUMMARY:END -->

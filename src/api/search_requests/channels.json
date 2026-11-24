@@ -1,0 +1,41 @@
+{
+ "entityRequests": [
+  {
+   "entityType": "TeamsChannel",
+   "contentSources": [
+    "Teams"
+   ],
+   "fields": [],
+   "query": {
+    "queryString": "{QUERY}",
+    "displayQueryString": "{QUERY}"
+   },
+   "size": 25,
+   "extendedQueries": [
+    {
+     "query": {}
+    }
+   ],
+   "HitHighlight": {
+    "HitHighlightedProperties": [
+     "HitHighlightedSummary"
+    ],
+    "SummaryLength": 200
+   },
+   "from": 0
+  }
+ ],
+ "scenario": {
+  "Dimensions": [
+   {
+    "DimensionName": "QueryType",
+    "DimensionValue": "TeamsAndChannels"
+   },
+   {
+    "DimensionName": "FormFactor",
+    "DimensionValue": "general.cdlworker.reactSearch"
+   }
+  ],
+  "Name": "powerbar"
+ }
+}

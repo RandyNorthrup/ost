@@ -4,10 +4,10 @@
 //! Decoder: takes H.264 NAL units, produces I420 YUV frames.
 
 use anyhow::{Context, Result};
-use openh264::decoder::{Decoder, DecoderConfig};
-use openh264::encoder::{BitRate, Encoder, EncoderConfig, FrameRate};
-use openh264::formats::YUVSource;
 use openh264::OpenH264API;
+use openh264::decoder::{Decoder, DecoderConfig};
+use openh264::encoder::{BitRate, Encoder, EncoderConfig, FrameRate, IntraFramePeriod, Profile};
+use openh264::formats::YUVSource;
 
 /// Wrapper to pass raw I420 data directly to openh264 encoder.
 struct RawI420<'a> {
@@ -69,6 +69,58 @@ impl H264Encoder {
             width,
             height,
         })
+    }
+
+    /// An encoder for live calls: constrained baseline (what WebRTC peers
+    /// decode everywhere), a keyframe every `keyframe_every` frames so a
+    /// receiver that lost packets recovers, frame skipping off.
+    pub fn new_realtime(
+        width: u32,
+        height: u32,
+        fps: f32,
+        bitrate_kbps: u32,
+        keyframe_every: u32,
+    ) -> Result<Self> {
+        let api = OpenH264API::from_source();
+        let config = EncoderConfig::new()
+            .max_frame_rate(FrameRate::from_hz(fps))
+            .bitrate(BitRate::from_bps(bitrate_kbps * 1000))
+            .profile(Profile::Baseline)
+            .intra_frame_period(IntraFramePeriod::from_num_frames(keyframe_every))
+            .skip_frames(false);
+        let encoder =
+            Encoder::with_api_config(api, config).context("Failed to create openh264 encoder")?;
+        Ok(Self {
+            encoder,
+            width,
+            height,
+        })
+    }
+
+    /// Change the target bitrate without a new encoder (and so without a
+    /// keyframe), as a meeting's processor retunes it every second or so.
+    pub fn set_bitrate(&mut self, kbps: u32) {
+        let mut info = openh264_sys2::SBitrateInfo {
+            iLayer: openh264_sys2::SPATIAL_LAYER_ALL,
+            iBitrate: (kbps * 1000) as std::os::raw::c_int,
+        };
+        // SAFETY: the encoder is initialised (it was made by `new` or
+        // `new_realtime`), and SetOption(ENCODER_OPTION_BITRATE) takes a
+        // pointer to an SBitrateInfo that lives across the call.
+        let rc = unsafe {
+            self.encoder.raw_api().set_option(
+                openh264_sys2::ENCODER_OPTION_BITRATE,
+                (&raw mut info).cast(),
+            )
+        };
+        if rc != 0 {
+            tracing::debug!(rc, kbps, "encoder bitrate change refused");
+        }
+    }
+
+    /// Make the next frame a keyframe (a receiver asked: RTCP PLI/FIR).
+    pub fn force_keyframe(&mut self) {
+        self.encoder.force_intra_frame();
     }
 
     /// Encode a raw I420 YUV frame into H.264 NAL units.

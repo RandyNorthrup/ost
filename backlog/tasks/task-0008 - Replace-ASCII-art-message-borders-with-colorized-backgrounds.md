@@ -3,8 +3,8 @@ id: TASK-0008
 title: Replace ASCII art message borders with colorized backgrounds
 status: Done
 assignee: []
-created_date: '2026-02-05 23:20'
-updated_date: '2026-02-05 23:50'
+created_date: 2026-02-05 23:20
+updated_date: '2026-11-20T01:22:00Z'
 labels:
   - tui
   - ux
@@ -20,11 +20,17 @@ Messages currently use ASCII box-drawing borders around each message, consuming 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Messages are visually separated using background color instead of border characters
-- [ ] #2 No box-drawing borders around individual messages
-- [ ] #3 Sender name and timestamp are still clearly distinguishable from message body
-- [ ] #4 Message density is noticeably higher than before
+- [x] #1 Messages are visually separated using background color instead of border characters
+- [x] #2 No box-drawing borders around individual messages
+- [x] #3 Sender name and timestamp are still clearly distinguishable from message body
+- [x] #4 Message density is noticeably higher than before
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-19 audit: criteria checked to match the Done status and final summary.
+<!-- SECTION:NOTES:END -->
 
 ## Final Summary
 

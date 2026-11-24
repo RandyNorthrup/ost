@@ -1,0 +1,95 @@
+---
+id: TASK-0081
+title: Channel header and channel menus as Teams
+status: Done
+assignee:
+  - '@claude'
+created_date: '2026-11-09T17:38:00Z'
+updated_date: '2026-11-09T22:36:00Z'
+labels:
+  - desktop
+dependencies: []
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Teams' channel header has a Meet now split button and More channel options, and every channel row in the chat list has the same ··· menu (measured on winpc, 2026-11-09: See new posts at top | Open in new window | Manage notifications ▸, Move to section ▸, Hide | Edit channel, Manage channel, Copy link, Get email address, Workflows). OST's channel header has neither and channel rows have no menu (docs/spec/chat-list-and-header.md §7.7-7.8).
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [x] #1 Channel header: Meet now split button (Meet now / Schedule a meeting) with Teams' disabled reasons; Find and Channel details only on Posts
+- [x] #2 More channel options and the channel row's ··· show Teams' items in Teams' order
+- [x] #3 Each item acts as Teams': See new posts at top, Open in new window, Manage notifications, Move to section, Hide, Edit channel, Manage channel, Copy link, Get email address, Workflows
+- [x] #4 Verified side by side with Teams on winpc in OST Test Team
+<!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Research (winpc, 2026-11-09):
+  - Meet now opens the meet-now pre-join (heading "Microsoft Teams meeting", an editable title "Meeting in \"<channel>\"") and starts an adHocMeeting on the channel; the service posts the meeting in the channel.
+  - ··· items:
+    - See new posts at top: user property enableChannelsV2 = "false"; a different layout with a top "Post in channel" card and newest first.
+    - Manage notifications: channelNotificationSettings {allNewPosts, tag, channelTeam, dskNotif} plus alerts, and a Customize dialog.
+    - Hide: properties favorite / isGeneralChannelFavorite "false", member interest NotInterested (Show reverses it).
+    - Edit channel dialog: name, description, Layout Threads/Posts.
+    - Manage channel page: Settings and Analytics.
+    - Get email address: {mt}/beta/channels/{id}/email with GET/POST/PUT/DELETE and allowedSenders.
+- Done so far: Meet now split (Meet now / Schedule a meeting) and the meet-now pre-join. Verified live: OST's channel Meet now made the same "Meeting in \"General\" ended" post in Teams.
+- Channel header: Find and Channel details (PanelRightExpand) show only on Posts, with no people button.
+
+- More channel options and the channel row ··· (ChannelMenu.qml): Teams' items, order and icons, with the Manage notifications flyout. Customize, Edit channel and Get email address dialogs were built from measurements and Teams' own strings.
+- Backend: api::channels (notifications, follow all, Hide/Show, Edit, email, new posts at top/bottom, channel link) and the channel_action invokable. The team list now carries notify, owner, layout and description.
+- Verified live in OST Test Team:
+  - notifications All, then back to @mentions;
+  - Hide (Teams then lists General in italics) and Show (back to normal);
+  - Copy link is byte-identical to Teams' clipboard (text and HTML);
+  - the email dialog shows the channel's address.
+- Fixed: a hidden General is the team's isGeneralChannelFavorite (captured), not the channel's isFavorite.
+- Left: See new posts at top (layout), Open in new window, Manage channel (Settings / Analytics), Workflows, and a hidden channel's italic row and "See all channels".
+
+- Open in new window (ChannelWindow.qml): Teams' 588 x 493 channel window. Its header has Meet now (icon and chevron), Find and ···; the compact channel posts (cards 30 in, names over times, ChannelPosts.compact); Post in channel. The backend keeps the channel live under its own "win:" key. Verified: a post sent from the window while the main window showed another chat appears in Teams.
+- Research for the rest:
+  - Workflows embeds automations.teams.cloud.microsoft/webapps/workflows/prod/home (renderMode=modal, subContext=channelworkflows, channel and team params) under a native header.
+  - Manage channel Settings: Channel details, plus Moderation (General: spaceAdminSettings.userSettings.generalChannelSetting 0/1/2, written back whole).
+  - Analytics: {mt}/beta/analytics/teams/{team}/channels/{channel}/summary-timeseries.
+
+- Manage channel (ManageChannel.qml): Teams' page in the conversation's place. Header with Settings / Analytics and More options (Go to channel, Open in new window, … no Workflows).
+  - Settings: Channel details (name, layout pill, Edit) and General's Moderation (spaceAdminSettings.generalChannelSetting, written back whole on the team thread). Verified: OST set 1, Teams showed the second choice; OST set 0 back (fresh read 0).
+  - Analytics (AnalyticsView.qml + AnalyticsChart.qml): the channel dashboard from summary-timeseries; errorCode 2 = no data as Teams; Highcharts-equivalent spline / column / stacked charts with Teams' palette, ticks and legend. Layout matches Teams' measurements (No Data Available state, as the test channel has).
+  - Fixed on the way: `property var data` in AnalyticsView shadowed Item.data (children never attached).
+- Workflows (WorkflowsDialog.qml): Teams' 900 x 634.4 dialog over the Workflows web app; it loads signed in on linuxlt. Fixed: it used the Page tab's pageOnly mode (Loop header and insert row).
+- All Channels / Analytics across channels go to Manage team: TASK-0083 (with non-General channel settings).
+
+- Researched hidden channels in Teams (hid General from Teams' own UI, restored from OST): a hidden channel that isn't open leaves the list, and so does a team with no shown channels. The open one stays, in italics. OST does the same now (italic row).
+- The row ··· for a channel that isn't open has no See new posts at top/bottom (Teams' dump, verified in OST: same 11 items).
+- "See all your teams" opens Teams' Your teams and channels page. That is TASK-0084 (also the way back for hidden teams).
+- Left: See new posts at top layout (needs TASK-0044's subject / Announcement composer).
+
+- See new posts at top: Teams' layout (newest first under the collapsed "Post in channel" card with Post / Announcement). The composer opens in the card's place. Measured on winpc with enableChannelsV2 "false", then set back to "true". OST's harness switched it the same way and back.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Teams' channel header and channel menus in OST, each item acting as in Teams (verified side by side on winpc in OST Test Team).
+
+Changes:
+- Header: Meet now split button (Meet now / Schedule a meeting), with the meet-now pre-join and the channel's adHocMeeting. Find and Channel details show only on Posts.
+- More channel options and every channel row's ··· (ChannelMenu.qml) use Teams' items, order, icons and conditions. The row of a channel that isn't open has no posts-order item. Manage channel's own menu starts with Go to channel.
+- Items:
+  - See new posts at top/bottom (enableChannelsV2, with Teams' top layout);
+  - Open in new window (ChannelWindow);
+  - Manage notifications (flyout and Customize);
+  - Move to section, Hide / Show (a hidden open channel in italics);
+  - Edit channel, Copy link (byte-identical), Get email address;
+  - Manage channel (Settings with General moderation; Analytics with Teams' dashboard and charts);
+  - Workflows (Teams' dialog over the Workflows web app).
+- Backend: api::channels (notifications, follow, hide, edit, email, posts order, link, moderation, analytics) and the channel_action invokable.
+
+Tests: lib tests (373 pass), including notification settings, channel link, edits, moderation in place, analytics parsing; harnesses --channel-menu-test, --channel-actions-test, --channel-visibility-test, --channel-window-test, --manage-channel-test, --workflows-test, --row-menu-test, --posts-top-test.
+
+Follow-ups: TASK-0083 (team menu, Manage team, non-General channel settings), TASK-0084 (Your teams and channels page).
+<!-- SECTION:FINAL_SUMMARY:END -->

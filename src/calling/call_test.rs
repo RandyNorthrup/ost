@@ -32,6 +32,9 @@ pub struct CallTestResult {
     pub echo_detected: bool,
     pub echo_delay_ms: f64,
     pub echo_correlation: f64,
+    /// The callee never answered: the service made the 1:1 call a hostless
+    /// meeting with only us in it (worth redialing).
+    pub callee_never_joined: bool,
 }
 
 impl CallTestResult {
@@ -51,6 +54,7 @@ impl CallTestResult {
             echo_detected: false,
             echo_delay_ms: 0.0,
             echo_correlation: 0.0,
+            callee_never_joined: false,
         }
     }
 }
@@ -141,10 +145,10 @@ pub async fn run_call_test(
     let is_1to1_call = echo || callee_mri.is_some();
 
     // Get tenant ID
-    let tenant_id = config
-        .tenant_id
-        .as_deref()
+    let tenant_id_owned = config
+        .tenant_id()
         .context("No tenant_id in config. Run `teams-cli login` first.")?;
+    let tenant_id = tenant_id_owned.as_str();
 
     // Fetch user profile for display name
     let (display_name, mail) = match &graph_token {
@@ -186,8 +190,7 @@ pub async fn run_call_test(
     // 1. Connect Trouter
     tracing::info!("Negotiating Trouter session...");
     let (trouter_session, epid) = session::negotiate(&http, skype_token_str).await?;
-    let session_id =
-        session::get_session_id(&http, &trouter_session, skype_token_str, &epid).await?;
+    let session_id = session::get_session_id(&trouter_session, skype_token_str, &epid).await?;
     let mut ws = websocket::TrouterSocket::connect(&trouter_session, &session_id, &epid).await?;
 
     // Wait for handshake
@@ -368,8 +371,23 @@ pub async fn run_call_test(
 
     // 7b. Phase 3: Acknowledge call acceptance and register CC callbacks
     if let Some(ref ack_url) = acceptance.acknowledgement_url {
-        if let Err(e) = signaling::acknowledge_call_acceptance(&http, ack_url, &conv_params).await {
-            tracing::warn!("Failed to acknowledge call acceptance: {:#}", e);
+        match signaling::acknowledge_call_acceptance(&http, ack_url, &conv_params).await {
+            Ok(ack) if signaling::became_hostless_meeting(&ack) => {
+                tracing::warn!("The callee never answered: the service made the call a hostless meeting with only us in it");
+                println!("callee_never_joined=true");
+                let end = acceptance.end_url.clone().or_else(|| {
+                    acceptance.call_leg_url.as_ref().map(|u| match u.find('?') {
+                        Some(i) => format!("{}/end{}", &u[..i], &u[i..]),
+                        None => format!("{u}/end"),
+                    })
+                });
+                if let Some(url) = end {
+                    end_call_by_url(&http, skype_token_str, &url).await.ok();
+                }
+                return Ok(CallTestResult { callee_never_joined: true, ..CallTestResult::failed(None) });
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!("Failed to acknowledge call acceptance: {:#}", e),
         }
     } else {
         tracing::error!(
@@ -386,19 +404,22 @@ pub async fn run_call_test(
     }
 
     // 8. Set up media leg
-    let mut outgoing_leg = setup_media_leg(
-        &offer_result.audio_crypto_line,
-        &offer_result.video_crypto_line,
-        &our_audio_ufrag,
-        &our_audio_pwd,
-        &our_video_ufrag,
-        &our_video_pwd,
+    let outgoing_leg = setup_media_leg(
+        LegSetup {
+            local_audio_crypto_line: &offer_result.audio_crypto_line,
+            local_video_crypto_line: &offer_result.video_crypto_line,
+            local_audio_ufrag: &our_audio_ufrag,
+            local_audio_pwd: &our_audio_pwd,
+            local_video_ufrag: &our_video_ufrag,
+            local_video_pwd: &our_video_pwd,
+            audio_socket,
+            video_socket,
+            label: "outgoing",
+            controlling: true,
+            video_ssrc,
+            audio_ssrc,
+        },
         &acceptance.sdp_blob.clone().unwrap_or_default(),
-        audio_socket,
-        video_socket,
-        "outgoing",
-        true,
-        video_ssrc,
     )
     .await
     .context("Failed to set up outgoing media leg")?;
@@ -445,8 +466,16 @@ pub async fn run_call_test(
     };
     #[cfg(not(feature = "audio"))]
     let mic_rx: Option<std::sync::mpsc::Receiver<Vec<i16>>> = None;
+    #[cfg(not(feature = "audio"))]
+    if !tone_mode {
+        tracing::warn!(
+            "Built without the audio feature: sending a 1kHz test tone instead of the microphone"
+        );
+    }
 
     // 9a. Initialize camera and display AFTER audio (SDL2 can interfere with audio)
+    #[cfg(feature = "video-capture")]
+    let mut outgoing_leg = outgoing_leg;
     #[cfg(feature = "video-capture")]
     {
         if use_camera {
@@ -481,7 +510,9 @@ pub async fn run_call_test(
     #[cfg(not(feature = "video-capture"))]
     {
         if use_camera || use_display {
-            tracing::warn!("Video capture/display requested but binary was not built with --features video-capture");
+            tracing::warn!(
+                "Video capture/display requested but binary was not built with --features video-capture"
+            );
         }
     }
 
@@ -497,55 +528,55 @@ pub async fn run_call_test(
     // 8b. Start recording in background after a short delay to let audio establish.
     // Recording is non-blocking: if it fails, the call continues normally.
     let mut recording_handle = None;
-    if record {
-        if let Some(rec_token) = recorder_token_str {
-            let http = http.clone();
-            let conversation_controller = phase1.conversation_controller.clone();
-            let add_participant_url_override = phase1.add_participant_url.clone();
-            let caller_mri = caller_mri.clone();
-            let participant_id = participant_id.clone();
-            let endpoint_id = endpoint_id.clone();
-            let chain_id = chain_id.clone();
-            let message_id = message_id.clone();
-            let thread_id = thread_id.clone();
-            let display_name = display_name.clone();
-            let trouter_surl = trouter_session.surl.clone();
-            let ic3_token = ic3_token_str.to_string();
-            let skype_token = skype_token_str.to_string();
-            recording_handle = Some(tokio::spawn(async move {
-                // Let audio flow for 3 seconds before injecting the recorder
-                tokio::time::sleep(Duration::from_secs(3)).await;
-                tracing::info!("Starting call recording (background, after 3s media warm-up)...");
-                match recording::start_call_recording(
-                    &http,
-                    &mut ws,
-                    &conversation_controller,
-                    &caller_mri,
-                    &participant_id,
-                    &endpoint_id,
-                    &chain_id,
-                    &message_id,
-                    &thread_id,
-                    &display_name,
-                    &trouter_surl,
-                    &ic3_token,
-                    &rec_token,
-                    &skype_token,
-                    add_participant_url_override.as_deref(),
-                )
-                .await
-                {
-                    Ok(session) => {
-                        println!("recording=true");
-                        Some(session)
-                    }
-                    Err(e) => {
-                        tracing::warn!("Recording flow failed (non-fatal): {:#}", e);
-                        None
-                    }
+    if record && let Some(rec_token) = recorder_token_str {
+        let http = http.clone();
+        let conversation_controller = phase1.conversation_controller.clone();
+        let add_participant_url_override = phase1.add_participant_url.clone();
+        let caller_mri = caller_mri.clone();
+        let participant_id = participant_id.clone();
+        let endpoint_id = endpoint_id.clone();
+        let chain_id = chain_id.clone();
+        let message_id = message_id.clone();
+        let thread_id = thread_id.clone();
+        let display_name = display_name.clone();
+        let trouter_surl = trouter_session.surl.clone();
+        let ic3_token = ic3_token_str.to_string();
+        let skype_token = skype_token_str.to_string();
+        recording_handle = Some(tokio::spawn(async move {
+            // Let audio flow for 3 seconds before injecting the recorder
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            tracing::info!("Starting call recording (background, after 3s media warm-up)...");
+            match recording::start_call_recording(
+                &http,
+                &mut ws,
+                &recording::RecordingRequest {
+                    conversation_controller: &conversation_controller,
+                    caller_mri: &caller_mri,
+                    participant_id: &participant_id,
+                    endpoint_id: &endpoint_id,
+                    chain_id: &chain_id,
+                    message_id: &message_id,
+                    thread_id: &thread_id,
+                    display_name: &display_name,
+                    trouter_surl: &trouter_surl,
+                    ic3_token: &ic3_token,
+                    recorder_token: &rec_token,
+                    skype_token: &skype_token,
+                    add_participant_url_override: add_participant_url_override.as_deref(),
+                },
+            )
+            .await
+            {
+                Ok(session) => {
+                    println!("recording=true");
+                    Some(session)
                 }
-            }));
-        }
+                Err(e) => {
+                    tracing::warn!("Recording flow failed (non-fatal): {:#}", e);
+                    None
+                }
+            }
+        }));
     }
 
     // 10. Wait for test duration
@@ -628,6 +659,7 @@ pub async fn run_call_test(
         echo_detected: echo_result.detected,
         echo_delay_ms: echo_result.delay_ms,
         echo_correlation: echo_result.correlation_peak,
+        callee_never_joined: false,
     };
 
     println!("audio_packets_sent={}", result.packets_sent);
@@ -645,7 +677,7 @@ pub async fn run_call_test(
 ///
 /// Uses calling_conversationServiceUrl directly if available,
 /// otherwise falls back to extracting the regional base from potentialCallRequestUrl.
-fn derive_epconv_url(region_gtms: &serde_json::Value) -> Option<String> {
+pub(crate) fn derive_epconv_url(region_gtms: &serde_json::Value) -> Option<String> {
     // Allow env var override for testing different regions
     if let Ok(url) = std::env::var("TEAMS_EPCONV_URL") {
         return Some(url);
@@ -684,6 +716,8 @@ struct MediaLeg {
     video_local_pwd: String,
     /// Video SSRC matching the SDP x-ssrc-range.
     video_ssrc: u32,
+    /// Audio SSRC matching the SDP x-ssrc-range.
+    audio_ssrc: u32,
     /// Camera frame receiver (when --camera is active).
     #[cfg(feature = "video-capture")]
     camera_rx: Option<std::sync::mpsc::Receiver<camera::YuvFrame>>,
@@ -714,20 +748,38 @@ impl MediaLegHandles {
 /// `local_audio_crypto_line` / `local_video_crypto_line` are the crypto lines from our SDP
 /// for this leg. `remote_sdp` is the SDP from the other side (the answer for outgoing,
 /// or the notification offer for incoming).
-async fn setup_media_leg(
-    local_audio_crypto_line: &str,
-    local_video_crypto_line: &str,
-    local_audio_ufrag: &str,
-    local_audio_pwd: &str,
-    local_video_ufrag: &str,
-    local_video_pwd: &str,
-    remote_sdp: &str,
+/// Our side of a media leg: SDP crypto lines, ICE credentials, sockets
+/// and SSRCs.
+struct LegSetup<'a> {
+    local_audio_crypto_line: &'a str,
+    local_video_crypto_line: &'a str,
+    local_audio_ufrag: &'a str,
+    local_audio_pwd: &'a str,
+    local_video_ufrag: &'a str,
+    local_video_pwd: &'a str,
     audio_socket: tokio::net::UdpSocket,
     video_socket: tokio::net::UdpSocket,
-    label: &str,
+    label: &'a str,
     controlling: bool,
     video_ssrc: u32,
-) -> Result<MediaLeg> {
+    audio_ssrc: u32,
+}
+
+async fn setup_media_leg(leg: LegSetup<'_>, remote_sdp: &str) -> Result<MediaLeg> {
+    let LegSetup {
+        local_audio_crypto_line,
+        local_video_crypto_line,
+        local_audio_ufrag,
+        local_audio_pwd,
+        local_video_ufrag,
+        local_video_pwd,
+        audio_socket,
+        video_socket,
+        label,
+        controlling,
+        video_ssrc,
+        audio_ssrc,
+    } = leg;
     // Decompress and log the full SDP for debugging
     let decompressed = crate::calling::sdp_compress::decompress_sdp(remote_sdp)
         .unwrap_or_else(|_| remote_sdp.to_string());
@@ -854,6 +906,7 @@ async fn setup_media_leg(
         video_remote_addr,
         video_local_pwd: local_video_pwd.to_string(),
         video_ssrc,
+        audio_ssrc,
         #[cfg(feature = "video-capture")]
         camera_rx: None,
         #[cfg(feature = "video-capture")]
@@ -868,21 +921,20 @@ async fn setup_media_leg(
 /// instead of generating a test tone — used on the incoming leg for echo verification.
 /// Returns handles and shared stat counters.
 fn spawn_media_leg(
-    mut leg: MediaLeg,
+    leg: MediaLeg,
     cname: &str,
     recorder: Option<Arc<Mutex<test_tone::AudioRecorder>>>,
     loopback: bool,
     speaker_tx: Option<std::sync::mpsc::SyncSender<Vec<i16>>>,
     mic_rx: Option<std::sync::mpsc::Receiver<Vec<i16>>>,
 ) -> MediaLegHandles {
+    // The camera and display handles move into their tasks.
+    #[cfg(feature = "video-capture")]
+    let mut leg = leg;
     let label = leg.label.clone();
     let mut handles = Vec::new();
 
-    let ssrc = {
-        let id = uuid::Uuid::new_v4();
-        let b = id.as_bytes();
-        u32::from_be_bytes([b[0], b[1], b[2], b[3]])
-    };
+    let ssrc = leg.audio_ssrc;
 
     let send_stats = Arc::new(Mutex::new(rtcp::RtpSendStats {
         ssrc,
@@ -1027,16 +1079,13 @@ fn spawn_media_leg(
                             let blocks = rtcp::parse_rtcp(&rtcp_data);
                             let mut rs = recv_stats.lock().await;
                             for block in &blocks {
-                                match block {
-                                    rtcp::RtcpBlock::SenderReport { ssrc, ntp_timestamp, sender_packet_count, sender_octet_count, .. } => {
-                                        tracing::info!(
-                                            "[{}] RTCP SR from SSRC={:#010x}: pkt_count={} oct_count={}",
-                                            label, ssrc, sender_packet_count, sender_octet_count
-                                        );
-                                        rs.last_sr_ntp = ((*ntp_timestamp >> 16) & 0xFFFF_FFFF) as u32;
-                                        rs.last_sr_recv_time = Some(std::time::Instant::now());
-                                    }
-                                    _ => {}
+                                if let rtcp::RtcpBlock::SenderReport { ssrc, ntp_timestamp, sender_packet_count, sender_octet_count, .. } = block {
+                                    tracing::info!(
+                                        "[{}] RTCP SR from SSRC={:#010x}: pkt_count={} oct_count={}",
+                                        label, ssrc, sender_packet_count, sender_octet_count
+                                    );
+                                    rs.last_sr_ntp = ((*ntp_timestamp >> 16) & 0xFFFF_FFFF) as u32;
+                                    rs.last_sr_recv_time = Some(std::time::Instant::now());
                                 }
                             }
                             continue;
@@ -1170,7 +1219,7 @@ fn spawn_media_leg(
     }
 
     // Video send loop
-    if let (Some(ref vid_srtp), Some(vid_addr)) = (&leg.video_srtp_ctx, leg.video_remote_addr) {
+    if let (Some(vid_srtp), Some(vid_addr)) = (&leg.video_srtp_ctx, leg.video_remote_addr) {
         let socket = leg.video_socket.clone();
         let vid_srtp = vid_srtp.clone();
         let vid_send_stats = video_send_stats.clone();
@@ -1214,7 +1263,7 @@ fn spawn_media_leg(
                 let nal_units = {
                     #[cfg(feature = "video-capture")]
                     {
-                        if let (Some(ref rx), Some(ref mut enc)) = (&camera_rx, &mut encoder) {
+                        if let (Some(rx), Some(enc)) = (&camera_rx, &mut encoder) {
                             match rx.try_recv() {
                                 Ok(frame) if frame.width > 0 => match enc.encode(&frame.data) {
                                     Ok(nals) if !nals.is_empty() => nals,
@@ -1268,7 +1317,7 @@ fn spawn_media_leg(
     }
 
     // Video recv loop
-    if let (Some(ref vid_srtp), Some(_)) = (&leg.video_srtp_ctx, leg.video_remote_addr) {
+    if let (Some(vid_srtp), Some(_)) = (&leg.video_srtp_ctx, leg.video_remote_addr) {
         let socket = leg.video_socket.clone();
         let vid_srtp = vid_srtp.clone();
         let vid_recv_stats = video_recv_stats.clone();
@@ -1303,15 +1352,15 @@ fn spawn_media_leg(
                         let data = &buf[..len];
 
                         if len >= 20 && ice::is_stun_message(data) {
-                            if ice::is_stun_request(data) {
-                                if let Some(txn_id) = ice::get_transaction_id(data) {
-                                    let resp = ice::build_binding_response(
-                                        &txn_id,
-                                        from,
-                                        Some(vid_local_pwd.as_bytes()),
-                                    );
-                                    let _ = socket.send_to(&resp, from).await;
-                                }
+                            if ice::is_stun_request(data)
+                                && let Some(txn_id) = ice::get_transaction_id(data)
+                            {
+                                let resp = ice::build_binding_response(
+                                    &txn_id,
+                                    from,
+                                    Some(vid_local_pwd.as_bytes()),
+                                );
+                                let _ = socket.send_to(&resp, from).await;
                             }
                             continue;
                         }
@@ -1366,9 +1415,12 @@ fn spawn_media_leg(
                                     // Depacketize and optionally decode + display
                                     let marker = pkt.marker;
                                     match depacketizer.depacketize(&pkt.payload, marker) {
+                                        // Shown only with the SDL viewer.
+                                        #[cfg(not(feature = "video-capture"))]
+                                        Ok(Some(_)) => {}
+                                        #[cfg(feature = "video-capture")]
                                         Ok(Some(nal)) => {
-                                            #[cfg(feature = "video-capture")]
-                                            if let (Some(ref mut dec), Some(ref tx)) =
+                                            if let (Some(dec), Some(tx)) =
                                                 (&mut decoder, &display_tx)
                                             {
                                                 match dec.decode(&nal) {
@@ -1422,7 +1474,7 @@ fn spawn_media_leg(
     }
 
     // Video RTCP send loop
-    if let (Some(ref vid_srtp), Some(vid_addr)) = (&leg.video_srtp_ctx, leg.video_remote_addr) {
+    if let (Some(vid_srtp), Some(vid_addr)) = (&leg.video_srtp_ctx, leg.video_remote_addr) {
         let socket = leg.video_socket.clone();
         let vid_srtp = vid_srtp.clone();
         let vid_send_stats = video_send_stats.clone();
@@ -1579,23 +1631,21 @@ pub fn extract_call_payload(frame: &str) -> Option<serde_json::Value> {
         for path in &["/body", "/data/body"] {
             if let Some(body_str) = v.pointer(path).and_then(|b| b.as_str()) {
                 // If gzip, decode base64 then decompress
-                if is_gzip {
-                    if let Some(decompressed) = decompress_gzip_base64(body_str) {
-                        if let Ok(inner) = serde_json::from_str::<serde_json::Value>(&decompressed)
-                        {
-                            return Some(inner);
-                        }
-                    }
+                if is_gzip
+                    && let Some(decompressed) = decompress_gzip_base64(body_str)
+                    && let Ok(inner) = serde_json::from_str::<serde_json::Value>(&decompressed)
+                {
+                    return Some(inner);
                 }
                 // Try as plain JSON string
                 if let Ok(inner) = serde_json::from_str::<serde_json::Value>(body_str) {
                     return Some(inner);
                 }
             }
-            if let Some(body_obj) = v.pointer(path) {
-                if body_obj.is_object() {
-                    return Some(body_obj.clone());
-                }
+            if let Some(body_obj) = v.pointer(path)
+                && body_obj.is_object()
+            {
+                return Some(body_obj.clone());
             }
         }
     }
@@ -1869,33 +1919,4 @@ async fn fetch_me(http: &reqwest::Client, graph_token: &str) -> Result<MeRespons
         anyhow::bail!("Graph /me returned {}: {}", status, body);
     }
     resp.json().await.context("Failed to parse /me response")
-}
-
-/// Write PCM i16 samples to a WAV file (mono, given sample rate).
-fn write_wav(path: &str, samples: &[i16], sample_rate: u32) -> anyhow::Result<()> {
-    use std::io::Write;
-    let mut f = std::fs::File::create(path)?;
-    let data_len = (samples.len() * 2) as u32;
-    let file_len = 36 + data_len;
-    // RIFF header
-    f.write_all(b"RIFF")?;
-    f.write_all(&file_len.to_le_bytes())?;
-    f.write_all(b"WAVE")?;
-    // fmt chunk
-    f.write_all(b"fmt ")?;
-    f.write_all(&16u32.to_le_bytes())?; // chunk size
-    f.write_all(&1u16.to_le_bytes())?; // PCM format
-    f.write_all(&1u16.to_le_bytes())?; // mono
-    f.write_all(&sample_rate.to_le_bytes())?; // sample rate
-    let byte_rate = sample_rate * 2;
-    f.write_all(&byte_rate.to_le_bytes())?; // byte rate
-    f.write_all(&2u16.to_le_bytes())?; // block align
-    f.write_all(&16u16.to_le_bytes())?; // bits per sample
-                                        // data chunk
-    f.write_all(b"data")?;
-    f.write_all(&data_len.to_le_bytes())?;
-    for &s in samples {
-        f.write_all(&s.to_le_bytes())?;
-    }
-    Ok(())
 }

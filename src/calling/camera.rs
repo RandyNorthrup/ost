@@ -11,6 +11,61 @@ use v4l::io::traits::CaptureStream;
 use v4l::video::Capture;
 use v4l::{Device, FourCC};
 
+/// The cameras V4L2 offers (capture nodes only, as Teams lists cameras):
+/// `(path, name)`, e.g. `("/dev/video0", "Integrated Camera")`.
+pub fn list_devices() -> Vec<(String, String)> {
+    let mut nodes: Vec<(u32, String)> = std::fs::read_dir("/dev")
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().into_string().ok()?;
+            let n: u32 = name.strip_prefix("video")?.parse().ok()?;
+            Some((n, format!("/dev/{name}")))
+        })
+        .collect();
+    nodes.sort();
+    nodes
+        .into_iter()
+        .filter_map(|(_, path)| {
+            let dev = match Device::with_path(&path) {
+                Ok(d) => d,
+                // A camera you may not open is still there (Teams lists it
+                // and reports "Teams needs permission to use this device", OST its own name):
+                // its name from sysfs, capture nodes only (a UVC camera's
+                // metadata node is its second, index 1).
+                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => return sysfs_camera(&path),
+                Err(_) => return None,
+            };
+            let caps = dev.query_caps().ok()?;
+            // Metadata and output nodes aren't cameras.
+            caps.capabilities
+                .contains(v4l::capability::Flags::VIDEO_CAPTURE)
+                .then(|| {
+                    let card = caps.card.trim().to_string();
+                    // UVC names repeat the model ("Integrated Camera: Integrated C").
+                    let name = card.split(':').next().unwrap_or(&card).trim().to_string();
+                    (path, if name.is_empty() { card } else { name })
+                })
+        })
+        .collect()
+}
+
+/// A camera node we can't open: `(path, name)` from
+/// /sys/class/video4linux/<node>/{name,index}, when it is a device's first
+/// node.
+fn sysfs_camera(path: &str) -> Option<(String, String)> {
+    let node = path.strip_prefix("/dev/")?;
+    let dir = std::path::Path::new("/sys/class/video4linux").join(node);
+    let index = std::fs::read_to_string(dir.join("index")).ok()?;
+    if index.trim() != "0" {
+        return None;
+    }
+    let card = std::fs::read_to_string(dir.join("name")).ok()?.trim().to_string();
+    let name = card.split(':').next().unwrap_or(&card).trim().to_string();
+    Some((path.to_string(), if name.is_empty() { card } else { name }))
+}
+
 /// A captured YUV420 (I420) frame.
 pub struct YuvFrame {
     pub width: u32,
@@ -22,6 +77,10 @@ pub struct YuvFrame {
 /// Camera capture handle. Keeps the capture thread alive.
 pub struct CameraCapture {
     _handle: std::thread::JoinHandle<()>,
+    /// Stops a capture that has no device to lose (the avatar camera).
+    stop: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    /// Its run in [`super::device_health`] (0: not watched).
+    run: u64,
 }
 
 impl CameraCapture {
@@ -36,12 +95,30 @@ impl CameraCapture {
         height: u32,
         fps: u32,
     ) -> Result<(Self, mpsc::Receiver<YuvFrame>)> {
+        if device_path == Some(AVATAR_DEVICE) {
+            return Ok(Self::avatar(width, height, fps));
+        }
         let path = device_path.unwrap_or("/dev/video0");
-        let dev = Device::with_path(path)
-            .with_context(|| format!("Failed to open camera at {}", path))?;
+        let dev = match Device::with_path(path) {
+            Ok(d) => d,
+            Err(e) => {
+                // Teams' VideoCapturePermissionDenied / start failure.
+                super::device_health::note_camera(if e.kind() == std::io::ErrorKind::PermissionDenied {
+                    super::device_health::Open::Permission
+                } else {
+                    super::device_health::Open::Failed
+                });
+                return Err(anyhow::Error::new(e).context(format!("Failed to open camera at {}", path)));
+            }
+        };
+        // Teams' "Automatically adjust camera controls", where chosen.
+        super::camera_controls::apply_preferred(path);
 
         // Try to set format — prefer YUYV (widely supported), fall back to whatever works
-        let mut fmt = dev.format().context("Failed to get camera format")?;
+        let mut fmt = dev
+            .format()
+            .inspect_err(|_| super::device_health::note_camera(super::device_health::Open::Failed))
+            .context("Failed to get camera format")?;
         fmt.width = width;
         fmt.height = height;
 
@@ -53,6 +130,7 @@ impl CameraCapture {
                 // Try MJPG as fallback — we won't use it but log what we get
                 fmt.fourcc = FourCC::new(b"MJPG");
                 dev.set_format(&fmt)
+                    .inspect_err(|_| super::device_health::note_camera(super::device_health::Open::Failed))
                     .context("Failed to set camera format (tried YUYV and MJPG)")?
             }
         };
@@ -78,13 +156,66 @@ impl CameraCapture {
 
         let (tx, rx) = mpsc::sync_channel::<YuvFrame>(2); // small buffer, drop old frames
 
+        // Its frames are watched from here: none for 5 s is Teams'
+        // VideoCaptureDeviceFreeze.
+        let run = super::device_health::camera_started();
         let handle = std::thread::spawn(move || {
             if let Err(e) = capture_loop(dev, actual_w, actual_h, actual_fourcc, tx) {
                 tracing::error!("Camera capture loop exited: {:#}", e);
+                super::device_health::note_camera(super::device_health::Open::Failed);
             }
         });
 
-        Ok((CameraCapture { _handle: handle }, rx))
+        Ok((CameraCapture { _handle: handle, stop: None, run }, rx))
+    }
+}
+
+/// Your avatar as the camera (Teams' avatar mode selects the avatar as
+/// its camera device): nothing is captured; each tick asks the Avatars
+/// app for a frame and passes on the newest one it drew.
+pub const AVATAR_DEVICE: &str = "ost-avatar";
+
+impl CameraCapture {
+    fn avatar(width: u32, height: u32, fps: u32) -> (Self, mpsc::Receiver<YuvFrame>) {
+        let (tx, rx) = mpsc::sync_channel::<YuvFrame>(2);
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop2 = stop.clone();
+        let every = std::time::Duration::from_millis(1000 / u64::from(fps.max(1)));
+        let handle = std::thread::spawn(move || {
+            tracing::info!("Avatar camera: {width}x{height} at {fps} fps");
+            let mut next = std::time::Instant::now();
+            loop {
+                if let Some(f) = ost_vfx::avatar::tick(width, height) {
+                    let mut data = vec![0u8; (width * height * 3 / 2) as usize];
+                    ost_vfx::filter::nv12_to_i420(&f.data, width as usize, height as usize, &mut data);
+                    match tx.try_send(YuvFrame { width, height, data }) {
+                        Ok(()) | Err(mpsc::TrySendError::Full(_)) => {}
+                        Err(mpsc::TrySendError::Disconnected(_)) => break,
+                    }
+                }
+                if stop2.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+                next += every;
+                let now = std::time::Instant::now();
+                if next > now {
+                    std::thread::sleep(next - now);
+                } else {
+                    next = now;
+                }
+            }
+            tracing::info!("Avatar camera stopped");
+        });
+        (CameraCapture { _handle: handle, stop: Some(stop), run: 0 }, rx)
+    }
+}
+
+impl Drop for CameraCapture {
+    fn drop(&mut self) {
+        if let Some(s) = &self.stop {
+            s.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        super::device_health::camera_stopped(self.run);
     }
 }
 
@@ -101,6 +232,7 @@ fn capture_loop(
 
     loop {
         let (buf, _meta) = stream.next().context("Failed to read camera frame")?;
+        super::device_health::camera_frame();
 
         let yuv_data = if fourcc == FourCC::new(b"YUYV") {
             yuyv_to_i420(buf, width, height)
@@ -108,6 +240,9 @@ fn capture_loop(
             // If format is already I420/YU12, use as-is
             buf.to_vec()
         };
+        // Sign language mode's detection sees the real camera (Teams never
+        // runs it on the avatar camera); a no-op unless it's on.
+        super::sign_detection::push_frame(&yuv_data, width, height, super::sign_detection::now_ms());
 
         let frame = YuvFrame {
             width,
@@ -132,6 +267,7 @@ fn capture_loop(
 }
 
 /// Capture ~3s of video from V4L2 camera, then play it back in an SDL2 window.
+#[cfg(feature = "video-capture")]
 pub fn cam_test() -> anyhow::Result<()> {
     use super::display::{DisplayFrame, VideoDisplay};
     use anyhow::bail;

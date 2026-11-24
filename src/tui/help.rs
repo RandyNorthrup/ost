@@ -1,11 +1,11 @@
 //! Help popup overlay: shows all keyboard shortcuts organized by category.
 
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
-    Frame,
 };
 
 /// Popup dimensions.
@@ -24,12 +24,13 @@ struct Category {
     shortcuts: &'static [Shortcut],
 }
 
+// Only keys the TUI handles (src/tui/app.rs), by where they work.
 const NAVIGATION: Category = Category {
     title: "NAVIGATION",
     shortcuts: &[
         Shortcut {
-            key: "Up/Down",
-            desc: "Move within pane",
+            key: "Up/Down j/k",
+            desc: "Move up and down",
         },
         Shortcut {
             key: "Left/Right",
@@ -44,20 +45,12 @@ const NAVIGATION: Category = Category {
             desc: "Cycle focus backward",
         },
         Shortcut {
-            key: "g g",
-            desc: "Jump to top",
+            key: "Enter",
+            desc: "Open chat / expand team",
         },
         Shortcut {
-            key: "G",
-            desc: "Jump to bottom",
-        },
-        Shortcut {
-            key: "/",
-            desc: "Search in current view",
-        },
-        Shortcut {
-            key: "Ctrl+K",
-            desc: "Global search",
+            key: "Enter",
+            desc: "Show or hide a thread",
         },
     ],
 };
@@ -67,146 +60,122 @@ const PANES: Category = Category {
     shortcuts: &[
         Shortcut {
             key: "1",
-            desc: "Teams/Channels pane",
+            desc: "Teams and chats",
         },
         Shortcut {
             key: "2",
-            desc: "Chat/Messages pane",
+            desc: "Messages",
         },
         Shortcut {
             key: "3",
-            desc: "Compose pane",
+            desc: "Compose",
         },
     ],
 };
 
 const VIEWS: Category = Category {
-    title: "VIEWS",
+    title: "ANYWHERE",
     shortcuts: &[
         Shortcut {
-            key: "F1",
-            desc: "Activity",
+            key: "Ctrl+K",
+            desc: "Search",
         },
         Shortcut {
-            key: "F2",
-            desc: "Chats",
+            key: "Ctrl+D",
+            desc: "Show or hide debug log",
         },
         Shortcut {
-            key: "F3",
-            desc: "Teams",
+            key: "PgUp/PgDn",
+            desc: "Scroll the debug log",
         },
         Shortcut {
-            key: "F4",
-            desc: "Calendar",
+            key: "?",
+            desc: "Show or hide this help",
         },
         Shortcut {
-            key: "F5",
-            desc: "Calls",
+            key: "q",
+            desc: "Quit (outside compose)",
         },
     ],
 };
 
 const MESSAGING: Category = Category {
-    title: "MESSAGING",
+    title: "COMPOSE",
     shortcuts: &[
         Shortcut {
             key: "Enter",
-            desc: "Send message / Open thread",
+            desc: "Send",
         },
         Shortcut {
             key: "Ctrl+Enter",
-            desc: "New line in compose",
-        },
-        Shortcut {
-            key: "Esc",
-            desc: "Cancel / Close popup",
+            desc: "New line",
         },
         Shortcut {
             key: "Ctrl+U",
-            desc: "Clear compose box",
+            desc: "Clear the box",
+        },
+        Shortcut {
+            key: "Left/Right",
+            desc: "Move the cursor",
+        },
+        Shortcut {
+            key: "Home/End",
+            desc: "Start / end of the text",
+        },
+        Shortcut {
+            key: "Bksp/Del",
+            desc: "Delete a character",
+        },
+        Shortcut {
+            key: "Esc",
+            desc: "Back to messages",
         },
     ],
 };
 
 const ACTIONS: Category = Category {
-    title: "ACTIONS",
+    title: "SEARCH (Ctrl+K)",
     shortcuts: &[
         Shortcut {
-            key: "r",
-            desc: "Reply to message",
+            key: "Up/Down",
+            desc: "Choose a result",
         },
         Shortcut {
-            key: "e",
-            desc: "Edit your message",
+            key: "Enter",
+            desc: "Open it",
         },
         Shortcut {
-            key: "d",
-            desc: "Delete message (confirm)",
-        },
-        Shortcut {
-            key: "+",
-            desc: "Add reaction",
-        },
-        Shortcut {
-            key: "@",
-            desc: "Mention user",
-        },
-        Shortcut {
-            key: "Ctrl+P",
-            desc: "Attach file",
+            key: "Esc",
+            desc: "Close search",
         },
     ],
 };
 
 const MISC: Category = Category {
-    title: "MISC",
+    title: "HELP",
     shortcuts: &[
         Shortcut {
-            key: "Ctrl+R",
-            desc: "Refresh",
-        },
-        Shortcut {
-            key: "Ctrl+N",
-            desc: "New chat",
-        },
-        Shortcut {
-            key: "Ctrl+T",
-            desc: "New channel post",
-        },
-        Shortcut {
-            key: "Ctrl+D",
-            desc: "Toggle debug log",
-        },
-        Shortcut {
-            key: "Ctrl+,",
-            desc: "Settings",
-        },
-        Shortcut {
-            key: "q",
-            desc: "Quit (confirm)",
-        },
-        Shortcut {
-            key: "?",
-            desc: "Toggle this help",
+            key: "Any key",
+            desc: "Close this help",
         },
     ],
 };
 
-/// Render the help popup overlay centered on screen.
+/// Render the help overlay over `area` (everything between the header and
+/// the status bar).
 ///
-/// Clears the area behind the popup and draws a bordered box with all
-/// keyboard shortcuts organized in a two-column layout.
-pub fn render_help_popup(frame: &mut Frame) {
-    let area = frame.area();
-
-    // Calculate centered popup area, clamped to terminal size.
+/// The whole area is cleared first, so no message or sidebar text shows
+/// around the popup, then a bordered box with all keyboard shortcuts is
+/// drawn centered in it, in a two-column layout.
+pub fn render_help_popup(frame: &mut Frame, area: Rect) {
+    // Calculate centered popup area, clamped to the area.
     let popup_w = POPUP_WIDTH.min(area.width.saturating_sub(2));
     let popup_h = POPUP_HEIGHT.min(area.height.saturating_sub(2));
 
     let popup_area = centered_rect(popup_w, popup_h, area);
 
-    // Clear the background behind the popup.
-    frame.render_widget(Clear, popup_area);
+    // Clear everything behind and around the popup.
+    frame.render_widget(Clear, area);
 
     // Outer block with title and footer.
     let block = Block::default()
@@ -303,4 +272,47 @@ fn inset(area: Rect, h: u16, v: u16) -> Rect {
         area.width.saturating_sub(h * 2),
         area.height.saturating_sub(v * 2),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_help_overlay_hides_everything_around_it() {
+        use ratatui::{Terminal, backend::TestBackend, widgets::Paragraph};
+        let mut term = Terminal::new(TestBackend::new(160, 45)).unwrap();
+        term.draw(|f| {
+            let area = f.area();
+            // Message text everywhere, then the overlay over the middle rows.
+            let filler = (0..area.height).map(|_| "█".repeat(area.width as usize)).collect::<Vec<_>>().join("\n");
+            f.render_widget(Paragraph::new(filler), area);
+            render_help_popup(f, Rect::new(0, 1, area.width, area.height - 2));
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+        for y in 1..44 {
+            for x in 0..160 {
+                assert_ne!(buf[(x, y)].symbol(), "█", "text shows through at {x},{y}");
+            }
+        }
+        // The header and status rows are left alone.
+        assert_eq!(buf[(0, 0)].symbol(), "█");
+        assert_eq!(buf[(0, 44)].symbol(), "█");
+    }
+
+    #[test]
+    fn the_help_lists_only_handled_keys() {
+        let all: Vec<&str> = [&NAVIGATION, &PANES, &VIEWS, &MESSAGING, &ACTIONS, &MISC]
+            .iter()
+            .flat_map(|c| c.shortcuts.iter().map(|s| s.key))
+            .collect();
+        // Keys the TUI doesn't handle (src/tui/app.rs).
+        for gone in ["g g", "G", "/", "r", "e", "d", "+", "@", "Ctrl+P", "Ctrl+R", "Ctrl+N", "Ctrl+T", "Ctrl+,", "F1", "F2", "F3", "F4", "F5"] {
+            assert!(!all.contains(&gone), "{gone} is listed but not handled");
+        }
+        for kept in ["Ctrl+K", "Ctrl+D", "Ctrl+U", "Ctrl+Enter", "Enter", "q", "?", "1", "2", "3"] {
+            assert!(all.contains(&kept), "{kept} is handled but not listed");
+        }
+    }
 }

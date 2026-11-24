@@ -68,6 +68,15 @@ pub struct App {
     pub status_is_error: bool,
     /// Debug log pane state.
     pub debug_log: DebugLogState,
+    /// The terminal has focus (Teams marks the open chat read only while
+    /// its window is active).
+    pub focused: bool,
+    /// A chat-list / team-list load is under way, and another was asked
+    /// for meanwhile (pushes are folded into one reload).
+    chats_loading: bool,
+    chats_again: bool,
+    teams_loading: bool,
+    teams_again: bool,
 }
 
 impl App {
@@ -90,6 +99,11 @@ impl App {
             status_message: None,
             status_is_error: false,
             debug_log: DebugLogState::new(log_buffer),
+            focused: true,
+            chats_loading: false,
+            chats_again: false,
+            teams_loading: false,
+            teams_again: false,
         }
     }
 }
@@ -115,6 +129,15 @@ impl App {
 
     /// Handle a crossterm event.
     pub fn handle_event(&mut self, event: Event, backend: &Backend) {
+        match event {
+            Event::FocusLost => self.focused = false,
+            Event::FocusGained => {
+                self.focused = true;
+                // Back in the window: the open chat's new messages are read.
+                self.mark_current_read(backend);
+            }
+            _ => {}
+        }
         if let Event::Key(key_event) = event {
             if key_event.kind != KeyEventKind::Press {
                 return;
@@ -215,7 +238,14 @@ impl App {
             }
             // Messages pane keys
             KeyCode::Up | KeyCode::Char('k') if self.active_pane == Pane::Messages => {
-                self.messages.select_previous();
+                // Past the oldest message: load older ones.
+                if let (Some(limit), Some(chat_id)) = (self.messages.wants_older(), self.current_chat_id.clone()) {
+                    self.status_message = Some("Loading older messages…".to_string());
+                    self.status_is_error = false;
+                    backend.send(BackendCommand::LoadMessages { chat_id, limit });
+                } else {
+                    self.messages.select_previous();
+                }
             }
             KeyCode::Down | KeyCode::Char('j') if self.active_pane == Pane::Messages => {
                 self.messages.select_next();
@@ -255,10 +285,14 @@ impl App {
                     self.messages.loading = true;
                     self.messages.channel_header = name;
                     self.messages.messages.clear();
+                    self.messages.reset_paging();
                     backend.send(BackendCommand::LoadMessages {
                         chat_id: id,
-                        limit: 50,
+                        limit: self.messages.limit,
                     });
+                    // Opening it reads it (Teams' conversation view moves
+                    // the read horizon to the newest message).
+                    self.mark_current_read(backend);
                 }
             }
             _ => {}
@@ -328,12 +362,11 @@ impl App {
                 self.compose.move_end();
             }
             // Regular character input.
-            (KeyCode::Char(c), m) => {
+            (KeyCode::Char(c), m)
                 // Only insert if no modifiers or just shift (for uppercase).
-                if m.is_empty() || m == KeyModifiers::SHIFT {
+                if (m.is_empty() || m == KeyModifiers::SHIFT) => {
                     self.compose.insert_char(c);
                 }
-            }
             _ => {}
         }
     }
@@ -384,13 +417,12 @@ impl App {
                 self.search.move_end();
             }
             // Regular character input.
-            (KeyCode::Char(c), m) => {
+            (KeyCode::Char(c), m)
                 // Only insert if no modifiers or just shift (for uppercase).
-                if m.is_empty() || m == KeyModifiers::SHIFT {
+                if (m.is_empty() || m == KeyModifiers::SHIFT) => {
                     self.search.insert_char(c);
                     self.search.update_results(&self.sidebar, &self.messages);
                 }
-            }
             _ => {}
         }
     }
@@ -416,11 +448,12 @@ impl App {
                 // Find the flat index of this channel in the sidebar.
                 let items = self.sidebar.flat_items();
                 for (idx, item) in items.iter().enumerate() {
-                    if let super::sidebar::SidebarItem::Channel(ti, ci) = item {
-                        if *ti == team_idx && *ci == channel_idx {
-                            self.sidebar.selected = idx;
-                            break;
-                        }
+                    if let super::sidebar::SidebarItem::Channel(ti, ci) = item
+                        && *ti == team_idx
+                        && *ci == channel_idx
+                    {
+                        self.sidebar.selected = idx;
+                        break;
                     }
                 }
                 self.active_pane = Pane::Sidebar;
@@ -429,11 +462,11 @@ impl App {
                 // Select the chat in the sidebar.
                 let items = self.sidebar.flat_items();
                 for (idx, item) in items.iter().enumerate() {
-                    if let super::sidebar::SidebarItem::Chat(ci) = item {
-                        if *ci == chat_idx {
-                            self.sidebar.selected = idx;
-                            break;
-                        }
+                    if let super::sidebar::SidebarItem::Chat(ci) = item
+                        && *ci == chat_idx
+                    {
+                        self.sidebar.selected = idx;
+                        break;
                     }
                 }
                 self.active_pane = Pane::Sidebar;
@@ -454,7 +487,8 @@ impl App {
     fn handle_backend_response(&mut self, response: BackendResponse, backend: &Backend) {
         match response {
             BackendResponse::Teams(Ok(teams)) => {
-                self.sidebar.update_teams(teams);
+                self.teams_loaded(backend);
+                self.sidebar.update_teams(teams, self.current_chat_id.as_deref());
                 self.sidebar.loading = false;
                 self.close_stale_search();
                 // If this is the first data load and we have teams, select the first
@@ -464,15 +498,23 @@ impl App {
                 }
             }
             BackendResponse::Teams(Err(e)) => {
+                self.teams_loaded(backend);
                 self.set_error(format!("Failed to load teams: {:#}", e));
                 self.sidebar.loading = false;
             }
             BackendResponse::Chats(Ok(chats)) => {
-                self.sidebar.update_chats(chats);
+                // As Teams lists them (no system streams, channels, empty or
+                // hidden chats; your notes chat first).
+                self.chats_loaded(backend);
+                self.sidebar.update_chats(
+                    crate::api::listed_chats(chats, &self.user_name),
+                    self.current_chat_id.as_deref(),
+                );
                 self.sidebar.loading = false;
                 self.close_stale_search();
             }
             BackendResponse::Chats(Err(e)) => {
+                self.chats_loaded(backend);
                 self.set_error(format!("Failed to load chats: {:#}", e));
                 self.sidebar.loading = false;
             }
@@ -487,8 +529,13 @@ impl App {
                         }
                         Err(e) => {
                             self.messages.loading = false;
+                            self.messages.live_reload = false;
                             self.set_error(format!("Failed to load messages: {:#}", e));
                         }
+                    }
+                    // A push came in while this loaded.
+                    if std::mem::take(&mut self.messages.reload_pending) {
+                        self.reload_current(backend);
                     }
                 }
             }
@@ -499,7 +546,7 @@ impl App {
                 if let Some(ref chat_id) = self.current_chat_id {
                     backend.send(BackendCommand::LoadMessages {
                         chat_id: chat_id.clone(),
-                        limit: 50,
+                        limit: self.messages.limit,
                     });
                 }
             }
@@ -508,6 +555,8 @@ impl App {
             }
             BackendResponse::UserInfo(Ok(info)) => {
                 self.user_name = info.display_name;
+                // The notes chat is named after you ("{you} (You)").
+                self.sidebar.rename_chat("48:notes", crate::api::notes_name(&self.user_name));
             }
             BackendResponse::UserInfo(Err(e)) => {
                 self.set_error(format!("Failed to load user info: {:#}", e));
@@ -528,12 +577,134 @@ impl App {
                 self.connection_state = "Connected".to_string();
                 self.is_online = true;
             }
+            BackendResponse::PushConnected => {
+                tracing::info!("TUI: push channel connected");
+                // Anything said while we weren't connected.
+                self.reload_lists(backend);
+                self.reload_current(backend);
+            }
+            BackendResponse::PushLagged => {
+                self.reload_lists(backend);
+                self.reload_current(backend);
+            }
+            BackendResponse::Push { changed, new_from_others } => {
+                self.on_push(changed, new_from_others, backend);
+            }
             BackendResponse::ClientError(msg) => {
                 self.connection_state = "Not authenticated".to_string();
                 self.is_online = false;
                 self.sidebar.loading = false;
                 self.set_error(format!("Auth: {}", msg));
             }
+        }
+    }
+
+    /// Teams pushed changes to these conversations: show the open one's
+    /// new messages, mark others with someone else's new message unread,
+    /// and reload the lists (Teams' order and read state).
+    fn on_push(&mut self, changed: Vec<String>, new_from_others: Vec<String>, backend: &Backend) {
+        let current = self.current_chat_id.clone();
+        let base = |id: &str| id.split(';').next().unwrap_or(id).to_string();
+        let mut reload_current = false;
+        let mut chats = false;
+        let mut teams = false;
+        for id in changed.iter().map(|i| base(i)) {
+            if current.as_deref() == Some(id.as_str()) {
+                reload_current = true;
+            }
+            if self.sidebar.is_channel(&id) {
+                teams = true;
+            } else if !id.starts_with("48:") || id == "48:notes" {
+                // A chat: new ones and the order come from the list.
+                chats = true;
+            }
+        }
+        for id in new_from_others.iter().map(|i| base(i)) {
+            if current.as_deref() == Some(id.as_str()) && self.focused {
+                continue;
+            }
+            self.sidebar.set_unread(&id, true);
+        }
+        if reload_current {
+            self.reload_current(backend);
+            if current.as_deref().is_some_and(|c| new_from_others.iter().any(|i| base(i) == c)) {
+                self.mark_current_read(backend);
+            }
+        }
+        if chats {
+            self.load_chats(backend);
+        }
+        if teams {
+            self.load_teams(backend);
+        }
+    }
+
+    /// Reload the open conversation for pushed changes, keeping your place.
+    fn reload_current(&mut self, backend: &Backend) {
+        let Some(chat_id) = self.current_chat_id.clone() else {
+            return;
+        };
+        if self.messages.loading {
+            self.messages.reload_pending = true;
+            return;
+        }
+        self.messages.live_reload = true;
+        self.messages.loading = true;
+        backend.send(BackendCommand::LoadMessages {
+            chat_id,
+            limit: self.messages.limit,
+        });
+    }
+
+    /// Mark the open conversation read, while the terminal has focus.
+    fn mark_current_read(&mut self, backend: &Backend) {
+        if !self.focused {
+            return;
+        }
+        let Some(chat_id) = self.current_chat_id.clone() else {
+            return;
+        };
+        self.sidebar.set_unread(&chat_id, false);
+        backend.send(BackendCommand::MarkRead { chat_id });
+    }
+
+    /// Reload the team and chat lists.
+    fn reload_lists(&mut self, backend: &Backend) {
+        self.load_chats(backend);
+        self.load_teams(backend);
+    }
+
+    /// Load the chat list, folding requests made while one is under way.
+    pub fn load_chats(&mut self, backend: &Backend) {
+        if self.chats_loading {
+            self.chats_again = true;
+            return;
+        }
+        self.chats_loading = true;
+        backend.send(BackendCommand::LoadChats { limit: CHAT_LIMIT });
+    }
+
+    /// Load the team list, folding requests made while one is under way.
+    pub fn load_teams(&mut self, backend: &Backend) {
+        if self.teams_loading {
+            self.teams_again = true;
+            return;
+        }
+        self.teams_loading = true;
+        backend.send(BackendCommand::LoadTeams);
+    }
+
+    fn chats_loaded(&mut self, backend: &Backend) {
+        self.chats_loading = false;
+        if std::mem::take(&mut self.chats_again) {
+            self.load_chats(backend);
+        }
+    }
+
+    fn teams_loaded(&mut self, backend: &Backend) {
+        self.teams_loading = false;
+        if std::mem::take(&mut self.teams_again) {
+            self.load_teams(backend);
         }
     }
 
@@ -559,6 +730,9 @@ impl App {
     }
 }
 
+/// Chats loaded into the sidebar.
+const CHAT_LIMIT: usize = 50;
+
 /// Run the TUI application with terminal restore on exit.
 ///
 /// Sets up a panic hook so the terminal is always restored even on panic.
@@ -567,12 +741,16 @@ pub async fn run(log_buffer: LogBuffer) -> Result<()> {
     // Install a panic hook that restores the terminal before printing the panic.
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
+        let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableFocusChange);
         ratatui::restore();
         default_hook(info);
     }));
 
     let mut terminal = ratatui::init();
+    // Focus reports: the open chat is marked read only while you're in it.
+    let _ = crossterm::execute!(std::io::stdout(), crossterm::event::EnableFocusChange);
     let res = run_app(&mut terminal, log_buffer).await;
+    let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableFocusChange);
     ratatui::restore();
     res
 }
@@ -583,10 +761,15 @@ async fn run_app(terminal: &mut DefaultTerminal, log_buffer: LogBuffer) -> Resul
     let mut events = EventStream::new();
 
     // Fire initial data loads.
-    backend.send(BackendCommand::LoadTeams);
-    backend.send(BackendCommand::LoadChats { limit: 50 });
+    app.load_teams(&backend);
+    app.load_chats(&backend);
     backend.send(BackendCommand::LoadUserInfo);
     backend.send(BackendCommand::LoadPresence);
+
+    // OstMac patch: without sign-in the backend task exits and its channel
+    // closes; upstream treats that as quit (exit 0, no UI). Stay open so the
+    // layout + auth error remain visible and navigable.
+    let mut backend_alive = true;
 
     while !app.should_exit {
         // Drain log buffer before rendering to keep it from growing unbounded.
@@ -608,14 +791,15 @@ async fn run_app(terminal: &mut DefaultTerminal, log_buffer: LogBuffer) -> Resul
                     }
                 }
             }
-            maybe_response = backend.recv() => {
+            maybe_response = backend.recv(), if backend_alive => {
                 match maybe_response {
                     Some(response) => {
                         app.handle_backend_response(response, &backend);
                     }
                     None => {
-                        // Backend channel closed.
-                        break;
+                        // OstMac: backend gone (e.g. unsigned) — keep UI alive.
+                        backend_alive = false;
+                        app.connection_state = "Not authenticated".to_string();
                     }
                 }
             }

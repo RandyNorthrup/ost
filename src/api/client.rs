@@ -2,12 +2,16 @@
 //!
 //! Wraps reqwest::Client with automatic token injection and refresh.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 use crate::auth::TokenStore;
 use crate::config::Config;
 
 const GRAPH_BASE: &str = "https://graph.microsoft.com/v1.0";
+/// Teams web's User-Agent on Linux. AMS reads the platform from its
+/// `Teams/{version}/{platform}` part; SharePoint words friendly dates only
+/// for browsers.
+pub const TEAMS_WEB_UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36 Teams/26276.513.5241.9675/1415";
 const DEFAULT_CHAT_SERVICE: &str = "https://amer.ng.msg.teams.microsoft.com";
 const CHATSVCAGG: &str = "https://chatsvcagg.teams.microsoft.com";
 
@@ -18,13 +22,38 @@ pub struct TeamsClient {
 }
 
 impl TeamsClient {
+    /// The signed-in user's display name, for message `imdisplayname`.
+    pub fn display_name(&self) -> Option<String> {
+        self.config.display_name()
+    }
+
+    /// The signed-in tenant.
+    pub fn tenant_id(&self) -> Option<String> {
+        self.config.tenant_id()
+    }
+
+    /// Teams' authz `licenseDetails` for the signed-in user.
+    pub fn license_details(&self) -> Option<serde_json::Value> {
+        self.config.get_license_details()
+    }
+
+    /// The signed-in user's sign-in name (user@domain).
+    pub fn user_principal_name(&self) -> Option<String> {
+        self.config.user_principal_name()
+    }
+
+    /// The signed-in user's object id, to recognise their own messages.
+    pub fn object_id(&self) -> Option<String> {
+        self.config.object_id()
+    }
+
     /// Load config and build client. Attempts token refresh if AAD token is expired.
     pub async fn new() -> Result<Self> {
         let mut config = Config::load()?;
 
         // Auto-refresh if any token is expired but refresh token exists
-        let needs_refresh = config.get_access_token().map_or(true, |t| t.is_expired())
-            || config.get_graph_token().map_or(true, |t| t.is_expired());
+        let needs_refresh = config.get_access_token().is_none_or(|t| t.is_expired())
+            || config.get_graph_token().is_none_or(|t| t.is_expired());
         if needs_refresh {
             if config.get_refresh_token().is_some() {
                 tracing::info!("Tokens missing or expired, refreshing...");
@@ -62,6 +91,11 @@ impl TeamsClient {
         Ok(token.token)
     }
 
+    /// The Skype token, for services that want it as `x-skypetoken`.
+    pub fn skype_token_value(&self) -> Result<String> {
+        self.skype_token()
+    }
+
     fn skype_token(&self) -> Result<String> {
         let token = self
             .config
@@ -91,6 +125,43 @@ impl TeamsClient {
     }
 
     /// POST request to Microsoft Graph API (bearer auth with Graph token).
+    /// GET with extra request headers (e.g. `ConsistencyLevel` for $search).
+    pub async fn graph_get_with(
+        &self,
+        path: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<reqwest::Response> {
+        let token = self.graph_token()?;
+        let url = format!("{}{}", GRAPH_BASE, path);
+        tracing::debug!("Graph GET {}", url);
+        let mut req = self.http.get(&url).bearer_auth(token);
+        for (k, v) in headers {
+            req = req.header(*k, *v);
+        }
+        let resp = req
+            .send()
+            .await
+            .with_context(|| format!("Graph GET {} failed", url))?;
+        check_response(resp, &url).await
+    }
+
+    /// GET a Graph resource that may not exist: `Ok(None)` for 404.
+    pub async fn graph_get_opt(&self, path: &str) -> Result<Option<reqwest::Response>> {
+        let token = self.graph_token()?;
+        let url = format!("{}{}", GRAPH_BASE, path);
+        let resp = self
+            .http
+            .get(&url)
+            .bearer_auth(&token)
+            .send()
+            .await
+            .with_context(|| format!("Graph GET {} failed", url))?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        Ok(Some(check_response(resp, &url).await?))
+    }
+
     pub async fn graph_post(
         &self,
         path: &str,
@@ -109,6 +180,146 @@ impl TeamsClient {
             .await
             .with_context(|| format!("Graph POST {} failed", url))?;
 
+        check_response(resp, &url).await
+    }
+
+    /// GET or POST on Graph's beta endpoint (features v1.0 lacks, such as
+    /// a site's recycle bin). `body` None is a GET.
+    pub async fn graph_beta(
+        &self,
+        path: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<reqwest::Response> {
+        let token = self.graph_token()?;
+        let url = format!("https://graph.microsoft.com/beta{}", path);
+        let req = match body {
+            Some(b) => self.http.post(&url).json(b),
+            None => self.http.get(&url),
+        }
+        .bearer_auth(&token);
+        let resp = req
+            .send()
+            .await
+            .with_context(|| format!("Graph beta {} failed", url))?;
+        check_response(resp, &url).await
+    }
+
+    /// POST a raw body with its content type (OneNote takes XHTML).
+    pub async fn graph_post_raw(
+        &self,
+        path: &str,
+        content_type: &str,
+        body: String,
+    ) -> Result<reqwest::Response> {
+        let token = self.graph_token()?;
+        let url = format!("{}{}", GRAPH_BASE, path);
+        let resp = self
+            .http
+            .post(&url)
+            .bearer_auth(&token)
+            .header(reqwest::header::CONTENT_TYPE, content_type)
+            .body(body)
+            .send()
+            .await
+            .with_context(|| format!("Graph {} failed", url))?;
+        check_response(resp, &url).await
+    }
+
+    /// PATCH on Graph's beta endpoint.
+    pub async fn graph_beta_patch(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<reqwest::Response> {
+        let token = self.graph_token()?;
+        let url = format!("https://graph.microsoft.com/beta{}", path);
+        let resp = self
+            .http
+            .patch(&url)
+            .bearer_auth(&token)
+            .json(body)
+            .send()
+            .await
+            .with_context(|| format!("Graph beta {} failed", url))?;
+        check_response(resp, &url).await
+    }
+
+    /// PATCH a Graph path with a JSON body.
+    pub async fn graph_patch(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<reqwest::Response> {
+        let token = self.graph_token()?;
+        let url = format!("{}{}", GRAPH_BASE, path);
+        let resp = self
+            .http
+            .patch(&url)
+            .bearer_auth(&token)
+            .json(body)
+            .send()
+            .await
+            .with_context(|| format!("Graph PATCH {} failed", url))?;
+        check_response(resp, &url).await
+    }
+
+    /// PATCH or DELETE a Graph path with extra headers (Planner needs
+    /// `If-Match: <etag>`); `body` is None for DELETE.
+    pub async fn graph_change_with(
+        &self,
+        path: &str,
+        body: Option<&serde_json::Value>,
+        headers: &[(&str, &str)],
+    ) -> Result<reqwest::Response> {
+        let token = self.graph_token()?;
+        let url = format!("{}{}", GRAPH_BASE, path);
+        let mut req = match body {
+            Some(b) => self.http.patch(&url).json(b),
+            None => self.http.delete(&url),
+        }
+        .bearer_auth(&token);
+        for (k, v) in headers {
+            req = req.header(*k, *v);
+        }
+        let resp = req
+            .send()
+            .await
+            .with_context(|| format!("Graph change {} failed", url))?;
+        check_response(resp, &url).await
+    }
+
+    /// DELETE a Graph path.
+    pub async fn graph_delete(&self, path: &str) -> Result<reqwest::Response> {
+        let token = self.graph_token()?;
+        let url = format!("{}{}", GRAPH_BASE, path);
+        let resp = self
+            .http
+            .delete(&url)
+            .bearer_auth(&token)
+            .send()
+            .await
+            .with_context(|| format!("Graph DELETE {} failed", url))?;
+        check_response(resp, &url).await
+    }
+
+    /// PUT raw bytes to a Graph path (small file uploads).
+    pub async fn graph_put_bytes(
+        &self,
+        path: &str,
+        bytes: Vec<u8>,
+        content_type: &str,
+    ) -> Result<reqwest::Response> {
+        let token = self.graph_token()?;
+        let url = format!("{}{}", GRAPH_BASE, path);
+        let resp = self
+            .http
+            .put(&url)
+            .bearer_auth(&token)
+            .header("Content-Type", content_type)
+            .body(bytes)
+            .send()
+            .await
+            .with_context(|| format!("Graph PUT {} failed", url))?;
         check_response(resp, &url).await
     }
 
@@ -161,6 +372,54 @@ impl TeamsClient {
             .unwrap_or_else(|| DEFAULT_CHAT_SERVICE.to_string())
     }
 
+    /// The Teams middle-tier base URL (e.g. …/api/mt/part/amer-03) from
+    /// region_gtms, which serves pictures among other things.
+    pub fn middle_tier_url(&self) -> Option<String> {
+        self.config
+            .get_region_gtms()?
+            .get("middleTier")?
+            .as_str()
+            .filter(|u| u.starts_with("https://"))
+            .map(|u| u.trim_end_matches('/').to_string())
+    }
+
+    /// Any https endpoint from region_gtms by its key (such as
+    /// "appsSuggestionService").
+    pub fn region_endpoint(&self, key: &str) -> Option<String> {
+        self.config
+            .get_region_gtms()?
+            .get(key)?
+            .as_str()
+            .filter(|u| u.starts_with("https://"))
+            .map(|u| u.trim_end_matches('/').to_string())
+    }
+
+    /// Teams' media store (AMS) base URL from region_gtms ("ams").
+    pub fn ams_url(&self) -> Option<String> {
+        self.config
+            .get_region_gtms()?
+            .get("ams")?
+            .as_str()
+            .filter(|u| u.starts_with("https://"))
+            .map(|u| u.trim_end_matches('/').to_string())
+    }
+
+    /// The AMS v2 gateway (asyncgw) base URL from region_gtms ("amsV2"),
+    /// where custom emoji pictures are served.
+    pub fn ams_v2_url(&self) -> Option<String> {
+        self.config
+            .get_region_gtms()?
+            .get("amsV2")?
+            .as_str()
+            .filter(|u| u.starts_with("https://"))
+            .map(|u| u.trim_end_matches('/').to_string())
+    }
+
+    /// The shared HTTP client.
+    pub fn http(&self) -> &reqwest::Client {
+        &self.http
+    }
+
     /// Chat service aggregator URL from region_gtms, falling back to default.
     pub fn chatsvcagg_url(&self) -> String {
         self.config
@@ -188,6 +447,30 @@ impl TeamsClient {
             .with_context(|| format!("CSA GET {} failed", url))?;
 
         check_response(resp, url).await
+    }
+
+    /// POST to CSA (the chat service aggregator) with the same auth as
+    /// `csa_get`; the reply is returned whatever its status.
+    pub async fn csa_post(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+        headers: &[(&str, &str)],
+    ) -> Result<reqwest::Response> {
+        let token = self.skype_token()?;
+        tracing::debug!("CSA POST {}", url);
+        let mut req = self
+            .http
+            .post(url)
+            .bearer_auth(&token)
+            .header("x-ms-client-version", "1416/1.0.0.2024050301")
+            .json(body);
+        for (k, v) in headers {
+            req = req.header(*k, *v);
+        }
+        req.send()
+            .await
+            .with_context(|| format!("CSA POST {} failed", url))
     }
 
     /// GET using `Authentication: skypetoken=...` header (native chat API).
@@ -224,6 +507,235 @@ impl TeamsClient {
             .await
             .with_context(|| format!("Chat POST {} failed", url))?;
 
+        check_response(resp, url).await
+    }
+
+    /// POST a JSON body given as text (its keys in the order the client
+    /// sends them) to the chat service.
+    pub async fn chat_post_text(&self, url: &str, body: &str) -> Result<reqwest::Response> {
+        let token = self.skype_token()?;
+        tracing::debug!("Chat POST {}", url);
+        let resp = self
+            .http
+            .post(url)
+            .header("Authentication", format!("skypetoken={}", token))
+            .header("Content-Type", "application/json")
+            .body(body.to_string())
+            .send()
+            .await
+            .with_context(|| format!("Chat POST {} failed", url))?;
+        check_response(resp, url).await
+    }
+
+    /// POST to the chat service and hand back the reply whatever its status
+    /// (the send pipeline classifies failures itself). Err only when no reply
+    /// came at all.
+    pub async fn chat_post_unchecked(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+        headers: &[(&str, &str)],
+    ) -> Result<reqwest::Response> {
+        let token = self.skype_token()?;
+        tracing::debug!("Chat POST {}", url);
+        let mut req = self
+            .http
+            .post(url)
+            .header("Authentication", format!("skypetoken={}", token))
+            .json(body);
+        for (k, v) in headers {
+            req = req.header(*k, *v);
+        }
+        req.send()
+            .await
+            .with_context(|| format!("Chat POST {} failed", url))
+    }
+
+    /// GET from Teams' media store (AMS), which wants `skype_token`.
+    pub async fn ams_get(&self, url: &str) -> Result<Vec<u8>> {
+        let token = self.skype_token()?;
+        let resp = self
+            .http
+            .get(url)
+            .header("Authorization", format!("skype_token {}", token))
+            .send()
+            .await
+            .context("Media GET failed")?;
+        let resp = check_response(resp, url).await?;
+        Ok(resp.bytes().await.context("Media body")?.to_vec())
+    }
+
+    /// Upload a picture to AMS for the members of `conv`, as Teams does for
+    /// inline pictures: `POST {ams}/v1/objects/` with type `pish/image` and
+    /// read permission for the conversation, then `PUT …/content/imgpsh`
+    /// with the bytes. Returns the object id.
+    pub async fn ams_upload_image(
+        &self,
+        conv: &str,
+        bytes: Vec<u8>,
+        filename: &str,
+    ) -> Result<String> {
+        self.ams_upload_image_for(conv, bytes, filename).await
+    }
+
+    /// As ams_upload_image, readable by `conv`: a conversation id, or
+    /// `*:tid:{tenant}` for the whole organisation (custom emoji).
+    pub async fn ams_upload_image_for(
+        &self,
+        conv: &str,
+        bytes: Vec<u8>,
+        filename: &str,
+    ) -> Result<String> {
+        let token = self.skype_token()?;
+        let base = self
+            .ams_url()
+            .context("No media store address for this account")?;
+        let auth = format!("skype_token {}", token);
+        // AMS reads the caller's platform from the User-Agent's
+        // `Teams/{version}/{platform}` part (Teams desktop sends …/49) and
+        // refuses a request without it; OST is platform 1415 elsewhere.
+        const UA: &str = TEAMS_WEB_UA;
+        let created = self
+            .http
+            .post(format!("{base}/v1/objects/"))
+            .header("Authorization", &auth)
+            .header(reqwest::header::USER_AGENT, UA)
+            .json(&serde_json::json!({
+                "type": "pish/image",
+                "permissions": { conv: ["read"] },
+                "filename": filename,
+            }))
+            .send()
+            .await
+            .context("Media create failed")?;
+        let created = check_response(created, &base).await?;
+        let v: serde_json::Value = created.json().await.context("Media create reply")?;
+        let id = v
+            .get("id")
+            .and_then(|i| i.as_str())
+            .context("No media object id")?
+            .to_string();
+        anyhow::ensure!(
+            id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
+            "Unexpected media object id"
+        );
+        let put = self
+            .http
+            .put(format!("{base}/v1/objects/{id}/content/imgpsh"))
+            .header("Authorization", &auth)
+            .header(reqwest::header::USER_AGENT, UA)
+            .header("Content-Type", "application/octet-stream")
+            .body(bytes)
+            .send()
+            .await
+            .context("Media upload failed")?;
+        check_response(put, &base).await?;
+        Ok(id)
+    }
+
+    /// Store a recorded video clip in AMS for the members of `conv`, as
+    /// Teams does after its recorder (captured on winpc, 2026-11-14):
+    /// `POST {ams}/v1/objects/` with type `sharing/videototranscode`, then
+    /// `PUT …/content/thumbnail` (the poster), `…/content/original` (the
+    /// recording) and `…/content/transcript_info`. AMS then transcodes it
+    /// (`…/views/video`). Returns the object id.
+    pub async fn ams_upload_video(
+        &self,
+        conv: &str,
+        original: Vec<u8>,
+        thumbnail: Vec<u8>,
+    ) -> Result<String> {
+        let token = self.skype_token()?;
+        let base = self
+            .ams_url()
+            .context("No media store address for this account")?;
+        let auth = format!("skype_token {}", token);
+        const UA: &str = TEAMS_WEB_UA;
+        let created = self
+            .http
+            .post(format!("{base}/v1/objects/"))
+            .header("Authorization", &auth)
+            .header(reqwest::header::USER_AGENT, UA)
+            .json(&serde_json::json!({
+                "type": "sharing/videototranscode",
+                "permissions": { conv: ["read"] },
+                "sharingMode": "Unknown",
+            }))
+            .send()
+            .await
+            .context("Media create failed")?;
+        let created = check_response(created, &base).await?;
+        let v: serde_json::Value = created.json().await.context("Media create reply")?;
+        let id = v
+            .get("id")
+            .and_then(|i| i.as_str())
+            .context("No media object id")?
+            .to_string();
+        anyhow::ensure!(
+            id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
+            "Unexpected media object id"
+        );
+        for (content, bytes) in [
+            ("thumbnail", thumbnail),
+            ("original", original),
+            ("transcript_info", b"transcript_info".to_vec()),
+        ] {
+            let put = self
+                .http
+                .put(format!("{base}/v1/objects/{id}/content/{content}"))
+                .header("Authorization", &auth)
+                .header(reqwest::header::USER_AGENT, UA)
+                .header("Content-Type", "application/octet-stream")
+                .body(bytes)
+                .send()
+                .await
+                .context("Media upload failed")?;
+            check_response(put, &base).await?;
+        }
+        Ok(id)
+    }
+
+    /// `chat_request` with extra headers.
+    pub async fn chat_request_with(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+        body: &serde_json::Value,
+        headers: &[(&str, &str)],
+    ) -> Result<reqwest::Response> {
+        let token = self.skype_token()?;
+        tracing::debug!("Chat {} {}", method, url);
+        let req = self
+            .http
+            .request(method.clone(), url)
+            .header("Authentication", format!("skypetoken={}", token));
+        let resp = headers
+            .iter()
+            .fold(req, |r, (k, v)| r.header(*k, *v))
+            .json(body)
+            .send()
+            .await
+            .with_context(|| format!("Chat {} {} failed", method, url))?;
+        check_response(resp, url).await
+    }
+
+    /// Any method with `Authentication: skypetoken=...` (native chat API).
+    pub async fn chat_request(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+        body: &serde_json::Value,
+    ) -> Result<reqwest::Response> {
+        let token = self.skype_token()?;
+        tracing::debug!("Chat {} {}", method, url);
+        let resp = self
+            .http
+            .request(method.clone(), url)
+            .header("Authentication", format!("skypetoken={}", token))
+            .json(body)
+            .send()
+            .await
+            .with_context(|| format!("Chat {} {} failed", method, url))?;
         check_response(resp, url).await
     }
 }

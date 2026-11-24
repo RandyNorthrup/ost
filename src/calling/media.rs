@@ -6,6 +6,7 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -31,10 +32,9 @@ pub struct MediaStats {
 /// A running media session for a single audio stream.
 pub struct MediaSession {
     socket: Arc<UdpSocket>,
-    remote_addr: SocketAddr,
-    srtp_ctx: Arc<Mutex<srtp::SrtpContext>>,
-    ssrc: u32,
     stats: Arc<Mutex<MediaStats>>,
+    /// While set, the microphone is captured but silence is sent.
+    muted: Arc<AtomicBool>,
     /// Handle to the send task (for shutdown).
     send_handle: Option<tokio::task::JoinHandle<()>>,
     /// Handle to the recv task (for shutdown).
@@ -124,6 +124,7 @@ impl MediaSession {
         #[cfg(not(feature = "audio"))]
         let spk_tx: Option<std::sync::mpsc::SyncSender<Vec<i16>>> = None;
 
+        let muted = Arc::new(AtomicBool::new(false));
         let send_handle = {
             let socket = socket.clone();
             let srtp_ctx = srtp_ctx.clone();
@@ -135,6 +136,7 @@ impl MediaSession {
                 ssrc,
                 stats,
                 mic_rx,
+                muted.clone(),
             ))
         };
 
@@ -150,10 +152,8 @@ impl MediaSession {
 
         Ok(MediaSession {
             socket,
-            remote_addr,
-            srtp_ctx,
-            ssrc,
             stats,
+            muted,
             send_handle: Some(send_handle),
             recv_handle: Some(recv_handle),
             #[cfg(feature = "audio")]
@@ -217,6 +217,7 @@ impl MediaSession {
         #[cfg(not(feature = "audio"))]
         let spk_tx: Option<std::sync::mpsc::SyncSender<Vec<i16>>> = None;
 
+        let muted = Arc::new(AtomicBool::new(false));
         let send_handle = {
             let socket = socket.clone();
             let srtp_ctx = srtp_ctx.clone();
@@ -228,6 +229,7 @@ impl MediaSession {
                 ssrc,
                 stats,
                 mic_rx,
+                muted.clone(),
             ))
         };
 
@@ -240,10 +242,8 @@ impl MediaSession {
 
         Ok(MediaSession {
             socket,
-            remote_addr,
-            srtp_ctx,
-            ssrc,
             stats,
+            muted,
             send_handle: Some(send_handle),
             recv_handle: Some(recv_handle),
             #[cfg(feature = "audio")]
@@ -256,6 +256,16 @@ impl MediaSession {
     /// Get the local port this session is bound to.
     pub fn local_port(&self) -> Result<u16> {
         Ok(self.socket.local_addr()?.port())
+    }
+
+    /// Mute or unmute the microphone. Muted sessions keep sending silence,
+    /// so the call stays alive and the peer sees no media gap.
+    pub fn set_muted(&self, muted: bool) {
+        self.muted.store(muted, Ordering::Relaxed);
+    }
+
+    pub fn is_muted(&self) -> bool {
+        self.muted.load(Ordering::Relaxed)
     }
 
     /// Get current media statistics.
@@ -309,6 +319,7 @@ async fn send_loop(
     ssrc: u32,
     stats: Arc<Mutex<MediaStats>>,
     mic_rx: Option<std::sync::mpsc::Receiver<Vec<i16>>>,
+    muted: Arc<AtomicBool>,
 ) {
     let mut seq: u16 = 0;
     let mut timestamp: u32 = 0;
@@ -327,6 +338,8 @@ async fn send_loop(
         // Try to get a frame from the microphone; fall back to silence.
         let payload = if let Some(ref rx) = mic_rx {
             match rx.try_recv() {
+                // Muted: drain the frame so capture doesn't back up, send silence.
+                Ok(_) if muted.load(Ordering::Relaxed) => rtp::silence_payload(),
                 Ok(samples) => {
                     let mut encoded = Vec::with_capacity(samples.len());
                     for &s in &samples {
@@ -382,7 +395,6 @@ pub struct VideoStats {
 /// A running media session for a video stream.
 pub struct VideoMediaSession {
     socket: Arc<UdpSocket>,
-    remote_addr: SocketAddr,
     stats: Arc<Mutex<VideoStats>>,
     send_handle: Option<tokio::task::JoinHandle<()>>,
     recv_handle: Option<tokio::task::JoinHandle<()>>,
@@ -436,7 +448,7 @@ impl VideoMediaSession {
 
         Ok(VideoMediaSession {
             socket,
-            remote_addr,
+
             stats,
             send_handle: Some(send_handle),
             recv_handle: Some(recv_handle),
@@ -772,14 +784,8 @@ mod tests {
     use super::*;
 
     fn test_material() -> srtp::SrtpKeyingMaterial {
-        let mut key = [0u8; 16];
-        let mut salt = [0u8; 14];
-        for i in 0..16 {
-            key[i] = (i + 1) as u8;
-        }
-        for i in 0..14 {
-            salt[i] = (i + 17) as u8;
-        }
+        let key: [u8; 16] = std::array::from_fn(|i| (i + 1) as u8);
+        let salt: [u8; 14] = std::array::from_fn(|i| (i + 17) as u8);
         srtp::SrtpKeyingMaterial {
             master_key: key,
             master_salt: salt,

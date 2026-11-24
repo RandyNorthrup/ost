@@ -13,7 +13,7 @@
 //! +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 //! ```
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 /// Minimum RTP header size in bytes (no CSRC, no extension).
 pub const RTP_HEADER_SIZE: usize = 12;
@@ -93,6 +93,52 @@ pub fn encode(payload_type: u8, seq: u16, timestamp: u32, ssrc: u32, payload: &[
     buf
 }
 
+/// An RTP packet with one-byte header extensions (RFC 8285): each
+/// `(id, data)` with 1–16 bytes of data.
+pub fn encode_with_extensions(
+    payload_type: u8,
+    seq: u16,
+    timestamp: u32,
+    ssrc: u32,
+    extensions: &[(u8, &[u8])],
+    payload: &[u8],
+) -> Vec<u8> {
+    if extensions.is_empty() {
+        return encode(payload_type, seq, timestamp, ssrc, payload);
+    }
+    let mut ext = Vec::new();
+    for (id, data) in extensions {
+        ext.push((id << 4) | ((data.len().clamp(1, 16) - 1) as u8));
+        ext.extend_from_slice(data);
+    }
+    while ext.len() % 4 != 0 {
+        ext.push(0);
+    }
+    let mut buf = Vec::with_capacity(RTP_HEADER_SIZE + 4 + ext.len() + payload.len());
+    buf.push(0x90); // V=2, X=1
+    buf.push(payload_type & 0x7F);
+    buf.extend_from_slice(&seq.to_be_bytes());
+    buf.extend_from_slice(&timestamp.to_be_bytes());
+    buf.extend_from_slice(&ssrc.to_be_bytes());
+    buf.extend_from_slice(&[0xBE, 0xDE]);
+    buf.extend_from_slice(&((ext.len() / 4) as u16).to_be_bytes());
+    buf.extend_from_slice(&ext);
+    buf.extend_from_slice(payload);
+    buf
+}
+
+/// RFC 6464's audio level byte for a frame: the voice-activity bit and the
+/// level in -dBov (0 loudest, 127 silence).
+pub fn audio_level(samples: &[i16], voice: bool) -> u8 {
+    let level = if samples.is_empty() {
+        127
+    } else {
+        let rms = (samples.iter().map(|&s| (s as f64 / 32768.0).powi(2)).sum::<f64>() / samples.len() as f64).sqrt();
+        if rms <= 0.0 { 127 } else { (-20.0 * rms.log10()).round().clamp(0.0, 127.0) as u8 }
+    };
+    (u8::from(voice) << 7) | level
+}
+
 /// Decode bytes into an RTP packet.
 pub fn decode(data: &[u8]) -> Result<RtpPacket> {
     if data.len() < RTP_HEADER_SIZE {
@@ -122,7 +168,29 @@ pub fn decode(data: &[u8]) -> Result<RtpPacket> {
         );
     }
 
-    let payload = data[header_len..].to_vec();
+    // A header extension (RFC 3550 5.3.1): 16-bit profile, 16-bit length
+    // in words, then the data.
+    let mut header_len = header_len;
+    if extension {
+        let ext = data
+            .get(header_len..header_len + 4)
+            .ok_or_else(|| anyhow::anyhow!("RTP extension header truncated"))?;
+        let words = u16::from_be_bytes([ext[2], ext[3]]) as usize;
+        header_len += 4 + words * 4;
+        if data.len() < header_len {
+            bail!("RTP extension truncated");
+        }
+    }
+    // Padding: the last byte says how many bytes to drop.
+    let mut end = data.len();
+    if padding {
+        let n = *data.last().unwrap_or(&0) as usize;
+        if n == 0 || header_len + n > end {
+            bail!("Bad RTP padding");
+        }
+        end -= n;
+    }
+    let payload = data[header_len..end].to_vec();
 
     Ok(RtpPacket {
         version,
@@ -209,11 +277,7 @@ pub fn ulaw_to_linear(sample: u8) -> i16 {
     let mag = biased - 132;
     let mag = mag.max(0);
 
-    if sign {
-        -(mag as i16)
-    } else {
-        mag as i16
-    }
+    if sign { -(mag as i16) } else { mag as i16 }
 }
 
 /// Generate a silence payload for PCMU (160 bytes of mu-law silence = 0xFF).
@@ -224,6 +288,18 @@ pub fn silence_payload() -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn extensions_and_padding_are_not_payload() {
+        let mut p = vec![0xb0, 102, 0, 1, 0, 0, 0, 9, 0, 0, 0, 7]; // V=2 P=1 X=1
+        p.extend_from_slice(&[0xbe, 0xde, 0, 1, 0x10, 0xaa, 0, 0]); // one-word extension
+        p.extend_from_slice(&[0x41, 0x42]); // payload
+        p.extend_from_slice(&[0, 0, 3]); // 3 bytes of padding
+        let r = decode(&p).unwrap();
+        assert_eq!(r.payload, vec![0x41, 0x42]);
+        assert!(decode(&[0x90, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0xbe, 0xde, 0, 9]).is_err());
+    }
+
     use super::*;
 
     #[test]
@@ -307,6 +383,19 @@ mod tests {
                 decoded,
             );
         }
+    }
+
+    #[test]
+    fn audio_level_extension_round_trips() {
+        let p = encode_with_extensions(111, 7, 960, 42, &[(1, &[audio_level(&[16384; 960], true)])], b"xyz");
+        assert_eq!(p[0], 0x90);
+        assert_eq!(&p[12..14], &[0xBE, 0xDE]);
+        assert_eq!(&p[14..16], &[0, 1]);
+        assert_eq!(p[16], 0x10);
+        assert_eq!(p[17], 0x80 | 6, "half scale is -6 dBov with voice");
+        let d = decode(&p).unwrap();
+        assert_eq!(d.payload, b"xyz");
+        assert_eq!(audio_level(&[0; 960], false), 127);
     }
 
     #[test]

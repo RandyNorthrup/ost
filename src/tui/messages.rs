@@ -43,6 +43,11 @@ pub struct Message {
     pub timestamp: String,
     /// Message body lines.
     pub content: String,
+    /// A channel post's subject, shown bold above the text ("" for none).
+    pub subject: String,
+    /// Its formatted lines (headings, quotes, code, styles); empty for plain
+    /// text rows, which show `content`.
+    pub rich: Vec<super::rich::RichLine>,
     /// Reactions below the message.
     pub reactions: Vec<Reaction>,
     /// Number of thread replies (0 = no thread).
@@ -67,7 +72,26 @@ pub struct MessagesState {
     pub expanded_threads: Vec<bool>,
     /// Whether messages are being loaded.
     pub loading: bool,
+    /// How many messages to load (grows as you scroll up for older ones).
+    pub limit: usize,
+    /// An older page was asked for: keep the selection on the message that
+    /// was at the top, and notice when nothing older came.
+    pub loading_older: bool,
+    /// Everything there is has been loaded.
+    pub all_loaded: bool,
+    /// How many messages there were before the last load.
+    pub loaded_before: usize,
+    /// The load under way is a pushed update of the open conversation:
+    /// keep the selection where it was (or on the newest message, if it
+    /// was there).
+    pub live_reload: bool,
+    /// A push came while a load was under way: reload once it's done.
+    pub reload_pending: bool,
 }
+
+/// Messages loaded at first, and how many more each scroll past the top
+/// asks for.
+pub const PAGE: usize = 50;
 
 impl Default for MessagesState {
     fn default() -> Self {
@@ -78,6 +102,12 @@ impl Default for MessagesState {
             scroll_offset: 0,
             selected: 0,
             loading: false,
+            limit: PAGE,
+            loading_older: false,
+            all_loaded: false,
+            loaded_before: 0,
+            live_reload: false,
+            reload_pending: false,
         }
     }
 }
@@ -85,13 +115,23 @@ impl Default for MessagesState {
 impl MessagesState {
     /// Update messages from API response.
     pub fn update_messages(&mut self, header: &str, api_messages: Vec<api::MessageInfo>) {
+        // A pushed update: remember what was selected, and whether it was
+        // the newest message.
+        let live = std::mem::take(&mut self.live_reload) && !self.loading_older;
+        let at_newest = self.selected + 1 >= self.messages.len();
+        let key = self
+            .messages
+            .get(self.selected)
+            .map(|m| (m.sender.clone(), m.timestamp.clone(), m.content.clone()));
         self.channel_header = header.to_string();
         self.messages = api_messages
             .into_iter()
             .map(|m| Message {
                 sender: m.sender,
                 timestamp: m.timestamp,
+                rich: super::rich::message_lines(&m.html, &m.flow, &m.files),
                 content: m.content,
+                subject: m.subject,
                 reactions: Vec::new(),
                 reply_count: 0,
                 replies: Vec::new(),
@@ -101,9 +141,55 @@ impl MessagesState {
         let count = self.messages.len();
         self.expanded_threads = vec![true; count];
         self.scroll_offset = 0;
-        // Select the last (newest) message so the view starts at the bottom.
-        self.selected = count.saturating_sub(1);
+        if live {
+            // New messages came in below: follow them from the newest one,
+            // else stay on the message you were reading.
+            self.selected = if at_newest {
+                count.saturating_sub(1)
+            } else {
+                key.and_then(|(s, t, c)| {
+                    self.messages
+                        .iter()
+                        .rposition(|m| m.sender == s && m.timestamp == t && m.content == c)
+                })
+                .unwrap_or(self.selected)
+                .min(count.saturating_sub(1))
+            };
+        } else if std::mem::take(&mut self.loading_older) {
+            // Older messages came in above: stay on the one that was at the
+            // top (nothing new means there's nothing older).
+            let added = count.saturating_sub(self.loaded_before);
+            self.all_loaded = added == 0;
+            self.selected = added.saturating_sub(1).min(count.saturating_sub(1));
+        } else {
+            // Select the last (newest) message so the view starts at the bottom.
+            self.selected = count.saturating_sub(1);
+            self.all_loaded = count < self.limit;
+        }
+        self.loaded_before = count;
         self.loading = false;
+    }
+
+    /// Up on the oldest message: whether to load older ones (and the new
+    /// limit to ask for).
+    pub fn wants_older(&mut self) -> Option<usize> {
+        if self.selected > 0 || self.all_loaded || self.loading || self.messages.is_empty() {
+            return None;
+        }
+        self.limit += PAGE;
+        self.loading_older = true;
+        self.loading = true;
+        Some(self.limit)
+    }
+
+    /// A different conversation: start again from its newest page.
+    pub fn reset_paging(&mut self) {
+        self.limit = PAGE;
+        self.loading_older = false;
+        self.all_loaded = false;
+        self.loaded_before = 0;
+        self.live_reload = false;
+        self.reload_pending = false;
     }
 
     /// Move selection up by one message.
@@ -176,8 +262,8 @@ pub fn render(area: Rect, buf: &mut Buffer, state: &MessagesState, focused: bool
         return;
     }
 
-    // Show loading indicator.
-    if state.loading {
+    // Show loading indicator (older messages load with the list still shown).
+    if state.loading && state.messages.is_empty() {
         let loading_area = Rect::new(messages_area.x, messages_area.y, messages_area.width, 1);
         let line = Line::from(Span::styled(
             " Loading messages...",
@@ -200,9 +286,12 @@ pub fn render(area: Rect, buf: &mut Buffer, state: &MessagesState, focused: bool
         return;
     }
 
+    // The last column is the scroll indicators' gutter: text and timestamps
+    // stop short of it, so an arrow never covers a character.
+    let text_width = messages_area.width.saturating_sub(1);
+
     // Pre-render all messages into a line buffer (single pass produces lines + ranges).
-    let (all_lines, msg_line_ranges) =
-        build_message_lines(state, messages_area.width as usize, user_name);
+    let (all_lines, msg_line_ranges) = build_message_lines(state, text_width as usize, user_name);
     let total_lines = all_lines.len();
     let visible_height = messages_area.height as usize;
 
@@ -221,7 +310,7 @@ pub fn render(area: Rect, buf: &mut Buffer, state: &MessagesState, focused: bool
         if y >= messages_area.y + messages_area.height {
             break;
         }
-        let line_area = Rect::new(messages_area.x, y, messages_area.width, 1);
+        let line_area = Rect::new(messages_area.x, y, text_width, 1);
         Paragraph::new(all_lines[line_idx].clone()).render(line_area, buf);
     }
 
@@ -280,20 +369,32 @@ fn build_message_lines(
         render_message_card(
             &mut lines,
             msg,
-            width,
-            is_selected,
-            false,
-            0,
-            msg_idx,
-            today,
-            user_name,
+            &CardLayout {
+                width,
+                is_selected,
+                is_reply: false,
+                indent: 0,
+                msg_idx,
+                today,
+                user_name,
+            },
         );
 
         // Render thread replies if expanded.
         if thread_expanded && !msg.replies.is_empty() {
             for reply in &msg.replies {
                 render_message_card(
-                    &mut lines, reply, width, false, true, 4, msg_idx, today, user_name,
+                    &mut lines,
+                    reply,
+                    &CardLayout {
+                        width,
+                        is_selected: false,
+                        is_reply: true,
+                        indent: 4,
+                        msg_idx,
+                        today,
+                        user_name,
+                    },
                 );
             }
         } else if msg.reply_count > 0 && !thread_expanded {
@@ -321,17 +422,27 @@ fn build_message_lines(
 ///
 /// Uses colored backgrounds instead of ASCII borders. Even/odd `msg_idx`
 /// alternates between two subtle background shades for visual separation.
-fn render_message_card(
-    lines: &mut Vec<Line<'static>>,
-    msg: &Message,
+/// How a message card is laid out.
+struct CardLayout<'a> {
     width: usize,
     is_selected: bool,
     is_reply: bool,
     indent: usize,
     msg_idx: usize,
     today: NaiveDate,
-    user_name: &str,
-) {
+    user_name: &'a str,
+}
+
+fn render_message_card(lines: &mut Vec<Line<'static>>, msg: &Message, layout: &CardLayout<'_>) {
+    let CardLayout {
+        width,
+        is_selected,
+        is_reply,
+        indent,
+        msg_idx,
+        today,
+        user_name,
+    } = *layout;
     let is_own = msg.sender == user_name;
     let indent_str: String = " ".repeat(indent);
     let reply_prefix = if is_reply { " -> " } else { "" };
@@ -363,7 +474,7 @@ fn render_message_card(
         Color::Rgb(30, 30, 38)
     } else if is_own {
         Color::Rgb(30, 38, 50)
-    } else if msg_idx % 2 == 0 {
+    } else if msg_idx.is_multiple_of(2) {
         Color::Rgb(35, 35, 45)
     } else {
         Color::Rgb(42, 42, 52)
@@ -424,15 +535,61 @@ fn render_message_card(
             "    " // align with sender name after selection indicator "  "
         }
     );
-    for cl in &content_lines {
-        let used = content_prefix.len() + cl.len();
+    // A post's subject, bold, above its text (Teams' heading).
+    for sl in wrap_text(&msg.subject, wrap_width) {
+        if sl.trim().is_empty() {
+            continue;
+        }
+        let used = content_prefix.len() + sl.len();
         lines.push(make_bg_line(
             vec![
                 Span::styled(content_prefix.clone(), bg_style),
-                Span::styled(cl.clone(), text_style),
+                Span::styled(sl.clone(), text_style.add_modifier(Modifier::BOLD)),
             ],
             used,
         ));
+    }
+    if msg.rich.is_empty() {
+        for cl in &content_lines {
+            let used = content_prefix.len() + cl.len();
+            lines.push(make_bg_line(
+                vec![
+                    Span::styled(content_prefix.clone(), bg_style),
+                    Span::styled(cl.clone(), text_style),
+                ],
+                used,
+            ));
+        }
+    } else {
+        // The message's formatting (headings, quotes, code, styles).
+        for rl in &msg.rich {
+            let (mark, mark_style) = match &rl.kind {
+                super::rich::Kind::Quote => ("│ ".to_string(), Style::default().fg(Color::DarkGray).bg(bg)),
+                super::rich::Kind::Code => ("▏ ".to_string(), Style::default().fg(Color::DarkGray).bg(bg)),
+                super::rich::Kind::Item(b) => (b.clone(), text_style),
+                _ => (String::new(), text_style),
+            };
+            let mark_w = unicode_width::UnicodeWidthStr::width(mark.as_str());
+            let base = match rl.kind {
+                super::rich::Kind::Heading(1) => text_style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                super::rich::Kind::Heading(_) => text_style.add_modifier(Modifier::BOLD),
+                super::rich::Kind::Quote => Style::default().fg(Color::Gray).bg(bg),
+                super::rich::Kind::Code => Style::default().fg(Color::LightCyan).bg(bg),
+                _ => text_style,
+            };
+            for (n, row) in wrap_spans(&rl.spans, wrap_width.saturating_sub(mark_w), rl.kind == super::rich::Kind::Code).into_iter().enumerate() {
+                let mut spans = vec![Span::styled(content_prefix.clone(), bg_style)];
+                // List bullets on the first row only; bars on every row.
+                let lead = if matches!(rl.kind, super::rich::Kind::Item(_)) && n > 0 { " ".repeat(mark_w) } else { mark.clone() };
+                spans.push(Span::styled(lead, mark_style));
+                let mut used = content_prefix.len() + mark_w;
+                for (t, f) in row {
+                    used += unicode_width::UnicodeWidthStr::width(t.as_str());
+                    spans.push(Span::styled(t, span_style(base, f)));
+                }
+                lines.push(make_bg_line(spans, used));
+            }
+        }
     }
 
     // Attachments.
@@ -559,6 +716,83 @@ fn format_timestamp(raw: &str, today: NaiveDate) -> String {
 }
 
 /// Simple word-wrapping: split content by newlines first, then wrap long lines.
+/// A span's terminal style on top of its line's.
+fn span_style(base: Style, f: super::rich::Fmt) -> Style {
+    let mut st = base;
+    if f.code {
+        st = st.fg(Color::LightYellow);
+    }
+    if f.media {
+        st = st.fg(Color::Magenta).add_modifier(Modifier::ITALIC);
+    }
+    if f.bold {
+        st = st.add_modifier(Modifier::BOLD);
+    }
+    if f.italic {
+        st = st.add_modifier(Modifier::ITALIC);
+    }
+    if f.underline {
+        st = st.add_modifier(Modifier::UNDERLINED);
+    }
+    if f.strike {
+        st = st.add_modifier(Modifier::CROSSED_OUT);
+    }
+    st
+}
+
+/// Wrap styled spans to `width` columns, keeping each piece's style:
+/// at spaces (long words are cut), or anywhere for `hard` (code).
+fn wrap_spans(spans: &[(String, super::rich::Fmt)], width: usize, hard: bool) -> Vec<Vec<(String, super::rich::Fmt)>> {
+    use unicode_width::UnicodeWidthChar;
+    let width = width.max(1);
+    let mut rows: Vec<Vec<(String, super::rich::Fmt)>> = vec![Vec::new()];
+    let mut col = 0usize;
+    let push = |rows: &mut Vec<Vec<(String, super::rich::Fmt)>>, c: char, f: super::rich::Fmt| {
+        let row = rows.last_mut().expect("a row");
+        match row.last_mut() {
+            Some((t, lf)) if *lf == f => t.push(c),
+            _ => row.push((c.to_string(), f)),
+        }
+    };
+    // Words with their style, spaces kept with the word before them.
+    let mut words: Vec<Vec<(char, super::rich::Fmt)>> = Vec::new();
+    let mut word: Vec<(char, super::rich::Fmt)> = Vec::new();
+    for (text, f) in spans {
+        for c in text.chars() {
+            word.push((c, *f));
+            if c == ' ' && !hard {
+                words.push(std::mem::take(&mut word));
+            }
+        }
+    }
+    if !word.is_empty() {
+        words.push(word);
+    }
+    for w in words {
+        let w_width: usize = w.iter().filter(|(c, _)| *c != ' ').map(|(c, _)| c.width().unwrap_or(0)).sum();
+        if !hard && col > 0 && col + w_width > width {
+            rows.push(Vec::new());
+            col = 0;
+        }
+        for (c, f) in w {
+            let cw = c.width().unwrap_or(0);
+            if col + cw > width {
+                if c == ' ' {
+                    continue;
+                }
+                rows.push(Vec::new());
+                col = 0;
+            }
+            if col == 0 && c == ' ' && !hard {
+                continue;
+            }
+            push(&mut rows, c, f);
+            col += cw;
+        }
+    }
+    rows
+}
+
 fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     if max_width == 0 {
         return vec![];
@@ -665,4 +899,86 @@ fn compute_auto_scroll(
     // Clamp.
     let max_scroll = total_lines.saturating_sub(visible_height);
     scroll.min(max_scroll)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scrolling_past_the_top_asks_for_older_messages() {
+        let msg = |i: usize| api::MessageInfo { sender: "A".into(), timestamp: String::new(), content: format!("m{i}"), ..Default::default() };
+        let mut st = MessagesState::default();
+        st.update_messages("h", (0..50).map(msg).collect());
+        assert_eq!(st.selected, 49);
+        assert_eq!(st.wants_older(), None, "not at the top yet");
+        st.selected = 0;
+        assert_eq!(st.wants_older(), Some(100));
+        // Twenty older ones came in above: the old top message stays selected.
+        st.update_messages("h", (0..70).map(msg).collect());
+        assert_eq!(st.selected, 19);
+        assert!(!st.all_loaded);
+        // Nothing more: no further requests.
+        st.selected = 0;
+        assert_eq!(st.wants_older(), Some(150));
+        st.update_messages("h", (0..70).map(msg).collect());
+        assert!(st.all_loaded);
+        st.selected = 0;
+        assert_eq!(st.wants_older(), None);
+    }
+
+    #[test]
+    fn scroll_arrows_never_cover_timestamps() {
+        let msg = |i: usize| api::MessageInfo { sender: "Someone".into(), timestamp: "2026-11-10T12:24:00Z".into(), content: format!("message {i}"), ..Default::default() };
+        let mut st = MessagesState::default();
+        st.update_messages("h", (0..30).map(msg).collect());
+        st.selected = 15; // arrows at both ends
+        let area = Rect::new(0, 0, 60, 20);
+        let mut buf = Buffer::empty(area);
+        render(area, &mut buf, &st, true, "Me");
+        // Inner area is 1..59; its last column (58) is the gutter.
+        let gutter: String = (2..19).map(|y| buf[(58, y)].symbol().to_string()).collect();
+        assert!(gutter.chars().all(|c| c == ' ' || c == '^' || c == 'v'), "text in the gutter: {gutter:?}");
+        assert!(gutter.contains('^') && gutter.contains('v'));
+    }
+
+    #[test]
+    fn subjects_show_bold_above_the_text() {
+        let mut st = MessagesState::default();
+        st.update_messages("h", vec![api::MessageInfo { sender: "A".into(), content: "OST TEST 88 body".into(), subject: "OST TEST 88 subject".into(), ..Default::default() }]);
+        let (lines, _) = build_message_lines(&st, 60, "Me");
+        let text: Vec<String> = lines.iter().map(|l| l.spans.iter().map(|s| s.content.to_string()).collect::<String>()).collect();
+        let s = text.iter().position(|l| l.contains("OST TEST 88 subject")).expect("subject shown");
+        let b = text.iter().position(|l| l.contains("OST TEST 88 body")).unwrap();
+        assert!(s < b);
+        assert!(lines[s].spans.iter().any(|sp| sp.content.contains("subject") && sp.style.add_modifier.contains(Modifier::BOLD)));
+    }
+
+    #[test]
+    fn formatting_shows_in_the_terminal() {
+        let mut st = MessagesState::default();
+        st.update_messages("h", vec![api::MessageInfo {
+            sender: "A".into(),
+            content: "plain".into(),
+            html: "<h1>Title</h1><p>a <b>bold</b> word and <code>x</code></p><blockquote><p>quoted</p></blockquote>".into(),
+            ..Default::default()
+        }]);
+        let (lines, _) = build_message_lines(&st, 60, "Me");
+        let find = |t: &str| lines.iter().find(|l| l.spans.iter().any(|s| s.content.contains(t))).expect(t);
+        let span = |t: &str| find(t).spans.iter().find(|s| s.content.contains(t)).unwrap().style;
+        assert!(span("Title").add_modifier.contains(Modifier::BOLD | Modifier::UNDERLINED));
+        assert!(span("bold").add_modifier.contains(Modifier::BOLD));
+        assert_eq!(span("x").fg, Some(Color::LightYellow));
+        assert!(find("quoted").spans.iter().any(|s| s.content.contains('│')));
+    }
+
+    #[test]
+    fn styled_text_wraps_at_spaces() {
+        let f = super::super::rich::Fmt::default();
+        let b = super::super::rich::Fmt { bold: true, ..f };
+        let rows = wrap_spans(&[("one two ".into(), f), ("three".into(), b), (" four".into(), f)], 9, false);
+        let text: Vec<String> = rows.iter().map(|r| r.iter().map(|(t, _)| t.as_str()).collect()).collect();
+        assert_eq!(text, ["one two ", "three ", "four"]);
+        assert!(rows[1].iter().any(|(t, f)| t == "three" && f.bold));
+    }
 }

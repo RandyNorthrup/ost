@@ -1,0 +1,36 @@
+{
+ "entityRequests": [
+  {
+   "entityType": "Chat",
+   "contentSources": [
+    "Teams"
+   ],
+   "propertySet": "Optimized",
+   "fields": [],
+   "query": {
+    "queryString": "{QUERY}",
+    "displayQueryString": "{QUERY}"
+   },
+   "extendedQueries": [
+    {
+     "query": {}
+    }
+   ],
+   "from": 0,
+   "size": 25
+  }
+ ],
+ "scenario": {
+  "Dimensions": [
+   {
+    "DimensionName": "QueryType",
+    "DimensionValue": "GroupChats"
+   },
+   {
+    "DimensionName": "FormFactor",
+    "DimensionValue": "general.maglev.reactSearch"
+   }
+  ],
+  "Name": "powerbar"
+ }
+}

@@ -5,8 +5,8 @@ title: >-
   'Connecting...'
 status: Done
 assignee: []
-created_date: '2026-02-05 23:11'
-updated_date: '2026-02-05 23:50'
+created_date: 2026-02-05 23:11
+updated_date: '2026-11-20T01:22:00Z'
 labels:
   - bug
   - tui
@@ -22,10 +22,16 @@ During TUI startup, the top-right of the title bar displays `o online` while the
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Top bar and bottom status bar show consistent connection state during startup
-- [ ] #2 While connecting, neither indicator claims 'online'
-- [ ] #3 Both indicators transition to 'online'/'Connected' at the same time
+- [x] #1 Top bar and bottom status bar show consistent connection state during startup
+- [x] #2 While connecting, neither indicator claims 'online'
+- [x] #3 Both indicators transition to 'online'/'Connected' at the same time
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-19 audit: criteria checked to match the Done status and final summary.
+<!-- SECTION:NOTES:END -->
 
 ## Final Summary
 

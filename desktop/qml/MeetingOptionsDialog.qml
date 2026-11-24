@@ -1,0 +1,600 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Window
+
+// Teams' Meeting options dialog (Controls ▸ View more options; calling
+// meeting options form), measured on winpc 2026-11-10 (CSS px):
+// - 780.7 x 538.7, white, radius 8, padding 0 24; "Meeting options"
+//   20/600 at 24, 24; Close (20.8) 24 in from the right, 28.9 down;
+// - a vertical tab list at 24, 78.5 (215 wide): 28 px tabs every 32,
+//   padding 4 8, the icon (20, filled when chosen) at 8 and the label at 34
+//   (14, 600 when chosen), a 3 px brand bar at the chosen tab's left;
+// - the sections scroll at 244, 78.5 (512.7 x 413.8), one after another:
+//   the section's icon (20) and title (16/700, line 22), its fields 48.5
+//   under it, sections 57 apart with a divider; a field: its label 14/600
+//   #616161, the description 12/16 #616161 (450.7 wide beside a switch,
+//   498.7 otherwise), then its dropdown (497.3 x 30, 8.7 under) or the
+//   switch (40 x 20) on the label's row at the right; fields 21.7 apart;
+// - Apply (71 x 31.3) at the bottom right, 24 in; disabled until
+//   something changes. Apply saves every option (Teams' POST of all of
+//   them) and the dialog stays open.
+// The labels and value names are Teams' (read from the live dialog).
+Popup {
+    id: root
+    parent: Overlay.overlay
+    modal: true; focus: true
+    padding: 0
+    width: 780.7; height: 538.7
+    anchors.centerIn: Overlay.overlay
+    // Escape and Close ask first when something's changed (tryClose).
+    closePolicy: Popup.NoAutoClose
+    background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+    Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
+
+    /// The meeting's options as the API lists them ({name: option}).
+    property var options: ({})
+    /// For the people pickers: {invitees: [{mri, upn, objectId, tenantId}],
+    /// people: {mri: name}, organizer: {mri, objectId, upn, tenantId},
+    /// tenantId}.
+    property var people: ({})
+    /// Teams' dialog strings from the same reply (translations), in the
+    /// app language (asked with Accept-Language). Teams' dialog shows them
+    /// as they are: a section's title `meetingsOptions_<SECTION>`, an
+    /// option's label `meetingsOptions_<option>`, its description
+    /// `…_<option>_Info`, a value's name `…_<option>_<value>`. OST's own
+    /// text below is only for a key the reply lacks (marked
+    /// "reply:meetingsOptions" where Teams has it nowhere else).
+    readonly property var strings: people.translations || ({})
+    function fromReply(key, fallback) { return strings["meetingsOptions_" + key] || fallback }
+    function valueName(option, v) { return fromReply(option + "_" + v, (labels[option] || {})[v] || String(v)) }
+    /// What's been changed and not applied yet ({name: value}).
+    property var changes: ({})
+    signal apply(var changes)
+    onAboutToShow: changes = ({})
+    function isPeople(o) { return !!o && (o.type === "PeopleSelection" || o.type === "PresenterSelection") }
+    function value(n) {
+        if (changes[n] !== undefined) return changes[n]
+        const o = options[n]
+        return !o ? undefined : isPeople(o) ? (o.selectedPeople || []) : o.currentValue
+    }
+    function change(n, v) {
+        const c = Object.assign({}, changes)
+        const o = options[n]
+        const same = isPeople(o)
+            ? (o.selectedPeople || []).map(p => p.mri).join() === v.map(p => p.mri).join()
+            : !!o && o.currentValue === v
+        if (same) delete c[n]; else c[n] = v
+        changes = c
+    }
+    function tryClose() { if (dirty) unsaved.open(); else close() }
+    // Teams' pickers (PeopleSelection `Xn`, PeoplePicker `da`): the
+    // meeting's invitees; co-organizers also those picked and never the
+    // organizer, nor anyone from another org; specific producers also the
+    // organizer; nobody already picked in the same section.
+    function samePerson(a, b) {
+        const eq = (x, y) => !!x && !!y && String(x).toLowerCase() === String(y).toLowerCase()
+        return eq(a.objectId, b.objectId) || eq(a.mri, b.mri) || eq(a.upn, b.upn)
+    }
+    function candidates(n) {
+        const org = people.organizer
+        let list = (people.invitees || []).filter(p => p.mri && p.upn && p.objectId)
+        const add = p => { if (!list.some(x => samePerson(x, p))) list.push(p) }
+        if (n === "CoOrganizers") {
+            value(n).forEach(add)
+            if (org) list = list.filter(p => !samePerson(p, org))
+            list = list.filter(p => !p.tenantId || !people.tenantId || p.tenantId === people.tenantId)
+        }
+        if (n === "SpecifiedProducers" && org && org.upn) add(org)
+        const cat = options[n] ? options[n].category : ""
+        const taken = Object.keys(options).filter(k => k !== n && isPeople(options[k]) && options[k].category === cat)
+            .reduce((all, k) => all.concat(value(k).map(p => p.mri)), [])
+        return list.filter(p => taken.indexOf(p.mri) < 0)
+    }
+    // A picker that must name someone: specific presenters or producers
+    // while "Specific people" is chosen (Teams' isValid).
+    function invalid(n) {
+        if (n === "SpecifiedPresenters") return value("PresenterOption") === "SpecifiedPeople" && value(n).length === 0
+        if (n === "SpecifiedProducers") return value("ProducerOption") === "SpecifiedPeople" && value(n).length === 0
+        return false
+    }
+    // Teams' planning-group note over Who can present: shown once there
+    // are co-organizers, or only some people present.
+    readonly property bool planningNote: (value("CoOrganizers") || []).length > 0
+        || ["SpecifiedPeople", "OrganizerOnly"].indexOf(value("PresenterOption")) >= 0
+    // Apply checks the pickers first, as Teams does: an empty required
+    // one is shown instead of saving.
+    function tryApply() {
+        for (let i = 0; i < sections.length; i++) {
+            if (sections[i].fields.some(f => f.kind === "people" && shown(f) && invalid(f.name))) { scrollTo(i); return }
+        }
+        const out = {}
+        Object.keys(changes).forEach(k => {
+            out[k] = isPeople(options[k]) ? changes[k].map(p => ({ mri: p.mri, upn: p.upn, objectId: p.objectId, tenantId: p.tenantId })) : changes[k]
+        })
+        apply(out)
+        changes = ({})
+    }
+    // Escape closes an open picker list first, then the dialog.
+    Shortcut {
+        sequence: "Escape"
+        enabled: root.opened && !unsaved.opened
+        onActivated: {
+            const f = root.contentItem.Window.activeFocusItem
+            if (f && typeof f.closeDropForEscape === "function" && f.closeDropForEscape()) return
+            root.tryClose()
+        }
+    }
+    readonly property bool dirty: Object.keys(changes).length > 0
+
+    // Teams' value names per option.
+    readonly property var labels: ({
+        AutoAdmittedUsers: { Everyone: qsTr("Everyone"), EveryoneInSameAndFederatedCompany: qsTr("People in my org, trusted orgs, and guests"), EveryoneInCompany: qsTr("People in my org and guests"), EveryoneInCompanyExcludingGuests: qsTr("People in my org"), InvitedUsers: qsTr("People who were invited"), OrganizerOnly: qsTr("Only organizers and co-organizers") },
+        UsersCanAdmitFromLobby: { OrganizersAndPresentersOnly: qsTr("Organizers, co-organizers, and presenters"), OrganizerAndCoOrganizersOnly: qsTr("Organizers and co-organizers") },
+        AllowedUsersForMeetingDetails: { UsersAllowedToByPassTheLobby: qsTr("Users allowed to bypass the lobby", "reply:meetingsOptions"), Everyone: qsTr("Everyone") },
+        PresenterOption: { Everyone: qsTr("Everyone"), EveryoneInCompany: qsTr("People in my org and guests"), SpecifiedPeople: qsTr("Specific people"), OrganizerOnly: qsTr("Only organizers and co-organizers") },
+        ManagedMode: { Default: qsTr("Off"), HostMode: qsTr("On", "calling:kar4y63pl"), AdvancedHostMode: qsTr("On with preview") },
+        ProducerOption: { OrganizerAndCoOrganizersOnly: qsTr("Organizer and co-organizers", "reply:meetingsOptions"), OrganizersAndPresentersOnly: qsTr("Organizer, co-organizers, and presenters", "reply:meetingsOptions"), SpecifiedPeople: qsTr("Specific people") },
+        AllowMeetingChat: { Enabled: qsTr("On", "calling:kar4y63pl"), Disabled: qsTr("Off"), InMeeting: qsTr("In meeting only") },
+        WhoCanStartAnnotations: { ActiveSharer: qsTr("Active sharer", "reply:meetingsOptions"), Everyone: qsTr("Everyone") },
+        AutoRecordAndTranscribeMode: { AutoRecordingAndTranscription: qsTr("Record and transcribe"), AutoTranscriptionOnly: qsTr("Transcribe only", "reply:meetingsOptions"), Off: qsTr("Off") },
+        WhoCanManageQna: { OrganizersAndCoorganizers: qsTr("Only organizers and co-organizers"), OrganizersAndPresenters: qsTr("Organizers, co-organizers, and presenters") },
+        RecorderOption: { OrganizersAndPresentersOnly: qsTr("Organizers, co-organizers, and presenters"), OrganizerAndCoOrganizersOnly: qsTr("Organizers and co-organizers") },
+        WhoCanAccessTranscriptAndRecording: { Default: qsTr("Everyone") },
+        CopilotMode: { EnabledWithTranscript: qsTr("During and after the meeting", "reply:meetingsOptions"), Enabled: qsTr("Only during the meeting", "reply:meetingsOptions"), Disabled: qsTr("Off") }
+    })
+    // The sections and their fields, in Teams' order. kind: "list",
+    // "switch", "people", "audio"/"video" (AttendeeRestrictions' bits).
+    readonly property var sections: baseSections.map(sec => Object.assign({}, sec, {
+        title: fromReply(sec.key, sec.title),
+        fields: sec.fields.map(f => Object.assign({}, f, {
+            label: f.label && f.kind !== "audio" && f.kind !== "video" ? fromReply(f.name, f.label) : f.label,
+            desc: f.desc && f.kind !== "audio" && f.kind !== "video" ? fromReply(f.name + "_Info", f.desc) : f.desc
+        }))
+    }))
+    readonly property var baseSections: [
+        { key: "MEETING_ACCESS", title: qsTr("Meeting access", "reply:meetingsOptions"), icon: "mo-access", fields: [
+            { name: "AutoAdmittedUsers", kind: "list", label: qsTr("Who can bypass the lobby?"), desc: qsTr("Even if Everyone is selected, your org policy may require certain participants wait in the lobby until a member of your org or a trusted org joins. This could include people joining without an account, people from untrusted orgs, and people dialing in.", "reply:meetingsOptions") },
+            { name: "AllowPstnUsersToBypassLobby", kind: "switch", label: qsTr("People dialing in can bypass the lobby") },
+            { name: "UsersCanAdmitFromLobby", kind: "list", label: qsTr("Who can admit from the lobby") },
+            { name: "AllowedUsersForMeetingDetails", kind: "list", label: qsTr("Show meeting info on join screen"), desc: qsTr("Display details about the meeting like title and start time, number of others joined, and presence of the organizer.", "reply:meetingsOptions") },
+            { name: "EntryExitAnnouncementsEnabled", kind: "switch", label: qsTr("Announce when people dialing in join or leave") },
+            { name: "AllowAnonymousUsersToJoinMeeting", kind: "switch", label: qsTr("Require unverified participants to verify their info before joining", "reply:meetingsOptions"), desc: qsTr("When this is on, unverified participants will need to sign in or verify their emails with a code before joining the meeting. Your license and admin policy also determine how they’ll join.", "reply:meetingsOptions") }] },
+        { key: "ROLES", title: qsTr("Roles"), icon: "mo-roles", fields: [
+            { name: "CoOrganizers", kind: "people", label: qsTr("Choose co-organizers:", "reply:meetingsOptions"), desc: qsTr("In Teams meeting, co-organizer has the same capabilities as the organizer.", "reply:meetingsOptions") },
+            { name: "PresenterOption", kind: "list", label: qsTr("Who can present") },
+            { name: "SpecifiedPresenters", kind: "people", label: "", showWhen: ["PresenterOption", "SpecifiedPeople"] },
+            { name: "Interpretation", kind: "switch", label: qsTr("Enable language interpretation"), desc: qsTr("Add interpreters who can interpret one language into another in real-time. To assign interpreters, send the meeting invite then refresh this page and choose them.", "reply:meetingsOptions") }] },
+        { key: "PRODUCTION_TOOLS", title: qsTr("Production tools"), icon: "mo-production", fields: [
+            { name: "ProducerOption", kind: "list", label: qsTr("Who has control of production tools"), desc: qsTr("To give people in the meeting control over what is shown on screen for attendees, add them as co-organizers or presenters.", "reply:meetingsOptions") },
+            { name: "SpecifiedProducers", kind: "people", label: "", showWhen: ["ProducerOption", "SpecifiedPeople"] },
+            { name: "ManagedMode", kind: "radio", label: qsTr("Manage what attendees see"), desc: qsTr("Choose if you'd like organizers and presenters to manage the content and people attendees see on their screens. Only people you've selected in the setting above can manage the screen.", "reply:meetingsOptions") },
+            { name: "StagingRoomEnabled", kind: "switch", label: qsTr("Enable green room"), desc: qsTr("Lets organizers and presenters check their audio, video, and content sharing before attendees are admitted. To use this feature, make someone a presenter and turn it on before the meeting starts.") }] },
+        { key: "PARTICIPATION", title: qsTr("Participation"), icon: "mo-participation", fields: [
+            { name: "AttendeeRestrictions", kind: "audio", label: qsTr("Allow mic for attendees"), desc: qsTr("Turn this off to prevent attendees from unmuting. You can allow them to unmute individually as needed.", "reply:meetingsOptions") },
+            { name: "AttendeeRestrictions", kind: "video", label: qsTr("Allow camera for attendees"), desc: qsTr("Turn this off to prevent attendees from sharing video. You can allow them to share video individually as needed.", "reply:meetingsOptions") },
+            { name: "AllowMeetingChat", kind: "list", label: qsTr("Meeting chat") },
+            { name: "YammerQNAEnabled", kind: "switch", label: qsTr("Q&A"), desc: qsTr("Organizers can customize Q&A to allow anonymous posts, review questions before publishing, and more.") },
+            { name: "WhoCanManageQna", kind: "list", label: qsTr("Who can manage Q&A") },
+            { name: "AllowTeamsMeetingReactions", kind: "switch", label: qsTr("Allow reactions") },
+            { name: "AttendanceReportEnabled", kind: "switch", label: qsTr("Allow attendance report") },
+            { name: "WhoCanStartAnnotations", kind: "list", label: qsTr("Who can start annotations?", "reply:meetingsOptions") }] },
+        { key: "RECORDING_AND_TRANSCRIPTION", title: qsTr("Recording & transcription", "reply:meetingsOptions"), icon: "mo-recording", fields: [
+            { name: "AutoRecordAndTranscribeMode", kind: "list", label: qsTr("Record and transcribe automatically"), desc: qsTr("Recording and transcription will start automatically when the meeting begins. Your license and admin policy also determine how they turn on.", "reply:meetingsOptions") },
+            { name: "MeetingSpokenLanguage", kind: "list", label: qsTr("Spoken language in this meeting"), desc: qsTr("Language that everyone is speaking in this meeting. This setting affects recording, transcription, captions, and Copilot.", "reply:meetingsOptions") },
+            { name: "RecorderOption", kind: "list", label: qsTr("Who can record and transcribe"), desc: qsTr("Your meeting role, your org’s license, and admin policy also determine who can record and transcribe.", "reply:meetingsOptions") },
+            { name: "EnableMultiLingualMeeting", kind: "switch", label: qsTr("Enable multilingual speech recognition"), desc: qsTr("This allows everyone to be understood in their spoken languages. This also affects recording, transcription, captions, and Copilot.", "reply:meetingsOptions") },
+            { name: "WhoCanAccessTranscriptAndRecording", kind: "list", label: qsTr("Who has access to the recording or transcript"), desc: qsTr("Copilot and recap access might be affected by this option.", "reply:meetingsOptions") }] },
+        { key: "COPILOT", title: qsTr("Copilot and other AI", "reply:meetingsOptions"), icon: "mo-copilot", fields: [
+            { name: "CopilotMode", kind: "list", label: qsTr("Allow Copilot") },
+            { name: "IsRecapEnabled", kind: "switch", label: qsTr("Start Intelligent Recap when Copilot is turned on"), desc: qsTr("Turn this off if you don’t want a recap with AI-generated content.", "reply:meetingsOptions") }] },
+        { key: "ACCESSIBILITY", title: qsTr("Accessibility"), icon: "mo-accessibility", fields: [
+            { name: "CARTExternalFeed", kind: "switch", label: qsTr("Provide CART Captions", "reply:meetingsOptions") }] }
+    ]
+    // AttendeeRestrictions as two switches (Teams' invertToggleFlags "011":
+    // on while that bit isn't set).
+    function bitOn(kind) {
+        const v = String(value("AttendeeRestrictions") || "UnRestricted")
+        return v.indexOf(kind === "audio" ? "DisableAudio" : "DisableVideo") < 0
+    }
+    function setBit(kind, on) {
+        const parts = String(value("AttendeeRestrictions") || "UnRestricted").split(",").map(s => s.trim()).filter(s => s && s !== "UnRestricted")
+        const bit = kind === "audio" ? "DisableAudio" : "DisableVideo"
+        const next = parts.filter(p => p !== bit).concat(on ? [] : [bit])
+        change("AttendeeRestrictions", next.length ? ["DisableAudio", "DisableVideo"].filter(b => next.indexOf(b) >= 0).join(",") : "UnRestricted")
+    }
+    function shown(f) {
+        if (!options[f.name]) return false
+        return !f.showWhen || value(f.showWhen[0]) === f.showWhen[1]
+    }
+    property int currentSection: 0
+    function scrollTo(i) {
+        currentSection = i
+        const item = sectionRepeater.itemAt(i)
+        // The section's title at the top, 8.5 down, as Teams scrolls it.
+        if (item) flick.contentY = Math.min(item.y + (i > 0 ? 0.67 + 56.3 - 8.5 : 0), Math.max(0, flick.contentHeight - flick.height))
+    }
+
+    Text {
+        x: 24; y: 24; height: 28; verticalAlignment: Text.AlignVCenter
+        text: qsTr("Meeting options")
+        font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
+        color: theme.text
+        Accessible.role: Accessible.Heading
+        Accessible.name: text
+    }
+    Rectangle {
+        id: hcFill1
+        x: root.width - 24 - 20.8; y: 28.9; width: 20.8; height: 20.8; radius: 4
+        color: closeH.hovered ? theme.menuHover : "transparent"
+        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
+        HoverHandler { id: closeH; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: root.tryClose() }
+        Accessible.role: Accessible.Button
+        Accessible.name: qsTr("Close")
+    }
+
+    // The tab list.
+    Column {
+        x: 24; y: 78.5; width: 215
+        spacing: 4
+        Repeater {
+            model: root.sections
+            Rectangle {
+                id: tab
+                required property var modelData
+                required property int index
+                readonly property bool chosen: root.currentSection === index
+                x: 2; width: tabRow.implicitWidth + 16; height: 28; radius: 4
+                color: tabH.hovered && !chosen ? theme.menuHover : "transparent"
+                Rectangle { visible: tab.chosen; x: 0; anchors.verticalCenter: parent.verticalCenter; width: 3; height: 16; radius: 1.5; color: theme.brand }
+                Row {
+                    id: tabRow
+                    x: 8; anchors.verticalCenter: parent.verticalCenter
+                    spacing: 6
+                    FluentIcon { name: tab.modelData.icon + (tab.chosen ? "-filled" : ""); size: 20; color: theme.onFill(tab, tab.chosen ? theme.brand : theme.textStrong); anchors.verticalCenter: parent.verticalCenter }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: tab.modelData.title
+                        font.family: theme.font; font.pixelSize: 14; font.weight: tab.chosen ? Font.DemiBold : Font.Normal
+                        color: theme.onFill(tab, tab.chosen ? theme.text : theme.textStrong)
+                    }
+                }
+                HoverHandler { id: tabH; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.scrollTo(tab.index) }
+                Accessible.role: Accessible.PageTab
+                Accessible.name: tab.modelData.title
+                Accessible.selected: tab.chosen
+            }
+        }
+    }
+
+    // The sections.
+    Flickable {
+        id: flick
+        x: 244; y: 78.5; width: 512.7; height: 413.8
+        contentHeight: sectionsCol.implicitHeight + 24
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        // The tab follows the section at the top as the list scrolls.
+        onContentYChanged: if (moving || dragging) {
+            for (let i = root.sections.length - 1; i >= 0; i--) {
+                const it = sectionRepeater.itemAt(i)
+                if (it && it.y <= contentY + 8) { root.currentSection = i; break }
+            }
+        }
+        Column {
+            id: sectionsCol
+            width: 499.4
+            spacing: 0
+            Repeater {
+                id: sectionRepeater
+                model: root.sections
+                Column {
+                    id: sec
+                    required property var modelData
+                    required property int index
+                    readonly property var visibleFields: modelData.fields.filter(f => root.shown(f))
+                    visible: visibleFields.length > 0
+                    width: parent.width
+                    spacing: 0
+                    Rectangle { visible: sec.index > 0; width: parent.width; height: Math.max(0.67, 1 / Screen.devicePixelRatio); color: theme.divider }
+                    Item { width: 1; height: sec.index > 0 ? 56.3 : 8.5 }
+                    Row {
+                        spacing: 5
+                        FluentIcon { name: sec.modelData.icon; size: 20; color: theme.textStrong; anchors.verticalCenter: parent.verticalCenter }
+                        Text {
+                            text: sec.modelData.title
+                            font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
+                            lineHeight: 22; lineHeightMode: Text.FixedHeight
+                            color: theme.text
+                            Accessible.role: Accessible.Heading
+                            Accessible.name: text
+                        }
+                    }
+                    Item { width: 1; height: 26.5 }
+                    Repeater {
+                        model: sec.visibleFields
+                        Item {
+                            id: field
+                            required property var modelData
+                            required property int index
+                            readonly property var opt: root.options[modelData.name] || ({})
+                            // Locked by the admin (isLocked) or unavailable (isDisabled).
+                            readonly property bool locked: !!opt.isDisabled || !!opt.isLocked
+                            readonly property bool isSwitch: ["switch", "audio", "video"].indexOf(modelData.kind) >= 0
+                            width: sec.width
+                            height: fieldCol.implicitHeight + 21.7
+                            Column {
+                                id: fieldCol
+                                width: parent.width
+                                spacing: 0
+                                // Teams' planning-group note over Who can present
+                                // (a #F5F5F5 alert, radius 5, padding 5: the
+                                // filled info glyph (16), the text 12/16 20 after
+                                // it with Learn more; 12 above the label).
+                                Item { visible: note.visible; width: 1; height: 2 }
+                                Rectangle {
+                                    id: note
+                                    visible: field.modelData.name === "PresenterOption" && root.planningNote
+                                    width: 498.7; height: noteText.implicitHeight + 10; radius: 5
+                                    color: theme.pick("#F5F5F5", "#2E2E2E", "#000000")
+                                    FluentIcon { x: 5; y: 5.5; name: "info-16"; size: 16; color: theme.text }
+                                    Text {
+                                        id: noteText
+                                        x: 25; y: 5; width: 468.7
+                                        wrapMode: Text.Wrap
+                                        textFormat: Text.StyledText
+                                        text: qsTr("You'll be able to chat separately with the co-organizers and presenters in the planning group. Once saved access it from chat list or Calendar") + "&nbsp;<a href=\"https://support.microsoft.com/teams/meetings/chat-with-event-group-microsoft-teams\">" + qsTr("Learn more") + "</a>"
+                                        linkColor: theme.brandForeground1
+                                        font.family: theme.font; font.pixelSize: 12
+                                        lineHeight: 16; lineHeightMode: Text.FixedHeight
+                                        color: theme.text
+                                        onLinkActivated: url => Qt.openUrlExternally(url)
+                                        HoverHandler { cursorShape: noteText.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                                    }
+                                    Accessible.role: Accessible.AlertMessage
+                                    Accessible.name: qsTr("You'll be able to chat separately with the co-organizers and presenters in the planning group. Once saved access it from chat list or Calendar")
+                                }
+                                Item { visible: note.visible; width: 1; height: 12 }
+                                // The label, then Teams' lock (locked by the admin)
+                                // and info (the chosen value's _Info string)
+                                // buttons: 24 x 23.3, transparent, the 16 px glyph
+                                // filled in brand on hover, Fluent's tooltip above.
+                                Row {
+                                    visible: field.modelData.label !== ""
+                                    readonly property string valueInfo: field.modelData.kind === "list"
+                                        ? (root.strings["meetingsOptions_" + field.modelData.name + "_" + root.value(field.modelData.name) + "_Info"] || "") : ""
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: Math.min(implicitWidth, (field.isSwitch ? 450.7 : fieldCol.width) - (lockBtn.visible ? 24 : 0) - (infoBtn.visible ? 24 : 0))
+                                        text: field.modelData.label
+                                        wrapMode: Text.Wrap
+                                        font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                                        lineHeight: 20; lineHeightMode: Text.FixedHeight
+                                        color: theme.textSecondary
+                                    }
+                                    LabelButton { id: lockBtn; visible: !!field.opt.isLocked; glyph: "lock-closed-16"; tip: qsTr("This option is locked by admin."); label: field.modelData.label }
+                                    LabelButton { id: infoBtn; visible: parent.valueInfo !== ""; glyph: "info-16"; regular: "info-16-regular"; tip: parent.valueInfo; label: field.modelData.label }
+                                }
+                                Text {
+                                    visible: !!field.modelData.desc
+                                    width: field.isSwitch ? 450.7 : 498.7
+                                    text: field.modelData.desc || ""
+                                    wrapMode: Text.Wrap
+                                    font.family: theme.font; font.pixelSize: 12
+                                    lineHeight: 16; lineHeightMode: Text.FixedHeight
+                                    color: theme.textSecondary
+                                }
+                                Item { visible: !field.isSwitch; width: 1; height: 8.7 }
+                                Dropdown {
+                                    visible: field.modelData.kind === "list"
+                                    x: 0.67; width: 497.3
+                                    enabled: !field.locked
+                                    opacity: field.locked ? 0.5 : 1
+                                    readonly property var names: root.labels[field.modelData.name] || ({})
+                                    // Teams' own value names from the reply's strings.
+                                    function nameOf(v) { return root.valueName(field.modelData.name, v) }
+                                    label: nameOf(root.value(field.modelData.name) || "")
+                                    options: (field.opt.values || []).map(v => [v, nameOf(v)])
+                                    accessibleName: field.modelData.label
+                                    onPicked: code => root.change(field.modelData.name, code)
+                                }
+                                // Manage what attendees see: Teams' radio group
+                                // (Off, On, On with preview; 145 apart).
+                                Row {
+                                    visible: field.modelData.kind === "radio"
+                                    enabled: !field.locked
+                                    opacity: field.locked ? 0.5 : 1
+                                    Repeater {
+                                        model: field.modelData.kind === "radio" ? (field.opt.values && field.opt.values.length ? field.opt.values : Object.keys(root.labels[field.modelData.name] || {})) : []
+                                        Item {
+                                            id: radioItem
+                                            required property var modelData
+                                            readonly property bool chosen: root.value(field.modelData.name) === modelData
+                                            width: 145; height: 32
+                                            Rectangle {
+                                                x: 8; anchors.verticalCenter: parent.verticalCenter; width: 16; height: 16; radius: 8
+                                                color: "transparent"; border.width: 1
+                                                border.color: radioItem.chosen ? theme.brand : radioHover.hovered ? theme.text : theme.textSecondary
+                                                Rectangle { visible: radioItem.chosen; anchors.centerIn: parent; width: 10; height: 10; radius: 5; color: theme.brand }
+                                            }
+                                            Text {
+                                                x: 32; anchors.verticalCenter: parent.verticalCenter
+                                                text: root.valueName(field.modelData.name, radioItem.modelData)
+                                                font.family: theme.font; font.pixelSize: 14; color: theme.text
+                                            }
+                                            HoverHandler { id: radioHover; cursorShape: Qt.PointingHandCursor }
+                                            TapHandler { onTapped: root.change(field.modelData.name, radioItem.modelData) }
+                                            Accessible.role: Accessible.RadioButton; Accessible.checked: radioItem.chosen
+                                            Accessible.name: root.valueName(field.modelData.name, radioItem.modelData)
+                                        }
+                                    }
+                                }
+                                // People pickers (Teams' TagPicker).
+                                MeetingPeoplePicker {
+                                    readonly property string fieldName: field.modelData.name
+                                    visible: field.modelData.kind === "people"
+                                    picked: visible ? root.value(field.modelData.name) : []
+                                    candidates: visible ? root.candidates(field.modelData.name) : []
+                                    names: root.people.people || ({})
+                                    max: field.opt.maxPeopleSelectionAllowed || 0
+                                    // Teams' picker is off while there's nobody to offer.
+                                    disabled: field.locked || (candidates.length === 0 && picked.length === 0)
+                                    hasError: root.invalid(field.modelData.name)
+                                    placeholder: qsTr("Search for participants")
+                                    onChanged: list => root.change(field.modelData.name, list)
+                                }
+                            }
+                            // Fluent's switch, 40 x 20, on the label's row.
+                            Rectangle {
+                                id: sw
+                                visible: field.isSwitch
+                                readonly property bool on: field.modelData.kind === "audio" || field.modelData.kind === "video"
+                                    ? root.bitOn(field.modelData.kind) : root.value(field.modelData.name) === true
+                                readonly property bool usable: !field.locked
+                                x: parent.width - 40 - 10; y: 0
+                                width: 40; height: 20; radius: 10
+                                color: !on ? "transparent" : !usable ? theme.bgDisabled : swH.hovered ? theme.brandHover : theme.checkedFill
+                                border.width: on ? 0 : 1
+                                border.color: !usable ? theme.pick("#E0E0E0", "#424242", "#FFFFFF") : swH.hovered ? theme.text : theme.textSecondary
+                                Rectangle {
+                                    width: 14; height: 14; radius: 7
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    x: sw.on ? parent.width - width - 3 : 3
+                                    color: sw.on ? (sw.usable ? theme.hc("white", "#000000") : theme.disabled) : (!sw.usable ? theme.disabled : swH.hovered ? theme.text : theme.textSecondary)
+                                }
+                                HoverHandler { id: swH; cursorShape: sw.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                                TapHandler {
+                                    enabled: sw.usable
+                                    onTapped: {
+                                        if (field.modelData.kind === "audio" || field.modelData.kind === "video") root.setBit(field.modelData.kind, !sw.on)
+                                        else root.change(field.modelData.name, !sw.on)
+                                    }
+                                }
+                                Accessible.role: Accessible.CheckBox
+                                Accessible.name: field.modelData.label
+                                Accessible.checked: on
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Apply.
+    Rectangle {
+        id: hcFill2
+        x: root.width - 24 - width; y: 497.4
+        width: 71; height: 31.3; radius: 4
+        color: !root.dirty ? theme.bgDisabled : applyH.hovered ? theme.brandHover : theme.brandFill
+        Text {
+            anchors.centerIn: parent
+            text: qsTr("Apply")
+            font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+            color: theme.onFill(hcFill2, root.dirty ? theme.textOnBrand : theme.disabled)
+        }
+        HoverHandler { id: applyH; enabled: root.dirty; cursorShape: Qt.PointingHandCursor }
+        TapHandler { enabled: root.dirty; onTapped: root.tryApply() }
+        Accessible.role: Accessible.Button
+        Accessible.name: qsTr("Apply")
+    }
+
+    // Teams' "Unsaved changes" (Close or Escape with changes not
+    // applied), measured on winpc 2026-11-11: 600 wide, radius 8, padding
+    // 24, the dialog shadow; the title 20/600 (line 28), the question 14/20
+    // 6 under it, the buttons 6 under that at the right, 8 apart:
+    // Continue editing (primary) and Discard.
+    Popup {
+        id: unsaved
+        parent: Overlay.overlay
+        anchors.centerIn: Overlay.overlay
+        modal: true; focus: true
+        width: 600; padding: 24
+        closePolicy: Popup.CloseOnEscape
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        Overlay.modal: Rectangle { color: "transparent" }
+        Column {
+            width: parent.width
+            spacing: 6
+            Text {
+                text: qsTr("Unsaved changes")
+                font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
+                lineHeight: 28; lineHeightMode: Text.FixedHeight
+                color: theme.text
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
+            }
+            Text {
+                text: qsTr("Do you want to discard edits or continue editing?")
+                font.family: theme.font; font.pixelSize: 14
+                lineHeight: 20; lineHeightMode: Text.FixedHeight
+                topPadding: 2; bottomPadding: 2
+                color: theme.text
+            }
+            Row {
+                anchors.right: parent.right
+                spacing: 8
+                Rectangle {
+                    id: hcFill3
+                    width: contLabel.implicitWidth + 24; height: 31.3; radius: 4
+                    color: contH.hovered ? theme.brandHover : theme.brandFill
+                    Text { id: contLabel; anchors.centerIn: parent; text: qsTr("Continue editing"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.textOnBrand) }
+                    HoverHandler { id: contH; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: unsaved.close() }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("Continue editing")
+                }
+                Rectangle {
+                    id: hcFill4
+                    width: Math.max(96, discLabel.implicitWidth + 24); height: 31.3; radius: 4
+                    color: discH.hovered ? theme.menuHover : theme.surface
+                    border.color: theme.stroke; border.width: 0.67
+                    Text { id: discLabel; anchors.centerIn: parent; text: qsTr("Discard"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
+                    HoverHandler { id: discH; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { unsaved.close(); root.changes = ({}); root.close() } }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("Discard")
+                }
+            }
+        }
+    }
+    function pickerForTest(n) {
+        for (let i = 0; i < sectionRepeater.count; i++) {
+            const sec = sectionRepeater.itemAt(i)
+            const found = sec ? findPicker(sec, n) : null
+            if (found) return found
+        }
+        return null
+    }
+    function findPicker(item, n) {
+        for (let i = 0; i < item.children.length; i++) {
+            const c = item.children[i]
+            if (c.candidates !== undefined && c.visible && c.fieldName === n) return c
+            const deeper = findPicker(c, n)
+            if (deeper) return deeper
+        }
+        return null
+    }
+
+    component LabelButton: Rectangle {
+        id: lb
+        property string glyph
+        property string regular: glyph
+        property string tip
+        property string label
+        width: 24; height: 23.3; radius: 4
+        color: "transparent"
+        FluentIcon {
+            anchors.centerIn: parent
+            name: lbH.hovered ? (lb.glyph === lb.regular ? lb.glyph + "-filled" : lb.glyph) : lb.regular
+            size: 16
+            color: lbH.hovered ? theme.brand : theme.textStrong
+        }
+        HoverHandler { id: lbH }
+        ArrowTip { visible: lbH.hovered; tipText: lb.tip }
+        Accessible.role: Accessible.Button
+        Accessible.name: lb.label + " " + lb.tip
+    }
+}

@@ -1,0 +1,16 @@
+# cargo audit settings.
+#
+# The three advisories ignored here are "unmaintained" notices, not
+# vulnerabilities. zbus 6 merged zbus_names, zvariant and zvariant_derive
+# into zbus itself, so their standalone crates won't get releases.
+# OST reaches them only through keyring's Linux Secret Service store
+# (keyring 4 → zbus-secret-service-keyring-store 1.0 → secret-service 5 →
+# zbus 5), which stores and reads the sign-in tokens over D-Bus.
+# Remove these lines once keyring's store moves to secret-service 6 / zbus 6
+# (secret-service 6.0.0-rc.1 is out as of 2026-11-10).
+[advisories]
+ignore = [
+    "RUSTSEC-2026-0370", # zvariant: merged into zbus 6 (its wire module)
+    "RUSTSEC-2026-0371", # zbus_names: merged into zbus 6 (its names module)
+    "RUSTSEC-2026-0372", # zvariant_derive: its derives ship with zbus 6
+]

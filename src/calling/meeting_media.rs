@@ -1,0 +1,901 @@
+//! Video in meetings and group calls, as Teams does it: our offer carries
+//! receive slots (main-video lines) and a data line; the media processor's
+//! answer gives each slot a stream id and an SSRC range; and over the
+//! data channel's media control plane we ask for whose video goes in which
+//! slot. See docs/spec/meeting-video.md.
+
+use super::datachannel::{DataEvent, DataSender};
+use super::mcp::{Incoming, Session, SourceRequest};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+/// Our camera's line.
+pub const CAMERA_MID: &str = "1";
+/// How many others' videos we can show at once (Teams' gallery shows up
+/// to nine without paging).
+pub const SLOT_COUNT: usize = 9;
+/// The screen-sharing line.
+pub const SHARE_MID: &str = "11";
+/// The data line: SCTP for the media control plane.
+pub const DATA_MID: &str = "12";
+/// The data channel Teams opens for the media control plane.
+pub const DATA_LABEL: &str = "main-channel";
+const SCTP_PORT: u16 = 5000;
+const MAX_MESSAGE_SIZE: u32 = 262_144;
+/// Heartbeats go every second, as Teams sends them.
+const HEARTBEAT: Duration = Duration::from_secs(1);
+/// The H.264 we decode: constrained baseline, level 3.1.
+const PROFILE_LEVEL_ID: u32 = 0x42e01f;
+/// Shared screens: Teams asks for High 3.1 (presenters encode them so).
+const SHARE_PROFILE_LEVEL_ID: u32 = 0x64001f;
+
+/// The receive slots' mids, in order.
+pub fn slot_mids() -> impl Iterator<Item = String> {
+    (2..2 + SLOT_COUNT).map(|m| m.to_string())
+}
+
+/// A `call/controlVideoStreaming/` event's requests for streams we send:
+/// (`sourceId`, `fmtParams`). The processor asks this way when someone
+/// starts watching our screen.
+pub fn video_control_requests(json: &str) -> Vec<(i64, String)> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
+        return Vec::new();
+    };
+    if v["callAgentPath"] != "call/controlVideoStreaming/" {
+        return Vec::new();
+    }
+    let info = &v["body"]["controlVideoStreaming"]["controlInfo"];
+    // One request, or a list of them.
+    let list = match info {
+        serde_json::Value::Array(a) => a.clone(),
+        serde_json::Value::Object(_) => vec![info.clone()],
+        _ => Vec::new(),
+    };
+    list.iter()
+        .filter_map(|c| {
+            Some((
+                c["sourceId"].as_i64()?,
+                c["fmtParams"].as_str().unwrap_or_default().to_string(),
+            ))
+        })
+        .collect()
+}
+
+/// The frame key a slot's decoded video is published under.
+pub fn frame_key(mid: &str) -> String {
+    format!("slot-{mid}")
+}
+
+/// Our data line, as Teams writes it (`x-data` with SCTP inside).
+pub fn data_section(
+    port: u16,
+    addr: &str,
+    ufrag: &str,
+    pwd: &str,
+    fingerprint: &str,
+    ssrc: u32,
+) -> String {
+    let mut s = String::new();
+    s.push_str(&format!("m=x-data {port} RTP/SAVP 127 126\r\n"));
+    s.push_str(&format!("c=IN IP4 {addr}\r\n"));
+    s.push_str("a=x-data-protocol:sctp\r\n");
+    s.push_str(&format!("a=x-ssrc-range:{ssrc}-{ssrc}\r\n"));
+    s.push_str("a=rtpmap:127 x-data/90000\r\n");
+    s.push_str("a=rtpmap:126 rtx/90000\r\n");
+    s.push_str("a=fmtp:126 apt=127\r\n");
+    s.push_str(&format!("a=ice-ufrag:{ufrag}\r\n"));
+    s.push_str(&format!("a=ice-pwd:{pwd}\r\n"));
+    s.push_str(&format!("a=fingerprint:{fingerprint}\r\n"));
+    s.push_str("a=setup:actpass\r\n");
+    s.push_str(&format!("a=mid:{DATA_MID}\r\n"));
+    s.push_str("a=sendrecv\r\n");
+    s.push_str("a=rtcp-mux\r\n");
+    s.push_str("a=label:data\r\n");
+    s.push_str(&format!("a=sctp-port:{SCTP_PORT}\r\n"));
+    s.push_str(&format!("a=max-message-size:{MAX_MESSAGE_SIZE}\r\n"));
+    s
+}
+
+/// A receive slot as the media processor answered it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Slot {
+    pub mid: String,
+    /// `a=x-source-streamid`: what source requests name it by.
+    pub stream_msid: i64,
+    /// The SSRCs the processor sends this slot's video with (its RTX
+    /// SSRCs too, which `pt` tells apart).
+    pub ssrcs: (u32, u32),
+    /// The video payload type (the line's first format).
+    pub pt: u8,
+}
+
+/// The m-sections of an SDP with their mids.
+fn sections(sdp: &str) -> Vec<(String, &str)> {
+    let mut out = Vec::new();
+    let mut rest = sdp;
+    while let Some(i) = rest.find("m=") {
+        let body = &rest[i..];
+        let end = body[2..].find("\nm=").map(|e| e + 3).unwrap_or(body.len());
+        let section = &body[..end];
+        let mid = section
+            .lines()
+            .find_map(|l| l.trim_end().strip_prefix("a=mid:"))
+            .unwrap_or_default()
+            .to_string();
+        out.push((mid, section));
+        rest = &body[end..];
+    }
+    out
+}
+
+fn attr<'a>(section: &'a str, name: &str) -> Option<&'a str> {
+    section
+        .lines()
+        .find_map(|l| l.trim_end().strip_prefix(name))
+}
+
+fn rejected(section: &str) -> bool {
+    section.split_whitespace().nth(1) == Some("0")
+}
+
+/// A video line of the processor's SDP as a slot.
+fn slot(mid: String, s: &str) -> Option<Slot> {
+    if !s.starts_with("m=video") || rejected(s) {
+        return None;
+    }
+    let stream_msid = attr(s, "a=x-source-streamid:")?.trim().parse().ok()?;
+    let range = attr(s, "a=x-ssrc-range:")?;
+    let (lo, hi) = range.split_once('-')?;
+    let pt = s.lines().next()?.split_whitespace().nth(3)?.parse().ok()?;
+    Some(Slot {
+        mid,
+        stream_msid,
+        ssrcs: (lo.trim().parse().ok()?, hi.trim().parse().ok()?),
+        pt,
+    })
+}
+
+/// Our receive slots in the processor's SDP (answer or re-offer).
+pub fn answered_slots(sdp: &str) -> Vec<Slot> {
+    let mids: Vec<String> = slot_mids().collect();
+    sections(sdp)
+        .into_iter()
+        .filter(|(mid, _)| mids.contains(mid))
+        .filter_map(|(mid, s)| slot(mid, s))
+        .collect()
+}
+
+/// The screen-sharing line in the processor's SDP.
+pub fn answered_share(sdp: &str) -> Option<Slot> {
+    sections(sdp)
+        .into_iter()
+        .find(|(mid, _)| mid == SHARE_MID)
+        .and_then(|(mid, s)| slot(mid, s))
+}
+
+/// The processor's stream id for our data line, when it accepted it.
+pub fn data_stream(sdp: &str) -> Option<i64> {
+    sections(sdp)
+        .into_iter()
+        .find(|(mid, s)| mid == DATA_MID && s.starts_with("m=x-data") && !rejected(s))
+        .and_then(|(_, s)| attr(s, "a=x-source-streamid:")?.trim().parse().ok())
+}
+
+/// What the media control plane does for us.
+enum Command {
+    /// (Re)send what changed in the source requests.
+    Resend,
+    /// Send what we typed for real-time text since the last.
+    RealTimeText(String),
+    /// Send whether we are signing (and for how long, ms).
+    SignLanguage { detected: bool, duration_ms: u64 },
+    /// Give / take control.
+    Control(ControlCommand),
+}
+
+/// What the call window does about give / take control
+/// ([`super::screen_control`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ControlCommand {
+    /// We share (or stopped); `enabled`: our screen can be controlled.
+    Sharing { on: bool, enabled: bool },
+    /// We watch this sharer (their data source), or nobody.
+    Viewing(Option<u32>),
+    Request,
+    CancelRequest,
+    Accept,
+    Deny,
+    Give(u32),
+    /// Sharer: Take back. Viewer: Stop control.
+    Terminate,
+    /// These data sources left the call.
+    Left(Vec<u32>),
+    /// Our mouse or keyboard event, for the sharer we control.
+    Input(Vec<u8>),
+}
+
+/// The source id that asks for nothing (MS-RTP's SOURCE_NONE): Teams
+/// releases a slot with it.
+const SOURCE_NONE: i64 = -1;
+
+/// What we ask the processor for.
+#[derive(Default)]
+struct State {
+    slots: Vec<Slot>,
+    /// The screen-sharing line, when the processor took it.
+    share_slot: Option<Slot>,
+    /// mid -> the camera shown there.
+    assigned: HashMap<String, i64>,
+    /// source -> how large it's shown, in pixels across.
+    widths: HashMap<i64, u32>,
+    /// Whose screen to receive (their applicationsharing-video source).
+    share: Option<i64>,
+    /// Our data source id, once the processor named it.
+    source_id: Option<u32>,
+}
+
+/// Others' video in a meeting: which source is in which slot, and the
+/// media control plane session that asks for them.
+pub struct MeetingVideo {
+    state: Arc<Mutex<State>>,
+    commands: tokio::sync::mpsc::UnboundedSender<Command>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for MeetingVideo {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+/// What to do with the processor's layer requests for one of our streams
+/// (its stream id, and its `vdclc` strings).
+pub type LayerHandler = Box<dyn Fn(i64, &[String]) + Send + Sync>;
+
+/// The processor's stream id (`x-source-streamid`) for one of our lines.
+pub fn stream_id(sdp: &str, mid: &str) -> Option<i64> {
+    sections(sdp)
+        .into_iter()
+        .find(|(m, s)| m == mid && !rejected(s))
+        .and_then(|(_, s)| attr(s, "a=x-source-streamid:")?.trim().parse().ok())
+}
+
+impl MeetingVideo {
+    /// Run the media control plane on an open data channel.
+    pub fn start(
+        slots: Vec<Slot>,
+        share_slot: Option<Slot>,
+        sender: DataSender,
+        events: tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+        on_layers: LayerHandler,
+    ) -> Self {
+        let state = Arc::new(Mutex::new(State {
+            slots,
+            share_slot,
+            ..Default::default()
+        }));
+        let (commands, rx) = tokio::sync::mpsc::unbounded_channel();
+        let task = tokio::spawn(run(sender, events, rx, state.clone(), on_layers));
+        Self {
+            state,
+            commands,
+            task,
+        }
+    }
+
+    fn changed(&self) {
+        let _ = self.commands.send(Command::Resend);
+    }
+
+    /// The processor re-offered: its slots may carry new stream ids, so
+    /// ask again for what they show.
+    pub fn update_slots(&self, slots: Vec<Slot>, share_slot: Option<Slot>) {
+        if slots.is_empty() {
+            return;
+        }
+        let mut st = lock(&self.state);
+        if st.slots != slots || (share_slot.is_some() && st.share_slot != share_slot) {
+            st.slots = slots;
+            if share_slot.is_some() {
+                st.share_slot = share_slot;
+            }
+            drop(st);
+            self.changed();
+        }
+    }
+
+    /// Show these cameras (roster `main-video` sourceIds, in the order they
+    /// should get slots, with how wide each is shown); returns sourceId ->
+    /// frame key for each one that has a slot. Sources keep their slots.
+    pub fn show(&self, sources: &[(i64, u32)]) -> HashMap<i64, String> {
+        let mut st = lock(&self.state);
+        let mids: Vec<String> = st.slots.iter().map(|s| s.mid.clone()).collect();
+        let before = st.assigned.clone();
+        let widths_before = st.widths.clone();
+        let ids: Vec<i64> = sources.iter().map(|s| s.0).collect();
+        st.assigned.retain(|_, src| ids.contains(src));
+        for src in &ids {
+            if st.assigned.values().any(|s| s == src) {
+                continue;
+            }
+            if let Some(free) = mids.iter().find(|m| !st.assigned.contains_key(*m)) {
+                st.assigned.insert(free.clone(), *src);
+            }
+        }
+        st.widths = sources.iter().copied().collect();
+        let out = st
+            .assigned
+            .iter()
+            .map(|(mid, src)| (*src, frame_key(mid)))
+            .collect();
+        // A slot given to someone else mustn't show the last frame of
+        // whoever had it.
+        for (mid, src) in &before {
+            if st.assigned.get(mid) != Some(src) {
+                super::frames::clear(&frame_key(mid));
+            }
+        }
+        let changed = st.assigned != before || st.widths != widths_before;
+        drop(st);
+        if changed {
+            self.changed();
+        }
+        out
+    }
+
+    /// Send what we typed for real-time text since the last (Teams'
+    /// `{s}`: characters, backspaces, a newline ending the line).
+    pub fn send_real_time_text(&self, text: &str) {
+        let _ = self.commands.send(Command::RealTimeText(text.to_string()));
+    }
+
+    /// Sign language mode: tell the meeting whether we are signing.
+    pub fn send_sign_language(&self, detected: bool, duration_ms: u64) {
+        let _ = self.commands.send(Command::SignLanguage { detected, duration_ms });
+    }
+
+    /// Give / take control: what the call window did.
+    pub fn screen_control(&self, c: ControlCommand) {
+        let _ = self.commands.send(Command::Control(c));
+    }
+
+    /// Our data source id (whose real-time text is ours), once known.
+    pub fn source_id(&self) -> Option<u32> {
+        lock(&self.state).source_id
+    }
+
+    /// Receive this presenter's screen (their applicationsharing-video
+    /// sourceId), or stop.
+    pub fn show_share(&self, source: Option<i64>) {
+        let mut st = lock(&self.state);
+        if st.share != source {
+            st.share = source;
+            drop(st);
+            if source.is_none() {
+                super::frames::clear("share");
+            }
+            self.changed();
+        }
+    }
+}
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// The capabilities Teams asks a camera with, by how wide it's shown:
+/// (max-fs, max-mbps). Large tiles take up to 1080p at 30; the side
+/// gallery's 160 px tiles 320x180.
+fn camera_caps(width: u32) -> (u32, u32) {
+    match width {
+        0..200 => (240, 8_437),
+        200..400 => (920, 33_750),
+        _ => (8160, 244_800),
+    }
+}
+
+/// Every request we want in force, by the receiving stream: cameras in
+/// their slots, the presenter's screen on the sharing line.
+fn requests(st: &State) -> HashMap<i64, SourceRequest> {
+    let mut out: HashMap<i64, SourceRequest> = st
+        .slots
+        .iter()
+        .filter_map(|s| {
+            let src = *st.assigned.get(&s.mid)?;
+            let (max_fs, max_mbps) = camera_caps(st.widths.get(&src).copied().unwrap_or(1280));
+            Some((
+                s.stream_msid,
+                SourceRequest {
+                    source_id: src,
+                    stream_msid: s.stream_msid,
+                    max_fs,
+                    max_mbps,
+                    max_fps: 3000,
+                    profile_level_id: PROFILE_LEVEL_ID,
+                },
+            ))
+        })
+        .collect();
+    if let (Some(slot), Some(src)) = (&st.share_slot, st.share) {
+        // Teams asks shared screens for up to 1080p at 15.
+        out.insert(
+            slot.stream_msid,
+            SourceRequest {
+                source_id: src,
+                stream_msid: slot.stream_msid,
+                max_fs: 8160,
+                max_mbps: 135_000,
+                max_fps: 1500,
+                profile_level_id: SHARE_PROFILE_LEVEL_ID,
+            },
+        );
+    }
+    out
+}
+
+/// What to send now, given what's in force (`sent`, by stream): the
+/// changed requests, and SOURCE_NONE for streams nothing is wanted on.
+fn due(
+    wanted: &HashMap<i64, SourceRequest>,
+    sent: &HashMap<i64, SourceRequest>,
+) -> Vec<SourceRequest> {
+    let mut out: Vec<SourceRequest> = wanted
+        .values()
+        .filter(|r| sent.get(&r.stream_msid) != Some(r))
+        .copied()
+        .collect();
+    out.extend(
+        sent.values()
+            .filter(|r| r.source_id != SOURCE_NONE && !wanted.contains_key(&r.stream_msid))
+            .map(|r| SourceRequest {
+                source_id: SOURCE_NONE,
+                ..*r
+            }),
+    );
+    out.sort_by_key(|r| r.stream_msid);
+    out
+}
+
+/// Give / take control's role in this meeting (sharing and whether we can
+/// be controlled; the sharer we watch), kept across media sessions.
+fn control_role() -> &'static Mutex<(Option<bool>, Option<u32>)> {
+    static R: std::sync::OnceLock<Mutex<(Option<bool>, Option<u32>)>> = std::sync::OnceLock::new();
+    R.get_or_init(|| Mutex::new((None, None)))
+}
+
+/// The call ended: no role to take up in the next one.
+pub fn clear_control_role() {
+    *lock(control_role()) = (None, None);
+}
+
+/// Give / take control's wishes: sends on the channel, events for the
+/// call window (`ost/screenControl/`).
+fn control_out(session: &mut Session, sender: &DataSender, outs: Vec<super::screen_control::Out>) {
+    use super::screen_control::Out;
+    for o in outs {
+        let body = match o {
+            Out::Send { to, message } => {
+                match session.screen_control(to, &message) {
+                    Some(packet) => {
+                        tracing::info!(to, action = message.action, reason = message.terminated_reason, "screen control sent");
+                        sender.send(packet);
+                    }
+                    None => tracing::warn!("screen control before the data channel is up: dropped"),
+                }
+                continue;
+            }
+            Out::Capable { capable, denied_by_sharer } => {
+                serde_json::json!({"type": "capable", "capable": capable, "deniedBySharer": denied_by_sharer})
+            }
+            Out::Controllable(list) => serde_json::json!({"type": "controllable", "sources": list}),
+            Out::IncomingRequest { from } => serde_json::json!({"type": "request", "source": from}),
+            Out::RequestWithdrawn { from } => serde_json::json!({"type": "withdrawn", "source": from}),
+            Out::ControlChanged { in_control, controller, reason } => {
+                serde_json::json!({"type": "changed", "inControl": in_control, "controller": controller, "reason": reason})
+            }
+            Out::RequestFailed { reason } => serde_json::json!({"type": "failed", "reason": reason}),
+        };
+        tracing::info!(%body, "screen control");
+        crate::event_hub::publish(
+            crate::event_hub::EventKind::Call,
+            serde_json::json!({"callAgentPath": "ost/screenControl/", "body": body}).to_string(),
+        );
+    }
+}
+
+async fn run(
+    sender: DataSender,
+    mut events: tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    mut commands: tokio::sync::mpsc::UnboundedReceiver<Command>,
+    state: Arc<Mutex<State>>,
+    on_layers: LayerHandler,
+) {
+    let mut session = Session::new();
+    let mut tick = tokio::time::interval(HEARTBEAT);
+    let mut control = super::screen_control::Session::new();
+    let mut control_tick = tokio::time::interval(std::time::Duration::from_millis(500));
+    let mut inputs_sent = 0u64;
+    let mut inputs_received = 0u64;
+    let mut keys_received = 0u64;
+    // What's in force on each receiving stream.
+    let mut sent: HashMap<i64, SourceRequest> = HashMap::new();
+    let send_requests = |session: &mut Session, sent: &mut HashMap<i64, SourceRequest>| {
+        let wanted = requests(&lock(&state));
+        for r in due(&wanted, sent) {
+            let (seq, frame) = session.source_request(r);
+            tracing::info!(
+                source = r.source_id,
+                stream = r.stream_msid,
+                max_fs = r.max_fs,
+                seq,
+                "MCP source request"
+            );
+            sent.insert(r.stream_msid, r);
+            sender.send(frame);
+        }
+    };
+    loop {
+        tokio::select! {
+            ev = events.recv() => match ev {
+                Some(DataEvent::Open) => {
+                    sent.clear();
+                    lock(&state).source_id = None;
+                    sender.send(session.syn());
+                }
+                Some(DataEvent::Message(m)) => {
+                    for inc in session.receive(&m) {
+                        match inc {
+                            Incoming::Ack { id } => {
+                                tracing::info!(id, "MCP session up");
+                                let role = *lock(control_role());
+                                let now = std::time::Instant::now();
+                                let outs = match role {
+                                    (Some(enabled), _) if control.role() != super::screen_control::Role::Sharer => control.start_sharing(enabled),
+                                    (None, Some(s)) if control.role() == super::screen_control::Role::None => control.start_viewing(s, now),
+                                    _ => Vec::new(),
+                                };
+                                if !outs.is_empty() {
+                                    tracing::info!(?role, "screen control: role taken up on the new session");
+                                    control_out(&mut session, &sender, outs);
+                                }
+                                lock(&state).source_id = session.source_id();
+                                sent.clear();
+                                send_requests(&mut session, &mut sent);
+                            }
+                            Incoming::SourceResult { seq, result } => {
+                                tracing::info!(seq, %result, "MCP source result");
+                            }
+                            Incoming::DominantSpeakers(ids) => {
+                                crate::event_hub::publish(
+                                    crate::event_hub::EventKind::Call,
+                                    serde_json::json!({
+                                        "callAgentPath": "ost/dominantSpeakers/",
+                                        "body": {"sourceIds": ids},
+                                    })
+                                    .to_string(),
+                                );
+                            }
+                            Incoming::SendLayers { stream, layers } => {
+                                tracing::debug!(stream, ?layers, "MCP send layers");
+                                on_layers(stream, &layers);
+                            }
+                            Incoming::Bandwidth { total, video } => {
+                                tracing::debug!(total, ?video, "MCP bandwidth");
+                                // What the processor says we can receive
+                                // (Call health's "Teams receive limit").
+                                super::call_health::current()
+                                    .receive_estimate
+                                    .store(total, std::sync::atomic::Ordering::Relaxed);
+                            }
+                            Incoming::Heartbeat => {}
+                            Incoming::Transcript(v) => {
+                                tracing::debug!(payload = %v, "speech recognition");
+                                crate::event_hub::publish(
+                                    crate::event_hub::EventKind::Call,
+                                    serde_json::json!({
+                                        "callAgentPath": "ost/transcript/",
+                                        "body": v,
+                                    })
+                                    .to_string(),
+                                );
+                            }
+                            Incoming::RealTimeText { source, text } => {
+                                tracing::debug!(source, len = text.chars().count(), "real-time text");
+                                crate::event_hub::publish(
+                                    crate::event_hub::EventKind::Call,
+                                    serde_json::json!({
+                                        "callAgentPath": "ost/rtt/",
+                                        "body": {"sourceId": source, "s": text},
+                                    })
+                                    .to_string(),
+                                );
+                            }
+                            Incoming::SignLanguage { source, detected } => {
+                                tracing::debug!(source, detected, "sign language event");
+                                crate::event_hub::publish(
+                                    crate::event_hub::EventKind::Call,
+                                    serde_json::json!({
+                                        "callAgentPath": "ost/signLanguage/",
+                                        "body": {"sourceId": source, "signDetected": detected},
+                                    })
+                                    .to_string(),
+                                );
+                            }
+                            Incoming::ScreenControl { source, message } => {
+                                tracing::info!(source, action = message.action, reason = message.terminated_reason, "screen control received");
+                                let outs = control.receive(source, &message, std::time::Instant::now());
+                                control_out(&mut session, &sender, outs);
+                            }
+                            Incoming::ControlInput { source, bytes } => {
+                                inputs_received += 1;
+                                // Keys are counted, not logged (a controller may type a password).
+                                let key = bytes.first() == Some(&0);
+                                if key {
+                                    keys_received += 1;
+                                }
+                                if inputs_received <= 5 && !key || inputs_received.is_multiple_of(50) {
+                                    tracing::info!(source, inputs_received, taken = control.takes_input_from(source), bytes = ?bytes, "control input received");
+                                } else if key && (keys_received <= 40 || keys_received.is_multiple_of(50)) {
+                                    tracing::info!(source, keys_received, inputs_received, taken = control.takes_input_from(source), "control key received");
+                                }
+                                if control.takes_input_from(source) {
+                                    crate::event_hub::publish(
+                                        crate::event_hub::EventKind::Call,
+                                        serde_json::json!({
+                                            "callAgentPath": "ost/controlInput/",
+                                            "body": {"source": source, "bytes": bytes},
+                                        })
+                                        .to_string(),
+                                    );
+                                }
+                            }
+                            Incoming::Other(v) => tracing::debug!("MCP message {v}"),
+                        }
+                    }
+                }
+                Some(DataEvent::Closed) | None => {
+                    tracing::info!("MCP data channel closed");
+                    return;
+                }
+            },
+            c = commands.recv() => match c {
+                Some(Command::Resend) => {
+                    if session.is_up() {
+                        // Streams no longer in the slot table are gone.
+                        let st = lock(&state);
+                        let live: Vec<i64> = st
+                            .slots
+                            .iter()
+                            .chain(st.share_slot.iter())
+                            .map(|s| s.stream_msid)
+                            .collect();
+                        drop(st);
+                        sent.retain(|m, _| live.contains(m));
+                        send_requests(&mut session, &mut sent);
+                    }
+                }
+                Some(Command::RealTimeText(text)) => match session.real_time_text(&text) {
+                    Some(packet) => {
+                        sender.send(packet);
+                    }
+                    None => tracing::warn!("real-time text before the data channel is up: dropped"),
+                },
+                Some(Command::SignLanguage { detected, duration_ms }) => {
+                    match session.sign_language(detected, duration_ms, chrono::Utc::now().timestamp_millis()) {
+                        Some(packet) => {
+                            sender.send(packet);
+                        }
+                        None => tracing::debug!("sign language event before the data channel is up: dropped"),
+                    }
+                }
+                Some(Command::Control(c)) => {
+                    let now = std::time::Instant::now();
+                    let outs = match c {
+                        ControlCommand::Sharing { on: true, enabled } => {
+                            lock(control_role()).0 = Some(enabled);
+                            control.start_sharing(enabled)
+                        }
+                        ControlCommand::Sharing { on: false, .. } => {
+                            lock(control_role()).0 = None;
+                            control.stop_sharing()
+                        }
+                        ControlCommand::Viewing(Some(s)) => {
+                            lock(control_role()).1 = Some(s);
+                            control.start_viewing(s, now)
+                        }
+                        ControlCommand::Viewing(None) => {
+                            lock(control_role()).1 = None;
+                            control.stop_viewing()
+                        }
+                        ControlCommand::Request => control.request(now),
+                        ControlCommand::CancelRequest => control.cancel_request(),
+                        ControlCommand::Accept => control.accept(now),
+                        ControlCommand::Deny => control.deny(),
+                        ControlCommand::Give(to) => control.give(to, now),
+                        ControlCommand::Terminate => control.terminate(now),
+                        ControlCommand::Left(list) => control.left(&list),
+                        ControlCommand::Input(bytes) => {
+                            if let Some(to) = control.controlled_sharer()
+                                && let Some(packet) = session.control_input(to, &bytes)
+                            {
+                                inputs_sent += 1;
+                                if inputs_sent <= 3 || inputs_sent.is_multiple_of(50) {
+                                    tracing::info!(to, inputs_sent, from = ?session.source_id(), bytes = ?bytes, "control input sent");
+                                }
+                                sender.send(packet);
+                            }
+                            Vec::new()
+                        }
+                    };
+                    control_out(&mut session, &sender, outs);
+                }
+                None => return,
+            },
+            _ = tick.tick() => {
+                if session.is_up() {
+                    sender.send(session.heartbeat());
+                }
+            }
+            _ = control_tick.tick() => {
+                let outs = control.tick(std::time::Instant::now());
+                if !outs.is_empty() {
+                    control_out(&mut session, &sender, outs);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The video lines of a media processor's answer to Teams' offer
+    /// (trimmed from the capture).
+    const ANSWER: &str = "v=0\r\nm=audio 3478 RTP/SAVP 0\r\na=mid:0\r\n\
+m=video 3478 RTP/SAVP 107 99\r\na=x-source-streamid:628\r\na=label:main-video\r\na=mid:1\r\na=x-ssrc-range:3403-3502\r\n\
+m=video 3478 RTP/SAVP 107 99\r\na=x-source-streamid:629\r\na=label:main-video\r\na=mid:2\r\na=x-ssrc-range:3503-3602\r\n\
+m=video 3478 RTP/SAVP 107 99\r\na=x-source-streamid:630\r\na=label:main-video\r\na=mid:3\r\na=sendonly\r\na=x-ssrc-range:3603-3702\r\n\
+m=video 0 RTP/SAVP 107\r\na=mid:4\r\n\
+m=x-data 3478 RTP/SAVP 127 126\r\na=x-source-streamid:639\r\na=mid:12\r\n";
+
+    #[test]
+    fn slots_and_the_data_stream_come_from_the_answer() {
+        assert_eq!(
+            answered_slots(ANSWER),
+            vec![
+                Slot {
+                    mid: "2".into(),
+                    stream_msid: 629,
+                    ssrcs: (3503, 3602),
+                    pt: 107
+                },
+                Slot {
+                    mid: "3".into(),
+                    stream_msid: 630,
+                    ssrcs: (3603, 3702),
+                    pt: 107
+                },
+            ],
+            "the camera line and rejected lines aren't slots"
+        );
+        assert_eq!(data_stream(ANSWER), Some(639));
+        assert_eq!(
+            data_stream("v=0\r\nm=x-data 0 RTP/SAVP 127\r\na=mid:12\r\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn data_line_is_teams_x_data_with_sctp() {
+        let s = data_section(9, "1.2.3.4", "u", "p", "sha-256 AA", 5);
+        for want in [
+            "m=x-data 9 RTP/SAVP 127 126",
+            "a=x-data-protocol:sctp",
+            "a=mid:12",
+            "a=sctp-port:5000",
+            "a=max-message-size:262144",
+            "a=label:data",
+        ] {
+            assert!(s.contains(want), "{want}");
+        }
+    }
+
+    #[tokio::test]
+    async fn sources_keep_their_slots() {
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let (_etx, erx) = tokio::sync::mpsc::unbounded_channel();
+        let v = MeetingVideo::start(
+            answered_slots(ANSWER),
+            None,
+            super::super::datachannel::DataSender::for_test(tx),
+            erx,
+            Box::new(|_, _| {}),
+        );
+        let w = |ids: &[i64]| ids.iter().map(|i| (*i, 450)).collect::<Vec<_>>();
+        let a = v.show(&w(&[2244, 2031]));
+        assert_eq!(a.len(), 2);
+        let b = v.show(&w(&[2031, 2244]));
+        assert_eq!(a, b, "order changes don't move anyone");
+        let c = v.show(&w(&[2031, 9999]));
+        assert_eq!(c[&2031], a[&2031]);
+        assert_eq!(c[&9999], a[&2244], "a freed slot is reused");
+        let d = v.show(&w(&[1, 2, 3]));
+        assert_eq!(d.len(), 2, "no more than the slots there are");
+    }
+
+    fn slot(mid: &str, msid: i64) -> Slot {
+        Slot {
+            mid: mid.into(),
+            stream_msid: msid,
+            ssrcs: (0, 0),
+            pt: 107,
+        }
+    }
+
+    #[test]
+    fn requests_ask_as_teams_does() {
+        let st = State {
+            slots: vec![slot("2", 7761), slot("3", 7762)],
+            share_slot: Some(slot("11", 7771)),
+            assigned: [("2".to_string(), 2244), ("3".to_string(), 2031)].into(),
+            widths: [(2244, 450), (2031, 156)].into(),
+            share: Some(17143),
+            source_id: None,
+        };
+        let r = requests(&st);
+        let caps = |m: i64| (r[&m].source_id, r[&m].max_fs, r[&m].max_mbps, r[&m].max_fps);
+        // As Teams asked: a gallery tile, a side gallery tile, a screen.
+        assert_eq!(caps(7761), (2244, 8160, 244_800, 3000));
+        assert_eq!(caps(7762), (2031, 240, 8_437, 3000));
+        assert_eq!(caps(7771), (17143, 8160, 135_000, 1500));
+    }
+
+    #[test]
+    fn freed_streams_are_released_and_unchanged_ones_left_alone() {
+        let mut st = State {
+            slots: vec![slot("2", 7761), slot("3", 7762)],
+            assigned: [("2".to_string(), 2244), ("3".to_string(), 2031)].into(),
+            ..Default::default()
+        };
+        let sent = requests(&st);
+        assert!(due(&requests(&st), &sent).is_empty());
+        st.assigned.remove("3");
+        let d = due(&requests(&st), &sent);
+        assert_eq!(d.len(), 1);
+        assert_eq!((d[0].stream_msid, d[0].source_id), (7762, SOURCE_NONE));
+    }
+
+    #[test]
+    fn the_sharing_line_is_read_from_the_answer() {
+        let sdp = "v=0\r\nm=video 3478 RTP/SAVP 107 99\r\na=x-source-streamid:638\r\na=label:applicationsharing-video\r\na=mid:11\r\na=x-ssrc-range:4403-4502\r\n";
+        assert_eq!(
+            answered_share(sdp),
+            Some(Slot {
+                mid: "11".into(),
+                stream_msid: 638,
+                ssrcs: (4403, 4502),
+                pt: 107
+            })
+        );
+    }
+
+    #[test]
+    fn video_control_events_ask_for_our_streams() {
+        // As the processor sent it when a guest started watching our screen.
+        let e = r#"{"body":{"controlVideoStreaming":{"controlInfo":[{"control":0,"fmtParams":"max-fs=8160;max-fps=1500;profile-level-id=42C02A;packetization-mode=1;max-br=1003;max-mbps=135000","sourceId":20977}],"globalTimeStamp":"11/08/2026 10:09:49","sequenceNumber":1},"debugContent":null},"callAgentPath":"call/controlVideoStreaming/"}"#;
+        let r = video_control_requests(e);
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].0, 20977);
+        #[cfg(feature = "video")]
+        let (limits, _) =
+            crate::calling::webrtc_video::parse_layer(&format!("KeyFrame=1;{}", r[0].1)).unwrap();
+        #[cfg(feature = "video")]
+        assert_eq!(
+            (limits.max_fs, limits.max_kbps, limits.max_fps),
+            (8160, 1003, 15)
+        );
+        assert!(video_control_requests(r#"{"callAgentPath":"call/end/"}"#).is_empty());
+    }
+}

@@ -1,0 +1,73 @@
+<svg width="192" height="192" xmlns="http://www.w3.org/2000/svg" fill="none">
+ <defs>
+  <clipPath id="i">
+   <path id="svg_1" d="m84,28l24,0l0,64l-24,0l0,-64z" fill="#fff"/>
+  </clipPath>
+  <radialGradient gradientUnits="userSpaceOnUse" gradientTransform="matrix(-2 51 -22 -1 90 70)" r="1" cy="0" cx="0" id="b">
+   <stop stop-color="#717171" offset="0.7"/>
+   <stop stop-opacity="0" stop-color="#717171" offset="1"/>
+  </radialGradient>
+  <radialGradient gradientUnits="userSpaceOnUse" gradientTransform="matrix(6 -22 13 4 91 140)" r="1" cy="0" cx="0" id="c">
+   <stop stop-color="#717171" offset="0.6"/>
+   <stop stop-opacity="0" stop-color="#717171" offset="1"/>
+  </radialGradient>
+  <radialGradient gradientUnits="userSpaceOnUse" gradientTransform="matrix(-26 16 -57 -88 138 101)" r="1" cy="0" cx="0" id="d">
+   <stop stop-color="#CED1D3" offset="0.4"/>
+   <stop stop-opacity="0" stop-color="#E7E6E7" offset="0.6"/>
+  </radialGradient>
+  <radialGradient gradientUnits="userSpaceOnUse" gradientTransform="matrix(37 0 0 293 104 72)" r="1" cy="0" cx="0" id="e">
+   <stop stop-color="#FE983A"/>
+   <stop stop-color="#FE983A" offset="0.1"/>
+   <stop stop-color="#FE7A3A" offset="0.2"/>
+   <stop stop-color="#E33812" offset="0.5"/>
+   <stop stop-color="#FE7A3A" offset="0.9"/>
+  </radialGradient>
+  <radialGradient gradientUnits="userSpaceOnUse" gradientTransform="matrix(-39 107 -46 -17 127 23)" r="1" cy="0" cx="0" id="f">
+   <stop stop-opacity="0" stop-color="#F6EDE3" offset="0.6"/>
+   <stop stop-color="#E56F15" offset="0.8"/>
+   <stop stop-color="#F15721" offset="0.9"/>
+   <stop stop-color="#F15721" offset="1"/>
+  </radialGradient>
+  <radialGradient gradientUnits="userSpaceOnUse" gradientTransform="matrix(-30 -107 46 -13 120 115)" r="1" cy="0" cx="0" id="g">
+   <stop stop-opacity="0" stop-color="#FB7F2C" offset="0.7"/>
+   <stop stop-color="#FB7F2C" offset="0.9"/>
+  </radialGradient>
+  <radialGradient gradientUnits="userSpaceOnUse" gradientTransform="matrix(16 23 -18 13 102 25)" r="1" cy="0" cx="0" id="h">
+   <stop stop-color="#fff"/>
+   <stop stop-color="#fff" offset="0.1"/>
+   <stop stop-opacity="0" stop-color="#fff" offset="0.3"/>
+  </radialGradient>
+  <radialGradient gradientUnits="userSpaceOnUse" gradientTransform="matrix(-15 26 -26 -15 99 123)" r="1" cy="0" cx="0" id="j">
+   <stop stop-color="#E8CCFF" offset="0.1"/>
+   <stop stop-color="#C594FF" offset="0.2"/>
+   <stop stop-color="#AD6CFF" offset="0.4"/>
+   <stop stop-color="#8E42FF" offset="0.5"/>
+   <stop stop-color="#E0538F" offset="0.8"/>
+  </radialGradient>
+  <radialGradient gradientUnits="userSpaceOnUse" gradientTransform="matrix(-3 25 -25 -3 96 129)" r="1" cy="0" cx="0" id="k">
+   <stop stop-opacity="0" stop-color="#fff" offset="0.5"/>
+   <stop stop-color="#fff" offset="0.8"/>
+  </radialGradient>
+  <linearGradient y2="1.75" y1="-0.06441" x2="0.03968" x1="0.93883" id="a">
+   <stop stop-color="#E7E7E7" offset="0.4"/>
+   <stop stop-color="#FEE39E" offset="0.8"/>
+  </linearGradient>
+ </defs>
+ <g>
+  <title>Layer 1</title>
+  <path id="svg_2" d="m152,166l-110,0c-10,0 -16,-11 -11,-20l54,-92c5,-8 18,-8 23,0l55,92c6,8 -1,20 -11,20z" fill="url(#a)"/>
+  <path id="svg_3" d="m152,166l-110,0c-10,0 -16,-11 -11,-20l54,-92c5,-8 18,-8 23,0l55,92c6,8 -1,20 -11,20z" fill-opacity="0.3" fill="url(#b)"/>
+  <path id="svg_4" d="m152,166l-110,0c-10,0 -16,-11 -11,-20l54,-92c5,-8 18,-8 23,0l55,92c6,8 -1,20 -11,20z" fill-opacity="0.3" fill="url(#c)"/>
+  <path id="svg_5" d="m152,166l-110,0c-10,0 -16,-11 -11,-20l54,-92c5,-8 18,-8 23,0l55,92c6,8 -1,20 -11,20z" fill="url(#d)"/>
+  <path id="svg_6" clip-rule="evenodd" d="m96,106c-7,0 -13,-6 -13,-13l0,-61c0,-8 6,-13 13,-13c8,0 14,5 14,13l0,61c0,7 -6,13 -14,13z" fill-rule="evenodd" fill="url(#e)"/>
+  <path id="svg_7" clip-rule="evenodd" d="m96,106c-7,0 -13,-6 -13,-13l0,-61c0,-8 6,-13 13,-13c8,0 14,5 14,13l0,61c0,7 -6,13 -14,13z" fill-rule="evenodd" fill-opacity="0.8" fill="url(#f)"/>
+  <path id="svg_8" clip-rule="evenodd" d="m96,106c-7,0 -13,-6 -13,-13l0,-61c0,-8 6,-13 13,-13c8,0 14,5 14,13l0,61c0,7 -6,13 -14,13z" fill-rule="evenodd" fill-opacity="0.8" fill="url(#g)"/>
+  <path id="svg_9" clip-rule="evenodd" d="m96,106c-7,0 -13,-6 -13,-13l0,-61c0,-8 6,-13 13,-13c8,0 14,5 14,13l0,61c0,7 -6,13 -14,13z" fill-rule="evenodd" fill-opacity="0.3" fill="url(#h)"/>
+  <g id="svg_10" clip-path="url(#i)" fill="#FEE39E">
+   <path id="svg_11" d="m90,29l1,-1l-1,0l0,1zm2,4a1,1 0 0 0 0,-1a1,1 0 1 0 0,1zm14,29zm1,27a1,1 0 0 1 -1,1a1,1 0 1 1 1,-1zm-21,-9l0,-1l-1,0l0,1l1,0zm4,-42a1,1 0 0 1 0,-1a1,1 0 1 1 1,0l-1,1zm12,2a1,1 0 0 0 0,-1a1,1 0 0 0 -1,1l1,0zm1,17l-1,0l1,0zm-12,16l1,-1l-1,0l0,1z"/>
+  </g>
+  <path id="svg_12" d="m102,93l0,1a1,1 0 0 1 0,-2a1,1 0 0 1 0,1z" fill="#FEE39E"/>
+  <circle id="svg_13" fill="url(#j)" r="14.4" cy="129" cx="96"/>
+  <circle id="svg_14" fill-opacity="0.8" fill="url(#k)" r="14.4" cy="129" cx="96"/>
+ </g>
+</svg>

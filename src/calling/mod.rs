@@ -2,27 +2,94 @@
 //!
 //! This handles signaling only (no media streaming).
 
+pub mod active_speakers;
+pub mod agenda;
+pub mod ai_interpreter;
+#[cfg(feature = "audio")]
+pub mod apm;
 #[cfg(feature = "audio")]
 pub mod audio;
+pub mod audio_codec;
+pub mod breakout;
+pub mod consult;
+pub mod content_sharing;
+pub mod call_health;
 pub mod call_test;
-#[cfg(feature = "video-capture")]
+#[cfg(feature = "video")]
 pub mod camera;
-#[cfg(feature = "video-capture")]
+#[cfg(feature = "video")]
+pub mod camera_controls;
+#[cfg(feature = "video")]
 pub mod codec;
+#[cfg(feature = "video")]
+pub mod content_camera;
+pub mod datachannel;
+pub mod datapacket;
+pub mod device_health;
 #[cfg(feature = "video-capture")]
 pub mod display;
+pub mod e2ee;
+pub mod echo_report;
+pub mod frames;
+/// Bluetooth (HFP) headset call controls (Teams' VoIP call coordinator).
+pub mod hfp;
+/// Headset call controls over HID telephony (Teams' Sync device buttons).
+pub mod hid_telephony;
 pub mod ice;
+pub mod incoming;
+pub mod live_event;
+pub mod live_stream;
+pub mod live_roster;
+pub mod mcp;
+pub mod network_quality;
 pub mod media;
+pub mod meeting_info;
+pub mod meeting_media;
+pub mod meeting_notes;
+pub mod meeting_options;
+pub mod meeting_timer;
+pub mod much;
+pub mod voice_isolation;
+pub mod muted_speech;
+pub mod outgoing;
+pub mod phone_audio;
+pub mod presenter_mode;
+pub mod quality_survey;
+#[cfg(all(feature = "audio", target_os = "linux"))]
+pub mod pw_defaults;
+pub mod recorder;
+pub mod room_devices;
+pub mod room_mode;
 pub mod recording;
+#[cfg(feature = "screencast")]
+pub mod remote_input;
+#[cfg(feature = "audio")]
+pub mod ringtone;
+pub mod roster;
+pub mod rtt;
 pub mod rtcp;
 pub mod rtp;
+#[cfg(feature = "screencast")]
+pub mod screencast;
+pub mod screen_control;
+#[cfg(feature = "audio")]
+pub mod system_sound;
 pub mod sdp;
+pub mod spatial;
 pub mod sdp_compress;
+pub mod sign_detection;
 pub mod signaling;
 pub mod srtp;
 pub mod test_tone;
 pub mod turn;
+pub mod transcript;
+pub mod send_bwe;
+pub mod twcc;
+pub mod ubar;
 pub mod video;
+pub mod webrtc_audio;
+#[cfg(feature = "video")]
+pub mod webrtc_video;
 
 use serde::Deserialize;
 
@@ -55,6 +122,8 @@ pub struct Participant {
     pub endpoint_id: Option<String>,
     #[serde(rename = "languageId")]
     pub language_id: Option<String>,
+    #[serde(rename = "tenantId", default)]
+    pub tenant_id: Option<String>,
 }
 
 /// Participants block from the invitation.
@@ -100,6 +169,11 @@ pub struct CallInvitation {
     pub links: Option<CallLinks>,
     #[serde(rename = "mediaContent")]
     pub media_content: Option<MediaContent>,
+    /// What the inviter attached to its addParticipant (Teams'
+    /// `participantInvitationData.invitationData`): for a room picked in
+    /// Room audio, how it was found and the proximity code.
+    #[serde(rename = "invitationData", default)]
+    pub invitation_data: Option<serde_json::Value>,
 }
 
 /// Top-level envelope for a call notification pushed via Trouter.
@@ -112,6 +186,21 @@ pub struct CallNotification {
     pub conversation_request: Option<ConversationRequest>,
     #[serde(rename = "debugContent")]
     pub debug_content: Option<DebugContent>,
+    /// A forked call's meeting, from its attach reply (`meetingDetails`:
+    /// meetingType, schedule).
+    #[serde(skip)]
+    pub meeting_details: Option<serde_json::Value>,
+    /// A forked call's conversation roster from its attach reply (the
+    /// join's `roster.participants`): who is already in, with what they
+    /// present, as a join's answer gives it.
+    #[serde(skip)]
+    pub initial_roster: Option<serde_json::Value>,
+    /// A forked call's conversation join answer from its attach reply
+    /// (`additionalActionResponses[0].output`): the meeting's conversation
+    /// links (`updateEndpointMetadata`, `addParticipant`…) and roster, as
+    /// a join's response has them.
+    #[serde(skip)]
+    pub conversation: Option<serde_json::Value>,
 }
 
 /// Simple call lifecycle state.

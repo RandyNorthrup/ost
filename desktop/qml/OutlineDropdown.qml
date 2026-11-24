@@ -1,0 +1,92 @@
+import QtQuick
+import QtQuick.Controls.Basic
+
+// Fluent's Dropdown, outline appearance (Pause notifications until's Time):
+// 32 tall, radius 4, a 0.67 NeutralStroke1 border with a NeutralStrokeAccessible
+// bottom (2 px brand while open), the value 14 px 12 in, chevron-down (20,
+// #616161) 10 from the right. Its listbox opens below: Fluent's surface
+// (radius 4, shadow16, padding 4), options 32 tall with the chosen one's
+// check (16) 6 in and the text at 30; disabled options greyed and inert.
+Item {
+    id: root
+    /// [{label, sublabel?, display? (the button's text), disabled?}]
+    property var options: []
+    property int current: 0
+    property string accessibleName: ""
+    /// Shown (#616161) while nothing is chosen.
+    property string placeholder: ""
+    signal picked(int index)
+    /// Fluent's filled-darker look (#F5F5F5, no outline or underline).
+    property bool filled: false
+    /// The listbox's tallest (Teams' language lists: 340 with padding).
+    property real maxListHeight: 300
+    implicitWidth: 277.3; implicitHeight: 32
+    function openList() {
+        // Below when it fits, else above.
+        const w = root.Window.window
+        const h = Math.min(view.contentHeight, root.maxListHeight) + 8
+        list.y = (w && root.mapToItem(null, 0, root.height).y + h + 2 > w.height && root.mapToItem(null, 0, 0).y > h + 2) ? -h - 2 : root.height + 2
+        list.open()
+    }
+
+    Rectangle {
+        id: hcFill1
+        anchors.fill: parent; radius: 4
+        color: root.filled ? theme.pick("#F5F5F5", "#141414", "#000000") : theme.surface
+        border.color: root.filled ? "transparent" : !root.enabled ? theme.pick("#E0E0E0", "#424242", "#FFFFFF") : hover.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67
+        Rectangle { visible: !root.filled || list.opened; anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: list.opened ? 2 : 0.67; color: list.opened ? theme.brand : root.enabled ? theme.textSecondary : theme.pick("#E0E0E0", "#424242", "#000000") }
+        Text {
+            x: 12; anchors.verticalCenter: parent.verticalCenter
+            width: parent.width - 52; elide: Text.ElideRight
+            text: root.options.length && root.current >= 0 ? (root.options[root.current].display || root.options[root.current].label) : root.placeholder
+            font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, !root.enabled ? theme.disabled : root.current >= 0 ? theme.text : theme.textSecondary)
+        }
+        FluentIcon { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.onFill(hcFill1, root.enabled ? theme.textSecondary : theme.disabled) }
+        HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: list.opened ? list.close() : root.openList() }
+        Accessible.role: Accessible.ComboBox
+        Accessible.name: root.accessibleName + (root.options.length && root.current >= 0 ? ", " + root.options[root.current].label : "")
+    }
+    Popup {
+        id: list
+        y: root.height + 2; width: root.width
+        padding: 4
+        height: Math.min(view.contentHeight, root.maxListHeight) + 8
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        onOpened: view.positionViewAtIndex(Math.max(0, root.current), ListView.Center)
+        contentItem: ListView {
+            id: view
+            clip: true
+            model: root.options
+            // Fluent's listbox: 2 px between options (measured on winpc
+            // 2026-11-19: voicemail rules and shortcut profiles).
+            spacing: 2
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            delegate: Rectangle {
+                id: opt
+                required property var modelData
+                required property int index
+                readonly property bool usable: !modelData.disabled
+                // A long label wraps onto 20 px lines, 6 above and below
+                // (Teams' voicemail rules: 32 or 52 tall, measured
+                // 2026-11-19).
+                // A sublabel (12/16 #616161) goes under the label (Teams'
+                // shortcut profiles: 48 tall).
+                width: view.width; height: Math.max(32, optCol.height + 12); radius: 4
+                color: optHover.hovered && usable ? theme.menuHover : "transparent"
+                FluentIcon { visible: opt.index === root.current; x: 6; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.onFill(opt, theme.text) }
+                Column {
+                    id: optCol
+                    x: 30; width: opt.width - 38; anchors.verticalCenter: parent.verticalCenter
+                    Text { width: parent.width; wrapMode: Text.Wrap; lineHeight: 20; lineHeightMode: Text.FixedHeight; text: opt.modelData.label; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(opt, opt.usable ? theme.text : theme.disabled) }
+                    Text { visible: !!opt.modelData.sublabel; width: parent.width; wrapMode: Text.Wrap; lineHeight: 16; lineHeightMode: Text.FixedHeight; text: opt.modelData.sublabel || ""; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(opt, theme.textSecondary) }
+                }
+                HoverHandler { id: optHover; cursorShape: opt.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                TapHandler { enabled: opt.usable; onTapped: { root.picked(opt.index); list.close() } }
+                Accessible.role: Accessible.ListItem
+                Accessible.name: opt.modelData.label
+            }
+        }
+    }
+}

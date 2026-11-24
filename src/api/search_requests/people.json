@@ -1,0 +1,106 @@
+{
+ "entityRequests": [
+  {
+   "entityType": "People",
+   "Filter": {
+    "And": [
+     {
+      "Or": [
+       {
+        "Term": {
+         "Flags": "NonHidden"
+        }
+       }
+      ]
+     },
+     {
+      "Or": [
+       {
+        "Term": {
+         "PeopleType": "Person"
+        }
+       },
+       {
+        "Term": {
+         "PeopleType": "Other"
+        }
+       }
+      ]
+     },
+     {
+      "Or": [
+       {
+        "Term": {
+         "PeopleSubtype": "OrganizationUser"
+        }
+       },
+       {
+        "Term": {
+         "PeopleSubtype": "MTOUser"
+        }
+       },
+       {
+        "Term": {
+         "PeopleSubtype": "Guest"
+        }
+       },
+       {
+        "Term": {
+         "PeopleSubtype": "Room"
+        }
+       },
+       {
+        "Term": {
+         "PeopleSubtype": "PersonalContact"
+        }
+       },
+       {
+        "Term": {
+         "PeopleSubtype": "ImplicitContact"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "contentSources": [
+    "Exchange"
+   ],
+   "Fields": [
+    "DisplayName",
+    "EmailAddresses",
+    "Department",
+    "CompanyName",
+    "OfficeLocation",
+    "Phones",
+    "JobTitle",
+    "PeopleType",
+    "PeopleSubtype",
+    "MRI",
+    "UserPrincipalName",
+    "HomeTenantName",
+    "HomeMRI",
+    "MTOLabel"
+   ],
+   "query": {
+    "queryString": "{QUERY}",
+    "displayQueryString": "{QUERY}"
+   },
+   "from": 0,
+   "size": 25
+  }
+ ],
+ "scenario": {
+  "Dimensions": [
+   {
+    "DimensionName": "QueryType",
+    "DimensionValue": "People"
+   },
+   {
+    "DimensionName": "FormFactor",
+    "DimensionValue": "general.maglev.reactSearch"
+   }
+  ],
+  "Name": "powerbar"
+ }
+}

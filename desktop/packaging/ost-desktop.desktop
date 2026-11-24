@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=OST
+GenericName=Team chat and calls
+Comment=Native client for Microsoft Teams chats, calls and meetings
+Exec=ost-desktop
+Icon=ost-desktop
+Terminal=false
+Categories=Network;InstantMessaging;Chat;VideoConference;
+StartupWMClass=ost-desktop

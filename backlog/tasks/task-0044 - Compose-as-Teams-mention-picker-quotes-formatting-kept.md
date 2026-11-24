@@ -1,0 +1,121 @@
+---
+id: TASK-0044
+title: 'Compose as Teams: @mention picker, quotes, formatting kept'
+status: Done
+assignee:
+  - '@claude'
+created_date: '2026-11-07T03:57:00Z'
+updated_date: '2026-11-15T23:27:00Z'
+labels:
+  - desktop
+  - messages
+dependencies: []
+references:
+  - docs/spec/messages-and-composer.md
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Compose gaps from docs/parity/gaps-chat-messages.md (P1), per docs/spec/messages-and-composer.md.
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [x] #1 @ opens Teams' mention picker (people, tags, everyone/channel/team per rules) and sends real mentions
+- [x] #2 Quoted replies compose and send as Teams' quote
+- [x] #3 Enter / Ctrl+Enter / Shift+Enter behave as Teams' setting rules
+- [x] #4 Channel posts get Teams' post composer: Add a subject, and Announcement (the headline banner with its colour or picture, Add a subheading), sent and shown as Teams does
+<!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Compose rebuilt as ComposeBox.qml to Teams' measured simplified compose (single-line and multiline states, side and bottom toolbars, formatting bar with Discard, focus line, Shift+Enter hint linking to Settings).
+- AC2: quoted replies compose (card with Remove Reference) and send as Teams' quote (verified earlier byte for byte).
+- AC3: Enter rules as Teams (Ctrl+Enter sends; Enter sends only with the Default setting and the bar closed; Shift+Enter new line).
+- Delivery options via "+" (measured flyout and listbox), IMPORTANT!/URGENT! header, Ctrl+Shift+I, Urgent rules; importance sent with the message.
+- Left: AC1 @mention picker; the full formatting bar (highlight, colour, size, quote, link, code block, rich style, indent, rule, table, undo/redo, overflow); fun picker (GIFs, stickers); Attach menu (cloud files); Schedule message; Record video clip; Loop; installed apps in "+"; drafts sync; pre-send checks.
+
+- AC1 (partial): @ opens Teams' picker (measured); person mentions insert as per-word tokens and send in Teams' wire format (verified rendered by Teams). Left: Everyone / tags / channel / team mentions, Add someone to the chat, Share contact, member emails in rows, mentions kept when editing.
+
+- Teams' unified fun picker replaces the old emoji popup, all measured on winpc:
+  - All, Emoji, GIFs and Stickers tabs, search, See all, the GIPHY credit and View Terms;
+  - GIF categories and results come from the middle tier's giphy command, trending when there is no query;
+  - Teams' sticker catalogue ships with OST (674 stickers), including Recent and the packs;
+  - the inline caption editor draws the sticker and uploads it to AMS.
+- Picks go into the compose box and are sent byte for byte as Teams sends them (emoticon span, GIF, sticker, AMS sticker). Verified on winpc, where Teams rendered OST's message.
+- Received GIFs and stickers render (earlier commit). Emoticon-only messages no longer vanish.
+- Left: the Custom (org emoji) section with Teams' Add emoji dialog; Teams' jumbo emoji-only messages; Fluent emoticon pictures inside message text; GIF and sticker order in mixed messages; GIFs and stickers in replies and edits.
+
+- Custom (org emoji) section with Teams' Add emoji dialog: done (add, send, react verified live on Teams web).
+- Big emoticons (1-3 emoticons/custom emoji alone at 50 px, no bubble) and Teams' Fluent emoticon pictures inside text: done (63a0563).
+
+- Pictures keep their place: text, GIFs, stickers and pictures show in the order written, with Teams' blank lines (measured on Teams web).
+- Edits keep emoticons, custom emoji, GIFs, stickers and pictures (edit_html/edit_media), verified live with two edits (4950794).
+- Left: GIFs/stickers in quoted replies (quote preview).
+
+- Quoted replies: preview text as Teams' QuotedReplyContent (📷 for pictures, 🎥 video, emoticon chars, :custom:, list numbering); verified live, Teams web rendered OST's reply.
+
+- Channel picker: team and channel mention rows (measured), Teams' wire format verified byte for byte live; members-only suggestions in channels; matched text bold; "Suggestions" header always.
+- Channel post highlights (bar + badge, Teams' priority order), measured on winpc (799e0a1).
+- Fixed: Everyone mentions were sent as plain text.
+- Left in AC1: Share someone's contact info, Add agent, Add someone to the chat, tags, mentions kept when editing.
+
+- Share someone's contact info: dialog measured on winpc, wire byte for byte, render as Teams (899c8f5).
+- Mentions kept when editing (tokens back in the edit box; edits send their own mentions list); verified live on OST TEST 65.
+- Left in AC1: Add agent, Add someone to the chat (needs the Add people dialog), tags.
+
+- Add someone to the chat (group chats) opens Teams' Add dialog; roster flyout rebuilt to Teams' measurements with Add people (451af76). Adding a member is unit-tested only; a live add needs a person the user approves.
+- Left in AC1: Add agent (bots), tags.
+
+- Add people verified live: randy@techit.pw (user's own account, approved) added to OST group test and removed again from OST; Teams web showed both control messages. Remove button + Teams' confirm dialog added.
+- Left: Leave (shown with >2 people), Add agents, presence for every member in the flyout.
+
+- Formatting bar (6ca36fe): all Teams groups except tables, Teams' overflow (flex gap calc(100% - 49rem)), popups measured (highlight/font colour palettes, font size, rich style, insert link), code block with Teams' languages, RichText C++ layer exporting clean HTML -> Teams wire; OST TEST 69 rendered by Teams web like its own.
+- Received formatting: quotes, code cards, colours/sizes, headings (measured 18/300, 14/700, 12/700), inline code.
+- Left: tables (insert/rows/columns/delete), code card ··· menu, syntax colours, inline-code hairline box (Qt rich text limit), Rich style button width in bar never shows (always overflows at 458).
+
+- Tags (AC1): the @ picker offers the team's tags after the team and channel (CSA tagCards; lavender circle with the Tag icon, "1 person"/"N people"), sends Teams' tag mention (readonly wrapper, mentionType "tag", mri = tagId), and keeps it when editing. A tag you are in counts as mentioning you (orange bold, @ badge), as Teams' currentUserTagIds. Activity names tag mentions "{name} mentioned {tag}" under the Tag mentions filter. Verified live: OST's "OST TEST 70" renders on winpc Teams exactly like Teams' own "OST TEST 69".
+- Left in AC1: Add agent to the chat/channel (agent picker), and the Everyone limits banner.
+
+- Add agent (AC1): the picker row opens Teams' in-context agent Store (TASK-0076).
+- Left in AC1: the Everyone limits banner (more than 50 people: "# people will be notified"; over 1,000: not available). This can't be tested live with the test chats.
+
+- AC4 (part): Teams' post composer (Post in channel) in the main window and channel windows. It has the author row, Add a subject, the always-open bar with Announcement, the tools and Post. Announcements have the colour banner, headline, 12 colour schemes and subheading.
+  - Posts carry subject, title, the announcementBanner card and postType, as Teams sends them (captured: OST TEST 74/75).
+  - Posts render subject lines and banners as Teams measures them. Banner pictures are cached and shown.
+  - Verified: OST's OST TEST 76 (subject) and 77 (Navy blue announcement) render in Teams exactly like Teams' own. OST reads back Teams' 74/75.
+- Left in AC4: Upload an image (the picture banner's upload and crop) and the composer's Loop components and ··· tools.
+
+- AC4 done: Upload an image. "Add a background image" has the drop area and the cropper (frame 848x244, zoom 1-4). The crop is uploaded to AMS and sent with Teams' imageData, appName and amsreferences (captured from Teams' OST TEST 78). Picture banners render at Teams' fixed ratio.
+  - Verified: OST's OST TEST 79 renders in Teams like Teams' 78 (684 x 190.1, white headline). Teams on winpc needed a restart to sync it.
+  - OST renders Teams' 78.
+
+- AC1 done: Teams' Everyone rules (messaging settings, live values). Everyone is offered while the others number at most 250 in group chats or 1,000 in meeting chats. Above that the row is disabled with "Not available for chats over 1,000 users.". Past 50 others, picking it shows Teams' danger banner "# people will be notified" for 3 s. A chat that big can't be tested live; the rules come from Teams' code and are checked by --compose-rules-test.
+- Compose banner (Teams' notificationBanner, measured): used for the announcement without a headline ("You'll need to add a headline to post your announcement.", measured live in Teams).
+- The post composer shows "Enter starts a new line." under it, as Teams does.
+- Fixed: the posts list went to negative height under a tall composer, so posts drew over the header.
+- The rest of compose moves to TASK-0085.
+
+- 2026-11-15: the Everyone banner was checked live in "OST large chat test" (ost-test1, ost-test2 and 52 guests ostguest01..52 invited from the OST Test Lab domain, no invitation mail). Teams on winpc and OST both show "53 people will be notified" (#FCF4F6, #C4314B, 748 wide). Teams' danger banner has no Close button, so OST's has none either now. OST's roster took over 6 s for 54 people (one Graph call each); it now uses Teams' single fetchShortProfile request (about 3 s with presence). Harness: --everyone-test.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Teams' compose in OST.
+
+What:
+- @ picker: people, tags, Everyone (Teams' limits and banner), channel and team mentions, Share contact, Add agent, Add someone.
+- Quoted replies.
+- Enter rules.
+- The formatting bar with Teams' popups.
+- The fun picker (emoji, GIFs, stickers, custom emoji).
+- Channel posts get Teams' post composer: subject; Announcement with Teams' 12 colour schemes or a cropped picture, and a subheading; the top layout. They are sent and shown as Teams does (captured wire, verified both ways on winpc with OST TEST 74-79).
+- Teams' compose banner (missing headline, Everyone threshold).
+
+Tests: lib tests (373 pass), including the post fields and banner card; harnesses --post-composer-test, --banner-test, --posts-top-test, --compose-rules-test.
+
+Follow-up: TASK-0085 (tables, code block card, Attach menu, Schedule message, video clip, Loop, apps, drafts sync).
+<!-- SECTION:FINAL_SUMMARY:END -->

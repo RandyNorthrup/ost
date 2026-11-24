@@ -67,7 +67,7 @@ pub fn is_rtcp_packet(data: &[u8]) -> bool {
         return false;
     }
     let pt = data[1];
-    pt >= 200 && pt <= 204
+    (200..=204).contains(&pt)
 }
 
 /// Get current NTP timestamp (seconds since 1900-01-01, 32.32 fixed point).
@@ -276,7 +276,7 @@ fn append_sdes(buf: &mut Vec<u8>, ssrc: u32, cname: &str) {
     buf.push(0);
 
     // Pad to 4-byte boundary
-    while (buf.len() - sdes_start) % 4 != 0 {
+    while !(buf.len() - sdes_start).is_multiple_of(4) {
         buf.push(0);
     }
 

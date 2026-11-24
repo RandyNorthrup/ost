@@ -1,11 +1,11 @@
 ---
 id: TASK-0002
-title: 'Wire TUI to real Teams API (send, receive, list)'
+title: Wire TUI to real Teams API (send, receive, list)
 status: Done
 assignee:
   - '@claude'
-created_date: '2026-02-04 22:44'
-updated_date: '2026-02-04 23:10'
+created_date: 2026-02-04 22:44
+updated_date: '2026-11-20T01:21:00Z'
 labels:
   - tui
   - api-integration
@@ -27,11 +27,9 @@ This task is to replace all mock data with live Teams API calls so the TUI funct
 - [x] #2 Sidebar loads real chats/DMs from the Teams API (chats command equivalent)
 - [x] #3 Selecting a channel or chat in the sidebar loads real messages (read command equivalent)
 - [x] #4 Compose box sends real messages via the Teams API (send command equivalent)
-- [ ] #5 Incoming messages appear in real-time via trouter WebSocket push
-- [x] #6 Presence indicators reflect real online/offline status from the presence API
-- [x] #7 User name and connection state in header/status bar reflect actual auth state
-- [ ] #8 Unread counts on channels and chats reflect real unread state
-- [x] #9 TUI gracefully handles API errors (auth expired, network issues) without crashing
+- [x] #5 Presence indicators reflect real online/offline status from the presence API
+- [x] #6 User name and connection state in header/status bar reflect actual auth state
+- [x] #7 TUI gracefully handles API errors (auth expired, network issues) without crashing
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -60,6 +58,8 @@ This task is to replace all mock data with live Teams API calls so the TUI funct
 
 <!-- SECTION:NOTES:BEGIN -->
 Implemented async backend pattern with mpsc channels bridging sync TUI and async API.\n\nReview fixes applied from MPED architect:\n- HTML-escape outgoing message content (security)\n- Fix Backend::recv() doc comment (was misleadingly described as non-blocking)\n- Deduplicate CLI functions to call _data() variants (DRY)\n- Log errors when backend cmd_tx.send() fails (observability)\n- Close search overlay on data reload to prevent stale indices (correctness)\n\nAC #5 (trouter real-time) and #8 (unread counts) deferred as follow-up tasks - require trouter WebSocket integration which is a separate concern.
+
+2026-11-19 audit: criteria #5 (real-time via trouter) and #8 (unread counts) were never met (no trouter in src/tui; sidebar unread always 0); moved to TASK-0229.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

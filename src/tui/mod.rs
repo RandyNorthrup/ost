@@ -9,6 +9,7 @@ mod debug_log;
 mod help;
 mod log_capture;
 mod messages;
+mod rich;
 mod search;
 mod sidebar;
 mod ui;
