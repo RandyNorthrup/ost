@@ -195,6 +195,12 @@ pub struct CallNotification {
     /// present, as a join's answer gives it.
     #[serde(skip)]
     pub initial_roster: Option<serde_json::Value>,
+    /// A forked call's conversation join answer from its attach reply
+    /// (`additionalActionResponses[0].output`): the meeting's conversation
+    /// links (`updateEndpointMetadata`, `addParticipant`…) and roster, as
+    /// a join's response has them.
+    #[serde(skip)]
+    pub conversation: Option<serde_json::Value>,
 }
 
 /// Simple call lifecycle state.

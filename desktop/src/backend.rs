@@ -4806,7 +4806,72 @@ async fn leave_moved_from(call: OutgoingCall) {
 /// recorder for a meeting it joined (a room invited into a meeting has
 /// none), so a room remote offers Captions only then.
 pub(crate) async fn call_has_captions() -> bool {
-    call_slot().lock().await.outgoing.is_some()
+    let slot = call_slot().lock().await;
+    slot.outgoing.is_some() || slot.active.as_ref().is_some_and(|a| a.in_meeting_conversation())
+}
+
+// Live captions in the meeting we're in: one we joined (outgoing), or one
+// we were invited into and answered (a Teams Room's, as a cast or Room
+// audio brings it in: Teams Rooms runs captions there as any participant
+// does, through the meeting's recorder and our endpoint metadata).
+
+/// The meeting's recorder is in the call.
+async fn captions_has_recorder() -> bool {
+    let slot = call_slot().lock().await;
+    match (&slot.outgoing, &slot.active) {
+        (Some(c), _) => c.has_recorder(),
+        (None, Some(a)) => a.has_recorder(),
+        _ => false,
+    }
+}
+
+/// The meeting a recorder command describes (title, calendar id).
+async fn captions_meeting_info() -> (String, String) {
+    let slot = call_slot().lock().await;
+    match (&slot.outgoing, &slot.active) {
+        (Some(c), _) => c.meeting_info().map(|i| (i.title, i.ical_uid)).unwrap_or_default(),
+        (None, Some(a)) => {
+            let m = a.recorder_meeting();
+            (m.title, m.ical_uid)
+        }
+        _ => Default::default(),
+    }
+}
+
+/// Send the meeting's recorder a command.
+async fn captions_command(
+    command: teams_cli::calling::recorder::Command,
+    meeting: &teams_cli::calling::recorder::Meeting,
+) -> anyhow::Result<()> {
+    let auth = if call_slot().lock().await.outgoing.is_none() { Some(CallAuth::load().await?) } else { None };
+    let slot = call_slot().lock().await;
+    match (&slot.outgoing, &slot.active, &auth) {
+        (Some(c), _, _) => c.recorder_command(command, meeting).await,
+        (None, Some(a), Some(auth)) => a.recorder_command(auth, command, meeting).await,
+        _ => anyhow::bail!("Not in a meeting"),
+    }
+}
+
+/// Invite the meeting's recorder.
+async fn captions_add_recorder(meeting: &teams_cli::calling::recorder::Meeting) -> anyhow::Result<()> {
+    let auth = if call_slot().lock().await.outgoing.is_none() { Some(CallAuth::load().await?) } else { None };
+    let slot = call_slot().lock().await;
+    match (&slot.outgoing, &slot.active, &auth) {
+        (Some(c), _, _) => c.add_recorder(meeting).await,
+        (None, Some(a), Some(auth)) => a.add_recorder(auth, meeting).await,
+        _ => anyhow::bail!("Not in a meeting"),
+    }
+}
+
+/// Say in our endpoint metadata whether we want live captions.
+async fn captions_pref(on: bool) -> anyhow::Result<()> {
+    let auth = if call_slot().lock().await.outgoing.is_none() { Some(CallAuth::load().await?) } else { None };
+    let slot = call_slot().lock().await;
+    match (&slot.outgoing, &slot.active, &auth) {
+        (Some(c), _, _) => c.publish_captions_pref(on).await,
+        (None, Some(a), Some(auth)) => a.publish_captions_pref(auth, on).await,
+        _ => anyhow::bail!("Not in a meeting"),
+    }
 }
 
 fn call_slot() -> &'static tokio::sync::Mutex<CallSlot> {
@@ -6922,17 +6987,13 @@ fn call_event_source_ids(json: &str, path: &str) -> Option<Vec<i64>> {
 /// does when it isn't, and wait (up to 20 s) for the roster to list it with
 /// its command URL.
 async fn ensure_recorder(meeting: &teams_cli::calling::recorder::Meeting) -> anyhow::Result<()> {
-    {
-        let slot = call_slot().lock().await;
-        let call = slot.outgoing.as_ref().context("Not in a call")?;
-        if call.has_recorder() {
-            return Ok(());
-        }
-        call.add_recorder(meeting).await?;
+    if captions_has_recorder().await {
+        return Ok(());
     }
+    captions_add_recorder(meeting).await?;
     for _ in 0..80 {
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-        if call_slot().lock().await.outgoing.as_ref().is_some_and(|c| c.has_recorder()) {
+        if captions_has_recorder().await {
             tracing::info!("the meeting's recorder joined");
             return Ok(());
         }
@@ -7361,12 +7422,16 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     if json.contains("conversation/rosterUpdate")
         && let Ok(v) = serde_json::from_str::<serde_json::Value>(json)
     {
-        let changed = call_slot()
-            .lock()
-            .await
-            .outgoing
-            .as_mut()
-            .and_then(|call| call.apply_processing(&v).then(|| call.processing()));
+        let changed = {
+            let mut slot = call_slot().lock().await;
+            if let Some(call) = slot.outgoing.as_mut() {
+                call.apply_processing(&v).then(|| call.processing())
+            } else {
+                // A meeting we were invited into (a Teams Room's): its
+                // recorder, for captions.
+                slot.active.as_mut().and_then(|call| call.apply_processing(&v).then(|| call.processing()))
+            }
+        };
         if let Some(p) = changed {
             tracing::info!(?p, "call recorder processing changed");
             let _ = qt.queue(move |mut this| this.as_mut().show_processing(p));
@@ -9440,6 +9505,11 @@ impl qobject::Backend {
             let title = QString::from(self.rust().room_call_title.as_str());
             self.as_mut().set_call_peer(title);
         }
+        // An answered call starts without the last call's captions or
+        // recorder state (a room is invited into one meeting after another:
+        // the last one's running captions aren't this one's).
+        self.as_mut().reset_captions();
+        self.as_mut().show_processing(Default::default());
         let group = runtime().block_on(async {
             let mut slot = call_slot().lock().await;
             let thread = slot.ringing.as_ref().filter(|_| !room).and_then(|c| c.group_thread().map(str::to_string));
@@ -11625,6 +11695,7 @@ impl qobject::Backend {
                 "mute" => call.mute_participant(&id).await,
                 "spotlight" => call.spotlight(&id, None).await,
                 "unspotlight" => call.spotlight(&id, Some(&state)).await,
+                "lowerHand" if !state.is_empty() => call.remove_state(&state, "Lower hand").await,
                 "attendee" | "presenter" => call.set_role(&id, &action).await,
                 "remove" => call.remove(&id, &name).await,
                 _ => Ok(()),
@@ -12701,28 +12772,22 @@ impl qobject::Backend {
             let result = if !on {
                 // Teams sends no stop: the recorder stops captions once no
                 // endpoint wants them.
-                match call_slot().lock().await.outgoing.as_ref() {
-                    Some(call) if was_published => call.publish_captions_pref(false).await,
-                    _ => Ok(()),
-                }
+                if was_published { captions_pref(false).await } else { Ok(()) }
             } else if running {
-                match call_slot().lock().await.outgoing.as_ref() {
-                    Some(call) => call.publish_captions_pref(true).await,
-                    None => return,
+                if !call_has_captions().await {
+                    return;
                 }
+                captions_pref(true).await
             } else {
-                let info = call_slot().lock().await.outgoing.as_ref().and_then(|c| c.meeting_info()).unwrap_or_default();
+                let (title, ical_uid) = captions_meeting_info().await;
                 let meeting = teams_cli::calling::recorder::Meeting {
-                    title: info.title,
-                    ical_uid: info.ical_uid,
+                    title,
+                    ical_uid,
                     organizer,
                     spoken_language: if language.is_empty() { "en-us".into() } else { language },
                 };
                 match ensure_recorder(&meeting).await {
-                    Ok(()) => match call_slot().lock().await.outgoing.as_ref() {
-                        Some(call) => call.recorder_command(teams_cli::calling::recorder::Command::StartCaptions, &meeting).await,
-                        None => return,
-                    },
+                    Ok(()) => captions_command(teams_cli::calling::recorder::Command::StartCaptions, &meeting).await,
                     Err(e) => Err(e),
                 }
             };
@@ -12748,9 +12813,7 @@ impl qobject::Backend {
         }
         self.as_mut().rust_mut().captions_published = true;
         runtime().spawn(async move {
-            if let Some(call) = call_slot().lock().await.outgoing.as_ref()
-                && let Err(e) = call.publish_captions_pref(true).await
-            {
+            if let Err(e) = captions_pref(true).await {
                 tracing::warn!("captions metadata: {}", short_error(&e));
             }
         });
@@ -12761,13 +12824,11 @@ impl qobject::Backend {
         self.as_mut().set_call_captions_language(QString::from(language.as_str()));
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let slot = call_slot().lock().await;
-            let Some(call) = slot.outgoing.as_ref() else { return };
+            if !call_has_captions().await {
+                return;
+            }
             let meeting = teams_cli::calling::recorder::Meeting { spoken_language: language, ..Default::default() };
-            let result = call
-                .recorder_command(teams_cli::calling::recorder::Command::SetCaptionsLanguage, &meeting)
-                .await;
-            drop(slot);
+            let result = captions_command(teams_cli::calling::recorder::Command::SetCaptionsLanguage, &meeting).await;
             if let Err(e) = result {
                 tracing::warn!("captions language: {}", short_error(&e));
                 let _ = qt.queue(|this| this.meeting_action_failed(QString::from("setCaptionsLanguage")));

@@ -31,7 +31,10 @@ Kinds:
   "de-de",translations:{k…:"…"}}`), named by a newer Teams web runtime on
   the CDN than the packaged build the main table comes from (text Teams
   loads at runtime that its package lacks, such as the Events app's
-  templates); keys are Teams' string ids.
+  templates); keys are Teams' string ids. A Teams web app's chunks work
+  the same way, named by its own main bundle (`teamsPage` finds the
+  current one): the room remote's text is the extensibility apps'
+  `main-locale-<lang>` (namespace extensibilityRoomRemote, plain keys).
 """
 
 import gzip
@@ -301,6 +304,25 @@ def _runtime_ids(runtime_js):
     return {k: f"{un[k]}-{uh[k]}.js" for k in un if k in uh}
 
 
+def _chunk_files(rt):
+    """A Teams webpack runtime's chunk file names, by chunk name: Teams'
+    own (`.un={id:"name"}`, `.uh={id:"hash"}`), or a Teams web app's main
+    bundle (`.u=e=>(({id:"name",…}[e]||e)+"-"+{id:"hash",…}[e]+".js")`,
+    the extensibility apps')."""
+    if ".un={" in rt:
+
+        def table(name):
+            i = rt.index(f".{name}={{")
+            return dict(re.findall(r'(\d+):"([^"]*)"', rt[i : rt.index("}", i)]))
+
+        un, uh = table("un"), table("uh")
+        return {un[k]: f"{un[k]}-{uh[k]}.js" for k in un if k in uh}
+    m = re.search(r'\.u=\w=>\(\(\{(.*?)\}\[\w\]\|\|\w\)\+"-"\+\{(.*?)\}\[\w\]\+"\.js"\)', rt)
+    names = dict(re.findall(r'([\d.e]+):"([^"]*)"', m.group(1)))
+    hashes = dict(re.findall(r'([\d.e]+):"([^"]*)"', m.group(2)))
+    return {n: f"{n}-{hashes[k]}.js" for k, n in names.items() if k in hashes}
+
+
 def _lang_candidates(loc):
     lang = loc.split("-")[0]
     special = {"zh-cn": ["zh-Hans"], "zh-tw": ["zh-Hant"], "zh-hk": ["zh-Hant"], "sr-latn-rs": ["sr-Latn-RS"], "sr-cyrl-rs": ["sr-Cyrl-RS"], "nn-no": ["nn-np"]}
@@ -333,14 +355,15 @@ def collect(locales, assets_dir, cache):
             import teams_strings
 
             entry["base"] = TEAMS_CDN
-            rt = get(TEAMS_CDN + cfg["teamsRuntime"], cache)
-
-            def table(name):
-                i = rt.index(f".{name}={{")
-                return dict(re.findall(r'(\d+):"([^"]*)"', rt[i : rt.index("}", i)]))
-
-            un, uh = table("un"), table("uh")
-            by_name = {un[k]: f"{un[k]}-{uh[k]}.js" for k in un if k in uh}
+            runtime_file = cfg["teamsRuntime"]
+            if "teamsPage" in cfg:
+                # a Teams web app's page names its current main bundle
+                # (Teams' extensibility apps: the room remote)
+                page = get(cfg["teamsPage"], cache) or ""
+                found = re.search(r'hashed-assets/(main-[0-9a-f]+\.js)"', page)
+                if found:
+                    runtime_file = found.group(1)
+            by_name = _chunk_files(get(TEAMS_CDN + runtime_file, cache))
             for loc in locales:
                 for lang in _lang_candidates(loc):
                     file = by_name.get(cfg["chunk"].replace("{lang}", lang))

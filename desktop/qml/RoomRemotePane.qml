@@ -52,13 +52,13 @@ Rectangle {
 
     function layoutName(id) {
         switch (id) {
-        case "showVideoGallery": case "showMixedGrid": return qsTr("Gallery")
-        case "showPrioritizeVideoView": return qsTr("Prioritize video")
-        case "showContent": return qsTr("Content")
-        case "showVideoGalleryAndContent": return qsTr("Content + gallery")
-        case "showLargeGallery": return qsTr("Large Gallery")
-        case "showTogether": return qsTr("Together mode")
-        case "showFrontRow": return qsTr("Front row")
+        case "showVideoGallery": case "showMixedGrid": return qsTr("Gallery", "x.roomremote:app_remote_layout_option_gallery")
+        case "showPrioritizeVideoView": return qsTr("Prioritize video", "x.roomremote:app_remote_layout_option_prioritize_video_view")
+        case "showContent": return qsTr("Content", "x.roomremote:app_remote_layout_option_content")
+        case "showVideoGalleryAndContent": return qsTr("Content + gallery", "x.roomremote:app_remote_layout_option_content_and_gallery")
+        case "showLargeGallery": return qsTr("Large Gallery", "x.roomremote:app_remote_layout_option_large_gallery")
+        case "showTogether": return qsTr("Together mode", "x.roomremote:app_remote_layout_option_together_mode")
+        case "showFrontRow": return qsTr("Front row", "x.roomremote:app_remote_layout_option_front_row")
         }
         return ""
     }
@@ -123,7 +123,7 @@ Rectangle {
 
         Text {
             x: 15.96; y: pad.at(23.56, 1)
-            text: qsTr("Controlling")
+            text: qsTr("Controlling", "x.roomremote:app_header_connected_to")
             font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
             lineHeight: 16; lineHeightMode: Text.FixedHeight
             color: root.ink
@@ -141,14 +141,14 @@ Rectangle {
             cx: 40.73; y: pad.at(61.1, 2)
             enabledControl: root.canCamera
             icon: root.canCamera && root.videoOn ? "room-remote-video" : "room-remote-video-off"
-            label: root.canCamera && root.videoOn ? qsTr("Video on") : qsTr("Video off")
+            label: root.canCamera && root.videoOn ? qsTr("Video on", "x.roomremote:app_remote_video_on") : qsTr("Video off", "x.roomremote:app_remote_video_off")
             onClicked: root.command(root.videoOn ? "cameraOff" : "cameraOn")
         }
         RemoteControl {
             cx: 140.51; y: pad.at(61.1, 2)
             enabledControl: root.canMute
             icon: root.canMute && root.micOn ? "room-remote-mic" : "room-remote-mic-off"
-            label: root.canMute && root.micOn ? qsTr("Mic on") : qsTr("Mic off")
+            label: root.canMute && root.micOn ? qsTr("Mic on", "x.roomremote:app_remote_mic_on") : qsTr("Mic off", "x.roomremote:app_remote_mic_off")
             onClicked: root.command(root.micOn ? "mute" : "unmute")
         }
         RemoteControl {
@@ -156,7 +156,7 @@ Rectangle {
             enabledControl: root.canCaptions
             labelColor: root.inkSoft
             icon: "room-remote-captions"
-            label: root.canCaptions && root.captionsOn ? qsTr("Captions on") : qsTr("Captions off")
+            label: root.canCaptions && root.captionsOn ? qsTr("Captions on", "x.roomremote:app_remote_captions_on") : qsTr("Captions off", "x.roomremote:app_remote_captions_off")
             onClicked: root.command(root.captionsOn ? "captionsOff" : "captionsOn")
         }
         RemoteControl {
@@ -165,7 +165,7 @@ Rectangle {
             enabledControl: root.layouts.length > 0
             hoverBrand: true
             icon: "room-remote-layout"
-            label: qsTr("Layout")
+            label: qsTr("Layout", "x.roomremote:app_remote_layout")
             onClicked: layoutMenu.open()
             Popup {
                 id: layoutMenu
@@ -190,7 +190,7 @@ Rectangle {
                             HoverHandler { id: liHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: { layoutMenu.close(); root.command(li.modelData) } }
                             Accessible.role: Accessible.MenuItem
-                            Accessible.name: liText.text + (li.modelData === root.st.stageLayout ? " " + qsTr("selected") : "")
+                            Accessible.name: liText.text + (li.modelData === root.st.stageLayout ? " " + qsTr("selected", "x.roomremote:app_remote_layout_option_selected") : "")
                         }
                     }
                 }
@@ -205,7 +205,7 @@ Rectangle {
             border.width: 0.67; border.color: root.inkSoft
             GlyphButton {
                 x: 53.18 - 16; y: 10.67
-                icon: "room-remote-volume-down"; label: qsTr("volume down"); enabledControl: root.canVolume
+                icon: "room-remote-volume-down"; label: qsTr("volume down", "x.roomremote:app_remote_volume_down"); enabledControl: root.canVolume
                 onClicked: root.command("volumeDown")
             }
             FluentIcon {
@@ -215,7 +215,7 @@ Rectangle {
             }
             GlyphButton {
                 x: volume.width - 53.18 - 16; y: 10.67
-                icon: "room-remote-volume-up"; label: qsTr("volume up"); enabledControl: root.canVolume
+                icon: "room-remote-volume-up"; label: qsTr("volume up", "x.roomremote:app_remote_volume_up"); enabledControl: root.canVolume
                 onClicked: root.command("volumeUp")
             }
         }
@@ -226,14 +226,14 @@ Rectangle {
             border.width: 0.67; border.color: theme.stroke
             Text {
                 anchors.centerIn: parent
-                text: qsTr("Disconnect room")
+                text: qsTr("Disconnect room", "x.roomremote:app_remote_end_call")
                 font.family: theme.font; font.pixelSize: 12
                 color: root.canLeave ? root.ink : root.offText
             }
             HoverHandler { id: leaveHover; cursorShape: root.canLeave ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: root.canLeave; onTapped: root.command("leaveMeeting") }
             Accessible.role: Accessible.Button
-            Accessible.name: qsTr("Disconnect room")
+            Accessible.name: qsTr("Disconnect room", "x.roomremote:app_remote_end_call")
         }
     }
 

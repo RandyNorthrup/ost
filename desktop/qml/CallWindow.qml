@@ -271,6 +271,65 @@ Window {
     readonly property bool pinningFull: pinnedIds.length >= maxPins
     function pinPerson(id) { if (id && pinnedIds.indexOf(id) < 0 && !pinningFull) pinnedIds = pinnedIds.concat([id]) }
     function unpinPerson(id) { pinnedIds = pinnedIds.filter(x => x !== id) }
+    // The video tile ··· menu's state (VideoTileMenu.qml): your role as
+    // Teams' isPresenter sees it (organizers, co-organizers and presenters
+    // in a meeting; anyone in a group call), the spotlight limit (Teams'
+    // allowedSpotlightCount, 7), and who may be reported.
+    readonly property bool presenterRole: meeting ? ["organizer", "coorganizer", "presenter"].indexOf(myRole) >= 0 : others.length > 1
+    readonly property bool oneOnOne: !meeting && others.length <= 1
+    readonly property int maxSpotlights: 7
+    readonly property bool canReportPeople: scheduled || adhocMeeting
+    /// Lower someone's hand from their tile (Teams' stage and roster
+    /// lower-hands entry points, ECS enableStageAndRosterLowerHandsEntrypoints).
+    readonly property bool lowerHandsOffered: backend.ecsSetting("calling", "enableStageAndRosterLowerHandsEntrypoints") !== "false"
+    /// Teams Rooms here can be controlled (Teams' Control Room System: ECS
+    /// enableRoomRemoteDesktop, desktop, not a 1:1 call).
+    readonly property bool roomRemoteOn: meeting && !backend.roomMode && backend.ecsSetting("calling", "enableRoomRemoteDesktop") === "true"
+    /// Fit to frame / Fill frame, per tile (Teams' scaling mode per
+    /// participant stream, kept for the call): ids shown whole ("me" for
+    /// yours); everyone else's video fills its tile.
+    property var fittedIds: []
+    function fitted(id) { return fittedIds.indexOf(id) >= 0 }
+    function setFitted(id, on) { fittedIds = on ? fittedIds.filter(x => x !== id).concat([id]) : fittedIds.filter(x => x !== id) }
+    function cameraCount() { try { return (JSON.parse(backend.videoDevices()).devices || []).length } catch (e) { return 0 } }
+    /// Open a tile's ··· menu (from its name tag's button), or the same
+    /// menu where the tile was right-clicked.
+    function openTileMenu(button, person) { tileMenu.openFor(button, person) }
+    function openTileMenuAt(item, x, y, person) { tileMenu.openAt(item, x, y, person, tiles.mapToItem(win.contentItem, 0, 0).y) }
+    readonly property string tileMenuFor: tileMenu.forId
+    /// You float over the stage with one other person (no gallery).
+    readonly property bool meOverlayShown: tiles.meOverlay
+    // Test hooks: show a tile's ··· as if hovered; open a tile's menu from
+    // its ··· (the tile answers tileMenuRequested); right-click a tile.
+    property string tileHoverForTest: ""
+    signal tileMenuRequested(string key)
+    function requestTileMenuForTest(key) { tileHoverForTest = key; tileMenuRequested(key) }
+    function tileMenuItemsForTest() { return tileMenu.opened ? tileMenu.itemsForTest() : [] }
+    function tileMenuCloseForTest() { tileMenu.close() }
+    /// A tile menu choice, as Teams handles it.
+    function tileAction(action, p) {
+        const id = p.self ? selfId : p.id
+        if (action === "pin") pinPerson(id)
+        else if (action === "unpin") unpinPerson(id)
+        else if ((action === "spotlight" || action === "unspotlight") && !liveEvent.managed) spotlightAsk.ask(action, p)
+        else if (action === "fit" || action === "fill") setFitted(p.self ? "me" : p.id, action === "fit")
+        else if (action === "hideMe") hideMe = true
+        else if (action === "meInGallery") meInGallery = !meInGallery
+        else if (action === "lowerMyHand") toggleHand()
+        else if (action === "switchCamera") {
+            const d = JSON.parse(backend.videoDevices() || "{}"), list = d.devices || []
+            const i = list.findIndex(c => c.path === d.current)
+            if (list.length > 1) backend.setCameraDevice(list[(i + 1) % list.length].path)
+        }
+        else if (action === "controlRoom") openRoomRemote(p.id, p.name || "")
+        else if (action === "report") openPersonReport(p.id, p.name || "")
+        // Mute participant, Lower hand (their raised hand's state).
+        else if (action === "lowerHand") participantAction("lowerHand", p.id, p.name || "", p.hand || "")
+        // Bring on screen / Take off screen (presenters manage what
+        // attendees see): straight away.
+        else if (action === "unspotlight") participantAction(action, id, p.name || "", ((roster.find(r => r.id === id) || {}).spotlight || ""))
+        else participantAction(action, id, p.name || "", "")
+    }
     readonly property var spotlighted: roster.filter(p => p.active !== false && !!p.spotlight)
     /// A participant menu action for the meeting (mute, roles, spotlight,
     /// remove).
@@ -2432,6 +2491,56 @@ Window {
         roomRemotePane.remoteRoomId = id
         backend.roomRemoteOpen(id, name)
     }
+    VideoTileMenu {
+        id: tileMenu
+        parent: win.contentItem
+        call: win
+        onChosen: (action, p) => win.tileAction(action, p)
+    }
+    // Teams' spotlight confirmation (634992), measured on winpc: 600 x
+    // 152.67, "Spotlight for everyone?" / "You'll highlight this video for
+    // everyone in the meeting." / Cancel, Spotlight for everyone.
+    ConfirmDialog {
+        id: spotlightAsk
+        dialogWidth: 600
+        property string action: ""
+        property var who: ({})
+        function ask(a, p) {
+            spotlightAsk.action = a
+            spotlightAsk.who = p
+            const mine = !!p.self
+            if (a === "spotlight") {
+                spotlightAsk.title = qsTr("Spotlight for everyone?")
+                spotlightAsk.body = mine ? qsTr("You'll highlight your video for everyone in the meeting.") : qsTr("You'll highlight this video for everyone in the meeting.")
+                spotlightAsk.confirmText = qsTr("Spotlight for everyone")
+            } else {
+                spotlightAsk.title = mine ? qsTr("Exit spotlight?") : qsTr("Stop spotlighting this video?")
+                spotlightAsk.body = mine ? qsTr("Your video will no longer be highlighted for everyone in the meeting.") : qsTr("The video will no longer be highlighted for everyone in the meeting.")
+                spotlightAsk.confirmText = mine ? qsTr("Exit spotlight") : qsTr("Stop spotlighting")
+            }
+            spotlightAsk.open()
+        }
+        onConfirmed: {
+            const p = spotlightAsk.who, id = p.self ? win.selfId : p.id
+            const state = p.self ? ((win.spotlighted.find(s => s.id === win.selfId) || {}).spotlight || "") : (p.spotlight || "")
+            win.participantAction(spotlightAsk.action, id, p.name || "", state)
+        }
+    }
+    function tileMenuForTest(id) {
+        const p = id === "me" ? selfEntry : others.find(o => o.id === id)
+        if (!p) return []
+        tileMenu.who = p
+        tileMenu.x = 300; tileMenu.y = 200
+        tileMenu.open()
+        return tileMenu.itemsForTest()
+    }
+    function tileMenuChooseForTest(id, action) {
+        const p = id === "me" ? selfEntry : others.find(o => o.id === id)
+        tileMenu.close()
+        if (p) tileAction(action, p)
+    }
+    function spotlightAskForTest() { return spotlightAsk.visible ? spotlightAsk.title : "" }
+    function spotlightConfirmForTest() { if (spotlightAsk.visible) spotlightAsk.confirm() }
     function openPersonReport(id, name) {
         if (!meetingInfo) loadMeetingInfo()
         meetingReport.people = []
@@ -2943,7 +3052,7 @@ Window {
                 const add = p => { if (p && out.indexOf(p) < 0 && focusedArea.indexOf(p) < 0 && out.length < win.maxPins) out.push(p) }
                 if (win.layout !== "accessibility") win.signFirst.forEach(add)
                 win.spotlighted.forEach(sp => add(sp.id === win.selfId ? win.selfEntry : sp))
-                win.pinnedIds.forEach(id => add(win.others.find(p => p.id === id)))
+                win.pinnedIds.forEach(id => add(id === win.selfId ? win.selfEntry : win.others.find(p => p.id === id)))
                 return out
             }
             readonly property var featuredList: focusedArea.length ? focusedArea : pinArea
@@ -3710,7 +3819,7 @@ Window {
             canReport: win.scheduled || win.adhocMeeting
             pinnedIds: win.pinnedIds
             pinningFull: win.pinningFull
-            roomRemote: win.meeting && !backend.roomMode && backend.ecsSetting("calling", "enableRoomRemoteDesktop") === "true"
+            roomRemote: win.roomRemoteOn
             onParticipantAction: (action, id, name, stateId) => {
                 if (action === "pin") win.pinPerson(id)
                 else if (action === "unpin") win.unpinPerson(id)
@@ -3720,6 +3829,9 @@ Window {
                 else if (action === "report") win.openPersonReport(id, name)
                 // Control Room System: the room's remote in this pane.
                 else if (action === "controlRoom") win.openRoomRemote(id, name)
+                // Spotlight asks first, as from a video tile (Teams' roster
+                // opens the same confirmation, 634992).
+                else if ((action === "spotlight" || action === "unspotlight") && !win.liveEvent.managed) spotlightAsk.ask(action, { id: id, name: name, spotlight: stateId })
                 else win.participantAction(action, id, name, stateId)
             }
             onShareInvite: inviteDialog.open()

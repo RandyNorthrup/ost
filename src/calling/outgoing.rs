@@ -88,20 +88,16 @@ pub struct OutgoingCall {
     /// What the meeting last said about itself (locked, attendee
     /// restrictions).
     capability: super::meeting_options::MeetingCapability,
-    /// What the meeting's call recorder does (transcript, recording,
-    /// Copilot), by its participant id.
-    processing: std::collections::HashMap<String, super::roster::Processing>,
-    /// The roster version each recorder entry came with (newer wins).
-    processing_versions: std::collections::HashMap<String, u64>,
+    /// The meeting's call recorder: its command URL (Record and
+    /// transcribe) and what it does (transcript, recording, captions,
+    /// Copilot).
+    recorder: super::recorder::Tracker,
     /// Teams' bar shows the AI indicator in this meeting.
     ai_indicator: bool,
     /// The meeting is a Meet now (`meetingDetails.meetingType` "MeetNow").
     meet_now: bool,
     /// What the join response says about the meeting (Meeting info).
     meeting_info: Option<super::meeting_info::MeetingInfo>,
-    /// The meeting's call recorder's command URL, once the roster names it
-    /// (Record and transcribe).
-    recorder_url: Option<String>,
     /// The meeting's real-time activity feed `getArtifacts` link (the
     /// stored transcript).
     artifacts_link: Option<String>,
@@ -680,29 +676,30 @@ impl OutgoingCall {
         Ok(())
     }
 
+    /// Remove someone's published state by its id (Teams' removeState,
+    /// scope "specified"): stop their spotlight, or lower their raised hand
+    /// (Teams' lowerOtherParticipantsHand from their tile or roster row).
+    pub async fn remove_state(&mut self, state_id: &str, what: &str) -> Result<()> {
+        self.state_seq += 1;
+        let link = self
+            .state_links
+            .1
+            .clone()
+            .with_context(|| format!("{what}: this meeting has no removeState link"))?;
+        let body = serde_json::json!({ "from": self.me.0.clone(), "sequenceNumber": self.state_seq, "scope": "specified", "stateIds": [state_id] });
+        cc_post(&self.http, &self.skype_token, &link, &body, what).await?;
+        Ok(())
+    }
+
     /// Spotlight someone for everyone (Teams' publishState: "spotlight" at
     /// user level, scope "specified" with them), or stop (removeState of
     /// that state).
     pub async fn spotlight(&mut self, id: &str, state_id: Option<&str>) -> Result<()> {
+        if let Some(state) = state_id {
+            return self.remove_state(state, "Stop spotlight").await;
+        }
         self.state_seq += 1;
         let from = self.me.0.clone();
-        if let Some(state) = state_id {
-            let link = self
-                .state_links
-                .1
-                .clone()
-                .context("This meeting can't stop a spotlight")?;
-            let body = serde_json::json!({ "from": from, "sequenceNumber": self.state_seq, "scope": "specified", "stateIds": [state] });
-            cc_post(
-                &self.http,
-                &self.skype_token,
-                &link,
-                &body,
-                "Stop spotlight",
-            )
-            .await?;
-            return Ok(());
-        }
         let link = self
             .state_links
             .0
@@ -805,38 +802,13 @@ impl OutgoingCall {
 
     /// What the meeting's call recorder is doing now.
     pub fn processing(&self) -> super::roster::Processing {
-        self.processing
-            .values()
-            .fold(super::roster::Processing::default(), |a, b| a.any(b))
+        self.recorder.processing()
     }
 
     /// Note a roster update's call recorder state; true when what it does
     /// changed.
     pub fn apply_processing(&mut self, json: &serde_json::Value) -> bool {
-        if let Some(url) = super::recorder::command_url(json) {
-            self.recorder_url = Some(url);
-        }
-        let before = self.processing();
-        for (id, modes, version) in super::roster::versioned_processing_updates(json) {
-            // An update older than what we have (they can arrive out of
-            // order) changes nothing.
-            let seen = self.processing_versions.get(&id).copied().unwrap_or(0);
-            if version != 0 && version <= seen {
-                continue;
-            }
-            if version != 0 {
-                self.processing_versions.insert(id.clone(), version);
-            }
-            match modes {
-                Some(m) => {
-                    self.processing.insert(id, m);
-                }
-                None => {
-                    self.processing.remove(&id);
-                }
-            }
-        }
-        self.processing() != before
+        self.recorder.apply(json)
     }
 
     /// Teams' bar shows the AI indicator in this meeting.
@@ -851,7 +823,7 @@ impl OutgoingCall {
 
     /// The meeting has a call recorder to command (Record and transcribe).
     pub fn has_recorder(&self) -> bool {
-        self.recorder_url.is_some()
+        self.recorder.has_recorder()
     }
 
     /// Ask the meeting's call recorder to start or stop the transcript or
@@ -861,22 +833,9 @@ impl OutgoingCall {
         command: super::recorder::Command,
         meeting: &super::recorder::Meeting,
     ) -> Result<()> {
-        let url = self
-            .recorder_url
-            .clone()
-            .context("The meeting's recorder isn't in the call")?;
-        let token = crate::auth::oauth::access_token_for(super::recorder::RECORDER_SCOPE).await?;
-        let body = super::recorder::body(
-            command,
-            self.me.0["id"].as_str().unwrap_or_default(),
-            self.me.0["participantId"].as_str().unwrap_or_default(),
-            meeting,
-            chrono::Local::now(),
-            &uuid::Uuid::new_v4().to_string(),
-        );
-        tracing::info!(?command, "recorder command");
-        let skype = command.needs_skype_token().then_some(self.skype_token.as_str());
-        super::recorder::send(&self.http, &url, &token, skype, &self.call_id, &body).await
+        self.recorder
+            .command(&self.http, &self.skype_token, &self.me.0, &self.call_id, command, meeting)
+            .await
     }
 
     /// Invite the meeting's recorder (Teams does when you start captions,
@@ -887,42 +846,13 @@ impl OutgoingCall {
         if !super::incoming::is_service_link(&link) {
             bail!("addParticipant: not a Teams service link");
         }
-        let token = crate::auth::oauth::access_token_for(super::recorder::RECORDER_SCOPE).await?;
-        let config = Config::load()?;
-        let ic3 = config.get_ic3_token().context("No calling (IC3) token")?.token;
         let (surl, epid) = &self.callbacks;
         let tc = |p: &str| signaling::trouter_callback(surl, epid, p);
         let links = serde_json::json!({
             "addParticipantSuccess": tc("conversation/addParticipantSuccess/"),
             "addParticipantFailure": tc("conversation/addParticipantFailure/"),
         });
-        let mut from = self.me.0.clone();
-        if let Some(o) = from.as_object_mut() {
-            o.entry("languageId").or_insert_with(|| "en-US".into());
-        }
-        let body = super::recorder::invitation_body(&from, meeting, &self.call_id, &self.thread_id, &token, links);
-        tracing::info!("inviting the meeting's recorder");
-        let resp = self
-            .http
-            .post(&link)
-            .bearer_auth(ic3)
-            .header("x-microsoft-skype-chain-id", &self.call_id)
-            .header("x-microsoft-skype-message-id", uuid::Uuid::new_v4().to_string())
-            .header("x-microsoft-skype-client", signaling::SKYPE_CLIENT_HEADER)
-            .header("ms-teams-partition", signaling::TEAMS_PARTITION)
-            .header("ms-teams-region", signaling::TEAMS_REGION)
-            .header("ms-teams-ring", signaling::TEAMS_RING)
-            .json(&body)
-            .send()
-            .await
-            .context("Inviting the recorder")?;
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            bail!("Inviting the recorder failed ({status}): {}", &text[..text.len().min(300)]);
-        }
-        tracing::info!(%status, "recorder invited");
-        Ok(())
+        super::recorder::invite(&self.http, &link, &self.me.0, meeting, &self.call_id, &self.thread_id, links).await
     }
 
     /// Merge another call's people into this one (Teams' P2PAndP2P merge):
@@ -4168,13 +4098,8 @@ async fn start_tagged(
             .and_then(|v| super::ai_interpreter::meeting_state(&v))
             .unwrap_or_default(),
         capability: capability.unwrap_or_default(),
-        processing: serde_json::from_str::<serde_json::Value>(&created.response_body)
-            .map(|v| {
-                super::roster::processing_updates(&v)
-                    .into_iter()
-                    .filter_map(|(id, m)| Some((id, m?)))
-                    .collect()
-            })
+        recorder: serde_json::from_str::<serde_json::Value>(&created.response_body)
+            .map(|v| super::recorder::Tracker::from_join(&v))
             .unwrap_or_default(),
         meet_now: serde_json::from_str::<serde_json::Value>(&created.response_body)
             .is_ok_and(|v| super::meeting_options::is_meet_now(&v)),
@@ -4201,10 +4126,6 @@ async fn start_tagged(
                 super::meeting_info::from_join_response(&v)
                     .inspect(|i| tracing::info!(subject = !i.title.is_empty(), instance_subject = !i.instance_subject.is_empty(), ?keys, "meeting info from the join"))
             }),
-        processing_versions: Default::default(),
-        recorder_url: serde_json::from_str::<serde_json::Value>(&created.response_body)
-            .ok()
-            .and_then(|v| super::recorder::command_url(&v)),
         artifacts_link: serde_json::from_str::<serde_json::Value>(&created.response_body)
             .ok()
             .and_then(|v| super::transcript::artifacts_link(&v)),

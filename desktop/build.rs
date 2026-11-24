@@ -303,6 +303,7 @@ fn main() {
         "qml/ControlAlert.qml",
         "qml/ContentCameraDialog.qml",
         "qml/MtmaHub.qml",
+        "qml/VideoTileMenu.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [

@@ -31,6 +31,24 @@ Item {
     readonly property bool signing: !!call && call.isSigning(self ? call.selfId : person.id)
     readonly property var tethered: !call || !signing ? [] : call.tetheredOf(self ? call.selfEntry : person)
     readonly property string reaction: { if (!call) return ""; call.reactions; return call.reactionOf(person.id || "") }
+    /// Teams' tile ··· menu (VideoTileMenu.qml): on the people tiles of a
+    /// meeting or group call, not the compact view's or the room's own.
+    readonly property bool menuOffered: !!call && !compact && !forRoom && !call.roomMode && !bot && person.id !== undefined
+                                        && (call.meeting || !call.oneOnOne || videoKey !== "")
+    readonly property string menuKey: self ? "me" : (person.id || "")
+    readonly property bool menuOpen: !!call && call.tileMenuFor !== "" && call.tileMenuFor === menuKey
+    // Test hook: the call asks a shown tile to open its menu from its ···.
+    Connections {
+        target: mt.call && mt.menuOffered ? mt.call : null
+        function onTileMenuRequested(key) { if (key === mt.menuKey && mt.visible && moreButton.visible) mt.call.openTileMenu(moreButton, mt.person) }
+    }
+    HoverHandler { id: tileHover }
+    // Right-click: the same menu at the pointer.
+    TapHandler {
+        acceptedButtons: Qt.RightButton
+        enabled: mt.menuOffered
+        onTapped: (ev, button) => mt.call.openTileMenuAt(mt, ev.position.x, ev.position.y, mt.person)
+    }
 
     Rectangle {
         id: surface
@@ -94,6 +112,9 @@ Item {
             anchors.fill: parent
             radius: 6
             visible: source !== "" && hasFrame
+            // Fit to frame (the tile ··· menu): the whole picture, the
+            // tile's own background around it (as Teams shows it).
+            fit: !!mt.call && mt.call.fitted(mt.self ? "me" : (mt.person.id || ""))
             transform: Scale { origin.x: video.width / 2; xScale: mt.self ? -1 : 1 }
             Timer {
                 interval: 33; repeat: true
@@ -277,6 +298,32 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: tagRow.pinned
                     name: "pin-20"; size: 16; color: theme.onFill(hcFill2, "white")
+                }
+                // Teams' More options (measured on winpc 2026-11-24): while
+                // the tile is hovered or its menu is open, a 20 x 24 button
+                // 4 after the last glyph, the tag 6 on past it; someone
+                // else's ··· is 16 px (2 in, 4 down), yours 20 (2 down);
+                // white, brand while the menu is open.
+                readonly property bool moreShown: mt.menuOffered && (tileHover.hovered || mt.menuOpen || (!!mt.call.tileHoverForTest && mt.call.tileHoverForTest === mt.menuKey))
+                Item { visible: tagRow.moreShown; width: 4; height: 1 }
+                Item {
+                    id: moreButton
+                    visible: tagRow.moreShown
+                    width: 20; height: 24
+                    anchors.verticalCenter: parent.verticalCenter
+                    FluentIcon {
+                        x: mt.self ? 0 : 2; y: mt.self ? 2 : 4
+                        name: mt.self ? "more-horizontal-20" : "more-horizontal-16"; size: mt.self ? 20 : 16
+                        color: theme.onFill(hcFill2, mt.menuOpen ? theme.brand : "white")
+                    }
+                    TapHandler { onTapped: mt.call.openTileMenu(moreButton, mt.person) }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    ToolTip.visible: moreHover.hovered && !mt.menuOpen
+                    ToolTip.delay: 500
+                    ToolTip.text: qsTr("More options")
+                    HoverHandler { id: moreHover }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("More options")
                 }
             }
         }

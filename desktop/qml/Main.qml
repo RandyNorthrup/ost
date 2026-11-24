@@ -15045,6 +15045,106 @@ Window {
     // screen|window (the desktop's picker asks which); Cast. In the call:
     // CAST call lines (state, sharing, content, who is in) until
     // --cast-stay=<s> (default 60) after it connects, then it leaves.
+    // --tile-menu-test (TASK-0278), in any call harness (--join-test,
+    // --room-remote-test): once connected and someone else (not a room)
+    // is in, the video tile ··· menus every 2 s (TILE lines with the items,
+    // -tile-<name>.png): the other person's (hovered ···, then the menu),
+    // the room's, yours; Fit / Fill on theirs; Spotlight for everyone (the
+    // ask, confirmed) and Stop spotlighting; Pin for me / Unpin on theirs
+    // and yours; Hide me; the right-click menu; as an attendee
+    // (--tile-attendee) only the menus. --tile-lower-hand: Lower hand on
+    // the first raised hand. Then tileTestDone (the room remote checks
+    // go on from there).
+    property bool tileTestDone: Qt.application.arguments.indexOf("--tile-menu-test") < 0
+    // --tile-raise: raise your hand once in, and keep it up (someone's
+    // raised hand for the others' Lower hand).
+    Timer {
+        running: Qt.application.arguments.indexOf("--tile-raise") >= 0 && backend.callState === "connected" && !done
+        interval: 6000
+        property bool done: false
+        onTriggered: { done = true; if (!backend.callHandRaised) backend.toggleHand(); console.warn("TILE raised hand") }
+    }
+    // --tile-demote=<name start> ("~" for spaces), as the organizer: make
+    // that person an attendee once they're in (Teams' attendee view of the
+    // tile menus, on their side).
+    Timer {
+        readonly property string who: (Qt.application.arguments.find(a => a.startsWith("--tile-demote=")) || "").slice(14).replace(/~/g, " ")
+        running: who.length > 0 && backend.callState === "connected" && !done
+        interval: 2000; repeat: true
+        property bool done: false
+        onTriggered: {
+            const p = (callWindow.others || []).find(o => (o.name || "").indexOf(who) === 0)
+            if (!p) return
+            console.warn("TILE demote", p.name, p.role)
+            if ((p.role || "").toLowerCase() !== "attendee") callWindow.participantAction("attendee", p.id, p.name || "", "")
+            done = true
+        }
+    }
+    Timer {
+        running: !window.tileTestDone && backend.callState === "connected"
+        interval: 2000; repeat: true
+        property int k: 0
+        property int at: -1
+        onTriggered: {
+            const others = callWindow.others || []
+            // (With only a room in, the room stands in for someone else.)
+            const other = others.find(p => !p.room && p.active !== false) || (k > 20 ? others.find(p => !!p.room) : null)
+            const room = others.find(p => !!p.room)
+            const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-tile-" + n + ".png")))
+            const log = (what, extra) => console.warn("TILE", what, JSON.stringify(extra === undefined ? callWindow.tileMenuItemsForTest() : extra))
+            k++
+            if (at < 0) {
+                if (k === 1 || k % 5 === 0) console.warn("TILE waiting", JSON.stringify(others.map(p => [p.name, p.id, p.role, !!p.room, !!p.guest])), "me", callWindow.myRole, "invite", callWindow.inviteUrl)
+                // --tile-attendee: once the organizer has made us an attendee.
+                if (Qt.application.arguments.indexOf("--tile-attendee") >= 0 && callWindow.myRole !== "attendee" && k < 60) return
+                if (other && callWindow.videoKeys[other.id]) at = k
+                else if (other && k > 40) at = k
+                else if (k > 150) { console.warn("TILE nobody else"); window.tileTestDone = true }
+                return
+            }
+            const s = k - at
+            const attendee = Qt.application.arguments.indexOf("--tile-attendee") >= 0
+            if (s === 1) { callWindow.side = ""; callWindow.tileHoverForTest = other.id; log("people", others.map(p => [p.name, p.role, !!p.room, !!p.guest, !!callWindow.videoKeys[p.id], !!p.muted])) }
+            else if (s === 2) grab("hover")
+            else if (s === 3) callWindow.requestTileMenuForTest(other.id)
+            else if (s === 4) { log("menu other " + other.name); grab("menu-other") }
+            else if (s === 5) { callWindow.tileMenuCloseForTest(); callWindow.tileHoverForTest = room ? room.id : ""; if (room) callWindow.requestTileMenuForTest(room.id) }
+            else if (s === 6) { if (room) { log("menu room " + room.name); grab("menu-room") } }
+            else if (s === 7) { callWindow.tileMenuCloseForTest(); callWindow.tileHoverForTest = "me"; callWindow.requestTileMenuForTest("me") }
+            else if (s === 8) { log("menu me"); grab("menu-me") }
+            else if (s === 9) { callWindow.tileMenuCloseForTest(); callWindow.tileHoverForTest = ""; callWindow.openTileMenuAt(callWindow.contentItem, callWindow.contentItem.width * 0.75, 300, other) }
+            else if (s === 10) { log("context menu"); grab("menu-context") }
+            else if (s === 11) { callWindow.tileMenuCloseForTest(); callWindow.tileMenuChooseForTest(other.id, "fit") }
+            else if (s === 12) { log("fitted", callWindow.fittedIds); grab("fit"); callWindow.requestTileMenuForTest(other.id) }
+            else if (s === 13) { log("menu after fit"); callWindow.tileMenuCloseForTest(); callWindow.tileMenuChooseForTest(other.id, "fill") }
+            else if (s === 14) log("filled", callWindow.fittedIds)
+            else if (s === 15) { callWindow.tileMenuChooseForTest(other.id, "pin") }
+            else if (s === 16) { log("pinned", callWindow.pinnedIds); grab("pinned"); callWindow.requestTileMenuForTest(other.id) }
+            else if (s === 17) { log("menu pinned"); callWindow.tileMenuCloseForTest(); callWindow.tileMenuChooseForTest(other.id, "unpin") }
+            else if (s === 18) { log("unpinned", callWindow.pinnedIds); callWindow.tileMenuChooseForTest("me", "pin") }
+            else if (s === 19) { log("me pinned", callWindow.pinnedIds); grab("me-pinned"); callWindow.requestTileMenuForTest("me") }
+            else if (s === 20) { log("menu me pinned"); grab("menu-me-pinned"); callWindow.tileMenuCloseForTest(); callWindow.tileMenuChooseForTest("me", "unpin") }
+            else if (s === 21) { log("me unpinned", callWindow.pinnedIds); callWindow.tileMenuChooseForTest("me", "hideMe") }
+            else if (s === 22) { log("hidden me", callWindow.hideMe); grab("hide-me"); callWindow.hideMe = false }
+            else if (s === 23 && !attendee) callWindow.tileMenuChooseForTest(other.id, "spotlight")
+            else if (s === 24 && !attendee) { log("spotlight ask", callWindow.spotlightAskForTest()); grab("spotlight-ask"); callWindow.spotlightConfirmForTest() }
+            else if (s === 27 && !attendee) { log("spotlighted", callWindow.spotlighted.map(p => p.name)); grab("spotlighted"); callWindow.requestTileMenuForTest(other.id) }
+            else if (s === 28 && !attendee) { log("menu spotlighted"); grab("menu-spotlighted"); callWindow.tileMenuCloseForTest(); const p = callWindow.others.find(o => o.id === other.id); callWindow.tileMenuChooseForTest(other.id, "unspotlight") }
+            else if (s === 29 && !attendee) { log("unspotlight ask", callWindow.spotlightAskForTest()); grab("unspotlight-ask"); callWindow.spotlightConfirmForTest() }
+            else if (s === 32 && !attendee) log("spotlight stopped", callWindow.spotlighted.map(p => p.name))
+            else if (s === 33 && Qt.application.arguments.indexOf("--tile-lower-hand") >= 0) {
+                const h = callWindow.others.find(p => !!p.hand)
+                log("hands", callWindow.others.filter(p => !!p.hand).map(p => p.name))
+                if (h) { callWindow.requestTileMenuForTest(h.id) }
+            }
+            else if (s === 34 && Qt.application.arguments.indexOf("--tile-lower-hand") >= 0) {
+                const h = callWindow.others.find(p => !!p.hand)
+                log("menu raised hand"); grab("menu-hand"); callWindow.tileMenuCloseForTest()
+                if (h) callWindow.tileMenuChooseForTest(h.id, "lowerHand")
+            }
+            else if (s === 37) { log("hands after", callWindow.others.filter(p => !!p.hand).map(p => p.name)); console.warn("TILE done"); window.tileTestDone = true }
+        }
+    }
     // --room-remote-test (TASK-0273): Teams' cast flow with no content —
     // a Meet now titled with the first nearby room, joined with devices
     // off, the room added with its beacon code — then the
@@ -15136,14 +15236,25 @@ Window {
             // -cast-rr-<name>.png): Mic, Video, Captions (each twice),
             // volume down / up, the layouts it offers, then Disconnect room
             // (--cast-rr-leave) or Close.
-            if (connectedAt > 0 && connectedAt < 1e9 && (Qt.application.arguments.indexOf("--cast-room-remote") >= 0 || rrTest)) {
+            if (connectedAt > 0 && connectedAt < 1e9 && (Qt.application.arguments.indexOf("--cast-room-remote") >= 0 || rrTest) && window.tileTestDone) {
                 const k = step - connectedAt
                 const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-cast-rr-" + n + ".png")))
                 const rr = () => { try { return JSON.parse(backend.roomRemoteJson || "{}") } catch (e) { return {} } }
                 const room = (callWindow.others || []).find(p => !!p.room)
-                if (k === 8) { callWindow.side = "people"; console.warn("RRCHK room", room ? room.name : "none") }
-                else if (k >= 9 && room && rrStage === 0) { callWindow.participantMenuForTest(room.id); grab("menu"); rrStage = 1 }
-                else if (rrStage === 1) { callWindow.closeParticipantMenuForTest(); callWindow.openRoomRemote(room.id, room.name); grab("loading"); rrStage = 2 }
+                // --tile-menu-test: from the room's video tile ··· instead
+                // of its People row.
+                const fromTile = Qt.application.arguments.indexOf("--tile-menu-test") >= 0
+                if (k === 8 && !fromTile) { callWindow.side = "people"; console.warn("RRCHK room", room ? room.name : "none") }
+                else if (k >= 9 && room && rrStage === 0) {
+                    if (fromTile) { callWindow.side = ""; callWindow.tileHoverForTest = room.id; callWindow.requestTileMenuForTest(room.id); console.warn("RRCHK tile menu", JSON.stringify(callWindow.tileMenuItemsForTest())) }
+                    else callWindow.participantMenuForTest(room.id)
+                    grab("menu"); rrStage = 1
+                }
+                else if (rrStage === 1) {
+                    if (fromTile) { callWindow.tileHoverForTest = ""; callWindow.tileMenuCloseForTest(); callWindow.tileMenuChooseForTest(room.id, "controlRoom") }
+                    else { callWindow.closeParticipantMenuForTest(); callWindow.openRoomRemote(room.id, room.name) }
+                    grab("loading"); rrStage = 2
+                }
                 else if (rrStage === 2 && rrAt < 0) {
                     const v = rr()
                     console.warn("RRCHK", k, JSON.stringify(v))
@@ -15154,12 +15265,18 @@ Window {
                     const plan = []
                     if (media.indexOf("toggleMute") >= 0) plan.push(() => s.toggleMute ? "unmute" : "mute", () => s.toggleMute ? "unmute" : "mute")
                     if (media.indexOf("toggleCamera") >= 0) plan.push(() => s.toggleCamera ? "cameraOff" : "cameraOn", () => s.toggleCamera ? "cameraOff" : "cameraOn")
-                    if (media.indexOf("toggleCaptions") >= 0) plan.push(() => s.toggleCaptions ? "captionsOff" : "captionsOn", () => s.toggleCaptions ? "captionsOff" : "captionsOn")
+                    if (media.indexOf("toggleCaptions") >= 0) {
+                        plan.push(() => s.toggleCaptions ? "captionsOff" : "captionsOn")
+                        // --rr-captions-hold=<s>: leave the room's captions
+                        // on that long (4 s a step) before turning them off.
+                        for (let h = 0; h < Math.ceil(parseInt(arg("rr-captions-hold", "0")) / 4); h++) plan.push(() => "")
+                        plan.push(() => s.toggleCaptions ? "captionsOff" : "captionsOn")
+                    }
                     plan.push(() => "volumeDown", () => "volumeUp")
                     lay.forEach(l => plan.push(() => l))
                     const i = Math.floor((k - rrAt - 1) / 2)
                     if ((k - rrAt) % 2 === 0) { console.warn("RRCHK state", JSON.stringify(v)); grab("step" + i) }
-                    else if (i < plan.length) { const c = plan[i](); console.warn("RRCHK press", c); backend.roomRemoteCommand(c) }
+                    else if (i < plan.length) { const c = plan[i](); if (c) { console.warn("RRCHK press", c); backend.roomRemoteCommand(c) } }
                     else if (i === plan.length) {
                         if (Qt.application.arguments.indexOf("--cast-rr-leave") >= 0) { console.warn("RRCHK press leaveMeeting"); backend.roomRemoteCommand("leaveMeeting") }
                         else { console.warn("RRCHK close"); callWindow.side = ""; backend.roomRemoteClose() }

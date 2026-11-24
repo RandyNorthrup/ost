@@ -903,6 +903,13 @@ async fn attach(
     // And who is in it already (a Teams Rooms device invited into a
     // meeting learns this way what is being presented there).
     notification.initial_roster = find_key(&reply, "roster").and_then(|r| r.get("participants")).filter(|p| p.is_object()).cloned();
+    // The join's answer itself: the conversation's links (captions need
+    // updateEndpointMetadata and addParticipant) and the recorder's state.
+    notification.conversation = reply
+        .get("additionalActionResponses")
+        .and_then(|a| a.as_array())
+        .and_then(|a| a.iter().find_map(|r| r.get("output").filter(|o| o.get("links").is_some())))
+        .cloned();
     Ok(notification)
 }
 
@@ -949,6 +956,9 @@ pub struct ActiveCall {
     /// What the last description said of sharing, and the shares so far.
     described_sharing: std::sync::atomic::AtomicBool,
     shares: std::sync::atomic::AtomicU64,
+    /// A meeting we were invited into (a Teams Room's): its call recorder
+    /// (live captions), from the attach's join answer and the roster.
+    recorder: super::recorder::Tracker,
 }
 
 impl Drop for ActiveCall {
@@ -960,6 +970,126 @@ impl Drop for ActiveCall {
 }
 
 impl ActiveCall {
+    /// Pick up what the attach's join answer says about the meeting's
+    /// recorder.
+    fn with_conversation(mut self) -> Self {
+        if let Some(c) = &self.notification.conversation {
+            self.recorder = super::recorder::Tracker::from_join(c);
+        }
+        self
+    }
+
+    /// One of the meeting's conversation links (the attach's join answer:
+    /// `updateEndpointMetadata`, `addParticipant`…), when we were invited
+    /// into a meeting.
+    fn conversation_link(&self, name: &str) -> Option<String> {
+        self.notification
+            .conversation
+            .as_ref()?
+            .pointer(&format!("/links/{name}"))?
+            .as_str()
+            .filter(|l| is_service_link(l))
+            .map(str::to_string)
+    }
+
+    /// We joined a meeting's conversation (invited into it, as a Teams
+    /// Room is): its captions work as a joined meeting's do.
+    pub fn in_meeting_conversation(&self) -> bool {
+        self.conversation_link("updateEndpointMetadata").is_some() && self.me.is_some()
+    }
+
+    /// What the meeting's call recorder does now.
+    pub fn processing(&self) -> super::roster::Processing {
+        self.recorder.processing()
+    }
+
+    /// Note a roster update's recorder state; true when what it does
+    /// changed.
+    pub fn apply_processing(&mut self, json: &serde_json::Value) -> bool {
+        self.recorder.apply(json)
+    }
+
+    /// The meeting's recorder is in the call with a command URL.
+    pub fn has_recorder(&self) -> bool {
+        self.recorder.has_recorder()
+    }
+
+    /// Who we are in the meeting, as its requests name us.
+    fn me_json(&self) -> Result<serde_json::Value> {
+        Ok(self.me.as_ref().context("Not in a meeting's conversation")?.json())
+    }
+
+    /// The meeting's chat thread (the invitation's `meetingDetails` or
+    /// group chat).
+    fn meeting_thread(&self) -> Option<String> {
+        self.notification
+            .conversation
+            .as_ref()
+            .and_then(|c| {
+                c.pointer("/meetingDetails/threadId")
+                    .or_else(|| c.pointer("/groupChat/threadId"))
+                    .or_else(|| find_key(c, "threadId"))
+                    .and_then(|t| t.as_str())
+                    .filter(|t| t.starts_with("19:"))
+                    .map(str::to_string)
+            })
+            .or_else(|| {
+                self.notification
+                    .meeting_details
+                    .as_ref()
+                    .and_then(|d| d.get("threadId"))
+                    .and_then(|t| t.as_str())
+                    .map(str::to_string)
+            })
+    }
+
+    /// The meeting's title and calendar id for a recorder command.
+    pub fn recorder_meeting(&self) -> super::recorder::Meeting {
+        let d = self.notification.meeting_details.as_ref();
+        let s = |k: &str| d.and_then(|d| d.get(k)).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        super::recorder::Meeting { title: s("title"), ical_uid: s("iCalUid"), ..Default::default() }
+    }
+
+    /// Ask the meeting's call recorder for something (live captions), as
+    /// a joined meeting does.
+    pub async fn recorder_command(
+        &self,
+        auth: &CallAuth,
+        command: super::recorder::Command,
+        meeting: &super::recorder::Meeting,
+    ) -> Result<()> {
+        let call_id = self.call_id().unwrap_or_default();
+        self.recorder
+            .command(&auth.http, &auth.skype_token, &self.me_json()?, &call_id, command, meeting)
+            .await
+    }
+
+    /// Bring the meeting's recorder into the call (Teams does when it
+    /// starts captions and the recorder isn't there yet).
+    pub async fn add_recorder(&self, auth: &CallAuth, meeting: &super::recorder::Meeting) -> Result<()> {
+        let link = self.conversation_link("addParticipant").context("No addParticipant link")?;
+        let me = self.me.as_ref().context("Not in a meeting's conversation")?;
+        let links = serde_json::json!({
+            "addParticipantSuccess": me.callback("conversation/addParticipantSuccess/"),
+            "addParticipantFailure": me.callback("conversation/addParticipantFailure/"),
+        });
+        let call_id = self.call_id().unwrap_or_default();
+        let thread = self.meeting_thread().unwrap_or_default();
+        super::recorder::invite(&auth.http, &link, &me.json(), meeting, &call_id, &thread, links).await
+    }
+
+    /// Tell the meeting whether we want live captions (`PUT
+    /// updateEndpointMetadata` with our `transcriptionPrefs`), as a joined
+    /// meeting does.
+    pub async fn publish_captions_pref(&self, auth: &CallAuth, on: bool) -> Result<()> {
+        let link = self.conversation_link("updateEndpointMetadata").context("No endpoint metadata link")?;
+        let body = serde_json::json!({
+            "participants": { "from": self.me_json()? },
+            "endpointMetadata": { "transcriptionPrefs": { "closedCaptions": on } },
+        });
+        cc_request(&auth.http, &auth.skype_token, reqwest::Method::PUT, &link, &body, "Endpoint metadata").await?;
+        Ok(())
+    }
     /// Invited into a meeting: show these cameras (roster `main-video`
     /// sourceIds, most wanted first); sourceId -> frame key for each that
     /// got a receive slot. Empty for a 1:1 call.
@@ -1680,7 +1810,9 @@ pub async fn answer(
         media_descriptions: None,
         described_sharing: Default::default(),
         shares: Default::default(),
-    })
+        recorder: Default::default(),
+    }
+    .with_conversation())
 }
 
 /// Answer a DTLS-SRTP (WebRTC) offer: bundled audio (PCMU), plus the
@@ -1758,7 +1890,9 @@ async fn answer_webrtc(
         media_descriptions: None,
         described_sharing: Default::default(),
         shares: Default::default(),
-    })
+        recorder: Default::default(),
+    }
+    .with_conversation())
 }
 
 /// Answer a meeting's media processor inviting us into the meeting (its
@@ -1848,7 +1982,9 @@ async fn answer_meeting_offer(
         media_descriptions: leg.media_descriptions.map(|l| (l, Default::default())),
         described_sharing: Default::default(),
         shares: Default::default(),
-    })
+        recorder: Default::default(),
+    }
+    .with_conversation())
 }
 
 /// Post a meeting's media descriptions

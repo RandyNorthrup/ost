@@ -224,6 +224,50 @@ pub fn invitation_body(
     })
 }
 
+/// Bring the recorder into the call through the conversation's
+/// `addParticipant` link, as `me` (our participant), with `links` the
+/// success and failure callbacks ([`invitation_body`]).
+pub async fn invite(
+    http: &reqwest::Client,
+    link: &str,
+    me: &Value,
+    meeting: &Meeting,
+    call_id: &str,
+    thread_id: &str,
+    links: Value,
+) -> Result<()> {
+    use super::signaling;
+    let token = crate::auth::oauth::access_token_for(RECORDER_SCOPE).await?;
+    let config = crate::config::Config::load()?;
+    let ic3 = config.get_ic3_token().context("No calling (IC3) token")?.token;
+    let mut from = me.clone();
+    if let Some(o) = from.as_object_mut() {
+        o.entry("languageId").or_insert_with(|| "en-US".into());
+    }
+    let body = invitation_body(&from, meeting, call_id, thread_id, &token, links);
+    tracing::info!("inviting the meeting's recorder");
+    let resp = http
+        .post(link)
+        .bearer_auth(ic3)
+        .header("x-microsoft-skype-chain-id", call_id)
+        .header("x-microsoft-skype-message-id", uuid::Uuid::new_v4().to_string())
+        .header("x-microsoft-skype-client", signaling::SKYPE_CLIENT_HEADER)
+        .header("ms-teams-partition", signaling::TEAMS_PARTITION)
+        .header("ms-teams-region", signaling::TEAMS_REGION)
+        .header("ms-teams-ring", signaling::TEAMS_RING)
+        .json(&body)
+        .send()
+        .await
+        .context("Inviting the recorder")?;
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        bail!("Inviting the recorder failed ({status}): {}", &text[..text.len().min(300)]);
+    }
+    tracing::info!(%status, "recorder invited");
+    Ok(())
+}
+
 /// Send a command to the recorder's command URL.
 pub async fn send(
     http: &reqwest::Client,
@@ -257,6 +301,99 @@ pub async fn send(
     Ok(())
 }
 
+/// What a meeting's call recorder is doing, as the roster tells it: its
+/// command URL once a participant's endpoint names one, and each recorder
+/// endpoint's processing modes (versioned: updates can arrive out of
+/// order). A placed call and an answered meeting (a Teams Room invited
+/// into one) each keep one.
+#[derive(Debug, Clone, Default)]
+pub struct Tracker {
+    url: Option<String>,
+    processing: std::collections::HashMap<String, super::roster::Processing>,
+    versions: std::collections::HashMap<String, u64>,
+}
+
+impl Tracker {
+    /// Start from a join response (or an attach's join answer): its
+    /// command URL and what the recorder already does.
+    pub fn from_join(v: &Value) -> Self {
+        Self {
+            url: command_url(v),
+            processing: super::roster::processing_updates(v)
+                .into_iter()
+                .filter_map(|(id, m)| m.map(|m| (id, m)))
+                .collect(),
+            versions: Default::default(),
+        }
+    }
+
+    /// The recorder is in the call with a command URL.
+    pub fn has_recorder(&self) -> bool {
+        self.url.is_some()
+    }
+
+    /// What the recorder does now (all its endpoints together).
+    pub fn processing(&self) -> super::roster::Processing {
+        self.processing
+            .values()
+            .fold(super::roster::Processing::default(), |a, b| a.any(b))
+    }
+
+    /// Note a roster update's recorder state; true when what it does
+    /// changed.
+    pub fn apply(&mut self, json: &Value) -> bool {
+        if let Some(url) = command_url(json) {
+            self.url = Some(url);
+        }
+        let before = self.processing();
+        for (id, modes, version) in super::roster::versioned_processing_updates(json) {
+            // An update older than what we have changes nothing.
+            let seen = self.versions.get(&id).copied().unwrap_or(0);
+            if version != 0 && version <= seen {
+                continue;
+            }
+            if version != 0 {
+                self.versions.insert(id.clone(), version);
+            }
+            match modes {
+                Some(m) => {
+                    self.processing.insert(id, m);
+                }
+                None => {
+                    self.processing.remove(&id);
+                }
+            }
+        }
+        self.processing() != before
+    }
+
+    /// Send `command` to the recorder as `me` (our participant: its `id`
+    /// and `participantId`) in the call `call_id`.
+    pub async fn command(
+        &self,
+        http: &reqwest::Client,
+        skype_token: &str,
+        me: &Value,
+        call_id: &str,
+        command: Command,
+        meeting: &Meeting,
+    ) -> Result<()> {
+        let url = self.url.clone().context("The meeting's recorder isn't in the call")?;
+        let token = crate::auth::oauth::access_token_for(RECORDER_SCOPE).await?;
+        let b = body(
+            command,
+            me["id"].as_str().unwrap_or_default(),
+            me["participantId"].as_str().unwrap_or_default(),
+            meeting,
+            chrono::Local::now(),
+            &uuid::Uuid::new_v4().to_string(),
+        );
+        tracing::info!(?command, "recorder command");
+        let skype = command.needs_skype_token().then_some(skype_token);
+        send(http, &url, &token, skype, call_id, &b).await
+    }
+}
+
 /// The recorder's command URL in a roster update or join response, if a
 /// participant's endpoint carries one.
 pub fn command_url(json: &Value) -> Option<String> {
@@ -278,6 +415,33 @@ pub fn command_url(json: &Value) -> Option<String> {
 mod tests {
     use super::*;
     use chrono::TimeZone;
+
+    #[test]
+    fn tracker_follows_the_recorder_from_join_to_roster() {
+        // The recorder's endpoint: its command URL and processing modes.
+        let bot = |captions: &str, version: u64| json!({
+            "28:bdd75849-e0a6-4cce-8fc1-d7c0d4da43e5": {"state": "active", "version": version,
+                "endpoints": {"e1": {"endpointMetadata": {
+                    "commandUrl": "https://recorder.example/cmd",
+                    "processingModes": {"closedCaptions": {"state": captions, "userId": "8:orgid:room"}}}}}}
+        });
+        // An attach's join answer (a Teams Room invited into a meeting)
+        // with the recorder not running captions yet.
+        let joined = json!({"links": {"updateEndpointMetadata": "https://cc/x"}, "roster": {"participants": bot("Inactive", 0)}});
+        let mut t = Tracker::from_join(&joined);
+        assert!(t.has_recorder());
+        assert!(!t.processing().captions);
+        // A roster update starts captions; an older one doesn't undo it.
+        let upd = |captions: &str, version: u64| json!({"callAgentPath": "conversation/rosterUpdate/", "body": {"participants": bot(captions, version)}});
+        assert!(t.apply(&upd("Active", 5)));
+        assert!(t.processing().captions);
+        assert!(!t.apply(&upd("Inactive", 4)));
+        assert!(t.processing().captions);
+        assert!(t.apply(&upd("Inactive", 6)));
+        assert!(!t.processing().captions);
+        // Nothing about the recorder: no recorder.
+        assert!(!Tracker::from_join(&json!({"links": {}})).has_recorder());
+    }
 
     fn meeting() -> Meeting {
         Meeting {
