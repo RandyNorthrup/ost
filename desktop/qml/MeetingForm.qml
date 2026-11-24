@@ -84,6 +84,32 @@ Item {
     readonly property bool readOnly: mode === "view"
     readonly property bool hasInvitees: required.length + optional.length > 0 || !!channel
     readonly property bool isSeries: ["occurrence", "exception", "seriesMaster"].indexOf(event.event_type || "") >= 0
+    // Which events of your series the page edits, as Outlook's form does
+    // (Teams' event page, winpc 2026-11-23): "occurrence" (This event,
+    // "You're editing one event in the series."), "following" (This and
+    // all following events: the repeat from this event's date, attendees
+    // only in the series) or "series" (All events in the series).
+    property string scope: ""
+    readonly property bool seriesScoped: existing && isSeries && mode === "edit"
+    readonly property bool attendeesLocked: seriesScoped && scope === "following"
+    /// The repeat can change for the series or this and the following
+    /// events, never back to "Does not repeat" (Outlook's series form has
+    /// only Repeat every … with an end date).
+    readonly property bool repeatEditable: !readOnly && (!seriesScoped || scope !== "occurrence")
+    function setScope(s) {
+        const unchanged = !recurrenceChanged
+        scope = s
+        if (!unchanged) return
+        const was = loading; loading = true
+        const series = detail && detail.recurrence ? fromGraph(detail.recurrence, startAt) : recurrence
+        recurrence = scopedRecurrence(series); recurrenceAtLoad = recurrenceKey(recurrence)
+        loading = was
+    }
+    /// This and all following events: the series' repeat, effective from
+    /// this event's date.
+    function scopedRecurrence(r) {
+        return r && scope === "following" ? makeRecurrence(r.unit, r.interval, r.days, dayStart(startAt), r.end) : r
+    }
     /// It was sent as a meeting (attendees or a Teams meeting), not saved as
     /// an appointment.
     readonly property bool wasMeeting: existing && (event.is_meeting === true || !!event.join_url || !!event.channel_id
@@ -111,7 +137,7 @@ Item {
         loading = true
         setBody(detail.body_html); bodyAtLoad = bodyHtml()
         // A series' repeat (an occurrence shows its series').
-        if (detail.recurrence && !dirty) { recurrence = fromGraph(detail.recurrence, startAt); recurrenceAtLoad = recurrenceKey(recurrence) }
+        if (detail.recurrence && !dirty) { recurrence = scopedRecurrence(fromGraph(detail.recurrence, startAt)); recurrenceAtLoad = recurrenceKey(recurrence) }
         loading = false
     }
     /// The repeat as the form opened it (an update sends it to the series
@@ -208,11 +234,12 @@ Item {
         virtualAppointment = true
         recordAuto = "Off"
     }
-    function openEvent(ev, asOrganizer) {
+    function openEvent(ev, asOrganizer, withScope) {
         reset()
         loading = true
         event = ev || ({}); detail = ({})
         mode = asOrganizer ? "edit" : "view"
+        scope = !isSeries ? "" : withScope ? withScope : event.event_type === "seriesMaster" ? "series" : "occurrence"
         editingId = ev.id || ""
         titleInput.text = ev.subject || ""
         startAt = new Date(ev.start_utc); endAt = new Date(ev.end_utc)
@@ -225,7 +252,7 @@ Item {
         online = !!ev.join_url
         location = (ev.location && !(online && ev.location === "Microsoft Teams Meeting")) ? ev.location : ""
         channel = ev.channel_id ? { teamId: ev.team_id || "", teamName: ev.team_name || "", channelId: ev.channel_id, channelName: ev.channel_name || "" } : null
-        recurrence = fromGraph(ev.recurrence, startAt)
+        recurrence = scopedRecurrence(fromGraph(ev.recurrence, startAt))
         recurrenceAtLoad = recurrenceKey(recurrence)
         attendeesAtLoad = attendeeKey()
         atLoad = { subject: titleInput.text.trim(), start: startAt.getTime(), end: endAt.getTime(), location: location }
@@ -312,6 +339,7 @@ Item {
             bodyChanged: bodyHtml() !== bodyAtLoad,
             recurrenceChanged: recurrenceChanged,
             targetAudience: audience || 0,
+            scope: seriesScoped ? scope : "",
             online: channel ? true : online,
             channel: channel,
             recurrence: recurrence ? { patternType: recurrence.patternType, daily: recurrence.daily, weekly: recurrence.weekly, monthly: recurrence.monthly, yearly: recurrence.yearly, range: { startDate: recurrence.start, endDate: recurrence.end } } : null,
@@ -328,8 +356,9 @@ Item {
     function primaryAction() {
         if (primaryKind === "join") { if (event.join_url) root.join(); return }
         if (!primaryEnabled) return
-        // A new repeat for a series asks first (Outlook's "Edit series").
-        if (existing && isSeries && recurrenceChanged) { editSeriesDialog.open(); return }
+        // A new repeat for a series asks first (Outlook's "Edit series");
+        // this and all following events are sent as they are.
+        if (existing && isSeries && recurrenceChanged && scope !== "following") { editSeriesDialog.open(); return }
         sendNow()
     }
     function sendNow() {
@@ -550,6 +579,28 @@ Item {
                 }
             }
 
+            // Your series: which events the page edits (Outlook's info bar
+            // on Teams' event page, measured on winpc 2026-11-23: 36 tall,
+            // the info glyph 13 in, 14 px #616161 text 41 in).
+            Item {
+                visible: root.seriesScoped
+                x: 32; width: scroller.fieldW + 42; height: visible ? 36 : 0
+                Rectangle {
+                    anchors.fill: parent; radius: 4; color: theme.inputFilled
+                    FluentIcon { x: 13; anchors.verticalCenter: parent.verticalCenter; name: "info-20"; size: 20; color: theme.textSecondary }
+                    Row {
+                        x: 41; anchors.verticalCenter: parent.verticalCenter; spacing: 12
+                        Text {
+                            text: root.scope === "following" ? qsTr("You're editing this and all following events in the series.")
+                                : root.scope === "series" ? qsTr("You're editing the series.") : qsTr("You're editing one event in the series.")
+                            font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                        }
+                        LinkButton { visible: root.scope === "occurrence"; label: qsTr("Edit series"); onClicked: root.setScope("series") }
+                        LinkButton { visible: root.scope === "occurrence"; label: qsTr("Edit this and all following events"); onClicked: root.setScope("following") }
+                    }
+                }
+            }
+
             // Title
             FieldRow {
                 icon: "edit-20"; height: 34
@@ -645,13 +696,13 @@ Item {
                                     name: modelData.name; mail: modelData.address
                                     status: root.availabilityText(root.availability(modelData.address))
                                     statusColor: root.availabilityColor(root.availability(modelData.address))
-                                    removable: !root.readOnly
+                                    removable: !root.readOnly && !root.attendeesLocked
                                     onRemove: root.required = root.required.filter((_, j) => j !== index)
                                 }
                             }
                             TextInput {
                                 id: peopleInput
-                                visible: !root.readOnly
+                                visible: !root.readOnly && !root.attendeesLocked
                                 width: Math.max(160, reqFlow.width - 8); height: 42
                                 verticalAlignment: TextInput.AlignVCenter
                                 leftPadding: 4
@@ -672,7 +723,7 @@ Item {
                             }
                         }
                         LinkButton {
-                            visible: !root.readOnly && !root.showOptional
+                            visible: !root.readOnly && !root.showOptional && !root.attendeesLocked
                             anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter
                             label: "+ " + qsTr("Optional", "calendar:k3udpyy3u")
                             onClicked: { root.showOptional = true; optionalInput.forceActiveFocus() }
@@ -697,13 +748,13 @@ Item {
                                     name: modelData.name; mail: modelData.address
                                     status: root.availabilityText(root.availability(modelData.address))
                                     statusColor: root.availabilityColor(root.availability(modelData.address))
-                                    removable: !root.readOnly
+                                    removable: !root.readOnly && !root.attendeesLocked
                                     onRemove: root.optional = root.optional.filter((_, j) => j !== index)
                                 }
                             }
                             TextInput {
                                 id: optionalInput
-                                visible: !root.readOnly
+                                visible: !root.readOnly && !root.attendeesLocked
                                 width: Math.max(160, optFlow.width - 8); height: 42
                                 verticalAlignment: TextInput.AlignVCenter
                                 leftPadding: 4
@@ -717,6 +768,17 @@ Item {
                                 Text { visible: !optionalInput.text && root.optional.length === 0; anchors.verticalCenter: parent.verticalCenter; x: 4; text: qsTr("Add optional attendees"); color: theme.textSecondary; font: optionalInput.font }
                             }
                         }
+                    }
+                }
+                // This and all following events: the attendees change only
+                // in the series (Outlook's form: 14 px #616161, "Open series").
+                FieldRow {
+                    visible: root.attendeesLocked
+                    icon: ""; height: 20
+                    Row {
+                        x: 8; spacing: 4
+                        Text { text: qsTr("You can only change attendees by editing the series."); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                        LinkButton { label: qsTr("Open series"); onClicked: root.setScope("series") }
                     }
                 }
                 // Facilitator (not with a channel, not on an invitation)
@@ -830,7 +892,7 @@ Item {
                 Rectangle {
                     id: repeatBox
                     width: repeatLabel.implicitWidth + 50; height: 32; radius: 4
-                    color: root.readOnly ? "transparent" : repeatHover.hovered ? theme.pick("#EBEBEB", "#1F1F1F", "#000000") : theme.inputFilled
+                    color: !root.repeatEditable ? "transparent" : repeatHover.hovered ? theme.pick("#EBEBEB", "#1F1F1F", "#000000") : theme.inputFilled
                     border.color: repeatMenu.opened ? theme.brand : "transparent"
                     Text {
                         id: repeatLabel
@@ -838,17 +900,20 @@ Item {
                         text: root.summary(root.recurrence)
                         font.family: theme.font; font.pixelSize: 14; color: theme.onFill(repeatBox, theme.text)
                     }
-                    FluentIcon { visible: !root.readOnly; x: repeatLabel.x + repeatLabel.implicitWidth + 8; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.onFill(repeatBox, theme.textSecondary) }
-                    HoverHandler { id: repeatHover; enabled: !root.readOnly; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { enabled: !root.readOnly; onTapped: repeatMenu.open() }
+                    FluentIcon { visible: root.repeatEditable; x: repeatLabel.x + repeatLabel.implicitWidth + 8; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.onFill(repeatBox, theme.textSecondary) }
+                    HoverHandler { id: repeatHover; enabled: root.repeatEditable; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { enabled: root.repeatEditable; onTapped: repeatMenu.open() }
                     Accessible.role: Accessible.ComboBox
                     Accessible.name: qsTr("Recurrence")
+                    // Your series keeps a repeat: Outlook's series form has
+                    // no "Does not repeat" (winpc, 2026-11-23).
                     MenuPopup {
                         id: repeatMenu
                         y: repeatBox.height + 2
                         rowHeight: 34
-                        items: [qsTr("Does not repeat"), qsTr("Every weekday (Mon - Fri)"), qsTr("Daily"), qsTr("Weekly"), qsTr("Monthly"), qsTr("Yearly"), qsTr("Custom")].map(l => ({ label: l }))
-                        onPicked: i => root.pickRepeat(i)
+                        items: [qsTr("Does not repeat"), qsTr("Every weekday (Mon - Fri)"), qsTr("Daily"), qsTr("Weekly"), qsTr("Monthly"), qsTr("Yearly"), qsTr("Custom")]
+                            .slice(root.seriesScoped ? 1 : 0).map(l => ({ label: l }))
+                        onPicked: i => root.pickRepeat(root.seriesScoped ? i + 1 : i)
                     }
                 }
             }
@@ -1266,7 +1331,7 @@ Item {
         markDirty()
     }
     function pickRepeat(i) {
-        if (i === 0) { recurrence = null; markDirty(); return }
+        if (i === 0) { if (!seriesScoped) { recurrence = null; markDirty() } return }
         const s = dayStart(startAt)
         const preset = [null,
             { unit: "week", days: [1, 2, 3, 4, 5] },
@@ -1728,6 +1793,9 @@ Item {
         recurrence = makeRecurrence("week", r ? r.interval : 1, days, r ? r.start : dayStart(startAt), r ? r.end : null)
         markDirty()
     }
+    function setScopeForTest(s) { setScope(s) }
+    /// The repeat menu's items as it would show them.
+    function repeatItemsForTest() { return repeatMenu.items.map(x => x.label) }
     readonly property bool editSeriesOpen: editSeriesDialog.opened
     function confirmEditSeriesForTest() { if (editSeriesDialog.opened) { editSeriesDialog.close(); sendNow() } }
     readonly property bool audienceOpen: audienceDialog.opened

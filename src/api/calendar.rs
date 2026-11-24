@@ -1207,6 +1207,11 @@ pub struct MeetingForm {
     /// "Send update" prompt): 0 not asked, 1 all attendees, 2 only those
     /// added or removed.
     pub target_audience: u8,
+    /// Which events of a series the update is for, as Outlook's form edits
+    /// them: "occurrence" (this event), "following" (this and all
+    /// following events) or "series" (all events in the series); "" for
+    /// an event that isn't a series'.
+    pub scope: String,
 }
 
 /// Teams' Virtual appointment template (Calendar ▸ New ▸ Virtual
@@ -1509,7 +1514,9 @@ pub async fn update_meeting(client: &TeamsClient, id: &str, form: &MeetingForm, 
 /// with what changed (`SetItemField`s on the item) and the attendees added
 /// and removed; Exchange sends the attendees the update. A changed repeat
 /// goes to the series (Outlook's "Edit series"): the series master's id,
-/// its `Recurrence`, and the times on the series' own start date.
+/// its `Recurrence`, and the times on the series' own start date. "This
+/// and all following events" goes to the occurrence with `EventScope` 2:
+/// Exchange ends the series before it and starts a new series from it.
 pub async fn send_event_update(client: &TeamsClient, id: &str, form: &MeetingForm) -> Result<()> {
     let select = "$select=subject,start,end,isAllDay,location,showAs,attendees,type,seriesMasterId,recurrence";
     let get = |path_id: String| async move {
@@ -1522,7 +1529,9 @@ pub async fn send_event_update(client: &TeamsClient, id: &str, form: &MeetingFor
     };
     let mut path_id = event_path_id(id)?.to_string();
     let mut cur = get(path_id.clone()).await?;
-    if form.recurrence_changed && form.recurrence.is_some() {
+    // All events in the series (or a new repeat for it) go to the series
+    // master; this and all following events to the occurrence itself.
+    if form.scope == "series" || (form.scope != "following" && form.recurrence_changed && form.recurrence.is_some()) {
         if let Some(master) = cur.get("seriesMasterId").and_then(|m| m.as_str()).filter(|m| !m.is_empty()) {
             path_id = event_path_id(master)?.to_string();
             cur = get(path_id.clone()).await?;
@@ -1579,8 +1588,14 @@ fn update_event_request(ews: &str, cur: &serde_json::Value, form: &MeetingForm, 
         updates.push(set("End", serde_json::json!({ "End": ews_time(&end) })));
         updates.push(set("IsAllDayEvent", serde_json::json!({ "IsAllDayEvent": form.all_day })));
     }
+    // This and all following events (EventScope 2, captured 2026-11-23): a
+    // new repeat starts on the occurrence's date.
+    let following = form.scope == "following";
     if form.recurrence_changed {
-        if let Some(r) = form.recurrence.as_ref().and_then(ews_recurrence) {
+        if let Some(mut r) = form.recurrence.as_ref().and_then(ews_recurrence) {
+            if following {
+                r["RecurrenceRange"]["StartDate"] = start.date_naive().format("%Y-%m-%d").to_string().into();
+            }
             updates.push(set("Recurrence", serde_json::json!({ "Recurrence": r })));
         }
     }
@@ -1634,12 +1649,14 @@ fn update_event_request(ews: &str, cur: &serde_json::Value, form: &MeetingForm, 
     let mut body = serde_json::json!({
         "__type": "UpdateCalendarEventRequest:#Exchange",
         "EventId": item_id,
-        "EventScope": 0,
+        "EventScope": if following { 2 } else { 0 },
         "ShouldSendUpdateToAttendees": false,
         "TargetAudience": form.target_audience.min(2),
         "ClientSupportsIrm": true,
     });
-    if key(&had, "Required") != key(&want, "Required") || key(&had, "Optional") != key(&want, "Optional") {
+    // (This and all following events can't change the attendees: "You can
+    // only change attendees by editing the series.")
+    if !following && (key(&had, "Required") != key(&want, "Required") || key(&had, "Optional") != key(&want, "Optional")) {
         let list = |kind: &str| want.iter().filter(|x| x.2 == kind).map(|x| mailbox(&x.1, &x.0)).collect::<Vec<_>>();
         let diff = |a: &[(String, String, String)], b: &[(String, String, String)], kind: &str| {
             a.iter()
@@ -1903,6 +1920,62 @@ mod tests {
         assert_eq!(m["RecurrencePattern"]["DayOfMonth"], 24);
         let y = rec(serde_json::json!({ "patternType": 5, "yearly": { "interval": 1, "month": 11, "dayOfMonth": 24 } }), None);
         assert_eq!(y["RecurrencePattern"]["Month"], "November");
+    }
+
+    #[test]
+    fn this_and_all_following_goes_to_the_occurrence_as_outlook_sends_it() {
+        // Teams' event page, Edit ▸ This and all following events on the
+        // 12/7 occurrence, 9:30 PM, Monday + Wednesday (captured
+        // 2026-11-23): EventScope 2 on the occurrence, the new repeat from
+        // its date.
+        let occ = serde_json::json!({
+            "subject": "Follow", "isAllDay": false, "showAs": "busy", "type": "occurrence", "seriesMasterId": "M",
+            "start": { "dateTime": "2026-12-08T05:00:00.0000000", "timeZone": "UTC" },
+            "end": { "dateTime": "2026-12-08T05:30:00.0000000", "timeZone": "UTC" },
+            "location": { "displayName": "" },
+            "attendees": [{ "type": "required", "emailAddress": { "address": "b@x.com", "name": "B" } }]
+        });
+        let mut form = super::MeetingForm {
+            subject: "Follow B".into(),
+            start: "2026-12-07T21:00:00-08:00".into(),
+            end: "2026-12-07T21:30:00-08:00".into(),
+            show_as: "Busy".into(),
+            attendees: vec![super::FormAttendee { address: "b@x.com".into(), name: "B".into(), kind: "Required".into() }],
+            scope: "following".into(),
+            ..Default::default()
+        };
+        let r = super::update_event_request("O/1=", &occ, &form, "Pacific Standard Time").unwrap();
+        assert_eq!(r["Body"]["EventScope"], 2);
+        assert_eq!(r["Body"]["EventId"]["Id"], "O/1=");
+        let ups = r["Body"]["ItemChange"]["Updates"].as_array().unwrap();
+        assert_eq!(ups.len(), 1, "{ups:?}");
+        assert_eq!(ups[0]["Item"]["Subject"], "Follow B");
+        // A new time and repeat: the occurrence's times, the repeat from its
+        // date (the form still holds the series' start).
+        form.start = "2026-12-07T21:30:00-08:00".into();
+        form.end = "2026-12-07T22:00:00-08:00".into();
+        form.recurrence = Some(serde_json::json!({
+            "pattern": { "patternType": 2, "weekly": { "interval": 1, "daysOfTheWeek": [1, 3] } },
+            "range": { "startDate": "2026-11-23T00:00:00-08:00", "endDate": "2027-05-17T00:00:00-08:00" }
+        }));
+        form.recurrence_changed = true;
+        // Attendees can't change from here.
+        form.attendees.push(super::FormAttendee { address: "c@x.com".into(), name: "C".into(), kind: "Required".into() });
+        let r = super::update_event_request("O/1=", &occ, &form, "Pacific Standard Time").unwrap();
+        let ups = r["Body"]["ItemChange"]["Updates"].as_array().unwrap();
+        let field = |f: &str| ups.iter().find(|u| u["Path"]["FieldURI"] == f).cloned().unwrap_or_default();
+        assert_eq!(field("Start")["Item"]["Start"], "2026-12-07T21:30:00.000-08:00");
+        assert_eq!(field("End")["Item"]["End"], "2026-12-07T22:00:00.000-08:00");
+        let rec = &field("Recurrence")["Item"]["Recurrence"];
+        assert_eq!(rec["RecurrencePattern"]["DaysOfWeek"], "Monday Wednesday");
+        assert_eq!(rec["RecurrenceRange"]["StartDate"], "2026-12-07");
+        assert_eq!(rec["RecurrenceRange"]["EndDate"], "2027-05-17");
+        assert!(r["Body"].get("AddedRequiredAttendees").is_none());
+        assert!(ups.iter().all(|u| u["Path"]["FieldURI"] != "RequiredAttendees"));
+        // The series (Edit series): EventScope 0.
+        form.scope = "series".into();
+        let r = super::update_event_request("M/1=", &occ, &form, "Pacific Standard Time").unwrap();
+        assert_eq!(r["Body"]["EventScope"], 0);
     }
 
     #[test]

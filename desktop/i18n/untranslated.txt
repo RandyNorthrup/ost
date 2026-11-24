@@ -8,7 +8,7 @@
 "%1 / Email"		LoopChromeBar.qml:84	
 "%1 / Page"		LoopChromeBar.qml:85	
 "%1 / Workspace"		LoopChromeBar.qml:85	
-"%1 PM"		CalendarView.qml:1278 CalendarView.qml:1384	
+"%1 PM"		CalendarView.qml:1280 CalendarView.qml:1386	
 "%1 ago"		ManageTeam.qml:169	
 "%1 and"		AppDetailsDialog.qml:576	
 "%1 by %2"		FindPane.qml:762	
@@ -28,7 +28,7 @@
 "%1 years"		ManageTeam.qml:155	
 "%1, %2, +%3"		LoopChromeBar.qml:81	
 "%1, %2, and %3"		LoopChromeBar.qml:80	
-"%1, all day event"		CalendarView.qml:1235	
+"%1, all day event"		CalendarView.qml:1237	
 "%1, and %2"		AppDetailsDialog.qml:575	
 "%1, change year"		DatePickerField.qml:139	
 "%1, collapsed"		KeyboardShortcuts.qml:272	
@@ -52,7 +52,7 @@
 "60 minutes - Least space for details"		CalendarView.qml:257	
 "<0>Early Access</0> through"		SettingsView.qml:4935	
 "About to leave meeting ..."		RoomAutoExit.qml:91	
-"Accept the proposed time"		CalendarView.qml:1788	
+"Accept the proposed time"		CalendarView.qml:1798	
 "Add %1 backdrop."		ClipEffectPanels.qml:252	
 "Add %1 sticker. Sticker %2 of %3 in the category %4"		ClipEffectPanels.qml:283	
 "Add a message"		OneDriveShare.qml:376 OneDriveShare.qml:378	
@@ -100,7 +100,7 @@
 "Calls merged"		backend.rs:13995	
 "Camera settings"		CameraSettingsDialog.qml:37	
 "Cameras"		ContentCameraDialog.qml:450	
-"Cancel this meeting for everyone?"		CalendarView.qml:1959	
+"Cancel this meeting for everyone?"		CalendarView.qml:1979	
 "Cancelling…"		backend.rs:24094	
 "Capture screenshot"		FeedbackWindow.qml:153	
 "Car"		CalendarView.qml:262	
@@ -151,7 +151,7 @@
 "Default microphone"		PreJoin.qml:237	
 "Default speaker"		CallsView.qml:211 CallsView.qml:224 CallsView.qml:228	
 "Delete menu."		ClipEditOverlay.qml:317	
-"Delete this event?"		CalendarView.qml:1959	
+"Delete this event?"		CalendarView.qml:1979	
 "Dial %1"		CallWindow.qml:5190	
 "Dial pad: %1"		backend.rs:14045	
 "Do not include any private or sensitive information."		FeedbackWindow.qml:111	
@@ -179,7 +179,7 @@
 "Files people share with you will show up here"		OneDriveView.qml:1051	
 "Files shared with you will show up here"		OneDriveView.qml:1048	
 "Find anything in a chat"		HelpView.qml:45	
-"Find my next one-on-one with"		CalendarView.qml:1022	
+"Find my next one-on-one with"		CalendarView.qml:1024	
 "Find your way around OST"		HelpView.qml:47	
 "Finish on GitHub: check the issue, then select Create."		FeedbackWindow.qml:283	
 "Finish on GitHub: paste your screenshot (Ctrl+V), drop in any other files from the folder that opened, and select Create."		FeedbackWindow.qml:282	
@@ -191,8 +191,8 @@
 "Fork knife"		CalendarView.qml:262	
 "Forward menu."		ClipEditOverlay.qml:320	
 "From filter"		FindPane.qml:434	
-"Go to next day"		CalendarView.qml:1048 CalendarView.qml:2228	
-"Go to previous day"		CalendarView.qml:1047 CalendarView.qml:2227	
+"Go to next day"		CalendarView.qml:1050 CalendarView.qml:2248	
+"Go to previous day"		CalendarView.qml:1049 CalendarView.qml:2247	
 "Goal"		CalendarView.qml:266	
 "Grant access is not available because this person can already view this item."		OneDriveShare.qml:950	
 "Group chat %1"		SearchView.qml:999 SearchView.qml:1093	
@@ -236,19 +236,19 @@
 "Mic is on"		VideoClipRecorder.qml:835	
 "More (%1)"		SearchView.qml:296	
 "More calls options"		CallsView.qml:106	
-"More new options"		CalendarView.qml:1145	
+"More new options"		CalendarView.qml:1147	
 "More ways to share"		ManageChannel.qml:284	
 "Moved %1 item"		FileActions.qml:297	
 "Moved %1 items"		FileActions.qml:297	
 "Movie"		CalendarView.qml:263	
 "Music"		CalendarView.qml:261	
 "Mute speaker"		AudioFlyout.qml:101 AudioSettingsPane.qml:174	
-"New event | Calendar"		CalendarView.qml:2837 CalendarView.qml:2856	
+"New event | Calendar"		CalendarView.qml:2885 CalendarView.qml:2904	
 "New group chat"		backend.rs:19393	
 "Next decade"		DatePickerField.qml:144	
 "No calls match this filter."		CallsView.qml:363	
 "No file chosen"		TeamAppsView.qml:233	
-"No icon"		CalendarView.qml:260 CalendarView.qml:2654	
+"No icon"		CalendarView.qml:260 CalendarView.qml:2702	
 "No matches yet"		TitleBar.qml:261	
 "No posts yet. Start the conversation."		ChannelPosts.qml:836	
 "No preview available"		PreviewBody.qml:165	
@@ -297,16 +297,16 @@
 "React with %1"		NotificationBanners.qml:376	
 "Reminder amount"		EventsView.qml:3794	
 "Reminder unit"		EventsView.qml:3796	
-"Remove channel"		MeetingForm.qml:895	
+"Remove channel"		MeetingForm.qml:960	
 "Remove music"		VideoClipRecorder.qml:1504	
 "Remove the card"		ShareForm.qml:238	
-"Repeat unit"		MeetingForm.qml:1510	
+"Repeat unit"		MeetingForm.qml:1575	
 "Resize %1"		OneDriveView.qml:859	
 "Restore defaults"		CameraSettingsDialog.qml:156	
 "Results for “%1”"		HelpView.qml:262	
 "Save as"		Main.qml:591	
 "Saved %1 to %2"		backend.rs:10066 backend.rs:10460	
-"Schedule 1 hour of focus time"		CalendarView.qml:1023	
+"Schedule 1 hour of focus time"		CalendarView.qml:1025	
 "Scheduled %1"		backend.rs:24302	
 "Search all files"		DownloadsFlyout.qml:90 DownloadsFlyout.qml:93	
 "Search emoji"		EmojiPicker.qml:89 EmojiPicker.qml:90	
@@ -361,7 +361,7 @@
 "The version wasn't deleted"		FileActions.qml:441	
 "The version wasn't restored"		FileActions.qml:441	
 "This Loop component is temporarily not available."		LoopCard.qml:181	
-"This app isn't available in OST yet."		Main.qml:15573	
+"This app isn't available in OST yet."		Main.qml:15593	
 "This camera has no settings to change."		CameraSettingsDialog.qml:64	
 "This file can't be opened"		FileViewer.qml:40	
 "This file has not been shared with a group yet."		OneDriveShare.qml:798	
@@ -369,7 +369,7 @@
 "This will turn off Interpreter for everyone."		CallWindow.qml:1057	
 "Thread: %1"		ThreadsPane.qml:188	
 "Thumbnail Preview"		FileCard.qml:148	
-"Today %1"		Main.qml:16614	
+"Today %1"		Main.qml:16634	
 "Todo"		CalendarView.qml:266	
 "Transcriptions of Teams meetings are retained by default for 90 days unless manually deleted earlier by the meeting organizer. The generated audio recap is exclusively accessible to you and will expire after 60 days. You can manage your audio recaps in OneDrive, where you have the option to delete any audio recap that is no longer needed. Please note that once an audio recap is deleted from OneDrive, it will no longer be available on your Teams audio recap listing page."		MeetingRecapsView.qml:1383	
 "Transfer to %1"		CallWindow.qml:5258 CallWindow.qml:5332	

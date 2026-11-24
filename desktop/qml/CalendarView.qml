@@ -441,11 +441,13 @@ Item {
     function liveEventDialogForTest() { return liveEventsRetiring }
     function newLiveEventForTest() { return newLiveEvent }
     /// The event page: yours to edit, or an invitation to answer.
-    function openPage(e) {
+    /// The event page; for your series' event, which events it edits
+    /// ("occurrence", "following", "series"; the card's Edit menu).
+    function openPage(e, scope) {
         const ev = withTeam(e)
         formLayer.visible = true
         form.detail = ({})
-        form.openEvent(ev, !!ev.is_organizer)
+        form.openEvent(ev, !!ev.is_organizer, scope || "")
         calendarAction("detail", JSON.stringify({ id: ev.id }))
     }
     /// A channel meeting's team and channel names, from the teams list.
@@ -1742,7 +1744,15 @@ Item {
             }
             Item { visible: !!details.ev.join_url; width: 1; height: 16 }
             Rectangle { width: 358; height: 1; color: root.cardLine }
+            // The rows as Outlook's card lays them out (Teams desktop, winpc
+            // 2026-11-23): each under a line from 51 (the first under the
+            // title's): the time 17 under it and 7 above the next line, the
+            // location 9 and 9 (no place: "Add a room with Copilot" in its
+            // place), who organised or invited you, "Prepare for this
+            // meeting", then the description 13 under its line and 11 above
+            // the next.
             DetailRow {
+                line: false; textTop: 17; bottomGap: 7
                 icon: "clock-20"
                 text: {
                     const e = details.ev
@@ -1790,20 +1800,14 @@ Item {
                     }
                 }
             }
+            // The place; with no place, Copilot's "Add a room with Copilot"
+            // in its stead (14/20 #4F52B2) for a meeting.
             DetailRow {
+                readonly property bool noPlace: !details.ev.location || (details.ev.is_online_meeting && details.ev.location === "Microsoft Teams Meeting")
                 icon: "location-20"
-                text: details.ev.location && !(details.ev.is_online_meeting && details.ev.location === "Microsoft Teams Meeting") ? details.ev.location : qsTr("No location added")
-            }
-            // Copilot (a Copilot licence): "Add a room with Copilot" under
-            // the location (14/20 #4F52B2), as Teams' card shows it.
-            Text {
-                visible: root.copilotEntries && !!details.ev.is_online_meeting && (!details.ev.location || details.ev.location === "Microsoft Teams Meeting")
-                x: 35; topPadding: -12; bottomPadding: 8
-                text: qsTr("Add a room with Copilot")
-                font.family: theme.font; font.pixelSize: 14; color: root.calLink
-                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: root.askCopilot("Add a room") }
-                Accessible.role: Accessible.Button; Accessible.name: text
+                link: noPlace && root.copilotEntries && (root.evIsMeeting(details.ev) || !!details.ev.is_online_meeting)
+                text: link ? qsTr("Add a room with Copilot") : noPlace ? qsTr("No location added") : details.ev.location
+                onClicked: root.askCopilot("Add a room")
             }
             // Who invited you (or the channel), and your answer.
             Item {
@@ -1844,29 +1848,33 @@ Item {
                     Accessible.name: qsTr("Attendee tracking") + ": " + text
                 }
             }
-            DetailRow {
-                visible: !!(details.ev.preview || "").trim()
-                icon: "text-description-20"
-                text: (details.ev.preview || "").replace(/_{4,}/g, "").replace(/\s+/g, " ").trim()
-                lines: 5
-            }
             // Copilot: "Prepare for this meeting" (a 32 px outlined button,
-            // padding 0 16, #BDBDBD edge, 14 px #616161), after who invited you.
+            // padding 0 20, #BDBDBD edge, 14/600 #616161) after who
+            // organised or invited you: 10 under its line, the glyph 14, 9
+            // above the next line.
             Item {
-                visible: root.copilotEntries && !!details.ev.is_online_meeting
-                width: 358; height: visible ? 58 : 0
+                visible: root.copilotEntries && (root.evIsMeeting(details.ev) || !!details.ev.is_online_meeting)
+                width: 358; height: visible ? 51 : 0
                 Rectangle { x: 34; width: 324; height: 1; color: root.cardLine }
-                FluentIcon { x: 2; y: 15; name: "calendar-sparkle-20"; size: 20; color: theme.textSecondary }
+                FluentIcon { x: 2; y: 14; name: "calendar-sparkle-20"; size: 20; color: theme.textSecondary }
                 Rectangle {
                     id: prepBtn
-                    x: 35; y: 13; width: prepText.implicitWidth + 32; height: 32; radius: 4
+                    x: 35; y: 10; width: prepText.implicitWidth + 40; height: 32; radius: 4
                     color: prepHover.hovered ? theme.rowHover : theme.surface
                     border.width: 0.67; border.color: theme.pick("#BDBDBD", "#666666", "#FFFFFF")
-                    Text { id: prepText; anchors.centerIn: parent; text: qsTr("Prepare for this meeting"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(prepBtn, theme.textSecondary) }
+                    Text { id: prepText; anchors.centerIn: parent; text: qsTr("Prepare for this meeting"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(prepBtn, theme.textSecondary) }
                     HoverHandler { id: prepHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.askCopilot("Prepare for this meeting") }
                     Accessible.role: Accessible.Button; Accessible.name: prepText.text
                 }
+            }
+            // The description, after Prepare for this meeting.
+            DetailRow {
+                visible: !!(details.ev.preview || "").trim()
+                textTop: 13; iconTop: 14; bottomGap: 11
+                icon: "text-description-20"
+                text: (details.ev.preview || "").replace(/_{4,}/g, "").replace(/\s+/g, " ").trim()
+                lines: 5
             }
             // Your answer, as Teams' card asks for it.
             Column {
@@ -1945,11 +1953,23 @@ Item {
                     Accessible.name: qsTr("Change")
                 }
             }
-            Row {
+            // Your event: Edit (for a series ▾ This event / This and all
+            // following events / All events in the series) and Cancel, 20
+            // under a line and 30 above the card's edge.
+            Item {
                 visible: details.ev.is_organizer === true && !details.confirming
-                topPadding: 14; leftPadding: 34; spacing: 6
-                CardButton { icon: "edit-20"; iconColor: theme.pick("#5B5FC7", theme.textStrong, "#0F6ABA"); label: qsTr("Edit"); onClicked: { const e = details.ev; details.close(); root.openPage(e) } }
-                CardButton { icon: "calendar-cancel-20"; iconColor: theme.pick("#E81123", "#C50F1F", "#E81123"); label: details.ev.attendees && details.ev.attendees.length || details.ev.channel_id ? qsTr("Cancel") : qsTr("Delete"); onClicked: details.confirming = true }
+                width: 358; height: visible ? 66 : 0
+                Rectangle { x: 34; width: 324; height: 1; color: root.cardLine }
+                Row {
+                    x: 34; y: 20; spacing: 6
+                    CardButton {
+                        id: editBtn
+                        icon: "edit-20"; iconColor: theme.pick("#5B5FC7", theme.textStrong, "#0F6ABA"); label: qsTr("Edit")
+                        chevron: details.series
+                        onClicked: { if (details.series) editScopeMenu.openFor(editBtn); else { const e = details.ev; details.close(); root.openPage(e) } }
+                    }
+                    CardButton { icon: "calendar-cancel-20"; iconColor: theme.pick("#E81123", "#C50F1F", "#E81123"); label: details.ev.attendees && details.ev.attendees.length || details.ev.channel_id ? qsTr("Cancel") : qsTr("Delete"); onClicked: details.confirming = true }
+                }
             }
             Column {
                 visible: details.confirming
@@ -1981,7 +2001,7 @@ Item {
     // 8, radius 8, a #D1D1D1 edge, 14/20).
     Popup {
         id: cardPrompts
-        visible: details.visible && root.copilotEntries && !!details.ev.is_online_meeting
+        visible: details.visible && root.copilotEntries && (root.evIsMeeting(details.ev) || !!details.ev.is_online_meeting)
         x: details.x; y: details.y + details.height + 4
         width: details.width; padding: 0
         closePolicy: Popup.NoAutoClose
@@ -2359,6 +2379,17 @@ Item {
         items: [{ label: qsTr("This event") }, { label: qsTr("All events in the series") }]
         onPicked: i => details.respond(scopeMenu.response, i === 1)
     }
+    // Your series' Edit ▾ on the card (Teams desktop, winpc 2026-11-23):
+    // the event page for this event, this and all following events, or
+    // the series.
+    MenuPopup {
+        id: editScopeMenu
+        function openFor(item) { parent = item; x = 0; y = item.height + 2; open() }
+        width: 220
+        items: [{ label: qsTr("This event") }, { label: qsTr("This and all following events") }, { label: qsTr("All events in the series") }]
+        onPicked: i => { const e = details.ev; details.close(); root.openPage(e, ["occurrence", "following", "series"][i]) }
+    }
+    function editScopeItemsForTest() { return editScopeMenu.items.map(x => x.label) }
 
     component DetailRow: Item {
         id: dr
@@ -2366,20 +2397,34 @@ Item {
         property alias text: drText.text
         property string suffix: ""
         property int lines: 2
-        width: 358; height: visible ? Math.max(20, drText.height) + 16 : 0
-        FluentIcon { id: drIcon; x: 2; y: 10; size: 20; color: theme.textSecondary }
+        /// Its line on top (the first row has the title's), the text's y
+        /// under it, the glyph's, and the space above the next line.
+        property bool line: true
+        property real textTop: 9
+        property real iconTop: textTop
+        property real bottomGap: 9
+        /// A link (Outlook's 14/20 #4F52B2 button) instead of text.
+        property bool link: false
+        signal clicked()
+        width: 358; height: visible ? textTop + drText.height + bottomGap : 0
+        Rectangle { visible: dr.line; x: 34; width: 324; height: 1; color: root.cardLine }
+        FluentIcon { id: drIcon; x: 2; y: dr.iconTop; size: 20; color: theme.textSecondary }
         Text {
             id: drText
-            x: 35; y: 10; width: dr.suffix ? Math.min(implicitWidth, 250) : 314; wrapMode: Text.Wrap; maximumLineCount: dr.lines; elide: Text.ElideRight
-            font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+            x: 35; y: dr.textTop; width: dr.suffix || dr.link ? Math.min(implicitWidth, dr.link ? 314 : 250) : 314; wrapMode: Text.Wrap; maximumLineCount: dr.lines; elide: Text.ElideRight
+            lineHeight: dr.line ? 20 : 1; lineHeightMode: dr.line ? Text.FixedHeight : Text.ProportionalHeight
+            font.family: theme.font; font.pixelSize: 14; color: dr.link ? root.calLink : theme.textSecondary
+            HoverHandler { enabled: dr.link; cursorShape: Qt.PointingHandCursor }
+            TapHandler { enabled: dr.link; onTapped: dr.clicked() }
+            Accessible.role: dr.link ? Accessible.Button : Accessible.StaticText
+            Accessible.name: text
         }
         Row {
             visible: !!dr.suffix
-            x: drText.x + drText.width + 10; y: 12; spacing: 4
+            x: drText.x + drText.width + 10; y: dr.textTop + 2; spacing: 4
             Text { text: dr.suffix; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
             FluentIcon { name: "arrow-repeat-all-16"; size: 14; color: theme.textSecondary }
         }
-        Rectangle { x: 34; anchors.bottom: parent.bottom; width: 324; height: 1; color: root.cardLine }
     }
     component CardButton: Rectangle {
         id: cb
@@ -2387,6 +2432,8 @@ Item {
         property string label
         property bool primary: false
         property bool danger: false
+        /// A ▾ after the label (a series' Edit).
+        property bool chevron: false
         property color iconColor: primary || danger ? "white" : theme.textStrong
         signal clicked()
         width: cbRow.implicitWidth + 24; height: 32; radius: 4
@@ -2404,6 +2451,7 @@ Item {
                 font.family: theme.font; font.pixelSize: theme.base; font.weight: cb.primary || cb.danger || cb.label === qsTr("Chat") ? Font.DemiBold : Font.Normal
                 color: theme.onFill(cb, cb.primary || cb.danger ? "white" : theme.text)
             }
+            FluentIcon { visible: cb.chevron; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.onFill(cb, theme.textSecondary) }
         }
         HoverHandler { id: cbh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: cb.clicked() }
@@ -2887,7 +2935,7 @@ Item {
                     channel: f.channel && f.channel.channelId ? f.channel : null, showAs: f.showAs || "Busy",
                     editingId: f.editingId || "", sendPersonalInvites: !!f.sendPersonalInvites, timeZone: root.mtTimeZone,
                     templateId: f.templateId || "", guests: f.guests || [], bodyChanged: !!f.bodyChanged,
-                    recurrenceChanged: !!f.recurrenceChanged, targetAudience: f.targetAudience || 0
+                    recurrenceChanged: !!f.recurrenceChanged, targetAudience: f.targetAudience || 0, scope: f.scope || ""
                 }
                 if (f.recurrence) {
                     const r = f.recurrence, pattern = { patternType: r.patternType }

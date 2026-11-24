@@ -4840,6 +4840,26 @@ Window {
             else if (arg("cal-audience") && step === 5) { const f = calendarView.formForTest; console.warn("CALTEST audience asks", f.asksAudience(), JSON.stringify(f.primaryLabel)); f.submitForTest() }
             else if (arg("cal-audience") && step === 6) { console.warn("CALTEST audience dialog", calendarView.formForTest.audienceOpen); cap("audience-dialog"); calendarView.formForTest.chooseAudienceForTest(Number(arg("cal-audience").split("|")[3] || 2)) }
             else if (arg("cal-audience") && step === 11) { console.warn("CALTEST audience done", calendarView.formOpen); Qt.quit() }
+            // --cal-following=<subject>|<new title>[|<weekdays, 0 = Sunday>]:
+            // your series' card ▸ Edit ▾ ▸ This and all following events, a
+            // new title (and weekly repeat), Send.
+            else if (arg("cal-following") && step === 2) { const s = arg("cal-following").split("|")[0]; console.warn("CALTEST following card", calendarView.cardForTest(s), JSON.stringify(calendarView.editScopeItemsForTest())); cap("following-card") }
+            else if (arg("cal-following") && step === 3) { const e = calendarView.eventBySubject(arg("cal-following").split("|")[0]); calendarView.detailsForTest.close(); if (e) calendarView.openPage(e, "following") }
+            else if (arg("cal-following") && step === 5) {
+                const p = arg("cal-following").split("|"), f = calendarView.formForTest
+                console.warn("CALTEST following form", f.scope, f.attendeesLocked, f.summary(f.recurrence), JSON.stringify(f.repeatItemsForTest()))
+                cap("following-form")
+                f.typeTitleForTest(p[1])
+                if (p[2]) f.setWeeklyDaysForTest(p[2].split(",").map(Number))
+            }
+            else if (arg("cal-following") && step === 6) { const f = calendarView.formForTest; console.warn("CALTEST following changed", f.summary(f.recurrence), f.recurrenceChanged, JSON.stringify(f.primaryLabel)); cap("following-changed"); f.submitForTest() }
+            else if (arg("cal-following") && step === 7) console.warn("CALTEST following edit-series dialog", calendarView.formForTest.editSeriesOpen)
+            else if (arg("cal-following") && step === 12) { console.warn("CALTEST following done", calendarView.formOpen); Qt.quit() }
+            // --cal-norepeat=<subject>: your series' page (All events in the
+            // series): the repeat menu and "Does not repeat" (nothing sent).
+            else if (arg("cal-norepeat") && step === 2) { const e = calendarView.eventBySubject(arg("cal-norepeat")); console.warn("CALTEST norepeat page", !!e); if (e) calendarView.openPage(e, "series") }
+            else if (arg("cal-norepeat") && step === 4) { const f = calendarView.formForTest; console.warn("CALTEST norepeat menu", f.scope, f.summary(f.recurrence), JSON.stringify(f.repeatItemsForTest())); f.pickRepeatForTest(0); cap("norepeat-form") }
+            else if (arg("cal-norepeat") && step === 5) { const f = calendarView.formForTest; console.warn("CALTEST norepeat after", f.summary(f.recurrence), f.recurrenceChanged, f.dirty); calendarView.formOpen = false; Qt.quit() }
             // --cal-channel-header=<team>/<channel>: that channel's header ▸
             // Schedule a meeting; the form it opens (never sent).
             else if (arg("cal-channel-header") && step === 2) {
@@ -4991,7 +5011,7 @@ Window {
                 ]
                 if (step >= 1 && step - 1 < seq.length) seq[step - 1]()
             }
-            else if (!arg("cal-respond") && !arg("cal-schedule") && !arg("cal-cancel") && !arg("cal-joinid") && !arg("cal-edit") && !arg("cal-buttons") && !arg("cal-repeat") && !arg("cal-audience") && !arg("cal-channel-header") && !arg("cal-rsvp-note") && !arg("cal-propose") && !arg("cal-proposals") && args.indexOf("--cal-event-form") < 0 && args.indexOf("--cal-live") < 0) {
+            else if (!arg("cal-respond") && !arg("cal-schedule") && !arg("cal-cancel") && !arg("cal-joinid") && !arg("cal-edit") && !arg("cal-buttons") && !arg("cal-repeat") && !arg("cal-audience") && !arg("cal-following") && !arg("cal-norepeat") && !arg("cal-channel-header") && !arg("cal-rsvp-note") && !arg("cal-propose") && !arg("cal-proposals") && args.indexOf("--cal-event-form") < 0 && args.indexOf("--cal-live") < 0) {
                 // Pictures: the views, the card and page of --cal-peek, the form and dialogs.
                 const peek = arg("cal-peek")
                 const seq = [
