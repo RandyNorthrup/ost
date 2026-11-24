@@ -29,15 +29,21 @@ troubleshooting and the list of differences from Teams.
   Loop components, video clips, scheduled messages, @mentions, read
   receipts, drafts, find in chat and search.
 - **Teams and channels:** posts and threads layouts, replies, announcements,
-  channel tabs (Shared, Page, Notes, apps), shared and private channels,
-  managing teams and channels.
+  editing posts in Teams' post composer, followed threads, channel tabs
+  (Shared, Page, Notes, apps), shared and private channels, managing teams
+  and channels.
+- **Copilot** (with a Microsoft 365 Copilot licence): in chats, meeting chats
+  and channel threads, and Write with Copilot in the message box.
 - **Activity:** Teams' activity feed, live and synced with Teams.
-- **Calendar:** day, work week, week and month views, event cards and pages,
-  RSVP, Teams' scheduling form, Meet now and Join with an ID.
+- **Calendar:** day, work week, week and month views, event cards, RSVP,
+  Teams' scheduling form, Outlook's event form for your events and
+  invitations (series edits and cancels, time suggestions, the body
+  editor's tools), Meet now and Join with an ID.
 - **Calls and meetings:** 1:1 and group calls, meetings with video and
   background effects, screen and window sharing, raise hand, reactions,
   live captions, recording and transcripts, breakout rooms, town halls and
-  webinars, hold, transfer and park, voicemail, recaps.
+  webinars, hold, transfer and park, voicemail, Meeting Recaps and audio
+  recaps.
 - **Files:** OneDrive (Home, My files, Shared, Libraries, Recycle bin),
   channel files, previews, sharing, and Teams' cloud file picker.
 - **Apps:** Teams' app bar and Store; People, Events and Meeting Recaps drawn
@@ -47,7 +53,9 @@ troubleshooting and the list of differences from Teams.
   your account, Teams' notification banners with quick reply, status and
   status messages, light, dark and high-contrast themes, Teams' keyboard
   shortcuts (Ctrl+. lists them), built-in Help (F1).
-- **Room mode:** run OST as a Teams Rooms device.
+- **Teams Rooms:** run OST as a Teams Rooms device, cast to a room, join
+  with a room's audio, and control a room from your laptop (Control Room
+  System).
 - **Translations:** every Teams app language, with Teams' own strings
   downloaded on first use (none of Microsoft's translations are in this
   repository).
