@@ -221,6 +221,13 @@ Rectangle {
     property bool noAvatars: false
     /// No header (the host draws its own).
     property bool hideHeader: false
+    /// The compose's gutter in a pane (Followed threads' thread: 32).
+    property real paneComposeGut: 12
+    /// A thread pane's "{N} replies" divider under the first message
+    /// (Followed threads' thread has none).
+    property bool threadRepliesDivider: true
+    /// The thread compose's "Send to" over a one-row compose.
+    property bool composeSendToInline: false
     /// Teams' empty chat header (chat-pencil illustration and a title),
     /// shown while there are no messages; "" for none.
     property string emptyTitle: ""
@@ -551,6 +558,8 @@ Rectangle {
     SectionDialog { id: headerSectionDialog; existing: root.folderList.map(f => f.title) }
     /// Teams' Meeting details (calendar.meetingDetails) for this chat's meeting.
     signal openMeetingDetails(string joinUrl, string icalUid, string start)
+    /// A channel meeting's calendar card: the meeting's own page.
+    signal openMeetingPage(string joinUrl, string start)
     // The meeting chat's meeting (join link, iCalUid, cancelled): the main
     // window's chat's from the backend, a pop-out's its own (looked up for
     // its chat, as the main window's is for the chat shown there).
@@ -1072,6 +1081,8 @@ Rectangle {
         const w = threadWindowComponent.createObject(null, { channelId: root.chatId, rootId: rootId, teamId: root.teamId, teamName: root.teamName, channelName: root.chatName, myName: root.myName })
         const all = Object.assign({}, root.threadWindows); all[key] = w; root.threadWindows = all
         w.agentStoreRequested.connect(id => root.openAgentStore(id, true))
+        w.joinMeeting.connect((url, title) => root.joinMeetingRequested(url, title))
+        w.openMeetingDetails.connect((url, start) => root.openMeetingPage(url, start))
         w.closing.connect(() => { const rest = Object.assign({}, root.threadWindows); delete rest[key]; root.threadWindows = rest; w.destroy() })
         w.show()
         return w
@@ -2144,6 +2155,7 @@ Rectangle {
         members: root.chatMembers
         onJoinMeeting: (url, title) => root.joinMeetingRequested(url, title)
         onSeeDetails: rootId => root.openPostView(rootId)
+        onOpenMeetingDetails: (url, start) => root.openMeetingPage(url, start)
         busy: root.busy
         onReply: (id, text) => root.sendReply(id, text)
         onReact: (id, key, on) => root.react(id, key, on)
@@ -2249,7 +2261,7 @@ Rectangle {
             readonly property real threadLineH: root.threadsLayout && (modelData.thread_replies || 0) > 0 ? 30 : 0
             // A thread pane's "{N} replies" divider under its first message
             // (Teams: a 28 tall item, the 12 px label 12 down).
-            readonly property real repliesDivH: root.threadPane && modelData.id === root.threadRoot && repliesCount > 0 ? 28 : 0
+            readonly property real repliesDivH: root.threadPane && root.threadRepliesDivider && modelData.id === root.threadRoot && repliesCount > 0 ? 28 : 0
             readonly property int repliesCount: root.threadPane ? root.messages.filter(m => m.id !== root.threadRoot && m.kind === "message").length : 0
             // A reply also sent to the channel: "Replied in thread: {first
             // message}" in the channel, "Also sent to channel" in the thread.
@@ -5289,13 +5301,14 @@ Rectangle {
         // cards, 27.7 above the bottom.
         post: root.postsLayout && !root.threadRoot && !root.pane
         readonly property real postGut: (root.width - Math.min(1100, root.width - 2 * (root.width > 480 ? 88 : 16))) / 2
-        anchors.leftMargin: post ? postGut : root.pane ? 12 : root.composeGut
-        anchors.rightMargin: post ? postGut : root.pane ? 12 : root.composeGut
+        anchors.leftMargin: post ? postGut : root.pane ? root.paneComposeGut : root.composeGut
+        anchors.rightMargin: post ? postGut : root.pane ? root.paneComposeGut : root.composeGut
 
         onCloseRequested: { compose.resetPost(); compose.clear(); root.posting = false }
         // Under 480 px Teams' compose is compact: its tools on their own row.
         compact: !root.pane && root.width < 480
         sendTo: root.threadPane ? "thread" : ""
+        sendToInline: root.composeSendToInline
         threadSubject: root.threadsLayout
         tierWidth: root.width
         // Teams offers it in chats and channels, not in your own chat or a
@@ -5410,6 +5423,8 @@ Rectangle {
             onPopOut: { const id = root.postViewRoot; root.postViewRoot = ""; root.openThreadWindow({ id: id, root_id: id }) }
             onAgentStoreRequested: id => root.openAgentStore(id, true)
             onOpenAttendance: (organizer, message, call) => root.channelAttendance = { organizer: organizer, message: message, call: call }
+            onJoinMeeting: (url, title) => root.joinMeetingRequested(url, title)
+            onOpenMeetingDetails: (url, start) => root.openMeetingPage(url, start)
         }
     }
 }

@@ -84,6 +84,9 @@ Item {
     /// A Threads-layout thread's reply target (Teams' "Send to:"): "" (none
     /// shown), "thread" (thread only) or "channel" (thread and channel).
     property string sendTo: ""
+    /// "Send to" over a one-row compose (Followed threads' thread, wide
+    /// enough for the tools beside the text) rather than the two-row one.
+    property bool sendToInline: false
     /// A Threads-layout channel's new message: formatting adds Teams' "Add
     /// a subject" row (measured on winpc 2026-11-10: 55.7 tall under the
     /// formatting bar, 10.7 in; the subject 18/600, 12 in and 15 down).
@@ -335,7 +338,7 @@ Item {
     property bool compact: false
     signal appCardSettingsRequested()
     signal appCardPermissionsRequested(string appId)
-    readonly property bool multiline: !!loop || hasPastedPicture || appCardShown || !!sendTo || scheduleAt > 0 || post || editing || compact || formatting || files.length > 0 || cloudFiles.length > 0 || !!quote || !!clip || grown || previewShown
+    readonly property bool multiline: !!loop || hasPastedPicture || appCardShown || (!!sendTo && !sendToInline) || scheduleAt > 0 || post || editing || compact || formatting || files.length > 0 || cloudFiles.length > 0 || !!quote || !!clip || grown || previewShown
     // Teams' channel post composer.
     property bool post: false
     property bool announcement: false

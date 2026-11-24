@@ -179,6 +179,9 @@ Item {
     signal joinMeeting(string url, string title)
     /// "See details" under an ended meeting's post: its thread.
     signal seeDetails(string rootId)
+    /// A scheduled meeting's calendar card: its details (the join link and
+    /// its start).
+    signal openMeetingDetails(string url, string start)
     // Teams' channel meetings (measured on winpc 2026-11-10): the meeting's
     // callStarted event is the post; a rejoin's start, posted as a root
     // linked to it (linked_root), and the thread's call events fold into
@@ -381,6 +384,22 @@ Item {
                             lineHeight: 25.7; lineHeightMode: Text.FixedHeight
                             color: theme.text
                             Accessible.role: Accessible.Heading
+                        }
+                        // A channel meeting's calendar card (Teams' pre-state
+                        // banner in the post's header: 2 left of the text,
+                        // 4 wider, 12 above it).
+                        Item {
+                            readonly property var sm: card.post ? card.post.scheduled_meeting || null : null
+                            visible: !!sm
+                            width: parent.width; height: visible ? meetingCard.height + 12 : 0
+                            ScheduledMeetingCard {
+                                id: meetingCard
+                                x: -2; width: parent.width + 4; height: implicitHeight
+                                meeting: parent.sm
+                                organizer: !!parent.sm && !!parent.sm.organizer_id && (backend.userMri || "").toLowerCase().indexOf(parent.sm.organizer_id.toLowerCase()) >= 0
+                                onJoin: root.joinMeeting(parent.sm.join_url, parent.sm.title)
+                                onOpenDetails: root.openMeetingDetails(parent.sm.join_url, parent.sm.start)
+                            }
                         }
                     }
                     // The text, cut with "see more" when it's long (Teams:

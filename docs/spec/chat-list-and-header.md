@@ -1974,9 +1974,19 @@ the channel again, or **Go to channel**, returns to its posts).
     (320 wide, "Return to list" 32 × 31.3 at 20, the title at 64, a line
     60 down), the post 532 and Copilot 360; the header then shows the
     brand Copilot button before More, and More is Follow / Unfollow only.
-    A Threads channel's thread shows the same header over the thread as a
-    chat with the "Send to" compose. (OST, TASK-0265: Posts channels'
-    threads; a Threads channel's followed thread still opens its channel.)
+    A Threads channel's thread (measured on winpc 2026-11-24 with OST
+    threads test's "OST TEST 81 threads layout") shows the same header,
+    its second line the thread's first message, over the thread as a chat
+    on white: Teams' message pane (`message-pane-list-runway`, padding
+    22 0 0 32, the bubbles' end 32 from the right), no "{N} replies" line,
+    and the "Send to: thread only" compose ("Reply in thread") 32 in. Its
+    More is Copilot (Alt+C), Unfollow thread, Mark as unread and Copy link
+    (139.3 wide, 32 tall items, 4.9 under the button); with Copilot open
+    the list moves to the chat list's place as for a post, and More is
+    Unfollow thread, Mark as unread and Copy link. A post's header names a
+    channel meeting by its title (Teams' `channelDrillDownHeaderBaseData`:
+    `properties.meeting`'s `meetingtitle`, else `properties.title` or
+    `subject`, else "Post by {author}").
   - The app is told what a Threads channel's thread tells it: ChannelL2,
     `cmmce9gzagp`, ViewChannel and the `channelContext`. The reference
     names the team, though: SHA-256 of "{team}-{channel}-{post}" (General:

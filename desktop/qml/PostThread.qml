@@ -50,6 +50,11 @@ import QtQuick.Dialogs
 //   its own Copilot's history for the post, in the Copilot pane's place),
 //   with no divider. The header's second line is the post's subject
 //   ("Post by {author}" without one). Under 640 wide the card is 30 in.
+// - A Threads channel's followed thread (`chatThread`, winpc 2026-11-24):
+//   this header (its second line the first message) over the thread as a
+//   chat (Main's followedChat); More adds Mark as unread and Copy link.
+// - A channel meeting's post: the header's second line is the meeting's
+//   title, and its calendar card (ScheduledMeetingCard) sits over the text.
 // The view stays on its thread (the backend keeps it loaded and live).
 Item {
     id: win
@@ -63,7 +68,14 @@ Item {
     property bool inPane: false
     /// Opened from Followed threads.
     property bool slice: false
+    /// A Threads-layout channel's thread (from Followed threads): only the
+    /// header here; Main shows the thread as a chat under it (Teams'
+    /// message pane with the "Send to" compose).
+    property bool chatThread: false
     signal goToChannel()
+    /// A channel meeting's calendar card: Join, and its details.
+    signal joinMeeting(string url, string title)
+    signal openMeetingDetails(string url, string start)
     signal popOut()
     /// A meeting end's Attendance card: the meeting's organizer, its post
     /// and the call.
@@ -75,6 +87,18 @@ Item {
         return all[threadKey] || []
     }
     readonly property var post: thread.find(m => m.id === rootId) || null
+    /// The header's second line, as Teams' channelDrillDownHeaderBaseData
+    /// takes it: a meeting's title (`properties.meeting`), else the post's
+    /// title or subject; a Threads channel's thread names its first
+    /// message; otherwise "Post by {author}".
+    readonly property string headerTitle: {
+        if (!post) return ""
+        const t = post.meeting_title || post.subject || ""
+        if (t) return t
+        if (chatThread) return String(post.text || "").split("\n")[0]
+        return qsTr("Post by %1").arg(senderOf(post))
+    }
+    readonly property var scheduledMeeting: post ? post.scheduled_meeting || null : null
     readonly property bool copilotAvailable: { try { return !!JSON.parse(backend.composeCopilotJson || "{}").channelPost } catch (e) { return false } }
     property bool copilotOpen: false
     onRootIdChanged: copilotOpen = false
@@ -202,7 +226,7 @@ Item {
         Text {
             x: 62; y: 31.7
             width: toolbar.x - x - 8; elide: Text.ElideRight
-            text: !win.post ? "" : win.post.subject ? win.post.subject : qsTr("Post by %1").arg(win.senderOf(win.post))
+            text: win.headerTitle
             font.family: theme.font; font.pixelSize: 12
             lineHeight: 16; lineHeightMode: Text.FixedHeight
             color: theme.textSecondary
@@ -283,17 +307,21 @@ Item {
     MenuPopup {
         id: moreMenu
         margins: 8
+        // (A Threads channel's thread adds Mark as unread and Copy link.)
         items: (win.slice ? (win.copilotAvailable && !win.copilotOpen ? [{ key: "copilot", label: qsTr("Copilot"), icon: "ai-copilot", keys: "Alt+C" }] : [])
                 : win.findInline ? [] : [{ key: "find", label: qsTr("Find in post"), icon: "search-20", keys: "Ctrl+F" }]).concat([
             win.post && (win.post.following || (win.slice && win.post.follow_explicit !== false))
                 ? { key: "unfollow", label: qsTr("Unfollow thread"), icon: "chat-multiple-minus-20" }
                 : { key: "follow", label: qsTr("Follow thread"), icon: "chat-multiple-20" }
-        ]).concat(win.slice || !win.copilotAvailable ? [] : [{ key: "history", label: qsTr("View Copilot history"), icon: "history-20" }])
+        ]).concat(win.chatThread ? [{ key: "unread", label: qsTr("Mark as unread"), icon: "glasses-off-20" }, { key: "link", label: qsTr("Copy link"), icon: "link-20" }] : [])
+          .concat(win.slice || !win.copilotAvailable ? [] : [{ key: "history", label: qsTr("View Copilot history"), icon: "history-20" }])
         onPicked: i => {
             const k = items[i].key
             if (k === "find") win.toggleFind()
             else if (k === "copilot") win.toggleCopilot()
             else if (k === "history") win.historyOpen = true
+            else if (k === "unread") { const last = win.thread.filter(m => m.kind === "message" && !m.deleted).pop(); if (last) backend.setThreadRead(win.rootId, "unread", last.id) }
+            else if (k === "link") { if (win.post) backend.copyMessageLink(JSON.stringify({ id: win.post.id, sender: win.post.sender || "", text: win.post.text || "", root_id: win.post.id }), JSON.stringify({ team_id: win.teamId, team_name: win.teamName, channel_name: win.channelName })) }
             else if (win.post) backend.setThreadFollowing(win.post.id, k === "follow")
         }
     }
@@ -354,6 +382,7 @@ Item {
     // The thread
     Flickable {
         id: flick
+        visible: !win.chatThread
         anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: compose.top; bottomMargin: 38.8; rightMargin: win.paneW }
         clip: true
         contentHeight: card.height + 7 + 3
@@ -440,11 +469,23 @@ Item {
                         color: theme.text
                         Accessible.role: Accessible.Heading
                     }
+                    // A channel meeting's calendar card (2 left of the text,
+                    // 4 wider, 12 above it).
+                    ScheduledMeetingCard {
+                        id: meetingCard
+                        visible: !!win.scheduledMeeting && !postItem.editing
+                        x: 16; y: 64 + (postSubject.visible ? postSubject.height : 0)
+                        width: card.width - 32; height: visible ? implicitHeight : 0
+                        meeting: win.scheduledMeeting
+                        organizer: !!win.scheduledMeeting && !!win.scheduledMeeting.organizer_id && (backend.userMri || "").toLowerCase().indexOf(win.scheduledMeeting.organizer_id.toLowerCase()) >= 0
+                        onJoin: win.joinMeeting(win.scheduledMeeting.join_url, win.scheduledMeeting.title)
+                        onOpenDetails: win.openMeetingDetails(win.scheduledMeeting.join_url, win.scheduledMeeting.start)
+                    }
                     PostBody {
                         id: postBody
                         visible: !!postItem.m && !postItem.editing && !win.meetingPost
                         height: win.meetingPost ? 0 : implicitHeight
-                        x: 18; y: 64 + (postSubject.visible ? postSubject.height : 0); width: card.width - 36
+                        x: 18; y: 64 + (postSubject.visible ? postSubject.height : 0) + (meetingCard.visible ? meetingCard.height + 12 : 0); width: card.width - 36
                         message: postItem.m
                         mark: win.markFor(postItem.m ? postItem.m.id : "")
                     }
@@ -686,6 +727,7 @@ Item {
     // Reply in thread
     ComposeBox {
         id: compose
+        visible: !win.chatThread
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
         anchors.leftMargin: win.inPane ? Math.max(28, win.cardX - 12) : 28; anchors.rightMargin: win.paneW + (win.inPane ? Math.max(30, win.cardX - 12) : 30)
         anchors.bottomMargin: 8.7 // its box 26.7 above the bottom (the hint row is 18)

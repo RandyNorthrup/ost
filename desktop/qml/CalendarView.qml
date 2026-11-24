@@ -1635,19 +1635,20 @@ Item {
     // ── the peek card ───────────────────────────────────────────────────
     property var pendingMeeting: null
     /// Show a meeting's card (from its chat's Meeting details): its week,
-    /// then its card. False when the calendar doesn't have it.
-    function showMeeting(joinUrl, icalUid, startIso) {
+    /// then its card (with `page`, its event page: a channel meeting's
+    /// calendar card). False when the calendar doesn't have it.
+    function showMeeting(joinUrl, icalUid, startIso, page) {
         const e = root.events.find(x => (joinUrl && x.join_url === joinUrl) || (icalUid && x.ical_uid === icalUid))
         if (e) {
             const d = new Date(e.start_utc)
             if (!isNaN(d)) root.start = root.startFor(d)
             pendingMeeting = null
-            details.show(e, null)
+            if (page) openPage(e, ""); else details.show(e, null)
             return true
         }
         const d = new Date(startIso || "")
         if (isNaN(d)) return false
-        pendingMeeting = { joinUrl: joinUrl, icalUid: icalUid }
+        pendingMeeting = { joinUrl: joinUrl, icalUid: icalUid, page: !!page }
         root.start = root.startFor(d)
         return true
     }
@@ -1655,7 +1656,7 @@ Item {
         if (pendingMeeting) {
             const p = pendingMeeting
             const e = root.events.find(x => (p.joinUrl && x.join_url === p.joinUrl) || (p.icalUid && x.ical_uid === p.icalUid))
-            if (e) { pendingMeeting = null; details.show(e, null) }
+            if (e) { pendingMeeting = null; if (p.page) openPage(e, ""); else details.show(e, null) }
         }
         // Keep an open card on the event's new state (after an answer).
         if (details.visible && details.ev.id) {

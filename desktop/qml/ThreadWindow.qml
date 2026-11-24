@@ -15,6 +15,8 @@ Window {
     property string myName: ""
     property bool pinned: false
     signal agentStoreRequested(string channelId)
+    signal joinMeeting(string url, string title)
+    signal openMeetingDetails(string url, string start)
     readonly property alias post: view.post
     readonly property alias thread: view.thread
     readonly property alias replies: view.replies
@@ -46,5 +48,7 @@ Window {
         teamId: win.teamId; teamName: win.teamName
         channelName: win.channelName; myName: win.myName
         onAgentStoreRequested: id => win.agentStoreRequested(id)
+        onJoinMeeting: (url, title) => win.joinMeeting(url, title)
+        onOpenMeetingDetails: (url, start) => win.openMeetingDetails(url, start)
     }
 }

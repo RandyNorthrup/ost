@@ -742,6 +742,10 @@ pub struct MessageView {
     pub call_started_at: String,
     #[serde(default)]
     pub call_conversation_url: String,
+    /// A channel meeting's scheduled post (`properties.meeting` with its
+    /// `scheduledMeetingInfo`): Teams' calendar card over the post's text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduled_meeting: Option<ScheduledMeeting>,
     /// The meeting's recap card on its ended row (Teams' recap chiclet):
     /// the call's recordings and transcript folded in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -862,6 +866,82 @@ pub struct MessageView {
     /// properties.links), when it is shown.
     #[serde(default)]
     pub url_preview: Option<super::url_preview::UrlPreview>,
+}
+
+/// A channel meeting's calendar card (Teams' pre-state schedule meeting
+/// banner, TASK-0265): `properties.meeting` (a JSON string) with its
+/// `scheduledMeetingInfo` — the times (UTC, RFC 3339), whether it repeats
+/// or was cancelled — the join link and the organizer's id.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ScheduledMeeting {
+    pub title: String,
+    pub start: String,
+    pub end: String,
+    pub recurring: bool,
+    pub cancelled: bool,
+    pub join_url: String,
+    pub organizer_id: String,
+}
+
+/// `properties.meeting` (a JSON string, or an object) of a message.
+fn meeting_prop(m: &serde_json::Value) -> serde_json::Value {
+    match m.pointer("/properties/meeting") {
+        Some(serde_json::Value::String(s)) => serde_json::from_str(s).unwrap_or_default(),
+        Some(v @ serde_json::Value::Object(_)) => v.clone(),
+        _ => serde_json::Value::Null,
+    }
+}
+
+/// The meeting's title as Teams' post header takes it (`meetingtitle`).
+fn meeting_title_of(meeting: &serde_json::Value) -> String {
+    ["meetingtitle", "meetingTitle"]
+        .iter()
+        .find_map(|k| meeting.get(*k).and_then(|v| v.as_str()).filter(|s| !s.is_empty()))
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// A time as the service writes it (RFC 3339, or a bare UTC date-time, or
+/// milliseconds) in RFC 3339 UTC.
+fn utc_time(v: Option<&serde_json::Value>) -> String {
+    match v {
+        Some(serde_json::Value::Number(n)) => n
+            .as_i64()
+            .and_then(chrono::DateTime::from_timestamp_millis)
+            .map(|t| t.to_rfc3339())
+            .unwrap_or_default(),
+        Some(serde_json::Value::String(s)) => chrono::DateTime::parse_from_rfc3339(s)
+            .map(|t| t.with_timezone(&chrono::Utc).to_rfc3339())
+            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s.trim_end_matches('Z'), "%Y-%m-%dT%H:%M:%S%.f").map(|t| t.and_utc().to_rfc3339()))
+            .unwrap_or_default(),
+        _ => String::new(),
+    }
+}
+
+fn scheduled_meeting(meeting: &serde_json::Value) -> Option<ScheduledMeeting> {
+    // (The chat service writes `scheduledmeetinginfo`; Teams' model calls
+    // it scheduledMeetingInfo.)
+    let info = meeting.get("scheduledmeetinginfo").or_else(|| meeting.get("scheduledMeetingInfo"))?;
+    let info = match info {
+        serde_json::Value::String(s) => serde_json::from_str(s).ok()?,
+        v => v.clone(),
+    };
+    if !info.is_object() {
+        return None;
+    }
+    let flag = |k: &str| info.get(k).is_some_and(|v| v.as_bool() == Some(true) || v.as_str() == Some("true"));
+    let s = |v: &serde_json::Value, k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    let recurring = info.get("eventRecurrencePattern").is_some_and(|p| !p.is_null() && p.as_str() != Some(""))
+        || matches!(info.get("eventType").and_then(|v| v.as_str()), Some("RecurringMaster" | "Occurrence" | "Exception"));
+    Some(ScheduledMeeting {
+        title: meeting_title_of(meeting),
+        start: utc_time(info.get("startTime")),
+        end: utc_time(info.get("endTime")),
+        recurring,
+        cancelled: flag("isCancelled"),
+        join_url: s(meeting, "meetingJoinUrl"),
+        organizer_id: s(meeting, "organizerId"),
+    })
 }
 
 /// A meeting's recap card (Teams' recap chiclet, meeting-recap-chiclet-app,
@@ -2398,6 +2478,8 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
             || m.pointer("/properties/isSharedInMain").and_then(|v| v.as_str()) == Some("true"),
         mentions_me: false,
         event: None,
+        meeting_title: meeting_title_of(&meeting_prop(m)),
+        scheduled_meeting: scheduled_meeting(&meeting_prop(m)),
         ..Default::default()
     };
     // Teams shows a legacy transcript message only in a 1:1 chat (as its
@@ -7101,5 +7183,37 @@ mod channel_meeting_tests {
         assert_eq!(c.linked_root, "");
         let linked = serde_json::json!({"properties": {"linkedRootMessageId": "1794373384701"}});
         assert_eq!(channel_meeting(&linked, "").linked_root, "1794373384701");
+    }
+
+    /// A scheduled channel meeting's post (as the chat service sent "OST
+    /// TEST 265 channel meeting", ids shortened): its calendar card and
+    /// the header's title; a cancelled one.
+    #[test]
+    fn reads_a_scheduled_meetings_post() {
+        let meeting = serde_json::json!({
+            "@type": "http://schema.skype.com/ScheduledMeetingCreated", "itemid": "1795503875866",
+            "meetingJoinUrl": "https://teams.microsoft.com/l/meetup-join/19%3ax%40thread.tacv2/1795503865770?context=x",
+            "meetingtitle": "OST TEST 265 channel meeting", "organizerId": "4287e791",
+            "scheduledmeetinginfo": {"endTime": "2026-11-24T18:30:00+00:00", "eventType": "Single", "iCalUid": "0400", "location": "Microsoft Teams Meeting",
+                                     "meetingType": 1, "startTime": "2026-11-24T18:00:00+00:00", "templateDetails": null},
+            "tenantId": "t"
+        });
+        let m = serde_json::json!({"id": "1795503865770", "messagetype": "RichText/Html", "content": "<p>Channel meeting</p>",
+                                   "properties": {"meeting": meeting.to_string()}});
+        let v = super::message_view(&m, "8:orgid:me", "Me").unwrap();
+        assert_eq!(v.meeting_title, "OST TEST 265 channel meeting");
+        let s = v.scheduled_meeting.unwrap();
+        assert_eq!((s.title.as_str(), s.start.as_str(), s.end.as_str()), ("OST TEST 265 channel meeting", "2026-11-24T18:00:00+00:00", "2026-11-24T18:30:00+00:00"));
+        assert!(!s.cancelled && !s.recurring);
+        assert_eq!((s.organizer_id.as_str(), s.join_url.starts_with("https://teams.microsoft.com/l/meetup-join/")), ("4287e791", true));
+        let mut cancelled = meeting.clone();
+        cancelled["scheduledmeetinginfo"]["isCancelled"] = serde_json::json!(true);
+        cancelled["scheduledmeetinginfo"]["eventType"] = serde_json::json!("RecurringMaster");
+        let m = serde_json::json!({"id": "1", "messagetype": "RichText/Html", "content": "<p>Cancelled</p>", "properties": {"meeting": cancelled.to_string()}});
+        let s = super::message_view(&m, "", "").unwrap().scheduled_meeting.unwrap();
+        assert!(s.cancelled && s.recurring);
+        // A message without one has neither.
+        let plain = super::message_view(&serde_json::json!({"id": "2", "messagetype": "RichText/Html", "content": "<p>x</p>"}), "", "").unwrap();
+        assert!(plain.scheduled_meeting.is_none() && plain.meeting_title.is_empty());
     }
 }

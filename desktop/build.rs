@@ -234,6 +234,7 @@ fn main() {
         "qml/ThreadsPane.qml",
         "qml/CopilotPane.qml",
         "qml/CopilotHistoryPane.qml",
+        "qml/ScheduledMeetingCard.qml",
         "qml/FindPane.qml",
         "qml/FeedbackWindow.qml",
         "qml/HelpView.qml",
