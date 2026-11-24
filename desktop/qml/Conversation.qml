@@ -1057,6 +1057,8 @@ Rectangle {
         onOpenChatSettings: root.openChatSettings()
         canPopOut: root.isChannel && !root.pane
         onThreadWindowRequested: m => root.openThreadWindow(m)
+        canRecordClip: root.canRecordClips
+        onRecordClipRequestedFor: box => { root.clipBox = box; clipRecorder.openFor(root.chatId) }
     }
     // Open conversation in new window: the post's thread in a window of
     // its own, one per post (opening it again brings that one forward).

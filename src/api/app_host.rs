@@ -374,6 +374,9 @@ pub fn context_from(
         });
         if let (Some(o), serde_json::Value::Object(e)) = (c.as_object_mut(), extra) {
             o.extend(e);
+            // (Teams gives a conversation-free app no OneNote section:
+            // Copilot's context, captured on winpc 2026-11-23.)
+            o.remove("defaultOneNoteSectionId");
         }
     }
     if !channel_id.is_empty() {
@@ -746,6 +749,7 @@ mod tests {
         assert_eq!(c["teamSiteDomain"], "x.sharepoint.com");
         assert_eq!(c["chatId"], "");
         assert_eq!(c["channelId"], "");
+        assert!(c.get("defaultOneNoteSectionId").is_none(), "Teams gives Copilot no OneNote section");
         assert_eq!(my_site_from("https://x-my.sharepoint.com/personal/u_x_com/Documents"), Some(("x-my.sharepoint.com".into(), "/personal/u_x_com".into())));
     }
 

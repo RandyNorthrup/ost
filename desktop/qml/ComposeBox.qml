@@ -56,6 +56,16 @@ Item {
     property var editFilesAtStart: []
     /// Files from this device added in the edit (their paths).
     property var editLocalFiles: []
+    // The message's own video clip and Loop component in its edit box
+    // (measured on winpc 2026-11-24, TASK-0265): the clip as the compose
+    // box shows one (400 x 225 over the text, Remove video clip on hover),
+    // the Loop component as the compose box's (its header's Discard asks
+    // "Discard draft message" and deletes the component's file at once, as
+    // Teams does). Done leaves out what was taken out.
+    property var editClip: null
+    property var removedClips: []
+    property var editLoop: null
+    property var removedLoops: []
     /// The conversation's team, for the edit's Attach (Browse Teams and
     /// Channels in a channel).
     property string editTeamId: ""
@@ -338,12 +348,59 @@ Item {
     property int bannerImageH: 0
     readonly property real bannerH: bannerImage ? 200 : 244
     readonly property bool postEmpty: empty && !subject.trim() && !headline.trim() && !bannerImage
+    // The post composer's "+" items (measured on winpc 2026-11-24,
+    // TASK-0265, new posts and post edits alike): Change permissions ("Who
+    // can reply": Everyone / You and moderators, Teams' replyPermission
+    // "AuthorAndOwners") and Post in other channels ("Post in": This channel
+    // / Multiple channels). Multiple channels adds Teams' cross-post row
+    // under the author row (cross-post-toolbar: a 24 px "+" with a 0.67
+    // #D1D1D1 edge 16.7 in, 10.3 under the row, then the channels as 95 x
+    // 24 #F5F5F5 chips 100 apart from 49.7: the team's picture 24, the
+    // channel's name 14 px at 29, a 20 px remove button at the end of the
+    // other channels'); "+" opens Choose channels. Editing a post shows its
+    // own, as Teams does: Close for Discard, no Announcement, Post saves.
+    property string replyPermission: ""
+    property string replyPermissionAtStart: ""
+    property bool crossPost: false
+    /// The post's other channels (ids), and those it had when the edit
+    /// began (null until read).
+    property var crossChannels: []
+    property var crossChannelsAtStart: null
+    property string crossPostId: ""
+    readonly property string postChannelId: String(root.chatId || backend.currentChatId)
+    readonly property real crossRowH: post && crossPost ? 43.4 : 0
+    /// The chips in Teams' order: the post's channel first, or (editing a
+    /// cross-post) its channels as Teams lists them, the post's own last.
+    readonly property var crossChips: root.editing ? root.crossChannels.concat([root.postChannelId]) : [root.postChannelId].concat(root.crossChannels)
+    /// The post's team's thread (the cross-post call names it).
+    readonly property string postTeamThread: {
+        for (const t of (backend.teamsJson ? JSON.parse(backend.teamsJson) : []))
+            if ((t.channels || []).some(c => c.id === root.postChannelId)) return t.thread_id || ""
+        return ""
+    }
+    function channelInfo(id) {
+        for (const t of (backend.teamsJson ? JSON.parse(backend.teamsJson) : [])) {
+            const c = (t.channels || []).find(c => c.id === id)
+            if (c) return { team: t, name: c.general ? qsTr("General") : c.name }
+        }
+        return { team: null, name: "" }
+    }
+    Connections {
+        target: backend
+        enabled: root.post && root.editing && !!root.crossPostId
+        function onChannelActionResultChanged() {
+            const r = JSON.parse(backend.channelActionResult || "{}")
+            if (r.op !== "cross-post-channels" || !r.ok || !r.data || r.data.crossPostId !== root.crossPostId) return
+            root.crossChannels = (r.data.channels || []).filter(c => c !== root.postChannelId)
+            root.crossChannelsAtStart = root.crossChannels.slice()
+        }
+    }
     signal closeRequested()
     // The formatting bar shows (always in the post composer).
     readonly property bool fmtOn: formatting || post
     // The delivery header ("IMPORTANT!") is 26 tall above the editor; the
     // post composer's author row and subject (and banner) are above it.
-    readonly property real headerH: post ? 57.3 + (announcement ? 12 + bannerH + 12 : 0) + 55.7 : importance ? 26 : sendTo || scheduleAt > 0 ? 25 : 0
+    readonly property real headerH: post ? 57.3 + crossRowH + (announcement ? 12 + bannerH + 12 : 0) + 55.7 : importance ? 26 : sendTo || scheduleAt > 0 ? 25 : 0
     readonly property real boxHeight: post ? headerH + 43 + editorArea.height + 16 + 31.3 + 17.4
         : headerH + (multiline
         ? (formatting ? 43 : 0) + subjectRowH + editorArea.height + 44.7
@@ -572,6 +629,22 @@ Item {
             root.editFiles = (m.files || []).filter(f => !!f.object_url)
                 .map(f => ({ key: f.object_url, name: f.name || "", kind: f.file_type || "", existing: true }))
             root.editFilesAtStart = root.editFiles.map(f => f.key)
+            root.editClip = (m.videos || []).length ? m.videos[0] : null
+            root.removedClips = []
+            const lc = (m.cards || []).find(c => c.content_type === "application/vnd.microsoft.card.fluidEmbedCard" && c.content && c.content.componentUrl)
+            root.editLoop = lc ? { url: String(lc.content.componentUrl), name: "", description: "" } : null
+            root.removedLoops = []
+            if (root.editLoop) backend.loopHostRequest("editLoopInfo", "editloop:" + root.editorDoc, JSON.stringify({ url: root.editLoop.url }))
+            if (root.post) {
+                root.subject = m.subject || ""
+                root.replyPermission = m.reply_permission === "AuthorAndOwners" ? "AuthorAndOwners" : ""
+                root.replyPermissionAtStart = root.replyPermission
+                root.crossPostId = m.cross_post_id || ""
+                root.crossPost = !!root.crossPostId
+                root.crossChannels = []
+                root.crossChannelsAtStart = root.crossPostId ? null : []
+                if (root.crossPostId) backend.channelAction("cross-post-channels", "", root.postChannelId, root.crossPostId)
+            }
         }
         // Mention tokens in Teams' colour; a shared contact's icon.
         const tokens = String(m.edit_html || "").replace(/<a href="(mention[^"]*)">/g, '<a href="$1" style="color:' + theme.brandForeground1 + '; text-decoration:none">')
@@ -694,19 +767,85 @@ Item {
                     id: hcFill3
                     x: parent.width - 32; y: 12.3; width: 32; height: 31.3; radius: 4
                     color: postCloseHover.hovered ? theme.hover : "transparent"
-                    FluentIcon { anchors.centerIn: parent; size: 20; name: root.postEmpty ? "dismiss-20" : "delete-20"; color: theme.onFill(hcFill3, postCloseHover.hovered ? theme.brand : theme.textStrong) }
+                    // (Editing a post: Close.)
+                    readonly property bool closes: root.postEmpty || root.editing
+                    FluentIcon { anchors.centerIn: parent; size: 20; name: parent.closes ? "dismiss-20" : "delete-20"; color: theme.onFill(hcFill3, postCloseHover.hovered ? theme.brand : theme.textStrong) }
                     HoverHandler { id: postCloseHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: root.postEmpty ? root.closeRequested() : root.requestCancel() }
+                    TapHandler { onTapped: root.editing ? root.requestCancel() : root.postEmpty ? root.closeRequested() : root.requestCancel() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: root.postEmpty ? qsTr("Close") : qsTr("Discard")
+                    Accessible.name: closes ? qsTr("Close") : qsTr("Discard")
                 }
                 Rectangle { y: Math.round(parent.height - 1); width: parent.width; height: 1; color: theme.divider }
+            }
+            // Post in other channels: "+" and the channels.
+            Item {
+                id: crossRow
+                visible: root.crossRowH > 0
+                x: 16.7; y: 67.7; width: parent.width - 33.3; height: 26
+                Rectangle {
+                    id: crossAdd
+                    y: 1; width: 24; height: 24; radius: 4
+                    color: crossAddHover.hovered ? theme.hover : theme.surface
+                    border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
+                    FluentIcon { anchors.centerIn: parent; size: 12; name: "add-16"; color: theme.onFill(crossAdd, theme.text) }
+                    HoverHandler { id: crossAddHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.openChooseChannels() }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("Select cross post channels")
+                }
+                Row {
+                    x: 33; y: 0; spacing: 3
+                    Repeater {
+                        model: root.crossChips
+                        Item {
+                            id: chip
+                            required property string modelData
+                            readonly property var info: root.channelInfo(modelData)
+                            readonly property bool own: modelData === root.postChannelId
+                            width: 97; height: 26
+                            Rectangle {
+                                x: 1; y: 1; width: 95; height: 24; radius: 4
+                                color: theme.pick("#F5F5F5", "#333333", "#000000")
+                                Avatar {
+                                    size: 24; square: true; squareRadius: 4
+                                    name: chip.info.team ? chip.info.team.name : ""
+                                    initialsText: chip.info.team ? String(chip.info.team.name).split(/\s+/).filter(w => w).slice(0, 2).map(w => w[0]).join("").toUpperCase() : ""
+                                    photoId: chip.info.team ? "team:" + chip.info.team.id : ""
+                                }
+                                Text {
+                                    x: 29; y: 2; width: (chip.own ? 95 : 75) - 29
+                                    elide: Text.ElideRight
+                                    text: chip.info.name
+                                    font.family: theme.font; font.pixelSize: 14
+                                    lineHeight: 20; lineHeightMode: Text.FixedHeight
+                                    color: theme.text
+                                }
+                                Rectangle {
+                                    id: chipRemove
+                                    visible: !chip.own
+                                    x: 75; y: 2; width: 20; height: 20; radius: 4
+                                    color: chipRemoveHover.hovered ? theme.hover : "transparent"
+                                    FluentIcon { anchors.centerIn: parent; size: 12; name: "dismiss-12"; color: theme.onFill(chipRemove, theme.textStrong) }
+                                    HoverHandler { id: chipRemoveHover; cursorShape: Qt.PointingHandCursor }
+                                    TapHandler { onTapped: root.crossChannels = root.crossChannels.filter(c => c !== chip.modelData) }
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: qsTr("Remove %1").arg(chip.info.name)
+                                }
+                                HoverHandler { id: chipHover }
+                                ToolTip.visible: chipHover.hovered; ToolTip.delay: 500
+                                ToolTip.text: (chip.info.team ? chip.info.team.name + " - " : "") + chip.info.name
+                            }
+                            Accessible.role: Accessible.ListItem
+                            Accessible.name: (chip.info.team ? chip.info.team.name + " - " : "") + chip.info.name
+                        }
+                    }
+                }
             }
             // Announcement: the banner.
             Rectangle {
                 id: bannerEdit
                 visible: root.announcement
-                x: 12.7; y: 69.3; width: parent.width - 25.3; height: root.bannerH; radius: 4
+                x: 12.7; y: 69.3 + root.crossRowH; width: parent.width - 25.3; height: root.bannerH; radius: 4
                 // With a picture the headline is white over it.
                 readonly property var colors: root.bannerImage ? [theme.banner(root.bannerTheme)[0], "#FFFFFF"] : theme.banner(root.bannerTheme)
                 color: colors[0]
@@ -815,7 +954,7 @@ Item {
             }
             // Add a subject / Add a subheading.
             Item {
-                x: 10.7; y: 57.3 + (root.announcement ? 12 + root.bannerH + 12 : 0)
+                x: 10.7; y: 57.3 + root.crossRowH + (root.announcement ? 12 + root.bannerH + 12 : 0)
                 width: parent.width - 21.3; height: 55.7
                 TextInput {
                     id: subjectField
@@ -943,6 +1082,7 @@ Item {
             tierWidth: root.tierWidth
             visible: root.fmtOn
             post: root.post
+            announcementButton: !root.editing
             onAnnouncementToggled: { root.announcement = !root.announcement; if (root.announcement) headlineEdit.forceActiveFocus() }
             x: root.post ? 0.7 : 0; y: root.headerH; width: parent.width
             editing: root.editing
@@ -977,6 +1117,7 @@ Item {
             y: root.headerH + (root.fmtOn ? 43 : 0.67) + root.subjectRowH
             width: root.post ? parent.width - 11.3 : root.multiline ? parent.width - 1.33 : parent.width - 1.33 - sideTools.width
             height: loopCard.visible ? loopCard.y + loopCard.height + 10
+                : editLoopCard.visible ? editLoopCard.y + editLoopCard.height + 10
                 : cloudCards.visible ? cloudCards.y + cloudCards.height + 13.9
                 : previewCard.visible ? previewCard.y + previewCard.height + 6
                 : appLinkCard.visible ? appLinkCard.y + appLinkCard.height + 8
@@ -1063,17 +1204,24 @@ Item {
             Loader {
                 id: clipCardBox
                 z: 2
-                visible: !!root.clip
-                active: !!root.clip
+                // (Editing: the message's own clip, as Teams' edit box shows
+                // it over the text, measured 2026-11-24; Remove video clip
+                // takes it out of the message.)
+                visible: !!root.clip || !!root.editClip
+                active: !!root.clip || !!root.editClip
                 x: 14; y: quoteCard.visible ? 14 + quoteCard.height + 4 + 22 : 32
                 sourceComponent: VideoClipCard {
-                    clip: ({ id: "", url: "", duration: (root.clip ? root.clip.duration : 0) / 1000, width: root.clip ? root.clip.width : 1280, height: root.clip ? root.clip.height : 720, thumb_local: root.clip ? root.clip.thumb : "" })
+                    clip: root.clip ? ({ id: "", url: "", duration: root.clip.duration / 1000, width: root.clip.width || 1280, height: root.clip.height || 720, thumb_local: root.clip.thumb || "" })
+                        : root.editClip
                     localPath: root.clip ? root.clip.path : ""
                     processing: !!root.clip && !!root.clip.uploading
                     removable: true
                     uploadFailed: !!root.clip && !!root.clip.error
                     background: theme.surface
-                    onRemoveRequested: root.clipRemoved()
+                    onRemoveRequested: {
+                        if (root.clip) { root.clipRemoved(); return }
+                        if (root.editClip) { root.removedClips = root.removedClips.concat([root.editClip.id]); root.editClip = null }
+                    }
                     onRetryUpload: root.clipRetry()
                 }
             }
@@ -1188,8 +1336,23 @@ Item {
                     backend.loopHostRequest("composeLink", root.loop.key + ":link", JSON.stringify({ driveId: info.driveId, itemId: info.itemId, url: info.componentUrl }))
                 }
                 onTitleChanged: t => root.setLoop({ title: t })
-                onDiscardRequested: loopDiscardDialog.open()
+                onDiscardRequested: { root.discardingEditLoop = false; loopDiscardDialog.open() }
                 onLinkSettingsRequested: root.openLoopLinkSettings()
+            }
+            // The message's own Loop component in its edit box.
+            LoopCard {
+                id: editLoopCard
+                z: 2
+                visible: !!root.editLoop && !root.loop
+                x: 16.7; y: root.textBottom + 20.5
+                width: parent.width - 33.3
+                mode: "edit"
+                live: visible
+                conversation: String(root.chatId || backend.currentChatId)
+                componentUrl: root.editLoop ? root.editLoop.url : ""
+                name: root.editLoop ? root.editLoop.name || "" : ""
+                description: root.editLoop ? root.editLoop.description || "" : ""
+                onDiscardRequested: { root.discardingEditLoop = true; loopDiscardDialog.open() }
             }
             Flow {
                 id: cloudCards
@@ -1618,7 +1781,77 @@ Item {
         body: qsTr("The Loop component will be deleted.")
         confirmText: qsTr("Discard")
         cancelText: qsTr("Close")
-        onConfirmed: root.discardLoop()
+        onConfirmed: root.discardingEditLoop ? root.discardEditLoop() : root.discardLoop()
+    }
+    // Change permissions ("Who can reply") and Post in other channels ("Post
+    // in"): Teams' radio menus (measured 2026-11-24: 161.2 / 144.8 wide
+    // rows, a 12/600 heading row, 16 px checks 6 in), 20 left of "+" with
+    // their bottom on its top.
+    function openPostMenu(menu, anchor) {
+        const a = anchor || root.attachButton()
+        menu.parent = a
+        menu.x = -20
+        menu.y = -menu.implicitHeight
+        menu.open()
+    }
+    MenuPopup {
+        id: permissionMenu
+        radioColumn: true; radioLabelX: 28; rowSpacing: 0
+        items: [{ heading: qsTr("Who can reply") },
+                { label: qsTr("Everyone"), checked: root.replyPermission !== "AuthorAndOwners" },
+                { label: qsTr("You and moderators"), checked: root.replyPermission === "AuthorAndOwners" }]
+        onPicked: i => { root.replyPermission = i === 2 ? "AuthorAndOwners" : (root.replyPermissionAtStart ? "Everyone" : ""); input.forceActiveFocus() }
+    }
+    MenuPopup {
+        id: postInMenu
+        radioColumn: true; radioLabelX: 28; rowSpacing: 0
+        items: [{ heading: qsTr("Post in") },
+                { label: qsTr("This channel"), checked: !root.crossPost },
+                { label: qsTr("Multiple channels"), checked: root.crossPost }]
+        onPicked: i => {
+            root.crossPost = i === 2
+            if (!root.crossPost) root.crossChannels = []
+            input.forceActiveFocus()
+        }
+    }
+    function openChooseChannels() {
+        chooseChannels.source = root.postChannelId
+        chooseChannels.selected = root.crossChannels.slice()
+        chooseChannels.open()
+    }
+    CrossPostDialog {
+        id: chooseChannels
+        onUpdated: channels => root.crossChannels = channels
+    }
+    function crossPostDialogForTest() { return chooseChannels }
+    function permissionMenuForTest() { return permissionMenu }
+    function postInMenuForTest() { return postInMenu }
+    property bool discardingEditLoop: false
+    // The edit's Loop component: its file's name and its link's words.
+    Connections {
+        target: backend
+        enabled: !!root.editLoop
+        function onLoopHostReply(id, json) {
+            if (id !== "editloop:" + root.editorDoc || !root.editLoop) return
+            let r = {}
+            try { r = JSON.parse(json) } catch (e) {}
+            const l = r.link || {}
+            const words = l.description ? l.description
+                : l.scope === "organization" ? (l.edit ? qsTr("People in your organization with the link can edit") : qsTr("People in your organization with the link can view"))
+                : l.scope === "anonymous" || l.scope === "anyone" ? (l.edit ? qsTr("Anyone with the link can edit") : qsTr("Anyone with the link can view"))
+                : l.scope === "users" ? (l.edit ? qsTr("People you choose can edit") : qsTr("People you choose can view")) : ""
+            root.editLoop = Object.assign({}, root.editLoop, { name: r.name || "", description: words })
+        }
+    }
+    /// The message's own Loop component discarded in its edit box: gone
+    /// from the edit, its file deleted at once (as Teams).
+    function discardEditLoop() {
+        const l = root.editLoop
+        root.discardingEditLoop = false
+        if (!l) return
+        root.removedLoops = root.removedLoops.concat([l.url])
+        root.editLoop = null
+        backend.loopHostRequest("composeDiscardUrl", "compose-discard-url", JSON.stringify({ url: l.url }))
     }
     // Write with Copilot (Teams' compose Copilot): for a Microsoft 365
     // Copilot licence where Teams' settings turn it on, between Attach
@@ -1727,6 +1960,19 @@ Item {
         const l = root.loopForSend()
         if (l) x.loop = JSON.parse(l)
         if (root.clip && root.clip.id) x.clip = { id: root.clip.id, url: root.clip.url, duration: root.clip.duration, width: root.clip.width, height: root.clip.height }
+        if (root.removedLoops.length) x.removedLoops = root.removedLoops
+        if (root.removedClips.length) x.removedClips = root.removedClips
+        // A post (Teams' post composer): its subject, who may reply (sent
+        // once set), its other channels when they changed.
+        if (root.post) {
+            x.post = true
+            x.subject = root.subject
+            if (root.replyPermission || root.replyPermissionAtStart) x.replyPermission = root.replyPermission || "Everyone"
+            const others = root.crossPost ? root.crossChannels : []
+            const before = root.crossChannelsAtStart
+            if (before === null ? root.crossPostId && !root.crossPost : JSON.stringify(others) !== JSON.stringify(before)) x.crossChannels = others
+            x.teamId = root.postTeamThread
+        }
         return JSON.stringify(x)
     }
     /// A recorded clip still being stored holds Done back.
@@ -1850,14 +2096,21 @@ Item {
         { id: "UnifiedFunPicker", icon: "emoji-20", label: qsTr("Emoji, GIFs and Stickers") },
         { id: "FilePicker", icon: "attach-20", label: qsTr("Attach files") },
         { id: "open-compose-copilot", icon: "pen-sparkle-20", label: qsTr("Write with Copilot") + " (Alt+A)", hidden: !root.copilotAllowed, pressed: copilotPopover.opened },
+        // (Loop components in posts and their edits too: measured
+        // 2026-11-24 at 580.7, after Write with Copilot.)
+        { id: "popup-semo", icon: "loop-page-20", label: qsTr("Loop components"), hidden: !root.loopAllowed || !!root.editLoop, pressed: !!root.loop },
         { id: "message-extension-flyout-command", icon: "add-20", label: qsTr("Actions and apps") }
     ].filter(t => !t.hidden)
     /// Back to an empty post composer.
-    function resetPost() { subject = ""; headline = ""; bannerTheme = "0"; announcement = false; bannerImage = ""; bannerImageW = 0; bannerImageH = 0 }
+    function resetPost() {
+        subject = ""; headline = ""; bannerTheme = "0"; announcement = false; bannerImage = ""; bannerImageW = 0; bannerImageH = 0
+        replyPermission = ""; crossPost = false; crossChannels = []
+    }
     /// The next post's fields for backend.setNextPost.
     function postFields() {
         return JSON.stringify({ subject: subject, title: headline, theme: announcement ? bannerTheme : "",
-            image: announcement ? bannerImage.replace(/^file:\/\//, "") : "", imageWidth: bannerImageW, imageHeight: bannerImageH })
+            image: announcement ? bannerImage.replace(/^file:\/\//, "") : "", imageWidth: bannerImageW, imageHeight: bannerImageH,
+            replyPermission: replyPermission, crossPost: crossPost ? crossChannels : [] })
     }
     BannerImageDialog {
         id: bannerImageDialog
@@ -1919,7 +2172,9 @@ Item {
         readonly property real listH: itemsCol.height + (appsCol.visible ? 10.7 + appsCol.height : 0) + (newApps.visible ? newApps.height : 0)
         readonly property real footerH: plain ? 0 : 48
         height: plain ? 12.7 + itemsCol.height + 12.6 : Math.min(480, 62.7 + listH + 14.7 + footerH)
-        x: !anchorItem ? 0 : plain ? anchorItem.mapToItem(Overlay.overlay, 0, 0).x + anchorItem.width - 2.7 - width
+        // (A post's edit: centred over the button, measured 2026-11-24.)
+        x: !anchorItem ? 0 : plain && root.post ? anchorItem.mapToItem(Overlay.overlay, 0, 0).x + (anchorItem.width - width) / 2
+            : plain ? anchorItem.mapToItem(Overlay.overlay, 0, 0).x + anchorItem.width - 2.7 - width
             : Math.min(Overlay.overlay.width - width - 8, anchorItem.mapToItem(Overlay.overlay, 0, 0).x + anchorItem.width - width)
         y: anchorItem ? anchorItem.mapToItem(Overlay.overlay, 0, 0).y - height - (plain ? 0 : 8) : 0
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
@@ -1930,11 +2185,15 @@ Item {
         // (Editing: Collaborate with Loop, Set delivery options and Record
         // video clip, measured 2026-11-23.)
         readonly property var items: [
-            { key: "loop", label: qsTr("Collaborate with Loop"), icon: "loop-page-20", hidden: !root.editing || !root.loopAllowed || !!root.loop },
+            { key: "loop", label: qsTr("Collaborate with Loop"), icon: "loop-page-20", hidden: !root.editing || !root.loopAllowed || !!root.loop || !!root.editLoop },
             { key: "schedule", label: qsTr("Schedule message"), icon: "send-clock-20", hidden: !root.scheduleAllowed || root.editing },
             { key: "delivery", label: qsTr("Set delivery options"), icon: "important-20", hidden: !root.deliveryOptions },
-            { key: "meeting", label: qsTr("Schedule meeting"), icon: "calendar-add-20", hidden: root.editing },
-            { key: "clip", label: qsTr("Record video clip"), icon: "video-clip-20", hidden: !root.canRecordClip }
+            { key: "meeting", label: qsTr("Schedule meeting"), icon: "calendar-add-20", hidden: root.editing || root.post },
+            { key: "clip", label: qsTr("Record video clip"), icon: "video-clip-20", hidden: !root.canRecordClip },
+            // A channel post's (new or edited; Teams' enableCrossPost, not
+            // when scheduled).
+            { key: "permissions", label: qsTr("Change permissions"), icon: "options-20", hidden: !root.post },
+            { key: "crosspost", label: qsTr("Post in other channels"), icon: "channel-share-20", hidden: !root.post || root.scheduleAt > 0 }
         ].filter(i => !i.hidden && i.label.toLowerCase().indexOf(search.text.trim().toLowerCase()) >= 0)
         Rectangle {
             visible: !plusFlyout.plain
@@ -1980,6 +2239,8 @@ Item {
                             else if (parent.modelData.key === "loop") root.insertLoop()
                             else if (parent.modelData.key === "schedule") schedulePopup.openFor(plusFlyout.anchorItem, false)
                             else if (parent.modelData.key === "clip") root.recordClipRequested()
+                            else if (parent.modelData.key === "permissions") root.openPostMenu(permissionMenu, plusFlyout.anchorItem)
+                            else if (parent.modelData.key === "crosspost") root.openPostMenu(postInMenu, plusFlyout.anchorItem)
                             else root.scheduleMeetingRequested()
                         }
                     }

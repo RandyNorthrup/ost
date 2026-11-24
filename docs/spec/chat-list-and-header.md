@@ -1952,6 +1952,31 @@ the channel again, or **Go to channel**, returns to its posts).
     covers the window.
   - Go to channel closes both. Followed threads' narrow 512 pane puts
     Copilot in More.
+  - More (TASK-0265, winpc 2026-11-24) is Find in post (when not inline),
+    Follow / Unfollow thread and **View Copilot history**
+    (`viewSummaryHistory`, history glyph), with no divider. The header's
+    second line is the post's subject ("Post by {author}" without one).
+    View Copilot history opens Teams' own Copilot (personalCopilot,
+    isHistoryOnly) in the Copilot pane's place: a 48 tall header (the
+    colour mark 20 at 20, 13.7 down; "Copilot history" 14/600 at 45, 3.7
+    down; "Learn what's in Copilot history", a 14 px brand link, 23.7 down;
+    Close 52 from the right) and, for ost-test1, "No history yet." (16/20
+    bold) and "This is where you'll find your old Copilot requests and
+    summaries for this conversation." (14/20) under Teams' picture (192),
+    centred. Teams made no request for it (Teams'
+    `submitTeamsCopilotHistoryOperation` over AugLoop wasn't sent for this
+    bizChat user).
+  - **Followed threads** (Quick views): picking a Posts channel's thread
+    shows this view in the place beside the list (512 at 1280). Teams'
+    `slice` source: no Find in post, More is "Copilot" (Alt+C) and
+    Follow / Unfollow thread, no View Copilot history. The card is 30 in
+    (452 at 512). With Copilot open the list takes the chat list's place
+    (320 wide, "Return to list" 32 × 31.3 at 20, the title at 64, a line
+    60 down), the post 532 and Copilot 360; the header then shows the
+    brand Copilot button before More, and More is Follow / Unfollow only.
+    A Threads channel's thread shows the same header over the thread as a
+    chat with the "Send to" compose. (OST, TASK-0265: Posts channels'
+    threads; a Threads channel's followed thread still opens its channel.)
   - The app is told what a Threads channel's thread tells it: ChannelL2,
     `cmmce9gzagp`, ViewChannel and the `channelContext`. The reference
     names the team, though: SHA-256 of "{team}-{channel}-{post}" (General:
@@ -1960,7 +1985,20 @@ the channel again, or **Go to channel**, returns to its posts).
   Metadata.ring.id, which the host takes from ECS Segmentation.TeamsRing
   (ost-test1: "ring3_6"). The context also gives manifestVersion "1.23",
   hostFeatures.serverSideRendering true (the app is in Teams'
-  appSSREnableList), teamSiteDomain and mySitePath.
+  appSSREnableList), teamSiteDomain and mySitePath. Its fields, in
+  Teams' order: locale, appSessionId, appLaunchId, appId, theme,
+  appIconPosition (-17 in every Copilot capture: chat, meeting chat,
+  channel thread, post view and its window), osLocaleInfo,
+  parentMessageId, userClickTime, userClickTimeV2, userFileOpenPreference,
+  manifestVersion, hostName, hostFeatures, hostClientType, sessionId,
+  ringId, hostAncestors, entityId, frameContext "sidePanel",
+  renderingSurface "copilotSidePanel", subEntityId, isFullScreen true,
+  isMultiWindow, isBackgroundLoad, sourceOrigin, userObjectId,
+  userLicenseType "Copilot", loginHint, userPrincipalName, upn,
+  userDisplayName "", tid, tenantSKU, channelId "", chatId "", meetingId
+  "", teamSiteId "", teamSiteUrl "", teamSiteDomain, teamSitePath "",
+  mySiteDomain, mySitePath — and no defaultOneNoteSectionId (a channel
+  tab gets one).
 - **Compose Copilot in edits**: the in-place edit box's tools are Format,
   Emoji, Attach files, Write with Copilot, Actions and apps, Cancel, Done;
   Write with Copilot's popover (602 wide) sits over the edit box, its right

@@ -1851,7 +1851,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && Qt.application.arguments.indexOf("--see-more-test") < 0 && Qt.application.arguments.indexOf("--draft-format-test") < 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--setf-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--copilot-test") < 0 && Qt.application.arguments.indexOf("--attach-link-test") < 0 && Qt.application.arguments.indexOf("--loop-compose-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat-named=")) && Qt.application.arguments.indexOf("--compose-apps-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--delete-test-messages=")) && Qt.application.arguments.indexOf("--thread-attach-test") < 0 && Qt.application.arguments.indexOf("--picker-bar-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--recorder-effects-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--collab-test") < 0 && Qt.application.arguments.indexOf("--notif-test") < 0 && Qt.application.arguments.indexOf("--accounts-test") < 0 && Qt.application.arguments.indexOf("--privacy-test") < 0 && Qt.application.arguments.indexOf("--calls-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--cards-test")) && !Qt.application.arguments.some(a => a.startsWith("--recognition-test=")) && Qt.application.arguments.indexOf("--recognition-states") < 0 && Qt.application.arguments.indexOf("--about-test") < 0 && Qt.application.arguments.indexOf("--room-audio-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--link-preview-test")) && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-")) && !Qt.application.arguments.some(a => a.startsWith("--embedded-apps-test")) && Qt.application.arguments.indexOf("--test-call-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--events-test")) && Qt.application.arguments.indexOf("--call-notes-test") < 0 && Qt.application.arguments.indexOf("--recaps-test") < 0 && Qt.application.arguments.indexOf("--phone-audio-test") < 0 && Qt.application.arguments.indexOf("--preheat-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--e2ee-setting-test")) && !Qt.application.arguments.some(a => /^--(voicemail-greeting|camera-controls|spatial-audio|tty)-test/.test(a)) && Qt.application.arguments.indexOf("--avatar-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--content-camera-test")) && !Qt.application.arguments.some(a => a.startsWith("--group-call-nmc=")) && Qt.application.arguments.indexOf("--va-test") < 0 && Qt.application.arguments.indexOf("--cast-test") < 0 && !Qt.application.arguments.some(a => /^--(vm-transfer|kb-dialog|ddv|sign-language|voice-isolation|rename-suggest|column-settings|preview-bar|playlist|picker-person)-test/.test(a)) && !Qt.application.arguments.some(a => a.startsWith("--reorder-test=")) && !Qt.application.arguments.some(a => /^--(app-bar|profile-org|channel-share|app-window|tab-settings|store-devices|store-filter|manage-apps|recap-window|paste-picture|card-action|compose-height|attach-media|loop-access|chat-copilot|edit-copilot|edit-tools|post-copilot)-test/.test(a))
+        running: window.shotPath.length > 0 && Qt.application.arguments.indexOf("--see-more-test") < 0 && Qt.application.arguments.indexOf("--draft-format-test") < 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--setf-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--copilot-test") < 0 && Qt.application.arguments.indexOf("--attach-link-test") < 0 && Qt.application.arguments.indexOf("--loop-compose-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat-named=")) && Qt.application.arguments.indexOf("--compose-apps-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--delete-test-messages=")) && Qt.application.arguments.indexOf("--thread-attach-test") < 0 && Qt.application.arguments.indexOf("--picker-bar-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--recorder-effects-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--collab-test") < 0 && Qt.application.arguments.indexOf("--notif-test") < 0 && Qt.application.arguments.indexOf("--accounts-test") < 0 && Qt.application.arguments.indexOf("--privacy-test") < 0 && Qt.application.arguments.indexOf("--calls-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--cards-test")) && !Qt.application.arguments.some(a => a.startsWith("--recognition-test=")) && Qt.application.arguments.indexOf("--recognition-states") < 0 && Qt.application.arguments.indexOf("--about-test") < 0 && Qt.application.arguments.indexOf("--room-audio-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--link-preview-test")) && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-")) && !Qt.application.arguments.some(a => a.startsWith("--embedded-apps-test")) && Qt.application.arguments.indexOf("--test-call-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--events-test")) && Qt.application.arguments.indexOf("--call-notes-test") < 0 && Qt.application.arguments.indexOf("--recaps-test") < 0 && Qt.application.arguments.indexOf("--phone-audio-test") < 0 && Qt.application.arguments.indexOf("--preheat-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--e2ee-setting-test")) && !Qt.application.arguments.some(a => /^--(voicemail-greeting|camera-controls|spatial-audio|tty)-test/.test(a)) && Qt.application.arguments.indexOf("--avatar-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--content-camera-test")) && !Qt.application.arguments.some(a => a.startsWith("--group-call-nmc=")) && Qt.application.arguments.indexOf("--va-test") < 0 && Qt.application.arguments.indexOf("--cast-test") < 0 && !Qt.application.arguments.some(a => /^--(vm-transfer|kb-dialog|ddv|sign-language|voice-isolation|rename-suggest|column-settings|preview-bar|playlist|picker-person)-test/.test(a)) && !Qt.application.arguments.some(a => a.startsWith("--reorder-test=")) && !Qt.application.arguments.some(a => /^--(app-bar|profile-org|channel-share|app-window|tab-settings|store-devices|store-filter|manage-apps|recap-window|paste-picture|card-action|compose-height|attach-media|loop-access|chat-copilot|edit-copilot|edit-tools|post-copilot|post-edit)-test/.test(a))
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInPage) {
@@ -5230,11 +5230,13 @@ Window {
             const t = teams.find(t => t.name === where[0])
             return t ? (t.channels.find(c => c.name === where[1]) || null) : null
         }
-        running: ids.length > 0 && backend.signedIn && (where.length === 2 ? !!channel : chatList.chats.some(c => c.name === "OST group test"))
+        // (`--delete-in=self`: your own chat.)
+        readonly property var selfChat: where[0] === "self" ? (chatList.chats.find(c => c.name.indexOf("(You)") >= 0) || null) : null
+        running: ids.length > 0 && backend.signedIn && (where[0] === "self" ? !!selfChat : where.length === 2 ? !!channel : chatList.chats.some(c => c.name === "OST group test"))
         interval: 3000; repeat: true
         property int step: 0
         onTriggered: {
-            if (step === 0) { const ch = channel || chatList.chats.find(x => x.name === "OST group test"); console.warn("DELETETEST in", ch.name, ch.id); backend.selectChat(ch.id, ch.name) }
+            if (step === 0) { const ch = selfChat || channel || chatList.chats.find(x => x.name === "OST group test"); console.warn("DELETETEST in", ch.name, ch.id); backend.selectChat(ch.id, ch.name) }
             else if (step - 2 < ids.length && step >= 2) { console.warn("DELETETEST", ids[step - 2]); backend.deleteMessage(ids[step - 2]) }
             else if (step >= 2) { Qt.quit(); return }
             step++
@@ -16292,12 +16294,64 @@ Window {
         kind: chatList.quickOpen || "followed"
         visible: rail.current === "chat" && !!chatList.quickOpen
         enterToOpen: window.enterToShow
-        anchors { top: appBanner.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
+        // (With the thread view's Copilot open the list takes the chat
+        // list's place.)
+        compact: followedPost.visible && followedPost.copilotOpen
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: compact ? rail.right : chatList.right; right: parent.right }
+        /// The followed post shown beside the list (Teams' single-thread
+        /// view), or null.
+        property var threadPick: null
+        onVisibleChanged: if (!visible) threadPick = null
+        onKindChanged: threadPick = null
+        onBackRequested: followedPost.copilotOpen = false
         onOpenItem: item => {
+            // A Posts channel's thread: Teams' post view in the list's
+            // right (TASK-0265, measured on winpc 2026-11-24).
+            const t = item.channel ? quickView.teams.find(t => (t.channels || []).some(c => c.id === item.thread_id)) : null
+            const ch = t ? t.channels.find(c => c.id === item.thread_id) : null
+            if (quickView.followed && ch && ch.layout !== "Conversational" && item.reply_chain) {
+                quickView.threadPick = item
+                return
+            }
+            quickView.threadPick = null
             const c = chatList.chats.find(c => c.id === item.thread_id)
             backend.selectChat(item.thread_id, c ? c.name : quickView.titleOf(item))
         }
     }
+    // Followed threads' single-thread view (Teams' channel L2 from a
+    // slice): 512 wide at 1280 beside the list; with Copilot open the list
+    // moves to the chat list's place and the post narrows beside the pane.
+    PostThread {
+        id: followedPost
+        readonly property var pick: quickView.threadPick
+        readonly property var team: pick ? quickView.teams.find(t => (t.channels || []).some(c => c.id === pick.thread_id)) || null : null
+        readonly property var channel: team ? team.channels.find(c => c.id === pick.thread_id) : null
+        visible: quickView.visible && !!pick
+        inPane: true
+        slice: true
+        anchors { top: appBanner.bottom; bottom: statusBar.top }
+        x: quickView.x + quickView.paneWidth
+        width: visible ? parent.width - x : 0
+        channelId: pick ? pick.thread_id : ""
+        rootId: pick ? pick.reply_chain : ""
+        teamId: team ? team.id : ""
+        teamName: team ? team.name : ""
+        channelName: channel ? (channel.general ? qsTr("General") : channel.name) : ""
+        myName: backend.userName
+        onGoToChannel: {
+            const id = channelId, name = channelName
+            quickView.threadPick = null
+            chatList.quickOpen = ""
+            backend.selectChat(id, name)
+        }
+        onPopOut: {
+            const w = followedWindowComponent.createObject(null, { channelId: channelId, rootId: rootId, teamId: teamId, teamName: teamName, channelName: channelName, myName: myName })
+            w.closing.connect(() => w.destroy())
+            w.show()
+        }
+        onAgentStoreRequested: id => agentStore.open()
+    }
+    Component { id: followedWindowComponent; ThreadWindow {} }
     DraftsView {
         id: draftsView
         visible: rail.current === "chat" && chatList.draftsOpen
@@ -16463,7 +16517,7 @@ Window {
         onChannelWorkflows: id => window.openWorkflows(id)
         onManageChannel: id => window.openManageChannel(id)
         myName: backend.userName
-        visible: (rail.current === "chat" && !chatList.draftsOpen && !chatList.copilotOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0) && (!chatList.quickOpen || quickView.selectedKey.length > 0) && !manageChannel.visible && !manageTeam.visible && !yourTeams.visible && !window.teamPage)
+        visible: (rail.current === "chat" && !chatList.draftsOpen && !chatList.copilotOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0) && (!chatList.quickOpen || (quickView.selectedKey.length > 0 && !quickView.threadPick)) && !manageChannel.visible && !manageTeam.visible && !yourTeams.visible && !window.teamPage)
             || (rail.current === "activity" && activityView.selectedId.length > 0)
         chatId: backend.currentChatId
         anchors { top: appBanner.bottom; bottom: statusBar.top; right: chatCopilot.left
@@ -16962,6 +17016,227 @@ Window {
             }
             step++
             function shot(n) { window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-post-copilot" + (n ? "-" + n : "") + ".png"))) }
+        }
+    }
+    // --post-edit-test=<phase> (TASK-0265). In OST Test Team > OST test
+    // channel on the post whose subject starts "OST TEST 265 plain post":
+    // "edit" (the post composer: tools, + menu, Change permissions, Post in
+    // other channels, Choose channels; then You and moderators, OST test
+    // channel 2 and " (edited)" saved), "restore" (Everyone, no other
+    // channel, the subject back), "history" (its view's More and View
+    // Copilot history), "followed" (Quick views > Followed threads, the
+    // post picked: header, More, Copilot open and the list beside it,
+    // Copilot's context). In your own chat on "OST TEST 263 edit tools":
+    // "existing" (its clip and Loop component in the edit box, then both
+    // taken out and Done). POSTEDIT lines; -post-edit-*.png.
+    Timer {
+        readonly property string phase: (Qt.application.arguments.find(a => a.startsWith("--post-edit-test=")) || "").slice(17)
+        // (--post-edit-subject=<the post's subject start>, ~ for spaces.)
+        readonly property string subjectArg: ((Qt.application.arguments.find(a => a.startsWith("--post-edit-subject=")) || "").slice(20) || "OST TEST 265 plain post").replace(/~/g, " ")
+        running: phase.length > 0 && backend.signedIn && chatList.chats.length > 0 && !!backend.teamsJson
+        interval: 2000; repeat: true
+        property int step: 0
+        property int waited: 0
+        property var target: null
+        property Item box: null
+        onTriggered: {
+            const log = (...a) => console.warn("POSTEDIT", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const geo = (it, r) => { if (!it) return null; const p = it.mapToItem(r || window.contentItem, 0, 0); return { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, w: Math.round(it.width * 10) / 10, h: Math.round(it.height * 10) / 10, visible: it.visible } }
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-post-edit-" + n + ".png")))
+            const find = (it, pred) => { for (const c of it.children) { if (pred(c)) return c; const f = find(c, pred); if (f) return f } return null }
+            const named = (it, out) => { for (const c of it.children) { if (c.visible && c.Accessible && c.Accessible.name && c.width > 0 && c.width < 200 && c.height > 15 && c.height < 45) out.push([c.Accessible.name, geo(c)]); named(c, out) } return out }
+            const show = m => m ? ({ id: m.id, subject: m.subject, text: m.text, reply_permission: m.reply_permission, cross_post_id: m.cross_post_id, edited: !!m.edited, cards: (m.cards || []).map(c => c.content_type), videos: (m.videos || []).map(v => v.id) }) : null
+            const teams = JSON.parse(backend.teamsJson || "[]")
+            const team = teams.find(t => t.name === "OST Test Team")
+            const channel = team ? team.channels.find(c => c.name === "OST test channel") : null
+            const channel2 = team ? team.channels.find(c => c.name === "OST test channel 2") : null
+            const pick = () => (conversation.messages || []).filter(m => m.mine && !m.deleted && String(m.subject || "").indexOf(subjectArg) === 0).pop() || null
+            if (phase === "new") {
+                // A new post with You and moderators (Teams' post composer).
+                if (step === 0) { rail.current = "chat"; backend.selectChat(channel.id, channel.name) }
+                else if (step === 2) {
+                    conversation.posting = true
+                    const c = conversation.composeForTest()
+                    c.subject = subjectArg
+                    c.setPlain("New post for the post composer test.")
+                    c.replyPermission = "AuthorAndOwners"
+                    log("new post fields", JSON.parse(c.postFields()))
+                    shot("new")
+                    c.trySubmit()
+                } else if (step === 6) {
+                    log("after", show(pick()))
+                    Qt.quit(); return
+                }
+            } else if (phase === "edit" || phase === "restore") {
+                if (step === 0) { rail.current = "chat"; backend.selectChat(channel.id, channel.name) }
+                else if (step === 2) {
+                    target = pick()
+                    if (!target && waited++ < 10) return
+                    waited = 0
+                    if (!target) { log("no post"); Qt.quit(); return }
+                    log("post", show(target))
+                    conversation.jumpToMessage(target.id)
+                    conversation.startEdit(target)
+                } else if (step === 3) {
+                    box = find(conversation, c => c.post === true && c.editing === true && c.editExtras !== undefined)
+                    if (!box && waited++ < 5) return
+                    waited = 0
+                    if (!box) { log("no post composer"); Qt.quit(); return }
+                    log("composer", geo(box), "subject", box.subject, "permission", box.replyPermission, "crossPostId", box.crossPostId, "crossPost", box.crossPost,
+                        "tools", box.postTools.map(t => [t.id, geo(box.toolForTest(t.id))]), "named", named(box, []).filter(n => n[1].y < geo(box).y + 120 || n[0] === "Post"))
+                    shot(phase + "-open")
+                    const f = box.plusFlyoutForTest(); f.anchorItem = box.toolForTest("message-extension-flyout-command"); f.open()
+                } else if (step === 4) {
+                    const f = box.plusFlyoutForTest()
+                    log("plus", { x: f.x, y: f.y, w: f.width, h: f.height, items: f.items.map(i => i.label) }, "anchor", geo(f.anchorItem))
+                    shot(phase + "-plus")
+                    f.close()
+                    box.openPostMenu(box.permissionMenuForTest(), box.toolForTest("message-extension-flyout-command"))
+                } else if (step === 5) {
+                    const m = box.permissionMenuForTest()
+                    log("permissions", { geo: geo(m.contentItem), items: m.items })
+                    shot(phase + "-permissions")
+                    m.close()
+                    box.openPostMenu(box.postInMenuForTest(), box.toolForTest("message-extension-flyout-command"))
+                } else if (step === 6) {
+                    const m = box.postInMenuForTest()
+                    log("post in", { geo: geo(m.contentItem), items: m.items })
+                    m.close()
+                    if (phase === "edit") {
+                        box.crossPost = true
+                        box.openChooseChannels()
+                    }
+                } else if (step === 7) {
+                    if (phase === "edit") {
+                        const d = box.crossPostDialogForTest()
+                        log("choose", { opened: d.opened, x: d.x, y: d.y, w: d.width, h: d.height, rows: d.rows.map(r => r.channel ? "  " + r.channel.name : r.team.name) })
+                        d.selected = [channel2.id]
+                        shot("choose")
+                        d.updated(d.selected.slice()); d.close()
+                        box.replyPermission = "AuthorAndOwners"
+                        box.subject = subjectArg + " (edited)"
+                    } else {
+                        box.replyPermission = box.replyPermissionAtStart ? "Everyone" : ""
+                        box.crossPost = false; box.crossChannels = []
+                        box.subject = subjectArg
+                    }
+                } else if (step === 8) {
+                    log("row", { crossRowH: box.crossRowH, chips: box.crossChips }, "named", named(box, []).filter(n => n[1].y < geo(box).y + 120))
+                    shot(phase + "-ready")
+                    log("extras", JSON.parse(box.editExtras()))
+                    box.trySubmit()
+                } else if (step === 9 || step === 10 || step === 11) {
+                    return void (step++)
+                } else if (step === 12) {
+                    log("after", show((conversation.messages || []).find(m => m.id === target.id)))
+                    Qt.quit(); return
+                }
+            } else if (phase === "history") {
+                if (step === 0) { rail.current = "chat"; backend.selectChat(channel.id, channel.name) }
+                else if (step === 2) {
+                    target = pick()
+                    if (!target && waited++ < 10) return
+                    if (!target) { log("no post"); Qt.quit(); return }
+                    conversation.openPostView(target.id)
+                } else if (step === 4) {
+                    const v = conversation.postViewForTest()
+                    log("view", geo(v), "findInline", v.findInline, "header", named(v, []).filter(n => n[1].y < 61 + geo(v).y))
+                    v.moreMenuForTest()
+                } else if (step === 5) {
+                    const v = conversation.postViewForTest()
+                    shot("more")
+                    log("more", v.moreItemsForTest())
+                    v.historyOpen = true
+                } else if (step === 6) {
+                    const v = conversation.postViewForTest()
+                    const h = v.historyForTest()
+                    log("history", geo(h), "named", named(h, []), "copilotOpen", v.copilotOpen)
+                    shot("history")
+                    v.historyOpen = false
+                    Qt.quit(); return
+                }
+            } else if (phase === "followed") {
+                if (step === 0) { rail.current = "chat"; chatList.quickOpen = "followed" }
+                else if (step === 2) {
+                    const items = quickView.items || []
+                    log("followed items", items.filter(i => i.channel).map(i => [i.thread_id.slice(3, 9), i.reply_chain, String(i.parent_preview || "").slice(0, 30), i.replies]))
+                    const it = items.find(i => i.thread_id === channel.id && /Plain post for the edit test|New post for the post composer test/.test(String(i.parent_preview || "")))
+                        || items.find(i => i.thread_id === channel.id && i.replies > 0) || items.find(i => i.thread_id === channel.id)
+                    if (!it && waited++ < 10) return
+                    waited = 0
+                    if (!it) { log("no followed item"); Qt.quit(); return }
+                    quickView.selectedKey = quickView.key(it)
+                    quickView.openItem(it)
+                    log("picked", it.reply_chain, it.parent_preview)
+                } else if (step === 4) {
+                    log("thread", followedPost.thread.map(m => [m.id, m.kind, m.root_id]).slice(0, 4), "post", !!followedPost.post, followedPost.post ? [followedPost.post.following, followedPost.post.follow_explicit, followedPost.post.subject] : null)
+                    log("view", geo(followedPost), "list", geo(quickView), "card", geo(followedPost.postItemForTest()), "header", named(followedPost, []).filter(n => n[1].y < 61 + geo(followedPost).y))
+                    shot("followed")
+                    followedPost.moreMenuForTest()
+                } else if (step === 5) {
+                    shot("followed-more")
+                    log("more", followedPost.moreItemsForTest())
+                    followedPost.toggleCopilot()
+                } else if (step === 6) {
+                    const pane = followedPost.copilotForTest()
+                    const app = pane.appForTest()
+                    const ev = app ? app.hostEvents : []
+                    if ((!app || ev.indexOf("ChatReady") < 0) && waited++ < 30) return
+                    waited = 0
+                    log("open", { list: geo(quickView), compact: quickView.compact, view: geo(followedPost), viewW: followedPost.viewW, pane: geo(pane) }, "header", named(followedPost, []).filter(n => n[1].y < 61 + geo(followedPost).y))
+                    const ctx = app ? app.contextForTest() : {}
+                    const hide = ["loginHint", "userPrincipalName", "upn", "userObjectId", "tid", "sessionId", "appSessionId", "appLaunchId", "userClickTime"]
+                    log("context keys", Object.keys(ctx))
+                    const shown = {}; for (const k of Object.keys(ctx)) if (hide.indexOf(k) < 0 && k !== "subEntityId") shown[k] = ctx[k]
+                    log("context", shown)
+                    shot("followed-copilot")
+                    followedPost.moreMenuForTest()
+                } else if (step === 7) {
+                    log("more open", followedPost.moreItemsForTest())
+                    quickView.backRequested()
+                } else if (step === 8) {
+                    log("back", { list: geo(quickView), compact: quickView.compact, view: geo(followedPost), copilot: followedPost.copilotOpen })
+                    Qt.quit(); return
+                }
+            } else if (phase === "existing") {
+                if (step === 0) {
+                    const c = chatList.chats.find(c => c.name === "OST Test 1 (You)") || chatList.chats.find(c => c.name.indexOf("(You)") >= 0)
+                    rail.current = "chat"; backend.selectChat(c.id, c.name)
+                } else if (step === 2) {
+                    target = (conversation.messages || []).filter(m => m.mine && !m.deleted && String(m.text || "").indexOf("OST TEST 263 edit tools") >= 0).pop() || null
+                    if (!target && waited++ < 10) return
+                    waited = 0
+                    if (!target) { log("no message"); Qt.quit(); return }
+                    log("message", show(target))
+                    conversation.jumpToMessage(target.id)
+                    conversation.startEdit(target)
+                } else if (step === 3) {
+                    box = conversation.editBoxForTest()
+                    if (!box) { log("no edit box"); Qt.quit(); return }
+                    log("edit box", geo(box), "clip", box.editClip ? box.editClip.id : null, "loop", box.editLoop)
+                } else if (step === 6) {
+                    const card = find(box, c => c.mode === "edit" && c.componentUrl !== undefined)
+                    const clipCard = find(box, c => c.removable === true && c.clip !== undefined)
+                    log("loop", box.editLoop, "card", geo(card), "clip card", geo(clipCard), "named", named(box, []))
+                    shot("existing")
+                    if (clipCard) clipCard.removeRequested()
+                } else if (step === 7) {
+                    box.discardingEditLoop = true
+                    box.loopDiscardDialogForTest().open()
+                } else if (step === 8) {
+                    const d = box.loopDiscardDialogForTest()
+                    log("discard dialog", { opened: d.opened, title: d.title, body: d.body })
+                    shot("existing-discard")
+                    d.confirmed(); d.close()
+                } else if (step === 9) {
+                    log("extras", JSON.parse(box.editExtras()))
+                    box.trySubmit()
+                } else if (step === 12) {
+                    log("after", show((conversation.messages || []).find(m => m.id === target.id)))
+                    Qt.quit(); return
+                }
+            }
+            step++
         }
     }
     // Open Copilot in a chat's header (TASK-0260): the Microsoft 365 Copilot

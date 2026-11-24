@@ -533,6 +533,48 @@ pub async fn access(client: &TeamsClient, component_url: &str) -> Result<Value> 
     Ok(access_from(&v))
 }
 
+/// A sent component's link as its edit box's header names it (Teams'
+/// compose header: the link's description, "People in your organization
+/// with the link can edit"): the widest sharing link on its file
+/// (`localizedDescription` when SharePoint gives one).
+pub async fn link_description(client: &TeamsClient, component_url: &str) -> Result<Value> {
+    let link = component_url.split('?').next().unwrap_or(component_url);
+    let item: Value = client
+        .graph_get(&format!("/shares/{}/driveItem?$select=id,webUrl,parentReference", super::drive::share_id(link)))
+        .await?
+        .json()
+        .await?;
+    let s = |p: &str| item.pointer(p).and_then(Value::as_str).unwrap_or_default().to_string();
+    let (drive, id) = (s("/parentReference/driveId"), s("/id"));
+    anyhow::ensure!(plain_id(&drive) && plain_id(&id), "The component's file");
+    let v: Value = client.graph_get(&format!("/drives/{drive}/items/{id}/permissions")).await?.json().await?;
+    Ok(link_description_from(&v))
+}
+
+/// [`link_description`] from a permissions list: {description (SharePoint's
+/// own words, if any), scope, edit}; the client words the rest.
+pub fn link_description_from(v: &Value) -> Value {
+    let rank = |scope: &str| match scope {
+        "anonymous" | "anyone" => 3,
+        "organization" => 2,
+        "users" | "existingAccess" => 1,
+        _ => 0,
+    };
+    let best = v
+        .get("value")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|p| p.get("link"))
+        .max_by_key(|l| rank(l.get("scope").and_then(Value::as_str).unwrap_or_default()));
+    let Some(l) = best else { return json!({}) };
+    json!({
+        "description": l.get("localizedDescription").and_then(Value::as_str).unwrap_or_default(),
+        "scope": l.get("scope").and_then(Value::as_str).unwrap_or_default(),
+        "edit": l.get("type").and_then(Value::as_str) == Some("edit"),
+    })
+}
+
 /// Shared locations (the Loop control Teams bundles, 698099, with its
 /// MTSFoundInPlaces provider): where a Loop component was shared, from
 /// `GET https://substrate.office.com/recommended/api/beta/loop/sharedlocations
@@ -630,6 +672,18 @@ pub fn add_to_workspace_url(component_url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn link_description_names_the_widest_link() {
+        let v = json!({"value": [
+            {"roles": ["owner"], "grantedTo": {"user": {"displayName": "OST Test 1"}}},
+            {"roles": ["write"], "link": {"type": "edit", "scope": "organization"}},
+            {"roles": ["read"], "link": {"type": "view", "scope": "users"}}]});
+        assert_eq!(link_description_from(&v), json!({"description": "", "scope": "organization", "edit": true}));
+        let sp = json!({"value": [{"link": {"type": "edit", "scope": "organization", "localizedDescription": "People in Contoso with the link can edit"}}]});
+        assert_eq!(link_description_from(&sp)["description"], "People in Contoso with the link can edit");
+        assert_eq!(link_description_from(&json!({"value": []})), json!({}));
+    }
 
     #[test]
     fn shared_locations_and_workspace_link_as_teams() {

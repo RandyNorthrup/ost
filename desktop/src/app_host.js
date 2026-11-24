@@ -118,7 +118,22 @@
             if (args !== undefined) msg.args = args;
             try { frame.contentWindow.postMessage(msg, "*") } catch (e) {}
         };
-        const context = () => Object.assign({}, ctx, { frameContext: cfg.frameContext });
+        // The context in Teams' own key order (its getContext answers,
+        // captured for a channel tab and Copilot's side panel); others after.
+        const ORDER = ["locale", "appSessionId", "appLaunchId", "appId", "theme", "appIconPosition", "osLocaleInfo", "parentMessageId",
+            "userClickTime", "userClickTimeV2", "userFileOpenPreference", "manifestVersion", "hostName", "hostFeatures", "hostClientType",
+            "sessionId", "ringId", "hostAncestors", "entityId", "frameContext", "renderingSurface", "subEntityId", "isFullScreen",
+            "isMultiWindow", "isBackgroundLoad", "sourceOrigin", "userObjectId", "userLicenseType", "loginHint", "userPrincipalName", "upn",
+            "userDisplayName", "tid", "tenantSKU", "channelId", "channelName", "channelRelativeUrl", "channelType", "defaultOneNoteSectionId",
+            "chatId", "meetingId", "teamId", "teamName", "teamType", "groupId", "isTeamArchived", "userTeamRole", "teamSiteId", "teamSiteUrl",
+            "teamSiteDomain", "teamSitePath", "mySiteDomain", "mySitePath"];
+        const context = () => {
+            const c = Object.assign({}, ctx, { frameContext: cfg.frameContext });
+            const out = {};
+            for (const k of ORDER) if (k in c) out[k] = c[k];
+            for (const k of Object.keys(c)) if (!(k in out)) out[k] = c[k];
+            return out;
+        };
 
         // A video app (Teams' video extensibility: Avatars), on the path
         // Teams desktop gives it, WebView2's texture streams: Teams starts a

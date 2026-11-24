@@ -103,6 +103,14 @@ pub struct Outgoing {
     /// A Loop component made in the compose box (Teams' FluidEmbedCard).
     #[serde(default)]
     pub loop_component: Option<LoopEmbed>,
+    /// A channel post's Change permissions: "AuthorAndOwners" (You and
+    /// moderators); "" for everyone (Teams then sends none).
+    #[serde(default)]
+    pub reply_permission: String,
+    /// Post in other channels: the other channels the post goes to too
+    /// (Teams then posts through its cross-post call).
+    #[serde(default)]
+    pub cross_post_channels: Vec<String>,
 }
 
 /// A compose Loop component as the message carries it: its link (the
@@ -479,6 +487,9 @@ pub fn post_body(o: &Outgoing) -> serde_json::Value {
         p["subject"] = o.subject.clone().into();
         p["title"] = if o.banner_theme.is_some() { o.title.clone() } else { String::new() }.into();
         p["policyViolation"] = serde_json::Value::Null;
+        if !o.reply_permission.is_empty() && o.reply_permission != "Everyone" {
+            p["replyPermission"] = o.reply_permission.clone().into();
+        }
         if let Some(theme) = &o.banner_theme {
             p["cards"] = banner_card(theme, o.banner_image.as_ref()).into();
         }
@@ -547,6 +558,20 @@ pub async fn post(o: &Outgoing) -> PostResult {
         o
     };
     let body = post_body(o);
+    // A post for other channels too (captured 2026-11-24, "OST TEST 265
+    // post edit"): Teams' cross-post call with the same message, less its
+    // crossPostChannels; the reply names the post in its channel.
+    if !o.cross_post_channels.is_empty() && is_channel_post(&o.conversation_id) {
+        let mut m = body.clone();
+        if let Some(obj) = m.as_object_mut() {
+            obj.remove("crossPostChannels");
+        }
+        return match super::messages::new_cross_post(&client, &m, &o.conversation_id, &o.cross_post_channels).await {
+            Ok(id) if !id.is_empty() => PostResult::Delivered { id, arrival_ms: o.arrival_ms },
+            Ok(_) => PostResult::Failed { status: Some(500), body: "InvalidResponse".into() },
+            Err(e) => PostResult::Failed { status: None, body: format!("{e:#}") },
+        };
+    }
     let mut counts = Counts::default();
     let mut attempt = 0;
     let mut created = false;
@@ -1126,6 +1151,8 @@ mod tests {
             app_card: None,
             bot_message_back: false,
             loop_component: None,
+            reply_permission: String::new(),
+            cross_post_channels: Vec::new(),
         };
         // An app's link card as Teams sent it (OST TEST 168a), and collapsed
         // as its preview (OST TEST 168b).
@@ -1193,6 +1220,8 @@ mod tests {
             app_card: None,
             bot_message_back: false,
             loop_component: None,
+            reply_permission: String::new(),
+            cross_post_channels: Vec::new(),
             ..o.clone()
         };
         let b = post_body(&root);
@@ -1257,6 +1286,8 @@ mod tests {
             app_card: None,
             bot_message_back: false,
             loop_component: None,
+            reply_permission: String::new(),
+            cross_post_channels: Vec::new(),
         };
         let b = post_body(&o);
         assert_eq!(b["properties"]["subject"], "OST TEST 75 subject");
@@ -1265,6 +1296,12 @@ mod tests {
         assert!(b["properties"]["policyViolation"].is_null());
         assert_eq!(b["postType"], "Standard");
         assert_eq!(b["crossPostChannels"], serde_json::json!([]));
+        assert!(b["properties"].get("replyPermission").is_none(), "Everyone sends none");
+        // Change permissions ▸ You and moderators (OST TEST 265, captured
+        // 2026-11-24).
+        o.reply_permission = "AuthorAndOwners".into();
+        assert_eq!(post_body(&o)["properties"]["replyPermission"], "AuthorAndOwners");
+        o.reply_permission = String::new();
 
         o.subject = "OST test subheading".into();
         o.title = "OST TEST 74 announcement".into();

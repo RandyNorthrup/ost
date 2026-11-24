@@ -847,6 +847,14 @@ pub struct MessageView {
     /// subheading).
     #[serde(default)]
     pub subject: String,
+    /// Who may reply to a channel post (Teams' `properties.replyPermission`:
+    /// "AuthorAndOwners" for "You and moderators"; "" or "Everyone" for
+    /// everyone).
+    #[serde(default)]
+    pub reply_permission: String,
+    /// A post Teams cross-posted to other channels (`properties.crossPostId`).
+    #[serde(default)]
+    pub cross_post_id: String,
     /// A channel announcement's banner.
     #[serde(default)]
     pub announcement: Option<Announcement>,
@@ -2357,6 +2365,8 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     let base = MessageView {
         importance: s("/properties/importance"),
         subject: s("/properties/subject"),
+        reply_permission: s("/properties/replyPermission"),
+        cross_post_id: s("/properties/crossPostId"),
         language_stamp: s("/properties/languageStamp"),
         announcement: announcement_from(m.pointer("/properties")),
         id: s("/id"),
@@ -4123,6 +4133,10 @@ pub fn edit_body(
         Some(q) => format!("{}{}", quote_html(q), content),
         None => content.to_string(),
     };
+    // As Teams' edit PUT (captured on winpc 2026-11-24, TASK-0265: a chat
+    // message, a channel post): the message's subject and title, who may
+    // reply and its cross-post kept, its media-store objects, and an empty
+    // crossPostChannels.
     let mut body = serde_json::json!({
         "id": original.get("id").cloned().unwrap_or_default(),
         "type": "Message",
@@ -4132,16 +4146,27 @@ pub fn edit_body(
         "contenttype": "Text",
         "imdisplayname": original.get("imdisplayname").cloned().unwrap_or_default(),
         "clientmessageid": original.get("clientmessageid").cloned().unwrap_or_default(),
+        "amsreferences": original.get("amsreferences").filter(|a| a.is_array()).cloned().unwrap_or_else(|| serde_json::json!([])),
         "properties": {
             "importance": keep("importance", ""),
+            "subject": keep("subject", ""),
+            "title": keep("title", ""),
             "cards": keep("cards", "[]"),
             "links": keep("links", "[]"),
             "mentions": keep("mentions", "[]"),
+            "onbehalfof": props.get("onbehalfof").cloned().unwrap_or(serde_json::Value::Null),
             "files": keep("files", "[]"),
+            "policyViolation": serde_json::Value::Null,
             "formatVariant": "TEAMS",
             "edittime": edit_ms,
         },
+        "crossPostChannels": [],
     });
+    for k in ["replyPermission", "crossPostId"] {
+        if let Some(v) = props.get(k).and_then(|v| v.as_str()).filter(|v| !v.is_empty()) {
+            body["properties"][k] = v.into();
+        }
+    }
     if let Some(q) = quote {
         body["properties"]["qtdMsgs"] = quoted_messages_property(q).into();
     }
@@ -4198,6 +4223,177 @@ pub struct EditExtras {
     pub loop_component: Option<super::outbox::LoopEmbed>,
     /// Media-store objects the new content refers to (a recorded clip).
     pub ams_references: Vec<String>,
+    /// The message's own Loop components taken out in the edit (their
+    /// componentUrl): span and card go (Teams deletes the file as the
+    /// component is discarded).
+    pub removed_loops: Vec<String>,
+    /// The message's own video clips taken out (their media-store ids).
+    pub removed_clips: Vec<String>,
+    /// A channel post's edit (Teams' post composer): its subject, who may
+    /// reply ("Everyone" / "AuthorAndOwners"), and the post's type.
+    pub subject: Option<String>,
+    pub reply_permission: Option<String>,
+    pub post: bool,
+    /// Post in other channels: the post's channels besides its own, as
+    /// chosen in the edit (None: unchanged), and the team's thread.
+    pub cross_channels: Option<Vec<String>>,
+    pub team_id: String,
+}
+
+/// The message object Teams' cross-post calls carry: the edit's body with
+/// the message's own fields (link, sender, times) and the edit time as its
+/// version (captured 2026-11-24).
+pub fn cross_post_message(body: &serde_json::Value, original: &serde_json::Value) -> serde_json::Value {
+    let mut m = body.clone();
+    let o = |k: &str| original.get(k).cloned().unwrap_or_default();
+    let conv = original.get("conversationid").and_then(|c| c.as_str()).unwrap_or_default();
+    let id = original.get("id").and_then(|c| c.as_str()).unwrap_or_default();
+    m["conversationLink"] = format!("conversation/{conv};messageid={id}").into();
+    m["from"] = o("from");
+    m["fromUserId"] = o("fromUserId");
+    if m["fromUserId"].is_null() {
+        m["fromUserId"] = original.get("from").and_then(|f| f.as_str()).and_then(|f| f.rsplit("/contacts/").next()).unwrap_or_default().into();
+    }
+    m["composetime"] = o("composetime");
+    m["originalarrivaltime"] = o("originalarrivaltime");
+    m["state"] = 0.into();
+    m["version"] = m["properties"]["edittime"].as_i64().unwrap_or_default().to_string().into();
+    if let Some(o) = m.as_object_mut() {
+        o.remove("crossPostChannels");
+    }
+    m
+}
+
+/// The channels a cross-post went to (Teams' `GET {csa}/v1/teams/users/me/
+/// crossposts/{id}` → successfulChannelIds: the others first, then the
+/// post's own).
+pub async fn cross_post_channels(client: &TeamsClient, cross_post_id: &str) -> Result<Vec<String>> {
+    anyhow::ensure!(cross_post_id.chars().all(|c| c.is_ascii_alphanumeric()), "Not a cross-post");
+    let (base, token) = super::teams::csa(client).await?;
+    let v: serde_json::Value = client
+        .http()
+        .get(format!("{base}/v1/teams/users/me/crossposts/{cross_post_id}"))
+        .bearer_auth(token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    Ok(v.get("successfulChannelIds")
+        .and_then(|a| a.as_array())
+        .map(|a| a.iter().filter_map(|c| c.as_str().map(str::to_string)).collect())
+        .unwrap_or_default())
+}
+
+/// One CSA cross-post request; its reply's JSON.
+async fn cross_post_request(client: &TeamsClient, method: reqwest::Method, path: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
+    let (base, token) = super::teams::csa(client).await?;
+    let resp = client.http().request(method, format!("{base}/v1/teams/{path}")).bearer_auth(token).json(body).send().await?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    anyhow::ensure!(status.is_success(), "Cross-post: {status} {}", text.chars().take(200).collect::<String>());
+    Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null))
+}
+
+/// Post a new post in its channel and others (Teams' Post in other
+/// channels: `POST {csa}/v1/teams/users/me/crossposts` {message,
+/// parentChannelId, channelIds (the others), amsStorageLocations}).
+/// Returns the post's id in its channel.
+pub async fn new_cross_post(client: &TeamsClient, message: &serde_json::Value, channel: &str, others: &[String]) -> Result<String> {
+    let v = cross_post_request(
+        client,
+        reqwest::Method::POST,
+        "users/me/crossposts",
+        &serde_json::json!({ "message": message, "parentChannelId": channel, "channelIds": others, "amsStorageLocations": {} }),
+    )
+    .await?;
+    Ok(v.get("parentMessageId").and_then(|p| p.as_str()).unwrap_or_default().to_string())
+}
+
+/// Edit a post (as Teams' post composer saves it): a cross-posted post
+/// through its cross-post (`PUT {csa}/v1/teams/users/me/crossposts/{id}`,
+/// its channels then the ones still chosen, the post's own included); a
+/// post given other channels through `POST {csa}/v1/teams/{team}/channels/
+/// {channel}/posts/{post}/crosspost`; else the chat service's PUT.
+async fn save_post_edit(
+    client: &TeamsClient,
+    url: &str,
+    chat_id: &str,
+    message_id: &str,
+    original: &serde_json::Value,
+    body: serde_json::Value,
+    x: &EditExtras,
+) -> Result<()> {
+    let cross_id = original.pointer("/properties/crossPostId").and_then(|c| c.as_str()).unwrap_or_default();
+    if !cross_id.is_empty() && cross_id.chars().all(|c| c.is_ascii_alphanumeric()) {
+        let others = match &x.cross_channels {
+            Some(c) => c.clone(),
+            None => cross_post_channels(client, cross_id).await?.into_iter().filter(|c| c != chat_id).collect(),
+        };
+        let mut channels: Vec<String> = others.into_iter().filter(|c| c != chat_id).collect();
+        channels.push(chat_id.to_string());
+        cross_post_request(
+            client,
+            reqwest::Method::PUT,
+            &format!("users/me/crossposts/{cross_id}"),
+            &serde_json::json!({ "message": cross_post_message(&body, original), "originatingChannelId": chat_id, "channelIds": channels,
+                                 "messageId": message_id, "amsStorageLocations": {}, "isAmsResourcesUpdated": false }),
+        )
+        .await?;
+        return Ok(());
+    }
+    let others: Vec<String> = x.cross_channels.clone().unwrap_or_default().into_iter().filter(|c| c != chat_id).collect();
+    if !others.is_empty() && !x.team_id.is_empty() {
+        let m = cross_post_message(&body, original);
+        cross_post_request(
+            client,
+            reqwest::Method::POST,
+            &format!("{}/channels/{}/posts/{}/crosspost", encode_component(&x.team_id), encode_component(chat_id), message_id),
+            &serde_json::json!({ "message": m, "parentChannelId": chat_id, "channelIds": others, "messageId": message_id, "amsStorageLocations": {} }),
+        )
+        .await?;
+        return Ok(());
+    }
+    client.chat_request(reqwest::Method::PUT, url, &body).await?;
+    Ok(())
+}
+
+/// encodeURIComponent.
+fn encode_component(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+/// The `<video itemtype="…/AMSVideo">…</video>` elements of `html`, in
+/// order, each with its media-store id.
+pub fn ams_video_elements(html: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let lower = html.to_ascii_lowercase();
+    let mut at = 0;
+    while let Some(i) = lower[at..].find("<video").map(|i| at + i) {
+        let Some(tag_end) = html[i..].find('>').map(|e| i + e + 1) else { break };
+        let tag = &html[i..tag_end];
+        let end = match lower[tag_end..].find("</video>") {
+            Some(e) if !tag.ends_with("/>") => tag_end + e + "</video>".len(),
+            _ => tag_end,
+        };
+        at = end;
+        if !attr(tag, "itemtype").is_some_and(|t| t.ends_with("schema.skype.com/AMSVideo")) {
+            continue;
+        }
+        let id = attr(tag, "src")
+            .and_then(|s| s.split("/v1/objects/").nth(1).map(|r| r.split('/').next().unwrap_or_default().to_string()))
+            .unwrap_or_default();
+        out.push((html[i..end].to_string(), id));
+    }
+    out
 }
 
 /// Apply `x` to an edit's body (from [`edit_body`]), as Teams' PUT carries
@@ -4234,9 +4430,34 @@ pub fn apply_edit_extras(body: &mut serde_json::Value, original: &serde_json::Va
         body["properties"]["files"] = serde_json::Value::String(serde_json::to_string(&files).unwrap_or_else(|_| "[]".into()));
     }
     let mut content = body["content"].as_str().unwrap_or_default().to_string();
+    // The message's own video clips (Teams' edit box shows them over the
+    // text): those kept go back before it, as the message had them; one
+    // taken out leaves its empty paragraph (captured 2026-11-24: "<p>&nbsp;
+    // </p><p>text</p>").
+    let original_content = original.get("content").and_then(|c| c.as_str()).unwrap_or_default();
+    let videos = ams_video_elements(original_content);
+    if !videos.is_empty() {
+        let kept: String = videos.iter().filter(|(_, id)| !x.removed_clips.contains(id)).map(|(h, _)| h.as_str()).collect();
+        // (A clip recorded in the edit already brought its paragraph.)
+        let rest = content.strip_prefix("<p>&nbsp;</p>").unwrap_or(&content).to_string();
+        content = format!("<p>&nbsp;</p>{kept}{rest}");
+    }
     let mut cards: Vec<serde_json::Value> = list("cards");
-    // The message's own Loop components stay, span and card.
-    for c in cards.iter().filter(|c| c["contentType"] == "application/vnd.microsoft.card.fluidEmbedCard") {
+    let fluid = |c: &serde_json::Value| c["contentType"] == "application/vnd.microsoft.card.fluidEmbedCard";
+    // Loop components taken out: their card and span go.
+    let removed: Vec<String> = cards
+        .iter()
+        .filter(|c| fluid(c) && c.pointer("/content/componentUrl").and_then(|u| u.as_str()).is_some_and(|u| x.removed_loops.iter().any(|r| r == u)))
+        .filter_map(|c| c["cardClientId"].as_str().map(str::to_string))
+        .collect();
+    for id in &removed {
+        content = content.replace(&super::outbox::loop_embed_span(id), "");
+        content = content.replace(&format!("<span itemtype=\"http://schema.skype.com/FluidEmbedCard\" itemid=\"{id}\"></span>"), "");
+    }
+    let cards_changed = !removed.is_empty() || x.loop_component.is_some();
+    cards.retain(|c| !(fluid(c) && c["cardClientId"].as_str().is_some_and(|id| removed.iter().any(|r| r == id))));
+    // The others stay, span and card.
+    for c in cards.iter().filter(|c| fluid(c)) {
         let id = c["cardClientId"].as_str().unwrap_or_default();
         if !id.is_empty() && !content.contains(&format!("itemid=\"{id}\"")) {
             content.push_str(&super::outbox::loop_embed_span(id));
@@ -4247,12 +4468,34 @@ pub fn apply_edit_extras(body: &mut serde_json::Value, original: &serde_json::Va
         let new: Vec<serde_json::Value> = serde_json::from_str(&super::outbox::loop_embed_cards(l)).unwrap_or_default();
         cards.extend(new);
     }
-    if x.loop_component.is_some() {
+    if cards_changed {
         body["properties"]["cards"] = serde_json::Value::String(serde_json::to_string(&cards).unwrap_or_else(|_| "[]".into()));
     }
     body["content"] = content.into();
-    if !x.ams_references.is_empty() {
-        body["amsreferences"] = serde_json::json!(x.ams_references);
+    // The media-store objects still in it, and new ones.
+    let mut ams: Vec<serde_json::Value> = body["amsreferences"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|a| !a.as_str().is_some_and(|a| x.removed_clips.iter().any(|r| r == a)))
+        .collect();
+    for a in &x.ams_references {
+        if !ams.iter().any(|v| v.as_str() == Some(a.as_str())) {
+            ams.push(a.clone().into());
+        }
+    }
+    body["amsreferences"] = serde_json::Value::Array(ams);
+    // A post's subject, who may reply, its type.
+    if let Some(s) = &x.subject {
+        body["properties"]["subject"] = s.clone().into();
+    }
+    if let Some(r) = x.reply_permission.as_ref().filter(|r| !r.is_empty()) {
+        body["properties"]["replyPermission"] = r.clone().into();
+    }
+    if x.post {
+        let announcement = list("cards").iter().any(|c| c["contentType"] == ANNOUNCEMENT_BANNER);
+        body["postType"] = if announcement { "Announcement" } else { "Standard" }.into();
     }
 }
 
@@ -4285,10 +4528,7 @@ pub async fn edit_message_with(
             .into();
     }
     apply_edit_extras(&mut body, &original, extras);
-    client
-        .chat_request(reqwest::Method::PUT, &url, &body)
-        .await?;
-    Ok(())
+    save_post_edit(client, &url, chat_id, message_id, &original, body, extras).await
 }
 
 /// Edit one of our messages to plain text, keeping its quote.
@@ -5746,7 +5986,7 @@ mod quote_tests {
             removed_files: vec!["https://x/Documents/b.loop".into()],
             added_files: vec![added.clone()],
             loop_component: Some(super::super::outbox::LoopEmbed { component_url: "https://x/:fl:/p/l".into(), card_client_id: "54be7bb7".into() }),
-            ams_references: vec![],
+            ..Default::default()
         });
         assert_eq!(b["properties"]["importance"], "high");
         let files: Vec<serde_json::Value> = serde_json::from_str(b["properties"]["files"].as_str().unwrap()).unwrap();
@@ -5754,7 +5994,9 @@ mod quote_tests {
         assert_eq!(b["content"], "<p>OST TEST 95 from the TUI</p> \n        <span itemtype=\"http://schema.skype.com/FluidEmbedCard\" itemid=\"54be7bb7\"></span>");
         let cards: serde_json::Value = serde_json::from_str(b["properties"]["cards"].as_str().unwrap()).unwrap();
         assert_eq!(cards[0]["content"]["sourceType"], "Compose");
-        assert!(b.get("amsreferences").is_none());
+        assert_eq!(b["amsreferences"], serde_json::json!([]));
+        assert_eq!(b["crossPostChannels"], serde_json::json!([]));
+        assert!(b.get("postType").is_none());
         // Nothing chosen: the message's own option and files stay; its Loop
         // keeps its span.
         let with_loop = serde_json::json!({
@@ -5766,6 +6008,77 @@ mod quote_tests {
         assert_eq!(b["properties"]["importance"], "high");
         assert_eq!(b["properties"]["files"], "[]");
         assert!(b["content"].as_str().unwrap().starts_with("<p>y</p> \n        <span") && b["content"].as_str().unwrap().contains("itemid=\"c1\""));
+    }
+
+    #[test]
+    fn edit_keeps_or_drops_clips_and_loops_as_teams() {
+        // "OST TEST 263 edit tools" (ost-test1's own chat, 2026-11-24): a
+        // clip over the text and a Loop component; Teams' PUTs after taking
+        // out the clip, then the Loop component.
+        let video = "<video src=\"https://us-api.asm.skype.com/v1/objects/0-wus-d10-abc/views/video\" cardId=\"3fa8\" itemscope itemtype=\"http://schema.skype.com/AMSVideo\" data-duration=\"PT3S\" width=\"1280\" height=\"720\">Video-Clip</video>";
+        let span = super::super::outbox::loop_embed_span("a2e1");
+        let card = serde_json::json!([{"appId": "FluidEmbedCard", "cardClientId": "a2e1", "contentType": "application/vnd.microsoft.card.fluidEmbedCard",
+                                       "content": {"componentUrl": "https://x/:fl:/p/l?nav=1", "sourceType": "Compose"}}]);
+        let original = serde_json::json!({
+            "id": "1795469892557", "conversationid": "48:notes",
+            "content": format!("<p>&nbsp;</p>{video}<p>OST TEST 263 edit tools</p>{span}"),
+            "amsreferences": ["0-wus-d10-abc"],
+            "properties": {"importance": "", "files": "[]", "cards": card.to_string()}
+        });
+        assert_eq!(ams_video_elements(original["content"].as_str().unwrap()), vec![(video.to_string(), "0-wus-d10-abc".to_string())]);
+        // Nothing taken out: clip and Loop stay where they were.
+        let mut b = edit_body(&original, "<p>OST TEST 263 edit tools</p>", None, 1);
+        apply_edit_extras(&mut b, &original, &EditExtras::default());
+        assert_eq!(b["content"], format!("<p>&nbsp;</p>{video}<p>OST TEST 263 edit tools</p>{span}"));
+        assert_eq!(b["amsreferences"], serde_json::json!(["0-wus-d10-abc"]));
+        // The clip taken out: its empty paragraph stays.
+        let mut b = edit_body(&original, "<p>OST TEST 263 edit tools</p>", None, 1);
+        apply_edit_extras(&mut b, &original, &EditExtras { removed_clips: vec!["0-wus-d10-abc".into()], ..Default::default() });
+        assert_eq!(b["content"], format!("<p>&nbsp;</p><p>OST TEST 263 edit tools</p>{span}"));
+        assert_eq!(b["amsreferences"], serde_json::json!([]));
+        assert_eq!(b["properties"]["cards"], card.to_string());
+        // Both taken out.
+        let mut b = edit_body(&original, "<p>OST TEST 263 edit tools</p>", None, 1);
+        apply_edit_extras(&mut b, &original, &EditExtras {
+            removed_clips: vec!["0-wus-d10-abc".into()], removed_loops: vec!["https://x/:fl:/p/l?nav=1".into()], ..Default::default()
+        });
+        assert_eq!(b["content"], "<p>&nbsp;</p><p>OST TEST 263 edit tools</p>");
+        assert_eq!(b["properties"]["cards"], "[]");
+    }
+
+    #[test]
+    fn post_edit_as_teams_post_composer() {
+        // "OST TEST 265 plain post" (OST test channel, 2026-11-24): Change
+        // permissions to You and moderators, saved with Post.
+        let original = serde_json::json!({
+            "id": "1795481657152", "conversationid": "19:782662e702f14fa7b33f95096b357dd8@thread.tacv2",
+            "from": "https://x/v1/users/ME/contacts/8:orgid:me", "composetime": "2026-11-24T00:54:17.152Z",
+            "originalarrivaltime": "2026-11-24T00:54:17.152Z", "content": "<p>Plain post for the edit test.</p>",
+            "properties": {"importance": "", "subject": "OST TEST 265 plain post", "title": "", "files": "[]", "cards": "[]"}
+        });
+        let mut b = edit_body(&original, "<p>Plain post for the edit test.</p>", None, 1795481734982);
+        assert_eq!(b["properties"]["subject"], "OST TEST 265 plain post");
+        apply_edit_extras(&mut b, &original, &EditExtras {
+            subject: Some("OST TEST 265 plain post (edited)".into()), reply_permission: Some("AuthorAndOwners".into()), post: true, ..Default::default()
+        });
+        assert_eq!(b["properties"]["subject"], "OST TEST 265 plain post (edited)");
+        assert_eq!(b["properties"]["replyPermission"], "AuthorAndOwners");
+        assert_eq!(b["properties"]["policyViolation"], serde_json::Value::Null);
+        assert_eq!(b["postType"], "Standard");
+        assert_eq!(b["crossPostChannels"], serde_json::json!([]));
+        // Its cross-post form (the message in Teams' crosspost calls).
+        let m = cross_post_message(&b, &original);
+        assert_eq!(m["conversationLink"], "conversation/19:782662e702f14fa7b33f95096b357dd8@thread.tacv2;messageid=1795481657152");
+        assert_eq!(m["version"], "1795481734982");
+        assert_eq!(m["fromUserId"], "8:orgid:me");
+        assert!(m.get("crossPostChannels").is_none());
+        // A cross-posted post keeps its cross-post and permission.
+        let mut crossed = original.clone();
+        crossed["properties"]["crossPostId"] = "3ab611bfee5f4f9e8d127c572640c7a7".into();
+        crossed["properties"]["replyPermission"] = "AuthorAndOwners".into();
+        let b = edit_body(&crossed, "<p>x</p>", None, 2);
+        assert_eq!(b["properties"]["crossPostId"], "3ab611bfee5f4f9e8d127c572640c7a7");
+        assert_eq!(b["properties"]["replyPermission"], "AuthorAndOwners");
     }
 
     #[test]

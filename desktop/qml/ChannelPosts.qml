@@ -466,7 +466,8 @@ Item {
                         id: postEdit
                         active: !!card.post && !!root.host && root.host.editingId === card.post.id
                         x: 0; y: 0; width: card.width
-                        sourceComponent: editComponent
+                        // (A post: Teams' post composer.)
+                        sourceComponent: card.post && card.post.kind !== "call" ? postEditComponent : editComponent
                         onLoaded: item.message = card.post
                     }
                     // Teams' hover bar, inside the card 10 from its end and 11
@@ -936,6 +937,32 @@ Item {
             editTeamName: root.host ? root.host.teamName : ""
             onSubmit: {
                 backend.editMessageWith(message.id, formattedText(), quote ? JSON.stringify(quote) : "", JSON.stringify(mediaInUse()), editExtras())
+                editSent()
+                root.host.editingId = ""
+            }
+            onCancelled: root.host.editingId = ""
+        }
+    }
+    // A post's edit: Teams' post composer in the card's place (measured on
+    // winpc 2026-11-24, TASK-0265): its subject, Change permissions and
+    // Post in other channels; Post saves it.
+    Component {
+        id: postEditComponent
+        ComposeBox {
+            id: pbox
+            property var message: null
+            editing: true
+            post: true
+            onMessageChanged: if (message) { setMessage(message); focusEditor() }
+            onEmojiRequested: a => root.host.openEmojiFor(pbox)
+            onSettingsRequested: root.host.openChatSettings()
+            canRecordClip: root.host ? root.host.canRecordClip : false
+            onRecordClipRequested: if (root.host) root.host.recordClipFor(pbox)
+            chatTitle: root.host ? root.host.chatName : ""
+            editTeamId: root.host ? root.host.teamId : ""
+            editTeamName: root.host ? root.host.teamName : ""
+            onSubmit: {
+                backend.editMessageWith(message.id, formattedText(), "", JSON.stringify(mediaInUse()), editExtras())
                 editSent()
                 root.host.editingId = ""
             }

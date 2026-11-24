@@ -19,6 +19,11 @@ Item {
     property string teamId: ""
     property string teamName: ""
     property string chatName: ""
+    /// An edit box here may record a video clip (its "+"); the recorder
+    /// fills the box that asked.
+    property bool canRecordClip: false
+    signal recordClipRequestedFor(Item box)
+    function recordClipFor(box) { recordClipRequestedFor(box) }
     /// The conversation's id (Share to Outlook), and whether it is your
     /// notes-to-self chat.
     property string chatId: backend.currentChatId

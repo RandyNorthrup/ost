@@ -21,7 +21,12 @@ import QtQuick.Controls.Basic
 // - Until something is picked: Teams' picture (192, centred in the rest)
 //   and "When you select a thread, it'll show up here" / "When you select a
 //   saved item, it'll show up here." (16 bold) 212 under its top.
-// Picking a row opens its chat or channel beside the list.
+// Picking a row opens its chat or channel beside the list; a channel's
+// post opens as Teams' single-thread view there (Main's PostThread,
+// TASK-0265). With that view's Copilot open the list takes the chat list's
+// place (`compact`, measured on winpc 2026-11-24): 320 wide, "Return to
+// list" (32 x 31.3, 20 in, 14.3 down) before the title (at 64) and a line
+// under the header (4 in, 60 down).
 Rectangle {
     id: root
     /// "followed" or "saved".
@@ -31,7 +36,9 @@ Rectangle {
     property string selectedKey: ""
     property string chip: ""
     signal openItem(var item)
-    readonly property real paneWidth: 380
+    property bool compact: false
+    readonly property real paneWidth: compact ? 320 : 380
+    signal backRequested()
     readonly property bool followed: kind === "followed"
     readonly property var teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
     readonly property var shown: items.filter(i => !chip
@@ -85,8 +92,21 @@ Rectangle {
         width: root.paneWidth; height: parent.height
         color: theme.surface
         Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: theme.dividerSoft }
+        Rectangle {
+            id: backButton
+            visible: root.compact
+            x: 20; y: 14.3; width: 32; height: 31.3; radius: 4
+            color: backHover.hovered ? theme.hover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: "arrow-left-20"; size: 20; color: theme.onFill(backButton, backHover.hovered ? theme.brand : theme.textStrong) }
+            HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.backRequested() }
+            ToolTip.visible: backHover.hovered; ToolTip.delay: 500; ToolTip.text: qsTr("Return to list")
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("Return to list")
+        }
+        Rectangle { visible: root.compact; x: 4; y: 60; width: parent.width - 4; height: 0.67; color: theme.divider }
         Text {
-            x: 32; y: 19
+            x: root.compact ? 64 : 32; y: 19
             text: root.followed ? qsTr("Followed threads") : qsTr("Saved")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
             lineHeight: 22; lineHeightMode: Text.FixedHeight
@@ -153,8 +173,9 @@ Rectangle {
                 }
                 Row {
                     x: 80; y: 10; spacing: 6
-                    Text { text: root.titleOf(row.modelData); width: Math.min(implicitWidth, 190); elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(hcFill1, theme.text) }
+                    Text { text: root.titleOf(row.modelData); width: Math.min(implicitWidth, root.paneWidth - 190, root.paneWidth - 80 - 32 - 64 - (repliesLabel.visible ? repliesLabel.implicitWidth + 6 : 0)); elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(hcFill1, theme.text) }
                     Text {
+                        id: repliesLabel
                         visible: root.followed
                         anchors.verticalCenter: parent.verticalCenter
                         text: "· " + row.modelData.replies + (row.modelData.replies === 1 ? " reply" : " replies")
@@ -189,7 +210,7 @@ Rectangle {
                 // Unfollow thread and More options.
                 Row {
                     visible: !root.followed || rh.hovered
-                    x: 292; y: 9.6; spacing: 8
+                    x: root.paneWidth - 88; y: 9.6; spacing: 8
                     Rectangle {
                         id: hcFill2
                         width: 24; height: 23.3; radius: 4

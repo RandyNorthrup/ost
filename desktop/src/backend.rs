@@ -6576,6 +6576,9 @@ struct NextPost {
     image_h: u32,
     /// A message in a Threads-layout channel (no post type).
     threads: bool,
+    /// Change permissions ("AuthorAndOwners") and Post in other channels.
+    reply_permission: String,
+    cross_post: Vec<String>,
 }
 
 impl NextPost {
@@ -6591,6 +6594,12 @@ impl NextPost {
             image_w: n("imageWidth"),
             image_h: n("imageHeight"),
             threads: v.get("threads").and_then(|x| x.as_bool()).unwrap_or(false),
+            reply_permission: f("replyPermission"),
+            cross_post: v
+                .get("crossPost")
+                .and_then(|x| x.as_array())
+                .map(|a| a.iter().filter_map(|c| c.as_str().map(str::to_string)).filter(|c| c.ends_with("@thread.tacv2")).collect())
+                .unwrap_or_default(),
         })
     }
 }
@@ -15268,6 +15277,9 @@ impl qobject::Backend {
     ) {
         let id = message_id.to_string();
         let x: serde_json::Value = serde_json::from_str(&extras_json.to_string()).unwrap_or_default();
+        let strs = |v: &serde_json::Value, k: &str| -> Vec<String> {
+            v.get(k).and_then(|a| a.as_array()).map(|a| a.iter().filter_map(|s| s.as_str().map(str::to_string)).collect()).unwrap_or_default()
+        };
         let media: Vec<api::messages::ComposeMedia> =
             serde_json::from_str(&media_json.to_string()).unwrap_or_default();
         let (mut html, mentions) =
@@ -15285,6 +15297,17 @@ impl qobject::Backend {
                 .get("loop")
                 .and_then(|l| serde_json::from_value::<api::outbox::LoopEmbed>(l.clone()).ok())
                 .filter(|l| !l.component_url.is_empty() && !l.card_client_id.is_empty()),
+            // The message's own Loop components and clips taken out, and a
+            // post's composer fields (TASK-0265).
+            removed_loops: strs(&x, "removedLoops"),
+            removed_clips: strs(&x, "removedClips"),
+            subject: x.get("subject").and_then(|v| v.as_str()).map(|s| s.trim().chars().take(250).collect()),
+            reply_permission: x.get("replyPermission").and_then(|v| v.as_str()).filter(|v| matches!(*v, "Everyone" | "AuthorAndOwners")).map(str::to_string),
+            post: x.get("post").and_then(|v| v.as_bool()).unwrap_or(false),
+            cross_channels: x.get("crossChannels").and_then(|v| v.as_array()).map(|a| {
+                a.iter().filter_map(|c| c.as_str()).filter(|c| c.ends_with("@thread.tacv2")).map(str::to_string).collect()
+            }),
+            team_id: x.get("teamId").and_then(|v| v.as_str()).filter(|t| t.ends_with("@thread.tacv2")).unwrap_or_default().to_string(),
             ..Default::default()
         };
         // A clip recorded in the edit goes before the text, as a send puts
@@ -16778,6 +16801,8 @@ impl qobject::Backend {
                 .map(|c| (c, api::link_unfurl::new_card_client_id())),
             bot_message_back: false,
             loop_component: None,
+            reply_permission: String::new(),
+            cross_post_channels: Vec::new(),
         }
     }
 
@@ -17780,6 +17805,10 @@ impl qobject::Backend {
         }
         o.subject = p.subject.trim().chars().take(250).collect();
         o.threads_layout = p.threads;
+        if !p.threads {
+            o.reply_permission = p.reply_permission;
+            o.cross_post_channels = p.cross_post.into_iter().filter(|c| *c != o.conversation_id).collect();
+        }
         if !p.threads && !p.theme.is_empty() && p.theme.parse::<u8>().is_ok_and(|t| t < 12) {
             o.title = p.title.trim().chars().take(44).collect();
             o.banner_theme = Some(p.theme);
@@ -21412,6 +21441,12 @@ impl qobject::Backend {
                         let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
                         Ok(api::team_create::join_by_code(&client, a["code"].as_str().unwrap_or_default()).await?)
                     }
+                    // A cross-posted post's channels (its post composer's
+                    // chips): {crossPostId, channels}.
+                    "cross-post-channels" => {
+                        let channels = api::messages::cross_post_channels(&client, &arg).await?;
+                        Ok(json!({ "crossPostId": arg, "channels": channels }))
+                    }
                     _ => anyhow::bail!("Unknown channel action"),
                 }
             }
@@ -21803,6 +21838,33 @@ impl qobject::Backend {
                     let r = async { api::loop_page::compose_discard(&TeamsClient::new().await?, &s("driveId"), &s("itemId")).await }.await;
                     if let Err(e) = &r {
                         tracing::warn!("discarding the Loop component failed: {}", short_error(e));
+                    }
+                    json!({ "ok": r.is_ok() }).to_string()
+                }
+                // A message's own Loop component in its edit box: its name
+                // and its link ({description, scope, edit}).
+                "editLoopInfo" => {
+                    let r = async {
+                        let client = TeamsClient::new().await?;
+                        let name = api::loop_page::page_name(&client, &s("url")).await.unwrap_or_default();
+                        let link = api::loop_page::link_description(&client, &s("url")).await.unwrap_or_default();
+                        anyhow::Ok(json!({ "name": name, "link": link }))
+                    }
+                    .await;
+                    r.unwrap_or_else(|e| json!({ "error": short_error(&e) })).to_string()
+                }
+                // A message's own Loop component discarded in its edit box:
+                // Teams deletes its file at once (`DELETE graph/v1.0/drives/
+                // {d}/items/{i}`, captured 2026-11-24).
+                "composeDiscardUrl" => {
+                    let r = async {
+                        let client = TeamsClient::new().await?;
+                        let page = api::tab_add::resolve_page_link(&client, &s("url")).await?;
+                        api::loop_page::compose_discard(&client, &page.drive_id, &page.item_id).await
+                    }
+                    .await;
+                    if let Err(e) = &r {
+                        tracing::warn!("discarding the message's Loop component failed: {}", short_error(e));
                     }
                     json!({ "ok": r.is_ok() }).to_string()
                 }

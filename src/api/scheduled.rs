@@ -215,6 +215,8 @@ mod tests {
             app_card: None,
             bot_message_back: false,
             loop_component: None,
+            reply_permission: String::new(),
+            cross_post_channels: Vec::new(),
         }
     }
 

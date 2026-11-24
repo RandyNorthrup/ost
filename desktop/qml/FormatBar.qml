@@ -17,6 +17,8 @@ Item {
     /// The channel post composer's bar (measured): Announcement after Code
     /// block, no Discard, the whole 490 for the buttons.
     property bool post: false
+    /// (A post's edit has no Announcement, measured 2026-11-24.)
+    property bool announcementButton: true
     /// Discard at the end (not in Teams' share dialog's bar, which keeps
     /// the same 458 for its buttons).
     property bool discard: true
@@ -35,7 +37,7 @@ Item {
     readonly property var groups: {
         if (custom) return custom
         const g = baseGroups.slice()
-        if (post) g.splice(4, 0, [{ k: "announcement", icon: "fmt-announcement", label: qsTr("Announcement") }])
+        if (post && announcementButton) g.splice(4, 0, [{ k: "announcement", icon: "fmt-announcement", label: qsTr("Announcement") }])
         return g
     }
     readonly property var baseGroups: [

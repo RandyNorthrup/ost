@@ -41,6 +41,15 @@ import QtQuick.Dialogs
 //   the video glyph (20, #616161) at (18, 16), the time and "Meeting ended:
 //   <b>duration</b>" (12/16) at 54, 14 down.
 // - "Reply in thread": Teams' compose at the bottom.
+// - From Followed threads (`slice`, measured on winpc 2026-11-24, TASK-0265)
+//   the view is the 512 wide place beside the list: no Find in post, and
+//   Copilot is More's first item ("Copilot", Alt+C) until it is open (then
+//   the button, brand, before More); More is Copilot and Follow/Unfollow
+//   thread. Elsewhere More is Find in post (when it isn't inline), Follow
+//   / Unfollow thread and View Copilot history (Teams' viewSummaryHistory:
+//   its own Copilot's history for the post, in the Copilot pane's place),
+//   with no divider. The header's second line is the post's subject
+//   ("Post by {author}" without one). Under 640 wide the card is 30 in.
 // The view stays on its thread (the backend keeps it loaded and live).
 Item {
     id: win
@@ -52,6 +61,8 @@ Item {
     property string myName: ""
     /// In the channel's pane (Teams' post view) rather than a window.
     property bool inPane: false
+    /// Opened from Followed threads.
+    property bool slice: false
     signal goToChannel()
     signal popOut()
     /// A meeting end's Attendance card: the meeting's organizer, its post
@@ -68,7 +79,10 @@ Item {
     property bool copilotOpen: false
     onRootIdChanged: copilotOpen = false
     onCopilotAvailableChanged: if (!copilotAvailable) copilotOpen = false
-    onCopilotOpenChanged: if (copilotOpen) { finding = false; viewingFound = false }
+    onCopilotOpenChanged: if (copilotOpen) { finding = false; viewingFound = false; historyOpen = false }
+    /// View Copilot history's pane (in Copilot's place).
+    property bool historyOpen: false
+    onHistoryOpenChanged: if (historyOpen) { copilotOpen = false; finding = false; viewingFound = false }
     function toggleCopilot() {
         if (!copilotAvailable) return
         copilotOpen = !copilotOpen
@@ -85,8 +99,8 @@ Item {
     }
     // Copilot's pane beside the post, or over all of it when there is no
     // room for both.
-    readonly property bool copilotCovers: copilotOpen && width - 360 < 320
-    readonly property real paneW: copilotOpen && !copilotCovers ? 360 : 0
+    readonly property bool copilotCovers: (copilotOpen || historyOpen) && width - 360 < 320
+    readonly property real paneW: (copilotOpen || historyOpen) && !copilotCovers ? 360 : 0
     readonly property real viewW: width - paneW
     readonly property bool findInline: viewW >= 640
     // Teams shows a channel meeting's Attendance card to its organizer
@@ -113,7 +127,7 @@ Item {
     function senderOf(m) { return !m ? "" : m.sender || peopleNames[m.sender_mri] || "" }
     onPostChanged: if (post && !post.sender && post.sender_mri && !peopleNames[post.sender_mri]) backend.resolveNames(JSON.stringify([post.sender_mri]))
     // The card: the channel's width in the pane, 30 in in the window.
-    readonly property real cardW: inPane ? Math.min(1100, viewW - 2 * (viewW > 480 ? 88 : 16)) : viewW - 62
+    readonly property real cardW: inPane ? Math.min(1100, viewW - 2 * (viewW >= 640 ? 88 : 30)) : viewW - 62
     readonly property real cardX: inPane ? (viewW - cardW) / 2 : 30
     // Find in post: Teams' find pane over the window (under its title
     // row). A result opens in the thread with the terms marked; Escape goes
@@ -188,7 +202,7 @@ Item {
         Text {
             x: 62; y: 31.7
             width: toolbar.x - x - 8; elide: Text.ElideRight
-            text: win.post ? qsTr("Post by %1").arg(win.senderOf(win.post)) : ""
+            text: !win.post ? "" : win.post.subject ? win.post.subject : qsTr("Post by %1").arg(win.senderOf(win.post))
             font.family: theme.font; font.pixelSize: 12
             lineHeight: 16; lineHeightMode: Text.FixedHeight
             color: theme.textSecondary
@@ -230,7 +244,7 @@ Item {
             // Open / Close Copilot (channel-copilot-button).
             Rectangle {
                 id: copilotButton
-                visible: win.copilotAvailable
+                visible: win.copilotAvailable && (!win.slice || win.copilotOpen)
                 width: 32; height: 32; radius: 4
                 color: copilotHover.hovered ? theme.hover : "transparent"
                 FluentIcon { anchors.centerIn: parent; name: win.copilotOpen ? "copilot-filled-48" : "ai-copilot"; size: 20; color: theme.onFill(copilotButton, win.copilotOpen ? theme.brand : theme.textStrong) }
@@ -244,7 +258,7 @@ Item {
             // only while finding (brand, as the side pane's toggle).
             Rectangle {
                 id: hcFill3
-                visible: win.finding || win.findInline
+                visible: !win.slice && (win.finding || win.findInline)
                 width: 32; height: 32; radius: 4
                 color: findToggleHover.hovered ? theme.hover : "transparent"
                 FluentIcon { anchors.centerIn: parent; name: "search-20"; size: 20; color: theme.onFill(hcFill3, win.finding ? theme.brand : theme.textStrong) }
@@ -269,23 +283,25 @@ Item {
     MenuPopup {
         id: moreMenu
         margins: 8
-        items: (win.findInline ? [] : [
-            { key: "find", label: qsTr("Find in post"), icon: "search-20", keys: "Ctrl+F" },
-            { separator: true }]).concat([
-            win.post && win.post.following
+        items: (win.slice ? (win.copilotAvailable && !win.copilotOpen ? [{ key: "copilot", label: qsTr("Copilot"), icon: "ai-copilot", keys: "Alt+C" }] : [])
+                : win.findInline ? [] : [{ key: "find", label: qsTr("Find in post"), icon: "search-20", keys: "Ctrl+F" }]).concat([
+            win.post && (win.post.following || (win.slice && win.post.follow_explicit !== false))
                 ? { key: "unfollow", label: qsTr("Unfollow thread"), icon: "chat-multiple-minus-20" }
                 : { key: "follow", label: qsTr("Follow thread"), icon: "chat-multiple-20" }
-        ])
+        ]).concat(win.slice || !win.copilotAvailable ? [] : [{ key: "history", label: qsTr("View Copilot history"), icon: "history-20" }])
         onPicked: i => {
             const k = items[i].key
             if (k === "find") win.toggleFind()
+            else if (k === "copilot") win.toggleCopilot()
+            else if (k === "history") win.historyOpen = true
             else if (win.post) backend.setThreadFollowing(win.post.id, k === "follow")
         }
     }
-    Shortcut { sequence: "Ctrl+F"; onActivated: win.toggleFind() }
+    Shortcut { sequence: "Ctrl+F"; enabled: !win.slice; onActivated: win.toggleFind() }
     Shortcut { sequence: "Alt+C"; enabled: win.visible && win.copilotAvailable && !!win.rootId; onActivated: win.toggleCopilot() }
-    function toggleFind() { if (finding && viewingFound) { viewingFound = false; return } finding = !finding; viewingFound = false; if (finding) copilotOpen = false; if (!finding) findMark = { id: "", terms: [] } }
+    function toggleFind() { if (finding && viewingFound) { viewingFound = false; return } finding = !finding; viewingFound = false; if (finding) { copilotOpen = false; historyOpen = false } if (!finding) findMark = { id: "", terms: [] } }
     function copilotForTest() { return copilotPane }
+    function moreItemsForTest() { const r = moreMenu.opened ? moreMenu.items.map(i => [i.label, i.keys || ""]) : null; moreMenu.close(); return r }
     CopilotPane {
         id: copilotPane
         z: 6
@@ -297,6 +313,16 @@ Item {
         onClosed: win.copilotOpen = false
         onOpenLink: url => win.openCopilotLink(url)
     }
+    CopilotHistoryPane {
+        id: historyPane
+        z: 6
+        visible: win.historyOpen && !!win.rootId
+        x: win.copilotCovers ? 0 : win.width - width; y: 0
+        width: !visible ? 0 : win.copilotCovers ? win.width : 360
+        height: win.height
+        onClosed: win.historyOpen = false
+    }
+    function historyForTest() { return historyPane }
     /// A Source the app opened: a message of this post scrolls to it (the
     /// pane stays); anything else goes where the window's links go.
     function openCopilotLink(url) {
@@ -433,7 +459,8 @@ Item {
                         id: postEdit
                         active: postItem.editing
                         x: 0; y: 0; width: card.width
-                        sourceComponent: editComponent
+                        // (A post: Teams' post composer.)
+                        sourceComponent: win.meetingPost ? editComponent : postEditComponent
                         onLoaded: item.message = postItem.m
                     }
                     HoverHandler { id: postHover }
@@ -627,6 +654,28 @@ Item {
             editTeamId: win.teamId; editTeamName: win.teamName
             onSubmit: {
                 backend.editMessageWith(message.id, formattedText(), quote ? JSON.stringify(quote) : "", JSON.stringify(mediaInUse()), editExtras())
+                editSent()
+                thost.editingId = ""
+            }
+            onCancelled: thost.editingId = ""
+        }
+    }
+
+    // A post's edit: Teams' post composer (TASK-0265).
+    Component {
+        id: postEditComponent
+        ComposeBox {
+            id: pbox
+            property var message: null
+            editing: true
+            post: true
+            onMessageChanged: if (message) { setMessage(message); focusEditor() }
+            onEmojiRequested: a => thost.openEmojiFor(pbox)
+            chatId: win.channelId
+            chatTitle: win.channelName
+            editTeamId: win.teamId; editTeamName: win.teamName
+            onSubmit: {
+                backend.editMessageWith(message.id, formattedText(), "", JSON.stringify(mediaInUse()), editExtras())
                 editSent()
                 thost.editingId = ""
             }

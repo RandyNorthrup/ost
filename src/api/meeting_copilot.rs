@@ -151,6 +151,10 @@ pub fn launch(m: &Meeting) -> Value {
             "entityId": format!("entity1-{}", uuid::Uuid::new_v4()),
             "frameContext": "sidePanel",
             "renderingSurface": "copilotSidePanel",
+            // Teams' appIconPosition for the Copilot side panel (-17 in
+            // every capture: chat, meeting, channel thread, post view and
+            // its window; winpc 2026-11-21..24).
+            "appIconPosition": -17,
             "isFullScreen": true,
             "userLicenseType": "Copilot",
             "mySiteDomain": m.my_site,
@@ -541,6 +545,7 @@ mod tests {
         let sub: Value = serde_json::from_str(&sub_entity_id(&m)).unwrap();
         assert_eq!(sub["hostSettings"]["focusOnLoad"], "Compose");
         assert_eq!(launch(&m)["context"]["renderingSurface"], "copilotSidePanel");
+        assert_eq!(launch(&m)["context"]["appIconPosition"], -17);
     }
     #[test]
     fn search_launch_anchors_on_the_session() {

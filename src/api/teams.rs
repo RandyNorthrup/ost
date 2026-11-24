@@ -583,7 +583,7 @@ pub struct TagList {
 }
 
 /// Teams' CSA base for the region and its token.
-async fn csa(client: &TeamsClient) -> Result<(String, String)> {
+pub(crate) async fn csa(client: &TeamsClient) -> Result<(String, String)> {
     let token = crate::auth::oauth::access_token_for("https://chatsvcagg.teams.microsoft.com/.default").await?;
     let region = client
         .chat_service_url()

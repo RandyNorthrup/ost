@@ -74,7 +74,11 @@ Popup {
     /// Item rows this tall (Teams' Write with Copilot Adjust menu: 38);
     /// 0 keeps the default.
     property real rowHeight: 0
-    function rowLabelX(i) { return radioColumn ? 52 : i.tag ? 56 : checkColumn ? (i.icon ? 54 : 30) : perItemIcons ? (i.icon ? 30 : 6) : labelX }
+    /// A radio column's label (52 after icons; 28 in Teams' post composer
+    /// menus, which have none) and the rows' gap (none in those menus).
+    property real radioLabelX: 52
+    property real rowSpacing: fabric ? 0 : 2
+    function rowLabelX(i) { return radioColumn ? radioLabelX : i.tag ? 56 : checkColumn ? (i.icon ? 54 : 30) : perItemIcons ? (i.icon ? 30 : 6) : labelX }
     /// OneDrive's viewer menus (Preview's Share ▾ and ···): a dark Fabric
     /// callout, #1B1A19, padding 4, rows 36 tall with radius 2, #F3F2F1.
     property bool darkCallout: false
@@ -226,7 +230,7 @@ Popup {
         if (rows.length) hoverRow(i, rows[0], "chevron")
     }
     contentItem: Column {
-        spacing: root.fabric ? 0 : 2
+        spacing: root.rowSpacing
         Loader {
             active: !!root.header
             visible: active

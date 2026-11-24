@@ -23,6 +23,10 @@ Rectangle {
     /// the page's name, then Pin for everyone and the message's three
     /// buttons, which fold into "More actions" ··· when the card is narrow).
     property string mode: "message"
+    /// "edit": a message's own component in its edit box (measured
+    /// 2026-11-24): the compose header (the link's description, Discard)
+    /// over the component as it is.
+    readonly property bool composeHeader: mode === "compose" || mode === "edit"
     signal pinRequested()
     signal copyLinkRequested()
     function copyLink() { copyLinkRequested() }
@@ -68,7 +72,7 @@ Rectangle {
         Rectangle {
             id: nameButton
             x: 22; y: 12; height: 28
-            width: Math.min(nameRow.implicitWidth + 6, header.width - 22 - (root.mode === "compose" ? 60 : root.mode === "embed" ? headerButtons.width + 26 : 130))
+            width: Math.min(nameRow.implicitWidth + 6, header.width - 22 - (root.composeHeader ? 60 : root.mode === "embed" ? headerButtons.width + 26 : 130))
             radius: 4
             color: nameHover.hovered ? theme.rowHover : "transparent"
             Row {
@@ -77,7 +81,7 @@ Rectangle {
                 Image { anchors.verticalCenter: parent.verticalCenter; width: 20; height: 20; sourceSize: Qt.size(40, 40); source: "../assets/icons/ft-loop-20.svg" }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    width: Math.min(implicitWidth, header.width - 22 - 34 - (root.mode === "compose" ? 260 : root.mode === "embed" ? headerButtons.width + 26 : 130))
+                    width: Math.min(implicitWidth, header.width - 22 - 34 - (root.composeHeader ? 260 : root.mode === "embed" ? headerButtons.width + 26 : 130))
                     elide: Text.ElideRight
                     text: root.name || qsTr("Loop paragraph")
                     lineHeight: 16; lineHeightMode: Text.FixedHeight
@@ -93,13 +97,13 @@ Rectangle {
         }
         // Compose: the link's description after a line.
         Rectangle {
-            visible: root.mode === "compose" && (root.description || root.linking)
+            visible: root.composeHeader && (root.description || root.linking)
             x: nameButton.x + nameButton.width + 8; y: 16; width: 0.67; height: 20
             color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF")
         }
         Text {
             id: desc
-            visible: root.mode === "compose"
+            visible: root.composeHeader
             x: nameButton.x + nameButton.width + 16.7; y: 13.3
             width: Math.min(implicitWidth, header.width - x - 60)
             elide: Text.ElideRight
@@ -115,9 +119,9 @@ Rectangle {
         Row {
             id: headerButtons
             anchors { right: parent.right; rightMargin: root.mode === "embed" ? 16 : 18 }
-            y: root.mode === "compose" ? 10.4 : 10.3
+            y: root.composeHeader ? 10.4 : 10.3
             readonly property bool full: root.mode === "message" || (root.mode === "embed" && !root.narrow)
-            HeaderButton { visible: root.mode === "compose"; icon: "delete-20"; tip: qsTr("Discard"); onClicked: root.discardRequested() }
+            HeaderButton { visible: root.composeHeader; icon: "delete-20"; tip: qsTr("Discard"); onClicked: root.discardRequested() }
             HeaderButton { visible: root.mode === "embed"; icon: "pin-20"; tip: qsTr("Pin for everyone", "messaging:k4e5qoudc"); onClicked: root.pinRequested() }
             HeaderButton { visible: headerButtons.full; icon: "apps"; tip: qsTr("Shared locations"); onClicked: locations.open() }
             HeaderButton { visible: headerButtons.full; icon: "select-object-20"; tip: qsTr("Copy component"); onClicked: root.copyLink() }
@@ -158,7 +162,7 @@ Rectangle {
         // component is inserted).
         active: root.live && !root.resetting && (root.mode === "compose" || root.componentUrl.length > 0)
         sourceComponent: LoopPage {
-            kind: root.mode === "embed" ? "message" : root.mode
+            kind: root.mode === "embed" || root.mode === "edit" ? "message" : root.mode
             create: root.mode === "compose"
             channel: root.conversation
             componentUrl: root.mode === "compose" ? "" : root.componentUrl
