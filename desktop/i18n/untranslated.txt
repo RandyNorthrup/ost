@@ -44,7 +44,7 @@
 "%1, sorted descending"		OneDriveView.qml:1221	
 "%1: %2. %3: %4."		AgendaTimerRow.qml:469	
 "%1m %2s"		MeetingRecapsView.qml:1277	
-"%n bytes"		MeetingForm.qml:3378	
+"%n bytes"		MeetingForm.qml:3381	
 "%n days before"		OutlookEmailReminder.qml:42	
 "%n hours before"		OutlookEmailReminder.qml:41	
 "%n mention(s) of you"		MeetingRecapsView.qml:1690	
@@ -128,8 +128,8 @@
 "Calls merged"		backend.rs:14049	
 "Camera settings"		CameraSettingsDialog.qml:37	
 "Cameras"		ContentCameraDialog.qml:450	
-"Canceled: %1"		ScheduledMeetingCard.qml:76	
-"Cancelled."		ScheduledMeetingCard.qml:135	
+"Canceled: %1"		ScheduledMeetingCard.qml:81	
+"Cancelled."		ScheduledMeetingCard.qml:140	
 "Cancelling…"		backend.rs:24214	
 "Capitalize 'I' (English only)"		OutlookEditorSettings.qml:68	
 "Capture screenshot"		FeedbackWindow.qml:153	
@@ -260,7 +260,7 @@
 "If your contact is based in the European Economic Area or Switzerland, they may need to change the LinkedIn Digital Markets Act %1 for you and others to see their LinkedIn profile here."		ProfileCard.qml:633	
 "Ignore all"		EditorCard.qml:60	
 "Images (*.png *.jpeg *.gif)"		CustomEmojiAdd.qml:33	
-"Images (*.png *.jpg *.jpeg *.gif *.bmp)"		MeetingForm.qml:3410 TeamPictureDialog.qml:42	
+"Images (*.png *.jpg *.jpeg *.gif *.bmp)"		MeetingForm.qml:3413 TeamPictureDialog.qml:42	
 "Images (*.png *.jpg *.jpeg *.svg *.webp *.gif)"		ClipEffectPanels.qml:628	
 "Images and videos (*.png *.jpg *.jpeg *.svg *.webp *.gif *.webm *.mp4)"		VideoClipRecorder.qml:340	
 "In a conference call"		CastWindow.qml:493	
@@ -329,9 +329,9 @@
 "OST asks after some calls. If a call had issues, Report a problem opens with its technical details (no one's name) for you to post as a public issue on GitHub."		SettingsView.qml:2395	
 "OST notifications"		NotificationBanners.qml:33	
 "Objects"		EmojiPicker.qml:54	
-"Occurs day %1 of every month"		MeetingForm.qml:3400	
-"Occurs every %1 %2"		MeetingForm.qml:3401	
-"Occurs every %1 weeks on %2"		MeetingForm.qml:3399	
+"Occurs day %1 of every month"		MeetingForm.qml:3403	
+"Occurs every %1 %2"		MeetingForm.qml:3404	
+"Occurs every %1 weeks on %2"		MeetingForm.qml:3402	
 "Older"		FindPane.qml:158	
 "OneDrive"		AppRail.qml:103 AppRail.qml:156 AppRail.qml:162	
 "OneNote"		AppRail.qml:55 AppRail.qml:406 FindPane.qml:363	
@@ -395,7 +395,7 @@
 "Search for participants"		MeetingOptionsDialog.qml:445 MeetingPeoplePicker.qml:27	
 "Search help"		HelpView.qml:137 HelpView.qml:139	
 "Search here"		ComposeAppPanel.qml:101 ComposeAppPanel.qml:105	
-"Searching for suggestions..."		MeetingForm.qml:3853	
+"Searching for suggestions..."		MeetingForm.qml:3856	
 "See all %1"		FunPicker.qml:205 StoreView.qml:318	
 "See more %1"		ClipEffectPanels.qml:203	
 "See who has access"		ChannelPageTab.qml:84 LoopCard.qml:128 LoopCard.qml:136	
@@ -451,7 +451,7 @@
 "Teams Cast"		RoomHome.qml:86 RoomHome.qml:296	
 "Text becomes difficult to read when its color is too similar to the color behind it. Increasing contrast makes text easier to read, especially when viewing documents in bright light. You can increase the contrast by changing the color of the font or by changing the color behind it."		OutlookFormPane.qml:248	
 "Text color contrast is too low"		OutlookFormPane.qml:248	
-"The best options in a 5-day window"		MeetingForm.qml:3846 MeetingForm.qml:3848	
+"The best options in a 5-day window"		MeetingForm.qml:3849 MeetingForm.qml:3851	
 "The file couldn't be opened"		FileActions.qml:289	
 "The folder color wasn't changed"		FileActions.qml:278	
 "The folder wasn't created"		FileActions.qml:1338	
