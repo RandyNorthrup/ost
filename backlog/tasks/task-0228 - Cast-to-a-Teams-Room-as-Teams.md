@@ -1,11 +1,11 @@
 ---
 id: TASK-0228
 title: Cast to a Teams Room as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-20T01:10:00Z'
-updated_date: '2026-11-24T05:17:00Z'
+updated_date: '2026-11-24T06:58:00Z'
 labels:
   - calls
 dependencies: []
@@ -20,7 +20,7 @@ OST's Cast window searches and reports no rooms (TASK-0166). Since TASK-0161 OST
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Cast finds the nearby Teams Room as Teams does
-- [ ] #2 Casting to the room shows the content on the room as Teams does, verified live with OST in room mode and against Teams
+- [x] #2 Casting to the room shows the content on the room as Teams does, verified live with OST in room mode and against Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -80,4 +80,37 @@ Built so far: the Cast wizard and Teams' cast flow; the room accepts and shows a
   - Content step as Teams' Cast tray: a 448-wide #292929 card (radius 4), "Share content" (16 bold) with Include sound (12) and its switch, Screen / Window over 144 x 80 tiles 24 apart, PowerPoint Live only when there are recent files (Teams showed none for ost-test1).
   - Leave while sharing: Teams' hang-up speed bump (ECS enableHangupSpeedbumpMode "Always") always asks "You're currently sharing. Are you sure you want to leave?" while you share; OST only asked when the Settings option was on.
 - Live OST cast (cast2, ost-test1 spatest on linuxlt hearing the room's beacon relayed to btvirt hci1/hci2 while the room advertised on hci0 for winpc): Cast listed OST Test Room, content = Window restored by the portal token (no picker; seeded for the Tk window's X11 class "Ostcasttest"), Meet now "OST Test Room" joined muted with the camera off, window shared (968x572), room added with the live code (202); the room auto-accepted (Bluetooth, in tenant) and showed the test window with its clock running. Invitation identical to Teams' apart from languageId casing.
+
+- Step 4, one room in both Cast lists at once (05:23 UTC): Teams on winpc listed "OST Test Room / Available" (TP-Link radio, beacon from linuxlt hci0) while OST (spatest on linuxlt, the same beacon relayed to btvirt hci1/hci2) listed it too (code, rssi -60 assumed on the virtual radio). Teams then cast to it again (05:24): room auto-accepted, showed the window, left by itself 5 min after Teams left (05:33).
+- Card border: with no keyboard focus, Teams' picked room card has only its #0F0F0F hairline (the white ring of the first run was focus), now as in OST.
+- Left as is: Teams' cast joins with the mic muted but usable; OST's cast uses its "Don't use audio" state (mic greyed). Both send the same streams to the meeting (audio sendrecv muted, video recvonly, sharing sendonly, data).
+- Tests: cargo test --features audio,video --lib 944 passed; desktop tests passed.
+- Cleanup: every OST cast run left its call (CAST done + call ended in its log) before it was stopped; the room left each meeting by itself (Call end 202) and was then stopped, so its beacon is gone (hci0 ActiveInstances 0); relay and btvirt pair stopped; test windows closed; portal restore tokens deleted; trouter dumps deleted; winpc: Teams on Calendar (Today) in no call, Cast window closed, helper files and scheduled task removed. Meet nows aren't calendar events (Cast's meetings step listed none), so there were no test meetings to delete.
+- winpc devices: nothing changed in this session. The TP-Link (USB 2357:0604, TP-Link driver 1.9.1038.3023) is the active radio; the AX201 shows code 31 because its staged Intel 24.80 driver still waits for a reboot. It was not disabled.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Cast to a Teams Room now matches Teams' own Cast, verified live side by side: Teams desktop on winpc and OST on linuxlt both cast to OST Test Room (OST in room mode on linuxlt), and each run was compared with the other.
+
+What was verified live:
+- Proximity: winpc's new TP-Link adapter hears the room's beacon from linuxlt hci0 at -62..-64 dBm (Teams lists rooms at -75 or better). The old AX201 heard it at -104.
+- Teams to room: Settings and more > Cast listed OST Test Room; Window > test window > Cast. The room auto-accepted (Bluetooth, in tenant) and showed the window.
+- OST to room: the same flow, with the window restored by the portal token. The room auto-accepted and showed the window.
+- The invitations are identical (proximitySource 1, deviceType computer, autoAcceptAuthorization = beacon code), apart from languageId casing.
+- Both apps listed the same room at the same time.
+- After the caster leaves, the room leaves on its own about 5 min later in both cases.
+
+Changes (commit 4239a4b4):
+- Just cast / calendar Meet now update the meeting chat as Teams' updateInstantMeetingInfo does: topic, plus meeting property with startTime = endTime = now when started. Without this the room never left an OST cast.
+- The Cast window stays open on its last step after Cast, as in Teams.
+- Room cards and the content step are restyled from measurements of Teams. The nearby glyph now shows only for adjacent rooms. The content step is a "Share content" card, and PowerPoint Live shows only when there are recent files.
+- Leaving while sharing always asks first ("You're currently sharing. Are you sure you want to leave?"), as Teams' hang-up speed bump does.
+
+Tests: lib 944 passed (new: instant_meeting_property_is_teams_update); desktop tests passed.
+
+Open:
+- OST's cast greys the mic out (its no-audio state). Teams keeps it muted but usable. The streams sent are identical.
+- untranslated.txt / ids.json not regenerated for the new strings.
+<!-- SECTION:FINAL_SUMMARY:END -->
