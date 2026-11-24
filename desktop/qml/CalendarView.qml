@@ -396,6 +396,7 @@ Item {
                 else if (typeof c.name === "string" && c.name && c.size !== undefined) out.push("icon " + c.name + " " + g)
                 else if (c.height <= 1.5 && c.width > 20 && c.color !== undefined) out.push("line " + g)
                 else if (c.border && c.border.width > 0 && c.width > 20 && c.height > 20) out.push("box " + g)
+                else if (c.depth !== undefined && c.radius !== undefined && c.width > 20 && c.height > 20) out.push("card " + g)
                 walk(c)
             }
         }
@@ -406,7 +407,7 @@ Item {
     function cancelMenuForTest() { cancelScopeMenu.openFor(cancelBtn) }
     property alias cancelScopeMenuForTest: cancelScopeMenu
     function confirmDeleteForTest() { root.deleteEvent(details.ev.id); details.close() }
-    function pageForTest(subject) { const e = eventBySubject(subject); if (e) openPage(e); return !!e }
+    function pageForTest(subject, scope) { const e = eventBySubject(subject); if (e) openPage(e, scope || ""); return !!e }
     function respondForTest(response, series, note) { details.respond(response, series, note) }
     function monthDebug() { return { events: root.events.length, shown: root.shown.length, start: root.iso(root.start), days: root.days, weeks: root.monthWeeks, laid: monthArea.weeksLaid.map(w => w.bars.length), cellH: monthArea.cellH, rows: monthArea.rowsPerCell } }
     property alias formForTest: form
@@ -2976,7 +2977,7 @@ Item {
     Rectangle {
         id: copilotPane
         visible: root.copilotOpen
-        z: 3
+        z: formLayer.visible ? 12 : 3
         anchors { top: parent.top; bottom: parent.bottom; right: parent.right }
         width: root.copilotWidth
         color: theme.surface
@@ -3111,12 +3112,20 @@ Item {
         anchors.fill: parent
         color: theme.surface
         z: 10
+        anchors.rightMargin: root.copilotWidth
         MeetingForm {
             id: form
             anchors.fill: parent
             teams: root.teams
             people: root.people
             me: root.me
+            charms: root.charms
+            charm: root.charmOf(event)
+            copilot: root.copilotEntries
+            categories: root.categories
+            categoryTagOf: c => root.categoryTag(c)
+            onCommand: act => root.formAct(act)
+            onCopilotPrompt: label => { if (label) root.openCopilotWith(label, true); else root.copilotOpen = !root.copilotOpen }
             onSearchPeople: q => root.searchPeople(q)
             onClosed: formLayer.visible = false
             onAvailabilityWanted: mails => {
@@ -3155,6 +3164,49 @@ Item {
             onJoin: root.joinMeeting(form.event.join_url, form.event.subject || qsTr("Meeting"))
             onOpenChat: root.openMeetingChat(form.event.join_url, form.event.subject || qsTr("Meeting"))
             onCopyLink: { textCopy.text = form.event.join_url || ""; textCopy.selectAll(); textCopy.copy() }
+        }
+    }
+    /// A command of the event page (Outlook's event form, MeetingForm's
+    /// command bar and fields) for its event.
+    function formAct(a) {
+        const e = form.event
+        if (!a || !e || !e.id) return
+        if (a === "popout") { popOutForm(); return }
+        if (a.startsWith("reminder:")) {
+            const m = parseInt(a.slice(9))
+            calendarAction("patchEvent", JSON.stringify({ id: e.id, patch: m < 0 ? { isReminderOn: false } : { isReminderOn: true, reminderMinutesBeforeStart: m } }))
+        } else if (a.startsWith("cat:")) calendarAction("patchEvent", JSON.stringify({ id: e.id, patch: { categories: form.eventCategories } }))
+        else if (a === "private") calendarAction("patchEvent", JSON.stringify({ id: e.id, patch: { sensitivity: form.sensitivity } }))
+        else if (a.startsWith("patch:")) calendarAction("patchEvent", JSON.stringify({ id: e.id, patch: JSON.parse(a.slice(6)) }))
+        else if (a.startsWith("csv:")) calendarAction("saveCsv", JSON.stringify({ name: (e.subject || "Tracking") + ".csv", rows: JSON.parse(a.slice(4)) }))
+        else if (a === "delete") { formLayer.visible = false; tileAct(e, "delete") }
+        else if (["apps", "options", "facilitator", "attach", "emoji", "editor", "loop", "accessibility"].indexOf(a) >= 0)
+            openOwaItem(e, ({ apps: "", options: "Options", facilitator: "Turn on", attach: "Attach", emoji: "Insert emoji, images and stickers.", editor: "Editor", loop: "Insert Loop component", accessibility: "Check for accessibility issues" })[a])
+        else tileAct(e, a)
+    }
+    /// The event page in a window of its own (Outlook's form's Open in new
+    /// window): the form moves into the window and back when it closes.
+    function popOutForm() {
+        const w = formWindow.createObject(null, { title: (form.event.subject || qsTr("(No title)")) + " | " + qsTr("Calendar") })
+        form.parent = w.contentItem
+        form.poppedOut = true
+        formLayer.visible = false
+        w.show()
+        popoutForTest = w
+    }
+    Component {
+        id: formWindow
+        Window {
+            id: fw
+            width: root.Window.window ? root.Window.window.width : 1280
+            height: root.Window.window ? root.Window.window.height : 680
+            color: root.calOff
+            onClosing: {
+                form.parent = formLayer
+                form.poppedOut = false
+                Qt.callLater(() => fw.destroy())
+            }
+            Connections { target: form; function onClosed() { if (form.poppedOut) fw.close() } }
         }
     }
     // Make sure the form never covers a calendar it didn't start from.

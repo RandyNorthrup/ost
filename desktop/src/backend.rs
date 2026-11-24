@@ -24213,6 +24213,19 @@ impl qobject::Backend {
                 let client = TeamsClient::new().await?;
                 match op.as_str() {
                     "detail" => api::calendar::event_detail(&client, &s("id")).await,
+                    // Tracking's Download as CSV (Outlook's event form): the
+                    // rows as a CSV file in Downloads.
+                    "saveCsv" => {
+                        let rows: Vec<Vec<String>> = serde_json::from_value(args["rows"].clone()).unwrap_or_default();
+                        let csv = rows
+                            .iter()
+                            .map(|r| r.iter().map(|c| format!("\"{}\"", c.replace('"', "\"\""))).collect::<Vec<_>>().join(","))
+                            .collect::<Vec<_>>()
+                            .join("\r\n");
+                        let dir = download_dir().ok_or_else(|| anyhow::anyhow!("No Downloads folder"))?;
+                        let path = teams_cli::api::files::save_unique(&dir, &s("name"), csv.as_bytes())?;
+                        Ok(json!({ "path": path.display().to_string() }))
+                    }
                     // Teams' calendar settings: Time scale, the day count,
                     // the Filter menu, Saved views, categories.
                     "prefs" => api::calendar::calendar_prefs(&client).await,

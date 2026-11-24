@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Dialogs
 
 // Teams' own scheduling form ("calv2": New meeting, a channel meeting, the
 // organizer's meeting details) and the attendee's event page, measured in
@@ -48,6 +49,26 @@ Item {
     signal join()
     signal openChat()
     signal copyLink()
+    /// A command of Outlook's event form the calendar carries out for the
+    /// event (CalendarView.tileAct's: "owa:Forward", "owa:Duplicate",
+    /// "owa:Print", "owa:Save as .ics", "owa:Propose new time",
+    /// "owa:Breakout rooms", "copy", "charm:<n>", "showAs:<v>", "cat:<name>",
+    /// "private", "reminder:<min>", "patch:<json>", "delete", "apps",
+    /// "options", "popout").
+    signal command(string act)
+    /// Copilot with a prompt (a Prepare chip, Add a room); "" opens it.
+    signal copilotPrompt(string label)
+
+    // ── what the calendar gives Outlook's form ──────────────────────
+    /// The charms (CalendarView.charms: [id, name, icon, label]) and this
+    /// event's charm id.
+    property var charms: []
+    property int charm: 0
+    /// A Copilot licence: the Copilot button, the Prepare card, Add a room.
+    property bool copilot: false
+    /// Your master categories ([{name, color}]) and their tag colours.
+    property var categories: []
+    property var categoryTagOf: null
 
     // ── the form's state ────────────────────────────────────────────
     property string editingId: ""
@@ -84,15 +105,39 @@ Item {
 
     readonly property bool existing: mode !== "new"
     /// Your own event's page (not a channel meeting) is Outlook's event
-    /// form on Teams desktop (winpc, 2026-11-23, CSS px): a 48 px title
-    /// bar "<subject> - Event instance" (Meeting, Event series) with Close
-    /// 48 x 48; on #FAFAFA a command bar card (16 in, 8 under the bar, 40
-    /// tall, radius 8): Cancel (▾ on a series), Busy ▾, then Send, Join and
-    /// Chat at its right; 10 under it the info bar and the fields in white
-    /// cards 813 wide (radius 8, 8 apart); the Tracking pane a 351 wide card
-    /// 16 from the right edge, level with the info bar.
-    readonly property bool outlookPage: existing && mode === "edit" && !channel
+    /// form on Teams desktop (winpc, 2026-11-23/24, CSS px): a 48 px title
+    /// bar "<subject> - Event instance" (Meeting, Event series) with Open
+    /// in new window and Close 48 x 48; on #FAFAFA the command bar card (16
+    /// in, 8 under the bar, 40 tall, radius 8) and Copilot's round button;
+    /// 10 under it the info bar, the Prepare card, the fields' card and the
+    /// body's card, 813 wide (radius 8, 8 apart); the Tracking pane a 351
+    /// wide card 16 from the right edge, level with the info bar (the
+    /// details are in docs/spec/calendar.md and the parts below). An
+    /// invitation's page (someone else's event) is Outlook's reading form:
+    /// "<subject> - Meeting - Calendar", the answers in the command bar,
+    /// the fields read-only.
+    readonly property bool outlookPage: existing && !channel
+    readonly property bool outlookRead: outlookPage && readOnly
+    readonly property bool outlookEdit: outlookPage && !readOnly
     readonly property bool readOnly: mode === "view"
+    /// Outlook's personal settings of the event (Graph): the reminder
+    /// (minutes, -1 off), whether answers are asked for and the attendee
+    /// list hidden; saved as they change, as Outlook's form does.
+    property int reminder: 15
+    property bool responseRequested: true
+    property bool hideAttendees: false
+    property string sensitivity: "normal"
+    property var eventCategories: []
+    /// The Prepare card's second row of chips (More suggestions).
+    property bool moreSuggestions: false
+    /// The time row's panel (Start date, times, All day, Recurring).
+    property bool timeOpen: false
+    /// The body's formatting toolbar (Show formatting options).
+    property bool formatOpen: false
+    /// Tracking's attendee order (Sort A to Z / Z to A) and search.
+    property int trackSort: 0
+    property string trackQuery: ""
+    property bool trackSearching: false
     readonly property bool hasInvitees: required.length + optional.length > 0 || !!channel
     readonly property bool isSeries: ["occurrence", "exception", "seriesMaster"].indexOf(event.event_type || "") >= 0
     // Which events of your series the page edits, as Outlook's form does
@@ -140,6 +185,8 @@ Item {
     readonly property bool primaryEnabled: primaryKind === "join" ? !!event.join_url
         : virtualAppointment && !existing ? guestsReady && titleInput.text.trim().length > 0 : !!primaryKind
     readonly property int durationMin: Math.max(0, Math.round((endAt - startAt) / 60000))
+    /// Outlook's show-as names (its form's menu): Out of office, not Away.
+    readonly property var outlookShowAs: ({ Free: qsTr("Free"), WorkingElsewhere: qsTr("Working elsewhere"), Tentative: qsTr("Tentative"), Busy: qsTr("Busy"), Oof: qsTr("Out of office") })
     readonly property var showAsLabels: ({ Free: qsTr("Free"), WorkingElsewhere: qsTr("Working elsewhere"), Tentative: qsTr("Tentative"), Busy: qsTr("Busy"), Oof: qsTr("Away") })
 
     onRequiredChanged: if (!loading) { dirty = true; availabilityWanted(allMails()) }
@@ -149,6 +196,9 @@ Item {
         setBody(detail.body_html); bodyAtLoad = bodyHtml()
         // A series' repeat (an occurrence shows its series').
         if (detail.recurrence && !dirty) { recurrence = scopedRecurrence(fromGraph(detail.recurrence, startAt)); recurrenceAtLoad = recurrenceKey(recurrence) }
+        if (detail.reminder !== undefined) reminder = detail.reminder
+        if (detail.response_requested !== undefined) responseRequested = detail.response_requested
+        if (detail.hide_attendees !== undefined) hideAttendees = detail.hide_attendees
         loading = false
     }
     /// The repeat as the form opened it (an update sends it to the series
@@ -268,7 +318,14 @@ Item {
         attendeesAtLoad = attendeeKey()
         atLoad = { subject: titleInput.text.trim(), start: startAt.getTime(), end: endAt.getTime(), location: location }
         showAs = ({ free: "Free", tentative: "Tentative", busy: "Busy", oof: "Oof", workingElsewhere: "WorkingElsewhere" })[ev.show_as] || "Busy"
+        sensitivity = ev.sensitivity || "normal"
+        eventCategories = (ev.categories || []).slice()
+        reminder = 15; responseRequested = ev.response_requested !== false; hideAttendees = false
+        timeOpen = false; formatOpen = false; moreSuggestions = false; trackSort = 0; trackQuery = ""; trackSearching = false
+        paneOpen = true
         dirty = false
+        // Outlook's form opens with the title focused (its brand line).
+        if (outlookEdit) Qt.callLater(() => titleInput.forceActiveFocus())
         loading = false
         availabilityWanted(allMails())
     }
@@ -432,8 +489,20 @@ Item {
             Text {
                 x: 16; anchors.verticalCenter: parent.verticalCenter
                 width: parent.width - 16 - 56; elide: Text.ElideRight
-                text: (root.event.subject || qsTr("(No title)")) + " - " + (root.scope === "occurrence" ? qsTr("Event instance") : root.scope === "series" ? qsTr("Event series") : qsTr("Meeting"))
+                text: (root.event.subject || qsTr("(No title)")) + " - " + (root.outlookRead ? qsTr("Meeting - Calendar") : root.scope === "occurrence" ? qsTr("Event instance") : root.scope === "series" ? qsTr("Event series") : qsTr("Meeting"))
                 font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+            }
+            // Open in new window (Outlook's form pops itself out).
+            Rectangle {
+                id: obPop
+                anchors.right: parent.right; anchors.rightMargin: 48; width: 48; height: 48
+                visible: !root.poppedOut
+                color: obPopHover.hovered ? theme.rowHover : "transparent"
+                FluentIcon { anchors.centerIn: parent; name: "open-20"; size: 20; color: theme.onFill(obPop, theme.textStrong) }
+                HoverHandler { id: obPopHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.command("popout") }
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("Open in new window")
             }
             Rectangle {
                 id: obClose
@@ -514,39 +583,181 @@ Item {
         width: root.outlookPage ? root.width - 16 - 68 : optionsPane.visible && root.paneOpen ? optionsPane.x : parent.width; height: root.outlookPage ? 40 : 41
         // Outlook's command bar: a white card, radius 8, padding 4 8; its
         // buttons 31 tall (20 px glyph, 14 px #424242 label, a 12 px ▾).
+        // Outlook's command bar (Teams' event page, winpc 2026-11-24):
+        // - your one-off event: Event | Series, Cancel, Share ▾,
+        //   Duplicate | Busy ▾, Reminder ▾, Categories ▾, Private ▾ |
+        //   (a Teams meeting: Apps |) Print (and … with Breakout rooms);
+        // - your series: Cancel (▾ on one event: This event / This and all
+        //   following / All events), the rest as above; one event and
+        //   this and following keep Private greyed, this and following
+        //   the show-as, reminder and category menus too;
+        // - an invitation: Accept, Decline, Follow, RSVP with note,
+        //   Propose new time, More options ▾ | Delete, Share ▾, Duplicate
+        //   | show as ▾, Reminder ▾, Categories ▾, Private ▾ | Apps |
+        //   Print, … (Save as .ics);
+        // dividers 12.67 wide (a 16 px #D1D1D1 line), buttons 4 apart.
         FluentSurface {
             visible: root.outlookPage
             anchors.fill: parent; depth: 4; radius: 8; color: theme.surface
             Row {
                 x: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 4
+                // An invitation's answers.
+                Repeater {
+                    model: root.outlookRead ? [
+                        { r: "Accept", t: qsTr("Accept"), icon: "checkmark-20", c: theme.hc("#498205", "#3FF23F") },
+                        { r: "Decline", t: qsTr("Decline"), icon: "dismiss-20", c: theme.hc("#A4262C", "#FFFFFF") },
+                        { r: "Follow", t: qsTr("Follow"), icon: "calendar-eye-20", c: theme.hc("#881798", "#FFFFFF") }
+                    ] : []
+                    OutlookBarButton {
+                        id: rsvpBtn2
+                        required property var modelData
+                        icon: modelData.icon; iconColor: modelData.c; label: modelData.t
+                        onClicked: {
+                            if (root.isSeries) { seriesMenu.response = modelData.r; seriesMenu.parent = rsvpBtn2; seriesMenu.y = rsvpBtn2.height + 4; seriesMenu.open() }
+                            else root.respond(modelData.r, true, "", false)
+                        }
+                    }
+                }
+                OutlookBarButton { visible: root.outlookRead; icon: "note-20"; accessible: qsTr("RSVP with note"); onClicked: rsvpDialog.openFor() }
+                OutlookBarButton { visible: root.outlookRead && root.event.allow_new_time_proposals !== false; icon: "calendar-clock-20"; accessible: qsTr("Propose new time"); onClicked: root.command("owa:Propose new time") }
+                OutlookBarButton {
+                    id: obRespMore
+                    visible: root.outlookRead
+                    icon: "chevron-down-20"; accessible: qsTr("More options")
+                    onClicked: obRespMoreMenu.open()
+                    MenuPopup {
+                        id: obRespMoreMenu
+                        y: obRespMore.height + 1
+                        items: [{ label: qsTr("Tentative"), icon: "question-circle-20" }]
+                        onPicked: i => { if (root.isSeries) { seriesMenu.response = "Tentative"; seriesMenu.parent = obRespMore; seriesMenu.y = obRespMore.height + 4; seriesMenu.open() } else root.respond("Tentative", true, "", false) }
+                    }
+                }
+                ObSep { visible: root.outlookRead }
+                OutlookBarButton { visible: root.outlookRead; icon: "delete-20"; accessible: qsTr("Delete"); onClicked: root.command("delete") }
+                // Your one-off event: Event | Series.
+                OutlookBarButton {
+                    visible: root.outlookEdit && !root.isSeries
+                    radio: true; checked: !root.recurrence; icon: "calendar-empty-20-filled"; label: qsTr("Event")
+                    onClicked: if (root.recurrence) { root.recurrence = null; root.markDirty() }
+                }
+                OutlookBarButton {
+                    visible: root.outlookEdit && !root.isSeries
+                    radio: true; checked: !!root.recurrence; icon: "arrow-repeat-all-20"; label: qsTr("Series")
+                    onClicked: if (!root.recurrence) { root.recurrence = root.defaultSeries(); root.markDirty(); root.timeOpen = true }
+                }
+                ObSep { visible: root.outlookEdit && !root.isSeries }
                 OutlookBarButton {
                     id: obCancel
+                    visible: root.outlookEdit
                     icon: "calendar-cancel-20"; iconColor: theme.hc("#A4262C", "#FFFFFF"); label: qsTr("Cancel")
-                    chevron: root.seriesScoped
-                    onClicked: { if (root.seriesScoped) pageCancelMenu2.open(); else root.openCancel("") }
+                    chevron: root.seriesScoped && root.scope === "occurrence"
+                    onClicked: { if (chevron) pageCancelMenu2.open(); else root.openCancel(root.seriesScoped ? root.scope : "") }
                     MenuPopup {
                         id: pageCancelMenu2
-                        y: obCancel.height + 4
+                        y: obCancel.height + 1
                         items: [{ label: qsTr("This event") }, { label: qsTr("This and all following events") }, { label: qsTr("All events in the series") }]
                         onPicked: i => root.openCancel(["occurrence", "following", "series"][i])
                     }
                 }
                 OutlookBarButton {
+                    id: obShare
+                    icon: "arrow-forward-20"; iconColor: theme.hc("#0078D4", "#FFFFFF"); chevron: true; accessible: qsTr("Share")
+                    onClicked: obShareMenu.open()
+                    MenuPopup {
+                        id: obShareMenu
+                        y: obShare.height + 1
+                        items: [{ label: qsTr("Forward this event"), icon: "arrow-forward-20", iconColor: theme.hc("#0078D4", "#FFFFFF") }]
+                            .concat(root.event.join_url ? [{ label: qsTr("Copy join link"), icon: "link-20" }] : [])
+                        onPicked: i => root.command(i === 0 ? "owa:Forward" : "copy")
+                    }
+                }
+                OutlookBarButton { icon: "square-multiple-20"; accessible: qsTr("Duplicate event"); onClicked: root.command("owa:Duplicate") }
+                ObSep {}
+                // Busy ▾ (show as), Reminder ▾, Categories ▾, Private ▾:
+                // saved as they're picked, as Outlook does.
+                OutlookBarButton {
                     id: obShowAs
-                    icon: "calendar-20"; label: root.showAsLabels[root.showAs] || qsTr("Busy"); chevron: true
+                    icon: "calendar-pattern-20"; label: root.outlookShowAs[root.showAs] || qsTr("Busy"); chevron: true
+                    enabledState: root.personalEditable
                     onClicked: obShowAsMenu.open()
                     MenuPopup {
                         id: obShowAsMenu
-                        y: obShowAs.height + 4
-                        items: ["Free", "WorkingElsewhere", "Tentative", "Busy", "Oof"].map(k => ({ label: root.showAsLabels[k], checked: root.showAs === k }))
-                        onPicked: i => { root.showAs = ["Free", "WorkingElsewhere", "Tentative", "Busy", "Oof"][i]; root.markDirty() }
+                        y: obShowAs.height + 1
+                        radioColumn: true; radioLabelX: 26
+                        items: ["Free", "WorkingElsewhere", "Tentative", "Busy", "Oof"].map(k => ({ label: root.outlookShowAs[k], checked: root.showAs === k }))
+                        onPicked: i => { const k = ["Free", "WorkingElsewhere", "Tentative", "Busy", "Oof"][i]; root.showAs = k; root.command("showAs:" + ({ Free: "free", WorkingElsewhere: "workingElsewhere", Tentative: "tentative", Busy: "busy", Oof: "oof" })[k]) }
+                    }
+                }
+                OutlookBarButton {
+                    id: obReminder
+                    icon: "clock-alarm-20"; chevron: true; enabledState: root.personalEditable
+                    accessible: qsTr("Reminder, %1 selected").arg(root.reminderLabel(root.reminder))
+                    onClicked: obReminderMenu.open()
+                    MenuPopup {
+                        id: obReminderMenu
+                        y: obReminder.height + 1
+                        radioColumn: true; radioLabelX: 26
+                        items: root.reminderChoices.map(m => ({ label: root.reminderLabel(m), checked: root.reminder === m }))
+                            .concat([{ separator: true }, { label: qsTr("Add email reminder"), enabled: false }])
+                        onPicked: i => { if (i < root.reminderChoices.length) { root.reminder = root.reminderChoices[i]; root.command("reminder:" + root.reminder) } }
+                    }
+                }
+                OutlookBarButton {
+                    id: obCats
+                    icon: "tag-20"; chevron: true; enabledState: root.personalEditable; accessible: qsTr("Categories")
+                    onClicked: obCatsMenu.open()
+                    MenuPopup {
+                        id: obCatsMenu
+                        y: obCats.height + 1
+                        radioColumn: true; radioLabelX: 50
+                        items: (root.categories || []).map(c => ({ label: c.name, tag: root.categoryTagOf ? root.categoryTagOf(c.color) : undefined, checked: root.eventCategories.indexOf(c.name) >= 0, persist: true }))
+                            .concat([{ separator: true }, { label: qsTr("New category"), enabled: false }])
+                        onPicked: i => {
+                            const c = (root.categories || [])[i]
+                            if (!c) return
+                            const l = root.eventCategories.slice(), k = l.indexOf(c.name)
+                            if (k >= 0) l.splice(k, 1); else l.push(c.name)
+                            root.eventCategories = l
+                            root.command("cat:" + c.name)
+                        }
+                    }
+                }
+                OutlookBarButton {
+                    id: obPrivate
+                    icon: root.sensitivity === "private" ? "lock-closed-20" : "lock-open-20"; chevron: true
+                    enabledState: root.personalEditable && root.scope !== "occurrence"
+                    accessible: root.sensitivity === "private" ? qsTr("Private") : qsTr("Not private")
+                    onClicked: obPrivateMenu.open()
+                    MenuPopup {
+                        id: obPrivateMenu
+                        y: obPrivate.height + 1
+                        radioColumn: true; radioLabelX: 26
+                        items: [{ label: qsTr("Private"), checked: root.sensitivity === "private" }, { label: qsTr("Not private"), checked: root.sensitivity !== "private" }]
+                        onPicked: i => { const s = i === 0 ? "private" : "normal"; if (s !== root.sensitivity) { root.sensitivity = s; root.command("private") } }
+                    }
+                }
+                ObSep {}
+                // A Teams meeting's Apps (its meeting apps) and divider.
+                OutlookBarButton { visible: !!root.event.join_url; icon: "app-folder-20"; accessible: qsTr("Apps"); onClicked: root.command("apps") }
+                ObSep { visible: !!root.event.join_url }
+                OutlookBarButton { icon: "print-20"; accessible: qsTr("Print"); onClicked: root.command("owa:Print") }
+                OutlookBarButton {
+                    id: obMore
+                    visible: root.outlookRead || !!root.event.join_url
+                    icon: "more-horizontal-20"; accessible: qsTr("More options")
+                    onClicked: obMoreMenu.open()
+                    MenuPopup {
+                        id: obMoreMenu
+                        y: obMore.height + 1
+                        items: root.outlookRead ? [{ label: qsTr("Save as .ics"), icon: "arrow-download-20" }] : [{ label: qsTr("Breakout rooms"), icon: "people-community-20" }]
+                        onPicked: i => root.command(root.outlookRead ? "owa:Save as .ics" : "owa:Breakout rooms")
                     }
                 }
             }
             Row {
                 anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 4
                 OutlookBarButton {
-                    visible: root.primaryKind === "send" || root.primaryKind === "save"
+                    visible: root.outlookEdit && (root.primaryKind === "send" || root.primaryKind === "save")
                     primary: true; strong: true; icon: root.primaryKind === "save" ? "save-20" : "send-20"; label: root.primaryLabel
                     onClicked: root.primaryAction()
                 }
@@ -623,6 +834,37 @@ Item {
         }
         Rectangle { visible: !root.outlookPage; anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.dividerSoft }
     }
+    // Copilot's 44 px round button right of the command bar (white, the
+    // depth-16 shadow, its 24 px logo).
+    FluentSurface {
+        id: obCopilot
+        visible: root.outlookPage && root.copilot
+        x: root.width - 60; y: header.height + 6; width: 44; height: 44
+        depth: 4; radius: 22; color: obCopilotHover.hovered ? theme.rowHover : theme.surface
+        Image { anchors.centerIn: parent; width: 24; height: 24; sourceSize: Qt.size(48, 48); source: "../assets/icons/copilot-color-48.svg" }
+        HoverHandler { id: obCopilotHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: root.copilotPrompt("") }
+        Accessible.role: Accessible.Button
+        Accessible.name: qsTr("Chat with Copilot")
+    }
+    /// Outlook keeps the show-as, reminder and category menus greyed when
+    /// editing this and the following events.
+    readonly property bool personalEditable: !(seriesScoped && scope === "following")
+    property bool poppedOut: false
+    readonly property var reminderChoices: [-1, 0, 5, 15, 30, 60, 120, 720, 1440, 10080]
+    function reminderLabel(m) {
+        const l = { "-1": qsTr("Don't remind me"), "0": qsTr("At time of event"), "5": qsTr("5 minutes before"), "15": qsTr("15 minutes before"),
+            "30": qsTr("30 minutes before"), "60": qsTr("1 hour before"), "120": qsTr("2 hours before"), "720": qsTr("12 hours before"),
+            "1440": qsTr("1 day before"), "10080": qsTr("1 week before") }[String(m)]
+        return l || qsTr("%1 minutes before").arg(m)
+    }
+    /// Series on a one-off event: weekly on its weekday, until the last
+    /// such weekday within six months (Outlook's default).
+    function defaultSeries() {
+        const s = dayStart(startAt), e = new Date(s); e.setMonth(e.getMonth() + 6)
+        while (e.getDay() !== s.getDay()) e.setDate(e.getDate() - 1)
+        return makeRecurrence("week", 1, [s.getDay()], s, e)
+    }
     MenuPopup {
         id: seriesMenu
         property string response: ""
@@ -636,7 +878,7 @@ Item {
         visible: root.tab === "Details"
         anchors { top: bar.bottom; bottom: parent.bottom; left: parent.left; topMargin: root.outlookPage ? 10 : 0; leftMargin: root.outlookPage ? 16 : 0 }
         width: root.outlookPage ? (optionsPane.visible && root.paneOpen ? optionsPane.x - 32 : root.width - 32) : optionsPane.visible && root.paneOpen ? optionsPane.x : parent.width
-        contentHeight: fields.height + (root.outlookPage ? 16 : 60)
+        contentHeight: root.outlookPage ? ofields.height + 16 : fields.height + 60
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
@@ -644,15 +886,11 @@ Item {
         // 52 to 22 before its edge.)
         readonly property real fieldW: root.outlookPage ? width - 74 : Math.max(320, Math.min(1037, width - 74 - 32))
         // Outlook's white cards behind the fields: from the title on.
-        FluentSurface {
-            visible: root.outlookPage
-            y: fields.y + fieldCardTop - 12; width: parent.width; height: fields.height - fieldCardTop + 24
-            depth: 2; radius: 8; color: theme.surface
-        }
 
         Column {
             id: fields
-            y: root.outlookPage ? 0 : 22
+            visible: !root.outlookPage
+            y: 22
             width: parent.width
             spacing: 14
 
@@ -718,13 +956,16 @@ Item {
                 id: titleRow
                 icon: "edit-20"; height: root.outlookPage ? 40 : 34
                 FieldBox {
+                    id: titleBox
                     width: scroller.fieldW; height: 34
                     focused: titleInput.activeFocus
                     TextInput {
                         id: titleInput
+                        // (Outlook's form: in its title row, 16 px.)
+                        parent: root.outlookEdit ? oTitleSlot : titleBox
                         x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter
                         readOnly: root.readOnly
-                        font.family: theme.font; font.pixelSize: 14; color: theme.text
+                        font.family: theme.font; font.pixelSize: root.outlookEdit ? 16 : 14; color: theme.text
                         clip: true; selectByMouse: true
                         onTextEdited: root.markDirty()
                         Accessible.name: qsTr("Add title")
@@ -1093,6 +1334,7 @@ Item {
                     width: scroller.fieldW; height: 50
                     focused: locationInput.activeFocus
                     Row {
+                        id: locRowItem
                         x: 8; height: parent.height
                         spacing: 8
                         Rectangle {
@@ -1123,9 +1365,12 @@ Item {
                         }
                         TextInput {
                             id: locationInput
+                            // (Outlook's form: its location field, after
+                            // the place.)
+                            parent: root.outlookEdit ? oLocSlot : locRowItem
                             visible: !root.readOnly
                             anchors.verticalCenter: parent.verticalCenter
-                            width: scroller.fieldW - (locChip.visible ? locChip.width + 8 : 0) - 200
+                            width: root.outlookEdit ? oLocSlot.width - (oLocText.visible ? oLocText.width + 8 : 0) : scroller.fieldW - (locChip.visible ? locChip.width + 8 : 0) - 200
                             font.family: theme.font; font.pixelSize: 14; color: theme.text
                             clip: true; selectByMouse: true
                             Keys.onReturnPressed: root.commitLocation()
@@ -1133,7 +1378,7 @@ Item {
                             Keys.onPressed: e => { if (e.key === Qt.Key_Backspace && !text && root.location) { root.location = ""; root.markDirty(); e.accepted = true } }
                             onActiveFocusChanged: if (!activeFocus && text.trim()) root.commitLocation()
                             Accessible.name: qsTr("Add location")
-                            Text { visible: !locationInput.text && !root.location; text: qsTr("Add location"); color: theme.textSecondary; font: locationInput.font }
+                            Text { visible: !locationInput.text && !root.location && !root.outlookPage; text: qsTr("Add location"); color: theme.textSecondary; font: locationInput.font }
                         }
                         Text {
                             visible: root.readOnly && !root.location
@@ -1163,6 +1408,8 @@ Item {
                     color: theme.inputFilled
                     Row {
                         id: fmtBar
+                        // (Outlook's form: above its attachments toolbar.)
+                        parent: root.outlookEdit ? oFmtSlot : detailsBox
                         visible: !root.readOnly
                         height: 32
                         FmtButton { icon: "fmt-bold"; tip: qsTr("Bold"); onClicked: root.wrapSelection("<b>", "</b>") }
@@ -1206,14 +1453,17 @@ Item {
                     }
                     TextEdit {
                         id: editor
-                        x: 12; y: fmtBar.visible ? 44 : 12
-                        width: parent.width - 24
+                        // Outlook's form: in its body card (black text; an
+                        // invitation's #616161, read-only).
+                        parent: root.outlookEdit ? oBodySlot : root.outlookRead ? oReadBody : detailsBox
+                        x: root.outlookPage ? 0 : 12; y: root.outlookPage ? 0 : fmtBar.visible ? 44 : 12
+                        width: parent.width - (root.outlookPage ? 0 : 24)
                         textFormat: TextEdit.RichText
                         wrapMode: TextEdit.Wrap
                         readOnly: root.readOnly
                         selectByMouse: true
                         font.family: theme.font; font.pixelSize: 14
-                        color: theme.text
+                        color: root.outlookEdit ? theme.pick("#000000", "#FFFFFF", "#FFFFFF") : root.outlookRead ? theme.textSecondary : theme.text
                         onTextChanged: root.markDirty()
                         onLinkActivated: link => Qt.openUrlExternally(link)
                         Keys.onPressed: e => {
@@ -1226,7 +1476,7 @@ Item {
                         }
                         Accessible.role: Accessible.EditableText
                         Accessible.name: qsTr("Type details for this new meeting")
-                        Text { visible: editor.length === 0 && !root.readOnly; text: qsTr("Type details for this new meeting"); color: theme.textSecondary; font: editor.font }
+                        Text { visible: editor.length === 0 && !root.readOnly && !root.outlookPage; text: qsTr("Type details for this new meeting"); color: theme.textSecondary; font: editor.font }
                         HoverHandler { cursorShape: hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor; property string hoveredLink: editor.hoveredLink }
                     }
                 }
@@ -1243,6 +1493,495 @@ Item {
                     Text { x: 13; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Add an agenda"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(agendaBox, theme.text) }
                     HoverHandler { id: agendaHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { editor.forceActiveFocus(); if (editor.length === 0) { editor.insert(0, "<b>" + qsTr("Agenda") + "</b><ul><li></li></ul>"); root.markDirty() } } }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("Add an agenda")
+                }
+            }
+        }
+
+        // ── Outlook's event form (your event's page, an invitation's) ──
+        // Teams desktop on winpc, 2026-11-24 (CSS px, the page 1212 wide):
+        // white cards 813 wide, 8 apart, radius 8, the depth-2 shadow; the
+        // field rows 40 tall and 12 apart (12 inside the card), their 20 px
+        // #616161 glyphs 18 in, 10 down; the fields from 52 (texts at 64),
+        // ending 22 before the card's edge (an invitation's 12), each edit
+        // row with a 0.67 #616161 line under it (the focused title a 2 px
+        // brand one).
+        Column {
+            id: ofields
+            visible: root.outlookPage
+            width: parent.width
+            spacing: 8
+            readonly property real fieldEnd: width - (root.outlookRead ? 12 : 22)
+
+            // Your series: which events the page edits (36 tall, #F5F5F5,
+            // a 0.67 #D1D1D1 edge; the glyph 13 in, the text 41 in, Edit
+            // series / Edit this and all following events 12 after it).
+            Rectangle {
+                visible: root.seriesScoped
+                width: parent.width; height: visible ? 36 : 0
+                radius: 4; color: theme.inputFilled; border.width: 0.67; border.color: theme.stroke
+                FluentIcon { x: 13; y: 8; name: "info-20"; size: 20; color: theme.textSecondary }
+                Row {
+                    x: 41; height: parent.height; spacing: 12
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: root.scope === "following" ? qsTr("You're editing this and all following events in the series.")
+                            : root.scope === "series" ? qsTr("You're editing the series.") : qsTr("You're editing one event in the series.")
+                        font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                    }
+                    Row {
+                        visible: root.scope === "occurrence"
+                        anchors.verticalCenter: parent.verticalCenter; spacing: 11
+                        InfoBarButton { label: qsTr("Edit series"); onClicked: root.setScope("series") }
+                        InfoBarButton { label: qsTr("Edit this and all following events"); onClicked: root.setScope("following") }
+                    }
+                }
+            }
+
+            // Prepare for your meeting (Copilot): the calendar-sparkle glyph,
+            // "Prepare for your meeting" 14 #242424 at 52,23; "Chat with
+            // Copilot to get ready" 12 #616161 at 55 (a series: Show
+            // insights, 40 tall); then Copilot's chat glyph and three chips
+            // 208.32 x 24 (radius 8, a 0.67 #D1D1D1 edge, 12 px), 216.33
+            // apart from 80, More suggestions (▾) at 733 opening three more
+            // 30 under them; 12 under the chips the card ends.
+            FluentSurface {
+                id: prepCard
+                visible: root.copilot
+                width: parent.width; height: visible ? prepChips.y + prepChips.height + 12 : 0
+                depth: 2; radius: 8; color: theme.surface
+                readonly property bool insights: false
+                readonly property var chips: root.outlookRead
+                    ? [qsTr("Talking points"), qsTr("Meeting outcomes"), qsTr("Why attend?"), qsTr("What will be covered?"), qsTr("Suggest a question"), qsTr("Prep me for this")]
+                    : [qsTr("Talking points"), qsTr("Identify concerns"), qsTr("What will be covered?"), qsTr("Suggest a question"), qsTr("Meeting outcomes"), qsTr("Prep me for this")]
+                FluentIcon { x: 18; y: 22.33; name: "calendar-sparkle-20"; size: 20; color: theme.textSecondary }
+                Text { x: 52; y: 23; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Prepare for your meeting"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text {
+                    visible: !prepCard.insights
+                    x: 52; y: 55; height: 16; verticalAlignment: Text.AlignVCenter
+                    text: qsTr("Chat with Copilot to get ready"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                }
+                Rectangle {
+                    id: insightsBtn
+                    visible: prepCard.insights
+                    x: 52; y: 55; width: parent.width - 64; height: 40; radius: 4
+                    color: insightsHover.hovered ? theme.rowHover : "transparent"
+                    FluentIcon { x: 13; y: 14; name: "chevron-down-12"; size: 12; color: theme.onFill(insightsBtn, theme.text) }
+                    Text { x: 31; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Show insights"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(insightsBtn, theme.text) }
+                    HoverHandler { id: insightsHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.copilotPrompt("Prep me for this") }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("Show insights for this meeting")
+                }
+                Item {
+                    id: prepChips
+                    x: 52; y: prepCard.insights ? 107 : 83
+                    width: parent.width - 64; height: root.moreSuggestions ? 54 : 24
+                    FluentIcon { name: "chat-20-filled"; size: 20; color: theme.brand }
+                    Repeater {
+                        model: prepCard.chips
+                        Rectangle {
+                            id: chip
+                            required property string modelData
+                            required property int index
+                            visible: index < 3 || root.moreSuggestions
+                            x: 28 + (index % 3) * 216.33; y: Math.floor(index / 3) * 30
+                            width: 208.32; height: 24; radius: 8
+                            color: chipHover.hovered ? theme.rowHover : theme.surface
+                            border.width: 0.67; border.color: theme.stroke
+                            Text {
+                                x: 8.67; width: parent.width - 17.33; anchors.verticalCenter: parent.verticalCenter
+                                horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
+                                text: chip.modelData; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(chip, theme.text)
+                            }
+                            HoverHandler { id: chipHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: root.copilotPrompt(chip.modelData) }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: chip.modelData
+                        }
+                    }
+                    Rectangle {
+                        id: moreChips
+                        x: 681; width: 29.33; height: 24; radius: 4
+                        color: moreChipsHover.hovered ? theme.rowHover : "transparent"
+                        FluentIcon { x: 8.67; y: 6; name: root.moreSuggestions ? "chevron-up-20" : "chevron-down-12"; size: 12; color: theme.onFill(moreChips, root.moreSuggestions ? theme.brand : theme.textStrong) }
+                        HoverHandler { id: moreChipsHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.moreSuggestions = !root.moreSuggestions }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: root.moreSuggestions ? qsTr("Less suggestions") : qsTr("More suggestions")
+                    }
+                }
+            }
+
+            // The fields' card.
+            FluentSurface {
+                id: formCard
+                width: parent.width; height: formRows.y + formRows.height + 12
+                depth: 2; radius: 8; color: theme.surface
+                Column {
+                    id: formRows
+                    y: 12; width: parent.width
+                    spacing: 12
+
+                    // The charm (32 x 32 at 12.5, radius 4, a 0.67 #C7C7C7
+                    // edge; the charm 24 px brand, none: a 14 px glyph) and
+                    // the title (739 x 40, 16 px, its text 12 in); an
+                    // invitation's title 16 px #616161 with Sensitivity
+                    // (greyed) at the right.
+                    Item {
+                        width: parent.width; height: 40
+                        Rectangle {
+                            id: charmBtn
+                            x: 12.5; y: 4; width: 32; height: 32; radius: 4
+                            color: charmHover.hovered && root.outlookEdit ? theme.rowHover : "transparent"
+                            border.width: 0.67; border.color: theme.pick("#C7C7C7", "#5C5C5C", "#FFFFFF")
+                            readonly property var c: root.charm > 0 ? (root.charms || []).find(x => x[0] === root.charm) : null
+                            FluentIcon { anchors.centerIn: parent; name: charmBtn.c ? charmBtn.c[2] : "symbols-20"; size: charmBtn.c ? 24 : 14; color: theme.onFill(charmBtn, theme.brand) }
+                            HoverHandler { id: charmHover; enabled: root.outlookEdit; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { enabled: root.outlookEdit; onTapped: charmPop.open() }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: charmBtn.c ? qsTr("Select an event charm button, %1 icon selected").arg(charmBtn.c[3]) : qsTr("Select an event charm")
+                            Popup {
+                                id: charmPop
+                                y: charmBtn.height + 4
+                                padding: 4; width: 454; height: 112
+                                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                                background: FluentSurface { depth: 16; radius: 4 }
+                                contentItem: Grid {
+                                    columns: 12; spacing: 4
+                                    Repeater {
+                                        model: root.charms
+                                        Rectangle {
+                                            id: cpCell
+                                            required property var modelData
+                                            width: 32; height: 32; radius: 2
+                                            color: root.charm === modelData[0] ? theme.pick("#DCDFFA", "#2F2F4A", "#1AEBFF") : cpHover.hovered ? theme.rowHover : "transparent"
+                                            FluentIcon { anchors.centerIn: parent; name: cpCell.modelData[2] || "prohibited-20"; size: 17; color: theme.onFill(cpCell, theme.textSecondary) }
+                                            HoverHandler { id: cpHover; cursorShape: Qt.PointingHandCursor }
+                                            TapHandler { onTapped: { root.charm = cpCell.modelData[0]; charmPop.close(); root.command("charm:" + cpCell.modelData[0]) } }
+                                            Accessible.role: Accessible.Button
+                                            Accessible.name: qsTr("%1 icon").arg(cpCell.modelData[3])
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Item { id: oTitleSlot; visible: root.outlookEdit; x: 52; width: ofields.fieldEnd - 52; height: 40 }
+                        Text {
+                            visible: root.outlookRead
+                            x: 52; y: 9; height: 22; width: ofields.fieldEnd - 52 - 103.91 - 8; elide: Text.ElideRight
+                            verticalAlignment: Text.AlignVCenter
+                            text: root.event.subject || ""
+                            font.family: theme.font; font.pixelSize: 16; color: theme.textSecondary
+                        }
+                        Item {
+                            visible: root.outlookRead
+                            x: ofields.fieldEnd - 103.91; y: 4; width: 103.91; height: 32
+                            FluentIcon { x: 6.67; anchors.verticalCenter: parent.verticalCenter; name: "shield-20"; size: 20; color: theme.text }
+                            Text { x: 32.67; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Sensitivity"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.disabled }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: qsTr("Sensitivity")
+                        }
+                        Rectangle {
+                            visible: root.outlookEdit
+                            x: 52; y: titleInput.activeFocus ? 39 : 39.67; width: ofields.fieldEnd - 52; height: titleInput.activeFocus ? 2 : 1
+                            color: titleInput.activeFocus ? theme.brand : theme.textSecondary
+                        }
+                    }
+
+                    // Attendees: 28 px pictures in pills (34 tall, a 0.67
+                    // #D1D1D1 edge, the name 12 px 40.67 in, ✕ after it), 4
+                    // apart from 64; Tracking (92.6) and Response options ▾
+                    // (49.33) at the right. An invitation: the names, the
+                    // organizer first, "; " between them. This and following:
+                    // the names, then "You can only change attendees by
+                    // editing the series." with Open series.
+                    Item {
+                        id: oAttRow
+                        width: parent.width
+                        height: root.outlookRead ? 40 : root.attendeesLocked ? 51.33 : Math.max(40, oAttFlow.height + 6)
+                        readonly property real trackX: ofields.fieldEnd - (root.outlookEdit && !root.attendeesLocked ? 49.33 + 4 : 0) - 92.6
+                        FluentIcon { x: 18; y: 10; name: "people-20"; size: 20; color: theme.textSecondary }
+                        Flow {
+                            id: oAttFlow
+                            visible: root.outlookEdit && !root.attendeesLocked
+                            x: 64; y: 1; width: oAttRow.trackX - 8 - 64
+                            spacing: 4
+                            Repeater {
+                                model: root.required.concat(root.optional)
+                                OutlookChip {
+                                    required property var modelData
+                                    required property int index
+                                    name: modelData.name || modelData.address
+                                    onRemove: {
+                                        if (index < root.required.length) root.required = root.required.filter((_, j) => j !== index)
+                                        else { const k = index - root.required.length; root.optional = root.optional.filter((_, j) => j !== k) }
+                                    }
+                                }
+                            }
+                            TextInput {
+                                id: oPeople
+                                width: 120; height: 34
+                                verticalAlignment: TextInput.AlignVCenter
+                                font.family: theme.font; font.pixelSize: 14; color: theme.text
+                                clip: true; selectByMouse: true
+                                onTextEdited: { if (text.trim().length >= 2) root.searchPeople(text.trim()); suggest.target = oPeople; suggest.optionalField = false }
+                                Keys.onReturnPressed: suggest.pickFirst(oPeople, false)
+                                Keys.onEnterPressed: suggest.pickFirst(oPeople, false)
+                                Keys.onPressed: e => { if (e.key === Qt.Key_Backspace && !text && root.required.length) { root.required = root.required.slice(0, -1); e.accepted = true } }
+                                Accessible.name: qsTr("Invite required attendees")
+                                Text { visible: !oPeople.text && root.required.length + root.optional.length === 0; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Invite required attendees"); color: theme.textSecondary; font: oPeople.font }
+                            }
+                        }
+                        Text {
+                            visible: root.outlookRead || root.attendeesLocked
+                            x: 64; y: root.outlookRead ? 10.67 : 0; height: 18.67; width: oAttRow.trackX - 8 - 64
+                            verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
+                            text: (root.outlookRead ? [root.event.organizer] : []).concat(root.required.concat(root.optional).map(p => p.name || p.address)).filter(n => n).join("; ")
+                            font.family: theme.font; font.pixelSize: 14; color: theme.textStrong
+                        }
+                        Row {
+                            visible: root.attendeesLocked
+                            x: 64; y: 28.67; spacing: 4
+                            Text { text: qsTr("You can only change attendees by editing the series."); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                            LinkButton { label: qsTr("Open series"); onClicked: root.setScope("series") }
+                        }
+                        OutlookFieldButton {
+                            x: oAttRow.trackX; y: root.attendeesLocked ? 4.33 : 4.33
+                            icon: "people-list-20"; label: qsTr("Tracking")
+                            onClicked: root.paneOpen = !root.paneOpen
+                        }
+                        OutlookFieldButton {
+                            id: respOpts
+                            visible: root.outlookEdit && !root.attendeesLocked
+                            x: ofields.fieldEnd - 49.33; y: 4
+                            icon: "people-settings-20"; chevron: true; accessible: qsTr("Response options")
+                            onClicked: respMenu2.open()
+                            OutlookSwitchMenu {
+                                id: respMenu2
+                                y: respOpts.height + 1
+                                rows: [{ label: qsTr("Request responses"), on: root.responseRequested },
+                                       { label: qsTr("Hide attendee list"), on: root.hideAttendees }]
+                                tail: qsTr("Add optional attendees")
+                                onToggled: i => {
+                                    if (i === 0) { root.responseRequested = !root.responseRequested; root.command("patch:" + JSON.stringify({ responseRequested: root.responseRequested })) }
+                                    else { root.hideAttendees = !root.hideAttendees; root.command("patch:" + JSON.stringify({ hideAttendees: root.hideAttendees })) }
+                                }
+                                onTailPicked: { root.showOptional = true; oPeople.forceActiveFocus() }
+                            }
+                        }
+                        Rectangle { visible: root.outlookEdit; x: 52; y: parent.height - 0.33; width: ofields.fieldEnd - 52; height: 1; color: theme.textSecondary }
+                    }
+
+                    // The time: one line (a series: Outlook's sentence),
+                    // 14 px #616161 at 64 (an invitation's at 52), opening
+                    // the time panel; Show all instances (one event of a
+                    // series) and Scheduler at the right.
+                    Item {
+                        id: oTimeRow
+                        width: parent.width; height: 40
+                        FluentIcon { x: 18; y: 10; name: "clock-20"; size: 20; color: theme.textSecondary }
+                        Text {
+                            x: root.outlookRead ? 52 : 64; y: root.outlookRead ? 10 : 10.67; height: root.outlookRead ? 20 : 18.67
+                            width: (root.seriesScoped && root.scope === "occurrence" ? showAllBtn.x : schedBtn.x) - 8 - x
+                            verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
+                            text: root.timeLine()
+                            font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                            HoverHandler { enabled: root.outlookEdit; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { enabled: root.outlookEdit; onTapped: root.timeOpen = !root.timeOpen }
+                        }
+                        OutlookFieldButton {
+                            id: showAllBtn
+                            visible: root.outlookEdit && root.seriesScoped && root.scope === "occurrence"
+                            x: schedBtn.x - 4 - width; y: 4.33
+                            icon: "document-text-20"; label: qsTr("Show all instances")
+                            onClicked: root.command("owa:Show all instances")
+                        }
+                        OutlookFieldButton {
+                            id: schedBtn
+                            x: ofields.fieldEnd - width; y: 4.33
+                            icon: "calendar-search-20"; label: qsTr("Scheduler")
+                            onClicked: root.command("owa:Scheduler")
+                        }
+                        Rectangle { visible: root.outlookEdit; x: 52; y: 39.67; width: ofields.fieldEnd - 52; height: 1; color: theme.textSecondary }
+                    }
+
+                    // If conflicts arise, let Copilot reschedule this event:
+                    // a 40 x 20 switch at 64 (greyed on one event, a one-off
+                    // and before a series is sent), the label at 112,
+                    // Acceptable times ▾ 6 after it, ⓘ 8 after that.
+                    Item {
+                        visible: root.outlookEdit
+                        width: parent.width; height: 40
+                        readonly property bool live: false
+                        FluentIcon { x: 18; y: 10; name: "calendar-sparkle-20"; size: 20; color: theme.textSecondary }
+                        OutlookSwitch { x: 64; y: 10; on: root.copilotReschedule; enabledState: parent.live; onToggled: root.copilotReschedule = !root.copilotReschedule }
+                        Text { id: conflictText; x: 116; height: 40; verticalAlignment: Text.AlignVCenter; text: qsTr("If conflicts arise, let Copilot reschedule this event."); font.family: theme.font; font.pixelSize: 14; color: parent.live ? theme.text : theme.disabled }
+                        Row {
+                            id: acceptable
+                            x: Math.max(conflictText.x + conflictText.implicitWidth + 10, 433.59); height: 40; spacing: 2
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Acceptable times"); font.family: theme.font; font.pixelSize: 14; color: parent.parent.live ? theme.brand : theme.disabled }
+                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: parent.parent.live ? theme.textSecondary : theme.disabled }
+                        }
+                        Item {
+                            x: Math.max(acceptable.x + acceptable.width + 8, 569.22); y: 8; width: 24; height: 24
+                            FluentIcon { x: 4; y: 4; name: "info-16-regular"; size: 16; color: theme.textStrong }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: qsTr("If you accept or create another event during this time, Copilot will help resolve conflicts by rescheduling this event.")
+                        }
+                    }
+
+                    // The place: Add a room with Copilot (14 #4F52B2 at 64),
+                    // the location field (509.34 x 34 at 224.32), Location
+                    // settings ▾ (49.33) at the right.
+                    Item {
+                        id: oLocRow
+                        width: parent.width; height: 40
+                        FluentIcon { x: 18; y: 10; name: "location-20"; size: 20; color: theme.textSecondary }
+                        Text {
+                            id: roomLink
+                            visible: root.copilot
+                            x: 64; y: 10.67; height: 18.67; verticalAlignment: Text.AlignVCenter
+                            text: qsTr("Add a room with Copilot"); font.family: theme.font; font.pixelSize: 14; color: theme.brandLink
+                            font.underline: roomHover.hovered
+                            HoverHandler { id: roomHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: root.copilotPrompt("Add a room") }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: text
+                        }
+                        Text {
+                            visible: root.outlookRead && !!root.location
+                            x: roomLink.visible ? roomLink.x + roomLink.width + 16 : 64; y: 10.67; height: 18.67; verticalAlignment: Text.AlignVCenter
+                            text: root.location; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong
+                        }
+                        Row {
+                            id: oLocSlot
+                            visible: root.outlookEdit
+                            x: root.copilot ? 224.32 : 64; y: 3; width: ofields.fieldEnd - 49.33 - 8 - x; height: 34
+                            spacing: 8
+                            Text {
+                                id: oLocText
+                                visible: !!root.location
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: root.location; font.family: theme.font; font.pixelSize: 14; color: theme.text
+                            }
+                        }
+                        OutlookFieldButton {
+                            id: locSettings
+                            visible: root.outlookEdit
+                            x: ofields.fieldEnd - 49.33; y: 4
+                            icon: "location-settings-20"; chevron: true; accessible: qsTr("Location settings")
+                            onClicked: locMenu.open()
+                            OutlookSwitchMenu {
+                                id: locMenu
+                                y: locSettings.height + 1
+                                rows: [{ label: qsTr("Rebook declined rooms"), on: root.rebookRooms, info: true }]
+                                onToggled: i => root.rebookRooms = !root.rebookRooms
+                            }
+                        }
+                        Rectangle { visible: root.outlookEdit; x: 52; y: 39.67; width: ofields.fieldEnd - 52; height: 1; color: theme.textSecondary }
+                    }
+
+                    // Microsoft Teams meeting: its switch (greyed once sent
+                    // as one), then "Facilitator is off for this meeting.
+                    // Turn on" and Options (89.64) at the right.
+                    Item {
+                        width: parent.width; height: 40
+                        readonly property bool teams: !!root.event.join_url
+                        readonly property bool live: root.outlookEdit && !teams
+                        FluentIcon { x: 18; y: 10; name: "video-20"; size: 20; color: theme.textSecondary }
+                        OutlookSwitch { x: 64; y: 10; on: parent.teams || root.online && root.outlookEdit; enabledState: parent.live; onToggled: { root.online = !root.online; root.markDirty() } }
+                        Text { id: teamsLabel; x: 116; height: 40; verticalAlignment: Text.AlignVCenter; text: qsTr("Microsoft Teams meeting"); font.family: theme.font; font.pixelSize: 14; color: parent.live ? theme.text : theme.disabled }
+                        FluentIcon {
+                            id: facIcon
+                            visible: root.outlookEdit && parent.teams
+                            x: Math.max(teamsLabel.x + teamsLabel.implicitWidth + 12, 287.85); y: 13
+                            name: "sparkle-16"; size: 14; color: theme.textSecondary
+                        }
+                        Text {
+                            id: facText
+                            visible: facIcon.visible
+                            x: facIcon.x + 18; y: 10.67; height: 18.67; verticalAlignment: Text.AlignVCenter
+                            text: qsTr("Facilitator is off for this meeting."); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                        }
+                        LinkButton {
+                            visible: facIcon.visible
+                            x: Math.max(facText.x + facText.implicitWidth + 8, 512.63); y: 10.67; height: 18.67; verticalAlignment: Text.AlignVCenter
+                            label: qsTr("Turn on"); color: theme.brand; onClicked: root.command("facilitator")
+                        }
+                        OutlookFieldButton {
+                            visible: root.outlookEdit && parent.teams
+                            x: ofields.fieldEnd - width; y: 4.33
+                            icon: "settings-20"; label: qsTr("Options"); accessible: qsTr("Button that opens the a dialog to change the online meeting options.")
+                            onClicked: root.command("options")
+                        }
+                    }
+                }
+                // The time panel (Start date, Start time, End time, the time
+                // zone, All day, Recurring; a series' repeat), a white
+                // surface 749 wide at 52 under the time row.
+                OutlookTimePanel {
+                    id: timePanel
+                    visible: root.timeOpen && root.outlookEdit
+                    x: 52; y: formRows.y + oTimeRow.y + 40 + 4
+                    width: parent.width - 64
+                    z: 5
+                }
+            }
+
+            // The body: the editor (748 wide at 53, a 0.67 #D1D1D1 edge,
+            // radius 4; its text 9.67 in, at least 71.83 tall, 24 under the
+            // text) with the attachments toolbar along its bottom (#F5F5F5,
+            // 46.5 tall, 32 px buttons 36 apart from 7: Attach ▾, Insert
+            // pictures inline, emoji, Show formatting options, Editor,
+            // Loop, accessibility), then Add an agenda (749 x 40, a 0.67
+            // #BDBDBD edge) 20 under it; an invitation's body read-only at
+            // 52, 22 down.
+            FluentSurface {
+                id: bodyCard
+                width: parent.width
+                height: root.outlookRead ? oReadBody.y + oReadBody.height + 22 : agendaBtn.y + 40 + 12
+                depth: 2; radius: 8; color: theme.surface
+                FluentIcon { x: 18; y: 22; name: "textbox-20"; size: 20; color: theme.textSecondary }
+                Item { id: oReadBody; visible: root.outlookRead; x: 52; y: 22; width: parent.width - 64; height: editor.contentHeight }
+                Rectangle {
+                    id: edBox
+                    visible: root.outlookEdit
+                    x: 53; y: 12; width: parent.width - 65
+                    readonly property real area: Math.max(71.83, editor.contentHeight + 24)
+                    height: 6.67 + area + strip.height + 0.67
+                    radius: 4; color: theme.surface
+                    border.width: 0.67; border.color: editor.activeFocus ? theme.brand : theme.stroke
+                    Item { id: oBodySlot; x: 9.67; y: 6.67; width: parent.width - 19.34; height: edBox.area }
+                    Rectangle {
+                        id: strip
+                        x: 0.67; y: 6.67 + edBox.area; width: parent.width - 1.34
+                        height: 46.5 + (root.formatOpen ? 40 : 0)
+                        radius: 4; color: theme.inputFilled
+                        Item { id: oFmtSlot; visible: root.formatOpen; x: 7; y: 8; width: parent.width - 14; height: 32 }
+                        Row {
+                            x: 7; y: (root.formatOpen ? 40 : 0) + 8.5; spacing: 4
+                            OutlookToolButton { icon: "attach-20"; chevron: true; tip: qsTr("Attach"); onClicked: root.command("attach") }
+                            OutlookToolButton { icon: "image-20"; tip: qsTr("Insert pictures inline"); onClicked: pictureDialog.open() }
+                            OutlookToolButton { icon: "sticker-20"; glyph: 22; iconColor: theme.brand; tip: qsTr("Insert emoji, images and stickers."); onClicked: root.command("emoji") }
+                            OutlookToolButton { icon: "text-edit-style-20"; checked: root.formatOpen; tip: qsTr("Show formatting options"); onClicked: root.formatOpen = !root.formatOpen }
+                            OutlookToolButton { icon: "text-proofing-tools-20"; tip: qsTr("Editor"); onClicked: root.command("editor") }
+                            OutlookToolButton { icon: "loop-page-20"; iconColor: theme.brand; tip: qsTr("Insert Loop component"); onClicked: root.command("loop") }
+                            OutlookToolButton { icon: "accessibility-checkmark-20"; tip: qsTr("Check for accessibility issues"); onClicked: root.command("accessibility") }
+                        }
+                    }
+                }
+                FluentIcon { visible: root.outlookEdit; x: 18; y: agendaBtn.y + 2; name: "notepad-20"; size: 20; color: theme.textSecondary }
+                Rectangle {
+                    id: agendaBtn
+                    visible: root.outlookEdit
+                    x: 52; y: edBox.y + edBox.height + 20; width: parent.width - 64; height: 40; radius: 4
+                    color: agendaHover2.hovered ? theme.rowHover : theme.surface
+                    border.width: 0.67; border.color: theme.pick("#BDBDBD", "#666666", "#FFFFFF")
+                    Text { x: 16.67; y: 8.67; height: 22.67; verticalAlignment: Text.AlignVCenter; text: qsTr("Add an agenda"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(agendaBtn, theme.textStrong) }
+                    HoverHandler { id: agendaHover2; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { editor.forceActiveFocus(); editor.cursorPosition = editor.length; editor.insert(editor.length, "<p><b>" + qsTr("Agenda") + "</b></p><ul><li></li></ul>"); root.markDirty() } }
                     Accessible.role: Accessible.Button
                     Accessible.name: qsTr("Add an agenda")
                 }
@@ -1292,7 +2031,7 @@ Item {
     // ── Options / Tracking pane ─────────────────────────────────────
     Item {
         id: optionsPane
-        visible: root.width >= 1000
+        visible: root.width >= 1000 && (!root.outlookPage || root.paneOpen)
         x: root.outlookPage ? (root.paneOpen ? root.width - 16 - 351 : root.width - 56) : root.paneOpen ? root.width - 368 : root.width - 56
         anchors { top: header.bottom; bottom: parent.bottom; topMargin: root.outlookPage ? 58 : 0; bottomMargin: root.outlookPage ? 16 : 0 }
         width: root.outlookPage && root.paneOpen ? 351 : root.width - x
@@ -1308,12 +2047,33 @@ Item {
             text: root.existing ? qsTr("Tracking") : qsTr("Options")
             font.family: theme.font; font.pixelSize: root.outlookPage ? 16 : root.existing ? 18 : 14; font.weight: Font.DemiBold; color: root.outlookPage ? theme.textSecondary : theme.text
         }
+        // Outlook's More options: Search attendees, Sort A to Z / Z to A;
+        // Copy attendee names, Copy all tracking information, Download as
+        // CSV.
+        Rectangle {
+            id: trackMore
+            visible: root.outlookPage
+            x: 264; y: 10; width: 32; height: 31.33; radius: 4
+            color: trackMoreHover.hovered ? theme.rowHover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(trackMore, theme.textStrong) }
+            HoverHandler { id: trackMoreHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: trackMoreMenu.open() }
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("More options")
+            MenuPopup {
+                id: trackMoreMenu
+                y: trackMore.height + 1
+                items: [{ label: qsTr("Search attendees"), icon: "search-16" }, { label: qsTr("Sort attendees A to Z"), icon: "text-sort-ascending-16" }, { label: qsTr("Sort attendees Z to A"), icon: "text-sort-descending-16" },
+                        { separator: true }, { label: qsTr("Copy attendee names"), icon: "copy-20" }, { label: qsTr("Copy all tracking information"), icon: "copy-20" }, { label: qsTr("Download as CSV"), icon: "copy-20" }]
+                onPicked: i => root.trackAct(i)
+            }
+        }
         Rectangle {
             id: hcFill2
             anchors.right: parent.right; anchors.rightMargin: root.outlookPage ? 15 : 24; y: root.outlookPage ? 10 : 8
             width: 32; height: root.outlookPage ? 31 : 24; radius: 4
             color: collapseHover.hovered ? theme.rowHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: root.paneOpen ? "panel-right-20" : "panel-right-expand-20"; size: 20; color: theme.onFill(hcFill2, theme.textSecondary) }
+            FluentIcon { anchors.centerIn: parent; name: root.outlookPage ? "panel-right-contract-20" : root.paneOpen ? "panel-right-20" : "panel-right-expand-20"; size: 20; color: theme.onFill(hcFill2, root.outlookPage ? theme.textStrong : theme.textSecondary) }
             HoverHandler { id: collapseHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.paneOpen = !root.paneOpen }
             Accessible.role: Accessible.Button
@@ -1372,9 +2132,112 @@ Item {
             Item { width: 1; height: 21 }
             LinkButton { label: qsTr("More options"); bold: true }
         }
+        // Outlook's Tracking (winpc, 2026-11-24): "Organizer" (14/600
+        // #707070, 30.67 tall, 12 in) 52 down; the organizer (32 px
+        // picture at 12, the name 14 #424242 at 52, "Sent on …" 12 #616161
+        // 18 under it) in a 47.67 row with a #F0F0F0 line; "Attendees";
+        // an invitation's "You didn't respond" (12 #707070, 28.35); then
+        // each answer's group ("Didn't respond: 2", 12/600 #707070 at 24
+        // after a 12 px ▾, 40 tall) and its people (14 in, 44 apart,
+        // "Required"/"Optional" under the name).
+        Flickable {
+            id: oTrack
+            visible: root.paneOpen && root.outlookPage
+            y: 52; width: parent.width; height: parent.height - y
+            contentHeight: oTrackCol.height + 12
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            Column {
+                id: oTrackCol
+                width: parent.width
+                Rectangle {
+                    visible: root.trackSearching
+                    x: 12; width: parent.width - 24; height: visible ? 32 : 0; radius: 4
+                    color: theme.surface; border.width: 0.67; border.color: theme.stroke
+                    TextInput {
+                        id: trackSearch
+                        x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter
+                        font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
+                        onTextEdited: root.trackQuery = text
+                        Accessible.name: qsTr("Search attendees")
+                        Text { visible: !trackSearch.text; text: qsTr("Search attendees"); color: theme.textSecondary; font: trackSearch.font }
+                    }
+                }
+                Item {
+                    width: parent.width; height: 30.67
+                    Text { x: 12; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Organizer"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
+                }
+                Item { width: 1; height: 12 }
+                Item {
+                    width: parent.width; height: 47.67
+                    Avatar { x: 12; y: 8; size: 32; name: root.event.organizer || root.me.name || ""; colorful: true }
+                    Text { x: 52; y: 7; height: 20; verticalAlignment: Text.AlignVCenter; text: root.event.organizer || root.me.name || ""; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
+                    Text {
+                        visible: !!root.sentAt
+                        x: 52; y: 25; height: 16; verticalAlignment: Text.AlignVCenter
+                        text: root.sentAt ? qsTr("Sent on %1 at %2").arg(theme.fmtDate(root.sentAt, "dddd, M/d/yyyy")).arg(root.fmtTime(root.sentAt)) : ""
+                        font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                    }
+                    Rectangle { y: 47; width: parent.width; height: 0.67; color: theme.pick("#F0F0F0", "#141414", "#5C5C5C") }
+                }
+                Item {
+                    width: parent.width; height: 30.67
+                    Text { x: 12; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Attendees"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
+                }
+                Item { width: 1; height: 10 }
+                Item {
+                    visible: root.outlookRead
+                    width: parent.width; height: visible ? 28.35 + 12 : 0
+                    Text {
+                        x: 12; height: 28.35; verticalAlignment: Text.AlignVCenter
+                        text: ({ accepted: qsTr("You accepted"), tentativelyAccepted: qsTr("You tentatively accepted"), declined: qsTr("You declined"), following: qsTr("You're following") })[root.event.response] || qsTr("You didn't respond")
+                        font.family: theme.font; font.pixelSize: 12; color: theme.pick("#707070", "#ADADAD", "#FFFFFF")
+                    }
+                }
+                Repeater {
+                    model: [
+                        { key: "accepted", label: qsTr("Accepted") },
+                        { key: "tentativelyAccepted", label: qsTr("Tentative") },
+                        { key: "declined", label: qsTr("Declined") },
+                        { key: "following", label: qsTr("Following") },
+                        { key: "none", label: qsTr("Didn't respond") }
+                    ]
+                    Column {
+                        id: ogroup
+                        required property var modelData
+                        readonly property var members: root.trackList.filter(p => root.responseKey(p.response) === modelData.key)
+                        property bool open: true
+                        visible: members.length > 0
+                        width: parent.width
+                        Item {
+                            width: parent.width; height: 40
+                            FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: ogroup.open ? "chevron-down-12" : "chevron-right-12"; size: 12; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
+                            Text { x: 24; anchors.verticalCenter: parent.verticalCenter; text: qsTr("%1: %2").arg(ogroup.modelData.label).arg(ogroup.members.length); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
+                            TapHandler { onTapped: ogroup.open = !ogroup.open }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: qsTr("%1: %2").arg(ogroup.modelData.label).arg(ogroup.members.length)
+                        }
+                        Item { visible: ogroup.open; width: 1; height: 6 }
+                        Repeater {
+                            model: ogroup.open ? ogroup.members : []
+                            Item {
+                                id: oPerson
+                                required property var modelData
+                                width: parent.width; height: 44
+                                Avatar { x: 14; y: 1; size: 32; name: oPerson.modelData.name || oPerson.modelData.address; colorful: true }
+                                Text { x: 54; y: 0; height: 20; verticalAlignment: Text.AlignVCenter; text: oPerson.modelData.name || oPerson.modelData.address; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
+                                Text { x: 54; y: 18; height: 16; verticalAlignment: Text.AlignVCenter; text: oPerson.modelData.kind === "optional" ? qsTr("Optional") : qsTr("Required"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("Open Profile Card for %1, Status: %2").arg(oPerson.modelData.name || oPerson.modelData.address).arg(oPerson.modelData.kind === "optional" ? qsTr("Optional") : qsTr("Required"))
+                            }
+                        }
+                    }
+                }
+            }
+        }
         // Tracking
         Flickable {
-            visible: root.paneOpen && root.existing
+            visible: root.paneOpen && root.existing && !root.outlookPage
             x: 12; y: 56; width: parent.width - 24; height: parent.height - 56
             contentHeight: tracking.height
             clip: true
@@ -1420,10 +2283,31 @@ Item {
             }
         }
     }
-    readonly property real fieldCardTop: titleRow.y
     readonly property var trackPeople: ((detail && detail.attendees) || event.attendees || [])
         .filter(a => a.kind !== "resource" && (a.address || "").toLowerCase() !== (event.organizer_address || "").toLowerCase())
     function responseKey(r) { return ["accepted", "tentativelyAccepted", "declined", "following"].indexOf(r) >= 0 ? r : "none" }
+    /// Tracking's people as Outlook lists them (searched, sorted).
+    readonly property var trackList: {
+        const q = trackQuery.trim().toLowerCase()
+        let l = trackPeople.filter(p => !q || (p.name || "").toLowerCase().indexOf(q) >= 0 || (p.address || "").toLowerCase().indexOf(q) >= 0)
+        if (trackSort) l = l.slice().sort((a, b) => trackSort * (a.name || a.address || "").localeCompare(b.name || b.address || ""))
+        return l
+    }
+    /// When the invitation went out (Outlook's "Sent on …"; the event's
+    /// createdDateTime).
+    readonly property var sentAt: detail && detail.created ? new Date(detail.created) : null
+    function trackStatus(p) { return ({ accepted: qsTr("Accepted"), tentativelyAccepted: qsTr("Tentative"), declined: qsTr("Declined"), following: qsTr("Following") })[p.response] || qsTr("Didn't respond") }
+    function trackAct(i) {
+        if (i === 0) { trackSearching = !trackSearching; trackQuery = ""; if (trackSearching) trackSearch.forceActiveFocus() }
+        else if (i === 1) trackSort = 1
+        else if (i === 2) trackSort = -1
+        else if (i === 4) backend.copyText(trackList.map(p => p.name || p.address).join("; "))
+        else if (i === 5) backend.copyText([qsTr("Organizer") + "\t" + (event.organizer || "")]
+            .concat(trackList.map(p => (p.name || p.address) + "\t" + (p.kind === "optional" ? qsTr("Optional") : qsTr("Required")) + "\t" + trackStatus(p))).join("\n"))
+        else if (i === 6) root.command("csv:" + JSON.stringify([[qsTr("Name"), qsTr("Attendance"), qsTr("Response")], [event.organizer || "", qsTr("Meeting organizer"), qsTr("None")]]
+            .concat(trackList.map(p => [p.name || p.address, p.kind === "optional" ? qsTr("Optional attendee") : qsTr("Required attendee"), trackStatus(p)]))))
+    }
+
 
     // ── behaviour ───────────────────────────────────────────────────
     function commitLocation() {
@@ -2018,10 +2902,346 @@ Item {
     function confirmCancelForTest(note) { if (channel) { cancelMeeting(note || "", ""); cancelDialog.close() } else { cancelMeeting(note || "", cancelScope); outlookCancel.close() } }
     readonly property bool cancelOpenForTest: outlookCancel.opened || cancelDialog.opened
     function pageCancelItemsForTest() { return pageCancelMenu.items.map(x => x.label) }
+    /// Outlook's page's menus by name (the harness opens and captures them).
+    function pageMenuForTest(name) {
+        return ({ share: obShareMenu, busy: obShowAsMenu, reminder: obReminderMenu, categories: obCatsMenu, private: obPrivateMenu, more: obMoreMenu,
+                  cancel: pageCancelMenu2, response: respMenu2, location: locMenu, tracking: trackMoreMenu, respmore: obRespMoreMenu, charm: charmPop })[name] || null
+    }
+    function pickReminderForTest(m) { reminder = m; command("reminder:" + m) }
+    function pickShowAsForTest(k) { showAs = k; command("showAs:" + ({ Free: "free", WorkingElsewhere: "workingElsewhere", Tentative: "tentative", Busy: "busy", Oof: "oof" })[k]) }
     function openRsvpNoteForTest() { rsvpDialog.openFor() }
     readonly property bool rsvpNoteOpen: rsvpDialog.visible
     function closeRsvpNoteForTest() { rsvpDialog.close() }
     function confirmRsvpNoteForTest(response, note) { rsvpNote.text = note || ""; rsvpDialog.response = response; respond(response, true, note || "", false); rsvpDialog.close() }
+
+    // ── Outlook's form: its parts ───────────────────────────────────
+    property bool copilotReschedule: false
+    property bool rebookRooms: false
+    /// The time row's text: "Wed 12/2/2026 9:00 PM - 9:30 PM", or for a
+    /// series Outlook's sentence ("Occurs every Monday from 9:00 PM to
+    /// 9:30 PM effective Mon 11/30/2026 until Mon 5/17/2027").
+    function timeLine() {
+        const day = theme.fmtDate(startAt, "ddd M/d/yyyy")
+        const showSeries = outlookEdit && !!recurrence && (!isSeries || scope !== "occurrence")
+        if (!showSeries) return allDay ? day + " " + qsTr("All day") : day + " " + fmtTime(startAt) + " - " + fmtTime(endAt)
+        const r = recurrence
+        const head = r.unit === "day" ? (r.interval === 1 ? qsTr("Occurs every day") : qsTr("Occurs every %1 days").arg(r.interval))
+            : r.unit === "week" ? (r.interval === 1 ? qsTr("Occurs every %1").arg(daysText(r.days)) : qsTr("Occurs every %1 weeks on %2").arg(r.interval).arg(daysText(r.days)))
+            : r.unit === "month" ? qsTr("Occurs day %1 of every month").arg(r.start.getDate())
+            : qsTr("Occurs every %1 %2").arg(monthLabels[r.start.getMonth()]).arg(r.start.getDate())
+        const when = allDay ? "" : " " + qsTr("from %1 to %2").arg(fmtTime(startAt)).arg(fmtTime(endAt))
+        const from = " " + qsTr("effective %1").arg(theme.fmtDate(r.start, "ddd M/d/yyyy"))
+        const until = r.end ? " " + qsTr("until %1").arg(theme.fmtDate(r.end, "ddd M/d/yyyy")) : ""
+        return head + when + from + until
+    }
+    FileDialog {
+        id: pictureDialog
+        title: qsTr("Insert pictures inline")
+        nameFilters: [qsTr("Images (*.png *.jpg *.jpeg *.gif *.bmp)")]
+        onAccepted: { editor.insert(editor.cursorPosition, "<img src=\"" + selectedFile + "\" />"); root.markDirty() }
+    }
+    // A person in the attendees row (Outlook's pill: 34 tall, a 0.67
+    // #D1D1D1 edge; the 28 px picture 2.67 in, the name 12 px 40.67 in, a
+    // 20 px ✕ 8 after it, 10.67 to the edge).
+    component OutlookChip: Rectangle {
+        id: oc
+        property string name
+        signal remove()
+        width: 40.67 + ocName.implicitWidth + 8 + 20 + 10.67; height: 34; radius: 17
+        color: theme.surface; border.width: 0.67; border.color: theme.stroke
+        Avatar { x: 2.67; y: 3; size: 28; name: oc.name; colorful: true }
+        Text { id: ocName; x: 40.67; y: 8.33; height: 16; verticalAlignment: Text.AlignVCenter; text: oc.name; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+        Item {
+            x: 40.67 + ocName.implicitWidth + 8; y: 7; width: 20; height: 20
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: oc.remove() }
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("Remove %1").arg(oc.name)
+        }
+        Accessible.role: Accessible.ListItem
+        Accessible.name: oc.name
+    }
+    // A field row's button (Tracking, Scheduler, Options: 31.33 tall, the
+    // glyph 6.67 in, the label 14/600 #424242 6 after it, 6.67 to the
+    // edge; Response options and Location settings: the glyph and a 12 px
+    // ▾, 49.33 x 32).
+    component OutlookFieldButton: Rectangle {
+        id: ofb
+        property string icon
+        property string label
+        property string accessible: ""
+        property bool chevron: false
+        signal clicked()
+        width: label ? 6.67 + 20 + 6 + ofbText.implicitWidth + 6.67 : 6.67 + 20 + 4 + 12 + 6.67
+        height: label ? 31.33 : 32; radius: 4
+        color: ofbHover.hovered ? theme.rowHover : "transparent"
+        FluentIcon { x: 6.67; anchors.verticalCenter: parent.verticalCenter; name: ofb.icon; size: 20; color: theme.onFill(ofb, theme.textStrong) }
+        Text { id: ofbText; visible: !!ofb.label; x: 32.67; anchors.verticalCenter: parent.verticalCenter; text: ofb.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(ofb, theme.textStrong) }
+        FluentIcon { visible: ofb.chevron; x: 30.67; y: 10.67; name: "chevron-down-12"; size: 12; color: theme.onFill(ofb, theme.textStrong) }
+        HoverHandler { id: ofbHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: ofb.clicked() }
+        Accessible.role: Accessible.Button
+        Accessible.name: ofb.accessible || ofb.label
+    }
+    // Outlook's switch: 40 x 20, a 0.67 #616161 edge off (#E0E0E0 when
+    // greyed) with the 14 px knob at the left; on: brand with a white knob
+    // at the right (greyed: #F0F0F0 with a #BDBDBD knob).
+    component OutlookSwitch: Rectangle {
+        id: osw
+        property bool on: false
+        property bool enabledState: true
+        property string accessible
+        signal toggled()
+        width: 40; height: 20; radius: 10
+        color: osw.on ? (osw.enabledState ? theme.checkedFill : theme.pick("#F0F0F0", "#3D3D3D", "#000000")) : "transparent"
+        border.width: osw.on ? 0 : 0.67
+        border.color: osw.enabledState ? theme.textSecondary : theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF")
+        Rectangle {
+            x: osw.on ? 23 : 3; anchors.verticalCenter: parent.verticalCenter
+            width: 14; height: 14; radius: 7
+            color: !osw.enabledState ? theme.disabled : osw.on ? theme.onFill(osw, "white") : theme.textSecondary
+        }
+        HoverHandler { enabled: osw.enabledState; cursorShape: Qt.PointingHandCursor }
+        TapHandler { enabled: osw.enabledState; onTapped: osw.toggled() }
+        Accessible.role: Accessible.CheckBox
+        Accessible.name: osw.accessible
+        Accessible.checked: osw.on
+    }
+    // Response options / Location settings: a Fluent menu of switch rows
+    // (the label 6 in, the switch 6 after the widest label, 8 from the
+    // edge; rows 32 tall, 2 apart) and an optional row after a divider.
+    component OutlookSwitchMenu: Popup {
+        id: osm
+        property var rows: []
+        property string tail: ""
+        signal toggled(int index)
+        signal tailPicked()
+        padding: 4
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: FluentSurface { depth: 16; radius: 4 }
+        FontMetrics { id: osmMetrics; font.family: theme.font; font.pixelSize: 14 }
+        readonly property real labelW: Math.max(0, ...osm.rows.map(r => osmMetrics.advanceWidth(r.label) + (r.info ? 30 : 0)))
+        contentItem: Column {
+            spacing: 2
+            Repeater {
+                model: osm.rows
+                Rectangle {
+                    id: osmRow
+                    required property var modelData
+                    required property int index
+                    width: 6 + osm.labelW + 6 + 40 + 8; height: modelData.info ? 36.5 : 32; radius: 4
+                    color: osmHover.hovered ? theme.menuHover : "transparent"
+                    Text { x: 6; anchors.verticalCenter: parent.verticalCenter; text: osmRow.modelData.label; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(osmRow, theme.textStrong) }
+                    FluentIcon { visible: !!osmRow.modelData.info; x: osmRow.width - 8 - 40 - 6 - 24 + 4; anchors.verticalCenter: parent.verticalCenter; name: "info-16-regular"; size: 16; color: theme.textStrong }
+                    OutlookSwitch { x: osmRow.width - 8 - 40; anchors.verticalCenter: parent.verticalCenter; on: osmRow.modelData.on; accessible: osmRow.modelData.label; onToggled: osm.toggled(osmRow.index) }
+                    HoverHandler { id: osmHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: osm.toggled(osmRow.index) }
+                    Accessible.role: Accessible.CheckBox
+                    Accessible.name: osmRow.modelData.label
+                    Accessible.checked: osmRow.modelData.on
+                }
+            }
+            Item { visible: !!osm.tail; width: 1; height: 8.67; Rectangle { y: 4; width: 6 + osm.labelW + 6 + 40 + 8; height: 1; color: theme.dividerSoft } }
+            Rectangle {
+                id: osmTail
+                visible: !!osm.tail
+                width: 6 + osm.labelW + 6 + 40 + 8; height: 32; radius: 4
+                color: osmTailHover.hovered ? theme.menuHover : "transparent"
+                Text { x: 8; anchors.verticalCenter: parent.verticalCenter; text: osm.tail; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(osmTail, theme.textStrong) }
+                HoverHandler { id: osmTailHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: { osm.close(); osm.tailPicked() } }
+                Accessible.role: Accessible.MenuItem
+                Accessible.name: osm.tail
+            }
+        }
+    }
+    // The body's toolbar buttons: 32 x 32, radius 2, the 20 px glyph
+    // centred (the emoji's 22); Attach 46 wide with a 16 px ▾.
+    component OutlookToolButton: Rectangle {
+        id: otb
+        property string icon
+        property string tip
+        property bool chevron: false
+        property bool checked: false
+        property int glyph: 20
+        property color iconColor: theme.textStrong
+        signal clicked()
+        width: chevron ? 46 : 32; height: 32; radius: 2
+        color: otb.checked ? theme.pick("#E0E0E0", "#3D3D3D", "#1AEBFF") : otbHover.hovered ? theme.rowHover : "transparent"
+        FluentIcon { x: otb.chevron ? 3 : (32 - otb.glyph) / 2; anchors.verticalCenter: parent.verticalCenter; name: otb.icon; size: otb.glyph; color: theme.onFill(otb, otb.iconColor) }
+        FluentIcon { visible: otb.chevron; x: 27; y: 8; name: "chevron-down-16"; size: 16; color: theme.onFill(otb, theme.textStrong) }
+        HoverHandler { id: otbHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: otb.clicked() }
+        ToolTip.visible: otbHover.hovered
+        ToolTip.text: otb.tip
+        ToolTip.delay: 600
+        Accessible.role: Accessible.Button
+        Accessible.name: otb.tip
+    }
+    // The time row's panel (Outlook's, measured on winpc 2026-11-24): a
+    // white surface (radius 4, the depth-16 shadow); "Start date", "Start
+    // time", "End time" 12 px #707070 over their fields (200.67 / 120 / 120
+    // x 32 with a 0.67 #D1D1D1 line under them) at 16.67, 244.33, 379.33,
+    // 36.67 down; the time zone (a brand globe) at 503.33; All day and
+    // Recurring 93.67 down (a series: All day at 551 in the first row and
+    // the repeat in the second: Repeat every, the count and unit, the
+    // weekday circles 43 apart from 239, Until and its date, Remove).
+    component OutlookTimePanel: FluentSurface {
+        id: otp
+        depth: 16; radius: 4; color: theme.surface
+        readonly property bool seriesForm: root.seriesScoped && root.scope !== "occurrence"
+        readonly property real repeatY: seriesForm ? 91.67 : 141
+        height: (root.recurrence && !(root.seriesScoped && root.scope === "occurrence") ? repeatY + 35 : 93.67 + 32) + 16
+        TapHandler {}
+        Repeater {
+            model: [[qsTr("Start date"), 16.67, 200.67], [qsTr("Start time"), 244.33, 120], [qsTr("End time"), 379.33, 120]]
+            Item {
+                id: otpField
+                required property var modelData
+                required property int index
+                x: modelData[1]; width: modelData[2]; height: 72
+                Text { x: 5; y: 16.67; height: 20; verticalAlignment: Text.AlignVCenter; text: otpField.modelData[0]; font.family: theme.font; font.pixelSize: 12; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
+                Item {
+                    id: otpBox
+                    y: 36.67; width: parent.width; height: 32
+                    Text {
+                        x: 6; anchors.verticalCenter: parent.verticalCenter
+                        text: otpField.index === 0 ? root.fmtDate(root.startAt) : root.fmtTime(otpField.index === 1 ? root.startAt : root.endAt)
+                        font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                    }
+                    FluentIcon { x: otpBox.width - (otpField.index === 0 ? 25 : 18); anchors.verticalCenter: parent.verticalCenter; name: otpField.index === 0 ? "calendar-ltr-20" : "chevron-down-12"; size: otpField.index === 0 ? 20 : 12; color: theme.textSecondary }
+                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.stroke }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { if (otpField.index === 0) otpDate.openPicker(); else timeList.show(otpBox, otpField.index === 2) } }
+                    DatePickerField {
+                        id: otpDate
+                        visible: otpField.index === 0
+                        bare: true; width: otpBox.width; height: otpBox.height
+                        date: root.startAt
+                        onPicked: d => { const n = new Date(root.startAt); n.setFullYear(d.getFullYear(), d.getMonth(), d.getDate()); root.setStart(n) }
+                    }
+                    Accessible.role: Accessible.ComboBox
+                    Accessible.name: otpField.modelData[0]
+                }
+            }
+        }
+        Item {
+            x: 503.33; y: 34.67; width: 32; height: 32
+            FluentIcon { anchors.centerIn: parent; name: "globe-20"; size: 20; color: theme.brand }
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("Time zone")
+        }
+        Row {
+            x: otp.seriesForm ? 551.33 : 28.67; y: otp.seriesForm ? 34.67 : 93.67; height: 32; spacing: 0
+            Item {
+                width: 32; height: 32
+                Rectangle {
+                    anchors.centerIn: parent; width: 16; height: 16; radius: 2
+                    color: root.allDay ? theme.checkedFill : "transparent"; border.width: root.allDay ? 0 : 0.67; border.color: theme.textSecondary
+                    FluentIcon { visible: root.allDay; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: "white" }
+                }
+                TapHandler { onTapped: { root.allDay = !root.allDay; root.markDirty() } }
+                Accessible.role: Accessible.CheckBox
+                Accessible.name: qsTr("All day")
+                Accessible.checked: root.allDay
+            }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("All day"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary; TapHandler { onTapped: { root.allDay = !root.allDay; root.markDirty() } } }
+        }
+        Rectangle {
+            id: recurBtn
+            visible: !otp.seriesForm && !root.isSeries
+            x: 121.46; y: 93.67; width: 110.3; height: 32; radius: 4
+            color: recurHover.hovered || root.recurrence ? theme.rowHover : "transparent"
+            FluentIcon { x: 12.67; anchors.verticalCenter: parent.verticalCenter; name: "arrow-repeat-all-20"; size: 20; color: theme.onFill(recurBtn, root.recurrence ? theme.brand : theme.textStrong) }
+            Text { x: 38.67; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Recurring"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(recurBtn, theme.textStrong) }
+            HoverHandler { id: recurHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: { root.recurrence = root.recurrence ? null : root.defaultSeries(); root.markDirty() } }
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("Make recurring")
+        }
+        // The repeat (a series, or a one-off made recurring).
+        Item {
+            visible: !!root.recurrence && !(root.seriesScoped && root.scope === "occurrence")
+            y: otp.repeatY; width: parent.width; height: 35
+            readonly property var r: root.recurrence
+            Text { x: 18.67; y: 4; height: 26; verticalAlignment: Text.AlignVCenter; text: qsTr("Repeat every"); font.family: theme.font; font.pixelSize: 12; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
+            Rectangle {
+                id: everyBox
+                x: 90.84; y: 2; width: 49.55; height: 28; radius: 4; color: theme.inputFilled
+                Text { x: 4; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.r ? parent.parent.r.interval : ""; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                FluentIcon { x: 25.56; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.pick("#8A8A8A", "#ADADAD", "#FFFFFF") }
+                TapHandler { onTapped: everyMenu.open() }
+                MenuPopup {
+                    id: everyMenu
+                    y: everyBox.height + 2
+                    items: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => ({ label: String(n), checked: !!root.recurrence && root.recurrence.interval === n }))
+                    onPicked: i => { const r = root.recurrence; root.recurrence = root.makeRecurrence(r.unit, i + 1, r.days, r.start, r.end); root.markDirty() }
+                }
+            }
+            Rectangle {
+                id: unitBox2
+                x: 150.4; y: 2; width: 73.72; height: 28; radius: 4; color: theme.inputFilled
+                Text { x: 4; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.r ? ({ day: qsTr("day"), week: qsTr("week"), month: qsTr("month"), year: qsTr("year") })[parent.parent.r.unit] : ""; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                FluentIcon { x: 49.71; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.pick("#8A8A8A", "#ADADAD", "#FFFFFF") }
+                TapHandler { onTapped: unitMenu2.open() }
+                MenuPopup {
+                    id: unitMenu2
+                    y: unitBox2.height + 2
+                    items: [qsTr("day"), qsTr("week"), qsTr("month"), qsTr("year")].map((l, i) => ({ label: l, checked: !!root.recurrence && root.recurrence.unit === ["day", "week", "month", "year"][i] }))
+                    onPicked: i => { const r = root.recurrence; root.recurrence = root.makeRecurrence(["day", "week", "month", "year"][i], r.interval, r.days, r.start, r.end); root.markDirty() }
+                }
+            }
+            Repeater {
+                // Monday first, as Outlook's circles.
+                model: (parent.r && parent.r.unit === "week") ? [1, 2, 3, 4, 5, 6, 0] : []
+                Rectangle {
+                    id: wd
+                    required property int modelData
+                    required property int index
+                    readonly property bool on: !!root.recurrence && root.recurrence.days.indexOf(modelData) >= 0
+                    x: 239.11 + index * 43; y: 0; width: 32; height: 32; radius: 16
+                    color: on ? theme.checkedFill : theme.pick("#EDEBE9", "#3D3D3D", "#000000")
+                    Text { anchors.centerIn: parent; text: Qt.locale().dayName(wd.modelData, Locale.NarrowFormat); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(wd, wd.on ? "white" : theme.pick("#201F1E", "#FFFFFF", "#FFFFFF")) }
+                    TapHandler {
+                        onTapped: {
+                            const r = root.recurrence, d = r.days.slice(), k = d.indexOf(wd.modelData)
+                            if (k >= 0) { if (d.length > 1) d.splice(k, 1) } else d.push(wd.modelData)
+                            root.recurrence = root.makeRecurrence(r.unit, r.interval, d, r.start, r.end); root.markDirty()
+                        }
+                    }
+                    Accessible.role: Accessible.CheckBox
+                    Accessible.name: root.dayLabels[wd.modelData]
+                    Accessible.checked: wd.on
+                }
+            }
+            Text { x: 542.11; y: 4; height: 27.33; verticalAlignment: Text.AlignVCenter; text: qsTr("Until"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+            Rectangle {
+                id: untilBox
+                x: 573.03; y: -4; width: 99.01; height: 35.33; radius: 4; color: theme.inputFilled
+                Text { x: 6.67; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.r && parent.parent.r.end ? theme.fmtDate(parent.parent.r.end, "MMM d, yyyy") : qsTr("Select date"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                FluentIcon { x: 77.35; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 10; color: theme.textSecondary }
+                TapHandler { onTapped: untilPicker.openPicker() }
+                DatePickerField {
+                    id: untilPicker
+                    bare: true; width: untilBox.width; height: untilBox.height
+                    date: root.recurrence && root.recurrence.end ? root.recurrence.end : root.startAt
+                    minDate: root.startAt
+                    onPicked: d => { const r = root.recurrence; root.recurrence = root.makeRecurrence(r.unit, r.interval, r.days, r.start, d); root.markDirty() }
+                }
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("End date")
+            }
+            Item {
+                visible: !!parent.r && !!parent.r.end
+                x: 672.04; y: -4; width: 27; height: 34
+                FluentIcon { x: 6; y: 11; name: "delete-16"; size: 16; color: theme.brandLink }
+                TapHandler { onTapped: { const r = root.recurrence; root.recurrence = root.makeRecurrence(r.unit, r.interval, r.days, r.start, null); root.markDirty() } }
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("Remove end date")
+            }
+        }
+    }
 
     // ── parts ───────────────────────────────────────────────────────
     // A field row: its 20 px icon in a 32 x 32 box at 32, the field at 74.
@@ -2108,31 +3328,67 @@ Item {
     // Outlook's command bar button: 31 tall, padding 0 7, a 20 px glyph,
     // a 14 px label (600 for Send, Join, Chat), a 12 px ▾; Send brand,
     // Join and Chat outlined.
+    // Outlook's command bar button (Fluent ToolbarButton, 31.33 tall,
+    // radius 4): an icon-only one is 32 wide (6, the 20 px glyph, 6); else
+    // 6.67, the glyph, 4, the 14 px #424242 label, then 4 and the 12 px ▾
+    // and 4.67, or 6.67. Join, Chat and Send: 12.67, the glyph, 6,
+    // the label 14/600, 12.67 (Join and Chat outlined #D1D1D1, Send brand).
+    // Event | Series are radio buttons (the picked one #EBEBEB with a 0.67
+    // #616161 edge).
     component OutlookBarButton: Rectangle {
         id: obb
         property string icon
-        property color iconColor: primary ? "white" : theme.textStrong
+        property color iconColor: primary ? "white" : enabledState ? theme.textStrong : theme.disabled
         property string label
         property string accessible: ""
         property bool chevron: false
         property bool primary: false
         property bool outlined: false
         property bool strong: false
+        property bool radio: false
+        property bool checked: false
+        property bool enabledState: true
         signal clicked()
-        width: obbRow.implicitWidth + 14 + (outlined || primary ? 12 : 0); height: 31; radius: 4
-        color: primary ? (obbh.hovered ? theme.brandHover : theme.brandFill) : obbh.hovered ? theme.rowHover : "transparent"
-        border.width: outlined ? 0.67 : 0; border.color: theme.stroke
-        Row {
-            id: obbRow
-            anchors.centerIn: parent; spacing: 4
-            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: obb.icon; size: 20; color: theme.onFill(obb, obb.iconColor) }
-            Text { visible: !!obb.label; anchors.verticalCenter: parent.verticalCenter; text: obb.label; font.family: theme.font; font.pixelSize: 14; font.weight: obb.strong ? Font.DemiBold : Font.Normal; color: theme.onFill(obb, obb.primary ? "white" : obb.strong ? theme.text : theme.textStrong) }
-            FluentIcon { visible: obb.chevron; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.onFill(obb, theme.textStrong) }
+        readonly property real labelW: obbText.visible ? obbText.implicitWidth : 0
+        readonly property bool big: outlined || primary
+        width: big ? 12.67 + 20 + 6 + labelW + 12.67
+            : !label && !chevron ? 32
+            : 6.67 + 20 + (label ? 4 + labelW : 0) + (chevron ? 4 + 12 + 4.67 : 6.67)
+        height: 31.33; radius: 4
+        color: primary ? (obbh.hovered ? theme.brandHover : theme.brandFill)
+            : radio && checked ? theme.pick("#EBEBEB", "#383838", "#1AEBFF")
+            : outlined ? (obbh.hovered ? theme.rowHover : theme.surface)
+            : obbh.hovered && enabledState ? theme.rowHover : "transparent"
+        border.width: outlined || (radio && checked) ? 0.67 : 0
+        border.color: radio ? theme.textSecondary : theme.stroke
+        FluentIcon {
+            x: obb.big ? 12.67 : !obb.label && !obb.chevron ? 6 : 6.67; anchors.verticalCenter: parent.verticalCenter
+            name: obb.icon; size: 20; color: theme.onFill(obb, obb.iconColor)
         }
-        HoverHandler { id: obbh; cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: obb.clicked() }
-        Accessible.role: Accessible.Button
+        Text {
+            id: obbText
+            visible: !!obb.label
+            x: obb.big ? 12.67 + 20 + 6 : 6.67 + 20 + 4; anchors.verticalCenter: parent.verticalCenter
+            text: obb.label; font.family: theme.font; font.pixelSize: 14; font.weight: obb.strong ? Font.DemiBold : Font.Normal
+            color: theme.onFill(obb, obb.primary ? "white" : !obb.enabledState ? theme.disabled : obb.strong || (obb.radio && obb.checked) ? theme.text : theme.textStrong)
+        }
+        FluentIcon {
+            visible: obb.chevron
+            x: obb.width - 4.67 - 12; y: 10.33
+            name: "chevron-down-12"; size: 12; color: theme.onFill(obb, obb.enabledState ? theme.textStrong : theme.disabled)
+        }
+        HoverHandler { id: obbh; enabled: obb.enabledState; cursorShape: Qt.PointingHandCursor }
+        TapHandler { enabled: obb.enabledState; onTapped: obb.clicked() }
+        Accessible.role: obb.radio ? Accessible.RadioButton : Accessible.Button
         Accessible.name: obb.accessible || obb.label
+        Accessible.checkable: obb.radio
+        Accessible.checked: obb.checked
+    }
+    // A command bar divider: 12.67 between its neighbours (4 + 4.67 + 4),
+    // a 0.67 x 16 #D1D1D1 line.
+    component ObSep: Item {
+        width: 4.67; height: 31.33
+        Rectangle { x: 2; anchors.verticalCenter: parent.verticalCenter; width: 0.67; height: 16; color: theme.stroke }
     }
     // The info bar's buttons (Outlook: 23 tall, 0.67 #D1D1D1 edge, radius
     // 4, 12 px #242424, padding 0 8).

@@ -4812,6 +4812,35 @@ Window {
             else if (arg("cal-card-cancel") && step === 15) { const s = arg("cal-card-cancel").split("|")[0]; console.warn("CALTEST card-cancel done", calTest.done, JSON.stringify(JSON.parse(backend.calendarJson).filter(e => e.subject === s).map(e => e.start_utc + (e.is_cancelled ? " cancelled" : "")))); Qt.quit() }
             // --cal-page-cancel=<subject>|<scope>|<message>: the event page's
             // Cancel meeting (a series' ▾), Outlook's dialog, Send.
+            // --cal-page=<subject>|<scope>: your event's or an invitation's
+            // page (Outlook's form): its layout and shots, the time panel,
+            // then it quits.
+            else if (arg("cal-page") && step === 5) console.warn("CALTEST page", calendarView.pageForTest(arg("cal-page").split("|")[0], arg("cal-page").split("|")[1] || ""))
+            else if (arg("cal-page") && step === 7) { const f = calendarView.formForTest; console.warn("CALTEST page charm", f.charm, JSON.stringify(f.event.charm || ""), f.reminder, f.sentAt, f.showAs, f.sensitivity, JSON.stringify(f.eventCategories)); console.warn("CALTEST page layout", f.outlookPage, f.mode, f.scope, JSON.stringify(calendarView.layoutForTest(f, f))); cap("page") }
+            else if (arg("cal-page") && step === 8) { const f = calendarView.formForTest; if (f.outlookEdit) f.timeOpen = true; f.moreSuggestions = true }
+            else if (arg("cal-page") && step === 9) { const f = calendarView.formForTest; console.warn("CALTEST page open layout", JSON.stringify(calendarView.layoutForTest(f, f))); cap("page-open") }
+            // --cal-page-menus=share,busy,…: each of the page's menus, opened
+            // and captured in turn (cal-page-menu-<name>.png).
+            else if (arg("cal-page") && arg("cal-page-menus") && step >= 10 && step < 10 + arg("cal-page-menus").split(",").length * 2) {
+                const f = calendarView.formForTest, names = arg("cal-page-menus").split(","), k = Math.floor((step - 10) / 2), m = f.pageMenuForTest(names[k])
+                f.timeOpen = false
+                if ((step - 10) % 2 === 0) { const prev = k > 0 ? f.pageMenuForTest(names[k - 1]) : null; if (prev) prev.close(); f.moreSuggestions = false; if (m) m.open(); console.warn("CALTEST page menu", names[k], !!m) }
+                else { if (m) console.warn("CALTEST page menu geometry", names[k], JSON.stringify(m.contentItem.mapToItem(f, 0, 0)), m.width, m.height); cap("page-menu-" + names[k]) }
+            }
+            // --cal-page-set=reminder:<min>|showAs:<Free…>: saved as Outlook's
+            // form does (Graph PATCH), then the page reopened from the
+            // refreshed calendar.
+            else if (arg("cal-page") && arg("cal-page-set") && step === 10) {
+                const f = calendarView.formForTest, p = arg("cal-page-set").split(":")
+                if (p[0] === "reminder") f.pickReminderForTest(parseInt(p[1])); else if (p[0] === "showAs") f.pickShowAsForTest(p[1])
+            }
+            else if (arg("cal-page") && arg("cal-page-set") && step === 13) console.warn("CALTEST page set done", calTest.done)
+            // --cal-page-popout: Open in new window, captured, closed again.
+            else if (arg("cal-page") && args.indexOf("--cal-page-popout") >= 0 && step === 10) calendarView.formForTest.command("popout")
+            else if (arg("cal-page") && args.indexOf("--cal-page-popout") >= 0 && step === 11) { const w = calendarView.popoutForTest; console.warn("CALTEST page popout", !!w, w ? w.visible + " " + w.width + "x" + w.height : "", calendarView.formForTest.poppedOut, calendarView.formOpen); if (w) w.contentItem.grabToImage(r => r.saveToFile(dir + "cal-page-popout.png")) }
+            else if (arg("cal-page") && args.indexOf("--cal-page-popout") >= 0 && step === 12) { const w = calendarView.popoutForTest; if (w) w.close() }
+            else if (arg("cal-page") && args.indexOf("--cal-page-popout") >= 0 && step === 13) console.warn("CALTEST page popin", calendarView.formForTest.poppedOut, calendarView.formForTest.parent === null ? "none" : "back")
+            else if (arg("cal-page") && step === Math.max(10, arg("cal-page-menus") ? 10 + arg("cal-page-menus").split(",").length * 2 : 0, arg("cal-page-set") || args.indexOf("--cal-page-popout") >= 0 ? 14 : 0)) Qt.quit()
             else if (arg("cal-page-cancel") && step === 5) console.warn("CALTEST page-cancel page", calendarView.pageForTest(arg("cal-page-cancel").split("|")[0]))
             else if (arg("cal-page-cancel") && step === 6) { console.warn("CALTEST page-cancel layout", JSON.stringify(calendarView.layoutForTest(calendarView.formForTest, calendarView.formForTest).slice(0, 160))); cap("pagecancel-page") }
             else if (arg("cal-page-cancel") && step === 7) { const f = calendarView.formForTest; console.warn("CALTEST page-cancel menu", f.seriesScoped, JSON.stringify(f.pageCancelItemsForTest())); f.openCancelForTest(arg("cal-page-cancel").split("|")[1]) }
@@ -5039,7 +5068,7 @@ Window {
                 ]
                 if (step >= 1 && step - 1 < seq.length) seq[step - 1]()
             }
-            else if (!arg("cal-respond") && !arg("cal-schedule") && !arg("cal-cancel") && !arg("cal-card-cancel") && !arg("cal-page-cancel") && !arg("cal-joinid") && !arg("cal-edit") && !arg("cal-buttons") && !arg("cal-repeat") && !arg("cal-audience") && !arg("cal-following") && !arg("cal-norepeat") && !arg("cal-channel-header") && !arg("cal-rsvp-note") && !arg("cal-propose") && !arg("cal-proposals") && args.indexOf("--cal-event-form") < 0 && args.indexOf("--cal-live") < 0) {
+            else if (!arg("cal-respond") && !arg("cal-schedule") && !arg("cal-cancel") && !arg("cal-card-cancel") && !arg("cal-page-cancel") && !arg("cal-page") && !arg("cal-joinid") && !arg("cal-edit") && !arg("cal-buttons") && !arg("cal-repeat") && !arg("cal-audience") && !arg("cal-following") && !arg("cal-norepeat") && !arg("cal-channel-header") && !arg("cal-rsvp-note") && !arg("cal-propose") && !arg("cal-proposals") && args.indexOf("--cal-event-form") < 0 && args.indexOf("--cal-live") < 0) {
                 // Pictures: the views, the card and page of --cal-peek, the form and dialogs.
                 const peek = arg("cal-peek")
                 const seq = [

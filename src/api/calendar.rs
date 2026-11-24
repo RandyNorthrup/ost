@@ -287,7 +287,9 @@ pub async fn set_charm(id: &str, charm: i64) -> Result<()> {
 /// categories, Private (Graph's showAs, categories, sensitivity).
 pub async fn patch_event(client: &TeamsClient, id: &str, patch: &serde_json::Value) -> Result<()> {
     let mut body = serde_json::Map::new();
-    for k in ["showAs", "categories", "sensitivity"] {
+    // (Outlook's event form also saves the reminder and its Response
+    // options' switches as they change.)
+    for k in ["showAs", "categories", "sensitivity", "isReminderOn", "reminderMinutesBeforeStart", "responseRequested", "hideAttendees"] {
         if let Some(v) = patch.get(k) {
             body.insert(k.into(), v.clone());
         }
@@ -569,7 +571,7 @@ pub async fn event_detail(client: &TeamsClient, id: &str) -> Result<serde_json::
     let v: serde_json::Value = client
         .graph_get_with(
             &format!(
-                "/me/events/{}?$select=body,attendees,recurrence,onlineMeeting,type,seriesMasterId",
+                "/me/events/{}?$select=body,attendees,recurrence,onlineMeeting,type,seriesMasterId,createdDateTime,isReminderOn,reminderMinutesBeforeStart,responseRequested,hideAttendees",
                 event_path_id(id)?
             ),
             &[("Prefer", "IdType=\"ImmutableId\"")],
@@ -595,6 +597,12 @@ pub async fn event_detail(client: &TeamsClient, id: &str) -> Result<serde_json::
         "attendees": attendees_of(&v),
         "recurrence": recurrence,
         "conference_id": v.pointer("/onlineMeeting/conferenceId").and_then(|c| c.as_str()).unwrap_or_default(),
+        // Outlook's event form: "Sent on …" (when the event was made),
+        // the reminder (minutes, -1 off), Response options' switches.
+        "created": v.get("createdDateTime").and_then(|c| c.as_str()).unwrap_or_default(),
+        "reminder": if v.get("isReminderOn").and_then(|r| r.as_bool()).unwrap_or(true) { v.get("reminderMinutesBeforeStart").and_then(|m| m.as_i64()).unwrap_or(15) } else { -1 },
+        "response_requested": v.get("responseRequested").and_then(|r| r.as_bool()).unwrap_or(true),
+        "hide_attendees": v.get("hideAttendees").and_then(|r| r.as_bool()).unwrap_or(false),
     }))
 }
 
