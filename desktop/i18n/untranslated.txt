@@ -16,9 +16,9 @@
 "%1 by %2"		FindPane.qml:762	
 "%1 channels selected"		CrossPostDialog.qml:163	
 "%1 checkbox, press spacebar to select all."		StoreView.qml:604	
-"%1 didn't open: %2"		backend.rs:25975	
+"%1 didn't open: %2"		backend.rs:26036	
 "%1 hour"		BreakoutSettingsDialog.qml:115	
-"%1 is presenting"		CallWindow.qml:3275 CallWindow.qml:3358	
+"%1 is presenting"		CallWindow.qml:3384 CallWindow.qml:3467	
 "%1 isn't available in OST yet."		TabWindow.qml:161	
 "%1 left"		MeetingRecapsView.qml:925	
 "%1 mentioned you: %2"		MentionsView.qml:152	
@@ -79,7 +79,7 @@
 "Add a message"		OneDriveShare.qml:376 OneDriveShare.qml:378	
 "Add a name, group, or email"		OneDriveShare.qml:273 OneDriveShare.qml:275	
 "Add an email reminder to stay on top of this event."		OutlookEmailReminder.qml:107	
-"Add email reminder"		MeetingForm.qml:839 OutlookEmailReminder.qml:373 OutlookEmailReminder.qml:377	
+"Add email reminder"		MeetingForm.qml:839 OutlookEmailReminder.qml:374 OutlookEmailReminder.qml:378	
 "Add header row"		OutlookFormPane.qml:440	
 "Add more"		OneDriveShare.qml:273	
 "Add more details"		FeedbackWindow.qml:133	
@@ -87,8 +87,8 @@
 "Add someone"		CallsView.qml:403	
 "Add to %1 workspace"		LoopChromeBar.qml:217 LoopChromeBar.qml:223	
 "Add to Dictionary"		EditorCard.qml:60	
-"Added a shortcut in your OneDrive"		backend.rs:23279	
-"Adding people…"		backend.rs:17222	
+"Added a shortcut in your OneDrive"		backend.rs:23340	
+"Adding people…"		backend.rs:17283	
 "Adding this component will link it to a workspace so you can start organizing and collecting content."		LoopChromeBar.qml:222	
 "Additional people: %1"		LoopAccessPopover.qml:73	
 "Afternoon (after 1:00 PM)"		OutlookAcceptableTimes.qml:164	
@@ -126,17 +126,17 @@
 "By pressing \"Send feedback\", Report a problem opens with your answers and the call's technical details, to post as a public issue on GitHub (%1). Nothing is sent before you do."		CallQualitySurvey.qml:221	
 "CSV files (*.csv)"		BreakoutCsvDialog.qml:133	
 "Call %1"		CallsView.qml:353	
-"Calling %1…"		CallWindow.qml:5445	
-"Calls are available in 1:1 chats"		backend.rs:9666	
-"Calls merged"		backend.rs:14129	
+"Calling %1…"		CallWindow.qml:5557	
+"Calls are available in 1:1 chats"		backend.rs:9736	
+"Calls merged"		backend.rs:14190	
 "Camera settings"		CameraSettingsDialog.qml:37	
 "Cameras"		ContentCameraDialog.qml:450	
 "Canceled: %1"		ScheduledMeetingCard.qml:81	
 "Cancelled."		ScheduledMeetingCard.qml:140	
-"Cancelling…"		backend.rs:24294	
+"Cancelling…"		backend.rs:24355	
 "Capitalize 'I' (English only)"		OutlookEditorSettings.qml:77	
-"Captions off"		RoomRemotePane.qml:159	
-"Captions on"		RoomRemotePane.qml:159	
+"Captions off"	x.roomremote:app_remote_captions_off	RoomRemotePane.qml:159	unknown id
+"Captions on"	x.roomremote:app_remote_captions_on	RoomRemotePane.qml:159	unknown id
 "Capture screenshot"		FeedbackWindow.qml:153	
 "Car"		CalendarView.qml:262	
 "Cast to this room with:"		RoomHome.qml:86 RoomHome.qml:292	
@@ -156,14 +156,15 @@
 "Clipchamp"		AppRail.qml:57 AppRail.qml:408	
 "Close Music"		VideoClipRecorder.qml:1394	
 "Conciseness"		OutlookEditorSettings.qml:102	
-"Connected without audio"		CallWindow.qml:3390	
-"Consult: %1"		backend.rs:13997	
-"Consult: not someone you can call"		backend.rs:13952	
-"Content + gallery"		RoomRemotePane.qml:58	
-"Controlling"		RoomRemotePane.qml:126	
+"Connected without audio"		CallWindow.qml:3499	
+"Consult: %1"		backend.rs:14058	
+"Consult: not someone you can call"		backend.rs:14013	
+"Content"	x.roomremote:app_remote_layout_option_content	RoomRemotePane.qml:57	unknown id
+"Content + gallery"	x.roomremote:app_remote_layout_option_content_and_gallery	RoomRemotePane.qml:58	unknown id
+"Controlling"	x.roomremote:app_header_connected_to	RoomRemotePane.qml:126	unknown id
 "Copied %1 item"		FileActions.qml:298 FileActions.qml:299	
 "Copied %1 items"		FileActions.qml:298 FileActions.qml:299	
-"Copilot uses your data to generate responses during the meeting and an Intelligent recap after the meeting. Interactions and summaries with Copilot might be retained due to the host organization’s policy."		CallWindow.qml:1737	
+"Copilot uses your data to generate responses during the meeting and an Intelligent recap after the meeting. Interactions and summaries with Copilot might be retained due to the host organization’s policy."		CallWindow.qml:1796	
 "Copy component"		ChannelPageTab.qml:83 LoopCard.qml:127 LoopCard.qml:136	
 "Copy email"		HoverCard.qml:229 PeopleView.qml:162	
 "Corrections"		OutlookEditorSettings.qml:99	
@@ -172,21 +173,21 @@
 "Couldn't cancel your registration."		EventsView.qml:896	
 "Couldn't change it."		EventsView.qml:4378	
 "Couldn't delete the audio recap."		MeetingRecapsView.qml:1394	
-"Couldn't join the meeting"		backend.rs:11523	
-"Couldn't join the meeting: %1"		backend.rs:11596 backend.rs:13192	
+"Couldn't join the meeting"		backend.rs:11593	
+"Couldn't join the meeting: %1"		backend.rs:11666 backend.rs:13253	
 "Couldn't load events."		EventsView.qml:1391	
 "Couldn't load the meeting options."		EventsView.qml:512	
 "Couldn't load this profile."		ProfileCard.qml:677	
 "Couldn't open the event."		EventsView.qml:248 EventsView.qml:482 EventsView.qml:490	
-"Couldn't post your review"		backend.rs:20741	
+"Couldn't post your review"		backend.rs:20802	
 "Couldn't publish the event."		EventsView.qml:4260	
-"Couldn't report the review"		backend.rs:20706	
+"Couldn't report the review"		backend.rs:20767	
 "Couldn't save your setting. Try again."		SettingsView.qml:4988	
-"Couldn't send the picture: %1"		backend.rs:26431	
+"Couldn't send the picture: %1"		backend.rs:26492	
 "Couldn't share to Outlook."		ShareToOutlookDialog.qml:35	
-"Couldn't start the call: %1"		backend.rs:10055	
+"Couldn't start the call: %1"		backend.rs:10125	
 "Couldn't update the link settings. Please try again."		CloudAttach.qml:66	
-"Couldn't upload the picture: %1"		backend.rs:17979	
+"Couldn't upload the picture: %1"		backend.rs:18040	
 "Create a team from %1"		CreateTeamPage.qml:234	
 "Create new folder"		OutlookUploadTo.qml:196 OutlookUploadTo.qml:200	
 "Credit card"		CalendarView.qml:264	
@@ -199,14 +200,14 @@
 "Default speaker"		CallsView.qml:211 CallsView.qml:224 CallsView.qml:228	
 "Delete menu."		ClipEditOverlay.qml:317	
 "Delete this event?"		CalendarView.qml:2132	
-"Dial %1"		CallWindow.qml:5357	
-"Dial pad: %1"		backend.rs:14179	
-"Disconnect room"		RoomRemotePane.qml:229 RoomRemotePane.qml:236	
+"Dial %1"		CallWindow.qml:5469	
+"Dial pad: %1"		backend.rs:14240	
+"Disconnect room"	x.roomremote:app_remote_end_call	RoomRemotePane.qml:229 RoomRemotePane.qml:236	unknown id
 "Do not include any private or sensitive information."		FeedbackWindow.qml:111	
 "Domains"		ChannelEmailDialog.qml:147	
 "Download failed. Please try again."		EventsView.qml:442	
-"Downloaded %1"		backend.rs:25750	
-"Downloading %1…"		backend.rs:10560	
+"Downloaded %1"		backend.rs:25811	
+"Downloading %1…"		backend.rs:10630	
 "Draft to %1"		DraftsView.qml:116	
 "Drag and drop files here or paste an image from your clipboard"		FeedbackWindow.qml:134	
 "Duplicate menu."		ClipEditOverlay.qml:319	
@@ -219,8 +220,8 @@
 "Email reminder"		OutlookEmailReminder.qml:98 OutlookEmailReminder.qml:143	
 "Enable auto capitalization"		OutlookEditorSettings.qml:77	
 "Enable auto correct"		OutlookEditorSettings.qml:77	
-"End consult"		CallWindow.qml:5455	
-"Enter a reminder message here (optional)"		OutlookEmailReminder.qml:333 OutlookEmailReminder.qml:334	
+"End consult"		CallWindow.qml:5567	
+"Enter a reminder message here (optional)"		OutlookEmailReminder.qml:334 OutlookEmailReminder.qml:335	
 "Enter your folder name"		CloudPicker.qml:1186 OneDriveView.qml:1328 OutlookUploadTo.qml:213	
 "Event Banner Image\n(Appears here in actual email)"		EventsView.qml:3732	
 "Event Date Time"		EventsView.qml:3540 EventsView.qml:3540	
@@ -252,7 +253,8 @@
 "Formality"		OutlookEditorSettings.qml:102	
 "Forward menu."		ClipEditOverlay.qml:320	
 "From filter"		FindPane.qml:434	
-"Front row"		RoomRemotePane.qml:61	
+"Front row"	x.roomremote:app_remote_layout_option_front_row	RoomRemotePane.qml:61	unknown id
+"Gallery"	x.roomremote:app_remote_layout_option_gallery	RoomRemotePane.qml:55	unknown id
 "Go premium"		OutlookEditorSettings.qml:123	
 "Go to next day"		CalendarView.qml:1087 CalendarView.qml:2395	
 "Go to next month"		CalendarView.qml:1087 CalendarView.qml:2395 DatePickerField.qml:85	
@@ -271,7 +273,7 @@
 "Help articles for OST, built into the app so they work offline. They're written by the OST project; you can read and improve them on %1."		HelpView.qml:367	
 "Help for OST"		HelpView.qml:160 HelpView.qml:362	
 "High Tech"		VideoClipRecorder.qml:1367	
-"Hold: %1"		backend.rs:13512	
+"Hold: %1"		backend.rs:13573	
 "Hushed face"		OutlookFormPane.qml:112	
 "If the caller mentions [topic], collect [information] first. Then proceed with booking an appointment or take a message for me so I can follow up."		SettingsView.qml:3365	
 "If your contact is based in the European Economic Area or Switzerland, they may need to change the LinkedIn Digital Markets Act %1 for you and others to see their LinkedIn profile here."		ProfileCard.qml:633	
@@ -292,7 +294,8 @@
 "Inviting this room to a meeting"		RoomHome.qml:245	
 "Island"		CalendarView.qml:265	
 "Join: %1"		EventsView.qml:121	
-"Large Gallery"		RoomRemotePane.qml:59	
+"Large Gallery"	x.roomremote:app_remote_layout_option_large_gallery	RoomRemotePane.qml:59	unknown id
+"Layout"	x.roomremote:app_remote_layout	RoomRemotePane.qml:168	unknown id
 "Leave now"		RoomAutoExit.qml:134	
 "Licence"		HelpView.qml:245	
 "Light blue"		Theme.qml:58	
@@ -311,6 +314,8 @@
 "Members and guests (%1)"		ManageChannel.qml:309	
 "Mic is off"		VideoClipRecorder.qml:835	
 "Mic is on"		VideoClipRecorder.qml:835	
+"Mic off"	x.roomremote:app_remote_mic_off	RoomRemotePane.qml:151	unknown id
+"Mic on"	x.roomremote:app_remote_mic_on	RoomRemotePane.qml:151	unknown id
 "Microsoft Editor Settings"		OutlookEditorSettings.qml:60	
 "Midday (12:00 PM - 1:00 PM)"		OutlookAcceptableTimes.qml:164	
 "Mink"		OutlookNewCategory.qml:43	
@@ -327,7 +332,7 @@
 "Mute speaker"		AudioFlyout.qml:101 AudioSettingsPane.qml:174	
 "Name your category"		OutlookNewCategory.qml:58 OutlookNewCategory.qml:59	
 "New event | Calendar"		CalendarView.qml:3094 CalendarView.qml:3113	
-"New group chat"		backend.rs:19547	
+"New group chat"		backend.rs:19608	
 "Next decade"		DatePickerField.qml:144	
 "No calls match this filter."		CallsView.qml:363	
 "No file chosen"		TeamAppsView.qml:233	
@@ -360,7 +365,7 @@
 "Only the people you specified can edit."		OneDriveShare.qml:132	
 "Only the people you specified can view"		FileActions.qml:1148 OneDriveShare.qml:854	
 "Only the people you specified can view."		OneDriveShare.qml:132	
-"Open chat with %1"		CallWindow.qml:5415	
+"Open chat with %1"		CallWindow.qml:5527	
 "Open component in"		LoopChromeBar.qml:187 MeetingNotesPane.qml:134	
 "Open hands"		OutlookFormPane.qml:113	
 "Opens list of active windows"		CastWindow.qml:342 ShareTray.qml:209	
@@ -372,7 +377,7 @@
 "PNG (*.png)"		TeamAppsView.qml:182	
 "Package delivery"		CalendarView.qml:264	
 "Parent folders"		OutlookUploadTo.qml:119 OutlookUploadTo.qml:120	
-"Parked call"		backend.rs:9683	
+"Parked call"		backend.rs:9753	
 "Party popper"		OutlookFormPane.qml:111	
 "People in your organization with the link can also access this Loop component"		LoopAccessPopover.qml:86	
 "People in your organization with the link can edit"		ComposeBox.qml:1843	
@@ -390,15 +395,15 @@
 "Powered by"		DeviceDetailsDialog.qml:284	
 "Prevent suspected spam calls from disturbing you"		SettingsView.qml:4089	
 "Previous decade"		DatePickerField.qml:141	
-"Prioritize video"		RoomRemotePane.qml:56	
-"Production view"		CallWindow.qml:2856	
+"Prioritize video"	x.roomremote:app_remote_layout_option_prioritize_video_view	RoomRemotePane.qml:56	unknown id
+"Production view"		CallWindow.qml:2965	
 "Proofing language"		OutlookEditorSettings.qml:87 OutlookEditorSettings.qml:94	
 "Public Team"		TeamSettingsView.qml:108	
 "Punctuation Conventions"		OutlookEditorSettings.qml:103	
 "React with %1"		NotificationBanners.qml:376	
 "Red heart"		OutlookFormPane.qml:111	
 "Refinements"		OutlookEditorSettings.qml:117	
-"Remind me:"		OutlookEmailReminder.qml:144 OutlookEmailReminder.qml:173	
+"Remind me:"		OutlookEmailReminder.qml:144 OutlookEmailReminder.qml:174	
 "Remind me: %1"		OutlookEmailReminder.qml:120	
 "Reminder amount"		EventsView.qml:3794	
 "Reminder unit"		EventsView.qml:3796	
@@ -412,9 +417,9 @@
 "Restore defaults"		CameraSettingsDialog.qml:156	
 "Results for “%1”"		HelpView.qml:262	
 "Save as"		Main.qml:592	
-"Saved %1 to %2"		backend.rs:10177 backend.rs:10571	
+"Saved %1 to %2"		backend.rs:10247 backend.rs:10641	
 "Schedule 1 hour of focus time"		CalendarView.qml:1062	
-"Scheduled %1"		backend.rs:24634	
+"Scheduled %1"		backend.rs:24695	
 "Search all files"		DownloadsFlyout.qml:90 DownloadsFlyout.qml:93	
 "Search emoji"		EmojiPicker.qml:89 EmojiPicker.qml:90	
 "Search for participants"		MeetingOptionsDialog.qml:445 MeetingPeoplePicker.qml:27	
@@ -427,15 +432,15 @@
 "Select a Date"		FindPane.qml:496	
 "Select a chat to start messaging"		Conversation.qml:2135	
 "Select a role, %1"		OneDriveShare.qml:562	
-"Select a time"		OutlookEmailReminder.qml:291 OutlookEmailReminder.qml:298	
+"Select a time"		OutlookEmailReminder.qml:292 OutlookEmailReminder.qml:299	
 "Select acceptable day(s):"		OutlookAcceptableTimes.qml:60	
 "Select acceptable time(s):"		OutlookAcceptableTimes.qml:162	
 "Select an event charm button, %1 icon selected"		MeetingForm.qml:1825	
 "Send reply"		ChannelPosts.qml:842	
-"Send to attendees"		OutlookEmailReminder.qml:345 OutlookEmailReminder.qml:348	
-"Sending update…"		backend.rs:24293	
-"Sending your proposal…"		backend.rs:24295	
-"Sending your response…"		backend.rs:24291	
+"Send to attendees"		OutlookEmailReminder.qml:346 OutlookEmailReminder.qml:349	
+"Sending update…"		backend.rs:24354	
+"Sending your proposal…"		backend.rs:24356	
+"Sending your response…"		backend.rs:24352	
 "Sensitive Geopolitical References"		OutlookEditorSettings.qml:103	
 "Sent on %1 at %2"		MeetingForm.qml:2540	
 "Share \"%1\""		OneDriveShare.qml:221	
@@ -459,10 +464,10 @@
 "Spelling"		OutlookEditorSettings.qml:101	
 "Split Clip"		VideoClipRecorder.qml:1303	
 "Sprint"		CalendarView.qml:266	
-"Start a call with %1"		CallWindow.qml:5425	
+"Start a call with %1"		CallWindow.qml:5537	
 "Steel"		OutlookNewCategory.qml:39	
 "Stock images"		OutlookFormPane.qml:142 OutlookFormPane.qml:268	
-"Stop consulting and resume"		CallWindow.qml:5507	
+"Stop consulting and resume"		CallWindow.qml:5619	
 "Stroke menu."		ClipEditOverlay.qml:306	
 "Submit an app to your IT admin for approval and check the status of your submissions."		ManageAppsView.qml:273	
 "Submit feedback to OST"		FeedbackWindow.qml:76	
@@ -487,20 +492,21 @@
 "The version wasn't deleted"		FileActions.qml:441	
 "The version wasn't restored"		FileActions.qml:441	
 "This Loop component is temporarily not available."		LoopCard.qml:185	
-"This app isn't available in OST yet."		Main.qml:15746	
+"This app isn't available in OST yet."		Main.qml:15863	
 "This camera has no settings to change."		CameraSettingsDialog.qml:64	
 "This file can't be opened"		FileViewer.qml:40	
 "This file has not been shared with a group yet."		OneDriveShare.qml:798	
 "This folder name is already in use."		OutlookUploadTo.qml:63	
 "This page is temporarily not available."		ChannelPageTab.qml:133	
-"This will turn off Interpreter for everyone."		CallWindow.qml:1120	
+"This will turn off Interpreter for everyone."		CallWindow.qml:1179	
 "Thread: %1"		ThreadsPane.qml:188	
 "Thumbnail Preview"		FileCard.qml:148	
 "Thumbs up"		OutlookFormPane.qml:112	
-"Today %1"		Main.qml:16879	
+"Today %1"		Main.qml:16996	
 "Todo"		CalendarView.qml:266	
+"Together mode"	x.roomremote:app_remote_layout_option_together_mode	RoomRemotePane.qml:60	unknown id
 "Transcriptions of Teams meetings are retained by default for 90 days unless manually deleted earlier by the meeting organizer. The generated audio recap is exclusively accessible to you and will expire after 60 days. You can manage your audio recaps in OneDrive, where you have the option to delete any audio recap that is no longer needed. Please note that once an audio recap is deleted from OneDrive, it will no longer be available on your Teams audio recap listing page."		MeetingRecapsView.qml:1383	
-"Transfer to %1"		CallWindow.qml:5425 CallWindow.qml:5499	
+"Transfer to %1"		CallWindow.qml:5537 CallWindow.qml:5611	
 "Travel"		EmojiPicker.qml:46	
 "Travel and places"		OutlookFormPane.qml:115	
 "Trophy"		CalendarView.qml:260	
@@ -516,8 +522,8 @@
 "Upload to your %1 folder"		OutlookUploadTo.qml:185	
 "Useful"		RecapWindow.qml:969	
 "Uses credits"		AiInterpreterModeDialog.qml:113	
-"Video off"		RoomRemotePane.qml:144	
-"Video on"		RoomRemotePane.qml:144	
+"Video off"	x.roomremote:app_remote_video_off	RoomRemotePane.qml:144	unknown id
+"Video on"	x.roomremote:app_remote_video_on	RoomRemotePane.qml:144	unknown id
 "Vocabulary"		OutlookEditorSettings.qml:103	
 "Voting table"		WebApp.qml:623	
 "We couldn't create your team. Please try again."		CreateTeamDialog.qml:126 CreateTeamPage.qml:245	
@@ -533,13 +539,13 @@
 "Yes, share"		FeedbackWindow.qml:218	
 "Yes, you may contact me"		FeedbackWindow.qml:227	
 "Yesterday %1"		Conversation.qml:1112 SearchView.qml:188	
-"You and %1 others are using Interpreter. Your interpretation language is %2."		CallWindow.qml:1960	
+"You and %1 others are using Interpreter. Your interpretation language is %2."		CallWindow.qml:2019	
 "You and attendees will be notified if Copilot automatically reschedules this event."		OutlookAcceptableTimes.qml:59	
-"You are using Interpreter. Your interpretation language is %1."		CallWindow.qml:1959	
+"You are using Interpreter. Your interpretation language is %1."		CallWindow.qml:2018	
 "You can't view this app right now."		AppDetailsDialog.qml:669	
 "You'll be able to chat separately with the co-organizers and presenters in the planning group. Once saved access it from chat list or Calendar"		MeetingOptionsDialog.qml:348 MeetingOptionsDialog.qml:357	
 "You're following"		MeetingForm.qml:2555	
-"You're presenting"		CallWindow.qml:3376	
+"You're presenting"		CallWindow.qml:3485	
 "You've hit the %1-person limit for group chats. You'll need to remove someone before you send your message."		NewChat.qml:392	
 "You've invited %1 to edit"		OneDriveShare.qml:667	
 "You've invited %1 to view"		OneDriveShare.qml:667	
@@ -560,9 +566,10 @@
 "less than a minute"		ManageTeam.qml:157	
 "more options"		OutlookFormPane.qml:211	
 "over %1"		ManageTeam.qml:167	
+"selected"	x.roomremote:app_remote_layout_option_selected	RoomRemotePane.qml:193	unknown id
 "today"		SearchView.qml:1229	
-"volume down"		RoomRemotePane.qml:208	
-"volume up"		RoomRemotePane.qml:218	
+"volume down"	x.roomremote:app_remote_volume_down	RoomRemotePane.qml:208	unknown id
+"volume up"	x.roomremote:app_remote_volume_up	RoomRemotePane.qml:218	unknown id
 "work with"		ProfileCard.qml:540	
 "yesterday"		SearchView.qml:1229	
 "…"		i18n.rs:4	
