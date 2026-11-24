@@ -1,10 +1,10 @@
 ---
 id: TASK-0265
 title: Post editing and Copilot history as Teams
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-24T00:42:00Z'
-updated_date: '2026-11-24T05:59:00Z'
+updated_date: '2026-11-24T09:03:00Z'
 labels: []
 dependencies: []
 ---
@@ -20,9 +20,9 @@ From TASK-0263: Teams edits a channel post in the full post composer (subject, C
 - [x] #1 Editing a channel post opens Teams' full post composer with its subject, permissions and post-in-other-channels options, and saves as Teams
 - [x] #2 The edit box shows a message's existing Loop component and video clip as Teams and keeps or removes them as Teams
 - [x] #3 A post view's More menu has View Copilot history, working as in Teams
-- [ ] #4 Followed threads opens a single thread view as Teams
+- [x] #4 Followed threads opens a single thread view as Teams
 - [x] #5 The Copilot app's startup context matches Teams' field for field, including appIconPosition
-- [ ] #6 A channel meeting's post shows its calendar card, and the post view's second line shows the meeting title, as Teams
+- [x] #6 A channel meeting's post shows its calendar card, and the post view's second line shows the meeting title, as Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -44,6 +44,17 @@ From TASK-0263: Teams edits a channel post in the full post composer (subject, C
 - Final build checks: followed view no longer covered by the conversation (fixed), compact list titles no longer overlap the time; tests lib 944 passed, desktop 37 passed. Committed 72ec3394 (worktree agent-a2ac76182fc66cdfb).
 - Left: AC4 only for Posts channels — a Threads channel's followed thread still opens its channel (Teams shows the same L2 header over the chat-style thread with Send to). OST's post card doesn't draw a channel meeting's calendar card, so Teams' header subtitle for those posts (the meeting title) shows "Post by" in OST. View Copilot history has only Teams' empty state: Teams made no history request for ost-test1 (bizChat), so entries were never seen.
 - Test data: OST TEST 265 posts (3) deleted in OST test channel after their cross-posts were removed; self-chat "OST TEST 263 edit tools" deleted (its Loop files deleted by Discard; the AMS clip objects remain, no delete API).
+
+- posR2 (2026-11-24), the two open ACs. Measured on winpc (CDP, own test data):
+  - AC4: Followed threads > OST threads test "OST TEST 81 threads layout": the same L2 header (512 at 1280; Go to channel 1077.2, pop-out 1189, divider, More 1237), second line = the first message; under it Teams' message pane on white (runway padding 22 0 0 32, bubbles end 32 from the right, no "{N} replies" line) and the "Send to: thread only" compose 32 in, one row (text + tools). More = Copilot (Alt+C), Unfollow thread, Mark as unread, Copy link (139.3 wide, 32 items, 4.9 under the button); Copilot open: list to the chat list's place, thread 532, Copilot 360, More = Unfollow, Mark as unread, Copy link.
+  - AC6: Teams' header title = channelDrillDownHeaderBaseData (properties.meeting meetingtitle, else title/subject, else Post by). Card = pre-state-schedule-meeting-banner-renderer: 684x70 at a 716 card (+16, 12 over the text), #EBEBEB, 0.67 #E0E0E0, 2 px brand bar 5 in, 32 white box with brand calendar at 20.7, title 14/600 at 62.7 (+17), start 12/16 ("Tuesday, November 24, 2026 10:00 AM"); live: More options 32x31.3 at W-156.7 (menu "Edit meeting details", centred 5 under), Join 96x31.3 white #D1D1D1 20.7 from the right; cancelled: "Canceled: {title}" struck through, no buttons. Clicking the card opens the meeting page. Wire: properties.meeting JSON with `scheduledmeetinginfo` {startTime, endTime, eventType, isCancelled, ...}.
+  - winpc Teams had stopped picking up posts: restarted with wv2on (env value removed again).
+- Built: messages::ScheduledMeeting (+ meeting_title on any message with properties.meeting); ScheduledMeetingCard.qml in ChannelPosts and PostThread (Join -> pre-join, card/More -> CalendarView.showMeeting(..., page) = the event page); PostThread headerTitle (meeting title / subject / first message / Post by), chatThread mode (More + Mark as unread, Copy link); Main followedChat (Conversation threadPane under the header, paneComposeGut 32, no replies divider, ComposeBox sendToInline); harness --meeting-post-test=create|show|followed|cancel.
+- Verified live on linuxlt (spatest = ost-test1): channel card 492/684x70, More 1019.3, Join 1059.3 96x31.3 (Teams same); post view card 476/716x217.7 with the banner at 180, header "OST TEST 265 channel meeting"; cancelled OST CAL posts struck through, no buttons. Followed threads > OST threads test: view 768/512, header Go to channel/pop-out 1189/More 1237, title "OST TEST 81 threads layout", chat 512 under it, compose 800/448 one row; More = Copilot Alt+C, Unfollow, Mark as unread, Copy link; Copilot open: list 68 compact, chat 388/532, pane 920/360, More = Unfollow, Mark as unread, Copy link (Teams same).
+- Tests: lib 949 passed.
+- Test data: "OST TEST 265 channel meeting" (made by OST, ost-test1 only) cancelled; its post and cancel reply deleted.
+
+- Tests: lib 949 passed, desktop 37 passed. Committed 02fe3bde (worktree agent-adf81594029a632e2).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -70,4 +81,20 @@ Verified: composer geometry, + menu, permission/post-in menus, chips equal Teams
 Tests: lib 944 passed, desktop 37 passed.
 
 Open: Threads channels' followed threads (still open the channel); meeting posts' subtitle; Copilot history entries (never shown for this account).
+
+Follow-up (posR2, 2026-11-24): the two remaining ACs, measured on winpc and verified live on linuxlt as ost-test1.
+
+Teams:
+- A Threads channel's followed thread shows the post view's header (its first message as the second line) over the thread as a chat: the message pane 32 in, no replies line, and the "Send to: thread only" compose on one row. More is Copilot, Unfollow thread, Mark as unread and Copy link.
+- A channel meeting's post carries properties.meeting (scheduledmeetinginfo). Teams draws its pre-state banner: 684x70 at a 716 card, the calendar box, the title and start, and More options (View / Edit meeting details) with Join. A cancelled meeting's banner reads "Canceled: {title}", struck through, with no buttons. The post view's second line is the meeting title.
+
+Changes:
+- messages::ScheduledMeeting, and meeting_title from properties.meeting on every message.
+- ScheduledMeetingCard.qml in ChannelPosts and PostThread (Join opens the pre-join; the card opens the meeting page in Calendar).
+- PostThread headerTitle and chatThread mode; Main followedChat; ComposeBox sendToInline; Conversation paneComposeGut and threadRepliesDivider.
+- Harness --meeting-post-test; specs; i18n.
+
+Verified: the card's geometry and buttons equal Teams' in the channel and the post view; the Threads followed view, its More menus and the Copilot layout equal Teams'.
+Tests: lib 949 passed, desktop 37 passed.
+Open: Teams' Followed threads list puts a calendar glyph before a meeting post's title (OST shows the title only); the live banner inside the 452 wide Followed view was not measured, because Teams lists only threads with replies.
 <!-- SECTION:FINAL_SUMMARY:END -->
