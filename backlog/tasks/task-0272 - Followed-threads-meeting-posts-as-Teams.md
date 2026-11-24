@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@fthY'
 created_date: '2026-11-24T09:04:00Z'
-updated_date: '2026-11-24T10:37:00Z'
+updated_date: '2026-11-24T11:32:00Z'
 labels: []
 dependencies: []
 ---
@@ -28,4 +28,8 @@ From TASK-0265: in Teams' Followed threads list a channel meeting post's title h
 - Teams (bundles + winpc CDP 2026-11-24, own test data): the Followed threads row's root line is the thread slice's parentMessageSubject, else parentMessagePreview, after cn(parentMessageType): CalendarRegular (16 px, margin-right 6, vertical-align top, #424242) for activityContext.parentMessageType "Meeting" (cancelled meetings too), DeleteRegular for parentMessagePreviewTemplateOption "deleted". Row: glyph and text at row+34 (text 22 after the glyph start), 12/16; unread = channel + root line 700 and a 4 px #242424 dot at (22, 30) of the row.
 - Teams' banner in the 512 Followed view for "OST TEST 272 channel meeting": 420 x 105.3 at card+16 (card 452 x 253), flex gap 10, text column 190.7 (title 2 lines 40, start wraps to 32), More 263.3 / Join 303.3 at y 37. The inline-slice max-width 75% class is not applied there.
 - Test data: "OST TEST 272 channel meeting" (tomorrow 10:00, ost-test1 only) made by OST in OST test channel; reply "OST TEST 272 channel meeting reply" and follow from OST (--meeting-post-test=reply).
+
+- Built: api::quick_views QuickItem parent_subject / parent_icon ("meeting" for parentMessageType Meeting, "deleted" for parentMessagePreviewTemplateOption deleted; a root record uses its own preview); deleted-thread records (activityReason "deleted") drop the thread. QuickListView: root line = subject else preview after the 16 px calendar-20 / delete-20 glyph (+22), unread bold (700) channel and root line plus the 4 px dot; channel threads whose channel OST doesn't know are skipped (Teams needs the conversation). ScheduledMeetingCard: 10 px gap before the buttons and the start wraps. Harness --meeting-post-test=reply | followed-meeting (+ --meeting-post-show-unread).
+- Verified live on linuxlt (spatest = ost-test1, fm2/fm3/fm5): meeting row glyph 16x16 at the line start, text +22, "OST TEST 272 channel meeting" (Teams same); cancelled OST CAL rows show the glyph as in Teams; unread drawing (forced) bold + dot at 410/root-4 (Teams 410, root-4); 512 view card 452x253, banner 420x105.3 at 814/180, More 1077.3 / Join 1117.3 at y 217 (Teams 263.3/303.3/37 in the banner, same). After cleanup OST's list = Teams' (OST CAL OST2, OST, test, OST threads test; no empty deleted rows or rows for unknown agent channels).
+- Cleanup: meeting cancelled from OST (--meeting-post-test=cancel); its post, the reply and the cancel reply deleted ("left []").
 <!-- SECTION:NOTES:END -->
