@@ -307,7 +307,7 @@ Window {
     // Ctrl+Shift+V / Ctrl+Shift+A answer with video / audio.
     Shortcut { enabled: window.zoomShortcuts; sequence: "Ctrl+U"; onActivated: { rail.current = "chat"; conversation.focusCompose() } }
     Shortcut { enabled: window.zoomShortcuts; sequence: "Alt+H"; onActivated: rail.current = "chat" }
-    Shortcut { enabled: window.zoomShortcuts; sequence: "Alt+A"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "connected") backend.toggleMute() }
+    Shortcut { enabled: window.zoomShortcuts; sequence: "Alt+A"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "connected") callWindow.pressMic(false) }
     Shortcut { enabled: window.zoomShortcuts; sequence: "Alt+V"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "connected" && backend.callCanVideo) backend.toggleCamera() }
     Shortcut { enabled: window.zoomShortcuts; sequence: "Alt+Y"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "connected") callWindow.runControl("RaiseHandsButton") }
     Shortcut { enabled: window.zoomShortcuts; sequence: "Alt+S"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "connected") callWindow.runControl("ShareButton") }
@@ -467,7 +467,8 @@ Window {
     Shortcut { sequence: "Alt+Shift+A"; onActivated: if (conversation.visible && !backend.callState) backend.startCall() }
     Shortcut { sequence: "Alt+Shift+V"; onActivated: if (conversation.visible && !backend.callState) backend.startVideoCall() }
     // Call keys work from the call window and the toast too.
-    Shortcut { sequence: "Ctrl+Shift+M"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "connected") backend.toggleMute() }
+    // (Without audio, Teams' Mic shortcut asks "Turn audio on?" as its button.)
+    Shortcut { sequence: "Ctrl+Shift+M"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "connected") callWindow.pressMic(false) }
     Shortcut { sequence: "Ctrl+Shift+H"; context: Qt.ApplicationShortcut; onActivated: if (["calling", "connecting", "connected", "lobby"].indexOf(backend.callState) >= 0) { if (backend.callState === "connected") callWindow.leaveAsked(); else backend.hangUp() } }
     Shortcut { sequence: "Ctrl+Shift+S"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "ringing") backend.acceptCall(false) }
     Shortcut { sequence: "Ctrl+Shift+A"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "ringing") backend.acceptCall(backend.callVideoOffered) }
@@ -2204,6 +2205,7 @@ Window {
         hasAudio: backend.callHasAudio
         onLeave: { window.breakoutLeaving = true; window.breakoutMain = null; backend.hangUp() }
         onToggleMute: backend.toggleMute()
+        onTurnAudioOn: backend.turnAudioOn()
         canVideo: backend.callCanVideo
         cameraOn: backend.callCameraOn
         onToggleCamera: backend.toggleCamera()
@@ -15042,6 +15044,29 @@ Window {
                          "title", callWindow.title, "others", JSON.stringify(others))
             if (backend.callState === "connected" && connectedAt < 0) connectedAt = step
             if (connectedAt > 0 && (step - connectedAt) * 2 === 20) callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-cast-call.png")))
+            // --cast-room-checks (TASK-0270), every 2 s once connected: the
+            // Mic without audio, its "Turn audio on?" ask and Turn audio on
+            // (muted again after), then Hide Attendees, Pin for me on the
+            // room and unpin (CASTCHK lines, -cast-<name>.png).
+            if (connectedAt > 0 && connectedAt < 1e9 && Qt.application.arguments.indexOf("--cast-room-checks") >= 0) {
+                const k = step - connectedAt
+                const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-cast-" + n + ".png")))
+                const log = what => console.warn("CASTCHK", what, JSON.stringify(callWindow.micForTest()), JSON.stringify(callWindow.roomForTest()))
+                if (k === 12) { log("mic before"); grab("mic") }
+                else if (k === 13) { callWindow.runControl("MicrophoneButton"); log("mic pressed") }
+                else if (k === 14) { log("asking"); grab("ask") }
+                else if (k === 15) callWindow.audioAskForTest().confirm()
+                else if (k === 17) { log("audio on"); grab("audio-on") }
+                else if (k === 18) { if (backend.callMuted) log("still muted"); else backend.toggleMute() }
+                else if (k === 19) { log("muted again"); grab("muted-again") }
+                else if (k === 20) { log("room alert"); grab("alert") }
+                else if (k === 21) callWindow.hideAttendeesForTest()
+                else if (k === 22) { log("hidden"); grab("hidden") }
+                else if (k === 23) { const r = callWindow.myRoom; console.warn("CASTCHK pin", r); callWindow.pinPerson(r) }
+                else if (k === 25) { log("pinned"); grab("pinned") }
+                else if (k === 26) callWindow.unpinPerson(callWindow.myRoom)
+                else if (k === 28) { log("unpinned"); grab("unpinned") }
+            }
             // --cast-end: End meeting for everyone (the room too) instead of
             // leaving.
             if (connectedAt > 0 && (step - connectedAt) * 2 >= parseInt(arg("cast-stay", "60"))) {

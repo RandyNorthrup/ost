@@ -75,7 +75,7 @@ Window {
         Repeater {
             model: cw.call ? [
                 { icon: cw.call.cameraOn ? "call-camera-filled" : "call-camera-off-filled", tip: cw.call.cameraOn ? qsTr("Turn camera off") : qsTr("Turn camera on"), strong: true, act: "camera" },
-                { icon: cw.call.muted || !cw.call.hasAudio ? "call-mic-off-filled" : "call-mic-filled", tip: cw.call.muted ? qsTr("Unmute mic") : qsTr("Mute mic"), strong: true, act: "mic" },
+                { icon: !cw.call.hasAudio ? "speaker-mute-20-filled" : cw.call.muted ? "call-mic-off-filled" : "call-mic-filled", tip: !cw.call.hasAudio ? qsTr("Turn audio on") : cw.call.muted ? qsTr("Unmute mic") : qsTr("Mute mic"), strong: true, act: "mic" },
                 { icon: cw.call.sharing ? "call-share-stop-filled" : "call-share-filled", tip: qsTr("Share"), strong: true, act: "share" },
                 { icon: "call-raise", tip: cw.call.handRaised ? qsTr("Lower your hand") : qsTr("Raise your hand"), act: "raise" },
                 { icon: "call-react", tip: qsTr("React"), act: "react" },
@@ -104,6 +104,9 @@ Window {
                     onTapped: {
                         const a = parent.modelData.act
                         if (a === "camera") cw.call.toggleCamera()
+                        // Teams' call monitor in no audio mode shows the
+                        // call window instead of turning audio on.
+                        else if (a === "mic" && !cw.call.hasAudio) cw.restore()
                         else if (a === "mic") cw.call.toggleMute()
                         else if (a === "share") cw.call.toggleShare()
                         else if (a === "raise") cw.call.toggleHand()

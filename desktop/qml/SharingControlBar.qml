@@ -114,10 +114,12 @@ Window {
             spacing: 15.7
             Item { width: 0.1; height: 1 }
             BarItem {
-                icon: bar.call && (bar.call.muted || !bar.call.hasAudio) ? "nmc-mic-off" : "nmc-mic"
+                // Teams' presenter toolbar: without audio it shows the
+                // speaker-mute glyph and turns audio on at once (no ask).
+                icon: bar.call && !bar.call.hasAudio ? "speaker-mute-20" : bar.call && bar.call.muted ? "nmc-mic-off" : "nmc-mic"
                 label: qsTr("Mic")
-                tip: bar.call && bar.call.muted ? qsTr("Unmute mic") : qsTr("Mute mic")
-                onClicked: bar.call.toggleMute()
+                tip: bar.call && !bar.call.hasAudio ? qsTr("Turn audio on") : bar.call && bar.call.muted ? qsTr("Unmute mic") : qsTr("Mute mic")
+                onClicked: bar.call.pressMic(true)
             }
             BarItem {
                 icon: bar.call && bar.call.cameraOn ? "nmc-camera" : "nmc-camera-off"

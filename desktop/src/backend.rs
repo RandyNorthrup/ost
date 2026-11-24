@@ -1693,6 +1693,11 @@ pub mod qobject {
         #[qinvokable]
         fn use_no_audio(self: Pin<&mut Backend>);
 
+        /// Teams' audio escalation ("Turn audio on"): the computer's mic
+        /// and speaker come back in a call without audio, unmuted.
+        #[qinvokable]
+        fn turn_audio_on(self: Pin<&mut Backend>);
+
         /// Presenter mode: "ContentOnly", "Weatherperson" (Standout),
         /// "SideBySide", "NewsAnchor" (Reporter).
         #[qinvokable]
@@ -13619,6 +13624,29 @@ impl qobject::Backend {
                 call.set_held(true);
             }
         });
+    }
+
+    pub fn turn_audio_on(mut self: Pin<&mut Self>) {
+        if self.rust().call_has_audio {
+            return;
+        }
+        self.as_mut().set_call_has_audio(true);
+        // A call on hold stays held; its media comes back when resumed.
+        let held = self.rust().call_held;
+        runtime().spawn(async move {
+            let slot = call_slot().lock().await;
+            if let Some(call) = slot.outgoing.as_ref() {
+                call.set_held(held);
+            }
+            if let Some(call) = slot.active.as_ref() {
+                call.set_held(held);
+            }
+        });
+        // Teams' toggleMuteAudio from the escalation dialog unmutes the
+        // mic as it turns the speaker on.
+        if self.rust().call_muted {
+            self.as_mut().toggle_mute();
+        }
     }
 
     pub fn admit_from_lobby(self: Pin<&mut Self>, id: &QString, name: &QString, not_bot: bool) {

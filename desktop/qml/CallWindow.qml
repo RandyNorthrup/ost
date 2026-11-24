@@ -39,6 +39,19 @@ Window {
     property bool attendantTest: false
     signal leave()
     signal toggleMute()
+    /// Teams' audio escalation: in a call without audio (its content-only
+    /// mode: "Don't use audio", a cast, phone audio) the computer's mic
+    /// and speaker come on, unmuted.
+    signal turnAudioOn()
+    /// Teams' Mic button (unified bar toggleMuteInternal): without audio
+    /// (isAudioOff) it asks "Turn audio on?" first, unless pressed on the
+    /// presenter toolbar (`direct`), which turns it on at once; otherwise
+    /// it mutes or unmutes.
+    function pressMic(direct) {
+        if (hasAudio) toggleMute()
+        else if (direct) turnAudioOn()
+        else audioOnAsk.open()
+    }
     /// Video: whether the call can carry ours, and whether the camera is on.
     property bool canVideo: false
     property bool cameraOn: false
@@ -272,11 +285,28 @@ Window {
     property string addedRoomName: ""
     readonly property string myRoomName: (roster.find(p => p.id === myRoom) || {}).name || addedRoomName
     /// Teams' Hide Attendees (shouldHideSameRoomParticipants): kept for
-    /// the call only.
+    /// the call only (its client cache only reaches the call's tiles: on
+    /// winpc the next cast showed the room and the alert again).
     property bool hideSameRoom: false
     function inSameRoom(p) { return !!myRoom && !!p && p.id !== selfId && (p.id === myRoom || p.meeting_room === myRoom) }
+    /// Teams' shouldHideItemInSameRoom: an in-room attendee stays off the
+    /// stage once hidden (always, where ECS Calling
+    /// enableUnhideOtherRoomParticipants is off) unless their hand is
+    /// raised. Teams offers no "show" option (none in View, People or the
+    /// room's menu; checked on winpc): the way back is pinning (Pin for
+    /// me) or spotlighting them, whose pin area takes anyone (pinArea
+    /// below; unpinned they hide again), a raised hand, or the next call.
+    readonly property bool unhideOff: backend.ecsSetting("calling", "enableUnhideOtherRoomParticipants") === "false"
+        && backend.ecsSetting("host", "enableHideSameRoomParticipants") !== "false"
+    function hiddenInRoom(p) { return (hideSameRoom || unhideOff) && inSameRoom(p) && !p.hand }
     /// The others the stage shows (Hide Attendees leaves the room's out).
-    readonly property var shownOthers: hideSameRoom ? others.filter(p => !inSameRoom(p)) : others
+    readonly property var shownOthers: others.filter(p => !hiddenInRoom(p))
+    /// Test hooks (--cast-test --cast-room-checks): the Mic button and the
+    /// audio dialog, and the in-room alert's Hide Attendees.
+    function micForTest() { const b = barItem("MicrophoneButton"); return { hasAudio: hasAudio, muted: muted, enabled: controlEnabled("MicrophoneButton"), icon: b ? b.icon : "", tip: b ? b.tip : "", asking: audioOnAsk.visible } }
+    function audioAskForTest() { return audioOnAsk }
+    function roomForTest() { return { myRoom: myRoom, alert: joinedInRoom.visible, hidden: hideSameRoom, shown: shownOthers.map(p => p.name), pinned: pinnedIds } }
+    function hideAttendeesForTest() { joinedInRoom.visible = false; hideSameRoom = true; console.warn("ROOMUFD hide attendees") }
     // Teams' "Joined in room" alert (UnhideRoomParticipantsUfd): once a
     // call, when you're mapped to a room, unless you are the room
     // (ECS Host enableHideSameRoomParticipants, Calling
@@ -672,7 +702,7 @@ Window {
     /// then videos first, when asked).
     readonly property var othersOrdered: {
         // Hide Attendees leaves the in-room attendees out of the gallery.
-        const rest = others.filter(p => signFirst.indexOf(p) < 0 && !(hideSameRoom && inSameRoom(p)))
+        const rest = others.filter(p => signFirst.indexOf(p) < 0 && !hiddenInRoom(p))
         return signFirst.concat(videosFirst ? rest.filter(p => hasVideo(p)).concat(rest.filter(p => !hasVideo(p))) : rest)
     }
     /// Meetings: Teams' meeting options page (Controls) and the meeting
@@ -1202,7 +1232,7 @@ Window {
             else { moreMenu.parent = barItem(name); moreMenu.open() }
         }
         else if (name === "VideoButton") toggleCamera()
-        else if (name === "MicrophoneButton") toggleMute()
+        else if (name === "MicrophoneButton") pressMic(false)
         else if (name === "ShareButton") {
             // Teams: Share opens the share tray; while sharing it stops.
             if (sharing) toggleShare()
@@ -1251,7 +1281,8 @@ Window {
         if (name === "MeetingDetailsButton") return chatUrl.length > 0
         if (name === "StartBreakoutRoomButton") return live
         if (name === "VideoButton") return canVideo
-        if (name === "MicrophoneButton") return hasAudio
+        // (Without audio it stays usable: it turns audio on, as Teams'.)
+        if (name === "MicrophoneButton") return true
         if (name === "ShareButton") return canShare || sharing
         if (name === "DialpadButton") return live && canDtmf
         if (name === "HoldButton") return live && hasAudio
@@ -2913,7 +2944,9 @@ Window {
                 // Teams (813237 onActiveSignerChanged, 937485 xB): people
                 // actively signing come before the dominant speakers.
                 const signer = win.signMode ? win.others.find(p => win.signingIds.indexOf(p.id) >= 0) : null
-                return signer || pool.find(p => p.id === win.speakerId) || win.othersOrdered[0]
+                // (No one else shown, e.g. the room's attendees hidden: you,
+                // as Teams' stage shows only your tile.)
+                return signer || pool.find(p => p.id === win.speakerId) || win.othersOrdered[0] || win.selfEntry
             }
             // Presenting: the content on stage, everyone in the side gallery
             // (no one in Focus on content).
@@ -3534,7 +3567,7 @@ Window {
             oneToOne: !win.meeting && !win.testCall
             anchors.fill: parent
             muted: win.muted || !win.hasAudio
-            onToggleMute: win.toggleMute()
+            onToggleMute: win.pressMic(false)
             onClosed: win.side = ""
         }
         TranscriptPane {
@@ -3988,6 +4021,18 @@ Window {
         }
     }
     ConfirmDialog { id: endAsk; onConfirmed: win.endMeeting() }
+    // Teams' confirm audio escalation dialog (350489): "Turn audio on?",
+    // its call or meeting text, Cancel and Turn audio on (measured on
+    // winpc during a cast, 2026-11-23: 600 x 164.67).
+    ConfirmDialog {
+        id: audioOnAsk
+        dialogWidth: 600
+        title: qsTr("Turn audio on?")
+        body: win.meeting ? qsTr("This will turn on your computer's mic and speaker. If a nearby phone or other audio device is already in the meeting, you could cause echo.")
+            : qsTr("This will turn on your computer's mic and speaker. If a nearby phone or other audio device is already in the call, you could cause echo.")
+        confirmText: qsTr("Turn audio on")
+        onConfirmed: win.turnAudioOn()
+    }
     // Teams' held main meeting (measured on winpc 2026-11-11): while its
     // organizer is in a breakout room, the main meeting keeps a window of
     // its own — the meeting's title and time, "▷ Resume" (a bordered
@@ -4252,7 +4297,7 @@ Window {
         // Teams' Spatial audio row is off and disabled in a 1:1 call
         // (Teams' P2P call type; its test call is not one: measured).
         oneToOne: !win.meeting && !win.testCall
-        onToggleMute: win.toggleMute()
+        onToggleMute: win.pressMic(false)
         // Teams opens its Audio settings pane (TASK-0062); OST's device settings for now.
         onMoreAudioSettings: win.side = "audio"
         // Right-aligned to the chevron; start-aligned to the button when
@@ -5675,7 +5720,9 @@ Window {
         id: cMic
         BarButton {
             id: micB
-            icon: win.newControls ? (win.muted || !win.hasAudio ? "nmc-mic-off" : "nmc-mic") : win.muted || !win.hasAudio ? "call-mic-off-filled" : "call-mic-filled"
+            // Teams' getIconTitle: "speaker-mute" while the audio is off.
+            icon: !win.hasAudio ? (win.newControls ? "speaker-mute-20" : "speaker-mute-20-filled")
+                : win.newControls ? (win.muted ? "nmc-mic-off" : "nmc-mic") : win.muted ? "call-mic-off-filled" : "call-mic-filled"
             label: qsTr("Mic"); strong: !win.newControls
             tip: win.micRestricted ? qsTr("Only select participants can unmute")
                 : !win.hasAudio ? qsTr("Turn audio on") : win.muted ? qsTr("Unmute mic") : qsTr("Mute mic")
