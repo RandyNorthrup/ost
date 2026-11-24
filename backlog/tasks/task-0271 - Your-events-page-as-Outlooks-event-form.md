@@ -1,9 +1,10 @@
 ---
 id: TASK-0271
 title: Your event's page as Outlook's event form
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-24T07:41:00Z'
+updated_date: '2026-11-24T08:15:00Z'
 labels:
   - desktop
   - calendar
