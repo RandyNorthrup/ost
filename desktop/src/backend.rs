@@ -24212,7 +24212,13 @@ impl qobject::Backend {
                     }
                     "update" => {
                         let form: api::calendar::MeetingForm = serde_json::from_value(args["form"].clone())?;
-                        api::calendar::update_meeting(&client, &s("id"), &form, &me, &s("joinUrl"), &s("eventType")).await?;
+                        // An event without a Teams meeting goes through
+                        // Outlook, as Teams' event page sends it.
+                        if s("joinUrl").is_empty() && form.channel.is_none() {
+                            api::calendar::send_event_update(&client, &s("id"), &form).await?;
+                        } else {
+                            api::calendar::update_meeting(&client, &s("id"), &form, &me, &s("joinUrl"), &s("eventType")).await?;
+                        }
                         Ok(json!({}))
                     }
                     "cancel" => {

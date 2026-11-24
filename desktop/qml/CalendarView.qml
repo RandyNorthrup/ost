@@ -677,21 +677,26 @@ Item {
     // and the hours outside the working day on neutralLighterAlt, the side
     // pane #FFFFFF/#0F0F0F, hour, header and month lines neutralTertiaryAlt,
     // the time scale's dashed lines #EBEBEB/#141414, the mini month's
-    // shown range colorBrandBackground2Hover.
+    // shown range colorBrandBackground2Hover. High contrast (measured
+    // 2026-11-23) is Teams' "contrast" palette for the frame: days and
+    // past days #000000, lines #5C5C5C, dashes #141414; the mini month
+    // keeps dark's range #383966 and a #4F52B2 today.
     readonly property color calDay: theme.pick("#FFFFFF", "#292929", "#000000")
     readonly property color calOff: theme.pick("#FAFAFA", "#242424", "#000000")
-    readonly property color calLine: theme.pick("#D1D1D1", "#5C5C5C", "#FFFFFF")
-    readonly property color calDash: theme.pick("#EBEBEB", "#141414", "#3F3F3F")
+    readonly property color calLine: theme.pick("#D1D1D1", "#5C5C5C", "#5C5C5C")
+    readonly property color calDash: theme.pick("#EBEBEB", "#141414", "#141414")
     readonly property color calPane: theme.pick("#FFFFFF", "#0F0F0F", "#000000")
-    readonly property color calRange: theme.pick("#DCE0FA", "#383966", "#1AEBFF")
-    /// The peek card's lines (neutralLight) and outlined buttons' edges.
-    readonly property color cardLine: theme.pick("#F0F0F0", "#141414", "#FFFFFF")
+    readonly property color calRange: theme.pick("#DCE0FA", "#383966", "#383966")
+    /// The peek card's lines and edge (neutralLight; #5C5C5C in high
+    /// contrast) and outlined buttons' edges.
+    readonly property color cardLine: theme.pick("#F0F0F0", "#141414", "#5C5C5C")
     readonly property color cardEdge: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
-    readonly property color calLink: theme.pick("#4F52B2", "#7F85F5", "#1AEBFF")
+    readonly property color calLink: theme.pick("#4F52B2", "#7F85F5", "#7F85F5")
     /// A day under an all-day busy event: the calendar colour at 10 % over
     /// the day, its hours outside the working day and its header (measured
-    /// 2026-11-23: light #EEEFF9 and #EAEBF5, dark #32323E and #2D2D39).
-    function dayFill(busy, under) { return busy && !theme.highContrast ? tint(calPrimary, under) : under }
+    /// 2026-11-23: light #EEEFF9 and #EAEBF5, dark #32323E and #2D2D39,
+    /// high contrast #1A1800).
+    function dayFill(busy, under) { return busy ? tint(calPrimary, under) : under }
 
     // ── Event colours, as Outlook's hosted calendar works them out (its
     // bundle: the calendar's colour scheme, the tile fill, edge and text,
@@ -700,8 +705,14 @@ Item {
     // shade generator, which in dark darkens where light lightens. Measured
     // on winpc 2026-11-23: light busy #C7C9EE, past busy #E1E1F6 with
     // #555555 text and a #C7C9EE bar; dark past busy #26284A with #A5A5A5
-    // text and a #4C5093 bar; canceled #FFFFFF/#292929 at 75 %.
-    readonly property color calPrimary: theme.pick("#5B5FC7", "#7F85F5", "#FFFFFF")
+    // text and a #4C5093 bar; canceled #FFFFFF/#292929 at 75 %. High
+    // contrast works the same way as dark with Teams' contrast themePrimary
+    // #FFF200 on #000000 days (measured 2026-11-23: busy #999100 and free,
+    // tentative and ended #4D4900 at 90 %, text #000000 / #E6E6E6, Month
+    // #FFFFFF, ended #BEBEBE; bars #FFF200 at 90 %).
+    readonly property color calPrimary: theme.pick("#5B5FC7", "#7F85F5", "#FFF200")
+    /// Away (show as Out of office): the palette's freeBusyAwayColor.
+    readonly property color awayColor: theme.pick("#B4009E", "#F500D8", "#F500D8")
     /// [calLighterAlt, calLighter, calLight, calTertiary, calSecondary].
     readonly property var calShades: [1, 2, 3, 4, 5].map(k => shadeOf(calPrimary, k, theme.dark))
     function shadeOf(base, k, dark) {
@@ -756,7 +767,7 @@ Item {
     function isPast(e) { return !!e.end_utc && evEnd(e) <= now }
     function isCanceled(e) { return !!e.is_cancelled || e.response === "declined" }
     function fillOf(e) {
-        if (theme.highContrast || !e) return "#000000"
+        if (!e) return "transparent"
         if (isCanceled(e)) return alpha(calDay, .75)
         const past = isPast(e), d = theme.dark
         const light = isTentative(e) || e.show_as === "free" || e.show_as === "tentative" || e.show_as === "workingElsewhere"
@@ -766,7 +777,7 @@ Item {
     /// The tile text: grey with 8:1 contrast on the fill (11:1 in Month),
     /// 5.5:1 once past, 6:1 when canceled.
     function textOf(e, month) {
-        if (theme.highContrast || !e) return "#FFFFFF"
+        if (!e) return theme.text
         const f = Qt.color(fillOf(e))
         return greyOn(over(f, f.a, calDay), isPast(e) ? 5.5 : isCanceled(e) ? 6 : month ? 11 : 8)
     }
@@ -779,8 +790,9 @@ Item {
     /// The show-as bar: the calendar colour, dimmed once past; a free
     /// event's edge calLight once past, a canceled one's its tile edge.
     function barOf(e) {
-        if (theme.highContrast || !e) return theme.brand
+        if (!e) return calPrimary
         if (isCanceled(e)) return edgeOf(e)
+        if (e.show_as === "oof") { const a = awayColor; return alpha(isPast(e) ? shadeOf(a, theme.dark ? 4 : 3, theme.dark) : a, .9) }
         if (e.show_as === "free") return alpha(isPast(e) ? shade("light") : calPrimary, .9)
         return alpha(isPast(e) ? shade(theme.dark ? "tertiary" : "light") : calPrimary, .9)
     }
@@ -853,7 +865,7 @@ Item {
                             : day >= root.sundayOf(root.start) && day < root.dayAt(root.days + (root.view === "workweek" ? 1 : 0))
                         width: 28; height: 28
                         Rectangle { id: rFill; visible: parent.inRange; anchors.fill: parent; color: root.calRange }
-                        Rectangle { id: tFill; visible: parent.today; anchors.centerIn: parent; width: 22; height: 22; radius: 11; color: theme.brandFill }
+                        Rectangle { id: tFill; visible: parent.today; anchors.centerIn: parent; width: 22; height: 22; radius: 11; color: theme.hc(theme.brandFill, "#4F52B2") }
                         Text {
                             anchors.centerIn: parent
                             text: parent.day.getDate()
@@ -1192,9 +1204,9 @@ Item {
                     readonly property bool today: dayIndex === root.todayIndex
                     x: root.colX(index); width: root.colW(index); y: root.splitHead; height: heads.height - y
                     color: root.dayFill(root.busyDay(dayIndex), root.pastDay(dayIndex) ? root.calOff : root.calDay)
-                    Rectangle { visible: parent.today; width: parent.width; height: 3; color: theme.brand }
-                    Text { x: 13; y: 8; text: parent.day.getDate(); font.family: theme.font; font.pixelSize: 20; color: theme.brand }
-                    Text { x: 13; y: 33; text: theme.fmtDate(parent.day, root.wideLayout ? "dddd" : "ddd"); font.family: theme.font; font.pixelSize: theme.small; color: parent.today ? theme.brand : theme.textSecondary }
+                    Rectangle { visible: parent.today; width: parent.width; height: 3; color: root.calPrimary }
+                    Text { x: 13; y: 8; text: parent.day.getDate(); font.family: theme.font; font.pixelSize: 20; color: root.calPrimary }
+                    Text { x: 13; y: 33; text: theme.fmtDate(parent.day, root.wideLayout ? "dddd" : "ddd"); font.family: theme.font; font.pixelSize: theme.small; color: parent.today ? root.calPrimary : theme.textSecondary }
                     Rectangle { width: 1; height: parent.height; color: root.calLine }
                     Rectangle { y: 54; width: parent.width; height: 1; color: root.calLine }
                 }
@@ -1382,42 +1394,65 @@ Item {
                 y: (root.now.getHours() + root.now.getMinutes() / 60) * root.hourHeight
                 Row {
                     x: root.gutter; spacing: 3
-                    Repeater { model: Math.max(0, Math.ceil((root.colX(Math.max(0, nowLine.col)) - root.gutter) / 6)); Rectangle { width: 3; height: 1; color: theme.brand } }
+                    Repeater { model: Math.max(0, Math.ceil((root.colX(Math.max(0, nowLine.col)) - root.gutter) / 6)); Rectangle { width: 3; height: 1; color: root.calPrimary } }
                 }
-                Rectangle { x: root.colX(Math.max(0, nowLine.col)); width: root.colW(Math.max(0, nowLine.col)); height: 2; y: -0.5; color: theme.brand }
-                Rectangle { x: root.colX(Math.max(0, nowLine.col)) - 5; y: -5; width: 10; height: 10; radius: 5; color: theme.brand }
+                Rectangle { x: root.colX(Math.max(0, nowLine.col)); width: root.colW(Math.max(0, nowLine.col)); height: 2; y: -0.5; color: root.calPrimary }
+                Rectangle { x: root.colX(Math.max(0, nowLine.col)) - 5; y: -5; width: 10; height: 10; radius: 5; color: root.calPrimary }
             }
         }
     }
 
     // How busy an event keeps you: a 4 px bar in the calendar colour (busy
     // solid; tentative and unanswered hatched with the day's colour; free
-    // and canceled the day's colour with a calendar-colour edge).
+    // and canceled the day's colour with a calendar-colour edge). As the
+    // hosted calendar draws them (its show-as styles, measured 2026-11-23):
+    // Working elsewhere is open with calendar-colour dots (three in every
+    // 4 x 4 px), Away is the away colour crossed both ways with the day's
+    // colour at 80 % every 6 px.
     component ShowAsBar: Item {
         id: sab
         property var ev
         readonly property bool open: !!ev && (ev.show_as === "free" || root.isCanceled(ev))
+        readonly property string pattern: !ev || open ? "" : ev.show_as === "oof" ? "away" : ev.show_as === "workingElsewhere" ? "elsewhere" : root.isTentative(ev) ? "tentative" : ""
         readonly property color barColor: root.barOf(ev)
         width: 4
         Rectangle {
             anchors.fill: parent; radius: 4
-            visible: !root.isTentative(sab.ev) || sab.open
+            visible: sab.pattern === ""
             color: sab.open ? root.calDay : sab.barColor
             border.width: sab.open ? 1 : 0; border.color: sab.barColor
         }
         Canvas {
             id: hatch
             anchors.fill: parent
-            visible: root.isTentative(sab.ev) && !sab.open
+            visible: sab.pattern !== ""
             onPaint: {
                 const c = getContext("2d")
                 c.clearRect(0, 0, width, height)
                 c.fillStyle = sab.barColor; c.fillRect(0, 0, width, height)
-                c.strokeStyle = root.calDay; c.lineWidth = 1.5
-                for (let y = -4; y < height + 4; y += 4) { c.beginPath(); c.moveTo(0, y + 4); c.lineTo(width, y); c.stroke() }
+                if (sab.pattern === "tentative") {
+                    c.strokeStyle = root.calDay; c.lineWidth = 1.5
+                    for (let y = -4; y < height + 4; y += 4) { c.beginPath(); c.moveTo(0, y + 4); c.lineTo(width, y); c.stroke() }
+                } else if (sab.pattern === "away") {
+                    c.strokeStyle = root.calDay; c.globalAlpha = 0.8; c.lineWidth = 1
+                    for (let y = -6; y < height + 6; y += 6) {
+                        c.beginPath(); c.moveTo(0, y); c.lineTo(width, y + width); c.stroke()
+                        c.beginPath(); c.moveTo(0, y + width); c.lineTo(width, y); c.stroke()
+                    }
+                    c.globalAlpha = 1
+                } else if (sab.pattern === "elsewhere") {
+                    // The day's colour inside a 1 px edge, then the dots.
+                    c.fillStyle = root.calDay; c.fillRect(1, 0, width - 2, height)
+                    c.fillStyle = sab.barColor
+                    for (let v = 0; v < height; v++) for (let u = 0; u < width - 2; u++) {
+                        const a = u % 4, b = v % 4
+                        if (a % 2 === 0 && b % 2 === 0 && !(a === 0 && b === 2)) c.fillRect(1 + u, v, 1, 1)
+                    }
+                }
             }
             onHeightChanged: requestPaint()
-            Connections { target: sab; function onBarColorChanged() { hatch.requestPaint() } }
+            onVisibleChanged: if (visible) requestPaint()
+            Connections { target: sab; function onBarColorChanged() { hatch.requestPaint() } function onPatternChanged() { hatch.requestPaint() } }
             Connections { target: root; function onCalDayChanged() { hatch.requestPaint() } }
         }
     }
@@ -1429,14 +1464,14 @@ Item {
         property var ev
         property bool selected: false
         anchors.fill: parent
-        readonly property bool canceled: !!ev && root.isCanceled(ev) && !theme.highContrast
+        readonly property bool canceled: !!ev && root.isCanceled(ev)
         Rectangle { visible: te.canceled; x: 4; width: parent.width - 4; height: 1; color: root.edgeOf(te.ev) }
         Rectangle { visible: te.canceled; x: 4; anchors.bottom: parent.bottom; width: parent.width - 4; height: 1; color: root.edgeOf(te.ev) }
         Rectangle { visible: te.canceled; anchors.right: parent.right; width: 1; height: parent.height; color: root.edgeOf(te.ev) }
         Rectangle {
             visible: te.selected
             anchors.fill: parent; radius: 4; z: 2
-            color: "transparent"; border.width: 2; border.color: theme.pick("#242424", "#D6D6D6", "#1AEBFF")
+            color: "transparent"; border.width: 2; border.color: theme.pick("#242424", "#D6D6D6", "#FFFFFF")
         }
     }
 
@@ -1501,11 +1536,11 @@ Item {
                 width: monthArea.cellW; height: monthArea.cellH
                 // Days before today on neutralLighterAlt, as the week's.
                 color: root.midnight(day) < root.midnight(root.now) ? root.calOff : root.calDay
-                border.width: today ? 1 : 0; border.color: theme.brand
+                border.width: today ? 1 : 0; border.color: root.calPrimary
                 Rectangle { visible: !cell.today; anchors.right: parent.right; width: 1; height: parent.height; color: root.calLine }
                 Rectangle { visible: !cell.today; anchors.bottom: parent.bottom; width: parent.width; height: 1; color: root.calLine }
                 // Today: a calendar-colour circle (#5B5FC7, dark #7F85F5).
-                Rectangle { id: todayDot; visible: cell.today; x: 4; y: 6; width: 22; height: 22; radius: 11; color: theme.brand }
+                Rectangle { id: todayDot; visible: cell.today; x: 4; y: 6; width: 22; height: 22; radius: 11; color: root.calPrimary }
                 Text {
                     x: cell.today ? 4 : 8; y: 6; width: cell.today ? 22 : implicitWidth; height: cell.today ? 22 : 19
                     horizontalAlignment: cell.today ? Text.AlignHCenter : Text.AlignLeft; verticalAlignment: Text.AlignVCenter
@@ -1632,8 +1667,8 @@ Item {
         }
         width: 392; padding: 0
         background: Rectangle {
-            radius: 4; color: theme.menu; border.color: theme.pick(theme.dividerSoft, "#141414", "#FFFFFF")
-            Rectangle { width: parent.width; height: 4; radius: 2; color: theme.brand }
+            radius: 4; color: theme.menu; border.color: theme.pick(theme.dividerSoft, "#141414", "#5C5C5C")
+            Rectangle { width: parent.width; height: 4; radius: 2; color: root.calPrimary }
         }
         contentItem: Column {
             topPadding: 17; bottomPadding: 16; leftPadding: 17; rightPadding: 17
@@ -1855,8 +1890,8 @@ Item {
             Row {
                 visible: details.ev.is_organizer === true && !details.confirming
                 topPadding: 14; leftPadding: 34; spacing: 6
-                CardButton { icon: "edit-20"; label: qsTr("Edit"); onClicked: { const e = details.ev; details.close(); root.openPage(e) } }
-                CardButton { icon: "calendar-cancel-20"; iconColor: theme.hc("#C50F1F", "#FFFFFF"); label: details.ev.attendees && details.ev.attendees.length || details.ev.channel_id ? qsTr("Cancel") : qsTr("Delete"); onClicked: details.confirming = true }
+                CardButton { icon: "edit-20"; iconColor: theme.pick("#5B5FC7", theme.textStrong, "#0F6ABA"); label: qsTr("Edit"); onClicked: { const e = details.ev; details.close(); root.openPage(e) } }
+                CardButton { icon: "calendar-cancel-20"; iconColor: theme.pick("#E81123", "#C50F1F", "#E81123"); label: details.ev.attendees && details.ev.attendees.length || details.ev.channel_id ? qsTr("Cancel") : qsTr("Delete"); onClicked: details.confirming = true }
             }
             Column {
                 visible: details.confirming
@@ -2793,7 +2828,7 @@ Item {
                     attendees: f.attendees || [], location: f.location || "", bodyHtml: f.bodyHtml || "", online: !!f.online,
                     channel: f.channel && f.channel.channelId ? f.channel : null, showAs: f.showAs || "Busy",
                     editingId: f.editingId || "", sendPersonalInvites: !!f.sendPersonalInvites, timeZone: root.mtTimeZone,
-                    templateId: f.templateId || "", guests: f.guests || []
+                    templateId: f.templateId || "", guests: f.guests || [], bodyChanged: !!f.bodyChanged
                 }
                 if (f.recurrence) {
                     const r = f.recurrence, pattern = { patternType: r.patternType }

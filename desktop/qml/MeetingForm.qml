@@ -97,7 +97,10 @@ Item {
 
     onRequiredChanged: if (!loading) { dirty = true; availabilityWanted(allMails()) }
     onOptionalChanged: if (!loading) { dirty = true; availabilityWanted(allMails()) }
-    onDetailChanged: if (existing && detail && detail.body_html !== undefined) { loading = true; setBody(detail.body_html); loading = false }
+    onDetailChanged: if (existing && detail && detail.body_html !== undefined) { loading = true; setBody(detail.body_html); bodyAtLoad = bodyHtml(); loading = false }
+    /// The details as the form opened them (an update sends the body only
+    /// when it changed).
+    property string bodyAtLoad: ""
 
     // Links in the details as Teams' event page draws them (Outlook's
     // editor, measured 2026-11-23): the browser's #0000EE in light, #BA7CFF
@@ -267,6 +270,7 @@ Item {
                 .concat(optional.map(p => ({ address: p.address, name: p.name, type: "Optional" }))),
             location: location,
             bodyHtml: bodyHtml(),
+            bodyChanged: bodyHtml() !== bodyAtLoad,
             online: channel ? true : online,
             channel: channel,
             recurrence: recurrence ? { patternType: recurrence.patternType, daily: recurrence.daily, weekly: recurrence.weekly, monthly: recurrence.monthly, yearly: recurrence.yearly, range: { startDate: recurrence.start, endDate: recurrence.end } } : null,

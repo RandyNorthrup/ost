@@ -1186,6 +1186,9 @@ pub struct MeetingForm {
     /// A virtual appointment's external guests (its clients), who get
     /// Teams' tailored invitation instead of being attendees.
     pub guests: Vec<FormGuest>,
+    /// Whether the details changed since the form opened (an update sends
+    /// only what changed, as Teams' event page does).
+    pub body_changed: bool,
 }
 
 /// Teams' Virtual appointment template (Calendar ▸ New ▸ Virtual
@@ -1482,6 +1485,148 @@ pub async fn update_meeting(client: &TeamsClient, id: &str, form: &MeetingForm, 
     Ok(())
 }
 
+/// Send update on an event that isn't a Teams meeting, as Teams' event page
+/// does (Outlook's form in the hosted calendar, captured 2026-11-23):
+/// Outlook's `UpdateCalendarEvent` with what changed (`SetItemField`s on
+/// the item) and the attendees added and removed; Exchange sends the
+/// update to the attendees. The middle tier's meeting update can't take an
+/// event without a meeting chat ("Conversation id cannot be null").
+pub async fn send_event_update(client: &TeamsClient, id: &str, form: &MeetingForm) -> Result<()> {
+    let path_id = event_path_id(id)?;
+    let cur: serde_json::Value = client
+        .graph_get_with(
+            &format!("/me/events/{path_id}?$select=subject,start,end,isAllDay,location,showAs,attendees"),
+            &[("Prefer", "IdType=\"ImmutableId\", outlook.timezone=\"UTC\"")],
+        )
+        .await?
+        .json()
+        .await?;
+    let tz = mailbox_time_zone().await;
+    let body = update_event_request(&ews_id(path_id), &cur, form, &tz)?;
+    let v = owa_action("UpdateCalendarEvent", &body).await?;
+    let code = v.pointer("/Body/ResponseMessages/Items/0/ResponseCode").and_then(|c| c.as_str()).unwrap_or("NoError");
+    if code != "NoError" {
+        bail!("Outlook didn't update the event: {code}");
+    }
+    Ok(())
+}
+
+/// The `UpdateCalendarEvent` request for [`send_event_update`]: the event as
+/// Graph has it (`cur`, times in UTC) against the form.
+fn update_event_request(ews: &str, cur: &serde_json::Value, form: &MeetingForm, tz: &str) -> Result<serde_json::Value> {
+    let item_id = serde_json::json!({ "__type": "ItemId:#Exchange", "Id": ews });
+    let set = |field: &str, item: serde_json::Value| {
+        let mut it = serde_json::json!({ "__type": "CalendarItem:#Exchange" });
+        if let (Some(o), Some(i)) = (it.as_object_mut(), item.as_object()) {
+            o.extend(i.clone());
+        }
+        serde_json::json!({ "__type": "SetItemField:#Exchange", "Path": { "__type": "PropertyUri:#Exchange", "FieldURI": field }, "Item": it })
+    };
+    let mut updates = Vec::new();
+    let cs = |p: &str| cur.pointer(p).and_then(|x| x.as_str()).unwrap_or_default();
+    // Times: the form's, with their offset, in the mailbox's zone context.
+    let start = chrono::DateTime::parse_from_rfc3339(&form.start).with_context(|| format!("Not a time: {}", form.start))?;
+    let end = chrono::DateTime::parse_from_rfc3339(&form.end).with_context(|| format!("Not a time: {}", form.end))?;
+    let utc = |t: &str| chrono::NaiveDateTime::parse_from_str(t.split('.').next().unwrap_or(t), "%Y-%m-%dT%H:%M:%S").ok().map(|n| n.and_utc());
+    let same_time = utc(cs("/start/dateTime")) == Some(start.with_timezone(&chrono::Utc)) && utc(cs("/end/dateTime")) == Some(end.with_timezone(&chrono::Utc));
+    let all_day = cur.get("isAllDay").and_then(|b| b.as_bool()).unwrap_or(false);
+    let ews_time = |t: &chrono::DateTime<chrono::FixedOffset>| t.format("%Y-%m-%dT%H:%M:%S%.3f%:z").to_string();
+    if form.subject.trim() != cs("/subject") {
+        updates.push(set("Subject", serde_json::json!({ "Subject": form.subject.trim() })));
+    }
+    if !same_time || form.all_day != all_day {
+        updates.push(set("Start", serde_json::json!({ "Start": ews_time(&start) })));
+        updates.push(set("End", serde_json::json!({ "End": ews_time(&end) })));
+        updates.push(set("IsAllDayEvent", serde_json::json!({ "IsAllDayEvent": form.all_day })));
+    }
+    if form.location.trim() != cs("/location/displayName") {
+        updates.push(set("Location", serde_json::json!({ "Location": { "__type": "EnhancedLocation:#Exchange", "DisplayName": form.location.trim() } })));
+    }
+    if form.body_changed {
+        updates.push(set("Body", serde_json::json!({ "Body": { "__type": "BodyContentType:#Exchange", "BodyType": "HTML", "Value": form.body_html } })));
+    }
+    let show_as = match form.show_as.to_ascii_lowercase().as_str() {
+        "free" => "Free",
+        "tentative" => "Tentative",
+        "oof" => "OOF",
+        "workingelsewhere" => "WorkingElsewhere",
+        _ => "Busy",
+    };
+    if !form.show_as.is_empty() && !cs("/showAs").eq_ignore_ascii_case(show_as) {
+        updates.push(set("LegacyFreeBusyStatus", serde_json::json!({ "FreeBusyType": show_as })));
+    }
+    // Attendees: the whole lists when they changed, and what was added and
+    // removed (Teams sends both).
+    let mailbox = |name: &str, address: &str| serde_json::json!({ "Mailbox": { "Name": if name.is_empty() { address } else { name }, "EmailAddress": address, "RoutingType": "SMTP" } });
+    let had: Vec<(String, String, String)> = cur
+        .get("attendees")
+        .and_then(|a| a.as_array())
+        .into_iter()
+        .flatten()
+        .filter(|a| a["type"].as_str() != Some("resource"))
+        .map(|a| {
+            (
+                a.pointer("/emailAddress/address").and_then(|x| x.as_str()).unwrap_or_default().to_ascii_lowercase(),
+                a.pointer("/emailAddress/name").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
+                if a["type"].as_str() == Some("optional") { "Optional" } else { "Required" }.to_string(),
+            )
+        })
+        .filter(|(m, _, _)| !m.is_empty())
+        .collect();
+    let want: Vec<(String, String, String)> = form
+        .attendees
+        .iter()
+        .filter(|a| a.address.contains('@'))
+        .map(|a| (a.address.to_ascii_lowercase(), a.name.clone(), if a.kind == "Optional" { "Optional" } else { "Required" }.to_string()))
+        .collect();
+    let key = |l: &[(String, String, String)], kind: &str| {
+        let mut v: Vec<String> = l.iter().filter(|x| x.2 == kind).map(|x| x.0.clone()).collect();
+        v.sort();
+        v
+    };
+    let mut body = serde_json::json!({
+        "__type": "UpdateCalendarEventRequest:#Exchange",
+        "EventId": item_id,
+        "EventScope": 0,
+        "ShouldSendUpdateToAttendees": false,
+        "TargetAudience": 0,
+        "ClientSupportsIrm": true,
+    });
+    if key(&had, "Required") != key(&want, "Required") || key(&had, "Optional") != key(&want, "Optional") {
+        let list = |kind: &str| want.iter().filter(|x| x.2 == kind).map(|x| mailbox(&x.1, &x.0)).collect::<Vec<_>>();
+        let diff = |a: &[(String, String, String)], b: &[(String, String, String)], kind: &str| {
+            a.iter()
+                .filter(|x| x.2 == kind && !b.iter().any(|y| y.2 == kind && y.0 == x.0))
+                .map(|x| mailbox(&x.1, &x.0))
+                .collect::<Vec<_>>()
+        };
+        updates.push(set("OptionalAttendees", serde_json::json!({ "OptionalAttendees": list("Optional") })));
+        updates.push(set("RequiredAttendees", serde_json::json!({ "RequiredAttendees": list("Required") })));
+        let b = body.as_object_mut().context("request")?;
+        b.insert("AddedRequiredAttendees".into(), diff(&want, &had, "Required").into());
+        b.insert("AddedOptionalAttendees".into(), diff(&want, &had, "Optional").into());
+        b.insert("AddedResources".into(), serde_json::json!([]));
+        b.insert("RemovedRequiredAttendees".into(), diff(&had, &want, "Required").into());
+        b.insert("RemovedOptionalAttendees".into(), diff(&had, &want, "Optional").into());
+        b.insert("RemovedResources".into(), serde_json::json!([]));
+    }
+    if updates.is_empty() {
+        // Nothing the form shows changed: send the title again, so the
+        // attendees still get the update.
+        updates.push(set("Subject", serde_json::json!({ "Subject": form.subject.trim() })));
+    }
+    body["ItemChange"] = serde_json::json!({ "__type": "ItemChange:#Exchange", "Updates": updates, "ItemId": item_id });
+    Ok(serde_json::json!({
+        "__type": "UpdateCalendarEventJsonRequest:#Exchange",
+        "Header": {
+            "__type": "JsonRequestHeaders:#Exchange",
+            "RequestServerVersion": "V2018_01_08",
+            "TimeZoneContext": { "__type": "TimeZoneContext:#Exchange", "TimeZoneDefinition": { "__type": "TimeZoneDefinitionType:#Exchange", "Id": tz } }
+        },
+        "Body": body,
+    }))
+}
+
 /// Cancel a meeting you organise, with an optional note (Teams' "Cancel
 /// meeting?"). A channel meeting is cancelled in its team's calendar and
 /// post (`PUT {mt}/v2.0/groups/smtp:<group>/calendars/events/<iCalUId>/cancel`,
@@ -1544,6 +1689,45 @@ pub async fn cancel_meeting(client: &TeamsClient, ev: &serde_json::Value, team_i
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn update_event_sends_what_changed() {
+        let cur = serde_json::json!({
+            "subject": "Plan", "isAllDay": false, "showAs": "busy",
+            "start": { "dateTime": "2026-11-26T22:00:00.0000000", "timeZone": "UTC" },
+            "end": { "dateTime": "2026-11-26T22:30:00.0000000", "timeZone": "UTC" },
+            "location": { "displayName": "" },
+            "attendees": [{ "type": "required", "emailAddress": { "address": "b@x.com", "name": "B" } }]
+        });
+        let mut form = super::MeetingForm {
+            subject: "Plan 2".into(),
+            start: "2026-11-26T14:00:00-08:00".into(),
+            end: "2026-11-26T14:30:00-08:00".into(),
+            show_as: "Busy".into(),
+            attendees: vec![super::FormAttendee { address: "b@x.com".into(), name: "B".into(), kind: "Required".into() }],
+            ..Default::default()
+        };
+        let r = super::update_event_request("ID/1=", &cur, &form, "Pacific Standard Time").unwrap();
+        assert_eq!(r["Header"]["TimeZoneContext"]["TimeZoneDefinition"]["Id"], "Pacific Standard Time");
+        let ups = r["Body"]["ItemChange"]["Updates"].as_array().unwrap();
+        assert_eq!(ups.len(), 1, "{ups:?}");
+        assert_eq!(ups[0]["Path"]["FieldURI"], "Subject");
+        assert_eq!(ups[0]["Item"]["Subject"], "Plan 2");
+        assert_eq!(r["Body"]["EventId"]["Id"], "ID/1=");
+        assert!(r["Body"].get("AddedRequiredAttendees").is_none());
+        // A new attendee and a later time.
+        form.attendees.push(super::FormAttendee { address: "c@x.com".into(), name: "C".into(), kind: "Required".into() });
+        form.start = "2026-11-26T15:00:00-08:00".into();
+        form.end = "2026-11-26T15:30:00-08:00".into();
+        let r = super::update_event_request("ID/1=", &cur, &form, "Pacific Standard Time").unwrap();
+        let fields: Vec<&str> = r["Body"]["ItemChange"]["Updates"].as_array().unwrap().iter().map(|u| u["Path"]["FieldURI"].as_str().unwrap()).collect();
+        assert_eq!(fields, ["Subject", "Start", "End", "IsAllDayEvent", "OptionalAttendees", "RequiredAttendees"]);
+        let start = &r["Body"]["ItemChange"]["Updates"][1]["Item"]["Start"];
+        assert_eq!(start, "2026-11-26T15:00:00.000-08:00");
+        assert_eq!(r["Body"]["AddedRequiredAttendees"][0]["Mailbox"]["EmailAddress"], "c@x.com");
+        assert_eq!(r["Body"]["RemovedRequiredAttendees"].as_array().unwrap().len(), 0);
+        assert_eq!(r["Body"]["ItemChange"]["Updates"][5]["Item"]["RequiredAttendees"].as_array().unwrap().len(), 2);
+    }
+
     #[test]
     fn cast_lists_meetings_as_teams() {
         let ev = |subject: &str, start: &str, end: &str, all_day: bool, link: bool| super::CalendarEvent {
