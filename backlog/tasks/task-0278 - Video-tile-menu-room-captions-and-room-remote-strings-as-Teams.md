@@ -1,11 +1,11 @@
 ---
 id: TASK-0278
 title: Video tile menu, room captions and room remote strings as Teams
-status: In Progress
+status: Done
 assignee:
   - '@tilB'
 created_date: '2026-11-24T15:00:00Z'
-updated_date: '2026-11-24T18:05:00Z'
+updated_date: '2026-11-24T18:23:00Z'
 labels: []
 dependencies: []
 ---
@@ -18,9 +18,9 @@ From TASK-0273: Teams has a ··· menu on video tiles (one of the places it off
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Video tiles have Teams' ··· menu with Teams' items for each kind of participant, each working as in Teams
+- [x] #1 Video tiles have Teams' ··· menu with Teams' items for each kind of participant, each working as in Teams
 - [x] #2 An OST room invited into a meeting runs captions as a Teams Room does, and its remote offers Captions
-- [ ] #3 The room remote's strings are translated from Teams' extensibility app strings, fetched at runtime like the others
+- [x] #3 The room remote's strings are translated from Teams' extensibility app strings, fetched at runtime like the others
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -41,4 +41,27 @@ From TASK-0273: Teams has a ··· menu on video tiles (one of the places it off
 
 - 2026-11-24 (tilB, follow-up after merge 6963b1af) guest tile live: Teams on winpc started a Meet now "OST TEST 278 guest tile"; an anonymous Chrome guest on linuxlt ("OST Test Guest 278", fake camera, CDP-driven join) waited in the lobby and was admitted by OST (spatest, --join-admit --join-admit-notbot). Teams' menu for the guest: Mute participant, Pin for me, Spotlight for everyone, Fill frame, divider, Report (the same as anyone else's). OST matched apart from Fit/Fill: Teams fits the video of the one person filling the stage while you float over it (automaticFor1x1call, until you choose), so its menu offered Fill frame. Fixed (CallWindow scaleChoices: chosen per tile, else fit for that 1x1 person); rerun showed Mute participant, Pin for me, Spotlight for everyone, Fill frame, divider, Report. Guest actions all worked (fit/fill, pin/unpin, spotlight ask/confirm/stop, own pin/hide). Guest left with its Leave button (Rejoin page), OST runs hung up, Teams left; Chrome guest and its tunnel stopped.
 - German live: OST spatest with an isolated config (XDG_CONFIG_HOME copy with appLanguage de-de, regionalFollowOs false; the shared desktop.json untouched) built the de-de catalogue (5371 strings, ids fingerprint changed so it rebuilt) and, controlling OST Test Room over the relayed beacon, showed the room remote in German from x.roomremote: Steuerung, Video aus, Mikro ein, Untertitel ausschalten, Layout, Raum trennen ("Room Remote" stays English in Teams' German too). Disconnect room -> the room left (Call end 202), controller hung up; room, relay, btvirt stopped; isolated config removed.
+
+- Final build/tests (on b49c5647 + fit fix, commit 7fb03262): lib 968 passed, desktop 38 passed. Cleanup: guest and every OST instance left their calls (guest page Rejoin, OST "hung up the call leg", room Call end 202) before stopping; Meet now has no calendar event to delete; room, relay, btvirt stopped (hci0 advertising 0); linuxlt helper files and isolated config removed; winpc Teams ost-test1 on Calendar, no call, Cast closed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Video tiles now have Teams' ··· menu, an OST room invited into a meeting runs captions (so its remote offers Captions), and the room remote is translated from Teams' own extensibility-app strings, all verified live against Teams on winpc.
+
+What Teams does (bundles + winpc):
+- Tile ··· menu (CallingParticipantContextMenu / MyselfVideo): the ··· in the name tag on hover, right-click at the pointer. Others: Mute participant, Lower hand, Pin for me/Unpin, Spotlight for everyone/Stop spotlighting (asks first), Fit to frame/Fill frame, Control Room System (rooms), divider, Report; yours: Switch camera, Pin for me, Hide me, Remove/Include me in gallery, Spotlight/Exit spotlight, Lower my hand, Fit/Fill. Attendees see Pin, Fit/Fill, Report (theirs: Pin, Hide me). A guest gets the same as anyone else. No Remove/role changes on tiles (People pane only). The one person filling the stage is fitted automatically.
+- A Teams Room in a meeting runs captions through the meeting's recorder; the remote toggles them.
+- The remote's text is the extensibility apps' main-locale-<lang> (extensibilityRoomRemote).
+
+Changes (6963b1af, 7fb03262):
+- VideoTileMenu.qml, MeetingTile ··· and Fit/Fill, self pin, spotlight confirmation (tiles and People pane), Lower hand via removeState.
+- Answered meetings: conversation links from the attach's join answer, recorder::Tracker (shared with joined meetings), recorder invite + StartCaptions + transcriptionPrefs; captions/recorder state reset per answered call; room remote offers Captions.
+- x.roomremote extra string source (found from the app page), remote strings pinned to its ids, ids/resources regenerated.
+- Harness: --tile-menu-test [--tile-attendee] [--tile-lower-hand], --tile-raise, --tile-demote, --rr-captions-hold.
+
+Verified live: Teams and OST controllers turned the room's captions on/off (captions shown on the room); a second meeting started captions again; OST menus matched Teams for a presenter, raised hand, room, guest, yourself and the attendee view; all actions worked; German UI showed the remote in German (Steuerung, Mikro ein, Untertitel ausschalten, Raum trennen).
+
+Tests: lib 968, desktop 38.
+<!-- SECTION:FINAL_SUMMARY:END -->
