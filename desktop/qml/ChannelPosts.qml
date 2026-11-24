@@ -929,7 +929,16 @@ Item {
             onQuoteDismissed: quote = null
             onEmojiRequested: a => root.host.openEmojiFor(box)
             onSettingsRequested: root.host.openChatSettings()
-            onSubmit: { backend.editMessageRich(message.id, formattedText(), quote ? JSON.stringify(quote) : "", JSON.stringify(mediaInUse())); root.host.editingId = "" }
+            // (Teams' edit box: Attach files and Actions and apps too,
+            // TASK-0263.)
+            chatTitle: root.host ? root.host.chatName : ""
+            editTeamId: root.host ? root.host.teamId : ""
+            editTeamName: root.host ? root.host.teamName : ""
+            onSubmit: {
+                backend.editMessageWith(message.id, formattedText(), quote ? JSON.stringify(quote) : "", JSON.stringify(mediaInUse()), editExtras())
+                editSent()
+                root.host.editingId = ""
+            }
             onCancelled: root.host.editingId = ""
         }
     }

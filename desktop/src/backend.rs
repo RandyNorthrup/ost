@@ -1018,6 +1018,10 @@ pub mod qobject {
         /// A Teams ECS setting as JSON ("" when ECS doesn't set it).
         #[qinvokable]
         fn ecs_setting(self: &Backend, area: &QString, key: &QString) -> QString;
+        /// The user's Teams ring ("ring3_6", "general"…), as Teams names it
+        /// to the apps it hosts (hostRing, ringId).
+        #[qinvokable]
+        fn client_ring(self: &Backend) -> QString;
         /// Teams' Refresh license and restart (Accounts and orgs): start OST
         /// again, which reads your licence and organisations afresh.
         #[qinvokable]
@@ -1593,6 +1597,20 @@ pub mod qobject {
             editor_html: &QString,
             quote_json: &QString,
             media_json: &QString,
+        );
+        /// As edit_message_rich, with what Teams' edit box adds (TASK-0263):
+        /// `extras_json` {importance ("high", "urgent", "" or absent to
+        /// keep), removedFiles [objectUrl], files (send_files' lines: local
+        /// paths and "cloud:" files), loop {component_url,
+        /// card_client_id}, clip {id, url, duration, width, height}}.
+        #[qinvokable]
+        fn edit_message_with(
+            self: Pin<&mut Backend>,
+            message_id: &QString,
+            editor_html: &QString,
+            quote_json: &QString,
+            media_json: &QString,
+            extras_json: &QString,
         );
 
         /// Delete one of our messages in the open chat.
@@ -6025,6 +6043,7 @@ pub fn compose_copilot_state(license: Option<&serde_json::Value>) -> serde_json:
     // user's shouldShowMetaOSCopilotApp, the app installed) with its
     // Settings switch (messaging.enableMetaOSCopilotToggleInSettings).
     let text = |ns: &str, key: &str, dflt: &str| api::ecs::setting(ns, key).and_then(|v| v.as_str().map(str::to_string)).unwrap_or_else(|| dflt.to_string());
+    let channel = if licensed { on("copilot", "enableBizChatCopilotInChannelLicensed", true) } else { on("copilot", "enableBizChatCopilotInChannelUnlicensed", false) };
     serde_json::json!({
         "allowed": allowed, "proofread": allowed && on("compose", "enableComposeRewriteProofread", false), "meeting": meeting, "rename": licensed,
         "licensed": licensed,
@@ -6041,7 +6060,11 @@ pub fn compose_copilot_state(license: Option<&serde_json::Value>) -> serde_json:
         // licensed user where the licensed flag is on, for others where the
         // unlicensed one is (off on this tenant, so no button).
         "chat": if licensed { on("copilot", "enableBizChatCopilotInChatLicensed", true) } else { on("copilot", "enableBizChatCopilotInChatUnlicensed", false) },
-        "channel": if licensed { on("copilot", "enableBizChatCopilotInChannelLicensed", true) } else { on("copilot", "enableBizChatCopilotInChannelUnlicensed", false) },
+        "channel": channel,
+        // A post's view (Teams' channel L2 header: See details, Followed
+        // threads, Open conversation in new window; TASK-0263) also asks
+        // channels.enableChannelCopilotInL2Header.
+        "channelPost": channel && on("channels", "enableChannelCopilotInL2Header", true),
         "meetingChat": if licensed { on("meetingCollaboration", "enableBizChatCopilotForMeetingChat", true) } else { on("meetingCollaboration", "enableBizChatCopilotForMeetingUnlicensed", false) },
     })
 }
@@ -15235,6 +15258,107 @@ impl qobject::Backend {
         });
     }
 
+    pub fn edit_message_with(
+        mut self: Pin<&mut Self>,
+        message_id: &QString,
+        editor_html: &QString,
+        quote_json: &QString,
+        media_json: &QString,
+        extras_json: &QString,
+    ) {
+        let id = message_id.to_string();
+        let x: serde_json::Value = serde_json::from_str(&extras_json.to_string()).unwrap_or_default();
+        let media: Vec<api::messages::ComposeMedia> =
+            serde_json::from_str(&media_json.to_string()).unwrap_or_default();
+        let (mut html, mentions) =
+            api::messages::teams_html_with_media(&editor_html.to_string(), &media);
+        let quote: Option<api::messages::Quote> =
+            serde_json::from_str(&quote_json.to_string()).ok();
+        let mut extras = api::messages::EditExtras {
+            importance: x.get("importance").and_then(|v| v.as_str()).map(str::to_string),
+            removed_files: x
+                .get("removedFiles")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|u| u.as_str().map(str::to_string)).collect())
+                .unwrap_or_default(),
+            loop_component: x
+                .get("loop")
+                .and_then(|l| serde_json::from_value::<api::outbox::LoopEmbed>(l.clone()).ok())
+                .filter(|l| !l.component_url.is_empty() && !l.card_client_id.is_empty()),
+            ..Default::default()
+        };
+        // A clip recorded in the edit goes before the text, as a send puts
+        // it (Teams' AMSVideo), and the message refers to its object.
+        let clip = x.get("clip").cloned().unwrap_or_default();
+        let clip_id = clip["id"].as_str().unwrap_or_default().to_string();
+        if !clip_id.is_empty() {
+            let url = clip["url"].as_str().unwrap_or_default().to_string();
+            let ok_id = clip_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+            let Some(base) = url.split_once("/v1/objects/").map(|(b, _)| b.to_string()).filter(|_| ok_id && api::messages::is_ams_url(&url)) else { return };
+            html = api::video_clips::clip_html(
+                &base,
+                &clip_id,
+                &api::video_clips::new_card_id(),
+                clip["duration"].as_f64().unwrap_or(0.0).max(0.0) as u64,
+                clip["width"].as_u64().unwrap_or(1280) as u32,
+                clip["height"].as_u64().unwrap_or(720) as u32,
+            ) + &html;
+            extras.ams_references = vec![clip_id];
+        }
+        let lines: Vec<String> = x
+            .get("files")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect();
+        let kept_files = x.get("keptFiles").and_then(|v| v.as_u64()).unwrap_or(0);
+        if html.trim().is_empty() && lines.is_empty() && kept_files == 0 && extras.loop_component.is_none() {
+            return;
+        }
+        if !lines.is_empty() {
+            self.as_mut().set_busy(true);
+        }
+        let busy = !lines.is_empty();
+        let at = id.clone();
+        let qt = self.qt_thread();
+        self.message_action(&at, move |client, chat| {
+            Box::pin(async move {
+                // New files as a send makes them: uploaded to your chat
+                // files (a channel's folder for a channel), or a cloud
+                // file shared with the chat.
+                for l in &lines {
+                    let entry = match l.strip_prefix("cloud:") {
+                        Some(j) => {
+                            let f: api::cloud_attach::CloudFile = serde_json::from_str(j)?;
+                            api::cloud_attach::send_record(&client, &chat, &f).await
+                        }
+                        None => {
+                            let p = std::path::PathBuf::from(l.strip_prefix("file://").unwrap_or(l));
+                            api::files::upload_for_chat(&client, &chat, &p).await
+                        }
+                    };
+                    match entry {
+                        Ok(e) => extras.added_files.push(e),
+                        Err(e) => {
+                            if busy {
+                                let _ = qt.queue(|mut this| this.as_mut().set_busy(false));
+                            }
+                            return Err(e);
+                        }
+                    }
+                }
+                let r = api::messages::edit_message_with(&client, &chat, &id, &html, quote.as_ref(), Some(&mentions), &extras).await;
+                if busy {
+                    let _ = qt.queue(|mut this| this.as_mut().set_busy(false));
+                }
+                r
+            })
+        });
+    }
+
     pub fn delete_message(self: Pin<&mut Self>, message_id: &QString) {
         let id = message_id.to_string();
         deleted_here().lock().unwrap().insert(id.clone());
@@ -17491,6 +17615,10 @@ impl qobject::Backend {
         api::ecs::setting(&area.to_string(), &key.to_string())
             .map(|v| QString::from(v.to_string().as_str()))
             .unwrap_or_default()
+    }
+
+    pub fn client_ring(&self) -> QString {
+        QString::from(api::ecs::ring().as_str())
     }
 
     pub fn restart_app(self: Pin<&mut Self>) {
@@ -26388,6 +26516,8 @@ mod chat_copilot_gate_tests {
         let licensed = serde_json::json!({ "isCopilot": true });
         let s = super::compose_copilot_state(Some(&licensed));
         assert_eq!((s["chat"].as_bool(), s["channel"].as_bool(), s["meetingChat"].as_bool()), (Some(true), Some(true), Some(true)));
+        // A post's view (channel L2 header) also needs channels.enableChannelCopilotInL2Header (on).
+        assert_eq!(s["channelPost"].as_bool(), Some(true));
         let unlicensed = serde_json::json!({ "isCopilot": false });
         let s = super::compose_copilot_state(Some(&unlicensed));
         assert_eq!((s["chat"].as_bool(), s["channel"].as_bool(), s["meetingChat"].as_bool()), (Some(false), Some(false), Some(false)));

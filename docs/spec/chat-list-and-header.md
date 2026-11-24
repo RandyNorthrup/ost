@@ -1934,6 +1934,33 @@ the channel again, or **Go to channel**, returns to its posts).
   68.7; Follow W−112, Close Copilot W−80, More W−48), the thread under it
   at the left and Copilot's pane (with its own header) at the right.
   Closing Copilot puts the thread back in its 360 pane.
+- **A post's view** (Posts channels; TASK-0263, measured on winpc
+  2026-11-23 in OST Test Team > General and OST test channel). This is
+  Teams' channel L2 header, shown by See details, Followed threads and
+  Open conversation in new window. It is gated by
+  `channels.enableChannelCopilotInL2Header` (built-in on) as well as the
+  channel flag.
+  - In the channel's pane the header is Go to channel, Open in new window,
+    the divider, then Open Copilot (`channel-copilot-button`) at W−107,
+    Find in post at W−75 and More at W−43.
+  - Find in post is inline only where the header is at least 640 wide.
+    Elsewhere it is More's first item: in the 588 wide window, and in the
+    pane with Copilot open. More is then Find in post, Follow/Unfollow
+    thread and View Copilot history.
+  - Open, Copilot takes the end slot (360). The post narrows beside it
+    (532 in the pane; 920 in a maximised window). In a 588 window the pane
+    covers the window.
+  - Go to channel closes both. Followed threads' narrow 512 pane puts
+    Copilot in More.
+  - The app is told what a Threads channel's thread tells it: ChannelL2,
+    `cmmce9gzagp`, ViewChannel and the `channelContext`. The reference
+    names the team, though: SHA-256 of "{team}-{channel}-{post}" (General:
+    team = channel).
+- **Ring**: the frame's `hostRing` and the context's `ringId` are Teams'
+  Metadata.ring.id, which the host takes from ECS Segmentation.TeamsRing
+  (ost-test1: "ring3_6"). The context also gives manifestVersion "1.23",
+  hostFeatures.serverSideRendering true (the app is in Teams'
+  appSSREnableList), teamSiteDomain and mySitePath.
 - **Compose Copilot in edits**: the in-place edit box's tools are Format,
   Emoji, Attach files, Write with Copilot, Actions and apps, Cancel, Done;
   Write with Copilot's popover (602 wide) sits over the edit box, its right

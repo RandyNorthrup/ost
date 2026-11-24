@@ -1,6 +1,7 @@
 import QtQuick
 import QtCore
 import QtQuick.Controls.Basic
+import QtQuick.Dialogs
 import com.ost.desktop
 
 // Teams' simplified compose (266342), measured on winpc. The same box is the
@@ -39,12 +40,33 @@ import com.ost.desktop
 Item {
     id: root
     property bool editing: false
+    // Editing a sent message (Teams' in-place edit box, measured on winpc
+    // 2026-11-23, TASK-0263): Format, Emoji, Attach files, Write with
+    // Copilot and Actions and apps, then Cancel and Done (no Loop
+    // button). Attach is the compose box's popover, its files going into
+    // the edit, and the message's own files show as cards to take out
+    // (Remove attachment). Actions and apps is Teams' short menu:
+    // Collaborate with Loop, Set delivery options (Standard or Important,
+    // the IMPORTANT! line over the text), Record video clip. Done sends
+    // them with the text (editExtras(): Teams' edit PUT carries the files,
+    // the importance and a Loop component's card).
+    /// The message's own files still in the edit ({key: objectUrl, name,
+    /// kind, existing}), and their keys when the edit began.
+    property var editFiles: []
+    property var editFilesAtStart: []
+    /// Files from this device added in the edit (their paths).
+    property var editLocalFiles: []
+    /// The conversation's team, for the edit's Attach (Browse Teams and
+    /// Channels in a channel).
+    property string editTeamId: ""
+    property string editTeamName: ""
+    readonly property var editAttach: editAttachLoader.item ? editAttachLoader.item.attach : null
     property string placeholder: qsTr("Type a message")
     property var quote: null
-    property var files: []
+    property var files: editing ? editLocalFiles : []
     /// Files picked from OneDrive or SharePoint ({key, name, kind, loading,
     /// file, thumbnail}), drawn as Teams' attachment cards under the text.
-    property var cloudFiles: []
+    property var cloudFiles: editing ? editFiles.concat(editAttach ? editAttach.pending : []) : []
     property bool formatting: false
     // Teams' delivery option for the next message: "", "high" or "urgent";
     // offered outside channels, Urgent only up to 20 members.
@@ -545,6 +567,12 @@ Item {
     // custom emoji and pictures (as Teams' edit does); else its text.
     function setMessage(m) {
         media = m.edit_media || []
+        if (root.editing) {
+            root.importance = m.importance === "high" || m.importance === "urgent" ? m.importance : ""
+            root.editFiles = (m.files || []).filter(f => !!f.object_url)
+                .map(f => ({ key: f.object_url, name: f.name || "", kind: f.file_type || "", existing: true }))
+            root.editFilesAtStart = root.editFiles.map(f => f.key)
+        }
         // Mention tokens in Teams' colour; a shared contact's icon.
         const tokens = String(m.edit_html || "").replace(/<a href="(mention[^"]*)">/g, '<a href="$1" style="color:' + theme.brandForeground1 + '; text-decoration:none">')
         setHtml(m.edit_html ? theme.messageHtml(tokens) : (m.html || escapeHtml(m.text || "")))
@@ -1457,12 +1485,12 @@ Item {
     readonly property var toolModel: [
         { id: "expand-compose", icon: "format-20", label: root.formatting ? qsTr("Hide Formatting options") : qsTr("Show Formatting options"), pressed: root.formatting },
         { id: "UnifiedFunPicker", icon: "emoji-20", label: qsTr("Emoji, GIFs and Stickers"), hidden: root.textOnly },
-        { id: "FilePicker", icon: "attach-20", label: qsTr("Attach files") + " (Alt+Shift+O)", hidden: root.editing || root.textOnly },
+        { id: "FilePicker", icon: "attach-20", label: qsTr("Attach files") + " (Alt+Shift+O)", hidden: root.textOnly },
         // (Also while editing a sent message: Teams' edit box keeps Write
         // with Copilot, its popover over the edit box, measured 2026-11-23.)
         { id: "open-compose-copilot", icon: "pen-sparkle-20", label: qsTr("Write with Copilot") + " (Alt+A)", hidden: root.textOnly || !root.copilotAllowed, pressed: copilotPopover.opened },
         { id: "popup-semo", icon: "loop-page-20", label: qsTr("Loop components"), hidden: root.editing || root.textOnly || !root.loopAllowed, pressed: !!root.loop },
-        { id: "message-extension-flyout-command", icon: "add-20", label: qsTr("Actions and apps"), hidden: root.editing || root.textOnly }
+        { id: "message-extension-flyout-command", icon: "add-20", label: qsTr("Actions and apps"), hidden: root.textOnly }
     ].filter(t => !t.hidden)
     /// This box can send a Loop component (the main compose box).
     property bool loopHost: true
@@ -1566,6 +1594,19 @@ Item {
     }
     function loopCardForTest() { return loopCard.visible ? loopCard : null }
     function openPlusForTest() { plusFlyout.anchorItem = root.attachButton(); plusFlyout.open() }
+    function toolForTest(id) {
+        const find = it => {
+            for (const c of it.children) {
+                if (c.visible && c.modelData && c.modelData.id === id) return c
+                const f = find(c)
+                if (f) return f
+            }
+            return null
+        }
+        return find(root)
+    }
+    function plusFlyoutForTest() { return plusFlyout }
+    function deliveryPopupForTest() { return deliveryPopup }
     function loopDiscardDialogForTest() { return loopDiscardDialog }
     // Teams' "Discard draft message" (measured): 600 wide, the title 20/28
     // 600, "The Loop component will be deleted." 14/20, Close and Discard
@@ -1625,12 +1666,79 @@ Item {
     function toolClicked(id, item) {
         if (id === "expand-compose") { formatting = !formatting; input.forceActiveFocus() }
         else if (id === "UnifiedFunPicker") root.emojiRequested(item)
-        else if (id === "FilePicker") root.attachRequested(item)
+        else if (id === "FilePicker") { if (root.editing) root.openEditAttach(item); else root.attachRequested(item) }
         else if (id === "open-compose-copilot") root.openCopilot(item)
         else if (id === "popup-semo") root.insertLoop()
         else if (id === "message-extension-flyout-command") { plusFlyout.anchorItem = item; plusFlyout.open() }
         else if (id === "discard-draft") root.requestCancel()
         else if (id === "send") root.trySubmit()
+    }
+    // The edit's own Attach (the conversation's popover and picker, its
+    // files kept for this edit).
+    Loader {
+        id: editAttachLoader
+        active: root.editing
+        sourceComponent: Item {
+            property alias attach: attachItem
+            CloudAttach {
+                id: attachItem
+                chatId: String(root.chatId || backend.currentChatId)
+                channel: chatId.indexOf("@thread.tacv2") >= 0
+                teamName: root.editTeamName
+                teamId: root.editTeamId
+                onUploadRequested: editUpload.open()
+                onFailed: text => root.showBanner(text, false, 3000)
+            }
+            FileDialog {
+                id: editUpload
+                title: qsTr("Upload from this device")
+                fileMode: FileDialog.OpenFiles
+                onAccepted: root.editLocalFiles = root.editLocalFiles.concat(selectedFiles.map(u => decodeURIComponent(u.toString().replace(/^file:\/\//, ""))))
+            }
+        }
+    }
+    function openEditAttach(anchor) {
+        if (!root.editAttach) return
+        root.editAttach.context = []
+        root.editAttach.openMenu(anchor || root.attachButton() || root)
+    }
+    Connections {
+        target: root
+        enabled: root.editing
+        function onFileRemoved(path) { root.editLocalFiles = root.editLocalFiles.filter(p => p !== path) }
+        function onCloudRemoved(key) {
+            if (root.editFiles.some(f => f.key === key)) root.editFiles = root.editFiles.filter(f => f.key !== key)
+            else if (root.editAttach) root.editAttach.remove(key)
+        }
+        function onCloudLinkRequested(key) { if (root.editAttach && !root.editFiles.some(f => f.key === key)) root.editAttach.openLink(key) }
+        // Cancelling drops what the edit made (Teams deletes a new Loop
+        // component's file).
+        function onCancelled() { if (root.loop) root.discardLoop(); root.editLocalFiles = []; if (root.editAttach) root.editAttach.clear() }
+    }
+    /// What Done sends besides the text (backend.editMessageWith).
+    function editExtras() {
+        const kept = root.editFiles.map(f => f.key)
+        const x = {
+            importance: root.importance,
+            removedFiles: root.editFilesAtStart.filter(k => kept.indexOf(k) < 0),
+            keptFiles: kept.length,
+            files: root.editLocalFiles.concat(root.editAttach ? root.editAttach.lines() : []).join("\n")
+        }
+        const l = root.loopForSend()
+        if (l) x.loop = JSON.parse(l)
+        if (root.clip && root.clip.id) x.clip = { id: root.clip.id, url: root.clip.url, duration: root.clip.duration, width: root.clip.width, height: root.clip.height }
+        return JSON.stringify(x)
+    }
+    /// A recorded clip still being stored holds Done back.
+    readonly property bool editWaiting: !!root.clip && !root.clip.id
+    /// After Done: a Loop component made in the edit takes its title as
+    /// its name (as a sent one does).
+    function editSent() {
+        const l = root.loop
+        if (l && l.itemId) backend.loopHostRequest("composeRename", "compose-rename", JSON.stringify({ driveId: l.driveId, itemId: l.itemId, title: l.title || "", chatTitle: root.chatTitle, kindName: qsTr("Loop paragraph") }))
+        root.loop = null
+        root.editLocalFiles = []
+        if (root.editAttach) root.editAttach.clear()
     }
     /// The Attach button on show (Alt+Shift+O opens the popover over it).
     function attachButton() {
@@ -1805,7 +1913,7 @@ Item {
     Popup {
         id: plusFlyout
         property Item anchorItem: null
-        readonly property bool plain: root.newConversation
+        readonly property bool plain: root.newConversation || root.editing
         parent: Overlay.overlay
         width: plain ? 234.3 : 341.3; padding: 0
         readonly property real listH: itemsCol.height + (appsCol.visible ? 10.7 + appsCol.height : 0) + (newApps.visible ? newApps.height : 0)
@@ -1819,10 +1927,13 @@ Item {
         onOpened: { search.text = ""; listFlick.contentY = 0; if (!plain) { search.forceActiveFocus(); root.loadComposeApps() } }
         readonly property var suggested: root.suggestedApps.filter(a => String(a.name || "").toLowerCase().indexOf(search.text.trim().toLowerCase()) >= 0)
         readonly property var apps: root.composeApps.filter(a => String(a.name || "").toLowerCase().indexOf(search.text.trim().toLowerCase()) >= 0)
+        // (Editing: Collaborate with Loop, Set delivery options and Record
+        // video clip, measured 2026-11-23.)
         readonly property var items: [
-            { key: "schedule", label: qsTr("Schedule message"), icon: "send-clock-20", hidden: !root.scheduleAllowed },
+            { key: "loop", label: qsTr("Collaborate with Loop"), icon: "loop-page-20", hidden: !root.editing || !root.loopAllowed || !!root.loop },
+            { key: "schedule", label: qsTr("Schedule message"), icon: "send-clock-20", hidden: !root.scheduleAllowed || root.editing },
             { key: "delivery", label: qsTr("Set delivery options"), icon: "important-20", hidden: !root.deliveryOptions },
-            { key: "meeting", label: qsTr("Schedule meeting"), icon: "calendar-add-20" },
+            { key: "meeting", label: qsTr("Schedule meeting"), icon: "calendar-add-20", hidden: root.editing },
             { key: "clip", label: qsTr("Record video clip"), icon: "video-clip-20", hidden: !root.canRecordClip }
         ].filter(i => !i.hidden && i.label.toLowerCase().indexOf(search.text.trim().toLowerCase()) >= 0)
         Rectangle {
@@ -1866,6 +1977,7 @@ Item {
                         onTapped: {
                             plusFlyout.close()
                             if (parent.modelData.key === "delivery") { deliveryPopup.anchorItem = plusFlyout.anchorItem; deliveryPopup.open() }
+                            else if (parent.modelData.key === "loop") root.insertLoop()
                             else if (parent.modelData.key === "schedule") schedulePopup.openFor(plusFlyout.anchorItem, false)
                             else if (parent.modelData.key === "clip") root.recordClipRequested()
                             else root.scheduleMeetingRequested()
@@ -2179,9 +2291,13 @@ Item {
         id: deliveryPopup
         property Item anchorItem: null
         parent: Overlay.overlay
-        width: 317.3; height: 161.3; padding: 0
-        x: anchorItem ? Math.min(Overlay.overlay.width - width - 8, anchorItem.mapToItem(Overlay.overlay, 0, 0).x + anchorItem.width - width + 50) : 0
-        y: anchorItem ? anchorItem.mapToItem(Overlay.overlay, 0, 0).y - height - 8 : 0
+        // (In an edit, measured 2026-11-23: Standard and Important only,
+        // 217.3 x 113.3, right on top of the button from its left edge,
+        // kept 16.7 inside the window.)
+        width: root.editing ? 217.3 : 317.3; height: root.editing ? 113.3 : 161.3; padding: 0
+        x: !anchorItem ? 0 : root.editing ? Math.min(Overlay.overlay.width - width - 16.7, anchorItem.mapToItem(Overlay.overlay, 0, 0).x)
+            : Math.min(Overlay.overlay.width - width - 8, anchorItem.mapToItem(Overlay.overlay, 0, 0).x + anchorItem.width - width + 50)
+        y: anchorItem ? anchorItem.mapToItem(Overlay.overlay, 0, 0).y - height - (root.editing ? 0 : 8) : 0
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
         Column {
@@ -2191,13 +2307,13 @@ Item {
                     { key: "", title: qsTr("Standard"), desc: qsTr("Message will be sent as usual"), icon: "chat-20", color: "", name: qsTr("Standard Message Delivery") },
                     { key: "high", title: qsTr("Important"), desc: qsTr("Message will be marked as important"), icon: "important-20", color: "#C4314B", name: qsTr("Mark message as important") },
                     { key: "urgent", title: qsTr("Urgent"), desc: root.urgentAllowed ? qsTr("Recipients notified every %1 min for %2 min", "", 1).arg(2).arg(20) : qsTr("Unavailable in chats with more than 20 people"), icon: "alert-urgent-20", color: "#C4314B", name: qsTr("Mark message as urgent and repeatedly notify recipients every %1 minutes for %2 minutes", "", 1).arg(2).arg(20) }
-                ]
+                ].filter(o => !root.editing || o.key !== "urgent")
                 Rectangle {
                     id: opt
                     required property var modelData
                     readonly property bool selected: root.importance === modelData.key
                     readonly property bool enabledNow: modelData.key !== "urgent" || root.urgentAllowed
-                    width: 316; height: 48
+                    width: deliveryPopup.width - 1.3; height: 48
                     color: selected || (optHover.hovered && enabledNow) ? theme.menuHover : "transparent"
                     FluentIcon {
                         x: opt.modelData.key === "urgent" ? 20 : 16; y: 16; size: 16
@@ -2206,7 +2322,7 @@ Item {
                     }
                     Text { x: opt.modelData.key === "urgent" ? 44.7 : 40.7; y: 6.6; text: opt.modelData.title; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(opt, opt.enabledNow ? theme.text : theme.disabled) }
                     Text { x: opt.modelData.key === "urgent" ? 44.7 : 40.7; y: 25.3; text: opt.modelData.desc; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(opt, opt.enabledNow ? theme.text : theme.disabled) }
-                    FluentIcon { visible: opt.selected; x: 284; y: 16; name: "checkmark-20"; size: 16; color: theme.onFill(opt, theme.text) }
+                    FluentIcon { visible: opt.selected; x: deliveryPopup.width - 33.3; y: 16; name: "checkmark-20"; size: 16; color: theme.onFill(opt, theme.text) }
                     HoverHandler { id: optHover; cursorShape: opt.enabledNow ? Qt.PointingHandCursor : Qt.ArrowCursor }
                     TapHandler { enabled: opt.enabledNow; onTapped: { root.importance = opt.modelData.key; deliveryPopup.close(); input.forceActiveFocus() } }
                     Accessible.role: Accessible.ListItem

@@ -327,7 +327,7 @@ pub fn context_from(
         "hostFeatures": { "nestedWildcardsInValidDomains": false, "serverSideRendering": false },
         "hostClientType": "desktop",
         "sessionId": session_id(),
-        "ringId": "general",
+        "ringId": super::ecs::ring(),
         "hostAncestors": ["TeamsModern"],
         "subEntityId": "",
         "isFullScreen": false,

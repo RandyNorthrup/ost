@@ -824,6 +824,13 @@ where `{{otherTargets}}` = "# other" / "# others" and n = targets − 1.
     - "You can discard your draft or cancel to keep editing" at (22.7, 62);
     - Cancel and Discard (brand), 96 × 31.3, at y 100.
   - A Teams edit (seen live) keeps the quote's blockquote and `qtdMsgs` and sends the full property set. The service then stores `edittime` (ms) and `version` = `edittime`; `clientmessageid` and `composetime` are unchanged.
+  - **Edit box tools** (winpc 2026-11-23, TASK-0263, ost-test1's own chat, OST TEST 95; edit PUTs captured read-only):
+    - The toolbar is Format, Emoji, Attach files, Write with Copilot, Actions and apps (32 apart), then the divider, Cancel and Done. There is no Loop button.
+    - Attach files opens the compose box's popover (305 wide, centred on the button, bottom on the toolbar): the recent-file suggestions, Attach cloud files, Upload from this device. A picked file shows as its attachment card in the edit box, and the message's own files show the same way with Remove attachment. Done sends the message's files less those removed, then the new ones, as `properties.files` in a send's form.
+    - Actions and apps opens the short menu: 234.3 wide, rows 218 × 36 from (7.7, 12.7), ending 2.7 before the button's right edge, its bottom on the toolbar. The rows are Collaborate with Loop, Set delivery options and Record video clip. A channel post's edit (the post composer) adds Change permissions and Post in other channels.
+      - Collaborate with Loop puts a Loop paragraph in the edit box, as the compose box's Loop button does. Done appends the FluidEmbedCard span to the content and its card (`sourceType` "Compose") to `properties.cards`. The component's trash asks "Discard draft message / The Loop component will be deleted." and Teams then deletes the file (Graph DELETE).
+      - Set delivery options lists Standard and Important (217.3 × 113.3, right on top of the button, kept 16.7 inside the window; no Urgent). Important shows the IMPORTANT! row in the edit box. Done sends `importance` "high"; Standard sends "".
+      - Record video clip opens the recorder. Its clip goes into the edit box. (Not recorded on winpc: the camera is used only in test calls.)
 
 ### "+" and delivery options (measured, winpc)
 - "+" (`sendMessageCommands-message-extension-flyout-command`) opens a 341.3-wide surface:

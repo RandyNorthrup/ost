@@ -703,39 +703,59 @@ Rectangle {
     /// offered once OST can record clips).
     signal replyWithVideoClip()
     readonly property bool canRecordClips: !root.popout && !root.threadRoot && !root.pane
-    onReplyWithVideoClip: clipRecorder.openFor(root.chatId)
+    onReplyWithVideoClip: { root.clipBox = compose; clipRecorder.openFor(root.chatId) }
     // Teams' recorder; its clip goes into the compose box and is stored at
     // once (Teams uploads it as the recorder closes).
+    /// The compose box the recorder fills: the chat's own, or a message's
+    /// edit box (Teams' edit box ▸ Actions and apps ▸ Record video clip).
+    property Item clipBox: compose
     VideoClipRecorder {
         id: clipRecorder
         onFinished: clip => {
-            compose.clip = Object.assign({}, clip, { uploading: true, id: "", url: "", rendering: !!clip.spec })
+            const box = root.clipBox || compose
+            box.clip = Object.assign({}, clip, { uploading: true, id: "", url: "", rendering: !!clip.spec })
             // An edited clip is made into one file first (Teams' recorder
             // does the same before it hands the clip over).
             if (clip.spec) backend.renderClip(JSON.stringify(clip.spec))
             else backend.videoClipUpload(chatId, clip.path, clip.thumb)
         }
     }
+    /// A clip taken out of a box (its recordings deleted).
+    function dropClip(box) {
+        if (!box || !box.clip) return
+        if (box.clip.path) backend.removeRecorderFile(box.clip.path)
+        if (box.clip.spec) for (const sg of box.clip.spec.segments) backend.removeRecorderFile(sg.path)
+        box.clip = null
+    }
+    function retryClip(box) {
+        root.clipBox = box
+        box.clip = Object.assign({}, box.clip, { uploading: true, error: "", rendering: !box.clip.path })
+        if (box.clip.path) backend.videoClipUpload(root.chatId, box.clip.path, box.clip.thumb)
+        else backend.renderClip(JSON.stringify(box.clip.spec))
+    }
     Connections {
         target: backend
         function onClipRendered(json) {
-            if (!compose.clip || !compose.clip.rendering) return
+            const box = root.clipBox || compose
+            if (!box.clip || !box.clip.rendering) return
             const r = JSON.parse(json)
-            if (r.error) { console.warn("CLIP render failed", r.error); compose.clip = Object.assign({}, compose.clip, { uploading: false, rendering: false, error: r.error }); return }
+            if (r.error) { console.warn("CLIP render failed", r.error); box.clip = Object.assign({}, box.clip, { uploading: false, rendering: false, error: r.error }); return }
             // The parts' recordings are no longer needed.
-            for (const sg of compose.clip.spec.segments) backend.removeRecorderFile(sg.path)
-            compose.clip = Object.assign({}, compose.clip, { rendering: false, path: r.path, duration: r.duration })
-            backend.videoClipUpload(root.chatId, r.path, compose.clip.thumb)
+            for (const sg of box.clip.spec.segments) backend.removeRecorderFile(sg.path)
+            box.clip = Object.assign({}, box.clip, { rendering: false, path: r.path, duration: r.duration })
+            backend.videoClipUpload(root.chatId, r.path, box.clip.thumb)
         }
     }
     Connections {
         target: backend
         function onVideoClipUploaded(path, json) {
-            if (!compose.clip || compose.clip.path !== path) return
+            const box = root.clipBox || compose
+            if (!box.clip || box.clip.path !== path) return
             const r = JSON.parse(json)
-            if (r.error) { console.warn("CLIP upload failed", r.error); compose.clip = Object.assign({}, compose.clip, { uploading: false, error: r.error }); return }
-            compose.clip = Object.assign({}, compose.clip, { uploading: false, id: r.id, url: r.url })
-            if (root.sendAfterClip) { root.sendAfterClip = false; root.sendCompose() }
+            if (r.error) { console.warn("CLIP upload failed", r.error); box.clip = Object.assign({}, box.clip, { uploading: false, error: r.error }); return }
+            box.clip = Object.assign({}, box.clip, { uploading: false, id: r.id, url: r.url })
+            console.info("CLIP stored", box === compose ? "compose" : "edit")
+            if (box === compose && root.sendAfterClip) { root.sendAfterClip = false; root.sendCompose() }
         }
     }
     /// A new conversation's message waits for its clip to be stored.
@@ -2612,12 +2632,26 @@ Rectangle {
                     onQuoteDismissed: quote = null
                     onEmojiRequested: a => root.openEmojiFor(editBox)
                     onSettingsRequested: root.openChatSettings()
+                    // Teams' edit box also attaches files, makes a Loop
+                    // component, sets the delivery option and records a
+                    // clip (TASK-0263), all sent with Done.
+                    chatTitle: root.chatTopic || root.chatName
+                    editTeamId: root.teamId; editTeamName: root.teamName
+                    deliveryOptions: !msg.scheduledMsg
+                    canRecordClip: root.canRecordClips && !msg.scheduledMsg
+                    onRecordClipRequested: { root.clipBox = editBox; clipRecorder.openFor(root.chatId) }
+                    onClipRemoved: root.dropClip(editBox)
+                    onClipRetry: root.retryClip(editBox)
                     onSubmit: {
                         if (msg.scheduledMsg) backend.editScheduled(msg.modelData.draft_id, msg.modelData.client_message_id || "", editBox.formattedText(), JSON.stringify(editBox.mediaInUse()), String(Math.round(editBox.scheduleAt)))
-                        else backend.editMessageRich(msg.modelData.id, editBox.formattedText(), editBox.quote ? JSON.stringify(editBox.quote) : "", JSON.stringify(editBox.mediaInUse()))
+                        else {
+                            if (editBox.editWaiting) return
+                            backend.editMessageWith(msg.modelData.id, editBox.formattedText(), editBox.quote ? JSON.stringify(editBox.quote) : "", JSON.stringify(editBox.mediaInUse()), editBox.editExtras())
+                            editBox.editSent()
+                        }
                         root.editingId = ""
                     }
-                    onCancelled: root.editingId = ""
+                    onCancelled: { root.dropClip(editBox); root.editingId = "" }
                     Component.onCompleted: { setMessage(msg.modelData); focusEditor() }
                 }
             }
@@ -5287,7 +5321,7 @@ Rectangle {
         onAttachRequested: a => root.openAttach(a)
         // Record video clip: in a chat's or channel's own compose box.
         canRecordClip: root.canRecordClips
-        onRecordClipRequested: clipRecorder.openFor(root.chatId)
+        onRecordClipRequested: { root.clipBox = compose; clipRecorder.openFor(root.chatId) }
         onClipRemoved: {
             if (compose.clip) {
                 if (compose.clip.path) backend.removeRecorderFile(compose.clip.path)

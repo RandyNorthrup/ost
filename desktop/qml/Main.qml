@@ -1851,7 +1851,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && Qt.application.arguments.indexOf("--see-more-test") < 0 && Qt.application.arguments.indexOf("--draft-format-test") < 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--setf-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--copilot-test") < 0 && Qt.application.arguments.indexOf("--attach-link-test") < 0 && Qt.application.arguments.indexOf("--loop-compose-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat-named=")) && Qt.application.arguments.indexOf("--compose-apps-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--delete-test-messages=")) && Qt.application.arguments.indexOf("--thread-attach-test") < 0 && Qt.application.arguments.indexOf("--picker-bar-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--recorder-effects-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--collab-test") < 0 && Qt.application.arguments.indexOf("--notif-test") < 0 && Qt.application.arguments.indexOf("--accounts-test") < 0 && Qt.application.arguments.indexOf("--privacy-test") < 0 && Qt.application.arguments.indexOf("--calls-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--cards-test")) && !Qt.application.arguments.some(a => a.startsWith("--recognition-test=")) && Qt.application.arguments.indexOf("--recognition-states") < 0 && Qt.application.arguments.indexOf("--about-test") < 0 && Qt.application.arguments.indexOf("--room-audio-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--link-preview-test")) && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-")) && !Qt.application.arguments.some(a => a.startsWith("--embedded-apps-test")) && Qt.application.arguments.indexOf("--test-call-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--events-test")) && Qt.application.arguments.indexOf("--call-notes-test") < 0 && Qt.application.arguments.indexOf("--recaps-test") < 0 && Qt.application.arguments.indexOf("--phone-audio-test") < 0 && Qt.application.arguments.indexOf("--preheat-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--e2ee-setting-test")) && !Qt.application.arguments.some(a => /^--(voicemail-greeting|camera-controls|spatial-audio|tty)-test/.test(a)) && Qt.application.arguments.indexOf("--avatar-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--content-camera-test")) && !Qt.application.arguments.some(a => a.startsWith("--group-call-nmc=")) && Qt.application.arguments.indexOf("--va-test") < 0 && Qt.application.arguments.indexOf("--cast-test") < 0 && !Qt.application.arguments.some(a => /^--(vm-transfer|kb-dialog|ddv|sign-language|voice-isolation|rename-suggest|column-settings|preview-bar|playlist|picker-person)-test/.test(a)) && !Qt.application.arguments.some(a => a.startsWith("--reorder-test=")) && !Qt.application.arguments.some(a => /^--(app-bar|profile-org|channel-share|app-window|tab-settings|store-devices|store-filter|manage-apps|recap-window|paste-picture|card-action|compose-height|attach-media|loop-access|chat-copilot|edit-copilot)-test/.test(a))
+        running: window.shotPath.length > 0 && Qt.application.arguments.indexOf("--see-more-test") < 0 && Qt.application.arguments.indexOf("--draft-format-test") < 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--setf-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--copilot-test") < 0 && Qt.application.arguments.indexOf("--attach-link-test") < 0 && Qt.application.arguments.indexOf("--loop-compose-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat-named=")) && Qt.application.arguments.indexOf("--compose-apps-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--delete-test-messages=")) && Qt.application.arguments.indexOf("--thread-attach-test") < 0 && Qt.application.arguments.indexOf("--picker-bar-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--recorder-effects-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--collab-test") < 0 && Qt.application.arguments.indexOf("--notif-test") < 0 && Qt.application.arguments.indexOf("--accounts-test") < 0 && Qt.application.arguments.indexOf("--privacy-test") < 0 && Qt.application.arguments.indexOf("--calls-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--cards-test")) && !Qt.application.arguments.some(a => a.startsWith("--recognition-test=")) && Qt.application.arguments.indexOf("--recognition-states") < 0 && Qt.application.arguments.indexOf("--about-test") < 0 && Qt.application.arguments.indexOf("--room-audio-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--link-preview-test")) && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-")) && !Qt.application.arguments.some(a => a.startsWith("--embedded-apps-test")) && Qt.application.arguments.indexOf("--test-call-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--events-test")) && Qt.application.arguments.indexOf("--call-notes-test") < 0 && Qt.application.arguments.indexOf("--recaps-test") < 0 && Qt.application.arguments.indexOf("--phone-audio-test") < 0 && Qt.application.arguments.indexOf("--preheat-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--e2ee-setting-test")) && !Qt.application.arguments.some(a => /^--(voicemail-greeting|camera-controls|spatial-audio|tty)-test/.test(a)) && Qt.application.arguments.indexOf("--avatar-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--content-camera-test")) && !Qt.application.arguments.some(a => a.startsWith("--group-call-nmc=")) && Qt.application.arguments.indexOf("--va-test") < 0 && Qt.application.arguments.indexOf("--cast-test") < 0 && !Qt.application.arguments.some(a => /^--(vm-transfer|kb-dialog|ddv|sign-language|voice-isolation|rename-suggest|column-settings|preview-bar|playlist|picker-person)-test/.test(a)) && !Qt.application.arguments.some(a => a.startsWith("--reorder-test=")) && !Qt.application.arguments.some(a => /^--(app-bar|profile-org|channel-share|app-window|tab-settings|store-devices|store-filter|manage-apps|recap-window|paste-picture|card-action|compose-height|attach-media|loop-access|chat-copilot|edit-copilot|edit-tools|post-copilot)-test/.test(a))
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInPage) {
@@ -16661,6 +16661,7 @@ Window {
                 waited = 0
                 log("pane", { open: pane.open, x: pane.mapToItem(window.contentItem, 0, 0).x, w: pane.width, h: pane.height, request: pane.request,
                               url: pane.launch ? pane.launch.url.split("?")[0] : "", context: pane.launch ? pane.launch.contextualChat : null, events: ev })
+                log("app context", app ? app.contextForTest() : null)
                 if (!threadMode) log("conversation", { width: conversation.width, copilotOpen: conversation.copilotOpen })
                 else log("thread pane", { width: threadsPane.width, x: threadsPane.mapToItem(window.contentItem, 0, 0).x })
             } else if (step === 9) {
@@ -16730,6 +16731,193 @@ Window {
                 Qt.quit(); return
             }
             step++
+        }
+    }
+    // --edit-tools-test=<phase> (TASK-0263): the edit box's Attach files
+    // and Actions and apps in your own chat (OST Test 1 (You)), on your
+    // newest message starting "OST TEST 263". Phases: send (sends "OST TEST
+    // 263 edit tools"), measure (the tools, the short + menu, delivery
+    // options and Attach popover, then Cancel), apply (Important and the
+    // file --edit-tools-file=<path>, Done), restore (Standard, the file
+    // taken out, Done), loop (Collaborate with Loop, Done) and clip (the
+    // video --edit-tools-clip=<mp4>,<poster png>,<ms> stored, Done).
+    // EDITTOOLS lines; -edit-tools*.png.
+    Timer {
+        readonly property string phase: (Qt.application.arguments.find(a => a.startsWith("--edit-tools-test=")) || "").slice(18)
+        readonly property string filePath: (Qt.application.arguments.find(a => a.startsWith("--edit-tools-file=")) || "").slice(18)
+        readonly property var clipArg: (Qt.application.arguments.find(a => a.startsWith("--edit-tools-clip=")) || "").slice(18).split(",")
+        running: phase.length > 0 && backend.signedIn && chatList.chats.length > 0
+        interval: 2000; repeat: true
+        property int step: 0
+        property int waited: 0
+        property var target: null
+        property Item anchorTool: null
+        onTriggered: {
+            const log = (...a) => console.warn("EDITTOOLS", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const box = conversation.editBoxForTest()
+            const geo = it => { if (!it) return null; const p = it.mapToItem(window.contentItem, 0, 0); return { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, w: Math.round(it.width * 10) / 10, h: Math.round(it.height * 10) / 10 } }
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-edit-tools-" + n + ".png")))
+            const now = () => (conversation.messages || []).find(m => target && m.id === target.id) || {}
+            const show = m => ({ text: m.text, importance: m.importance, files: (m.files || []).map(f => f.name), cards: (m.cards || []).map(c => c.content_type), videos: (m.videos || []).map(v => v.id), edited: !!m.edited })
+            if (step === 0) {
+                const c = chatList.chats.find(c => c.name === "OST Test 1 (You)") || chatList.chats.find(c => c.name.indexOf("(You)") >= 0)
+                if (!c) { log("no self chat"); Qt.quit(); return }
+                rail.current = "chat"; backend.selectChat(c.id, c.name)
+            } else if (step === 2) {
+                if (phase === "send") { backend.sendMessage("OST TEST 263 edit tools"); log("sent"); step = 90; return }
+                target = (conversation.messages || []).filter(m => m.mine && m.kind === "message" && !m.deleted && String(m.text || "").indexOf("OST TEST 263") === 0).pop() || null
+                if (!target && waited++ < 10) return
+                waited = 0
+                if (!target) { log("no OST TEST 263 message"); Qt.quit(); return }
+                log("message", target.id, show(target))
+                conversation.jumpToMessage(target.id)
+                conversation.startEdit(target)
+            } else if (step === 3) {
+                if (!box) { log("no edit box"); Qt.quit(); return }
+                log("edit box", geo(box), "tools", box.toolModel.map(t => [t.id, geo(box.toolForTest(t.id))]), "end", box.endModel.map(t => [t.id, geo(box.toolForTest(t.id))]),
+                    "files", box.editFiles, "importance", box.importance)
+                if (phase === "measure") {
+                    anchorTool = box.toolForTest("message-extension-flyout-command")
+                    const f = box.plusFlyoutForTest(); f.anchorItem = anchorTool; f.open()
+                } else if (phase === "apply") {
+                    box.importance = "high"
+                    if (filePath) box.editLocalFiles = [filePath]
+                    log("extras", JSON.parse(box.editExtras())); shot("apply"); box.trySubmit()
+                } else if (phase === "restore") {
+                    box.importance = ""
+                    const f = box.editFiles.find(f => f.name === filePath.split("/").pop()) || box.editFiles[box.editFiles.length - 1]
+                    if (f) box.cloudRemoved(f.key)
+                    log("extras", JSON.parse(box.editExtras())); box.trySubmit()
+                } else if (phase === "loop") {
+                    const f = box.plusFlyoutForTest(); f.anchorItem = box.toolForTest("message-extension-flyout-command"); f.open()
+                    log("plus items", f.items.map(i => i.key))
+                    f.close(); box.insertLoop()
+                } else if (phase === "clip") {
+                    conversation.clipBox = box
+                    box.clip = { path: clipArg[0], thumb: clipArg[1], duration: Number(clipArg[2] || 3000), width: 1280, height: 720, uploading: true, id: "", url: "" }
+                    backend.videoClipUpload(conversation.chatId, clipArg[0], clipArg[1])
+                }
+            } else if (step === 4) {
+                if (phase === "measure") {
+                    const f = box.plusFlyoutForTest()
+                    log("plus", { opened: f.opened, plain: f.plain, x: f.x, y: f.y, w: f.width, h: f.height, items: f.items.map(i => i.label) }, "anchor", geo(anchorTool))
+                    shot("plus")
+                    f.close()
+                    const d = box.deliveryPopupForTest(); d.anchorItem = anchorTool; d.open()
+                } else if (phase === "loop") {
+                    if (!(box && box.loop && box.loop.url) && waited++ < 30) return
+                    waited = 0
+                    log("loop", box ? box.loop : null, "card", box ? geo(box.loopCardForTest()) : null)
+                    shot("loop")
+                    if (box) box.trySubmit()
+                } else if (phase === "clip") {
+                    if (!(box && box.clip && box.clip.id) && waited++ < 40) return
+                    waited = 0
+                    log("clip", box ? box.clip : null)
+                    shot("clip")
+                    if (box) { log("extras", JSON.parse(box.editExtras())); box.trySubmit() }
+                } else {
+                    if (box) { log("still editing"); return }
+                    if (!now().edited && waited++ < 8) return
+                    log("after", show(now())); step = 90; return
+                }
+            } else if (step === 5) {
+                if (phase === "measure") {
+                    const d = box.deliveryPopupForTest()
+                    log("delivery", { opened: d.opened, x: d.x, y: d.y, w: d.width, h: d.height }, "window", window.contentItem.width)
+                    shot("delivery")
+                    d.close()
+                    box.openEditAttach(box.toolForTest("FilePicker"))
+                } else {
+                    if (box) { log("still editing"); return }
+                    if (waited++ < 4) return
+                    log("after", show(now())); step = 90; return
+                }
+            } else if (step === 6) {
+                const m = box.editAttach ? box.editAttach.menu : null
+                log("attach", m ? { opened: m.opened, x: m.x, y: m.y, w: m.width, h: m.height } : null, "attach button", geo(box.toolForTest("FilePicker")))
+                shot("attach")
+                if (m) m.close()
+                box.cancelled()
+            } else if (step === 7) {
+                log("cancelled", "editing:", !!conversation.editBoxForTest(), show(now()))
+                Qt.quit(); return
+            } else if (step >= 90) {
+                if (step === 92) { Qt.quit(); return }
+            }
+            step++
+        }
+    }
+    // --post-copilot-test=<team>/<channel>/<post id> (~ for spaces;
+    // TASK-0263): a Posts channel post's view (Teams' See details) and its
+    // header's Open Copilot with the Copilot app beside it; then the post's
+    // own window (588 wide) and its Copilot. POSTCOPILOT lines;
+    // -post-copilot*.png.
+    Timer {
+        readonly property var arg: (Qt.application.arguments.find(a => a.startsWith("--post-copilot-test=")) || "").slice(20).replace(/~/g, " ").split("/")
+        running: arg.length === 3 && backend.signedIn && chatList.chats.length > 0
+        interval: 2000; repeat: true
+        property int step: 0
+        property int waited: 0
+        property var win: null
+        onTriggered: {
+            const log = (...a) => console.warn("POSTCOPILOT", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const view = win ? null : conversation.postViewForTest()
+            const geo = (it, root_) => { if (!it) return null; const p = it.mapToItem(root_ || window.contentItem, 0, 0); return { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, w: Math.round(it.width * 10) / 10, h: Math.round(it.height * 10) / 10, visible: it.visible } }
+            const header = v => {
+                const out = []
+                const walk = it => { for (const c of it.children) { if (c.Accessible && c.Accessible.name && c.visible && c.width > 0 && c.width < 140 && c.height > 20 && c.height < 40) out.push([c.Accessible.name, geo(c, v)]); walk(c) } }
+                walk(v)
+                return out.filter(o => o[1].y < 61)
+            }
+            if (step === 0) {
+                const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+                const t = teams.find(t => t.name === arg[0])
+                const ch = t ? (t.channels || []).find(c => c.name === arg[1]) : null
+                if (!ch) { log("no channel", arg); Qt.quit(); return }
+                rail.current = "chat"; backend.selectChat(ch.id, ch.name)
+            } else if (step === 3) {
+                conversation.openPostView(arg[2])
+            } else if (step === 5) {
+                if (!view) { log("no post view"); Qt.quit(); return }
+                log("gate", JSON.parse(backend.composeCopilotJson || "{}").channelPost, "view", geo(view), "header", header(view), "findInline", view.findInline)
+                shot()
+            } else if (step === 6 && !view.copilotOpen) {
+                view.toggleCopilot()
+                return
+            } else if (step === 6) {
+                const pane = view.copilotForTest()
+                const app = pane.appForTest()
+                const ev = app ? app.hostEvents : []
+                if ((!app || ev.indexOf("ChatReady") < 0) && waited++ < 30) return
+                waited = 0
+                log("pane", { geo: geo(pane), request: pane.request, url: pane.launch ? pane.launch.url : "", context: pane.launch ? pane.launch.contextualChat : null, events: ev })
+                log("app context", app ? app.contextForTest() : null)
+                log("open header", header(view), "viewW", view.viewW, "findInline", view.findInline)
+            } else if (step === 7) {
+                shot("open")
+            } else if (step === 9) {
+                view.toggleCopilot()
+            } else if (step === 10) {
+                log("closed", { open: view.copilotOpen, viewW: view.viewW })
+                win = conversation.openThreadWindow({ id: arg[2], root_id: arg[2] })
+            } else if (step === 12) {
+                const pt = win.contentItem.children.find(c => c.copilotForTest) || null
+                log("window", { w: win.width, h: win.height }, "header", pt ? header(pt) : null, "findInline", pt ? pt.findInline : null)
+                win.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-post-copilot-window.png")))
+                if (pt) pt.toggleCopilot()
+            } else if (step === 15) {
+                const pt = win.contentItem.children.find(c => c.copilotForTest) || null
+                const pane = pt ? pt.copilotForTest() : null
+                log("window pane", pane ? geo(pane, win.contentItem) : null, "covers", pt ? pt.copilotCovers : null)
+                win.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-post-copilot-window-open.png")))
+            } else if (step === 16) {
+                win.close()
+                if (Qt.application.arguments.indexOf("--post-copilot-quit") >= 0) { Qt.quit(); return }
+                stop(); return
+            }
+            step++
+            function shot(n) { window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-post-copilot" + (n ? "-" + n : "") + ".png"))) }
         }
     }
     // Open Copilot in a chat's header (TASK-0260): the Microsoft 365 Copilot

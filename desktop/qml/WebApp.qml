@@ -233,6 +233,15 @@ Item {
         root.hostLoading = true
         web.loadHtml(backend.appHostPage(root.appName), "https://teams.cloud.microsoft/")
     }
+    /// The TeamsJS context the frame was given (its keys and the values
+    /// that name no one), for comparing with Teams'.
+    function contextForTest() {
+        let c = {}
+        try { c = JSON.parse(hostBridge.config || "{}").context || {} } catch (e) { c = {} }
+        const out = {}
+        for (const k in c) out[k] = ["userObjectId", "loginHint", "userPrincipalName", "upn", "tid", "subEntityId"].indexOf(k) >= 0 ? "<" + k + ">" : c[k]
+        return out
+    }
     function hostStateForTest() {
         // The frame's address without its values (they may hold links).
         const full = root.hostUrl || root.hostAddress

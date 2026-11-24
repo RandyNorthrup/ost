@@ -30,9 +30,6 @@ use sha2::{Digest, Sha256};
 pub const APP_ID: &str = "b5abf2ae-c16b-4310-8f8a-d3bcdb52f162";
 /// The app's chat page.
 pub const CHAT_URL: &str = "https://m365copilotapp.svc.cloud.microsoft/chat";
-/// The ring the host names in the address (`hostRing`), the same as the
-/// `ringId` OST's TeamsJS context gives apps.
-pub const HOST_RING: &str = "general";
 /// The CMM id Teams' meeting entry point refers the app with.
 pub const MEETING_CMMID: &str = "cmm35g04qbs";
 
@@ -105,8 +102,9 @@ pub fn content_url(m: &Meeting) -> String {
             .append_pair("sessionId", &m.app_session)
             .append_pair("renderingSurface", "copilotSidePanel")
             .append_pair("theme", if m.theme.is_empty() { "default" } else { &m.theme })
-            // Teams names its ring (the ring OST's context gives apps).
-            .append_pair("hostRing", HOST_RING)
+            // Teams names the user's ring (ECS Segmentation.TeamsRing,
+            // "ring3_6" for ost-test1; the ringId OST's context gives apps).
+            .append_pair("hostRing", &super::ecs::ring())
             .append_pair("parentSessionId", &m.host_session);
     }
     u.to_string()
@@ -329,16 +327,22 @@ pub struct ChannelThread {
     /// The team's group (AAD) id.
     pub group_id: String,
     pub tenant_id: String,
+    /// The reference names the team too: a post's view (Teams' channel L2
+    /// view: See details, Followed threads, a post's own window) hashes
+    /// "{team}-{channel}-{post}" (measured 2026-11-23, TASK-0263).
+    pub team_in_reference: bool,
 }
 
 /// Copilot from a channel thread's header (Teams' CopilotFromChannelsL2Header
 /// with copilot.enableBizChatCopilotInChannelLicensed, measured on winpc
 /// 2026-11-23): scope "Channel", entry point "ChannelL2", the reference the
 /// SHA-256 of "{team}-{channel}-{thread}" with the team left empty as Teams
-/// parses it from the thread's key; the host then tells the app the thread
-/// (`channelContext`, "ViewChannel") and [disableGPT5].
+/// parses it from the thread's key (a post's view names the team); the
+/// host then tells the app the thread (`channelContext`, "ViewChannel") and
+/// [disableGPT5].
 pub fn launch_channel(m: &Meeting, t: &ChannelThread, cmmid: &str, variants: &[String]) -> Value {
-    let reference = reference_id(&format!("-{}-{}", t.channel_id, t.reply_chain_id));
+    let team = if t.team_in_reference { t.team_id.as_str() } else { "" };
+    let reference = reference_id(&format!("{team}-{}-{}", t.channel_id, t.reply_chain_id));
     let caller = Caller { scope: "Channel", entry_point: "ChannelL2", sub_entry_point: None, reference };
     let attributes = context_attributes("ViewChannel", None);
     let mut v = launch(m);
@@ -432,6 +436,7 @@ mod tests {
             reply_chain_id: "1794312901896".into(),
             group_id: "1fac3ae3-c9c0-4ddb-90bb-58f52209c181".into(),
             tenant_id: "2716d134-5614-4856-a48d-2002edd9a570".into(),
+            team_in_reference: false,
         };
         let v = launch_channel(&meeting(), &t, CHANNEL_L2_CMMID, &[]);
         // Measured: the frame's anchor for OST threads test's OST TEST 81 thread.
@@ -443,6 +448,27 @@ mod tests {
         assert_eq!(c["contextType"], "Channel");
         assert_eq!(c["channelContext"]["teamId"], t.team_id.as_str());
         assert_eq!(c["channelContext"]["replyChainId"], "1794312901896");
+    }
+
+    #[test]
+    fn post_view_anchors_on_team_channel_and_post() {
+        // Measured: OST Test Team > General, a meeting post's See details
+        // (Posts layout), its Open Copilot frame's anchor.
+        let general = "19:ekCPvoD9glVOIeBqbQQXdfV-vTnBPkGFtas97c_IYnA1@thread.tacv2";
+        let t = ChannelThread {
+            team_id: general.into(),
+            channel_id: general.into(),
+            reply_chain_id: "1794379759264".into(),
+            group_id: "1fac3ae3-c9c0-4ddb-90bb-58f52209c181".into(),
+            tenant_id: "2716d134-5614-4856-a48d-2002edd9a570".into(),
+            team_in_reference: true,
+        };
+        let v = launch_channel(&meeting(), &t, CHANNEL_L2_CMMID, &[]);
+        assert!(v["url"].as_str().unwrap().contains("/chat/sessionanchor/a375eae6b9882b4c9e417115f0f2e0a8c76312fb8d16c6283db259045a75130a?"));
+        let (_, payload) = decode_sub(&v);
+        assert_eq!(payload["referral"]["cmmid"], "cmmce9gzagp");
+        assert_eq!(payload["callerInfo"]["entryPoint"], "ChannelL2");
+        assert_eq!(v["contextualChat"]["contentItems"][0]["channelContext"]["groupId"], "1fac3ae3-c9c0-4ddb-90bb-58f52209c181");
     }
 
     #[test]
@@ -505,7 +531,8 @@ mod tests {
         let u = content_url(&m);
         assert!(u.starts_with("https://m365copilotapp.svc.cloud.microsoft/chat?OID=4287e791-1b98-4963-8b94-281c50472683%402716d134"));
         assert!(u.contains("renderingSurface=copilotSidePanel") && u.contains("mysite=scnetsolutions-my.sharepoint.com"));
-        // Teams names its ring between the theme and the parent session.
+        // Teams names the ring between the theme and the parent session
+        // ("general" until the ECS settings are in).
         assert!(u.contains("&theme=default&hostRing=general&parentSessionId=s0"));
         let c = contextual_chat(&m);
         assert_eq!(c["contentItems"][0]["meetingContext"]["organizerId"], "4287e791-1b98-4963-8b94-281c50472683@2716d134-5614-4856-a48d-2002edd9a570");

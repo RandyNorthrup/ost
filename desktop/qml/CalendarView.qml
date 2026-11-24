@@ -2673,7 +2673,7 @@ Item {
         const q = ["hostApp=hub", "isanonymous=true", "culture=en-us", "mysite={mySiteDomain}", "hostName=TeamsModern", "hostClientType=desktop",
                    "sessionId=" + root.guid(), "renderingSurface=copilotSidePanel", "theme=" + (theme.dark ? "dark" : "default"), "includeAgents=true",
                    "M365ChatFeatures=disableFPSLoggingForStreaming,enableGptWrapperInChat,enablePrefetchAnnotationContext", "overrideScenario=CalendarSidepane",
-                   "rootHub=TeamsModern", "topOrigin=https%3A%2F%2Fteams.microsoft.com", "isDeeplyNAASupported=true", "hostRing=general"]
+                   "rootHub=TeamsModern", "topOrigin=https%3A%2F%2Fteams.microsoft.com", "isDeeplyNAASupported=true", "hostRing=" + backend.clientRing()]
         return "https://outlook.office.com/hosted/semanticoverview/Users('OID:" + root.objectId + "@" + root.tenantId + "')?" + q.join("&")
     }
 

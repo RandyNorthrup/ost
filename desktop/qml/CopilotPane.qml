@@ -97,7 +97,11 @@ Rectangle {
             // capabilities.)
             ssr: true
             runtimeSupports: ({ appPerformanceMetrics: {}, copilot: { eligibility: {} }, mouseRelay: {} })
-            hostThread: pane.request ? (pane.request.chat || (pane.request.thread ? pane.request.thread.channelId : "")) : ""
+            // (Teams gives the pane's app a context with no conversation:
+            // chatId, channelId and the team site empty, the tenant's
+            // SharePoint host; measured 2026-11-23, TASK-0263. The
+            // conversation goes in contextualChatChanged.)
+            hostThread: ""
             hostContext: pane.launch.context
             home: pane.launch.url
             onHostEvent: (name, json) => {

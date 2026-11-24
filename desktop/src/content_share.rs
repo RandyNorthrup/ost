@@ -307,7 +307,7 @@ impl qobject::Backend {
             ("contentId", e(&st(&s, "sessionId"))),
             ("meetingChatId", e(&thread)),
             ("endpointId", e(&endpoint)),
-            ("uihRing", e("general")),
+            ("uihRing", e(&api::ecs::ring())),
             ("isHighContrast", "false".into()),
             ("highContrastColorSettings", String::new()),
             ("useZipItSnap", "false".into()),

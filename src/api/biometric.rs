@@ -90,9 +90,7 @@ pub enum FaceOutcome {
 
 /// The client ring Teams names in `x-ringoverride`.
 fn ring() -> String {
-    super::ecs::setting("metadata", "ring")
-        .and_then(|r| r.get("id").and_then(|i| i.as_str()).map(str::to_string))
-        .unwrap_or_else(|| "general".into())
+    super::ecs::ring()
 }
 
 /// Teams' `AppEnrolledFrom` ("<client type>,<version>"), for OST.

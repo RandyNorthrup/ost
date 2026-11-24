@@ -4182,6 +4182,115 @@ pub async fn edit_message_html(
     Ok(())
 }
 
+/// What an edit changes besides its text: Teams' edit box keeps Attach
+/// files and Actions and apps (Collaborate with Loop, Set delivery
+/// options, Record video clip), measured on winpc 2026-11-23 (TASK-0263).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct EditExtras {
+    /// The delivery option chosen in the edit ("high", "urgent", "" for
+    /// Standard); None keeps the message's.
+    pub importance: Option<String>,
+    /// The message's files taken out (their objectUrl).
+    pub removed_files: Vec<String>,
+    /// Files added (`properties.files` entries, as a send makes them).
+    pub added_files: Vec<serde_json::Value>,
+    /// A Loop component made in the edit.
+    pub loop_component: Option<super::outbox::LoopEmbed>,
+    /// Media-store objects the new content refers to (a recorded clip).
+    pub ams_references: Vec<String>,
+}
+
+/// Apply `x` to an edit's body (from [`edit_body`]), as Teams' PUT carries
+/// them: `importance`, the files list (the message's less those removed,
+/// then the new ones, in a send's form), a Loop component's FluidEmbedCard
+/// span after the content with its card, the message's own Loop cards kept
+/// (their spans written back when the editor dropped them), and
+/// `amsreferences`.
+pub fn apply_edit_extras(body: &mut serde_json::Value, original: &serde_json::Value, x: &EditExtras) {
+    let props = original.get("properties").cloned().unwrap_or_default();
+    let list = |k: &str| -> Vec<serde_json::Value> {
+        match props.get(k) {
+            Some(serde_json::Value::String(s)) => serde_json::from_str(s).unwrap_or_default(),
+            Some(serde_json::Value::Array(a)) => a.clone(),
+            _ => Vec::new(),
+        }
+    };
+    if let Some(i) = &x.importance {
+        body["properties"]["importance"] = i.clone().into();
+    }
+    if !x.removed_files.is_empty() || !x.added_files.is_empty() {
+        let url_of = |f: &serde_json::Value| {
+            f.get("objectUrl")
+                .and_then(|u| u.as_str())
+                .or_else(|| f.pointer("/fileInfo/fileUrl").and_then(|u| u.as_str()))
+                .unwrap_or_default()
+                .to_string()
+        };
+        let mut files: Vec<serde_json::Value> = list("files")
+            .into_iter()
+            .filter(|f| !x.removed_files.contains(&url_of(f)))
+            .collect();
+        files.extend(x.added_files.iter().cloned());
+        body["properties"]["files"] = serde_json::Value::String(serde_json::to_string(&files).unwrap_or_else(|_| "[]".into()));
+    }
+    let mut content = body["content"].as_str().unwrap_or_default().to_string();
+    let mut cards: Vec<serde_json::Value> = list("cards");
+    // The message's own Loop components stay, span and card.
+    for c in cards.iter().filter(|c| c["contentType"] == "application/vnd.microsoft.card.fluidEmbedCard") {
+        let id = c["cardClientId"].as_str().unwrap_or_default();
+        if !id.is_empty() && !content.contains(&format!("itemid=\"{id}\"")) {
+            content.push_str(&super::outbox::loop_embed_span(id));
+        }
+    }
+    if let Some(l) = &x.loop_component {
+        content.push_str(&super::outbox::loop_embed_span(&l.card_client_id));
+        let new: Vec<serde_json::Value> = serde_json::from_str(&super::outbox::loop_embed_cards(l)).unwrap_or_default();
+        cards.extend(new);
+    }
+    if x.loop_component.is_some() {
+        body["properties"]["cards"] = serde_json::Value::String(serde_json::to_string(&cards).unwrap_or_else(|_| "[]".into()));
+    }
+    body["content"] = content.into();
+    if !x.ams_references.is_empty() {
+        body["amsreferences"] = serde_json::json!(x.ams_references);
+    }
+}
+
+/// Edit one of our messages as Teams' edit box does: the text (Teams HTML),
+/// its quote and mentions, and what [`EditExtras`] adds or takes out.
+pub async fn edit_message_with(
+    client: &TeamsClient,
+    chat_id: &str,
+    message_id: &str,
+    content: &str,
+    quote: Option<&Quote>,
+    mentions: Option<&[OutMention]>,
+    extras: &EditExtras,
+) -> Result<()> {
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}/messages/{}",
+        client.chat_service_url(),
+        chat_id,
+        message_id
+    );
+    let original: serde_json::Value = client.chat_get(&url).await?.json().await?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or_default();
+    let mut body = edit_body(&original, content, quote, now);
+    if let Some(m) = mentions {
+        body["properties"]["mentions"] = serde_json::to_string(m)
+            .unwrap_or_else(|_| "[]".into())
+            .into();
+    }
+    apply_edit_extras(&mut body, &original, extras);
+    client
+        .chat_request(reqwest::Method::PUT, &url, &body)
+        .await?;
+    Ok(())
+}
+
 /// Edit one of our messages to plain text, keeping its quote.
 pub async fn edit_message(
     client: &TeamsClient,
@@ -5617,6 +5726,46 @@ mod quote_tests {
         let b = edit_body(&original, "<p>new</p>", None, 42);
         assert!(b["properties"].get("qtdMsgs").is_none());
         assert_eq!(b["content"], "<p>new</p>");
+    }
+
+    #[test]
+    fn edit_extras_as_teams_edit_box() {
+        // Shaped as Teams' edit PUTs captured on winpc 2026-11-23 (OST TEST
+        // 95 in ost-test1's own chat): delivery option, a file added then
+        // taken out, a Loop component.
+        let kept = serde_json::json!({"objectUrl": "https://x/Documents/a.txt", "fileName": "a.txt"});
+        let gone = serde_json::json!({"fileInfo": {"fileUrl": "https://x/Documents/b.loop"}, "fileName": "b.loop"});
+        let original = serde_json::json!({
+            "id": "1", "conversationid": "48:notes", "content": "<p>OST TEST 95 from the TUI</p>",
+            "properties": {"importance": "", "files": serde_json::to_string(&vec![kept.clone(), gone]).unwrap(), "cards": "[]"}
+        });
+        let mut b = edit_body(&original, "<p>OST TEST 95 from the TUI</p>", None, 7);
+        let added = serde_json::json!({"objectUrl": "https://x/Documents/c.docx"});
+        apply_edit_extras(&mut b, &original, &EditExtras {
+            importance: Some("high".into()),
+            removed_files: vec!["https://x/Documents/b.loop".into()],
+            added_files: vec![added.clone()],
+            loop_component: Some(super::super::outbox::LoopEmbed { component_url: "https://x/:fl:/p/l".into(), card_client_id: "54be7bb7".into() }),
+            ams_references: vec![],
+        });
+        assert_eq!(b["properties"]["importance"], "high");
+        let files: Vec<serde_json::Value> = serde_json::from_str(b["properties"]["files"].as_str().unwrap()).unwrap();
+        assert_eq!(files, vec![kept, added]);
+        assert_eq!(b["content"], "<p>OST TEST 95 from the TUI</p> \n        <span itemtype=\"http://schema.skype.com/FluidEmbedCard\" itemid=\"54be7bb7\"></span>");
+        let cards: serde_json::Value = serde_json::from_str(b["properties"]["cards"].as_str().unwrap()).unwrap();
+        assert_eq!(cards[0]["content"]["sourceType"], "Compose");
+        assert!(b.get("amsreferences").is_none());
+        // Nothing chosen: the message's own option and files stay; its Loop
+        // keeps its span.
+        let with_loop = serde_json::json!({
+            "content": "<p>x</p> \n        <span itemtype=\"http://schema.skype.com/FluidEmbedCard\" itemid=\"c1\"></span>",
+            "properties": {"importance": "high", "files": "[]", "cards": serde_json::json!([{"cardClientId": "c1", "contentType": "application/vnd.microsoft.card.fluidEmbedCard"}]).to_string()}
+        });
+        let mut b = edit_body(&with_loop, "<p>y</p>", None, 7);
+        apply_edit_extras(&mut b, &with_loop, &EditExtras::default());
+        assert_eq!(b["properties"]["importance"], "high");
+        assert_eq!(b["properties"]["files"], "[]");
+        assert!(b["content"].as_str().unwrap().starts_with("<p>y</p> \n        <span") && b["content"].as_str().unwrap().contains("itemid=\"c1\""));
     }
 
     #[test]

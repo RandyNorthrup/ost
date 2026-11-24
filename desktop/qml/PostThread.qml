@@ -15,6 +15,18 @@ import QtQuick.Dialogs
 //   (from 18 down), Find in post (32) and More (32); in the window only the
 //   line and More: Find in post (Ctrl+F), then Follow / Unfollow thread.
 //   While finding, Find in post's toggle is brand.
+// - Open Copilot (Teams' channel-copilot-button in its channel L2 header,
+//   measured on winpc 2026-11-23, TASK-0263, OST Test Team > General and
+//   OST test channel): after the line, before Find in post (pane: Go to
+//   channel, Open in new window, line, Copilot W-107, Find W-75, More
+//   W-43). Find in post shows only where the header is at least 640 wide,
+//   else it is More's first item (a 588 wide window; the pane with
+//   Copilot open). Open, Copilot's 360 pane (CopilotPane) sits at the
+//   right and the post narrows beside it (a window too narrow for both:
+//   the pane covers it); the button turns brand and filled ("Close
+//   Copilot"), Alt+C toggles it, and Go to channel closes both. The app is
+//   told the post as a channel thread (ChannelL2) whose reference names
+//   the team, the channel and the post.
 // - The thread on the channel page, 7 from the top: in the pane the post
 //   and its replies centred at the channel's card width, in the window one
 //   card 30 in (radius 8, Fluent shadow 4). The post: the author's 32 px
@@ -52,6 +64,31 @@ Item {
         return all[threadKey] || []
     }
     readonly property var post: thread.find(m => m.id === rootId) || null
+    readonly property bool copilotAvailable: { try { return !!JSON.parse(backend.composeCopilotJson || "{}").channelPost } catch (e) { return false } }
+    property bool copilotOpen: false
+    onRootIdChanged: copilotOpen = false
+    onCopilotAvailableChanged: if (!copilotAvailable) copilotOpen = false
+    onCopilotOpenChanged: if (copilotOpen) { finding = false; viewingFound = false }
+    function toggleCopilot() {
+        if (!copilotAvailable) return
+        copilotOpen = !copilotOpen
+        console.info("COPILOT post view", copilotOpen)
+    }
+    /// The post as Copilot's pane names it: the team's thread, the channel,
+    /// the post, the team's group.
+    readonly property var copilotRequest: {
+        if (!copilotOpen || !rootId) return null
+        const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+        const t = teams.find(t => t.id === win.teamId) || teams.find(t => (t.channels || []).some(c => c.id === win.channelId)) || {}
+        return { kind: "channel", thread: { teamId: t.thread_id || "", channelId: win.channelId, replyChainId: win.rootId, groupId: t.id || win.teamId,
+                                            tenantId: backend.tenantId(), teamInReference: true } }
+    }
+    // Copilot's pane beside the post, or over all of it when there is no
+    // room for both.
+    readonly property bool copilotCovers: copilotOpen && width - 360 < 320
+    readonly property real paneW: copilotOpen && !copilotCovers ? 360 : 0
+    readonly property real viewW: width - paneW
+    readonly property bool findInline: viewW >= 640
     // Teams shows a channel meeting's Attendance card to its organizer
     // (the join link's Oid).
     readonly property string meetingOrganizer: {
@@ -76,8 +113,8 @@ Item {
     function senderOf(m) { return !m ? "" : m.sender || peopleNames[m.sender_mri] || "" }
     onPostChanged: if (post && !post.sender && post.sender_mri && !peopleNames[post.sender_mri]) backend.resolveNames(JSON.stringify([post.sender_mri]))
     // The card: the channel's width in the pane, 30 in in the window.
-    readonly property real cardW: inPane ? Math.min(1100, width - 2 * (width > 480 ? 88 : 16)) : width - 62
-    readonly property real cardX: inPane ? (width - cardW) / 2 : 30
+    readonly property real cardW: inPane ? Math.min(1100, viewW - 2 * (viewW > 480 ? 88 : 16)) : viewW - 62
+    readonly property real cardX: inPane ? (viewW - cardW) / 2 : 30
     // Find in post: Teams' find pane over the window (under its title
     // row). A result opens in the thread with the terms marked; Escape goes
     // back to the results.
@@ -131,7 +168,7 @@ Item {
     Rectangle {
         id: header
         anchors.top: parent.top
-        width: parent.width; height: 61
+        width: win.viewW; height: 61
         color: theme.channelPage
         Avatar {
             x: 20; y: 14.2
@@ -190,11 +227,24 @@ Item {
                 color: theme.pick("#F0F0F0", "#3D3D3D", "#000000")
             }
             Item { width: 7; height: 1 }
-            // Find in post: always in the pane; in the window while finding
-            // (brand, as the side pane's toggle).
+            // Open / Close Copilot (channel-copilot-button).
+            Rectangle {
+                id: copilotButton
+                visible: win.copilotAvailable
+                width: 32; height: 32; radius: 4
+                color: copilotHover.hovered ? theme.hover : "transparent"
+                FluentIcon { anchors.centerIn: parent; name: win.copilotOpen ? "copilot-filled-48" : "ai-copilot"; size: 20; color: theme.onFill(copilotButton, win.copilotOpen ? theme.brand : theme.textStrong) }
+                HoverHandler { id: copilotHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: win.toggleCopilot() }
+                ToolTip.visible: copilotHover.hovered; ToolTip.delay: 500
+                ToolTip.text: (win.copilotOpen ? qsTr("Close Copilot") : qsTr("Open Copilot")) + " (Alt+C)"
+                Accessible.role: Accessible.Button; Accessible.name: win.copilotOpen ? qsTr("Close Copilot") : qsTr("Open Copilot")
+            }
+            // Find in post: where the header is wide enough; otherwise
+            // only while finding (brand, as the side pane's toggle).
             Rectangle {
                 id: hcFill3
-                visible: win.finding || win.inPane
+                visible: win.finding || win.findInline
                 width: 32; height: 32; radius: 4
                 color: findToggleHover.hovered ? theme.hover : "transparent"
                 FluentIcon { anchors.centerIn: parent; name: "search-20"; size: 20; color: theme.onFill(hcFill3, win.finding ? theme.brand : theme.textStrong) }
@@ -219,13 +269,13 @@ Item {
     MenuPopup {
         id: moreMenu
         margins: 8
-        items: [
+        items: (win.findInline ? [] : [
             { key: "find", label: qsTr("Find in post"), icon: "search-20", keys: "Ctrl+F" },
-            { separator: true },
+            { separator: true }]).concat([
             win.post && win.post.following
                 ? { key: "unfollow", label: qsTr("Unfollow thread"), icon: "chat-multiple-minus-20" }
                 : { key: "follow", label: qsTr("Follow thread"), icon: "chat-multiple-20" }
-        ]
+        ])
         onPicked: i => {
             const k = items[i].key
             if (k === "find") win.toggleFind()
@@ -233,7 +283,31 @@ Item {
         }
     }
     Shortcut { sequence: "Ctrl+F"; onActivated: win.toggleFind() }
-    function toggleFind() { if (finding && viewingFound) { viewingFound = false; return } finding = !finding; viewingFound = false; if (!finding) findMark = { id: "", terms: [] } }
+    Shortcut { sequence: "Alt+C"; enabled: win.visible && win.copilotAvailable && !!win.rootId; onActivated: win.toggleCopilot() }
+    function toggleFind() { if (finding && viewingFound) { viewingFound = false; return } finding = !finding; viewingFound = false; if (finding) copilotOpen = false; if (!finding) findMark = { id: "", terms: [] } }
+    function copilotForTest() { return copilotPane }
+    CopilotPane {
+        id: copilotPane
+        z: 6
+        open: win.copilotOpen && !!win.rootId
+        request: win.copilotRequest
+        x: win.copilotCovers ? 0 : win.width - width; y: 0
+        width: !open ? 0 : win.copilotCovers ? win.width : 360
+        height: win.height
+        onClosed: win.copilotOpen = false
+        onOpenLink: url => win.openCopilotLink(url)
+    }
+    /// A Source the app opened: a message of this post scrolls to it (the
+    /// pane stays); anything else goes where the window's links go.
+    function openCopilotLink(url) {
+        const m = /^https:\/\/teams\.microsoft\.com\/l\/message\/([^/?#]+)\/([0-9]+)/.exec(url)
+        const id = m && decodeURIComponent(m[1]) === win.channelId ? m[2] : ""
+        const here = !!id && (id === win.rootId || win.replies.some(r => r.id === id))
+        console.info("COPILOT post source", here ? "here" : "elsewhere", m ? m[2] : "")
+        if (here) { win.showFound(id, []); return }
+        if (typeof window !== "undefined" && window.openCopilotLink) window.openCopilotLink(url)
+        else Qt.openUrlExternally(url)
+    }
 
     FindPane {
         id: findPane
@@ -254,7 +328,7 @@ Item {
     // The thread
     Flickable {
         id: flick
-        anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: compose.top; bottomMargin: 38.8 }
+        anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: compose.top; bottomMargin: 38.8; rightMargin: win.paneW }
         clip: true
         contentHeight: card.height + 7 + 3
         boundsBehavior: Flickable.StopAtBounds
@@ -546,7 +620,16 @@ Item {
             onMessageChanged: if (message) { quote = message.quote || null; setMessage(message); focusEditor() }
             onQuoteDismissed: quote = null
             onEmojiRequested: a => thost.openEmojiFor(box)
-            onSubmit: { backend.editMessageRich(message.id, formattedText(), quote ? JSON.stringify(quote) : "", JSON.stringify(mediaInUse())); thost.editingId = "" }
+            // (Teams' edit box: Attach files and Actions and apps too,
+            // TASK-0263.)
+            chatId: win.channelId
+            chatTitle: win.channelName
+            editTeamId: win.teamId; editTeamName: win.teamName
+            onSubmit: {
+                backend.editMessageWith(message.id, formattedText(), quote ? JSON.stringify(quote) : "", JSON.stringify(mediaInUse()), editExtras())
+                editSent()
+                thost.editingId = ""
+            }
             onCancelled: thost.editingId = ""
         }
     }
@@ -555,7 +638,7 @@ Item {
     ComposeBox {
         id: compose
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-        anchors.leftMargin: win.inPane ? Math.max(28, win.cardX - 12) : 28; anchors.rightMargin: win.inPane ? Math.max(30, win.cardX - 12) : 30
+        anchors.leftMargin: win.inPane ? Math.max(28, win.cardX - 12) : 28; anchors.rightMargin: win.paneW + (win.inPane ? Math.max(30, win.cardX - 12) : 30)
         anchors.bottomMargin: 8.7 // its box 26.7 above the bottom (the hint row is 18)
         placeholder: qsTr("Reply in thread")
         deliveryOptions: false

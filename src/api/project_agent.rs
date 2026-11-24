@@ -128,7 +128,7 @@ pub async fn add_to_new_team(client: &TeamsClient, channel: &str, team_thread: &
         .header("content-type", "application/json;charset=UTF-8")
         .header("x-ms-correlation-id", uuid::Uuid::new_v4().to_string())
         .header("MS-CV", uuid::Uuid::new_v4().to_string())
-        .header("x-ringoverride", super::ecs::setting("metadata", "ring").and_then(|r| r.get("id").and_then(|i| i.as_str()).map(str::to_string)).unwrap_or_else(|| "general".into()))
+        .header("x-ringoverride", super::ecs::ring())
         .json(&body)
         .timeout(std::time::Duration::from_secs(180))
         .send()

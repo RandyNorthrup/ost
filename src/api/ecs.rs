@@ -234,6 +234,14 @@ mod tests {
         assert_eq!(about_ring_in(&v).unwrap().0, "Targeted release");
         assert!(about_ring_in(&serde_json::json!({ "Segmentation": { "TeamsRing": "general" } })).is_none());
     }
+
+    #[test]
+    fn ring_from_segmentation_as_teams_host() {
+        assert_eq!(ring_in(&serde_json::json!({ "Segmentation": { "TeamsRing": "ring3_6" } })), "ring3_6");
+        let meta = serde_json::json!({ "TeamsNorthstar": { "metadata": { "ring": { "id": "ring1" } } } });
+        assert_eq!(ring_in(&meta), "ring1");
+        assert_eq!(ring_in(&serde_json::json!({})), "general");
+    }
 }
 
 /// About's ring line (settings-app `by` / `wy` / `Ty`): shown when the
@@ -259,4 +267,30 @@ pub fn about_ring_in(v: &serde_json::Value) -> Option<(String, String)> {
 
 pub fn about_ring() -> Option<(String, String)> {
     SETTINGS.read().ok()?.as_ref().and_then(about_ring_in)
+}
+
+/// Teams' client ring (its settings' Metadata.ring.id), in `v` (the ECS
+/// reply): the host takes it from Segmentation.TeamsRing ("ring3_6" for a
+/// Targeted release user; measured on winpc 2026-11-23, TASK-0263: the
+/// Copilot frame's hostRing and TeamsJS ringId), else a metadata.ring
+/// setting, else "general".
+pub fn ring_in(v: &serde_json::Value) -> String {
+    v.get("Segmentation")
+        .and_then(|s| s.get("TeamsRing"))
+        .and_then(|r| r.as_str())
+        .filter(|r| !r.is_empty())
+        .map(str::to_string)
+        .or_else(|| setting_in(v, "metadata", "ring").and_then(|r| r.get("id")?.as_str().map(str::to_string)))
+        .unwrap_or_else(|| "general".into())
+}
+
+/// The user's ring from the settings loaded so far ("general" before they
+/// load): what Teams names as hostRing, ringId, uihRing and
+/// x-ringoverride.
+pub fn ring() -> String {
+    SETTINGS
+        .read()
+        .ok()
+        .and_then(|s| s.as_ref().map(ring_in))
+        .unwrap_or_else(|| "general".into())
 }
