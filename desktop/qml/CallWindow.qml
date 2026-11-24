@@ -286,11 +286,19 @@ Window {
     /// enableRoomRemoteDesktop, desktop, not a 1:1 call).
     readonly property bool roomRemoteOn: meeting && !backend.roomMode && backend.ecsSetting("calling", "enableRoomRemoteDesktop") === "true"
     /// Fit to frame / Fill frame, per tile (Teams' scaling mode per
-    /// participant stream, kept for the call): ids shown whole ("me" for
-    /// yours); everyone else's video fills its tile.
-    property var fittedIds: []
-    function fitted(id) { return fittedIds.indexOf(id) >= 0 }
-    function setFitted(id, on) { fittedIds = on ? fittedIds.filter(x => x !== id).concat([id]) : fittedIds.filter(x => x !== id) }
+    /// participant stream, kept for the call): {id: "fit" | "fill"} as
+    /// chosen ("me" for yours). Unchosen, a video fills its tile, except
+    /// the one person filling the stage with you floating over it, whose
+    /// video Teams fits (its automaticFor1x1call scaling; measured on
+    /// winpc: a guest's 4:3 camera shown whole, its menu offering Fill
+    /// frame).
+    property var scaleChoices: ({})
+    readonly property var fittedIds: Object.keys(scaleChoices).filter(k => scaleChoices[k] === "fit")
+    function fitted(id) {
+        if (scaleChoices[id] !== undefined) return scaleChoices[id] === "fit"
+        return meOverlayShown && id !== "me" && (others[0] || {}).id === id
+    }
+    function setFitted(id, on) { const c = Object.assign({}, scaleChoices); c[id] = on ? "fit" : "fill"; scaleChoices = c }
     function cameraCount() { try { return (JSON.parse(backend.videoDevices()).devices || []).length } catch (e) { return 0 } }
     /// Open a tile's ··· menu (from its name tag's button), or the same
     /// menu where the tile was right-clicked.
