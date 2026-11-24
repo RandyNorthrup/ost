@@ -260,6 +260,7 @@ fn main() {
         "qml/MeetingTimerStrip.qml",
         "qml/AgendaTimerRow.qml",
         "qml/CallHealthPane.qml",
+        "qml/RoomRemotePane.qml",
         "qml/TimerSpin.qml",
         "qml/NotificationBanners.qml",
         "qml/EnrollmentDone.qml",

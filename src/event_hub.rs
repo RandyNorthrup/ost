@@ -22,6 +22,9 @@ pub enum EventKind {
     /// A Better Together command from one of the user's Teams devices
     /// (`api::better_together::Message` JSON), already acknowledged.
     BetterTogether,
+    /// A message on a room remote session (`{url, body}`: the Trouter path
+    /// it came to and its JSON body), already acknowledged.
+    RoomRemote,
 }
 
 /// One pushed event; `json` is the decoded event body.

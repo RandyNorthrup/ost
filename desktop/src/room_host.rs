@@ -133,6 +133,13 @@ pub fn start(object_id: String, on_salt: impl Fn(u16) + Send + 'static) {
     });
 }
 
+/// Whether `token` is the room's current salt or a recent one (Teams
+/// Rooms' devicesBLEService.isSaltValid, as a room remote's pairing checks
+/// it).
+pub fn salt_valid(token: u32) -> bool {
+    SALTS.lock().unwrap_or_else(|e| e.into_inner()).as_ref().is_some_and(|s| s.is_valid(token))
+}
+
 /// Teams Rooms' answer to `call`: accept it by itself, or ring. `tenant`
 /// is the room's tenant (Teams' participant type InTenant when the
 /// caller's is the same).

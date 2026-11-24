@@ -488,6 +488,15 @@ pub mod qobject {
         /// The meeting's link to share (Teams' Share invite), once joined.
         #[qproperty(QString, call_invite_url)]
         #[qproperty(bool, call_has_audio)]
+        /// Room mode: the stage layout the call window shows ("gallery",
+        /// "speaker", "focus") and whether content is on its stage, for a
+        /// room remote (Teams Rooms' RemoteControllerCallState).
+        #[qproperty(QString, room_remote_layout)]
+        /// The Room Remote pane (Control Room System) as JSON: {view
+        /// ("loading", "remote", "error", "left"), error, roomName, caps,
+        /// state}.
+        #[qproperty(QString, room_remote_json)]
+        #[qproperty(bool, room_remote_content)]
         /// "Randy Northrup is typing" for the open chat, or "".
         /// Bumped when emoticon images or the catalogue arrive.
         #[qproperty(i32, emoticons_version)]
@@ -2816,9 +2825,24 @@ pub mod qobject {
         /// The user's answer to Teams' pairing prompt (Connect / Cancel).
         #[qinvokable]
         fn better_together_answer(self: &Backend, accept: bool);
+        /// Control Room System on a Teams Room in the meeting: reach and
+        /// pair with it (the Room Remote pane follows room_remote_json).
+        #[qinvokable]
+        fn room_remote_open(self: &Backend, room_mri: &QString, room_name: &QString);
+        /// A button on the Room Remote ("mute", "cameraOn", "volumeUp",
+        /// "showContent", "leaveMeeting", ...).
+        #[qinvokable]
+        fn room_remote_command(self: &Backend, name: &QString);
+        /// The Room Remote pane closed: end the session.
+        #[qinvokable]
+        fn room_remote_close(self: &Backend);
         /// The paired phones changed.
         #[qsignal]
         fn better_together_changed(self: Pin<&mut Backend>);
+        /// Room mode: a room remote asks for a stage layout ("gallery",
+        /// "focus").
+        #[qsignal]
+        fn room_remote_layout_requested(self: Pin<&mut Backend>, view: QString);
         /// A phone asks to pair (its name); empty when the prompt is over.
         #[qsignal]
         fn better_together_pair_request(self: Pin<&mut Backend>, device_name: QString);
@@ -3383,6 +3407,9 @@ pub struct BackendRust {
     call_chat_url: QString,
     call_invite_url: QString,
     call_has_audio: bool,
+    room_remote_layout: QString,
+    room_remote_content: bool,
+    room_remote_json: QString,
     typing_text: QString,
     emoticons_version: i32,
     recent_reactions_json: QString,
@@ -4773,6 +4800,13 @@ async fn leave_moved_from(call: OutgoingCall) {
         Ok(()) => tracing::info!("left the meeting we moved out of"),
         Err(e) => tracing::warn!("leaving the meeting we moved out of: {}", short_error(&e)),
     }
+}
+
+/// Whether the call can have captions: OST runs them through the meeting's
+/// recorder for a meeting it joined (a room invited into a meeting has
+/// none), so a room remote offers Captions only then.
+pub(crate) async fn call_has_captions() -> bool {
+    call_slot().lock().await.outgoing.is_some()
 }
 
 fn call_slot() -> &'static tokio::sync::Mutex<CallSlot> {
@@ -8896,6 +8930,27 @@ fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 impl qobject::Backend {
+    /// Room mode: a room remote mutes or unmutes the room's mic (Teams
+    /// Rooms' MuteToggleCommand; unmuting a room without audio turns its
+    /// audio on).
+    pub fn room_remote_set_muted(self: Pin<&mut Self>, mute: bool) {
+        if !mute && !*self.call_has_audio() {
+            self.turn_audio_on();
+        } else if *self.call_muted() != mute {
+            self.toggle_mute();
+        }
+    }
+
+    /// Room mode: a room remote turns the speaker up or down a step of 10
+    /// (Teams Rooms' VolumeCommand: up to the next ten, down to the one
+    /// before, never below 1).
+    pub fn room_remote_volume(self: Pin<&mut Self>, up: bool) {
+        let now = teams_cli::calling::audio::speaker_volume() as i32;
+        let next = teams_cli::api::room_remote::volume_step(now, up);
+        tracing::info!(now, next, "room remote: speaker volume");
+        teams_cli::calling::audio::set_speaker_volume(next as u32);
+    }
+
     pub fn start(mut self: Pin<&mut Self>) {
         let _ = QT_THREAD.set(self.qt_thread());
         // Teams' regional formats for text the engine formats.
@@ -9271,6 +9326,7 @@ impl qobject::Backend {
         // Better Together: subscribed before the socket connects, so no
         // phone's command is missed.
         crate::better_together::start(self.qt_thread());
+        crate::room_remote::start(self.qt_thread());
         self.as_mut().load_recent_reactions();
         // The outbox: redraw the open chat whenever a send changes state, and
         // replay queued sends at startup and every 10 minutes (Teams'
@@ -24799,6 +24855,18 @@ impl qobject::Backend {
 
     pub fn better_together_answer(&self, accept: bool) {
         crate::better_together::answer(accept);
+    }
+
+    pub fn room_remote_open(&self, room_mri: &QString, room_name: &QString) {
+        crate::room_remote::open(room_mri.to_string(), room_name.to_string(), self.call_thread_id().to_string());
+    }
+
+    pub fn room_remote_command(&self, name: &QString) {
+        crate::room_remote::command(name.to_string());
+    }
+
+    pub fn room_remote_close(&self) {
+        crate::room_remote::close();
     }
 
     pub fn nearby_rooms(&self, scan: bool) -> QString {

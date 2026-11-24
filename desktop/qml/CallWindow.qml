@@ -2420,6 +2420,18 @@ Window {
         meetingReport.organizer = org ? org.name : ""
         meetingReport.open()
     }
+    /// Control Room System (Teams' toggleInfoPane "roomremote"): the Room
+    /// Remote pane takes the side, and OST reaches and pairs with the room.
+    // Leaving the call ends a room remote's session (Teams' roomRemoteEndCall).
+    Connections {
+        target: backend
+        function onCallStateChanged() { if (backend.callState === "ended" && roomRemotePane.remoteRoomId) { backend.roomRemoteClose(); roomRemotePane.remoteRoomId = "" } }
+    }
+    function openRoomRemote(id, name) {
+        side = "roomRemote"
+        roomRemotePane.remoteRoomId = id
+        backend.roomRemoteOpen(id, name)
+    }
     function openPersonReport(id, name) {
         if (!meetingInfo) loadMeetingInfo()
         meetingReport.people = []
@@ -3628,6 +3640,16 @@ Window {
             onClosed: win.side = ""
             onRefresh: win.refreshCallHealth()
         }
+        RoomRemotePane {
+            id: roomRemotePane
+            visible: win.side === "roomRemote"
+            anchors.fill: parent
+            remote: { try { return JSON.parse(backend.roomRemoteJson || "{}") } catch (e) { return ({}) } }
+            onClosed: { backend.roomRemoteClose(); win.side = "" }
+            onCommand: name => backend.roomRemoteCommand(name)
+            onRetry: backend.roomRemoteOpen(remoteRoomId, remote.roomName || "")
+            property string remoteRoomId: ""
+        }
         CaptionStylesPane {
             id: captionStylesPane
             visible: win.side === "captionStyles"
@@ -3688,6 +3710,7 @@ Window {
             canReport: win.scheduled || win.adhocMeeting
             pinnedIds: win.pinnedIds
             pinningFull: win.pinningFull
+            roomRemote: win.meeting && !backend.roomMode && backend.ecsSetting("calling", "enableRoomRemoteDesktop") === "true"
             onParticipantAction: (action, id, name, stateId) => {
                 if (action === "pin") win.pinPerson(id)
                 else if (action === "unpin") win.unpinPerson(id)
@@ -3695,6 +3718,8 @@ Window {
                 else if (action === "attendee" || action === "presenter") roleAsk.ask(action, id, name)
                 // Report this person: Teams' report dialog for them.
                 else if (action === "report") win.openPersonReport(id, name)
+                // Control Room System: the room's remote in this pane.
+                else if (action === "controlRoom") win.openRoomRemote(id, name)
                 else win.participantAction(action, id, name, stateId)
             }
             onShareInvite: inviteDialog.open()
@@ -3731,6 +3756,15 @@ Window {
         if (n < 3) backend.setSetting("byodSdmUfdTriggerCount", String(n + 1))
     }
     onRoomModeChanged: if (roomMode) showRoomNotice()
+    // A Teams Room's stage as its room remotes see it (Teams Rooms'
+    // RemoteControllerCallState), and the layouts they ask for.
+    Binding { target: backend; property: "roomRemoteLayout"; value: win.layout; when: backend.roomMode }
+    Binding { target: backend; property: "roomRemoteContent"; value: win.shareShown; when: backend.roomMode }
+    Connections {
+        target: backend
+        enabled: backend.roomMode
+        function onRoomRemoteLayoutRequested(view) { win.layout = view }
+    }
     Loader {
         id: roomLoader
         active: win.roomMode
@@ -4155,6 +4189,7 @@ Window {
     }
     function minimizeForTest() { win.showMinimized() }
     function compactViewForTest() { return compactView }
+    function closeParticipantMenuForTest() { peoplePane.closeMenusForTest() }
     function participantMenuForTest(id) { const p = win.people.find(x => x.id === id); if (p) peoplePane.participantMenuForTest(p) }
     // Teams' Mute all confirmation ("All" scope).
     ConfirmDialog {

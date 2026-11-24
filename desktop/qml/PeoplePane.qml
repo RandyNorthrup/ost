@@ -30,6 +30,10 @@ Rectangle {
     /// You can manage others (organizer): the participant ··· menu offers
     /// Mute, Spotlight, roles and Remove; everyone can Pin for themselves.
     property bool canManage: false
+    /// Teams Rooms in the meeting can be controlled from here (Teams'
+    /// Control Room System: ECS enableRoomRemoteDesktop, desktop, not a
+    /// 1:1 call).
+    property bool roomRemote: false
     /// Who you pinned (Pin for me), if anyone.
     /// Whom you pinned, and whether the pin area is full (Teams' 9).
     property var pinnedIds: []
@@ -517,13 +521,18 @@ Rectangle {
                     out.push(w.spotlight ? { k: "unspotlight", t: qsTr("Take off screen"), icon: "spotlight-20" } : { k: "spotlight", t: qsTr("Bring on screen"), icon: "spotlight-20" })
                 else
                     out.push(w.spotlight ? { k: "unspotlight", t: qsTr("Stop spotlighting"), icon: "spotlight-20" } : { k: "spotlight", t: qsTr("Spotlight for everyone"), icon: "spotlight-20" })
+                // A Teams Room: its remote (Teams' controlRoomSystemItem).
+                if (w.room && root.roomRemote) out.push({ k: "controlRoom", t: qsTr("Control Room System"), icon: "device-meeting-room-remote-20" })
                 if ((w.role || "").toLowerCase() !== "organizer")
                     out.push((w.role || "").toLowerCase() === "attendee"
                         ? { k: "presenter", t: qsTr("Make a presenter"), icon: "presenter-off-20" }
                         : { k: "attendee", t: qsTr("Make an attendee"), icon: "presenter-off-20" })
                 out.push({ sep: true })
                 out.push({ k: "remove", t: qsTr("Remove from meeting"), icon: "person-remove-20" })
-            } else if (root.canReport) out.push({ sep: true })
+            } else {
+                if (w.room && root.roomRemote) out.push({ k: "controlRoom", t: qsTr("Control Room System"), icon: "device-meeting-room-remote-20" })
+                if (root.canReport) out.push({ sep: true })
+            }
             // Report this person (a security report, as Teams files it).
             if (root.canReport) out.push({ k: "report", t: qsTr("Report"), icon: "shield-error-20" })
             return out

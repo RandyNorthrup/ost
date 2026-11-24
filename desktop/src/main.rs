@@ -15,6 +15,7 @@ mod lock_watch;
 mod rich_text;
 mod room_ble;
 mod room_host;
+mod room_remote;
 mod tray;
 mod video_effects;
 mod video_item;

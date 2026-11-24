@@ -505,6 +505,14 @@ async fn handle_frame(frame: &str, http: &reqwest::Client, skype_token: &str, op
         return;
     }
 
+    // Room remote session messages (to the links a session was accepted
+    // or started with), acknowledged at once.
+    if let Some((url, body)) = room_remote_frame(frame) {
+        tracing::info!("room remote message received");
+        publish(EventKind::RoomRemote, serde_json::json!({ "url": url, "body": body }).to_string());
+        return;
+    }
+
     // Better Together commands from the user's other Teams devices, once
     // acknowledged (the socket answered them already).
     if let Some((status, _)) = better_together_ack(frame) {
@@ -621,11 +629,30 @@ pub(crate) fn sync_reply(frame: &str) -> Option<(u16, String)> {
     sync_reply_body(frame).map(|b| (200, b))
 }
 
+/// A message to one of our room remote session links (SlimCore's
+/// session callbacks): its path and JSON body.
+fn room_remote_frame(frame: &str) -> Option<(String, serde_json::Value)> {
+    let payload = frame.strip_prefix("3:::")?;
+    let (url, body) = data_frame_body(payload)?;
+    let ours = crate::api::room_remote::is_session_path(&url)
+        || (crate::api::better_together::is_trouter_url(&url) && crate::api::room_remote::is_session_message(&body));
+    if !ours {
+        return None;
+    }
+    let body = serde_json::from_str(&body).unwrap_or(serde_json::Value::String(body));
+    Some((url, body))
+}
+
 /// Teams' acknowledgement of a Better Together command, sent in the
 /// Trouter reply (SlimCore's sendIncomingCommandResponse).
 fn better_together_ack(frame: &str) -> Option<(u16, String)> {
     let payload = frame.strip_prefix("3:::")?;
     let (url, body) = data_frame_body(payload)?;
+    if crate::api::room_remote::is_session_path(&url)
+        || (crate::api::better_together::is_trouter_url(&url) && crate::api::room_remote::is_session_message(&body))
+    {
+        return Some(crate::api::room_remote::acknowledgement(&url, &body));
+    }
     if !crate::api::better_together::is_trouter_url(&url) {
         return None;
     }

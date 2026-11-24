@@ -80,6 +80,7 @@ pub mod regional;
 pub mod teams_strings;
 pub mod rooms;
 pub mod better_together;
+pub mod room_remote;
 pub mod tab_add;
 pub mod tabs;
 pub mod translation;

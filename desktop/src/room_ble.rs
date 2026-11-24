@@ -37,6 +37,9 @@ struct Shared {
     /// Better Together proximity checks running (Teams subscribes to its
     /// companion discovery for each).
     companion_scans: u32,
+    /// Room remote proximity checks running (Teams' checkRoomProximity
+    /// subscribes to its nearby rooms for each).
+    remote_scans: u32,
     task: bool,
 }
 
@@ -46,12 +49,13 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     companions: std::collections::BTreeMap::new(),
     scanning: false,
     companion_scans: 0,
+    remote_scans: 0,
     task: false,
 });
 
 fn scanning_wanted() -> bool {
     let s = SHARED.lock().unwrap_or_else(|e| e.into_inner());
-    s.scanning || s.companion_scans > 0
+    s.scanning || s.companion_scans > 0 || s.remote_scans > 0
 }
 
 fn note_companion(c: Companion, now: Instant) {
@@ -117,6 +121,26 @@ pub fn snapshot() -> (BleState, Vec<Beacon>) {
     let mut rooms: Vec<Beacon> = s.seen.values().map(|(b, _)| b.clone()).collect();
     rooms.sort_by_key(|b| -b.rssi);
     (s.state, rooms)
+}
+
+/// Scan for Teams Rooms while a room remote's proximity check runs.
+pub fn set_remote_scanning(on: bool) {
+    let start = {
+        let mut s = SHARED.lock().unwrap_or_else(|e| e.into_inner());
+        if on {
+            s.remote_scans += 1;
+        } else {
+            s.remote_scans = s.remote_scans.saturating_sub(1);
+        }
+        let start = on && !s.task;
+        if start {
+            s.task = true;
+        }
+        start
+    };
+    if start {
+        spawn_scan();
+    }
 }
 
 /// Scan while Room audio is looking for rooms (Teams subscribes to its

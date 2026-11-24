@@ -177,7 +177,7 @@ fn start_push(client: &TeamsClient, resp_tx: mpsc::UnboundedSender<BackendRespon
             };
             let response = match ev.kind {
                 EventKind::Connected => BackendResponse::PushConnected,
-                EventKind::Call | EventKind::BetterTogether => continue,
+                EventKind::Call | EventKind::BetterTogether | EventKind::RoomRemote => continue,
                 EventKind::Chat => {
                     let changed = event_hub::conversation_ids(&ev.json);
                     if changed.is_empty() {
