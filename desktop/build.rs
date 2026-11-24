@@ -18,6 +18,7 @@ fn main() {
         "qml/CalendarView.qml",
         "qml/MeetingForm.qml",
         "qml/OutlookFormPane.qml",
+        "qml/OutlookUploadTo.qml",
         "qml/OutlookAcceptableTimes.qml",
         "qml/OutlookEmailReminder.qml",
         "qml/OutlookNewCategory.qml",

@@ -14,10 +14,16 @@ import QtQuick.Controls.Basic
 // Inclusiveness, Punctuation Conventions, Sensitive Geopolitical
 // References, Vocabulary) with "Try Editor's advanced writing suggestions.
 // Go premium"; Reset to default, OK and Cancel at the bottom (577.33).
-// The switches are OST's Editor options (the ones Teams' Editor uses, by
-// language); OK keeps them.
+// The switches are kept where Outlook keeps them (captured 2026-11-24):
+// your mailbox's Outlook options Proofing (Spelling, Grammar), AutoCorrect
+// (auto correct, Capitalize 'I', auto capitalization) and TextPrediction,
+// read as the dialog opens and written by OK (event_form::
+// set_editor_options); the dialog closes once they're saved. The proofing
+// language shows your Editor languages (none: empty, as Outlook).
 Popup {
     id: dlg
+    /// The event page (its calendarCall).
+    property var form: null
     parent: Overlay.overlay
     modal: true; padding: 0
     x: (parent.width - width) / 2; y: 0
@@ -25,27 +31,30 @@ Popup {
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
     property var st: ({ languages: [], supported: [], critiques: {}, autocorrect: [] })
     property var opts: ({})
+    property bool saving: false
     readonly property string lang: st.languages && st.languages.length ? st.languages[0] : ""
     readonly property var defaults: ({ autocorrect: true, capitalizeI: true, autoCapitalize: true, spelling: true, grammar: true })
     onOpened: {
+        saving = false
         backend.editorReadSettings()
         try { st = JSON.parse(backend.editorSettingsJson()) } catch (e) {}
-        let saved = {}
-        try { saved = JSON.parse(backend.setting("outlookEditorOptions") || "{}") } catch (e) {}
-        const o = Object.assign({}, defaults, saved)
-        if (lang) o.autocorrect = (st.autocorrect || []).indexOf(lang) >= 0 || saved.autocorrect === undefined
-        opts = o
+        opts = Object.assign({}, defaults)
+        if (form) form.calendarCall("editorOptions", {})
     }
     Connections { target: backend; function onEditorSettingsChanged() { try { dlg.st = JSON.parse(backend.editorSettingsJson()) } catch (e) {} } }
+    function answer(op, r, error) {
+        if (op === "setEditorOptions") { saving = false; if (!error) close(); return }
+        if (error) return
+        const o = {}
+        for (const k of Object.keys(defaults)) o[k] = r[k] !== false
+        opts = o
+    }
     function set(k, v) { const o = Object.assign({}, opts); o[k] = v; opts = o }
     function nameOf(code) { const l = (st.supported || []).find(x => x.code === code); return l ? l.native : code }
     function accept() {
-        backend.setSetting("outlookEditorOptions", JSON.stringify(opts))
-        if (lang) {
-            const l = (st.autocorrect || []).filter(x => x !== lang)
-            backend.setSetting("editorAutoCorrect", JSON.stringify(opts.autocorrect ? l.concat([lang]) : l))
-        }
-        close()
+        if (!form || saving) return
+        saving = true
+        form.calendarCall("setEditorOptions", { options: opts })
     }
 
     Text { x: 24.67; y: 24.67; height: 31.33; verticalAlignment: Text.AlignVCenter; text: qsTr("Microsoft Editor Settings"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; Accessible.role: Accessible.Heading }

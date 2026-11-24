@@ -21,7 +21,11 @@ import QtQuick.Controls.Basic
 Popup {
     id: pop
     property var form: null
-    width: 526; height: 296.67
+    width: series ? 606 : 526; height: 296.67
+    /// A series: weekdays instead of a month (Outlook's form, 606 wide; the
+    /// times 80 further right).
+    readonly property bool series: !!form && form.acceptSeries
+    readonly property real tx: series ? 80 : 0
     padding: 0
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
@@ -54,13 +58,13 @@ Popup {
     Text { x: 16.67; y: 16.67; width: 492.67; height: 16; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
            text: qsTr("You and attendees will be notified if Copilot automatically reschedules this event."); font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
     Text { x: 16.67; y: 47.33; height: 21.33; verticalAlignment: Text.AlignVCenter; text: qsTr("Select acceptable day(s):"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
-    Text { x: 26.67; y: 76.33; height: 18.67; verticalAlignment: Text.AlignVCenter; text: theme.fmtDate(pop.month, "MMMM yyyy"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+    Text { visible: !pop.series; x: 26.67; y: 76.33; height: 18.67; verticalAlignment: Text.AlignVCenter; text: theme.fmtDate(pop.month, "MMMM yyyy"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
     Repeater {
         model: [["arrow-up-16", -1, 164.67, qsTr("Go to previous month")], ["arrow-down-16", 1, 192.67, qsTr("Go to next month")]]
         Item {
             id: nav
             required property var modelData
-            x: modelData[2] - 6; y: 72.33; width: 24; height: 24
+            visible: !pop.series; x: modelData[2] - 6; y: 72.33; width: 24; height: 24
             readonly property bool off: modelData[1] < 0 && pop.month <= new Date(new Date().getFullYear(), new Date().getMonth(), 1)
             FluentIcon { anchors.centerIn: parent; name: nav.modelData[0]; size: 12; color: nav.off ? theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F") : theme.textSecondary }
             TapHandler { enabled: !nav.off; onTapped: pop.month = new Date(pop.month.getFullYear(), pop.month.getMonth() + nav.modelData[1], 1) }
@@ -72,7 +76,7 @@ Popup {
         model: 7
         Text {
             required property int index
-            x: 16.67 + index * 28; y: 103.67; width: 28; height: 24
+            visible: !pop.series; x: 16.67 + index * 28; y: 103.67; width: 28; height: 24
             horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
             text: Qt.locale().dayName(index, Locale.NarrowFormat); font.family: theme.font; font.pixelSize: 12; color: theme.text
         }
@@ -89,7 +93,7 @@ Popup {
             readonly property bool picked: !!pop.form && pop.form.acceptDays.indexOf(pop.iso(day)) >= 0
             readonly property bool prevPicked: { const d = new Date(day); d.setDate(d.getDate() - 1); return index % 7 > 0 && !!pop.form && pop.form.acceptDays.indexOf(pop.iso(d)) >= 0 }
             readonly property bool nextPicked: { const d = new Date(day); d.setDate(d.getDate() + 1); return index % 7 < 6 && !!pop.form && pop.form.acceptDays.indexOf(pop.iso(d)) >= 0 }
-            visible: Math.floor(index / 7) < Math.ceil((pop.month.getDay() + new Date(pop.month.getFullYear(), pop.month.getMonth() + 1, 0).getDate()) / 7)
+            visible: !pop.series && Math.floor(index / 7) < Math.ceil((pop.month.getDay() + new Date(pop.month.getFullYear(), pop.month.getMonth() + 1, 0).getDate()) / 7)
             x: 16.67 + (index % 7) * 28; y: 127.67 + Math.floor(index / 7) * 28; width: 28; height: 28
             Rectangle {
                 visible: cell.picked
@@ -122,7 +126,40 @@ Popup {
             Accessible.checked: cell.picked
         }
     }
-    Text { x: 230.67; y: 47.33; height: 21.33; verticalAlignment: Text.AlignVCenter; text: qsTr("Select acceptable time(s):"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+    // A series' weekdays (winpc 2026-11-24): seven 32 x 31.33 circles 42
+    // apart from 16.67, 68.67 (S M T W T F S, 14/600); a picked one on
+    // #EBEBEB (#242424), the others #424242; the series' own days stay
+    // picked.
+    Repeater {
+        model: pop.series ? 7 : 0
+        Rectangle {
+            id: wd
+            required property int index
+            readonly property bool required: !!pop.form && pop.form.seriesWeekdays.indexOf(index) >= 0
+            readonly property bool picked: required || (!!pop.form && pop.form.acceptWeekdays.indexOf(index) >= 0)
+            x: 16.67 + index * 42; y: 68.67; width: 32; height: 31.33; radius: height / 2
+            color: picked ? theme.pick("#EBEBEB", "#3D3D3D", "#1AEBFF") : wdHover.hovered ? theme.rowHover : "transparent"
+            Text {
+                anchors.centerIn: parent
+                text: Qt.locale().dayName(wd.index, Locale.NarrowFormat); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                color: wd.picked ? theme.text : theme.textStrong
+            }
+            HoverHandler { id: wdHover; cursorShape: wd.required ? Qt.ArrowCursor : Qt.PointingHandCursor }
+            TapHandler {
+                enabled: !wd.required
+                onTapped: {
+                    const l = pop.form.acceptWeekdays.slice(), i = l.indexOf(wd.index)
+                    if (i >= 0) l.splice(i, 1); else l.push(wd.index)
+                    pop.form.acceptWeekdays = l
+                }
+            }
+            Accessible.role: Accessible.Button
+            Accessible.name: Qt.locale().dayName(wd.index, Locale.LongFormat)
+            Accessible.checked: wd.picked
+            Accessible.checkable: true
+        }
+    }
+    Text { x: 230.67 + pop.tx; y: 47.33; height: 21.33; verticalAlignment: Text.AlignVCenter; text: qsTr("Select acceptable time(s):"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
     Repeater {
         model: [qsTr("Morning (before 12:00 PM)"), qsTr("Midday (12:00 PM - 1:00 PM)"), qsTr("Afternoon (after 1:00 PM)"), qsTr("Custom")]
         Item {
@@ -130,7 +167,7 @@ Popup {
             required property string modelData
             required property int index
             readonly property bool on: index < 3 ? pop.hasTime(pop.presets[index]) : !!pop.custom
-            x: 230.67; y: 66.67 + index * 42; width: 270; height: 36
+            x: 230.67 + pop.tx; y: 66.67 + index * 42; width: 270; height: 36
             Rectangle {
                 x: 8; y: 10; width: 16; height: 16; radius: 2
                 color: trow.on ? theme.checkedFill : "transparent"; border.width: 0.67; border.color: trow.on ? theme.checkedFill : theme.textSecondary
@@ -148,7 +185,7 @@ Popup {
         Rectangle {
             id: tbox
             required property var modelData
-            x: modelData[0]; y: 236.67; width: 105.33; height: 33.33; radius: 2
+            x: modelData[0] + pop.tx; y: 236.67; width: 105.33; height: 33.33; radius: 2
             color: "transparent"; border.width: 0.67; border.color: theme.pick("#BDBDBD", "#666666", "#FFFFFF")
             opacity: pop.custom ? 1 : 0.6
             Text { x: 8; anchors.verticalCenter: parent.verticalCenter; text: pop.minLabel(tbox.modelData[1] ? pop.customFrom : pop.customTo); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
@@ -164,5 +201,5 @@ Popup {
             Accessible.name: tbox.modelData[1] ? qsTr("Start time") : qsTr("End time")
         }
     }
-    FluentIcon { x: 376; y: 243.33; name: "arrow-right-20"; size: 20; color: theme.textStrong }
+    FluentIcon { x: 376 + pop.tx; y: 243.33; name: "arrow-right-20"; size: 20; color: theme.textStrong }
 }

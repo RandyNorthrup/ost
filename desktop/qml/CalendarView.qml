@@ -497,7 +497,8 @@ Item {
         if (op === "detail" && !error && formLayer.visible && form.event && r.id === form.event.id) form.detail = r
         else if (op === "outlookEvent") { if (!error && form.event && r.id === form.event.id) form.outlookInfo = r }
         else if (["findTimes", "attachFile", "deleteAttachment", "attachmentFile", "eventOptions", "setEventOptions", "eventFacilitator",
-                  "uploadShare", "shareLink", "graphics", "graphicsFile", "emailReminders", "newCategory"].indexOf(op) >= 0) {
+                  "uploadShare", "shareLink", "graphics", "graphicsThemes", "graphicsFile", "emailReminders", "newCategory",
+                  "driveFolders", "createFolder", "editorOptions", "setEditorOptions"].indexOf(op) >= 0) {
             form.actionDone(op, r, error)
             if (op === "newCategory" && !error) loadPrefs()
         }

@@ -246,10 +246,99 @@ Item {
     property string bodyLinkSet: ""
     function setBody(html) {
         bodyLinkSet = bodyLink.toString()
+        html = keepBodyParts(String(html || ""))
         // (Qt imports only what lies between fragment markers, which would
         // leave the style sheet out; a browser ignores them.)
-        editor.text = html ? "<style>a { color: " + bodyLinkSet + "; }</style>" + String(html).replace(/<!--(Start|End)Fragment-->/g, "") : ""
+        editor.text = html ? "<style>a { color: " + bodyLinkSet + "; }</style>" + html.replace(/<!--(Start|End)Fragment-->/g, "") : ""
     }
+    /// Body parts Qt's rich text can't keep as Outlook wrote them, kept
+    /// aside and put back by bodyHtml(): a OneDrive file's link (Outlook's
+    /// read-only link entity: the file-type icon, the #FAFAFA chip, its
+    /// classes), by the link's address; a picture kept as a data address
+    /// (an inserted stock image or sticker, its alt text and max-width), by
+    /// that address, shown fitted into the body's 729 px as Outlook's
+    /// max-width does.
+    property var bodyLinks: ({})
+    property var bodyPictures: ({})
+    property var bodyLinkIds: ({})
+    /// The body's spelling marks (Teams' Editor session, one document for
+    /// the page; from the body's first focus).
+    readonly property string bodyDoc: "eventbody-" + Math.random().toString(36).slice(2)
+    property bool spellingOn: false
+    property var bodyCritiques: []
+    function checkBodySpelling() { if (spellingOn && outlookEdit && !readOnly) backend.editorSetText(bodyDoc, editor.getText(0, editor.length)) }
+    Connections {
+        target: backend
+        function onEditorCritiques(doc, json) { if (doc === root.bodyDoc) root.bodyCritiques = JSON.parse(json).filter(c => !c.category || c.category === "Spelling") }
+    }
+    Component.onDestruction: backend.editorClose(bodyDoc)
+    function keepBodyParts(html) {
+        const links = {}, pics = {}
+        html = html.replace(/<span class="entityDelimiterBefore">[^<]*<\/span>\s*<span class="_Entity[^"]*"[^>]*>\s*<span>\s*(<a\b[^>]*data-loopstyle="linkonly"[^>]*>[\s\S]*?<\/a>)\s*<\/span>\s*<\/span>\s*<span class="entityDelimiterAfter">[^<]*<\/span>/g, (all, a) => {
+            const href = /\bhref="([^"]*)"/.exec(a)
+            if (!href) return all
+            links[unescapeHtml(href[1])] = all.replace(/\s+data-imagetype="[^"]*"/g, "")
+            return "\u200B" + fileLinkShown(a) + "\u200B"
+        })
+        // A link with an id (the Teams meeting block's) would come back
+        // from Qt split after its first letter, the rest no longer a link:
+        // the editor gets it without the id, which goes back on save.
+        const ids = {}
+        html = html.replace(/<a\b([^>]*)>/gi, (all, attrs) => {
+            const h = /\bhref="([^"]*)"/i.exec(attrs), id = /\b(?:id|name)="([^"]*)"/i.exec(attrs)
+            if (!h || !id) return all
+            ids[unescapeHtml(h[1])] = id[1]
+            return "<a" + attrs.replace(/\s+(?:id|name)="[^"]*"/gi, "") + ">"
+        })
+        bodyLinkIds = ids
+        html = html.replace(/<img\b[^>]*>/gi, tag => {
+            const src = /\bsrc="(data:image\/[^"]+)"/i.exec(tag)
+            if (!src) return tag
+            pics[src[1]] = tag.replace(/\s+data-imagetype="[^"]*"/g, "")
+            if (/\bwidth="\d/i.test(tag)) return tag
+            const size = dataImageSize(src[1])
+            if (!size) return tag
+            const k = Math.min(1, 729 / size[0])
+            return tag.replace(/^<img\b/i, "<img width=\"" + Math.round(size[0] * k) + "\" height=\"" + Math.round(size[1] * k) + "\"")
+        })
+        bodyLinks = links; bodyPictures = pics
+        return html
+    }
+    function unescapeHtml(s) { return String(s).replace(/&quot;/g, "\"").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&") }
+    function escapeHtml(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;") }
+    /// A file link as the editor shows it: just its address, the icon 16 px
+    /// (Qt draws the width attribute, Outlook its style's) and the name on
+    /// the chip's #FAFAFA (Qt would turn the entity's id into a named
+    /// anchor that splits the link).
+    readonly property string linkChip: theme.pick("#FAFAFA", "#292929", "#000000")
+    function fileLinkShown(a) {
+        const href = (/\bhref="([^"]*)"/i.exec(a) || [])[1] || ""
+        const icon = (/<img\b[^>]*\bsrc="([^"]*)"/i.exec(a) || [])[1] || ""
+        const name = a.replace(/^<a\b[^>]*>/i, "").replace(/<\/a>\s*$/i, "").replace(/<img\b[^>]*>/gi, "")
+        return "<a href=\"" + href + "\" style=\"background-color:" + linkChip + "\">" + (icon ? "<img src=\"" + icon + "\" width=\"16\" height=\"16\" />" : "") + name + "</a>"
+    }
+    /// A data: picture's size from its PNG, GIF or JPEG header.
+    function dataImageSize(u) {
+        const m = /^data:image\/(png|jpe?g|gif);base64,([A-Za-z0-9+/=]+)/i.exec(u)
+        if (!m) return null
+        let b64 = m[2].slice(0, 262144)
+        b64 = b64.slice(0, b64.length - b64.length % 4)
+        let b
+        try { b = Qt.atob(b64) } catch (e) { return null }
+        const at = i => b.charCodeAt(i) & 255
+        const kind = m[1].toLowerCase()
+        if (kind === "png") return b.length > 24 ? [(at(16) << 24 | at(17) << 16 | at(18) << 8 | at(19)) >>> 0, (at(20) << 24 | at(21) << 16 | at(22) << 8 | at(23)) >>> 0] : null
+        if (kind === "gif") return b.length > 10 ? [at(6) | at(7) << 8, at(8) | at(9) << 8] : null
+        for (let i = 2; i + 9 < b.length;) {
+            if (at(i) !== 0xFF) { i++; continue }
+            const mk = at(i + 1)
+            if (mk >= 0xC0 && mk <= 0xCF && mk !== 0xC4 && mk !== 0xC8 && mk !== 0xCC) return [at(i + 7) << 8 | at(i + 8), at(i + 5) << 8 | at(i + 6)]
+            if (mk === 0xD8 || mk === 0x01 || (mk >= 0xD0 && mk <= 0xD7)) { i += 2; continue }
+            i += 2 + (at(i + 2) << 8 | at(i + 3))
+        }
+        return null
+    }
+    function regexEscape(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") }
     onBodyLinkChanged: if (bodyLinkSet && editor.length > 0) { const was = loading; loading = true; setBody(bodyHtml()); loading = was }
 
     function allMails() { return required.concat(optional).map(p => (p.address || "").toLowerCase()).filter(m => m) }
@@ -339,8 +428,8 @@ Item {
         reminder = 15; responseRequested = ev.response_requested !== false; hideAttendees = false
         timeOpen = false; formatOpen = false; moreSuggestions = false; trackSort = 0; trackQuery = ""; trackSearching = false
         outlookInfo = ({}); outlookAtLoad = ({}); allowForwarding = true; rebookRooms = false; copilotReschedule = false
-        acceptDays = defaultAcceptDays(); acceptTimes = [[0, 720], [720, 780], [780, 1440]]; emailReminders = []; attachments = []
-        docLinks = []; timeSuggestions = []; suggestionsKey = ""; facilitatorOn = null; sidePane = ""; bodyLoop = null; stockImages = ({})
+        acceptDays = defaultAcceptDays(); acceptWeekdays = [1, 2, 3, 4, 5]; acceptTimes = [[0, 720], [720, 780], [780, 1440]]; emailReminders = []; attachments = []
+        docLinks = []; timeSuggestions = []; suggestionsKey = ""; facilitatorOn = null; sidePane = ""; bodyLoop = null; spellingOn = false; bodyCritiques = []
         paneOpen = true
         dirty = false
         // Outlook's form opens with the title focused (its brand line).
@@ -412,8 +501,22 @@ Item {
         // link's span).
         const c = (bodyLinkSet || bodyLink.toString()).toLowerCase()
         html = html.replace(/(<a [^>]*><span style="(?:[^"]*?[\s;])?)color:(#[0-9a-f]{6});/gi, (all, head, col) => col.toLowerCase() === c ? head : all)
-        // Stock images and stickers go as their pictures' addresses.
-        for (const local in stockImages) html = html.split(local).join(stockImages[local])
+        // File links and kept pictures as Outlook wrote them (Qt splits a
+        // link around its icon: each part is an <a> of the same address).
+        for (const href in bodyLinks) {
+            const zw = "(?:\u200B|&#8203;|&#x200[bB];)?"
+            const a = "<a href=\"" + regexEscape(escapeHtml(href)) + "\"[^>]*>[\\s\\S]*?</a>"
+            // (and any of its name Qt left outside the link, still on the
+            // chip's colour)
+            const rest = "(?:<span style=\"[^\"]*background-color:" + regexEscape(linkChip.toLowerCase()) + ";[^\"]*\">[^<]*</span>)*"
+            html = html.replace(new RegExp(zw + "(?:" + a + ")+" + rest + zw, "i"), bodyLinks[href].replace(/\$/g, "$$$$"))
+        }
+        for (const href in bodyLinkIds)
+            html = html.replace(new RegExp("<a href=\"" + regexEscape(escapeHtml(href)) + "\""), m => m + " id=\"" + bodyLinkIds[href] + "\"")
+        for (const src in bodyPictures) {
+            const re = new RegExp("<img\\b[^>]*\\bsrc=\"" + regexEscape(escapeHtml(src)) + "\"[^>]*>", "g")
+            html = html.replace(re, bodyPictures[src].replace(/\$/g, "$$$$"))
+        }
         // The body's Loop component: Outlook's embedded Loop link.
         if (bodyLoop && bodyLoop.url && html.indexOf(bodyLoop.url) < 0)
             html += "<a href=\"" + bodyLoop.url.replace(/&/g, "&amp;") + "\" class=\"OWAAutoLink none\" data-loopstyle=\"embedded\" style=\"display: block;\">"
@@ -1494,8 +1597,43 @@ Item {
                         selectByMouse: true
                         font.family: theme.font; font.pixelSize: 14
                         color: root.outlookEdit ? theme.pick("#000000", "#FFFFFF", "#FFFFFF") : root.outlookRead ? theme.textSecondary : theme.text
-                        onTextChanged: root.markDirty()
+                        onTextChanged: { root.markDirty(); root.checkBodySpelling() }
+                        onActiveFocusChanged: if (activeFocus && root.outlookEdit && !root.spellingOn) { root.spellingOn = true; root.checkBodySpelling() }
                         onLinkActivated: link => Qt.openUrlExternally(link)
+                        // Outlook's body marks misspelt words as the browser's
+                        // spellchecker does once the body is first focused
+                        // (Teams desktop on winpc, 2026-11-24: a wavy #FF0000
+                        // line, a 6 px period 2.67 high and 1.33 thick, its
+                        // middle 0.67 above the line's bottom; no card on a
+                        // click). OST finds them with Teams' Editor.
+                        Repeater {
+                            model: root.spellingOn ? root.bodyCritiques : []
+                            Item {
+                                id: bsq
+                                required property var modelData
+                                readonly property rect a: { editor.text; editor.width; return editor.positionToRectangle(modelData.start) }
+                                readonly property rect b: { editor.text; editor.width; return editor.positionToRectangle(modelData.start + modelData.length) }
+                                z: 1
+                                x: a.x; y: a.y + a.height - 2
+                                width: Math.max(1, (b.y === a.y ? b.x : editor.width) - a.x); height: 3.34
+                                Canvas {
+                                    anchors.fill: parent
+                                    onWidthChanged: requestPaint()
+                                    onPaint: {
+                                        const ctx = getContext("2d")
+                                        ctx.reset()
+                                        ctx.strokeStyle = "#FF0000"
+                                        ctx.lineWidth = 1.33
+                                        ctx.beginPath()
+                                        for (let x = 0; x <= width; x += 0.5) {
+                                            const y = 1.67 + 1.33 * Math.sin(2 * Math.PI * x / 6)
+                                            if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y)
+                                        }
+                                        ctx.stroke()
+                                    }
+                                }
+                            }
+                        }
                         Keys.onPressed: e => {
                             if (e.modifiers & Qt.ControlModifier) {
                                 if (e.key === Qt.Key_B) { root.wrapSelection("<b>", "</b>"); e.accepted = true }
@@ -1881,6 +2019,12 @@ Item {
                                 id: acceptPop
                                 x: 64 - acceptable.x - 12; y: 40
                                 form: root
+                                // Under the row, or over it when there's no
+                                // room under it (Outlook's popover flips).
+                                onAboutToShow: {
+                                    const top = parent.mapToItem(null, 0, 0).y, win = root.Window.window ? root.Window.window.height : 1e6
+                                    y = top + 40 + height + 8 > win ? -height - 2 : 40
+                                }
                             }
                         }
                         Item {
@@ -2520,7 +2664,6 @@ Item {
         if (!t) return
         location = t; locationInput.text = ""; markDirty()
     }
-    function escapeHtml(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
     function wrapSelection(open, close) {
         const s = editor.selectionStart, e = editor.selectionEnd
         if (s === e) { if (open.indexOf("<li>") >= 0) { editor.insert(s, open + close); markDirty() } return }
@@ -3139,6 +3282,8 @@ Item {
     function meetingOptionsForTest() { return meetingOptions }
     function acceptableTimesForTest() { return acceptPop }
     function formPaneForTest() { return formPane }
+    function uploadToForTest() { return uploadTo }
+    function bodyEditorForTest() { return editor }
     function pageMenuForTest(name) {
         return ({ share: obShareMenu, busy: obShowAsMenu, reminder: obReminderMenu, categories: obCatsMenu, private: obPrivateMenu, more: obMoreMenu,
                   cancel: pageCancelMenu2, response: respMenu2, location: locMenu, tracking: trackMoreMenu, respmore: obRespMoreMenu, charm: charmPop, attach: attachMenu })[name] || null
@@ -3168,6 +3313,26 @@ Item {
     /// 780..1440, Custom).
     property var acceptDays: []
     property var acceptTimes: []
+    /// A series' acceptable weekdays (0 Sunday … 6 Saturday, in the order
+    /// picked; Outlook starts Monday to Friday); the series' own days are
+    /// always in (`seriesWeekdays`).
+    property var acceptWeekdays: [1, 2, 3, 4, 5]
+    /// Acceptable times for the series (weekdays instead of dates).
+    readonly property bool acceptSeries: outlookEdit && !!recurrence && !(isSeries && scope === "occurrence")
+    /// The series' days as Outlook takes them: a weekly series' days, every
+    /// day of a daily one, else its start's weekday.
+    readonly property var seriesWeekdays: {
+        const r = recurrence
+        if (!r) return []
+        if (r.unit === "week") return r.days.slice().sort()
+        if (r.unit === "day" && r.interval === 1) return [0, 1, 2, 3, 4, 5, 6]
+        return [startAt.getDay()]
+    }
+    // Turning on "let Copilot reschedule" starts Acceptable times afresh,
+    // as Outlook's form does.
+    onCopilotRescheduleChanged: if (copilotReschedule && !loading) {
+        acceptDays = defaultAcceptDays(); acceptWeekdays = [1, 2, 3, 4, 5]; acceptTimes = [[0, 720], [720, 780], [780, 1440]]
+    }
     /// Reminder ▸ Add email reminder: [{id, offset, message, sendOption}].
     property var emailReminders: []
     /// The event's attachments ([{id, name, size, contentType}]) and the
@@ -3187,14 +3352,13 @@ Item {
     onSidePaneChanged: if (sidePane) paneOpen = true
     /// The Loop component put in the body: {key, url, driveId, itemId, title}.
     property var bodyLoop: null
-    /// Stock images and stickers put in the body: their local copy → the
-    /// picture's address (the body sends the address).
-    property var stockImages: ({})
     /// A calendar request of the page ("outlookEvent", "findTimes",
     /// "emailReminders", "newCategory", "attachFile", "deleteAttachment",
     /// "attachmentFile", "eventOptions", "setEventOptions",
-    /// "eventFacilitator", "uploadShare", "shareLink", "graphics"); the
-    /// answer comes back in actionDone().
+    /// "eventFacilitator", "uploadShare", "shareLink", "graphics",
+    /// "graphicsThemes", "graphicsFile", "driveFolders", "createFolder",
+    /// "editorOptions", "setEditorOptions"); the answer comes back in
+    /// actionDone().
     signal calendarCall(string op, var args)
     onOutlookInfoChanged: {
         const o = outlookInfo || {}
@@ -3205,6 +3369,7 @@ Item {
         rebookRooms = !!o.rebookRooms
         copilotReschedule = o.managed === 1
         if ((o.intentDays || []).length) acceptDays = o.intentDays.slice()
+        if ((o.intentWeekdays || []).length) acceptWeekdays = o.intentWeekdays.map(n => dayNames.indexOf(n)).filter(i => i >= 0)
         if ((o.intentTimes || []).length) acceptTimes = o.intentTimes.map(t => [t[0], t[1]])
         emailReminders = (o.inboxReminders || []).slice()
         attachments = (o.attachments || []).slice()
@@ -3235,9 +3400,15 @@ Item {
         return out
     }
     /// Outlook's Intent (event_form::intent_json): days as Date filters (a
-    /// run "a..b", a single day alone), times as TimeOfDay minute ranges.
+    /// run "a..b", a single day alone), a series' as DayOfWeek filters (its
+    /// own days first, then the picked ones), times as TimeOfDay minute
+    /// ranges.
     function intentJson() {
-        const days = acceptDays.slice().sort(), runs = []
+        const days = acceptSeries ? [] : acceptDays.slice().sort(), runs = []
+        if (acceptSeries) {
+            const seen = []
+            for (const d of seriesWeekdays.concat(acceptWeekdays)) if (seen.indexOf(d) < 0) { seen.push(d); runs.push({ FilterType: "DayOfWeek", FilterValue: dayNames[d] }) }
+        }
         const next = s => { const d = new Date(s + "T00:00:00"); d.setDate(d.getDate() + 1); return isoDay(d) }
         for (let i = 0; i < days.length;) {
             let j = i
@@ -3346,28 +3517,47 @@ Item {
             else if (op === "setEventOptions") { meetingOptions.options = byName; meetingOptions.people = r }
         }
         else if (op === "eventFacilitator" && !error) facilitatorOn = !!r.facilitator
-        else if ((op === "uploadShare" || op === "shareLink") && !error && r.url) insertFileLink(r.url, r.name || "")
+        else if ((op === "uploadShare" || op === "shareLink") && !error && r.url) insertFileLink(r.url, r.name || "", r.icon || "")
         else if (op === "graphics") graphicsPane.answer(r, error)
-        else if (op === "graphicsFile" && !error && r.path) insertStockImage(r.path, r.url)
+        else if (op === "graphicsThemes") graphicsPane.themesAnswer(r, error)
+        else if (op === "graphicsFile" && !error && r.path) insertStockImage(r)
+        else if (op === "driveFolders" || op === "createFolder") uploadTo.answer(op, r, error)
+        else if (op === "editorOptions" || op === "setEditorOptions") editorSettings.answer(op, r, error)
     }
     property bool optionsWanted: false
-    /// A OneDrive file's link at the cursor, as Outlook's Share link puts it
-    /// (`<a class="OWAAutoLink" data-loopstyle="linkonly">` with the file's
-    /// name).
-    function insertFileLink(url, name) {
+    /// A OneDrive file's link at the cursor, as Outlook's Share link and
+    /// Upload and share put it (captured 2026-11-24): its read-only link
+    /// entity, `<a … class="OWAAutoLink eScj0 none" data-loopstyle="linkonly"
+    /// style="…background-color:rgb(250,250,250)">` with the file-type icon
+    /// (16 px) before the file's name.
+    function insertFileLink(url, name, icon) {
         editor.forceActiveFocus()
-        const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;")
-        editor.insert(editor.cursorPosition, "<a href=\"" + esc(url) + "\" class=\"OWAAutoLink\" data-loopstyle=\"linkonly\">" + esc(name || url) + "</a>&nbsp;")
+        const id = "OLK_Beautified_" + ([8, 4, 4, 4, 12].map(n => Array.from({ length: n }, () => Math.floor(Math.random() * 16).toString(16)).join("")).join("-"))
+        const a = "<a href=\"" + escapeHtml(url) + "\" rel=\"noopener noreferrer\" id=\"" + id + "\" class=\"OWAAutoLink eScj0 none\" data-loopstyle=\"linkonly\""
+                + " style=\"padding: 0px 1px; border-radius: 2px; user-select: text; background-color: rgb(250, 250, 250);\" data-ogsc=\"\">"
+                + "<img src=\"" + escapeHtml(icon) + "\" class=\"suRDx\" alt=\"\" role=\"presentation\" width=\"18\" height=\"18\" style=\"width: 16px; height: 16px; vertical-align: middle; padding: 0px 2px 2px 0px;\">"
+                + escapeHtml(name || url) + "</a>"
+        const entity = "<span class=\"entityDelimiterBefore\">​</span><span class=\"_Entity _EType_OWALink _EId_OWALink _EReadonly_1\" style=\"display: inline-block;\"><span>"
+                     + a + "</span></span><span class=\"entityDelimiterAfter\">​</span>"
+        const l = Object.assign({}, bodyLinks); l[url] = entity; bodyLinks = l
+        editor.insert(editor.cursorPosition, "\u200B" + fileLinkShown(a) + "\u200B")
         markDirty()
     }
-    /// A stock image or sticker in the body (its local copy shows; the
-    /// body sends the picture's address).
-    function insertStockImage(path, url) {
-        const local = "file://" + path
-        const m = Object.assign({}, stockImages); m[local] = url; stockImages = m
+    /// A stock image or sticker in the body (Outlook's, captured
+    /// 2026-11-24): the local copy shows (a stock image at its own size up
+    /// to the body's 729 px, a sticker 100 x 100); the body keeps it as a
+    /// data address, a stock image as a JPEG at quality 50.
+    function insertStockImage(r) {
+        const local = "file://" + r.path
+        const alt = escapeHtml(r.alt || "")
+        const p = Object.assign({}, bodyPictures)
+        p[local] = r.sticker ? "<img src=\"" + r.dataUri + "\" alt=\"" + alt + "\" width=\"100\" height=\"100\" style=\"width: 100px; height: 100px; max-width: 729px;\">"
+                             : "<img src=\"" + r.dataUri + "\" alt=\"" + alt + "\" style=\"max-width: 729px;\">"
+        bodyPictures = p
         editor.forceActiveFocus()
-        const size = (formPane.sizes || {})[url]
-        editor.insert(editor.cursorPosition, "<img src=\"" + local + "\"" + (size ? " width=\"" + size[0] + "\" height=\"" + size[1] + "\"" : "") + " />")
+        let w = 100, h = 100
+        if (!r.sticker) { const k = Math.min(1, 729 / Math.max(1, r.width)); w = Math.round(r.width * k); h = Math.round(r.height * k) }
+        editor.insert(editor.cursorPosition, "<img src=\"" + local + "\" width=\"" + w + "\" height=\"" + h + "\" />")
         markDirty()
     }
     function insertEmoji(e) {
@@ -3428,40 +3618,11 @@ Item {
         title: qsTr("Upload and share")
         onAccepted: uploadTo.openFor(root.localPath(selectedFile))
     }
-    // "Upload to" (Outlook's, winpc 2026-11-24): 384 wide, "Upload to"
-    // 20/600, Close 32 at 341.33, 18.67; the place (336 x 56 at 22.67,
-    // 78.67, a 0.67 #F0F0F0 edge): OneDrive's cloud (32) and "OneDrive -
-    // <org>" 14/600 #616161 at 72.67 over "Attachments" (a folder glyph) 26
-    // under it; Upload (96 x 31.33 brand) and Cancel 182.67 down.
-    Popup {
+    // "Upload to" (Outlook's, with Change location: OutlookUploadTo).
+    OutlookUploadTo {
         id: uploadTo
-        parent: Overlay.overlay
-        modal: true; padding: 0
-        x: (parent.width - width) / 2; y: (parent.height - height) / 2
-        width: 384; height: 236.67
-        property string path: ""
-        function openFor(p) { path = p; open() }
-        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
-        Text { x: 22.67; y: 6.67; height: 72; verticalAlignment: Text.AlignVCenter; text: qsTr("Upload to"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-        Rectangle {
-            x: 341.33; y: 18.67; width: 32; height: 32; radius: 4; color: utClose.hovered ? theme.rowHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
-            HoverHandler { id: utClose; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: uploadTo.close() }
-            Accessible.role: Accessible.Button; Accessible.name: qsTr("Close")
-        }
-        Rectangle {
-            x: 22.67; y: 78.67; width: 336; height: 56; color: "transparent"; border.width: 0.67; border.color: theme.pick("#F0F0F0", "#3D3D3D", "#FFFFFF")
-            FluentIcon { x: 4; y: 12; name: "onedrive-color"; size: 32 }
-            Text { x: 50; y: 5; width: 274; height: 20; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; text: qsTr("OneDrive"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textSecondary }
-            FluentIcon { x: 50; y: 33; name: "folder-16"; size: 16; color: theme.textSecondary }
-            Text { x: 70; y: 31; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Attachments"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
-        }
-        Row {
-            x: 136.67; y: 182.67; spacing: 14
-            OutlookButton { primary: true; label: qsTr("Upload"); width: 96; onClicked: { root.calendarCall("uploadShare", { path: uploadTo.path }); uploadTo.close() } }
-            OutlookButton { label: qsTr("Cancel"); width: 96; onClicked: uploadTo.close() }
-        }
+        form: root
+        onUpload: (path, folderId) => root.calendarCall("uploadShare", { path: path, folderId: folderId })
     }
     // Attach ▸ OneDrive: OneDrive's picker; Share link puts the file's link
     // in the body.
@@ -3483,6 +3644,7 @@ Item {
     OutlookEmailReminder {
         id: emailReminderDialog
         meeting: root.hasInvitees
+        eventStart: root.startAt
         onSaved: list => { root.emailReminders = list; root.calendarCall("emailReminders", { reminders: list }) }
     }
     // Categories ▸ New category (Outlook's "Create new category").
@@ -3495,9 +3657,9 @@ Item {
             root.calendarCall("newCategory", { name: name, color: color, categories: l })
         }
     }
-    // Editor: Microsoft Editor Settings (the AugLoop proofing options OST
-    // keeps for Teams' Editor).
-    OutlookEditorSettings { id: editorSettings }
+    // Editor: Microsoft Editor Settings (kept in your Outlook options, as
+    // Outlook keeps them).
+    OutlookEditorSettings { id: editorSettings; form: root }
     // A person in the attendees row (Outlook's pill: 34 tall, a 0.67
     // #D1D1D1 edge; the 28 px picture 2.67 in, the name 12 px 40.67 in, a
     // 20 px ✕ 8 after it, 10.67 to the edge).

@@ -12,9 +12,10 @@ import QtQuick.Controls.Basic
 //   search glyph 8.67 in); All: "Emoji" and "Stock images" 14 px headings
 //   with "View more" (brand) at the right, twelve emoji (28 px in 40 x 40
 //   cells, 42.14 apart, seven a row) and four stock pictures (141.5 x 98
-//   in two columns); Emoji: the categories and their emoji; Stock images
-//   and Stickers: Microsoft's content service's pictures. A pick goes in
-//   the body at the cursor (an emoji as text, a picture inline).
+//   in two columns); Emoji: Outlook's category bar and the category's
+//   emoji; Stock images: category tiles, then a search's pictures;
+//   Stickers (below). A pick goes in the body at the cursor (an emoji as
+//   text, a stock image at its own size up to 729 px, a sticker 100 x 100).
 // - "Accessibility checker" (Check for accessibility issues): Outlook's
 //   three checks of the body (inline images without alt text, tables
 //   without a header row, text whose colour contrast is too low), each an
@@ -51,16 +52,37 @@ FluentSurface {
     }
 
     // ── Graphics ────────────────────────────────────────────────────
+    // Outlook's content picker over Microsoft's content service
+    // (event_form::graphics). Emoji: a bar of categories (32 px tabs 39.86
+    // apart at 20, 160.67: Smilies, Hand gestures, People, Animals, Food,
+    // Travel and places, Objects and "more options" with Activities and
+    // Symbols; the picked one's icon filled in brand over a 20 x 2 brand
+    // bar 30 down, a 0.67 #D1D1D1 line under the bar), the category's name
+    // (14/600 #616161, 206.33 down) and its emoji (the content service's
+    // answer for the name, Smilies' faces and Hand gestures' hands kept),
+    // seven a row from 246.33. Stock images: the service's category tiles
+    // (two columns 141.5 wide and 10 apart from 177.67, each row as tall as
+    // its taller picture, the picture rounded 4 with Fluent's shadow under
+    // a 50 % black veil and its name in white); a tile searches for its
+    // name. A search: its pictures (50) in the same two columns. Stickers
+    // (100): 72 px pictures in 91 x 75.33 cells 101 and 85.33 apart.
+    // Nothing found: the illustration (186.59 x 186.95), "We didn't find
+    // anything" and "Try a different keyword" (bold).
     property int tab: 0
     property string query: ""
-    /// The content service's answers by "<pivot>|<search>".
+    /// The Emoji tab's category.
+    property string category: "Smilies"
+    /// The content service's answers by "<pivot>|<search>|<category>".
     property var found: ({})
     property var pending: ({})
-    function ask(pivot, top) {
-        const key = pivot + "|" + query
+    property var themes: []
+    property bool themesAsked: false
+    function keyOf(pivot, search, cat) { return pivot + "|" + search + "|" + (cat || "") }
+    function ask(pivot, search, top, cat) {
+        const key = keyOf(pivot, search, cat)
         if (found[key] || pending[key] || !form) return
         const p = Object.assign({}, pending); p[key] = true; pending = p
-        form.calendarCall("graphics", { pivot: pivot, search: query, top: top, key: key })
+        form.calendarCall("graphics", { pivot: pivot, search: search, top: top, category: cat || "", key: key })
     }
     function answer(r, error) {
         const key = (r && r.key) || ""
@@ -68,31 +90,51 @@ FluentSurface {
         if (error || !key) return
         const f = Object.assign({}, found); f[key] = r.items || []; found = f
     }
-    function items(pivot) { return found[pivot + "|" + query] || [] }
-    onTabChanged: if (mode === "graphics") { if (tab === 0 || tab === 2) ask("Stock Images", tab === 0 ? 4 : 30); if (tab === 3) ask("Stickers", 30) }
-    onQueryChanged: queryTimer.restart()
-    Timer { id: queryTimer; interval: 350; onTriggered: pane.tabChanged() }
-    onVisibleChanged: if (visible && mode === "graphics") tabChanged()
-    onModeChanged: if (visible && mode === "graphics") tabChanged()
-    // The emoji as the compose box's picker lists them (its categories).
-    EmojiPicker { id: emojiData; visible: false }
-    readonly property var featured: ["🙂", "😂", "❤️", "🎉", "😯", "🐶", "😺", "👍", "👐", "✅", "✈️", "🍕"]
-    function emojiMatches() {
-        const q = query.trim().toLowerCase()
-        const all = []
-        for (const c of emojiData.categories) for (const e of c.items) if (!q || e[1].indexOf(q) >= 0) all.push(e[0])
-        return all
+    function themesAnswer(r, error) { if (!error) themes = r.themes || [] }
+    function items(pivot, search, cat) { return found[keyOf(pivot, search, cat)] || [] }
+    function loading(pivot, search, cat) { return !!pending[keyOf(pivot, search, cat)] }
+    readonly property string q: query.trim()
+    function refresh() {
+        if (mode !== "graphics" || !visible) return
+        if (tab === 0) { if (q) ask("Emojis", q, 12, ""); ask("Stock Images", q, 4, "") }
+        else if (tab === 1) ask("Emojis", q || category, 200, q ? "" : category)
+        else if (tab === 2) { if (q) ask("Stock Images", q, 50, ""); else if (!themesAsked && form) { themesAsked = true; form.calendarCall("graphicsThemes", { kind: "Stock Images" }) } }
+        else if (tab === 3) ask("Stickers", q, 100, "")
     }
-    /// The size a pick goes in at (its own, fitted: a sticker 120 wide,
-    /// a picture 400), by its address.
-    property var sizes: ({})
-    function pickPicture(it) {
-        if (!form) return
-        const max = tab === 3 ? 120 : 400, w = it.width || max, h = it.height || max, k = Math.min(1, max / w)
-        const m = Object.assign({}, sizes); m[it.url] = [Math.round(w * k), Math.round(h * k)]; sizes = m
-        form.calendarCall("graphicsFile", { url: it.url })
+    onTabChanged: refresh()
+    onCategoryChanged: refresh()
+    onQueryChanged: queryTimer.restart()
+    Timer { id: queryTimer; interval: 500; onTriggered: pane.refresh() }
+    onVisibleChanged: refresh()
+    onModeChanged: refresh()
+    // All's first emoji (Outlook's initial twelve).
+    readonly property var featured: [["🙂", qsTr("Slightly smiling face")], ["😂", qsTr("Face with tears of joy")], ["❤️", qsTr("Red heart")], ["🎉", qsTr("Party popper")],
+                                     ["😯", qsTr("Hushed face")], ["🐶", qsTr("Dog face")], ["😺", qsTr("Grinning cat")], ["👍", qsTr("Thumbs up")],
+                                     ["👐", qsTr("Open hands")], ["✅", qsTr("Check mark button")], ["✈️", qsTr("Airplane")], ["🍕", qsTr("Pizza")]]
+    readonly property var categories: [["Smilies", qsTr("Smilies"), "emoji-20"], ["Hand gestures", qsTr("Hand gestures"), "hand-right-20"], ["People", qsTr("People"), "people-20"],
+                                       ["Animals", qsTr("Animals"), "animal-dog-20"], ["Food", qsTr("Food"), "food-pizza-20"], ["Travel and places", qsTr("Travel and places"), "building-20"],
+                                       ["Objects", qsTr("Objects"), "lightbulb-20"]]
+    readonly property var moreCategories: [["Activities", qsTr("Activities"), "sport-soccer-20"], ["Symbols", qsTr("Symbols"), "number-symbol-square-20"]]
+    function categoryLabel(c) { const all = categories.concat(moreCategories); const x = all.find(e => e[0] === c); return x ? x[1] : c }
+    /// What the emoji grid shows: [glyph, description].
+    readonly property var emojiShown: tab === 0 ? (q ? items("Emojis", q, "").slice(0, 12).map(e => [e.glyph, e.description]) : featured)
+                                     : tab === 1 ? items("Emojis", q || category, q ? "" : category).map(e => [e.glyph, e.description]) : []
+    /// A picked picture goes in the body (MeetingForm.insertStockImage).
+    function pickPicture(it, sticker) {
+        if (form) form.calendarCall("graphicsFile", { url: it.url, sticker: sticker, alt: it.description || "" })
+    }
+    /// Two columns of pictures, each row as tall as its taller picture
+    /// (141.5 wide, by the picture's own shape).
+    function rowsOf(list, aspect) {
+        const out = []
+        for (let i = 0; i < list.length; i += 2) {
+            const a = list[i], b = list[i + 1]
+            out.push({ a: a, b: b || null, h: Math.max(141.5 * aspect(a), b ? 141.5 * aspect(b) : 0) })
+        }
+        return out
     }
 
+    Rectangle { visible: pane.mode === "graphics"; x: 0; y: 52; width: pane.width; height: 0.67; color: theme.pick("#DBDBDB", "#3D3D3D", "#FFFFFF") }
     Item {
         visible: pane.mode === "graphics"
         anchors.fill: parent
@@ -116,23 +158,73 @@ FluentSurface {
         }
         Rectangle {
             x: 20; y: 128.67; width: 311; height: 32; radius: 4
-            color: theme.surface; border.width: 0.67; border.color: findInput.activeFocus ? theme.brand : theme.stroke
+            color: theme.surface; border.width: 0.67; border.color: findInput.activeFocus ? theme.brand : findHover.hovered ? theme.textSecondary : theme.stroke
+            HoverHandler { id: findHover }
             FluentIcon { x: 8.67; y: 9; name: "search-16"; size: 14; color: theme.textSecondary }
             TextInput {
                 id: findInput
                 x: 22.67; width: 287.67; height: 30.67; y: 0.67
-                verticalAlignment: TextInput.AlignVCenter; clip: true; selectByMouse: true
+                verticalAlignment: TextInput.AlignVCenter; clip: true; selectByMouse: true; leftPadding: 6.67; rightPadding: 6.67
                 font.family: theme.font; font.pixelSize: 14; color: theme.text
-                onTextChanged: pane.query = text
+                text: pane.query
+                onTextEdited: pane.query = text
                 Accessible.name: qsTr("Find something fun")
-                Text { visible: !findInput.text; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Find something fun"); font: findInput.font; color: theme.textSecondary }
+                Text { visible: !findInput.text; x: 6.67; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Find something fun"); font: findInput.font; color: theme.textSecondary }
+            }
+        }
+        // Emoji's categories (while not searching).
+        Item {
+            id: catBar
+            visible: pane.tab === 1 && !pane.q
+            x: 20; y: 160.67; width: 311; height: 32.67
+            Rectangle { y: 32; width: 311; height: 0.67; color: theme.stroke }
+            Repeater {
+                model: pane.categories
+                Item {
+                    id: ctab
+                    required property var modelData
+                    required property int index
+                    readonly property bool picked: pane.category === modelData[0]
+                    x: index * 39.857; width: 32; height: 32
+                    Rectangle { anchors.fill: parent; radius: 4; color: ctabHover.hovered && !ctab.picked ? theme.rowHover : "transparent" }
+                    FluentIcon { x: 6; y: 6; name: ctab.picked ? ctab.modelData[2] + "-filled" : ctab.modelData[2]; size: 20; color: ctab.picked ? theme.brand : theme.textStrong }
+                    Rectangle { visible: ctab.picked; x: 6; y: 30; width: 20; height: 2; radius: 1; color: theme.brand }
+                    HoverHandler { id: ctabHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: pane.category = ctab.modelData[0] }
+                    ToolTip.visible: ctabHover.hovered
+                    ToolTip.text: ctab.modelData[1]
+                    Accessible.role: Accessible.PageTab
+                    Accessible.name: ctab.modelData[1]
+                    Accessible.selected: ctab.picked
+                }
+            }
+            Item {
+                id: moreTab
+                x: 279; width: 32; height: 32
+                Rectangle { anchors.fill: parent; radius: 4; color: moreHover.hovered ? theme.rowHover : "transparent" }
+                FluentIcon { x: 6; y: 6; name: "more-horizontal-20"; size: 20; color: theme.textStrong }
+                HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: moreMenu.open() }
+                ToolTip.visible: moreHover.hovered && !moreMenu.opened
+                ToolTip.text: qsTr("More")
+                Accessible.role: Accessible.PageTab
+                Accessible.name: qsTr("more options")
+                MenuPopup {
+                    id: moreMenu
+                    radioColumn: true
+                    x: moreTab.width + 4 - width; y: moreTab.height + 0.67
+                    items: pane.moreCategories.map(c => ({ label: c[1], icon: c[2], checked: pane.category === c[0] }))
+                    onPicked: i => pane.category = pane.moreCategories[i][0]
+                }
             }
         }
         Flickable {
-            x: 20; y: 172.67; width: 321; height: pane.height - y - 10
+            id: gFlick
+            x: 20; y: catBar.visible ? 193.33 : 172.67; width: 321; height: pane.height - y - 10
             clip: true; contentHeight: gCol.height + 12
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar {}
+            Connections { target: pane; function onTabChanged() { gFlick.contentY = 0 } function onCategoryChanged() { gFlick.contentY = 0 } }
             Column {
                 id: gCol
                 width: 311; spacing: 0
@@ -144,21 +236,29 @@ FluentSurface {
                     Text { anchors.right: parent.right; anchors.rightMargin: 0; y: 13.67; height: 18.67; verticalAlignment: Text.AlignVCenter; text: qsTr("View more"); font.family: theme.font; font.pixelSize: 14; color: theme.brandLink
                            TapHandler { onTapped: pane.tab = 1 } HoverHandler { cursorShape: Qt.PointingHandCursor } }
                 }
+                // Emoji: the category's name over its emoji.
+                Item {
+                    visible: pane.tab === 1 && !pane.q
+                    width: 311; height: visible ? 33 : 0
+                    Text { y: 13; width: 293; height: 20; verticalAlignment: Text.AlignVCenter; text: pane.categoryLabel(pane.category); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textSecondary; Accessible.role: Accessible.Heading }
+                }
                 Flow {
                     visible: pane.tab === 0 || pane.tab === 1
-                    width: 311; spacing: 2; topPadding: pane.tab === 0 ? 13 : 4
+                    width: 311; spacing: 2; topPadding: pane.tab === 0 ? 13 : pane.q ? 4 : 20
                     Repeater {
-                        model: pane.tab === 0 ? (pane.query ? pane.emojiMatches().slice(0, 12) : pane.featured) : pane.tab === 1 ? pane.emojiMatches() : []
+                        model: pane.emojiShown
                         Rectangle {
                             id: ecell
-                            required property string modelData
+                            required property var modelData
                             width: 40.14; height: 40; radius: 4
                             color: ecellHover.hovered ? theme.rowHover : "transparent"
-                            Text { anchors.centerIn: parent; text: ecell.modelData; font.family: theme.font; font.pixelSize: 28 }
+                            Text { anchors.centerIn: parent; text: ecell.modelData[0]; font.family: theme.font; font.pixelSize: 28 }
                             HoverHandler { id: ecellHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: if (pane.form) pane.form.insertEmoji(ecell.modelData) }
+                            TapHandler { onTapped: if (pane.form) pane.form.insertEmoji(ecell.modelData[0]) }
+                            ToolTip.visible: ecellHover.hovered && !!ecell.modelData[1]
+                            ToolTip.text: ecell.modelData[1] || ""
                             Accessible.role: Accessible.Button
-                            Accessible.name: ecell.modelData
+                            Accessible.name: ecell.modelData[1] || ecell.modelData[0]
                         }
                     }
                 }
@@ -167,34 +267,127 @@ FluentSurface {
                     width: 311; height: visible ? 44 : 0
                     Text { x: 5; y: 20; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Stock images"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                     Text { anchors.right: parent.right; y: 20.67; height: 18.67; verticalAlignment: Text.AlignVCenter; text: qsTr("View more"); font.family: theme.font; font.pixelSize: 14; color: theme.brandLink
-                           TapHandler { onTapped: pane.tab = 2 } HoverHandler { cursorShape: Qt.PointingHandCursor } }
+                           TapHandler { onTapped: { pane.tab = 2 } } HoverHandler { cursorShape: Qt.PointingHandCursor } }
                 }
-                Flow {
-                    visible: pane.tab === 0 || pane.tab === 2 || pane.tab === 3
-                    width: 311; spacing: 4; topPadding: 12
+                // Stock images' category tiles (no search).
+                Column {
+                    visible: pane.tab === 2 && !pane.q
+                    topPadding: 5; spacing: 10
                     Repeater {
-                        model: pane.tab === 3 ? pane.items("Stickers") : pane.tab === 0 ? pane.items("Stock Images").slice(0, 4) : pane.tab === 2 ? pane.items("Stock Images") : []
-                        Rectangle {
-                            id: pcell
+                        model: pane.tab === 2 && !pane.q ? pane.rowsOf(pane.themes, t => t.aspect || 98.46 / 141.5) : []
+                        Row {
+                            id: trow
                             required property var modelData
-                            readonly property bool sticker: pane.tab === 3
-                            width: sticker ? 101 : 141.5; height: sticker ? 101 : 98.15; radius: 4
-                            color: pcellHover.hovered ? theme.rowHover : "transparent"
-                            clip: true
-                            Image {
-                                anchors.fill: parent; anchors.margins: pcell.sticker ? 8 : 0
-                                source: pcell.modelData.thumb; asynchronous: true
-                                fillMode: pcell.sticker ? Image.PreserveAspectFit : Image.PreserveAspectCrop
+                            spacing: 10
+                            Repeater {
+                                model: [trow.modelData.a, trow.modelData.b].filter(x => x)
+                                Item {
+                                    id: tile
+                                    required property var modelData
+                                    width: 141.5; height: trow.modelData.h
+                                    FluentSurface { anchors.fill: parent; depth: 2; radius: 4; color: "transparent" }
+                                    Image {
+                                        id: timg
+                                        anchors.fill: parent
+                                        source: tile.modelData.thumb; asynchronous: true
+                                        fillMode: Image.PreserveAspectCrop
+                                        onStatusChanged: if (status === Image.Ready && implicitWidth > 0) pane.setThemeAspect(tile.modelData.id, implicitHeight / implicitWidth)
+                                    }
+                                    Rectangle { anchors.fill: parent; radius: 5; color: Qt.rgba(0, 0, 0, tileHover.hovered ? 0.6 : 0.5) }
+                                    Text {
+                                        anchors.centerIn: parent; width: parent.width - 20
+                                        horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                                        text: tile.modelData.name; font.family: theme.font; font.pixelSize: 14; color: "white"
+                                    }
+                                    RoundedCorners { anchors.fill: parent; radius: 4; background: theme.surface }
+                                    HoverHandler { id: tileHover; cursorShape: Qt.PointingHandCursor }
+                                    TapHandler { onTapped: pane.query = tile.modelData.name }
+                                    ToolTip.visible: tileHover.hovered
+                                    ToolTip.text: tile.modelData.name
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: tile.modelData.name
+                                }
                             }
-                            HoverHandler { id: pcellHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: pane.pickPicture(pcell.modelData) }
+                        }
+                    }
+                }
+                // Pictures: All's four, a search's, and the stickers.
+                Column {
+                    visible: pane.tab === 0 || (pane.tab === 2 && pane.q)
+                    topPadding: pane.tab === 0 ? 12 : 5; spacing: pane.tab === 0 ? 4 : 10
+                    Repeater {
+                        model: pane.tab === 0 ? pane.rowsOf(pane.items("Stock Images", pane.q, "").slice(0, 4), p => 98.15 / 141.5)
+                             : pane.tab === 2 && pane.q ? pane.rowsOf(pane.items("Stock Images", pane.q, ""), p => p.thumbWidth ? p.thumbHeight / p.thumbWidth : 98.15 / 141.5) : []
+                        Row {
+                            id: prow
+                            required property var modelData
+                            spacing: pane.tab === 0 ? 4 : 10
+                            Repeater {
+                                model: [prow.modelData.a, prow.modelData.b].filter(x => x)
+                                Item {
+                                    id: pcell
+                                    required property var modelData
+                                    width: 141.5; height: prow.modelData.h
+                                    clip: true
+                                    Image {
+                                        anchors.fill: parent
+                                        source: pcell.modelData.thumb; asynchronous: true
+                                        fillMode: Image.PreserveAspectCrop
+                                        opacity: pcellHover.hovered ? 0.85 : 1
+                                    }
+                                    RoundedCorners { visible: pane.tab === 0; anchors.fill: parent; radius: 4; background: theme.surface }
+                                    HoverHandler { id: pcellHover; cursorShape: Qt.PointingHandCursor }
+                                    TapHandler { onTapped: pane.pickPicture(pcell.modelData, false) }
+                                    ToolTip.visible: pcellHover.hovered && !!pcell.modelData.description
+                                    ToolTip.text: pcell.modelData.description || ""
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: pcell.modelData.description
+                                }
+                            }
+                        }
+                    }
+                }
+                Grid {
+                    visible: pane.tab === 3
+                    topPadding: 5; columns: 3; columnSpacing: 10; rowSpacing: 10
+                    Repeater {
+                        model: pane.tab === 3 ? pane.items("Stickers", pane.q, "") : []
+                        Item {
+                            id: scell
+                            required property var modelData
+                            width: 91; height: 75.33
+                            Rectangle { anchors.fill: parent; radius: 4; color: scellHover.hovered ? theme.rowHover : "transparent" }
+                            Image { x: 9.5; width: 72; height: 72; source: scell.modelData.thumb; asynchronous: true; fillMode: Image.PreserveAspectFit }
+                            HoverHandler { id: scellHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: pane.pickPicture(scell.modelData, true) }
                             Accessible.role: Accessible.Button
-                            Accessible.name: pcell.modelData.description
+                            Accessible.name: scell.modelData.description
                         }
                     }
                 }
             }
         }
+        // Nothing found.
+        Item {
+            readonly property bool none: (pane.tab === 1 && pane.q && !pane.loading("Emojis", pane.q, "") && pane.found[pane.keyOf("Emojis", pane.q, "")] !== undefined && pane.emojiShown.length === 0)
+                || (pane.tab === 2 && pane.q && pane.found[pane.keyOf("Stock Images", pane.q, "")] !== undefined && pane.items("Stock Images", pane.q, "").length === 0)
+                || (pane.tab === 3 && pane.found[pane.keyOf("Stickers", pane.q, "")] !== undefined && pane.items("Stickers", pane.q, "").length === 0)
+            visible: none
+            x: 20; y: 160.67; width: 311; height: pane.height - y - 10
+            Image {
+                x: 62.2; y: 62.52; width: 186.59; height: 186.95
+                source: "https://res.public.onecdn.static.microsoft/assets/mail/illustrations/emptySpotlight/v2/" + (theme.dark ? "dark" : "light") + ".svg"
+                sourceSize: Qt.size(373, 374); asynchronous: true; fillMode: Image.PreserveAspectFit
+            }
+            Text { y: 249.47; width: 311; height: 18.67; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; text: qsTr("We didn't find anything"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+            Text { y: 268.13; width: 311; height: 18.67; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; text: qsTr("Try a different keyword"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; color: theme.textSecondary }
+        }
+    }
+    /// A category tile's picture shape, once loaded.
+    function setThemeAspect(id, a) {
+        const l = themes.slice(), i = l.findIndex(t => t.id === id)
+        if (i < 0 || Math.abs((l[i].aspect || 0) - a) < 0.001) return
+        l[i] = Object.assign({}, l[i], { aspect: a }); themes = l
     }
 
     // ── Accessibility checker ───────────────────────────────────────

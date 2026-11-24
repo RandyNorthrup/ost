@@ -821,7 +821,11 @@ pub async fn owa_action(action: &str, body: &serde_json::Value) -> Result<serde_
     // encodeURIComponent, as the page encodes it: a space is %20 (a "+"
     // would reach the service as a plus: "Pacific+Standard+Time").
     let data = url::form_urlencoded::byte_serialize(body.to_string().as_bytes()).collect::<String>().replace('+', "%20");
-    let resp = reqwest::Client::new()
+    // A small request goes in the X-OWA-UrlPostData header, a large one
+    // (GetCalendarEvent, an UpdateCalendarEvent with pictures in its body)
+    // as the request's body, as the page sends them (captured 2026-11-24).
+    let (data, payload) = if data.len() > 4096 { (String::new(), body.to_string()) } else { (data, String::new()) };
+    let req = reqwest::Client::new()
         .post(format!("https://outlook.office.com/owa/service.svc?action={action}&app=Calendar"))
         .bearer_auth(token)
         .header("x-anchormailbox", anchor)
@@ -836,12 +840,9 @@ pub async fn owa_action(action: &str, body: &serde_json::Value) -> Result<serde_
         .header("x-owa-correlationid", uuid::Uuid::new_v4().to_string())
         .header("x-tenantid", tenant)
         .header("prefer", "IdType=\"ImmutableId\", exchange.behavior=\"IncludeThirdPartyOnlineMeetingProviders\"")
-        .header("content-type", "application/json; charset=utf-8")
-        .header("x-owa-urlpostdata", data)
-        .body("")
-        .send()
-        .await
-        .with_context(|| format!("{action} failed"))?;
+        .header("content-type", "application/json; charset=utf-8");
+    let req = if data.is_empty() { req } else { req.header("x-owa-urlpostdata", data) };
+    let resp = req.body(payload).send().await.with_context(|| format!("{action} failed"))?;
     let status = resp.status();
     let err = resp.headers().get("x-owa-error").and_then(|v| v.to_str().ok()).unwrap_or_default().to_string();
     let text = resp.text().await.unwrap_or_default();

@@ -5373,6 +5373,30 @@ fn premium_json(s: &api::premium::TrialState, entity: Option<&serde_json::Value>
     v
 }
 
+unsafe extern "C" {
+    fn ost_picture_to_jpeg(src: *const core::ffi::c_char, dst: *const core::ffi::c_char, quality: i32, w: *mut i32, h: *mut i32) -> i32;
+}
+
+/// A Graphics pane pick as the body keeps it (Outlook's, captured
+/// 2026-11-24): a stock image re-encoded as a JPEG at quality 50 at its own
+/// size, a sticker as its own picture; with the picture's size.
+fn graphics_data_uri(path: &std::path::Path, sticker: bool) -> anyhow::Result<(String, i32, i32)> {
+    if sticker {
+        let mime = if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("gif")) { "image/gif" } else { "image/png" };
+        return Ok((api::event_form::file_data_uri(path, mime)?, 100, 100));
+    }
+    let jpeg = path.with_extension("q50.jpg");
+    let c = |p: &std::path::Path| std::ffi::CString::new(p.to_string_lossy().as_bytes()).map_err(|_| anyhow::anyhow!("Bad path"));
+    let (src, dst) = (c(path)?, c(&jpeg)?);
+    let (mut w, mut h) = (0, 0);
+    // SAFETY: NUL-terminated paths and two ints to write.
+    let r = unsafe { ost_picture_to_jpeg(src.as_ptr(), dst.as_ptr(), 50, &mut w, &mut h) };
+    anyhow::ensure!(r == 0, "Not a picture");
+    let data = api::event_form::file_data_uri(&jpeg, "image/jpeg")?;
+    let _ = std::fs::remove_file(&jpeg);
+    Ok((data, w, h))
+}
+
 /// Where downloads go: Settings ▸ Files and links' location, else
 /// $XDG_DOWNLOAD_DIR, else ~/Downloads.
 fn download_dir() -> Option<std::path::PathBuf> {
@@ -24348,22 +24372,39 @@ impl qobject::Backend {
                     // the file's link for the body.
                     "shareLink" => {
                         let url = api::event_form::share_link(&client, &s("driveId"), &s("itemId")).await?;
-                        Ok(json!({ "url": url, "name": s("name") }))
+                        Ok(json!({ "url": url, "name": s("name"), "icon": api::event_form::file_type_icon(&s("name")) }))
                     }
                     "uploadShare" => {
                         let path = s("path");
-                        api::event_form::upload_and_share(&client, std::path::Path::new(path.strip_prefix("file://").unwrap_or(&path))).await
+                        let mut v = api::event_form::upload_and_share(&client, std::path::Path::new(path.strip_prefix("file://").unwrap_or(&path)), &s("folderId")).await?;
+                        v["icon"] = api::event_form::file_type_icon(v["name"].as_str().unwrap_or_default()).into();
+                        Ok(v)
                     }
+                    // "Upload to" ▸ Change location: a folder's folders, and
+                    // Create new folder.
+                    "driveFolders" => api::event_form::drive_folders(&client, &s("folderId")).await,
+                    "createFolder" => api::event_form::create_drive_folder(&client, &s("parentId"), &s("name")).await,
+                    // The body's Editor button: Microsoft Editor Settings,
+                    // kept in your Outlook options as Outlook keeps them.
+                    "editorOptions" => api::event_form::editor_options().await,
+                    "setEditorOptions" => api::event_form::set_editor_options(&args["options"]).await,
                     // The Graphics pane's Stock images and Stickers, and a
                     // picked one's local copy.
                     "graphics" => {
-                        let mut v = api::event_form::graphics(&s("pivot"), &s("search"), args["top"].as_u64().unwrap_or(30) as u32).await?;
+                        let mut v = api::event_form::graphics(&s("pivot"), &s("search"), args["top"].as_u64().unwrap_or(30) as u32, &s("category")).await?;
                         v["key"] = args["key"].clone();
                         Ok(v)
                     }
+                    "graphicsThemes" => api::event_form::graphics_themes(&s("kind")).await,
                     "graphicsFile" => {
                         let path = api::event_form::graphics_file(&s("url")).await?;
-                        Ok(json!({ "path": path.display().to_string(), "url": s("url") }))
+                        let sticker = args["sticker"].as_bool().unwrap_or(false);
+                        let (data, width, height) = tokio::task::spawn_blocking({
+                            let path = path.clone();
+                            move || graphics_data_uri(&path, sticker)
+                        })
+                        .await??;
+                        Ok(json!({ "path": path.display().to_string(), "url": s("url"), "alt": s("alt"), "dataUri": data, "width": width, "height": height, "sticker": sticker }))
                     }
                     // An attachment's Preview (opened) and Download (saved
                     // in Downloads).
