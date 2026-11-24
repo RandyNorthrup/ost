@@ -4791,6 +4791,31 @@ Window {
             else if (arg("cal-schedule") && step === 12) { const e = ev(arg("cal-schedule")); console.warn("CALTEST scheduled", arg("cal-schedule"), !!e, e ? JSON.stringify({ join: !!e.join_url, channel: e.channel_id, attendees: e.attendees.length, type: e.event_type }) : ""); if (e) calendarView.cardForTest(e.subject) }
             else if (arg("cal-schedule") && step === 13) cap("scheduled")
             else if (arg("cal-schedule") && step === 14) Qt.quit()
+            // --cal-card-cancel=<subject>|<single|occurrence|following|series>|<message>:
+            // the card's Cancel (a series' ▾ menu), the cancel message, Send.
+            else if (arg("cal-card-cancel") && step === 5) {
+                const p = arg("cal-card-cancel").split("|")
+                console.warn("CALTEST card-cancel card", calendarView.cardForTest(p[0]), JSON.stringify(calendarView.cancelScopeItemsForTest()))
+                console.warn("CALTEST card-cancel layout", JSON.stringify(calendarView.cardLayoutForTest()))
+                cap("cardcancel-card")
+            } else if (arg("cal-card-cancel") && step === 6) { if (calendarView.detailsForTest.series) calendarView.cancelMenuForTest() }
+            else if (arg("cal-card-cancel") && step === 7) { console.warn("CALTEST card-cancel menu", calendarView.cancelScopeMenuForTest.opened); cap("cardcancel-menu") }
+            else if (arg("cal-card-cancel") && step === 8) { const p = arg("cal-card-cancel").split("|"); calendarView.cancelScopeMenuForTest.close(); calendarView.cancelForTest(p[1], p[2] || "") }
+            else if (arg("cal-card-cancel") && step === 9) {
+                const d = calendarView.detailsForTest
+                console.warn("CALTEST card-cancel compose", d.cancelScope, "card", d.x, d.y, d.width, d.height)
+                console.warn("CALTEST card-cancel compose layout", JSON.stringify(calendarView.cardLayoutForTest()))
+                cap("cardcancel-compose")
+            } else if (arg("cal-card-cancel") && step === 10) { if (args.indexOf("--cal-no-send") < 0) calendarView.sendCancelForTest(); else calendarView.detailsForTest.close() }
+            else if (arg("cal-card-cancel") && step === 15) { const s = arg("cal-card-cancel").split("|")[0]; console.warn("CALTEST card-cancel done", calTest.done, JSON.stringify(JSON.parse(backend.calendarJson).filter(e => e.subject === s).map(e => e.start_utc + (e.is_cancelled ? " cancelled" : "")))); Qt.quit() }
+            // --cal-page-cancel=<subject>|<scope>|<message>: the event page's
+            // Cancel meeting (a series' ▾), Outlook's dialog, Send.
+            else if (arg("cal-page-cancel") && step === 5) console.warn("CALTEST page-cancel page", calendarView.pageForTest(arg("cal-page-cancel").split("|")[0]))
+            else if (arg("cal-page-cancel") && step === 6) { console.warn("CALTEST page-cancel layout", JSON.stringify(calendarView.layoutForTest(calendarView.formForTest, calendarView.formForTest).slice(0, 160))); cap("pagecancel-page") }
+            else if (arg("cal-page-cancel") && step === 7) { const f = calendarView.formForTest; console.warn("CALTEST page-cancel menu", f.seriesScoped, JSON.stringify(f.pageCancelItemsForTest())); f.openCancelForTest(arg("cal-page-cancel").split("|")[1]) }
+            else if (arg("cal-page-cancel") && step === 8) { console.warn("CALTEST page-cancel dialog", calendarView.formForTest.cancelOpenForTest); cap("pagecancel-dialog") }
+            else if (arg("cal-page-cancel") && step === 9) { if (args.indexOf("--cal-no-send") < 0) calendarView.formForTest.confirmCancelForTest(arg("cal-page-cancel").split("|")[2] || ""); else Qt.quit() }
+            else if (arg("cal-page-cancel") && step === 14) { const s = arg("cal-page-cancel").split("|")[0]; console.warn("CALTEST page-cancel done", calTest.done, JSON.stringify(JSON.parse(backend.calendarJson).filter(e => e.subject === s).map(e => e.start_utc))); Qt.quit() }
             else if (arg("cal-cancel") && step === 2) {
                 // --cal-cancel=<subject> [--cal-cancel-note=<text>]: the event page's Cancel meeting.
                 console.warn("CALTEST cancel page", calendarView.pageForTest(arg("cal-cancel")))
@@ -5012,7 +5037,7 @@ Window {
                 ]
                 if (step >= 1 && step - 1 < seq.length) seq[step - 1]()
             }
-            else if (!arg("cal-respond") && !arg("cal-schedule") && !arg("cal-cancel") && !arg("cal-joinid") && !arg("cal-edit") && !arg("cal-buttons") && !arg("cal-repeat") && !arg("cal-audience") && !arg("cal-following") && !arg("cal-norepeat") && !arg("cal-channel-header") && !arg("cal-rsvp-note") && !arg("cal-propose") && !arg("cal-proposals") && args.indexOf("--cal-event-form") < 0 && args.indexOf("--cal-live") < 0) {
+            else if (!arg("cal-respond") && !arg("cal-schedule") && !arg("cal-cancel") && !arg("cal-card-cancel") && !arg("cal-page-cancel") && !arg("cal-joinid") && !arg("cal-edit") && !arg("cal-buttons") && !arg("cal-repeat") && !arg("cal-audience") && !arg("cal-following") && !arg("cal-norepeat") && !arg("cal-channel-header") && !arg("cal-rsvp-note") && !arg("cal-propose") && !arg("cal-proposals") && args.indexOf("--cal-event-form") < 0 && args.indexOf("--cal-live") < 0) {
                 // Pictures: the views, the card and page of --cal-peek, the form and dialogs.
                 const peek = arg("cal-peek")
                 const seq = [
@@ -5021,8 +5046,8 @@ Window {
                     () => { calendarView.view = "day" }, () => cap("day-view"),
                     () => { calendarView.view = "month"; if (d) calendarView.start = calendarView.startFor(new Date(d + "T12:00:00")) }, () => {}, () => {}, () => { console.warn("CALTEST month", JSON.stringify(calendarView.monthDebug())); cap("month-view") },
                     () => { calendarView.view = "workweek"; if (d) calendarView.start = calendarView.startFor(new Date(d + "T12:00:00")) },
-                    () => console.warn("CALTEST peek", peek, calendarView.cardForTest(peek)), () => cap("peek"),
-                    () => { calendarView.detailsForTest.close(); console.warn("CALTEST page", calendarView.pageForTest(peek)) }, () => cap("page"),
+                    () => console.warn("CALTEST peek", peek, calendarView.cardForTest(peek)), () => { console.warn("CALTEST peek layout", JSON.stringify(calendarView.cardLayoutForTest())); cap("peek") },
+                    () => { calendarView.detailsForTest.close(); console.warn("CALTEST page", calendarView.pageForTest(peek)) }, () => { console.warn("CALTEST page layout", JSON.stringify(calendarView.layoutForTest(calendarView.formForTest, calendarView.formForTest))); cap("page") },
                     // RSVP with note only on an invitation's page that opened.
                     () => { const e = calendarView.eventBySubject(peek); if (calendarView.formOpen && e && !e.is_organizer) calendarView.formForTest.openRsvpNoteForTest(); else console.warn("CALTEST rsvp-note skipped: no invitation", peek) },
                     () => { if (calendarView.formForTest.rsvpNoteOpen) cap("rsvp-note") },

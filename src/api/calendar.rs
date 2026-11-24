@@ -1795,11 +1795,11 @@ fn ews_recurrence(r: &serde_json::Value) -> Option<serde_json::Value> {
     Some(serde_json::json!({ "__type": "RecurrenceType:#Exchange", "RecurrencePattern": pattern, "RecurrenceRange": range }))
 }
 
-/// Cancel a meeting you organise, with an optional note (Teams' "Cancel
-/// meeting?"). A channel meeting is cancelled in its team's calendar and
-/// post (`PUT {mt}/v2.0/groups/smtp:<group>/calendars/events/<iCalUId>/cancel`,
+/// Cancel a meeting you organise, with an optional note, for one event, this
+/// and the following events or the series (`scope`). A channel meeting is
+/// cancelled in its team's calendar and post (`PUT {mt}/v2.0/groups/smtp:<group>/calendars/events/<iCalUId>/cancel`,
 /// measured 2026-11-17).
-pub async fn cancel_meeting(client: &TeamsClient, ev: &serde_json::Value, team_id: &str, note: &str) -> Result<()> {
+pub async fn cancel_meeting(client: &TeamsClient, ev: &serde_json::Value, team_id: &str, note: &str, scope: &str) -> Result<()> {
     let s = |k: &str| ev.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
     if !s("channel_id").is_empty() {
         let (base, token) = crate::api::tabs::middle_tier(client).await?;
@@ -1836,27 +1836,97 @@ pub async fn cancel_meeting(client: &TeamsClient, ev: &serde_json::Value, team_i
             .context("Cancel the channel meeting")?;
         return Ok(());
     }
-    // Teams' own cancel (`PUT {mt}/v2.0/me/calendars/events/{objectId}/cancel`,
-    // `{cancellationMessage}`).
-    let object_id = rest_id(client, &s("id")).await?;
-    let (base, token) = crate::api::tabs::middle_tier(client).await?;
-    let body = if note.trim().is_empty() { serde_json::json!({}) } else { serde_json::json!({ "cancellationMessage": note.trim() }) };
-    let r = client
-        .http()
-        .put(format!("{base}/v2.0/me/calendars/events/{object_id}/cancel"))
-        .bearer_auth(&token)
-        .json(&body)
-        .send()
-        .await?;
-    let status = r.status();
-    if !status.is_success() {
-        bail!("{status}: {}", r.text().await.unwrap_or_default().chars().take(300).collect::<String>());
+    // Every other event you organise is cancelled through Outlook, as
+    // Teams' card and event page do.
+    cancel_event(ev, scope, note).await
+}
+
+/// Which events a cancel takes, as Outlook's `CancelCalendarEvent` names
+/// them (`EventScope`, captured on winpc 2026-11-23): 1 this event (of a
+/// series, or one that doesn't repeat), 2 this and all following events, 3
+/// all events in the series (sent with the series master's id).
+fn cancel_scope(scope: &str) -> u8 {
+    match scope {
+        "following" => 2,
+        "series" => 3,
+        _ => 1,
+    }
+}
+
+/// Cancel an event you organise as Teams' card ("Cancel ▾ This event /
+/// This and all following events / All events in the series", then "Send")
+/// and its event page's "Cancel meeting" do (Outlook's hosted calendar,
+/// captured on winpc 2026-11-23): `CancelCalendarEvent` on the event (the
+/// series master for all events) with its `EventScope` and the optional
+/// message as HTML `Notes`. Exchange removes the events and sends the
+/// attendees "Canceled: <subject>" with the message.
+pub async fn cancel_event(ev: &serde_json::Value, scope: &str, note: &str) -> Result<()> {
+    let s = |k: &str| ev.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let id = if scope == "series" && !s("series_master_id").is_empty() { s("series_master_id") } else { s("id") };
+    let tz = mailbox_time_zone().await;
+    let body = cancel_event_request(&ews_id(event_path_id(&id)?), scope, note, &tz);
+    let v = owa_action("CancelCalendarEvent", &body).await?;
+    let code = v
+        .pointer("/Body/ResponseMessages/Items/0/ResponseCode")
+        .or_else(|| v.pointer("/Body/ResponseCode"))
+        .and_then(|c| c.as_str())
+        .unwrap_or("NoError");
+    if code != "NoError" {
+        bail!("Outlook didn't cancel the event: {code}");
     }
     Ok(())
 }
 
+/// The `CancelCalendarEvent` request for [`cancel_event`]. The message goes
+/// as Outlook's editor writes it: a `<div>` a line.
+fn cancel_event_request(ews: &str, scope: &str, note: &str, tz: &str) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "__type": "CancelCalendarEventRequest:#Exchange",
+        "EventId": { "__type": "ItemId:#Exchange", "Id": ews },
+        "EventScope": cancel_scope(scope),
+        "ClientSupportsIrm": true,
+    });
+    let note = note.trim();
+    if !note.is_empty() {
+        let html: String = note
+            .lines()
+            .map(|l| if l.trim().is_empty() { "<div><br></div>".to_string() } else { format!("<div>{}</div>", super::chat::html_escape(l)) })
+            .collect();
+        body["Notes"] = serde_json::json!({ "__type": "BodyContentType:#Exchange", "BodyType": "HTML", "Value": html });
+    }
+    serde_json::json!({
+        "__type": "CancelCalendarEventJsonRequest:#Exchange",
+        "Header": {
+            "__type": "JsonRequestHeaders:#Exchange",
+            "RequestServerVersion": "V2018_01_08",
+            "TimeZoneContext": { "__type": "TimeZoneContext:#Exchange", "TimeZoneDefinition": { "__type": "TimeZoneDefinitionType:#Exchange", "Id": tz } }
+        },
+        "Body": body,
+    })
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cancel_event_request_as_outlook_sends_it() {
+        // This event, with a message (captured on winpc 2026-11-23).
+        let r = super::cancel_event_request("AAkBOQ=", "occurrence", "Sorry & bye\n\nnext week", "Pacific Standard Time");
+        assert_eq!(r["__type"], "CancelCalendarEventJsonRequest:#Exchange");
+        assert_eq!(r["Header"]["TimeZoneContext"]["TimeZoneDefinition"]["Id"], "Pacific Standard Time");
+        assert_eq!(r["Body"]["EventId"]["Id"], "AAkBOQ=");
+        assert_eq!(r["Body"]["EventScope"], 1);
+        assert_eq!(r["Body"]["ClientSupportsIrm"], true);
+        assert_eq!(r["Body"]["Notes"]["BodyType"], "HTML");
+        assert_eq!(r["Body"]["Notes"]["Value"], "<div>Sorry &amp; bye</div><div><br></div><div>next week</div>");
+        // This and all following events; all events without a message.
+        assert_eq!(super::cancel_event_request("x", "following", "", "UTC")["Body"]["EventScope"], 2);
+        let all = super::cancel_event_request("x", "series", "  ", "UTC");
+        assert_eq!(all["Body"]["EventScope"], 3);
+        assert!(all["Body"].get("Notes").is_none());
+        // An event that doesn't repeat: this event.
+        assert_eq!(super::cancel_event_request("x", "", "", "UTC")["Body"]["EventScope"], 1);
+    }
+
     #[test]
     fn update_event_sends_what_changed() {
         let cur = serde_json::json!({

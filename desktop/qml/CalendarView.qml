@@ -382,6 +382,29 @@ Item {
     function editForTest(newTitle) { openPage(details.ev); details.close(); form.typeTitleForTest(newTitle) }
     function saveForTest() { form.submitForTest() }
     function deleteForTest() { details.confirming = true }
+    /// Where each visible text, glyph and line sits (x y w h, from base's
+    /// top left): the card's (details.background) or the page's rows, to
+    /// set against Teams' measurements.
+    function layoutForTest(item, base) {
+        const out = []
+        function walk(it) {
+            for (const c of it.children) {
+                if (!c.visible || c.opacity === 0) continue
+                const p = c.mapToItem(base, 0, 0)
+                const g = [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10, Math.round(c.width * 10) / 10, Math.round(c.height * 10) / 10].join(" ")
+                if (typeof c.text === "string" && c.text) out.push("text " + JSON.stringify(c.text.slice(0, 50)) + " " + g + (c.font ? " " + c.font.pixelSize + "/" + c.font.weight : ""))
+                else if (typeof c.name === "string" && c.name && c.size !== undefined) out.push("icon " + c.name + " " + g)
+                else if (c.height <= 1.5 && c.width > 20 && c.color !== undefined) out.push("line " + g)
+                else if (c.border && c.border.width > 0 && c.width > 20 && c.height > 20) out.push("box " + g)
+                walk(c)
+            }
+        }
+        walk(item)
+        return out
+    }
+    function cardLayoutForTest() { return layoutForTest(details.contentItem, details.background) }
+    function cancelMenuForTest() { cancelScopeMenu.openFor(cancelBtn) }
+    property alias cancelScopeMenuForTest: cancelScopeMenu
     function confirmDeleteForTest() { root.deleteEvent(details.ev.id); details.close() }
     function pageForTest(subject) { const e = eventBySubject(subject); if (e) openPage(e); return !!e }
     function respondForTest(response, series, note) { details.respond(response, series, note) }
@@ -1679,6 +1702,11 @@ Item {
         id: details
         property var ev: ({})
         property bool confirming: false
+        /// Cancelling your meeting: "single", or for a series "occurrence",
+        /// "following" or "series" (the card's Cancel ▾).
+        property string cancelScope: ""
+        /// Cancel (a meeting: attendees or a channel) rather than Delete.
+        readonly property bool cancels: !!(ev.attendees && ev.attendees.length) || !!ev.channel_id
         property bool changing: false
         property bool emailOrganizer: true
         readonly property bool invite: !!ev.id && ev.is_organizer === false && ev.response_requested !== false
@@ -1686,12 +1714,32 @@ Item {
         readonly property bool series: ev.event_type === "occurrence" || ev.event_type === "exception"
         readonly property bool live: !!ev.start_utc && root.now >= new Date(root.evStart(ev) - 5 * 60000) && root.now < root.evEnd(ev)
         function show(e, item) {
-            ev = e; confirming = false; changing = false; emailOrganizer = true; note.text = ""
+            ev = e; confirming = false; cancelScope = ""; cancelNote.text = ""; changing = false; emailOrganizer = true; note.text = ""
             if (!item) { x = (root.width - width) / 2; y = 80; open(); return }
             const p = item.mapToItem(root, 0, 0)
             x = p.x - width - 8 >= 0 ? p.x - width - 8 : Math.min(root.width - width - 8, p.x + item.width + 8)
             y = Math.max(8, Math.min(root.height - implicitHeight - 8, p.y - 8))
             open()
+        }
+        /// The cancel message in place of Edit and Cancel; the card keeps
+        /// its bottom edge, as Teams' does.
+        function beginCancel(scope) {
+            const bottom = y + height
+            cancelNote.text = ""; cancelScope = scope
+            // (A series' choice puts the cursor in the message; an event
+            // that doesn't repeat doesn't.)
+            Qt.callLater(() => { y = Math.max(8, bottom - implicitHeight); if (scope !== "single") cancelNote.forceActiveFocus() })
+        }
+        function endCancel() {
+            const bottom = y + height
+            cancelScope = ""
+            Qt.callLater(() => { y = Math.max(8, Math.min(root.height - implicitHeight - 8, bottom - implicitHeight)) })
+        }
+        /// Send: Outlook's CancelCalendarEvent with the scope and message.
+        function sendCancel() {
+            const e = root.withTeam(ev)
+            root.calendarAction("cancel", JSON.stringify({ event: e, teamId: e.team_id || "", note: cancelNote.text.trim(), scope: cancelScope === "single" ? "" : cancelScope }))
+            close()
         }
         /// Answer (Teams: RespondToCalendarEvent); a series answer goes to its series.
         function respond(response, wholeSeries, msg) {
@@ -1709,9 +1757,14 @@ Item {
             spacing: 0
             Item {
                 width: 358; height: Math.max(36, titleText.height)
+                // The event's charm before the title (24 px, brand; the
+                // title then 40 further in), as Teams' card shows it.
+                readonly property var charm: { const n = root.charmOf(details.ev); return n ? root.charms.find(x => x[0] === n) : null }
+                FluentIcon { visible: !!parent.charm; x: -1; y: 4; size: 24; name: parent.charm ? parent.charm[2] : ""; color: theme.pick("#5B5FC7", "#7F85F5", "#FFFFFF") }
                 Text {
                     id: titleText
-                    width: parent.width - 32; wrapMode: Text.Wrap
+                    x: parent.charm ? 39 : 0
+                    width: parent.width - 32 - x; wrapMode: Text.Wrap
                     text: details.ev.subject || qsTr("(No title)")
                     font.family: theme.font; font.pixelSize: 21; font.weight: Font.DemiBold; color: theme.pick(theme.text, "#ADADAD", "#FFFFFF")
                 }
@@ -1732,12 +1785,27 @@ Item {
             Row {
                 visible: !!details.ev.join_url
                 spacing: 5
-                CardButton {
-                    primary: true; icon: "video-20"; label: qsTr("Join")
-                    onClicked: { root.joinMeeting(details.ev.join_url, details.ev.subject || qsTr("Meeting")); details.close() }
+                // Join ▾ (a split button: Join 77 wide, then a 24 px ▾ part
+                // 1 after it with Join Teams meeting and Copy join link).
+                Row {
+                    spacing: 1
+                    CardButton {
+                        primary: true; icon: "video-20"; label: qsTr("Join"); minWidth: 77
+                        onClicked: { root.joinMeeting(details.ev.join_url, details.ev.subject || qsTr("Meeting")); details.close() }
+                    }
+                    Rectangle {
+                        id: joinMore
+                        width: 24; height: 32; radius: 4
+                        color: jmh.hovered ? theme.brandHover : theme.brandFill
+                        FluentIcon { anchors.centerIn: parent; name: "chevron-down-12"; size: 12; color: theme.onFill(joinMore, "white") }
+                        HoverHandler { id: jmh; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: joinMenu.openFor(joinMore) }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("More join options")
+                    }
                 }
                 CardButton {
-                    icon: "chat-20"; label: qsTr("Chat")
+                    icon: "chat-20"; label: qsTr("Chat"); minWidth: 96
                     onClicked: { root.openMeetingChat(details.ev.join_url, details.ev.subject || qsTr("Meeting")); details.close() }
                     Accessible.name: qsTr("Chat with participants")
                 }
@@ -1801,11 +1869,16 @@ Item {
                 }
             }
             // The place; with no place, Copilot's "Add a room with Copilot"
-            // in its stead (14/20 #4F52B2) for a meeting.
+            // in its stead (14/20 #4F52B2) for a meeting. A Teams meeting
+            // (its place "Microsoft Teams Meeting") says "No location
+            // added" with the link under it (winpc, 2026-11-23).
             DetailRow {
-                readonly property bool noPlace: !details.ev.location || (details.ev.is_online_meeting && details.ev.location === "Microsoft Teams Meeting")
+                readonly property bool teamsPlace: !!details.ev.is_online_meeting && details.ev.location === "Microsoft Teams Meeting"
+                readonly property bool noPlace: !details.ev.location || teamsPlace
+                readonly property bool copilotRoom: noPlace && root.copilotEntries && (root.evIsMeeting(details.ev) || !!details.ev.is_online_meeting)
                 icon: "location-20"
-                link: noPlace && root.copilotEntries && (root.evIsMeeting(details.ev) || !!details.ev.is_online_meeting)
+                link: copilotRoom && !teamsPlace
+                linkBelow: copilotRoom && teamsPlace ? qsTr("Add a room with Copilot") : ""
                 text: link ? qsTr("Add a room with Copilot") : noPlace ? qsTr("No location added") : details.ev.location
                 onClicked: root.askCopilot("Add a room")
             }
@@ -1870,10 +1943,13 @@ Item {
             }
             // The description, after Prepare for this meeting.
             DetailRow {
-                visible: !!(details.ev.preview || "").trim()
+                // (A Teams meeting's join details, from the line of
+                // underscores on, aren't shown: Teams' card leaves them out.)
+                readonly property string own: (details.ev.preview || "").replace(/_{4,}[\s\S]*$/, "").replace(/\s+/g, " ").trim()
+                visible: !!own
                 textTop: 13; iconTop: 14; bottomGap: 11
                 icon: "text-description-20"
-                text: (details.ev.preview || "").replace(/_{4,}/g, "").replace(/\s+/g, " ").trim()
+                text: own
                 lines: 5
             }
             // Your answer, as Teams' card asks for it.
@@ -1954,10 +2030,11 @@ Item {
                 }
             }
             // Your event: Edit (for a series ▾ This event / This and all
-            // following events / All events in the series) and Cancel, 20
-            // under a line and 30 above the card's edge.
+            // following events / All events in the series) and Cancel (for
+            // a series ▾ with the same three), 20 under a line and 30 above
+            // the card's edge.
             Item {
-                visible: details.ev.is_organizer === true && !details.confirming
+                visible: details.ev.is_organizer === true && !details.confirming && !details.cancelScope
                 width: 358; height: visible ? 66 : 0
                 Rectangle { x: 34; width: 324; height: 1; color: root.cardLine }
                 Row {
@@ -1968,28 +2045,81 @@ Item {
                         chevron: details.series
                         onClicked: { if (details.series) editScopeMenu.openFor(editBtn); else { const e = details.ev; details.close(); root.openPage(e) } }
                     }
-                    CardButton { icon: "calendar-cancel-20"; iconColor: theme.pick("#E81123", "#C50F1F", "#E81123"); label: details.ev.attendees && details.ev.attendees.length || details.ev.channel_id ? qsTr("Cancel") : qsTr("Delete"); onClicked: details.confirming = true }
+                    CardButton {
+                        id: cancelBtn
+                        icon: "calendar-cancel-20"; iconColor: theme.pick("#E81123", "#C50F1F", "#E81123")
+                        label: details.cancels ? qsTr("Cancel") : qsTr("Delete")
+                        chevron: details.cancels && details.series
+                        onClicked: {
+                            if (!details.cancels) details.confirming = true
+                            else if (details.series) cancelScopeMenu.openFor(cancelBtn)
+                            else details.beginCancel("single")
+                        }
+                    }
                 }
             }
+            // Cancel (Teams desktop, winpc 2026-11-23): the Edit and Cancel
+            // row turns into "Cancel … and notify attendees" (14/600
+            // #616161, its glyph 17 px #A4262C) 16 under the line, the
+            // message box 8 under it (320 x 72 at 39, a 0.67 #616161 edge,
+            // padding 12), then Send and Discard 12 under the box; the card
+            // keeps its bottom edge and grows upwards.
+            Item {
+                id: cancelCompose
+                visible: !!details.cancelScope
+                width: 358; height: visible ? cancelButtons.y + 32 : 0
+                Rectangle { x: 34; width: 324; height: 1; color: root.cardLine }
+                FluentIcon { x: -1; y: cancelHead.y + (cancelHead.height - 17) / 2; name: "calendar-cancel-20"; size: 17; color: theme.hc("#A4262C", "#FFFFFF") }
+                Text {
+                    id: cancelHead
+                    x: 24; y: 16; width: 342; wrapMode: Text.Wrap
+                    text: details.cancelScope === "following" ? qsTr("Cancel this and all following events and notify attendees")
+                        : details.cancelScope === "series" ? qsTr("Cancel all events in the series and notify attendees")
+                        : details.cancelScope === "occurrence" ? qsTr("Cancel this event and notify attendees")
+                        : qsTr("Cancel event and notify attendees")
+                    font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 17; lineHeightMode: Text.FixedHeight
+                    color: theme.textSecondary
+                }
+                Rectangle {
+                    id: cancelBox
+                    x: 22; y: cancelHead.y + cancelHead.lineCount * 17 + 8; width: 320; height: 72
+                    // (#616161 while typing, else #D1D1D1.)
+                    color: theme.menu; border.width: 0.67; border.color: cancelNote.activeFocus ? theme.textSecondary : theme.stroke
+                    Flickable {
+                        id: cancelFlick
+                        x: 12; y: 12; width: parent.width - 24; height: parent.height - 24
+                        contentHeight: cancelNote.implicitHeight; clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        TextEdit {
+                            id: cancelNote
+                            width: cancelFlick.width; wrapMode: TextEdit.Wrap
+                            font.family: theme.font; font.pixelSize: 14; color: theme.text; selectByMouse: true
+                            onCursorRectangleChanged: if (cursorRectangle.y + cursorRectangle.height > cancelFlick.contentY + cancelFlick.height) cancelFlick.contentY = cursorRectangle.y + cursorRectangle.height - cancelFlick.height
+                            Accessible.role: Accessible.EditableText
+                            Accessible.name: cancelHead.text + ", " + qsTr("Add an optional message.")
+                            Text { visible: !cancelNote.text; text: qsTr("Add a message (optional)"); color: theme.textSecondary; font: cancelNote.font }
+                        }
+                    }
+                }
+                Row {
+                    id: cancelButtons
+                    x: 22; y: cancelBox.y + cancelBox.height + 12; spacing: 12
+                    ComposeButton { primary: true; icon: "send-20"; label: qsTr("Send"); onClicked: details.sendCancel() }
+                    ComposeButton { icon: "delete-20"; label: qsTr("Discard"); onClicked: details.endCancel() }
+                }
+            }
+            // Delete an appointment (no attendees).
             Column {
                 visible: details.confirming
                 topPadding: 14; spacing: 10
                 Text {
                     width: 358; wrapMode: Text.Wrap
-                    text: details.ev.attendees && details.ev.attendees.length || details.ev.channel_id ? qsTr("Cancel this meeting for everyone?") : qsTr("Delete this event?")
+                    text: qsTr("Delete this event?")
                     font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text
                 }
                 Row {
                     spacing: 8
-                    CardButton {
-                        danger: true; label: details.ev.attendees && details.ev.attendees.length || details.ev.channel_id ? qsTr("Cancel meeting") : qsTr("Delete")
-                        onClicked: {
-                            const e = root.withTeam(details.ev)
-                            if (e.channel_id || (e.attendees && e.attendees.length)) root.calendarAction("cancel", JSON.stringify({ event: e, teamId: e.team_id || "", note: "" }))
-                            else root.deleteEvent(e.id)
-                            details.close()
-                        }
-                    }
+                    CardButton { danger: true; label: qsTr("Delete"); onClicked: { root.deleteEvent(details.ev.id); details.close() } }
                     CardButton { label: qsTr("Keep it"); onClicked: details.confirming = false }
                 }
             }
@@ -2013,7 +2143,9 @@ Item {
                 id: promptCol
                 x: 40; y: 8.5; spacing: 8
                 Repeater {
-                    model: [{ k: "What are key talking points?", t: qsTr("What are key talking points?") }, { k: "What are the anticipated outcomes?", t: qsTr("What are the anticipated outcomes?") }, { k: "What will this meeting cover?", t: qsTr("What will this meeting cover?") }]
+                    // (Not "What are key talking points?" once the meeting
+                    // is on, as Teams' card.)
+                    model: (details.live ? [] : [{ k: "What are key talking points?", t: qsTr("What are key talking points?") }]).concat([{ k: "What are the anticipated outcomes?", t: qsTr("What are the anticipated outcomes?") }, { k: "What will this meeting cover?", t: qsTr("What will this meeting cover?") }])
                     Rectangle {
                         id: chipP
                         required property var modelData
@@ -2223,7 +2355,7 @@ Item {
             calendarAction("patchEvent", JSON.stringify({ id: id, patch: { categories: c } }))
         }
         else if (a === "private") calendarAction("patchEvent", JSON.stringify({ id: id, patch: { sensitivity: e.sensitivity === "private" ? "normal" : "private" } }))
-        else if (a === "delete") { details.show(e, null); details.confirming = true }
+        else if (a === "delete") { details.show(e, null); if (details.cancels && e.is_organizer) details.beginCancel(details.series ? "occurrence" : "single"); else details.confirming = true }
         else if (a === "instr:manage") openOutlookCommand(["Calendar settings", "Calendar instructions"])
         else if (a === "instr:create") {
             const verb = e.response === "tentativelyAccepted" ? "follow" : e.response === "declined" ? "decline" : "accept"
@@ -2384,12 +2516,35 @@ Item {
     // the series.
     MenuPopup {
         id: editScopeMenu
-        function openFor(item) { parent = item; x = 0; y = item.height + 2; open() }
-        width: 220
+        // (Outlook's ContextualMenu: 194.33 wide, 36 px rows, labels 8 in,
+        // right under the button.)
+        function openFor(item) { parent = item; x = 0; y = item.height; open() }
+        fabric: true; fabricWidth: 194.33; labelInset: 8
         items: [{ label: qsTr("This event") }, { label: qsTr("This and all following events") }, { label: qsTr("All events in the series") }]
         onPicked: i => { const e = details.ev; details.close(); root.openPage(e, ["occurrence", "following", "series"][i]) }
     }
     function editScopeItemsForTest() { return editScopeMenu.items.map(x => x.label) }
+    // The card's Join ▾ (Teams desktop, winpc 2026-11-23).
+    MenuPopup {
+        id: joinMenu
+        function openFor(item) { parent = item; x = -78; y = item.height + 2; open() }
+        items: [{ label: qsTr("Join Teams meeting"), icon: "video-20" }, { label: qsTr("Copy join link"), icon: "link-20" }]
+        onPicked: i => { const e = details.ev; if (i === 0) { details.close(); root.joinMeeting(e.join_url, e.subject || qsTr("Meeting")) } else backend.copyText(e.join_url) }
+    }
+    // Your series' Cancel ▾ on the card: the same three (Teams desktop,
+    // winpc 2026-11-23), then the cancel message.
+    MenuPopup {
+        id: cancelScopeMenu
+        // (Outlook's ContextualMenu: 194.33 wide, 36 px rows, labels 8 in,
+        // right under the button.)
+        function openFor(item) { parent = item; x = 0; y = item.height; open() }
+        fabric: true; fabricWidth: 194.33; labelInset: 8
+        items: [{ label: qsTr("This event") }, { label: qsTr("This and all following events") }, { label: qsTr("All events in the series") }]
+        onPicked: i => details.beginCancel(["occurrence", "following", "series"][i])
+    }
+    function cancelScopeItemsForTest() { return cancelScopeMenu.items.map(x => x.label) }
+    function cancelForTest(scope, msg) { details.beginCancel(scope); Qt.callLater(() => { cancelNote.text = msg || "" }) }
+    function sendCancelForTest() { details.sendCancel() }
 
     component DetailRow: Item {
         id: dr
@@ -2405,8 +2560,11 @@ Item {
         property real bottomGap: 9
         /// A link (Outlook's 14/20 #4F52B2 button) instead of text.
         property bool link: false
+        /// A link under the text, 2 below it (a Teams meeting's "Add a
+        /// room with Copilot" under "No location added").
+        property string linkBelow: ""
         signal clicked()
-        width: 358; height: visible ? textTop + drText.height + bottomGap : 0
+        width: 358; height: visible ? textTop + drText.height + (linkBelow ? 22 : 0) + bottomGap : 0
         Rectangle { visible: dr.line; x: 34; width: 324; height: 1; color: root.cardLine }
         FluentIcon { id: drIcon; x: 2; y: dr.iconTop; size: 20; color: theme.textSecondary }
         Text {
@@ -2419,12 +2577,45 @@ Item {
             Accessible.role: dr.link ? Accessible.Button : Accessible.StaticText
             Accessible.name: text
         }
+        Text {
+            visible: !!dr.linkBelow
+            x: 35; y: dr.textTop + drText.height + 2; height: 20; verticalAlignment: Text.AlignVCenter
+            text: dr.linkBelow
+            font.family: theme.font; font.pixelSize: 14; color: root.calLink
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: dr.clicked() }
+            Accessible.role: Accessible.Button
+            Accessible.name: text
+        }
         Row {
             visible: !!dr.suffix
             x: drText.x + drText.width + 10; y: dr.textTop + 2; spacing: 4
             Text { text: dr.suffix; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
             FluentIcon { name: "arrow-repeat-all-16"; size: 14; color: theme.textSecondary }
         }
+    }
+    // The cancel message's Send and Discard (Outlook's buttons: 32 tall,
+    // padding 0 12, a 20 px glyph 4 in, the label 14/600 8 after it; Send
+    // brand, Discard white with a #BDBDBD edge).
+    component ComposeButton: Rectangle {
+        id: kb
+        property string icon
+        property string label
+        property bool primary: false
+        signal clicked()
+        width: kbRow.implicitWidth + 33.33; height: 32; radius: 4
+        color: primary ? (kbh.hovered ? theme.brandHover : theme.brandFill) : (kbh.hovered ? theme.rowHover : theme.menu)
+        border.width: 0.67; border.color: primary ? theme.brandFill : theme.pick("#BDBDBD", "#666666", "#FFFFFF")
+        Row {
+            id: kbRow
+            anchors.centerIn: parent; spacing: 8
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: kb.icon; size: 20; color: theme.onFill(kb, kb.primary ? "white" : theme.textSecondary) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: kb.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(kb, kb.primary ? "white" : theme.textSecondary) }
+        }
+        HoverHandler { id: kbh; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: kb.clicked() }
+        Accessible.role: Accessible.Button
+        Accessible.name: kb.label
     }
     component CardButton: Rectangle {
         id: cb
@@ -2435,8 +2626,11 @@ Item {
         /// A ▾ after the label (a series' Edit).
         property bool chevron: false
         property color iconColor: primary || danger ? "white" : theme.textStrong
+        /// Fluent's buttons are at least 96 wide (Chat); Join's part of
+        /// its split button is 77.
+        property real minWidth: 0
         signal clicked()
-        width: cbRow.implicitWidth + 24; height: 32; radius: 4
+        width: Math.max(minWidth, cbRow.implicitWidth + 24); height: 32; radius: 4
         color: primary ? (cbh.hovered ? theme.brandHover : theme.brandFill)
             : danger ? (cbh.hovered ? theme.hc("#BC2F32", "#1AEBFF") : theme.hc("#D13438", "#000000"))
             : (cbh.hovered ? theme.rowHover : theme.menu)
@@ -2947,9 +3141,9 @@ Item {
                 if (out.editingId) root.calendarAction("update", JSON.stringify({ id: out.editingId, form: out, joinUrl: form.event.join_url || "", eventType: form.event.event_type || "" }))
                 else root.calendarAction("schedule", JSON.stringify({ form: out }))
             }
-            onCancelMeeting: note => {
+            onCancelMeeting: (note, scope) => {
                 const e = root.withTeam(form.event)
-                root.calendarAction("cancel", JSON.stringify({ event: e, teamId: e.team_id || "", note: note }))
+                root.calendarAction("cancel", JSON.stringify({ event: e, teamId: e.team_id || "", note: note, scope: scope }))
             }
             onRespond: (response, send, msg, series) => {
                 const e = form.event

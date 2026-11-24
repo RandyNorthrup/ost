@@ -2733,7 +2733,7 @@ pub mod qobject {
 
         /// The calendar's actions, as Teams' calendar does them (src/api/calendar.rs):
         /// "detail" {id}, "respond" {id, response, send, note}, "schedule"
-        /// {form}, "update" {id, form}, "cancel" {event, teamId, note},
+        /// {form}, "update" {id, form}, "cancel" {event, teamId, note, scope},
         /// "availability" {people: [[mail, name]], start, end}. The answer
         /// comes back in calendar_action_done.
         #[qinvokable]
@@ -24313,7 +24313,7 @@ impl qobject::Backend {
                         Ok(json!({}))
                     }
                     "cancel" => {
-                        api::calendar::cancel_meeting(&client, &args["event"], &s("teamId"), &s("note")).await?;
+                        api::calendar::cancel_meeting(&client, &args["event"], &s("teamId"), &s("note"), &s("scope")).await?;
                         Ok(json!({}))
                     }
                     "availability" => {
