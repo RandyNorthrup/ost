@@ -22,6 +22,7 @@ From TASK-0263: Teams edits a channel post in the full post composer (subject, C
 - [x] #3 A post view's More menu has View Copilot history, working as in Teams
 - [ ] #4 Followed threads opens a single thread view as Teams
 - [x] #5 The Copilot app's startup context matches Teams' field for field, including appIconPosition
+- [ ] #6 A channel meeting's post shows its calendar card, and the post view's second line shows the meeting title, as Teams
 <!-- AC:END -->
 
 ## Implementation Notes
