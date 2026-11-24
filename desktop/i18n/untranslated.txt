@@ -112,8 +112,8 @@
 "Calls merged"		backend.rs:14049	
 "Camera settings"		CameraSettingsDialog.qml:37	
 "Cameras"		ContentCameraDialog.qml:450	
-"Canceled: %1"		ScheduledMeetingCard.qml:76	
-"Cancelled."		ScheduledMeetingCard.qml:135	
+"Canceled: %1"		ScheduledMeetingCard.qml:81	
+"Cancelled."		ScheduledMeetingCard.qml:140	
 "Cancelling…"		backend.rs:24201	
 "Capture screenshot"		FeedbackWindow.qml:153	
 "Car"		CalendarView.qml:262	
