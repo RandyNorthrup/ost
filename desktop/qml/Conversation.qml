@@ -814,11 +814,13 @@ Rectangle {
     // it, and Teams' 20-member limit for calls in group chats.
     // The thread's liveness entry (the chat list's liveCall) says so even
     // when the call's start isn't among the loaded messages.
-    readonly property var liveCall: { const c = (backend.chatsJson ? JSON.parse(backend.chatsJson) : []).find(c => c.id === root.chatId); return c && c.liveCall ? c.liveCall : null }
-    readonly property bool chatMuted: { const c = (backend.chatsJson ? JSON.parse(backend.chatsJson) : []).find(c => c.id === root.chatId); return !!(c && c.muted) }
+    /// This chat's entry in the chat list (read once per list update).
+    readonly property var chatEntry: (backend.chatsJson ? JSON.parse(backend.chatsJson) : []).find(c => c.id === root.chatId) || null
+    readonly property var liveCall: chatEntry && chatEntry.liveCall ? chatEntry.liveCall : null
+    readonly property bool chatMuted: !!(chatEntry && chatEntry.muted)
     /// An event's or meeting's group chat (Teams' backroom chat): "event", "meeting" or "".
-    readonly property string backroom: { const c = (backend.chatsJson ? JSON.parse(backend.chatsJson) : []).find(c => c.id === root.chatId); return c && c.backroom ? c.backroom : "" }
-    readonly property bool chatIsCreator: { const c = (backend.chatsJson ? JSON.parse(backend.chatsJson) : []).find(c => c.id === root.chatId); return !!(c && c.isCreator) }
+    readonly property string backroom: chatEntry && chatEntry.backroom ? chatEntry.backroom : ""
+    readonly property bool chatIsCreator: !!(chatEntry && chatEntry.isCreator)
     /// The chat's Recap (Teams' recap card: View recap, the transcript chip
     /// and the recording open the meeting's Recap view).
     signal openEventHighlights(string title, real startMs)
@@ -892,7 +894,7 @@ Rectangle {
         if (i >= 0) root.tab = "Recap"
         console.info("RECAPCARD open", part || "recap", i >= 0)
     }
-    readonly property string chatTopic: { const c = (backend.chatsJson ? JSON.parse(backend.chatsJson) : []).find(c => c.id === root.chatId); return c && c.topic ? c.topic : "" }
+    readonly property string chatTopic: chatEntry && chatEntry.topic ? chatEntry.topic : ""
     // Watching the chat's call while we aren't in it (Teams subscribes to
     // its conversation without joining): who is in it, for the header.
     readonly property var liveRosterPeople: JSON.parse(backend.chatLiveRosterJson || "[]")

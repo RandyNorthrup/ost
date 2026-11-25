@@ -8,7 +8,7 @@
 use std::collections::{HashMap, HashSet};
 use std::pin::Pin;
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use anyhow::Context;
 use cxx_qt::{CxxQtType, Threading};
@@ -6480,6 +6480,10 @@ const MERGE_LEAVE_DELAY: std::time::Duration = std::time::Duration::from_secs(15
 
 /// How many chats to load per request.
 const CHAT_LIMIT: usize = 50;
+/// How long the chat list waits for pushes to stop before reloading
+/// (`reload_chats_soon`), and the longest it waits in a steady stream.
+const CHAT_RELOAD_QUIET: std::time::Duration = std::time::Duration::from_millis(400);
+const CHAT_RELOAD_MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 
 pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
     static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
@@ -10917,6 +10921,8 @@ impl qobject::Backend {
             }
         });
         let qt = self.qt_thread();
+        // Whose messages make nothing unread (yours, from another device).
+        let me = self.rust().my_mri.clone().unwrap_or_default();
         runtime().spawn(async move {
             use teams_cli::event_hub::EventKind;
             use tokio::sync::broadcast::error::RecvError;
@@ -10927,7 +10933,7 @@ impl qobject::Backend {
                         tracing::warn!("missed {n} push events; reloading");
                         let _ = qt.queue(|mut this| {
                             this.as_mut().reload_messages();
-                            this.as_mut().reload_chats();
+                            this.as_mut().reload_chats_soon();
                         });
                         continue;
                     }
@@ -10957,8 +10963,9 @@ impl qobject::Backend {
                 if ids.is_empty() {
                     continue;
                 }
-                tracing::info!(chats = ids.len(), "chat push");
-                let _ = qt.queue(move |mut this| this.as_mut().on_chat_push(ids));
+                let unread = teams_cli::event_hub::unread_conversation_ids(&ev.json, &me);
+                tracing::info!(chats = ids.len(), new = unread.len(), "chat push");
+                let _ = qt.queue(move |mut this| this.as_mut().on_chat_push(ids, unread));
             }
         });
     }
@@ -18278,7 +18285,9 @@ impl qobject::Backend {
         });
     }
 
-    fn on_chat_push(mut self: Pin<&mut Self>, ids: Vec<String>) {
+    /// Pushed chat events: `ids` the conversations they changed, `unread`
+    /// those of them that got a new message from someone else.
+    fn on_chat_push(mut self: Pin<&mut Self>, ids: Vec<String>, unread: Vec<String>) {
         // Waiting in a lobby whose chat already exists: the first push of
         // the lobby chat thread is how its messages reach us (no
         // conversationUpdate then); a meeting thread that is the lobby's
@@ -18352,7 +18361,7 @@ impl qobject::Backend {
             // counts and replies also sent to the channel).
             if id == current || id.split(';').next() == Some(current.as_str()) {
                 reload = true;
-            } else {
+            } else if unread.contains(&id) {
                 list_changed |= self.as_mut().rust_mut().unread.insert(id);
             }
         }
@@ -18362,7 +18371,46 @@ impl qobject::Backend {
         if list_changed {
             self.as_mut().publish_chats();
         }
-        self.as_mut().reload_chats();
+        self.as_mut().reload_chats_soon();
+    }
+
+    /// Reload the chat list once pushes settle: a burst of them (another
+    /// client hiding hundreds of chats in a row, each pushing conversation
+    /// updates) reads and publishes the list a few times, not once per
+    /// push. It waits for a quiet moment, never longer than
+    /// `CHAT_RELOAD_MAX_WAIT` after the first push.
+    fn reload_chats_soon(self: Pin<&mut Self>) {
+        static PENDING: AtomicBool = AtomicBool::new(false);
+        static LAST_MS: AtomicU64 = AtomicU64::new(0);
+        let now_ms = || {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or_default()
+        };
+        LAST_MS.store(now_ms(), Ordering::SeqCst);
+        if PENDING.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let first = now_ms();
+            loop {
+                tokio::time::sleep(CHAT_RELOAD_QUIET).await;
+                let now = now_ms();
+                let quiet = now.saturating_sub(LAST_MS.load(Ordering::SeqCst));
+                let waited = now.saturating_sub(first);
+                if quiet >= CHAT_RELOAD_QUIET.as_millis() as u64
+                    || waited >= CHAT_RELOAD_MAX_WAIT.as_millis() as u64
+                {
+                    break;
+                }
+            }
+            let _ = qt.queue(|mut this| {
+                PENDING.store(false, Ordering::SeqCst);
+                this.as_mut().reload_chats();
+            });
+        });
     }
 
     /// Reload the chat list quietly (new chats, new order), keeping unread
@@ -23627,7 +23675,7 @@ impl qobject::Backend {
                 if let Err(e) = &result {
                     tracing::warn!("hide chat failed: {}", short_error(e));
                 }
-                this.as_mut().reload_chats();
+                this.as_mut().reload_chats_soon();
             });
         });
     }
