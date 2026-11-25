@@ -27446,7 +27446,7 @@ impl qobject::Backend {
                             "favorites" => json!({ "items": folders(api::drive::favorites(&client).await?) }),
                             "meetings" => json!({ "items": folders(api::drive::meetings(&client).await?) }),
                             "people" => json!({ "people": api::drive::by_people(&client).await?.into_iter()
-                                .map(|p| json!({ "name": p.name, "items": p.items.into_iter().filter(|i| i["is_folder"].as_bool() == Some(true)).collect::<Vec<_>>() }))
+                                .map(|p| json!({ "name": p.name, "id": p.id, "items": p.items.into_iter().filter(|i| i["is_folder"].as_bool() == Some(true)).collect::<Vec<_>>() }))
                                 .collect::<Vec<_>>() }),
                             other => anyhow::bail!("unknown place {other}"),
                         }

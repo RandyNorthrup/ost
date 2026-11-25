@@ -26,13 +26,15 @@ Item {
     readonly property alias fileActions: actions
     /// Browse files by People: the person picked.
     property string person: ""
+    /// Their object id (two people can share a name).
+    property string personId: ""
 
     property string view: "recent"
     /// Folders opened from My files or a library: [{name, drive_id, item_id}].
     property var trail: []
     readonly property var here: trail.length ? trail[trail.length - 1] : { name: "", drive_id: "", item_id: "" }
     readonly property var items: view === "people"
-        ? ((driveData.people || []).find(p => p.name === person) || { items: [] }).items
+        ? ((driveData.people || []).find(p => personId ? p.id === personId : p.name === person) || { items: [] }).items
         : driveData.items || []
     readonly property var deleted: driveData.deleted || []
     // Filter by (TASK-0236): the folder's column filters as the backend
@@ -60,7 +62,7 @@ Item {
     readonly property var hereItem: sub && driveData.here && driveData.here.id === here.item_id ? driveData.here : null
 
     function open(v) {
-        view = v; trail = []; person = ""; selectedIds = []
+        view = v; trail = []; person = ""; personId = ""; selectedIds = []
         load(v === "myfiles" ? "folder" : v, "", "")
         if (v === "myfiles") { view = "folder"; trail = [{ name: qsTr("My files"), drive_id: "", item_id: "" }] }
     }
@@ -595,7 +597,7 @@ Item {
                         Text { text: qsTr("%n files", "", (modelData.files || modelData.items).length); font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(hcFill2, theme.textSecondary) }
                     }
                     HoverHandler { id: pph; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: root.person = modelData.name }
+                    TapHandler { onTapped: { root.personId = modelData.id || ""; root.person = modelData.name } }
                     Accessible.role: Accessible.Button
                     Accessible.name: qsTr("Files from %1").arg(modelData.name)
                 }

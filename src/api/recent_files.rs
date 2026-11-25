@@ -27,6 +27,9 @@ pub struct Recent {
     /// Extension, lowercase; "one" for a OneNote notebook.
     pub kind: String,
     pub notebook: bool,
+    /// A folder (OneDrive also counts "Other" items of a folder content
+    /// type), not a notebook.
+    pub folder: bool,
     /// The file's address in its library.
     pub web_url: String,
     /// Where OneDrive opens it (Doc.aspx, Loop), else `web_url`.
@@ -281,7 +284,9 @@ pub fn parse(entry: &Value, personal: &str) -> Recent {
     let name = s(&x["FileName"]);
     let notebook = is_notebook(x);
     let ext = s(&x["FileExtension"]).to_ascii_lowercase();
-    let folder = x["Visualization"]["Type"].as_str() == Some("Folder");
+    let kind = x["Visualization"]["Type"].as_str().unwrap_or_default();
+    let folder =
+        kind == "Folder" || kind == "Other" && s(&sp["ContentTypeId"]).starts_with("0x0120");
     // OneDrive's name: a folder's name, a file's name without its
     // extension, else the title.
     let title = if folder {
@@ -300,6 +305,7 @@ pub fn parse(entry: &Value, personal: &str) -> Recent {
         title,
         kind: if notebook { "one".into() } else { ext },
         notebook,
+        folder: folder && !notebook,
         open_url: first(&[
             &x["Visualization"]["AccessUrl"],
             &x["ItemProperties"]["SemanticProperties"]["Url"],
@@ -389,6 +395,8 @@ pub fn drive_item(r: &Recent, graph: Option<DriveItem>) -> DriveItem {
         modified: r.modified.clone(),
         modified_by: r.modified_by.clone(),
         sharing: "Private".into(),
+        // A shared folder stays a folder.
+        is_folder: r.folder,
         ..Default::default()
     });
     it.name = r.name.clone();

@@ -776,6 +776,10 @@ mod tests {
         // newest first.
         assert_eq!(rows[0].file.name, "Plans");
         assert!(!rows.iter().any(|r| r.file.name == "Partner.docx"));
+        // Without Graph's item it is still a folder (pickers and the
+        // Move/Copy picker take folders only).
+        assert!(recent_files::drive_item(&rows[0].file, None).is_folder);
+        assert!(!recent_files::drive_item(&rows[1].file, None).is_folder);
     }
 
     #[test]
