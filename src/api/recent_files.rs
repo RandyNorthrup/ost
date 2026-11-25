@@ -351,8 +351,7 @@ pub fn graph_path(r: &Recent) -> Option<String> {
     let ok = |id: &str| {
         !id.is_empty() && id.len() <= 64 && id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
     };
-    let item_ok =
-        !r.list_item_id.is_empty() && r.list_item_id.bytes().all(|b| b.is_ascii_digit());
+    let item_ok = !r.list_item_id.is_empty() && r.list_item_id.bytes().all(|b| b.is_ascii_digit());
     let host_ok = host
         .bytes()
         .all(|b| b.is_ascii_alphanumeric() || b".-".contains(&b));
