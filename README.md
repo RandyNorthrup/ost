@@ -45,6 +45,9 @@ Arch Linux packages are coming to the AUR. OST runs on 64-bit x86 Linux
 with Wayland or X11. Requirements, checksums, the terminal client package,
 updating and uninstalling are covered in
 [Installation](https://github.com/RandyNorthrup/ost/wiki/Installation).
+Every release file has a build-provenance attestation: check one with
+`gh attestation verify <file> -R RandyNorthrup/ost`
+([Verifying a download](SECURITY.md#verifying-a-download)).
 
 ## Features
 

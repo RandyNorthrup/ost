@@ -1,0 +1,6 @@
+# flatpak-cargo-generator.py's dependencies (its pyproject.toml), for the
+# release workflow. Regenerate the hashed lock with:
+#   uv pip compile --universal --generate-hashes --python-version 3.10 cargo-generator-requirements.in -o cargo-generator-requirements.txt
+aiohttp>=3.9.5,<4
+PyYAML>=6.0.2,<7
+tomlkit>=0.13.3,<1

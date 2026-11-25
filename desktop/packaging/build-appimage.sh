@@ -11,9 +11,23 @@
 # provides glibc, the C++ runtime, the GPU stack, PipeWire/ALSA/PulseAudio
 # clients, D-Bus, systemd, the Wayland client libraries and OpenSSL.
 #
-# Needs qmake6 (QMAKE=…), curl, and LayerShellQt (liblayershellqtinterface6)
-# installed. linuxdeploy, its Qt plugin and appimagetool are downloaded into
-# <work dir>/tools on first use.
+# Needs qmake6 (QMAKE=…), curl, git, cmake, a C++ compiler, pkg-config,
+# patchelf, nlohmann-json, CImg, libpng and libjpeg headers, and LayerShellQt
+# (liblayershellqtinterface6) installed (build-deb.sh --deps-only plus the
+# release workflow's list).
+#
+# The build tools, all pinned (bump them together, after checking the new
+# versions' release notes):
+#   - linuxdeploy and appimagetool: release files at exact versions, and the
+#     AppImage runtime appimagetool embeds (it would otherwise download the
+#     latest one), each checked against its SHA-256 before it runs;
+#   - linuxdeploy-plugin-qt: built here from an exact commit (its only
+#     versioned release predates the Wayland, networkinformation and Qt 6
+#     AppRun changes OST's AppImage needs), with its submodules at the commits
+#     that commit records, its build dependencies from the distribution, and
+#     the library exclude list it compiles in from a pinned commit, checked
+#     against its SHA-256.
+# They are kept in <work dir>/tools; every run checks them again.
 set -eu
 V=$1
 SRC=$(cd "$(dirname "$0")/../.." && pwd)
@@ -25,13 +39,57 @@ LIB=$("$QMAKE" -query QT_INSTALL_LIBS)
 QTP=$("$QMAKE" -query QT_INSTALL_PLUGINS)
 OUT="$W/OST-$V-x86_64.AppImage"
 
+LINUXDEPLOY_URL=https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
+LINUXDEPLOY_SHA256=c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d
+APPIMAGETOOL_URL=https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+APPIMAGETOOL_SHA256=ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+RUNTIME_URL=https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
+RUNTIME_SHA256=2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+PLUGIN_QT_REPO=https://github.com/linuxdeploy/linuxdeploy-plugin-qt
+PLUGIN_QT_COMMIT=9b9fca179e7312ae4a433ad6c3183d73c116180b
+EXCLUDELIST_URL=https://raw.githubusercontent.com/AppImageCommunity/pkg2appimage/15a64c20dc23a0154622ba25829364323903b6b5/excludelist
+EXCLUDELIST_SHA256=50db0f894f34b169c47a5cbc0c17dbab61e9edebca5bc8269a1e6ac1bf4bdad9
+
+# fetch <url> <sha256> <file>: download once, check the hash on every run.
+fetch() {
+  if [ ! -f "$3" ]; then
+    curl -fsSL --retry 3 -o "$3.part" "$1"
+    mv "$3.part" "$3"
+  fi
+  if ! printf '%s  %s\n' "$2" "$3" | sha256sum -c --quiet -; then
+    echo "error: $3 doesn't match its pinned SHA-256 ($1)" >&2
+    rm -f "$3"
+    exit 1
+  fi
+}
+
 mkdir -p "$T"
-for u in https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage \
-         https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage \
-         https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage; do
-  f="$T/$(basename "$u")"
-  [ -x "$f" ] || { curl -fsSL -o "$f" "$u"; chmod +x "$f"; }
-done
+fetch "$LINUXDEPLOY_URL" "$LINUXDEPLOY_SHA256" "$T/linuxdeploy-x86_64.AppImage"
+fetch "$APPIMAGETOOL_URL" "$APPIMAGETOOL_SHA256" "$T/appimagetool-x86_64.AppImage"
+fetch "$RUNTIME_URL" "$RUNTIME_SHA256" "$T/runtime-x86_64"
+chmod +x "$T/linuxdeploy-x86_64.AppImage" "$T/appimagetool-x86_64.AppImage"
+
+if [ "$(cat "$T/linuxdeploy-plugin-qt.commit" 2>/dev/null)" != "$PLUGIN_QT_COMMIT" ] || [ ! -x "$T/linuxdeploy-plugin-qt" ]; then
+  P=$T/linuxdeploy-plugin-qt-src
+  rm -rf "$P" "$T/linuxdeploy-plugin-qt" "$T/linuxdeploy-plugin-qt.commit"
+  git init -q "$P"
+  git -C "$P" fetch -q --depth 1 "$PLUGIN_QT_REPO" "$PLUGIN_QT_COMMIT"
+  git -C "$P" checkout -q --detach FETCH_HEAD
+  [ "$(git -C "$P" rev-parse HEAD)" = "$PLUGIN_QT_COMMIT" ] || { echo "error: linuxdeploy-plugin-qt isn't at $PLUGIN_QT_COMMIT" >&2; exit 1; }
+  git -C "$P" submodule -q update --init --recursive
+  # linuxdeploy's build downloads its library exclude list from a moving
+  # branch: it reads the pinned, checked copy instead.
+  fetch "$EXCLUDELIST_URL" "$EXCLUDELIST_SHA256" "$T/excludelist"
+  G=$P/lib/linuxdeploy/src/core/generate-excludelist.sh
+  sed -i "s|wget --quiet \"\$url\" -O -|cat '$T/excludelist'|" "$G"
+  grep -q "cat '$T/excludelist'" "$G" || { echo "error: $G changed; update build-appimage.sh" >&2; exit 1; }
+  # Its dependencies come from the system; nothing is fetched at build time.
+  cmake -S "$P" -B "$P/build" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DFETCHCONTENT_FULLY_DISCONNECTED=ON >/dev/null
+  cmake --build "$P/build" --target linuxdeploy-plugin-qt -j "$(nproc)" >/dev/null
+  install -m755 "$P/build/bin/linuxdeploy-plugin-qt" "$T/linuxdeploy-plugin-qt"
+  echo "$PLUGIN_QT_COMMIT" > "$T/linuxdeploy-plugin-qt.commit"
+  rm -rf "$P"
+fi
 export PATH="$T:$PATH"
 
 rm -rf "$W/AppDir" "$OUT"
@@ -91,5 +149,5 @@ exec "$HERE/usr/bin/ost-desktop" "$@"
 EOF
 chmod 755 AppDir/AppRun
 
-ARCH=x86_64 VERSION="$V" appimagetool-x86_64.AppImage --no-appstream AppDir "$OUT"
+ARCH=x86_64 VERSION="$V" appimagetool-x86_64.AppImage --no-appstream --runtime-file "$T/runtime-x86_64" AppDir "$OUT"
 ls -la "$OUT"

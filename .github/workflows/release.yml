@@ -6,12 +6,38 @@
 #   - .deb for Ubuntu 26.04 and Debian testing,
 #   - .rpm for Fedora and openSUSE Tumbleweed,
 #   - the Flatpak bundle (desktop/packaging/flatpak).
+# Every released file, SHA256SUMS included, gets a GitHub build-provenance
+# attestation (Sigstore), which ties it to this workflow, the tag and its
+# commit:
+#   gh attestation verify <file> -R RandyNorthrup/ost
 # Then the AUR packages are updated, when the AUR_SSH_KEY secret is set.
+#
+# A dry run builds every package the same way and keeps them, with
+# SHA256SUMS, as the run's "release-files" artifact, without attesting,
+# creating or changing a release, or touching the AUR:
+#   gh workflow run release.yml -R RandyNorthrup/ost --ref main
+# (on a branch it is always a dry run; on a tag, -f dry_run=false redoes
+# that tag's release).
+#
+# Supply chain: actions are pinned to commit SHAs, the third-party container
+# image to its digest, and every tool the jobs download is pinned to an
+# exact version and checked against its SHA-256 before it runs
+# (desktop/packaging/build-appimage.sh, the flatpak job below). The
+# distributions' own images (ubuntu, debian, fedora, opensuse, archlinux)
+# stay on their tags: they are Docker Official Images, everything the jobs
+# install in them comes from the distribution's signed repositories, and the
+# rolling ones can't build from an old snapshot.
 name: Release
 
 on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+", "v[0-9]+.[0-9]+.[0-9]+-*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build every package without attesting or publishing anything (always on for a branch)"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -29,17 +55,35 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
       prerelease: ${{ steps.v.outputs.prerelease }}
+      dry_run: ${{ steps.v.outputs.dry_run }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - id: v
         name: The tag matches Cargo.toml's version
+        env:
+          DRY_RUN_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
         run: |
-          v=${GITHUB_REF_NAME#v}
           cargo=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
           desk=$(sed -n 's/^version = "\(.*\)"/\1/p' desktop/Cargo.toml | head -n 1)
-          [ "${v%%-*}" = "$cargo" ] && [ "$cargo" = "$desk" ] || { echo "::error::tag $GITHUB_REF_NAME, Cargo.toml $cargo, desktop/Cargo.toml $desk"; exit 1; }
-          echo "version=$v" >> "$GITHUB_OUTPUT"
-          case "$v" in *-*) echo "prerelease=true" ;; *) echo "prerelease=false" ;; esac >> "$GITHUB_OUTPUT"
+          [ "$cargo" = "$desk" ] || { echo "::error::Cargo.toml $cargo, desktop/Cargo.toml $desk"; exit 1; }
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            v=${GITHUB_REF_NAME#v}
+            [ "${v%%-*}" = "$cargo" ] || { echo "::error::tag $GITHUB_REF_NAME, Cargo.toml $cargo"; exit 1; }
+            dry=$DRY_RUN_INPUT
+          else
+            # A branch has no release: its packages are versioned
+            # <Cargo.toml version>-dryrun<run number>.
+            v="$cargo-dryrun$GITHUB_RUN_NUMBER"
+            dry=true
+          fi
+          {
+            echo "version=$v"
+            echo "dry_run=$dry"
+            case "$v" in *-*) echo "prerelease=true" ;; *) echo "prerelease=false" ;; esac
+          } >> "$GITHUB_OUTPUT"
+          echo "OST $v, dry run: $dry" >> "$GITHUB_STEP_SUMMARY"
 
   ubuntu:
     # .deb for Ubuntu 26.04, the AppImage and the tarball from the same build.
@@ -50,12 +94,17 @@ jobs:
       V: ${{ needs.version.outputs.version }}
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Build dependencies
         run: |
           sh desktop/packaging/build-deb.sh --deps-only
-          apt-get install -y -q --no-install-recommends liblayershellqtinterface-dev layer-shell-qt curl file
-      - uses: actions/cache@v4
+          # LayerShellQt for the AppImage; the rest builds the pinned
+          # linuxdeploy-plugin-qt (desktop/packaging/build-appimage.sh).
+          apt-get install -y -q --no-install-recommends liblayershellqtinterface-dev layer-shell-qt curl file \
+            patchelf nlohmann-json3-dev cimg-dev libpng-dev libjpeg-dev
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cargo/registry
           key: cargo-registry-${{ hashFiles('Cargo.lock') }}
@@ -81,7 +130,7 @@ jobs:
           rm -rf squashfs-root
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ubuntu
           path: |
@@ -99,14 +148,16 @@ jobs:
       V: ${{ needs.version.outputs.version }}
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - run: sh desktop/packaging/build-deb.sh --deps-only
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cargo/registry
           key: cargo-registry-${{ hashFiles('Cargo.lock') }}
       - run: SOURCE_DATE_EPOCH=$(git log -1 --format=%ct 2>/dev/null || date +%s) sh desktop/packaging/build-deb.sh "$V" out
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: debian
           path: out/*.deb
@@ -131,15 +182,17 @@ jobs:
     steps:
       - name: tar and gzip for the checkout and the cache
         run: command -v dnf >/dev/null && dnf install -y -q tar gzip git || zypper -n -q install --force-resolution tar gzip git gawk
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - run: sh desktop/packaging/build-rpm.sh --deps-only
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cargo/registry
           key: cargo-registry-${{ hashFiles('Cargo.lock') }}
       - run: sh desktop/packaging/build-rpm.sh "$V" "$PWD/rpm"
       - run: mkdir out && cp rpm/RPMS/*/*.rpm out/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ matrix.name }}
           path: out/*.rpm
@@ -150,24 +203,44 @@ jobs:
     needs: version
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:kde-6.11
+      # flatpak-builder with the KDE 6.11 runtime, pinned to its digest.
+      image: ghcr.io/flathub-infra/flatpak-github-actions:kde-6.11@sha256:b0a8a2acb9e420dd0e3e083ff552bea5a817e17e41532f1d2287ff49ef9aae0e
       options: --privileged
     env:
       V: ${{ needs.version.outputs.version }}
       MANIFEST: desktop/packaging/flatpak/io.github.RandyNorthrup.ost.yml
+      # flatpak-cargo-generator.py at an exact commit of flatpak-builder-tools,
+      # and its SHA-256; its Python dependencies are locked with hashes in
+      # desktop/packaging/flatpak/cargo-generator-requirements.txt.
+      GENERATOR_URL: https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/41c20aa10819cdb2a4f3ca171758a96d1955c018/cargo/flatpak-cargo-generator.py
+      GENERATOR_SHA256: 0a2db6be87d75910facef28ab46d4d6460802e8419ab850d0caa6a364d26b380
+      # The SHA-256 of Flathub's repository signing key (fingerprint
+      # 6E5C05D979C76DAF93C081354184DD4D907A7CAE, expires 2027-06-14) as
+      # flathub.flatpakrepo carries it. The runtimes, the SDK extensions
+      # and the QtWebEngine BaseApp come from Flathub, and flatpak checks
+      # every one against this key.
+      FLATHUB_KEY_SHA256: 8b124b52da2b0c8a54b338969ebc108488ca1caf718fb45ba6ffee6c7adfcbe0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - id: has
         run: '[ -f "$MANIFEST" ] && echo "yes=true" >> "$GITHUB_OUTPUT" || echo "::notice::no Flatpak manifest yet: skipped"'
       - if: steps.has.outputs.yes == 'true'
         name: The crates' sources from Cargo.lock
         run: |
-          curl -fsSLO https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
-          python3 -m venv /tmp/gen && /tmp/gen/bin/pip -q install aiohttp PyYAML tomlkit
-          /tmp/gen/bin/python flatpak-cargo-generator.py Cargo.lock -o desktop/packaging/flatpak/cargo-sources.json
-          rm flatpak-cargo-generator.py
+          G=/tmp/gen
+          mkdir -p "$G/bin"
+          curl -fsSL --retry 3 -o "$G/bin/flatpak-cargo-generator.py" "$GENERATOR_URL"
+          echo "$GENERATOR_SHA256  $G/bin/flatpak-cargo-generator.py" | sha256sum -c -
+          python3 -I -m venv "$G/venv"
+          # -I: the image's PYTHONPATH (its own site-packages) stays out.
+          "$G/venv/bin/python" -I -m pip install -q --require-hashes --only-binary :all: \
+            -r desktop/packaging/flatpak/cargo-generator-requirements.txt
+          "$G/venv/bin/python" -I "$G/bin/flatpak-cargo-generator.py" Cargo.lock -o desktop/packaging/flatpak/cargo-sources.json
+          rm -rf "$G"
       - if: steps.has.outputs.yes == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .flatpak-builder
           key: flatpak-builder-${{ hashFiles('desktop/packaging/flatpak/**', 'Cargo.lock') }}
@@ -175,12 +248,15 @@ jobs:
       - if: steps.has.outputs.yes == 'true'
         name: Build the bundle
         run: |
-          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          curl -fsSL --retry 3 -o /tmp/flathub.flatpakrepo https://dl.flathub.org/repo/flathub.flatpakrepo
+          key=$(sed -n 's/^GPGKey=//p' /tmp/flathub.flatpakrepo | tr -d '\n' | sha256sum | cut -d' ' -f1)
+          [ "$key" = "$FLATHUB_KEY_SHA256" ] || { echo "::error::Flathub's signing key changed ($key); check it and update FLATHUB_KEY_SHA256"; exit 1; }
+          flatpak remote-add --user --if-not-exists flathub /tmp/flathub.flatpakrepo
           flatpak-builder --user --install-deps-from=flathub --disable-rofiles-fuse --repo=repo --force-clean build "$MANIFEST"
           flatpak build-bundle repo "OST-$V-x86_64.flatpak" io.github.RandyNorthrup.ost \
             --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo
       - if: steps.has.outputs.yes == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: flatpak
           path: OST-${{ env.V }}-x86_64.flatpak
@@ -192,12 +268,17 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # The build-provenance attestations: a Sigstore certificate from the
+      # workflow's OIDC token, stored with the repository's attestations.
+      id-token: write
+      attestations: write
     env:
       V: ${{ needs.version.outputs.version }}
+      PRERELEASE: ${{ needs.version.outputs.prerelease }}
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: dist
           merge-multiple: true
@@ -209,12 +290,26 @@ jobs:
           for f in *~*; do if [ -e "$f" ]; then mv -- "$f" "$(printf %s "$f" | tr '~' '.')"; fi; done
           ls -la
           sha256sum -- * > SHA256SUMS && cat SHA256SUMS
-      - name: Attach to the release (created when the tag has none yet)
+      - if: needs.version.outputs.dry_run == 'true'
+        name: Keep the files (dry run)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-files
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+      - if: needs.version.outputs.dry_run != 'true'
+        name: Build-provenance attestations
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+      - if: needs.version.outputs.dry_run != 'true'
+        name: Attach to the release (created when the tag has none yet)
         run: |
           if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            pre=""; [ "${{ needs.version.outputs.prerelease }}" = true ] && pre=--prerelease
+            pre=""; [ "$PRERELEASE" = true ] && pre=--prerelease
             gh release create "$GITHUB_REF_NAME" $pre --verify-tag --title "OST $V" \
-              --notes "OST $V. Packages: see [Installation](https://github.com/RandyNorthrup/ost/wiki/Installation); checksums in SHA256SUMS."
+              --notes "OST $V. Packages: see [Installation](https://github.com/RandyNorthrup/ost/wiki/Installation). Checksums are in SHA256SUMS; every file has a build-provenance attestation: \`gh attestation verify <file> -R RandyNorthrup/ost\` ([Verifying downloads](https://github.com/RandyNorthrup/ost/wiki/Installation#verifying-downloads))."
           fi
           gh release upload "$GITHUB_REF_NAME" --clobber dist/*
 
@@ -222,7 +317,7 @@ jobs:
     # Runs once the release has its files (ost-bin downloads them).
     needs: [version, release]
     runs-on: ubuntu-latest
-    if: needs.version.outputs.prerelease == 'false'
+    if: needs.version.outputs.prerelease == 'false' && needs.version.outputs.dry_run != 'true'
     container: archlinux:latest
     env:
       V: ${{ needs.version.outputs.version }}
@@ -233,7 +328,9 @@ jobs:
       - if: steps.key.outputs.yes == 'true'
         run: pacman -Sy --noconfirm --needed git
       - if: steps.key.outputs.yes == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - if: steps.key.outputs.yes == 'true'
         name: Update and push the AUR packages
         run: sh desktop/packaging/update-aur.sh "$V"
