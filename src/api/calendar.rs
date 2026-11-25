@@ -588,14 +588,12 @@ pub async fn event_detail(client: &TeamsClient, id: &str) -> Result<serde_json::
     // An occurrence has no recurrence of its own: its series' (what
     // Outlook's form shows on Edit series).
     let mut recurrence = v.get("recurrence").cloned().unwrap_or(serde_json::Value::Null);
-    if recurrence.is_null() {
-        if let Some(master) = v.get("seriesMasterId").and_then(|m| m.as_str()).filter(|m| !m.is_empty()) {
-            if let Ok(r) = client.graph_get_with(&format!("/me/events/{}?$select=recurrence", event_path_id(master)?), &[("Prefer", "IdType=\"ImmutableId\"")]).await {
+    if recurrence.is_null()
+        && let Some(master) = v.get("seriesMasterId").and_then(|m| m.as_str()).filter(|m| !m.is_empty())
+            && let Ok(r) = client.graph_get_with(&format!("/me/events/{}?$select=recurrence", event_path_id(master)?), &[("Prefer", "IdType=\"ImmutableId\"")]).await {
                 let m: serde_json::Value = r.json().await.unwrap_or_default();
                 recurrence = m.get("recurrence").cloned().unwrap_or(serde_json::Value::Null);
             }
-        }
-    }
     Ok(serde_json::json!({
         "id": id,
         "body_html": v.pointer("/body/content").and_then(|c| c.as_str()).unwrap_or_default(),
@@ -790,7 +788,7 @@ fn respond_body(ews_id: &str, response: &str, attendance: u8, send_response: boo
 /// padded).
 pub(crate) fn ews_id(rest_id: &str) -> String {
     let mut s = rest_id.replace('-', "/").replace('_', "+");
-    while s.len() % 4 != 0 {
+    while !s.len().is_multiple_of(4) {
         s.push('=');
     }
     s
@@ -921,7 +919,7 @@ pub async fn calendar_prefs(client: &TeamsClient) -> Result<serde_json::Value> {
         .and_then(|v| v.get("options").and_then(|o| o.as_array()).cloned())
         .unwrap_or_default()
         .into_iter()
-        .find(|o| is_surface_options(o))
+        .find(is_surface_options)
         .unwrap_or(serde_json::Value::Null);
     if let Err(e) = &options {
         tracing::warn!("calendar options: {e:#}");
@@ -1594,12 +1592,11 @@ pub async fn send_event_update(client: &TeamsClient, id: &str, form: &MeetingFor
     let mut cur = get(path_id.clone()).await?;
     // All events in the series (or a new repeat for it) go to the series
     // master; this and all following events to the occurrence itself.
-    if form.scope == "series" || (form.scope != "following" && form.recurrence_changed && form.recurrence.is_some()) {
-        if let Some(master) = cur.get("seriesMasterId").and_then(|m| m.as_str()).filter(|m| !m.is_empty()) {
+    if (form.scope == "series" || (form.scope != "following" && form.recurrence_changed && form.recurrence.is_some()))
+        && let Some(master) = cur.get("seriesMasterId").and_then(|m| m.as_str()).filter(|m| !m.is_empty()) {
             path_id = event_path_id(master)?.to_string();
             cur = get(path_id.clone()).await?;
         }
-    }
     let tz = mailbox_time_zone().await;
     let body = update_event_request(&ews_id(&path_id), &cur, form, &tz)?;
     let v = owa_action("UpdateCalendarEvent", &body).await?;
@@ -1654,14 +1651,13 @@ fn update_event_request(ews: &str, cur: &serde_json::Value, form: &MeetingForm, 
     // This and all following events (EventScope 2, captured 2026-11-23): a
     // new repeat starts on the occurrence's date.
     let following = form.scope == "following";
-    if form.recurrence_changed {
-        if let Some(mut r) = form.recurrence.as_ref().and_then(ews_recurrence) {
+    if form.recurrence_changed
+        && let Some(mut r) = form.recurrence.as_ref().and_then(ews_recurrence) {
             if following {
                 r["RecurrenceRange"]["StartDate"] = start.date_naive().format("%Y-%m-%d").to_string().into();
             }
             updates.push(set("Recurrence", serde_json::json!({ "Recurrence": r })));
         }
-    }
     // (A Teams meeting's "Microsoft Teams Meeting" isn't in the form.)
     let cur_location = Some(cs("/location/displayName")).filter(|l| *l != "Microsoft Teams Meeting").unwrap_or_default();
     if form.location.trim() != cur_location {

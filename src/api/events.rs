@@ -180,7 +180,7 @@ pub fn card_presenters(speakers: &[Value], owner: Option<&Value>) -> Vec<String>
     let shown = |p: &&Value| {
         !s(p, "/displayName").is_empty()
             && p.get("isHidden").and_then(Value::as_bool) != Some(true)
-            && s(p, "/userPurpose").to_ascii_lowercase() != "room"
+            && !s(p, "/userPurpose").eq_ignore_ascii_case("room")
     };
     let names: Vec<String> = speakers
         .iter()

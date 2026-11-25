@@ -155,7 +155,7 @@ async fn serve(stream: tokio::net::TcpStream, path: &str) -> anyhow::Result<()> 
                     if drawn == 1 {
                         tracing::info!(width = f.width, height = f.height, "Avatars app drew its first frame");
                         since = std::time::Instant::now();
-                    } else if drawn % 300 == 0 {
+                    } else if drawn.is_multiple_of(300) {
                         let fps = 299.0 / since.elapsed().as_secs_f64();
                         tracing::info!(drawn, fps = format!("{fps:.1}"), "Avatars app drawing");
                         since = std::time::Instant::now();

@@ -458,7 +458,7 @@ mod tests {
         p.extend_from_slice(&chunk.to_be_bytes());
         p.extend_from_slice(&[4, 8]); // 1 ms, 2 ms
         p.extend_from_slice(&(-4i16).to_be_bytes()); // -1 ms
-        while p.len() % 4 != 0 {
+        while !p.len().is_multiple_of(4) {
             p.push(0);
         }
         let words = (p.len() / 4 - 1) as u16;

@@ -386,11 +386,10 @@ pub async fn compose_relink(
             (v.get("webUrl").and_then(Value::as_str).context("The component's file")?.to_string(), String::new())
         }
     };
-    if !old_share_id.is_empty() && !old_share_id.eq_ignore_ascii_case(&share_id) && plain_id(&old_share_id.replace('-', "")) {
-        if let Err(e) = client.graph_delete(&format!("/drives/{drive_id}/items/{item_id}/permissions/{old_share_id}")).await {
+    if !old_share_id.is_empty() && !old_share_id.eq_ignore_ascii_case(&share_id) && plain_id(&old_share_id.replace('-', ""))
+        && let Err(e) = client.graph_delete(&format!("/drives/{drive_id}/items/{item_id}/permissions/{old_share_id}")).await {
             tracing::warn!("deleting the Loop component's old link failed: {e:#}");
         }
-    }
     Ok((super::meeting_notes::shared_link(&url, component_url), share_id))
 }
 

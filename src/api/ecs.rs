@@ -198,52 +198,6 @@ pub async fn load(client: &TeamsClient, cache_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn asks_as_teams_desktop_and_reads_overrides_first() {
-        let license = serde_json::json!({"experimentationTeamsLicenseCategories": ["TeamsSmb"], "meetingRoomLicenseCategories": []});
-        let q = query("u", "t", "amer", Some(&license), "s", "c");
-        let get = |k: &str| q.iter().find(|(a, _)| *a == k).map(|(_, v)| v.as_str());
-        assert_eq!(get("teamsLicenseCategory"), Some("TeamsSmb"));
-        assert_eq!(get("TeamsLicenseCategory"), Some("TeamsSmb"));
-        assert_eq!(get("TeamsMeetingRoomLicenseCategory"), Some("None"));
-        assert_eq!(get("Region"), Some("amer"));
-        assert_eq!(get("agents"), Some(AGENTS));
-        assert_eq!(q.last().unwrap(), &("ECSCanary", "1".to_string()));
-        // Shaped as Teams' reply for ost-test1 on 2026-11-09 (the store doc
-        // from TeamsNorthstar, enableChannelApps from the user overrides);
-        // an override wins over the same key in TeamsNorthstar.
-        let v = serde_json::json!({
-            "TeamsNorthstar": {"extensibility": {"storeAppsCollectionsDoc": "Enterprise/NewStoreCustomization/storev3", "enableChannelApps": false}},
-            "TeamsNorthstarUserOverrides": {"extensibility": {"enableChannelApps": true}}
-        });
-        assert_eq!(
-            setting_in(&v, "extensibility", "storeAppsCollectionsDoc"),
-            Some(serde_json::json!("Enterprise/NewStoreCustomization/storev3"))
-        );
-        assert_eq!(setting_in(&v, "extensibility", "enableChannelApps"), Some(serde_json::json!(true)));
-        assert_eq!(setting_in(&v, "extensibility", "b"), None);
-    }
-
-    #[test]
-    fn ring_line_for_targeted_release_only() {
-        let v = serde_json::json!({ "Segmentation": { "TeamsRing": "ring3_6" } });
-        assert_eq!(about_ring_in(&v).unwrap().0, "Targeted release");
-        assert!(about_ring_in(&serde_json::json!({ "Segmentation": { "TeamsRing": "general" } })).is_none());
-    }
-
-    #[test]
-    fn ring_from_segmentation_as_teams_host() {
-        assert_eq!(ring_in(&serde_json::json!({ "Segmentation": { "TeamsRing": "ring3_6" } })), "ring3_6");
-        let meta = serde_json::json!({ "TeamsNorthstar": { "metadata": { "ring": { "id": "ring1" } } } });
-        assert_eq!(ring_in(&meta), "ring1");
-        assert_eq!(ring_in(&serde_json::json!({})), "general");
-    }
-}
-
 /// About's ring line (settings-app `by` / `wy` / `Ty`): shown when the
 /// user's ring is Early Access (Teams' host takes the ring from ECS
 /// Segmentation.TeamsRing, "ring3_6" for Targeted release users), with
@@ -293,4 +247,50 @@ pub fn ring() -> String {
         .ok()
         .and_then(|s| s.as_ref().map(ring_in))
         .unwrap_or_else(|| "general".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn asks_as_teams_desktop_and_reads_overrides_first() {
+        let license = serde_json::json!({"experimentationTeamsLicenseCategories": ["TeamsSmb"], "meetingRoomLicenseCategories": []});
+        let q = query("u", "t", "amer", Some(&license), "s", "c");
+        let get = |k: &str| q.iter().find(|(a, _)| *a == k).map(|(_, v)| v.as_str());
+        assert_eq!(get("teamsLicenseCategory"), Some("TeamsSmb"));
+        assert_eq!(get("TeamsLicenseCategory"), Some("TeamsSmb"));
+        assert_eq!(get("TeamsMeetingRoomLicenseCategory"), Some("None"));
+        assert_eq!(get("Region"), Some("amer"));
+        assert_eq!(get("agents"), Some(AGENTS));
+        assert_eq!(q.last().unwrap(), &("ECSCanary", "1".to_string()));
+        // Shaped as Teams' reply for ost-test1 on 2026-11-09 (the store doc
+        // from TeamsNorthstar, enableChannelApps from the user overrides);
+        // an override wins over the same key in TeamsNorthstar.
+        let v = serde_json::json!({
+            "TeamsNorthstar": {"extensibility": {"storeAppsCollectionsDoc": "Enterprise/NewStoreCustomization/storev3", "enableChannelApps": false}},
+            "TeamsNorthstarUserOverrides": {"extensibility": {"enableChannelApps": true}}
+        });
+        assert_eq!(
+            setting_in(&v, "extensibility", "storeAppsCollectionsDoc"),
+            Some(serde_json::json!("Enterprise/NewStoreCustomization/storev3"))
+        );
+        assert_eq!(setting_in(&v, "extensibility", "enableChannelApps"), Some(serde_json::json!(true)));
+        assert_eq!(setting_in(&v, "extensibility", "b"), None);
+    }
+
+    #[test]
+    fn ring_line_for_targeted_release_only() {
+        let v = serde_json::json!({ "Segmentation": { "TeamsRing": "ring3_6" } });
+        assert_eq!(about_ring_in(&v).unwrap().0, "Targeted release");
+        assert!(about_ring_in(&serde_json::json!({ "Segmentation": { "TeamsRing": "general" } })).is_none());
+    }
+
+    #[test]
+    fn ring_from_segmentation_as_teams_host() {
+        assert_eq!(ring_in(&serde_json::json!({ "Segmentation": { "TeamsRing": "ring3_6" } })), "ring3_6");
+        let meta = serde_json::json!({ "TeamsNorthstar": { "metadata": { "ring": { "id": "ring1" } } } });
+        assert_eq!(ring_in(&meta), "ring1");
+        assert_eq!(ring_in(&serde_json::json!({})), "general");
+    }
 }

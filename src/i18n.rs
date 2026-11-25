@@ -402,7 +402,7 @@ pub fn plural_category(lang: &str, n: u64) -> &'static str {
         "fr" | "pt-br" => {
             if n == 0 || n == 1 {
                 "one"
-            } else if n % 1_000_000 == 0 {
+            } else if n.is_multiple_of(1_000_000) {
                 "many"
             } else {
                 "other"
@@ -411,7 +411,7 @@ pub fn plural_category(lang: &str, n: u64) -> &'static str {
         "es" | "it" | "ca" | "pt" => {
             if n == 1 {
                 "one"
-            } else if n != 0 && n % 1_000_000 == 0 {
+            } else if n != 0 && n.is_multiple_of(1_000_000) {
                 "many"
             } else {
                 "other"

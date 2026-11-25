@@ -1456,7 +1456,7 @@ mod evergreen_tests {
 pub async fn app_for_bot(client: &TeamsClient, bot: &str) -> Option<(String, String, String)> {
     let id = bot.strip_prefix("28:").unwrap_or(bot).to_ascii_lowercase();
     let defs = catalog(client).await.ok()?;
-    let def = defs.iter().find(|d| bot_of(d).iter().any(|b| *b == id))?;
+    let def = defs.iter().find(|d| bot_of(d).contains(&id))?;
     Some((str_at(def, "id").to_string(), str_at(def, "name").to_string(), super::tabs::https_only(str_at(def, "largeImageUrl"))))
 }
 

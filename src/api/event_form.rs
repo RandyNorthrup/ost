@@ -201,11 +201,10 @@ pub fn parse_intent(intent: &str) -> (Vec<String>, Vec<String>, Vec<(u32, u32)>)
             }
             Some("DayOfWeek") => weekdays.push(val.to_string()),
             Some("TimeOfDay") => {
-                if let Some((a, b)) = val.split_once("..") {
-                    if let (Ok(a), Ok(b)) = (a.parse(), b.parse()) {
+                if let Some((a, b)) = val.split_once("..")
+                    && let (Ok(a), Ok(b)) = (a.parse(), b.parse()) {
                         times.push((a, b));
                     }
-                }
             }
             _ => {}
         }
@@ -1010,7 +1009,7 @@ pub async fn find_meeting_times(req: &Value) -> Result<Value> {
 /// The suggestions of a findmeetingtimes answer (PascalCase, as Outlook's
 /// scheduling service answers; camelCase too).
 pub fn suggestions_from(v: &Value) -> Vec<Value> {
-    let get = |o: &Value, k: &str| o.get(k).or_else(|| o.get(&lower_first(k))).cloned().unwrap_or(Value::Null);
+    let get = |o: &Value, k: &str| o.get(k).or_else(|| o.get(lower_first(k))).cloned().unwrap_or(Value::Null);
     get(v, "MeetingTimeSuggestions")
         .as_array()
         .into_iter()

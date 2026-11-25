@@ -1300,7 +1300,7 @@ pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
                 return None;
             }
             let joined = targets.iter().all(|t| *t == actor);
-            let actor_added = targets.iter().any(|t| *t == actor);
+            let actor_added = targets.contains(&actor);
             targets.retain(|t| *t != actor);
             if joined {
                 return Some(ev("MemberJoined", vec![actor.clone()], String::new(), None));

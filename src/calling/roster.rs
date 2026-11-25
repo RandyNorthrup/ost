@@ -352,7 +352,7 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                                 .and_then(|m| m.get("sourceId")?.as_i64())
                         }),
                     content_sessions: {
-                        log_sharer_attributes(&mri, p);
+                        log_sharer_attributes(mri, p);
                         super::content_sharing::presenter_sessions(p)
                     },
                     on_hold: !streams.is_empty()
@@ -398,7 +398,7 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
 /// that sizes Annotate for viewers) when it is new, wherever the roster
 /// carries it.
 fn log_sharer_attributes(mri: &str, p: &serde_json::Value) {
-    fn find<'a>(v: &'a serde_json::Value, depth: u8) -> Option<&'a serde_json::Value> {
+    fn find(v: &serde_json::Value, depth: u8) -> Option<&serde_json::Value> {
         if depth > 5 {
             return None;
         }

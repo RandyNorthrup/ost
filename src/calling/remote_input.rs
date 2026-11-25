@@ -62,8 +62,8 @@ impl Injector {
             .response()
             .context("The remote control portal refused the request")?;
         let sources = match kind {
-            Source::Screen => SourceType::MONITOR.into(),
-            Source::Window => SourceType::WINDOW.into(),
+            Source::Screen => SourceType::MONITOR,
+            Source::Window => SourceType::WINDOW,
             Source::Any => SourceType::MONITOR | SourceType::WINDOW,
         };
         screencast

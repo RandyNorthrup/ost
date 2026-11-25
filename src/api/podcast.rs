@@ -227,7 +227,7 @@ pub(crate) async fn run_op_with(annotations: &[&str], path: Value, signal: Value
     let (mut ws, _) = tokio_tungstenite::connect_async(req).await.context("AugLoop")?;
     let group = uuid::Uuid::new_v4().simple().to_string();
     let mut n = 0u64;
-    let mut next = |n: &mut u64| {
+    let next = |n: &mut u64| {
         *n += 1;
         (format!("c{n}"), format!("ost{}.{n}", &group[..8]))
     };

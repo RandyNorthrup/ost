@@ -2764,8 +2764,8 @@ async fn recv_loop(ctx: RecvCtx) {
                                 f.map(|f| (*ssrc, f))
                             })
                             .collect();
-                        if !flags.is_empty() {
-                            if let Some(p) = &rtcp_plain {
+                        if !flags.is_empty()
+                            && let Some(p) = &rtcp_plain {
                                 for (ssrc, flag) in flags {
                                     if super::webrtc_video::wants_keyframe(p, ssrc) {
                                         tracing::debug!(ssrc, "keyframe requested");
@@ -2773,7 +2773,6 @@ async fn recv_loop(ctx: RecvCtx) {
                                     }
                                 }
                             }
-                        }
                     }
                     continue;
                 }

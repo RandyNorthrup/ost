@@ -630,7 +630,7 @@ pub fn match_contents(v: &Value, ical_uid: &str, item_id: &str) -> Option<Meetin
                 let (d, i) = (s("driveId"), s("driveItemId"));
                 (!d.is_empty() && !i.is_empty()).then_some((d, i))
             })
-            .last();
+            .next_back();
         let transcripts = m.get("resources").and_then(Value::as_array).into_iter().flatten().filter_map(super::podcast::transcript_from).collect();
         let organizer_name = t
             .pointer("/organizer/emailAddress/name")

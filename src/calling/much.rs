@@ -142,9 +142,9 @@ impl MuchMixer {
     #[cfg(feature = "audio")]
     fn decode_one(&mut self, source: u32, frame: &[u8], now: Instant) -> Vec<i16> {
         let rate = self.rate;
-        if !self.speakers.contains_key(&source) {
+        if let std::collections::hash_map::Entry::Vacant(e) = self.speakers.entry(source) {
             let Ok(decoder) = opus::Decoder::new(rate, opus::Channels::Mono) else { return Vec::new() };
-            self.speakers.insert(source, Speaker { decoder, place: super::spatial::Spatializer::new(rate), seen: now });
+            e.insert(Speaker { decoder, place: super::spatial::Spatializer::new(rate), seen: now });
             tracing::info!(source, gain = super::ai_interpreter::gain_for(source), "x-much2: a speaker starts");
         }
         let Some(sp) = self.speakers.get_mut(&source) else { return Vec::new() };

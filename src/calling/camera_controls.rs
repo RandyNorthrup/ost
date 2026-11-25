@@ -373,11 +373,10 @@ pub fn set(path: &str, id: u32, value: i64) -> Result<()> {
 pub fn reset(path: &str) -> Result<()> {
     let d = open(path)?;
     for desc in d.query_controls()? {
-        if ORDER.iter().any(|(id, _)| *id == desc.id) || AUTO_CONTROLS.iter().any(|(a, _)| *a == desc.id) {
-            if usable(&desc) {
+        if (ORDER.iter().any(|(id, _)| *id == desc.id) || AUTO_CONTROLS.iter().any(|(a, _)| *a == desc.id))
+            && usable(&desc) {
                 let _ = set_value(&d, &desc, desc.default);
             }
-        }
     }
     Ok(())
 }

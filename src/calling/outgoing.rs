@@ -3441,7 +3441,7 @@ fn preheat_joins_ongoing() -> bool {
 /// link) and the meeting's `meetingData` the liveness entry names.
 fn ongoing_join(live: &crate::api::LiveCall) -> Option<(&str, Option<&serde_json::Value>)> {
     super::incoming::is_service_link(&live.conversation_url)
-        .then(|| (live.conversation_url.as_str(), live.meeting_data.as_ref()))
+        .then_some((live.conversation_url.as_str(), live.meeting_data.as_ref()))
 }
 
 /// Join with an ID: the meeting a meeting ID and passcode stand for, as

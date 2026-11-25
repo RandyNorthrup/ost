@@ -291,7 +291,7 @@ impl Processor {
                 self.seg = SegWorker::start();
             }
             if let Some(s) = &self.seg {
-                if self.count % 2 == 0 {
+                if self.count.is_multiple_of(2) {
                     let _ = s.tx.try_send(model_input(src, sw as u32, sh as u32));
                 }
                 if let Some(m) = s.newest.lock().unwrap().take() {

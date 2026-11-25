@@ -196,11 +196,10 @@ pub fn bodies(tab: &str, keywords: &str, f: &Filters, from: usize, timezone: &st
                         let key = if q.get("QueryString").is_some() { "QueryString" } else { "queryString" };
                         q[key] = qs.into();
                     }
-                    if matches!(kind.as_str(), "Message" | "File") {
-                        if let Some(p) = people_note(f, tenant) {
+                    if matches!(kind.as_str(), "Message" | "File")
+                        && let Some(p) = people_note(f, tenant) {
                             q["queryAnnotations"] = serde_json::json!([p]);
                         }
-                    }
                 }
                 if kind == "Message" && name != "images-messages" {
                     if matches!(f.in_kind.as_str(), "team" | "channel") && !f.in_group.is_empty() {

@@ -50,8 +50,8 @@ impl ScreenCapture {
     pub async fn start_kind(kind: Source) -> Result<(Self, mpsc::Receiver<YuvFrame>)> {
         let sources = match kind {
             Source::Any => SourceType::MONITOR | SourceType::WINDOW,
-            Source::Screen => SourceType::MONITOR.into(),
-            Source::Window => SourceType::WINDOW.into(),
+            Source::Screen => SourceType::MONITOR,
+            Source::Window => SourceType::WINDOW,
         };
         let proxy = Screencast::new()
             .await

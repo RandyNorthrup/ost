@@ -128,11 +128,10 @@ static SINK: std::sync::Mutex<Option<Sink>> = std::sync::Mutex::new(None);
 
 fn notify(kind: &str, data: serde_json::Value) {
     tracing::info!("WORKLOC banner {kind} {data}");
-    if let Ok(sink) = SINK.lock() {
-        if let Some(sink) = sink.as_ref() {
+    if let Ok(sink) = SINK.lock()
+        && let Some(sink) = sink.as_ref() {
             sink(kind, data);
         }
-    }
 }
 
 /// Set the check-in's mode (the policy and your switch, from Settings'

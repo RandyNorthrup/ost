@@ -520,7 +520,7 @@ pub fn acknowledgement(body: &str, own_endpoint: Option<&str>) -> (u16, String) 
     }
     let open = [command::RESPONSE, command::BROADCAST, command::PAIR, command::AUTOPAIR, "uploadbettertogetherlogs"];
     let name = msg.name();
-    let paired = PAIRED.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|id| *id == msg.registration_id);
+    let paired = PAIRED.lock().unwrap_or_else(|e| e.into_inner()).contains(&msg.registration_id);
     if !open.contains(&name.as_str()) && !paired {
         return (STATUS_FAILED, serde_json::json!({"errorCode": ERROR_NOT_PAIRED}).to_string());
     }

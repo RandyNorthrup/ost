@@ -216,11 +216,10 @@ pub fn matching<'a>(query: &str, list: &'a [Building]) -> Vec<&'a Building> {
 pub fn suggested<'a>(banner: Option<&'a Building>, office: Option<&'a Building>, shown: &[&Building]) -> Vec<&'a Building> {
     let banner = banner.filter(|b| !b.id.is_empty() && !b.name.is_empty());
     let mut out: Vec<&Building> = banner.into_iter().collect();
-    if let Some(o) = office.filter(|o| !o.id.is_empty() && !o.name.is_empty()) {
-        if banner.map(|b| b.id != o.id).unwrap_or(true) {
+    if let Some(o) = office.filter(|o| !o.id.is_empty() && !o.name.is_empty())
+        && banner.map(|b| b.id != o.id).unwrap_or(true) {
             out.push(o);
         }
-    }
     out.into_iter().filter(|s| shown.iter().any(|b| b.id == s.id)).collect()
 }
 

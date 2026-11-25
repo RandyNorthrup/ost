@@ -93,7 +93,7 @@ fn fill(template: &str, args: &[&str]) -> String {
     out
 }
 /// OneDrive's "a||b||c" list forms (intervals 1||2||3).
-fn pick<'a>(forms: &'a str, n: usize) -> &'a str {
+fn pick(forms: &str, n: usize) -> &str {
     let v: Vec<&str> = forms.split("||").collect();
     v[n.clamp(1, v.len()) - 1]
 }

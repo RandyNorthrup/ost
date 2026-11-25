@@ -778,7 +778,7 @@ pub async fn preview(client: &TeamsClient, item: &DriveItem) -> Result<Preview> 
     if kind == "none" || item.is_folder {
         return Ok(Preview { kind: "none".into(), text: String::new(), path: String::new() });
     }
-    let convert = kind == "pdf" && item.kind.to_ascii_lowercase() != "pdf";
+    let convert = kind == "pdf" && !item.kind.eq_ignore_ascii_case("pdf");
     let url = format!("{}/content{}", item_path(&item.drive_id, &item.id)?, if convert { "?format=pdf" } else { "" });
     let bytes = client.graph_get(&url).await?.bytes().await.context("Preview")?;
     if kind == "text" {

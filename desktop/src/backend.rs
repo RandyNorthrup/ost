@@ -4610,7 +4610,7 @@ async fn preheat_for_prejoin(qt: cxx_qt::CxxQtThread<qobject::Backend>, url: Str
         let tag = tag.clone();
         let qt = qt.clone();
         async move {
-            if !call_slot().lock().await.preheat.as_ref().is_some_and(|p| p.tag == tag) {
+            if call_slot().lock().await.preheat.as_ref().is_none_or(|p| p.tag != tag) {
                 return;
             }
             tracing::info!(available, how, "pre-join phone audio");
@@ -4633,7 +4633,7 @@ async fn preheat_for_prejoin(qt: cxx_qt::CxxQtThread<qobject::Backend>, url: Str
                 placed = true;
                 let mut slot = call_slot().lock().await;
                 match r {
-                    Ok(call) if ours(&*slot) => {
+                    Ok(call) if ours(&slot) => {
                         tracing::info!(in_lobby = call.in_lobby(), "pre-join: the call is preheated");
                         if let Some(d) = call.joined_details() {
                             latest = Some(d.clone());
@@ -4695,7 +4695,7 @@ async fn preheat_for_prejoin(qt: cxx_qt::CxxQtThread<qobject::Backend>, url: Str
                     // The meeting ended it (or we left): nothing to keep.
                     tracing::info!("pre-join: the preheated call ended");
                     let mut slot = call_slot().lock().await;
-                    if ours(&*slot) {
+                    if ours(&slot) {
                         slot.preheat = None;
                         slot.left_tags.push(tag.clone());
                     }
@@ -4724,7 +4724,7 @@ async fn preheat_for_prejoin(qt: cxx_qt::CxxQtThread<qobject::Backend>, url: Str
                 // Teams leaves its preheated call after a minute.
                 let p = {
                     let mut slot = call_slot().lock().await;
-                    if ours(&*slot) { slot.preheat.take() } else { None }
+                    if ours(&slot) { slot.preheat.take() } else { None }
                 };
                 if let Some(p) = p {
                     tracing::info!("pre-join: the preheated call timed out");
@@ -5310,7 +5310,7 @@ fn spawn_call_stats_logger(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
                     this.as_mut().set_call_network_strength(QString::from(name));
                 }
             });
-            if tick % 5 != 0 {
+            if !tick.is_multiple_of(5) {
                 continue;
             }
             let slot = call_slot().lock().await;
@@ -7112,7 +7112,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                     this.as_mut().set_call_breakout_room_json(QString::default());
                     this.as_mut().set_call_state(QString::from("connecting"));
                 });
-                seed_roster(&qt, &call).await;
+                seed_roster(qt, &call).await;
                 call_slot().lock().await.outgoing = Some(call);
                 let _ = qt.queue(move |mut this| {
                     this.as_mut().show_joined(view, false);
@@ -7190,12 +7190,11 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         return;
     }
     // A notification about a meeting (its kind and fields, never values).
-    if json.contains("\"notificationType\"") && !json.contains("HuddleMeetingStart") {
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(json) {
+    if json.contains("\"notificationType\"") && !json.contains("HuddleMeetingStart")
+        && let Ok(v) = serde_json::from_str::<serde_json::Value>(json) {
             let keys: Vec<&String> = v.as_object().map(|o| o.keys().collect()).unwrap_or_default();
             tracing::info!(kind = %v["notificationType"], ?keys, "call notification");
         }
-    }
     if let Some(start) = teams_cli::calling::incoming::meeting_start(json) {
         tracing::info!(thread = %start.thread_id, "meeting started in a chat");
         let qt2 = qt.clone();
@@ -8001,7 +8000,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                     this.as_mut().set_call_breakout_json(QString::default());
                     this.as_mut().set_call_breakout_room_json(QString::default());
                 });
-                seed_roster(&qt, &call).await;
+                seed_roster(qt, &call).await;
                 call_slot().lock().await.outgoing = Some(call);
                 let _ = qt.queue(move |mut this| {
                     this.as_mut().show_joined(view, true);
@@ -10023,7 +10022,7 @@ impl qobject::Backend {
     /// A group chat's call (Meet now, Audio call or Join), shown with the
     /// meeting window.
     fn start_group_call(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         chat_id: String,
         title: QString,
         // None: a new meeting in a channel, titled `title` (Meet now).
@@ -10693,11 +10692,10 @@ impl qobject::Backend {
             let result: anyhow::Result<serde_json::Value> = async {
                 let client = TeamsClient::new().await?;
                 // Teams names the bot's app when it knows it.
-                if target.app_id.is_empty() {
-                    if let Some((app, _, _)) = api::app_details::app_for_bot(&client, &target.bot_mri).await {
+                if target.app_id.is_empty()
+                    && let Some((app, _, _)) = api::app_details::app_for_bot(&client, &target.bot_mri).await {
                         target.app_id = app;
                     }
-                }
                 let kind = action["type"].as_str().unwrap_or_default().to_ascii_lowercase();
                 let (name, text, value) = if kind == "action.execute" {
                     (Some("adaptiveCard/action"), None, api::bot_invoke::execute_value(&action, &inputs, automatic))
@@ -11485,7 +11483,7 @@ impl qobject::Backend {
             // on; watched in Teams desktop 2026-11-17), still in the
             // meeting it came from. Not an organizer's Join over the held
             // main meeting, and not a move we cancelled.
-            let participant_move = undo.is_some() && !call_slot().lock().await.held_main.is_some();
+            let participant_move = undo.is_some() && call_slot().lock().await.held_main.is_none();
             if participant_move
                 && let Err(e) = &result
                 && e.to_string() != "Call cancelled"
@@ -13367,7 +13365,7 @@ impl qobject::Backend {
         });
     }
 
-    pub fn download_attendance_report(mut self: Pin<&mut Self>, thread: &QString, organizer: &QString, call_id: &QString) {
+    pub fn download_attendance_report(self: Pin<&mut Self>, thread: &QString, organizer: &QString, call_id: &QString) {
         let Some(dir) = download_dir() else { return };
         let (thread, organizer, call) = (thread.to_string(), organizer.to_string(), call_id.to_string());
         let qt = self.qt_thread();
@@ -17803,11 +17801,10 @@ impl qobject::Backend {
     }
 
     pub fn open_os_settings(&self, kind: &QString) {
-        if let Some((program, args)) = os_settings_command(&kind.to_string()) {
-            if let Err(e) = std::process::Command::new(program).args(args).spawn() {
+        if let Some((program, args)) = os_settings_command(&kind.to_string())
+            && let Err(e) = std::process::Command::new(program).args(args).spawn() {
                 tracing::warn!("system settings ({program}): {e}");
             }
-        }
     }
 
     pub fn third_party_notices_url(&self) -> QString {
@@ -19164,8 +19161,8 @@ impl qobject::Backend {
                     continue;
                 }
                 let ours = local.as_ref().map(|d| draft_teams_form(d).0).unwrap_or_default();
-                if r.time_ms as u64 > synced && !same_draft_html(&ours, &r.content) {
-                    if let Some(rd) = view(r) {
+                if r.time_ms as u64 > synced && !same_draft_html(&ours, &r.content)
+                    && let Some(rd) = view(r) {
                         if local.is_none() || untouched {
                             adopt(&mut self, rd);
                             tracing::info!("DRAFT changed on another device: {chat}");
@@ -19175,7 +19172,6 @@ impl qobject::Backend {
                         arrived.push(chat.clone());
                         continue;
                     }
-                }
             }
             // Another device's own draft for this chat (a different id).
             let local = self.as_mut().drafts_mut().get(&chat).cloned();
@@ -22443,7 +22439,7 @@ impl qobject::Backend {
                         Ok(json!({
                             "recap": r, "link": api::recaps::recap_link(&r), "recording": recording, "audioRecap": audio, "notesUrl": notes,
                             "player": player.as_ref().map(String::as_str).unwrap_or_default(),
-                            "playerError": player.as_ref().err().map(|e| short_error(e)).unwrap_or_default(),
+                            "playerError": player.as_ref().err().map(short_error).unwrap_or_default(),
                             "transcript": transcript,
                         }))
                     }
@@ -23053,8 +23049,8 @@ impl qobject::Backend {
                         // 2. A scheduled meeting (it has a calendar id): Teams'
                         // collab object service gives the notes made, or the
                         // claim to make them.
-                        if !m.i_cal_uid.is_empty() {
-                            if let Ok(client) = TeamsClient::new().await {
+                        if !m.i_cal_uid.is_empty()
+                            && let Ok(client) = TeamsClient::new().await {
                                 let region = notes_region(&client);
                                 let caller = api::meeting_notes::CollabCaller {
                                     user: format!("{}@{}", client.object_id().unwrap_or_default(), client.tenant_id().unwrap_or_default()),
@@ -23073,7 +23069,6 @@ impl qobject::Backend {
                                     Err(e) => tracing::info!("meeting notes collab: {}", short_error(&e)),
                                 }
                             }
-                        }
                         // 3. A Meet now (no calendar id): as Teams does (its
                         // meeting-notes service only answers its Copilot bot's
                         // ping and the meeting chat's notes), claim making
@@ -24588,8 +24583,8 @@ impl qobject::Backend {
                         if target.id.is_empty() {
                             target.id = s("id");
                         }
-                        if args["series"].as_bool() == Some(true) {
-                            if let Some(master) = args["event"]["series_master_id"].as_str().filter(|m| !m.is_empty()) {
+                        if args["series"].as_bool() == Some(true)
+                            && let Some(master) = args["event"]["series_master_id"].as_str().filter(|m| !m.is_empty()) {
                                 target.id = master.to_string();
                                 target.event_type = "seriesMaster".into();
                                 if let Ok(r) = client.graph_get(&format!("/me/events/{master}?$select=iCalUId,start")).await {
@@ -24600,7 +24595,6 @@ impl qobject::Backend {
                                     }
                                 }
                             }
-                        }
                         api::calendar::respond(&client, &target, &s("response"), args["send"].as_bool().unwrap_or(true), &s("note")).await?;
                         Ok(json!({}))
                     }

@@ -247,11 +247,10 @@ pub fn follow_all_rc_change(existing: &str, now_mark: &str, follow: bool) -> Opt
         if r.len() > 15 {
             r.remove(0);
         }
-    } else if let Some(o) = r.pop() {
-        if o != now_mark {
+    } else if let Some(o) = r.pop()
+        && o != now_mark {
             r.push(format!("{o}:{now_mark}"));
         }
-    }
     Some(r.join(";"))
 }
 

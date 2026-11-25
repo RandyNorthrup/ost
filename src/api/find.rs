@@ -156,12 +156,11 @@ pub fn query_string(thread: &str, keywords: &str, f: &Filters, my_oid: &str) -> 
     if !f.start.is_empty() && !f.end.is_empty() {
         q += &format!("{field} >= {} AND {field} < {} AND ", f.start, f.end);
     }
-    if f.files {
-        if let Some(t) = type_term(&f.file_type) {
+    if f.files
+        && let Some(t) = type_term(&f.file_type) {
             q += &t;
             q += " AND ";
         }
-    }
     if !f.files {
         if f.attachment {
             q += "hasattachment:yes AND ";

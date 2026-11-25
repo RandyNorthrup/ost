@@ -476,11 +476,10 @@ impl Bus {
             tracing::info!(bus = ?self.kind, "hfp: call service for Bluetooth headsets (ModemManager's Voice API)");
         } else {
             self.retry_at = Some(Instant::now() + RETRY);
-            if blocked != self.blocked {
-                if let Some(b) = &blocked {
+            if blocked != self.blocked
+                && let Some(b) = &blocked {
                     tracing::info!(bus = ?self.kind, "hfp: can't offer calls to Bluetooth headsets here: {}", b.describe(self.kind));
                 }
-            }
         }
         self.blocked = blocked;
     }
@@ -585,8 +584,8 @@ async fn run(mut rx: tokio::sync::watch::Receiver<CallView>, on_action: OnAction
         }
         let view = rx.borrow_and_update().clone();
         let target = view.phase.mm_state();
-        if !offered {
-            if let Some(bus) = buses.iter().find(|b| b.owned && b.asked.load(Ordering::SeqCst)) {
+        if !offered
+            && let Some(bus) = buses.iter().find(|b| b.owned && b.asked.load(Ordering::SeqCst)) {
                 offered = true;
                 check_at = None;
                 tracing::info!(bus = ?bus.kind, "hfp: PipeWire's HFP gateway takes call commands from OST: a Bluetooth headset's answer and hang-up are offered");
@@ -595,7 +594,6 @@ async fn run(mut rx: tokio::sync::watch::Receiver<CallView>, on_action: OnAction
                     tracing::info!(call = %path.as_str(), state, "hfp: call announced to the headset");
                 }
             }
-        }
         if check_at.is_some_and(|t| Instant::now() >= t) {
             check_at = None;
             let why: Vec<String> = buses

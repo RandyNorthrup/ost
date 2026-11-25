@@ -246,11 +246,10 @@ async fn room_command(link: Option<String>, m: Message) {
         tracing::info!(command = %m.command, "room remote: command outside a session");
         return;
     };
-    if let Some(s) = room().sessions.get_mut(&id) {
-        if !m.debug_content.chain_id.is_empty() {
+    if let Some(s) = room().sessions.get_mut(&id)
+        && !m.debug_content.chain_id.is_empty() {
             s.chain = m.debug_content.chain_id.clone();
         }
-    }
     let name = m.name();
     if name == command::RESPONSE {
         return;

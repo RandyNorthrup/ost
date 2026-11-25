@@ -530,7 +530,7 @@ pub fn auth_state_shape(result: &str) -> String {
     match &v {
         Value::String(s) => format!("string of {} chars", s.len()),
         Value::Object(o) => format!("object with keys {:?}", o.keys().collect::<Vec<_>>()),
-        other => format!("{}", if other.is_null() { "null" } else { "other" }),
+        other => (if other.is_null() { "null" } else { "other" }).to_string(),
     }
 }
 
