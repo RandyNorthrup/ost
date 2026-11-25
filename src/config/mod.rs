@@ -65,11 +65,19 @@ pub fn profile() -> Option<String> {
 }
 
 /// The keyring account the tokens live under ("teams-tokens", or
-/// "teams-tokens:{profile}").
+/// "teams-tokens:{profile}"). In a Flatpak the config folder is the
+/// sandbox's own (~/.var/app/{app id}/config) but the desktop keyring is
+/// the host's, so the account also carries the app id
+/// ("teams-tokens@io.github.RandyNorthrup.ost"): the sandbox's sign-in
+/// never replaces an OST installed on the host.
 fn keyring_account() -> String {
-    match profile() {
+    let account = match profile() {
         Some(p) => format!("{KEYRING_ACCOUNT}:{p}"),
         None => KEYRING_ACCOUNT.to_string(),
+    };
+    match std::env::var("FLATPAK_ID").ok().filter(|id| !id.trim().is_empty()) {
+        Some(id) => format!("{account}@{}", id.trim()),
+        None => account,
     }
 }
 
