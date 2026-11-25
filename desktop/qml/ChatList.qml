@@ -255,7 +255,7 @@ Rectangle {
     property var notifyTagged: ({})
     readonly property bool signedIn: backend.signedIn
     onSignedInChanged: if (signedIn) backend.channelAction("notify-tagged", "", "", "")
-    Component.onCompleted: { if (signedIn) backend.channelAction("notify-tagged", "", "", ""); if (backend.signedIn) backend.loadSettings() }
+    Component.onCompleted: { syncSections(); if (signedIn) backend.channelAction("notify-tagged", "", "", ""); if (backend.signedIn) backend.loadSettings() }
     Connections {
         target: backend
         function onChannelActionResultChanged() {
@@ -438,6 +438,47 @@ Rectangle {
         return { folder: f, rows: rows, keep: keep }
     }).filter(s => s.keep)
     readonly property bool nothingShown: filtered && sections.every(s => s.rows.length === 0)
+    // The list's models: sections by key, each with its rows by key.
+    ListModel { id: sectionModel }
+    property var sectionByKey: ({})
+    readonly property var emptySection: ({ folder: { id: "", kind: "", title: "", expanded: false, items: [] }, rows: [] })
+    function rowKey(r) {
+        switch (r.type) {
+        case "chat": return "chat:" + r.chat.id
+        case "channel": return "channel:" + r.channel.id
+        case "team": return "team:" + r.team.id
+        case "slice": return "slice:" + r.key
+        default: return r.type
+        }
+    }
+    function syncSections() {
+        const m = {}, keys = []
+        for (const s of sections) {
+            const k = s.folder.id || s.folder.kind
+            if (k in m) continue
+            m[k] = s
+            keys.push(k)
+        }
+        sectionByKey = m
+        syncKeys(sectionModel, keys)
+    }
+    onSectionsChanged: syncSections()
+    /// Make a ListModel of {key} rows hold `keys`, in order, with the fewest
+    /// changes: a Repeater over it keeps the items of the rows that stay
+    /// (moved rows keep theirs too).
+    function syncKeys(model, keys) {
+        const want = {}
+        for (const k of keys) want[k] = true
+        const cur = []
+        for (let i = 0; i < model.count; i++) cur.push(model.get(i).key)
+        for (let i = cur.length - 1; i >= 0; i--) if (!want[cur[i]]) { model.remove(i); cur.splice(i, 1) }
+        for (let i = 0; i < keys.length; i++) {
+            if (cur[i] === keys[i]) continue
+            const j = cur.indexOf(keys[i], i + 1)
+            if (j >= 0) { model.move(j, i, 1); cur.splice(j, 1); cur.splice(i, 0, keys[i]) }
+            else { model.insert(i, { key: keys[i] }); cur.splice(i, 0, keys[i]) }
+        }
+    }
 
     Rectangle { width: 1; height: parent.height; anchors.right: parent.right; color: theme.edge }
 
@@ -717,13 +758,46 @@ Rectangle {
                 onClicked: root.openCopilot()
             }
             Item { width: 1; height: root.showCopilot && !root.filtered && root.pane !== "teams" ? 4 : 0 }
+            // Sections and their rows are keyed models kept in step with
+            // the data (syncKeys, syncRows): an update (a chat hidden or
+            // shown, a new message, presence) changes only the rows it
+            // touched, instead of building every row of the list again
+            // (with hundreds of chats, a burst of pushed updates rebuilt
+            // the list each time and ran memory up by gigabytes).
             Repeater {
-                model: root.sections
+                model: sectionModel
                 Column {
                     id: sec
-                    required property var modelData
-                    required property int index
+                    required property string key
+                    readonly property var modelData: root.sectionByKey[key] || root.emptySection
                     readonly property var folder: modelData.folder
+                    // Each row's data and its JSON (to tell what changed),
+                    // and its item, by row key; changed in place.
+                    property var rowData: ({})
+                    property var rowJson: ({})
+                    property var rowItems: ({})
+                    ListModel { id: rowModel }
+                    function syncRows() {
+                        // (From modelData: folder may not have caught up yet.)
+                        const d = sec.modelData || root.emptySection
+                        const rows = d.folder && d.folder.expanded ? d.rows : []
+                        const keys = [], seen = {}
+                        for (const r of rows) {
+                            const k = root.rowKey(r)
+                            if (seen[k]) continue
+                            seen[k] = true
+                            keys.push(k)
+                            const j = JSON.stringify(r)
+                            if (sec.rowJson[k] === j) continue
+                            sec.rowJson[k] = j
+                            sec.rowData[k] = r
+                            if (sec.rowItems[k]) sec.rowItems[k].row = r
+                        }
+                        for (const k in sec.rowJson) if (!seen[k]) { delete sec.rowJson[k]; delete sec.rowData[k] }
+                        root.syncKeys(rowModel, keys)
+                    }
+                    onModelDataChanged: syncRows()
+                    Component.onCompleted: syncRows()
                     width: list.width
                     // Quick views end with a hairline (12 below, the next
                     // section 4 after it).
@@ -736,19 +810,24 @@ Rectangle {
                     }
                     Item { width: 1; height: sec.folder.expanded && sec.modelData.rows.length > 0 ? 4 : 0 }
                     Repeater {
-                        model: sec.folder.expanded ? sec.modelData.rows : []
+                        model: rowModel
                         Loader {
-                            required property var modelData
+                            id: rowLoader
+                            required property string key
                             width: list.width
-                            sourceComponent: modelData.type === "chat" ? chatRowComp
-                                : modelData.type === "channel" ? channelRowComp
-                                : modelData.type === "team" ? teamComp
-                                : modelData.type === "slice" ? sliceComp
-                                : modelData.type === "seeAllTeams" ? seeAllComp
-                                : modelData.type === "newMessage" ? newMessageComp
-                                : joinCommunitiesComp
-                            property var row: modelData
+                            // Set once here; syncRows hands it new data.
+                            property var row: sec.rowData[key]
                             property var section: sec.folder
+                            Component.onCompleted: sec.rowItems[key] = rowLoader
+                            Component.onDestruction: if (sec.rowItems[key] === rowLoader) delete sec.rowItems[key]
+                            sourceComponent: !row ? null
+                                : row.type === "chat" ? chatRowComp
+                                : row.type === "channel" ? channelRowComp
+                                : row.type === "team" ? teamComp
+                                : row.type === "slice" ? sliceComp
+                                : row.type === "seeAllTeams" ? seeAllComp
+                                : row.type === "newMessage" ? newMessageComp
+                                : joinCommunitiesComp
                         }
                     }
                     Item { width: 1; height: sec.folder.kind === "QuickViews" && !root.filtered ? 12 : 8 }
@@ -883,6 +962,8 @@ Rectangle {
         if (d.toDateString() === n.toDateString()) return theme.time(d)
         return d.getFullYear() === n.getFullYear() ? theme.dateNoYear(d) : theme.dateShortYear(d)
     }
+    /// Group chats' member counts, by chat id (loaded as menus open).
+    readonly property var memberCounts: backend.chatMemberCountsJson ? JSON.parse(backend.chatMemberCountsJson) : ({})
     function previewOf(c) {
         if (!c.preview) return ""
         if (c.previewSystem) return c.preview
@@ -895,8 +976,21 @@ Rectangle {
         id: row
         property var chat
         property var section: null
-        readonly property bool menuOpen: rowMenu.opened
-        function closeMenu() { rowMenu.close() }
+        readonly property bool menuOpen: !!row.rowMenu && row.rowMenu.opened
+        function closeMenu() { if (row.rowMenu) row.rowMenu.close() }
+        // The row's menu, its Manage notifications flyout and its dialogs
+        // are made the first time they're needed: with hundreds of chats
+        // listed, five popups on every row made each row (and each update
+        // that built rows) cost megabytes.
+        property var rowMenu: null
+        property var chatNotifyFlyout: null
+        property var chatNotifyDialog: null
+        property var removeHistoryAsk: null
+        property var leaveAsk: null
+        function made(name, comp) { if (!row[name]) row[name] = comp.createObject(row); return row[name] }
+        function menu() { return made("rowMenu", rowMenuComp) }
+        function flyout() { return made("chatNotifyFlyout", chatNotifyFlyoutComp) }
+        function notifyDialog() { return made("chatNotifyDialog", chatNotifyDialogComp) }
         Component.onCompleted: { if (chat && chat.id) root.rowsForTest[chat.id] = row; reg() }
         Component.onDestruction: { if (chat && root.rowsForTest[chat.id] === row) delete root.rowsForTest[chat.id]; if (regGroup) root.unregisterDrag(regGroup, regKey, row) }
         // Reordering: in Favorites or one of your sections (Custom order).
@@ -1011,7 +1105,7 @@ Rectangle {
             y: row.twoLine ? 30 : (parent.height - height) / 2
             color: theme.brand
         }
-        readonly property bool showMore: (hover.hovered || rowMenu.opened) && !row.reorderingThis
+        readonly property bool showMore: (hover.hovered || row.menuOpen) && !row.reorderingThis
         Rectangle {
             id: moreButton
             visible: row.showMore
@@ -1032,7 +1126,7 @@ Rectangle {
         // Set workflows, Copy link | Remove chat history, Leave, Hide;
         // meeting chats end Hide | Report a concern.
         readonly property string holder: row.chat.id in root.sectioned ? root.sectioned[row.chat.id] : (root.inFavorites(row.chat) && root.favoritesFolder ? (root.favoritesFolder.id || "Favorites") : "")
-        readonly property var members: { const m = backend.chatMemberCountsJson ? JSON.parse(backend.chatMemberCountsJson) : ({}); return m[row.chat.id] }
+        readonly property var members: root.memberCounts[row.chat.id]
         // Leave: a member of a group chat of at least 3 (not a meeting chat
         // you created).
         readonly property bool canLeave: !!row.chat.isGroup && !row.chat.peerMri && (row.members || 0) >= 3 && !(root.isMeeting(row.chat) && row.chat.isCreator)
@@ -1051,6 +1145,7 @@ Rectangle {
             sub.push({ label: qsTr("New section"), icon: "folder-add-20", newSection: true })
             const oneOnOne = !!row.chat.peerMri && !row.chat.isSelf
             const tagged = oneOnOne && root.notifyTagged[row.chat.peerMri.toLowerCase()]
+            const rowMenu = row.menu()
             rowMenu.items = [
                 { key: "window", label: qsTr("Open in new window"), icon: "open-window-20" },
                 // Teams: with single pointer controls on, in a section you
@@ -1083,146 +1178,157 @@ Rectangle {
         // Teams shows Manage notifications for a group chat (not a meeting
         // or one-on-one chat) when granular chat settings are on.
         readonly property bool groupNotify: !!row.chat.isGroup && !row.chat.peerMri && !row.chat.isSelf && !root.isMeeting(row.chat)
-        MenuPopup {
-            id: rowMenu
-            separatorHeight: 8.6
-            onFlyoutRequested: (i, r) => {
-                if (i < 0 || !r) { chatNotifyFlyout.close(); return }
-                const p = r.mapToItem(rowMenu.contentItem, 0, 0)
-                chatNotifyFlyout.parent = rowMenu.contentItem
-                chatNotifyFlyout.x = rowMenu.width - 8
-                chatNotifyFlyout.y = p.y - 4
-                chatNotifyFlyout.load()
-                chatNotifyFlyout.open()
-            }
-            onClosed: chatNotifyFlyout.close()
-            onPicked: i => {
-                const k = items[i].key
-                if (k === "read" || k === "unread") backend.setChatUnread(row.chat.id, k === "unread")
-                else if (k === "mute" || k === "unmute") backend.setChatMuted(row.chat.id, k === "mute")
-                else if (k === "link") backend.copyLinkOfChat(row.chat.id, row.chat.name)
-                else if (k === "removeFrom") backend.folderAction("remove", JSON.stringify({ item: row.chat.id, from: row.holder }))
-                else if (k === "hide" || k === "unhide") backend.setChatHidden(row.chat.id, k === "hide")
-                else if (k === "leave") leaveAsk.open()
-                else if (k === "window") root.openChatWindow(row.chat.id, row.chat.name, row.chat.peerMri || "", row.chat.presence || "")
-                else if (k === "apps") root.manageChatApps(row.chat.id, row.chat.name)
-                else if (k === "workflows") root.chatWorkflows(row.chat.id, row.chat.name)
-                else if (k === "removeHistory") removeHistoryAsk.open()
-                else if (k === "report") root.reportMeetingChat(row.chat.id)
-                else if (k === "reorder") root.startReorder(row.dragGroup, row.chat.id)
-                else if (k === "notifyOn") backend.channelAction("notify-on", "", "", JSON.stringify({ mri: row.chat.peerMri }))
-                else if (k === "notifyOff") { const t = root.notifyTagged[row.chat.peerMri.toLowerCase()]; backend.channelAction("notify-off", "", "", JSON.stringify({ id: t.id, mri: row.chat.peerMri, email: t.email })) }
-            }
-            onSubPicked: (i, j) => {
-                const s = items[i].submenu[j]
-                if (s.newSection) sectionDialog.create(row.chat.id, row.holder)
-                else if (s.to) backend.folderAction("move", JSON.stringify({ item: row.chat.id, to: s.to, from: row.holder }))
+        Component {
+            id: rowMenuComp
+            MenuPopup {
+                id: rowMenu
+                separatorHeight: 8.6
+                onFlyoutRequested: (i, r) => {
+                    if (i < 0 || !r) { if (row.chatNotifyFlyout) row.chatNotifyFlyout.close(); return }
+                    const p = r.mapToItem(rowMenu.contentItem, 0, 0)
+                    const chatNotifyFlyout = row.flyout()
+                    chatNotifyFlyout.parent = rowMenu.contentItem
+                    chatNotifyFlyout.x = rowMenu.width - 8
+                    chatNotifyFlyout.y = p.y - 4
+                    chatNotifyFlyout.load()
+                    chatNotifyFlyout.open()
+                }
+                onClosed: if (row.chatNotifyFlyout) row.chatNotifyFlyout.close()
+                onPicked: i => {
+                    const k = items[i].key
+                    if (k === "read" || k === "unread") backend.setChatUnread(row.chat.id, k === "unread")
+                    else if (k === "mute" || k === "unmute") backend.setChatMuted(row.chat.id, k === "mute")
+                    else if (k === "link") backend.copyLinkOfChat(row.chat.id, row.chat.name)
+                    else if (k === "removeFrom") backend.folderAction("remove", JSON.stringify({ item: row.chat.id, from: row.holder }))
+                    else if (k === "hide" || k === "unhide") backend.setChatHidden(row.chat.id, k === "hide")
+                    else if (k === "leave") row.made("leaveAsk", leaveAskComp).open()
+                    else if (k === "window") root.openChatWindow(row.chat.id, row.chat.name, row.chat.peerMri || "", row.chat.presence || "")
+                    else if (k === "apps") root.manageChatApps(row.chat.id, row.chat.name)
+                    else if (k === "workflows") root.chatWorkflows(row.chat.id, row.chat.name)
+                    else if (k === "removeHistory") row.made("removeHistoryAsk", removeHistoryAskComp).open()
+                    else if (k === "report") root.reportMeetingChat(row.chat.id)
+                    else if (k === "reorder") root.startReorder(row.dragGroup, row.chat.id)
+                    else if (k === "notifyOn") backend.channelAction("notify-on", "", "", JSON.stringify({ mri: row.chat.peerMri }))
+                    else if (k === "notifyOff") { const t = root.notifyTagged[row.chat.peerMri.toLowerCase()]; backend.channelAction("notify-off", "", "", JSON.stringify({ id: t.id, mri: row.chat.peerMri, email: t.email })) }
+                }
+                onSubPicked: (i, j) => {
+                    const s = items[i].submenu[j]
+                    if (s.newSection) sectionDialog.create(row.chat.id, row.holder)
+                    else if (s.to) backend.folderAction("move", JSON.stringify({ item: row.chat.id, to: s.to, from: row.holder }))
+                }
             }
         }
         // Manage notifications ▸ (Teams' conversation notification settings
         // popover): "Select what content notifies you", All new messages and
         // Mute ("Customized" after the current one when you changed its
         // parts), a line, Customize.
-        Popup {
-            id: chatNotifyFlyout
-            padding: 4
-            width: 290 + 8
-            background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
-            property var state_: null
-            function load() { state_ = null; backend.channelAction("chat-notify-load", "", row.chat.id, "") }
-            Connections {
-                target: backend
-                enabled: chatNotifyFlyout.visible
-                function onChannelActionResultChanged() {
-                    const r = JSON.parse(backend.channelActionResult || "{}")
-                    if (r.op === "chat-notify-load" && r.channel === row.chat.id && r.ok) chatNotifyFlyout.state_ = r.data
-                }
-            }
-            readonly property string current: state_ ? state_.preset : (row.chat.muted ? "mute" : "all")
-            readonly property var choices: [
-                { mode: "all", icon: "alert-on-20", label: qsTr("All new messages"), hint: qsTr("New messages, all @mentions, and replies to followed threads") },
-                { mode: "mute", icon: "alert-off-20", label: qsTr("Mute"), hint: qsTr("You'll still be notified for personal mentions and replies to followed threads") }
-            ]
-            contentItem: Column {
-                spacing: 2
-                Text {
-                    width: 290; height: 32
-                    leftPadding: 8; rightPadding: 8
-                    verticalAlignment: Text.AlignVCenter
-                    text: qsTr("Select what content notifies you")
-                    font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
-                    color: theme.textSecondary
-                }
-                Repeater {
-                    model: chatNotifyFlyout.choices
-                    Rectangle {
-                        id: nChoice
-                        required property var modelData
-                        readonly property bool current: chatNotifyFlyout.current === modelData.mode
-                        width: 290; height: 64; radius: 4
-                        color: nHover.hovered ? theme.menuHover : "transparent"
-                        FluentIcon { visible: nChoice.current; x: 4; y: 8; size: 16; name: "checkmark-16"; color: theme.onFill(nChoice, theme.textStrong) }
-                        FluentIcon { x: 24; y: 6; size: 20; name: nChoice.modelData.icon; color: theme.onFill(nChoice, nHover.hovered ? theme.text : theme.textStrong) }
-                        Column {
-                            x: 50; y: 6; width: 232
-                            Row {
-                                spacing: 4
-                                Text { text: nChoice.modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(nChoice, nHover.hovered ? theme.text : theme.textStrong) }
-                                // Teams' "Customized" label after the
-                                // current preset.
-                                Rectangle {
-                                    visible: nChoice.current && !!chatNotifyFlyout.state_ && chatNotifyFlyout.state_.customized
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    width: custText.implicitWidth + 8; height: 18; radius: 4
-                                    color: "transparent"; border.color: theme.divider; border.width: 0.67
-                                    Text { id: custText; anchors.centerIn: parent; text: qsTr("Customized"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
-                                }
-                            }
-                            Text { width: 232; wrapMode: Text.Wrap; text: nChoice.modelData.hint; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.onFill(nChoice, theme.textSecondary) }
-                        }
-                        HoverHandler { id: nHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: { chatNotifyFlyout.close(); rowMenu.close(); if (!nChoice.current) backend.channelAction("chat-notify", "", row.chat.id, nChoice.modelData.mode) } }
-                        Accessible.role: Accessible.RadioButton
-                        Accessible.checked: nChoice.current
-                        Accessible.name: modelData.label
+        Component {
+            id: chatNotifyFlyoutComp
+            Popup {
+                id: chatNotifyFlyout
+                padding: 4
+                width: 290 + 8
+                background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+                property var state_: null
+                function load() { state_ = null; backend.channelAction("chat-notify-load", "", row.chat.id, "") }
+                Connections {
+                    target: backend
+                    enabled: chatNotifyFlyout.visible
+                    function onChannelActionResultChanged() {
+                        const r = JSON.parse(backend.channelActionResult || "{}")
+                        if (r.op === "chat-notify-load" && r.channel === row.chat.id && r.ok) chatNotifyFlyout.state_ = r.data
                     }
                 }
-                Item {
-                    width: 290; height: 5
-                    Rectangle { anchors.verticalCenter: parent.verticalCenter; x: -5; width: 300; height: 0.67; color: theme.divider }
-                }
-                Rectangle {
-                    id: nCustom
-                    width: 290; height: 32; radius: 4
-                    color: nCustomHover.hovered ? theme.menuHover : "transparent"
-                    FluentIcon { x: 24; anchors.verticalCenter: parent.verticalCenter; size: 20; name: "options-20"; color: theme.onFill(nCustom, nCustomHover.hovered ? theme.text : theme.textStrong) }
-                    Text { x: 48; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Customize"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(nCustom, nCustomHover.hovered ? theme.text : theme.textStrong) }
-                    HoverHandler { id: nCustomHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: { chatNotifyFlyout.close(); rowMenu.close(); chatNotifyDialog.start({ id: row.chat.id, name: row.chat.name, muted: !!row.chat.muted }) } }
-                    Accessible.role: Accessible.MenuItem
-                    Accessible.name: qsTr("Customize")
+                readonly property string current: state_ ? state_.preset : (row.chat.muted ? "mute" : "all")
+                readonly property var choices: [
+                    { mode: "all", icon: "alert-on-20", label: qsTr("All new messages"), hint: qsTr("New messages, all @mentions, and replies to followed threads") },
+                    { mode: "mute", icon: "alert-off-20", label: qsTr("Mute"), hint: qsTr("You'll still be notified for personal mentions and replies to followed threads") }
+                ]
+                contentItem: Column {
+                    spacing: 2
+                    Text {
+                        width: 290; height: 32
+                        leftPadding: 8; rightPadding: 8
+                        verticalAlignment: Text.AlignVCenter
+                        text: qsTr("Select what content notifies you")
+                        font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
+                        color: theme.textSecondary
+                    }
+                    Repeater {
+                        model: chatNotifyFlyout.choices
+                        Rectangle {
+                            id: nChoice
+                            required property var modelData
+                            readonly property bool current: chatNotifyFlyout.current === modelData.mode
+                            width: 290; height: 64; radius: 4
+                            color: nHover.hovered ? theme.menuHover : "transparent"
+                            FluentIcon { visible: nChoice.current; x: 4; y: 8; size: 16; name: "checkmark-16"; color: theme.onFill(nChoice, theme.textStrong) }
+                            FluentIcon { x: 24; y: 6; size: 20; name: nChoice.modelData.icon; color: theme.onFill(nChoice, nHover.hovered ? theme.text : theme.textStrong) }
+                            Column {
+                                x: 50; y: 6; width: 232
+                                Row {
+                                    spacing: 4
+                                    Text { text: nChoice.modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(nChoice, nHover.hovered ? theme.text : theme.textStrong) }
+                                    // Teams' "Customized" label after the
+                                    // current preset.
+                                    Rectangle {
+                                        visible: nChoice.current && !!chatNotifyFlyout.state_ && chatNotifyFlyout.state_.customized
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: custText.implicitWidth + 8; height: 18; radius: 4
+                                        color: "transparent"; border.color: theme.divider; border.width: 0.67
+                                        Text { id: custText; anchors.centerIn: parent; text: qsTr("Customized"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                                    }
+                                }
+                                Text { width: 232; wrapMode: Text.Wrap; text: nChoice.modelData.hint; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.onFill(nChoice, theme.textSecondary) }
+                            }
+                            HoverHandler { id: nHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: { chatNotifyFlyout.close(); row.closeMenu(); if (!nChoice.current) backend.channelAction("chat-notify", "", row.chat.id, nChoice.modelData.mode) } }
+                            Accessible.role: Accessible.RadioButton
+                            Accessible.checked: nChoice.current
+                            Accessible.name: modelData.label
+                        }
+                    }
+                    Item {
+                        width: 290; height: 5
+                        Rectangle { anchors.verticalCenter: parent.verticalCenter; x: -5; width: 300; height: 0.67; color: theme.divider }
+                    }
+                    Rectangle {
+                        id: nCustom
+                        width: 290; height: 32; radius: 4
+                        color: nCustomHover.hovered ? theme.menuHover : "transparent"
+                        FluentIcon { x: 24; anchors.verticalCenter: parent.verticalCenter; size: 20; name: "options-20"; color: theme.onFill(nCustom, nCustomHover.hovered ? theme.text : theme.textStrong) }
+                        Text { x: 48; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Customize"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(nCustom, nCustomHover.hovered ? theme.text : theme.textStrong) }
+                        HoverHandler { id: nCustomHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: { chatNotifyFlyout.close(); row.closeMenu(); row.notifyDialog().start({ id: row.chat.id, name: row.chat.name, muted: !!row.chat.muted }) } }
+                        Accessible.role: Accessible.MenuItem
+                        Accessible.name: qsTr("Customize")
+                    }
                 }
             }
         }
-        ChannelNotifyDialog { id: chatNotifyDialog; chat: true; onOpenNotificationSettings: window.launchSettings("notifications") }
-        function notifyFlyoutForTest() { rowMenu.open(); chatNotifyFlyout.parent = rowMenu.contentItem; chatNotifyFlyout.x = rowMenu.width - 8; chatNotifyFlyout.y = 60; chatNotifyFlyout.load(); chatNotifyFlyout.open() }
-        function notifyCustomizeForTest() { chatNotifyDialog.start({ id: row.chat.id, name: row.chat.name, muted: !!row.chat.muted }) }
-        function closeMenuForTest() { rowMenu.close() }
-        function menuItemsForTest() { return rowMenu.items }
-        function leaveForTest() { return leaveAsk }
-        function removeHistoryForTest() { return removeHistoryAsk }
+        Component { id: chatNotifyDialogComp; ChannelNotifyDialog { chat: true; onOpenNotificationSettings: window.launchSettings("notifications") } }
+        function notifyFlyoutForTest() { const m = row.menu(), f = row.flyout(); m.open(); f.parent = m.contentItem; f.x = m.width - 8; f.y = 60; f.load(); f.open() }
+        function notifyCustomizeForTest() { row.notifyDialog().start({ id: row.chat.id, name: row.chat.name, muted: !!row.chat.muted }) }
+        function closeMenuForTest() { row.closeMenu() }
+        function menuItemsForTest() { return row.rowMenu ? row.rowMenu.items : [] }
+        function leaveForTest() { return row.made("leaveAsk", leaveAskComp) }
+        function removeHistoryForTest() { return row.made("removeHistoryAsk", removeHistoryAskComp) }
         // Teams' "Remove chat history?" (600 wide).
-        ConfirmDialog {
-            id: removeHistoryAsk
-            width: 600
-            title: qsTr("Remove chat history?")
-            body: qsTr("This will remove the chat from your list and search. It affects you only.")
-            confirmText: qsTr("Remove")
-            onConfirmed: backend.removeChatHistory(row.chat.id)
+        Component {
+            id: removeHistoryAskComp
+            ConfirmDialog {
+                width: 600
+                title: qsTr("Remove chat history?")
+                body: qsTr("This will remove the chat from your list and search. It affects you only.")
+                confirmText: qsTr("Remove")
+                onConfirmed: backend.removeChatHistory(row.chat.id)
+            }
         }
-        LeaveChatDialog {
-            id: leaveAsk
-            onConfirmed: removeHistory => { backend.leaveChat(row.chat.id); if (removeHistory) backend.removeChatHistory(row.chat.id) }
+        Component {
+            id: leaveAskComp
+            LeaveChatDialog {
+                onConfirmed: removeHistory => { backend.leaveChat(row.chat.id); if (removeHistory) backend.removeChatHistory(row.chat.id) }
+            }
         }
         Accessible.role: Accessible.Button
         // Teams' chat item support texts (Unread message, Muted, Meeting in progress).

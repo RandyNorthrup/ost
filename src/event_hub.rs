@@ -57,53 +57,97 @@ pub fn subscribe() -> broadcast::Receiver<Event> {
 /// `resource.conversationLink` (`…/conversations/<id>`), `resourceLink`, or
 /// `resource.id` for conversation updates.
 pub fn conversation_ids(json: &str) -> Vec<String> {
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
-        return Vec::new();
-    };
-    let events: Vec<&serde_json::Value> = match v.get("eventMessages").and_then(|e| e.as_array()) {
-        Some(list) => list.iter().collect(),
-        None => vec![&v],
-    };
     let mut ids = Vec::new();
-    for ev in events {
-        let resource = ev.get("resource");
-        // Typing indicators and other control messages change nothing shown.
-        let is_control = resource
-            .and_then(|r| r.get("messagetype"))
-            .and_then(|t| t.as_str())
-            .is_some_and(|t| t.starts_with("Control/"));
-        if is_control {
+    for ev in chat_events(json) {
+        if is_control(&ev) {
             continue;
         }
-        // Messages link to …/conversations/<id>; thread changes (members,
-        // read horizons) to …/threads/<id>.
-        let from_link = |link: Option<&serde_json::Value>| {
-            let l = link.and_then(|l| l.as_str())?;
-            l.split("/conversations/")
-                .nth(1)
-                .or_else(|| l.split("/threads/").nth(1))
-                .map(|rest| rest.split(['/', '?']).next().unwrap_or(rest).to_string())
-        };
-        let id = from_link(resource.and_then(|r| r.get("conversationLink")))
-            .or_else(|| from_link(ev.get("resourceLink")))
-            .or_else(|| {
-                let is_conv = ev
-                    .get("resourceType")
-                    .and_then(|t| t.as_str())
-                    .is_some_and(|t| t.eq_ignore_ascii_case("ConversationUpdate"));
-                is_conv
-                    .then(|| resource.and_then(|r| r.get("id")).and_then(|i| i.as_str()))
-                    .flatten()
-                    .map(str::to_string)
-            });
-        if let Some(id) =
-            id.filter(|i| i.starts_with("19:") || i.starts_with("48:") || i.starts_with("8:"))
+        if let Some(id) = event_conversation_id(&ev)
             && !ids.contains(&id)
         {
             ids.push(id);
         }
     }
     ids
+}
+
+/// The conversations a chat-service event brought a new message to from
+/// someone other than `me` (an MRI): the ones it makes unread, as Teams
+/// does. Conversation and thread updates (a chat hidden or shown by any of
+/// your clients, members, read horizons) and your own messages (sent from
+/// another device) leave the unread state alone. Ids as `conversation_ids`.
+pub fn unread_conversation_ids(json: &str, me: &str) -> Vec<String> {
+    let mut ids = Vec::new();
+    for ev in chat_events(json) {
+        let new_message = ev
+            .get("resourceType")
+            .and_then(|t| t.as_str())
+            .is_some_and(|t| t == "NewMessage");
+        if !new_message || is_control(&ev) {
+            continue;
+        }
+        let from = ev
+            .pointer("/resource/from")
+            .and_then(|f| f.as_str())
+            .and_then(|f| f.rsplit("/contacts/").next())
+            .unwrap_or_default();
+        if !me.is_empty() && from.eq_ignore_ascii_case(me) {
+            continue;
+        }
+        if let Some(id) = event_conversation_id(&ev)
+            && !ids.contains(&id)
+        {
+            ids.push(id);
+        }
+    }
+    ids
+}
+
+/// The events of a chat-service push: a single event or an
+/// `eventMessages` batch.
+fn chat_events(json: &str) -> Vec<serde_json::Value> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
+        return Vec::new();
+    };
+    match v.get("eventMessages").and_then(|e| e.as_array()) {
+        Some(list) => list.clone(),
+        None => vec![v],
+    }
+}
+
+/// Typing indicators and other control messages change nothing shown.
+fn is_control(ev: &serde_json::Value) -> bool {
+    ev.pointer("/resource/messagetype")
+        .and_then(|t| t.as_str())
+        .is_some_and(|t| t.starts_with("Control/"))
+}
+
+/// The conversation an event is about (chats "19:…", "48:…" streams and
+/// one-on-ones "8:…" only).
+fn event_conversation_id(ev: &serde_json::Value) -> Option<String> {
+    let resource = ev.get("resource");
+    // Messages link to …/conversations/<id>; thread changes (members,
+    // read horizons) to …/threads/<id>.
+    let from_link = |link: Option<&serde_json::Value>| {
+        let l = link.and_then(|l| l.as_str())?;
+        l.split("/conversations/")
+            .nth(1)
+            .or_else(|| l.split("/threads/").nth(1))
+            .map(|rest| rest.split(['/', '?']).next().unwrap_or(rest).to_string())
+    };
+    from_link(resource.and_then(|r| r.get("conversationLink")))
+        .or_else(|| from_link(ev.get("resourceLink")))
+        .or_else(|| {
+            let is_conv = ev
+                .get("resourceType")
+                .and_then(|t| t.as_str())
+                .is_some_and(|t| t.eq_ignore_ascii_case("ConversationUpdate"));
+            is_conv
+                .then(|| resource.and_then(|r| r.get("id")).and_then(|i| i.as_str()))
+                .flatten()
+                .map(str::to_string)
+        })
+        .filter(|i| i.starts_with("19:") || i.starts_with("48:") || i.starts_with("8:"))
 }
 
 /// A chat message pushed to us.
@@ -386,6 +430,25 @@ mod tests {
             conversation_ids(ev),
             vec!["19:abc_def@unq.gbl.spaces".to_string()]
         );
+    }
+
+    #[test]
+    fn unread_ids_only_for_others_new_messages() {
+        // Hiding a chat (from any client) pushes conversation updates;
+        // they make nothing unread, nor do your own messages.
+        let batch = r#"{"eventMessages":[
+            {"resourceType":"ConversationUpdate","resource":{"id":"19:hidden@thread.v2"}},
+            {"resourceType":"ThreadUpdate","resourceLink":"https://x/v1/threads/19:t@thread.v2"},
+            {"resourceType":"NewMessage","resource":{"messagetype":"Control/Typing","from":"https://x/v1/users/ME/contacts/8:orgid:them","conversationLink":"https://x/v1/users/ME/conversations/19:typing@thread.v2"}},
+            {"resourceType":"NewMessage","resource":{"messagetype":"RichText/Html","from":"https://x/v1/users/ME/contacts/8:orgid:ME","conversationLink":"https://x/v1/users/ME/conversations/19:mine@thread.v2"}},
+            {"resourceType":"NewMessage","resource":{"messagetype":"RichText/Html","from":"https://x/v1/users/ME/contacts/8:orgid:them","conversationLink":"https://x/v1/users/ME/conversations/19:new@thread.v2"}}]}"#;
+        assert_eq!(
+            unread_conversation_ids(batch, "8:orgid:me"),
+            vec!["19:new@thread.v2"]
+        );
+        // Every one of them still changes the list.
+        assert_eq!(conversation_ids(batch).len(), 4);
+        assert!(unread_conversation_ids("not json", "8:orgid:me").is_empty());
     }
 
     #[test]

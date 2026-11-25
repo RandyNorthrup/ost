@@ -7365,6 +7365,36 @@ Window {
             else if (st === 103) Qt.quit()
         }
     }
+    // --chatlist-churn-test=<n>: n chat-list updates in a row, as a burst
+    // of hides and unhides from another client brings them, without
+    // touching the server: every 100 ms one listed chat is hidden, then
+    // shown again, in the list handed to QML. CHURN lines report progress
+    // (measure the process' memory alongside); a garbage collection
+    // follows the last one, and with --shots=<dir> a picture of the window
+    // (churn.png).
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--chatlist-churn-test=")) && backend.signedIn && chatList.chats.length > 0
+        interval: 100; repeat: true
+        property int step: 0
+        onTriggered: {
+            const n = parseInt(Qt.application.arguments.find(a => a.startsWith("--chatlist-churn-test=")).slice(22)) || 200
+            const st = step++
+            if (st === 0) rail.current = "chat"
+            if (st >= n) {
+                if (st === n) { gc(); console.warn("CHURN done", n, "rows", Object.keys(chatList.rowsForTest).length) }
+                const shots = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "").slice(8)
+                if (st === n + 20 && shots) window.contentItem.grabToImage(r => r.saveToFile(shots + "/churn.png"))
+                return
+            }
+            const list = JSON.parse(backend.chatsJson || "[]")
+            const shown = list.filter(c => !c.unlisted && !c.isSelf)
+            if (!shown.length) return
+            const c = shown[Math.floor(st / 2) % shown.length]
+            c.hidden = !c.hidden
+            backend.chatsJson = JSON.stringify(list)
+            if (st % 50 === 0) console.warn("CHURN", st, "rows", Object.keys(chatList.rowsForTest).length)
+        }
+    }
     // --hide-chats=<name>|<name>… (~ for spaces): each chat of the list
     // with exactly that name: its ··· menu (logged: Teams offers Hide
     // there), then Hide as the menu's item does (unpinnedTime and
