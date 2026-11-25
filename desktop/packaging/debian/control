@@ -1,0 +1,96 @@
+Source: ost
+Section: net
+Priority: optional
+Maintainer: Randy Northrup <randy.northrup@gmail.com>
+Build-Depends: debhelper-compat (= 13),
+ cargo (>= 1.91),
+ rustc (>= 1.91),
+ clang,
+ lld,
+ cmake,
+ nasm,
+ pkgconf,
+ qt6-base-dev,
+ qt6-base-dev-tools,
+ qt6-declarative-dev,
+ qt6-declarative-dev-tools,
+ qt6-multimedia-dev,
+ qt6-webengine-dev,
+ qt6-pdf-dev,
+ qt6-svg-dev,
+ qt6-shader-baker,
+ qml6-module-qtquick-controls,
+ qml6-module-qtquick-dialogs,
+ qml6-module-qtquick-effects,
+ qml6-module-qtquick-shapes,
+ qml6-module-qtquick-window,
+ qml6-module-qtmultimedia,
+ qml6-module-qtwebengine,
+ qml6-module-qtwebchannel,
+ qml6-module-qtquick-pdf,
+ libavcodec-dev,
+ libavfilter-dev,
+ libavformat-dev,
+ libavutil-dev,
+ libswscale-dev,
+ libasound2-dev,
+ libpipewire-0.3-dev,
+ libssl-dev,
+ libopus-dev,
+ libwebrtc-audio-processing-dev (>= 1.0),
+ libdbus-1-dev,
+Standards-Version: 4.7.2
+Homepage: https://github.com/RandyNorthrup/ost/wiki
+Vcs-Browser: https://github.com/RandyNorthrup/ost
+Vcs-Git: https://github.com/RandyNorthrup/ost.git
+Rules-Requires-Root: no
+
+Package: ost-desktop
+Architecture: amd64
+Depends: ${shlibs:Depends}, ${misc:Depends},
+ qt6-qpa-plugins,
+ qt6-wayland,
+ qt6-svg-plugins,
+ qt6-image-formats-plugins,
+ qml6-module-qtqml,
+ qml6-module-qtqml-workerscript,
+ qml6-module-qtquick,
+ qml6-module-qtquick-controls,
+ qml6-module-qtquick-templates,
+ qml6-module-qtquick-layouts,
+ qml6-module-qtquick-window,
+ qml6-module-qtquick-dialogs,
+ qml6-module-qtquick-effects,
+ qml6-module-qtquick-shapes,
+ qml6-module-qtquick-pdf,
+ qml6-module-qtcore,
+ qml6-module-qt-labs-platform,
+ qml6-module-qtmultimedia,
+ qml6-module-qtwebengine,
+ qml6-module-qtwebchannel,
+Recommends: pipewire,
+ wireplumber,
+ xdg-desktop-portal,
+ gnome-keyring | kwalletmanager | ksecretd | keepassxc,
+ layer-shell-qt,
+ ca-certificates,
+Suggests: teams-cli
+Description: Native Linux desktop client for Microsoft Teams
+ Native Linux desktop client for Microsoft Teams: chat, channels, calls and
+ meetings, calendar and files, built in Rust and Qt Quick. Unofficial, not
+ affiliated with Microsoft.
+ .
+ OST looks and works like the Teams desktop app; only the name and the logo
+ differ. Sign in with your own Microsoft work or school account.
+ .
+ Bluetooth headset answer and hang-up buttons need a one-time PipeWire
+ setup: sh /usr/share/ost-desktop/install-hfp-calls.sh
+
+Package: teams-cli
+Architecture: amd64
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Recommends: pipewire, gnome-keyring | kwalletmanager | ksecretd | keepassxc, ca-certificates
+Description: Terminal client for Microsoft Teams
+ teams-cli is OST's terminal client for Microsoft Teams: chats, channels and
+ calls in a text interface, and command-line tools. Unofficial, not affiliated
+ with Microsoft.

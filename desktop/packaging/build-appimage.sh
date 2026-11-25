@@ -64,8 +64,14 @@ linuxdeploy-x86_64.AppImage --appdir AppDir "$@" \
 mkdir -p AppDir/usr/plugins/wayland-graphics-integration-client AppDir/usr/plugins/wayland-shell-integration
 cp "$QTP/wayland-graphics-integration-client/libqt-plugin-wayland-egl.so" AppDir/usr/plugins/wayland-graphics-integration-client/
 cp "$QTP/wayland-shell-integration/liblayer-shell.so" AppDir/usr/plugins/wayland-shell-integration/
+# Their own dependencies come from the bundle too (linuxdeploy sets their
+# RUNPATH).
 linuxdeploy-x86_64.AppImage --appdir AppDir "$@" \
-  --deploy-deps-only AppDir/usr/plugins/wayland-graphics-integration-client
+  --deploy-deps-only AppDir/usr/plugins/wayland-graphics-integration-client \
+  --deploy-deps-only AppDir/usr/plugins/wayland-shell-integration
+
+# Qt Design Studio's metadata for the Controls styles isn't used at run time.
+rm -rf AppDir/usr/qml/QtQuick/Controls/designer
 
 # Whatever a plugin's own deployment brought in from the excluded set goes.
 for e in $EXCLUDES; do rm -f AppDir/usr/lib/$e; done

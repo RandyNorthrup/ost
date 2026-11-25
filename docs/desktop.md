@@ -181,9 +181,19 @@ On machines with little memory, keep the build parallelism low
 ## Install and run
 
 ```bash
-desktop/packaging/install-user.sh          # binary, menu entry and icon in ~/.local
+desktop/packaging/install-user.sh          # binary, menu entry, icon and metainfo in ~/.local
 ost-desktop
 ```
+
+Releases carry packages built from the same source (README, Install):
+`desktop/packaging/build-deb.sh` (Debian/Ubuntu, `debian/` in
+`desktop/packaging/debian`), `build-rpm.sh` (Fedora/openSUSE,
+`rpm/ost-desktop.spec`), `build-appimage.sh` with `build-tarball.sh`, the
+Flatpak manifest in `desktop/packaging/flatpak` and the AUR PKGBUILDs in
+`desktop/packaging/aur`; `.github/workflows/release.yml` builds them all for
+a pushed `vX.Y.Z` tag. Every package uses the app ID
+`io.github.RandyNorthrup.ost` (desktop entry, icon, AppStream metainfo,
+Wayland app id).
 
 `ost-desktop --version` prints the version and `ost-desktop --help` the
 options; neither starts the app.

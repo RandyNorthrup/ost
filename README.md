@@ -78,34 +78,47 @@ so on) is listed in
 
 ## Install
 
-OST ships as an **AppImage**: one file with Qt, QtWebEngine, FFmpeg and the
-WebRTC audio processing library inside. Download `OST-<version>-x86_64.AppImage`
-from the [latest release](https://github.com/RandyNorthrup/ost/releases/latest)
-and run it:
+Every [release](https://github.com/RandyNorthrup/ost/releases/latest) has
+native packages built against each distribution's own Qt 6, FFmpeg and
+WebRTC audio processing, a Flatpak bundle, and an AppImage for everything
+else. Each package has the desktop app `ost-desktop` (menu entry **OST**)
+and the terminal client `teams-cli` (its own package for .deb and .rpm).
+Check your download against the release's `SHA256SUMS`
+(`sha256sum -c SHA256SUMS --ignore-missing`).
 
-```bash
-chmod +x OST-*-x86_64.AppImage
-./OST-*-x86_64.AppImage
-```
+| System | Download | Install |
+| --- | --- | --- |
+| Ubuntu 26.04 | `ost-desktop_<version>-1~ubuntu26.04_amd64.deb` | `sudo apt install ./ost-desktop_*~ubuntu26.04_amd64.deb` |
+| Debian testing (forky) | `ost-desktop_<version>-1~debian.forky_amd64.deb` | `sudo apt install ./ost-desktop_*~debian.forky_amd64.deb` |
+| Fedora 45 | `ost-desktop-<version>-1.fc45.x86_64.rpm` | `sudo dnf install ./ost-desktop-*.fc45.x86_64.rpm` |
+| openSUSE Tumbleweed | `ost-desktop-<version>-1.suse.tw.x86_64.rpm` | `sudo zypper install --allow-unsigned-rpm ./ost-desktop-*.suse.tw.x86_64.rpm` |
+| Arch Linux | AUR `ost` / `ost-bin` (coming soon) | |
+| Any, with Flatpak | `OST-<version>-x86_64.flatpak` | `flatpak install --user ./OST-*-x86_64.flatpak` (with the Flathub remote set up, for the KDE runtime) |
+| Any, glibc 2.43+ | `OST-<version>-x86_64.AppImage` | `chmod +x OST-*-x86_64.AppImage && ./OST-*-x86_64.AppImage` |
 
-To add OST to your app menu, use the release's
+Add `teams-cli_*.deb` or `teams-cli-*.rpm` to the same command for the
+terminal client. apt, dnf and zypper pull in the libraries OST needs;
+removing the package (`sudo apt remove ost-desktop`, `sudo dnf remove
+ost-desktop`) removes it again. Fedora's and openSUSE's own FFmpeg leave out
+some patented codecs; if a video clip doesn't play, install the full FFmpeg
+from RPM Fusion or Packman.
+
+To add the AppImage to your app menu, use the release's
 `ost-<version>-linux-x86_64.tar.gz` (the same AppImage with the install
 scripts):
 
 ```bash
-sha256sum -c SHA256SUMS --ignore-missing
 tar xf ost-*-linux-x86_64.tar.gz
 cd ost-*-linux-x86_64
 sh packaging/install-user.sh ./OST-*-x86_64.AppImage   # ~/.local/bin/ost-desktop, menu entry and icon
 ost-desktop
 ```
 
-**Supported systems:** 64-bit x86 Linux with glibc 2.43 or newer, on Wayland
-or X11 (tested on Ubuntu 26.04 and Arch Linux). Your system provides the
-graphics drivers, PipeWire for audio, a Secret Service keyring (GNOME
-Keyring or KWallet), FUSE 3 (`fuse3`) to mount the AppImage and, for screen
-sharing, xdg-desktop-portal with your desktop's backend. On older systems,
-build from source as below. More in
+**Supported systems:** 64-bit x86 Linux on Wayland or X11. Your system
+provides the graphics drivers, PipeWire for audio, a Secret Service keyring
+(GNOME Keyring or KWallet) and, for screen sharing, xdg-desktop-portal with
+your desktop's backend; the AppImage also needs glibc 2.43 or newer and FUSE
+3 (`fuse3`). On other systems, build from source as below. More in
 [Installation](https://github.com/RandyNorthrup/ost/wiki/Installation).
 
 On first start OST shows Microsoft's sign-in page; sign in with your work or
@@ -113,8 +126,10 @@ school account. Settings ▸ About OST checks GitHub for newer releases.
 
 **Bluetooth headsets:** mute works out of the box. Answering and ending
 calls with the headset's button needs a one-time PipeWire setup:
-`sh packaging/install-hfp-calls.sh` (it asks before changing anything that
-needs `sudo`; `--uninstall` undoes it). See
+`sh /usr/share/ost-desktop/install-hfp-calls.sh` with the .deb or .rpm, or
+`sh packaging/install-hfp-calls.sh` from the tarball (it asks before
+changing anything that needs `sudo`; `--uninstall` undoes it; not available
+in the Flatpak). See
 [Bluetooth headsets](https://github.com/RandyNorthrup/ost/wiki/Bluetooth-headsets).
 
 ## Build from source
@@ -143,7 +158,11 @@ desktop/packaging/install-user.sh          # installs target/release/ost-desktop
 The C++ parts are heavy; on machines with little memory use
 `cargo build -j 2 --release -p ost-desktop`. To package your build as an
 AppImage, also build `teams-cli` (`cargo build --release --bin teams-cli
---features audio`) and run `sh desktop/packaging/build-appimage.sh <version>`. More in
+--features audio`) and run `sh desktop/packaging/build-appimage.sh <version>`.
+`desktop/packaging/build-deb.sh` and `build-rpm.sh` build the .deb and .rpm
+packages on the distribution they are for (`--deps` installs the build
+dependencies first); `.github/workflows/release.yml` builds every package
+for a release. More in
 [Building from source](https://github.com/RandyNorthrup/ost/wiki/Building-from-source)
 and [docs/desktop.md](docs/desktop.md).
 

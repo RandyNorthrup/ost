@@ -1,0 +1,49 @@
+#!/usr/bin/make -f
+# OST's Debian/Ubuntu packages, built by desktop/packaging/build-deb.sh
+# (which puts this directory at the top of a copy of the source as debian/).
+# Rust, Qt, FFmpeg, PipeWire, OpenSSL and webrtc-audio-processing are the
+# distribution's.
+
+include /usr/share/dpkg/buildopts.mk
+
+export QMAKE = /usr/lib/qt6/bin/qmake6
+export CARGO_TARGET_DIR ?= $(CURDIR)/target
+JOBS = $(or $(DEB_BUILD_OPTION_PARALLEL),2)
+CARGO = cargo build --release --locked -j $(JOBS)
+REL = $(CARGO_TARGET_DIR)/release
+ID = io.github.RandyNorthrup.ost
+PKG = desktop/packaging
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+
+override_dh_auto_build:
+	$(CARGO) -p ost-desktop
+	$(CARGO) --bin teams-cli --features audio
+
+override_dh_auto_test:
+
+override_dh_auto_clean:
+
+override_dh_auto_install:
+	install -Dm755 $(REL)/ost-desktop debian/ost-desktop/usr/bin/ost-desktop
+	install -Dm644 $(PKG)/$(ID).desktop debian/ost-desktop/usr/share/applications/$(ID).desktop
+	install -Dm644 $(PKG)/$(ID).png debian/ost-desktop/usr/share/icons/hicolor/256x256/apps/$(ID).png
+	install -Dm644 desktop/assets/logo.svg debian/ost-desktop/usr/share/icons/hicolor/scalable/apps/$(ID).svg
+	install -Dm644 $(PKG)/$(ID).metainfo.xml debian/ost-desktop/usr/share/metainfo/$(ID).metainfo.xml
+	install -Dm755 $(PKG)/install-hfp-calls.sh debian/ost-desktop/usr/share/ost-desktop/install-hfp-calls.sh
+	install -Dm644 $(PKG)/ost-hfp-calls.dbus.conf debian/ost-desktop/usr/share/ost-desktop/ost-hfp-calls.dbus.conf
+	install -Dm644 $(PKG)/ost-hfp-calls.wireplumber.conf debian/ost-desktop/usr/share/ost-desktop/ost-hfp-calls.wireplumber.conf
+	install -Dm644 desktop/THIRD-PARTY-NOTICES.md debian/ost-desktop/usr/share/doc/ost-desktop/THIRD-PARTY-NOTICES.md
+	install -Dm755 $(REL)/teams-cli debian/teams-cli/usr/bin/teams-cli
+
+override_dh_installdocs:
+	dh_installdocs README.md
+
+# The binaries are large; no -dbgsym packages and no DWARF compression pass.
+override_dh_strip:
+	dh_strip --no-automatic-dbgsym
+
+override_dh_dwz:

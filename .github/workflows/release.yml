@@ -1,0 +1,231 @@
+# OST's releases: a pushed vX.Y.Z tag (or vX.Y.Z-something, a pre-release)
+# builds every package in a container of the distribution it is for and
+# attaches them, with SHA256SUMS, to the tag's GitHub release:
+#   - the AppImage and the tarball (Ubuntu 26.04: glibc 2.43 is the oldest
+#     they run on),
+#   - .deb for Ubuntu 26.04 and Debian testing,
+#   - .rpm for Fedora and openSUSE Tumbleweed,
+#   - the Flatpak bundle (desktop/packaging/flatpak).
+# Then the AUR packages are updated, when the AUR_SSH_KEY secret is set.
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+", "v[0-9]+.[0-9]+.[0-9]+-*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        name: The tag matches Cargo.toml's version
+        run: |
+          v=${GITHUB_REF_NAME#v}
+          cargo=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          desk=$(sed -n 's/^version = "\(.*\)"/\1/p' desktop/Cargo.toml | head -n 1)
+          [ "${v%%-*}" = "$cargo" ] && [ "$cargo" = "$desk" ] || { echo "::error::tag $GITHUB_REF_NAME, Cargo.toml $cargo, desktop/Cargo.toml $desk"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          case "$v" in *-*) echo "prerelease=true" ;; *) echo "prerelease=false" ;; esac >> "$GITHUB_OUTPUT"
+
+  ubuntu:
+    # .deb for Ubuntu 26.04, the AppImage and the tarball from the same build.
+    needs: version
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    env:
+      V: ${{ needs.version.outputs.version }}
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build dependencies
+        run: |
+          sh desktop/packaging/build-deb.sh --deps-only
+          apt-get install -y -q --no-install-recommends liblayershellqtinterface-dev layer-shell-qt curl file
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: cargo-registry-${{ hashFiles('Cargo.lock') }}
+      - name: .deb
+        run: SOURCE_DATE_EPOCH=$(git log -1 --format=%ct 2>/dev/null || date +%s) sh desktop/packaging/build-deb.sh "$V" out
+      - name: AppImage
+        run: |
+          sh desktop/packaging/build-appimage.sh "$V" "$PWD/appimage"
+          mv appimage/OST-"$V"-x86_64.AppImage out/
+      - name: Tarball
+        run: sh desktop/packaging/build-tarball.sh "$V" out/OST-"$V"-x86_64.AppImage out
+      - name: Check the AppImage's plugins resolve inside it
+        run: |
+          cd out && ./OST-"$V"-x86_64.AppImage --appimage-extract >/dev/null
+          for f in squashfs-root/usr/plugins/wayland-shell-integration/liblayer-shell.so \
+                   squashfs-root/usr/plugins/wayland-graphics-integration-client/libqt-plugin-wayland-egl.so; do
+            readelf -d "$f" | grep -q 'R.*PATH.*\$ORIGIN' || { echo "::error::$f has no \$ORIGIN RUNPATH"; exit 1; }
+          done
+          rm -rf squashfs-root
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ubuntu
+          path: |
+            out/*.deb
+            out/*.AppImage
+            out/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  debian:
+    needs: version
+    runs-on: ubuntu-latest
+    container: debian:testing
+    env:
+      V: ${{ needs.version.outputs.version }}
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh desktop/packaging/build-deb.sh --deps-only
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: cargo-registry-${{ hashFiles('Cargo.lock') }}
+      - run: SOURCE_DATE_EPOCH=$(git log -1 --format=%ct 2>/dev/null || date +%s) sh desktop/packaging/build-deb.sh "$V" out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debian
+          path: out/*.deb
+          if-no-files-found: error
+          retention-days: 7
+
+  rpm:
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: fedora
+            image: fedora:45
+          - name: opensuse
+            image: opensuse/tumbleweed
+    container: ${{ matrix.image }}
+    env:
+      V: ${{ needs.version.outputs.version }}
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - name: tar and gzip for the checkout and the cache
+        run: command -v dnf >/dev/null && dnf install -y -q tar gzip git || zypper -n -q install tar gzip git
+      - uses: actions/checkout@v4
+      - run: sh desktop/packaging/build-rpm.sh --deps-only
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: cargo-registry-${{ hashFiles('Cargo.lock') }}
+      - run: sh desktop/packaging/build-rpm.sh "$V" "$PWD/rpm"
+      - run: mkdir out && cp rpm/RPMS/*/*.rpm out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: out/*.rpm
+          if-no-files-found: error
+          retention-days: 7
+
+  flatpak:
+    needs: version
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:kde-6.11
+      options: --privileged
+    env:
+      V: ${{ needs.version.outputs.version }}
+      MANIFEST: desktop/packaging/flatpak/io.github.RandyNorthrup.ost.yml
+    steps:
+      - uses: actions/checkout@v4
+      - id: has
+        run: '[ -f "$MANIFEST" ] && echo "yes=true" >> "$GITHUB_OUTPUT" || echo "::notice::no Flatpak manifest yet: skipped"'
+      - if: steps.has.outputs.yes == 'true'
+        name: The crates' sources from Cargo.lock
+        run: |
+          curl -fsSLO https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+          python3 -m venv /tmp/gen && /tmp/gen/bin/pip -q install aiohttp PyYAML tomlkit
+          /tmp/gen/bin/python flatpak-cargo-generator.py Cargo.lock -o desktop/packaging/flatpak/cargo-sources.json
+          rm flatpak-cargo-generator.py
+      - if: steps.has.outputs.yes == 'true'
+        uses: actions/cache@v4
+        with:
+          path: .flatpak-builder
+          key: flatpak-builder-${{ hashFiles('desktop/packaging/flatpak/**', 'Cargo.lock') }}
+          restore-keys: flatpak-builder-
+      - if: steps.has.outputs.yes == 'true'
+        name: Build the bundle
+        run: |
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak-builder --user --install-deps-from=flathub --disable-rofiles-fuse --repo=repo --force-clean build "$MANIFEST"
+          flatpak build-bundle repo "OST-$V-x86_64.flatpak" io.github.RandyNorthrup.ost \
+            --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo
+      - if: steps.has.outputs.yes == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: OST-${{ env.V }}-x86_64.flatpak
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: [version, ubuntu, debian, rpm, flatpak]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      V: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: SHA256SUMS
+        run: |
+          cd dist && ls -la
+          sha256sum -- * > SHA256SUMS && cat SHA256SUMS
+      - name: Attach to the release (created when the tag has none yet)
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            pre=""; [ "${{ needs.version.outputs.prerelease }}" = true ] && pre=--prerelease
+            gh release create "$GITHUB_REF_NAME" $pre --verify-tag --title "OST $V" \
+              --notes "OST $V. Packages: see [Installation](https://github.com/RandyNorthrup/ost/wiki/Installation); checksums in SHA256SUMS."
+          fi
+          gh release upload "$GITHUB_REF_NAME" --clobber dist/*
+
+  aur:
+    # Runs once the release has its files (ost-bin downloads them).
+    needs: [version, release]
+    runs-on: ubuntu-latest
+    if: needs.version.outputs.prerelease == 'false'
+    container: archlinux:latest
+    env:
+      V: ${{ needs.version.outputs.version }}
+      AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+    steps:
+      - id: key
+        run: '[ -n "$AUR_SSH_KEY" ] && echo "yes=true" >> "$GITHUB_OUTPUT" || echo "::notice::AUR_SSH_KEY is not set: the AUR packages were not updated"'
+      - if: steps.key.outputs.yes == 'true'
+        run: pacman -Sy --noconfirm --needed git
+      - if: steps.key.outputs.yes == 'true'
+        uses: actions/checkout@v4
+      - if: steps.key.outputs.yes == 'true'
+        name: Update and push the AUR packages
+        run: sh desktop/packaging/update-aur.sh "$V"
