@@ -159,7 +159,7 @@ pub fn decide(call: &IncomingCall, tenant: Option<&str>) -> Decision {
         // inviting the room into a meeting of the room's tenant.
         (None, Some(t)) => {
             call.caller_id()
-                .is_some_and(|id| id.starts_with("8:orgid:"))
+                .is_some_and(|id| teams_cli::identity::work_object_id(&id).is_some())
                 && call
                     .invitation_data()
                     .and_then(|d| d.pointer("/meetingInfo/tenantId"))

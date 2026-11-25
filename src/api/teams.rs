@@ -1005,7 +1005,7 @@ pub async fn tag_people(client: &TeamsClient, mris: &[String]) -> Vec<TagPerson>
             mri: mri.clone(),
             ..Default::default()
         };
-        if let Some(oid) = mri.strip_prefix("8:orgid:")
+        if let Some(oid) = crate::identity::work_object_id(mri)
             && uuid::Uuid::parse_str(oid).is_ok()
             && let Ok(resp) = client
                 .graph_get(&format!("/users/{oid}?$select=displayName,jobTitle,officeLocation,department,mail,userPrincipalName"))

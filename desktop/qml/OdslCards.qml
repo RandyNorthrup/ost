@@ -323,7 +323,7 @@ Column {
                             spacing: -4
                             Repeater {
                                 model: (taskCard.modelData.assignments || []).slice(0, 3)
-                                Avatar { required property var modelData; y: 2.5; size: 20; photoId: "8:orgid:" + modelData; name: root.nameOf("8:orgid:" + modelData) || "?" }
+                                Avatar { required property var modelData; y: 2.5; size: 20; photoId: Mri.work(modelData); name: root.nameOf(Mri.work(modelData)) || "?" }
                             }
                         }
                         DueDate { visible: !!taskCard.modelData.due; due: taskCard.modelData.due; y: 1.25 }

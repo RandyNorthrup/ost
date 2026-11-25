@@ -811,7 +811,7 @@ pub(crate) fn other_member_oid(chat_id: &str, me: &str) -> Option<String> {
 
 /// A user's display name from Graph (by object id or `8:orgid:` MRI).
 pub async fn user_display_name(client: &TeamsClient, user: &str) -> Option<String> {
-    let oid = user.trim_start_matches("8:orgid:");
+    let oid = crate::identity::work_object_id(user).unwrap_or(user);
     resolve_user_name(client, oid, &mut Default::default()).await
 }
 
@@ -946,8 +946,8 @@ pub struct Member {
 /// Graph (`8:orgid:` users). Members with no name are left out.
 pub async fn chat_members(client: &TeamsClient, thread: &str) -> Result<Vec<Member>> {
     let me = client
-        .object_id()
-        .map(|o| format!("8:orgid:{o}").to_ascii_lowercase())
+        .self_mri()
+        .map(|m| m.to_ascii_lowercase())
         .unwrap_or_default();
     let ids = thread_member_ids(client, thread).await?;
     let profiles: std::collections::HashMap<String, (String, String)> =
@@ -982,7 +982,7 @@ pub async fn chat_members(client: &TeamsClient, thread: &str) -> Result<Vec<Memb
         if let Some((name, mail)) = profiles.get(&mri) {
             m.name = name.clone();
             m.mail = mail.clone();
-        } else if let Some(oid) = mri.strip_prefix("8:orgid:")
+        } else if let Some(oid) = crate::identity::work_object_id(&mri)
             && uuid::Uuid::parse_str(oid).is_ok()
             && let Ok(resp) = client
                 .graph_get(&format!(
@@ -1032,8 +1032,10 @@ pub async fn create_group_chat(
 /// it as Teams does (`createThread` with a fixed, unique roster) when it
 /// doesn't; returns its id.
 pub async fn ensure_one_on_one_chat(client: &TeamsClient, me: &str, other: &str) -> Result<String> {
-    let oid = |m: &str| m.trim_start_matches("8:orgid:").to_string();
-    let id = super::directory::one_on_one_chat_id(&oid(me), &oid(other));
+    // Work users by object ID; anyone else (a personal account, a bot)
+    // by MRI, as the chat service names them.
+    let id_of = |m: &str| crate::identity::work_object_id(m).unwrap_or(m).to_string();
+    let id = super::directory::one_on_one_chat_id(&id_of(me), &id_of(other));
     ensure_unique_chat(client, &id, me, other, Some("2")).await
 }
 
@@ -1090,7 +1092,7 @@ fn group_chat_body(members: &[String], topic: &str) -> Result<serde_json::Value>
     let members: Vec<_> = members
         .iter()
         .map(|m| m.trim().to_ascii_lowercase())
-        .filter(|m| m.starts_with("8:orgid:") && m.len() > 8 && seen.insert(m.clone()))
+        .filter(|m| crate::identity::is_person_mri(m) && seen.insert(m.clone()))
         .map(|m| serde_json::json!({ "id": m, "role": "Admin" }))
         .collect();
     if members.len() < 2 {
@@ -1131,11 +1133,19 @@ mod group_chat_tests {
         let me = "8:orgid:aaaa".to_string();
         assert!(group_chat_body(&[me.clone(), me.clone()], "").is_err());
         let b = group_chat_body(
-            &[me.clone(), "8:orgid:BBBB".into(), "bogus".into()],
+            &[
+                me.clone(),
+                "8:orgid:BBBB".into(),
+                "bogus".into(),
+                "8:live:.cid.c".into(),
+                "28:bot".into(),
+            ],
             " Team ",
         )
         .unwrap();
-        assert_eq!(b["members"].as_array().unwrap().len(), 2);
+        // People of any kind of account; not bots or junk.
+        assert_eq!(b["members"].as_array().unwrap().len(), 3);
+        assert_eq!(b["members"][2]["id"], "8:live:.cid.c");
         assert_eq!(b["members"][1]["id"], "8:orgid:bbbb");
         assert_eq!(b["properties"]["topic"], "Team");
         assert_eq!(b["properties"]["threadType"], "chat");
@@ -1647,10 +1657,7 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
         .unwrap_or_default();
 
     let own_oid = client.object_id();
-    let me = own_oid
-        .as_deref()
-        .map(|o| format!("8:orgid:{o}"))
-        .unwrap_or_default();
+    let me = client.self_mri().unwrap_or_default();
     let now_secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -1926,10 +1933,7 @@ pub async fn read_messages_data(
     }
     let body = serde_json::json!({ "messages": raw });
 
-    let me = client
-        .object_id()
-        .map(|o| format!("8:orgid:{o}"))
-        .unwrap_or_default();
+    let me = client.self_mri().unwrap_or_default();
     let own_name = client.display_name();
     let mut names: std::collections::HashMap<String, Option<String>> = Default::default();
     let mut result = Vec::new();
@@ -1947,7 +1951,9 @@ pub async fn read_messages_data(
             || kind == "RichText/Media_CallLocalRecording"
         {
             let content = m["content"].as_str().unwrap_or_default();
-            let organizer = match between(content, "<MeetingOrganizerId value=\"8:orgid:", "\"") {
+            let organizer = match between(content, "<MeetingOrganizerId value=\"", "\"")
+                .and_then(crate::identity::work_object_id)
+            {
                 Some(oid) => resolve_user_name(client, oid, &mut names).await,
                 None => None,
             };
@@ -2131,10 +2137,7 @@ pub async fn call_history(client: &TeamsClient, limit: usize) -> Result<Vec<Call
         .json()
         .await
         .context("Call history reply")?;
-    let me = client
-        .object_id()
-        .map(|o| format!("8:orgid:{o}"))
-        .unwrap_or_default();
+    let me = client.self_mri().unwrap_or_default();
     Ok(v.get("messages")
         .and_then(|m| m.as_array())
         .into_iter()

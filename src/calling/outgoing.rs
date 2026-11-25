@@ -1285,7 +1285,7 @@ impl OutgoingCall {
         validation_code: Option<u16>,
         ultrasound: bool,
     ) -> Result<()> {
-        if !room_mri.starts_with("8:orgid:") {
+        if crate::identity::work_object_id(room_mri).is_none() {
             bail!("Not a room account");
         }
         let link = self
@@ -2881,7 +2881,7 @@ pub fn callee_mri_for_chat(chat_id: &str, my_oid: &str) -> Option<String> {
     } else {
         return None;
     };
-    Some(format!("8:orgid:{other}"))
+    Some(crate::identity::user_mri(other))
 }
 
 /// The 1:1 chat two people share (Teams' `19:<oid>_<oid>@unq.gbl.spaces`,
@@ -3722,10 +3722,7 @@ pub async fn call_own_voicemail(
     cancel: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<OutgoingCall> {
     let config = Config::load()?;
-    let oid = config
-        .object_id()
-        .context("Signed-in user has no object id")?;
-    let me = format!("8:orgid:{oid}");
+    let me = config.self_mri().context("Signed-in user has no MRI")?;
     let extras = signaling::CallExtras {
         voicemail: Some(signaling::VOICEMAIL_GREETING.to_string()),
         ..Default::default()
@@ -3740,10 +3737,7 @@ pub async fn call_personal_attendant(
     cancel: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<OutgoingCall> {
     let config = Config::load()?;
-    let oid = config
-        .object_id()
-        .context("Signed-in user has no object id")?;
-    let me = format!("8:orgid:{oid}");
+    let me = config.self_mri().context("Signed-in user has no MRI")?;
     let extras = signaling::CallExtras {
         personal_attendant: true,
         ..Default::default()
@@ -3998,7 +3992,7 @@ pub async fn keep_conversation(
         crate::trouter::current_endpoint().context("Push channel is not connected")?;
     let tag = new_call_tag();
     let surl = format!("{}/x{tag}/", surl.trim_end_matches('/'));
-    let caller_mri = format!("8:orgid:{oid}");
+    let caller_mri = config.self_mri().context("Signed-in user has no MRI")?;
     let participant_id = uuid::Uuid::new_v4().to_string();
     let chain_id = uuid::Uuid::new_v4().to_string();
     let message_id = uuid::Uuid::new_v4().to_string();
@@ -4121,7 +4115,7 @@ pub async fn resolve_meeting_id(meeting_id: &str, passcode: &str) -> Result<(Mee
     let (surl, endpoint_id) =
         crate::trouter::current_endpoint().context("Push channel is not connected")?;
     let surl = format!("{}/x{}/", surl.trim_end_matches('/'), new_call_tag());
-    let caller_mri = format!("8:orgid:{oid}");
+    let caller_mri = config.self_mri().context("Signed-in user has no MRI")?;
     let participant_id = uuid::Uuid::new_v4().to_string();
     let chain_id = uuid::Uuid::new_v4().to_string();
     let message_id = uuid::Uuid::new_v4().to_string();
@@ -4198,7 +4192,7 @@ pub async fn start_test_call(cancel: tokio::sync::oneshot::Receiver<()>) -> Resu
             if let Err(e) = crate::api::ensure_unique_chat(
                 &client,
                 &thread,
-                &format!("8:orgid:{oid}"),
+                &config.self_mri().context("Signed-in user has no MRI")?,
                 signaling::ECHO_BOT_MRI,
                 None,
             )
@@ -4343,7 +4337,7 @@ async fn start_tagged(
     } else {
         local.offer_sdp()
     };
-    let caller_mri = format!("8:orgid:{oid}");
+    let caller_mri = config.self_mri().context("Signed-in user has no MRI")?;
     // Into the conversation we kept: as the participant we are there.
     let participant_id = match &target {
         Target::Meeting(_, JoinHow { kept: Some(k), .. }) => k.participant_id.clone(),
@@ -4400,12 +4394,8 @@ async fn start_tagged(
     // A group call names the chat's members (rung, or nudged for Meet now).
     let members: Vec<String> = if matches!(target, Target::Group(_)) {
         match crate::api::client::TeamsClient::new().await {
-            Ok(client) => match crate::api::files::member_oids(&client, thread_id).await {
-                Ok(oids) => oids
-                    .iter()
-                    .take(MAX_RING)
-                    .map(|o| format!("8:orgid:{o}"))
-                    .collect(),
+            Ok(client) => match crate::api::files::member_mris(&client, thread_id).await {
+                Ok(mris) => mris.into_iter().take(MAX_RING).collect(),
                 Err(e) => {
                     tracing::warn!("Group members unavailable: {:#}", e);
                     Vec::new()

@@ -213,7 +213,7 @@ pub async fn rooms(client: &TeamsClient, query: Option<&str>) -> Result<Vec<Room
 
 /// The room's MRI from a Teams Rooms Bluetooth beacon's object id.
 pub fn mri_for(object_id: &str) -> String {
-    format!("8:orgid:{object_id}")
+    crate::identity::work_user_mri(object_id)
 }
 
 /// Microsoft's Bluetooth company id (Teams' `aB`).

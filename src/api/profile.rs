@@ -16,7 +16,7 @@ fn person(v: &serde_json::Value) -> serde_json::Value {
         "id": v["id"],
         "name": v["displayName"],
         "jobTitle": v["jobTitle"],
-        "mri": v["id"].as_str().map(|o| format!("8:orgid:{o}")),
+        "mri": v["id"].as_str().map(crate::identity::work_user_mri),
     })
 }
 
@@ -123,7 +123,7 @@ fn org_person(v: &serde_json::Value) -> serde_json::Value {
     let oid = v["aadObjectId"].as_str().unwrap_or_default();
     serde_json::json!({
         "id": oid,
-        "mri": format!("8:orgid:{oid}"),
+        "mri": crate::identity::work_user_mri(oid),
         "name": v["fullName"],
         "jobTitle": v["jobTitle"].as_str().unwrap_or_default(),
         "location": v["location"].as_str().unwrap_or_default(),

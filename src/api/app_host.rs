@@ -594,7 +594,7 @@ pub async fn context(
         tid: client.tenant_id().unwrap_or_default(),
         oid: client.object_id().unwrap_or_default(),
         upn: client.user_principal_name().unwrap_or_default(),
-        mri: format!("8:orgid:{}", client.object_id().unwrap_or_default()),
+        mri: client.self_mri().unwrap_or_default(),
     };
     let manifest = facts(client, app_id)
         .await
@@ -702,7 +702,7 @@ pub async fn meeting_annotation_board(
     let q = format!(
         "threadId={}&organizerId={}&tenantId={}&meetingTitle={}",
         e(thread),
-        e(&format!("8:orgid:{organizer_oid}")),
+        e(&crate::identity::user_mri(organizer_oid)),
         e(&client.tenant_id().unwrap_or_default()),
         e(title)
     );
@@ -802,7 +802,7 @@ fn board_query(client: &TeamsClient, thread: &str, organizer_oid: &str) -> Strin
     format!(
         "threadId={}&messageId=0&organizerId={}&tenantId={}",
         e(thread),
-        e(&format!("8:orgid:{organizer_oid}")),
+        e(&crate::identity::user_mri(organizer_oid)),
         e(&client.tenant_id().unwrap_or_default())
     )
 }

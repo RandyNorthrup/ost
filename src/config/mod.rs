@@ -7,6 +7,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::auth::{StoredToken, TokenStore};
+use crate::identity::{AccountIdentity, tenant_id_from_jwt};
 
 /// Application configuration
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -39,6 +40,10 @@ pub struct Config {
     /// this file; the file then holds no secrets.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub tokens_in_keyring: bool,
+    /// The signed-in account, filled in when its tokens are stored (sign-in
+    /// and refresh). Not a secret: it is what the app shows as "you".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<AccountIdentity>,
 }
 
 /// Every secret in [`Config`], stored as one keyring entry.
@@ -97,34 +102,65 @@ fn keyring_entry() -> Option<keyring::Entry> {
 }
 
 impl Config {
-    /// The signed-in tenant: the recorded one, or failing that the `tid` of
-    /// the stored access token (configs written before it was recorded).
+    /// The signed-in account. Configs written before it was recorded get it
+    /// from their stored access token when they are loaded.
+    pub fn identity(&self) -> Option<&AccountIdentity> {
+        self.identity.as_ref()
+    }
+
+    /// Record the signed-in account. A work account's identity comes from
+    /// its access token ([`TokenStore::set_access_token`]); the personal
+    /// sign-in (TASK-0292) sets its `8:live:` identity here from the Skype
+    /// token, since its access tokens are opaque.
+    pub fn set_identity(&mut self, identity: AccountIdentity) {
+        if identity.tenant_id.is_some() || identity.is_personal() {
+            self.tenant_id = identity.tenant_id.clone();
+        }
+        self.identity = Some(identity);
+    }
+
+    /// The signed-in user's own MRI (`8:orgid:{oid}`, or `8:live:…`).
+    pub fn self_mri(&self) -> Option<String> {
+        Some(self.identity()?.mri.clone())
+    }
+
+    /// The signed-in tenant: the account's, or for configs from before the
+    /// identity was recorded, the one recorded at the last sign-in. None
+    /// for a personal account.
     pub fn tenant_id(&self) -> Option<String> {
-        self.tenant_id.clone().or_else(|| {
-            self.access_token
-                .as_ref()
-                .and_then(|t| tenant_id_from_jwt(&t.token))
-        })
+        match self.identity() {
+            Some(me) if me.is_personal() => None,
+            Some(me) if me.tenant_id.is_some() => me.tenant_id.clone(),
+            _ => self.tenant_id.clone(),
+        }
     }
 
-    /// The signed-in user's display name (`name` claim of the access token).
+    /// The signed-in user's display name.
     pub fn display_name(&self) -> Option<String> {
-        let token = self.access_token.as_ref()?;
-        jwt_claim(&token.token, "name").filter(|n| !n.trim().is_empty())
+        self.identity()?.display_name.clone()
     }
 
-    /// The signed-in user's sign-in name (`upn`, else `unique_name`).
+    /// The signed-in user's sign-in name (user@domain).
     pub fn user_principal_name(&self) -> Option<String> {
-        let token = self.access_token.as_ref()?;
-        jwt_claim(&token.token, "upn")
-            .or_else(|| jwt_claim(&token.token, "unique_name"))
-            .filter(|n| n.contains('@'))
+        self.identity()?.upn.clone()
     }
 
-    /// The signed-in user's Entra object id (`oid` claim), validated as a GUID.
+    /// The signed-in user's object id (a work account's Entra `oid`).
     pub fn object_id(&self) -> Option<String> {
-        let token = self.access_token.as_ref()?;
-        jwt_claim(&token.token, "oid").filter(|o| is_guid(o))
+        Some(self.identity()?.object_id.clone()).filter(|o| !o.is_empty())
+    }
+
+    /// Fill in the identity of a config written before it was recorded,
+    /// from its stored (work) access token.
+    fn ensure_identity(&mut self) {
+        if self.identity.is_none()
+            && let Some(me) = self
+                .access_token
+                .as_ref()
+                .and_then(|t| AccountIdentity::from_work_token(&t.token))
+        {
+            self.set_identity(me);
+        }
     }
 
     /// Get config directory path
@@ -165,6 +201,7 @@ impl Config {
                 None => tracing::warn!("Tokens are in the keyring, but the keyring is disabled"),
             }
         }
+        config.ensure_identity();
         Ok(config)
     }
 
@@ -225,6 +262,7 @@ impl Config {
             region_gtms: self.region_gtms.clone(),
             license_details: self.license_details.clone(),
             auth_flow: self.auth_flow.clone(),
+            identity: self.identity.clone(),
             ..Self::default()
         }
     }
@@ -288,11 +326,17 @@ impl TokenStore for Config {
     }
 
     fn set_access_token(&mut self, token: String, expires_in: Option<u64>) {
-        // Calling needs the tenant id, and nothing else records it: take it
-        // from the token's `tid` claim each time the token is stored, so both
-        // a fresh login and a refresh keep it current.
-        if let Some(tid) = tenant_id_from_jwt(&token) {
-            self.tenant_id = Some(tid);
+        // The account's identity (and the tenant calling needs) comes from
+        // a work account's access token each time it is stored, so both a
+        // fresh login and a refresh keep it current. A personal account's
+        // opaque token leaves the identity its sign-in recorded.
+        match AccountIdentity::from_work_token(&token) {
+            Some(me) => self.set_identity(me),
+            None => {
+                if let Some(tid) = tenant_id_from_jwt(&token) {
+                    self.tenant_id = Some(tid);
+                }
+            }
         }
         self.access_token = Some(StoredToken::new(token, expires_in));
     }
@@ -330,6 +374,7 @@ impl Config {
         self.ic3_token = None;
         self.recorder_token = None;
         self.tenant_id = None;
+        self.identity = None;
         self.region_gtms = None;
         self.license_details = None;
     }
@@ -358,32 +403,6 @@ fn write_private(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
             .context("Failed to set config permissions")?;
     }
     Ok(())
-}
-
-/// Read one string claim from a JWT payload without verifying the token.
-///
-/// Tokens here were issued to us by Azure AD over TLS; claims read this way
-/// are used only for display and routing, never for authorization.
-fn jwt_claim(token: &str, claim: &str) -> Option<String> {
-    use base64::Engine;
-    let payload = token.split('.').nth(1)?;
-    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(payload.trim_end_matches('='))
-        .ok()?;
-    let json: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
-    Some(json.get(claim)?.as_str()?.to_string())
-}
-
-fn is_guid(s: &str) -> bool {
-    s.len() == 36
-        && s.chars().enumerate().all(|(i, c)| {
-            matches!(i, 8 | 13 | 18 | 23) == (c == '-') && (c == '-' || c.is_ascii_hexdigit())
-        })
-}
-
-/// Read the `tid` (tenant id) claim, accepting only a GUID.
-fn tenant_id_from_jwt(token: &str) -> Option<String> {
-    jwt_claim(token, "tid").filter(|t| is_guid(t))
 }
 
 /// An account signed in on this device (Teams' "Accounts and orgs" list):
@@ -619,21 +638,81 @@ mod tenant_id_tests {
     }
 
     #[test]
-    fn identity_claims_come_from_the_access_token() {
+    fn identity_comes_from_the_access_token_once() {
         let mut c = Config::default();
         assert_eq!(c.display_name(), None);
+        assert_eq!(c.self_mri(), None);
         c.set_access_token(
-            jwt_with(r#"{"name":"OST Test 1","oid":"4287e791-1b98-4963-8b94-281c50472683"}"#),
+            jwt_with(
+                r#"{"name":"OST Test 1","oid":"4287e791-1b98-4963-8b94-281c50472683","upn":"t1@x.com"}"#,
+            ),
             Some(3600),
         );
         assert_eq!(c.display_name().as_deref(), Some("OST Test 1"));
+        assert_eq!(c.user_principal_name().as_deref(), Some("t1@x.com"));
         assert_eq!(
             c.object_id().as_deref(),
             Some("4287e791-1b98-4963-8b94-281c50472683")
         );
-        c.set_access_token(jwt_with(r#"{"name":"  ","oid":"nope"}"#), None);
-        assert_eq!(c.display_name(), None);
+        assert_eq!(
+            c.self_mri().as_deref(),
+            Some("8:orgid:4287e791-1b98-4963-8b94-281c50472683")
+        );
+        // A refresh brings the new name.
+        c.set_access_token(
+            jwt_with(r#"{"name":"OST One","oid":"4287e791-1b98-4963-8b94-281c50472683"}"#),
+            None,
+        );
+        assert_eq!(c.display_name().as_deref(), Some("OST One"));
+        // A token without an object id (a personal account's opaque one)
+        // keeps the identity its sign-in recorded.
+        c.set_access_token("opaque".into(), None);
+        assert_eq!(c.display_name().as_deref(), Some("OST One"));
+    }
+
+    #[test]
+    fn old_configs_get_their_identity_and_keep_it_on_disk() {
+        let mut c = Config {
+            access_token: Some(StoredToken::new(
+                jwt_with(
+                    r#"{"oid":"4287e791-1b98-4963-8b94-281c50472683","tid":"09a28c80-30f0-4c4d-98ba-0f7f8d19b780"}"#,
+                ),
+                Some(3600),
+            )),
+            ..Default::default()
+        };
+        assert_eq!(c.identity(), None);
+        c.ensure_identity();
+        assert_eq!(
+            c.tenant_id().as_deref(),
+            Some("09a28c80-30f0-4c4d-98ba-0f7f8d19b780")
+        );
+        let on_disk = toml::to_string_pretty(&c.clone_settings()).unwrap();
+        let back: Config = toml::from_str(&on_disk).unwrap();
+        assert_eq!(back.identity(), c.identity());
+        assert!(back.access_token.is_none());
+    }
+
+    #[test]
+    fn personal_accounts_have_no_tenant() {
+        let mut c = Config {
+            tenant_id: Some("09a28c80-30f0-4c4d-98ba-0f7f8d19b780".into()),
+            ..Default::default()
+        };
+        c.set_identity(AccountIdentity {
+            kind: crate::identity::AccountKind::Personal,
+            mri: "8:live:.cid.0123456789abcdef".into(),
+            object_id: String::new(),
+            tenant_id: None,
+            display_name: Some("P".into()),
+            upn: None,
+        });
+        assert_eq!(c.tenant_id(), None);
         assert_eq!(c.object_id(), None);
+        assert_eq!(
+            c.self_mri().as_deref(),
+            Some("8:live:.cid.0123456789abcdef")
+        );
     }
 
     #[test]
@@ -668,7 +747,11 @@ mod sign_out_tests {
             auth_flow: Some(crate::auth::TEAMS_WEB_FLOW.into()),
             license_details: Some("{}".into()),
             tokens_in_keyring: true,
+            identity: AccountIdentity::from_work_token(
+                "x.eyJvaWQiOiI0Mjg3ZTc5MS0xYjk4LTQ5NjMtOGI5NC0yODFjNTA0NzI2ODMifQ.s",
+            ),
         };
+        assert!(c.identity().is_some());
         c.forget_account();
         assert!(c.secrets().refresh_token.is_none() && c.get_access_token().is_none());
         assert!(
@@ -678,6 +761,7 @@ mod sign_out_tests {
                 && c.recorder_token.is_none()
         );
         assert!(c.tenant_id.is_none() && c.region_gtms.is_none() && c.license_details.is_none());
+        assert!(c.identity().is_none());
         assert!(!c.tokens_in_keyring);
 
         // config.toml as save() writes it: the sign-in method stays, so the

@@ -62,7 +62,7 @@ Rectangle {
     function composeBox() { return compose }
 
     function chatWith(oid) {
-        const mri = "8:orgid:" + oid
+        const mri = Mri.work(oid)
         const c = root.chats.find(c => c.peerMri === mri && !c.isGroup && !c.isSelf && !c.meeting)
         return c ? c.id : ""
     }

@@ -385,18 +385,18 @@ pub(crate) async fn member_emails(client: &TeamsClient, chat_id: &str) -> Result
     Ok(emails)
 }
 
-/// The object ids of a chat's other members (people only; checked to be
-/// object ids).
-pub async fn member_oids(client: &TeamsClient, chat_id: &str) -> Result<Vec<String>> {
-    let me = client.object_id().unwrap_or_default();
-    let oids: Vec<String> = if let Some(inner) = chat_id
+/// The MRIs of a chat's other members: people only, of any kind of
+/// account (`8:orgid:`, `8:live:`, …), without the signed-in user.
+pub async fn member_mris(client: &TeamsClient, chat_id: &str) -> Result<Vec<String>> {
+    let me = client.identity().cloned();
+    let mris: Vec<String> = if let Some(inner) = chat_id
         .strip_prefix("19:")
         .and_then(|c| c.strip_suffix("@unq.gbl.spaces"))
     {
         inner
             .split('_')
-            .filter(|o| !o.eq_ignore_ascii_case(&me))
-            .map(str::to_string)
+            .filter(|id| !id.is_empty())
+            .map(crate::identity::user_mri)
             .collect()
     } else {
         let url = format!(
@@ -415,14 +415,25 @@ pub async fn member_oids(client: &TeamsClient, chat_id: &str) -> Result<Vec<Stri
             .into_iter()
             .flatten()
             .filter_map(|m| m.get("id").and_then(|i| i.as_str()))
-            .filter_map(|id| id.strip_prefix("8:orgid:"))
-            .filter(|o| !o.eq_ignore_ascii_case(&me))
             .map(str::to_string)
             .collect()
     };
-    Ok(oids
+    Ok(mris
         .into_iter()
-        .filter(|o| !o.is_empty() && o.chars().all(|c| c.is_ascii_hexdigit() || c == '-'))
+        .filter(|m| crate::identity::is_person_mri(m))
+        .filter(|m| !me.as_ref().is_some_and(|me| me.is_me(m)))
+        .collect())
+}
+
+/// The object ids of a chat's other work-account members (for Graph
+/// lookups; checked to be object ids).
+pub async fn member_oids(client: &TeamsClient, chat_id: &str) -> Result<Vec<String>> {
+    Ok(member_mris(client, chat_id)
+        .await?
+        .iter()
+        .filter_map(|m| crate::identity::work_object_id(m))
+        .filter(|o| o.chars().all(|c| c.is_ascii_hexdigit() || c == '-'))
+        .map(str::to_string)
         .collect())
 }
 

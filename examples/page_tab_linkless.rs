@@ -17,7 +17,7 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
     let creator = if args[1] == "me" {
-        format!("8:orgid:{}", client.object_id().unwrap_or_default())
+        client.self_mri().unwrap_or_default()
     } else {
         args[1].clone()
     };

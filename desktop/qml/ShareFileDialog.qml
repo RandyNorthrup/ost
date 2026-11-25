@@ -175,7 +175,7 @@ Popup {
     component Picture: Avatar {
         property var who: null
         name: who ? (who.plain_name || who.name) : ""
-        photoId: !who ? "" : who.kind === "person" ? "8:orgid:" + who.oid : who.group ? "team:" + who.group : ""
+        photoId: !who ? "" : who.kind === "person" ? Mri.work(who.oid) : who.group ? "team:" + who.group : ""
         meeting: !!who && who.thread_type === "Meeting"
         group: !!who && who.kind === "chat" && !who.group && who.thread_type !== "Meeting"
         square: !!who && !!who.group

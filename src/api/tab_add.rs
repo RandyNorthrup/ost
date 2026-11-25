@@ -787,10 +787,7 @@ pub fn page_property(
 /// ([`crate::api::loop_page`]) and [`set_page_component_url`] points the
 /// tab at it. Returns the tab's id.
 pub async fn add_new_page_tab(client: &TeamsClient, channel_id: &str) -> Result<String> {
-    let me = client
-        .object_id()
-        .map(|o| format!("8:orgid:{o}"))
-        .context("Not signed in")?;
+    let me = client.self_mri().context("Not signed in")?;
     add_page_tab_without_link(client, channel_id, &me, "Untitled page").await
 }
 
@@ -979,10 +976,7 @@ pub async fn add_existing_page(
     let (orders, names) = existing_tabs(client, channel_id).await?;
     let id = format!("tab::{}", uuid::Uuid::new_v4());
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-    let me = client
-        .object_id()
-        .map(|o| format!("8:orgid:{o}"))
-        .unwrap_or_default();
+    let me = client.self_mri().unwrap_or_default();
     let property = page_property(
         &id,
         add_order(&orders),
@@ -1151,10 +1145,7 @@ async fn post_link(
     tab_name: &str,
     text: &str,
 ) -> Result<String> {
-    let me = client
-        .object_id()
-        .map(|o| format!("8:orgid:{o}"))
-        .context("Not signed in")?;
+    let me = client.self_mri().context("Not signed in")?;
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let body = tabs::tab_link_post(
         thread_id,

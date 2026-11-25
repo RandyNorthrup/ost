@@ -615,9 +615,7 @@ pub fn transfer_body(
     cb: impl Fn(&str) -> String,
     replaces: Option<&str>,
 ) -> Result<serde_json::Value> {
-    let oid = target
-        .strip_prefix("8:orgid:")
-        .context("Not a person to transfer to")?;
+    let oid = crate::identity::work_object_id(target).context("Not a person to transfer to")?;
     if uuid::Uuid::parse_str(oid).is_err() {
         anyhow::bail!("Not a person to transfer to");
     }
@@ -2320,16 +2318,14 @@ fn modalities(video: bool) -> serde_json::Value {
 /// participant id the service assigned us, and the live Trouter endpoint.
 fn local_participant(forked: Option<&serde_json::Value>) -> Result<LocalParticipant> {
     let config = crate::config::Config::load()?;
-    let oid = config
-        .object_id()
-        .context("Signed-in user has no object id")?;
+    let mri = config.self_mri().context("Signed-in user has no MRI")?;
     let (trouter_surl, endpoint_id) =
         crate::trouter::current_endpoint().context("Push channel is not connected")?;
     let participant_id = forked
         .and_then(|v| str_at(v, "/callNotification/to/participantId"))
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     Ok(LocalParticipant {
-        id: format!("8:orgid:{oid}"),
+        id: mri,
         display_name: config.display_name().unwrap_or_default(),
         endpoint_id,
         participant_id,

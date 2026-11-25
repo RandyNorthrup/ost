@@ -306,7 +306,7 @@ pub async fn tagged(client: &TeamsClient) -> Result<Vec<(String, String, String)
 /// Teams' Notify when available body: the person as a contact with the
 /// "Tagged" system tag.
 pub fn notify_body(mri: &str, tenant: &str) -> serde_json::Value {
-    let oid = mri.trim_start_matches("8:orgid:");
+    let oid = crate::identity::work_object_id(mri).unwrap_or(mri);
     serde_json::json!({
         "mri": mri,
         "names": [],

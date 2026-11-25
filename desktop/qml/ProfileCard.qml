@@ -28,7 +28,7 @@ Popup {
     signal startCall(string mri, string name, bool video)
     signal quickMessage(string mri, string name, string text)
     readonly property var card: backend.profileCardJson ? JSON.parse(backend.profileCardJson) : ({})
-    readonly property string mri: card.id ? "8:orgid:" + card.id : who
+    readonly property string mri: card.id ? Mri.work(card.id) : who
     readonly property var p: card.presence || ({})
     function show(id) { who = id; tab = "overview"; moreContact = false; quick.text = ""; history = [id]; historyAt = 0; backend.loadProfileCard(id); open() }
     // The org chart's people: Home, Back to previous profile and Next

@@ -708,8 +708,7 @@ async fn connect(room_mri: String, thread_id: String, generation: u64) -> Result
     let config = teams_cli::config::Config::load().ok();
     let me = config
         .as_ref()
-        .and_then(|c| c.object_id())
-        .map(|o| format!("8:orgid:{o}"))
+        .and_then(|c| c.self_mri())
         .unwrap_or_default();
     let my_name = config
         .as_ref()

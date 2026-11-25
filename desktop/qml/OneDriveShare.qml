@@ -159,7 +159,7 @@ Popup {
     }
     function unpick(i) { const a = picked.slice(); a.splice(i, 1); picked = a }
     function roleWord(r) { return r === 3 ? qsTr("Owner") : r === 2 ? qsTr("Can edit") : qsTr("Can view") }
-    function personPhoto(p) { return p && p.oid ? "8:orgid:" + p.oid : "" }
+    function personPhoto(p) { return p && p.oid ? Mri.work(p.oid) : "" }
 
     // A 32 px OneDrive icon button (Help, Close, Back, Grant Access).
     component IconButton: Rectangle {
@@ -245,7 +245,7 @@ Popup {
                             required property int index
                             width: pillName.implicitWidth + 28 + 8 + 32; height: 28; radius: 16
                             color: theme.pick("#F3F2F1", "#3B3A39", "#000000")
-                            Avatar { x: 1; size: 28; name: parent.modelData.DisplayText; photoId: parent.modelData.EntityData && parent.modelData.EntityData.ObjectId ? "8:orgid:" + parent.modelData.EntityData.ObjectId : "" }
+                            Avatar { x: 1; size: 28; name: parent.modelData.DisplayText; photoId: parent.modelData.EntityData && parent.modelData.EntityData.ObjectId ? Mri.work(parent.modelData.EntityData.ObjectId) : "" }
                             Text { id: pillName; x: 37; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.DisplayText; font.family: theme.font; font.pixelSize: 14; color: root.ink }
                             Rectangle {
                                 id: hcFill2
@@ -333,7 +333,7 @@ Popup {
                         required property var modelData
                         width: ListView.view.width; height: 54
                         color: sgh.hovered ? theme.menuHover : "transparent"
-                        Avatar { x: 12; y: 7; size: 40; name: parent.modelData.DisplayText; photoId: parent.modelData.EntityData && parent.modelData.EntityData.ObjectId && parent.modelData.EntityType === "User" ? "8:orgid:" + parent.modelData.EntityData.ObjectId : "" }
+                        Avatar { x: 12; y: 7; size: 40; name: parent.modelData.DisplayText; photoId: parent.modelData.EntityData && parent.modelData.EntityData.ObjectId && parent.modelData.EntityType === "User" ? Mri.work(parent.modelData.EntityData.ObjectId) : "" }
                         Text { x: 60; y: 17; text: parent.modelData.DisplayText; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill4, root.ink) }
                         HoverHandler { id: sgh; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.pick(parent.modelData) }
@@ -671,7 +671,7 @@ Popup {
             Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter; y: 158.79; width: 44; height: 39.33; radius: 2
                 color: ivh.hovered ? theme.menuHover : "transparent"
-                Avatar { anchors.centerIn: parent; size: 36; name: root.invited.length ? root.invited[0] : ""; photoId: root.picked.length && root.picked[0].EntityData && root.picked[0].EntityData.ObjectId ? "8:orgid:" + root.picked[0].EntityData.ObjectId : "" }
+                Avatar { anchors.centerIn: parent; size: 36; name: root.invited.length ? root.invited[0] : ""; photoId: root.picked.length && root.picked[0].EntityData && root.picked[0].EntityData.ObjectId ? Mri.work(root.picked[0].EntityData.ObjectId) : "" }
                 HoverHandler { id: ivh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { root.tab = "people"; root.view = "manage" } }
                 Accessible.role: Accessible.Button

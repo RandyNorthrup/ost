@@ -1559,7 +1559,7 @@ Rectangle {
     Timer { id: collTimer; interval: 1000; property string cid: ""; property int n: 0
             function again(id, k) { cid = id; n = k + 1; restart() }
             onTriggered: root.pollCollection(cid, n) }
-    readonly property bool imOwner: !!collectionPeople && (collectionPeople.owners || []).some(o => o.id === backend.userMri.replace("8:orgid:", ""))
+    readonly property bool imOwner: !!collectionPeople && (collectionPeople.owners || []).some(o => o.id === backend.userOid)
     Flickable {
         id: collPage
         visible: root.page === "collections" || root.page === "collection"
@@ -1724,7 +1724,7 @@ Rectangle {
             Column { required property var modelData; required property int index
                 width: ct.width
                 Item { width: parent.width; height: 64
-                    Avatar { x: 16; anchors.verticalCenter: parent.verticalCenter; size: 36; name: modelData.displayName; photoId: "8:orgid:" + modelData.id }
+                    Avatar { x: 16; anchors.verticalCenter: parent.verticalCenter; size: 36; name: modelData.displayName; photoId: Mri.work(modelData.id) }
                     Column { x: 64; anchors.verticalCenter: parent.verticalCenter
                         Text { text: modelData.displayName; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                         Text { text: modelData.userPrincipalName || ""; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
@@ -1737,7 +1737,7 @@ Rectangle {
                                                     v => { if (!v.error) root.call("collectionPeople", { id: root.collection.collection.id }, p => { if (!p.error) root.collectionPeople = p }) })
                         Accessible.name: qsTr("Role")
                     }
-                    Btn { visible: !ct.owners && (root.imOwner || modelData.id === backend.userMri.replace("8:orgid:", "")); anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter
+                    Btn { visible: !ct.owners && (root.imOwner || modelData.id === backend.userOid); anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter
                           icon: "dismiss-20"; text: ""; pad: 6; Accessible.name: qsTr("Remove %1").arg(modelData.displayName); onClicked: collRemove.openFor(modelData) }
                 }
                 Rectangle { visible: index < ct.people.length - 1; width: parent.width; height: 1; color: theme.divider } } }

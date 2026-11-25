@@ -64,12 +64,7 @@ impl qobject::Backend {
         self.as_mut().rust_mut().content.error.clear();
         self.as_mut().show_content();
         let title = self.rust().call_peer.to_string();
-        let me_oid = self
-            .rust()
-            .user_mri
-            .to_string()
-            .trim_start_matches("8:orgid:")
-            .to_string();
+        let me_oid = teams_cli::identity::mri_id(&self.rust().user_mri.to_string()).to_string();
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let r = start_content(&kind, &args, &title, &me_oid).await;
@@ -251,12 +246,7 @@ impl qobject::Backend {
         let pairs: Vec<(&str, String)> =
             pairs.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
         let meeting_id = cs::meeting_id(&thread);
-        let user = self
-            .rust()
-            .user_mri
-            .to_string()
-            .trim_start_matches("8:orgid:")
-            .to_string();
+        let user = teams_cli::identity::mri_id(&self.rust().user_mri.to_string()).to_string();
         let url = api::app_host::shared_board_frame_url(
             &session_url.to_string(),
             &uuid::Uuid::new_v4().to_string(),
@@ -275,12 +265,7 @@ impl qobject::Backend {
     /// Annotate.
     pub fn content_save_board(self: Pin<&mut Self>, kind: &QString, url: &QString) {
         let (kind, url) = (kind.to_string(), url.to_string());
-        let me_oid = self
-            .rust()
-            .user_mri
-            .to_string()
-            .trim_start_matches("8:orgid:")
-            .to_string();
+        let me_oid = teams_cli::identity::mri_id(&self.rust().user_mri.to_string()).to_string();
         runtime().spawn(async move {
             let (thread, organizer) = {
                 let slot = call_slot().lock().await;
@@ -363,12 +348,7 @@ impl qobject::Backend {
         } else {
             uuid::Uuid::new_v4().to_string()
         };
-        let user = self
-            .rust()
-            .user_mri
-            .to_string()
-            .trim_start_matches("8:orgid:")
-            .to_string();
+        let user = teams_cli::identity::mri_id(&self.rust().user_mri.to_string()).to_string();
         let e = |v: &str| teams_cli::api::tabs::encode_uri_component(v);
         let now = chrono::Utc::now().timestamp_millis().to_string();
         let name = st(&c, "name");

@@ -661,7 +661,7 @@ pub fn person(email: &str, display_name: &str, object_id: &str, tenant_id: &str)
     json!({
         "email": email,
         "displayName": display_name,
-        "identity": { "mri": format!("8:orgid:{object_id}"), "objectId": object_id, "tenantId": tenant_id, "upn": null },
+        "identity": { "mri": crate::identity::work_user_mri(object_id), "objectId": object_id, "tenantId": tenant_id, "upn": null },
         "userBio": { "description": "", "company": "", "jobTitle": "", "socialMediaLinks": { "linkedIn": "", "twitter": "" } },
         "userPurpose": "unknown"
     })
@@ -1723,10 +1723,10 @@ pub async fn search_rooms(
                 let r = rooms.iter().find(|r| r.email.eq_ignore_ascii_case(email));
                 let mri = r
                     .map(|r| r.mri.clone())
-                    .unwrap_or_else(|| format!("8:orgid:{oid}"));
+                    .unwrap_or_else(|| crate::identity::work_user_mri(oid));
                 (!oid.is_empty() || r.is_some()).then(|| json!({
             "name": name, "email": email, "mri": mri,
-            "objectId": mri.trim_start_matches("8:orgid:"), "tenantId": tid, "upn": email,
+            "objectId": crate::identity::work_object_id(&mri).unwrap_or(&mri), "tenantId": tid, "upn": email,
             "userType": "Room", "group": false, "detail": email, "availability": avail,
         }))
             })

@@ -5516,7 +5516,7 @@ Window {
                     required property var modelData
                     width: 296; height: 44; radius: theme.radius
                     color: ph.hovered ? theme.rowHover : "transparent"
-                    Avatar { x: 6; anchors.verticalCenter: parent.verticalCenter; size: 28; name: modelData.name; photoId: "8:orgid:" + modelData.id }
+                    Avatar { x: 6; anchors.verticalCenter: parent.verticalCenter; size: 28; name: modelData.name; photoId: Mri.work(modelData.id) }
                     Column {
                         x: 44; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 52
                         Text { width: parent.width; elide: Text.ElideRight; text: modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(hcFill10, theme.text) }

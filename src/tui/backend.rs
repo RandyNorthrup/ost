@@ -172,10 +172,7 @@ fn start_push(client: &TeamsClient, resp_tx: mpsc::UnboundedSender<BackendRespon
             tracing::warn!("push channel stopped: {:#}", e);
         }
     });
-    let me = client
-        .object_id()
-        .map(|o| format!("8:orgid:{o}"))
-        .unwrap_or_default();
+    let me = client.self_mri().unwrap_or_default();
     tokio::spawn(async move {
         loop {
             let ev = match events.recv().await {

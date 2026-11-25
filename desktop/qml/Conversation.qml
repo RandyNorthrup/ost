@@ -592,7 +592,7 @@ Rectangle {
     }
     // Teams' Attendance card shows to the meeting's organizer and
     // co-organizers (not for town halls), under each meeting's end.
-    readonly property string myOid: (backend.userMri || "").replace("8:orgid:", "")
+    readonly property string myOid: backend.userOid
     readonly property bool canSeeAttendance: !!meeting && meeting.meeting_type !== "Broadcast" && !!myOid
         && (meeting.organizer_id === myOid || (meeting.co_organizer_ids || []).indexOf(myOid) >= 0)
     property bool attendanceTab: false

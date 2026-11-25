@@ -99,9 +99,10 @@ impl LiveRoster {
             .get_ic3_token()
             .context("No calling (IC3) token")?
             .token;
-        let oid = config
-            .object_id()
-            .context("Signed-in user has no object id")?;
+        let me = config
+            .identity()
+            .context("Signed-in user has no identity")?
+            .clone();
         let (trouter_surl, endpoint_id) =
             crate::trouter::current_endpoint().context("Push channel is not connected")?;
         let trouter_surl = match &tag {
@@ -111,7 +112,7 @@ impl LiveRoster {
         let params = OwnedParams {
             ic3_token,
             trouter_surl,
-            caller_mri: format!("8:orgid:{oid}"),
+            caller_mri: me.mri,
             caller_display_name: config.display_name().unwrap_or_default(),
             endpoint_id,
             participant_id: uuid::Uuid::new_v4().to_string(),
@@ -122,7 +123,7 @@ impl LiveRoster {
                 call_id.to_string()
             },
             message_id: uuid::Uuid::new_v4().to_string(),
-            caller_oid: oid.clone(),
+            caller_oid: me.object_id,
             tenant_id: config.tenant_id().unwrap_or_default(),
         };
         let http = reqwest::Client::new();

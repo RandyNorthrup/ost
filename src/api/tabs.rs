@@ -1136,10 +1136,7 @@ pub async fn start_conversation(
         bail!("This tab has no conversation");
     }
     let base = client.chat_service_url();
-    let me = client
-        .object_id()
-        .map(|o| format!("8:orgid:{o}"))
-        .context("Not signed in")?;
+    let me = client.self_mri().context("Not signed in")?;
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let cmid = super::outbox::new_client_message_id();
     let body = conversation_post(

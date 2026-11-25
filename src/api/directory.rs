@@ -246,10 +246,7 @@ pub async fn photo(
             id.starts_with("19:") && !id.contains(['/', '?', '#']),
             "Not a chat id"
         );
-        let me = format!(
-            "8:orgid:{}",
-            client.object_id().context("No signed-in user")?
-        );
+        let me = client.self_mri().context("No signed-in user")?;
         let ids = super::chat::thread_member_ids(client, id).await?;
         let names: Vec<(String, String)> = short_profiles(client, &ids).await.unwrap_or_default();
         let members = group_picture_members(names, &me);
@@ -259,7 +256,7 @@ pub async fn photo(
                 .collect();
         format!(
             "{base}/beta/users/{}/mergedProfilePicturev2?usersInfo={users}&size=HR64x64",
-            me.trim_start_matches("8:orgid:")
+            crate::identity::mri_id(&me)
         )
     } else if owner == PhotoOwner::Named {
         if display_name.trim().is_empty() {
@@ -277,7 +274,10 @@ pub async fn photo(
         // at 1.5x scaling); teams come at one fixed size.
         let path = match owner {
             PhotoOwner::Team => format!("teams/{id}?displayName={name}"),
-            _ => format!("8:orgid:{id}?displayname={name}&size=HR196x196"),
+            _ => format!(
+                "{}?displayname={name}&size=HR196x196",
+                crate::identity::work_user_mri(id)
+            ),
         };
         format!("{base}/beta/users/{me}/profilepicturev2/{path}")
     };

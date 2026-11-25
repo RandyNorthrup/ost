@@ -1283,16 +1283,7 @@ pub fn recording_event(content: &str, now: chrono::DateTime<chrono::Utc>) -> Opt
         return None;
     }
     let status = attr("RecordingStatus", "status").unwrap_or_default();
-    let mri = |v: Option<String>| {
-        v.map(|v| {
-            if v.starts_with("8:") {
-                v
-            } else {
-                format!("8:orgid:{v}")
-            }
-        })
-        .unwrap_or_default()
-    };
+    let mri = |v: Option<String>| v.map(|v| crate::identity::user_mri(&v)).unwrap_or_default();
     let event = |kind: &str, actor: String| ChatEvent {
         kind: kind.into(),
         actor,
@@ -1952,10 +1943,7 @@ pub async fn read_message(
         message_id
     );
     let m: serde_json::Value = client.chat_get(&url).await?.json().await?;
-    let me = client
-        .object_id()
-        .map(|o| format!("8:orgid:{o}"))
-        .unwrap_or_default();
+    let me = client.self_mri().unwrap_or_default();
     let name = client.display_name().unwrap_or_default();
     view_of(&m, &me, &name).ok_or_else(|| anyhow::anyhow!("not a message Teams shows"))
 }
@@ -2035,10 +2023,7 @@ pub async fn read_timeline_page(
         Err(e) => return Err(e),
     };
     let v: serde_json::Value = resp.json().await.context("Messages reply")?;
-    let me = client
-        .object_id()
-        .map(|o| format!("8:orgid:{o}"))
-        .unwrap_or_default();
+    let me = client.self_mri().unwrap_or_default();
     let own_name = client.display_name().unwrap_or_default();
     let mut out: Vec<MessageView> = v
         .get("messages")
@@ -2085,7 +2070,7 @@ pub async fn person_name(client: &TeamsClient, mri: &str) -> Option<String> {
     if let Some(n) = cached_name(mri) {
         return Some(n);
     }
-    let oid = mri.strip_prefix("8:orgid:")?;
+    let oid = crate::identity::work_object_id(mri)?;
     uuid::Uuid::parse_str(oid).ok()?;
     let v: serde_json::Value = client
         .graph_get(&format!("/users/{oid}?$select=displayName"))
@@ -2119,7 +2104,10 @@ async fn name_events(client: &TeamsClient, chat_id: &str, out: &mut [MessageView
             c.entry(id.clone()).or_insert_with(|| n.clone());
         }
         for id in std::iter::once(&e.actor).chain(e.targets.iter()) {
-            if id.starts_with("8:orgid:") && !c.contains_key(id) && !wanted.contains(id) {
+            if crate::identity::work_object_id(id).is_some()
+                && !c.contains_key(id)
+                && !wanted.contains(id)
+            {
                 wanted.push(id.clone());
             }
         }
@@ -5329,10 +5317,7 @@ pub async fn peer_read_horizon(client: &TeamsClient, chat_id: &str) -> Result<Op
         .text()
         .await
         .context("Consumption horizons reply")?;
-    let me = client
-        .object_id()
-        .map(|o| format!("8:orgid:{o}"))
-        .unwrap_or_default();
+    let me = client.self_mri().unwrap_or_default();
     if let Some(n) = serde_json::from_str::<serde_json::Value>(&text)
         .ok()
         .and_then(|v| v.get("consumptionhorizons")?.as_array().map(Vec::len))
@@ -6192,10 +6177,7 @@ pub async fn unread_chat_ids(client: &TeamsClient) -> Result<Vec<String>> {
         .json()
         .await
         .context("Conversations reply")?;
-    let me = client
-        .object_id()
-        .map(|o| format!("8:orgid:{o}"))
-        .unwrap_or_default();
+    let me = client.self_mri().unwrap_or_default();
     Ok(v.get("conversations")
         .and_then(|c| c.as_array())
         .into_iter()

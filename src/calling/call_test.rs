@@ -112,14 +112,15 @@ pub async fn run_call_test(
         .context("No region_gtms in config. Run `teams-cli login` first.")?;
     let http = reqwest::Client::new();
 
-    // Extract caller MRI from skype token (JWT)
-    let caller_mri = extract_mri_from_skype_token(skype_token_str)
-        .context("Cannot extract MRI from skype token")?;
+    // The caller's MRI: the signed-in identity, else the Skype token's.
+    let caller_mri = config
+        .self_mri()
+        .or_else(|| crate::identity::mri_from_skype_token(skype_token_str))
+        .context("Cannot tell the signed-in user's MRI")?;
     tracing::info!("Caller MRI: {}", caller_mri);
 
     // Extract OID from MRI (e.g. "8:orgid:{guid}" -> "{guid}")
-    let caller_oid = caller_mri
-        .strip_prefix("8:orgid:")
+    let caller_oid = crate::identity::work_object_id(&caller_mri)
         .context("MRI does not have expected 8:orgid: prefix")?;
 
     // Determine thread ID and call mode based on options:
@@ -131,7 +132,7 @@ pub async fn run_call_test(
     } else if let Some(ref tid) = thread_override {
         // Extract callee OID from 1:1 thread format: 19:{oid1}_{oid2}@unq.gbl.spaces
         let callee_oid = extract_callee_oid_from_thread(tid, caller_oid);
-        let callee_mri = callee_oid.map(|oid| format!("8:orgid:{}", oid));
+        let callee_mri = callee_oid.map(|oid| crate::identity::user_mri(&oid));
         (tid.clone(), callee_mri)
     } else {
         let tid = std::env::var("TEAMS_AV_TEST_THREAD_ID").context(
@@ -1829,45 +1830,6 @@ async fn end_call_by_url(http: &reqwest::Client, skype_token: &str, end_url: &st
     tracing::info!("Call ended ({}): {}", status, body);
 
     Ok(())
-}
-
-/// Extract user MRI (e.g. "8:orgid:<guid>") from a Skype token.
-///
-/// Skype tokens are JWTs. The payload contains a "skypeid" claim like
-/// "orgid:<guid>" which we prefix with "8:" to form the MRI.
-fn extract_mri_from_skype_token(token: &str) -> Option<String> {
-    let parts: Vec<&str> = token.split('.').collect();
-    if parts.len() < 2 {
-        return None;
-    }
-    // Decode JWT payload (base64url, no padding)
-    let payload = parts[1];
-    let padded = match payload.len() % 4 {
-        2 => format!("{}==", payload),
-        3 => format!("{}=", payload),
-        _ => payload.to_string(),
-    };
-    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(padded.trim_end_matches('='))
-        .or_else(|_| base64::engine::general_purpose::STANDARD.decode(payload))
-        .ok()?;
-    let json: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
-
-    // Try "skypeid" field first, then "oid" (Azure AD object ID)
-    if let Some(skypeid) = json.get("skypeid").and_then(|v| v.as_str()) {
-        // skypeid is like "orgid:<guid>" — prefix with "8:"
-        if skypeid.starts_with("orgid:") || skypeid.starts_with("teamsvisitor:") {
-            return Some(format!("8:{}", skypeid));
-        }
-        return Some(skypeid.to_string());
-    }
-
-    // Fallback: use oid claim
-    if let Some(oid) = json.get("oid").and_then(|v| v.as_str()) {
-        return Some(format!("8:orgid:{}", oid));
-    }
-
-    None
 }
 
 /// Extract the callee's OID from a 1:1 thread ID.

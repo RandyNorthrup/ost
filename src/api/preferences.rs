@@ -389,12 +389,10 @@ pub async fn e2ee_calls_enabled(client: &TeamsClient) -> Result<bool> {
 pub async fn voice_settings(client: &TeamsClient) -> Result<serde_json::Value> {
     let mt = client.middle_tier_url().context("No middle-tier address")?;
     let token = super::directory::middle_tier_token().await?;
-    let oid = client.object_id().context("No user id")?;
+    let me = client.self_mri().context("No user id")?;
     let resp = client
         .http()
-        .get(format!(
-            "{mt}/beta/usersettings/8:orgid:{oid}/voicesettings"
-        ))
+        .get(format!("{mt}/beta/usersettings/{me}/voicesettings"))
         .bearer_auth(token)
         .send()
         .await
@@ -487,8 +485,8 @@ pub fn voicemail_target_mri(target: &serde_json::Value) -> Option<String> {
     };
     Some(match target.get("type").and_then(|v| v.as_str())? {
         "Unspecified" | "Pstn" => format!("4:{}", s("telUri")),
-        "ApplicationEndpoint" => format!("28:orgid:{}", s("objectId")),
-        "User" => format!("8:orgid:{}", s("objectId")),
+        "ApplicationEndpoint" => crate::identity::app_endpoint_mri(&s("objectId")),
+        "User" => crate::identity::work_user_mri(&s("objectId")),
         _ => s("objectId"),
     })
 }
@@ -524,7 +522,7 @@ pub async fn set_voice_setting(
 ) -> Result<()> {
     let mt = client.middle_tier_url().context("No middle-tier address")?;
     let token = super::directory::middle_tier_token().await?;
-    let oid = client.object_id().context("No user id")?;
+    let me = client.self_mri().context("No user id")?;
     let (path, body) = match which {
         "redirection" => ("callredirectionsettings", body.clone()),
         "voicemail" => {
@@ -549,7 +547,7 @@ pub async fn set_voice_setting(
     };
     let resp = client
         .http()
-        .post(format!("{mt}/beta/usersettings/8:orgid:{oid}/{path}"))
+        .post(format!("{mt}/beta/usersettings/{me}/{path}"))
         .bearer_auth(token)
         .json(&body)
         .send()

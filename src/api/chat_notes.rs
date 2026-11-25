@@ -135,10 +135,7 @@ async fn thread(client: &TeamsClient, thread: &str) -> Result<Value> {
 /// has none (or, with `recreate`, again after they were deleted), as
 /// opening Teams' tab does.
 pub async fn open(client: &TeamsClient, thread_id: &str, recreate: bool) -> Result<NotesState> {
-    let me = client
-        .object_id()
-        .map(|o| format!("8:orgid:{o}"))
-        .unwrap_or_default();
+    let me = client.self_mri().unwrap_or_default();
     if !recreate {
         match notes_file(&thread(client, thread_id).await?) {
             Ok(Some(f)) => return Ok(state_of(&f, &me)),
@@ -167,10 +164,7 @@ pub async fn open(client: &TeamsClient, thread_id: &str, recreate: bool) -> Resu
 
 /// The chat's notes without making any (to follow a file being made).
 pub async fn read(client: &TeamsClient, thread_id: &str) -> Result<NotesState> {
-    let me = client
-        .object_id()
-        .map(|o| format!("8:orgid:{o}"))
-        .unwrap_or_default();
+    let me = client.self_mri().unwrap_or_default();
     Ok(match notes_file(&thread(client, thread_id).await?) {
         Ok(Some(f)) => state_of(&f, &me),
         Err(()) => NotesState::Deleted,

@@ -9,7 +9,7 @@ async fn main() -> anyhow::Result<()> {
     let op = args.next().expect("add or remove");
     let chat = args.next().expect("chat id");
     let oid = args.next().expect("object id");
-    let mri = format!("8:orgid:{oid}");
+    let mri = teams_cli::identity::user_mri(&oid);
     let client = TeamsClient::new().await?;
     match op.as_str() {
         "add" => {

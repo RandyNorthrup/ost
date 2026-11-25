@@ -741,7 +741,7 @@ Item {
                             required property var modelData
                             width: parent.width; height: 40
                             color: sgh.hovered ? theme.menuHover : "transparent"
-                            Avatar { x: 8; y: 6; size: 28; name: parent.modelData.DisplayText; photoId: parent.modelData.EntityData && parent.modelData.EntityData.ObjectId ? "8:orgid:" + parent.modelData.EntityData.ObjectId : "" }
+                            Avatar { x: 8; y: 6; size: 28; name: parent.modelData.DisplayText; photoId: parent.modelData.EntityData && parent.modelData.EntityData.ObjectId ? Mri.work(parent.modelData.EntityData.ObjectId) : "" }
                             Text { x: 44; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.DisplayText + (parent.modelData.Description ? "  " + parent.modelData.Description : ""); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill5, root.ink); elide: Text.ElideRight; width: parent.width - 52 }
                             HoverHandler { id: sgh; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: { fileRequest.picked = fileRequest.picked.concat([parent.modelData]); frTo.text = ""; fileRequest.found = [] } }
@@ -1633,7 +1633,7 @@ Item {
                     y: -1; width: 14 + (person ? 20 + 6 : 0) + Math.min(220, personText.implicitWidth) + 6 + 16 + 14; height: 32; radius: 16
                     color: person || personMenu.opened ? theme.pick("#E1E3F7", "#2B2C3F", "#000000") : pph.hovered ? theme.menuHover : theme.pick("#FAFAFA", "#1F1F1F", "#000000")
                     border.width: 1; border.color: person || personMenu.opened ? theme.pick("#4F52B2", "#7F85F5", "#1AEBFF") : theme.pick("#D1D1D1", "#666666", "#FFFFFF")
-                    Avatar { visible: !!personButton.person; x: 14; anchors.verticalCenter: parent.verticalCenter; size: 20; name: personButton.person ? personButton.person.name : ""; photoId: personButton.person && personButton.person.id ? "8:orgid:" + personButton.person.id : "" }
+                    Avatar { visible: !!personButton.person; x: 14; anchors.verticalCenter: parent.verticalCenter; size: 20; name: personButton.person ? personButton.person.name : ""; photoId: personButton.person && personButton.person.id ? Mri.work(personButton.person.id) : "" }
                     Text {
                         id: personText
                         x: personButton.person ? 40 : 14; width: Math.min(220, implicitWidth); anchors.verticalCenter: parent.verticalCenter; anchors.verticalCenterOffset: -1
@@ -1698,7 +1698,7 @@ Item {
                                     x: 4; width: 312; height: 32; radius: 8
                                     color: prh.hovered ? theme.pick("#F0F0F0", "#2E2E2E", "#1AEBFF") : "transparent"
                                     FluentIcon { visible: prow.on; x: 10; anchors.verticalCenter: parent.verticalCenter; size: 16; name: "checkmark-16"; color: theme.onFill(prow, theme.pick("#424242", "#D6D6D6", "#FFFFFF")) }
-                                    Avatar { x: 36; anchors.verticalCenter: parent.verticalCenter; size: 20; name: prow.modelData.name; photoId: prow.modelData.id ? "8:orgid:" + prow.modelData.id : "" }
+                                    Avatar { x: 36; anchors.verticalCenter: parent.verticalCenter; size: 20; name: prow.modelData.name; photoId: prow.modelData.id ? Mri.work(prow.modelData.id) : "" }
                                     Text {
                                         x: 64; width: parent.width - 72; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight
                                         text: prow.modelData.name
@@ -1941,7 +1941,7 @@ Item {
                                     visible: frow.modelData.location_kind === "person"
                                     anchors.verticalCenter: parent.verticalCenter
                                     size: 16; name: frow.locParts[0] ? String(frow.locParts[0]).replace(/'s OneDrive$/, "") : ""
-                                    photoId: locRow.pic && locRow.pic.oid ? "8:orgid:" + locRow.pic.oid : ""
+                                    photoId: locRow.pic && locRow.pic.oid ? Mri.work(locRow.pic.oid) : ""
                                 }
                                 Repeater {
                                     model: frow.locParts

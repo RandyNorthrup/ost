@@ -470,8 +470,12 @@ pub mod qobject {
         #[qproperty(QString, call_share_mri)]
         /// Who waits in the meeting's lobby: [{id, name}].
         #[qproperty(QString, call_lobby_json)]
-        /// Your own MRI (`8:orgid:<oid>`, lowercase), once signed in.
+        /// Your own MRI (`8:orgid:<oid>`, or a personal account's
+        /// `8:live:…`; lowercase), once signed in.
         #[qproperty(QString, user_mri)]
+        /// Your own object id (a work account's Entra id, lowercase), once
+        /// signed in; from the account's identity, as userMri is.
+        #[qproperty(QString, user_oid)]
         /// The meeting's chat thread (for the call window's Chat pane).
         #[qproperty(QString, call_thread_id)]
         #[qproperty(bool, call_muted)]
@@ -3694,6 +3698,7 @@ pub struct BackendRust {
     lobby_people: Vec<teams_cli::calling::outgoing::LobbyPerson>,
     call_thread_id: QString,
     user_mri: QString,
+    user_oid: QString,
     roster: Vec<teams_cli::calling::roster::Participant>,
     /// Your own roster entry (role, state) in a main meeting put on hold
     /// for a breakout room: the room's roster replaces it meanwhile.
@@ -5660,8 +5665,8 @@ async fn room_call_title(
     }
     if conv.topic.is_none() && matches!(kind, ConversationKind::Group | ConversationKind::Other) {
         let me = client
-            .object_id()
-            .map(|o| format!("8:orgid:{o}").to_ascii_lowercase())
+            .self_mri()
+            .map(|m| m.to_ascii_lowercase())
             .unwrap_or_default();
         match api::chat_members(&client, thread).await {
             Ok(members) => {
@@ -5696,9 +5701,7 @@ async fn take_transfer(
         .ok()
         .and_then(|c| c.object_id())
         .unwrap_or_default();
-    let target_oid = request
-        .target_mri
-        .strip_prefix("8:orgid:")
+    let target_oid = teams_cli::identity::work_object_id(&request.target_mri)
         .unwrap_or_default()
         .to_string();
     let chat = outgoing::one_to_one_chat_id(&my_oid, &target_oid).unwrap_or_default();
@@ -5959,7 +5962,7 @@ async fn picked_conversation(
     group_chats: &[String],
 ) -> anyhow::Result<String> {
     let me = client
-        .object_id()
+        .self_mri()
         .ok_or_else(|| anyhow::anyhow!("not signed in"))?;
     let chats: Vec<&serde_json::Value> = targets.iter().filter(|t| t["kind"] == "chat").collect();
     let people: Vec<String> = targets
@@ -5976,15 +5979,16 @@ async fn picked_conversation(
     if people.len() == 1 {
         return api::ensure_one_on_one_chat(
             client,
-            &format!("8:orgid:{me}"),
-            &format!("8:orgid:{}", people[0]),
+            &me,
+            &teams_cli::identity::user_mri(&people[0]),
         )
         .await;
     }
     let mut want: Vec<String> = people
         .iter()
-        .chain(std::iter::once(&me))
-        .map(|o| format!("8:orgid:{}", o.to_ascii_lowercase()))
+        .map(|o| teams_cli::identity::user_mri(o))
+        .chain(std::iter::once(me))
+        .map(|m| m.to_ascii_lowercase())
         .collect();
     want.sort();
     want.dedup();
@@ -6477,7 +6481,7 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
         "sender": notes.and_then(|c| c.last_message_sender.clone()),
         "preview": notes.and_then(|c| c.last_message_preview.clone()),
         "previewSystem": notes.is_some_and(|c| c.last_message_system),
-        "peerMri": format!("8:orgid:{my_oid}"),
+        "peerMri": client.self_mri().unwrap_or_default(),
         "favorite": fav_rank("48:notes").is_some(),
         "favoriteRank": fav_rank("48:notes"),
     })];
@@ -9245,7 +9249,7 @@ async fn picker_people(
     tenant: &str,
     organizer: &str,
 ) -> (serde_json::Value, serde_json::Value) {
-    let organizer_mri = format!("8:orgid:{organizer}");
+    let organizer_mri = teams_cli::identity::user_mri(organizer);
     let mut mris: Vec<String> = o
         .invitees
         .iter()
@@ -10152,7 +10156,9 @@ fn photo_target(id: &str, my_oid: Option<&str>) -> Option<(api::directory::Photo
     } else {
         (
             PhotoOwner::User,
-            id.strip_prefix("8:orgid:").unwrap_or(id).to_string(),
+            teams_cli::identity::work_object_id(id)
+                .unwrap_or(id)
+                .to_string(),
         )
     };
     let valid = oid.len() == 36 && oid.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
@@ -10951,7 +10957,10 @@ impl qobject::Backend {
                 return;
             }
             let config = teams_cli::config::Config::load().ok();
-            let Some(oid) = config.as_ref().and_then(|c| c.object_id()) else {
+            let Some((oid, me)) = config
+                .as_ref()
+                .and_then(|c| c.object_id().zip(c.self_mri()))
+            else {
                 return;
             };
             let tenant = config
@@ -10959,7 +10968,7 @@ impl qobject::Backend {
                 .and_then(|c| c.tenant_id())
                 .unwrap_or_default();
             let name = config.and_then(|c| c.display_name()).unwrap_or_default();
-            let (mri, qr_name, qr_qt) = (format!("8:orgid:{oid}"), name.clone(), qt.clone());
+            let (mri, qr_name, qr_qt) = (me, name.clone(), qt.clone());
             crate::room_host::start(oid, move |salt| {
                 let rows = crate::room_host::qr_rows(&crate::room_host::qr_link(
                     &mri, &tenant, salt, &qr_name,
@@ -12681,7 +12690,7 @@ impl qobject::Backend {
                 // unassignableMRIsRegex leaves guests and others out); their
                 // meeting roles from the meeting's options (presenters can
                 // manage rooms).
-                let organizer_mri = format!("8:orgid:{organizer}").to_ascii_lowercase();
+                let organizer_mri = teams_cli::identity::user_mri(&organizer).to_ascii_lowercase();
                 let members = api::chat_members(&client, &thread).await.unwrap_or_default();
                 let invitees = api::meeting_options::get(&client, &main.tenant, &main.organizer, &main.thread, &main.message)
                     .await
@@ -12689,7 +12698,7 @@ impl qobject::Backend {
                     .unwrap_or_default();
                 state["people"] = json!(members
                     .iter()
-                    .filter(|m| m.mri.starts_with("8:orgid:") && m.mri.to_ascii_lowercase() != organizer_mri)
+                    .filter(|m| teams_cli::identity::work_object_id(&m.mri).is_some() && m.mri.to_ascii_lowercase() != organizer_mri)
                     .map(|m| {
                         let role = invitees
                             .iter()
@@ -12700,7 +12709,7 @@ impl qobject::Backend {
                             "id": m.mri,
                             "name": m.name,
                             "upn": m.mail,
-                            "objectId": m.mri.trim_start_matches("8:orgid:"),
+                            "objectId": teams_cli::identity::mri_id(&m.mri),
                             "tenantId": main.tenant,
                             "role": role,
                         })
@@ -16016,7 +16025,7 @@ impl qobject::Backend {
     }
 
     pub fn transfer_call(self: Pin<&mut Self>, oid: &QString) {
-        let target = format!("8:orgid:{}", oid.to_string().trim());
+        let target = teams_cli::identity::user_mri(&oid.to_string());
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let slot = call_slot().lock().await;
@@ -16055,7 +16064,7 @@ impl qobject::Backend {
                 .set_status_text(QString::from(tr("Consult: not someone you can call")));
             return;
         };
-        let mri = format!("8:orgid:{oid}");
+        let mri = teams_cli::identity::user_mri(&oid);
         let was_held = self.rust().call_held;
         let qt = self.qt_thread();
         let tag = outgoing::new_call_tag();
@@ -16189,17 +16198,13 @@ impl qobject::Backend {
                         .cloned()
                 });
             let result = async {
-                let my_oid = teams_cli::config::Config::load()
+                let my_mri = teams_cli::config::Config::load()
                     .ok()
-                    .and_then(|c| c.object_id())
+                    .and_then(|c| c.self_mri())
                     .context("Not signed in")?;
                 // Teams' getCallingConversationWith: the chat of everyone
                 // in both calls, which the merged call takes as its group.
-                let members = vec![
-                    format!("8:orgid:{my_oid}"),
-                    first_peer.clone(),
-                    target.mri.clone(),
-                ];
+                let members = vec![my_mri, first_peer.clone(), target.mri.clone()];
                 let client = TeamsClient::new().await?;
                 let thread = api::create_group_chat(&client, &members, "").await?;
                 let consult = consult_call.as_ref().context("No consult call")?;
@@ -17384,7 +17389,7 @@ impl qobject::Backend {
         }
         let text = typing_text(&names);
         if let Some(latest) = self.rust().typers.last().cloned() {
-            let id = latest.key.strip_prefix("8:orgid:").unwrap_or_default();
+            let id = teams_cli::identity::work_object_id(&latest.key).unwrap_or_default();
             self.as_mut().set_typing_avatar_id(QString::from(id));
             self.as_mut()
                 .set_typing_avatar(QString::from(latest.name.as_str()));
@@ -17604,9 +17609,7 @@ impl qobject::Backend {
                         c.peer_name = n.clone();
                         continue;
                     }
-                    let Some(oid) = c
-                        .peer_mri
-                        .strip_prefix("8:orgid:")
+                    let Some(oid) = teams_cli::identity::work_object_id(&c.peer_mri)
                         .filter(|o| o.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-'))
                     else {
                         continue;
@@ -18217,9 +18220,15 @@ impl qobject::Backend {
                                 },
                             ));
                         }
-                        this.as_mut().rust_mut().my_mri = cfg
+                        let oid = cfg
+                            .as_ref()
                             .and_then(|c| c.object_id())
-                            .map(|oid| format!("8:orgid:{oid}").to_ascii_lowercase());
+                            .unwrap_or_default()
+                            .to_ascii_lowercase();
+                        this.as_mut().set_user_oid(QString::from(oid.as_str()));
+                        this.as_mut().rust_mut().my_mri = cfg
+                            .and_then(|c| c.self_mri())
+                            .map(|m| m.to_ascii_lowercase());
                         let mri = this.rust().my_mri.clone().unwrap_or_default();
                         this.as_mut().set_user_mri(QString::from(mri.as_str()));
                         this.as_mut().rust_mut().chats = chats;
@@ -19639,12 +19648,7 @@ impl qobject::Backend {
                 ),
             )
         } else {
-            let oid = self
-                .my_mri
-                .as_deref()
-                .and_then(|m| m.strip_prefix("8:orgid:"))
-                .unwrap_or_default()
-                .to_string();
+            let oid = self.user_oid.to_string();
             (
                 api::msgactions::chat_message_link(&conv, &id, None, &oid),
                 api::msgactions::copy_link_text(&sender.to_string(), &text.to_string(), None),
@@ -21556,12 +21560,8 @@ impl qobject::Backend {
             }
             return QString::default();
         }
-        let my_oid = self
-            .rust()
-            .my_mri
-            .as_deref()
-            .and_then(|m| m.strip_prefix("8:orgid:"))
-            .map(str::to_string)
+        let my_oid = Some(self.rust().user_oid.to_string())
+            .filter(|o| !o.is_empty())
             .or_else(|| {
                 teams_cli::config::Config::load()
                     .ok()
@@ -22472,17 +22472,17 @@ impl qobject::Backend {
     ) {
         let Some(me) = teams_cli::config::Config::load()
             .ok()
-            .and_then(|c| c.object_id())
+            .and_then(|c| c.self_mri())
         else {
             return;
         };
-        let mut members = vec![format!("8:orgid:{me}")];
+        let mut members = vec![me];
         members.extend(
             oids.to_string()
                 .split(',')
                 .map(str::trim)
                 .filter(|o| !o.is_empty())
-                .map(|o| format!("8:orgid:{}", o.trim_start_matches("8:orgid:"))),
+                .map(teams_cli::identity::user_mri),
         );
         let (topic, text) = (topic.to_string(), first_message.to_string());
         self.as_mut().set_busy(true);
@@ -23370,8 +23370,8 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                let me = client.object_id().context("not signed in")?;
-                api::msgactions::leave_chat(&client, &id, &format!("8:orgid:{me}")).await
+                let me = client.self_mri().context("not signed in")?;
+                api::msgactions::leave_chat(&client, &id, &me).await
             }
             .await;
             let _ = qt.queue(move |mut this| match result {
@@ -24415,7 +24415,7 @@ impl qobject::Backend {
                     "meeting-chat-report-info" => {
                         let m = api::chat_meeting(&client, &channel).await?.unwrap_or_default();
                         let members = api::chat_members(&client, &channel).await.unwrap_or_default();
-                        let org_mri = format!("8:orgid:{}", m.organizer_id).to_ascii_lowercase();
+                        let org_mri = teams_cli::identity::user_mri(&m.organizer_id).to_ascii_lowercase();
                         let mut organizer = members
                             .iter()
                             .find(|p| p.mri.to_ascii_lowercase() == org_mri)
@@ -28464,7 +28464,8 @@ impl qobject::Backend {
 
     pub fn load_profile_card(mut self: Pin<&mut Self>, who: &QString) {
         let who = who.to_string();
-        let oid = who.trim_start_matches("8:orgid:").to_string();
+        let mri = teams_cli::identity::user_mri(&who);
+        let oid = teams_cli::identity::mri_id(&mri).to_string();
         self.as_mut().set_profile_card_json(QString::from(
             json!({ "id": oid, "loading": true }).to_string().as_str(),
         ));
@@ -28474,7 +28475,7 @@ impl qobject::Backend {
                 let client = TeamsClient::new().await?;
                 let mut card = api::profile::profile_card(&client, &oid).await?;
                 let http = reqwest::Client::new();
-                if let Ok(list) = teams_cli::api::presence::get_presences(&http, &[format!("8:orgid:{oid}")]).await
+                if let Ok(list) = teams_cli::api::presence::get_presences(&http, &[mri]).await
                     && let Some(p) = list.into_iter().next()
                 {
                     card["presence"] = json!({

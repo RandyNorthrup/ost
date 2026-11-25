@@ -499,7 +499,7 @@ Rectangle {
                         Text { width: parent.width; elide: Text.ElideRight; text: parent.parent.modelData.mail || parent.parent.modelData.upn || ""; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill4, theme.textSecondary) }
                     }
                     HoverHandler { id: pph; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: { personPop.picked = { name: parent.modelData.name, mail: parent.modelData.mail || parent.modelData.upn || "", mri: parent.modelData.mri || ("8:orgid:" + (parent.modelData.id || "")) }; pField.text = "" } }
+                    TapHandler { onTapped: { personPop.picked = { name: parent.modelData.name, mail: parent.modelData.mail || parent.modelData.upn || "", mri: parent.modelData.mri || Mri.work(parent.modelData.id || "") }; pField.text = "" } }
                 }
             }
         }

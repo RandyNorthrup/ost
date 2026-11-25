@@ -1040,7 +1040,7 @@ pub async fn owa_action(action: &str, body: &serde_json::Value) -> Result<serde_
     .await?;
     let tenant = crate::config::Config::load()
         .ok()
-        .and_then(|c| c.tenant_id)
+        .and_then(|c| c.tenant_id())
         .unwrap_or_default();
     static SESSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     let session = SESSION.get_or_init(|| uuid::Uuid::new_v4().to_string());
@@ -1149,7 +1149,7 @@ pub async fn ows(
     .await?;
     let tenant = crate::config::Config::load()
         .ok()
-        .and_then(|c| c.tenant_id)
+        .and_then(|c| c.tenant_id())
         .unwrap_or_default();
     let anchor = crate::config::Config::load()
         .ok()
@@ -1266,7 +1266,7 @@ pub async fn calendar_prefs(client: &TeamsClient) -> Result<serde_json::Value> {
         "categories": categories,
         "calendarId": calendar_id,
         "objectId": crate::config::Config::load().ok().and_then(|c| c.object_id()).unwrap_or_default(),
-        "tenantId": crate::config::Config::load().ok().and_then(|c| c.tenant_id).unwrap_or_default(),
+        "tenantId": crate::config::Config::load().ok().and_then(|c| c.tenant_id()).unwrap_or_default(),
         // A Copilot licence (authz licenseDetails isCopilot): the calendar's
         // Copilot entry points.
         "copilot": client.license_details().and_then(|l| l.get("isCopilot").and_then(|b| b.as_bool())).unwrap_or(false),
@@ -1453,7 +1453,7 @@ pub async fn organizer(client: &TeamsClient, me: &Me) -> Me {
         if out.mri.is_empty() {
             out.mri = v["id"]
                 .as_str()
-                .map(|id| format!("8:orgid:{id}"))
+                .map(crate::identity::work_user_mri)
                 .unwrap_or_default();
         }
     }

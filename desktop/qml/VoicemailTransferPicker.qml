@@ -61,7 +61,7 @@ Item {
         const out = []
         if (phone && phoneSuggestions) out.push({ kind: "pstn", name: phone, mri: "4:+" + phone.replace(/[^0-9]/g, ""), oid: "" })
         if (peopleQuery === query)
-            for (const p of people.filter(p => exclude.indexOf("8:orgid:" + p.id) < 0).slice(0, 8)) out.push({ kind: "person", name: p.name || "", sub: p.sub || "", mri: "8:orgid:" + p.id, oid: p.id })
+            for (const p of people.filter(p => exclude.indexOf(Mri.work(p.id)) < 0).slice(0, 8)) out.push({ kind: "person", name: p.name || "", sub: p.sub || "", mri: Mri.work(p.id), oid: p.id })
         return out
     }
     property int current: 0

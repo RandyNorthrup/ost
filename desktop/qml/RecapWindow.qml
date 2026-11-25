@@ -707,7 +707,7 @@ Window {
                 delegate: Item {
                     required property var modelData
                     width: mentionList.width; height: mCol.implicitHeight
-                    Avatar { x: 0; y: 0; size: 32; name: modelData.speaker || "?"; photoId: modelData.speakerId ? "8:orgid:" + modelData.speakerId : "" }
+                    Avatar { x: 0; y: 0; size: 32; name: modelData.speaker || "?"; photoId: modelData.speakerId ? Mri.work(modelData.speakerId) : "" }
                     Column {
                         id: mCol
                         x: 44; width: parent.width - 44; spacing: 4

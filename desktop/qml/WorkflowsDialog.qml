@@ -30,7 +30,7 @@ Popup {
             ["teamId", teamId], ["teamName", teamName]
         ]).concat([
             ["theme", theme.dark ? "dark" : "default"], ["locale", "en-us"], ["ringId", backend.clientRing()],
-            ["userId", (backend.userMri || "").replace(/^8:orgid:/, "")], ["tenantId", backend.tenantId()],
+            ["userId", backend.userOid], ["tenantId", backend.tenantId()],
             ["clientType", "desktop"]
         ]).map(p => p[0] + "=" + encodeURIComponent(p[1])).join("&")
         return "https://automations.teams.cloud.microsoft/webapps/workflows/prod/home?" + q

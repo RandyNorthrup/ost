@@ -715,15 +715,13 @@ pub fn parse_recipients(reply: &serde_json::Value, my_oid: &str) -> Vec<serde_js
                 "People"
                     if r["PeopleType"] == "Person"
                         || r["PeopleSubtype"] == "Guest"
-                        || s(&r["MRI"]).starts_with("8:orgid:") =>
+                        || crate::identity::work_object_id(&s(&r["MRI"])).is_some() =>
                 {
                     // A directory person (guests included); one known only
                     // as a contact by its Teams id.
                     let mut oid = s(&r["ExternalDirectoryObjectId"]).to_ascii_lowercase();
                     if oid.is_empty() {
-                        oid = s(&r["MRI"])
-                            .trim_start_matches("8:orgid:")
-                            .to_ascii_lowercase();
+                        oid = crate::identity::mri_id(&s(&r["MRI"])).to_ascii_lowercase();
                     }
                     let upn = s(&r["UserPrincipalName"]);
                     let alias = upn.split('@').next().unwrap_or_default().to_uppercase();
@@ -939,8 +937,7 @@ pub fn new_chat_arrange(
                     // Substrate leaves it out, as it does for you).
                     let mut id = s(&r["ExternalDirectoryObjectId"]).to_ascii_lowercase();
                     if id.is_empty() {
-                        id = s(&r["MRI"])
-                            .strip_prefix("8:orgid:")
+                        id = crate::identity::work_object_id(&s(&r["MRI"]))
                             .unwrap_or_default()
                             .to_ascii_lowercase();
                     }

@@ -1177,7 +1177,7 @@ Rectangle {
                 readonly property var people: {
                     const q = noteText.mentionQuery.trim().toLowerCase()
                     if (q.length < 2) return []
-                    return (backend.peopleJson ? JSON.parse(backend.peopleJson) : []).slice(0, 8).map(p => ({ mri: "8:orgid:" + p.id, name: p.name, mail: p.mail || p.email || "" }))
+                    return (backend.peopleJson ? JSON.parse(backend.peopleJson) : []).slice(0, 8).map(p => ({ mri: Mri.work(p.id), name: p.name, mail: p.mail || p.email || "" }))
                 }
                 // Teams: 128 left of the editor, its bottom on the caret line.
                 x: 16 - 128; y: Math.max(-40, 71 + noteText.cursorRectangle.y + 8 - height + 6)

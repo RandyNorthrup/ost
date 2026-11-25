@@ -18,7 +18,7 @@ Item {
     readonly property var results: {
         if (query.length < 2 || !backend.peopleJson) return []
         const list = JSON.parse(backend.peopleJson)
-        return list.map(p => ({ mri: "8:orgid:" + p.id, name: p.name, sub: p.job_title || p.mail || "" }))
+        return list.map(p => ({ mri: Mri.work(p.id), name: p.name, sub: p.job_title || p.mail || "" }))
             .filter(p => !root.picked.some(x => x.mri === p.mri) && root.exclude.indexOf(p.mri) < 0)
     }
     onQueryChanged: { current = 0; if (query.length >= 2) backend.searchPeople(query) }

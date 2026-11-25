@@ -2679,7 +2679,7 @@ Item {
         readonly property var people: {
             const q = root.mentionQuery.trim().toLowerCase()
             const fromRoster = root.mentionables.filter(p => !q || (p.name || "").toLowerCase().split(/\s+/).some(w => w.startsWith(q)) || (p.name || "").toLowerCase().startsWith(q) || (p.mail || "").toLowerCase().startsWith(q))
-            const found = q.length >= 2 && root.mentionDirectory ? (backend.peopleJson ? JSON.parse(backend.peopleJson) : []).map(p => ({ mri: "8:orgid:" + p.id, name: p.name, mail: p.mail || p.email || "" })) : []
+            const found = q.length >= 2 && root.mentionDirectory ? (backend.peopleJson ? JSON.parse(backend.peopleJson) : []).map(p => ({ mri: Mri.work(p.id), name: p.name, mail: p.mail || p.email || "" })) : []
             const out = []
             // A channel's team and the channel itself (Teams' channel
             // picker): by a word of their name, or by "team" / "channel".

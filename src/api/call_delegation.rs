@@ -93,10 +93,7 @@ async fn mt_send(
 }
 
 fn me(client: &TeamsClient) -> Result<String> {
-    Ok(format!(
-        "8:orgid:{}",
-        client.object_id().context("No user id")?
-    ))
+    client.self_mri().context("No user id")
 }
 
 pub async fn add_delegate(client: &TeamsClient, delegate_mri: &str) -> Result<()> {

@@ -350,8 +350,8 @@ pub fn checkout_banner(reason: &str, device_home_building: &str) -> bool {
 /// Your work location's source and building id (Teams'
 /// getCurrentVerifiedLocation), or None when none is set.
 async fn my_work_location(client: &TeamsClient) -> Option<(String, String)> {
-    let oid = client.object_id()?;
-    let p = api::presence::get_presences(client.http(), &[format!("8:orgid:{oid}")])
+    let me = client.self_mri()?;
+    let p = api::presence::get_presences(client.http(), &[me])
         .await
         .ok()?
         .into_iter()

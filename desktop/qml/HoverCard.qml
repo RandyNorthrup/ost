@@ -41,15 +41,15 @@ Popup {
     property Item pendingItem: null
     property string pendingWho: ""
     readonly property var card: backend.profileCardJson ? JSON.parse(backend.profileCardJson) : ({})
-    readonly property string mri: card.id ? "8:orgid:" + card.id : who
+    readonly property string mri: card.id ? Mri.work(card.id) : who
     // Their data once it has loaded for this person (the full card shares
     // it), else what the hovered item showed.
-    readonly property bool loaded: !!card.id && ("8:orgid:" + card.id) === who
+    readonly property bool loaded: !!card.id && Mri.work(card.id) === who
     readonly property var p: (loaded && card.presence) || (fallbackPresence ? { availability: fallbackPresence } : ({}))
     readonly property bool hovered: cardHover.hovered
     /// Their direct reports (Loki's org chart, else Graph's) and whether
     /// there's an org chart to show.
-    readonly property var directs: loaded ? ((card.org && card.org.directs && card.org.directs.length ? card.org.directs : card.reports) || []).map(d => ({ name: d.name || d.displayName || "", mri: d.mri || (d.id ? "8:orgid:" + d.id : "") })) : []
+    readonly property var directs: loaded ? ((card.org && card.org.directs && card.org.directs.length ? card.org.directs : card.reports) || []).map(d => ({ name: d.name || d.displayName || "", mri: d.mri || (d.id ? Mri.work(d.id) : "") })) : []
     readonly property bool hasOrg: loaded && !!card.org && ((card.org.managers || []).length > 0 || (card.org.directs || []).length > 0)
 
     /// The pointer reached a person's picture or name.

@@ -82,7 +82,7 @@ Popup {
                     required property int index
                     width: 2 + 24 + 8 + chipName.implicitWidth + 4 + 12 + 6; height: 25; radius: 12.5
                     color: theme.surface
-                    Avatar { x: 2; y: 0.5; size: 24; name: (chip.modelData.plain_name || chip.modelData.name); photoId: chip.modelData.kind === "person" ? "8:orgid:" + chip.modelData.oid : chip.modelData.group ? "team:" + chip.modelData.group : ""; meeting: chip.modelData.thread_type === "Meeting"; group: chip.modelData.kind === "chat" && !chip.modelData.group && chip.modelData.thread_type !== "Meeting"; square: !!chip.modelData.group }
+                    Avatar { x: 2; y: 0.5; size: 24; name: (chip.modelData.plain_name || chip.modelData.name); photoId: chip.modelData.kind === "person" ? Mri.work(chip.modelData.oid) : chip.modelData.group ? "team:" + chip.modelData.group : ""; meeting: chip.modelData.thread_type === "Meeting"; group: chip.modelData.kind === "chat" && !chip.modelData.group && chip.modelData.thread_type !== "Meeting"; square: !!chip.modelData.group }
                     Text { id: chipName; x: 34; anchors.verticalCenter: parent.verticalCenter; text: chip.modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
                     FluentIcon {
                         x: chipName.x + chipName.implicitWidth + 4; anchors.verticalCenter: parent.verticalCenter; name: "dismiss-12"; size: 12; color: theme.textStrong
@@ -182,7 +182,7 @@ Popup {
                 required property var modelData
                 width: 526.7; height: 50; radius: 4
                 color: optHover.hovered ? theme.menuHover : "transparent"
-                Avatar { x: 12; y: 9; size: 32; name: (opt.modelData.plain_name || opt.modelData.name); photoId: opt.modelData.kind === "person" ? "8:orgid:" + opt.modelData.oid : opt.modelData.group ? "team:" + opt.modelData.group : ""; meeting: opt.modelData.thread_type === "Meeting"; group: opt.modelData.kind === "chat" && !opt.modelData.group && opt.modelData.thread_type !== "Meeting"; square: !!opt.modelData.group }
+                Avatar { x: 12; y: 9; size: 32; name: (opt.modelData.plain_name || opt.modelData.name); photoId: opt.modelData.kind === "person" ? Mri.work(opt.modelData.oid) : opt.modelData.group ? "team:" + opt.modelData.group : ""; meeting: opt.modelData.thread_type === "Meeting"; group: opt.modelData.kind === "chat" && !opt.modelData.group && opt.modelData.thread_type !== "Meeting"; square: !!opt.modelData.group }
                 Column {
                     x: 60; anchors.verticalCenter: parent.verticalCenter
                     Text { text: root.bolded(opt.modelData.name); textFormat: Text.StyledText; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(opt, theme.textStrong) }

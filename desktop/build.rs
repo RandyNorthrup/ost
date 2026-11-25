@@ -386,7 +386,8 @@ fn main() {
     resources.sort();
     let module = QmlModule::new("com.ost.desktop")
         .qml_files(qml)
-        .qml_file(QmlFile::from("qml/IconCache.qml").singleton(true));
+        .qml_file(QmlFile::from("qml/IconCache.qml").singleton(true))
+        .qml_file(QmlFile::from("qml/Mri.qml").singleton(true));
     // qt-build-utils runs qmlcachegen before qmltyperegistrar writes this
     // build's plugin.qmltypes, so an incremental build would compile the
     // QML against the previous build's types: after a Rust QObject gains a

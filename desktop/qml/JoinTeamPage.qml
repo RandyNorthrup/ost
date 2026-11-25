@@ -219,7 +219,7 @@ Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter; y: 148.7; spacing: 4
             Repeater {
                 model: (tc.team.people || []).slice(0, 5)
-                Avatar { required property var modelData; size: 24; name: modelData.name || modelData.email || ""; photoId: modelData.id ? "8:orgid:" + modelData.id : "" }
+                Avatar { required property var modelData; size: 24; name: modelData.name || modelData.email || ""; photoId: modelData.id ? Mri.work(modelData.id) : "" }
             }
         }
         Text {

@@ -136,7 +136,7 @@ Item {
         const m = d.match(/"Oid"\s*:\s*"([0-9a-fA-F-]{36})"/)
         return m ? m[1].toLowerCase() : ""
     }
-    readonly property bool canSeeAttendance: meetingOrganizer !== "" && meetingOrganizer === (backend.userMri || "").replace("8:orgid:", "").toLowerCase()
+    readonly property bool canSeeAttendance: meetingOrganizer !== "" && meetingOrganizer === backend.userOid
     // Replies: messages, and a meeting's call ends (its starts fold into
     // the post).
     readonly property var replies: thread.filter(m => m.id !== rootId && !(m.kind === "call" && m.call_state === "started"))

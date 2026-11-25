@@ -35,7 +35,7 @@ async fn person(client: &TeamsClient, upn: &str) -> anyhow::Result<events::Perso
     Ok(events::Person {
         name: u["displayName"].as_str().unwrap_or(upn).to_string(),
         email: upn.to_string(),
-        mri: format!("8:orgid:{id}"),
+        mri: teams_cli::identity::work_user_mri(id),
         object_id: id.to_string(),
         tenant_id: client.tenant_id().unwrap_or_default(),
         upn: upn.to_string(),

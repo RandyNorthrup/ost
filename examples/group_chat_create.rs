@@ -11,19 +11,12 @@ async fn main() -> anyhow::Result<()> {
         .next()
         .ok_or_else(|| anyhow::anyhow!("usage: group_chat_create <topic> <oid|mri>..."))?;
     let client = TeamsClient::new().await?;
-    let me = format!(
-        "8:orgid:{}",
-        client
-            .object_id()
-            .ok_or_else(|| anyhow::anyhow!("not signed in"))?
-    );
+    let me = client
+        .self_mri()
+        .ok_or_else(|| anyhow::anyhow!("not signed in"))?;
     let mut members = vec![me];
     for a in args {
-        members.push(if a.starts_with("8:") {
-            a
-        } else {
-            format!("8:orgid:{a}")
-        });
+        members.push(teams_cli::identity::user_mri(&a));
     }
     let id = create_group_chat(&client, &members, &topic).await?;
     println!("{} members: {id}", members.len());

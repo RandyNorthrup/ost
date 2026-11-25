@@ -461,10 +461,7 @@ pub async fn readers(
         conv
     );
     let v: serde_json::Value = client.chat_get(&url).await?.json().await?;
-    let me = client
-        .object_id()
-        .map(|o| format!("8:orgid:{o}"))
-        .unwrap_or_default();
+    let me = client.self_mri().unwrap_or_default();
     Ok(readers_from(&v, &me, arrival_ms))
 }
 

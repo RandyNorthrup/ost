@@ -381,10 +381,7 @@ pub async fn set_hidden(
     general: bool,
     hidden: bool,
 ) -> Result<()> {
-    let me = client
-        .object_id()
-        .map(|o| format!("8:orgid:{o}"))
-        .context("Not signed in")?;
+    let me = client.self_mri().context("Not signed in")?;
     let favorite = if hidden { "false" } else { "true" };
     if general {
         set_property(client, channel, "isGeneralChannelFavorite", favorite).await?;
@@ -865,10 +862,7 @@ pub async fn leave_team(
     team_thread: &str,
     group_id: &str,
 ) -> Result<Option<String>> {
-    let me = client
-        .object_id()
-        .map(|o| format!("8:orgid:{o}"))
-        .context("Who you are")?;
+    let me = client.self_mri().context("Who you are")?;
     update_membership(client, team_thread, group_id, &me, "DemotedAndLeft").await
 }
 
@@ -921,7 +915,7 @@ pub async fn team_roster(client: &TeamsClient, team_thread: &str) -> Result<Vec<
         out.extend(roster_from(&v));
     }
     for m in out.iter_mut() {
-        if let Some(oid) = m.mri.strip_prefix("8:orgid:")
+        if let Some(oid) = crate::identity::work_object_id(&m.mri)
             && uuid::Uuid::parse_str(oid).is_ok()
             && let Ok(resp) = client
                 .graph_get(&format!(
@@ -1858,7 +1852,7 @@ async fn named_members(client: &TeamsClient, url: &str) -> Result<Vec<Moderation
             mri: mri.to_string(),
             ..Default::default()
         };
-        if let Some(oid) = mri.strip_prefix("8:orgid:")
+        if let Some(oid) = crate::identity::work_object_id(mri)
             && uuid::Uuid::parse_str(oid).is_ok()
             && let Ok(resp) = client
                 .graph_get(&format!(
@@ -2052,7 +2046,7 @@ pub fn add_candidate_from(v: &serde_json::Value) -> Option<AddCandidate> {
             v["mri"]
                 .as_str()
                 .map(str::to_string)
-                .unwrap_or_else(|| format!("8:orgid:{object_id}"))
+                .unwrap_or_else(|| crate::identity::work_user_mri(&object_id))
         },
         object_id,
         name: s("displayName"),
@@ -2115,7 +2109,7 @@ pub async fn group_people(client: &TeamsClient, group_id: &str) -> Result<Vec<Ad
             let id = u["id"].as_str()?.to_string();
             let upn = u["userPrincipalName"].as_str().unwrap_or_default();
             Some(AddCandidate {
-                mri: format!("8:orgid:{id}"),
+                mri: crate::identity::work_user_mri(&id),
                 object_id: id,
                 name: u["displayName"].as_str().unwrap_or_default().to_string(),
                 mail: u["mail"].as_str().unwrap_or(upn).to_string(),
@@ -2605,7 +2599,7 @@ pub async fn channel_members(
                 .collect();
             serde_json::json!({
                 "name": m["displayName"],
-                "mri": m["userId"].as_str().map(|o| format!("8:orgid:{o}")),
+                "mri": m["userId"].as_str().map(crate::identity::work_user_mri),
                 "email": m["email"],
                 "owner": roles.contains(&"owner"),
                 "guest": roles.contains(&"guest"),

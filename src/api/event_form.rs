@@ -1162,7 +1162,7 @@ async fn owa_upload(action: &str, request: &Value, bytes: Vec<u8>) -> Result<Val
     .await?;
     let tenant = crate::config::Config::load()
         .ok()
-        .and_then(|c| c.tenant_id)
+        .and_then(|c| c.tenant_id())
         .unwrap_or_default();
     let anchor = crate::config::Config::load()
         .ok()
@@ -1288,7 +1288,7 @@ pub async fn find_meeting_times(req: &Value) -> Result<Value> {
     .await?;
     let tenant = crate::config::Config::load()
         .ok()
-        .and_then(|c| c.tenant_id)
+        .and_then(|c| c.tenant_id())
         .unwrap_or_default();
     let anchor = crate::config::Config::load()
         .ok()

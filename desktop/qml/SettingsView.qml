@@ -1659,7 +1659,7 @@ Rectangle {
                                         Avatar { x: 8; anchors.verticalCenter: parent.verticalCenter; size: 28; name: parent.modelData.name || ""; photoId: parent.modelData.id || "" }
                                         Text { x: 44; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 52; elide: Text.ElideRight; text: parent.modelData.name || ""; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, theme.text) }
                                         HoverHandler { id: pHover; cursorShape: Qt.PointingHandCursor }
-                                        TapHandler { onTapped: { backend.channelAction("notify-on", "", "", JSON.stringify({ mri: "8:orgid:" + parent.modelData.id })); addPeople.text = ""; matches.close() } }
+                                        TapHandler { onTapped: { backend.channelAction("notify-on", "", "", JSON.stringify({ mri: Mri.work(parent.modelData.id) })); addPeople.text = ""; matches.close() } }
                                         Accessible.role: Accessible.Button
                                         Accessible.name: modelData.name || ""
                                     }
@@ -1919,7 +1919,7 @@ Rectangle {
                                                 Avatar { x: 8; anchors.verticalCenter: parent.verticalCenter; size: 28; name: parent.modelData.name || ""; photoId: parent.modelData.id || "" }
                                                 Text { x: 44; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 52; elide: Text.ElideRight; text: parent.modelData.name || ""; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill4, theme.text) }
                                                 HoverHandler { id: ppHover; cursorShape: Qt.PointingHandCursor }
-                                                TapHandler { onTapped: { backend.channelAction("people-list-add", "", "", JSON.stringify({ list: "priority", mri: "8:orgid:" + parent.modelData.id })); prioField.text = ""; prioMatches.close() } }
+                                                TapHandler { onTapped: { backend.channelAction("people-list-add", "", "", JSON.stringify({ list: "priority", mri: Mri.work(parent.modelData.id) })); prioField.text = ""; prioMatches.close() } }
                                                 Accessible.role: Accessible.Button
                                                 Accessible.name: modelData.name || ""
                                             }
@@ -3252,8 +3252,8 @@ Rectangle {
                     const t = vm.vmTransferTarget
                     if (!t || !t.type) return ""
                     if (t.type === "Pstn" || t.type === "Unspecified") return "4:" + (t.telUri || "")
-                    if (t.type === "ApplicationEndpoint") return "28:orgid:" + (t.objectId || "")
-                    if (t.type === "User") return "8:orgid:" + (t.objectId || "")
+                    if (t.type === "ApplicationEndpoint") return Mri.appEndpoint(t.objectId || "")
+                    if (t.type === "User") return Mri.work(t.objectId || "")
                     return t.objectId || ""
                 }
                 onTargetMriChanged: if (targetMri && !targetMri.startsWith("4:")) { backend.resolveNames(JSON.stringify([targetMri])); backend.loadPresences(JSON.stringify([targetMri])) }

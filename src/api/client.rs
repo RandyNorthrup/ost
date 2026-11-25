@@ -42,9 +42,20 @@ impl TeamsClient {
         self.config.user_principal_name()
     }
 
-    /// The signed-in user's object id, to recognise their own messages.
+    /// The signed-in user's object id (a work account's Entra `oid`).
     pub fn object_id(&self) -> Option<String> {
         self.config.object_id()
+    }
+
+    /// The signed-in account's identity.
+    pub fn identity(&self) -> Option<&crate::identity::AccountIdentity> {
+        self.config.identity()
+    }
+
+    /// The signed-in user's own MRI, to recognise their own messages and
+    /// name them in requests.
+    pub fn self_mri(&self) -> Option<String> {
+        self.config.self_mri()
     }
 
     /// Load config and build client. Attempts token refresh if AAD token is expired.

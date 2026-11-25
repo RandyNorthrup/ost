@@ -730,8 +730,8 @@ async fn delivered_copy(o: &Outgoing) -> Option<(String, i64)> {
 /// The other person of a 1:1 chat the sender is in (`8:orgid:<oid>`), from
 /// its id (`19:<oid>_<oid>@unq.gbl.spaces`).
 fn one_on_one_other(conversation_id: &str, sender_mri: &str) -> Option<String> {
-    let me = sender_mri.strip_prefix("8:orgid:")?;
-    super::chat::other_member_oid(conversation_id, me).map(|o| format!("8:orgid:{o}"))
+    let me = crate::identity::work_object_id(sender_mri)?;
+    super::chat::other_member_oid(conversation_id, me).map(|o| crate::identity::work_user_mri(&o))
 }
 
 /// Plain text as Teams sends it: one paragraph, line breaks as `<br>`.

@@ -2802,7 +2802,7 @@ Window {
             else if (step === 15) conversation.openPostView(chan[1])
             else if (step === 18) shot("post")
             else if (step === 19) { const pv = conversation.postViewForTest ? conversation.postViewForTest() : null; console.warn("ATT post view", !!pv) }
-            else if (step === 20) conversation.channelAttendance = { organizer: (backend.userMri || "").replace("8:orgid:", ""), message: chan[1], call: "" }
+            else if (step === 20) conversation.channelAttendance = { organizer: backend.userOid, message: chan[1], call: "" }
             else if (step === 22) { console.warn("ATT channel", backend.attendanceJson.slice(0, 400)); shot("channel") }
             else if (step === 23) Qt.quit()
             step++
