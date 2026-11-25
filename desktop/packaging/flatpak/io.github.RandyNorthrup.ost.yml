@@ -18,32 +18,59 @@ sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
   - org.freedesktop.Sdk.Extension.llvm21
 command: ost-desktop
+# Each permission below is one OST uses, with what for; anything not listed
+# (home folder, other files, other D-Bus names, the session's other apps)
+# stays out of reach. Screen sharing, opening links and picking files to
+# send go through the desktop portals, which need no permission here.
 finish-args:
-  - --share=ipc
+  # Teams' service, its calls' media (TURN/UDP) and the Microsoft 365 web
+  # apps it embeds.
   - --share=network
+  # The window: Wayland, or X11 where there's no Wayland session (ipc: the
+  # X server's shared memory, which X11 rendering needs).
   - --socket=wayland
   - --socket=fallback-x11
-  # Cameras (V4L2) and headsets' call buttons (hidraw).
+  - --share=ipc
+  # Devices. Cameras are V4L2 nodes (/dev/video*) today, and headsets' call
+  # buttons, lights and ring (Settings > Devices) are HID: hidraw, hiddev
+  # and usbfs nodes (src/calling/hid_telephony.rs). Flatpak has no narrower
+  # permission for hidraw or hiddev (--device=input is /dev/input only,
+  # --device=usb /dev/bus/usb only), so it takes --device=all; the GPU
+  # (--device=dri) comes with it.
+  # TODO(TASK-0307): once cameras come from PipeWire through the camera
+  # portal, they no longer need this; it then stays for the headsets' HID
+  # only (or becomes --device=dri, if headset buttons are left out of the
+  # Flatpak).
   - --device=all
-  - --socket=pulseaudio
-  # Microphones, speakers and cameras by PipeWire node, and the screen-share
-  # streams the ScreenCast portal hands over.
+  # Audio: microphones and speakers by PipeWire node, and the screen-share
+  # streams the ScreenCast portal hands over (xdg-run/pipewire-0); ringtones,
+  # notification sounds and video clips through Qt Multimedia's PulseAudio
+  # output (PipeWire's pulse server).
   - --filesystem=xdg-run/pipewire-0
-  # Downloaded files go to Downloads, as in Teams.
+  - --socket=pulseaudio
+  # Downloaded files go to Downloads without a dialog, as in Teams. Only
+  # that folder: nothing else of the home folder is visible.
   - --filesystem=xdg-download
+  # Notifications (the desktop's notification server, as notify-rust talks
+  # to it).
   - --talk-name=org.freedesktop.Notifications
-  # The sign-in is kept in the desktop keyring (Secret Service).
+  # The sign-in tokens are kept in the desktop keyring (Secret Service:
+  # GNOME Keyring, KWallet, KeePassXC), never in a file.
   - --talk-name=org.freedesktop.secrets
-  # The tray icon and the launcher's unread badge.
+  # The tray icon (StatusNotifierItem) and the launcher's unread badge.
   - --talk-name=org.kde.StatusNotifierWatcher
   - --talk-name=com.canonical.Unity
   # Keeping OST's own windows out of screen shares on KDE Plasma.
   - --talk-name=org.kde.KWin
-  # Away when the screen locks; work location from the Wi-Fi network;
-  # Bluetooth room proximity.
+  # Away when the screen locks (logind's LockedHint, read only); work
+  # location from the Wi-Fi network's name (NetworkManager, read only);
+  # nearby Teams Rooms from their Bluetooth beacons (BlueZ: an LE scan while
+  # the pre-join screen's Room audio looks for rooms; nothing is paired or
+  # changed).
   - --system-talk-name=org.freedesktop.login1
   - --system-talk-name=org.freedesktop.NetworkManager
   - --system-talk-name=org.bluez
+  # Not a permission: where the spell-check dictionaries are.
   - --env=QTWEBENGINE_DICTIONARIES_PATH=/app/qtwebengine_dictionaries
 cleanup-commands:
   - /app/cleanup-BaseApp.sh
