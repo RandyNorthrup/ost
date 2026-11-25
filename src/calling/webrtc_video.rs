@@ -350,12 +350,12 @@ pub fn wants_keyframe(rtcp: &[u8], ours: u32) -> bool {
     false
 }
 
-/// Our camera, encoded and handed out as plain RTP packets; drop it to
-/// stop. The newest picture is also published as the "self" frame.
 /// Your camera before a call: its picture as the "self" preview (Teams'
-/// pre-join preview), until dropped.
+/// pre-join preview), until dropped. Dropping it returns once the camera
+/// is closed, so the call (or a new preview) can open it straight away.
 pub struct CameraPreview {
     stop: Arc<AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl CameraPreview {
@@ -364,39 +364,54 @@ impl CameraPreview {
         let (camera, frames) = super::camera::CameraCapture::start(device.as_deref(), w, h, fps)?;
         let stop = Arc::new(AtomicBool::new(false));
         let stop2 = stop.clone();
-        std::thread::Builder::new()
+        let thread = std::thread::Builder::new()
             .name("ost-camera-preview".into())
             .spawn(move || {
                 let _camera = camera;
                 // The preview shows the video effects as they'll be sent.
                 let mut effects = ost_vfx::Processor::new();
                 while !stop2.load(Ordering::Relaxed) {
-                    if let Ok(mut f) = frames.recv_timeout(std::time::Duration::from_millis(250)) {
-                        effects.process(f.width, f.height, &mut f.data);
-                        super::frames::publish(
-                            "self",
-                            f.width,
-                            f.height,
-                            preview_rgba(&f.data, f.width, f.height),
-                        );
+                    match frames.recv_timeout(std::time::Duration::from_millis(50)) {
+                        Ok(mut f) => {
+                            effects.process(f.width, f.height, &mut f.data);
+                            super::frames::publish(
+                                "self",
+                                f.width,
+                                f.height,
+                                preview_rgba(&f.data, f.width, f.height),
+                            );
+                        }
+                        Err(mpsc::RecvTimeoutError::Timeout) => {}
+                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
                     }
                 }
                 super::frames::clear("self");
             })?;
-        Ok(Self { stop })
+        Ok(Self {
+            stop,
+            thread: Some(thread),
+        })
     }
 }
 
 impl Drop for CameraPreview {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
+        if let Some(t) = self.thread.take() {
+            super::camera::finish_thread(t, super::camera::STOP_WAIT);
+        }
     }
 }
 
+/// Our camera, encoded and handed out as plain RTP packets; drop it to
+/// stop. The newest picture is also published as the "self" frame.
 pub struct VideoSender {
     stop: Arc<AtomicBool>,
     /// Set when the peer asked for a keyframe.
     pub keyframe: Arc<AtomicBool>,
+    /// A camera's sending thread: waited for when dropped, so the camera
+    /// is closed by then.
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 /// Teams' Efficiency mode (Settings ▸ General): "reduces processor,
@@ -629,7 +644,7 @@ impl VideoSender {
         let stop = Arc::new(AtomicBool::new(false));
         let keyframe = Arc::new(AtomicBool::new(true));
         let (stop2, key2) = (stop.clone(), keyframe.clone());
-        std::thread::Builder::new()
+        let thread = std::thread::Builder::new()
             .name("ost-video-tx".into())
             .spawn(move || {
                 let _camera = camera;
@@ -643,7 +658,11 @@ impl VideoSender {
                 );
                 super::frames::clear("self");
             })?;
-        Ok(Self { stop, keyframe })
+        Ok(Self {
+            stop,
+            keyframe,
+            thread: Some(thread),
+        })
     }
 
     /// Send a screen capture's frames (payload type `pt`, `ssrc`) to `out`.
@@ -674,7 +693,11 @@ impl VideoSender {
                 // The capture ended (or we were stopped): say so.
                 stop2.store(true, Ordering::Relaxed);
             })?;
-        Ok(Self { stop, keyframe })
+        Ok(Self {
+            stop,
+            keyframe,
+            thread: None,
+        })
     }
 }
 
@@ -688,6 +711,9 @@ impl VideoSender {
 impl Drop for VideoSender {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
+        if let Some(t) = self.thread.take() {
+            super::camera::finish_thread(t, super::camera::STOP_WAIT);
+        }
     }
 }
 

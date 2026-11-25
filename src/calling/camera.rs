@@ -4,7 +4,9 @@
 //! Runs a capture thread that sends raw YUV frames over a channel.
 
 use anyhow::{Context, Result};
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc};
+use std::time::{Duration, Instant};
 use v4l::buffer::Type;
 use v4l::io::mmap::Stream;
 use v4l::io::traits::CaptureStream;
@@ -79,11 +81,14 @@ pub struct YuvFrame {
     pub data: Vec<u8>,
 }
 
-/// Camera capture handle. Keeps the capture thread alive.
+/// Camera capture handle. Keeps the capture thread alive; dropping it
+/// stops the thread and returns once the device is closed, so the camera
+/// can be opened again at once (the pre-join preview handing it to the
+/// call, or the camera turned off and on).
 pub struct CameraCapture {
-    _handle: std::thread::JoinHandle<()>,
-    /// Stops a capture that has no device to lose (the avatar camera).
-    stop: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    handle: Option<std::thread::JoinHandle<()>>,
+    /// Asks the capture thread to stop.
+    stop: Arc<AtomicBool>,
     /// Its run in [`super::device_health`] (0: not watched).
     run: u64,
 }
@@ -170,8 +175,10 @@ impl CameraCapture {
         // Its frames are watched from here: none for 5 s is Teams'
         // VideoCaptureDeviceFreeze.
         let run = super::device_health::camera_started();
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop2 = stop.clone();
         let handle = std::thread::spawn(move || {
-            if let Err(e) = capture_loop(dev, actual_w, actual_h, actual_fourcc, tx) {
+            if let Err(e) = capture_loop(dev, actual_w, actual_h, actual_fourcc, tx, &stop2) {
                 tracing::error!("Camera capture loop exited: {:#}", e);
                 super::device_health::note_camera(super::device_health::Open::Failed);
             }
@@ -179,8 +186,8 @@ impl CameraCapture {
 
         Ok((
             CameraCapture {
-                _handle: handle,
-                stop: None,
+                handle: Some(handle),
+                stop,
                 run,
             },
             rx,
@@ -196,12 +203,12 @@ pub const AVATAR_DEVICE: &str = "ost-avatar";
 impl CameraCapture {
     fn avatar(width: u32, height: u32, fps: u32) -> (Self, mpsc::Receiver<YuvFrame>) {
         let (tx, rx) = mpsc::sync_channel::<YuvFrame>(2);
-        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop = Arc::new(AtomicBool::new(false));
         let stop2 = stop.clone();
-        let every = std::time::Duration::from_millis(1000 / u64::from(fps.max(1)));
+        let every = Duration::from_millis(1000 / u64::from(fps.max(1)));
         let handle = std::thread::spawn(move || {
             tracing::info!("Avatar camera: {width}x{height} at {fps} fps");
-            let mut next = std::time::Instant::now();
+            let mut next = Instant::now();
             loop {
                 if let Some(f) = ost_vfx::avatar::tick(width, height) {
                     let mut data = vec![0u8; (width * height * 3 / 2) as usize];
@@ -220,11 +227,11 @@ impl CameraCapture {
                         Err(mpsc::TrySendError::Disconnected(_)) => break,
                     }
                 }
-                if stop2.load(std::sync::atomic::Ordering::Relaxed) {
+                if stop2.load(Ordering::Relaxed) {
                     break;
                 }
                 next += every;
-                let now = std::time::Instant::now();
+                let now = Instant::now();
                 if next > now {
                     std::thread::sleep(next - now);
                 } else {
@@ -235,8 +242,8 @@ impl CameraCapture {
         });
         (
             CameraCapture {
-                _handle: handle,
-                stop: Some(stop),
+                handle: Some(handle),
+                stop,
                 run: 0,
             },
             rx,
@@ -246,11 +253,49 @@ impl CameraCapture {
 
 impl Drop for CameraCapture {
     fn drop(&mut self) {
-        if let Some(s) = &self.stop {
-            s.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(h) = self.handle.take() {
+            finish_thread(h, STOP_WAIT);
         }
         super::device_health::camera_stopped(self.run);
     }
+}
+
+/// How long a camera's read waits for a frame before looking whether it
+/// was asked to stop (a camera that gives none still stops promptly).
+const FRAME_WAIT: Duration = Duration::from_millis(200);
+
+/// How long stopping a camera waits for its threads to let the device go.
+pub(crate) const STOP_WAIT: Duration = Duration::from_secs(2);
+
+/// Wait (at most `limit`) for a thread that was asked to stop to end, so
+/// what it holds (the camera device) is released when this returns. A
+/// thread still running after that is left to end on its own.
+pub(crate) fn finish_thread(handle: std::thread::JoinHandle<()>, limit: Duration) {
+    if handle.thread().id() == std::thread::current().id() {
+        return;
+    }
+    let until = Instant::now() + limit;
+    while !handle.is_finished() {
+        if Instant::now() >= until {
+            tracing::warn!(
+                thread = handle.thread().name().unwrap_or(""),
+                "camera thread still stopping"
+            );
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let _ = handle.join();
+}
+
+/// A read that ended without a frame (timed out or interrupted): the
+/// stream stays as it was, so waiting again is safe.
+fn no_frame_yet(e: &std::io::Error) -> bool {
+    matches!(
+        e.kind(),
+        std::io::ErrorKind::TimedOut | std::io::ErrorKind::Interrupted
+    )
 }
 
 /// Main capture loop — runs on a dedicated thread.
@@ -260,12 +305,33 @@ fn capture_loop(
     height: u32,
     fourcc: FourCC,
     tx: mpsc::SyncSender<YuvFrame>,
+    stop: &AtomicBool,
 ) -> Result<()> {
     let mut stream = Stream::with_buffers(&dev, Type::VideoCapture, 4)
         .context("Failed to start V4L2 mmap stream")?;
+    // Reads give up now and then, so a stop is seen even without frames.
+    stream.set_timeout(FRAME_WAIT);
 
-    loop {
-        let (buf, _meta) = stream.next().context("Failed to read camera frame")?;
+    while !stop.load(Ordering::Relaxed) {
+        let (buf, _meta) = match stream.next() {
+            Ok(f) => f,
+            Err(e) if no_frame_yet(&e) => {
+                // The buffer that read queued is still queued: wait for a
+                // frame without queueing it again (that picture is skipped).
+                loop {
+                    if stop.load(Ordering::Relaxed) {
+                        return Ok(());
+                    }
+                    match CaptureStream::dequeue(&mut stream) {
+                        Ok(_) => break,
+                        Err(e) if no_frame_yet(&e) => {}
+                        Err(e) => return Err(e).context("Failed to read camera frame"),
+                    }
+                }
+                continue;
+            }
+            Err(e) => return Err(e).context("Failed to read camera frame"),
+        };
         super::device_health::camera_frame();
 
         let yuv_data = if fourcc == FourCC::new(b"YUYV") {
@@ -444,4 +510,48 @@ fn yuyv_to_i420(yuyv: &[u8], width: u32, height: u32) -> Vec<u8> {
     }
 
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stopping_waits_for_the_thread_to_let_go() {
+        let stop = Arc::new(AtomicBool::new(false));
+        let released = Arc::new(AtomicBool::new(false));
+        let (s, r) = (stop.clone(), released.clone());
+        let t = std::thread::spawn(move || {
+            while !s.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            // Letting the device go takes a while.
+            std::thread::sleep(Duration::from_millis(100));
+            r.store(true, Ordering::Relaxed);
+        });
+        stop.store(true, Ordering::Relaxed);
+        finish_thread(t, STOP_WAIT);
+        assert!(released.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn a_thread_that_never_stops_is_not_waited_for_long() {
+        let started = Instant::now();
+        let t = std::thread::spawn(|| std::thread::sleep(Duration::from_secs(3)));
+        finish_thread(t, Duration::from_millis(100));
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn a_read_without_a_frame_is_waited_out_and_other_errors_end_it() {
+        assert!(no_frame_yet(&std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "VIDIOC_DQBUF"
+        )));
+        assert!(no_frame_yet(&std::io::Error::from(
+            std::io::ErrorKind::Interrupted
+        )));
+        // EBUSY.
+        assert!(!no_frame_yet(&std::io::Error::from_raw_os_error(16)));
+    }
 }

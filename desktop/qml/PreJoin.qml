@@ -264,9 +264,12 @@ Window {
         if (cameraOn && !backend.setCameraPreview(true)) cameraOn = false
         else if (!cameraOn) backend.setCameraPreview(avatarPreview)
     }
-    // The camera is free again for the call (or for nobody) once we go.
+    // The camera is free again for the call (or for nobody) once we go
+    // (closed by the time setCameraPreview returns). Shown again for the
+    // lobby with the camera on: your preview again, as Teams.
     onVisibleChanged: {
         if (!visible && (cameraOn || avatarPreview)) backend.setCameraPreview(false)
+        else if (visible && cameraOn && !backend.setCameraPreview(true)) cameraOn = false
         // Bluetooth room discovery stops with the pre-join screen.
         if (!visible) backend.nearbyRooms(false)
     }

@@ -4533,7 +4533,7 @@ async fn reoffer_reply(
             tracing::info!(?camera, ?sharing, "media changed");
             let _ = qt.queue(move |mut this| {
                 if let Some(c) = camera {
-                    this.as_mut().set_call_camera_on(c);
+                    this.as_mut().show_call_camera(c);
                 }
                 if let Some(s) = sharing {
                     this.as_mut().set_call_sharing(s);
@@ -10923,7 +10923,7 @@ impl qobject::Backend {
                         this.as_mut().set_call_can_video(can_video);
                         this.as_mut().set_call_can_dtmf(can_dtmf);
                         this.as_mut().set_call_can_share(can_share);
-                        this.as_mut().set_call_camera_on(camera);
+                        this.as_mut().show_call_camera(camera);
                         this.as_mut().set_call_e2ee(e2ee);
                         this.as_mut()
                             .set_call_e2ee_numbers(QString::from(e2ee_numbers.as_str()));
@@ -11228,7 +11228,7 @@ impl qobject::Backend {
                         this.as_mut().set_call_can_dtmf(can_dtmf);
                         this.as_mut().set_call_can_video(can_video);
                         this.as_mut().set_call_can_share(can_share);
-                        this.as_mut().set_call_camera_on(camera);
+                        this.as_mut().show_call_camera(camera);
                         this.as_mut().set_call_state(QString::from("connected"));
                     });
                 }
@@ -15436,7 +15436,10 @@ impl qobject::Backend {
             .get_or_init(Default::default)
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        *p = None;
+        // (Dropping it closes the camera before this goes on.)
+        if p.take().is_some() {
+            tracing::info!("camera preview stopped");
+        }
         if !on {
             return true;
         }
@@ -15498,7 +15501,7 @@ impl qobject::Backend {
             };
             drop(guard);
             let _ = qt.queue(move |mut this| match result {
-                Ok(Some(c)) => this.as_mut().set_call_camera_on(c),
+                Ok(Some(c)) => this.as_mut().show_call_camera(c),
                 Ok(None) => {}
                 Err(e) => {
                     tracing::info!("camera: {}", short_error(&e));
@@ -15507,6 +15510,22 @@ impl qobject::Backend {
                 }
             });
         });
+    }
+
+    /// The call's camera as it now is. On, it works (again), so "Your
+    /// camera failed" goes.
+    fn show_call_camera(mut self: Pin<&mut Self>, on: bool) {
+        self.as_mut().set_call_camera_on(on);
+        if on {
+            self.clear_camera_failed();
+        }
+    }
+
+    /// Take "Your camera failed" (and nothing else) off the status bar.
+    fn clear_camera_failed(mut self: Pin<&mut Self>) {
+        if self.rust().status_text.to_string() == tr("Your camera failed") {
+            self.as_mut().set_status_text(QString::default());
+        }
     }
 
     pub fn toggle_mute(mut self: Pin<&mut Self>) {
@@ -16606,6 +16625,7 @@ impl qobject::Backend {
             self.as_mut().set_call_state(QString::from("ended"));
         }
         self.as_mut().set_call_camera_on(false);
+        self.as_mut().clear_camera_failed();
         self.as_mut()
             .set_call_network_strength(QString::from("Good"));
         self.as_mut().set_call_can_video(false);
