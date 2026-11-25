@@ -7395,6 +7395,15 @@ Window {
             if (st % 50 === 0) console.warn("CHURN", st, "rows", Object.keys(chatList.rowsForTest).length)
         }
     }
+    // --chatlist-watch: every 2 s a CHATWATCH line with the rows the chat
+    // list shows and how many of its chats are hidden or unread (live
+    // checks of hides and unhides from other clients).
+    Timer {
+        running: Qt.application.arguments.indexOf("--chatlist-watch") >= 0 && backend.signedIn
+        interval: 2000; repeat: true
+        onTriggered: console.warn("CHATWATCH", new Date().toISOString(), "rows", Object.keys(chatList.rowsForTest).length,
+                                  "hidden", chatList.chats.filter(c => c.hidden).length, "unread", chatList.chats.filter(c => c.unread).length)
+    }
     // --hide-chats=<name>|<name>… (~ for spaces): each chat of the list
     // with exactly that name: its ··· menu (logged: Teams offers Hide
     // there), then Hide as the menu's item does (unpinnedTime and
