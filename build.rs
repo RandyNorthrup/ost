@@ -7,15 +7,20 @@ fn main() {
     if std::env::var_os("CARGO_FEATURE_AUDIO").is_none() {
         return;
     }
-    let lib = pkg_config::Config::new()
-        .atleast_version("1.0")
-        .probe("webrtc-audio-processing-1")
-        .or_else(|_| {
-            pkg_config::Config::new()
-                .atleast_version("2.0")
-                .probe("webrtc-audio-processing-2")
-        })
-        .expect("webrtc-audio-processing-1 or -2 (install its development package)");
+    let probe = |name: &str, min: &str, link: bool| {
+        pkg_config::Config::new()
+            .atleast_version(min)
+            .cargo_metadata(link)
+            .probe(name)
+    };
+    let (name, min) = [
+        ("webrtc-audio-processing-1", "1.0"),
+        ("webrtc-audio-processing-2", "2.0"),
+    ]
+    .into_iter()
+    .find(|(name, min)| probe(name, min, false).is_ok())
+    .expect("webrtc-audio-processing-1 or -2 (install its development package)");
+    let lib = probe(name, min, false).expect("webrtc-audio-processing");
     let mut build = cc::Build::new();
     build
         .cpp(true)
@@ -29,4 +34,8 @@ fn main() {
         build.define(k, v.as_deref());
     }
     build.compile("ost_apm");
+    // The library's link flags after the bridge's: GNU ld (Ubuntu's Rust
+    // links with it) only takes a shared library that an earlier input
+    // needs, so it must come after ost_apm.
+    probe(name, min, true).expect("webrtc-audio-processing");
 }
