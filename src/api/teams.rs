@@ -240,7 +240,12 @@ pub fn people_count(summary: &serde_json::Value) -> u64 {
 /// Read Teams' team list (`{csa}/api/v1/teams/users/me/teams`).
 pub fn list_teams_from(v: &serde_json::Value) -> Vec<ListTeam> {
     let b = |x: &serde_json::Value, k: &str| x.get(k).and_then(|v| v.as_bool()).unwrap_or(false);
-    let s = |x: &serde_json::Value, k: &str| x.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let s = |x: &serde_json::Value, k: &str| {
+        x.get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     v.as_array()
         .into_iter()
         .flatten()
@@ -252,63 +257,86 @@ pub fn list_teams_from(v: &serde_json::Value) -> Vec<ListTeam> {
                 .into_iter()
                 .flatten()
                 .collect();
-            let channels: Vec<&serde_json::Value> = all.iter().copied().filter(|c| !b(c, "isDeleted")).collect();
+            let channels: Vec<&serde_json::Value> =
+                all.iter().copied().filter(|c| !b(c, "isDeleted")).collect();
             let thread = s(t, "id");
             let channel_of = |c: &&serde_json::Value| ListChannel {
-                    id: s(c, "id"),
-                    name: s(c, "displayName"),
-                    // General's place in the list is the team's
-                    // isGeneralChannelFavorite (Hide / Show set it there).
-                    shown: if b(c, "isGeneral") {
-                        t.get("isGeneralChannelFavorite").and_then(|v| v.as_bool()).unwrap_or(true)
-                    } else {
-                        b(c, "isFavorite")
-                    },
-                    unread: c.get("isMessageRead").and_then(|r| r.as_bool()) == Some(false),
-                    muted: b(c, "isMuted"),
-                    general: b(c, "isGeneral"),
-                    new: !b(c, "isGeneral") && !read_horizon(c),
-                    description: s(c, "description"),
-                    notify: crate::api::channels::Notify::from_properties(
-                        &s(c, "channelNotificationSettings"),
-                        c.get("alerts").and_then(|a| a.as_bool()).unwrap_or(true),
-                    )
-                    .mode,
-                    owner: s(c, "memberRoleString") == "admin",
-                    layout: Some(s(c, "modality")).filter(|m| !m.is_empty()).unwrap_or_else(|| "PostReply".into()),
-                    // Its last message, else when it was made (Teams shows a
-                    // new channel as active since then).
-                    last_active: c
-                        .pointer("/lastMessage/composeTime")
-                        .and_then(|v| v.as_str())
-                        .filter(|t| !t.is_empty())
-                        .or_else(|| c.get("creationTime").and_then(|v| v.as_str()))
-                        .unwrap_or_default()
-                        .to_string(),
-                    // CSA says channelType 1 for private and shared alike;
-                    // threadSubType / isShared tell them apart.
-                    channel_type: match s(c, "threadSubType").as_str() {
-                        "SharedChannel" => 2,
-                        "PrivateChannel" => 1,
-                        _ if b(c, "isShared") => 2,
-                        _ => c.get("channelType").and_then(|v| v.as_u64()).unwrap_or(0).min(1) as u8,
-                    },
-                    archived: b(c, "isArchived"),
-                    // A private or shared channel's own site (Teams names
-                    // a file's team from it in search).
-                    site_url: s(c, "sharepointSiteUrl"),
-                    shared_in: b(c, "isShared") && !s(c, "parentTeamId").is_empty() && s(c, "parentTeamId") != thread,
-                    recommended: b(c, "isFavoriteByDefault") && !b(c, "isGeneral"),
-                };
+                id: s(c, "id"),
+                name: s(c, "displayName"),
+                // General's place in the list is the team's
+                // isGeneralChannelFavorite (Hide / Show set it there).
+                shown: if b(c, "isGeneral") {
+                    t.get("isGeneralChannelFavorite")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true)
+                } else {
+                    b(c, "isFavorite")
+                },
+                unread: c.get("isMessageRead").and_then(|r| r.as_bool()) == Some(false),
+                muted: b(c, "isMuted"),
+                general: b(c, "isGeneral"),
+                new: !b(c, "isGeneral") && !read_horizon(c),
+                description: s(c, "description"),
+                notify: crate::api::channels::Notify::from_properties(
+                    &s(c, "channelNotificationSettings"),
+                    c.get("alerts").and_then(|a| a.as_bool()).unwrap_or(true),
+                )
+                .mode,
+                owner: s(c, "memberRoleString") == "admin",
+                layout: Some(s(c, "modality"))
+                    .filter(|m| !m.is_empty())
+                    .unwrap_or_else(|| "PostReply".into()),
+                // Its last message, else when it was made (Teams shows a
+                // new channel as active since then).
+                last_active: c
+                    .pointer("/lastMessage/composeTime")
+                    .and_then(|v| v.as_str())
+                    .filter(|t| !t.is_empty())
+                    .or_else(|| c.get("creationTime").and_then(|v| v.as_str()))
+                    .unwrap_or_default()
+                    .to_string(),
+                // CSA says channelType 1 for private and shared alike;
+                // threadSubType / isShared tell them apart.
+                channel_type: match s(c, "threadSubType").as_str() {
+                    "SharedChannel" => 2,
+                    "PrivateChannel" => 1,
+                    _ if b(c, "isShared") => 2,
+                    _ => c
+                        .get("channelType")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0)
+                        .min(1) as u8,
+                },
+                archived: b(c, "isArchived"),
+                // A private or shared channel's own site (Teams names
+                // a file's team from it in search).
+                site_url: s(c, "sharepointSiteUrl"),
+                shared_in: b(c, "isShared")
+                    && !s(c, "parentTeamId").is_empty()
+                    && s(c, "parentTeamId") != thread,
+                recommended: b(c, "isFavoriteByDefault") && !b(c, "isGeneral"),
+            };
             let mut list: Vec<ListChannel> = channels.iter().map(channel_of).collect();
-            let deleted: Vec<ListChannel> = all.iter().filter(|c| b(c, "isDeleted")).map(channel_of).collect();
+            let deleted: Vec<ListChannel> = all
+                .iter()
+                .filter(|c| b(c, "isDeleted"))
+                .map(channel_of)
+                .collect();
             // General first, then by name (Teams' channel order).
-            list.sort_by(|a, b| b.general.cmp(&a.general).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+            list.sort_by(|a, b| {
+                b.general
+                    .cmp(&a.general)
+                    .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            });
             let group = channels
                 .iter()
                 .map(|c| s(c, "groupId"))
                 .find(|g| !g.is_empty())
-                .or_else(|| t.pointer("/teamSiteInformation/groupId").and_then(|g| g.as_str()).map(str::to_string))
+                .or_else(|| {
+                    t.pointer("/teamSiteInformation/groupId")
+                        .and_then(|g| g.as_str())
+                        .map(str::to_string)
+                })
                 .unwrap_or_default();
             ListTeam {
                 id: if group.is_empty() { s(t, "id") } else { group },
@@ -320,11 +348,20 @@ pub fn list_teams_from(v: &serde_json::Value) -> Vec<ListTeam> {
                 channels: list,
                 deleted_channels: deleted,
                 description: s(t, "description"),
-                site_url: t.pointer("/teamSiteInformation/sharepointSiteUrl").and_then(|u| u.as_str()).unwrap_or_default().to_string(),
+                site_url: t
+                    .pointer("/teamSiteInformation/sharepointSiteUrl")
+                    .and_then(|u| u.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
                 owner: s(t, "memberRoleString") == "admin",
                 public: t.get("accessType").and_then(|a| a.as_u64()) == Some(3),
-                role: Some(s(t, "memberRoleString").to_lowercase()).filter(|r| !r.is_empty()).unwrap_or_else(|| "user".into()),
-                people: people_count(t.get("membershipSummary").unwrap_or(&serde_json::Value::Null)),
+                role: Some(s(t, "memberRoleString").to_lowercase())
+                    .filter(|r| !r.is_empty())
+                    .unwrap_or_else(|| "user".into()),
+                people: people_count(
+                    t.get("membershipSummary")
+                        .unwrap_or(&serde_json::Value::Null),
+                ),
                 team_type: t.get("teamType").and_then(|v| v.as_u64()).unwrap_or(0),
                 picture_etag: s(t, "pictureETag"),
             }
@@ -334,7 +371,9 @@ pub fn list_teams_from(v: &serde_json::Value) -> Vec<ListTeam> {
 
 /// Your teams and their channels as Teams' chat list has them.
 pub async fn list_teams_csa(client: &TeamsClient) -> Result<Vec<ListTeam>> {
-    let token = crate::auth::oauth::access_token_for("https://chatsvcagg.teams.microsoft.com/.default").await?;
+    let token =
+        crate::auth::oauth::access_token_for("https://chatsvcagg.teams.microsoft.com/.default")
+            .await?;
     let region = client
         .chat_service_url()
         .split("//")
@@ -357,7 +396,9 @@ pub async fn list_teams_csa(client: &TeamsClient) -> Result<Vec<ListTeam>> {
     let mut teams = list_teams_from(&v);
     // Teams' order: the order you set (the teamsOrder preference), the rest
     // as the service lists them (a stable sort, as Teams' sortBy).
-    let order = teams_order(client, &token, &region).await.unwrap_or_default();
+    let order = teams_order(client, &token, &region)
+        .await
+        .unwrap_or_default();
     apply_teams_order(&mut teams, &order);
     Ok(teams)
 }
@@ -399,8 +440,13 @@ pub fn teams_order_from(v: &serde_json::Value) -> std::collections::HashMap<Stri
 /// properties?name=teamsOrder` with `{"teamsOrder": "[{teamId, order}]"}`
 /// (a JSON string), every team by thread id from 0.
 pub async fn set_teams_order(client: &TeamsClient, thread_ids: &[String]) -> Result<()> {
-    let url = format!("{}/v1/users/ME/properties?name=teamsOrder", client.chat_service_url());
-    client.chat_request(reqwest::Method::PUT, &url, &teams_order_body(thread_ids)).await?;
+    let url = format!(
+        "{}/v1/users/ME/properties?name=teamsOrder",
+        client.chat_service_url()
+    );
+    client
+        .chat_request(reqwest::Method::PUT, &url, &teams_order_body(thread_ids))
+        .await?;
     Ok(())
 }
 
@@ -416,10 +462,20 @@ pub fn teams_order_body(thread_ids: &[String]) -> serde_json::Value {
 /// Sort teams by the order you set; teams without one keep their place
 /// after them.
 pub fn apply_teams_order(teams: &mut [ListTeam], order: &std::collections::HashMap<String, i64>) {
-    teams.sort_by_key(|t| order.get(&t.thread_id).or_else(|| order.get(&t.id)).copied().unwrap_or(i64::MAX));
+    teams.sort_by_key(|t| {
+        order
+            .get(&t.thread_id)
+            .or_else(|| order.get(&t.id))
+            .copied()
+            .unwrap_or(i64::MAX)
+    });
 }
 
-async fn teams_order(client: &TeamsClient, token: &str, region: &str) -> Result<std::collections::HashMap<String, i64>> {
+async fn teams_order(
+    client: &TeamsClient,
+    token: &str,
+    region: &str,
+) -> Result<std::collections::HashMap<String, i64>> {
     // Teams keeps it among your user properties (where it writes it, and
     // reads it back as a user preference); the discover preferences are
     // the older copy.
@@ -427,7 +483,9 @@ async fn teams_order(client: &TeamsClient, token: &str, region: &str) -> Result<
     if let Ok(r) = client.chat_get(&url).await {
         let props: serde_json::Value = r.json().await.unwrap_or_default();
         if props.get("teamsOrder").is_some() {
-            return Ok(teams_order_from(&serde_json::json!({ "teamsOrder": props["teamsOrder"] })));
+            return Ok(teams_order_from(
+                &serde_json::json!({ "teamsOrder": props["teamsOrder"] }),
+            ));
         }
     }
     let v: serde_json::Value = client
@@ -503,7 +561,9 @@ fn note_tags(tags: &[TeamTag]) {
 /// Teams reads them for the @ picker:
 /// `GET {csa}/api/v1/teams/{id}/tagCards?tagType=any`.
 pub async fn team_tags(client: &TeamsClient, team_thread_id: &str) -> Result<Vec<TeamTag>> {
-    let token = crate::auth::oauth::access_token_for("https://chatsvcagg.teams.microsoft.com/.default").await?;
+    let token =
+        crate::auth::oauth::access_token_for("https://chatsvcagg.teams.microsoft.com/.default")
+            .await?;
     let region = client
         .chat_service_url()
         .split("//")
@@ -551,7 +611,12 @@ pub fn tag_cards_from(v: &serde_json::Value) -> Vec<TagCard> {
         .into_iter()
         .flatten()
         .filter_map(|t| {
-            let s = |k: &str| t.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+            let s = |k: &str| {
+                t.get(k)
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_string()
+            };
             let member_ids: Vec<String> = t
                 .get("memberIds")
                 .and_then(|m| m.as_array())
@@ -563,9 +628,15 @@ pub fn tag_cards_from(v: &serde_json::Value) -> Vec<TagCard> {
                 id: t.get("tagId")?.as_str()?.to_string(),
                 name: s("tagName"),
                 description: s("tagDescription"),
-                count: t.get("memberCount").and_then(|c| c.as_u64()).unwrap_or(member_ids.len() as u64),
+                count: t
+                    .get("memberCount")
+                    .and_then(|c| c.as_u64())
+                    .unwrap_or(member_ids.len() as u64),
                 member_ids,
-                mine: t.get("currentMemberIsPartOfTag").and_then(|m| m.as_bool()).unwrap_or(false),
+                mine: t
+                    .get("currentMemberIsPartOfTag")
+                    .and_then(|m| m.as_bool())
+                    .unwrap_or(false),
                 version: t.get("version").and_then(|n| n.as_u64()).unwrap_or(0),
                 source: s("tagSource"),
             })
@@ -584,7 +655,9 @@ pub struct TagList {
 
 /// Teams' CSA base for the region and its token.
 pub(crate) async fn csa(client: &TeamsClient) -> Result<(String, String)> {
-    let token = crate::auth::oauth::access_token_for("https://chatsvcagg.teams.microsoft.com/.default").await?;
+    let token =
+        crate::auth::oauth::access_token_for("https://chatsvcagg.teams.microsoft.com/.default")
+            .await?;
     let region = client
         .chat_service_url()
         .split("//")
@@ -592,7 +665,10 @@ pub(crate) async fn csa(client: &TeamsClient) -> Result<(String, String)> {
         .and_then(|h| h.split('.').next())
         .unwrap_or("amer")
         .to_string();
-    Ok((format!("https://teams.microsoft.com/api/csa/{region}/api"), token))
+    Ok((
+        format!("https://teams.microsoft.com/api/csa/{region}/api"),
+        token,
+    ))
 }
 
 /// One CSA tag request; the reply's JSON (null when empty).
@@ -604,7 +680,10 @@ async fn csa_tag_request(
     if_match: Option<u64>,
 ) -> Result<serde_json::Value> {
     let (base, token) = csa(client).await?;
-    let mut req = client.http().request(method, format!("{base}/{path}")).bearer_auth(token);
+    let mut req = client
+        .http()
+        .request(method, format!("{base}/{path}"))
+        .bearer_auth(token);
     if let Some(v) = if_match {
         req = req.header("if-match", v.to_string());
     }
@@ -615,35 +694,70 @@ async fn csa_tag_request(
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
     if !status.is_success() {
-        anyhow::bail!("Tags: {status} {}", text.chars().take(200).collect::<String>());
+        anyhow::bail!(
+            "Tags: {status} {}",
+            text.chars().take(200).collect::<String>()
+        );
     }
     Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null))
 }
 
 /// `GET teams/{team}/tagCards?tagType=any` and `teams/{team}/deletedTags`.
 pub async fn tag_list(client: &TeamsClient, team_thread: &str) -> Result<TagList> {
-    let v = csa_tag_request(client, reqwest::Method::GET, &format!("v1/teams/{team_thread}/tagCards?tagType=any"), None, None).await?;
-    let deleted = csa_tag_request(client, reqwest::Method::GET, &format!("v1/teams/{team_thread}/deletedTags"), None, None)
-        .await
-        .map(|d| tag_cards_from(&d))
-        .unwrap_or_default();
+    let v = csa_tag_request(
+        client,
+        reqwest::Method::GET,
+        &format!("v1/teams/{team_thread}/tagCards?tagType=any"),
+        None,
+        None,
+    )
+    .await?;
+    let deleted = csa_tag_request(
+        client,
+        reqwest::Method::GET,
+        &format!("v1/teams/{team_thread}/deletedTags"),
+        None,
+        None,
+    )
+    .await
+    .map(|d| tag_cards_from(&d))
+    .unwrap_or_default();
     let tags = tag_cards_from(&v);
     note_tags(
         &tags
             .iter()
-            .map(|t| TeamTag { id: t.id.clone(), name: t.name.clone(), count: t.count, mine: t.mine })
+            .map(|t| TeamTag {
+                id: t.id.clone(),
+                name: t.name.clone(),
+                count: t.count,
+                mine: t.mine,
+            })
             .collect::<Vec<_>>(),
     );
     Ok(TagList {
         tags,
         deleted,
-        only_owners: v.pointer("/teamTagSettings/onlyOwnersCanUpdate").and_then(|b| b.as_bool()).unwrap_or(false),
+        only_owners: v
+            .pointer("/teamTagSettings/onlyOwnersCanUpdate")
+            .and_then(|b| b.as_bool())
+            .unwrap_or(false),
     })
 }
 
 /// A tag's members' MRIs (`GET teams/{team}/tags/{tag}/members?pageSize=200`).
-pub async fn tag_members(client: &TeamsClient, team_thread: &str, tag: &str) -> Result<Vec<String>> {
-    let v = csa_tag_request(client, reqwest::Method::GET, &format!("v1/teams/{team_thread}/tags/{tag}/members?pageSize=200"), None, None).await?;
+pub async fn tag_members(
+    client: &TeamsClient,
+    team_thread: &str,
+    tag: &str,
+) -> Result<Vec<String>> {
+    let v = csa_tag_request(
+        client,
+        reqwest::Method::GET,
+        &format!("v1/teams/{team_thread}/tags/{tag}/members?pageSize=200"),
+        None,
+        None,
+    )
+    .await?;
     Ok(v["members"]
         .as_array()
         .into_iter()
@@ -653,13 +767,31 @@ pub async fn tag_members(client: &TeamsClient, team_thread: &str, tag: &str) -> 
 }
 
 /// Create a tag (`POST teams/{team}/tags`).
-pub async fn create_tag(client: &TeamsClient, team_thread: &str, name: &str, description: &str, members: &[String]) -> Result<()> {
-    csa_tag_request(client, reqwest::Method::POST, &format!("v1/teams/{team_thread}/tags"), Some(create_tag_body(team_thread, name, description, members)), None).await?;
+pub async fn create_tag(
+    client: &TeamsClient,
+    team_thread: &str,
+    name: &str,
+    description: &str,
+    members: &[String],
+) -> Result<()> {
+    csa_tag_request(
+        client,
+        reqwest::Method::POST,
+        &format!("v1/teams/{team_thread}/tags"),
+        Some(create_tag_body(team_thread, name, description, members)),
+        None,
+    )
+    .await?;
     Ok(())
 }
 
 /// Teams' create body.
-pub fn create_tag_body(team_thread: &str, name: &str, description: &str, members: &[String]) -> serde_json::Value {
+pub fn create_tag_body(
+    team_thread: &str,
+    name: &str,
+    description: &str,
+    members: &[String],
+) -> serde_json::Value {
     serde_json::json!({
         "threadId": team_thread,
         "tagName": name.trim(),
@@ -670,42 +802,104 @@ pub fn create_tag_body(team_thread: &str, name: &str, description: &str, members
 
 /// Rename / describe a tag (`PATCH {csa}/api/v2/teams/{team}/tags/{tag}`,
 /// `if-match` its version; Teams' only v2 tag call).
-pub async fn update_tag(client: &TeamsClient, team_thread: &str, tag: &str, version: u64, name: &str, description: &str) -> Result<()> {
+pub async fn update_tag(
+    client: &TeamsClient,
+    team_thread: &str,
+    tag: &str,
+    version: u64,
+    name: &str,
+    description: &str,
+) -> Result<()> {
     let body = serde_json::json!({ "tagName": name.trim(), "tagDescription": description.trim() });
-    csa_tag_request(client, reqwest::Method::PATCH, &format!("v2/teams/{team_thread}/tags/{tag}"), Some(body), Some(version)).await?;
+    csa_tag_request(
+        client,
+        reqwest::Method::PATCH,
+        &format!("v2/teams/{team_thread}/tags/{tag}"),
+        Some(body),
+        Some(version),
+    )
+    .await?;
     Ok(())
 }
 
 /// Delete a tag (`DELETE teams/{team}/tags/{tag}`) or restore a deleted one
 /// (`POST teams/{team}/tags/{tag}/restore`).
-pub async fn delete_tag(client: &TeamsClient, team_thread: &str, tag: &str, restore: bool) -> Result<()> {
+pub async fn delete_tag(
+    client: &TeamsClient,
+    team_thread: &str,
+    tag: &str,
+    restore: bool,
+) -> Result<()> {
     if restore {
-        csa_tag_request(client, reqwest::Method::POST, &format!("v1/teams/{team_thread}/tags/{tag}/restore"), None, None).await?;
+        csa_tag_request(
+            client,
+            reqwest::Method::POST,
+            &format!("v1/teams/{team_thread}/tags/{tag}/restore"),
+            None,
+            None,
+        )
+        .await?;
     } else {
-        csa_tag_request(client, reqwest::Method::DELETE, &format!("v1/teams/{team_thread}/tags/{tag}"), None, None).await?;
+        csa_tag_request(
+            client,
+            reqwest::Method::DELETE,
+            &format!("v1/teams/{team_thread}/tags/{tag}"),
+            None,
+            None,
+        )
+        .await?;
     }
     Ok(())
 }
 
 /// Add people to a tag (`…/memberTags?tagType=team&action=add`, by tag
 /// name) or take them out (`action=delete`, by tag id).
-pub async fn change_tag_members(client: &TeamsClient, team_thread: &str, tag_id: &str, tag_name: &str, members: &[String], add: bool) -> Result<()> {
+pub async fn change_tag_members(
+    client: &TeamsClient,
+    team_thread: &str,
+    tag_id: &str,
+    tag_name: &str,
+    members: &[String],
+    add: bool,
+) -> Result<()> {
     let (action, body) = tag_members_body(tag_id, tag_name, members, add);
-    csa_tag_request(client, reqwest::Method::POST, &format!("v1/teams/{team_thread}/memberTags?tagType=team&action={action}"), Some(body), None).await?;
+    csa_tag_request(
+        client,
+        reqwest::Method::POST,
+        &format!("v1/teams/{team_thread}/memberTags?tagType=team&action={action}"),
+        Some(body),
+        None,
+    )
+    .await?;
     Ok(())
 }
 
 /// Teams' memberTags bodies.
-pub fn tag_members_body(tag_id: &str, tag_name: &str, members: &[String], add: bool) -> (&'static str, serde_json::Value) {
+pub fn tag_members_body(
+    tag_id: &str,
+    tag_name: &str,
+    members: &[String],
+    add: bool,
+) -> (&'static str, serde_json::Value) {
     if add {
-        ("add", serde_json::json!({ "memberIds": members, "tagNames": [tag_name] }))
+        (
+            "add",
+            serde_json::json!({ "memberIds": members, "tagNames": [tag_name] }),
+        )
     } else {
-        ("delete", serde_json::json!({ "memberIds": members, "tagIds": [tag_id] }))
+        (
+            "delete",
+            serde_json::json!({ "memberIds": members, "tagIds": [tag_id] }),
+        )
     }
 }
 
 /// The tags each person has (`POST teams/{team}/memberTags?tagType=any&action=get`).
-pub async fn member_tags(client: &TeamsClient, team_thread: &str, mris: &[String]) -> Result<Vec<(String, Vec<String>)>> {
+pub async fn member_tags(
+    client: &TeamsClient,
+    team_thread: &str,
+    mris: &[String],
+) -> Result<Vec<(String, Vec<String>)>> {
     if mris.is_empty() {
         return Ok(Vec::new());
     }
@@ -763,14 +957,32 @@ pub fn tag_settings_from(v: &serde_json::Value) -> TagSettings {
 
 /// Read a team's tag settings.
 pub async fn tag_settings(client: &TeamsClient, team_thread: &str) -> Result<TagSettings> {
-    let v = csa_tag_request(client, reqwest::Method::GET, &format!("v1/teams/{team_thread}/tagSettings"), None, None).await?;
+    let v = csa_tag_request(
+        client,
+        reqwest::Method::GET,
+        &format!("v1/teams/{team_thread}/tagSettings"),
+        None,
+        None,
+    )
+    .await?;
     Ok(tag_settings_from(&v))
 }
 
 /// Write them (`PUT …/tagSettings`, `if-match` the version), as Teams does.
-pub async fn set_tag_settings(client: &TeamsClient, team_thread: &str, s: &TagSettings) -> Result<()> {
+pub async fn set_tag_settings(
+    client: &TeamsClient,
+    team_thread: &str,
+    s: &TagSettings,
+) -> Result<()> {
     let body = serde_json::json!({ "onlyOwnersCanUpdate": s.only_owners, "disallowedSources": s.disallowed_sources });
-    csa_tag_request(client, reqwest::Method::PUT, &format!("v1/teams/{team_thread}/tagSettings"), Some(body), Some(s.version)).await?;
+    csa_tag_request(
+        client,
+        reqwest::Method::PUT,
+        &format!("v1/teams/{team_thread}/tagSettings"),
+        Some(body),
+        Some(s.version),
+    )
+    .await?;
     Ok(())
 }
 
@@ -789,7 +1001,10 @@ pub struct TagPerson {
 pub async fn tag_people(client: &TeamsClient, mris: &[String]) -> Vec<TagPerson> {
     let mut out = Vec::new();
     for mri in mris {
-        let mut p = TagPerson { mri: mri.clone(), ..Default::default() };
+        let mut p = TagPerson {
+            mri: mri.clone(),
+            ..Default::default()
+        };
         if let Some(oid) = mri.strip_prefix("8:orgid:")
             && uuid::Uuid::parse_str(oid).is_ok()
             && let Ok(resp) = client
@@ -819,16 +1034,37 @@ mod tag_tests {
         let v = serde_json::json!({"tagCards":[{"tagId":"tmu3aacUko","tagName":"OST test tag","memberIds":["8:orgid:4287e791-1b98-4963-8b94-281c50472683"],"memberCount":1,"tagType":"team","currentMemberIsPartOfTag":true,"scheduledMembers":[],"version":1}],"teamTagSettings":{"onlyOwnersCanUpdate":false,"tagCount":1,"disallowedSources":[],"enableAutomaticTags":null,"automaticTagsNeedsRefresh":true,"version":134},"continuationToken":""});
         let t = tag_cards_from(&v);
         assert_eq!(t.len(), 1);
-        assert_eq!((t[0].id.as_str(), t[0].count, t[0].mine, t[0].version), ("tmu3aacUko", 1, true, 1));
+        assert_eq!(
+            (t[0].id.as_str(), t[0].count, t[0].mine, t[0].version),
+            ("tmu3aacUko", 1, true, 1)
+        );
         assert!(tag_cards_from(&serde_json::json!([])).is_empty());
         let (a, b) = tag_members_body("tmu3aacUko", "OST test tag", &["8:orgid:x".into()], true);
-        assert_eq!((a, b.to_string().as_str()), ("add", r#"{"memberIds":["8:orgid:x"],"tagNames":["OST test tag"]}"#));
+        assert_eq!(
+            (a, b.to_string().as_str()),
+            (
+                "add",
+                r#"{"memberIds":["8:orgid:x"],"tagNames":["OST test tag"]}"#
+            )
+        );
         let (a, b) = tag_members_body("tmu3aacUko", "OST test tag", &["8:orgid:x".into()], false);
-        assert_eq!((a, b.to_string().as_str()), ("delete", r#"{"memberIds":["8:orgid:x"],"tagIds":["tmu3aacUko"]}"#));
+        assert_eq!(
+            (a, b.to_string().as_str()),
+            (
+                "delete",
+                r#"{"memberIds":["8:orgid:x"],"tagIds":["tmu3aacUko"]}"#
+            )
+        );
         assert_eq!(create_tag_body("19:t", " A ", "", &[])["tagName"], "A");
         // Teams' memberTags reply on the Members tab.
         let v = serde_json::json!([{"memberId":"8:orgid:4287e791-1b98-4963-8b94-281c50472683","tags":[{"tagName":"OST test tag","tagId":"tmu3aacUko"}],"version":0}]);
-        assert_eq!(member_tags_from(&v), vec![("8:orgid:4287e791-1b98-4963-8b94-281c50472683".to_string(), vec!["OST test tag".to_string()])]);
+        assert_eq!(
+            member_tags_from(&v),
+            vec![(
+                "8:orgid:4287e791-1b98-4963-8b94-281c50472683".to_string(),
+                vec!["OST test tag".to_string()]
+            )]
+        );
     }
 }
 
@@ -843,11 +1079,19 @@ mod list_tests {
         let tags = team_tags_from(&v);
         assert_eq!(
             tags,
-            vec![TeamTag { id: "tmu3aacUko".into(), name: "OST test tag".into(), count: 1, mine: true }]
+            vec![TeamTag {
+                id: "tmu3aacUko".into(),
+                name: "OST test tag".into(),
+                count: 1,
+                mine: true
+            }]
         );
         note_tags(&tags);
         // (Another id, as the messages tests use this one.)
-        let t = TeamTag { id: "listTestTag".into(), ..tags[0].clone() };
+        let t = TeamTag {
+            id: "listTestTag".into(),
+            ..tags[0].clone()
+        };
         note_tags(std::slice::from_ref(&t));
         assert!(is_my_tag("listTestTag") && !is_my_tag("other"));
         note_tags(&[TeamTag { mine: false, ..t }]);
@@ -891,15 +1135,27 @@ mod list_tests {
             {"id": "t3", "displayName": "Another", "channels": []}]);
         let mut t = list_teams_from(&v);
         apply_teams_order(&mut t, &Default::default());
-        assert_eq!(t.iter().map(|t| t.thread_id.as_str()).collect::<Vec<_>>(), vec!["t1", "t2", "t3"]);
-        let order = teams_order_from(&serde_json::json!({"preferences": [{"category": "teamsOrder", "value": "[{\"teamId\":\"t3\",\"order\":0}]"}]}));
+        assert_eq!(
+            t.iter().map(|t| t.thread_id.as_str()).collect::<Vec<_>>(),
+            vec!["t1", "t2", "t3"]
+        );
+        let order = teams_order_from(
+            &serde_json::json!({"preferences": [{"category": "teamsOrder", "value": "[{\"teamId\":\"t3\",\"order\":0}]"}]}),
+        );
         apply_teams_order(&mut t, &order);
-        assert_eq!(t.iter().map(|t| t.thread_id.as_str()).collect::<Vec<_>>(), vec!["t3", "t1", "t2"]);
+        assert_eq!(
+            t.iter().map(|t| t.thread_id.as_str()).collect::<Vec<_>>(),
+            vec!["t3", "t1", "t2"]
+        );
         assert!(teams_order_from(&serde_json::json!({})).is_empty());
         // What Teams writes when you move a team (and reads back).
         let body = teams_order_body(&["t2".into(), "t1".into()]);
-        let list: serde_json::Value = serde_json::from_str(body["teamsOrder"].as_str().unwrap()).unwrap();
-        assert_eq!(list, serde_json::json!([{"teamId": "t2", "order": 0}, {"teamId": "t1", "order": 1}]));
+        let list: serde_json::Value =
+            serde_json::from_str(body["teamsOrder"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            list,
+            serde_json::json!([{"teamId": "t2", "order": 0}, {"teamId": "t1", "order": 1}])
+        );
         let back = teams_order_from(&body);
         assert_eq!(back.get("t2"), Some(&0));
         assert_eq!(back.get("t1"), Some(&1));
@@ -915,8 +1171,17 @@ mod list_tests {
             {"id": "t2", "displayName": "Secure Coast", "memberRoleString": "User", "accessType": 3,
             "membershipSummary": {"botCount": 0, "adminRoleCount": 2, "userRoleCount": 2, "guestRoleCount": 1}, "channels": []}]);
         let t = list_teams_from(&v);
-        assert_eq!((t[0].people, t[0].role.as_str(), t[0].team_type), (1, "admin", 0));
-        assert_eq!((t[1].people, t[1].role.as_str(), t[1].public), (5, "user", true));
-        assert_eq!(people_count(&serde_json::json!({"botCount": 5, "adminRoleCount": 1})), 0);
+        assert_eq!(
+            (t[0].people, t[0].role.as_str(), t[0].team_type),
+            (1, "admin", 0)
+        );
+        assert_eq!(
+            (t[1].people, t[1].role.as_str(), t[1].public),
+            (5, "user", true)
+        );
+        assert_eq!(
+            people_count(&serde_json::json!({"botCount": 5, "adminRoleCount": 1})),
+            0
+        );
     }
 }

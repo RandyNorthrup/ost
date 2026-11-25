@@ -41,6 +41,13 @@ async fn main() -> anyhow::Result<()> {
     let resp = client
         .chat_request_with(reqwest::Method::POST, &url, &body, &headers)
         .await?;
-    println!("{} {}", resp.status(), resp.headers().get("location").and_then(|v| v.to_str().ok()).unwrap_or_default());
+    println!(
+        "{} {}",
+        resp.status(),
+        resp.headers()
+            .get("location")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+    );
     Ok(())
 }

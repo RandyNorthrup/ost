@@ -43,8 +43,15 @@ use super::client::TeamsClient;
 /// A command's contexts (none listed: compose and the command box).
 fn contexts(cmd: &Value) -> Vec<String> {
     // An empty list is the default too (1st Reporting's `context: []`).
-    match cmd.get("context").and_then(Value::as_array).filter(|a| !a.is_empty()) {
-        Some(a) => a.iter().filter_map(|x| x.as_str().map(|s| s.to_lowercase())).collect(),
+    match cmd
+        .get("context")
+        .and_then(Value::as_array)
+        .filter(|a| !a.is_empty())
+    {
+        Some(a) => a
+            .iter()
+            .filter_map(|x| x.as_str().map(|s| s.to_lowercase()))
+            .collect(),
         None => vec!["compose".into(), "commandbox".into()],
     }
 }
@@ -98,9 +105,17 @@ pub fn compose_entry(def: &Value) -> Option<Value> {
 pub fn sort_recent(apps: &mut [Value], mru: &[String]) {
     let pos = |a: &Value| {
         let id = a.get("id").and_then(Value::as_str).unwrap_or_default();
-        mru.iter().position(|m| m.eq_ignore_ascii_case(id)).unwrap_or(usize::MAX)
+        mru.iter()
+            .position(|m| m.eq_ignore_ascii_case(id))
+            .unwrap_or(usize::MAX)
     };
-    let name = |a: &Value| a.get("name").and_then(Value::as_str).unwrap_or_default().encode_utf16().collect::<Vec<u16>>();
+    let name = |a: &Value| {
+        a.get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .encode_utf16()
+            .collect::<Vec<u16>>()
+    };
     apps.sort_by(|a, b| pos(a).cmp(&pos(b)).then_with(|| name(a).cmp(&name(b))));
 }
 
@@ -114,7 +129,10 @@ async fn usable_ids(client: &TeamsClient, conversation: &str) -> Result<Vec<Stri
         .map(|(id, _)| id.to_lowercase())
         .collect();
     if conversation.ends_with("@thread.v2") || conversation.ends_with("@unq.gbl.spaces") {
-        for (id, st) in super::store_content::chat_apps(client, conversation).await.unwrap_or_default() {
+        for (id, st) in super::store_content::chat_apps(client, conversation)
+            .await
+            .unwrap_or_default()
+        {
             if super::link_unfurl::installed_state(&st) && !ids.contains(&id.to_lowercase()) {
                 ids.push(id.to_lowercase());
             }
@@ -130,7 +148,9 @@ pub async fn installed(client: &TeamsClient, conversation: &str) -> Result<Vec<V
     let ids = usable_ids(client, conversation).await?;
     let mut out = Vec::new();
     for chunk in ids.chunks(40) {
-        let defs = super::app_details::definitions(client, chunk).await.unwrap_or_default();
+        let defs = super::app_details::definitions(client, chunk)
+            .await
+            .unwrap_or_default();
         out.extend(defs.iter().filter_map(compose_entry));
     }
     let mru = super::tab_add::apps_usage(client).await;
@@ -149,11 +169,18 @@ const SUGGESTED: usize = 10;
 pub async fn suggested(client: &TeamsClient, conversation: &str) -> Result<Vec<Value>> {
     let catalog = super::app_details::catalog(client).await?;
     let have = usable_ids(client, conversation).await.unwrap_or_default();
-    let ranked = super::store_content::ranked(client, &["all".to_string()]).await.unwrap_or_default();
-    let by_id: std::collections::HashMap<String, &super::store_content::Ranked> =
-        ranked.values().flatten().map(|r| (r.id.to_lowercase(), r)).collect();
+    let ranked = super::store_content::ranked(client, &["all".to_string()])
+        .await
+        .unwrap_or_default();
+    let by_id: std::collections::HashMap<String, &super::store_content::Ranked> = ranked
+        .values()
+        .flatten()
+        .map(|r| (r.id.to_lowercase(), r))
+        .collect();
     // Every rated app's rating (the Store's ranked lists don't name them all).
-    let ratings = super::app_details::all_ratings(client).await.unwrap_or_default();
+    let ratings = super::app_details::all_ratings(client)
+        .await
+        .unwrap_or_default();
     let mut apps: Vec<(Vec<u16>, Value)> = catalog
         .iter()
         .filter(|d| {
@@ -192,11 +219,32 @@ pub async fn suggested(client: &TeamsClient, conversation: &str) -> Result<Vec<V
 pub async fn record_usage(client: &TeamsClient, app_id: &str) -> Result<()> {
     let (base, token) = super::tabs::middle_tier(client).await?;
     let url = format!("{base}/beta/users/apps/usage");
-    let v: Value = client.http().get(&url).bearer_auth(&token).send().await?.error_for_status()?.json().await?;
-    let mut usage = v.get("value").filter(|x| x.is_object()).cloned().unwrap_or_else(|| json!({}));
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+    let v: Value = client
+        .http()
+        .get(&url)
+        .bearer_auth(&token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let mut usage = v
+        .get("value")
+        .filter(|x| x.is_object())
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let now = chrono::Utc::now()
+        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string();
     bump_usage(&mut usage, app_id, &now);
-    client.http().post(&url).bearer_auth(&token).json(&usage).send().await?.error_for_status()?;
+    client
+        .http()
+        .post(&url)
+        .bearer_auth(&token)
+        .json(&usage)
+        .send()
+        .await?
+        .error_for_status()?;
     Ok(())
 }
 
@@ -207,9 +255,18 @@ pub fn bump_usage(usage: &mut Value, app_id: &str, now: &str) {
     if !usage.is_object() {
         *usage = json!({});
     }
-    let list = |u: &mut Value, k: &str| -> Vec<Value> { u.get(k).and_then(Value::as_array).cloned().unwrap_or_default() };
+    let list = |u: &mut Value, k: &str| -> Vec<Value> {
+        u.get(k)
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+    };
     let mut mru = list(usage, "appsMru");
-    mru.retain(|e| !e.get("appId").and_then(Value::as_str).is_some_and(|a| a.eq_ignore_ascii_case(app_id)));
+    mru.retain(|e| {
+        !e.get("appId")
+            .and_then(Value::as_str)
+            .is_some_and(|a| a.eq_ignore_ascii_case(app_id))
+    });
     mru.insert(0, json!({ "appId": app_id, "lastUsedTimeStamp": now }));
     mru.truncate(150);
     let mut apps = list(usage, "apps");
@@ -231,7 +288,14 @@ fn plain_bot(bot: &str) -> bool {
 }
 
 /// The invoke body Teams sends for a compose action.
-pub fn invoke_body(name: &str, app_id: &str, value: Value, conversation: &str, display_name: &str, aad_token: &str) -> Value {
+pub fn invoke_body(
+    name: &str,
+    app_id: &str,
+    value: Value,
+    conversation: &str,
+    display_name: &str,
+    aad_token: &str,
+) -> Value {
     json!({
         "name": name,
         "appId": app_id,
@@ -245,13 +309,24 @@ pub fn invoke_body(name: &str, app_id: &str, value: Value, conversation: &str, d
 /// The value of each compose invoke, as Teams sends it.
 pub fn value_for(kind: &str, command: &str, args: &Value) -> Value {
     match kind {
-        "fetchTask" => json!({ "commandId": command, "commandContext": "compose", "context": { "theme": "default" } }),
-        "submitAction" => json!({ "commandId": command, "commandContext": "compose", "context": { "theme": "default" }, "data": args.get("data").cloned().unwrap_or(Value::Null) }),
+        "fetchTask" => {
+            json!({ "commandId": command, "commandContext": "compose", "context": { "theme": "default" } })
+        }
+        "submitAction" => {
+            json!({ "commandId": command, "commandContext": "compose", "context": { "theme": "default" }, "data": args.get("data").cloned().unwrap_or(Value::Null) })
+        }
         "query" => {
             let text = args.get("text").and_then(Value::as_str).unwrap_or_default();
-            let param = args.get("parameter").and_then(Value::as_str).unwrap_or("query");
+            let param = args
+                .get("parameter")
+                .and_then(Value::as_str)
+                .unwrap_or("query");
             let skip = args.get("skip").and_then(Value::as_u64).unwrap_or(0);
-            let parameters = if text.is_empty() { json!([{ "name": "initialRun", "value": "true" }]) } else { json!([{ "name": param, "value": text }]) };
+            let parameters = if text.is_empty() {
+                json!([{ "name": "initialRun", "value": "true" }])
+            } else {
+                json!([{ "name": param, "value": text }])
+            };
             json!({ "commandId": command, "parameters": parameters, "queryOptions": { "count": 25, "skip": skip } })
         }
         _ => json!({ "commandContext": "Compose" }),
@@ -259,20 +334,55 @@ pub fn value_for(kind: &str, command: &str, args: &Value) -> Value {
 }
 
 /// Ask the app's bot (fetchTask, submitAction, query or fetchCommands).
-pub async fn invoke(client: &TeamsClient, bot: &str, app_id: &str, kind: &str, command: &str, args: &Value, conversation: &str) -> Result<Value> {
+pub async fn invoke(
+    client: &TeamsClient,
+    bot: &str,
+    app_id: &str,
+    kind: &str,
+    command: &str,
+    args: &Value,
+    conversation: &str,
+) -> Result<Value> {
     anyhow::ensure!(plain_bot(bot), "Not an app");
-    anyhow::ensure!(matches!(kind, "fetchTask" | "submitAction" | "query" | "fetchCommands"), "Not a compose action");
-    let token = crate::auth::oauth::access_token_for("https://api.spaces.skype.com/.default").await.unwrap_or_default();
+    anyhow::ensure!(
+        matches!(
+            kind,
+            "fetchTask" | "submitAction" | "query" | "fetchCommands"
+        ),
+        "Not a compose action"
+    );
+    let token = crate::auth::oauth::access_token_for("https://api.spaces.skype.com/.default")
+        .await
+        .unwrap_or_default();
     let display = client.display_name().unwrap_or_default();
     let endpoint = format!("{}/v1/agents/28:{}/invoke", client.chat_service_url(), bot);
-    let body = invoke_body(&format!("composeExtension/{kind}"), app_id, value_for(kind, command, args), conversation, &display, &token);
+    let body = invoke_body(
+        &format!("composeExtension/{kind}"),
+        app_id,
+        value_for(kind, command, args),
+        conversation,
+        &display,
+        &token,
+    );
     let resp = client
-        .chat_request_with(reqwest::Method::POST, &endpoint, &body, &[("content-type", "application/json")])
+        .chat_request_with(
+            reqwest::Method::POST,
+            &endpoint,
+            &body,
+            &[("content-type", "application/json")],
+        )
         .await
         .context("Unable to reach app. Please try again.")?;
     let text = resp.text().await.unwrap_or_default();
     let reply: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
-    tracing::info!("compose app {kind}: answered {}", if reply.get("errorCode").is_some() { "an error" } else { "ok" });
+    tracing::info!(
+        "compose app {kind}: answered {}",
+        if reply.get("errorCode").is_some() {
+            "an error"
+        } else {
+            "ok"
+        }
+    );
     Ok(reply)
 }
 
@@ -284,19 +394,50 @@ mod tests {
     fn an_empty_context_is_compose() {
         // 1st Reporting's search command lists `context: []`.
         let def = json!({ "id": "a", "name": "1st Reporting ", "inputExtensions": [{ "botId": "b-1", "commands": [{ "id": "findReport", "context": [], "title": "Find" }] }] });
-        assert_eq!(compose_entry(&def).unwrap()["commands"][0]["id"], "findReport");
+        assert_eq!(
+            compose_entry(&def).unwrap()["commands"][0]["id"],
+            "findReport"
+        );
     }
 
     #[test]
     fn recent_apps_in_teams_order() {
-        let mut apps = vec![json!({"id": "p", "name": "Polly"}), json!({"id": "c", "name": "Clipchamp"}), json!({"id": "w", "name": "Workflows"}), json!({"id": "v", "name": "Viva Learning"}), json!({"id": "b", "name": "Power BI"})];
+        let mut apps = vec![
+            json!({"id": "p", "name": "Polly"}),
+            json!({"id": "c", "name": "Clipchamp"}),
+            json!({"id": "w", "name": "Workflows"}),
+            json!({"id": "v", "name": "Viva Learning"}),
+            json!({"id": "b", "name": "Power BI"}),
+        ];
         // never used: by name
         sort_recent(&mut apps, &[]);
-        let names = |a: &[Value]| a.iter().map(|x| x["name"].as_str().unwrap().to_string()).collect::<Vec<_>>();
-        assert_eq!(names(&apps), ["Clipchamp", "Polly", "Power BI", "Viva Learning", "Workflows"]);
+        let names = |a: &[Value]| {
+            a.iter()
+                .map(|x| x["name"].as_str().unwrap().to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            names(&apps),
+            [
+                "Clipchamp",
+                "Polly",
+                "Power BI",
+                "Viva Learning",
+                "Workflows"
+            ]
+        );
         // used ones first, newest first
         sort_recent(&mut apps, &["W".into(), "p".into()]);
-        assert_eq!(names(&apps), ["Workflows", "Polly", "Clipchamp", "Power BI", "Viva Learning"]);
+        assert_eq!(
+            names(&apps),
+            [
+                "Workflows",
+                "Polly",
+                "Clipchamp",
+                "Power BI",
+                "Viva Learning"
+            ]
+        );
     }
 
     #[test]
@@ -304,7 +445,10 @@ mod tests {
         let mut u = json!({"apps": ["a", "b"], "appsMru": [{"appId": "a", "lastUsedTimeStamp": "t1"}, {"appId": "b", "lastUsedTimeStamp": "t0"}], "appActions": [], "appCommands": [], "appScenes": []});
         bump_usage(&mut u, "B", "t2");
         assert_eq!(u["apps"], json!(["B", "a"]));
-        assert_eq!(u["appsMru"][0], json!({"appId": "B", "lastUsedTimeStamp": "t2"}));
+        assert_eq!(
+            u["appsMru"][0],
+            json!({"appId": "B", "lastUsedTimeStamp": "t2"})
+        );
         assert_eq!(u["appsMru"].as_array().unwrap().len(), 2);
         let mut empty = Value::Null;
         bump_usage(&mut empty, "x", "t");
@@ -318,7 +462,12 @@ mod tests {
                           { "id": "msg", "type": "action", "context": ["message"] },
                           { "id": "search", "type": "query" } ] }] });
         let e = compose_entry(&def).unwrap();
-        let ids: Vec<&str> = e["commands"].as_array().unwrap().iter().map(|c| c["id"].as_str().unwrap()).collect();
+        let ids: Vec<&str> = e["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["id"].as_str().unwrap())
+            .collect();
         assert_eq!(ids, ["collectFormData", "search"]);
         assert_eq!(e["botId"], "b-1");
         assert!(compose_entry(&json!({ "id": "x", "inputExtensions": [{ "botId": "b", "commands": [{ "id": "m", "context": ["message"] }] }] })).is_none());
@@ -327,11 +476,34 @@ mod tests {
     #[test]
     fn asks_as_teams() {
         // Captured 2026-11-20 (Polls, Power BI).
-        assert_eq!(value_for("fetchTask", "collectFormData", &json!({})), json!({"commandId":"collectFormData","commandContext":"compose","context":{"theme":"default"}}));
-        assert_eq!(value_for("query", "search", &json!({})), json!({"commandId":"search","parameters":[{"name":"initialRun","value":"true"}],"queryOptions":{"count":25,"skip":0}}));
-        assert_eq!(value_for("query", "search", &json!({"text": "q", "parameter": "searchQuery"}))["parameters"], json!([{"name":"searchQuery","value":"q"}]));
-        assert_eq!(value_for("fetchCommands", "", &json!({})), json!({"commandContext":"Compose"}));
-        let b = invoke_body("composeExtension/fetchTask", "app", json!({}), "19:x@thread.v2", "OST Test 1", "t");
+        assert_eq!(
+            value_for("fetchTask", "collectFormData", &json!({})),
+            json!({"commandId":"collectFormData","commandContext":"compose","context":{"theme":"default"}})
+        );
+        assert_eq!(
+            value_for("query", "search", &json!({})),
+            json!({"commandId":"search","parameters":[{"name":"initialRun","value":"true"}],"queryOptions":{"count":25,"skip":0}})
+        );
+        assert_eq!(
+            value_for(
+                "query",
+                "search",
+                &json!({"text": "q", "parameter": "searchQuery"})
+            )["parameters"],
+            json!([{"name":"searchQuery","value":"q"}])
+        );
+        assert_eq!(
+            value_for("fetchCommands", "", &json!({})),
+            json!({"commandContext":"Compose"})
+        );
+        let b = invoke_body(
+            "composeExtension/fetchTask",
+            "app",
+            json!({}),
+            "19:x@thread.v2",
+            "OST Test 1",
+            "t",
+        );
         assert_eq!(b["conversation"]["id"], "19:x@thread.v2");
     }
 }

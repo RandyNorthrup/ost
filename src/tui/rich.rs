@@ -38,7 +38,10 @@ pub struct RichLine {
 
 impl RichLine {
     fn new(kind: Kind) -> Self {
-        Self { kind, spans: Vec::new() }
+        Self {
+            kind,
+            spans: Vec::new(),
+        }
     }
 
     /// The line's text, styles dropped.
@@ -57,19 +60,46 @@ pub fn message_lines(html: &str, flow: &[FlowPart], files: &[String]) -> Vec<Ric
         for part in flow {
             if let Some(code) = &part.code {
                 for l in code.text.trim_end_matches('\n').split('\n') {
-                    out.push(RichLine { kind: Kind::Code, spans: vec![(l.to_string(), Fmt { code: true, ..Fmt::default() })] });
+                    out.push(RichLine {
+                        kind: Kind::Code,
+                        spans: vec![(
+                            l.to_string(),
+                            Fmt {
+                                code: true,
+                                ..Fmt::default()
+                            },
+                        )],
+                    });
                 }
             } else if let Some(q) = &part.quote {
                 out.extend(from_html(q, true));
             } else if part.pic.is_some() {
-                out.push(RichLine { kind: Kind::Text, spans: vec![("[Image]".into(), Fmt { media: true, ..Fmt::default() })] });
+                out.push(RichLine {
+                    kind: Kind::Text,
+                    spans: vec![(
+                        "[Image]".into(),
+                        Fmt {
+                            media: true,
+                            ..Fmt::default()
+                        },
+                    )],
+                });
             } else if !part.html.is_empty() {
                 out.extend(from_html(&part.html, false));
             }
         }
     }
     for f in files {
-        out.push(RichLine { kind: Kind::Text, spans: vec![(format!("[file] {f}"), Fmt { media: true, ..Fmt::default() })] });
+        out.push(RichLine {
+            kind: Kind::Text,
+            spans: vec![(
+                format!("[file] {f}"),
+                Fmt {
+                    media: true,
+                    ..Fmt::default()
+                },
+            )],
+        });
     }
     // No blank lines at the ends, and never two in a row.
     let blank = |l: &RichLine| l.text().trim().is_empty() && l.kind != Kind::Code;
@@ -106,7 +136,9 @@ fn decode(s: &str) -> String {
             "amp" => Some('&'),
             "quot" => Some('"'),
             "apos" | "#39" => Some('\''),
-            n if n.starts_with("#x") || n.starts_with("#X") => u32::from_str_radix(&n[2..], 16).ok().and_then(char::from_u32),
+            n if n.starts_with("#x") || n.starts_with("#X") => u32::from_str_radix(&n[2..], 16)
+                .ok()
+                .and_then(char::from_u32),
             n if n.starts_with('#') => n[1..].parse().ok().and_then(char::from_u32),
             _ => None,
         };
@@ -140,7 +172,10 @@ pub fn from_html(html: &str, quote: bool) -> Vec<RichLine> {
         /// Open lists: None for bullets, Some(n) for the next number.
         lists: Vec<Option<u32>>,
     }
-    let mut st = State { quote: u32::from(quote), ..State::default() };
+    let mut st = State {
+        quote: u32::from(quote),
+        ..State::default()
+    };
     let mut lines: Vec<RichLine> = Vec::new();
     let mut cur: Option<RichLine> = None;
     let kind_now = |st: &State| {
@@ -182,12 +217,18 @@ pub fn from_html(html: &str, quote: bool) -> Vec<RichLine> {
     let bytes = html.as_bytes();
     while i < html.len() {
         if bytes[i] == b'<' {
-            let Some(end) = html[i..].find('>').map(|e| i + e) else { break };
+            let Some(end) = html[i..].find('>').map(|e| i + e) else {
+                break;
+            };
             let raw = &html[i + 1..end];
             i = end + 1;
             let closing = raw.starts_with('/');
             let body = raw.trim_start_matches('/').trim_end_matches('/');
-            let name = body.split(|c: char| c.is_whitespace()).next().unwrap_or_default().to_ascii_lowercase();
+            let name = body
+                .split(|c: char| c.is_whitespace())
+                .next()
+                .unwrap_or_default()
+                .to_ascii_lowercase();
             let attrs = &body[name.len().min(body.len())..];
             let delta = |n: &mut u32| {
                 if closing {
@@ -210,12 +251,27 @@ pub fn from_html(html: &str, quote: bool) -> Vec<RichLine> {
                     cur = Some(RichLine::new(k));
                 }
                 "img" if !closing => {
-                    let alt = attrs.split("alt=\"").nth(1).and_then(|a| a.split('"').next()).unwrap_or_default();
+                    let alt = attrs
+                        .split("alt=\"")
+                        .nth(1)
+                        .and_then(|a| a.split('"').next())
+                        .unwrap_or_default();
                     // Emoticons are pictures with their emoji as alt text.
-                    let emoji = attrs.contains("itemtype=\"http://schema.skype.com/Emoji\"") || attrs.contains("class=\"emoji\"");
-                    let (text, media) = if emoji && !alt.is_empty() { (decode(alt), false) } else { ("[Image]".to_string(), true) };
+                    let emoji = attrs.contains("itemtype=\"http://schema.skype.com/Emoji\"")
+                        || attrs.contains("class=\"emoji\"");
+                    let (text, media) = if emoji && !alt.is_empty() {
+                        (decode(alt), false)
+                    } else {
+                        ("[Image]".to_string(), true)
+                    };
                     let line = cur.get_or_insert_with(|| RichLine::new(kind_now(&st)));
-                    line.spans.push((text, Fmt { media, ..Fmt::default() }));
+                    line.spans.push((
+                        text,
+                        Fmt {
+                            media,
+                            ..Fmt::default()
+                        },
+                    ));
                 }
                 "blockquote" => {
                     flush(&mut cur, &mut lines);
@@ -227,7 +283,11 @@ pub fn from_html(html: &str, quote: bool) -> Vec<RichLine> {
                 }
                 "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
                     flush(&mut cur, &mut lines);
-                    st.heading = if closing { 0 } else { name[1..].parse().unwrap_or(1) };
+                    st.heading = if closing {
+                        0
+                    } else {
+                        name[1..].parse().unwrap_or(1)
+                    };
                 }
                 "ul" | "ol" => {
                     flush(&mut cur, &mut lines);
@@ -249,7 +309,10 @@ pub fn from_html(html: &str, quote: bool) -> Vec<RichLine> {
                             }
                             _ => "• ".to_string(),
                         };
-                        cur = Some(RichLine::new(Kind::Item(format!("{}{bullet}", "  ".repeat(depth)))));
+                        cur = Some(RichLine::new(Kind::Item(format!(
+                            "{}{bullet}",
+                            "  ".repeat(depth)
+                        ))));
                     }
                 }
                 "p" | "div" | "tr" | "table" => flush(&mut cur, &mut lines),
@@ -274,7 +337,9 @@ pub fn from_html(html: &str, quote: bool) -> Vec<RichLine> {
             let text: String = decode(&raw.replace(['\r', '\n', '\t'], " "));
             // Collapse runs of spaces (non-breaking ones stay).
             let mut collapsed = String::with_capacity(text.len());
-            let mut prev_space = cur.as_ref().is_none_or(|l| l.text().ends_with(' ') || l.spans.is_empty());
+            let mut prev_space = cur
+                .as_ref()
+                .is_none_or(|l| l.text().ends_with(' ') || l.spans.is_empty());
             for c in text.chars() {
                 if c == ' ' {
                     if prev_space {
@@ -300,7 +365,10 @@ mod tests {
     use super::*;
 
     fn kinds(lines: &[RichLine]) -> Vec<(Kind, String)> {
-        lines.iter().map(|l| (l.kind.clone(), l.text().trim().to_string())).collect()
+        lines
+            .iter()
+            .map(|l| (l.kind.clone(), l.text().trim().to_string()))
+            .collect()
     }
 
     #[test]
@@ -324,16 +392,35 @@ mod tests {
         );
         let first = &lines[0].spans;
         let style = |t: &str| first.iter().find(|(s, _)| s.contains(t)).unwrap().1;
-        assert!(style("bold").bold && style("it").italic && style("un").underline && style("st").strike && style("inline").code);
+        assert!(
+            style("bold").bold
+                && style("it").italic
+                && style("un").underline
+                && style("st").strike
+                && style("inline").code
+        );
         assert!(!style("OST").bold);
     }
 
     #[test]
     fn code_blocks_pictures_and_files_from_the_flow() {
         let flow = vec![
-            FlowPart { html: "<p>OST TEST 87 code block (Rust)</p>".into(), ..FlowPart::default() },
-            FlowPart { code: Some(crate::api::messages::CodeBlock { lang: "rust".into(), name: "Rust".into(), text: "fn main() {\n    let n = 1;\n}".into() }), ..FlowPart::default() },
-            FlowPart { pic: Some(0), ..FlowPart::default() },
+            FlowPart {
+                html: "<p>OST TEST 87 code block (Rust)</p>".into(),
+                ..FlowPart::default()
+            },
+            FlowPart {
+                code: Some(crate::api::messages::CodeBlock {
+                    lang: "rust".into(),
+                    name: "Rust".into(),
+                    text: "fn main() {\n    let n = 1;\n}".into(),
+                }),
+                ..FlowPart::default()
+            },
+            FlowPart {
+                pic: Some(0),
+                ..FlowPart::default()
+            },
         ];
         let lines = message_lines("", &flow, &["notes.pdf".to_string()]);
         assert_eq!(
@@ -347,6 +434,10 @@ mod tests {
                 (Kind::Text, "[file] notes.pdf".into()),
             ]
         );
-        assert_eq!(lines[2].text(), "    let n = 1;", "code keeps its indentation");
+        assert_eq!(
+            lines[2].text(),
+            "    let n = 1;",
+            "code keeps its indentation"
+        );
     }
 }

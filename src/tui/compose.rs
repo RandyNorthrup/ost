@@ -332,7 +332,14 @@ mod tests {
         let row: String = (0..60).map(|x| buf[(x, 0)].symbol().to_string()).collect();
         assert!(row.contains("Enter \u{27A4}"), "{row}");
         assert!(row.contains("Ctrl+Enter: new line"), "{row}");
-        for gone in ["\u{1D401}", "\u{1F517}", "\u{1F4CE}", "\u{1F60A}", "\u{1F4F7}", "\u{1F3A4}"] {
+        for gone in [
+            "\u{1D401}",
+            "\u{1F517}",
+            "\u{1F4CE}",
+            "\u{1F60A}",
+            "\u{1F4F7}",
+            "\u{1F3A4}",
+        ] {
             assert!(!row.contains(gone), "{gone} is not wired up: {row}");
         }
         // Narrow: just the send arrow.

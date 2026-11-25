@@ -189,7 +189,9 @@ pub async fn all_properties(client: &TeamsClient) -> Result<serde_json::Value> {
         Ok(r) => r,
         // An account that never saved a property has none yet (404,
         // "UserProperties not found"): every setting is at its default.
-        Err(e) if format!("{e:#}").contains("UserProperties not found") => return Ok(serde_json::json!({})),
+        Err(e) if format!("{e:#}").contains("UserProperties not found") => {
+            return Ok(serde_json::json!({}));
+        }
         Err(e) => return Err(e),
     };
     let v: serde_json::Value = resp.json().await.context("User properties reply")?;
@@ -213,24 +215,42 @@ pub fn parsed_properties(v: &serde_json::Value) -> serde_json::Value {
 /// Change a setting kept in a user property: for a JSON one, `value` is a
 /// patch merged into what is saved; for a plain one, the string itself.
 /// Returns the property's new value.
-pub async fn set_property(client: &TeamsClient, name: &str, value: &serde_json::Value) -> Result<serde_json::Value> {
+pub async fn set_property(
+    client: &TeamsClient,
+    name: &str,
+    value: &serde_json::Value,
+) -> Result<serde_json::Value> {
     let saved = if JSON_PROPERTIES.contains(&name) {
         if name == CALL_ACCESSIBILITY {
             return update_call_accessibility_settings(client, value).await;
         }
         let all = all_properties(client).await?;
-        let base = all.get(name).cloned().filter(|b| b.is_object()).unwrap_or_else(|| serde_json::json!({}));
+        let base = all
+            .get(name)
+            .cloned()
+            .filter(|b| b.is_object())
+            .unwrap_or_else(|| serde_json::json!({}));
         let next = merged(base, value);
         (next.to_string(), next)
     } else if PLAIN_PROPERTIES.contains(&name) {
-        let s = value.as_str().map(str::to_string).unwrap_or_else(|| value.to_string());
+        let s = value
+            .as_str()
+            .map(str::to_string)
+            .unwrap_or_else(|| value.to_string());
         (s.clone(), serde_json::Value::String(s))
     } else {
         anyhow::bail!("Not a setting: {name}");
     };
-    let url = format!("{}/v1/users/ME/properties?name={name}", client.chat_service_url());
+    let url = format!(
+        "{}/v1/users/ME/properties?name={name}",
+        client.chat_service_url()
+    );
     client
-        .chat_request(reqwest::Method::PUT, &url, &serde_json::json!({ name: saved.0 }))
+        .chat_request(
+            reqwest::Method::PUT,
+            &url,
+            &serde_json::json!({ name: saved.0 }),
+        )
         .await?;
     Ok(saved.1)
 }
@@ -247,7 +267,10 @@ pub async fn middle_tier_settings(client: &TeamsClient) -> Result<serde_json::Va
     let mt = client.middle_tier_url().context("No middle-tier address")?;
     let token = super::directory::middle_tier_token().await?;
     let get = |path: String| {
-        let req = client.http().get(format!("{mt}/{path}")).bearer_auth(token.clone());
+        let req = client
+            .http()
+            .get(format!("{mt}/{path}"))
+            .bearer_auth(token.clone());
         async move {
             let r = req.send().await.ok()?;
             if !r.status().is_success() {
@@ -258,13 +281,21 @@ pub async fn middle_tier_settings(client: &TeamsClient) -> Result<serde_json::Va
     };
     let blocked = get("beta/usersettings/blockedCallers".into()).await;
     let transcript = match (client.tenant_id(), client.object_id()) {
-        (Some(t), Some(o)) => get(format!("beta/users/getUserTranscriptMeetingSettings/tenant/{t}/user/{o}")).await,
+        (Some(t), Some(o)) => {
+            get(format!(
+                "beta/users/getUserTranscriptMeetingSettings/tenant/{t}/user/{o}"
+            ))
+            .await
+        }
         _ => None,
     };
     // End-to-end encrypted calls: your choice (a bare JSON boolean) and
     // whether the tenant lets you choose.
     let e2ee = get(E2EE_SETTING_PATH.into()).await;
-    let e2ee_policy = super::custom_emoji::effective_policies(client, &["teamsEnhancedEncryptionPolicy"]).await.ok();
+    let e2ee_policy =
+        super::custom_emoji::effective_policies(client, &["teamsEnhancedEncryptionPolicy"])
+            .await
+            .ok();
     Ok(serde_json::json!({
         "blockAnonymousCaller": blocked.as_ref().and_then(|b| b["blockAnonymousCaller"].as_bool()).unwrap_or(false),
         "enableSpeakerAttribution": transcript.as_ref().and_then(|t| t.pointer("/attributionSettings/enableSpeakerAttribution")?.as_bool()).unwrap_or(true),
@@ -297,13 +328,20 @@ pub fn e2ee_calls_allowed(policies: &serde_json::Value) -> bool {
 /// Enterprise Voice user (`voiceAdminSettings.isEvEnabled`, which needs a
 /// Teams Phone licence).
 pub fn call_park_allowed(policies: &serde_json::Value, voice_admin: &serde_json::Value) -> bool {
-    policies.pointer("/teamsCallParkPolicy/value/allowCallPark").and_then(serde_json::Value::as_bool) == Some(true)
-        && voice_admin.pointer("/voiceAdminSettings/value/isEvEnabled").and_then(serde_json::Value::as_bool) == Some(true)
+    policies
+        .pointer("/teamsCallParkPolicy/value/allowCallPark")
+        .and_then(serde_json::Value::as_bool)
+        == Some(true)
+        && voice_admin
+            .pointer("/voiceAdminSettings/value/isEvEnabled")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
 }
 
 /// [`call_park_allowed`] for you, read from the middle tier.
 pub async fn call_park_available(client: &TeamsClient) -> Result<bool> {
-    let policies = super::custom_emoji::effective_policies(client, &["teamsCallParkPolicy"]).await?;
+    let policies =
+        super::custom_emoji::effective_policies(client, &["teamsCallParkPolicy"]).await?;
     let mt = client.middle_tier_url().context("No middle-tier address")?;
     let token = super::directory::middle_tier_token().await?;
     let resp = client
@@ -315,7 +353,10 @@ pub async fn call_park_available(client: &TeamsClient) -> Result<bool> {
         .await
         .context("Voice admin settings request")?;
     if !resp.status().is_success() {
-        anyhow::bail!("HTTP {} reading voice admin settings", resp.status().as_u16());
+        anyhow::bail!(
+            "HTTP {} reading voice admin settings",
+            resp.status().as_u16()
+        );
     }
     let voice: serde_json::Value = resp.json().await.unwrap_or_default();
     Ok(call_park_allowed(&policies, &voice))
@@ -325,11 +366,22 @@ pub async fn call_park_available(client: &TeamsClient) -> Result<bool> {
 pub async fn e2ee_calls_enabled(client: &TeamsClient) -> Result<bool> {
     let mt = client.middle_tier_url().context("No middle-tier address")?;
     let token = super::directory::middle_tier_token().await?;
-    let resp = client.http().get(format!("{mt}/{E2EE_SETTING_PATH}")).bearer_auth(token).send().await.context("E2EE setting")?;
+    let resp = client
+        .http()
+        .get(format!("{mt}/{E2EE_SETTING_PATH}"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .context("E2EE setting")?;
     if !resp.status().is_success() {
         anyhow::bail!("HTTP {} reading the E2EE setting", resp.status().as_u16());
     }
-    Ok(resp.json::<serde_json::Value>().await.ok().and_then(|v| v.as_bool()).unwrap_or(false))
+    Ok(resp
+        .json::<serde_json::Value>()
+        .await
+        .ok()
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false))
 }
 
 /// Your calling settings, as Settings ▸ Calls reads them (`GET {mt}/beta/
@@ -340,7 +392,9 @@ pub async fn voice_settings(client: &TeamsClient) -> Result<serde_json::Value> {
     let oid = client.object_id().context("No user id")?;
     let resp = client
         .http()
-        .get(format!("{mt}/beta/usersettings/8:orgid:{oid}/voicesettings"))
+        .get(format!(
+            "{mt}/beta/usersettings/8:orgid:{oid}/voicesettings"
+        ))
         .bearer_auth(token)
         .send()
         .await
@@ -367,7 +421,10 @@ pub async fn voice_admin_settings(client: &TeamsClient) -> Result<serde_json::Va
         .await
         .context("Voice admin settings request")?;
     if !resp.status().is_success() {
-        anyhow::bail!("HTTP {} reading voice admin settings", resp.status().as_u16());
+        anyhow::bail!(
+            "HTTP {} reading voice admin settings",
+            resp.status().as_u16()
+        );
     }
     let v: serde_json::Value = resp.json().await.context("Voice admin settings reply")?;
     Ok(v["voiceAdminSettings"]["value"].clone())
@@ -402,7 +459,13 @@ pub fn voicemail_transfer_target(mri: &str, object_id: &str, tenant_id: &str) ->
     } else {
         "ApplicationEndpoint"
     };
-    let opt = |s: &str| if has_oid { serde_json::Value::from(s) } else { serde_json::Value::Null };
+    let opt = |s: &str| {
+        if has_oid {
+            serde_json::Value::from(s)
+        } else {
+            serde_json::Value::Null
+        }
+    };
     serde_json::json!({
         "objectId": opt(object_id),
         "tenantId": opt(tenant_id),
@@ -415,7 +478,13 @@ pub fn voicemail_transfer_target(mri: &str, object_id: &str, tenant_id: &str) ->
 
 /// The MRI Teams shows for a saved transfer target.
 pub fn voicemail_target_mri(target: &serde_json::Value) -> Option<String> {
-    let s = |k: &str| target.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let s = |k: &str| {
+        target
+            .get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     Some(match target.get("type").and_then(|v| v.as_str())? {
         "Unspecified" | "Pstn" => format!("4:{}", s("telUri")),
         "ApplicationEndpoint" => format!("28:orgid:{}", s("objectId")),
@@ -427,7 +496,11 @@ pub fn voicemail_target_mri(target: &serde_json::Value) -> Option<String> {
 /// Teams' call redirection body (captured 2026-11-10) from the page's
 /// choices: forward everything to voicemail, or ring and then redirect
 /// unanswered calls to voicemail (or not) after `delay` seconds.
-pub fn call_redirection_body(forward_all: bool, unanswered_to_voicemail: bool, delay: u32) -> serde_json::Value {
+pub fn call_redirection_body(
+    forward_all: bool,
+    unanswered_to_voicemail: bool,
+    delay: u32,
+) -> serde_json::Value {
     let forwarding = if forward_all {
         serde_json::json!({ "isEnabled": true, "forwardingType": "Immediate", "targetType": "Voicemail", "target": null, "delaySeconds": 0 })
     } else {
@@ -444,7 +517,11 @@ pub fn call_redirection_body(forward_all: bool, unanswered_to_voicemail: bool, d
 /// Save a Settings ▸ Calls change: "redirection" (a call_redirection_body),
 /// "voicemail" (Teams' voicemail settings with only the changed keys set,
 /// the rest null) or "ringtone" (ringtone_body).
-pub async fn set_voice_setting(client: &TeamsClient, which: &str, body: &serde_json::Value) -> Result<()> {
+pub async fn set_voice_setting(
+    client: &TeamsClient,
+    which: &str,
+    body: &serde_json::Value,
+) -> Result<()> {
     let mt = client.middle_tier_url().context("No middle-tier address")?;
     let token = super::directory::middle_tier_token().await?;
     let oid = client.object_id().context("No user id")?;
@@ -487,13 +564,24 @@ pub async fn set_voice_setting(client: &TeamsClient, which: &str, body: &serde_j
 /// Teams' calling policy as Settings ▸ Calls uses it (the effective
 /// teamsCallingPolicy with Teams' defaults, CallingPolicySettingStore) and
 /// whether you're an Enterprise Voice (Teams Phone) user.
-pub async fn calling_policy(client: &TeamsClient, voice_admin: &serde_json::Value) -> serde_json::Value {
-    let p = super::custom_emoji::effective_policies(client, &["teamsCallingPolicy"]).await.unwrap_or_default();
+pub async fn calling_policy(
+    client: &TeamsClient,
+    voice_admin: &serde_json::Value,
+) -> serde_json::Value {
+    let p = super::custom_emoji::effective_policies(client, &["teamsCallingPolicy"])
+        .await
+        .unwrap_or_default();
     calling_policy_of(&p, voice_admin)
 }
 
-pub fn calling_policy_of(policies: &serde_json::Value, voice_admin: &serde_json::Value) -> serde_json::Value {
-    let v = policies.pointer("/teamsCallingPolicy/value").cloned().unwrap_or_default();
+pub fn calling_policy_of(
+    policies: &serde_json::Value,
+    voice_admin: &serde_json::Value,
+) -> serde_json::Value {
+    let v = policies
+        .pointer("/teamsCallingPolicy/value")
+        .cloned()
+        .unwrap_or_default();
     let b = |k: &str, d: bool| v.get(k).and_then(|x| x.as_bool()).unwrap_or(d);
     serde_json::json!({
         "ev": voice_admin.get("isEvEnabled").and_then(|x| x.as_bool()).unwrap_or(false),
@@ -518,7 +606,10 @@ pub fn ringtone_body_for(current: &serde_json::Value, kind: &str, name: &str) ->
         .cloned()
         .collect();
     if name != "Ring" {
-        list.insert(0, serde_json::json!({ "type": kind, "value": name, "associatedEntityId": "" }));
+        list.insert(
+            0,
+            serde_json::json!({ "type": kind, "value": name, "associatedEntityId": "" }),
+        );
     }
     serde_json::json!({ "assignments": { "ringToneAssignments": list } })
 }
@@ -535,7 +626,10 @@ pub fn ringtone_body(current: &serde_json::Value, name: &str) -> serde_json::Val
         .cloned()
         .collect();
     if name != "Ring" {
-        list.insert(0, serde_json::json!({ "type": "Regular", "value": name, "associatedEntityId": "" }));
+        list.insert(
+            0,
+            serde_json::json!({ "type": "Regular", "value": name, "associatedEntityId": "" }),
+        );
     }
     serde_json::json!({ "assignments": { "ringToneAssignments": list } })
 }
@@ -557,13 +651,22 @@ pub async fn set_middle_tier_setting(client: &TeamsClient, key: &str, on: bool) 
             .put(format!("{mt}/{E2EE_SETTING_PATH}"))
             .json(&serde_json::json!({ "useEndToEndEncryption": on })),
         "enableSpeakerAttribution" => {
-            let (t, o) = client.tenant_id().zip(client.object_id()).context("No tenant or user id")?;
-            http.put(format!("{mt}/beta/users/updateUserTranscriptMeetingSettings/tenant/{t}/user/{o}"))
-                .json(&serde_json::json!({ "attributionSettings": { "enableSpeakerAttribution": on } }))
+            let (t, o) = client
+                .tenant_id()
+                .zip(client.object_id())
+                .context("No tenant or user id")?;
+            http.put(format!(
+                "{mt}/beta/users/updateUserTranscriptMeetingSettings/tenant/{t}/user/{o}"
+            ))
+            .json(&serde_json::json!({ "attributionSettings": { "enableSpeakerAttribution": on } }))
         }
         _ => anyhow::bail!("Not a setting: {key}"),
     };
-    let resp = req.bearer_auth(token).send().await.context("Settings request")?;
+    let resp = req
+        .bearer_auth(token)
+        .send()
+        .await
+        .context("Settings request")?;
     if !resp.status().is_success() {
         anyhow::bail!("HTTP {} saving {key}", resp.status().as_u16());
     }
@@ -593,7 +696,10 @@ pub async fn automatic_replies(client: &TeamsClient) -> Result<serde_json::Value
 
 /// Save them as Teams' Save does (captured on winpc 2026-11-10): `POST
 /// {mt}/beta/users/updateAutomaticRepliesSetting` with all six fields.
-pub async fn set_automatic_replies(client: &TeamsClient, setting: &serde_json::Value) -> Result<()> {
+pub async fn set_automatic_replies(
+    client: &TeamsClient,
+    setting: &serde_json::Value,
+) -> Result<()> {
     let mt = client.middle_tier_url().context("No middle-tier address")?;
     let token = super::directory::middle_tier_token().await?;
     let body = automatic_replies_body(setting);
@@ -631,12 +737,16 @@ mod tests {
     #[test]
     fn call_park_needs_the_policy_and_enterprise_voice() {
         let policy = |on: bool| serde_json::json!({ "teamsCallParkPolicy": { "value": { "allowCallPark": on, "parkTimeoutSeconds": 300 } } });
-        let no_ev = serde_json::json!({ "voiceAdminSettings": { "value": { "accountType": "User" } } });
+        let no_ev =
+            serde_json::json!({ "voiceAdminSettings": { "value": { "accountType": "User" } } });
         let ev = serde_json::json!({ "voiceAdminSettings": { "value": { "isEvEnabled": true } } });
         assert!(!call_park_allowed(&policy(true), &no_ev));
         assert!(call_park_allowed(&policy(true), &ev));
         assert!(!call_park_allowed(&policy(false), &ev));
-        assert!(!call_park_allowed(&serde_json::json!({ "teamsCallParkPolicy": { "value": {} } }), &ev));
+        assert!(!call_park_allowed(
+            &serde_json::json!({ "teamsCallParkPolicy": { "value": {} } }),
+            &ev
+        ));
     }
 
     #[test]
@@ -656,7 +766,10 @@ mod tests {
             serde_json::from_str::<serde_json::Value>(r#"{"callForwardingSettings":{"delaySeconds":0,"forwardingType":"Immediate","isEnabled":true,"target":null,"targetType":"Voicemail"},"callGroupDetails":{"callOrder":"simultaneous","delaySeconds":0,"targets":[]},"favoriteTargets":{"targets":[]},"unansweredCallSettings":{"delaySeconds":20,"isEnabled":false,"safeForward":false,"target":null,"targetType":"Voicemail"}}"#).unwrap()
         );
         let off = call_redirection_body(false, true, 5);
-        assert_eq!(off["callForwardingSettings"]["forwardingType"], "Simultaneous");
+        assert_eq!(
+            off["callForwardingSettings"]["forwardingType"],
+            "Simultaneous"
+        );
         assert_eq!(off["unansweredCallSettings"]["isEnabled"], true);
         assert_eq!(off["unansweredCallSettings"]["delaySeconds"], 5);
     }
@@ -669,10 +782,19 @@ mod tests {
             { "type": "Regular", "value": "Bubbles", "associatedEntityId": "" },
             { "type": "CallQueue", "value": "Plink", "associatedEntityId": "" } ] } });
         let b = ringtone_body(&current, "Bop");
-        assert_eq!(b["assignments"]["ringToneAssignments"][0], serde_json::json!({ "type": "Regular", "value": "Bop", "associatedEntityId": "" }));
-        assert_eq!(b["assignments"]["ringToneAssignments"][1]["type"], "CallQueue");
+        assert_eq!(
+            b["assignments"]["ringToneAssignments"][0],
+            serde_json::json!({ "type": "Regular", "value": "Bop", "associatedEntityId": "" })
+        );
+        assert_eq!(
+            b["assignments"]["ringToneAssignments"][1]["type"],
+            "CallQueue"
+        );
         let ring = ringtone_body(&serde_json::Value::Null, "Ring");
-        assert_eq!(ring, serde_json::json!({ "assignments": { "ringToneAssignments": [] } }));
+        assert_eq!(
+            ring,
+            serde_json::json!({ "assignments": { "ringToneAssignments": [] } })
+        );
     }
 
     #[test]
@@ -700,8 +822,14 @@ mod tests {
         });
         let p = parsed_properties(&raw);
         assert_eq!(p["messageDensity"], "COMFY");
-        assert_eq!(p["simpleCollabUserSettings"]["hasUserEnabledShowTimeStamps"], false);
-        assert_eq!(p["userPersonalSettings"]["chatSettings"]["mruChatHeaderCallOption"], "VOICE_CALL");
+        assert_eq!(
+            p["simpleCollabUserSettings"]["hasUserEnabledShowTimeStamps"],
+            false
+        );
+        assert_eq!(
+            p["userPersonalSettings"]["chatSettings"]["mruChatHeaderCallOption"],
+            "VOICE_CALL"
+        );
         // Not a settings object: left as the string.
         assert!(p["favorites"].is_string());
     }

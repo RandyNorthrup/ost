@@ -13,12 +13,22 @@ async fn main() -> anyhow::Result<()> {
     let message = args.get(2).map(String::as_str);
     let reports = attendance::history(&client, thread, organizer, message).await?;
     for r in &reports {
-        println!("{} {} – {} ({} attended)", r["callId"], r["startTimeUtc"], r["endTimeUtc"], r["attendeeCount"]);
+        println!(
+            "{} {} – {} ({} attended)",
+            r["callId"], r["startTimeUtc"], r["endTimeUtc"], r["attendeeCount"]
+        );
     }
     if let Some(call) = reports.first().and_then(|r| r["callId"].as_str()) {
-        println!("{:#}", attendance::report(&client, thread, call, organizer, message).await?);
+        println!(
+            "{:#}",
+            attendance::report(&client, thread, call, organizer, message).await?
+        );
         let (name, bytes) = attendance::file(&client, thread, call, organizer).await?;
-        println!("file {name:?}, {} bytes, starts {:02x?}", bytes.len(), &bytes[..bytes.len().min(8)]);
+        println!(
+            "file {name:?}, {} bytes, starts {:02x?}",
+            bytes.len(),
+            &bytes[..bytes.len().min(8)]
+        );
     }
     Ok(())
 }

@@ -130,7 +130,11 @@ pub(crate) fn fill(url: &str, ctx: &TabContext, entity_id: &str) -> String {
 /// A stored address with its placeholders, kept only if it's an https
 /// link (else empty).
 pub fn https_template(url: &str) -> String {
-    if url.starts_with("https://") && !url.contains(['<', '>', '"', '\'', ' ']) { url.to_string() } else { String::new() }
+    if url.starts_with("https://") && !url.contains(['<', '>', '"', '\'', ' ']) {
+        url.to_string()
+    } else {
+        String::new()
+    }
 }
 
 /// A URL kept only if it's an https link (else empty).
@@ -215,17 +219,68 @@ pub fn menus(
             all.push((m, submenu_only));
         }
     };
-    push(item("popOut", tr_id("Open tab in new window", "extensibility:kb8ixr8m0")), false, popout);
-    push(item("expandTab", tr_id("Expand tab", "extensibility:k9oizye16")), true, reload_expand);
-    push(item("reloadTab", tr_id("Reload tab", "extensibility:k1eoad9j9")), true, reload_expand);
-    push(item("goToWebsite", tr_id("Open in browser", "extensibility:k9hj5pgm9")), false, website);
-    push(item("copyLink", tr_id("Copy link to tab", "extensibility:k6hbp3jub")), false, copy_link);
+    push(
+        item(
+            "popOut",
+            tr_id("Open tab in new window", "extensibility:kb8ixr8m0"),
+        ),
+        false,
+        popout,
+    );
+    push(
+        item("expandTab", tr_id("Expand tab", "extensibility:k9oizye16")),
+        true,
+        reload_expand,
+    );
+    push(
+        item("reloadTab", tr_id("Reload tab", "extensibility:k1eoad9j9")),
+        true,
+        reload_expand,
+    );
+    push(
+        item(
+            "goToWebsite",
+            tr_id("Open in browser", "extensibility:k9hj5pgm9"),
+        ),
+        false,
+        website,
+    );
+    push(
+        item(
+            "copyLink",
+            tr_id("Copy link to tab", "extensibility:k6hbp3jub"),
+        ),
+        false,
+        copy_link,
+    );
     // The divider before Rename shows with Rename (ConfigDivider).
     push(divider(), false, rename);
-    push(item("renameTab", tr_id("Rename", "extensibility:k52ozwndw")), false, rename);
-    push(item("updateTab", tr_id("Settings", "extensibility:k5getf51n")), false, settings);
-    push(item("devicePermissions", tr_id("App permissions", "extensibility:k3bpq3z6e")), false, perms);
-    push(item("aboutTab", tr_id("About this tab", "extensibility:k9tl9vpwx")), false, about);
+    push(
+        item("renameTab", tr_id("Rename", "extensibility:k52ozwndw")),
+        false,
+        rename,
+    );
+    push(
+        item("updateTab", tr_id("Settings", "extensibility:k5getf51n")),
+        false,
+        settings,
+    );
+    push(
+        item(
+            "devicePermissions",
+            tr_id("App permissions", "extensibility:k3bpq3z6e"),
+        ),
+        false,
+        perms,
+    );
+    push(
+        item(
+            "aboutTab",
+            tr_id("About this tab", "extensibility:k9tl9vpwx"),
+        ),
+        false,
+        about,
+    );
     push(
         MenuItem {
             key: "moveLeft",
@@ -245,7 +300,11 @@ pub fn menus(
         true,
     );
     push(divider(), false, remove);
-    push(item("removeTab", tr_id("Remove", "extensibility:k5w6otyxa")), false, remove);
+    push(
+        item("removeTab", tr_id("Remove", "extensibility:k5w6otyxa")),
+        false,
+        remove,
+    );
     let menu = all.iter().map(|(m, _)| m.clone()).collect();
     let context = all
         .iter()
@@ -321,7 +380,10 @@ pub fn copy_link_in(tab: &Tab, channel_id: &str, chat: bool, tenant_id: &str) ->
     // JSON.stringify({subEntityId: undefined, channelId}) drops the
     // undefined key.
     let context = if chat {
-        format!("{{\"chatId\":{},\"contextType\":\"chat\"}}", serde_json::Value::from(channel_id))
+        format!(
+            "{{\"chatId\":{},\"contextType\":\"chat\"}}",
+            serde_json::Value::from(channel_id)
+        )
     } else {
         format!("{{\"channelId\":{}}}", serde_json::Value::from(channel_id))
     };
@@ -453,8 +515,16 @@ pub(crate) async fn app_facts(client: &TeamsClient, app_id: &str) -> (AppFlags, 
             .ok()?;
         Some((
             app_flags(&d),
-            https_only(d.get("largeImageUrl").and_then(|v| v.as_str()).unwrap_or_default()),
-            https_template(d.pointer("/galleryTabs/0/configurationUrl").and_then(|v| v.as_str()).unwrap_or_default()),
+            https_only(
+                d.get("largeImageUrl")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default(),
+            ),
+            https_template(
+                d.pointer("/galleryTabs/0/configurationUrl")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default(),
+            ),
         ))
     }
     .await;
@@ -472,7 +542,10 @@ pub(crate) async fn app_facts(client: &TeamsClient, app_id: &str) -> (AppFlags, 
 /// A tab menu's flags from an app definition.
 pub fn app_flags(d: &serde_json::Value) -> AppFlags {
     AppFlags {
-        device_permissions: d.get("devicePermissions").and_then(|p| p.as_array()).is_some_and(|p| !p.is_empty()),
+        device_permissions: d
+            .get("devicePermissions")
+            .and_then(|p| p.as_array())
+            .is_some_and(|p| !p.is_empty()),
         can_update_config: d
             .pointer("/galleryTabs/0/canUpdateConfiguration")
             .and_then(|v| v.as_bool())
@@ -711,16 +784,25 @@ pub async fn channel_tabs(
     // channel's own tab property (settings.creatorUserMri), which the
     // middle tier's list leaves out. Teams reads the property; so does OST
     // (Teams hides such a tab when someone else made it).
-    if tabs.iter().any(|t| t.kind == Kind::ChannelPage && t.content_url.is_empty() && t.creator.is_empty())
+    if tabs
+        .iter()
+        .any(|t| t.kind == Kind::ChannelPage && t.content_url.is_empty() && t.creator.is_empty())
         && let Ok(props) = super::tab_add::thread_properties(client, channel_id).await
     {
         let bare = |s: &str| s.trim_start_matches("tab::").to_ascii_lowercase();
         let made: HashMap<String, String> = super::tab_add::property_tabs(&props)
             .iter()
             .filter(|p| str_at(p, "/settings/componentUrl").is_empty())
-            .map(|p| (bare(&str_at(p, "/id")), str_at(p, "/settings/creatorUserMri")))
+            .map(|p| {
+                (
+                    bare(&str_at(p, "/id")),
+                    str_at(p, "/settings/creatorUserMri"),
+                )
+            })
             .collect();
-        for t in tabs.iter_mut().filter(|t| t.kind == Kind::ChannelPage && t.content_url.is_empty() && t.creator.is_empty()) {
+        for t in tabs.iter_mut().filter(|t| {
+            t.kind == Kind::ChannelPage && t.content_url.is_empty() && t.creator.is_empty()
+        }) {
             if let Some(c) = made.get(&bare(&t.id)) {
                 t.creator = c.clone();
             }
@@ -760,7 +842,7 @@ fn tabs_from(
         conversation: String::new(),
         icon: String::new(),
         config_url: String::new(),
-            creator: String::new(),
+        creator: String::new(),
     }];
     for t in pinned {
         let id = str_at(t, "/id");
@@ -786,13 +868,18 @@ fn tabs_from(
             opens_in_browser: kind == Kind::Website,
             menu: Vec::new(),
             context_menu: Vec::new(),
-            can_converse: matches!(kind, Kind::Extension | Kind::Website | Kind::OneNote) && id.starts_with("tab:"),
+            can_converse: matches!(kind, Kind::Extension | Kind::Website | Kind::OneNote)
+                && id.starts_with("tab:"),
             conversation: Some(str_at(t, "/messageId"))
                 .filter(|m| !m.is_empty() && m != "0" && m.bytes().all(|b| b.is_ascii_digit()))
                 .unwrap_or_default(),
             icon: String::new(),
             config_url: String::new(),
-            creator: ["/settings/creatorUserMri", "/configuration/creatorUserMri"].iter().map(|k| str_at(t, k)).find(|c| !c.is_empty()).unwrap_or_default(),
+            creator: ["/settings/creatorUserMri", "/configuration/creatorUserMri"]
+                .iter()
+                .map(|k| str_at(t, k))
+                .find(|c| !c.is_empty())
+                .unwrap_or_default(),
             id,
             app_id,
             kind,
@@ -842,7 +929,12 @@ pub async fn move_tab(
 
 /// Drop a dragged tab at `to` among the movable tabs (Teams' tab list
 /// drag and drop: the same single-tab order change as Move left/right).
-pub async fn move_tab_to(client: &TeamsClient, channel_id: &str, tab: &str, to: usize) -> Result<()> {
+pub async fn move_tab_to(
+    client: &TeamsClient,
+    channel_id: &str,
+    tab: &str,
+    to: usize,
+) -> Result<()> {
     check_tab(tab)?;
     let tabs: Vec<serde_json::Value> = pinned(client, channel_id)
         .await?
@@ -861,7 +953,13 @@ pub async fn move_tab_to(client: &TeamsClient, channel_id: &str, tab: &str, to: 
 }
 
 /// Move tab `i` to `j` and save only its new order.
-async fn save_moved(client: &TeamsClient, channel_id: &str, mut tabs: Vec<serde_json::Value>, i: usize, j: usize) -> Result<()> {
+async fn save_moved(
+    client: &TeamsClient,
+    channel_id: &str,
+    mut tabs: Vec<serde_json::Value>,
+    i: usize,
+    j: usize,
+) -> Result<()> {
     let moved = tabs.remove(i);
     tabs.insert(j, moved);
     let orders: Vec<f64> = tabs.iter().map(order_of).collect();
@@ -901,7 +999,10 @@ pub fn rename_error(name: &str, others: &[String]) -> Option<String> {
         .iter()
         .any(|o| o.trim().to_lowercase() == trimmed.to_lowercase())
     {
-        Some(tr_id("You already have a tab with that name. Try a different one.", "extensibility:k7gfc5tqi"))
+        Some(tr_id(
+            "You already have a tab with that name. Try a different one.",
+            "extensibility:k7gfc5tqi",
+        ))
     } else {
         None
     }
@@ -1016,16 +1117,21 @@ pub fn tab_link_post(
 /// (Teams keeps every other field as it was).
 pub fn with_reply_chain(property: &str, root: &str) -> Result<String> {
     let mut v: serde_json::Value = serde_json::from_str(property).context("Tab property")?;
-    v.as_object_mut()
-        .context("Tab property")?
-        .insert("replyChainId".into(), serde_json::Value::String(root.into()));
+    v.as_object_mut().context("Tab property")?.insert(
+        "replyChainId".into(),
+        serde_json::Value::String(root.into()),
+    );
     Ok(v.to_string())
 }
 
 /// Start a tab's conversation as Teams does: post the tab's link in the
 /// channel, make that post the tab's reply chain (its thread property) and
 /// mark the chain read. Returns the root post's id.
-pub async fn start_conversation(client: &TeamsClient, channel_id: &str, tab: &Tab) -> Result<String> {
+pub async fn start_conversation(
+    client: &TeamsClient,
+    channel_id: &str,
+    tab: &Tab,
+) -> Result<String> {
     if !tab.can_converse {
         bail!("This tab has no conversation");
     }
@@ -1048,15 +1154,28 @@ pub async fn start_conversation(client: &TeamsClient, channel_id: &str, tab: &Ta
         "{base}/v1/users/ME/conversations/{}/messages",
         encode_uri_component(channel_id)
     );
-    let reply: serde_json::Value = client.chat_post(&url, &body).await?.json().await.context("Post reply")?;
+    let reply: serde_json::Value = client
+        .chat_post(&url, &body)
+        .await?
+        .json()
+        .await
+        .context("Post reply")?;
     let root = reply
         .get("OriginalArrivalTime")
         .and_then(|v| v.as_i64())
         .context("The post has no id")?
         .to_string();
     // The tab's thread property, with the root.
-    let thread_url = format!("{base}/v1/threads/{}?view=msnp24Equivalent", encode_uri_component(channel_id));
-    let thread: serde_json::Value = client.chat_get(&thread_url).await?.json().await.context("Channel thread")?;
+    let thread_url = format!(
+        "{base}/v1/threads/{}?view=msnp24Equivalent",
+        encode_uri_component(channel_id)
+    );
+    let thread: serde_json::Value = client
+        .chat_get(&thread_url)
+        .await?
+        .json()
+        .await
+        .context("Channel thread")?;
     let name = &tab.id;
     let property = thread
         .pointer("/properties")
@@ -1070,7 +1189,11 @@ pub async fn start_conversation(client: &TeamsClient, channel_id: &str, tab: &Ta
         encode_uri_component(name)
     );
     client
-        .chat_request(reqwest::Method::PUT, &prop_url, &serde_json::json!({ name: updated }))
+        .chat_request(
+            reqwest::Method::PUT,
+            &prop_url,
+            &serde_json::json!({ name: updated }),
+        )
         .await?;
     let rc_url = format!(
         "{base}/v1/users/ME/conversations/{}/rcmetadata/{root}",
@@ -1078,7 +1201,11 @@ pub async fn start_conversation(client: &TeamsClient, channel_id: &str, tab: &Ta
     );
     let ch: i64 = root.parse().context("Post id")?;
     client
-        .chat_request(reqwest::Method::PUT, &rc_url, &serde_json::json!({ "ch": ch }))
+        .chat_request(
+            reqwest::Method::PUT,
+            &rc_url,
+            &serde_json::json!({ "ch": ch }),
+        )
         .await?;
     Ok(root)
 }
@@ -1114,7 +1241,10 @@ mod tests {
         ];
         let perms = HashMap::from([(
             "0d820ecd-def2-4297-adad-78056cde7c78".to_string(),
-            AppFlags { device_permissions: true, can_update_config: false },
+            AppFlags {
+                device_permissions: true,
+                can_update_config: false,
+            },
         )]);
         let t = tabs_from(&pinned, &TabContext::default(), true, &perms);
         let names: Vec<_> = t.iter().map(|t| t.name.as_str()).collect();
@@ -1195,15 +1325,44 @@ mod tests {
         let k: Vec<&str> = menu.iter().map(|m| m.key).collect();
         assert_eq!(
             k,
-            ["popOut", "expandTab", "reloadTab", "goToWebsite", "copyLink", "divider", "renameTab", "updateTab", "aboutTab", "moveLeft", "moveRight", "divider", "removeTab"]
+            [
+                "popOut",
+                "expandTab",
+                "reloadTab",
+                "goToWebsite",
+                "copyLink",
+                "divider",
+                "renameTab",
+                "updateTab",
+                "aboutTab",
+                "moveLeft",
+                "moveRight",
+                "divider",
+                "removeTab"
+            ]
         );
         assert_eq!(menu[7].label, "Settings");
         assert!(context.iter().any(|m| m.key == "updateTab"));
         // Not without the right to change tabs, nor for an app that doesn't
         // allow it, nor for a website tab.
-        assert!(!menus(Kind::Extension, false, app, true, false).0.iter().any(|m| m.key == "updateTab"));
-        assert!(!menus(Kind::Extension, true, AppFlags::default(), true, false).0.iter().any(|m| m.key == "updateTab"));
-        assert!(!menus(Kind::Website, true, app, true, false).0.iter().any(|m| m.key == "updateTab"));
+        assert!(
+            !menus(Kind::Extension, false, app, true, false)
+                .0
+                .iter()
+                .any(|m| m.key == "updateTab")
+        );
+        assert!(
+            !menus(Kind::Extension, true, AppFlags::default(), true, false)
+                .0
+                .iter()
+                .any(|m| m.key == "updateTab")
+        );
+        assert!(
+            !menus(Kind::Website, true, app, true, false)
+                .0
+                .iter()
+                .any(|m| m.key == "updateTab")
+        );
     }
 
     #[test]
@@ -1225,7 +1384,10 @@ mod tests {
     #[test]
     fn rename_errors_are_teams_own() {
         let others = vec!["Notes".to_string(), "Page".to_string()];
-        assert_eq!(rename_error("  ", &others).as_deref(), Some("Name is required"));
+        assert_eq!(
+            rename_error("  ", &others).as_deref(),
+            Some("Name is required")
+        );
         assert_eq!(
             rename_error(&"x".repeat(129), &others).as_deref(),
             Some("Tab name cannot exceed 128 characters.")
@@ -1259,8 +1421,18 @@ mod tests {
             config_url: String::new(),
             creator: String::new(),
         };
-        let v = conversation_post("19:a@thread.tacv2", &tab, "8:orgid:me", "OST Test 1", "123", "2026-11-09T17:31:58.118Z");
-        assert_eq!(v["content"], "Added a new tab at the top of this channel. Here's a link.");
+        let v = conversation_post(
+            "19:a@thread.tacv2",
+            &tab,
+            "8:orgid:me",
+            "OST Test 1",
+            "123",
+            "2026-11-09T17:31:58.118Z",
+        );
+        assert_eq!(
+            v["content"],
+            "Added a new tab at the top of this channel. Here's a link."
+        );
         assert_eq!(v["messagetype"], "Text");
         assert_eq!(v["conversationLink"], "blah/19:a@thread.tacv2");
         // Teams' captured files property, byte for byte.
@@ -1269,7 +1441,8 @@ mod tests {
             r#"[{"itemid":"tab::de385e42-cca1-4ce5-9d50-68995918f19b","fileName":"Notes","fileType":"deeplink","fileInfo":{"serverRelativeUrl":""},"fileChicletState":{},"@type":"http://schema.skype.com/File","version":2,"id":"tab::de385e42-cca1-4ce5-9d50-68995918f19b","type":"deeplink","title":"Notes","botFileProperties":{},"filePreview":{}}]"#
         );
         let prop = r#"{"id":"tab::x","name":"Notes","order":10000,"settings":{"websiteUrl":"https://onenote.com/"}}"#;
-        let out: serde_json::Value = serde_json::from_str(&with_reply_chain(prop, "1794245518435").unwrap()).unwrap();
+        let out: serde_json::Value =
+            serde_json::from_str(&with_reply_chain(prop, "1794245518435").unwrap()).unwrap();
         assert_eq!(out["replyChainId"], "1794245518435");
         assert_eq!(out["settings"]["websiteUrl"], "https://onenote.com/");
     }
@@ -1319,7 +1492,10 @@ mod tests {
             link,
             "https://teams.microsoft.com/l/channel/19%3Aab%40thread.tacv2/tab%3A%3Aa62a7cb0-4528-4db8-958e-c6a5ce6b364e?context=%7B%22channelId%22%3A%2219%3Aab%40thread.tacv2%22%7D&tenantId=t-1"
         );
-        assert!(html.starts_with("<div itemprop=\"teams-copy-link\"><a href=") && html.ends_with(">Page &lt;1&gt;</a></div>"));
+        assert!(
+            html.starts_with("<div itemprop=\"teams-copy-link\"><a href=")
+                && html.ends_with(">Page &lt;1&gt;</a></div>")
+        );
         tab.entity_id = "NOTES".into();
         tab.app_id = "0d820ecd-def2-4297-adad-78056cde7c78".into();
         let (link, _) = copy_link(&tab, "19:ab@thread.tacv2", "", "");

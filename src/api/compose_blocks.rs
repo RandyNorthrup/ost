@@ -198,7 +198,9 @@ fn table_rows(html: &str, lists: &mut u32) -> Vec<Vec<Vec<ComposeBlock>>> {
         let mut cells = Vec::new();
         let mut rest = row;
         while let Some(at) = rest.find("<td") {
-            let Some(gt) = rest[at..].find('>') else { break };
+            let Some(gt) = rest[at..].find('>') else {
+                break;
+            };
             let (inner, next) = until(&rest[at + gt + 1..], "</td>");
             let mut blocks = parse(inner, lists);
             if blocks.is_empty() {
@@ -334,7 +336,10 @@ mod tests {
         assert_eq!(b[1].list_id, b[2].list_id, "items of one list share it");
         assert_eq!(b[3].list, "ol");
         assert_ne!(b[3].list_id, b[1].list_id);
-        assert_ne!(b[4].list_id, b[1].list_id, "a second bulleted list is its own");
+        assert_ne!(
+            b[4].list_id, b[1].list_id,
+            "a second bulleted list is its own"
+        );
     }
 
     #[test]
@@ -354,7 +359,10 @@ mod tests {
     #[test]
     fn code_block_without_language_is_plain_text() {
         let b = compose_blocks("<pre><code>x</code></pre>");
-        assert_eq!((b[0].kind, b[0].lang.as_str(), b[0].text.as_str()), ("code", "plaintext", "x"));
+        assert_eq!(
+            (b[0].kind, b[0].lang.as_str(), b[0].text.as_str()),
+            ("code", "plaintext", "x")
+        );
     }
 
     #[test]
@@ -380,7 +388,10 @@ mod tests {
         );
         assert_eq!(b.len(), 1);
         let h = &b[0].html;
-        assert!(h.contains("<span style=\"font-family:'ost-inline-code'\">ls -l</span>"), "{h}");
+        assert!(
+            h.contains("<span style=\"font-family:'ost-inline-code'\">ls -l</span>"),
+            "{h}"
+        );
         assert!(!h.contains("<code>"));
         assert!(h.contains("<a href=\"https://example.com/?a=1&amp;b=2\">site</a>"));
         assert!(h.contains("<a href=\"mention:8:orgid:x\">Ann</a>&nbsp;<img"));
@@ -405,6 +416,9 @@ mod tests {
 
     #[test]
     fn unescape_decodes_once() {
-        assert_eq!(unescape("&amp;lt; &lt;&gt; &quot;&#39; &nbsp;& &bogus;"), "&lt; <> \"' \u{a0}& &bogus;");
+        assert_eq!(
+            unescape("&amp;lt; &lt;&gt; &quot;&#39; &nbsp;& &bogus;"),
+            "&lt; <> \"' \u{a0}& &bogus;"
+        );
     }
 }

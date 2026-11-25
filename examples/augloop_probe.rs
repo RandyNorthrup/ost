@@ -7,7 +7,18 @@ use teams_cli::api::editor::{Editor, Event};
 async fn main() -> anyhow::Result<()> {
     let ed = Editor::start(&tokio::runtime::Handle::current(), "en-us", |e| match e {
         Event::Critiques { doc, critiques } => {
-            let v: Vec<_> = critiques.iter().map(|c| format!("{}@{}+{}→{:?}", c.word, c.start, c.length, c.suggestions.first())).collect();
+            let v: Vec<_> = critiques
+                .iter()
+                .map(|c| {
+                    format!(
+                        "{}@{}+{}→{:?}",
+                        c.word,
+                        c.start,
+                        c.length,
+                        c.suggestions.first()
+                    )
+                })
+                .collect();
             println!("{doc}: {v:?}");
         }
         Event::Settings(s) => println!("settings: {s:?}"),

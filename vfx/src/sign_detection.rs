@@ -170,7 +170,8 @@ impl SignDetector {
         }
         // On schedule (a 30 fps camera gets ten evaluations a second, not one
         // every fourth frame), but never two frames in a row after a pause.
-        self.next_eval = (self.next_eval.max(t_ms.saturating_sub(EVAL_INTERVAL_MS)) + EVAL_INTERVAL_MS)
+        self.next_eval = (self.next_eval.max(t_ms.saturating_sub(EVAL_INTERVAL_MS))
+            + EVAL_INTERVAL_MS)
             .max(t_ms + EVAL_INTERVAL_MS / 2);
         let hands = match self.keypoints(i420, w, h) {
             Ok(k) => raised_hands(&k),
@@ -182,10 +183,17 @@ impl SignDetector {
         let mut changes = [None, None];
         for (i, hand) in hands.iter().enumerate() {
             let patch = hand.and_then(|hand| Patch::new(i420, w, h, hand.centre, hand.side));
-            changes[i] = self.patches[i].as_ref().zip(patch.as_ref()).map(|(a, b)| a.change(b));
+            changes[i] = self.patches[i]
+                .as_ref()
+                .zip(patch.as_ref())
+                .map(|(a, b)| a.change(b));
             self.patches[i] = patch;
         }
-        while self.history.front().is_some_and(|s| s.t_ms + WINDOW_MS < t_ms || s.t_ms > t_ms) {
+        while self
+            .history
+            .front()
+            .is_some_and(|s| s.t_ms + WINDOW_MS < t_ms || s.t_ms > t_ms)
+        {
             self.history.pop_front();
         }
         self.history.push_back(Sample {
@@ -193,7 +201,8 @@ impl SignDetector {
             wrists: hands.map(|h| h.map(|h| h.rel)),
             changes,
         });
-        self.signing = (0..2).any(|i| hands[i].is_some() && (moving(&self.history, i) || shaping(&self.history, i)));
+        self.signing = (0..2)
+            .any(|i| hands[i].is_some() && (moving(&self.history, i) || shaping(&self.history, i)));
         self.signing
     }
 
@@ -207,7 +216,9 @@ impl SignDetector {
     /// The pose's keypoints, `[x, y, score]` in the model's square picture
     /// (0..1 across; the frame is letterboxed into it).
     fn keypoints(&self, i420: &[u8], w: usize, h: usize) -> anyhow::Result<[[f32; 3]; KEYPOINTS]> {
-        let input: Tensor = tract_ndarray::Array4::from_shape_vec((1, INPUT, INPUT, 3), model_input(i420, w, h))?.into();
+        let input: Tensor =
+            tract_ndarray::Array4::from_shape_vec((1, INPUT, INPUT, 3), model_input(i420, w, h))?
+                .into();
         let out = self.model.run(tvec!(input.into()))?;
         let out = out[0].to_plain_array_view::<f32>()?;
         let out = out
@@ -282,7 +293,9 @@ fn raised_hands(k: &[[f32; 3]; KEYPOINTS]) -> [Option<Hand>; 2] {
     [(LEFT_WRIST, LEFT_ELBOW), (RIGHT_WRIST, RIGHT_ELBOW)].map(|(wi, ei)| {
         let (p, e) = (k[wi], k[ei]);
         let rel = [(p[0] - centre[0]) / width, (p[1] - centre[1]) / width];
-        let raised = p[2] >= MIN_SCORE && (SPACE_TOP..=SPACE_BOTTOM).contains(&rel[1]) && rel[0].abs() <= SPACE_SIDE;
+        let raised = p[2] >= MIN_SCORE
+            && (SPACE_TOP..=SPACE_BOTTOM).contains(&rel[1])
+            && rel[0].abs() <= SPACE_SIDE;
         // Without its elbow, the hand is taken to be around the wrist.
         let reach = if e[2] >= MIN_SCORE { HAND_REACH } else { 0.0 };
         raised.then(|| Hand {
@@ -311,7 +324,10 @@ impl Patch {
         // The model's picture is the frame letterboxed into a square.
         let x = centre[0] * long - (long - w as f32) / 2.0 - side as f32 / 2.0;
         let y = centre[1] * long - (long - h as f32) / 2.0 - side as f32 / 2.0;
-        let (x0, y0) = ((x.max(0.0) as usize).min(w - side), (y.max(0.0) as usize).min(h - side));
+        let (x0, y0) = (
+            (x.max(0.0) as usize).min(w - side),
+            (y.max(0.0) as usize).min(h - side),
+        );
         let mut cells = [0f32; PATCH * PATCH];
         for (i, cell) in cells.iter_mut().enumerate() {
             let (cx, cy) = (i % PATCH, i / PATCH);
@@ -327,7 +343,12 @@ impl Patch {
     /// How different another picture of the hand is: the mean absolute
     /// difference of the cells, in luma levels.
     fn change(&self, other: &Self) -> f32 {
-        self.0.iter().zip(&other.0).map(|(a, b)| (a - b).abs()).sum::<f32>() / self.0.len() as f32
+        self.0
+            .iter()
+            .zip(&other.0)
+            .map(|(a, b)| (a - b).abs())
+            .sum::<f32>()
+            / self.0.len() as f32
     }
 }
 
@@ -444,7 +465,9 @@ impl SigningAggregator {
     pub fn tick(&mut self, now_ms: u64) -> Option<SignMessage> {
         let since_tick = std::mem::take(&mut self.since_tick);
         let Some(start) = self.started else {
-            let long_enough = self.run.is_some_and(|(first, last)| last - first >= MIN_DURATION_MS);
+            let long_enough = self
+                .run
+                .is_some_and(|(first, last)| last - first >= MIN_DURATION_MS);
             if !(since_tick && long_enough) {
                 return None;
             }
@@ -501,7 +524,12 @@ mod tests {
 
     /// Feeds frames every 100 ms from `from` to `to` (exclusive) with a tick
     /// after each one on a multiple of 500 ms; the messages with their times.
-    fn run(a: &mut SigningAggregator, from: u64, to: u64, signing: impl Fn(u64) -> bool) -> Vec<(u64, SignMessage)> {
+    fn run(
+        a: &mut SigningAggregator,
+        from: u64,
+        to: u64,
+        signing: impl Fn(u64) -> bool,
+    ) -> Vec<(u64, SignMessage)> {
         let mut out = Vec::new();
         for t in (from..to).step_by(100) {
             a.push(signing(t), t);
@@ -610,8 +638,16 @@ mod tests {
     fn sign_detection_starts_again_after_a_stop() {
         let mut a = SigningAggregator::new();
         let msgs = run(&mut a, 0, 10_000, |t| t < 3000 || (6000..9000).contains(&t));
-        let starts: Vec<u64> = msgs.iter().filter(|(_, m)| *m == START).map(|(t, _)| *t).collect();
-        let stops: Vec<u64> = msgs.iter().filter(|(_, m)| *m == SignMessage::STOP).map(|(t, _)| *t).collect();
+        let starts: Vec<u64> = msgs
+            .iter()
+            .filter(|(_, m)| *m == START)
+            .map(|(t, _)| *t)
+            .collect();
+        let stops: Vec<u64> = msgs
+            .iter()
+            .filter(|(_, m)| *m == SignMessage::STOP)
+            .map(|(t, _)| *t)
+            .collect();
         assert_eq!(starts, vec![500, 6500]);
         assert_eq!(stops, vec![3500, 9500]);
     }
@@ -672,9 +708,19 @@ mod tests {
         let at = |p: [f32; 2]| (Some(p), Some(1.0));
         // A hand held still (keypoint jitter, camera noise) isn't signing; a
         // moving one is; too few sightings aren't judged.
-        let still = history(&[at([0.2, 0.3]), at([0.22, 0.31]), at([0.21, 0.29]), at([0.2, 0.3])]);
+        let still = history(&[
+            at([0.2, 0.3]),
+            at([0.22, 0.31]),
+            at([0.21, 0.29]),
+            at([0.2, 0.3]),
+        ]);
         assert!(!moving(&still, 0) && !shaping(&still, 0));
-        let signing = history(&[at([0.2, 0.3]), at([0.4, 0.1]), at([0.1, 0.4]), at([0.3, 0.2])]);
+        let signing = history(&[
+            at([0.2, 0.3]),
+            at([0.4, 0.1]),
+            at([0.1, 0.4]),
+            at([0.3, 0.2]),
+        ]);
         assert!(moving(&signing, 0));
         let brief = history(&[(None, None), (None, None), at([0.2, 0.3]), at([0.6, 0.1])]);
         assert!(!moving(&brief, 0));
@@ -749,7 +795,8 @@ mod tests {
             );
             return None;
         };
-        let onnx = std::fs::read(&path).unwrap_or_else(|e| panic!("OST_SIGN_DETECTION_MODEL={path:?}: {e}"));
+        let onnx = std::fs::read(&path)
+            .unwrap_or_else(|e| panic!("OST_SIGN_DETECTION_MODEL={path:?}: {e}"));
         Some(SignDetector::new(&onnx).unwrap())
     }
 

@@ -76,7 +76,12 @@ pub fn folder_path(web_url: &str) -> String {
                         .unwrap_or_default()
                 })
                 .collect();
-            format!("{}://{}/{}", u.scheme(), u.host_str().unwrap_or_default(), path.join("/"))
+            format!(
+                "{}://{}/{}",
+                u.scheme(),
+                u.host_str().unwrap_or_default(),
+                path.join("/")
+            )
         })
         .unwrap_or_else(|| web_url.to_string())
 }
@@ -157,26 +162,37 @@ pub fn query_string(thread: &str, keywords: &str, f: &Filters, my_oid: &str) -> 
         q += &format!("{field} >= {} AND {field} < {} AND ", f.start, f.end);
     }
     if f.files
-        && let Some(t) = type_term(&f.file_type) {
-            q += &t;
-            q += " AND ";
-        }
+        && let Some(t) = type_term(&f.file_type)
+    {
+        q += &t;
+        q += " AND ";
+    }
     if !f.files {
         if f.attachment {
             q += "hasattachment:yes AND ";
         }
         if f.mentions && !my_oid.is_empty() {
-            q += &format!("mentions:{} AND ", my_oid.replace('-', "").to_ascii_lowercase());
+            q += &format!(
+                "mentions:{} AND ",
+                my_oid.replace('-', "").to_ascii_lowercase()
+            );
         }
         if f.post_root.is_empty() {
             // Chats leave out channels' (topic / space) threads; a channel
             // asks for them.
-            let not = if conversation_type(thread) == "Channel" { "" } else { "NOT " };
+            let not = if conversation_type(thread) == "Channel" {
+                ""
+            } else {
+                "NOT "
+            };
             q += &format!(
                 "clientthreadid:{thread} AND {not}(Extension_SkypeSpaces_ConversationPost_Extension_ThreadType_String:(topic OR space)) AND NOT (isClientSoftDeleted:TRUE)"
             );
         } else {
-            q += &format!("clientconversationid:{thread};messageId={} AND NOT (isClientSoftDeleted:TRUE)", f.post_root);
+            q += &format!(
+                "clientconversationid:{thread};messageId={} AND NOT (isClientSoftDeleted:TRUE)",
+                f.post_root
+            );
         }
         if !f.from_mail.is_empty() {
             q += " ";
@@ -420,7 +436,11 @@ fn file_context(r: &serde_json::Value) -> (String, String, String) {
         _ => "Modified by",
     };
     if !action.is_empty() {
-        return (action.into(), s(&note["User"]["DisplayName"]), s(&note["Timestamp"]));
+        return (
+            action.into(),
+            s(&note["User"]["DisplayName"]),
+            s(&note["Timestamp"]),
+        );
     }
     let by = s(&src["ModifiedBy"]);
     if !by.is_empty() {
@@ -461,17 +481,25 @@ pub fn found_from(reply: &serde_json::Value) -> Found {
                 file_by,
                 file_when,
                 file_folder: s(&src["ParentLink"]),
-                file_site: [&src["SpWebUrl"], &src["SiteName"]].iter().map(|v| s(v)).find(|u| !u.is_empty()).unwrap_or_default(),
+                file_site: [&src["SpWebUrl"], &src["SiteName"]]
+                    .iter()
+                    .map(|v| s(v))
+                    .find(|u| !u.is_empty())
+                    .unwrap_or_default(),
                 file_list: s(&src["ListId"]),
                 file_group_id: s(&src["ChannelGroupId"]),
                 file_unredeemed: src["Path"].is_null(),
                 text: plain(&s(&r["HitHighlightedSummary"])),
                 file_name: s(&src["FileName"]),
-                file_type: [&src["FileType"], &src["FileExtension"], &src["SecondaryFileExtension"]]
-                    .iter()
-                    .map(|v| s(v))
-                    .find(|t| !t.is_empty())
-                    .unwrap_or_default(),
+                file_type: [
+                    &src["FileType"],
+                    &src["FileExtension"],
+                    &src["SecondaryFileExtension"],
+                ]
+                .iter()
+                .map(|v| s(v))
+                .find(|t| !t.is_empty())
+                .unwrap_or_default(),
                 file_url: s(&src["DefaultEncodingUrl"]),
                 url: [&src["LinkingUrl"], &src["DefaultEncodingUrl"], &src["Path"]]
                     .iter()
@@ -484,17 +512,28 @@ pub fn found_from(reply: &serde_json::Value) -> Found {
             let ext = &src["Extensions"];
             let id = s(&src["InternetMessageId"]);
             let parent = s(&ext["SkypeSpaces_ConversationPost_Extension_ParentMessageId"]);
-            let summary = r["HitHighlightedSummary"].as_str().or_else(|| src["Preview"].as_str()).unwrap_or_default();
+            let summary = r["HitHighlightedSummary"]
+                .as_str()
+                .or_else(|| src["Preview"].as_str())
+                .unwrap_or_default();
             let thread_type = s(&ext["SkypeSpaces_ConversationPost_Extension_ThreadType"]);
             let channel = thread_type == "topic" || thread_type == "space";
             Hit {
                 parent_id: if parent == id { String::new() } else { parent },
                 thread: s(&src["ClientThreadId"]),
                 conversation: s(&src["ClientConversationId"]),
-                team: if channel { s(&src["DisplayTo"]) } else { String::new() },
+                team: if channel {
+                    s(&src["DisplayTo"])
+                } else {
+                    String::new()
+                },
                 team_thread: s(&ext["SkypeSpaces_ConversationPost_Extension_SkypeGroupId"]),
                 // (A chat's ConversationTopic is the chat's name, not a subject.)
-                subject: if channel { s(&src["Subject"]) } else { String::new() },
+                subject: if channel {
+                    s(&src["Subject"])
+                } else {
+                    String::new()
+                },
                 thread_type,
                 id,
                 sender_mri: s(&ext["SkypeSpaces_ConversationPost_Extension_FromSkypeInternalId"]),
@@ -517,7 +556,9 @@ const FLIGHTS: &str = "DisableTeamsSharedFilesFilter,QueryMicroservice,KeepAlive
 /// Send a query (with Teams' headers; `anchor` is "OID:{oid}@{tenant}");
 /// the service's reply.
 pub async fn search_raw(body: &serde_json::Value, anchor: &str) -> Result<serde_json::Value> {
-    let token = crate::auth::oauth::access_token_for(SCOPE).await.context("Search token")?;
+    let token = crate::auth::oauth::access_token_for(SCOPE)
+        .await
+        .context("Search token")?;
     let request_id = uuid::Uuid::new_v4().to_string();
     let mut req = reqwest::Client::new()
         .post(SEARCH_URL)
@@ -528,16 +569,18 @@ pub async fn search_raw(body: &serde_json::Value, anchor: &str) -> Result<serde_
         .header("client-request-id", &request_id)
         .header("x-ms-request-id", &request_id);
     if !anchor.is_empty() {
-        req = req.header("x-anchormailbox", anchor).header("x-routingparameter-sessionkey", anchor);
+        req = req
+            .header("x-anchormailbox", anchor)
+            .header("x-routingparameter-sessionkey", anchor);
     }
-    let resp = req
-        .json(body)
-        .send()
-        .await
-        .context("Search request")?;
+    let resp = req.json(body).send().await.context("Search request")?;
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
-    anyhow::ensure!(status.is_success(), "Search failed ({status}): {}", text.chars().take(300).collect::<String>());
+    anyhow::ensure!(
+        status.is_success(),
+        "Search failed ({status}): {}",
+        text.chars().take(300).collect::<String>()
+    );
     serde_json::from_str(&text).context("Search reply")
 }
 
@@ -547,7 +590,11 @@ fn card_words(v: &serde_json::Value, out: &mut Vec<String>) {
         serde_json::Value::Object(o) => {
             for (k, x) in o {
                 match (k.as_str(), x) {
-                    ("text" | "title" | "subtitle", serde_json::Value::String(t)) if !t.trim().is_empty() => out.push(plain(t)),
+                    ("text" | "title" | "subtitle", serde_json::Value::String(t))
+                        if !t.trim().is_empty() =>
+                    {
+                        out.push(plain(t))
+                    }
                     _ => card_words(x, out),
                 }
             }
@@ -581,7 +628,9 @@ pub async fn fill_texts(client: &super::client::TeamsClient, thread: &str, found
         .collect();
     let texts: Vec<(usize, Option<(String, String)>)> = futures::stream::iter(ids)
         .map(|(i, id)| async move {
-            let m = super::messages::read_message(client, thread, &id).await.ok();
+            let m = super::messages::read_message(client, thread, &id)
+                .await
+                .ok();
             (i, m.map(|m| (row_text(&m), m.subject.clone())))
         })
         .buffer_unordered(6)
@@ -592,7 +641,11 @@ pub async fn fill_texts(client: &super::client::TeamsClient, thread: &str, found
         // A post's row: its subject (bold), then the subject and text.
         let hit = &mut found.hits[i];
         if !subject.is_empty() {
-            hit.text = if text.is_empty() { subject.clone() } else { format!("{subject} {text}") };
+            hit.text = if text.is_empty() {
+                subject.clone()
+            } else {
+                format!("{subject} {text}")
+            };
             hit.subject = subject;
         } else if !text.is_empty() {
             hit.text = text;
@@ -612,7 +665,11 @@ pub async fn search(
     tenant: &str,
 ) -> Result<Found> {
     let body = query_body(thread, keywords, f, from, timezone, my_oid, tenant);
-    let anchor = if my_oid.is_empty() || tenant.is_empty() { String::new() } else { format!("OID:{my_oid}@{tenant}") };
+    let anchor = if my_oid.is_empty() || tenant.is_empty() {
+        String::new()
+    } else {
+        format!("OID:{my_oid}@{tenant}")
+    };
     let mut found = found_from(&search_raw(&body, &anchor).await?);
     if !f.files {
         fill_texts(client, thread, &mut found).await;
@@ -629,7 +686,15 @@ mod tests {
 
     #[test]
     fn the_query_is_teams() {
-        let b = query_body(CHAT, "bubble", &Filters::default(), 0, "America/Los_Angeles", "", "");
+        let b = query_body(
+            CHAT,
+            "bubble",
+            &Filters::default(),
+            0,
+            "America/Los_Angeles",
+            "",
+            "",
+        );
         let r = &b["entityRequests"][0];
         assert_eq!(r["query"]["queryString"], format!("{TAIL} bubble"));
         assert_eq!(r["filter"]["term"]["conversationType"], "OneToOne");
@@ -638,9 +703,15 @@ mod tests {
         assert_eq!(b["scenario"]["Name"], "powerbar");
         assert!(r["query"].get("queryAnnotations").is_none());
         // As Teams sent it in OST Test Team > General ("body").
-        let g = Filters { channel_group: "1fac3ae3-c9c0-4ddb-90bb-58f52209c181".into(), ..Default::default() };
+        let g = Filters {
+            channel_group: "1fac3ae3-c9c0-4ddb-90bb-58f52209c181".into(),
+            ..Default::default()
+        };
         let c = query_body("19:x@thread.tacv2", "body", &g, 0, "UTC", "", "");
-        assert_eq!(c["entityRequests"][0]["filter"], serde_json::json!({"term": {"groupId": "1fac3ae3-c9c0-4ddb-90bb-58f52209c181"}}));
+        assert_eq!(
+            c["entityRequests"][0]["filter"],
+            serde_json::json!({"term": {"groupId": "1fac3ae3-c9c0-4ddb-90bb-58f52209c181"}})
+        );
         assert_eq!(
             c["entityRequests"][0]["query"]["queryString"],
             "clientthreadid:19:x@thread.tacv2 AND (Extension_SkypeSpaces_ConversationPost_Extension_ThreadType_String:(topic OR space)) AND NOT (isClientSoftDeleted:TRUE) body"
@@ -650,12 +721,20 @@ mod tests {
     #[test]
     fn filters_are_teams_terms() {
         // As Teams sent them (winpc, OST group test, "bubble").
-        let mut f = Filters { attachment: true, ..Default::default() };
-        assert_eq!(query_string(CHAT, "bubble", &f, "4287e791-1b98-4963-8b94-281c50472683"), format!("hasattachment:yes AND {TAIL} bubble"));
+        let mut f = Filters {
+            attachment: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            query_string(CHAT, "bubble", &f, "4287e791-1b98-4963-8b94-281c50472683"),
+            format!("hasattachment:yes AND {TAIL} bubble")
+        );
         f.mentions = true;
         assert_eq!(
             query_string(CHAT, "bubble", &f, "4287e791-1b98-4963-8b94-281c50472683"),
-            format!("hasattachment:yes AND mentions:4287e7911b9849638b94281c50472683 AND {TAIL} bubble")
+            format!(
+                "hasattachment:yes AND mentions:4287e7911b9849638b94281c50472683 AND {TAIL} bubble"
+            )
         );
         f.start = "2026-11-08T08:00:00.000Z".into();
         f.end = "2026-11-15T08:00:00.000Z".into();
@@ -663,7 +742,9 @@ mod tests {
         f.from_oid = "5050c9d6-0000-0000-0000-000000000000".into();
         assert_eq!(
             query_string(CHAT, "bubble", &f, "4287e791-1b98-4963-8b94-281c50472683"),
-            format!("sent >= 2026-11-08T08:00:00.000Z AND sent < 2026-11-15T08:00:00.000Z AND hasattachment:yes AND mentions:4287e7911b9849638b94281c50472683 AND {TAIL} someone@example.com bubble")
+            format!(
+                "sent >= 2026-11-08T08:00:00.000Z AND sent < 2026-11-15T08:00:00.000Z AND hasattachment:yes AND mentions:4287e7911b9849638b94281c50472683 AND {TAIL} someone@example.com bubble"
+            )
         );
         let b = query_body(CHAT, "bubble", &f, 0, "UTC", "", "t1");
         assert_eq!(
@@ -680,8 +761,14 @@ mod tests {
             {"Type": "File", "Source": {"FileName": "b.docx", "SpWebUrl": "https://x/sites/T"}}
         ]}]}]});
         let f = found_from(&reply);
-        assert_eq!((f.hits[0].file_group_id.as_str(), f.hits[0].file_unredeemed), ("g1", false));
-        assert_eq!((f.hits[1].file_group_id.as_str(), f.hits[1].file_unredeemed), ("", true));
+        assert_eq!(
+            (f.hits[0].file_group_id.as_str(), f.hits[0].file_unredeemed),
+            ("g1", false)
+        );
+        assert_eq!(
+            (f.hits[1].file_group_id.as_str(), f.hits[1].file_unredeemed),
+            ("", true)
+        );
     }
 
     #[test]
@@ -701,9 +788,18 @@ mod tests {
             r["query"]["queryString"],
             "LastModifiedTime >= 2026-11-08T08:00:00.000Z AND LastModifiedTime < 2026-11-15T08:00:00.000Z AND someone@example.com bubble"
         );
-        assert_eq!(r["query"]["queryAnnotations"][1], serde_json::json!({"type": "Chat", "id": CHAT, "text": "dummyText"}));
-        assert_eq!(b["scenario"]["Dimensions"][0]["DimensionValue"], "ContextualFilesTypeAhead");
-        let plain_files = Filters { files: true, ..Default::default() };
+        assert_eq!(
+            r["query"]["queryAnnotations"][1],
+            serde_json::json!({"type": "Chat", "id": CHAT, "text": "dummyText"})
+        );
+        assert_eq!(
+            b["scenario"]["Dimensions"][0]["DimensionValue"],
+            "ContextualFilesTypeAhead"
+        );
+        let plain_files = Filters {
+            files: true,
+            ..Default::default()
+        };
         assert_eq!(query_string(CHAT, "bubble", &plain_files, ""), "bubble");
     }
 
@@ -719,16 +815,25 @@ mod tests {
             }],
             ..Default::default()
         };
-        assert_eq!(row_text(&m), "Take a look at this app. Help Help Microsoft Corporation");
+        assert_eq!(
+            row_text(&m),
+            "Take a look at this app. Help Help Microsoft Corporation"
+        );
     }
 
     #[test]
     fn find_in_post_names_the_post() {
         // As Teams sent it (a post's window, "OST").
-        let f = Filters { post_root: "1794312231733".into(), ..Default::default() };
+        let f = Filters {
+            post_root: "1794312231733".into(),
+            ..Default::default()
+        };
         let b = query_body("19:c@thread.tacv2", "OST", &f, 0, "UTC", "", "");
         let r = &b["entityRequests"][0];
-        assert_eq!(r["query"]["queryString"], "clientconversationid:19:c@thread.tacv2;messageId=1794312231733 AND NOT (isClientSoftDeleted:TRUE) OST");
+        assert_eq!(
+            r["query"]["queryString"],
+            "clientconversationid:19:c@thread.tacv2;messageId=1794312231733 AND NOT (isClientSoftDeleted:TRUE) OST"
+        );
         assert!(r.get("filter").is_none());
     }
 
@@ -754,8 +859,15 @@ mod tests {
             query_string(CHAT, "attachment", &f, ""),
             "LastModifiedTime >= 2026-11-08T08:00:00.000Z AND LastModifiedTime < 2026-11-15T08:00:00.000Z AND (filetype:txt OR fileExtension:txt) AND attachment"
         );
-        let w = Filters { files: true, file_type: "word".into(), ..Default::default() };
-        assert_eq!(query_string(CHAT, "attachment", &w, ""), "(filetype:doc OR filetype:docx OR fileExtension:doc OR fileExtension:docx) AND attachment");
+        let w = Filters {
+            files: true,
+            file_type: "word".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            query_string(CHAT, "attachment", &w, ""),
+            "(filetype:doc OR filetype:docx OR fileExtension:doc OR fileExtension:docx) AND attachment"
+        );
         let c = Filters {
             files: true,
             channel_group: "g".into(),
@@ -811,11 +923,25 @@ mod tests {
             {"Type": "File", "Source": {"FileName": "All.aspx", "Author": "System Account", "LastModifiedTime": "2026-11-08T23:41:49Z"}}
         ]}]}]});
         let f = found_from(&reply);
-        let line = |i: usize| (f.hits[i].file_action.as_str(), f.hits[i].file_by.as_str(), f.hits[i].file_when.as_str());
-        assert_eq!(line(0), ("Shared by", "OST Test 1", "2026-11-05T17:46:04.0000000Z"));
-        assert_eq!(line(1), ("Modified by", "OST Test 1", "2026-11-07T02:12:12.0000000Z"));
+        let line = |i: usize| {
+            (
+                f.hits[i].file_action.as_str(),
+                f.hits[i].file_by.as_str(),
+                f.hits[i].file_when.as_str(),
+            )
+        };
+        assert_eq!(
+            line(0),
+            ("Shared by", "OST Test 1", "2026-11-05T17:46:04.0000000Z")
+        );
+        assert_eq!(
+            line(1),
+            ("Modified by", "OST Test 1", "2026-11-07T02:12:12.0000000Z")
+        );
         assert_eq!(line(2), ("", "System Account", ""));
-        assert_eq!(f.hits[0].sender_name, "OST Test 1", "Find in chat keeps the modifier");
+        assert_eq!(
+            f.hits[0].sender_name, "OST Test 1",
+            "Find in chat keeps the modifier"
+        );
     }
 }
-

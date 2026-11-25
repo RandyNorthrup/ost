@@ -54,7 +54,13 @@ struct StateProcessor {
 
 impl StateProcessor {
     fn new(low: f64, high: f64) -> Self {
-        StateProcessor { low, high, in_lower: true, current: true, stick_started: None }
+        StateProcessor {
+            low,
+            high,
+            in_lower: true,
+            current: true,
+            stick_started: None,
+        }
     }
 
     /// Rate a sample taken at `now_ms`; true is Good.
@@ -173,7 +179,11 @@ impl Rater {
                 Some(l) if l > 0.0 => self.loss_state.on_sample(l, now_ms),
                 _ => true,
             };
-            self.outbound = if jitter_good && loss_good { Strength::Good } else { Strength::Bad };
+            self.outbound = if jitter_good && loss_good {
+                Strength::Good
+            } else {
+                Strength::Bad
+            };
         }
         self.inbound.max(self.outbound)
     }
@@ -186,11 +196,19 @@ impl Rater {
         if m < good_lo {
             Strength::Good
         } else if m < good_hi {
-            if was == Strength::Good { Strength::Good } else { Strength::Poor }
+            if was == Strength::Good {
+                Strength::Good
+            } else {
+                Strength::Poor
+            }
         } else if m < bad_lo {
             Strength::Poor
         } else if m < bad_hi {
-            if was == Strength::Bad { Strength::Bad } else { Strength::Poor }
+            if was == Strength::Bad {
+                Strength::Bad
+            } else {
+                Strength::Poor
+            }
         } else {
             Strength::Bad
         }
@@ -239,7 +257,12 @@ mod tests {
     use super::*;
 
     fn s(missing: f64, t: u64) -> Sample {
-        Sample { samples_received: 48_000 * (t + 20), missing_ratio: Some(missing), packets_sent: 0, ..Default::default() }
+        Sample {
+            samples_received: 48_000 * (t + 20),
+            missing_ratio: Some(missing),
+            packets_sent: 0,
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -269,7 +292,11 @@ mod tests {
         // Nothing until 10 s of audio has arrived.
         let mut fresh = Rater::default();
         for t in 0..6 {
-            let early = Sample { samples_received: 48_000 * t, missing_ratio: Some(0.5), ..Default::default() };
+            let early = Sample {
+                samples_received: 48_000 * t,
+                missing_ratio: Some(0.5),
+                ..Default::default()
+            };
             assert_eq!(fresh.sample(early, t * 1000), Strength::Good);
         }
     }
@@ -277,7 +304,11 @@ mod tests {
     #[test]
     fn sending_bad_sticks_for_five_seconds() {
         let mut r = Rater::default();
-        let out = |loss: f64| Sample { packets_sent: 500, remote_loss: Some(loss), ..Default::default() };
+        let out = |loss: f64| Sample {
+            packets_sent: 500,
+            remote_loss: Some(loss),
+            ..Default::default()
+        };
         assert_eq!(r.sample(out(0.05), 0), Strength::Good);
         assert_eq!(r.sample(out(0.4), 1000), Strength::Bad);
         // Back under the low threshold: Bad holds for 5 s.

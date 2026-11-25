@@ -10,7 +10,10 @@ async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("--raw") => {
-            let filter = args.get(1).map(String::as_str).unwrap_or(places::BUILDINGS_FILTER);
+            let filter = args
+                .get(1)
+                .map(String::as_str)
+                .unwrap_or(places::BUILDINGS_FILTER);
             for p in places::find_places(&client, filter).await? {
                 println!("{p:#}");
             }
@@ -23,14 +26,24 @@ async fn main() -> anyhow::Result<()> {
             return Ok(());
         }
         Some("--id") => {
-            println!("{:?}", places::building_by_id(&client, args.get(1).map(String::as_str).unwrap_or_default()).await?);
+            println!(
+                "{:?}",
+                places::building_by_id(
+                    &client,
+                    args.get(1).map(String::as_str).unwrap_or_default()
+                )
+                .await?
+            );
             return Ok(());
         }
         _ => {}
     }
     let new_api = args.first().map(String::as_str) == Some("--new");
     for b in places::buildings(&client, new_api).await? {
-        println!("{}  {}  ({}, {}, {})", b.id, b.name, b.city, b.state, b.country);
+        println!(
+            "{}  {}  ({}, {}, {})",
+            b.id, b.name, b.city, b.state, b.country
+        );
     }
     Ok(())
 }

@@ -169,7 +169,10 @@ pub fn collections_from(content: &serde_json::Value) -> Vec<Collection> {
             nav_section: s(c, "navSection"),
             nav_sub: s(c, "navSubSection"),
             nav_order: c.get("navSectionOrder").and_then(|h| h.as_i64()),
-            no_ratings: c.get("disableRatings").and_then(|h| h.as_bool()).unwrap_or(false),
+            no_ratings: c
+                .get("disableRatings")
+                .and_then(|h| h.as_bool())
+                .unwrap_or(false),
             ..Default::default()
         })
         .collect();
@@ -188,8 +191,11 @@ pub fn collections_from(content: &serde_json::Value) -> Vec<Collection> {
             .flatten()
             .filter_map(|i| Some((i.get("id")?.as_str()?.to_string(), s(i, "type"))))
             .collect();
-        let children: Vec<String> =
-            typed.iter().filter(|(_, k)| k == "childCollectionId").map(|(i, _)| i.clone()).collect();
+        let children: Vec<String> = typed
+            .iter()
+            .filter(|(_, k)| k == "childCollectionId")
+            .map(|(i, _)| i.clone())
+            .collect();
         if let Some((target, kind)) = typed.first()
             && kind == "linkedCollectionId"
         {
@@ -225,10 +231,18 @@ pub fn collections_from(content: &serde_json::Value) -> Vec<Collection> {
                 if let Some(f) = c.get("feedOrder").and_then(|x| x.as_i64()) {
                     o.feed_order = Some(f);
                 }
-                if let Some(d) = c.get("description").and_then(|x| x.as_str()).filter(|d| !d.is_empty()) {
+                if let Some(d) = c
+                    .get("description")
+                    .and_then(|x| x.as_str())
+                    .filter(|d| !d.is_empty())
+                {
                     o.description = d.to_string();
                 }
-                if let Some(n) = c.get("navSection").and_then(|x| x.as_str()).filter(|n| !n.is_empty()) {
+                if let Some(n) = c
+                    .get("navSection")
+                    .and_then(|x| x.as_str())
+                    .filter(|n| !n.is_empty())
+                {
                     o.nav_section = n.to_string();
                 }
                 if o.linked.is_empty() && o.items.is_empty() && !self_link {
@@ -249,7 +263,11 @@ pub fn collections_from(content: &serde_json::Value) -> Vec<Collection> {
                 nav_section: s(c, "navSection"),
                 nav_sub: s(c, "navSubSection"),
                 nav_order: c.get("navSectionOrder").and_then(|x| x.as_i64()),
-                items: if self_link || !children.is_empty() { Vec::new() } else { items },
+                items: if self_link || !children.is_empty() {
+                    Vec::new()
+                } else {
+                    items
+                },
                 children,
                 id,
                 ..Default::default()
@@ -510,7 +528,12 @@ pub struct StoreApp {
 /// An app's filter features from its definition and its Store
 /// capabilities, as Teams' worker computes them (KDr and its helpers).
 pub fn app_features(def: &serde_json::Value, caps: &[String]) -> Vec<&'static str> {
-    let list = |k: &str| def.get(k).and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let list = |k: &str| {
+        def.get(k)
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default()
+    };
     let mut f: Vec<&'static str> = Vec::new();
     let mut add = |x: &'static str| {
         if !f.contains(&x) {
@@ -519,7 +542,10 @@ pub fn app_features(def: &serde_json::Value, caps: &[String]) -> Vec<&'static st
     };
     let statics = list("staticTabs");
     let scoped = |t: &serde_json::Value, s: &str| {
-        t.get("scopes").and_then(|v| v.as_array()).is_some_and(|l| l.iter().any(|x| x.as_str().is_some_and(|x| x.eq_ignore_ascii_case(s))))
+        t.get("scopes").and_then(|v| v.as_array()).is_some_and(|l| {
+            l.iter()
+                .any(|x| x.as_str().is_some_and(|x| x.eq_ignore_ascii_case(s)))
+        })
     };
     if !statics.is_empty() && statics.iter().all(|t| scoped(t, "personal")) {
         add("Personal");
@@ -527,14 +553,21 @@ pub fn app_features(def: &serde_json::Value, caps: &[String]) -> Vec<&'static st
     if !list("connectors").is_empty() {
         add("Connector");
     }
-    let channel_types: Vec<String> = list("supportedChannelTypes").iter().filter_map(|v| v.as_str().map(str::to_lowercase)).collect();
+    let channel_types: Vec<String> = list("supportedChannelTypes")
+        .iter()
+        .filter_map(|v| v.as_str().map(str::to_lowercase))
+        .collect();
     if channel_types.iter().any(|c| c == "sharedchannels") {
         add("SharedChannelTypeSupported");
     }
     if channel_types.iter().any(|c| c == "privatechannels") {
         add("PrivateChannelTypeSupported");
     }
-    if def.get("isBlocked").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if def
+        .get("isBlocked")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         add("Blocked");
     } else {
         add("Available");
@@ -551,21 +584,50 @@ pub fn app_features(def: &serde_json::Value, caps: &[String]) -> Vec<&'static st
         // Meeting: a tab for a meeting's side panel or stage in a group chat.
         let meeting = gallery.iter().any(|t| {
             scoped(t, "groupchat")
-                && t.get("context").and_then(|v| v.as_array()).is_some_and(|c| {
-                    c.iter().any(|x| x.as_str().is_some_and(|x| x.eq_ignore_ascii_case("meetingSidePanel") || x.eq_ignore_ascii_case("meetingStage")))
-                })
+                && t.get("context")
+                    .and_then(|v| v.as_array())
+                    .is_some_and(|c| {
+                        c.iter().any(|x| {
+                            x.as_str().is_some_and(|x| {
+                                x.eq_ignore_ascii_case("meetingSidePanel")
+                                    || x.eq_ignore_ascii_case("meetingStage")
+                            })
+                        })
+                    })
         });
         if meeting {
             add("Meeting");
         }
     }
-    add(if def.pointer("/subscriptionOffer/offerId").and_then(|v| v.as_str()).is_some_and(|o| !o.is_empty()) { "Paid" } else { "Free" });
-    match def.pointer("/securityComplianceInfo/status").and_then(|v| v.as_str()).map(str::to_lowercase).as_deref() {
+    add(
+        if def
+            .pointer("/subscriptionOffer/offerId")
+            .and_then(|v| v.as_str())
+            .is_some_and(|o| !o.is_empty())
+        {
+            "Paid"
+        } else {
+            "Free"
+        },
+    );
+    match def
+        .pointer("/securityComplianceInfo/status")
+        .and_then(|v| v.as_str())
+        .map(str::to_lowercase)
+        .as_deref()
+    {
         Some("m365certified") => add("Certified"),
         Some("attested") => add("PublisherAttested"),
         _ => {}
     }
-    if is_agent(caps) || def.get("metaCapabilities").and_then(|m| m.as_object()).is_some_and(|m| m.contains_key("copilotPlugins") || m.contains_key("copilotExtensions")) {
+    if is_agent(caps)
+        || def
+            .get("metaCapabilities")
+            .and_then(|m| m.as_object())
+            .is_some_and(|m| {
+                m.contains_key("copilotPlugins") || m.contains_key("copilotExtensions")
+            })
+    {
         add("CopilotPlugin");
     }
     f
@@ -716,7 +778,10 @@ impl IcKind {
         }
     }
     pub fn is_tab(self) -> bool {
-        matches!(self, IcKind::TabChat | IcKind::TabMeeting | IcKind::TabChannel)
+        matches!(
+            self,
+            IcKind::TabChat | IcKind::TabMeeting | IcKind::TabChannel
+        )
     }
     /// The tab context an app's tab must list (when it lists any).
     pub fn tab_context(self) -> &'static str {
@@ -758,11 +823,13 @@ pub fn tab_supports(def: &serde_json::Value, scope: &str, context: &str) -> bool
             .collect();
         in_scope && (ctx.is_empty() || ctx.iter().any(|c| c.eq_ignore_ascii_case(context)))
     };
-    ["galleryTabs", "configurableTabs", "staticTabs"].iter().any(|k| {
-        def.get(*k)
-            .and_then(|l| l.as_array())
-            .is_some_and(|l| l.iter().any(fits))
-    })
+    ["galleryTabs", "configurableTabs", "staticTabs"]
+        .iter()
+        .any(|k| {
+            def.get(*k)
+                .and_then(|l| l.as_array())
+                .is_some_and(|l| l.iter().any(fits))
+        })
 }
 
 /// Teams' "Add agent to the chat/channel" Store: `team` for a channel.
@@ -773,7 +840,11 @@ pub async fn in_context(
     team: bool,
     apps: &[(String, String)],
 ) -> Result<InContext> {
-    let kind = if team { IcKind::BotTeam } else { IcKind::BotGroupChat };
+    let kind = if team {
+        IcKind::BotTeam
+    } else {
+        IcKind::BotGroupChat
+    };
     // Apps already added (the grid's) aren't offered again.
     let excluded: HashSet<String> = apps
         .iter()
@@ -788,7 +859,8 @@ pub async fn in_context(
         .filter(|(_, state)| state == "Installed")
         .filter_map(|(id, _)| {
             let d = defs.get(&id.to_lowercase())?;
-            kind.supports(d).then(|| store_app(d, by_id.get(&id.to_lowercase())))
+            kind.supports(d)
+                .then(|| store_app(d, by_id.get(&id.to_lowercase())))
         })
         .collect();
     // By name, as Teams lists them (Forms, Power BI, Updates).
@@ -808,7 +880,11 @@ pub async fn ic_collections(
     client: &TeamsClient,
     kind: IcKind,
     excluded: &HashSet<String>,
-) -> Result<(Vec<IcCollection>, HashMap<String, serde_json::Value>, HashMap<String, Ranked>)> {
+) -> Result<(
+    Vec<IcCollection>,
+    HashMap<String, serde_json::Value>,
+    HashMap<String, Ranked>,
+)> {
     // Teams looks up `{capability}{scope}` ("botteam", "tabgroupchat"),
     // then the capability alone ("bot", "tab"), ignoring case.
     let overwrite = setting("inContextStoreCollectionIdsOverwrite");
@@ -879,7 +955,8 @@ pub async fn ic_collections(
             .filter(|id| seen.insert(id.to_lowercase()) && !excluded.contains(&id.to_lowercase()))
             .filter_map(|id| {
                 let d = defs.get(&id.to_lowercase())?;
-                kind.supports(d).then(|| store_app(d, by_id.get(&id.to_lowercase())))
+                kind.supports(d)
+                    .then(|| store_app(d, by_id.get(&id.to_lowercase())))
             })
             .collect();
         let min = if c.id == "copilotplugins" {
@@ -911,7 +988,12 @@ pub struct FeedCollection {
 /// Teams' feed order: collections with a feedOrder first, by it; the rest
 /// after, as listed.
 pub fn feed(collections: &[Collection]) -> Vec<Collection> {
-    let mut v: Vec<(usize, Collection)> = collections.iter().filter(|c| c.in_feed).cloned().enumerate().collect();
+    let mut v: Vec<(usize, Collection)> = collections
+        .iter()
+        .filter(|c| c.in_feed)
+        .cloned()
+        .enumerate()
+        .collect();
     v.sort_by_key(|(i, c)| (c.feed_order.is_none(), c.feed_order.unwrap_or(0), *i));
     v.into_iter().map(|(_, c)| c).collect()
 }
@@ -954,7 +1036,11 @@ fn nav_icon(c: &Collection, title_key: &str) -> String {
     let key = format!("app:co:{}", c.id);
     list.iter()
         .find(|e| e.get("collectionId").and_then(|x| x.as_str()) == Some(key.as_str()))
-        .or_else(|| list.iter().find(|e| !title_key.is_empty() && e.get("title").and_then(|x| x.as_str()) == Some(title_key)))
+        .or_else(|| {
+            list.iter().find(|e| {
+                !title_key.is_empty() && e.get("title").and_then(|x| x.as_str()) == Some(title_key)
+            })
+        })
         .and_then(|e| e.get("icon")?.as_str().map(kebab))
         .unwrap_or_default()
 }
@@ -962,11 +1048,20 @@ fn nav_icon(c: &Collection, title_key: &str) -> String {
 /// The Store's header menus from the collections (Teams'
 /// getCollectionIdsForNavSection): Featured grouped by sub-section in
 /// navSectionOrder; Categories alphabetically.
-pub fn nav(collections: &[Collection], raw_titles: &HashMap<String, String>) -> (Vec<Vec<NavItem>>, Vec<NavItem>) {
+pub fn nav(
+    collections: &[Collection],
+    raw_titles: &HashMap<String, String>,
+) -> (Vec<Vec<NavItem>>, Vec<NavItem>) {
     let item = |c: &Collection| NavItem {
         id: c.id.clone(),
         title: c.title.clone(),
-        icon: nav_icon(c, raw_titles.get(&c.id).map(String::as_str).unwrap_or_default()),
+        icon: nav_icon(
+            c,
+            raw_titles
+                .get(&c.id)
+                .map(String::as_str)
+                .unwrap_or_default(),
+        ),
     };
     let mut seen = HashSet::new();
     let mut featured: Vec<&Collection> = collections
@@ -981,8 +1076,11 @@ pub fn nav(collections: &[Collection], raw_titles: &HashMap<String, String>) -> 
             None => groups.push((c.nav_sub.clone(), vec![item(c)])),
         }
     }
-    let mut categories: Vec<NavItem> =
-        collections.iter().filter(|c| c.nav_section == "category").map(item).collect();
+    let mut categories: Vec<NavItem> = collections
+        .iter()
+        .filter(|c| c.nav_section == "category")
+        .map(item)
+        .collect();
     categories.sort_by_key(|n| n.title.to_lowercase());
     (groups.into_iter().map(|(_, v)| v).collect(), categories)
 }
@@ -1020,27 +1118,53 @@ impl Resolver {
             .and_then(|c| c.as_array())
             .into_iter()
             .flatten()
-            .chain(doc.get("collectionsList").and_then(|l| l.as_array()).into_iter().flatten())
+            .chain(
+                doc.get("collectionsList")
+                    .and_then(|l| l.as_array())
+                    .into_iter()
+                    .flatten(),
+            )
             .filter_map(|c| {
                 let id = c.get("collectionId").or(c.get("id"))?.as_str()?.to_string();
                 Some((id, c.get("title")?.as_str()?.to_string()))
             })
             .collect();
         let mine = app_details::entitlements(client).await.unwrap_or_default();
-        Ok(Self { collections, ranked, rank, catalog, raw_titles, mine })
+        Ok(Self {
+            collections,
+            ranked,
+            rank,
+            catalog,
+            raw_titles,
+            mine,
+        })
     }
 
     fn apps(&self, c: &Collection) -> Vec<StoreApp> {
-        let defs: HashMap<String, &serde_json::Value> =
-            self.catalog.iter().filter_map(|d| Some((d.get("id")?.as_str()?.to_lowercase(), d))).collect();
-        let by_id: HashMap<String, &Ranked> = self.ranked.values().flatten().map(|r| (r.id.to_lowercase(), r)).collect();
+        let defs: HashMap<String, &serde_json::Value> = self
+            .catalog
+            .iter()
+            .filter_map(|d| Some((d.get("id")?.as_str()?.to_lowercase(), d)))
+            .collect();
+        let by_id: HashMap<String, &Ranked> = self
+            .ranked
+            .values()
+            .flatten()
+            .map(|r| (r.id.to_lowercase(), r))
+            .collect();
         let mut seen = HashSet::new();
         collection_ids(c, &self.ranked, &self.rank)
             .into_iter()
             .filter(|id| seen.insert(id.to_lowercase()))
             .filter_map(|id| {
-                let mut a = store_app(defs.get(&id.to_lowercase())?, by_id.get(&id.to_lowercase()).copied());
-                a.installed = self.mine.get(&id.to_lowercase()).is_some_and(|s| s.starts_with("Installed"));
+                let mut a = store_app(
+                    defs.get(&id.to_lowercase())?,
+                    by_id.get(&id.to_lowercase()).copied(),
+                );
+                a.installed = self
+                    .mine
+                    .get(&id.to_lowercase())
+                    .is_some_and(|s| s.starts_with("Installed"));
                 Some(a)
             })
             .collect()
@@ -1051,7 +1175,13 @@ impl Resolver {
         if let Some(n) = top {
             apps.truncate(n);
         }
-        FeedCollection { id: c.id.clone(), title: c.title.clone(), description: c.description.clone(), apps, no_ratings: c.no_ratings }
+        FeedCollection {
+            id: c.id.clone(),
+            title: c.title.clone(),
+            description: c.description.clone(),
+            apps,
+            no_ratings: c.no_ratings,
+        }
     }
 }
 
@@ -1060,9 +1190,17 @@ impl Resolver {
 pub async fn store_home(client: &TeamsClient) -> Result<StoreHome> {
     let r = Resolver::new(client, |c| c.in_feed).await?;
     let feed_cols = feed(&r.collections);
-    let feed = feed_cols.iter().map(|c| r.feed_collection(c, Some(9))).filter(|f| !f.apps.is_empty()).collect();
+    let feed = feed_cols
+        .iter()
+        .map(|c| r.feed_collection(c, Some(9)))
+        .filter(|f| !f.apps.is_empty())
+        .collect();
     let (featured, categories) = nav(&r.collections, &r.raw_titles);
-    Ok(StoreHome { feed, featured, categories })
+    Ok(StoreHome {
+        feed,
+        featured,
+        categories,
+    })
 }
 
 /// A Store page: a collection with all its apps, or a category group with
@@ -1079,10 +1217,22 @@ pub struct StorePage {
 
 pub async fn store_page(client: &TeamsClient, id: &str) -> Result<StorePage> {
     let r = Resolver::new(client, |_| true).await?;
-    let c = r.collections.iter().find(|c| c.id == id).cloned().context("No such collection")?;
+    let c = r
+        .collections
+        .iter()
+        .find(|c| c.id == id)
+        .cloned()
+        .context("No such collection")?;
     if c.children.is_empty() {
         let f = r.feed_collection(&c, None);
-        return Ok(StorePage { id: c.id, title: c.title, description: c.description, apps: f.apps, sections: Vec::new(), no_ratings: c.no_ratings });
+        return Ok(StorePage {
+            id: c.id,
+            title: c.title,
+            description: c.description,
+            apps: f.apps,
+            sections: Vec::new(),
+            no_ratings: c.no_ratings,
+        });
     }
     let sections = c
         .children
@@ -1091,12 +1241,21 @@ pub async fn store_page(client: &TeamsClient, id: &str) -> Result<StorePage> {
         .map(|x| r.feed_collection(x, Some(9)))
         .filter(|f| !f.apps.is_empty())
         .collect();
-    Ok(StorePage { id: c.id, title: c.title, description: c.description, apps: Vec::new(), sections, no_ratings: false })
+    Ok(StorePage {
+        id: c.id,
+        title: c.title,
+        description: c.description,
+        apps: Vec::new(),
+        sections,
+        no_ratings: false,
+    })
 }
 
 /// Search the Store (Teams' server search), every kind of app.
 pub async fn search_store(client: &TeamsClient, query: &str) -> Result<Vec<StoreApp>> {
-    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let base = client
+        .middle_tier_url()
+        .context("No Teams middle-tier endpoint")?;
     let token = super::directory::middle_tier_token().await?;
     let v: serde_json::Value = client
         .http()
@@ -1120,8 +1279,15 @@ pub async fn search_store(client: &TeamsClient, query: &str) -> Result<Vec<Store
     Ok(search_ids(&v)
         .into_iter()
         .filter_map(|id| {
-            let d = catalog.iter().find(|d| d.get("id").and_then(|i| i.as_str()).is_some_and(|i| i.eq_ignore_ascii_case(&id)))?;
-            Some(store_app(d, ranked.iter().find(|r| r.id.eq_ignore_ascii_case(&id))))
+            let d = catalog.iter().find(|d| {
+                d.get("id")
+                    .and_then(|i| i.as_str())
+                    .is_some_and(|i| i.eq_ignore_ascii_case(&id))
+            })?;
+            Some(store_app(
+                d,
+                ranked.iter().find(|r| r.id.eq_ignore_ascii_case(&id)),
+            ))
         })
         .collect())
 }
@@ -1165,7 +1331,11 @@ pub async fn search_agents(
         .filter(|(_, state)| state == "Installed")
         .map(|(i, _)| i.to_lowercase())
         .collect();
-    let kind = if team { IcKind::BotTeam } else { IcKind::BotGroupChat };
+    let kind = if team {
+        IcKind::BotTeam
+    } else {
+        IcKind::BotGroupChat
+    };
     search_in_context(client, query, kind, &excluded).await
 }
 
@@ -1236,7 +1406,9 @@ pub fn bot_of(def: &serde_json::Value) -> Option<(String, bool)> {
     let b = def.get("bots")?.as_array()?.first()?;
     Some((
         b.get("id")?.as_str()?.to_string(),
-        b.get("isNotificationOnly").and_then(|n| n.as_bool()).unwrap_or(false),
+        b.get("isNotificationOnly")
+            .and_then(|n| n.as_bool())
+            .unwrap_or(false),
     ))
 }
 
@@ -1246,7 +1418,10 @@ pub fn bot_of(def: &serde_json::Value) -> Option<(String, bool)> {
 pub enum AddTarget<'a> {
     Chat(&'a str),
     /// A channel and its team's thread id (19:…@thread.tacv2).
-    Channel { channel: &'a str, team_thread: &'a str },
+    Channel {
+        channel: &'a str,
+        team_thread: &'a str,
+    },
 }
 
 /// Add an app as Teams' Add does (captured on winpc, 2026-11-09): for you
@@ -1256,14 +1431,26 @@ pub enum AddTarget<'a> {
 /// with `X-Ms-Appinstall-Channelid: {channel}`; the channel's own id there is
 /// refused with 403, checked live 2026-11-15). Each body is the app's
 /// definition.
-pub async fn add_app(client: &TeamsClient, app_id: &str, conversation: Option<AddTarget<'_>>) -> Result<Added> {
-    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+pub async fn add_app(
+    client: &TeamsClient,
+    app_id: &str,
+    conversation: Option<AddTarget<'_>>,
+) -> Result<Added> {
+    let base = client
+        .middle_tier_url()
+        .context("No Teams middle-tier endpoint")?;
     let token = super::directory::middle_tier_token().await?;
     let def = app_details::definition(client, app_id).await?;
     let mine = app_details::entitlements(client).await.unwrap_or_default();
-    let have = mine.get(&app_id.to_lowercase()).is_some_and(|s| s.starts_with("Installed"));
+    let have = mine
+        .get(&app_id.to_lowercase())
+        .is_some_and(|s| s.starts_with("Installed"));
     let post = |url: String, channel: Option<&str>| {
-        let mut rq = client.http().post(url).bearer_auth(&token).header("x-client-ui-language", "en-us");
+        let mut rq = client
+            .http()
+            .post(url)
+            .bearer_auth(&token)
+            .header("x-client-ui-language", "en-us");
         if let Some(c) = channel {
             // Teams names the channel it was added from.
             rq = rq.header("X-Ms-Appinstall-Channelid", c);
@@ -1271,14 +1458,21 @@ pub async fn add_app(client: &TeamsClient, app_id: &str, conversation: Option<Ad
         rq.json(&def).send()
     };
     if !have {
-        post(format!("{base}/beta/users/apps/entitlements"), None).await?.error_for_status().context("Add the app")?;
+        post(format!("{base}/beta/users/apps/entitlements"), None)
+            .await?
+            .error_for_status()
+            .context("Add the app")?;
     }
     if let Some(target) = conversation {
         let (url, channel) = match target {
             AddTarget::Chat(chat) => (format!("{base}/beta/chats/{chat}/apps/entitlements"), None),
-            AddTarget::Channel { channel, team_thread } => {
-                (format!("{base}/beta/teams/{team_thread}/apps/entitlements"), Some(channel))
-            }
+            AddTarget::Channel {
+                channel,
+                team_thread,
+            } => (
+                format!("{base}/beta/teams/{team_thread}/apps/entitlements"),
+                Some(channel),
+            ),
         };
         post(url, channel)
             .await?
@@ -1288,7 +1482,11 @@ pub async fn add_app(client: &TeamsClient, app_id: &str, conversation: Option<Ad
     let (bot, notification_only) = bot_of(&def).unwrap_or_default();
     Ok(Added {
         app: app_id.to_string(),
-        name: def.get("name").and_then(|n| n.as_str()).unwrap_or_default().to_string(),
+        name: def
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or_default()
+            .to_string(),
         bot,
         notification_only,
     })
@@ -1297,11 +1495,15 @@ pub async fn add_app(client: &TeamsClient, app_id: &str, conversation: Option<Ad
 /// Remove an app from a chat (Manage apps ▸ Remove:
 /// `DELETE {mt}/beta/chats/{id}/apps/entitlements/{appId}`).
 pub async fn remove_from_chat(client: &TeamsClient, thread_id: &str, app_id: &str) -> Result<()> {
-    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let base = client
+        .middle_tier_url()
+        .context("No Teams middle-tier endpoint")?;
     let token = super::directory::middle_tier_token().await?;
     client
         .http()
-        .delete(format!("{base}/beta/chats/{thread_id}/apps/entitlements/{app_id}"))
+        .delete(format!(
+            "{base}/beta/chats/{thread_id}/apps/entitlements/{app_id}"
+        ))
         .bearer_auth(token)
         .send()
         .await?
@@ -1378,14 +1580,31 @@ pub fn team_apps_from(v: &serde_json::Value) -> Vec<TeamApp> {
         .iter()
         .filter_map(|e| {
             let d = e.get("appDefinition").unwrap_or(e);
-            let s = |x: &serde_json::Value, k: &str| x.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
-            let id = [s(e, "id"), s(d, "id"), s(e, "appId")].into_iter().find(|x| !x.is_empty())?;
+            let s = |x: &serde_json::Value, k: &str| {
+                x.get(k)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string()
+            };
+            let id = [s(e, "id"), s(d, "id"), s(e, "appId")]
+                .into_iter()
+                .find(|x| !x.is_empty())?;
             Some(TeamApp {
                 id,
                 name: s(d, "name"),
                 publisher: s(d, "developerName"),
-                icon: [s(d, "largeImageUrl"), s(d, "smallImageUrl"), s(d, "colorIcon")].into_iter().find(|x| !x.is_empty()).unwrap_or_default(),
-                state: [s(e, "state"), s(e, "appState")].into_iter().find(|x| !x.is_empty()).unwrap_or_default(),
+                icon: [
+                    s(d, "largeImageUrl"),
+                    s(d, "smallImageUrl"),
+                    s(d, "colorIcon"),
+                ]
+                .into_iter()
+                .find(|x| !x.is_empty())
+                .unwrap_or_default(),
+                state: [s(e, "state"), s(e, "appState")]
+                    .into_iter()
+                    .find(|x| !x.is_empty())
+                    .unwrap_or_default(),
             })
         })
         .collect();
@@ -1398,11 +1617,15 @@ pub fn team_apps_from(v: &serde_json::Value) -> Vec<TeamApp> {
 /// with the team thread ids → `value.teamsEntitlements[team]` (id, state)
 /// and `value.definitions` (id → definition); the installed ones.
 pub async fn team_apps(client: &TeamsClient, team_thread: &str) -> Result<Vec<TeamApp>> {
-    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let base = client
+        .middle_tier_url()
+        .context("No Teams middle-tier endpoint")?;
     let token = super::directory::middle_tier_token().await?;
     let v: serde_json::Value = client
         .http()
-        .post(format!("{base}/beta/teams/apps/aggregatedEntitlements?appbarview=userpinned"))
+        .post(format!(
+            "{base}/beta/teams/apps/aggregatedEntitlements?appbarview=userpinned"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!([team_thread]))
         .send()
@@ -1415,9 +1638,17 @@ pub async fn team_apps(client: &TeamsClient, team_thread: &str) -> Result<Vec<Te
     let mut apps = team_apps_from_aggregated(&v, team_thread);
     // Built-in apps carry Teams-relative icons; the catalog has the
     // pictures Teams shows.
-    for a in apps.iter_mut().filter(|a| a.name.is_empty() || !a.icon.starts_with("https://")) {
+    for a in apps
+        .iter_mut()
+        .filter(|a| a.name.is_empty() || !a.icon.starts_with("https://"))
+    {
         if let Ok(d) = app_details::definition(client, &a.id).await {
-            let s = |k: &str| d.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let s = |k: &str| {
+                d.get(k)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string()
+            };
             if a.name.is_empty() {
                 a.name = s("name");
                 a.publisher = s("developerName");
@@ -1434,15 +1665,22 @@ pub async fn team_apps(client: &TeamsClient, team_thread: &str) -> Result<Vec<Te
 
 /// Every app in your teams' entitlements, whatever its state (as Teams'
 /// App permissions reads them), with its definition: (id, definition).
-pub async fn teams_entitled_definitions(client: &TeamsClient, team_threads: &[String]) -> Result<Vec<(String, serde_json::Value)>> {
+pub async fn teams_entitled_definitions(
+    client: &TeamsClient,
+    team_threads: &[String],
+) -> Result<Vec<(String, serde_json::Value)>> {
     if team_threads.is_empty() {
         return Ok(Vec::new());
     }
-    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let base = client
+        .middle_tier_url()
+        .context("No Teams middle-tier endpoint")?;
     let token = super::directory::middle_tier_token().await?;
     let v: serde_json::Value = client
         .http()
-        .post(format!("{base}/beta/teams/apps/aggregatedEntitlements?appbarview=userpinned"))
+        .post(format!(
+            "{base}/beta/teams/apps/aggregatedEntitlements?appbarview=userpinned"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!(team_threads))
         .send()
@@ -1459,7 +1697,11 @@ pub async fn teams_entitled_definitions(client: &TeamsClient, team_threads: &[St
 pub fn entitled_definitions_from(v: &serde_json::Value) -> Vec<(String, serde_json::Value)> {
     let defs = &v["value"]["definitions"];
     let mut out: Vec<(String, serde_json::Value)> = Vec::new();
-    for list in v["value"]["teamsEntitlements"].as_object().into_iter().flat_map(|m| m.values()) {
+    for list in v["value"]["teamsEntitlements"]
+        .as_object()
+        .into_iter()
+        .flat_map(|m| m.values())
+    {
         for e in list.as_array().into_iter().flatten() {
             let Some(id) = e["id"].as_str() else { continue };
             if out.iter().any(|(i, _)| i.eq_ignore_ascii_case(id)) {
@@ -1477,7 +1719,11 @@ pub fn team_apps_from_aggregated(v: &serde_json::Value, team_thread: &str) -> Ve
     let val = &v["value"];
     let ents = val["teamsEntitlements"]
         .as_object()
-        .and_then(|m| m.iter().find(|(k, _)| k.eq_ignore_ascii_case(team_thread)).map(|(_, e)| e.clone()))
+        .and_then(|m| {
+            m.iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(team_thread))
+                .map(|(_, e)| e.clone())
+        })
         .unwrap_or_default();
     let defs = &val["definitions"];
     let installed = ["Installed", "AdminPreInstalled", "InstalledAndFavorited"];
@@ -1489,13 +1735,21 @@ pub fn team_apps_from_aggregated(v: &serde_json::Value, team_thread: &str) -> Ve
         .filter_map(|e| {
             let id = e["id"].as_str()?.to_string();
             let d = defs.get(&id).or_else(|| {
-                defs.as_object().and_then(|m| m.iter().find(|(k, _)| k.starts_with(&id)).map(|(_, d)| d))
+                defs.as_object()
+                    .and_then(|m| m.iter().find(|(k, _)| k.starts_with(&id)).map(|(_, d)| d))
             });
-            let s = |k: &str| d.and_then(|d| d[k].as_str()).unwrap_or_default().to_string();
+            let s = |k: &str| {
+                d.and_then(|d| d[k].as_str())
+                    .unwrap_or_default()
+                    .to_string()
+            };
             Some(TeamApp {
                 name: s("name"),
                 publisher: s("developerName"),
-                icon: [s("largeImageUrl"), s("smallImageUrl")].into_iter().find(|x| !x.is_empty()).unwrap_or_default(),
+                icon: [s("largeImageUrl"), s("smallImageUrl")]
+                    .into_iter()
+                    .find(|x| !x.is_empty())
+                    .unwrap_or_default(),
                 state: e["state"].as_str().unwrap_or_default().to_string(),
                 id,
             })
@@ -1508,11 +1762,15 @@ pub fn team_apps_from_aggregated(v: &serde_json::Value, team_thread: &str) -> Ve
 /// Remove an app from a team (`DELETE {mt}/beta/teams/{teamThread}/apps/entitlements/{appId}`,
 /// as Remove does for a chat).
 pub async fn remove_from_team(client: &TeamsClient, team_thread: &str, app_id: &str) -> Result<()> {
-    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let base = client
+        .middle_tier_url()
+        .context("No Teams middle-tier endpoint")?;
     let token = super::directory::middle_tier_token().await?;
     client
         .http()
-        .delete(format!("{base}/beta/teams/{team_thread}/apps/entitlements/{app_id}"))
+        .delete(format!(
+            "{base}/beta/teams/{team_thread}/apps/entitlements/{app_id}"
+        ))
         .bearer_auth(token)
         .send()
         .await?
@@ -1523,7 +1781,13 @@ pub async fn remove_from_team(client: &TeamsClient, team_thread: &str, app_id: &
 
 /// Teams' manifest for an outgoing webhook (installed into the team as an
 /// app with a custom bot).
-pub fn outgoing_webhook_definition(id: &str, name: &str, description: &str, url: &str, icon_url: &str) -> serde_json::Value {
+pub fn outgoing_webhook_definition(
+    id: &str,
+    name: &str,
+    description: &str,
+    url: &str,
+    icon_url: &str,
+) -> serde_json::Value {
     serde_json::json!({
         "manifestVersion": "0.4",
         "id": id,
@@ -1545,19 +1809,37 @@ pub fn outgoing_webhook_definition(id: &str, name: &str, description: &str, url:
 /// Create an outgoing webhook in a team: its manifest installed as the
 /// team's app (`POST {mt}/beta/teams/{teamThread}/apps/entitlements`).
 /// `icon` is a PNG file (Teams takes 30 KB at most), sent as a data URL.
-pub async fn create_outgoing_webhook(client: &TeamsClient, team_thread: &str, name: &str, description: &str, url: &str, icon: Option<&str>) -> Result<()> {
+pub async fn create_outgoing_webhook(
+    client: &TeamsClient,
+    team_thread: &str,
+    name: &str,
+    description: &str,
+    url: &str,
+    icon: Option<&str>,
+) -> Result<()> {
     let icon_url = match icon {
         Some(path) => {
             use base64::Engine as _;
             let bytes = std::fs::read(path).context("Picture")?;
             anyhow::ensure!(bytes.len() <= 30 * 1024, "The picture is over 30 KB");
-            format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes))
+            format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(bytes)
+            )
         }
         None => String::new(),
     };
-    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let base = client
+        .middle_tier_url()
+        .context("No Teams middle-tier endpoint")?;
     let token = super::directory::middle_tier_token().await?;
-    let def = outgoing_webhook_definition(&uuid::Uuid::new_v4().to_string(), name, description, url, &icon_url);
+    let def = outgoing_webhook_definition(
+        &uuid::Uuid::new_v4().to_string(),
+        name,
+        description,
+        url,
+        &icon_url,
+    );
     client
         .http()
         .post(format!("{base}/beta/teams/{team_thread}/apps/entitlements"))
@@ -1604,15 +1886,24 @@ mod tests {
     #[test]
     fn team_apps_are_teams() {
         // Manage apps' Copy link, as Teams copied it (winpc clipboard).
-        assert_eq!(manage_apps_link("81fef3a6-72aa-4648-a763-de824aeafb7d"), "https://teams.microsoft.com/l/app/81fef3a6-72aa-4648-a763-de824aeafb7d?source=manage-apps-copy-link");
+        assert_eq!(
+            manage_apps_link("81fef3a6-72aa-4648-a763-de824aeafb7d"),
+            "https://teams.microsoft.com/l/app/81fef3a6-72aa-4648-a763-de824aeafb7d?source=manage-apps-copy-link"
+        );
         let v = serde_json::json!({"value":[{"id":"b","state":"Installed","appDefinition":{"id":"b","name":"Lists","developerName":"Microsoft Corporation","largeImageUrl":"https://x/l.png"}},{"id":"a","state":"Installed","name":"Forms","developerName":"Microsoft Corporation"}]});
         let apps = team_apps_from(&v);
-        assert_eq!(apps.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(), vec!["Forms", "Lists"]);
+        assert_eq!(
+            apps.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(),
+            vec!["Forms", "Lists"]
+        );
         assert_eq!(apps[1].icon, "https://x/l.png");
         let agg = serde_json::json!({"value":{"teamsEntitlements":{"19:t@thread.tacv2":[{"id":"a","state":"Installed"},{"id":"b","state":"NotInstalled"}]},"definitions":{"a":{"id":"a","name":"Forms","developerName":"Microsoft Corporation"},"b":{"id":"b","name":"X"}}}});
         let t = team_apps_from_aggregated(&agg, "19:t@thread.tacv2");
         assert_eq!(t.len(), 1);
-        assert_eq!((t[0].name.as_str(), t[0].state.as_str()), ("Forms", "Installed"));
+        assert_eq!(
+            (t[0].name.as_str(), t[0].state.as_str()),
+            ("Forms", "Installed")
+        );
         let d = outgoing_webhook_definition("id", "Hook", "Desc", "https://example.com/h", "");
         assert_eq!(d["manifestVersion"], "0.4");
         assert_eq!(d["customBots"][0]["endpointUrl"], "https://example.com/h");
@@ -1715,18 +2006,39 @@ mod tests {
         ]});
         let all = collections_from(&content);
         let raw: HashMap<String, String> = [
-            ("support-tools-group".to_string(), "_store_grouped_category_support_tools_title".to_string()),
-            ("business-operations-group".to_string(), "_store_grouped_category_business_operations_title".to_string()),
+            (
+                "support-tools-group".to_string(),
+                "_store_grouped_category_support_tools_title".to_string(),
+            ),
+            (
+                "business-operations-group".to_string(),
+                "_store_grouped_category_business_operations_title".to_string(),
+            ),
         ]
         .into();
         let (featured, categories) = nav(&all, &raw);
-        let titles: Vec<Vec<String>> = featured.iter().map(|g| g.iter().map(|n| n.title.clone()).collect()).collect();
+        let titles: Vec<Vec<String>> = featured
+            .iter()
+            .map(|g| g.iter().map(|n| n.title.clone()).collect())
+            .collect();
         assert_eq!(titles[0], ["Built for your org"]);
         assert!(titles.iter().flatten().any(|t| t == "Popular on Teams"));
         assert_eq!(featured[0][0].icon, "guest");
-        assert_eq!(categories.iter().map(|c| c.title.as_str()).collect::<Vec<_>>(), ["Business operations", "Support and tools"]);
+        assert_eq!(
+            categories
+                .iter()
+                .map(|c| c.title.as_str())
+                .collect::<Vec<_>>(),
+            ["Business operations", "Support and tools"]
+        );
         assert_eq!(categories[0].icon, "building");
-        assert_eq!(all.iter().find(|c| c.id == "business-operations-group").unwrap().children, ["finance"]);
+        assert_eq!(
+            all.iter()
+                .find(|c| c.id == "business-operations-group")
+                .unwrap()
+                .children,
+            ["finance"]
+        );
     }
 
     #[test]
@@ -1734,7 +2046,10 @@ mod tests {
         // Polls' definition (its bot only notifies, so Teams shows "About
         // this bot" after adding it).
         let polls = serde_json::json!({"bots": [{"id": "fd931076-bbfb-4a38-a85c-1f0fb5b61bee", "isNotificationOnly": true, "scopes": ["GroupChat", "Team"]}]});
-        assert_eq!(bot_of(&polls), Some(("fd931076-bbfb-4a38-a85c-1f0fb5b61bee".to_string(), true)));
+        assert_eq!(
+            bot_of(&polls),
+            Some(("fd931076-bbfb-4a38-a85c-1f0fb5b61bee".to_string(), true))
+        );
         assert_eq!(bot_of(&serde_json::json!({})), None);
     }
 

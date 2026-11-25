@@ -99,9 +99,9 @@ pub fn merge_live(into: &mut Vec<Entry>, rows: Vec<Entry>, now_ms: i64) {
             && let Some(i) = into
                 .iter()
                 .position(|e| partial(e) && e.user_id == r.user_id)
-            {
-                into.remove(i);
-            }
+        {
+            into.remove(i);
+        }
         if !r.id.is_empty() && into.iter().any(|e| e.id == r.id) {
             continue;
         }

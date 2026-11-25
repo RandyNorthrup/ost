@@ -47,7 +47,10 @@ struct Shared {
 }
 
 static SHARED: Mutex<Shared> = Mutex::new(Shared {
-    state: BleState { supported: false, radio_on: false },
+    state: BleState {
+        supported: false,
+        radio_on: false,
+    },
     seen: std::collections::BTreeMap::new(),
     companions: std::collections::BTreeMap::new(),
     scanning: false,
@@ -167,7 +170,13 @@ type Objects = HashMap<OwnedObjectPath, HashMap<String, HashMap<String, OwnedVal
 
 async fn objects(bus: &zbus::Connection) -> zbus::Result<Objects> {
     let reply = bus
-        .call_method(Some("org.bluez"), "/", Some("org.freedesktop.DBus.ObjectManager"), "GetManagedObjects", &())
+        .call_method(
+            Some("org.bluez"),
+            "/",
+            Some("org.freedesktop.DBus.ObjectManager"),
+            "GetManagedObjects",
+            &(),
+        )
         .await?;
     reply.body().deserialize::<Objects>()
 }
@@ -181,9 +190,15 @@ fn manufacturer_data(props: &HashMap<String, OwnedValue>) -> Vec<(u16, Vec<u8>)>
             _ => None,
         }
     }
-    let Some(Ok(v)) = props.get("ManufacturerData").map(|v| v.try_clone()) else { return Vec::new() };
-    let Ok(map) = HashMap::<u16, OwnedValue>::try_from(v) else { return Vec::new() };
-    map.into_iter().filter_map(|(company, data)| bytes_of(&data).map(|b| (company, b))).collect()
+    let Some(Ok(v)) = props.get("ManufacturerData").map(|v| v.try_clone()) else {
+        return Vec::new();
+    };
+    let Ok(map) = HashMap::<u16, OwnedValue>::try_from(v) else {
+        return Vec::new();
+    };
+    map.into_iter()
+        .filter_map(|(company, data)| bytes_of(&data).map(|b| (company, b)))
+        .collect()
 }
 
 async fn scan() -> zbus::Result<()> {
@@ -210,10 +225,23 @@ async fn scan() -> zbus::Result<()> {
             .and_then(|v| bool::try_from(v).ok())
             .unwrap_or(false);
         let path = found.map(|(p, _)| p.clone());
-        set_state(BleState { supported: path.is_some(), radio_on: powered });
+        set_state(BleState {
+            supported: path.is_some(),
+            radio_on: powered,
+        });
         let call = |method: &'static str, p: OwnedObjectPath| {
             let bus = bus.clone();
-            async move { bus.call_method(Some("org.bluez"), p.as_str(), Some("org.bluez.Adapter1"), method, &()).await.map(|_| ()) }
+            async move {
+                bus.call_method(
+                    Some("org.bluez"),
+                    p.as_str(),
+                    Some("org.bluez.Adapter1"),
+                    method,
+                    &(),
+                )
+                .await
+                .map(|_| ())
+            }
         };
         if !wanted {
             if let Some(p) = adapter.take() {
@@ -230,7 +258,13 @@ async fn scan() -> zbus::Result<()> {
             filter.insert("Transport", Value::from("le"));
             filter.insert("DuplicateData", Value::from(true));
             let _ = bus
-                .call_method(Some("org.bluez"), p.as_str(), Some("org.bluez.Adapter1"), "SetDiscoveryFilter", &(filter,))
+                .call_method(
+                    Some("org.bluez"),
+                    p.as_str(),
+                    Some("org.bluez.Adapter1"),
+                    "SetDiscoveryFilter",
+                    &(filter,),
+                )
                 .await;
             match call("StartDiscovery", p.clone()).await {
                 Ok(()) => {
@@ -253,7 +287,11 @@ async fn scan() -> zbus::Result<()> {
                 .and_then(|v| i16::try_from(v).ok())
                 // 127 is HCI's "not available" (what btvirt reports).
                 .filter(|r| *r != 127)
-                .or_else(|| std::env::var("OST_BT_ASSUMED_RSSI").ok().and_then(|v| v.parse().ok()))
+                .or_else(|| {
+                    std::env::var("OST_BT_ASSUMED_RSSI")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                })
             else {
                 continue;
             };
@@ -273,12 +311,25 @@ async fn scan() -> zbus::Result<()> {
 /// The adapter OST's Bluetooth uses: `OST_BT_ADAPTER` (such as `hci1`) when
 /// set, otherwise the first one BlueZ has (by name, so always the same).
 #[allow(clippy::type_complexity)]
-fn pick_adapter(objs: &Objects) -> Option<(&OwnedObjectPath, &HashMap<String, HashMap<String, OwnedValue>>)> {
-    let wanted = std::env::var("OST_BT_ADAPTER").ok().map(|a| a.trim().to_string()).filter(|a| !a.is_empty());
-    let mut adapters: Vec<_> = objs.iter().filter(|(_, i)| i.contains_key("org.bluez.Adapter1")).collect();
+fn pick_adapter(
+    objs: &Objects,
+) -> Option<(
+    &OwnedObjectPath,
+    &HashMap<String, HashMap<String, OwnedValue>>,
+)> {
+    let wanted = std::env::var("OST_BT_ADAPTER")
+        .ok()
+        .map(|a| a.trim().to_string())
+        .filter(|a| !a.is_empty());
+    let mut adapters: Vec<_> = objs
+        .iter()
+        .filter(|(_, i)| i.contains_key("org.bluez.Adapter1"))
+        .collect();
     adapters.sort_by(|a, b| a.0.as_str().cmp(b.0.as_str()));
     match wanted {
-        Some(name) => adapters.into_iter().find(|(p, _)| p.as_str().rsplit('/').next() == Some(name.as_str())),
+        Some(name) => adapters
+            .into_iter()
+            .find(|(p, _)| p.as_str().rsplit('/').next() == Some(name.as_str())),
         None => adapters.into_iter().next(),
     }
 }
@@ -351,28 +402,51 @@ async fn unregister(adapter: &OwnedObjectPath) -> zbus::Result<()> {
     let bus = system_bus().await?;
     let path = zbus::zvariant::ObjectPath::try_from(ADVERT_PATH)?;
     let r = bus
-        .call_method(Some("org.bluez"), adapter.as_str(), Some("org.bluez.LEAdvertisingManager1"), "UnregisterAdvertisement", &(path,))
+        .call_method(
+            Some("org.bluez"),
+            adapter.as_str(),
+            Some("org.bluez.LEAdvertisingManager1"),
+            "UnregisterAdvertisement",
+            &(path,),
+        )
         .await;
-    let _ = bus.object_server().remove::<Advertisement, _>(ADVERT_PATH).await;
+    let _ = bus
+        .object_server()
+        .remove::<Advertisement, _>(ADVERT_PATH)
+        .await;
     r.map(|_| ())
 }
 
-async fn register(object_id: &str, code: u16, previous: Option<OwnedObjectPath>) -> zbus::Result<OwnedObjectPath> {
+async fn register(
+    object_id: &str,
+    code: u16,
+    previous: Option<OwnedObjectPath>,
+) -> zbus::Result<OwnedObjectPath> {
     if let Some(p) = previous {
         let _ = unregister(&p).await;
     }
-    let data = teams_cli::api::rooms::beacon_data(object_id, code).ok_or_else(|| zbus::Error::Failure("not a room id".into()))?;
+    let data = teams_cli::api::rooms::beacon_data(object_id, code)
+        .ok_or_else(|| zbus::Error::Failure("not a room id".into()))?;
     let bus = system_bus().await?;
     let objs = objects(&bus).await?;
-    let (adapter, ifaces) = pick_adapter(&objs).ok_or_else(|| zbus::Error::Failure("no Bluetooth adapter".into()))?;
+    let (adapter, ifaces) =
+        pick_adapter(&objs).ok_or_else(|| zbus::Error::Failure("no Bluetooth adapter".into()))?;
     if !ifaces.contains_key("org.bluez.LEAdvertisingManager1") {
         return Err(zbus::Error::Failure("the adapter can't advertise".into()));
     }
     let adapter = adapter.clone();
-    bus.object_server().at(ADVERT_PATH, Advertisement { data }).await?;
+    bus.object_server()
+        .at(ADVERT_PATH, Advertisement { data })
+        .await?;
     let path = zbus::zvariant::ObjectPath::try_from(ADVERT_PATH)?;
     let options: HashMap<&str, Value> = HashMap::new();
-    bus.call_method(Some("org.bluez"), adapter.as_str(), Some("org.bluez.LEAdvertisingManager1"), "RegisterAdvertisement", &(path, options))
-        .await?;
+    bus.call_method(
+        Some("org.bluez"),
+        adapter.as_str(),
+        Some("org.bluez.LEAdvertisingManager1"),
+        "RegisterAdvertisement",
+        &(path, options),
+    )
+    .await?;
     Ok(adapter)
 }

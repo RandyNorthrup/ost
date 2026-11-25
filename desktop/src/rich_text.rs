@@ -105,11 +105,19 @@ unsafe extern "C" {
     );
     fn ost_rich_free(s: *mut core::ffi::c_char);
     fn ost_rich_chips_load(helper: *mut core::ffi::c_void, parts: *const core::ffi::c_char);
-    fn ost_rich_chip_insert(helper: *mut core::ffi::c_void, from: i32, to: i32, chip: *const core::ffi::c_char) -> i32;
+    fn ost_rich_chip_insert(
+        helper: *mut core::ffi::c_void,
+        from: i32,
+        to: i32,
+        chip: *const core::ffi::c_char,
+    ) -> i32;
     fn ost_rich_chips_raw(helper: *mut core::ffi::c_void) -> *mut core::ffi::c_char;
     fn ost_rich_chip_boxes(helper: *mut core::ffi::c_void) -> *mut core::ffi::c_char;
     fn ost_rich_dpr(helper: *mut core::ffi::c_void) -> f64;
-    fn ost_rich_line_ascents(helper: *mut core::ffi::c_void, positions: *const core::ffi::c_char) -> *mut core::ffi::c_char;
+    fn ost_rich_line_ascents(
+        helper: *mut core::ffi::c_void,
+        positions: *const core::ffi::c_char,
+    ) -> *mut core::ffi::c_char;
     fn ost_rich_code_runs(
         helper: *mut core::ffi::c_void,
         family: *const core::ffi::c_char,
@@ -227,11 +235,16 @@ impl qobject::RichText {
         let dpr = unsafe { ost_rich_dpr(me) };
         // SAFETY: `me` is this live item; `positions` outlives the call.
         let ascents = take(unsafe { ost_rich_line_ascents(me, positions.as_ptr()) });
-        let lines: Vec<serde_json::Value> = serde_json::from_str::<Vec<Option<f64>>>(&ascents.to_string())
-            .unwrap_or_default()
-            .into_iter()
-            .map(|a| a.map_or(serde_json::Value::Null, |a| serde_json::json!(spelling_mark_centre(a, dpr))))
-            .collect();
+        let lines: Vec<serde_json::Value> =
+            serde_json::from_str::<Vec<Option<f64>>>(&ascents.to_string())
+                .unwrap_or_default()
+                .into_iter()
+                .map(|a| {
+                    a.map_or(serde_json::Value::Null, |a| {
+                        serde_json::json!(spelling_mark_centre(a, dpr))
+                    })
+                })
+                .collect();
         QString::from(serde_json::Value::Array(lines).to_string().as_str())
     }
 
@@ -245,8 +258,10 @@ impl qobject::RichText {
         // The blocks are read here (teams-cli's compose_blocks); richtext.cpp
         // builds them into the document.
         let blocks = teams_cli::api::compose_blocks::compose_blocks_json(&html.to_string());
-        let (Ok(blocks), Ok(color)) = (CString::new(blocks), CString::new(mention_color.to_string()))
-        else {
+        let (Ok(blocks), Ok(color)) = (
+            CString::new(blocks),
+            CString::new(mention_color.to_string()),
+        ) else {
             return;
         };
         let me = self.this();
@@ -305,10 +320,23 @@ fn code_box(r: &CodeRun, dpr: f64) -> (f64, f64, f64, f64) {
 
 fn code_boxes_json(runs: &str, dpr: f64) -> String {
     let all: serde_json::Value = serde_json::from_str(runs).unwrap_or_default();
-    let settled = all.get("settled").and_then(serde_json::Value::as_bool).unwrap_or(true);
-    let runs = all.get("runs").and_then(serde_json::Value::as_array).cloned().unwrap_or_default();
-    let num = |v: &serde_json::Value, k: &str| v.get(k).and_then(serde_json::Value::as_f64).unwrap_or(0.0);
-    let flag = |v: &serde_json::Value, k: &str| v.get(k).and_then(serde_json::Value::as_bool).unwrap_or(false);
+    let settled = all
+        .get("settled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(true);
+    let runs = all
+        .get("runs")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let num = |v: &serde_json::Value, k: &str| {
+        v.get(k).and_then(serde_json::Value::as_f64).unwrap_or(0.0)
+    };
+    let flag = |v: &serde_json::Value, k: &str| {
+        v.get(k)
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    };
     let boxes: Vec<serde_json::Value> = runs
         .iter()
         .map(|v| {
@@ -360,7 +388,15 @@ mod tests {
     }
 
     fn run(x0: f64, x1: f64, open_start: bool, open_end: bool) -> CodeRun {
-        CodeRun { x0, x1, base: 16.0, ascent: 12.99, descent: 3.28, open_start, open_end }
+        CodeRun {
+            x0,
+            x1,
+            base: 16.0,
+            ascent: 12.99,
+            descent: 3.28,
+            open_start,
+            open_end,
+        }
     }
 
     fn close(a: f64, b: f64) -> bool {
@@ -383,13 +419,24 @@ mod tests {
         let room = code_room(code_border(1.5));
         assert!(close(room, 6.667));
         let glyphs = 24.5;
-        let r = CodeRun { x0: 19.198 + room, x1: 19.198 + room + glyphs + room, base: 16.0, ascent: 12.667, descent: 3.333, open_start: false, open_end: false };
+        let r = CodeRun {
+            x0: 19.198 + room,
+            x1: 19.198 + room + glyphs + room,
+            base: 16.0,
+            ascent: 12.667,
+            descent: 3.333,
+            open_start: false,
+            open_end: false,
+        };
         let (x, y, w, h) = code_box(&r, 1.5);
         assert!(close(x, 21.333), "{x}"); // 21.198 on device pixels
         assert!(close(y, -1.333), "{y}");
         assert!(close(h, 25.333), "{h}");
         // 33.833 in Chromium; on device pixels, within one of it.
-        assert!((w - (glyphs + 2.0 * (4.0 + 0.667))).abs() <= 2.0 / 3.0, "{w}");
+        assert!(
+            (w - (glyphs + 2.0 * (4.0 + 0.667))).abs() <= 2.0 / 3.0,
+            "{w}"
+        );
     }
 
     #[test]
@@ -421,6 +468,9 @@ mod tests {
         assert_eq!(v["boxes"][0]["w"], 48.0);
         assert_eq!(v["boxes"][0]["open_end"], true);
         assert_eq!(v["settled"], false);
-        assert_eq!(code_boxes_json("garbage", 1.0), r#"{"border":1.0,"boxes":[],"dpr":1.0,"settled":true}"#);
+        assert_eq!(
+            code_boxes_json("garbage", 1.0),
+            r#"{"border":1.0,"boxes":[],"dpr":1.0,"settled":true}"#
+        );
     }
 }

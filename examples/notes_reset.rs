@@ -12,7 +12,10 @@ const CHANNEL_NOTES: &str = "https://www.onenote.com/teams/ChannelNotes?ui={loca
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let a: Vec<String> = std::env::args().collect();
-    anyhow::ensure!(a.len() >= 5, "usage: notes_reset <channel thread> <tab id> <group id> <channel name> [--keep-section]");
+    anyhow::ensure!(
+        a.len() >= 5,
+        "usage: notes_reset <channel thread> <tab id> <group id> <channel name> [--keep-section]"
+    );
     let (thread, tab, group, name) = (&a[1], &a[2], &a[3], &a[4]);
     let client = TeamsClient::new().await?;
     let settings = serde_json::json!({"entityId": "NOTES", "contentUrl": CHANNEL_NOTES, "websiteUrl": "https://www.onenote.com", "removeUrl": ""});
@@ -23,17 +26,47 @@ async fn main() -> anyhow::Result<()> {
     }
     // Site Assets is hidden from the site's drive list; its list is
     // addressed by title.
-    let site: serde_json::Value = client.graph_get(&format!("/groups/{group}/sites/root?$select=id")).await?.json().await?;
+    let site: serde_json::Value = client
+        .graph_get(&format!("/groups/{group}/sites/root?$select=id"))
+        .await?
+        .json()
+        .await?;
     let site = site["id"].as_str().unwrap_or_default().to_string();
-    let d: serde_json::Value = client.graph_get(&format!("/sites/{site}/lists/Site%20Assets/drive?$select=id")).await?.json().await?;
+    let d: serde_json::Value = client
+        .graph_get(&format!(
+            "/sites/{site}/lists/Site%20Assets/drive?$select=id"
+        ))
+        .await?
+        .json()
+        .await?;
     let drive = d["id"].as_str().unwrap_or_default().to_string();
-    let kids: serde_json::Value = client.graph_get(&format!("/drives/{drive}/root/children?$select=id,name")).await?.json().await?;
-    for nb in kids["value"].as_array().into_iter().flatten().filter(|k| k["name"].as_str().is_some_and(|n| n.ends_with(" Notebook"))) {
+    let kids: serde_json::Value = client
+        .graph_get(&format!("/drives/{drive}/root/children?$select=id,name"))
+        .await?
+        .json()
+        .await?;
+    for nb in kids["value"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|k| k["name"].as_str().is_some_and(|n| n.ends_with(" Notebook")))
+    {
         let id = nb["id"].as_str().unwrap_or_default();
-        let files: serde_json::Value = client.graph_get(&format!("/drives/{drive}/items/{id}/children?$select=id,name")).await?.json().await?;
+        let files: serde_json::Value = client
+            .graph_get(&format!(
+                "/drives/{drive}/items/{id}/children?$select=id,name"
+            ))
+            .await?
+            .json()
+            .await?;
         for f in files["value"].as_array().into_iter().flatten() {
             if f["name"].as_str() == Some(format!("{name}.one").as_str()) {
-                client.graph_delete(&format!("/drives/{drive}/items/{}", f["id"].as_str().unwrap_or_default())).await?;
+                client
+                    .graph_delete(&format!(
+                        "/drives/{drive}/items/{}",
+                        f["id"].as_str().unwrap_or_default()
+                    ))
+                    .await?;
                 println!("deleted section {name}.one");
             }
         }

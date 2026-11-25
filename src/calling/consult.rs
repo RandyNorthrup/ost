@@ -79,19 +79,44 @@ impl Consult {
         use Consult::*;
         match (self, event) {
             (Idle, Event::Start(p)) => (Placing { target: p }, Action::HoldAndCall),
-            (Placing { target }, Event::Answered) => (Connected { target: target.clone() }, Action::Nothing),
-            (Connected { target }, Event::Transfer) => (Transferring { target: target.clone() }, Action::SendTransfer),
-            (Connected { target }, Event::Merge) => (Merging { target: target.clone() }, Action::SendMerge),
-            (Transferring { target } | Merging { target }, Event::Failed) => {
-                (Connected { target: target.clone() }, Action::Nothing)
-            }
+            (Placing { target }, Event::Answered) => (
+                Connected {
+                    target: target.clone(),
+                },
+                Action::Nothing,
+            ),
+            (Connected { target }, Event::Transfer) => (
+                Transferring {
+                    target: target.clone(),
+                },
+                Action::SendTransfer,
+            ),
+            (Connected { target }, Event::Merge) => (
+                Merging {
+                    target: target.clone(),
+                },
+                Action::SendMerge,
+            ),
+            (Transferring { target } | Merging { target }, Event::Failed) => (
+                Connected {
+                    target: target.clone(),
+                },
+                Action::Nothing,
+            ),
             (Transferring { .. }, Event::Done) => (Idle, Action::Finished),
             // A merge leaves us in the consult call, now the group call.
             (Merging { .. }, Event::Done) => (Idle, Action::Finished),
             // The consult call is replaced by the transfer: its end is the
             // transfer's, not a reason to resume.
-            (Transferring { target }, Event::ConsultEnded) => (Transferring { target: target.clone() }, Action::Nothing),
-            (Placing { .. } | Connected { .. } | Merging { .. }, Event::ConsultEnded) => (Idle, Action::ResumeFirst),
+            (Transferring { target }, Event::ConsultEnded) => (
+                Transferring {
+                    target: target.clone(),
+                },
+                Action::Nothing,
+            ),
+            (Placing { .. } | Connected { .. } | Merging { .. }, Event::ConsultEnded) => {
+                (Idle, Action::ResumeFirst)
+            }
             (s, _) => (s.clone(), Action::Nothing),
         }
     }
@@ -100,9 +125,10 @@ impl Consult {
     pub fn target(&self) -> Option<&Person> {
         match self {
             Consult::Idle => None,
-            Consult::Placing { target } | Consult::Connected { target } | Consult::Transferring { target } | Consult::Merging { target } => {
-                Some(target)
-            }
+            Consult::Placing { target }
+            | Consult::Connected { target }
+            | Consult::Transferring { target }
+            | Consult::Merging { target } => Some(target),
         }
     }
 
@@ -126,7 +152,10 @@ mod tests {
     use super::*;
 
     fn bob() -> Person {
-        Person { mri: "8:orgid:00000000-0000-0000-0000-00000000000b".into(), name: "Bob".into() }
+        Person {
+            mri: "8:orgid:00000000-0000-0000-0000-00000000000b".into(),
+            name: "Bob".into(),
+        }
     }
 
     #[test]
@@ -151,7 +180,10 @@ mod tests {
         let s = Consult::Connected { target: bob() };
         let (s, _) = s.step(Event::Transfer);
         let (s, a) = s.step(Event::Failed);
-        assert_eq!((s.clone(), a), (Consult::Connected { target: bob() }, Action::Nothing));
+        assert_eq!(
+            (s.clone(), a),
+            (Consult::Connected { target: bob() }, Action::Nothing)
+        );
         let (s, a) = s.step(Event::ConsultEnded);
         assert_eq!((s, a), (Consult::Idle, Action::ResumeFirst));
         // No answer: back to the held call.

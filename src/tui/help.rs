@@ -153,12 +153,10 @@ const ACTIONS: Category = Category {
 
 const MISC: Category = Category {
     title: "HELP",
-    shortcuts: &[
-        Shortcut {
-            key: "Any key",
-            desc: "Close this help",
-        },
-    ],
+    shortcuts: &[Shortcut {
+        key: "Any key",
+        desc: "Close this help",
+    }],
 };
 
 /// Render the help overlay over `area` (everything between the header and
@@ -285,7 +283,10 @@ mod tests {
         term.draw(|f| {
             let area = f.area();
             // Message text everywhere, then the overlay over the middle rows.
-            let filler = (0..area.height).map(|_| "█".repeat(area.width as usize)).collect::<Vec<_>>().join("\n");
+            let filler = (0..area.height)
+                .map(|_| "█".repeat(area.width as usize))
+                .collect::<Vec<_>>()
+                .join("\n");
             f.render_widget(Paragraph::new(filler), area);
             render_help_popup(f, Rect::new(0, 1, area.width, area.height - 2));
         })
@@ -308,10 +309,24 @@ mod tests {
             .flat_map(|c| c.shortcuts.iter().map(|s| s.key))
             .collect();
         // Keys the TUI doesn't handle (src/tui/app.rs).
-        for gone in ["g g", "G", "/", "r", "e", "d", "+", "@", "Ctrl+P", "Ctrl+R", "Ctrl+N", "Ctrl+T", "Ctrl+,", "F1", "F2", "F3", "F4", "F5"] {
+        for gone in [
+            "g g", "G", "/", "r", "e", "d", "+", "@", "Ctrl+P", "Ctrl+R", "Ctrl+N", "Ctrl+T",
+            "Ctrl+,", "F1", "F2", "F3", "F4", "F5",
+        ] {
             assert!(!all.contains(&gone), "{gone} is listed but not handled");
         }
-        for kept in ["Ctrl+K", "Ctrl+D", "Ctrl+U", "Ctrl+Enter", "Enter", "q", "?", "1", "2", "3"] {
+        for kept in [
+            "Ctrl+K",
+            "Ctrl+D",
+            "Ctrl+U",
+            "Ctrl+Enter",
+            "Enter",
+            "q",
+            "?",
+            "1",
+            "2",
+            "3",
+        ] {
             assert!(all.contains(&kept), "{kept} is handled but not listed");
         }
     }

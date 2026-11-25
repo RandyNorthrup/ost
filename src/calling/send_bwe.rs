@@ -17,7 +17,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-
 /// Where the estimate starts (bit/s), and its bounds.
 const START_BPS: f64 = 600_000.0;
 const MIN_BPS: f64 = 80_000.0;
@@ -73,7 +72,11 @@ impl Default for SendSide {
 
 impl SendSide {
     pub fn new() -> Self {
-        SendSide { next_seq: 1, history: BTreeMap::new(), estimator: Estimator::new(START_BPS) }
+        SendSide {
+            next_seq: 1,
+            history: BTreeMap::new(),
+            estimator: Estimator::new(START_BPS),
+        }
     }
 
     /// Give an RTP packet (no extensions yet, as ours are built) its
@@ -82,7 +85,13 @@ impl SendSide {
         let seq = self.next_seq;
         self.next_seq += 1;
         if add_extension(rtp, seq as u16) {
-            self.history.insert(seq, Sent { at: now, size: rtp.len() });
+            self.history.insert(
+                seq,
+                Sent {
+                    at: now,
+                    size: rtp.len(),
+                },
+            );
         }
         while let Some((&first, s)) = self.history.iter().next() {
             if now.duration_since(s.at) > HISTORY {
@@ -107,7 +116,11 @@ impl SendSide {
             for (seq16, arrival) in fb {
                 let seq = unwrap_seq(seq16, latest);
                 if let Some(s) = self.history.get(&seq) {
-                    results.push(PacketResult { send: s.at, size: s.size, arrival_us: arrival });
+                    results.push(PacketResult {
+                        send: s.at,
+                        size: s.size,
+                        arrival_us: arrival,
+                    });
                 }
             }
             if !results.is_empty() {
@@ -144,7 +157,16 @@ pub fn add_extension(rtp: &mut Vec<u8>, seq: u16) -> bool {
         return false;
     }
     rtp[0] |= 0x10;
-    let ext = [0xBE, 0xDE, 0x00, 0x01, (super::twcc::extension_id() << 4) | 1, (seq >> 8) as u8, seq as u8, 0x00];
+    let ext = [
+        0xBE,
+        0xDE,
+        0x00,
+        0x01,
+        (super::twcc::extension_id() << 4) | 1,
+        (seq >> 8) as u8,
+        seq as u8,
+        0x00,
+    ];
     rtp.splice(at..at, ext);
     true
 }
@@ -161,7 +183,8 @@ pub fn feedback_packets(rtcp: &[u8]) -> Vec<Vec<(u16, i64)>> {
         if at + len > rtcp.len() {
             break;
         }
-        if pt == 205 && fmt == 15
+        if pt == 205
+            && fmt == 15
             && let Some(fb) = parse_feedback(&rtcp[at..at + len])
         {
             out.push(fb);
@@ -179,7 +202,11 @@ fn parse_feedback(p: &[u8]) -> Option<Vec<(u16, i64)>> {
     let count = usize::from(u16::from_be_bytes([p[14], p[15]]));
     // 24-bit signed reference time in 64 ms units.
     let raw = (u32::from(p[16]) << 16) | (u32::from(p[17]) << 8) | u32::from(p[18]);
-    let reference = if raw & 0x80_0000 != 0 { raw as i64 - 0x100_0000 } else { raw as i64 };
+    let reference = if raw & 0x80_0000 != 0 {
+        raw as i64 - 0x100_0000
+    } else {
+        raw as i64
+    };
     let mut at = 20;
     let mut symbols = Vec::with_capacity(count);
     while symbols.len() < count {
@@ -287,7 +314,9 @@ impl Estimator {
     }
 
     fn acked_bps(&self) -> f64 {
-        let (Some(first), Some(last)) = (self.acked.front(), self.acked.back()) else { return 0.0 };
+        let (Some(first), Some(last)) = (self.acked.front(), self.acked.back()) else {
+            return 0.0;
+        };
         let span = (last.0 - first.0) as f64 / 1e6;
         if span < 0.2 {
             return 0.0;
@@ -318,7 +347,11 @@ impl Estimator {
     fn loss(&mut self, received: usize, expected: usize, now: Instant) {
         self.lost_window.0 += received;
         self.lost_window.1 += expected;
-        if self.last_loss_update.is_some_and(|t| now.duration_since(t) < Duration::from_secs(1)) || self.lost_window.1 < 20 {
+        if self
+            .last_loss_update
+            .is_some_and(|t| now.duration_since(t) < Duration::from_secs(1))
+            || self.lost_window.1 < 20
+        {
             return;
         }
         let (got, want) = std::mem::take(&mut self.lost_window);
@@ -335,7 +368,11 @@ impl Estimator {
     fn packet(&mut self, send: Instant, arrival: i64) {
         match self.group {
             Some((first, _, _)) if send.duration_since(first) <= BURST => {
-                self.group = Some((first, send, arrival.max(self.group.map_or(arrival, |g| g.2))));
+                self.group = Some((
+                    first,
+                    send,
+                    arrival.max(self.group.map_or(arrival, |g| g.2)),
+                ));
             }
             _ => {
                 if let Some((_, last_send, last_arrival)) = self.group.take() {
@@ -355,7 +392,8 @@ impl Estimator {
         let first = *self.first_arrival.get_or_insert(arrival);
         self.accumulated += delta_ms;
         self.smoothed = SMOOTHING * self.smoothed + (1.0 - SMOOTHING) * self.accumulated;
-        self.window.push_back(((arrival - first) as f64 / 1000.0, self.smoothed));
+        self.window
+            .push_back(((arrival - first) as f64 / 1000.0, self.smoothed));
         if self.window.len() > WINDOW {
             self.window.pop_front();
         }
@@ -363,22 +401,38 @@ impl Estimator {
             return;
         }
         let n = self.window.len() as f64;
-        let (mx, my) = self.window.iter().fold((0.0, 0.0), |(a, b), (x, y)| (a + x, b + y));
+        let (mx, my) = self
+            .window
+            .iter()
+            .fold((0.0, 0.0), |(a, b), (x, y)| (a + x, b + y));
         let (mx, my) = (mx / n, my / n);
-        let (num, den) = self.window.iter().fold((0.0, 0.0), |(a, b), (x, y)| (a + (x - mx) * (y - my), b + (x - mx) * (x - mx)));
+        let (num, den) = self.window.iter().fold((0.0, 0.0), |(a, b), (x, y)| {
+            (a + (x - mx) * (y - my), b + (x - mx) * (x - mx))
+        });
         let slope = if den > 0.0 { num / den } else { 0.0 };
         let modified = slope * n.min(60.0) * TREND_GAIN;
         // Adaptive threshold (GCC: k_up 0.0087, k_down 0.039, ms).
         let now_ms = arrival / 1000;
-        let dt = self.last_threshold_update.map_or(0, |t| (now_ms - t).min(100)) as f64;
+        let dt = self
+            .last_threshold_update
+            .map_or(0, |t| (now_ms - t).min(100)) as f64;
         self.last_threshold_update = Some(now_ms);
         if modified.abs() < self.threshold + 15.0 {
-            let k = if modified.abs() < self.threshold { 0.039 } else { 0.0087 };
-            self.threshold = (self.threshold + k * (modified.abs() - self.threshold) * dt).clamp(6.0, 600.0);
+            let k = if modified.abs() < self.threshold {
+                0.039
+            } else {
+                0.0087
+            };
+            self.threshold =
+                (self.threshold + k * (modified.abs() - self.threshold) * dt).clamp(6.0, 600.0);
         }
         self.usage = if modified > self.threshold {
             let since = *self.overuse_since.get_or_insert(now_ms);
-            if now_ms - since >= 10 { Usage::Over } else { self.usage }
+            if now_ms - since >= 10 {
+                Usage::Over
+            } else {
+                self.usage
+            }
         } else if modified < -self.threshold {
             self.overuse_since = None;
             Usage::Under
@@ -389,7 +443,9 @@ impl Estimator {
     }
 
     fn rate_control(&mut self, now: Instant) {
-        let dt = self.last_increase.map_or(0.0, |t| now.duration_since(t).as_secs_f64().min(1.0));
+        let dt = self
+            .last_increase
+            .map_or(0.0, |t| now.duration_since(t).as_secs_f64().min(1.0));
         self.last_increase = Some(now);
         match self.usage {
             Usage::Over => {
@@ -403,8 +459,14 @@ impl Estimator {
             Usage::Normal => {
                 // Don't run far ahead of what actually gets through.
                 let acked = self.acked_bps();
-                let cap = if acked > 0.0 { 1.5 * acked + 10_000.0 } else { MAX_BPS };
-                self.delay_bps = (self.delay_bps * 1.08f64.powf(dt)).min(cap.max(self.delay_bps)).min(MAX_BPS);
+                let cap = if acked > 0.0 {
+                    1.5 * acked + 10_000.0
+                } else {
+                    MAX_BPS
+                };
+                self.delay_bps = (self.delay_bps * 1.08f64.powf(dt))
+                    .min(cap.max(self.delay_bps))
+                    .min(MAX_BPS);
             }
             Usage::Under => {}
         }
@@ -489,7 +551,14 @@ mod tests {
         for i in 0..200 {
             let send = t0 + Duration::from_millis(i * 10);
             arrival += 10_000;
-            e.update(&[PacketResult { send, size: 1200, arrival_us: arrival }], send);
+            e.update(
+                &[PacketResult {
+                    send,
+                    size: 1200,
+                    arrival_us: arrival,
+                }],
+                send,
+            );
         }
         let grown = e.delay_bps.min(e.loss_bps);
         assert!(grown > START_BPS, "{grown}");
@@ -497,7 +566,14 @@ mod tests {
         for i in 200..400 {
             let send = t0 + Duration::from_millis(i * 10);
             arrival += 13_000;
-            e.update(&[PacketResult { send, size: 1200, arrival_us: arrival }], send);
+            e.update(
+                &[PacketResult {
+                    send,
+                    size: 1200,
+                    arrival_us: arrival,
+                }],
+                send,
+            );
         }
         assert!(e.delay_bps < grown, "{} < {grown}", e.delay_bps);
     }

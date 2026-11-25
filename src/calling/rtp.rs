@@ -133,8 +133,17 @@ pub fn audio_level(samples: &[i16], voice: bool) -> u8 {
     let level = if samples.is_empty() {
         127
     } else {
-        let rms = (samples.iter().map(|&s| (s as f64 / 32768.0).powi(2)).sum::<f64>() / samples.len() as f64).sqrt();
-        if rms <= 0.0 { 127 } else { (-20.0 * rms.log10()).round().clamp(0.0, 127.0) as u8 }
+        let rms = (samples
+            .iter()
+            .map(|&s| (s as f64 / 32768.0).powi(2))
+            .sum::<f64>()
+            / samples.len() as f64)
+            .sqrt();
+        if rms <= 0.0 {
+            127
+        } else {
+            (-20.0 * rms.log10()).round().clamp(0.0, 127.0) as u8
+        }
     };
     (u8::from(voice) << 7) | level
 }
@@ -387,7 +396,14 @@ mod tests {
 
     #[test]
     fn audio_level_extension_round_trips() {
-        let p = encode_with_extensions(111, 7, 960, 42, &[(1, &[audio_level(&[16384; 960], true)])], b"xyz");
+        let p = encode_with_extensions(
+            111,
+            7,
+            960,
+            42,
+            &[(1, &[audio_level(&[16384; 960], true)])],
+            b"xyz",
+        );
         assert_eq!(p[0], 0x90);
         assert_eq!(&p[12..14], &[0xBE, 0xDE]);
         assert_eq!(&p[14..16], &[0, 1]);

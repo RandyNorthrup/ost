@@ -33,7 +33,10 @@ const FINGERPRINT_HASH_LEN: usize = 16;
 /// Teams' DTLS fingerprint hash for a 1:1 call (`GetDtlsFingerprintHash`),
 /// from the two endpoints' raw 32-byte DTLS fingerprints (SHA-256 of each
 /// DER certificate). Argument order does not matter.
-pub fn fingerprint_hash(fingerprint_a: &[u8; 32], fingerprint_b: &[u8; 32]) -> [u8; FINGERPRINT_HASH_LEN] {
+pub fn fingerprint_hash(
+    fingerprint_a: &[u8; 32],
+    fingerprint_b: &[u8; 32],
+) -> [u8; FINGERPRINT_HASH_LEN] {
     let (low, high) = if fingerprint_a <= fingerprint_b {
         (fingerprint_a, fingerprint_b)
     } else {
@@ -88,7 +91,10 @@ mod tests {
     use super::*;
 
     fn fp(s: &str) -> [u8; 32] {
-        let v: Vec<u8> = s.split(':').map(|h| u8::from_str_radix(h, 16).unwrap()).collect();
+        let v: Vec<u8> = s
+            .split(':')
+            .map(|h| u8::from_str_radix(h, 16).unwrap())
+            .collect();
         v.try_into().unwrap()
     }
 
@@ -97,20 +103,43 @@ mod tests {
         // Teams desktop (winpc) calling OST Test 2 with E2EE on, 2026-11-17:
         // the SDP offer's and answer's fingerprints, and the numbers Teams'
         // encryption popup showed.
-        let teams = fp("8F:DF:43:E3:C8:6F:63:9B:E1:12:15:52:2B:B3:A6:54:6A:4E:DB:EF:6F:BB:C1:58:F1:86:11:A5:AB:E0:5F:7F");
-        let ost = fp("76:FA:D8:33:B4:4E:A1:E0:77:96:C4:27:DC:B6:C2:4B:A9:90:ED:5F:B0:70:28:91:03:B0:FF:43:5D:CC:7A:87");
-        assert_eq!(security_numbers(&teams, &ost), ["4507", "0411", "8497", "0193", "3733"]);
-        let teams = fp("90:5A:DB:4E:6F:C7:8B:32:5E:09:5B:4B:6F:98:1C:E8:8F:40:48:DC:1E:EF:43:0B:4B:EB:64:28:7D:44:AD:7B");
-        let ost = fp("7E:9D:8B:58:F9:E7:93:51:83:E6:AB:BD:2F:04:61:46:19:32:4A:61:A7:CA:14:AD:2D:2D:A7:6E:61:B4:37:B2");
-        assert_eq!(security_numbers(&teams, &ost), ["6167", "3878", "8004", "3470", "2825"]);
+        let teams = fp(
+            "8F:DF:43:E3:C8:6F:63:9B:E1:12:15:52:2B:B3:A6:54:6A:4E:DB:EF:6F:BB:C1:58:F1:86:11:A5:AB:E0:5F:7F",
+        );
+        let ost = fp(
+            "76:FA:D8:33:B4:4E:A1:E0:77:96:C4:27:DC:B6:C2:4B:A9:90:ED:5F:B0:70:28:91:03:B0:FF:43:5D:CC:7A:87",
+        );
+        assert_eq!(
+            security_numbers(&teams, &ost),
+            ["4507", "0411", "8497", "0193", "3733"]
+        );
+        let teams = fp(
+            "90:5A:DB:4E:6F:C7:8B:32:5E:09:5B:4B:6F:98:1C:E8:8F:40:48:DC:1E:EF:43:0B:4B:EB:64:28:7D:44:AD:7B",
+        );
+        let ost = fp(
+            "7E:9D:8B:58:F9:E7:93:51:83:E6:AB:BD:2F:04:61:46:19:32:4A:61:A7:CA:14:AD:2D:2D:A7:6E:61:B4:37:B2",
+        );
+        assert_eq!(
+            security_numbers(&teams, &ost),
+            ["6167", "3878", "8004", "3470", "2825"]
+        );
         // Either side computes the same numbers.
-        assert_eq!(security_numbers(&ost, &teams), ["6167", "3878", "8004", "3470", "2825"]);
+        assert_eq!(
+            security_numbers(&ost, &teams),
+            ["6167", "3878", "8004", "3470", "2825"]
+        );
     }
 
     #[test]
     fn format_is_teams_popup_formatter() {
         // 0xffffffff % 100000 = 67295; four chunks -> 20 digits -> 5 groups.
-        assert_eq!(format_numbers(&[0xff; 16]), ["6729", "5672", "9567", "2956", "7295"]);
-        assert_eq!(format_numbers(&[0; 16]), ["0000", "0000", "0000", "0000", "0000"]);
+        assert_eq!(
+            format_numbers(&[0xff; 16]),
+            ["6729", "5672", "9567", "2956", "7295"]
+        );
+        assert_eq!(
+            format_numbers(&[0; 16]),
+            ["0000", "0000", "0000", "0000", "0000"]
+        );
     }
 }

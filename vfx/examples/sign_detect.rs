@@ -62,7 +62,10 @@ fn main() -> anyhow::Result<()> {
     let (w, h, fps): (u32, u32, f64) = (w.parse()?, h.parse()?, fps.parse()?);
     let started = Instant::now();
     let mut detector = SignDetector::new(&std::fs::read(model)?)?;
-    println!("model loaded in {:.0} ms", started.elapsed().as_secs_f64() * 1000.0);
+    println!(
+        "model loaded in {:.0} ms",
+        started.elapsed().as_secs_f64() * 1000.0
+    );
 
     let mut frame = vec![0u8; (w * h * 3 / 2) as usize];
     let mut agg = SigningAggregator::new();
@@ -92,7 +95,12 @@ fn main() -> anyhow::Result<()> {
     }
     sec.flush();
     evals.sort_by(f64::total_cmp);
-    let pct = |p: f64| evals.get(((evals.len() as f64 - 1.0) * p) as usize).copied().unwrap_or(0.0);
+    let pct = |p: f64| {
+        evals
+            .get(((evals.len() as f64 - 1.0) * p) as usize)
+            .copied()
+            .unwrap_or(0.0)
+    };
     println!(
         "{n} frames ({:.1} s): signing {:.2}; {} evaluations, median {:.1} ms, p95 {:.1} ms, max {:.1} ms; {messages} messages",
         n as f64 / fps,

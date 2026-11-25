@@ -105,10 +105,14 @@ fn details(json: &Value) -> Option<&Value> {
 pub fn live_event(json: &Value) -> Option<LiveEvent> {
     let d = details(json)?;
     let cap = d.get("meetingCapability")?.as_object()?;
-    let template = ["/templateDetails/templateId", "/templateDetails/id", "/templateId"]
-        .iter()
-        .find_map(|p| d.pointer(p).and_then(Value::as_str))
-        .unwrap_or_default();
+    let template = [
+        "/templateDetails/templateId",
+        "/templateDetails/id",
+        "/templateId",
+    ]
+    .iter()
+    .find_map(|p| d.pointer(p).and_then(Value::as_str))
+    .unwrap_or_default();
     let conv_type = ["/conversationType", "/body/conversationType"]
         .iter()
         .find_map(|p| json.pointer(p).and_then(Value::as_str))
@@ -116,16 +120,26 @@ pub fn live_event(json: &Value) -> Option<LiveEvent> {
     let flag = |k: &str| cap.get(k).and_then(Value::as_bool).unwrap_or(false);
     let state = cap.get("meetingLiveState");
     Some(LiveEvent {
-        town_hall: flag("forceAttendeeStreaming") || template == TOWNHALL_TEMPLATE || conv_type == "scheduledTownhall",
+        town_hall: flag("forceAttendeeStreaming")
+            || template == TOWNHALL_TEMPLATE
+            || conv_type == "scheduledTownhall",
         webinar: template == WEBINAR_TEMPLATE,
         streaming: flag("forceAttendeeStreaming"),
         staging: flag("stagingRoomEnabled"),
-        phase: state.and_then(|s| s.get("phase")).and_then(Value::as_str).unwrap_or_default().to_string(),
+        phase: state
+            .and_then(|s| s.get("phase"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
         seq: state
             .and_then(|s| s.get("seqNum").or_else(|| s.get("sequenceNumber")))
             .and_then(Value::as_u64)
             .unwrap_or(0),
-        attendee_view: cap.get("attendeeViewModes").and_then(Value::as_str).unwrap_or("Default").to_string(),
+        attendee_view: cap
+            .get("attendeeViewModes")
+            .and_then(Value::as_str)
+            .unwrap_or("Default")
+            .to_string(),
         qna: flag("yammerQNAEnabled"),
         reactions: flag("allowTeamsMeetingReactions"),
         layout: production_layout(json).unwrap_or_default(),
@@ -153,7 +167,13 @@ pub fn curtain_state(live: bool, teams_call_id: &str, sequence: u64) -> Value {
 /// The `updateMeetingLiveState` body (Teams' calling stack: `from`, the
 /// phase with the live state's sequence number, the status callback and an
 /// operation id).
-pub fn live_state_body(from: &Value, live: bool, seq: u64, status_link: &str, operation_id: &str) -> Value {
+pub fn live_state_body(
+    from: &Value,
+    live: bool,
+    seq: u64,
+    status_link: &str,
+    operation_id: &str,
+) -> Value {
     json!({
         "from": from,
         "meetingLiveState": { "phase": if live { "live" } else { "ended" }, "sequenceNumber": seq },
@@ -206,7 +226,12 @@ pub fn production_layout(json: &Value) -> Option<ProductionLayout> {
     .find_map(|p| json.pointer(p))
     .filter(|v| v.is_object())?;
     let layout = d.get("layout").unwrap_or(&Value::Null);
-    let s = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+    let s = |v: &Value, k: &str| {
+        v.get(k)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
     let participants = layout
         .get("participants")
         .and_then(Value::as_array)
@@ -235,7 +260,11 @@ pub fn production_layout(json: &Value) -> Option<ProductionLayout> {
 /// Teams' layout kind for these sources (getUpdatedLayoutKind): side by
 /// side with a screen share among them, else classic.
 pub fn layout_kind(sources: &[LayoutSource]) -> &'static str {
-    if sources.iter().any(|s| s.modality == "VBSS") { "SIDEBYSIDE" } else { "CLASSIC" }
+    if sources.iter().any(|s| s.modality == "VBSS") {
+        "SIDEBYSIDE"
+    } else {
+        "CLASSIC"
+    }
 }
 
 /// Send live (Teams' production studio setProductionLayout ▸
@@ -248,7 +277,14 @@ pub fn layout_kind(sources: &[LayoutSource]) -> &'static str {
 /// participantId, endpointId, modality, isRTMPInVideo false, state
 /// null}], nameTag {isEnabled true}, kind, kindDetails null, background
 /// null, action "put"}` with the conversation's sequence number.
-pub fn set_layout_body(from: &Value, layout_id: &str, sources: &[LayoutSource], seq: u64, status_link: &str, operation_id: &str) -> Value {
+pub fn set_layout_body(
+    from: &Value,
+    layout_id: &str,
+    sources: &[LayoutSource],
+    seq: u64,
+    status_link: &str,
+    operation_id: &str,
+) -> Value {
     let participants: Vec<Value> = sources
         .iter()
         .map(|p| {
@@ -313,14 +349,28 @@ mod tests {
             "isRTMPInVideo": false, "modality": "VIDEO", "participantId": "9c84"}], "resolution": {"height": 720, "width": 1280}, "sequenceNumber": 0},
             "sequenceNumber": 1}}});
         let l = production_layout(&j).unwrap();
-        assert_eq!((l.kind.as_str(), l.sequence, l.updated_by.as_str()), ("CLASSIC", 1, "8:orgid:4287"));
-        assert_eq!(l.participants, vec![LayoutSource { id: "8:orgid:9edc".into(), participant_id: "9c84".into(), endpoint_id: "f2a6".into(), modality: "VIDEO".into() }]);
+        assert_eq!(
+            (l.kind.as_str(), l.sequence, l.updated_by.as_str()),
+            ("CLASSIC", 1, "8:orgid:4287")
+        );
+        assert_eq!(
+            l.participants,
+            vec![LayoutSource {
+                id: "8:orgid:9edc".into(),
+                participant_id: "9c84".into(),
+                endpoint_id: "f2a6".into(),
+                modality: "VIDEO".into()
+            }]
+        );
         // As the meeting starts: no layout yet ("NONE", null participants);
         // and a conversation without one.
         let none = json!({"body": {"layoutDetails": {"layout": {"kind": "NONE", "participants": null, "sequenceNumber": 0}, "sequenceNumber": 0}}});
         let n = production_layout(&none).unwrap();
         assert!(n.participants.is_empty() && n.kind == "CLASSIC");
-        assert_eq!(production_layout(&json!({"body": {"layoutDetails": null}})), None);
+        assert_eq!(
+            production_layout(&json!({"body": {"layoutDetails": null}})),
+            None
+        );
         // Off stage (isOnStage false) isn't shown.
         let off = json!({"layoutDetails": {"layout": {"participants": [{"id": "a", "isOnStage": false}]}}});
         assert!(production_layout(&off).unwrap().participants.is_empty());
@@ -328,26 +378,65 @@ mod tests {
 
     #[test]
     fn sends_live_as_teams_does() {
-        let src = vec![LayoutSource { id: "8:orgid:9edc".into(), participant_id: "9c84".into(), endpoint_id: "f2a6".into(), modality: "VIDEO".into() }];
-        let b = set_layout_body(&json!({"id": "8:orgid:me"}), "112_Preview", &src, 1, "https://cb/conversation/setMeetingLayoutStatus/", "op");
+        let src = vec![LayoutSource {
+            id: "8:orgid:9edc".into(),
+            participant_id: "9c84".into(),
+            endpoint_id: "f2a6".into(),
+            modality: "VIDEO".into(),
+        }];
+        let b = set_layout_body(
+            &json!({"id": "8:orgid:me"}),
+            "112_Preview",
+            &src,
+            1,
+            "https://cb/conversation/setMeetingLayoutStatus/",
+            "op",
+        );
         // Teams desktop's layoutDetails for Send live (logged 2026-11-19).
-        assert_eq!(b["layoutDetails"], json!({"layout": {"id": "112_Preview", "participants": [{"id": "8:orgid:9edc", "participantId": "9c84",
+        assert_eq!(
+            b["layoutDetails"],
+            json!({"layout": {"id": "112_Preview", "participants": [{"id": "8:orgid:9edc", "participantId": "9c84",
             "endpointId": "f2a6", "modality": "VIDEO", "isRTMPInVideo": false, "state": null}], "nameTag": {"isEnabled": true}, "kind": "CLASSIC",
-            "kindDetails": null, "background": null, "action": "put"}, "sequenceNumber": 1}));
+            "kindDetails": null, "background": null, "action": "put"}, "sequenceNumber": 1})
+        );
         assert_eq!(b["operationId"], "op");
-        assert_eq!(b["links"]["setMeetingLayoutStatus"], "https://cb/conversation/setMeetingLayoutStatus/");
-        let share = vec![LayoutSource { modality: "VBSS".into(), ..src[0].clone() }];
+        assert_eq!(
+            b["links"]["setMeetingLayoutStatus"],
+            "https://cb/conversation/setMeetingLayoutStatus/"
+        );
+        let share = vec![LayoutSource {
+            modality: "VBSS".into(),
+            ..src[0].clone()
+        }];
         assert_eq!(layout_kind(&share), "SIDEBYSIDE");
-        assert_eq!(set_layout_body(&json!({}), "1_Preview", &[], 2, "", "")["layoutDetails"]["layout"]["participants"], json!([]));
+        assert_eq!(
+            set_layout_body(&json!({}), "1_Preview", &[], 2, "", "")["layoutDetails"]["layout"]["participants"],
+            json!([])
+        );
     }
 
     #[test]
     fn starts_the_event_as_teams_does() {
         let c = curtain_state(true, "abc", 7);
         assert_eq!(c["stateType"], "ufd");
-        assert_eq!(c["content"], json!({"publishStateUFDType": "stage-curtain", "meetingPhase": "live", "teamsCallId": "abc"}));
-        let b = live_state_body(&json!({"id": "8:orgid:x"}), false, 2, "https://cb/conversation/updateMeetingLiveStateStatus/", "op");
-        assert_eq!(b["meetingLiveState"], json!({"phase": "ended", "sequenceNumber": 2}));
-        assert_eq!(b["links"]["updateMeetingLiveStateStatus"], "https://cb/conversation/updateMeetingLiveStateStatus/");
+        assert_eq!(
+            c["content"],
+            json!({"publishStateUFDType": "stage-curtain", "meetingPhase": "live", "teamsCallId": "abc"})
+        );
+        let b = live_state_body(
+            &json!({"id": "8:orgid:x"}),
+            false,
+            2,
+            "https://cb/conversation/updateMeetingLiveStateStatus/",
+            "op",
+        );
+        assert_eq!(
+            b["meetingLiveState"],
+            json!({"phase": "ended", "sequenceNumber": 2})
+        );
+        assert_eq!(
+            b["links"]["updateMeetingLiveStateStatus"],
+            "https://cb/conversation/updateMeetingLiveStateStatus/"
+        );
     }
 }

@@ -8,8 +8,15 @@ use serde::Serialize;
 /// Every endpoint is in the lobby, none in the call (`modalityJoined`
 /// "Lobby"): the person waits in the meeting's lobby.
 fn lobby_only(p: &serde_json::Value) -> bool {
-    let eps: Vec<&serde_json::Value> = p.get("endpoints").and_then(|e| e.as_object()).map(|e| e.values().collect()).unwrap_or_default();
-    !eps.is_empty() && eps.iter().all(|ep| ep.get("call").is_none() && ep.get("lobby").is_some())
+    let eps: Vec<&serde_json::Value> = p
+        .get("endpoints")
+        .and_then(|e| e.as_object())
+        .map(|e| e.values().collect())
+        .unwrap_or_default();
+    !eps.is_empty()
+        && eps
+            .iter()
+            .all(|ep| ep.get("call").is_none() && ep.get("lobby").is_some())
 }
 
 /// A participant's Sign language mode state (527114 SignerMixin): the
@@ -145,34 +152,77 @@ fn is_hidden(mri: &str, p: &serde_json::Value) -> bool {
 /// (`28:e32c9418-…`, "s04-prdnoamcompsvc", which streams the event to its
 /// attendees). Teams' useFilterBlacklistedBots compares MRIs exactly.
 pub const BLACKLISTED_BOTS: [&str; 64] = [
-    "28:5f2511f1-6da9-41d9-80d9-af7da23a2c27", "28:accb0009-8d12-4cfe-969c-39b204e3ed0c", "28:bdd75849-e0a6-4cce-8fc1-d7c0d4da43e5",
-    "28:4b25d9f8-18f5-4d09-a582-cd0a28f63181", "28:07331c9d-bd9a-4d00-bb00-9dcacd105691", "28:123425f9-0c72-4bd8-8814-7cb6b02dfc3f",
-    "28:4be36d18-a394-4f94-ad18-fb20df412d7a", "28:4c072661-d231-483f-b32c-2d305791d32d", "28:e8f1f4bd-f39c-479f-8885-a69ded583534",
-    "28:ae05be75-6c5a-47c0-97b8-8c84fd83880d", "28:0a18c351-466c-4293-87eb-7b08a096b0a1", "28:4c1a6ff1-c702-4652-9991-e0b36d310d19",
-    "28:b1902c3e-b9f7-4650-9b23-5772bd429747", "28:a8011016-05a6-4f6e-b2b3-26543cf329a0", "4:*13",
-    "28:f4693563-c70b-4e4d-bda6-01792aa21440", "28:e32c9418-a835-4eb1-bfb9-733fa74dd6e8", "28:cebb622a-9099-475d-9f85-0413cf0b19c7",
-    "28:38b34208-9db4-425d-91e5-6f201eeaef40", "28:a53eec89-0b8a-4f98-9c56-8e99ce1c58a3", "28:3d59cb08-f597-4e49-9add-a05f9735152b",
-    "28:8cf0f6d9-65dc-464b-a2cb-8f66a9767358", "28:b102ccd8-1925-448b-90a7-b083aba25074", "28:556b15e7-452c-4773-b728-6313eaa47b77",
-    "28:494c14c2-d8bb-41e7-b463-4dd17c3fda60", "28:dod-global:494c14c2-d8bb-41e7-b463-4dd17c3fda60", "28:9fe5a0d5-c286-41f1-a014-67c755902881",
-    "28:gcch-global:9fe5a0d5-c286-41f1-a014-67c755902881", "28:b5738585-9037-4ebd-8c03-d9a8bdbb537d", "28:gcch-global:b5738585-9037-4ebd-8c03-d9a8bdbb537d",
-    "28:e9989ac1-1203-4f1e-a716-07abc621a240", "28:dod-global:e9989ac1-1203-4f1e-a716-07abc621a240", "28:c733a6ab-69c4-4b1d-b660-60048c4dce2f",
-    "28:56aa0a8f-4cd3-446b-8146-0023476a5ff2", "28:bf9a6ad5-ccd4-4c41-ba31-87e67b045a9a", "28:0235a40d-f7c9-4028-a32b-13a50dd6e2fa",
-    "28:dod-global:bf9a6ad5-ccd4-4c41-ba31-87e67b045a9a", "28:gcch-global:0235a40d-f7c9-4028-a32b-13a50dd6e2fa", "28:729cc3ee-79fa-4b21-8601-8b45e143623f",
-    "28:badb39bd-1bdd-4a66-86de-2246b27cd138", "28:bleu-global:729cc3ee-79fa-4b21-8601-8b45e143623f", "28:delos-global:badb39bd-1bdd-4a66-86de-2246b27cd138",
-    "28:fr-global:9d2127a4-a920-42c8-8be7-c5e3285f9188", "28:de-global:9d2127a4-a920-42c8-8be7-c5e3285f9188", "28:6b45c5b6-1c34-47c0-8980-11e98d47d23f",
-    "28:c78e4215-e66c-4a70-8964-74992656de25", "28:8133db4c-c049-4346-9edd-273f164a9227", "28:dod-global:0468c4cf-7b80-4846-ab60-332bd6a9c47f",
-    "28:dod-global:95939add-a568-4c86-89b1-0ae3cdbdeeee", "28:gcch-global:523206b9-49f4-4051-b9d3-07db3242884b", "28:gcch-global:3d00fc8a-a067-49a2-9ae7-4d214f9422a6",
-    "28:gal-global:5f950626-8b3f-41ef-bb7e-3af032f46ee7", "28:gal-global:c8637bd1-81d1-4f05-b3da-08c30cdc6284", "28:ag08-global:9b96c71e-f4d4-4b03-b307-93f4171e17bd",
-    "28:ag09-global:018434e7-ea81-43aa-b947-2cba6462f332", "28:30f2ee85-68d2-40a0-9fcd-3e4a759c8c34", "28:b8cd536a-fe8e-4088-a5b8-e298cc3f2577",
-    "28:bfa8d8c3-fa5e-4ee9-88f5-ffce728a797c", "28:4062df8b-5499-49a2-abe0-29ad866b2c04", "28:gcch-global:56aa0a8f-4cd3-446b-8146-0023476a5ff2",
-    "28:dod-global:56aa0a8f-4cd3-446b-8146-0023476a5ff2", "28:ag08-global:c8637bd1-81d1-4f05-b3da-08c30cdc6284", "28:ag09-global:c8637bd1-81d1-4f05-b3da-08c30cdc6284",
+    "28:5f2511f1-6da9-41d9-80d9-af7da23a2c27",
+    "28:accb0009-8d12-4cfe-969c-39b204e3ed0c",
+    "28:bdd75849-e0a6-4cce-8fc1-d7c0d4da43e5",
+    "28:4b25d9f8-18f5-4d09-a582-cd0a28f63181",
+    "28:07331c9d-bd9a-4d00-bb00-9dcacd105691",
+    "28:123425f9-0c72-4bd8-8814-7cb6b02dfc3f",
+    "28:4be36d18-a394-4f94-ad18-fb20df412d7a",
+    "28:4c072661-d231-483f-b32c-2d305791d32d",
+    "28:e8f1f4bd-f39c-479f-8885-a69ded583534",
+    "28:ae05be75-6c5a-47c0-97b8-8c84fd83880d",
+    "28:0a18c351-466c-4293-87eb-7b08a096b0a1",
+    "28:4c1a6ff1-c702-4652-9991-e0b36d310d19",
+    "28:b1902c3e-b9f7-4650-9b23-5772bd429747",
+    "28:a8011016-05a6-4f6e-b2b3-26543cf329a0",
+    "4:*13",
+    "28:f4693563-c70b-4e4d-bda6-01792aa21440",
+    "28:e32c9418-a835-4eb1-bfb9-733fa74dd6e8",
+    "28:cebb622a-9099-475d-9f85-0413cf0b19c7",
+    "28:38b34208-9db4-425d-91e5-6f201eeaef40",
+    "28:a53eec89-0b8a-4f98-9c56-8e99ce1c58a3",
+    "28:3d59cb08-f597-4e49-9add-a05f9735152b",
+    "28:8cf0f6d9-65dc-464b-a2cb-8f66a9767358",
+    "28:b102ccd8-1925-448b-90a7-b083aba25074",
+    "28:556b15e7-452c-4773-b728-6313eaa47b77",
+    "28:494c14c2-d8bb-41e7-b463-4dd17c3fda60",
+    "28:dod-global:494c14c2-d8bb-41e7-b463-4dd17c3fda60",
+    "28:9fe5a0d5-c286-41f1-a014-67c755902881",
+    "28:gcch-global:9fe5a0d5-c286-41f1-a014-67c755902881",
+    "28:b5738585-9037-4ebd-8c03-d9a8bdbb537d",
+    "28:gcch-global:b5738585-9037-4ebd-8c03-d9a8bdbb537d",
+    "28:e9989ac1-1203-4f1e-a716-07abc621a240",
+    "28:dod-global:e9989ac1-1203-4f1e-a716-07abc621a240",
+    "28:c733a6ab-69c4-4b1d-b660-60048c4dce2f",
+    "28:56aa0a8f-4cd3-446b-8146-0023476a5ff2",
+    "28:bf9a6ad5-ccd4-4c41-ba31-87e67b045a9a",
+    "28:0235a40d-f7c9-4028-a32b-13a50dd6e2fa",
+    "28:dod-global:bf9a6ad5-ccd4-4c41-ba31-87e67b045a9a",
+    "28:gcch-global:0235a40d-f7c9-4028-a32b-13a50dd6e2fa",
+    "28:729cc3ee-79fa-4b21-8601-8b45e143623f",
+    "28:badb39bd-1bdd-4a66-86de-2246b27cd138",
+    "28:bleu-global:729cc3ee-79fa-4b21-8601-8b45e143623f",
+    "28:delos-global:badb39bd-1bdd-4a66-86de-2246b27cd138",
+    "28:fr-global:9d2127a4-a920-42c8-8be7-c5e3285f9188",
+    "28:de-global:9d2127a4-a920-42c8-8be7-c5e3285f9188",
+    "28:6b45c5b6-1c34-47c0-8980-11e98d47d23f",
+    "28:c78e4215-e66c-4a70-8964-74992656de25",
+    "28:8133db4c-c049-4346-9edd-273f164a9227",
+    "28:dod-global:0468c4cf-7b80-4846-ab60-332bd6a9c47f",
+    "28:dod-global:95939add-a568-4c86-89b1-0ae3cdbdeeee",
+    "28:gcch-global:523206b9-49f4-4051-b9d3-07db3242884b",
+    "28:gcch-global:3d00fc8a-a067-49a2-9ae7-4d214f9422a6",
+    "28:gal-global:5f950626-8b3f-41ef-bb7e-3af032f46ee7",
+    "28:gal-global:c8637bd1-81d1-4f05-b3da-08c30cdc6284",
+    "28:ag08-global:9b96c71e-f4d4-4b03-b307-93f4171e17bd",
+    "28:ag09-global:018434e7-ea81-43aa-b947-2cba6462f332",
+    "28:30f2ee85-68d2-40a0-9fcd-3e4a759c8c34",
+    "28:b8cd536a-fe8e-4088-a5b8-e298cc3f2577",
+    "28:bfa8d8c3-fa5e-4ee9-88f5-ffce728a797c",
+    "28:4062df8b-5499-49a2-abe0-29ad866b2c04",
+    "28:gcch-global:56aa0a8f-4cd3-446b-8146-0023476a5ff2",
+    "28:dod-global:56aa0a8f-4cd3-446b-8146-0023476a5ff2",
+    "28:ag08-global:c8637bd1-81d1-4f05-b3da-08c30cdc6284",
+    "28:ag09-global:c8637bd1-81d1-4f05-b3da-08c30cdc6284",
     "28:d123a3e6-7f0a-4bbd-91f2-6d0ad1707297",
 ];
 
 /// Whether Teams hides this participant as a blacklisted bot (ECS
 /// `Calling.blacklistedBots` when it sets one, else Teams' default list).
 pub fn is_blacklisted_bot(mri: &str) -> bool {
-    match crate::api::ecs::setting("Calling", "blacklistedBots").and_then(|v| v.as_array().cloned()) {
+    match crate::api::ecs::setting("Calling", "blacklistedBots").and_then(|v| v.as_array().cloned())
+    {
         Some(list) if !list.is_empty() => list.iter().any(|b| b.as_str() == Some(mri)),
         _ => BLACKLISTED_BOTS.contains(&mri),
     }
@@ -279,7 +329,10 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                     // ("Echo"), not always in the roster.
                     name: Some(s("/details/displayName"))
                         .filter(|n| !n.is_empty())
-                        .or_else(|| mri.eq_ignore_ascii_case(super::signaling::ECHO_BOT_MRI).then_some("Echo"))
+                        .or_else(|| {
+                            mri.eq_ignore_ascii_case(super::signaling::ECHO_BOT_MRI)
+                                .then_some("Echo")
+                        })
                         .unwrap_or_default()
                         .to_string(),
                     role: [s("/meetingRole"), s("/advancedMeetingRole")]
@@ -331,7 +384,9 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                         .and_then(|s| s.as_array())
                         .into_iter()
                         .flatten()
-                        .find(|s| s.get("stateType").and_then(|t| t.as_str()) == Some("weatherPerson"))
+                        .find(|s| {
+                            s.get("stateType").and_then(|t| t.as_str()) == Some("weatherPerson")
+                        })
                         .map(|s| match s.get("content") {
                             Some(serde_json::Value::String(c)) => c.clone(),
                             Some(c) => c.to_string(),
@@ -345,7 +400,13 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                         .into_iter()
                         .flat_map(|e| e.values())
                         .filter_map(|ep| ep.pointer("/call/mediaStreams")?.as_array())
-                        .find(|ms| sending_source(&ms.iter().collect::<Vec<_>>(), "applicationsharing-video").is_some())
+                        .find(|ms| {
+                            sending_source(
+                                &ms.iter().collect::<Vec<_>>(),
+                                "applicationsharing-video",
+                            )
+                            .is_some()
+                        })
                         .and_then(|ms| {
                             ms.iter()
                                 .find(|m| m.get("type").and_then(|t| t.as_str()) == Some("data"))
@@ -363,7 +424,12 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                     room: p
                         .get("endpoints")
                         .and_then(|e| e.as_object())
-                        .is_some_and(|eps| eps.values().any(|ep| ep.get("deviceType").and_then(|d| d.as_str()) == Some(super::room_mode::ROOM_DEVICE_TYPE))),
+                        .is_some_and(|eps| {
+                            eps.values().any(|ep| {
+                                ep.get("deviceType").and_then(|d| d.as_str())
+                                    == Some(super::room_mode::ROOM_DEVICE_TYPE)
+                            })
+                        }),
                     meeting_room: meeting_room_of(p),
                     suspected: mri.starts_with("8:teamsvisitor:")
                         && p.pointer("/details/propertyBag/participantScreening/value/isBot")
@@ -403,7 +469,9 @@ fn log_sharer_attributes(mri: &str, p: &serde_json::Value) {
             return None;
         }
         match v {
-            serde_json::Value::Object(m) => m.get("screenSharerAttributes").or_else(|| m.values().find_map(|x| find(x, depth + 1))),
+            serde_json::Value::Object(m) => m
+                .get("screenSharerAttributes")
+                .or_else(|| m.values().find_map(|x| find(x, depth + 1))),
             serde_json::Value::Array(a) => a.iter().find_map(|x| find(x, depth + 1)),
             _ => None,
         }
@@ -568,12 +636,28 @@ impl Processing {
         let same = self.recording.as_deref().map(str::to_ascii_lowercase)
             == self.transcript.as_deref().map(str::to_ascii_lowercase);
         match (!rec.is_empty(), !tr.is_empty()) {
-            (true, true) if same => fill(&tr_id("Recording and transcription started by %1.", "calling:k7htcmvot"), &[&tr]),
-            (true, true) => {
-                fill(&tr_id("Recording started by %1. Transcription started by %2.", "calling:k4nbj3ibx"), &[&rec, &tr])
-            }
-            (true, false) => fill(&tr_id("Recording started by %1.", "calling:k6ptwcn2g"), &[&rec]),
-            (false, true) => fill(&tr_id("Transcription started by %1.", "calling:k5tqwoq2b"), &[&tr]),
+            (true, true) if same => fill(
+                &tr_id(
+                    "Recording and transcription started by %1.",
+                    "calling:k7htcmvot",
+                ),
+                &[&tr],
+            ),
+            (true, true) => fill(
+                &tr_id(
+                    "Recording started by %1. Transcription started by %2.",
+                    "calling:k4nbj3ibx",
+                ),
+                &[&rec, &tr],
+            ),
+            (true, false) => fill(
+                &tr_id("Recording started by %1.", "calling:k6ptwcn2g"),
+                &[&rec],
+            ),
+            (false, true) => fill(
+                &tr_id("Transcription started by %1.", "calling:k5tqwoq2b"),
+                &[&tr],
+            ),
             (false, false) => match self.indicator_state() {
                 "Transcribing" => tr_id("Transcription started", "calling:k22fflw0f"),
                 "" => String::new(),
@@ -588,14 +672,21 @@ impl Processing {
 /// for one whose endpoint carries them, `None` for one that left.
 /// Participants the update names without endpoints are left out.
 pub fn processing_updates(json: &serde_json::Value) -> Vec<(String, Option<Processing>)> {
-    versioned_processing_updates(json).into_iter().map(|(id, m, _)| (id, m)).collect()
+    versioned_processing_updates(json)
+        .into_iter()
+        .map(|(id, m, _)| (id, m))
+        .collect()
 }
 
 /// The same with each participant's roster `version`: updates can arrive
 /// out of order, and the newer version wins (as Teams merges the roster).
-pub fn versioned_processing_updates(json: &serde_json::Value) -> Vec<(String, Option<Processing>, u64)> {
+pub fn versioned_processing_updates(
+    json: &serde_json::Value,
+) -> Vec<(String, Option<Processing>, u64)> {
     let participants = match json.get("callAgentPath").and_then(|p| p.as_str()) {
-        Some(path) if path.starts_with("conversation/rosterUpdate") => json.pointer("/body/participants"),
+        Some(path) if path.starts_with("conversation/rosterUpdate") => {
+            json.pointer("/body/participants")
+        }
         Some(_) => None,
         None => json.pointer("/roster/participants"),
     };
@@ -607,7 +698,10 @@ pub fn versioned_processing_updates(json: &serde_json::Value) -> Vec<(String, Op
         .filter_map(|(mri, p)| {
             let id = mri.to_ascii_lowercase();
             let version = p.get("version").and_then(|v| v.as_u64()).unwrap_or(0);
-            if p.get("state").and_then(|s| s.as_str()).is_some_and(|s| s != "active") {
+            if p.get("state")
+                .and_then(|s| s.as_str())
+                .is_some_and(|s| s != "active")
+            {
                 return Some((id, None, version));
             }
             let modes = p
@@ -617,10 +711,19 @@ pub fn versioned_processing_updates(json: &serde_json::Value) -> Vec<(String, Op
                 .find_map(|ep| ep.pointer("/endpointMetadata/processingModes"))?;
             let started_by = |k: &str| {
                 let m = modes.get(k)?;
-                (m.get("state").and_then(|s| s.as_str()) == Some("Active"))
-                    .then(|| m.get("userId").and_then(|u| u.as_str()).unwrap_or_default().to_string())
+                (m.get("state").and_then(|s| s.as_str()) == Some("Active")).then(|| {
+                    m.get("userId")
+                        .and_then(|u| u.as_str())
+                        .unwrap_or_default()
+                        .to_string()
+                })
             };
-            let waiting = |k: &str| modes.pointer(&format!("/{k}/state")).and_then(|s| s.as_str()) == Some("WaitingForMeetingLive");
+            let waiting = |k: &str| {
+                modes
+                    .pointer(&format!("/{k}/state"))
+                    .and_then(|s| s.as_str())
+                    == Some("WaitingForMeetingLive")
+            };
             Some((
                 id,
                 Some(Processing {
@@ -640,12 +743,19 @@ pub fn versioned_processing_updates(json: &serde_json::Value) -> Vec<(String, Op
 /// Someone's endpoint in the call and its participant id (the roster's
 /// endpoints are keyed by endpoint id; each names its participantId).
 fn call_endpoint(p: &serde_json::Value) -> (String, String) {
-    let eps: Vec<(&String, &serde_json::Value)> = p.get("endpoints").and_then(|e| e.as_object()).map(|e| e.iter().collect()).unwrap_or_default();
+    let eps: Vec<(&String, &serde_json::Value)> = p
+        .get("endpoints")
+        .and_then(|e| e.as_object())
+        .map(|e| e.iter().collect())
+        .unwrap_or_default();
     eps.iter()
         .find(|(_, ep)| ep.get("call").is_some())
         .or_else(|| eps.first())
         .map(|(id, ep)| {
-            let pid = ep.get("participantId").and_then(|v| v.as_str()).unwrap_or_default();
+            let pid = ep
+                .get("participantId")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
             (id.to_string(), pid.to_string())
         })
         .unwrap_or_default()
@@ -703,7 +813,11 @@ pub fn apply_lobby(lobby: &mut Vec<super::outgoing::LobbyPerson>, delta: &[Parti
     let before = lobby.clone();
     for p in delta {
         if p.in_lobby {
-            let person = super::outgoing::LobbyPerson { id: p.id.clone(), name: p.name.clone(), suspected: p.suspected };
+            let person = super::outgoing::LobbyPerson {
+                id: p.id.clone(),
+                name: p.name.clone(),
+                suspected: p.suspected,
+            };
             match lobby.iter_mut().find(|w| w.id == p.id) {
                 Some(w) => *w = person,
                 None => lobby.push(person),
@@ -747,7 +861,8 @@ mod tests {
         // As OST Test 2 waited (rosterUpdate, 2026-11-11).
         let waiting = serde_json::json!({"state":"active","endpoints":{"9e4d":{"lobby":{"mediaStreams":[]},"modalityJoined":"Lobby"}}});
         assert!(lobby_only(&waiting));
-        let admitted = serde_json::json!({"state":"active","endpoints":{"9e4d":{"call":{"mediaStreams":[]}}}});
+        let admitted =
+            serde_json::json!({"state":"active","endpoints":{"9e4d":{"call":{"mediaStreams":[]}}}});
         assert!(!lobby_only(&admitted));
         assert!(!lobby_only(&serde_json::json!({"state":"active"})));
     }
@@ -763,8 +878,13 @@ mod tests {
             "8:orgid:a": {"state": "active", "details": {"displayName": "A"}}
         }}});
         let d = roster_delta(&ev.to_string()).unwrap();
-        assert_eq!(d.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), vec!["A"]);
-        assert!(is_blacklisted_bot("28:e32c9418-a835-4eb1-bfb9-733fa74dd6e8"));
+        assert_eq!(
+            d.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+            vec!["A"]
+        );
+        assert!(is_blacklisted_bot(
+            "28:e32c9418-a835-4eb1-bfb9-733fa74dd6e8"
+        ));
         assert!(!is_blacklisted_bot("8:orgid:a"));
     }
 
@@ -789,7 +909,15 @@ mod tests {
             "8:orgid:room": {"state": "active", "details": {"displayName": "OST Test Room"}}
         }}});
         apply(&mut roster, roster_delta(&names_only.to_string()).unwrap());
-        assert_eq!(roster.iter().find(|p| p.id == "8:orgid:caster").unwrap().meeting_room.as_deref(), Some("8:orgid:room"));
+        assert_eq!(
+            roster
+                .iter()
+                .find(|p| p.id == "8:orgid:caster")
+                .unwrap()
+                .meeting_room
+                .as_deref(),
+            Some("8:orgid:room")
+        );
         assert!(roster.iter().find(|p| p.id == "8:orgid:room").unwrap().room);
     }
 
@@ -809,19 +937,30 @@ mod tests {
 
     #[test]
     fn call_recorder_processing() {
-        let bot = |state: &str, transcript: &str| serde_json::json!({
-            "callAgentPath": "conversation/rosterUpdate/",
-            "body": {"participants": {
-                "28:BDD75849-e0a6": {"state": state, "details": {"displayName": null},
-                    "endpoints": {"fca2": {"endpointMetadata": {"processingModes": {
-                        "copilot": {"state": "Inactive"},
-                        "realTimeTranscript": {"state": transcript, "userId": "8:orgid:a"},
-                        "recording": {"state": "Inactive", "userId": ""}}}}}},
-                "8:orgid:a": {"state": "active", "details": {"displayName": "A"}}
-            }}
-        });
+        let bot = |state: &str, transcript: &str| {
+            serde_json::json!({
+                "callAgentPath": "conversation/rosterUpdate/",
+                "body": {"participants": {
+                    "28:BDD75849-e0a6": {"state": state, "details": {"displayName": null},
+                        "endpoints": {"fca2": {"endpointMetadata": {"processingModes": {
+                            "copilot": {"state": "Inactive"},
+                            "realTimeTranscript": {"state": transcript, "userId": "8:orgid:a"},
+                            "recording": {"state": "Inactive", "userId": ""}}}}}},
+                    "8:orgid:a": {"state": "active", "details": {"displayName": "A"}}
+                }}
+            })
+        };
         let u = processing_updates(&bot("active", "Active"));
-        assert_eq!(u, vec![("28:bdd75849-e0a6".to_string(), Some(Processing { transcript: Some("8:orgid:a".into()), ..Default::default() }))]);
+        assert_eq!(
+            u,
+            vec![(
+                "28:bdd75849-e0a6".to_string(),
+                Some(Processing {
+                    transcript: Some("8:orgid:a".into()),
+                    ..Default::default()
+                })
+            )]
+        );
         let u = processing_updates(&bot("active", "Inactive"));
         assert_eq!(u[0].1, Some(Processing::default()));
         let u = processing_updates(&bot("inactive", "Inactive"));
@@ -829,15 +968,37 @@ mod tests {
         // An auto-recorded event's green room: the recorder waits for the
         // meeting to go live.
         let mut green = bot("active", "WaitingForMeetingLive");
-        green["body"]["participants"]["28:BDD75849-e0a6"]["endpoints"]["fca2"]["endpointMetadata"]["processingModes"]["recording"]["state"] = "WaitingForMeetingLive".into();
+        green["body"]["participants"]["28:BDD75849-e0a6"]["endpoints"]["fca2"]["endpointMetadata"]
+            ["processingModes"]["recording"]["state"] = "WaitingForMeetingLive".into();
         let w = processing_updates(&green)[0].1.clone().unwrap();
         assert!(w.recording_waiting && w.transcript_waiting && w.transcript.is_none());
         assert_eq!(w.waiting_alert(), "RecordingAndTranscript");
-        assert_eq!(processing_updates(&bot("active", "WaitingForMeetingLive"))[0].1.clone().unwrap().waiting_alert(), "Transcript");
-        assert_eq!(processing_updates(&bot("active", "Active"))[0].1.clone().unwrap().waiting_alert(), "");
+        assert_eq!(
+            processing_updates(&bot("active", "WaitingForMeetingLive"))[0]
+                .1
+                .clone()
+                .unwrap()
+                .waiting_alert(),
+            "Transcript"
+        );
+        assert_eq!(
+            processing_updates(&bot("active", "Active"))[0]
+                .1
+                .clone()
+                .unwrap()
+                .waiting_alert(),
+            ""
+        );
         // A join response's roster.
         let joined = serde_json::json!({"roster": {"participants": bot("active", "Active")["body"]["participants"].clone()}});
-        assert!(processing_updates(&joined)[0].1.clone().unwrap().transcript.is_some());
+        assert!(
+            processing_updates(&joined)[0]
+                .1
+                .clone()
+                .unwrap()
+                .transcript
+                .is_some()
+        );
         assert!(processing_updates(&serde_json::json!({"callAgentPath": "call/x"})).is_empty());
         let mut v = bot("active", "Active");
         v["body"]["participants"]["28:BDD75849-e0a6"]["version"] = 578.into();
@@ -851,15 +1012,37 @@ mod tests {
             "8:orgid:b" => "Randy".to_string(),
             _ => String::new(),
         };
-        let p = |r: Option<&str>, t: Option<&str>| Processing { recording: r.map(Into::into), transcript: t.map(Into::into), ..Default::default() };
+        let p = |r: Option<&str>, t: Option<&str>| Processing {
+            recording: r.map(Into::into),
+            transcript: t.map(Into::into),
+            ..Default::default()
+        };
         assert_eq!(p(None, Some("8:orgid:a")).indicator_state(), "Transcribing");
-        assert_eq!(p(None, Some("8:orgid:a")).indicator_tooltip(name), "Transcription started by OST Test 1.");
-        assert_eq!(p(Some("8:orgid:a"), Some("8:orgid:a")).indicator_tooltip(name), "Recording and transcription started by OST Test 1.");
-        assert_eq!(p(Some("8:orgid:b"), Some("8:orgid:a")).indicator_tooltip(name), "Recording started by Randy. Transcription started by OST Test 1.");
-        assert_eq!(p(Some("8:orgid:b"), None).indicator_tooltip(name), "Recording started by Randy.");
+        assert_eq!(
+            p(None, Some("8:orgid:a")).indicator_tooltip(name),
+            "Transcription started by OST Test 1."
+        );
+        assert_eq!(
+            p(Some("8:orgid:a"), Some("8:orgid:a")).indicator_tooltip(name),
+            "Recording and transcription started by OST Test 1."
+        );
+        assert_eq!(
+            p(Some("8:orgid:b"), Some("8:orgid:a")).indicator_tooltip(name),
+            "Recording started by Randy. Transcription started by OST Test 1."
+        );
+        assert_eq!(
+            p(Some("8:orgid:b"), None).indicator_tooltip(name),
+            "Recording started by Randy."
+        );
         assert_eq!(p(Some("8:orgid:b"), None).indicator_state(), "Recording");
-        assert_eq!(p(None, Some("")).indicator_tooltip(name), "Transcription started");
-        assert_eq!(p(Some(""), Some("")).indicator_tooltip(name), "Recording started");
+        assert_eq!(
+            p(None, Some("")).indicator_tooltip(name),
+            "Transcription started"
+        );
+        assert_eq!(
+            p(Some(""), Some("")).indicator_tooltip(name),
+            "Recording started"
+        );
         assert_eq!(p(None, None).indicator_state(), "");
     }
 

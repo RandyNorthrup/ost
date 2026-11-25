@@ -8,7 +8,8 @@ async fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
     let method = args.next().expect("method");
     let path = args.next().expect("path");
-    let body: serde_json::Value = serde_json::from_str(&args.next().unwrap_or_else(|| "{}".into()))?;
+    let body: serde_json::Value =
+        serde_json::from_str(&args.next().unwrap_or_else(|| "{}".into()))?;
     let client = TeamsClient::new().await?;
     let reply = match method.as_str() {
         "POST" => client.graph_post(&path, &body).await,

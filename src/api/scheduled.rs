@@ -48,7 +48,9 @@ pub fn schedule_body(o: &Outgoing, send_at_ms: i64) -> serde_json::Value {
 /// Schedule `o` to go at `send_at_ms`; the draft's id.
 pub async fn schedule(client: &TeamsClient, o: &Outgoing, send_at_ms: i64) -> Result<String> {
     let url = format!("{}/v1/users/ME/drafts", client.chat_service_url());
-    let resp = client.chat_post(&url, &schedule_body(o, send_at_ms)).await?;
+    let resp = client
+        .chat_post(&url, &schedule_body(o, send_at_ms))
+        .await?;
     let from_location = resp
         .headers()
         .get("location")
@@ -60,7 +62,11 @@ pub async fn schedule(client: &TeamsClient, o: &Outgoing, send_at_ms: i64) -> Re
         .or_else(|| {
             body.pointer("/message/id")
                 .or_else(|| body.get("id"))
-                .map(|v| v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string()))
+                .map(|v| {
+                    v.as_str()
+                        .map(str::to_string)
+                        .unwrap_or_else(|| v.to_string())
+                })
         })
         .unwrap_or_default())
 }
@@ -83,18 +89,28 @@ pub fn edit_body(id: &str, o: &Outgoing, send_at_ms: i64, now_ms: i64) -> serde_
 
 /// Change a scheduled message (its text or its time).
 pub async fn edit(client: &TeamsClient, id: &str, o: &Outgoing, send_at_ms: i64) -> Result<()> {
-    anyhow::ensure!(!id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()), "Not a draft: {id}");
+    anyhow::ensure!(
+        !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()),
+        "Not a draft: {id}"
+    );
     let url = format!("{}/v1/users/ME/drafts/{id}", client.chat_service_url());
     let body = edit_body(id, o, send_at_ms, chrono::Utc::now().timestamp_millis());
-    client.chat_request(reqwest::Method::PUT, &url, &body).await?;
+    client
+        .chat_request(reqwest::Method::PUT, &url, &body)
+        .await?;
     Ok(())
 }
 
 /// Cancel a scheduled message.
 pub async fn cancel(client: &TeamsClient, id: &str) -> Result<()> {
-    anyhow::ensure!(!id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()), "Not a draft: {id}");
+    anyhow::ensure!(
+        !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()),
+        "Not a draft: {id}"
+    );
     let url = format!("{}/v1/users/ME/drafts/{id}", client.chat_service_url());
-    client.chat_request(reqwest::Method::DELETE, &url, &serde_json::Value::Null).await?;
+    client
+        .chat_request(reqwest::Method::DELETE, &url, &serde_json::Value::Null)
+        .await?;
     Ok(())
 }
 
@@ -128,7 +144,8 @@ pub fn scheduled_from(page: &serde_json::Value, me: &str, own_name: &str) -> Vec
     for m in page["drafts"].as_array().into_iter().flatten() {
         let props = &m["properties"];
         // Deleted (cancelled or sent) drafts stay in the stream, emptied.
-        if m["content"].as_str().unwrap_or_default().is_empty() || props.get("deletetime").is_some() {
+        if m["content"].as_str().unwrap_or_default().is_empty() || props.get("deletetime").is_some()
+        {
             continue;
         }
         let kind = props
@@ -147,7 +164,11 @@ pub fn scheduled_from(page: &serde_json::Value, me: &str, own_name: &str) -> Vec
             .to_string();
         let details = {
             let d = object(props.get("draftDetails"));
-            if d.is_null() { object(m.get("draftDetails")) } else { d }
+            if d.is_null() {
+                object(m.get("draftDetails"))
+            } else {
+                d
+            }
         };
         let (Some(send_at_ms), false) = (send_at(&details), conversation.is_empty()) else {
             continue;
@@ -170,7 +191,10 @@ pub fn scheduled_from(page: &serde_json::Value, me: &str, own_name: &str) -> Vec
 pub async fn list(client: &TeamsClient, me: &str, own_name: &str) -> Result<Vec<Scheduled>> {
     // (The 48:drafts stream can't be read as a conversation; the drafts
     // list is its own resource.)
-    let url = format!("{}/v1/users/ME/drafts?pageSize=200", client.chat_service_url());
+    let url = format!(
+        "{}/v1/users/ME/drafts?pageSize=200",
+        client.chat_service_url()
+    );
     let resp = match client.chat_get(&url).await {
         Ok(r) => r,
         Err(e) if e.to_string().contains("HTTP 404") => return Ok(Vec::new()),
@@ -226,7 +250,10 @@ mod tests {
         let b = schedule_body(&outgoing(), 1_794_326_400_000);
         assert_eq!(b["draftType"], "ScheduledDraft");
         assert_eq!(b["draftDetails"]["sendAt"], "1794326400000");
-        assert_eq!(b["innerThreadId"], "19:ef213c7c46cf4036b11608300e96fee4@thread.v2");
+        assert_eq!(
+            b["innerThreadId"],
+            "19:ef213c7c46cf4036b11608300e96fee4@thread.v2"
+        );
         let m = &b["message"];
         assert_eq!(m["threadtype"], "streamofdrafts");
         assert_eq!(m["innerThreadId"], b["innerThreadId"]);
@@ -239,13 +266,24 @@ mod tests {
 
     #[test]
     fn an_edit_is_teams_put() {
-        let b = edit_body("1794323757462", &outgoing(), 1_794_326_400_000, 1_794_323_778_362);
+        let b = edit_body(
+            "1794323757462",
+            &outgoing(),
+            1_794_326_400_000,
+            1_794_323_778_362,
+        );
         assert_eq!(b["draftType"], "ScheduledDraft");
         assert_eq!(b["message"]["id"], "1794323757462");
         assert_eq!(b["message"]["properties"]["draftId"], "1794323757462");
-        assert_eq!(b["message"]["properties"]["edittime"], 1_794_323_778_362_i64);
+        assert_eq!(
+            b["message"]["properties"]["edittime"],
+            1_794_323_778_362_i64
+        );
         assert_eq!(b["message"]["version"], "2026-11-10T15:16:18.362Z");
-        assert_eq!(b["message"]["draftDetails"]["sendAt"], "2026-11-10T16:00:00.000Z");
+        assert_eq!(
+            b["message"]["draftDetails"]["sendAt"],
+            "2026-11-10T16:00:00.000Z"
+        );
     }
 
     #[test]

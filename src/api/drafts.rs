@@ -77,7 +77,11 @@ pub struct Outgoing<'a> {
 
 /// `chat` or `chat;messageid=root`, as Teams names a draft's thread.
 fn inner_thread(chat: &str, reply_to: &str) -> String {
-    if reply_to.is_empty() { chat.to_string() } else { format!("{chat};messageid={reply_to}") }
+    if reply_to.is_empty() {
+        chat.to_string()
+    } else {
+        format!("{chat};messageid={reply_to}")
+    }
 }
 
 /// Teams' body for a roamed draft: the message as it would be sent, put in
@@ -86,7 +90,15 @@ fn inner_thread(chat: &str, reply_to: &str) -> String {
 /// ones Teams keeps with a local draft (captured from its IndexedDB).
 pub fn roam_body(o: &Outgoing) -> serde_json::Value {
     let inner = inner_thread(o.chat, o.reply_to);
-    let client_draft_id = format!("draft.{}.-4.{}", o.chat, if o.reply_to.is_empty() { o.chat } else { o.reply_to });
+    let client_draft_id = format!(
+        "draft.{}.-4.{}",
+        o.chat,
+        if o.reply_to.is_empty() {
+            o.chat
+        } else {
+            o.reply_to
+        }
+    );
     let mut message = serde_json::json!({
         "clientmessageid": o.client_message_id,
         "content": o.content,
@@ -154,7 +166,8 @@ pub fn roam_body(o: &Outgoing) -> serde_json::Value {
 
 fn epoch_ms(v: Option<&serde_json::Value>) -> Option<i64> {
     let v = v?;
-    v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+    v.as_i64()
+        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
 }
 
 /// The roamed drafts in a drafts list (`{"drafts": [...]}`), deleted ones
@@ -163,9 +176,15 @@ pub fn roamed_from(page: &serde_json::Value) -> Vec<Roamed> {
     let mut out = Vec::new();
     for m in page["drafts"].as_array().into_iter().flatten() {
         let props = &m["properties"];
-        let kind = m.get("draftType").or_else(|| props.get("draftType")).and_then(|k| k.as_str()).unwrap_or("");
+        let kind = m
+            .get("draftType")
+            .or_else(|| props.get("draftType"))
+            .and_then(|k| k.as_str())
+            .unwrap_or("");
         // A send time makes it a scheduled message (Teams' isDraft).
-        let scheduled = m.pointer("/draftDetails/sendAt").is_some_and(|v| !v.is_null());
+        let scheduled = m
+            .pointer("/draftDetails/sendAt")
+            .is_some_and(|v| !v.is_null());
         if kind != "RegularDraft" || scheduled {
             continue;
         }
@@ -179,10 +198,16 @@ pub fn roamed_from(page: &serde_json::Value) -> Vec<Roamed> {
         }
         let content = m["content"].as_str().unwrap_or_default().to_string();
         out.push(Roamed {
-            id: m["id"].as_str().map(str::to_string).unwrap_or_else(|| m["id"].to_string()),
+            id: m["id"]
+                .as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| m["id"].to_string()),
             chat,
             reply_to,
-            client_message_id: m["clientmessageid"].as_str().unwrap_or_default().to_string(),
+            client_message_id: m["clientmessageid"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
             deleted: content.is_empty() || props.get("deletetime").is_some(),
             content,
             mentions: props["mentions"].as_str().unwrap_or("[]").to_string(),
@@ -197,10 +222,15 @@ pub fn roamed_from(page: &serde_json::Value) -> Vec<Roamed> {
 /// The drafts list (scheduled messages and roamed drafts):
 /// `GET v1/users/ME/drafts`.
 pub async fn page(client: &TeamsClient) -> Result<serde_json::Value> {
-    let url = format!("{}/v1/users/ME/drafts?pageSize=200", client.chat_service_url());
+    let url = format!(
+        "{}/v1/users/ME/drafts?pageSize=200",
+        client.chat_service_url()
+    );
     let resp = match client.chat_get(&url).await {
         Ok(r) => r,
-        Err(e) if e.to_string().contains("HTTP 404") => return Ok(serde_json::json!({ "drafts": [] })),
+        Err(e) if e.to_string().contains("HTTP 404") => {
+            return Ok(serde_json::json!({ "drafts": [] }));
+        }
         Err(e) => return Err(e),
     };
     resp.json().await.context("Drafts reply")
@@ -223,17 +253,28 @@ pub async fn create(client: &TeamsClient, o: &Outgoing<'_>) -> Result<String> {
 /// Replace a roamed draft with its new text.
 pub async fn update(client: &TeamsClient, o: &Outgoing<'_>) -> Result<()> {
     let id = o.id.unwrap_or_default();
-    anyhow::ensure!(!id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()), "Not a draft: {id}");
+    anyhow::ensure!(
+        !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()),
+        "Not a draft: {id}"
+    );
     let url = format!("{}/v1/users/ME/drafts/{id}", client.chat_service_url());
-    client.chat_request(reqwest::Method::PUT, &url, &roam_body(o)).await?;
+    client
+        .chat_request(reqwest::Method::PUT, &url, &roam_body(o))
+        .await?;
     Ok(())
 }
 
 /// Remove a roamed draft (sent or cleared).
 pub async fn delete(client: &TeamsClient, id: &str) -> Result<()> {
-    anyhow::ensure!(!id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()), "Not a draft: {id}");
+    anyhow::ensure!(
+        !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()),
+        "Not a draft: {id}"
+    );
     let url = format!("{}/v1/users/ME/drafts/{id}", client.chat_service_url());
-    match client.chat_request(reqwest::Method::DELETE, &url, &serde_json::Value::Null).await {
+    match client
+        .chat_request(reqwest::Method::DELETE, &url, &serde_json::Value::Null)
+        .await
+    {
         Err(e) if e.to_string().contains("HTTP 404") => Ok(()),
         r => r.map(|_| ()),
     }
@@ -263,7 +304,10 @@ mod tests {
         let b = roam_body(&outgoing());
         assert_eq!(b["draftType"], "RegularDraft");
         assert_eq!(b["innerThreadId"], CHAT);
-        assert!(b.get("draftDetails").is_none(), "no send time: not a scheduled message");
+        assert!(
+            b.get("draftDetails").is_none(),
+            "no send time: not a scheduled message"
+        );
         let m = &b["message"];
         assert_eq!(m["conversationid"], "48:drafts");
         assert_eq!(m["threadtype"], "streamofdrafts");
@@ -271,17 +315,27 @@ mod tests {
         assert_eq!(m["innerThreadId"], CHAT);
         assert_eq!(m["content"], "<p>OST draft probe B</p>");
         assert_eq!(m["properties"]["mentions"], "[]");
-        assert_eq!(m["draftDetails"]["clientDraftProperties"]["clientDraftId"], format!("draft.{CHAT}.-4.{CHAT}"));
+        assert_eq!(
+            m["draftDetails"]["clientDraftProperties"]["clientDraftId"],
+            format!("draft.{CHAT}.-4.{CHAT}")
+        );
         assert!(m.get("id").is_none());
     }
 
     #[test]
     fn a_changed_draft_carries_its_id_and_a_reply_its_thread() {
-        let o = Outgoing { id: Some("1794831861119"), reply_to: "1794000000000", ..outgoing() };
+        let o = Outgoing {
+            id: Some("1794831861119"),
+            reply_to: "1794000000000",
+            ..outgoing()
+        };
         let b = roam_body(&o);
         assert_eq!(b["message"]["id"], "1794831861119");
         assert_eq!(b["message"]["properties"]["draftId"], "1794831861119");
-        assert_eq!(b["innerThreadId"], format!("{CHAT};messageid=1794000000000"));
+        assert_eq!(
+            b["innerThreadId"],
+            format!("{CHAT};messageid=1794000000000")
+        );
     }
 
     #[test]
@@ -307,6 +361,9 @@ mod tests {
         assert_eq!(r[0].content, "<p>OST draft probe B</p>");
         assert_eq!(r[0].time_ms, 1_794_831_861_119);
         assert!(!r[0].deleted);
-        assert_eq!((r[1].chat.as_str(), r[1].reply_to.as_str(), r[1].deleted), ("19:c@thread.tacv2", "1794", true));
+        assert_eq!(
+            (r[1].chat.as_str(), r[1].reply_to.as_str(), r[1].deleted),
+            ("19:c@thread.tacv2", "1794", true)
+        );
     }
 }

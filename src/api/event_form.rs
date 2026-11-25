@@ -16,7 +16,9 @@
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 
-use super::calendar::{HOSTED_CALENDAR_APP, OWA_USER_AGENT, event_path_id, ews_id, mailbox_time_zone, owa_action};
+use super::calendar::{
+    HOSTED_CALENDAR_APP, OWA_USER_AGENT, event_path_id, ews_id, mailbox_time_zone, owa_action,
+};
 
 /// Outlook's own property set for Copilot's calendar properties
 /// (`CopilotManagedEventType`, `Intent`, `IsDefaultPreferences`, …).
@@ -92,7 +94,11 @@ pub fn form_updates(form: &Value) -> Vec<Value> {
     if let Some(on) = b("hideAttendees") {
         out.push(set_field("HideAttendees", on.into()));
     }
-    if let Some(links) = form.get("docLinks").and_then(Value::as_array).filter(|l| !l.is_empty()) {
+    if let Some(links) = form
+        .get("docLinks")
+        .and_then(Value::as_array)
+        .filter(|l| !l.is_empty())
+    {
         let links: Vec<Value> = links
             .iter()
             .filter_map(Value::as_str)
@@ -103,18 +109,40 @@ pub fn form_updates(form: &Value) -> Vec<Value> {
     let managed = form.get("managed").filter(|m| m.is_object());
     match managed {
         Some(m) if m.get("on").and_then(Value::as_bool) == Some(true) => {
-            out.push(set_extended("CopilotAutoReschedulingCount", "Integer", Some("0".into())));
-            out.push(set_extended("CopilotManagedEventType", "Integer", Some("1".into())));
+            out.push(set_extended(
+                "CopilotAutoReschedulingCount",
+                "Integer",
+                Some("0".into()),
+            ));
+            out.push(set_extended(
+                "CopilotManagedEventType",
+                "Integer",
+                Some("1".into()),
+            ));
             let intent = m.get("intent").and_then(Value::as_str).unwrap_or_default();
-            out.push(set_extended("Intent", "String", Some(intent).filter(|i| !i.is_empty()).map(str::to_string)));
-            out.push(set_extended("IsDefaultPreferences", "Boolean", Some("false".into())));
+            out.push(set_extended(
+                "Intent",
+                "String",
+                Some(intent).filter(|i| !i.is_empty()).map(str::to_string),
+            ));
+            out.push(set_extended(
+                "IsDefaultPreferences",
+                "Boolean",
+                Some("false".into()),
+            ));
         }
         Some(_) => {
-            out.push(set_extended("CopilotManagedEventType", "Integer", Some("0".into())));
+            out.push(set_extended(
+                "CopilotManagedEventType",
+                "Integer",
+                Some("0".into()),
+            ));
             out.push(set_extended("Intent", "String", None));
             out.push(set_extended("IsDefaultPreferences", "Boolean", None));
         }
-        None if !out.is_empty() || b("rebookRooms").is_some() => out.push(set_extended("IsDefaultPreferences", "Boolean", None)),
+        None if !out.is_empty() || b("rebookRooms").is_some() => {
+            out.push(set_extended("IsDefaultPreferences", "Boolean", None))
+        }
         None => {}
     }
     if let Some(on) = b("rebookRooms") {
@@ -123,7 +151,11 @@ pub fn form_updates(form: &Value) -> Vec<Value> {
     // Outlook sends its changes in the order of their names.
     let name = |u: &Value| {
         let p = &u["Path"];
-        let n = p.get("PropertyName").or_else(|| p.get("FieldURI")).and_then(Value::as_str).unwrap_or_default();
+        let n = p
+            .get("PropertyName")
+            .or_else(|| p.get("FieldURI"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         n.strip_prefix("Calendar").unwrap_or(n).to_string()
     };
     out.sort_by_key(name);
@@ -140,7 +172,11 @@ pub fn form_updates(form: &Value) -> Vec<Value> {
 /// weekdays instead (captured 2026-11-24 on a weekly series): an OR of
 /// `DayOfWeek` filters (`"Thursday"`), the series' own days first, then the
 /// picked ones in the order they were picked.
-pub fn intent_json(days: &[chrono::NaiveDate], weekdays: &[String], times: &[(u32, u32)]) -> String {
+pub fn intent_json(
+    days: &[chrono::NaiveDate],
+    weekdays: &[String],
+    times: &[(u32, u32)],
+) -> String {
     let mut days: Vec<chrono::NaiveDate> = days.to_vec();
     days.sort();
     days.dedup();
@@ -159,18 +195,26 @@ pub fn intent_json(days: &[chrono::NaiveDate], weekdays: &[String], times: &[(u3
         while j + 1 < days.len() && days[j + 1] - days[j] == chrono::Duration::days(1) {
             j += 1;
         }
-        let v = if i == j { day(&days[i]) } else { format!("{}..{}", day(&days[i]), day(&days[j])) };
+        let v = if i == j {
+            day(&days[i])
+        } else {
+            format!("{}..{}", day(&days[i]), day(&days[j]))
+        };
         runs.push(json!({ "FilterType": "Date", "FilterValue": v }));
         i = j + 1;
     }
-    let times: Vec<Value> = times.iter().map(|(a, b)| json!({ "FilterType": "TimeOfDay", "FilterValue": format!("{a}..{b}") })).collect();
+    let times: Vec<Value> = times
+        .iter()
+        .map(|(a, b)| json!({ "FilterType": "TimeOfDay", "FilterValue": format!("{a}..{b}") }))
+        .collect();
     let group = |mut l: Vec<Value>| match l.len() {
         0 => None,
         1 => l.pop(),
         _ => Some(json!({ "ConstraintType": "OR", "Constraints": l })),
     };
     let parts: Vec<Value> = [group(runs), group(times)].into_iter().flatten().collect();
-    json!({ "IntentConstraint": { "ConstraintType": "AND", "Constraints": parts }, "Version": 1 }).to_string()
+    json!({ "IntentConstraint": { "ConstraintType": "AND", "Constraints": parts }, "Version": 1 })
+        .to_string()
 }
 
 /// The days, weekdays and times an `Intent` holds (the inverse of
@@ -180,18 +224,29 @@ pub fn parse_intent(intent: &str) -> (Vec<String>, Vec<String>, Vec<(u32, u32)>)
     let mut days = Vec::new();
     let mut times = Vec::new();
     let mut weekdays = Vec::new();
-    fn walk(v: &Value, days: &mut Vec<String>, weekdays: &mut Vec<String>, times: &mut Vec<(u32, u32)>) {
+    fn walk(
+        v: &Value,
+        days: &mut Vec<String>,
+        weekdays: &mut Vec<String>,
+        times: &mut Vec<(u32, u32)>,
+    ) {
         if let Some(c) = v.get("Constraints").and_then(Value::as_array) {
             for x in c {
                 walk(x, days, weekdays, times);
             }
             return;
         }
-        let val = v.get("FilterValue").and_then(Value::as_str).unwrap_or_default();
+        let val = v
+            .get("FilterValue")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         match v.get("FilterType").and_then(Value::as_str) {
             Some("Date") => {
                 let (a, b) = val.split_once("..").unwrap_or((val, val));
-                if let (Ok(a), Ok(b)) = (chrono::NaiveDate::parse_from_str(a, "%Y-%m-%d"), chrono::NaiveDate::parse_from_str(b, "%Y-%m-%d")) {
+                if let (Ok(a), Ok(b)) = (
+                    chrono::NaiveDate::parse_from_str(a, "%Y-%m-%d"),
+                    chrono::NaiveDate::parse_from_str(b, "%Y-%m-%d"),
+                ) {
                     let mut d = a;
                     while d <= b && days.len() < 400 {
                         days.push(d.format("%Y-%m-%d").to_string());
@@ -202,14 +257,20 @@ pub fn parse_intent(intent: &str) -> (Vec<String>, Vec<String>, Vec<(u32, u32)>)
             Some("DayOfWeek") => weekdays.push(val.to_string()),
             Some("TimeOfDay") => {
                 if let Some((a, b)) = val.split_once("..")
-                    && let (Ok(a), Ok(b)) = (a.parse(), b.parse()) {
-                        times.push((a, b));
-                    }
+                    && let (Ok(a), Ok(b)) = (a.parse(), b.parse())
+                {
+                    times.push((a, b));
+                }
             }
             _ => {}
         }
     }
-    walk(v.get("IntentConstraint").unwrap_or(&Value::Null), &mut days, &mut weekdays, &mut times);
+    walk(
+        v.get("IntentConstraint").unwrap_or(&Value::Null),
+        &mut days,
+        &mut weekdays,
+        &mut times,
+    );
     (days, weekdays, times)
 }
 
@@ -251,9 +312,17 @@ pub fn outlook_event_from(item: &Value) -> Value {
             .and_then(Value::as_array)
             .into_iter()
             .flatten()
-            .find(|p| p.pointer("/ExtendedFieldURI/PropertyName").and_then(Value::as_str) == Some(name))
+            .find(|p| {
+                p.pointer("/ExtendedFieldURI/PropertyName")
+                    .and_then(Value::as_str)
+                    == Some(name)
+            })
             .and_then(|p| p.get("Value"))
-            .and_then(|v| v.as_str().map(str::to_string).or_else(|| Some(v.to_string())))
+            .and_then(|v| {
+                v.as_str()
+                    .map(str::to_string)
+                    .or_else(|| Some(v.to_string()))
+            })
             .unwrap_or_default()
     };
     let reminders: Vec<Value> = item
@@ -327,7 +396,10 @@ pub async fn save_now(id: &str, updates: Vec<Value>) -> Result<()> {
         }
     });
     let v = owa_action("UpdateCalendarEvent", &body).await?;
-    let code = v.pointer("/Body/ResponseMessages/Items/0/ResponseCode").and_then(Value::as_str).unwrap_or("NoError");
+    let code = v
+        .pointer("/Body/ResponseMessages/Items/0/ResponseCode")
+        .and_then(Value::as_str)
+        .unwrap_or("NoError");
     if code != "NoError" {
         bail!("Outlook didn't save the event: {code}");
     }
@@ -371,7 +443,16 @@ const GRAMMAR_ID: &str = "04aeb01b-175a-4385-9257-bfc5f7e4b650";
 /// autoCapitalizeI) and `TextPrediction`, from `GET ows/v1.0/OutlookOptions`
 /// (Outlook's defaults, all on, while you have none).
 pub fn editor_options_from(all: &Value) -> Value {
-    let find = |class: &str| all.get("options").and_then(Value::as_array).and_then(|l| l.iter().find(|o| o.get("itemClass").and_then(Value::as_str) == Some(class)).cloned()).unwrap_or(Value::Null);
+    let find = |class: &str| {
+        all.get("options")
+            .and_then(Value::as_array)
+            .and_then(|l| {
+                l.iter()
+                    .find(|o| o.get("itemClass").and_then(Value::as_str) == Some(class))
+                    .cloned()
+            })
+            .unwrap_or(Value::Null)
+    };
     let (p, a) = (find("Proofing"), find("AutoCorrect"));
     let on = |o: &Value, k: &str| o.get(k).and_then(Value::as_bool).unwrap_or(true);
     json!({
@@ -397,8 +478,18 @@ pub async fn editor_options() -> Result<Value> {
 /// `editorServiceOverriddenSettings` and `editorPaneOverriddenSettings`
 /// (`{id, name, value "0"/"1", languageId}`). `opts`: the dialog's
 /// switches; `locale`: the proofing locale ("en-us").
-pub fn editor_option_writes(all: &Value, opts: &Value, locale: &str) -> Vec<(reqwest::Method, String, Value)> {
-    let find = |class: &str| all.get("options").and_then(Value::as_array).and_then(|l| l.iter().find(|o| o.get("itemClass").and_then(Value::as_str) == Some(class)).cloned());
+pub fn editor_option_writes(
+    all: &Value,
+    opts: &Value,
+    locale: &str,
+) -> Vec<(reqwest::Method, String, Value)> {
+    let find = |class: &str| {
+        all.get("options").and_then(Value::as_array).and_then(|l| {
+            l.iter()
+                .find(|o| o.get("itemClass").and_then(Value::as_str) == Some(class))
+                .cloned()
+        })
+    };
     let flag = |k: &str| opts.get(k).and_then(Value::as_bool).unwrap_or(true);
     let locale = if locale.is_empty() { "en-us" } else { locale };
     let mut out = Vec::new();
@@ -406,7 +497,12 @@ pub fn editor_option_writes(all: &Value, opts: &Value, locale: &str) -> Vec<(req
         let existed = current.is_some();
         let mut o = current.unwrap_or(fresh);
         if let Some(m) = o.as_object_mut() {
-            for k in ["feature@is.Queryable", "feature@odata.type", "createdDateTime", "lastModifiedDateTime"] {
+            for k in [
+                "feature@is.Queryable",
+                "feature@odata.type",
+                "createdDateTime",
+                "lastModifiedDateTime",
+            ] {
                 m.remove(k);
             }
             for (k, v) in set.as_object().into_iter().flatten() {
@@ -414,11 +510,25 @@ pub fn editor_option_writes(all: &Value, opts: &Value, locale: &str) -> Vec<(req
             }
         }
         let body = json!({ "correlationId": uuid::Uuid::new_v4().to_string(), "options": o });
-        out.push((if existed { reqwest::Method::PATCH } else { reqwest::Method::POST }, format!("ows/v1.0/OutlookOptions/{class}"), body));
+        out.push((
+            if existed {
+                reqwest::Method::PATCH
+            } else {
+                reqwest::Method::POST
+            },
+            format!("ows/v1.0/OutlookOptions/{class}"),
+            body,
+        ));
     };
     // Proofing, with Editor's category overrides.
     let proofing = find("Proofing");
-    let was = |k: &str| proofing.as_ref().and_then(|p| p.get(k)).and_then(Value::as_bool).unwrap_or(true);
+    let was = |k: &str| {
+        proofing
+            .as_ref()
+            .and_then(|p| p.get(k))
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+    };
     let mut over: Value = proofing
         .as_ref()
         .and_then(|p| p.get("overriddenOptions"))
@@ -429,14 +539,25 @@ pub fn editor_option_writes(all: &Value, opts: &Value, locale: &str) -> Vec<(req
                 "editorServiceOverriddenSettings": [{ "id": SPELLING_ID, "value": "1" }, { "id": GRAMMAR_ID, "value": "1" }],
                 "inlineEditingSettings": [], "augloopOverriddenSettings": [], "editorPaneOverriddenSettings": [] } })
         });
-    for (id, name, key, setting) in [(SPELLING_ID, "Spelling", "spelling", "spellCheckEnabled"), (GRAMMAR_ID, "Grammar", "grammar", "grammarEnabled")] {
+    for (id, name, key, setting) in [
+        (SPELLING_ID, "Spelling", "spelling", "spellCheckEnabled"),
+        (GRAMMAR_ID, "Grammar", "grammar", "grammarEnabled"),
+    ] {
         if flag(key) == was(setting) {
             continue;
         }
         let entry = json!({ "id": id, "name": name, "value": if flag(key) { "1" } else { "0" }, "languageId": locale });
-        for list in ["editorServiceOverriddenSettings", "editorPaneOverriddenSettings"] {
-            if let Some(l) = over.pointer_mut(&format!("/sharedUserSettings/{list}")).and_then(Value::as_array_mut) {
-                l.retain(|e| !(e.get("id").and_then(Value::as_str) == Some(id) && e.get("name").is_some()));
+        for list in [
+            "editorServiceOverriddenSettings",
+            "editorPaneOverriddenSettings",
+        ] {
+            if let Some(l) = over
+                .pointer_mut(&format!("/sharedUserSettings/{list}"))
+                .and_then(Value::as_array_mut)
+            {
+                l.retain(|e| {
+                    !(e.get("id").and_then(Value::as_str) == Some(id) && e.get("name").is_some())
+                });
                 l.push(entry.clone());
             }
         }
@@ -449,8 +570,17 @@ pub fn editor_option_writes(all: &Value, opts: &Value, locale: &str) -> Vec<(req
         json!({ "spellCheckEnabled": flag("spelling"), "grammarEnabled": flag("grammar"), "overriddenOptions": over.to_string() }),
     );
     let prediction = find("TextPrediction");
-    let predict = prediction.as_ref().and_then(|p| p.get("isTextPredictionEnabled")).and_then(Value::as_bool).unwrap_or(false);
-    put("TextPrediction", prediction, json!({ "feature": 63 }), json!({ "isTextPredictionEnabled": predict }));
+    let predict = prediction
+        .as_ref()
+        .and_then(|p| p.get("isTextPredictionEnabled"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    put(
+        "TextPrediction",
+        prediction,
+        json!({ "feature": 63 }),
+        json!({ "isTextPredictionEnabled": predict }),
+    );
     put(
         "AutoCorrect",
         find("AutoCorrect"),
@@ -466,7 +596,10 @@ pub async fn set_editor_options(opts: &Value) -> Result<Value> {
     let locale = all
         .get("options")
         .and_then(Value::as_array)
-        .and_then(|l| l.iter().find(|o| o.get("itemClass").and_then(Value::as_str) == Some("Proofing")))
+        .and_then(|l| {
+            l.iter()
+                .find(|o| o.get("itemClass").and_then(Value::as_str) == Some("Proofing"))
+        })
         .and_then(|p| p.get("proofingLocale"))
         .and_then(Value::as_str)
         .unwrap_or("en-us")
@@ -497,7 +630,9 @@ pub async fn add_master_category(name: &str, color: i64) -> Result<()> {
         }
     });
     let v = owa_action("UpdateMasterCategoryList", &body).await?;
-    if v.pointer("/Body/ResponseClass").and_then(Value::as_str) == Some("Error") || v.get("WasSuccessful").and_then(Value::as_bool) == Some(false) {
+    if v.pointer("/Body/ResponseClass").and_then(Value::as_str) == Some("Error")
+        || v.get("WasSuccessful").and_then(Value::as_bool) == Some(false)
+    {
         bail!("Outlook didn't add the category");
     }
     Ok(())
@@ -510,8 +645,14 @@ pub async fn add_master_category(name: &str, color: i64) -> Result<()> {
 /// (encodeURI) and the file itself as the body. The answer names the
 /// attachment.
 pub async fn attach_file(id: &str, path: &std::path::Path) -> Result<Value> {
-    let bytes = tokio::fs::read(path).await.with_context(|| format!("Can't read {}", path.display()))?;
-    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("attachment").to_string();
+    let bytes = tokio::fs::read(path)
+        .await
+        .with_context(|| format!("Can't read {}", path.display()))?;
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("attachment")
+        .to_string();
     let content_type = mime_of(&name);
     let tz = mailbox_time_zone().await;
     let cancel = uuid::Uuid::new_v4().to_string();
@@ -554,7 +695,11 @@ pub async fn attach_file(id: &str, path: &std::path::Path) -> Result<Value> {
 
 /// An attachment's More actions ▸ Remove attachment (`DeleteAttachment`).
 pub async fn delete_attachment(event_id: &str, attachment_id: &str) -> Result<()> {
-    if attachment_id.is_empty() || !attachment_id.bytes().all(|b| b.is_ascii_alphanumeric() || b"+/=-_".contains(&b)) {
+    if attachment_id.is_empty()
+        || !attachment_id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"+/=-_".contains(&b))
+    {
         bail!("Not an attachment");
     }
     let tz = mailbox_time_zone().await;
@@ -567,7 +712,10 @@ pub async fn delete_attachment(event_id: &str, attachment_id: &str) -> Result<()
         }
     });
     let v = owa_action("DeleteAttachment", &body).await?;
-    let code = v.pointer("/Body/ResponseMessages/Items/0/ResponseCode").and_then(Value::as_str).unwrap_or("NoError");
+    let code = v
+        .pointer("/Body/ResponseMessages/Items/0/ResponseCode")
+        .and_then(Value::as_str)
+        .unwrap_or("NoError");
     if code != "NoError" {
         bail!("Outlook didn't remove the attachment: {code}");
     }
@@ -575,17 +723,29 @@ pub async fn delete_attachment(event_id: &str, attachment_id: &str) -> Result<()
 }
 
 /// An attachment's content (Preview, Download), through Graph.
-pub async fn attachment_bytes(client: &super::client::TeamsClient, event_id: &str, attachment_id: &str) -> Result<Vec<u8>> {
+pub async fn attachment_bytes(
+    client: &super::client::TeamsClient,
+    event_id: &str,
+    attachment_id: &str,
+) -> Result<Vec<u8>> {
     let enc = |s: &str| url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>();
     let id = event_path_id(event_id)?;
     let r = client
-        .graph_get_with(&format!("/me/events/{id}/attachments/{}/$value", enc(&attachment_id.replace('/', "-").replace('+', "_"))), &[("Prefer", "IdType=\"ImmutableId\"")])
+        .graph_get_with(
+            &format!(
+                "/me/events/{id}/attachments/{}/$value",
+                enc(&attachment_id.replace('/', "-").replace('+', "_"))
+            ),
+            &[("Prefer", "IdType=\"ImmutableId\"")],
+        )
         .await?;
     Ok(r.bytes().await?.to_vec())
 }
 
 fn is_drive_id(s: &str) -> bool {
-    !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"!-_".contains(&b))
+    !s.is_empty()
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"!-_".contains(&b))
 }
 
 /// "Upload to" ▸ Change location: the folders in one of your OneDrive's
@@ -596,7 +756,12 @@ pub async fn drive_folders(client: &super::client::TeamsClient, folder_id: &str)
         id if is_drive_id(id) => format!("/me/drive/items/{id}"),
         _ => bail!("Not a folder"),
     };
-    let v: Value = client.graph_get(&format!("{base}/children?$select=id,name,folder&$top=999")).await?.json().await.context("Folders")?;
+    let v: Value = client
+        .graph_get(&format!("{base}/children?$select=id,name,folder&$top=999"))
+        .await?
+        .json()
+        .await
+        .context("Folders")?;
     Ok(json!({ "folderId": folder_id, "folders": folders_from(&v) }))
 }
 
@@ -616,25 +781,39 @@ pub fn folders_from(v: &Value) -> Vec<Value> {
 
 /// "Upload to" ▸ Create new folder: a folder in the folder shown (a name
 /// already there fails, as Outlook's "This folder name is already in use.").
-pub async fn create_drive_folder(client: &super::client::TeamsClient, parent_id: &str, name: &str) -> Result<Value> {
+pub async fn create_drive_folder(
+    client: &super::client::TeamsClient,
+    parent_id: &str,
+    name: &str,
+) -> Result<Value> {
     let base = match parent_id {
         "root" | "" => "/me/drive/root".to_string(),
         id if is_drive_id(id) => format!("/me/drive/items/{id}"),
         _ => bail!("Not a folder"),
     };
-    let r = client.graph_post(&format!("{base}/children"), &json!({ "name": name, "folder": {}, "@microsoft.graph.conflictBehavior": "fail" })).await?;
+    let r = client
+        .graph_post(
+            &format!("{base}/children"),
+            &json!({ "name": name, "folder": {}, "@microsoft.graph.conflictBehavior": "fail" }),
+        )
+        .await?;
     if r.status() == reqwest::StatusCode::CONFLICT {
         bail!("in use");
     }
     let v: Value = r.error_for_status()?.json().await?;
-    Ok(json!({ "id": v.get("id").and_then(Value::as_str).unwrap_or_default(), "name": v.get("name").and_then(Value::as_str).unwrap_or(name) }))
+    Ok(
+        json!({ "id": v.get("id").and_then(Value::as_str).unwrap_or_default(), "name": v.get("name").and_then(Value::as_str).unwrap_or(name) }),
+    )
 }
 
 /// The file-type icon Outlook puts before a OneDrive file's link (its
 /// Fluent item-types picture, by extension; captured 2026-11-24:
 /// `…/item-types/24_1.5x/docx.png`).
 pub fn file_type_icon(name: &str) -> String {
-    let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+    let ext = name
+        .rsplit_once('.')
+        .map(|(_, e)| e.to_ascii_lowercase())
+        .unwrap_or_default();
     let kind = match ext.as_str() {
         "doc" | "docm" | "docx" => "docx",
         "dot" | "dotm" | "dotx" => "dotx",
@@ -659,40 +838,71 @@ pub fn file_type_icon(name: &str) -> String {
         "mp4" | "mov" | "avi" | "wmv" | "mkv" | "m4v" | "webm" => "video",
         "html" | "htm" | "mht" => "html",
         "xml" => "xml",
-        "js" | "ts" | "py" | "rs" | "c" | "cpp" | "h" | "cs" | "java" | "json" | "css" | "sh" | "ps1" | "sql" | "go" | "rb" => "code",
+        "js" | "ts" | "py" | "rs" | "c" | "cpp" | "h" | "cs" | "java" | "json" | "css" | "sh"
+        | "ps1" | "sql" | "go" | "rb" => "code",
         "eml" | "msg" => "email",
         "exe" | "msi" | "dll" | "bat" => "exe",
         "url" | "website" => "link",
         _ => "genericfile",
     };
-    format!("https://res.public.onecdn.static.microsoft/assets/fluentui-resources/1.1.0/app-min/assets/item-types/24_1.5x/{kind}.png")
+    format!(
+        "https://res.public.onecdn.static.microsoft/assets/fluentui-resources/1.1.0/app-min/assets/item-types/24_1.5x/{kind}.png"
+    )
 }
 
 /// Attach ▸ OneDrive ▸ Share link: the file's link as Outlook's form puts
 /// it in the body (captured 2026-11-24: the organization's sharing link,
 /// `https://…-my.sharepoint.com/:t:/p/…`).
-pub async fn share_link(client: &super::client::TeamsClient, drive_id: &str, item_id: &str) -> Result<String> {
-    let ok = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"!-_".contains(&b));
+pub async fn share_link(
+    client: &super::client::TeamsClient,
+    drive_id: &str,
+    item_id: &str,
+) -> Result<String> {
+    let ok = |s: &str| {
+        !s.is_empty()
+            && s.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"!-_".contains(&b))
+    };
     if !ok(drive_id) || !ok(item_id) {
         bail!("Not a OneDrive file");
     }
     let v: Value = client
-        .graph_post(&format!("/drives/{drive_id}/items/{item_id}/createLink"), &json!({ "type": "view", "scope": "organization" }))
+        .graph_post(
+            &format!("/drives/{drive_id}/items/{item_id}/createLink"),
+            &json!({ "type": "view", "scope": "organization" }),
+        )
         .await?
         .json()
         .await
         .context("createLink")?;
-    v.pointer("/link/webUrl").and_then(Value::as_str).map(str::to_string).context("No link")
+    v.pointer("/link/webUrl")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .context("No link")
 }
 
 /// Attach ▸ Upload and share ("Upload to" OneDrive ▸ Attachments; captured
 /// 2026-11-24: the file goes to your OneDrive's Attachments folder, a name
 /// already there renamed, and its link goes in the body). Change location
 /// puts it in another of your folders (`folder_id`, "root" for Files).
-pub async fn upload_and_share(client: &super::client::TeamsClient, path: &std::path::Path, folder_id: &str) -> Result<Value> {
-    let name = path.file_name().and_then(|n| n.to_str()).context("File has no name")?.to_string();
-    let bytes = tokio::fs::read(path).await.with_context(|| format!("Can't read {}", path.display()))?;
-    let seg = |s: &str| url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>().replace('+', "%20");
+pub async fn upload_and_share(
+    client: &super::client::TeamsClient,
+    path: &std::path::Path,
+    folder_id: &str,
+) -> Result<Value> {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .context("File has no name")?
+        .to_string();
+    let bytes = tokio::fs::read(path)
+        .await
+        .with_context(|| format!("Can't read {}", path.display()))?;
+    let seg = |s: &str| {
+        url::form_urlencoded::byte_serialize(s.as_bytes())
+            .collect::<String>()
+            .replace('+', "%20")
+    };
     let target = match folder_id {
         "" => format!("/me/drive/root:/Attachments/{}:", seg(&name)),
         "root" => format!("/me/drive/root:/{}:", seg(&name)),
@@ -700,13 +910,23 @@ pub async fn upload_and_share(client: &super::client::TeamsClient, path: &std::p
         _ => bail!("Not a folder"),
     };
     let item: Value = client
-        .graph_put_bytes(&format!("{target}/content?@microsoft.graph.conflictBehavior=rename"), bytes, "application/octet-stream")
+        .graph_put_bytes(
+            &format!("{target}/content?@microsoft.graph.conflictBehavior=rename"),
+            bytes,
+            "application/octet-stream",
+        )
         .await?
         .json()
         .await
         .context("Upload reply")?;
-    let item_id = item.get("id").and_then(Value::as_str).context("Upload reply has no id")?;
-    let drive_id = item.pointer("/parentReference/driveId").and_then(Value::as_str).context("Upload reply has no drive")?;
+    let item_id = item
+        .get("id")
+        .and_then(Value::as_str)
+        .context("Upload reply has no id")?;
+    let drive_id = item
+        .pointer("/parentReference/driveId")
+        .and_then(Value::as_str)
+        .context("Upload reply has no drive")?;
     let url = share_link(client, drive_id, item_id).await?;
     Ok(json!({ "url": url, "name": item.get("name").and_then(Value::as_str).unwrap_or(&name) }))
 }
@@ -723,7 +943,11 @@ pub async fn graphics(pivot: &str, search: &str, top: u32, category: &str) -> Re
     if !matches!(pivot, "Stock Images" | "Stickers" | "Emojis") {
         bail!("Not a pivot");
     }
-    let enc = |s: &str| url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>().replace('+', "%20");
+    let enc = |s: &str| {
+        url::form_urlencoded::byte_serialize(s.as_bytes())
+            .collect::<String>()
+            .replace('+', "%20")
+    };
     let url = format!(
         "{HUBBLE}/contentsvc/api/pivots?filter={}&search={}&top={}&app=5&tid=&secureurl=1",
         enc(&format!("pivotNames/any(p: p eq '{pivot}' )")),
@@ -761,13 +985,27 @@ async fn hubble_get(url: &str) -> Result<Value> {
 pub fn emoji_category_filter(items: Vec<Value>, category: &str) -> Vec<Value> {
     let words: &[&str] = match category {
         "Smilies" => &["face", "smile", "smiley"],
-        "Hand gestures" => &["hand", "index", "thumb", "finger", "palm", "fist", "gesture", "gesturing", "tipping hand"],
+        "Hand gestures" => &[
+            "hand",
+            "index",
+            "thumb",
+            "finger",
+            "palm",
+            "fist",
+            "gesture",
+            "gesturing",
+            "tipping hand",
+        ],
         _ => return items,
     };
     items
         .into_iter()
         .filter(|i| {
-            let d = i.get("description").and_then(Value::as_str).unwrap_or_default().to_lowercase();
+            let d = i
+                .get("description")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_lowercase();
             words.iter().any(|w| d.contains(w))
         })
         .collect()
@@ -809,16 +1047,26 @@ pub fn graphics_from(v: &Value) -> Vec<Value> {
     v.as_array()
         .into_iter()
         .flatten()
-        .flat_map(|p| p.get("MicrosoftContents").and_then(Value::as_array).cloned().unwrap_or_default())
+        .flat_map(|p| {
+            p.get("MicrosoftContents")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+        })
         .filter_map(|c| {
             let text = |k: &str| c.get(k).and_then(Value::as_str).filter(|s| !s.is_empty());
-            let description = text("DescriptionWithLocale").or_else(|| text("Description")).unwrap_or_default();
+            let description = text("DescriptionWithLocale")
+                .or_else(|| text("Description"))
+                .unwrap_or_default();
             let id = text("Id").unwrap_or_default();
             if let Some(glyph) = text("Glyph") {
                 return Some(json!({ "id": id, "glyph": glyph, "description": description }));
             }
             let path = text("Path")?;
-            let thumb = c.pointer("/ThumbnailInfo/Medium/Path").and_then(Value::as_str).unwrap_or(path);
+            let thumb = c
+                .pointer("/ThumbnailInfo/Medium/Path")
+                .and_then(Value::as_str)
+                .unwrap_or(path);
             let num = |p: &str| c.pointer(p).and_then(Value::as_i64).unwrap_or(0);
             Some(json!({
                 "id": id,
@@ -839,7 +1087,10 @@ pub fn graphics_from(v: &Value) -> Vec<Value> {
 pub fn file_data_uri(path: &std::path::Path, mime: &str) -> Result<String> {
     use base64::Engine;
     let bytes = std::fs::read(path).with_context(|| format!("Can't read {}", path.display()))?;
-    Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
+    Ok(format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
 }
 
 /// A stock picture's local copy (shown in the body while editing).
@@ -847,17 +1098,42 @@ pub async fn graphics_file(url: &str) -> Result<std::path::PathBuf> {
     if !url.starts_with(HUBBLE_CDN) {
         bail!("Not a stock picture");
     }
-    let bytes = reqwest::Client::new().get(url).send().await?.error_for_status()?.bytes().await?;
+    let bytes = reqwest::Client::new()
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
     let dir = std::env::temp_dir().join("ost-graphics");
     tokio::fs::create_dir_all(&dir).await?;
-    let name = url.rsplit('/').next().unwrap_or("picture.png").chars().filter(|c| c.is_ascii_alphanumeric() || "._-".contains(*c)).collect::<String>();
-    let file = dir.join(format!("{}-{}", uuid::Uuid::new_v4().simple(), if name.is_empty() { "picture.png".into() } else { name }));
+    let name = url
+        .rsplit('/')
+        .next()
+        .unwrap_or("picture.png")
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || "._-".contains(*c))
+        .collect::<String>();
+    let file = dir.join(format!(
+        "{}-{}",
+        uuid::Uuid::new_v4().simple(),
+        if name.is_empty() {
+            "picture.png".into()
+        } else {
+            name
+        }
+    ));
     tokio::fs::write(&file, &bytes).await?;
     Ok(file)
 }
 
 fn mime_of(name: &str) -> &'static str {
-    match name.rsplit('.').next().map(|e| e.to_ascii_lowercase()).as_deref() {
+    match name
+        .rsplit('.')
+        .next()
+        .map(|e| e.to_ascii_lowercase())
+        .as_deref()
+    {
         Some("txt") => "text/plain",
         Some("pdf") => "application/pdf",
         Some("png") => "image/png",
@@ -877,9 +1153,22 @@ fn mime_of(name: &str) -> &'static str {
 /// in `X-OWA-UrlPostData` (encodeURI, as Outlook's XHR sends it) and the
 /// file as the body.
 async fn owa_upload(action: &str, request: &Value, bytes: Vec<u8>) -> Result<Value> {
-    let (token, _) = crate::auth::oauth::brokered_token(HOSTED_CALENDAR_APP, "https://outlook.office.com", "https://outlook.office.com/.default", None).await?;
-    let tenant = crate::config::Config::load().ok().and_then(|c| c.tenant_id).unwrap_or_default();
-    let anchor = crate::config::Config::load().ok().and_then(|c| c.object_id()).map(|o| format!("OID:{o}@{tenant}")).unwrap_or_default();
+    let (token, _) = crate::auth::oauth::brokered_token(
+        HOSTED_CALENDAR_APP,
+        "https://outlook.office.com",
+        "https://outlook.office.com/.default",
+        None,
+    )
+    .await?;
+    let tenant = crate::config::Config::load()
+        .ok()
+        .and_then(|c| c.tenant_id)
+        .unwrap_or_default();
+    let anchor = crate::config::Config::load()
+        .ok()
+        .and_then(|c| c.object_id())
+        .map(|o| format!("OID:{o}@{tenant}"))
+        .unwrap_or_default();
     // encodeURI: everything but A-Z a-z 0-9 ;,/?:@&=+$-_.!~*'()# is escaped.
     let data: String = request
         .to_string()
@@ -893,7 +1182,9 @@ async fn owa_upload(action: &str, request: &Value, bytes: Vec<u8>) -> Result<Val
         })
         .collect();
     let resp = reqwest::Client::new()
-        .post(format!("https://outlook.office.com/owa/service.svc/{action}"))
+        .post(format!(
+            "https://outlook.office.com/owa/service.svc/{action}"
+        ))
         .bearer_auth(token)
         .header("x-anchormailbox", anchor)
         .header("user-agent", OWA_USER_AGENT)
@@ -903,7 +1194,10 @@ async fn owa_upload(action: &str, request: &Value, bytes: Vec<u8>) -> Result<Val
         .header("x-owa-hosted-ux", "true")
         .header("x-owa-host-app", "teams_desktop")
         .header("origin", "https://outlook.office.com")
-        .header("prefer", "IdType=\"ImmutableId\", exchange.behavior=\"IncludeThirdPartyOnlineMeetingProviders\"")
+        .header(
+            "prefer",
+            "IdType=\"ImmutableId\", exchange.behavior=\"IncludeThirdPartyOnlineMeetingProviders\"",
+        )
         .header("x-owa-urlpostdata", data)
         .body(bytes)
         .send()
@@ -912,7 +1206,10 @@ async fn owa_upload(action: &str, request: &Value, bytes: Vec<u8>) -> Result<Val
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
     if !status.is_success() {
-        bail!("{action}: {status} {}", text.chars().take(300).collect::<String>());
+        bail!(
+            "{action}: {status} {}",
+            text.chars().take(300).collect::<String>()
+        );
     }
     let v: Value = serde_json::from_str(&text).unwrap_or_default();
     Ok(v.get("Body").cloned().unwrap_or(v))
@@ -935,7 +1232,12 @@ async fn owa_upload(action: &str, request: &Value, bytes: Vec<u8>) -> Result<Val
 /// zone's), available (how many are free), total, confidence}]`.
 pub async fn find_meeting_times(req: &Value) -> Result<Value> {
     let tz = mailbox_time_zone().await;
-    let s = |k: &str| req.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+    let s = |k: &str| {
+        req.get(k)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
     let attendees: Vec<Value> = req
         .get("attendees")
         .and_then(Value::as_array)
@@ -948,7 +1250,11 @@ pub async fn find_meeting_times(req: &Value) -> Result<Value> {
             })
         })
         .collect();
-    let minutes = req.get("duration").and_then(Value::as_i64).unwrap_or(30).max(1);
+    let minutes = req
+        .get("duration")
+        .and_then(Value::as_i64)
+        .unwrap_or(30)
+        .max(1);
     let local = |t: &str| t.replace('T', " ").chars().take(19).collect::<String>();
     let mut body = json!({
         "attendees": attendees,
@@ -973,9 +1279,22 @@ pub async fn find_meeting_times(req: &Value) -> Result<Value> {
             body["constraints"] = json!({ "queryExpression": s("query") });
         }
     }
-    let (token, _) = crate::auth::oauth::brokered_token(HOSTED_CALENDAR_APP, "https://outlook.office.com", "https://outlook.office.com/.default", None).await?;
-    let tenant = crate::config::Config::load().ok().and_then(|c| c.tenant_id).unwrap_or_default();
-    let anchor = crate::config::Config::load().ok().and_then(|c| c.object_id()).map(|o| format!("OID:{o}@{tenant}")).unwrap_or_default();
+    let (token, _) = crate::auth::oauth::brokered_token(
+        HOSTED_CALENDAR_APP,
+        "https://outlook.office.com",
+        "https://outlook.office.com/.default",
+        None,
+    )
+    .await?;
+    let tenant = crate::config::Config::load()
+        .ok()
+        .and_then(|c| c.tenant_id)
+        .unwrap_or_default();
+    let anchor = crate::config::Config::load()
+        .ok()
+        .and_then(|c| c.object_id())
+        .map(|o| format!("OID:{o}@{tenant}"))
+        .unwrap_or_default();
     let mut http = reqwest::Client::new()
         .post("https://outlook.office.com/SchedulingB2/api/v1.0/me/findmeetingtimes")
         .bearer_auth(token)
@@ -986,7 +1305,10 @@ pub async fn find_meeting_times(req: &Value) -> Result<Value> {
         .header("x-maxfilteredsuggestions", "5")
         .header("x-getschedule-whv2", "true")
         .header("x-tenantid", tenant.as_str())
-        .header("prefer", "IdType=\"ImmutableId\", exchange.behavior=\"IncludeThirdPartyOnlineMeetingProviders\"")
+        .header(
+            "prefer",
+            "IdType=\"ImmutableId\", exchange.behavior=\"IncludeThirdPartyOnlineMeetingProviders\"",
+        )
         .header("x-returnaccommodations", "true")
         .header("x-filterbusyrequiredattendees", "true")
         .header("x-ReturnOriginalAvailability", "true")
@@ -1000,16 +1322,26 @@ pub async fn find_meeting_times(req: &Value) -> Result<Value> {
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
     if !status.is_success() {
-        bail!("findmeetingtimes: {status} {}", text.chars().take(300).collect::<String>());
+        bail!(
+            "findmeetingtimes: {status} {}",
+            text.chars().take(300).collect::<String>()
+        );
     }
     let v: Value = serde_json::from_str(&text).unwrap_or_default();
-    Ok(json!({ "suggestions": suggestions_from(&v), "reason": v.get("EmptySuggestionsReason").and_then(Value::as_str).unwrap_or_default() }))
+    Ok(
+        json!({ "suggestions": suggestions_from(&v), "reason": v.get("EmptySuggestionsReason").and_then(Value::as_str).unwrap_or_default() }),
+    )
 }
 
 /// The suggestions of a findmeetingtimes answer (PascalCase, as Outlook's
 /// scheduling service answers; camelCase too).
 pub fn suggestions_from(v: &Value) -> Vec<Value> {
-    let get = |o: &Value, k: &str| o.get(k).or_else(|| o.get(lower_first(k))).cloned().unwrap_or(Value::Null);
+    let get = |o: &Value, k: &str| {
+        o.get(k)
+            .or_else(|| o.get(lower_first(k)))
+            .cloned()
+            .unwrap_or(Value::Null)
+    };
     get(v, "MeetingTimeSuggestions")
         .as_array()
         .into_iter()
@@ -1020,14 +1352,30 @@ pub fn suggestions_from(v: &Value) -> Vec<Value> {
             // a Z, others are the zone's wall times.
             let t = |k: &str| {
                 let p = get(&slot, k);
-                let dt = get(&p, "DateTime").as_str().unwrap_or_default().split('.').next().unwrap_or_default().to_string();
+                let dt = get(&p, "DateTime")
+                    .as_str()
+                    .unwrap_or_default()
+                    .split('.')
+                    .next()
+                    .unwrap_or_default()
+                    .to_string();
                 let tz = get(&p, "TimeZone").as_str().unwrap_or("UTC").to_string();
-                if tz.is_empty() || tz.eq_ignore_ascii_case("UTC") { format!("{dt}Z") } else { dt }
+                if tz.is_empty() || tz.eq_ignore_ascii_case("UTC") {
+                    format!("{dt}Z")
+                } else {
+                    dt
+                }
             };
             let people = get(s, "AttendeeAvailability");
             let people = people.as_array().cloned().unwrap_or_default();
-            let free = people.iter().filter(|p| matches!(get(p, "Availability").as_str(), Some("Free") | Some("free"))).count();
-            let organizer_free = matches!(get(s, "OrganizerAvailability").as_str(), Some("Free") | Some("free"));
+            let free = people
+                .iter()
+                .filter(|p| matches!(get(p, "Availability").as_str(), Some("Free") | Some("free")))
+                .count();
+            let organizer_free = matches!(
+                get(s, "OrganizerAvailability").as_str(),
+                Some("Free") | Some("free")
+            );
             json!({
                 "start": t("Start"),
                 "end": t("End"),
@@ -1041,7 +1389,9 @@ pub fn suggestions_from(v: &Value) -> Vec<Value> {
 
 fn lower_first(k: &str) -> String {
     let mut c = k.chars();
-    c.next().map(|f| f.to_ascii_lowercase().to_string() + c.as_str()).unwrap_or_default()
+    c.next()
+        .map(|f| f.to_ascii_lowercase().to_string() + c.as_str())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -1059,22 +1409,39 @@ mod tests {
         assert_eq!(items[0]["glyph"], "😄");
         // Smilies keeps faces, Hand gestures hands; others keep all.
         assert_eq!(emoji_category_filter(items.clone(), "Smilies").len(), 1);
-        assert_eq!(emoji_category_filter(items.clone(), "Hand gestures")[0]["id"], "c");
+        assert_eq!(
+            emoji_category_filter(items.clone(), "Hand gestures")[0]["id"],
+            "c"
+        );
         assert_eq!(emoji_category_filter(items, "Objects").len(), 3);
         let stock = json!([{ "MicrosoftContents": [{ "Id": "p", "Path": "m365content/publish/p/1.jpg", "Width": 5760, "Height": 3840, "Description": "Skill",
             "ThumbnailInfo": { "Medium": { "Path": "m365content/publish/p/thumbnails/medium.jpg", "Width": 195, "Height": 130 } } }] }]);
         let p = &graphics_from(&stock)[0];
-        assert_eq!(p["url"], "https://cdn.hubblecontent.osi.office.net/m365content/publish/p/1.jpg");
+        assert_eq!(
+            p["url"],
+            "https://cdn.hubblecontent.osi.office.net/m365content/publish/p/1.jpg"
+        );
         assert_eq!(p["thumbHeight"], 130);
-        let themes = themes_from(&json!([{ "Id": "t", "Name": "skill", "ThumbnailInfo": { "Small": { "Path": "m365content/publish/t/thumbnails/small.jpg" } } }]));
+        let themes = themes_from(
+            &json!([{ "Id": "t", "Name": "skill", "ThumbnailInfo": { "Small": { "Path": "m365content/publish/t/thumbnails/small.jpg" } } }]),
+        );
         assert_eq!(themes[0]["name"], "Skill");
-        assert_eq!(themes[0]["thumb"], "https://cdn.hubblecontent.osi.office.net/m365content/publish/t/thumbnails/small.jpg");
+        assert_eq!(
+            themes[0]["thumb"],
+            "https://cdn.hubblecontent.osi.office.net/m365content/publish/t/thumbnails/small.jpg"
+        );
     }
 
     #[test]
     fn intent_as_outlook_writes_it() {
         let d = |s: &str| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
-        let days = [d("2026-11-24"), d("2026-11-25"), d("2026-11-26"), d("2026-11-27"), d("2026-11-30")];
+        let days = [
+            d("2026-11-24"),
+            d("2026-11-25"),
+            d("2026-11-26"),
+            d("2026-11-27"),
+            d("2026-11-30"),
+        ];
         // As captured from Outlook's form (Morning and Midday picked).
         assert_eq!(
             intent_json(&days, &[], &[(0, 720), (720, 780)]),
@@ -1096,7 +1463,14 @@ mod tests {
         let opts = json!({ "autocorrect": true, "capitalizeI": false, "autoCapitalize": true, "spelling": true, "grammar": false });
         let w = editor_option_writes(&json!({ "options": [] }), &opts, "en-us");
         let paths: Vec<_> = w.iter().map(|(m, p, _)| format!("{m} {p}")).collect();
-        assert_eq!(paths, ["POST ows/v1.0/OutlookOptions/Proofing", "POST ows/v1.0/OutlookOptions/TextPrediction", "POST ows/v1.0/OutlookOptions/AutoCorrect"]);
+        assert_eq!(
+            paths,
+            [
+                "POST ows/v1.0/OutlookOptions/Proofing",
+                "POST ows/v1.0/OutlookOptions/TextPrediction",
+                "POST ows/v1.0/OutlookOptions/AutoCorrect"
+            ]
+        );
         let p = &w[0].2["options"];
         assert_eq!(p["feature"], 25);
         assert_eq!(p["grammarEnabled"], false);
@@ -1106,22 +1480,47 @@ mod tests {
             over["sharedUserSettings"]["editorPaneOverriddenSettings"],
             json!([{ "id": GRAMMAR_ID, "name": "Grammar", "value": "0", "languageId": "en-us" }])
         );
-        assert_eq!(over["sharedUserSettings"]["editorServiceOverriddenSettings"].as_array().unwrap().len(), 3);
-        assert_eq!(w[1].2["options"], json!({ "feature": 63, "isTextPredictionEnabled": false }));
-        assert_eq!(w[2].2["options"], json!({ "feature": 56, "isAutoCorrectEnabled": true, "isAutoCapitalizationEnabled": true, "autoCapitalizeI": false }));
+        assert_eq!(
+            over["sharedUserSettings"]["editorServiceOverriddenSettings"]
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+        assert_eq!(
+            w[1].2["options"],
+            json!({ "feature": 63, "isTextPredictionEnabled": false })
+        );
+        assert_eq!(
+            w[2].2["options"],
+            json!({ "feature": 56, "isAutoCorrectEnabled": true, "isAutoCapitalizationEnabled": true, "autoCapitalizeI": false })
+        );
         // Existing options are PATCHed whole, the Grammar override replaced.
         let all = json!({ "options": [
             { "itemClass": "Proofing", "feature": 25, "id": "P", "createdDateTime": "x", "spellCheckEnabled": true, "grammarEnabled": false, "proofingLocale": "en-us", "overriddenOptions": over.to_string() },
             { "itemClass": "AutoCorrect", "feature": 56, "id": "A", "autoCapitalizeI": false, "isAutoCorrectEnabled": true, "isAutoCapitalizationEnabled": true },
             { "itemClass": "TextPrediction", "feature": 63, "id": "T", "isTextPredictionEnabled": false } ] });
-        let back = editor_option_writes(&all, &json!({ "autocorrect": true, "capitalizeI": true, "autoCapitalize": true, "spelling": true, "grammar": true }), "en-us");
+        let back = editor_option_writes(
+            &all,
+            &json!({ "autocorrect": true, "capitalizeI": true, "autoCapitalize": true, "spelling": true, "grammar": true }),
+            "en-us",
+        );
         assert!(back.iter().all(|(m, _, _)| *m == reqwest::Method::PATCH));
         let p = &back[0].2["options"];
         assert_eq!(p["id"], "P");
         assert!(p.get("createdDateTime").is_none());
         let over: Value = serde_json::from_str(p["overriddenOptions"].as_str().unwrap()).unwrap();
-        assert_eq!(over["sharedUserSettings"]["editorPaneOverriddenSettings"][0]["value"], "1");
-        assert_eq!(over["sharedUserSettings"]["editorPaneOverriddenSettings"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            over["sharedUserSettings"]["editorPaneOverriddenSettings"][0]["value"],
+            "1"
+        );
+        assert_eq!(
+            over["sharedUserSettings"]["editorPaneOverriddenSettings"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
         assert_eq!(editor_options_from(&all)["capitalizeI"], false);
         assert_eq!(editor_options_from(&json!({}))["grammar"], true);
     }
@@ -1130,7 +1529,10 @@ mod tests {
     fn series_intent_as_outlook_writes_it() {
         // Captured from Outlook's form on a weekly Thursday series: Monday
         // taken off, Saturday added, Morning and Afternoon.
-        let w: Vec<String> = ["Thursday", "Tuesday", "Wednesday", "Friday", "Saturday"].iter().map(|s| s.to_string()).collect();
+        let w: Vec<String> = ["Thursday", "Tuesday", "Wednesday", "Friday", "Saturday"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         assert_eq!(
             intent_json(&[], &w, &[(0, 720), (780, 1440)]),
             r#"{"IntentConstraint":{"ConstraintType":"AND","Constraints":[{"ConstraintType":"OR","Constraints":[{"FilterType":"DayOfWeek","FilterValue":"Thursday"},{"FilterType":"DayOfWeek","FilterValue":"Tuesday"},{"FilterType":"DayOfWeek","FilterValue":"Wednesday"},{"FilterType":"DayOfWeek","FilterValue":"Friday"},{"FilterType":"DayOfWeek","FilterValue":"Saturday"}]},{"ConstraintType":"OR","Constraints":[{"FilterType":"TimeOfDay","FilterValue":"0..720"},{"FilterType":"TimeOfDay","FilterValue":"780..1440"}]}]},"Version":1}"#
@@ -1153,12 +1555,38 @@ mod tests {
         assert_eq!(u[1]["Item"]["IsRoomRequested"], true);
         // As captured: HideAttendees, IsDefaultPreferences, CalendarIsResponseRequested.
         let u = form_updates(&json!({ "requestResponses": false, "hideAttendees": true }));
-        let paths: Vec<&str> = u.iter().map(|x| x["Path"]["FieldURI"].as_str().or(x["Path"]["PropertyName"].as_str()).unwrap()).collect();
-        assert_eq!(paths, ["HideAttendees", "IsDefaultPreferences", "CalendarIsResponseRequested"]);
+        let paths: Vec<&str> = u
+            .iter()
+            .map(|x| {
+                x["Path"]["FieldURI"]
+                    .as_str()
+                    .or(x["Path"]["PropertyName"].as_str())
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                "HideAttendees",
+                "IsDefaultPreferences",
+                "CalendarIsResponseRequested"
+            ]
+        );
         assert_eq!(u[2]["Item"]["IsResponseRequested"], false);
         let u = form_updates(&json!({ "managed": { "on": true, "intent": "{}" } }));
-        let names: Vec<&str> = u.iter().map(|x| x["Path"]["PropertyName"].as_str().unwrap()).collect();
-        assert_eq!(names, ["CopilotAutoReschedulingCount", "CopilotManagedEventType", "Intent", "IsDefaultPreferences"]);
+        let names: Vec<&str> = u
+            .iter()
+            .map(|x| x["Path"]["PropertyName"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "CopilotAutoReschedulingCount",
+                "CopilotManagedEventType",
+                "Intent",
+                "IsDefaultPreferences"
+            ]
+        );
         assert_eq!(u[1]["Item"]["ExtendedProperty"][0]["Value"], "1");
         let u = form_updates(&json!({ "managed": { "on": false } }));
         assert_eq!(u[0]["Item"]["ExtendedProperty"][0]["Value"], "0");

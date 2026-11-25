@@ -46,7 +46,10 @@ impl ProximitySource {
             Some(4) => return Some(Self::CopilotQr),
             _ => {}
         }
-        match invitation.pointer("/autoAcceptAuthorization/source").and_then(|v| v.as_str()) {
+        match invitation
+            .pointer("/autoAcceptAuthorization/source")
+            .and_then(|v| v.as_str())
+        {
             Some("CopilotQR") => Some(Self::CopilotQr),
             Some("QR") => Some(Self::QrCode),
             Some("BTP") => Some(Self::Bluetooth),
@@ -124,14 +127,25 @@ pub enum Decision {
 /// Teams Rooms' byomAutoAcceptService.acceptCall for an invitation
 /// (`invitation`: its invitationData, possibly absent) from a caller in
 /// the room's tenant or not, with the salts the room advertised.
-pub fn decide(invitation: Option<&serde_json::Value>, caller_in_tenant: bool, settings: &Settings, salts: &Salts) -> Decision {
+pub fn decide(
+    invitation: Option<&serde_json::Value>,
+    caller_in_tenant: bool,
+    settings: &Settings,
+    salts: &Salts,
+) -> Decision {
     let empty = serde_json::Value::Null;
     let inv = invitation.unwrap_or(&empty);
     let source = ProximitySource::of(inv);
-    let mode = if settings.auto_accept_enabled { settings.auto_accept } else { AutoAccept::Disabled };
+    let mode = if settings.auto_accept_enabled {
+        settings.auto_accept
+    } else {
+        AutoAccept::Disabled
+    };
     match mode {
         AutoAccept::Disabled => return Decision::Ring("Auto_accept_not_allowed"),
-        AutoAccept::InTenant if !caller_in_tenant => return Decision::Ring("Auto_accept_not_allowed"),
+        AutoAccept::InTenant if !caller_in_tenant => {
+            return Decision::Ring("Auto_accept_not_allowed");
+        }
         _ => {}
     }
     let allowed = match source {
@@ -200,7 +214,14 @@ impl Default for Salts {
 
 impl Salts {
     pub fn new(update: Duration, history: usize, lifetime: Duration) -> Self {
-        Self { update, lifetime, history, salt: random_salt(), old: VecDeque::new(), since: Instant::now() }
+        Self {
+            update,
+            lifetime,
+            history,
+            salt: random_salt(),
+            old: VecDeque::new(),
+            since: Instant::now(),
+        }
     }
 
     /// The salt to advertise now.
@@ -262,7 +283,9 @@ pub const ROOM_DEVICE_TYPE: &str = "room";
 /// room's endpoint with `deviceType: "room"`, and Teams shows a room.
 pub fn mark_device(payload: &mut serde_json::Value) {
     if is_active()
-        && let Some(req) = payload.get_mut("conversationRequest").and_then(|r| r.as_object_mut())
+        && let Some(req) = payload
+            .get_mut("conversationRequest")
+            .and_then(|r| r.as_object_mut())
     {
         req.insert("deviceType".into(), ROOM_DEVICE_TYPE.into());
     }
@@ -286,7 +309,10 @@ pub fn meeting_kind(details: &serde_json::Value) -> MeetingKind {
     MeetingKind {
         adhoc: s("meetingType").as_deref() == Some("Adhoc"),
         // Teams Rooms' isValidEndTime: an ad-hoc meeting says 0001-01-01.
-        end: ["endTime", "scheduledEndTime", "meetingEndTime"].iter().find_map(|k| s(k)).filter(|e| !e.is_empty() && !e.starts_with("0001-")),
+        end: ["endTime", "scheduledEndTime", "meetingEndTime"]
+            .iter()
+            .find_map(|k| s(k))
+            .filter(|e| !e.is_empty() && !e.starts_with("0001-")),
     }
 }
 
@@ -297,7 +323,9 @@ pub fn meeting_kind(details: &serde_json::Value) -> MeetingKind {
 /// (`19:meeting_…`) is scheduled or a Meet now, and a channel
 /// (`@thread.tacv2`) holds both kinds, so those wait for the meeting's end.
 pub fn auto_exits_when_alone(thread: Option<&str>) -> bool {
-    thread.is_some_and(|t| t.starts_with("19:") && t.ends_with("@thread.v2") && !t.starts_with("19:meeting_"))
+    thread.is_some_and(|t| {
+        t.starts_with("19:") && t.ends_with("@thread.v2") && !t.starts_with("19:meeting_")
+    })
 }
 
 /// What a call's conversation is, for its title (Teams' calling
@@ -351,8 +379,16 @@ pub fn call_title(conv: &CallConversation) -> String {
     use crate::i18n::{fill, tr_id};
     // Teams' strings, in the app language ("Teams" in them reads "OST").
     let default = || tr_id("OST meeting", "calling:k7f4r2l46");
-    let in_channel = |c: &str| fill(&tr_id("Meeting in \"%1\"", "calling:k81e9cufd"), &[c]).trim_end().to_string();
-    let topic = conv.topic.as_deref().map(str::trim).filter(|t| !t.is_empty());
+    let in_channel = |c: &str| {
+        fill(&tr_id("Meeting in \"%1\"", "calling:k81e9cufd"), &[c])
+            .trim_end()
+            .to_string()
+    };
+    let topic = conv
+        .topic
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty());
     match (conv.kind, topic) {
         (Some(ConversationKind::Channel), Some(t)) => return in_channel(t),
         (Some(ConversationKind::Group), Some(t)) => {
@@ -363,9 +399,16 @@ pub fn call_title(conv: &CallConversation) -> String {
             };
         }
         (Some(ConversationKind::PrivateMeeting), Some(t)) => return t.to_string(),
-        (Some(ConversationKind::BreakoutRoom), t) => return t.map(str::to_string).unwrap_or_else(default),
+        (Some(ConversationKind::BreakoutRoom), t) => {
+            return t.map(str::to_string).unwrap_or_else(default);
+        }
         (Some(ConversationKind::Channel), None) => {
-            return match conv.channel_name.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
+            return match conv
+                .channel_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|c| !c.is_empty())
+            {
                 Some(c) => in_channel(c),
                 None => default(),
             };
@@ -373,7 +416,12 @@ pub fn call_title(conv: &CallConversation) -> String {
         (Some(ConversationKind::PrivateMeeting), None) => return default(),
         _ => {}
     }
-    let mut names: Vec<&str> = conv.others.iter().map(|n| n.trim()).filter(|n| !n.is_empty()).collect();
+    let mut names: Vec<&str> = conv
+        .others
+        .iter()
+        .map(|n| n.trim())
+        .filter(|n| !n.is_empty())
+        .collect();
     if names.is_empty() {
         return default();
     }
@@ -400,7 +448,9 @@ pub fn conversation_kind(thread: &str, thread_type: Option<&str>) -> Conversatio
         Some("breakoutroom") | Some("breakout") => ConversationKind::BreakoutRoom,
         Some("chat") => ConversationKind::Group,
         _ if thread.starts_with("19:meeting_") => ConversationKind::PrivateMeeting,
-        _ if thread.ends_with("@thread.tacv2") || thread.ends_with("@thread.skype") => ConversationKind::Channel,
+        _ if thread.ends_with("@thread.tacv2") || thread.ends_with("@thread.skype") => {
+            ConversationKind::Channel
+        }
         _ if thread.ends_with("@thread.v2") => ConversationKind::Group,
         _ => ConversationKind::Other,
     }
@@ -421,7 +471,10 @@ pub fn is_room_participant(participant: &serde_json::Value) -> bool {
     let first = participant
         .pointer("/endpoints/endpointDetails/0")
         .or_else(|| participant.pointer("/endpointDetails/0"));
-    first.and_then(|e| e.get("deviceType")).and_then(|d| d.as_str()) == Some(ROOM_DEVICE_TYPE)
+    first
+        .and_then(|e| e.get("deviceType"))
+        .and_then(|d| d.as_str())
+        == Some(ROOM_DEVICE_TYPE)
 }
 
 #[cfg(test)]
@@ -439,27 +492,61 @@ mod tests {
             huddle: false,
         };
         use ConversationKind::*;
-        assert_eq!(call_title(&conv(Some(PrivateMeeting), Some("OST TEST 226 sync"), &["OST Test 1"])), "OST TEST 226 sync");
-        assert_eq!(call_title(&conv(Some(PrivateMeeting), None, &["OST Test 1"])), "OST meeting");
-        assert_eq!(call_title(&conv(Some(Channel), Some("OST layout test"), &[])), "Meeting in \"OST layout test\"");
+        assert_eq!(
+            call_title(&conv(
+                Some(PrivateMeeting),
+                Some("OST TEST 226 sync"),
+                &["OST Test 1"]
+            )),
+            "OST TEST 226 sync"
+        );
+        assert_eq!(
+            call_title(&conv(Some(PrivateMeeting), None, &["OST Test 1"])),
+            "OST meeting"
+        );
+        assert_eq!(
+            call_title(&conv(Some(Channel), Some("OST layout test"), &[])),
+            "Meeting in \"OST layout test\""
+        );
         let mut ch = conv(Some(Channel), None, &[]);
         ch.channel_name = Some("General".into());
         assert_eq!(call_title(&ch), "Meeting in \"General\"");
-        assert_eq!(call_title(&conv(Some(Group), Some("OST group"), &[])), "Call with OST group");
-        assert_eq!(call_title(&conv(Some(Group), None, &["OST Test 2", "OST Test 1"])), "OST Test 1, OST Test 2");
-        assert_eq!(call_title(&conv(Some(Other), None, &["OST Test 1"])), "OST Test 1");
-        assert_eq!(call_title(&conv(None, None, &["D d", "C c", "B b", "A a"])), "A and 3 others");
+        assert_eq!(
+            call_title(&conv(Some(Group), Some("OST group"), &[])),
+            "Call with OST group"
+        );
+        assert_eq!(
+            call_title(&conv(Some(Group), None, &["OST Test 2", "OST Test 1"])),
+            "OST Test 1, OST Test 2"
+        );
+        assert_eq!(
+            call_title(&conv(Some(Other), None, &["OST Test 1"])),
+            "OST Test 1"
+        );
+        assert_eq!(
+            call_title(&conv(None, None, &["D d", "C c", "B b", "A a"])),
+            "A and 3 others"
+        );
         assert_eq!(call_title(&conv(None, None, &[])), "OST meeting");
-        assert_eq!(call_title(&conv(Some(BreakoutRoom), None, &["x"])), "OST meeting");
+        assert_eq!(
+            call_title(&conv(Some(BreakoutRoom), None, &["x"])),
+            "OST meeting"
+        );
     }
 
     #[test]
     fn conversation_kinds() {
         use ConversationKind::*;
-        assert_eq!(conversation_kind("19:meeting_abc@thread.v2", None), PrivateMeeting);
+        assert_eq!(
+            conversation_kind("19:meeting_abc@thread.v2", None),
+            PrivateMeeting
+        );
         assert_eq!(conversation_kind("19:de4@thread.tacv2", None), Channel);
         assert_eq!(conversation_kind("19:abc@thread.v2", Some("chat")), Group);
-        assert_eq!(conversation_kind("19:abc@thread.v2", Some("meeting")), PrivateMeeting);
+        assert_eq!(
+            conversation_kind("19:abc@thread.v2", Some("meeting")),
+            PrivateMeeting
+        );
         assert_eq!(conversation_kind("", None), Other);
         assert!(adhoc_escalated(2) && !adhoc_escalated(1));
     }
@@ -468,7 +555,11 @@ mod tests {
     fn a_proximity_invite_with_a_current_code_is_accepted() {
         let s = Salts::default();
         let inv = json!({"proximitySource": 1, "deviceType": "computer", "autoAcceptAuthorization": {"token": s.current()}});
-        let expect = if s.current() == 0 { Decision::Ring("Salt_not_found") } else { Decision::Accept { video: true } };
+        let expect = if s.current() == 0 {
+            Decision::Ring("Salt_not_found")
+        } else {
+            Decision::Accept { video: true }
+        };
         assert_eq!(decide(Some(&inv), true, &Settings::default(), &s), expect);
     }
 
@@ -476,11 +567,20 @@ mod tests {
     fn without_a_valid_code_the_room_rings() {
         let s = Salts::default();
         let none = json!({"proximitySource": 1, "deviceType": "computer", "autoAcceptAuthorization": null});
-        assert_eq!(decide(Some(&none), true, &Settings::default(), &s), Decision::Ring("Salt_not_found"));
-        assert_eq!(decide(None, true, &Settings::default(), &s), Decision::Ring("Salt_not_found"));
+        assert_eq!(
+            decide(Some(&none), true, &Settings::default(), &s),
+            Decision::Ring("Salt_not_found")
+        );
+        assert_eq!(
+            decide(None, true, &Settings::default(), &s),
+            Decision::Ring("Salt_not_found")
+        );
         let wrong = s.current().wrapping_add(1).max(1);
         let bad = json!({"proximitySource": 1, "autoAcceptAuthorization": {"token": wrong}});
-        assert_eq!(decide(Some(&bad), true, &Settings::default(), &s), Decision::Ring("Salt_is_invalid"));
+        assert_eq!(
+            decide(Some(&bad), true, &Settings::default(), &s),
+            Decision::Ring("Salt_is_invalid")
+        );
     }
 
     #[test]
@@ -490,18 +590,49 @@ mod tests {
             s = Salts::default();
         }
         let inv = json!({"proximitySource": 1, "autoAcceptAuthorization": {"token": s.current()}});
-        assert_eq!(decide(Some(&inv), false, &Settings::default(), &s), Decision::Ring("Auto_accept_not_allowed"));
-        let all = Settings { auto_accept: AutoAccept::All, ..Settings::default() };
-        assert_eq!(decide(Some(&inv), false, &all, &s), Decision::Accept { video: true });
-        let off = Settings { auto_accept_enabled: false, ..Settings::default() };
-        assert_eq!(decide(Some(&inv), true, &off, &s), Decision::Ring("Auto_accept_not_allowed"));
+        assert_eq!(
+            decide(Some(&inv), false, &Settings::default(), &s),
+            Decision::Ring("Auto_accept_not_allowed")
+        );
+        let all = Settings {
+            auto_accept: AutoAccept::All,
+            ..Settings::default()
+        };
+        assert_eq!(
+            decide(Some(&inv), false, &all, &s),
+            Decision::Accept { video: true }
+        );
+        let off = Settings {
+            auto_accept_enabled: false,
+            ..Settings::default()
+        };
+        assert_eq!(
+            decide(Some(&inv), true, &off, &s),
+            Decision::Ring("Auto_accept_not_allowed")
+        );
         let us = json!({"proximitySource": 2, "autoAcceptAuthorization": {"token": s.current()}});
-        let no_us = Settings { ultrasound_auto_accept: false, ..Settings::default() };
-        assert_eq!(decide(Some(&us), true, &no_us, &s), Decision::Ring("Auto_accept_not_allowed"));
-        let no_video = Settings { video_allowed: false, ..Settings::default() };
-        assert_eq!(decide(Some(&inv), true, &no_video, &s), Decision::Accept { video: false });
-        let copilot = json!({"proximitySource": 4, "autoAcceptAuthorization": {"token": s.current()}});
-        assert_eq!(decide(Some(&copilot), true, &Settings::default(), &s), Decision::Ring("Auto_accept_not_allowed"));
+        let no_us = Settings {
+            ultrasound_auto_accept: false,
+            ..Settings::default()
+        };
+        assert_eq!(
+            decide(Some(&us), true, &no_us, &s),
+            Decision::Ring("Auto_accept_not_allowed")
+        );
+        let no_video = Settings {
+            video_allowed: false,
+            ..Settings::default()
+        };
+        assert_eq!(
+            decide(Some(&inv), true, &no_video, &s),
+            Decision::Accept { video: false }
+        );
+        let copilot =
+            json!({"proximitySource": 4, "autoAcceptAuthorization": {"token": s.current()}});
+        assert_eq!(
+            decide(Some(&copilot), true, &Settings::default(), &s),
+            Decision::Ring("Auto_accept_not_allowed")
+        );
     }
 
     #[test]
@@ -528,8 +659,12 @@ mod tests {
 
     #[test]
     fn room_endpoints_and_requests() {
-        assert!(is_room_participant(&json!({"endpoints": {"endpointDetails": [{"deviceType": "room"}]}})));
-        assert!(!is_room_participant(&json!({"endpoints": {"endpointDetails": [{"participantId": "x"}]}})));
+        assert!(is_room_participant(
+            &json!({"endpoints": {"endpointDetails": [{"deviceType": "room"}]}})
+        ));
+        assert!(!is_room_participant(
+            &json!({"endpoints": {"endpointDetails": [{"participantId": "x"}]}})
+        ));
         let mut p = json!({"conversationRequest": {"subject": null}});
         mark_device(&mut p);
         assert!(p["conversationRequest"].get("deviceType").is_none());
@@ -543,10 +678,17 @@ mod tests {
     fn meeting_kinds_from_details() {
         let k = meeting_kind(&json!({"meetingType": "Adhoc", "isChannelMeeting": true}));
         assert!(k.adhoc && k.end.is_none());
-        let k = meeting_kind(&json!({"meetingType": "Scheduled", "endTime": "2026-11-19T07:00:00Z"}));
-        assert_eq!((k.adhoc, k.end.as_deref()), (false, Some("2026-11-19T07:00:00Z")));
+        let k =
+            meeting_kind(&json!({"meetingType": "Scheduled", "endTime": "2026-11-19T07:00:00Z"}));
+        assert_eq!(
+            (k.adhoc, k.end.as_deref()),
+            (false, Some("2026-11-19T07:00:00Z"))
+        );
         // Cast's "Just cast" Meet now isn't ad hoc to Teams Rooms.
-        assert!(!meeting_kind(&json!({"meetingType": "MeetNow", "endTime": "0001-01-01T00:00:00"})).adhoc);
+        assert!(
+            !meeting_kind(&json!({"meetingType": "MeetNow", "endTime": "0001-01-01T00:00:00"}))
+                .adhoc
+        );
     }
 
     #[test]
@@ -559,8 +701,14 @@ mod tests {
 
     #[test]
     fn sources_as_teams_rooms_reads_them() {
-        assert_eq!(ProximitySource::of(&json!({"proximitySource": 2})), Some(ProximitySource::Ultrasound));
-        assert_eq!(ProximitySource::of(&json!({"autoAcceptAuthorization": {"source": "QR"}})), Some(ProximitySource::QrCode));
+        assert_eq!(
+            ProximitySource::of(&json!({"proximitySource": 2})),
+            Some(ProximitySource::Ultrasound)
+        );
+        assert_eq!(
+            ProximitySource::of(&json!({"autoAcceptAuthorization": {"source": "QR"}})),
+            Some(ProximitySource::QrCode)
+        );
         assert_eq!(ProximitySource::of(&json!({})), None);
         assert_eq!(AutoAccept::parse("ALL"), AutoAccept::All);
         assert_eq!(AutoAccept::parse("weird"), AutoAccept::InTenant);

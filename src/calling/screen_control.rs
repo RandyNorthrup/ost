@@ -81,7 +81,12 @@ pub struct Message {
 
 impl Message {
     pub fn new(action: u8, terminated_reason: u8) -> Self {
-        Self { action, terminated_reason, cause_id: None, handshake_id: None }
+        Self {
+            action,
+            terminated_reason,
+            cause_id: None,
+            handshake_id: None,
+        }
     }
 
     fn cause(mut self, id: Option<&str>) -> Self {
@@ -104,7 +109,9 @@ impl Message {
         if let Some(h) = &self.handshake_id {
             inner["handshakeId"] = json!(h);
         }
-        json!({"type": 0, "message": inner.to_string()}).to_string().into_bytes()
+        json!({"type": 0, "message": inner.to_string()})
+            .to_string()
+            .into_bytes()
     }
 
     pub fn decode(payload: &[u8]) -> Option<Self> {
@@ -123,7 +130,10 @@ impl Message {
         };
         Some(Self {
             action: inner.get("action")?.as_u64()? as u8,
-            terminated_reason: inner.get("terminatedReason").and_then(Value::as_u64).unwrap_or(0) as u8,
+            terminated_reason: inner
+                .get("terminatedReason")
+                .and_then(Value::as_u64)
+                .unwrap_or(0) as u8,
             cause_id: id("causeId"),
             handshake_id: id("handshakeId"),
         })
@@ -191,14 +201,22 @@ pub struct KeyEvent {
 
 impl KeyEvent {
     pub fn encode(&self) -> Vec<u8> {
-        vec![0, 1 | ((self.up as u8) << 4) | ((self.repeat as u8) << 5), self.code]
+        vec![
+            0,
+            1 | ((self.up as u8) << 4) | ((self.repeat as u8) << 5),
+            self.code,
+        ]
     }
 
     pub fn decode(b: &[u8]) -> Option<Self> {
         if b.len() != 3 || b[0] != 0 {
             return None;
         }
-        Some(Self { code: b[2], up: (b[1] >> 4) & 1 == 1, repeat: (b[1] >> 5) & 1 == 1 })
+        Some(Self {
+            code: b[2],
+            up: (b[1] >> 4) & 1 == 1,
+            repeat: (b[1] >> 5) & 1 == 1,
+        })
     }
 }
 
@@ -208,7 +226,10 @@ pub mod keys {
     /// positions, as Teams' viewer sends the key's code, not its character).
     pub fn evdev_from_vk(vk: u8) -> Option<i32> {
         // Letters A–Z on their QWERTY keys.
-        const LETTERS: [i32; 26] = [30, 48, 46, 32, 18, 33, 34, 35, 23, 36, 37, 38, 50, 49, 24, 25, 16, 19, 31, 20, 22, 47, 17, 45, 21, 44];
+        const LETTERS: [i32; 26] = [
+            30, 48, 46, 32, 18, 33, 34, 35, 23, 36, 37, 38, 50, 49, 24, 25, 16, 19, 31, 20, 22, 47,
+            17, 45, 21, 44,
+        ];
         Some(match vk {
             0x41..=0x5a => LETTERS[(vk - 0x41) as usize],
             0x31..=0x39 => 2 + (vk - 0x31) as i32,
@@ -368,7 +389,10 @@ pub enum Out {
     Send { to: u32, message: Message },
     /// Viewer: whether the sharer can be asked (Teams' Take control);
     /// `denied_by_sharer` when its AvailableNack said SharerDenied.
-    Capable { capable: bool, denied_by_sharer: bool },
+    Capable {
+        capable: bool,
+        denied_by_sharer: bool,
+    },
     /// Sharer: who can be given control (their data sources).
     Controllable(Vec<u32>),
     /// Sharer: `from` asks for control.
@@ -377,7 +401,11 @@ pub enum Out {
     RequestWithdrawn { from: u32 },
     /// Control changed: `controller` is the data source in control (the
     /// sharer's view) or None for "us" (the viewer's view).
-    ControlChanged { in_control: bool, controller: Option<u32>, reason: u8 },
+    ControlChanged {
+        in_control: bool,
+        controller: Option<u32>,
+        reason: u8,
+    },
     /// Viewer: the request was refused or timed out.
     RequestFailed { reason: u8 },
 }
@@ -475,10 +503,21 @@ impl Session {
         let mut out = Vec::new();
         if let Some((from, cause)) = self.request.take() {
             out.push(Out::RequestWithdrawn { from });
-            out.push(Out::Send { to: from, message: Message::new(action::REJECT_REQUEST, reason::SHARER_TERMINATED).cause(cause.as_deref()) });
+            out.push(Out::Send {
+                to: from,
+                message: Message::new(action::REJECT_REQUEST, reason::SHARER_TERMINATED)
+                    .cause(cause.as_deref()),
+            });
         }
-        if let Some(c) = self.controller.filter(|_| self.state == State::RemoteControlling) {
-            out.push(Out::ControlChanged { in_control: false, controller: Some(c), reason: reason::SHARER_TERMINATED });
+        if let Some(c) = self
+            .controller
+            .filter(|_| self.state == State::RemoteControlling)
+        {
+            out.push(Out::ControlChanged {
+                in_control: false,
+                controller: Some(c),
+                reason: reason::SHARER_TERMINATED,
+            });
         }
         self.reset();
         self.viewers.clear();
@@ -493,11 +532,24 @@ impl Session {
             return Vec::new();
         };
         let mut out = Vec::new();
-        if let Some(c) = self.controller.filter(|c| *c != from && self.state == State::RemoteControlling) {
-            out.push(Out::Send { to: c, message: Message::new(action::TERMINATE_NO_ACK, reason::SHARER_TERMINATED) });
-            out.push(Out::ControlChanged { in_control: false, controller: Some(c), reason: reason::SHARER_TERMINATED });
+        if let Some(c) = self
+            .controller
+            .filter(|c| *c != from && self.state == State::RemoteControlling)
+        {
+            out.push(Out::Send {
+                to: c,
+                message: Message::new(action::TERMINATE_NO_ACK, reason::SHARER_TERMINATED),
+            });
+            out.push(Out::ControlChanged {
+                in_control: false,
+                controller: Some(c),
+                reason: reason::SHARER_TERMINATED,
+            });
         }
-        out.push(Out::Send { to: from, message: Message::new(action::ACCEPT_REQUEST, reason::NONE).cause(cause.as_deref()) });
+        out.push(Out::Send {
+            to: from,
+            message: Message::new(action::ACCEPT_REQUEST, reason::NONE).cause(cause.as_deref()),
+        });
         self.controller = Some(from);
         self.cause_id = cause;
         self.state = State::WaitingForControlAck;
@@ -510,7 +562,11 @@ impl Session {
         let Some((from, cause)) = self.request.take().filter(|_| self.role == Role::Sharer) else {
             return Vec::new();
         };
-        vec![Out::Send { to: from, message: Message::new(action::REJECT_REQUEST, reason::SHARER_DENIED).cause(cause.as_deref()) }]
+        vec![Out::Send {
+            to: from,
+            message: Message::new(action::REJECT_REQUEST, reason::SHARER_DENIED)
+                .cause(cause.as_deref()),
+        }]
     }
 
     /// Sharer: give control to `to` (Give control ▸ a person).
@@ -523,14 +579,24 @@ impl Session {
             match self.controller {
                 Some(c) if c == to => return out,
                 Some(c) => {
-                    out.push(Out::Send { to: c, message: Message::new(action::TERMINATE_NO_ACK, reason::SHARER_TERMINATED) });
-                    out.push(Out::ControlChanged { in_control: false, controller: Some(c), reason: reason::SHARER_TERMINATED });
+                    out.push(Out::Send {
+                        to: c,
+                        message: Message::new(action::TERMINATE_NO_ACK, reason::SHARER_TERMINATED),
+                    });
+                    out.push(Out::ControlChanged {
+                        in_control: false,
+                        controller: Some(c),
+                        reason: reason::SHARER_TERMINATED,
+                    });
                 }
                 None => {}
             }
         }
         let cause = new_id();
-        out.push(Out::Send { to, message: Message::new(action::GIVE_CONTROL, reason::NONE).cause(Some(&cause)) });
+        out.push(Out::Send {
+            to,
+            message: Message::new(action::GIVE_CONTROL, reason::NONE).cause(Some(&cause)),
+        });
         self.cause_id = Some(cause);
         self.controller = Some(to);
         self.state = State::WaitingForControlAck;
@@ -542,21 +608,39 @@ impl Session {
     pub fn terminate(&mut self, now: Instant) -> Vec<Out> {
         match (self.role, self.state) {
             (Role::Sharer, State::RemoteControlling) => {
-                let Some(c) = self.controller else { return Vec::new() };
+                let Some(c) = self.controller else {
+                    return Vec::new();
+                };
                 self.state = State::WaitingForTerminateAck;
                 self.deadline = Some(now + ACK_TIMEOUT);
                 vec![
-                    Out::Send { to: c, message: Message::new(action::TERMINATE, reason::SHARER_TERMINATED) },
-                    Out::ControlChanged { in_control: false, controller: Some(c), reason: reason::SHARER_TERMINATED },
+                    Out::Send {
+                        to: c,
+                        message: Message::new(action::TERMINATE, reason::SHARER_TERMINATED),
+                    },
+                    Out::ControlChanged {
+                        in_control: false,
+                        controller: Some(c),
+                        reason: reason::SHARER_TERMINATED,
+                    },
                 ]
             }
             (Role::Viewer, State::LocalControlling) => {
-                let Some(s) = self.sharer else { return Vec::new() };
+                let Some(s) = self.sharer else {
+                    return Vec::new();
+                };
                 self.state = State::WaitingForTerminateAck;
                 self.deadline = Some(now + ACK_TIMEOUT);
                 vec![
-                    Out::Send { to: s, message: Message::new(action::TERMINATE, reason::VIEWER_TERMINATED) },
-                    Out::ControlChanged { in_control: false, controller: None, reason: reason::VIEWER_TERMINATED },
+                    Out::Send {
+                        to: s,
+                        message: Message::new(action::TERMINATE, reason::VIEWER_TERMINATED),
+                    },
+                    Out::ControlChanged {
+                        in_control: false,
+                        controller: None,
+                        reason: reason::VIEWER_TERMINATED,
+                    },
                 ]
             }
             _ => Vec::new(),
@@ -581,8 +665,15 @@ impl Session {
         self.capable = false;
         self.rendered_sent = false;
         let id = new_id();
-        out.push(Out::Send { to: sharer, message: Message::new(action::AVAILABLE, reason::NONE).handshake(&id) });
-        self.handshake = Some(Handshake { id, attempt: 1, next: now + AVAILABLE_RETRY });
+        out.push(Out::Send {
+            to: sharer,
+            message: Message::new(action::AVAILABLE, reason::NONE).handshake(&id),
+        });
+        self.handshake = Some(Handshake {
+            id,
+            attempt: 1,
+            next: now + AVAILABLE_RETRY,
+        });
         out
     }
 
@@ -595,17 +686,33 @@ impl Session {
         if let Some(s) = self.sharer {
             match self.state {
                 State::RequestSent => {
-                    out.push(Out::Send { to: s, message: Message::new(action::CANCEL_CONTROL_REQUEST, reason::VIEWER_CANCELLED).cause(self.cause_id.as_deref()) });
-                    out.push(Out::RequestFailed { reason: reason::VIEWER_CANCELLED });
+                    out.push(Out::Send {
+                        to: s,
+                        message: Message::new(
+                            action::CANCEL_CONTROL_REQUEST,
+                            reason::VIEWER_CANCELLED,
+                        )
+                        .cause(self.cause_id.as_deref()),
+                    });
+                    out.push(Out::RequestFailed {
+                        reason: reason::VIEWER_CANCELLED,
+                    });
                 }
                 State::LocalControlling => {
-                    out.push(Out::ControlChanged { in_control: false, controller: None, reason: reason::VIEWER_TERMINATED });
+                    out.push(Out::ControlChanged {
+                        in_control: false,
+                        controller: None,
+                        reason: reason::VIEWER_TERMINATED,
+                    });
                 }
                 _ => {}
             }
         }
         if self.capable {
-            out.push(Out::Capable { capable: false, denied_by_sharer: false });
+            out.push(Out::Capable {
+                capable: false,
+                denied_by_sharer: false,
+            });
         }
         self.reset();
         self.role = Role::None;
@@ -617,7 +724,10 @@ impl Session {
 
     /// Viewer: Take control ▸ Request.
     pub fn request(&mut self, now: Instant) -> Vec<Out> {
-        let Some(s) = self.sharer.filter(|_| self.role == Role::Viewer && self.state == State::None) else {
+        let Some(s) = self
+            .sharer
+            .filter(|_| self.role == Role::Viewer && self.state == State::None)
+        else {
             return Vec::new();
         };
         let cause = new_id();
@@ -630,15 +740,24 @@ impl Session {
 
     /// Viewer: withdraw the request.
     pub fn cancel_request(&mut self) -> Vec<Out> {
-        let Some(s) = self.sharer.filter(|_| self.role == Role::Viewer && self.state == State::RequestSent) else {
+        let Some(s) = self
+            .sharer
+            .filter(|_| self.role == Role::Viewer && self.state == State::RequestSent)
+        else {
             return Vec::new();
         };
         let cause = self.cause_id.take();
         self.state = State::None;
         self.deadline = None;
         vec![
-            Out::Send { to: s, message: Message::new(action::CANCEL_CONTROL_REQUEST, reason::VIEWER_CANCELLED).cause(cause.as_deref()) },
-            Out::RequestFailed { reason: reason::VIEWER_CANCELLED },
+            Out::Send {
+                to: s,
+                message: Message::new(action::CANCEL_CONTROL_REQUEST, reason::VIEWER_CANCELLED)
+                    .cause(cause.as_deref()),
+            },
+            Out::RequestFailed {
+                reason: reason::VIEWER_CANCELLED,
+            },
         ]
     }
 
@@ -646,25 +765,47 @@ impl Session {
 
     /// A protocol message from data source `from`.
     pub fn receive(&mut self, from: u32, m: &Message, now: Instant) -> Vec<Out> {
-        let ack = || Out::Send { to: from, message: Message::new(action::ACK, reason::NONE) };
+        let ack = || Out::Send {
+            to: from,
+            message: Message::new(action::ACK, reason::NONE),
+        };
         match m.action {
             action::AVAILABLE if self.role == Role::Sharer => {
                 let hs = m.handshake_id.clone().unwrap_or_default();
                 if !self.enabled {
-                    return vec![Out::Send { to: from, message: Message::new(action::AVAILABLE_NACK, reason::SHARER_CONTROL_DISABLED).handshake(&hs) }];
+                    return vec![Out::Send {
+                        to: from,
+                        message: Message::new(
+                            action::AVAILABLE_NACK,
+                            reason::SHARER_CONTROL_DISABLED,
+                        )
+                        .handshake(&hs),
+                    }];
                 }
                 self.viewers.insert(from);
                 vec![
-                    Out::Send { to: from, message: Message::new(action::AVAILABLE_ACK, reason::NONE).handshake(&hs) },
+                    Out::Send {
+                        to: from,
+                        message: Message::new(action::AVAILABLE_ACK, reason::NONE).handshake(&hs),
+                    },
                     Out::Controllable(self.viewers.iter().copied().collect()),
                 ]
             }
             action::CONTROL_REQUEST if self.role == Role::Sharer => {
                 if !self.enabled {
-                    return vec![Out::Send { to: from, message: Message::new(action::REJECT_REQUEST, reason::SHARER_CONTROL_DISABLED) }];
+                    return vec![Out::Send {
+                        to: from,
+                        message: Message::new(
+                            action::REJECT_REQUEST,
+                            reason::SHARER_CONTROL_DISABLED,
+                        ),
+                    }];
                 }
                 if self.request.is_some() {
-                    return vec![Out::Send { to: from, message: Message::new(action::REJECT_REQUEST, reason::SHARER_BUSY) }];
+                    return vec![Out::Send {
+                        to: from,
+                        message: Message::new(action::REJECT_REQUEST, reason::SHARER_BUSY),
+                    }];
                 }
                 self.request = Some((from, m.cause_id.clone()));
                 vec![Out::IncomingRequest { from }]
@@ -680,7 +821,11 @@ impl Session {
                 (Role::Sharer, State::WaitingForControlAck) if self.controller == Some(from) => {
                     self.state = State::RemoteControlling;
                     self.deadline = None;
-                    vec![Out::ControlChanged { in_control: true, controller: Some(from), reason: m.terminated_reason }]
+                    vec![Out::ControlChanged {
+                        in_control: true,
+                        controller: Some(from),
+                        reason: m.terminated_reason,
+                    }]
                 }
                 (_, State::WaitingForTerminateAck) => {
                     self.reset();
@@ -693,10 +838,19 @@ impl Session {
                 self.capable = true;
                 // Teams' viewer also says its renderer shows the share
                 // (RenderedAtViewer, once it draws the first frame).
-                let mut out = vec![Out::Capable { capable: true, denied_by_sharer: false }];
+                let mut out = vec![Out::Capable {
+                    capable: true,
+                    denied_by_sharer: false,
+                }];
                 if !self.rendered_sent {
                     self.rendered_sent = true;
-                    out.insert(0, Out::Send { to: from, message: Message::new(action::RENDERED_AT_VIEWER, reason::NONE) });
+                    out.insert(
+                        0,
+                        Out::Send {
+                            to: from,
+                            message: Message::new(action::RENDERED_AT_VIEWER, reason::NONE),
+                        },
+                    );
                 }
                 out
             }
@@ -706,35 +860,68 @@ impl Session {
                 }
                 self.handshake = None;
                 self.capable = false;
-                vec![Out::Capable { capable: false, denied_by_sharer: m.terminated_reason == reason::SHARER_DENIED }]
+                vec![Out::Capable {
+                    capable: false,
+                    denied_by_sharer: m.terminated_reason == reason::SHARER_DENIED,
+                }]
             }
-            action::ACCEPT_REQUEST if self.role == Role::Viewer && self.state == State::RequestSent => {
+            action::ACCEPT_REQUEST
+                if self.role == Role::Viewer && self.state == State::RequestSent =>
+            {
                 self.state = State::LocalControlling;
                 self.deadline = None;
-                vec![ack(), Out::ControlChanged { in_control: true, controller: None, reason: reason::NONE }]
+                vec![
+                    ack(),
+                    Out::ControlChanged {
+                        in_control: true,
+                        controller: None,
+                        reason: reason::NONE,
+                    },
+                ]
             }
-            action::REJECT_REQUEST if self.role == Role::Viewer && self.state == State::RequestSent => {
+            action::REJECT_REQUEST
+                if self.role == Role::Viewer && self.state == State::RequestSent =>
+            {
                 self.state = State::None;
                 self.deadline = None;
                 self.cause_id = None;
-                vec![Out::RequestFailed { reason: m.terminated_reason }]
+                vec![Out::RequestFailed {
+                    reason: m.terminated_reason,
+                }]
             }
             action::GIVE_CONTROL if self.role == Role::Viewer => {
                 self.cause_id = m.cause_id.clone();
                 self.state = State::LocalControlling;
                 self.deadline = None;
-                vec![ack(), Out::ControlChanged { in_control: true, controller: None, reason: m.terminated_reason }]
+                vec![
+                    ack(),
+                    Out::ControlChanged {
+                        in_control: true,
+                        controller: None,
+                        reason: m.terminated_reason,
+                    },
+                ]
             }
             action::TERMINATE | action::TERMINATE_NO_ACK => {
                 let was = match self.role {
-                    Role::Viewer if matches!(self.state, State::LocalControlling | State::RequestSent) => Some(None),
-                    Role::Sharer if self.controller == Some(from) && self.state != State::None => Some(Some(from)),
+                    Role::Viewer
+                        if matches!(self.state, State::LocalControlling | State::RequestSent) =>
+                    {
+                        Some(None)
+                    }
+                    Role::Sharer if self.controller == Some(from) && self.state != State::None => {
+                        Some(Some(from))
+                    }
                     _ => None,
                 };
                 let mut out = Vec::new();
                 if let Some(controller) = was {
                     self.reset();
-                    out.push(Out::ControlChanged { in_control: false, controller, reason: m.terminated_reason });
+                    out.push(Out::ControlChanged {
+                        in_control: false,
+                        controller,
+                        reason: m.terminated_reason,
+                    });
                 }
                 if m.action == action::TERMINATE {
                     out.push(ack());
@@ -758,12 +945,18 @@ impl Session {
             if h.attempt <= AVAILABLE_RETRIES {
                 h.attempt += 1;
                 h.next = now + AVAILABLE_RETRY * h.attempt;
-                out.push(Out::Send { to: s, message: Message::new(action::AVAILABLE, reason::NONE).handshake(&h.id) });
+                out.push(Out::Send {
+                    to: s,
+                    message: Message::new(action::AVAILABLE, reason::NONE).handshake(&h.id),
+                });
             } else {
                 // Teams: "Reached Available retry limit! Control
                 // capability will be false".
                 self.handshake = None;
-                out.push(Out::Capable { capable: false, denied_by_sharer: false });
+                out.push(Out::Capable {
+                    capable: false,
+                    denied_by_sharer: false,
+                });
             }
         }
         if self.deadline.is_some_and(|d| now >= d) {
@@ -771,23 +964,47 @@ impl Session {
             match (self.role, self.state) {
                 (Role::Viewer, State::RequestSent) => {
                     if let Some(s) = self.sharer {
-                        out.push(Out::Send { to: s, message: Message::new(action::CANCEL_CONTROL_REQUEST, reason::SHARER_NO_RESPONSE).cause(self.cause_id.as_deref()) });
+                        out.push(Out::Send {
+                            to: s,
+                            message: Message::new(
+                                action::CANCEL_CONTROL_REQUEST,
+                                reason::SHARER_NO_RESPONSE,
+                            )
+                            .cause(self.cause_id.as_deref()),
+                        });
                     }
                     self.state = State::None;
                     self.cause_id = None;
-                    out.push(Out::RequestFailed { reason: reason::SHARER_NO_RESPONSE });
+                    out.push(Out::RequestFailed {
+                        reason: reason::SHARER_NO_RESPONSE,
+                    });
                 }
                 (Role::Sharer, State::WaitingForControlAck) => {
                     if let Some(c) = self.controller {
-                        out.push(Out::Send { to: c, message: Message::new(action::TERMINATE_NO_ACK, reason::ACK_TIMEOUT).cause(self.cause_id.as_deref()) });
-                        out.push(Out::ControlChanged { in_control: false, controller: Some(c), reason: reason::ACK_TIMEOUT });
+                        out.push(Out::Send {
+                            to: c,
+                            message: Message::new(action::TERMINATE_NO_ACK, reason::ACK_TIMEOUT)
+                                .cause(self.cause_id.as_deref()),
+                        });
+                        out.push(Out::ControlChanged {
+                            in_control: false,
+                            controller: Some(c),
+                            reason: reason::ACK_TIMEOUT,
+                        });
                     }
                     self.reset();
                 }
                 (_, State::WaitingForTerminateAck) => {
-                    let to = if self.role == Role::Sharer { self.controller } else { self.sharer };
+                    let to = if self.role == Role::Sharer {
+                        self.controller
+                    } else {
+                        self.sharer
+                    };
                     if let Some(t) = to {
-                        out.push(Out::Send { to: t, message: Message::new(action::TERMINATE_NO_ACK, reason::ACK_TIMEOUT) });
+                        out.push(Out::Send {
+                            to: t,
+                            message: Message::new(action::TERMINATE_NO_ACK, reason::ACK_TIMEOUT),
+                        });
                     }
                     self.reset();
                 }
@@ -807,7 +1024,11 @@ impl Session {
                 self.viewers.retain(|v| !sources.contains(v));
                 if let Some(c) = self.controller.filter(|c| sources.contains(c)) {
                     if self.state == State::RemoteControlling {
-                        out.push(Out::ControlChanged { in_control: false, controller: Some(c), reason: reason::SHARER_TERMINATED });
+                        out.push(Out::ControlChanged {
+                            in_control: false,
+                            controller: Some(c),
+                            reason: reason::SHARER_TERMINATED,
+                        });
                     }
                     self.reset();
                 }
@@ -819,7 +1040,9 @@ impl Session {
                     out.push(Out::Controllable(self.viewers.iter().copied().collect()));
                 }
             }
-            Role::Viewer if self.sharer.is_some_and(|s| sources.contains(&s)) => out = self.stop_viewing(),
+            Role::Viewer if self.sharer.is_some_and(|s| sources.contains(&s)) => {
+                out = self.stop_viewing()
+            }
             _ => {}
         }
         out
@@ -860,23 +1083,47 @@ mod tests {
         let outer: Value = serde_json::from_str(&wire).unwrap();
         assert_eq!(outer["type"], 0);
         let inner: Value = serde_json::from_str(outer["message"].as_str().unwrap()).unwrap();
-        assert_eq!(inner, json!({"action": 1, "terminatedReason": 0, "causeId": "c-1"}));
+        assert_eq!(
+            inner,
+            json!({"action": 1, "terminatedReason": 0, "causeId": "c-1"})
+        );
         assert_eq!(Message::decode(wire.as_bytes()).unwrap(), m);
         // Teams' own: what its _sendRequest builds for AvailableAck.
         let teams = br#"{"type":0,"message":"{\"action\":9,\"terminatedReason\":0,\"handshakeId\":\"h\"}"}"#;
         let d = Message::decode(teams).unwrap();
-        assert_eq!((d.action, d.handshake_id.as_deref()), (action::AVAILABLE_ACK, Some("h")));
+        assert_eq!(
+            (d.action, d.handshake_id.as_deref()),
+            (action::AVAILABLE_ACK, Some("h"))
+        );
     }
 
     #[test]
     fn input_events_are_teams_bytes() {
-        let m = MouseEvent { kind: mouse::BUTTON, button: mouse::RIGHT, down: true, x: 0x1234, y: 65535, wheel: 0 };
-        assert_eq!(m.encode(), vec![1, 2 | (1 << 2) | (1 << 5), 0x34, 0x12, 0xff, 0xff, 0]);
+        let m = MouseEvent {
+            kind: mouse::BUTTON,
+            button: mouse::RIGHT,
+            down: true,
+            x: 0x1234,
+            y: 65535,
+            wheel: 0,
+        };
+        assert_eq!(
+            m.encode(),
+            vec![1, 2 | (1 << 2) | (1 << 5), 0x34, 0x12, 0xff, 0xff, 0]
+        );
         assert_eq!(MouseEvent::decode(&m.encode()), Some(m));
-        let w = MouseEvent { kind: mouse::WHEEL, wheel: -120, ..Default::default() };
+        let w = MouseEvent {
+            kind: mouse::WHEEL,
+            wheel: -120,
+            ..Default::default()
+        };
         assert_eq!(w.encode()[6], 136, "Teams writes -120 with setUint8");
         assert_eq!(MouseEvent::decode(&w.encode()).unwrap().wheel, -120);
-        let k = KeyEvent { code: 0x41, up: true, repeat: false };
+        let k = KeyEvent {
+            code: 0x41,
+            up: true,
+            repeat: false,
+        };
         assert_eq!(k.encode(), vec![0, 1 | (1 << 4), 0x41]);
         assert_eq!(KeyEvent::decode(&k.encode()), Some(k));
         assert_eq!(KeyEvent::decode(&[1, 0, 0]), None);
@@ -915,9 +1162,16 @@ mod tests {
         let back = deliver(&out, 20, 10, &mut sharer, now);
         assert!(back.contains(&Out::Controllable(vec![20])));
         let got = deliver(&back, 10, 20, &mut viewer, now);
-        assert!(got.contains(&Out::Capable { capable: true, denied_by_sharer: false }));
+        assert!(got.contains(&Out::Capable {
+            capable: true,
+            denied_by_sharer: false
+        }));
         assert_eq!(sends(&got), vec![(10, action::RENDERED_AT_VIEWER, 0)]);
-        assert_eq!(sends(&viewer.receive(10, &Message::new(action::AVAILABLE_ACK, 0), now)), vec![], "RenderedAtViewer goes once");
+        assert_eq!(
+            sends(&viewer.receive(10, &Message::new(action::AVAILABLE_ACK, 0), now)),
+            vec![],
+            "RenderedAtViewer goes once"
+        );
         // Request, accept, ack.
         let req = viewer.request(now);
         let at_sharer = deliver(&req, 20, 10, &mut sharer, now);
@@ -927,12 +1181,23 @@ mod tests {
         let at_viewer = deliver(&acc, 10, 20, &mut viewer, now);
         assert_eq!(viewer.controlled_sharer(), Some(10));
         let done = deliver(&at_viewer, 20, 10, &mut sharer, now);
-        assert_eq!(done, vec![Out::ControlChanged { in_control: true, controller: Some(20), reason: 0 }]);
+        assert_eq!(
+            done,
+            vec![Out::ControlChanged {
+                in_control: true,
+                controller: Some(20),
+                reason: 0
+            }]
+        );
         assert!(sharer.takes_input_from(20) && !sharer.takes_input_from(21));
         // The sharer takes control back; the viewer acks.
         let tb = sharer.terminate(now);
         let at_viewer = deliver(&tb, 10, 20, &mut viewer, now);
-        assert!(at_viewer.contains(&Out::ControlChanged { in_control: false, controller: None, reason: reason::SHARER_TERMINATED }));
+        assert!(at_viewer.contains(&Out::ControlChanged {
+            in_control: false,
+            controller: None,
+            reason: reason::SHARER_TERMINATED
+        }));
         deliver(&at_viewer, 20, 10, &mut sharer, now);
         assert_eq!((sharer.state(), viewer.state()), (State::None, State::None));
     }
@@ -950,9 +1215,16 @@ mod tests {
         deliver(&ack, 20, 10, &mut sharer, now);
         assert_eq!(sharer.controller(), Some(20));
         let stop = viewer.terminate(now);
-        assert_eq!(sends(&stop), vec![(10, action::TERMINATE, reason::VIEWER_TERMINATED)]);
+        assert_eq!(
+            sends(&stop),
+            vec![(10, action::TERMINATE, reason::VIEWER_TERMINATED)]
+        );
         let at_sharer = deliver(&stop, 20, 10, &mut sharer, now);
-        assert!(at_sharer.contains(&Out::ControlChanged { in_control: false, controller: Some(20), reason: reason::VIEWER_TERMINATED }));
+        assert!(at_sharer.contains(&Out::ControlChanged {
+            in_control: false,
+            controller: Some(20),
+            reason: reason::VIEWER_TERMINATED
+        }));
         deliver(&at_sharer, 10, 20, &mut viewer, now);
         assert_eq!((sharer.state(), viewer.state()), (State::None, State::None));
     }
@@ -967,16 +1239,29 @@ mod tests {
         deliver(&req, 20, 10, &mut sharer, now);
         let no = sharer.deny();
         let at_viewer = deliver(&no, 10, 20, &mut viewer, now);
-        assert_eq!(at_viewer, vec![Out::RequestFailed { reason: reason::SHARER_DENIED }]);
+        assert_eq!(
+            at_viewer,
+            vec![Out::RequestFailed {
+                reason: reason::SHARER_DENIED
+            }]
+        );
         // Unanswered: cancelled after 30 s.
         viewer.request(now);
         let late = viewer.tick(now + REQUEST_TIMEOUT);
-        assert!(late.contains(&Out::RequestFailed { reason: reason::SHARER_NO_RESPONSE }));
-        assert_eq!(sends(&late).last().map(|s| s.1), Some(action::CANCEL_CONTROL_REQUEST));
+        assert!(late.contains(&Out::RequestFailed {
+            reason: reason::SHARER_NO_RESPONSE
+        }));
+        assert_eq!(
+            sends(&late).last().map(|s| s.1),
+            Some(action::CANCEL_CONTROL_REQUEST)
+        );
         // No Ack after a give: TerminateNoAck after 10 s.
         sharer.give(20, now);
         let t = sharer.tick(now + ACK_TIMEOUT);
-        assert_eq!(sends(&t), vec![(20, action::TERMINATE_NO_ACK, reason::ACK_TIMEOUT)]);
+        assert_eq!(
+            sends(&t),
+            vec![(20, action::TERMINATE_NO_ACK, reason::ACK_TIMEOUT)]
+        );
         // Available is retried 2 s × n, six times, then given up.
         let mut v = Session::new();
         v.start_viewing(10, now);
@@ -988,13 +1273,19 @@ mod tests {
         }
         assert_eq!(tries, 7);
         at += Duration::from_secs(20);
-        assert!(v.tick(at).contains(&Out::Capable { capable: false, denied_by_sharer: false }));
+        assert!(v.tick(at).contains(&Out::Capable {
+            capable: false,
+            denied_by_sharer: false
+        }));
         // A sharer that can't be controlled refuses the handshake.
         let mut locked = Session::new();
         locked.start_sharing(false);
         let out = v.start_viewing(11, now);
         let back = deliver(&out, 20, 11, &mut locked, now);
-        assert_eq!(sends(&back), vec![(20, action::AVAILABLE_NACK, reason::SHARER_CONTROL_DISABLED)]);
+        assert_eq!(
+            sends(&back),
+            vec![(20, action::AVAILABLE_NACK, reason::SHARER_CONTROL_DISABLED)]
+        );
     }
 
     #[test]
@@ -1006,7 +1297,11 @@ mod tests {
         let ack = deliver(&sharer.give(20, now), 10, 20, &mut viewer, now);
         deliver(&ack, 20, 10, &mut sharer, now);
         let out = sharer.left(&[20]);
-        assert!(out.contains(&Out::ControlChanged { in_control: false, controller: Some(20), reason: reason::SHARER_TERMINATED }));
+        assert!(out.contains(&Out::ControlChanged {
+            in_control: false,
+            controller: Some(20),
+            reason: reason::SHARER_TERMINATED
+        }));
         assert_eq!(sharer.controller(), None);
     }
 }

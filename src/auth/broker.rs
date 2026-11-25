@@ -61,10 +61,22 @@ impl Account {
     /// came straight from Azure AD.
     pub fn from_id_token(id_token: &str) -> Option<Self> {
         let payload = id_token.split('.').nth(1)?;
-        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload.trim_end_matches('=')).ok()?;
+        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(payload.trim_end_matches('='))
+            .ok()?;
         let c: Value = serde_json::from_slice(&bytes).ok()?;
-        let s = |k: &str| c.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
-        let a = Self { oid: s("oid"), tenant_id: s("tid"), username: s("preferred_username"), name: s("name") };
+        let s = |k: &str| {
+            c.get(k)
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string()
+        };
+        let a = Self {
+            oid: s("oid"),
+            tenant_id: s("tid"),
+            username: s("preferred_username"),
+            name: s("name"),
+        };
         (!a.oid.is_empty()).then_some(a)
     }
 }
@@ -72,17 +84,33 @@ impl Account {
 /// What an app asked for.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Request {
-    InitContext { request_id: String },
-    Token { request_id: String, client_id: String, scope: String, claims: Option<String>, force_refresh: bool },
+    InitContext {
+        request_id: String,
+    },
+    Token {
+        request_id: String,
+        client_id: String,
+        scope: String,
+        claims: Option<String>,
+        force_refresh: bool,
+    },
     /// A token request without a client or scope.
-    MissingParameters { request_id: String },
-    Invalid { request_id: String },
+    MissingParameters {
+        request_id: String,
+    },
+    Invalid {
+        request_id: String,
+    },
 }
 
 impl Request {
     pub fn parse(request: &str) -> Self {
         let v: Value = serde_json::from_str(request).unwrap_or(Value::Null);
-        let request_id = v.get("requestId").and_then(Value::as_str).unwrap_or("N/A").to_string();
+        let request_id = v
+            .get("requestId")
+            .and_then(Value::as_str)
+            .unwrap_or("N/A")
+            .to_string();
         if v.get("messageType").and_then(Value::as_str) != Some("NestedAppAuthRequest") {
             return Self::Invalid { request_id };
         }
@@ -90,14 +118,28 @@ impl Request {
             Some("GetInitContext") => Self::InitContext { request_id },
             Some("GetToken" | "GetTokenPopup") => {
                 let p = v.get("tokenParams").cloned().unwrap_or(Value::Null);
-                let s = |k: &str| p.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+                let s = |k: &str| {
+                    p.get(k)
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string()
+                };
                 let (client_id, scope) = (s("clientId"), s("scope"));
                 if client_id.is_empty() || scope.is_empty() {
                     return Self::MissingParameters { request_id };
                 }
                 let claims = Some(s("claims")).filter(|c| !c.is_empty());
-                let force_refresh = p.get("forceRefresh").and_then(Value::as_bool).unwrap_or(false);
-                Self::Token { request_id, client_id, scope, claims, force_refresh }
+                let force_refresh = p
+                    .get("forceRefresh")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                Self::Token {
+                    request_id,
+                    client_id,
+                    scope,
+                    claims,
+                    force_refresh,
+                }
             }
             _ => Self::Invalid { request_id },
         }
@@ -116,13 +158,21 @@ fn response(request_id: &str, body: Value) -> String {
 pub fn init_context(request_id: &str, account: Option<&Account>) -> String {
     let mut ctx = json!({ "sdkName": "Teams Auth SDK", "sdkVersion": "V1" });
     if let Some(a) = account {
-        ctx["accountContext"] = json!({ "homeAccountId": a.oid, "tenantId": a.tenant_id, "environment": ENVIRONMENT });
+        ctx["accountContext"] =
+            json!({ "homeAccountId": a.oid, "tenantId": a.tenant_id, "environment": ENVIRONMENT });
     }
     response(request_id, json!({ "success": true, "initContext": ctx }))
 }
 
 /// A token answer (`scope` as the app asked it).
-pub fn token(request_id: &str, scope: &str, access_token: &str, id_token: &str, expires_in: u64, account: &Account) -> String {
+pub fn token(
+    request_id: &str,
+    scope: &str,
+    access_token: &str,
+    id_token: &str,
+    expires_in: u64,
+    account: &Account,
+) -> String {
     let a = account.json();
     response(
         request_id,
@@ -141,7 +191,13 @@ pub const API_CONTRACT_VIOLATION: &str = "API_CONTRACT_VIOLATION";
 
 /// A failed token request, as Teams maps its token service's errors
 /// (`code` is that service's error code).
-pub fn token_error(request_id: &str, status: &str, code: &str, description: &str, is_expected: bool) -> String {
+pub fn token_error(
+    request_id: &str,
+    status: &str,
+    code: &str,
+    description: &str,
+    is_expected: bool,
+) -> String {
     response(
         request_id,
         json!({ "success": false, "error": { "status": status, "isExpected": is_expected, "code": code, "subError": "", "description": description } }),
@@ -160,8 +216,14 @@ pub fn contract_error(request_id: &str, description: &str) -> String {
 pub fn classify(err: &anyhow::Error) -> (&'static str, &'static str, bool) {
     let s = format!("{err:#}");
     let has = |n: &str| s.contains(n);
-    if has("interaction_required") || has("consent_required") || has("login_required") || has("AADSTS65001") || has("AADSTS50076")
-        || has("AADSTS50079") || has("AADSTS50058") || has("AADSTS700084")
+    if has("interaction_required")
+        || has("consent_required")
+        || has("login_required")
+        || has("AADSTS65001")
+        || has("AADSTS50076")
+        || has("AADSTS50079")
+        || has("AADSTS50058")
+        || has("AADSTS700084")
     {
         (USER_INTERACTION_REQUIRED, "InteractionRequired", true)
     } else if has("failed to send") || has("error sending request") || has("dns error") {
@@ -182,7 +244,10 @@ struct Cached {
 static CACHE: Mutex<Option<HashMap<String, Cached>>> = Mutex::new(None);
 
 fn cache_key(client_id: &str, origin: &str, scope: &str, claims: Option<&str>) -> String {
-    format!("{client_id}\n{origin}\n{scope}\n{}", claims.unwrap_or_default())
+    format!(
+        "{client_id}\n{origin}\n{scope}\n{}",
+        claims.unwrap_or_default()
+    )
 }
 
 /// Forget every brokered token (sign-out).
@@ -213,9 +278,17 @@ pub async fn execute(request: &str, origin: &str, trusted: bool) -> String {
             let account = if trusted { stored_account() } else { None };
             init_context(&request_id, account.as_ref())
         }
-        Request::MissingParameters { request_id } => contract_error(&request_id, "Missing parameters."),
+        Request::MissingParameters { request_id } => {
+            contract_error(&request_id, "Missing parameters.")
+        }
         Request::Invalid { request_id } => contract_error(&request_id, "Not a valid request."),
-        Request::Token { request_id, client_id, scope, claims, force_refresh } => {
+        Request::Token {
+            request_id,
+            client_id,
+            scope,
+            claims,
+            force_refresh,
+        } => {
             if !origin.starts_with("https://") {
                 return contract_error(&request_id, "Missing parameters.");
             }
@@ -225,19 +298,31 @@ pub async fn execute(request: &str, origin: &str, trusted: bool) -> String {
                     let c = CACHE.lock().ok()?;
                     let e = c.as_ref()?.get(&key)?;
                     let left = e.until.checked_duration_since(Instant::now())?;
-                    (left > RENEW_BEFORE).then(|| (e.access_token.clone(), e.id_token.clone(), left.as_secs()))
+                    (left > RENEW_BEFORE)
+                        .then(|| (e.access_token.clone(), e.id_token.clone(), left.as_secs()))
                 })
                 .flatten();
             let (access, id, left) = match cached {
                 Some(t) => t,
-                None => match super::oauth::brokered_tokens(&client_id, origin, &scope, claims.as_deref()).await {
+                None => match super::oauth::brokered_tokens(
+                    &client_id,
+                    origin,
+                    &scope,
+                    claims.as_deref(),
+                )
+                .await
+                {
                     Ok(t) => {
                         let left = t.expires_in.unwrap_or(3600);
                         let id = t.id_token.clone().unwrap_or_default();
                         if let Ok(mut c) = CACHE.lock() {
                             c.get_or_insert_with(HashMap::new).insert(
                                 key,
-                                Cached { access_token: t.access_token.clone(), id_token: id.clone(), until: Instant::now() + Duration::from_secs(left) },
+                                Cached {
+                                    access_token: t.access_token.clone(),
+                                    id_token: id.clone(),
+                                    until: Instant::now() + Duration::from_secs(left),
+                                },
                             );
                         }
                         (t.access_token, id, left)
@@ -247,11 +332,19 @@ pub async fn execute(request: &str, origin: &str, trusted: bool) -> String {
                         // The description is Azure AD's (no tokens in it).
                         let d = format!("{e:#}");
                         tracing::warn!("NAA token for {client_id} from {origin} failed: {status}");
-                        return token_error(&request_id, status, code, &d.chars().take(300).collect::<String>(), expected);
+                        return token_error(
+                            &request_id,
+                            status,
+                            code,
+                            &d.chars().take(300).collect::<String>(),
+                            expected,
+                        );
                     }
                 },
             };
-            let account = Account::from_id_token(&id).or_else(stored_account).unwrap_or_default();
+            let account = Account::from_id_token(&id)
+                .or_else(stored_account)
+                .unwrap_or_default();
             token(&request_id, &scope, &access, &id, left, &account)
         }
     }
@@ -269,7 +362,12 @@ mod tests {
 
     #[test]
     fn requests_parse_as_msal_sends_them() {
-        assert_eq!(Request::parse(&req("GetInitContext", Value::Null)), Request::InitContext { request_id: "r1".into() });
+        assert_eq!(
+            Request::parse(&req("GetInitContext", Value::Null)),
+            Request::InitContext {
+                request_id: "r1".into()
+            }
+        );
         let r = Request::parse(&req(
             "GetToken",
             json!({ "clientId": "243c63a3-247d-41c5-9d83-7788c43f1c43", "scope": "e03a13ee-9730-4cae-8525-47559c8cf18a/.default",
@@ -285,24 +383,54 @@ mod tests {
                 force_refresh: true
             }
         );
-        assert!(matches!(Request::parse(&req("GetTokenPopup", json!({ "clientId": "x", "scope": "s" }))), Request::Token { .. }));
-        assert_eq!(Request::parse(&req("GetToken", json!({ "clientId": "x" }))), Request::MissingParameters { request_id: "r1".into() });
-        assert_eq!(Request::parse(&req("Other", Value::Null)), Request::Invalid { request_id: "r1".into() });
-        assert_eq!(Request::parse("not json"), Request::Invalid { request_id: "N/A".into() });
+        assert!(matches!(
+            Request::parse(&req(
+                "GetTokenPopup",
+                json!({ "clientId": "x", "scope": "s" })
+            )),
+            Request::Token { .. }
+        ));
+        assert_eq!(
+            Request::parse(&req("GetToken", json!({ "clientId": "x" }))),
+            Request::MissingParameters {
+                request_id: "r1".into()
+            }
+        );
+        assert_eq!(
+            Request::parse(&req("Other", Value::Null)),
+            Request::Invalid {
+                request_id: "r1".into()
+            }
+        );
+        assert_eq!(
+            Request::parse("not json"),
+            Request::Invalid {
+                request_id: "N/A".into()
+            }
+        );
     }
 
     #[test]
     fn answers_are_teams_shape() {
-        let a = Account { oid: "o".into(), tenant_id: "t".into(), username: "u@x".into(), name: "N".into() };
+        let a = Account {
+            oid: "o".into(),
+            tenant_id: "t".into(),
+            username: "u@x".into(),
+            name: "N".into(),
+        };
         let v: Value = serde_json::from_str(&init_context("r1", Some(&a))).unwrap();
         assert_eq!(v["messageType"], "NestedAppAuthResponse");
         assert_eq!(v["success"], true);
         assert_eq!(v["initContext"]["sdkName"], "Teams Auth SDK");
-        assert_eq!(v["initContext"]["accountContext"], json!({ "homeAccountId": "o", "tenantId": "t", "environment": ENVIRONMENT }));
+        assert_eq!(
+            v["initContext"]["accountContext"],
+            json!({ "homeAccountId": "o", "tenantId": "t", "environment": ENVIRONMENT })
+        );
         let v: Value = serde_json::from_str(&init_context("r1", None)).unwrap();
         assert!(v["initContext"].get("accountContext").is_none());
 
-        let v: Value = serde_json::from_str(&token("r1", "https://x/.default", "A", "I", 4000, &a)).unwrap();
+        let v: Value =
+            serde_json::from_str(&token("r1", "https://x/.default", "A", "I", 4000, &a)).unwrap();
         assert_eq!(v["token"]["scope"], "https://x/.default");
         assert_eq!(v["token"]["expires_in"], 4000);
         assert_eq!(v["account"]["__typename"], "NestedAppUser");
@@ -312,7 +440,14 @@ mod tests {
         let v: Value = serde_json::from_str(&contract_error("r1", "Missing parameters.")).unwrap();
         assert_eq!(v["success"], false);
         assert_eq!(v["error"]["status"], API_CONTRACT_VIOLATION);
-        let v: Value = serde_json::from_str(&token_error("r1", USER_INTERACTION_REQUIRED, "InteractionRequired", "d", true)).unwrap();
+        let v: Value = serde_json::from_str(&token_error(
+            "r1",
+            USER_INTERACTION_REQUIRED,
+            "InteractionRequired",
+            "d",
+            true,
+        ))
+        .unwrap();
         assert_eq!(v["error"]["code"], "InteractionRequired");
         assert_eq!(v["error"]["subError"], "");
     }
@@ -320,17 +455,47 @@ mod tests {
     #[test]
     fn errors_are_classified() {
         let e = |s: &str| anyhow::anyhow!(s.to_string());
-        assert_eq!(classify(&e("broker token rejected (400): invalid_grant: AADSTS65001: consent")).0, USER_INTERACTION_REQUIRED);
-        assert_eq!(classify(&e("Broker token request failed to send")).0, NO_NETWORK);
-        assert_eq!(classify(&e("broker token failed with HTTP 503 Service Unavailable")).0, TRANSIENT_ERROR);
-        assert_eq!(classify(&e("broker token rejected (400): invalid_request: AADSTS700046")).0, PERSISTENT_ERROR);
+        assert_eq!(
+            classify(&e(
+                "broker token rejected (400): invalid_grant: AADSTS65001: consent"
+            ))
+            .0,
+            USER_INTERACTION_REQUIRED
+        );
+        assert_eq!(
+            classify(&e("Broker token request failed to send")).0,
+            NO_NETWORK
+        );
+        assert_eq!(
+            classify(&e("broker token failed with HTTP 503 Service Unavailable")).0,
+            TRANSIENT_ERROR
+        );
+        assert_eq!(
+            classify(&e(
+                "broker token rejected (400): invalid_request: AADSTS700046"
+            ))
+            .0,
+            PERSISTENT_ERROR
+        );
     }
 
     #[test]
     fn account_comes_from_the_id_token() {
         let enc = |v: Value| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(v.to_string());
-        let t = format!("{}.{}.sig", enc(json!({"alg": "none"})), enc(json!({"oid": "o1", "tid": "t1", "preferred_username": "u@x", "name": "U X"})));
-        assert_eq!(Account::from_id_token(&t), Some(Account { oid: "o1".into(), tenant_id: "t1".into(), username: "u@x".into(), name: "U X".into() }));
+        let t = format!(
+            "{}.{}.sig",
+            enc(json!({"alg": "none"})),
+            enc(json!({"oid": "o1", "tid": "t1", "preferred_username": "u@x", "name": "U X"}))
+        );
+        assert_eq!(
+            Account::from_id_token(&t),
+            Some(Account {
+                oid: "o1".into(),
+                tenant_id: "t1".into(),
+                username: "u@x".into(),
+                name: "U X".into()
+            })
+        );
         assert_eq!(Account::from_id_token("junk"), None);
     }
 }

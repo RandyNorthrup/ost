@@ -17,7 +17,9 @@ pub struct Release {
 /// The latest published release, or None when there is none yet.
 pub async fn latest_release(http: &reqwest::Client) -> Result<Option<Release>> {
     let r = http
-        .get(format!("https://api.github.com/repos/{REPOSITORY}/releases/latest"))
+        .get(format!(
+            "https://api.github.com/repos/{REPOSITORY}/releases/latest"
+        ))
         .header("Accept", "application/vnd.github+json")
         .header("User-Agent", concat!("ost/", env!("CARGO_PKG_VERSION")))
         .send()
@@ -55,7 +57,10 @@ pub async fn latest_preview_release(http: &reqwest::Client) -> Result<Option<Rel
         .send()
         .await
         .context("update check")?;
-    super::ddv::record("Ost.UpdateCheck", serde_json::json!({ "url": url, "userAgent": concat!("ost/", env!("CARGO_PKG_VERSION")), "status": r.status().as_u16() }));
+    super::ddv::record(
+        "Ost.UpdateCheck",
+        serde_json::json!({ "url": url, "userAgent": concat!("ost/", env!("CARGO_PKG_VERSION")), "status": r.status().as_u16() }),
+    );
     if r.status() == reqwest::StatusCode::NOT_FOUND {
         return Ok(None);
     }
@@ -65,10 +70,17 @@ pub async fn latest_preview_release(http: &reqwest::Client) -> Result<Option<Rel
 
 /// The first release in GitHub's list (newest first) that isn't a draft.
 pub fn newest_published(list: &serde_json::Value) -> Option<Release> {
-    list.as_array()?.iter().find(|r| r["draft"].as_bool() != Some(true)).map(|r| Release {
-        version: r["tag_name"].as_str().unwrap_or_default().trim_start_matches(['v', 'V']).to_string(),
-        url: r["html_url"].as_str().unwrap_or_default().to_string(),
-    })
+    list.as_array()?
+        .iter()
+        .find(|r| r["draft"].as_bool() != Some(true))
+        .map(|r| Release {
+            version: r["tag_name"]
+                .as_str()
+                .unwrap_or_default()
+                .trim_start_matches(['v', 'V'])
+                .to_string(),
+            url: r["html_url"].as_str().unwrap_or_default().to_string(),
+        })
 }
 
 /// Whether the effective Teams update policy lets you opt in to public
@@ -76,7 +88,9 @@ pub fn newest_published(list: &serde_json::Value) -> Option<Release> {
 /// Forced or FollowOfficePreview; Disabled or none: no).
 pub fn public_preview_allowed(policies: &serde_json::Value) -> bool {
     matches!(
-        policies.pointer("/teamsUpdateManagementPolicy/value/allowPublicPreview").and_then(|v| v.as_str()),
+        policies
+            .pointer("/teamsUpdateManagementPolicy/value/allowPublicPreview")
+            .and_then(|v| v.as_str()),
         Some("Enabled" | "Forced" | "FollowOfficePreview")
     )
 }
@@ -89,12 +103,18 @@ pub fn is_newer(latest: &str, current: &str) -> bool {
             Some((c, _)) => (c, true),
             None => (v, false),
         };
-        (core.split('.').map(|p| p.parse().unwrap_or(0)).collect(), pre)
+        (
+            core.split('.').map(|p| p.parse().unwrap_or(0)).collect(),
+            pre,
+        )
     }
     let ((a, a_pre), (b, b_pre)) = (parts(latest), parts(current));
     let n = a.len().max(b.len());
     for i in 0..n {
-        let (x, y) = (a.get(i).copied().unwrap_or(0), b.get(i).copied().unwrap_or(0));
+        let (x, y) = (
+            a.get(i).copied().unwrap_or(0),
+            b.get(i).copied().unwrap_or(0),
+        );
         if x != y {
             return x > y;
         }
@@ -119,8 +139,18 @@ mod tests {
     #[test]
     fn preview_channel() {
         let list = serde_json::json!([{ "tag_name": "v0.2.0-preview.1", "html_url": "u1", "draft": true }, { "tag_name": "v0.2.0-preview.0", "html_url": "u2", "prerelease": true }]);
-        assert_eq!(newest_published(&list), Some(Release { version: "0.2.0-preview.0".into(), url: "u2".into() }));
-        assert!(public_preview_allowed(&serde_json::json!({ "teamsUpdateManagementPolicy": { "value": { "allowPublicPreview": "Enabled" } } })));
-        assert!(!public_preview_allowed(&serde_json::json!({ "teamsUpdateManagementPolicy": { "value": { "allowPublicPreview": "Disabled" } } })));
+        assert_eq!(
+            newest_published(&list),
+            Some(Release {
+                version: "0.2.0-preview.0".into(),
+                url: "u2".into()
+            })
+        );
+        assert!(public_preview_allowed(
+            &serde_json::json!({ "teamsUpdateManagementPolicy": { "value": { "allowPublicPreview": "Enabled" } } })
+        ));
+        assert!(!public_preview_allowed(
+            &serde_json::json!({ "teamsUpdateManagementPolicy": { "value": { "allowPublicPreview": "Disabled" } } })
+        ));
     }
 }

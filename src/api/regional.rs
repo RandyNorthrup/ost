@@ -42,13 +42,19 @@ pub struct AppLanguage {
 
 fn cultures() -> &'static [Culture] {
     static C: std::sync::OnceLock<Vec<Culture>> = std::sync::OnceLock::new();
-    C.get_or_init(|| serde_json::from_str(include_str!("regional_cultures.json")).expect("regional_cultures.json"))
+    C.get_or_init(|| {
+        serde_json::from_str(include_str!("regional_cultures.json"))
+            .expect("regional_cultures.json")
+    })
 }
 
 /// Teams' app languages (its language picker's list).
 pub fn app_languages() -> &'static [AppLanguage] {
     static L: std::sync::OnceLock<Vec<AppLanguage>> = std::sync::OnceLock::new();
-    L.get_or_init(|| serde_json::from_str(include_str!("regional_languages.json")).expect("regional_languages.json"))
+    L.get_or_init(|| {
+        serde_json::from_str(include_str!("regional_languages.json"))
+            .expect("regional_languages.json")
+    })
 }
 
 /// The app languages the language picker offers: all of Teams'. OST's
@@ -61,11 +67,69 @@ pub fn available_app_languages() -> Vec<&'static AppLanguage> {
 /// The locales Teams ships its UI strings in (its `*-locale-<locale>-*`
 /// string resources); OST has a catalogue for each.
 pub const STRING_LOCALES: [&str; 63] = [
-    "af-za", "ar-sa", "az-latn-az", "bg-bg", "bs-latn-ba", "ca-es", "ca-es-valencia", "cs-cz", "cy-gb", "da-dk", "de-de", "el-gr", "en-gb",
-    "en-us", "es-es", "es-mx", "et-ee", "eu-es", "fa-ir", "fi-fi", "fil-ph", "fr-ca", "fr-fr", "gl-es", "he-il", "hi-in", "hr-hr", "hu-hu",
-    "id-id", "is-is", "it-it", "ja-jp", "ka-ge", "kk-kz", "km-kh", "ko-kr", "lo-la", "lt-lt", "lv-lv", "mk-mk", "ms-my", "mt-mt", "nb-no",
-    "nl-nl", "nn-no", "pl-pl", "pt-br", "pt-pt", "ro-ro", "ru-ru", "sk-sk", "sl-si", "sq-al", "sr-cyrl-rs", "sr-latn-rs", "sv-se", "th-th",
-    "tr-tr", "uk-ua", "uz-latn-uz", "vi-vn", "zh-cn", "zh-tw",
+    "af-za",
+    "ar-sa",
+    "az-latn-az",
+    "bg-bg",
+    "bs-latn-ba",
+    "ca-es",
+    "ca-es-valencia",
+    "cs-cz",
+    "cy-gb",
+    "da-dk",
+    "de-de",
+    "el-gr",
+    "en-gb",
+    "en-us",
+    "es-es",
+    "es-mx",
+    "et-ee",
+    "eu-es",
+    "fa-ir",
+    "fi-fi",
+    "fil-ph",
+    "fr-ca",
+    "fr-fr",
+    "gl-es",
+    "he-il",
+    "hi-in",
+    "hr-hr",
+    "hu-hu",
+    "id-id",
+    "is-is",
+    "it-it",
+    "ja-jp",
+    "ka-ge",
+    "kk-kz",
+    "km-kh",
+    "ko-kr",
+    "lo-la",
+    "lt-lt",
+    "lv-lv",
+    "mk-mk",
+    "ms-my",
+    "mt-mt",
+    "nb-no",
+    "nl-nl",
+    "nn-no",
+    "pl-pl",
+    "pt-br",
+    "pt-pt",
+    "ro-ro",
+    "ru-ru",
+    "sk-sk",
+    "sl-si",
+    "sq-al",
+    "sr-cyrl-rs",
+    "sr-latn-rs",
+    "sv-se",
+    "th-th",
+    "tr-tr",
+    "uk-ua",
+    "uz-latn-uz",
+    "vi-vn",
+    "zh-cn",
+    "zh-tw",
 ];
 
 /// The string locale Teams shows a language in, as its loader picks it:
@@ -74,8 +138,12 @@ pub const STRING_LOCALES: [&str; 63] = [
 /// "zh-sg" -> "zh-cn"), else the fallback for its base language, else
 /// en-us.
 pub fn string_locale(code: &str) -> &'static str {
-    static MAP: std::sync::OnceLock<std::collections::HashMap<String, String>> = std::sync::OnceLock::new();
-    let map = MAP.get_or_init(|| serde_json::from_str(include_str!("regional_locale_map.json")).expect("regional_locale_map.json"));
+    static MAP: std::sync::OnceLock<std::collections::HashMap<String, String>> =
+        std::sync::OnceLock::new();
+    let map = MAP.get_or_init(|| {
+        serde_json::from_str(include_str!("regional_locale_map.json"))
+            .expect("regional_locale_map.json")
+    });
     let c = code.trim().replace('_', "-").to_lowercase();
     let known = |l: &str| STRING_LOCALES.iter().copied().find(|s| *s == l);
     if let Some(l) = known(&c) {
@@ -92,12 +160,83 @@ pub fn string_locale(code: &str) -> &'static str {
 /// right-to-left languages, by base language).
 pub fn is_rtl(code: &str) -> bool {
     const RTL: [&str; 70] = [
-        "aao", "abh", "abv", "acm", "acq", "acw", "acx", "acy", "adf", "ads", "ae", "aeb", "aec", "afb", "ajp", "apc", "apd", "ar", "arb",
-        "arc", "arq", "ars", "ary", "arz", "auz", "avl", "ayh", "ayl", "ayn", "ayp", "bbz", "bcc", "bqi", "ckb", "dv", "fa", "glk", "hbo",
-        "he", "jpr", "ku", "men", "mzn", "nqo", "pbt", "pbu", "peo", "pes", "pga", "pnb", "prd", "prp", "prs", "ps", "pst", "sam", "sd",
-        "shu", "sqr", "ssh", "ug", "ur", "xaa", "xmn", "ydd", "yhd", "yi", "yih", "yud", "pseudo_rtl",
+        "aao",
+        "abh",
+        "abv",
+        "acm",
+        "acq",
+        "acw",
+        "acx",
+        "acy",
+        "adf",
+        "ads",
+        "ae",
+        "aeb",
+        "aec",
+        "afb",
+        "ajp",
+        "apc",
+        "apd",
+        "ar",
+        "arb",
+        "arc",
+        "arq",
+        "ars",
+        "ary",
+        "arz",
+        "auz",
+        "avl",
+        "ayh",
+        "ayl",
+        "ayn",
+        "ayp",
+        "bbz",
+        "bcc",
+        "bqi",
+        "ckb",
+        "dv",
+        "fa",
+        "glk",
+        "hbo",
+        "he",
+        "jpr",
+        "ku",
+        "men",
+        "mzn",
+        "nqo",
+        "pbt",
+        "pbu",
+        "peo",
+        "pes",
+        "pga",
+        "pnb",
+        "prd",
+        "prp",
+        "prs",
+        "ps",
+        "pst",
+        "sam",
+        "sd",
+        "shu",
+        "sqr",
+        "ssh",
+        "ug",
+        "ur",
+        "xaa",
+        "xmn",
+        "ydd",
+        "yhd",
+        "yi",
+        "yih",
+        "yud",
+        "pseudo_rtl",
     ];
-    let base = code.trim().split(['-', '_']).next().unwrap_or_default().to_lowercase();
+    let base = code
+        .trim()
+        .split(['-', '_'])
+        .next()
+        .unwrap_or_default()
+        .to_lowercase();
     RTL.contains(&base.as_str())
 }
 
@@ -123,10 +262,24 @@ pub fn culture_formats(culture: &str) -> Option<Formats> {
 }
 
 /// Teams' Date format choices.
-pub const DATE_FORMATS: [&str; 8] = ["d/M/yyyy", "dd-MM-yyyy", "dd.MM.yyyy", "dd/MM/yyyy", "M/d/yyyy", "yyyy-MM-dd", "yyyy.MM.dd", "yyyy/MM/dd"];
+pub const DATE_FORMATS: [&str; 8] = [
+    "d/M/yyyy",
+    "dd-MM-yyyy",
+    "dd.MM.yyyy",
+    "dd/MM/yyyy",
+    "M/d/yyyy",
+    "yyyy-MM-dd",
+    "yyyy.MM.dd",
+    "yyyy/MM/dd",
+];
 
 /// Teams' Time format choices (Windows): (short, long).
-pub const TIME_FORMATS: [(&str, &str); 4] = [("HH:mm", "HH:mm:ss"), ("H:mm", "H:mm:ss"), ("hh:mm tt", "hh:mm:ss tt"), ("h:mm tt", "h:mm:ss tt")];
+pub const TIME_FORMATS: [(&str, &str); 4] = [
+    ("HH:mm", "HH:mm:ss"),
+    ("H:mm", "H:mm:ss"),
+    ("hh:mm tt", "hh:mm:ss tt"),
+    ("h:mm tt", "h:mm:ss tt"),
+];
 
 /// Your choices: follow the OS, or an app language with an optional date
 /// format and time format (short patterns from the lists above).
@@ -160,11 +313,22 @@ pub fn resolve(choice: &Choice, os_locale: &str) -> Formats {
 /// for "M/d/yyyy", "dd.MM." for "dd.MM.yyyy" in German).
 pub fn without_year(pattern: &str, culture: &str) -> String {
     // Teams' regexes: some cultures keep the dot before the year.
-    let lang = culture.split(['-', '_']).next().unwrap_or_default().to_lowercase();
-    let keep_dot = ["bs", "cs", "de", "dsb", "fi", "gsw", "hr", "hsb", "hu", "is", "ko", "lb", "lv", "nb", "nds", "nn", "sk", "sl", "sr"]
-        .contains(&lang.as_str())
+    let lang = culture
+        .split(['-', '_'])
+        .next()
+        .unwrap_or_default()
+        .to_lowercase();
+    let keep_dot = [
+        "bs", "cs", "de", "dsb", "fi", "gsw", "hr", "hsb", "hu", "is", "ko", "lb", "lv", "nb",
+        "nds", "nn", "sk", "sl", "sr",
+    ]
+    .contains(&lang.as_str())
         || culture.eq_ignore_ascii_case("fr-CH");
-    let seps: &[char] = if keep_dot { &['/', '-', ','] } else { &['.', '/', '-', ','] };
+    let seps: &[char] = if keep_dot {
+        &['/', '-', ',']
+    } else {
+        &['.', '/', '-', ',']
+    };
     let chars: Vec<char> = pattern.chars().collect();
     let mut out = String::new();
     let mut i = 0;
@@ -359,16 +523,59 @@ mod tests {
     fn cultures_and_choices_as_teams_resolves_them() {
         assert_eq!(culture_formats("en-US"), Some(default_formats()));
         let gb = culture_formats("en_gb").unwrap();
-        assert_eq!((gb.short_date.as_str(), gb.short_time.as_str(), gb.first_day_of_week), ("dd/MM/yyyy", "HH:mm", 1));
+        assert_eq!(
+            (
+                gb.short_date.as_str(),
+                gb.short_time.as_str(),
+                gb.first_day_of_week
+            ),
+            ("dd/MM/yyyy", "HH:mm", 1)
+        );
         assert_eq!(culture_formats("xx-YY"), None);
-        assert_eq!(resolve(&Choice { follow_os: true, ..Default::default() }, "en_GB"), gb);
-        assert_eq!(resolve(&Choice { follow_os: true, ..Default::default() }, "C"), default_formats());
-        let c = Choice { follow_os: false, app_language: "en-gb".into(), date_format: "yyyy-MM-dd".into(), time_format: "h:mm tt".into() };
+        assert_eq!(
+            resolve(
+                &Choice {
+                    follow_os: true,
+                    ..Default::default()
+                },
+                "en_GB"
+            ),
+            gb
+        );
+        assert_eq!(
+            resolve(
+                &Choice {
+                    follow_os: true,
+                    ..Default::default()
+                },
+                "C"
+            ),
+            default_formats()
+        );
+        let c = Choice {
+            follow_os: false,
+            app_language: "en-gb".into(),
+            date_format: "yyyy-MM-dd".into(),
+            time_format: "h:mm tt".into(),
+        };
         let f = resolve(&c, "en-US");
-        assert_eq!((f.short_date.as_str(), f.short_time.as_str(), f.long_time.as_str()), ("yyyy-MM-dd", "h:mm tt", "h:mm:ss tt"));
+        assert_eq!(
+            (
+                f.short_date.as_str(),
+                f.short_time.as_str(),
+                f.long_time.as_str()
+            ),
+            ("yyyy-MM-dd", "h:mm tt", "h:mm:ss tt")
+        );
         assert_eq!(f.long_date, "dd MMMM yyyy");
         // A format that isn't one of Teams' choices is ignored.
-        let f = resolve(&Choice { date_format: "nope".into(), ..c }, "en-US");
+        let f = resolve(
+            &Choice {
+                date_format: "nope".into(),
+                ..c
+            },
+            "en-US",
+        );
         assert_eq!(f.short_date, "dd/MM/yyyy");
     }
 
@@ -387,10 +594,23 @@ mod tests {
         // Every app language has Teams' strings: its own or a fallback's.
         for l in app_languages() {
             let s = string_locale(&l.code);
-            assert!(s != "en-us" || l.code.starts_with("en-"), "{} has no strings", l.code);
+            assert!(
+                s != "en-us" || l.code.starts_with("en-"),
+                "{} has no strings",
+                l.code
+            );
         }
-        assert!(is_rtl("ar-sa") && is_rtl("he-IL") && is_rtl("fa_IR") && is_rtl("ur") && !is_rtl("en-us"));
-        assert_eq!(app_languages().iter().filter(|l| is_rtl(&l.code)).count(), 3);
+        assert!(
+            is_rtl("ar-sa")
+                && is_rtl("he-IL")
+                && is_rtl("fa_IR")
+                && is_rtl("ur")
+                && !is_rtl("en-us")
+        );
+        assert_eq!(
+            app_languages().iter().filter(|l| is_rtl(&l.code)).count(),
+            3
+        );
     }
 
     #[test]

@@ -58,7 +58,13 @@ pub fn active() -> bool {
 
 /// Whether the app has drawn a frame lately.
 pub fn drawing() -> bool {
-    state().0.lock().unwrap().output.as_ref().is_some_and(|(_, at)| at.elapsed() < OUTPUT_FRESH)
+    state()
+        .0
+        .lock()
+        .unwrap()
+        .output
+        .as_ref()
+        .is_some_and(|(_, at)| at.elapsed() < OUTPUT_FRESH)
 }
 
 /// Visemes older than this are dropped (the microphone stopped).
@@ -79,10 +85,17 @@ pub fn tick(width: u32, height: u32) -> Option<super::filter::Frame> {
         Some((v, at)) if at.elapsed() < VISEMES_FRESH => v.clone(),
         _ => Vec::new(),
     };
-    s.request = Some(Request { width, height, seq: s.next_seq, visemes });
+    s.request = Some(Request {
+        width,
+        height,
+        seq: s.next_seq,
+        visemes,
+    });
     cv.notify_all();
     match &s.output {
-        Some((f, at)) if f.width == width && f.height == height && at.elapsed() < OUTPUT_FRESH => Some(f.clone()),
+        Some((f, at)) if f.width == width && f.height == height && at.elapsed() < OUTPUT_FRESH => {
+            Some(f.clone())
+        }
         _ => None,
     }
 }
@@ -153,9 +166,15 @@ impl VisemeModel {
     /// `window`: WINDOW samples, −1..1. The model's output.
     pub fn infer(&self, window: &[f32]) -> anyhow::Result<Vec<f32>> {
         anyhow::ensure!(window.len() == WINDOW, "the model takes {WINDOW} samples");
-        let input: Tensor = tract_ndarray::Array3::<f32>::from_shape_fn((1, 1, WINDOW), |(_, _, i)| window[i]).into();
+        let input: Tensor =
+            tract_ndarray::Array3::<f32>::from_shape_fn((1, 1, WINDOW), |(_, _, i)| window[i])
+                .into();
         let out = self.model.run(tvec!(input.into()))?;
-        Ok(out[0].to_plain_array_view::<f32>()?.iter().copied().collect())
+        Ok(out[0]
+            .to_plain_array_view::<f32>()?
+            .iter()
+            .copied()
+            .collect())
     }
 }
 
@@ -178,13 +197,25 @@ struct Lipsync {
 
 fn lipsync() -> &'static Mutex<Lipsync> {
     static L: OnceLock<Mutex<Lipsync>> = OnceLock::new();
-    L.get_or_init(|| Mutex::new(Lipsync { model: None, samples: Vec::new(), pending: 0, muted: false, phase: 0.0 }))
+    L.get_or_init(|| {
+        Mutex::new(Lipsync {
+            model: None,
+            samples: Vec::new(),
+            pending: 0,
+            muted: false,
+            phase: 0.0,
+        })
+    })
 }
 
 /// Load the app's viseme model (its `audioInferenceModel`); an empty or
 /// broken one turns lip sync off, as the app expects.
 pub fn set_viseme_model(onnx: &[u8]) -> anyhow::Result<()> {
-    let model = if onnx.len() > 2000 { Some(VisemeModel::new(onnx)?) } else { None };
+    let model = if onnx.len() > 2000 {
+        Some(VisemeModel::new(onnx)?)
+    } else {
+        None
+    };
     let mut l = lipsync().lock().unwrap();
     l.model = model;
     l.samples.clear();
@@ -229,7 +260,10 @@ pub fn feed(samples: &[i16], rate: u32) {
     let mut newest = None;
     while l.pending + WINDOW <= l.samples.len() {
         let at = l.pending;
-        let out = l.model.as_ref().and_then(|m| m.infer(&l.samples[at..at + WINDOW]).ok());
+        let out = l
+            .model
+            .as_ref()
+            .and_then(|m| m.infer(&l.samples[at..at + WINDOW]).ok());
         if let Some(out) = out {
             newest = Some(out);
         }
@@ -257,7 +291,12 @@ mod tests {
         assert!(tick(4, 2).is_none());
         let r = next_request(0, Duration::from_millis(10)).unwrap();
         assert_eq!((r.width, r.height), (4, 2));
-        put_output(super::super::filter::Frame { width: 4, height: 2, seq: r.seq, data: vec![9; 12] });
+        put_output(super::super::filter::Frame {
+            width: 4,
+            height: 2,
+            seq: r.seq,
+            data: vec![9; 12],
+        });
         let f = tick(4, 2).unwrap();
         assert_eq!(f.data, vec![9; 12]);
         // Another size is a different camera: not the old picture.
@@ -269,7 +308,10 @@ mod tests {
 
     #[test]
     fn visemes_go_to_the_app_as_float_bytes() {
-        assert_eq!(viseme_bytes(&[1.0, 0.5]), vec![0, 0, 0x80, 0x3f, 0, 0, 0, 0x3f]);
+        assert_eq!(
+            viseme_bytes(&[1.0, 0.5]),
+            vec![0, 0, 0x80, 0x3f, 0, 0, 0, 0x3f]
+        );
         assert!(set_viseme_model(&[]).is_ok());
         assert!(!has_viseme_model());
         assert!(set_viseme_model(&[0u8; 4000]).is_err());

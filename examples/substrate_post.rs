@@ -4,7 +4,8 @@
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let token = teams_cli::auth::oauth::access_token_for("https://substrate.office.com/.default").await?;
+    let token =
+        teams_cli::auth::oauth::access_token_for("https://substrate.office.com/.default").await?;
     let resp = reqwest::Client::new()
         .post(format!("https://substrate.office.com/{}", args[0]))
         .bearer_auth(token)

@@ -8,7 +8,9 @@ const RESOURCE: &str = "00edd498-7c0c-4e68-859c-5a55d518c9c0";
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let client = TeamsClient::new().await?;
-    let base = client.region_endpoint("biometricService").expect("biometricService");
+    let base = client
+        .region_endpoint("biometricService")
+        .expect("biometricService");
     let token = teams_cli::auth::oauth::access_token_for(&format!("{RESOURCE}/.default")).await?;
     for path in std::env::args().skip(1) {
         let url = format!("{base}/{}", path.trim_start_matches('/'));
@@ -23,7 +25,10 @@ async fn main() -> anyhow::Result<()> {
             .await?;
         let status = r.status();
         let body = r.text().await.unwrap_or_default();
-        println!("{path} -> {status}\n{}", body.chars().take(1500).collect::<String>());
+        println!(
+            "{path} -> {status}\n{}",
+            body.chars().take(1500).collect::<String>()
+        );
     }
     Ok(())
 }

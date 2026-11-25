@@ -298,14 +298,30 @@ impl OutgoingCall {
             .as_ref()
             .context("The preheated call has no endpoint state link")?;
         let n = seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-        cc_post(&self.http, &self.skype_token, link, &preheat_join_body(&self.me.0, muted, n), "Join (preheated)").await?;
+        cc_post(
+            &self.http,
+            &self.skype_token,
+            link,
+            &preheat_join_body(&self.me.0, muted, n),
+            "Join (preheated)",
+        )
+        .await?;
         self.preheated = false;
         if let Some(link) = self.metadata_link.clone() {
             let body = serde_json::json!({
                 "participants": { "from": self.me.0 },
                 "endpointMetadata": { "holographicCapabilities": 3 },
             });
-            if let Err(e) = cc_send(&self.http, reqwest::Method::PUT, &self.skype_token, &link, &body, "Endpoint metadata").await {
+            if let Err(e) = cc_send(
+                &self.http,
+                reqwest::Method::PUT,
+                &self.skype_token,
+                &link,
+                &body,
+                "Endpoint metadata",
+            )
+            .await
+            {
                 tracing::warn!("endpoint metadata after the preheated join: {e:#}");
             }
         }
@@ -322,7 +338,14 @@ impl OutgoingCall {
     pub async fn leave(mut self) -> Result<()> {
         self.media = None;
         let link = self.leave_link.clone().context("No leave link")?;
-        cc_post(&self.http, &self.skype_token, &link, &leave_body(&self.me.0), "Leave").await?;
+        cc_post(
+            &self.http,
+            &self.skype_token,
+            &link,
+            &leave_body(&self.me.0),
+            "Leave",
+        )
+        .await?;
         tracing::info!("left the meeting's conversation");
         Ok(())
     }
@@ -493,8 +516,15 @@ impl OutgoingCall {
     /// when screen sharing starts): our `screenSharerAttributes` — the
     /// source ("Monitor" or "Window") and the annotation window's size (the
     /// shared screen's), which viewers need to show Annotate over it.
-    pub async fn screen_sharer_attributes(&mut self, source: u8, size: Option<(u32, u32, u32)>) -> Result<()> {
-        let link = self.properties_link.clone().context("This meeting can't update participants")?;
+    pub async fn screen_sharer_attributes(
+        &mut self,
+        source: u8,
+        size: Option<(u32, u32, u32)>,
+    ) -> Result<()> {
+        let link = self
+            .properties_link
+            .clone()
+            .context("This meeting can't update participants")?;
         self.state_seq += 1;
         let op = uuid::Uuid::new_v4().to_string();
         let from = serde_json::json!({
@@ -508,9 +538,20 @@ impl OutgoingCall {
             size,
             self.state_seq,
             &op,
-            &signaling::trouter_callback(&self.callbacks.0, &self.callbacks.1, "conversation/updateParticipantPropertiesStatus/"),
+            &signaling::trouter_callback(
+                &self.callbacks.0,
+                &self.callbacks.1,
+                "conversation/updateParticipantPropertiesStatus/",
+            ),
         );
-        cc_post(&self.http, &self.skype_token, &link, &body, "Screen sharer attributes").await?;
+        cc_post(
+            &self.http,
+            &self.skype_token,
+            &link,
+            &body,
+            "Screen sharer attributes",
+        )
+        .await?;
         tracing::info!(?size, "screen sharer attributes sent");
         Ok(())
     }
@@ -618,7 +659,11 @@ impl OutgoingCall {
         let from = self.me.0.clone();
         match layout {
             Some(content) => {
-                let link = self.state_links.0.clone().context("This meeting doesn't take presenter modes")?;
+                let link = self
+                    .state_links
+                    .0
+                    .clone()
+                    .context("This meeting doesn't take presenter modes")?;
                 let body = serde_json::json!({
                     "from": from,
                     "publishedState": {
@@ -628,10 +673,21 @@ impl OutgoingCall {
                         "sequenceNumber": self.state_seq,
                     },
                 });
-                cc_post(&self.http, &self.skype_token, &link, &body, "Presenter mode").await?;
+                cc_post(
+                    &self.http,
+                    &self.skype_token,
+                    &link,
+                    &body,
+                    "Presenter mode",
+                )
+                .await?;
             }
             None => {
-                let link = self.state_links.1.clone().context("This meeting doesn't take presenter modes")?;
+                let link = self
+                    .state_links
+                    .1
+                    .clone()
+                    .context("This meeting doesn't take presenter modes")?;
                 let body = serde_json::json!({
                     "from": from,
                     "sequenceNumber": self.state_seq,
@@ -649,29 +705,58 @@ impl OutgoingCall {
     /// ToOthers}`) or "signLanguageInterpreter" (`{}`), at user level with no
     /// scope; the earlier state is removed first (scope "specified", its
     /// id), and `None` only removes it.
-    pub async fn sign_language_state(&mut self, state: Option<(&str, serde_json::Value)>) -> Result<()> {
+    pub async fn sign_language_state(
+        &mut self,
+        state: Option<(&str, serde_json::Value)>,
+    ) -> Result<()> {
         let from = self.me.0.clone();
         if let Some(id) = self.sign_state_id.take() {
             self.state_seq += 1;
-            let link = self.state_links.1.clone().context("This meeting doesn't take sign language states")?;
+            let link = self
+                .state_links
+                .1
+                .clone()
+                .context("This meeting doesn't take sign language states")?;
             let body = serde_json::json!({ "from": from, "sequenceNumber": self.state_seq, "scope": "specified", "stateIds": [id] });
-            cc_post(&self.http, &self.skype_token, &link, &body, "Sign language state off").await?;
+            cc_post(
+                &self.http,
+                &self.skype_token,
+                &link,
+                &body,
+                "Sign language state off",
+            )
+            .await?;
         }
         if let Some((kind, content)) = state {
             self.state_seq += 1;
-            let link = self.state_links.0.clone().context("This meeting doesn't take sign language states")?;
+            let link = self
+                .state_links
+                .0
+                .clone()
+                .context("This meeting doesn't take sign language states")?;
             let body = serde_json::json!({
                 "from": from,
                 "publishedState": { "content": content, "level": "user", "stateType": kind, "sequenceNumber": self.state_seq },
             });
-            let reply = cc_post(&self.http, &self.skype_token, &link, &body, "Sign language state").await?;
+            let reply = cc_post(
+                &self.http,
+                &self.skype_token,
+                &link,
+                &body,
+                "Sign language state",
+            )
+            .await?;
             self.sign_state_id = reply
                 .pointer("/publishStateResponse/stateId")
                 .or_else(|| reply.pointer("/publishStateResponse/publishedState/stateId"))
                 .or_else(|| reply.pointer("/stateId"))
                 .and_then(|v| v.as_str())
                 .map(str::to_string);
-            tracing::info!(kind, has_id = self.sign_state_id.is_some(), "sign language state published");
+            tracing::info!(
+                kind,
+                has_id = self.sign_state_id.is_some(),
+                "sign language state published"
+            );
         }
         Ok(())
     }
@@ -746,10 +831,15 @@ impl OutgoingCall {
         if links.transfer.is_some() {
             self.transfer_link = links.transfer;
         }
-        if let Some(l) = links.renegotiation.filter(|l| super::incoming::is_service_link(l)) {
+        if let Some(l) = links
+            .renegotiation
+            .filter(|l| super::incoming::is_service_link(l))
+        {
             self.renegotiation_link = Some(l);
         }
-        if let (Some(l), Some((old, _))) = (links.media_descriptions, self.media_descriptions.as_mut()) {
+        if let (Some(l), Some((old, _))) =
+            (links.media_descriptions, self.media_descriptions.as_mut())
+        {
             *old = l;
         }
     }
@@ -759,14 +849,20 @@ impl OutgoingCall {
     pub fn admit_from_lobby(&mut self, update: &serde_json::Value) {
         let body = update.to_string();
         let link = |name: &str| conversation_link(&body, name);
-        self.state_links = (link("publishState").or(self.state_links.0.take()), link("removeState"));
+        self.state_links = (
+            link("publishState").or(self.state_links.0.take()),
+            link("removeState"),
+        );
         self.all_participants = link("getAllParticipants");
         self.admit_links = (link("admit"), link("admitAll"));
         self.remove_link = link("removeParticipant");
         self.properties_link = link("updateParticipantProperties");
         self.role_link = link("updateParticipantRole");
         self.settings_link = link("updateMeetingSettings");
-        self.group_links = (link("joinMeetingGroup").or(self.group_links.0.take()), link("leaveMeetingGroup").or(self.group_links.1.take()));
+        self.group_links = (
+            link("joinMeetingGroup").or(self.group_links.0.take()),
+            link("leaveMeetingGroup").or(self.group_links.1.take()),
+        );
         self.mute_link = link("mute");
         self.metadata_link = link("updateEndpointMetadata").or(self.metadata_link.take());
         self.add_participant_link = link("addParticipant").or(self.add_participant_link.take());
@@ -776,7 +872,8 @@ impl OutgoingCall {
         if let Some(e) = super::live_event::live_event(update) {
             self.event = e;
         }
-        self.add_modality_link = link("addParticipantAndModality").or(self.add_modality_link.take());
+        self.add_modality_link =
+            link("addParticipantAndModality").or(self.add_modality_link.take());
         self.content_link = link("addModality").or(self.content_link.take());
         self.apply_phone_audio(update);
         self.unmute_link = link("unmute");
@@ -792,7 +889,11 @@ impl OutgoingCall {
         }
         self.lobby_thread = group_chat_field(&body, "lobbyThreadId").or(self.lobby_thread.take());
         self.in_lobby = false;
-        tracing::info!(has_mute = self.mute_link.is_some(), has_admit = self.admit_links.0.is_some(), "admitted from the lobby");
+        tracing::info!(
+            has_mute = self.mute_link.is_some(),
+            has_admit = self.admit_links.0.is_some(),
+            "admitted from the lobby"
+        );
     }
 
     /// The meeting's lock and attendee restrictions, as last reported.
@@ -834,7 +935,14 @@ impl OutgoingCall {
         meeting: &super::recorder::Meeting,
     ) -> Result<()> {
         self.recorder
-            .command(&self.http, &self.skype_token, &self.me.0, &self.call_id, command, meeting)
+            .command(
+                &self.http,
+                &self.skype_token,
+                &self.me.0,
+                &self.call_id,
+                command,
+                meeting,
+            )
             .await
     }
 
@@ -842,7 +950,10 @@ impl OutgoingCall {
     /// the transcript or a recording and it isn't in the call yet). The
     /// roster then lists it with its command URL.
     pub async fn add_recorder(&self, meeting: &super::recorder::Meeting) -> Result<()> {
-        let link = self.add_participant_link.clone().context("No addParticipant link")?;
+        let link = self
+            .add_participant_link
+            .clone()
+            .context("No addParticipant link")?;
         if !super::incoming::is_service_link(&link) {
             bail!("addParticipant: not a Teams service link");
         }
@@ -852,7 +963,16 @@ impl OutgoingCall {
             "addParticipantSuccess": tc("conversation/addParticipantSuccess/"),
             "addParticipantFailure": tc("conversation/addParticipantFailure/"),
         });
-        super::recorder::invite(&self.http, &link, &self.me.0, meeting, &self.call_id, &self.thread_id, links).await
+        super::recorder::invite(
+            &self.http,
+            &link,
+            &self.me.0,
+            meeting,
+            &self.call_id,
+            &self.thread_id,
+            links,
+        )
+        .await
     }
 
     /// Merge another call's people into this one (Teams' P2PAndP2P merge):
@@ -860,25 +980,36 @@ impl OutgoingCall {
     /// in both calls) and each person is added with the leg they replace in
     /// the other call ([`merge_body`]). The other call is left afterwards.
     pub async fn merge_in(&self, thread_id: &str, people: &[MergePerson]) -> Result<()> {
-        let link = self.add_participant_link.clone().context("No addParticipant link")?;
+        let link = self
+            .add_participant_link
+            .clone()
+            .context("No addParticipant link")?;
         if !super::incoming::is_service_link(&link) {
             bail!("addParticipant: not a Teams service link");
         }
         let config = Config::load()?;
-        let ic3 = config.get_ic3_token().context("No calling (IC3) token")?.token;
+        let ic3 = config
+            .get_ic3_token()
+            .context("No calling (IC3) token")?
+            .token;
         let (surl, epid) = &self.callbacks;
         let mut from = self.me.0.clone();
         if let Some(o) = from.as_object_mut() {
             o.entry("languageId").or_insert_with(|| "en-US".into());
         }
-        let body = merge_body(&from, thread_id, people, |p| signaling::trouter_callback(surl, epid, p));
+        let body = merge_body(&from, thread_id, people, |p| {
+            signaling::trouter_callback(surl, epid, p)
+        });
         tracing::info!(people = people.len(), "merging calls");
         let resp = self
             .http
             .post(&link)
             .bearer_auth(ic3)
             .header("x-microsoft-skype-chain-id", &self.call_id)
-            .header("x-microsoft-skype-message-id", uuid::Uuid::new_v4().to_string())
+            .header(
+                "x-microsoft-skype-message-id",
+                uuid::Uuid::new_v4().to_string(),
+            )
             .header("x-microsoft-skype-client", signaling::SKYPE_CLIENT_HEADER)
             .header("ms-teams-partition", signaling::TEAMS_PARTITION)
             .header("ms-teams-region", signaling::TEAMS_REGION)
@@ -890,7 +1021,10 @@ impl OutgoingCall {
         let status = resp.status();
         if !status.is_success() {
             let text = resp.text().await.unwrap_or_default();
-            bail!("Merging calls failed ({status}): {}", &text[..text.len().min(300)]);
+            bail!(
+                "Merging calls failed ({status}): {}",
+                &text[..text.len().min(300)]
+            );
         }
         tracing::info!(%status, "merge requested");
         Ok(())
@@ -900,7 +1034,10 @@ impl OutgoingCall {
     /// they start or stop: `PUT updateEndpointMetadata` with our
     /// participant (and its language) and `transcriptionPrefs`.
     pub async fn publish_captions_pref(&self, on: bool) -> Result<()> {
-        let link = self.metadata_link.clone().context("No endpoint metadata link")?;
+        let link = self
+            .metadata_link
+            .clone()
+            .context("No endpoint metadata link")?;
         let mut from = self.me.0.clone();
         if let Some(o) = from.as_object_mut() {
             o.entry("languageId").or_insert_with(|| "en-us".into());
@@ -909,7 +1046,15 @@ impl OutgoingCall {
             "participants": { "from": from },
             "endpointMetadata": { "transcriptionPrefs": { "closedCaptions": on } },
         });
-        cc_send(&self.http, reqwest::Method::PUT, &self.skype_token, &link, &body, "Endpoint metadata").await?;
+        cc_send(
+            &self.http,
+            reqwest::Method::PUT,
+            &self.skype_token,
+            &link,
+            &body,
+            "Endpoint metadata",
+        )
+        .await?;
         Ok(())
     }
 
@@ -919,7 +1064,10 @@ impl OutgoingCall {
     /// roster when Teams cast to OST Test Room, 2026-11-23). Everyone's
     /// roster then nests us under the room and counts us in the room.
     pub async fn publish_meeting_room(&self, room_mri: &str, room_email: &str) -> Result<()> {
-        let link = self.metadata_link.clone().context("No endpoint metadata link")?;
+        let link = self
+            .metadata_link
+            .clone()
+            .context("No endpoint metadata link")?;
         let mut from = self.me.0.clone();
         if let Some(o) = from.as_object_mut() {
             o.entry("languageId").or_insert_with(|| "en-us".into());
@@ -928,7 +1076,15 @@ impl OutgoingCall {
             "participants": { "from": from },
             "endpointMetadata": { "holographicCapabilities": 3, "meetingRoom": { "email": room_email, "mri": room_mri } },
         });
-        cc_send(&self.http, reqwest::Method::PUT, &self.skype_token, &link, &body, "Endpoint metadata").await?;
+        cc_send(
+            &self.http,
+            reqwest::Method::PUT,
+            &self.skype_token,
+            &link,
+            &body,
+            "Endpoint metadata",
+        )
+        .await?;
         tracing::info!(room = room_mri, "joined in the room (endpoint metadata)");
         Ok(())
     }
@@ -936,7 +1092,10 @@ impl OutgoingCall {
     /// The meeting's stored transcript and transcript starts and stops
     /// (Teams' Transcript pane, on opening).
     pub async fn transcript_history(&self) -> Result<Vec<super::transcript::Entry>> {
-        let link = self.artifacts_link.clone().context("The meeting has no transcript store")?;
+        let link = self
+            .artifacts_link
+            .clone()
+            .context("The meeting has no transcript store")?;
         super::transcript::history(&self.http, &link, &self.call_id).await
     }
 
@@ -957,7 +1116,11 @@ impl OutgoingCall {
             let l = self.leave_link.as_deref()?;
             let (path, query) = l.split_once('?').unwrap_or((l, ""));
             let path = path.trim_end_matches('/').strip_suffix("/leave")?;
-            Some(if query.is_empty() { path.to_string() } else { format!("{path}?{query}") })
+            Some(if query.is_empty() {
+                path.to_string()
+            } else {
+                format!("{path}?{query}")
+            })
         })
     }
 
@@ -994,7 +1157,10 @@ impl OutgoingCall {
 
     /// The meeting organizer's object id (the join response's meetingInfo).
     pub fn organizer_oid(&self) -> Option<&str> {
-        self.notes_organizer.split('@').next().filter(|o| !o.is_empty())
+        self.notes_organizer
+            .split('@')
+            .next()
+            .filter(|o| !o.is_empty())
     }
 
     /// The meeting's title, times, location and calendar link (Meeting info).
@@ -1016,7 +1182,9 @@ impl OutgoingCall {
     /// capability); true when they changed. An update without dial-in
     /// details keeps the ones the join gave.
     pub fn apply_phone_audio(&mut self, json: &serde_json::Value) -> bool {
-        let Some(mut p) = super::phone_audio::phone_audio(json, false) else { return false };
+        let Some(mut p) = super::phone_audio::phone_audio(json, false) else {
+            return false;
+        };
         let d = super::phone_audio::dial_in(json).or_else(|| self.dial_in.clone());
         if d.is_some() && super::phone_audio::dial_in(json).is_none() {
             p.available = p.dial_in && p.dial_out;
@@ -1040,12 +1208,18 @@ impl OutgoingCall {
         if !phone_mri.starts_with("4:") || phone_mri.len() < 4 {
             bail!("Not a phone number");
         }
-        let link = self.add_modality_link.clone().context("No addParticipantAndModality link")?;
+        let link = self
+            .add_modality_link
+            .clone()
+            .context("No addParticipantAndModality link")?;
         if !super::incoming::is_service_link(&link) {
             bail!("addParticipantAndModality: not a Teams service link");
         }
         let config = Config::load()?;
-        let ic3 = config.get_ic3_token().context("No calling (IC3) token")?.token;
+        let ic3 = config
+            .get_ic3_token()
+            .context("No calling (IC3) token")?
+            .token;
         let (surl, epid) = &self.callbacks;
         let tc = |p: &str| signaling::trouter_callback(surl, epid, p);
         let links = serde_json::json!({
@@ -1069,7 +1243,10 @@ impl OutgoingCall {
             .post(&link)
             .bearer_auth(ic3)
             .header("x-microsoft-skype-chain-id", &self.call_id)
-            .header("x-microsoft-skype-message-id", uuid::Uuid::new_v4().to_string())
+            .header(
+                "x-microsoft-skype-message-id",
+                uuid::Uuid::new_v4().to_string(),
+            )
             .header("x-microsoft-skype-client", signaling::SKYPE_CLIENT_HEADER)
             .header("ms-teams-partition", signaling::TEAMS_PARTITION)
             .header("ms-teams-region", signaling::TEAMS_REGION)
@@ -1081,7 +1258,10 @@ impl OutgoingCall {
         let status = resp.status();
         if !status.is_success() {
             let text = resp.text().await.unwrap_or_default();
-            bail!("Call me failed ({status}): {}", &text[..text.len().min(300)]);
+            bail!(
+                "Call me failed ({status}): {}",
+                &text[..text.len().min(300)]
+            );
         }
         tracing::info!(%status, "call me back accepted");
         self.call_me = Some(phone_mri.to_string());
@@ -1098,16 +1278,28 @@ impl OutgoingCall {
     /// validation code as `autoAcceptAuthorization` (a Teams Rooms device
     /// then joins by itself), and the meeting's organizer and tenant. The
     /// outcome comes back as addParticipantSuccess / addParticipantFailure.
-    pub async fn add_room(&mut self, room_mri: &str, room_name: &str, validation_code: Option<u16>, ultrasound: bool) -> Result<()> {
+    pub async fn add_room(
+        &mut self,
+        room_mri: &str,
+        room_name: &str,
+        validation_code: Option<u16>,
+        ultrasound: bool,
+    ) -> Result<()> {
         if !room_mri.starts_with("8:orgid:") {
             bail!("Not a room account");
         }
-        let link = self.add_modality_link.clone().context("No addParticipantAndModality link")?;
+        let link = self
+            .add_modality_link
+            .clone()
+            .context("No addParticipantAndModality link")?;
         if !super::incoming::is_service_link(&link) {
             bail!("addParticipantAndModality: not a Teams service link");
         }
         let config = Config::load()?;
-        let ic3 = config.get_ic3_token().context("No calling (IC3) token")?.token;
+        let ic3 = config
+            .get_ic3_token()
+            .context("No calling (IC3) token")?
+            .token;
         let (surl, epid) = &self.callbacks;
         let tc = |p: &str| signaling::trouter_callback(surl, epid, p);
         let links = serde_json::json!({
@@ -1118,15 +1310,35 @@ impl OutgoingCall {
         if let Some(o) = from.as_object_mut() {
             o.entry("languageId").or_insert_with(|| "en-us".into());
         }
-        let meeting_info = self.notes_organizer.split_once('@').map(|(o, t)| (o.to_string(), t.to_string()));
-        let body = room_invite_body(&from, room_mri, room_name, &self.thread_id, self.group_message_id.as_deref(), validation_code, ultrasound, meeting_info, links);
-        tracing::info!(room = room_mri, code = validation_code.is_some(), "adding the room to the meeting");
+        let meeting_info = self
+            .notes_organizer
+            .split_once('@')
+            .map(|(o, t)| (o.to_string(), t.to_string()));
+        let body = room_invite_body(
+            &from,
+            room_mri,
+            room_name,
+            &self.thread_id,
+            self.group_message_id.as_deref(),
+            validation_code,
+            ultrasound,
+            meeting_info,
+            links,
+        );
+        tracing::info!(
+            room = room_mri,
+            code = validation_code.is_some(),
+            "adding the room to the meeting"
+        );
         let resp = self
             .http
             .post(&link)
             .bearer_auth(ic3)
             .header("x-microsoft-skype-chain-id", &self.call_id)
-            .header("x-microsoft-skype-message-id", uuid::Uuid::new_v4().to_string())
+            .header(
+                "x-microsoft-skype-message-id",
+                uuid::Uuid::new_v4().to_string(),
+            )
             .header("x-microsoft-skype-client", signaling::SKYPE_CLIENT_HEADER)
             .header("ms-teams-partition", signaling::TEAMS_PARTITION)
             .header("ms-teams-region", signaling::TEAMS_REGION)
@@ -1138,7 +1350,10 @@ impl OutgoingCall {
         let status = resp.status();
         if !status.is_success() {
             let text = resp.text().await.unwrap_or_default();
-            bail!("Adding the room failed ({status}): {}", &text[..text.len().min(300)]);
+            bail!(
+                "Adding the room failed ({status}): {}",
+                &text[..text.len().min(300)]
+            );
         }
         tracing::info!(%status, "room invitation accepted by the conversation");
         self.room_pending = Some(room_mri.to_string());
@@ -1150,19 +1365,31 @@ impl OutgoingCall {
     /// Ask the conversation service (`method` on `link`, a Teams service
     /// address) with the calling token and Teams' headers, plus a content
     /// session's chain id.
-    async fn content_request(&self, method: reqwest::Method, link: &str, body: &serde_json::Value, chain: &str) -> Result<String> {
+    async fn content_request(
+        &self,
+        method: reqwest::Method,
+        link: &str,
+        body: &serde_json::Value,
+        chain: &str,
+    ) -> Result<String> {
         if !super::incoming::is_service_link(link) {
             bail!("content sharing: not a Teams service link");
         }
         let config = Config::load()?;
-        let ic3 = config.get_ic3_token().context("No calling (IC3) token")?.token;
+        let ic3 = config
+            .get_ic3_token()
+            .context("No calling (IC3) token")?
+            .token;
         let resp = self
             .http
             .request(method.clone(), link)
             .bearer_auth(ic3)
             .header(super::content_sharing::CHAIN_ID_HEADER, chain)
             .header("x-microsoft-skype-chain-id", &self.call_id)
-            .header("x-microsoft-skype-message-id", uuid::Uuid::new_v4().to_string())
+            .header(
+                "x-microsoft-skype-message-id",
+                uuid::Uuid::new_v4().to_string(),
+            )
             .header("x-microsoft-skype-client", signaling::SKYPE_CLIENT_HEADER)
             .header("ms-teams-partition", signaling::TEAMS_PARTITION)
             .header("ms-teams-region", signaling::TEAMS_REGION)
@@ -1174,7 +1401,10 @@ impl OutgoingCall {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
         if !status.is_success() {
-            bail!("content sharing {method} failed ({status}): {}", &text[..text.len().min(300)]);
+            bail!(
+                "content sharing {method} failed ({status}): {}",
+                &text[..text.len().min(300)]
+            );
         }
         tracing::info!(%method, %status, "content sharing request");
         Ok(text)
@@ -1204,17 +1434,38 @@ impl OutgoingCall {
     /// optional first state: `POST links.addModality`. The session is ours
     /// once `conversation/addModalitySuccess/` names its correlation id
     /// ([`OutgoingCall::content_started`]). Returns the correlation id.
-    pub async fn start_content_sharing(&mut self, content: serde_json::Value, subject: &str, state: Option<&str>) -> Result<String> {
+    pub async fn start_content_sharing(
+        &mut self,
+        content: serde_json::Value,
+        subject: &str,
+        state: Option<&str>,
+    ) -> Result<String> {
         use super::content_sharing as cs;
-        let link = self.content_link.clone().context("This call can't share content (no addModality link)")?;
+        let link = self
+            .content_link
+            .clone()
+            .context("This call can't share content (no addModality link)")?;
         let correlation = uuid::Uuid::new_v4().to_string();
         let identifier = cs::encode_identifier(&content);
-        let body = cs::add_modality_body(&self.content_from(), &identifier, subject, state, &self.content_callback());
+        let body = cs::add_modality_body(
+            &self.content_from(),
+            &identifier,
+            subject,
+            state,
+            &self.content_callback(),
+        );
         tracing::info!(kind = cs::content_type(&content), %correlation, "content sharing: adding the modality");
-        self.content_request(reqwest::Method::POST, &link, &body, &correlation).await?;
+        self.content_request(reqwest::Method::POST, &link, &body, &correlation)
+            .await?;
         self.my_content = Some(cs::Session {
             correlation_id: correlation.clone(),
-            presenter: self.me.0.get("id").and_then(|i| i.as_str()).unwrap_or_default().to_ascii_lowercase(),
+            presenter: self
+                .me
+                .0
+                .get("id")
+                .and_then(|i| i.as_str())
+                .unwrap_or_default()
+                .to_ascii_lowercase(),
             content,
             identifier,
             subject: subject.to_string(),
@@ -1227,7 +1478,10 @@ impl OutgoingCall {
 
     /// Our session's addModalitySuccess (true: it started) or failure
     /// (Err: Teams' phrase), if `event` is either for it.
-    pub fn content_started(&mut self, event: &serde_json::Value) -> Option<std::result::Result<super::content_sharing::Session, String>> {
+    pub fn content_started(
+        &mut self,
+        event: &serde_json::Value,
+    ) -> Option<std::result::Result<super::content_sharing::Session, String>> {
         use super::content_sharing as cs;
         let mine = self.my_content.as_mut()?;
         if let Some((corr, session, links, state)) = cs::add_modality_success(event) {
@@ -1259,36 +1513,70 @@ impl OutgoingCall {
     pub async fn update_content_state(&mut self, state: &str) -> Result<()> {
         let from = self.content_from();
         let mine = self.my_content.as_mut().context("Not sharing content")?;
-        let link = mine.links.update_state.clone().context("The session has no updateSessionState link yet")?;
+        let link = mine
+            .links
+            .update_state
+            .clone()
+            .context("The session has no updateSessionState link yet")?;
         mine.sequence += 1;
         mine.state = state.to_string();
-        let body = super::content_sharing::update_state_body(&from, mine.sequence, state, &uuid::Uuid::new_v4().to_string());
+        let body = super::content_sharing::update_state_body(
+            &from,
+            mine.sequence,
+            state,
+            &uuid::Uuid::new_v4().to_string(),
+        );
         let chain = mine.correlation_id.clone();
-        self.content_request(reqwest::Method::POST, &link, &body, &chain).await.map(|_| ())
+        self.content_request(reqwest::Method::POST, &link, &body, &chain)
+            .await
+            .map(|_| ())
     }
 
     /// Stop presenting (`DELETE links.contentSharingController`).
     pub async fn stop_content_sharing(&mut self) -> Result<()> {
-        let Some(mine) = self.my_content.take() else { return Ok(()) };
-        let link = mine.links.controller.clone().context("The session has no controller link")?;
+        let Some(mine) = self.my_content.take() else {
+            return Ok(());
+        };
+        let link = mine
+            .links
+            .controller
+            .clone()
+            .context("The session has no controller link")?;
         let body = super::content_sharing::stop_body(&self.content_from());
         tracing::info!(correlation = %mine.correlation_id, "content sharing: stopping");
-        self.content_request(reqwest::Method::DELETE, &link, &body, &mine.correlation_id).await.map(|_| ())
+        self.content_request(reqwest::Method::DELETE, &link, &body, &mine.correlation_id)
+            .await
+            .map(|_| ())
     }
 
     /// Join a session someone else presents (from the roster), to get its
     /// state updates: `POST sessionInformation.contentSharingController`.
-    pub async fn join_content(&mut self, mut session: super::content_sharing::Session) -> Result<super::content_sharing::Session> {
+    pub async fn join_content(
+        &mut self,
+        mut session: super::content_sharing::Session,
+    ) -> Result<super::content_sharing::Session> {
         if let Some(s) = self.joined_content.get(&session.correlation_id) {
             return Ok(s.clone());
         }
-        let link = session.join_link.clone().context("The session has no join link")?;
-        let body = super::content_sharing::join_body(&self.content_from(), &self.content_callback());
-        let text = self.content_request(reqwest::Method::POST, &link, &body, &session.correlation_id).await?;
+        let link = session
+            .join_link
+            .clone()
+            .context("The session has no join link")?;
+        let body =
+            super::content_sharing::join_body(&self.content_from(), &self.content_callback());
+        let text = self
+            .content_request(reqwest::Method::POST, &link, &body, &session.correlation_id)
+            .await?;
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
             let cs = v.get("contentSharing").unwrap_or(&v);
-            session.links = super::content_sharing::SessionLinks::from(cs.get("links").unwrap_or(&serde_json::Value::Null));
-            if let Some(st) = cs.get("sessionState").and_then(|s| s.as_str()).filter(|s| !s.is_empty()) {
+            session.links = super::content_sharing::SessionLinks::from(
+                cs.get("links").unwrap_or(&serde_json::Value::Null),
+            );
+            if let Some(st) = cs
+                .get("sessionState")
+                .and_then(|s| s.as_str())
+                .filter(|s| !s.is_empty())
+            {
                 session.state = st.to_string();
             }
             if let Some(n) = cs.get("sequenceNumber").and_then(|n| n.as_u64()) {
@@ -1296,7 +1584,8 @@ impl OutgoingCall {
             }
         }
         tracing::info!(correlation = %session.correlation_id, kind = session.kind(), "content sharing: joined");
-        self.joined_content.insert(session.correlation_id.clone(), session.clone());
+        self.joined_content
+            .insert(session.correlation_id.clone(), session.clone());
         Ok(session)
     }
 
@@ -1316,7 +1605,11 @@ impl OutgoingCall {
         }
         if let Some(corr) = cs::session_end(event) {
             self.joined_content.remove(&corr);
-            if self.my_content.as_ref().is_some_and(|m| m.correlation_id == corr) {
+            if self
+                .my_content
+                .as_ref()
+                .is_some_and(|m| m.correlation_id == corr)
+            {
                 self.my_content = None;
             }
             return Some((corr, None));
@@ -1328,27 +1621,55 @@ impl OutgoingCall {
     /// control): `POST links.takeControl` from the session's join; once
     /// it answers the session is ours (its state goes out through our
     /// updateSessionState from then on).
-    pub async fn take_content_control(&mut self, correlation: &str) -> Result<super::content_sharing::Session> {
+    pub async fn take_content_control(
+        &mut self,
+        correlation: &str,
+    ) -> Result<super::content_sharing::Session> {
         use super::content_sharing as cs;
-        let s = self.joined_content.get(correlation).cloned().context("Not viewing that session")?;
-        let link = s.links.take_control.clone().context("The session has no takeControl link")?;
+        let s = self
+            .joined_content
+            .get(correlation)
+            .cloned()
+            .context("Not viewing that session")?;
+        let link = s
+            .links
+            .take_control
+            .clone()
+            .context("The session has no takeControl link")?;
         let body = cs::take_control_body(&self.content_from());
         tracing::info!(%correlation, "content sharing: taking control");
-        let text = self.content_request(reqwest::Method::POST, &link, &body, correlation).await?;
+        let text = self
+            .content_request(reqwest::Method::POST, &link, &body, correlation)
+            .await?;
         let mut mine = s;
         mine.mine = true;
-        mine.presenter = self.me.0.get("id").and_then(|i| i.as_str()).unwrap_or_default().to_ascii_lowercase();
+        mine.presenter = self
+            .me
+            .0
+            .get("id")
+            .and_then(|i| i.as_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
             let c = v.get("contentSharing").unwrap_or(&v);
-            mine.links.merge(cs::SessionLinks::from(c.get("links").unwrap_or(&serde_json::Value::Null)));
-            if let Some(st) = c.get("sessionState").and_then(|s| s.as_str()).filter(|s| !s.is_empty()) {
+            mine.links.merge(cs::SessionLinks::from(
+                c.get("links").unwrap_or(&serde_json::Value::Null),
+            ));
+            if let Some(st) = c
+                .get("sessionState")
+                .and_then(|s| s.as_str())
+                .filter(|s| !s.is_empty())
+            {
                 mine.state = st.to_string();
             }
             if let Some(n) = c.get("sequenceNumber").and_then(|n| n.as_u64()) {
                 mine.sequence = mine.sequence.max(n);
             }
         }
-        tracing::info!(update = mine.links.update_state.is_some(), "content sharing: we present now");
+        tracing::info!(
+            update = mine.links.update_state.is_some(),
+            "content sharing: we present now"
+        );
         self.joined_content.remove(correlation);
         self.my_content = Some(mine.clone());
         Ok(mine)
@@ -1357,10 +1678,24 @@ impl OutgoingCall {
     /// A session's presenter changed (someone took control): if it was
     /// ours, it becomes one we view. (correlation id, the new presenter,
     /// whether it was taken from us.)
-    pub fn content_presenter(&mut self, event: &serde_json::Value) -> Option<(String, String, bool)> {
+    pub fn content_presenter(
+        &mut self,
+        event: &serde_json::Value,
+    ) -> Option<(String, String, bool)> {
         let (corr, presenter) = super::content_sharing::update_presenter(event)?;
-        let me = self.me.0.get("id").and_then(|i| i.as_str()).unwrap_or_default().to_ascii_lowercase();
-        if self.my_content.as_ref().is_some_and(|m| m.correlation_id == corr) && presenter != me {
+        let me = self
+            .me
+            .0
+            .get("id")
+            .and_then(|i| i.as_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if self
+            .my_content
+            .as_ref()
+            .is_some_and(|m| m.correlation_id == corr)
+            && presenter != me
+        {
             let mut s = self.my_content.take()?;
             tracing::info!(%corr, "content sharing: someone took control");
             s.mine = false;
@@ -1396,7 +1731,10 @@ impl OutgoingCall {
         self.joined_content.remove(correlation);
     }
 
-    pub fn room_outcome(&mut self, event: &serde_json::Value) -> Option<std::result::Result<String, String>> {
+    pub fn room_outcome(
+        &mut self,
+        event: &serde_json::Value,
+    ) -> Option<std::result::Result<String, String>> {
         let mri = self.room_pending.clone()?;
         let r = super::phone_audio::call_me_back_result(event, &mri)?;
         self.room_pending = None;
@@ -1406,7 +1744,10 @@ impl OutgoingCall {
     /// The meeting's answer to "Call me", if `event` is it: Ok(the phone's
     /// id) when it joined, Err(Teams' message) when it failed. The pending
     /// number is forgotten either way.
-    pub fn call_me_outcome(&mut self, event: &serde_json::Value) -> Option<std::result::Result<String, String>> {
+    pub fn call_me_outcome(
+        &mut self,
+        event: &serde_json::Value,
+    ) -> Option<std::result::Result<String, String>> {
         let mri = self.call_me.clone()?;
         let r = super::phone_audio::call_me_back_result(event, &mri)?;
         self.call_me = None;
@@ -1444,7 +1785,9 @@ impl OutgoingCall {
     /// title, join link and calendar id.
     pub fn notes_context(&self) -> serde_json::Value {
         let info = self.meeting_info.clone();
-        let s = |f: fn(&super::meeting_info::MeetingInfo) -> &String| info.as_ref().map(|i| f(i).clone()).unwrap_or_default();
+        let s = |f: fn(&super::meeting_info::MeetingInfo) -> &String| {
+            info.as_ref().map(|i| f(i).clone()).unwrap_or_default()
+        };
         serde_json::json!({
             "threadId": self.thread_id,
             "organizer": self.notes_organizer,
@@ -1466,8 +1809,15 @@ impl OutgoingCall {
 
     /// Set meeting states for everyone (Teams' updateMeetingStates), such
     /// as the notes' claim and link.
-    pub async fn publish_meeting_states(&self, states: serde_json::Value, what: &str) -> Result<()> {
-        let link = self.meeting_states_link.clone().context("This call has no meeting states")?;
+    pub async fn publish_meeting_states(
+        &self,
+        states: serde_json::Value,
+        what: &str,
+    ) -> Result<()> {
+        let link = self
+            .meeting_states_link
+            .clone()
+            .context("This call has no meeting states")?;
         let mut from = self.me.0.clone();
         if let Some(o) = from.as_object_mut() {
             o.entry("languageId").or_insert_with(|| "en-us".into());
@@ -1491,16 +1841,21 @@ impl OutgoingCall {
     /// updateMeetingStates with the three timers' JSON); the change shows
     /// when the update comes back.
     pub async fn publish_timer(&self, adhoc: &super::meeting_timer::Timer) -> Result<()> {
-        self.publish_meeting_timers(self.timers.publish(adhoc), adhoc.state()).await
+        self.publish_meeting_timers(self.timers.publish(adhoc), adhoc.state())
+            .await
     }
 
     /// Change the meeting's agenda for everyone (an agenda edit).
     pub async fn publish_agenda(&self, agenda: &super::meeting_timer::Timer) -> Result<()> {
-        self.publish_meeting_timers(self.timers.publish_agenda(agenda), agenda.state()).await
+        self.publish_meeting_timers(self.timers.publish_agenda(agenda), agenda.state())
+            .await
     }
 
     async fn publish_meeting_timers(&self, states: serde_json::Value, state: &str) -> Result<()> {
-        let link = self.meeting_states_link.clone().context("This meeting has no timer")?;
+        let link = self
+            .meeting_states_link
+            .clone()
+            .context("This meeting has no timer")?;
         let mut from = self.me.0.clone();
         if let Some(o) = from.as_object_mut() {
             o.entry("languageId").or_insert_with(|| "en-us".into());
@@ -1515,7 +1870,11 @@ impl OutgoingCall {
             ),
             "operationId": uuid::Uuid::new_v4().to_string(),
         });
-        tracing::info!(state, sequence = self.timers.sequence, "meeting timer: publishing");
+        tracing::info!(
+            state,
+            sequence = self.timers.sequence,
+            "meeting timer: publishing"
+        );
         cc_post(&self.http, &self.skype_token, &link, &body, "Meeting timer").await?;
         Ok(())
     }
@@ -1537,7 +1896,10 @@ impl OutgoingCall {
             return false;
         }
         let me = self.me.0["id"].as_str().unwrap_or_default().to_string();
-        let ep = self.me.0["endpointId"].as_str().unwrap_or_default().to_string();
+        let ep = self.me.0["endpointId"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
         let mut changed = false;
         if let Some(lobby) = super::live_stream::self_streaming(json, &me, &ep)
             && lobby != self.in_lobby
@@ -1551,8 +1913,19 @@ impl OutgoingCall {
             let summary: Vec<String> = all
                 .iter()
                 .map(|s| {
-                    let host = s.urls.first().and_then(|u| url::Url::parse(u).ok()).and_then(|u| u.host_str().map(str::to_string)).unwrap_or_default();
-                    format!("{} primary={} host={} token={}", s.delivery_pipeline_type, s.is_primary, host, !s.key_authorization_token.is_empty())
+                    let host = s
+                        .urls
+                        .first()
+                        .and_then(|u| url::Url::parse(u).ok())
+                        .and_then(|u| u.host_str().map(str::to_string))
+                        .unwrap_or_default();
+                    format!(
+                        "{} primary={} host={} token={}",
+                        s.delivery_pipeline_type,
+                        s.is_primary,
+                        host,
+                        !s.key_authorization_token.is_empty()
+                    )
                 })
                 .collect();
             tracing::info!(?summary, "town hall streams");
@@ -1578,13 +1951,21 @@ impl OutgoingCall {
         // without it keeps the last one (Teams keeps meetingLayoutDetails).
         let layout = super::live_event::production_layout(json);
         if let Some(l) = &layout {
-            let raw = ["/body/layoutDetails", "/layoutDetails", "/body/conversationUpdate/layoutDetails"]
-                .iter()
-                .find_map(|p| json.pointer(p))
-                .map(|v| v.to_string().chars().take(3000).collect::<String>())
-                .unwrap_or_default();
+            let raw = [
+                "/body/layoutDetails",
+                "/layoutDetails",
+                "/body/conversationUpdate/layoutDetails",
+            ]
+            .iter()
+            .find_map(|p| json.pointer(p))
+            .map(|v| v.to_string().chars().take(3000).collect::<String>())
+            .unwrap_or_default();
             tracing::info!(kind = %l.kind, seq = l.sequence, %raw, sources = ?l.participants.iter().map(|p| format!("{}:{}", p.participant_id, p.modality)).collect::<Vec<_>>(), "event production layout");
-            if let Some(n) = json.pointer("/body/layoutDetails/sequenceNumber").or_else(|| json.pointer("/layoutDetails/sequenceNumber")).and_then(|v| v.as_u64()) {
+            if let Some(n) = json
+                .pointer("/body/layoutDetails/sequenceNumber")
+                .or_else(|| json.pointer("/layoutDetails/sequenceNumber"))
+                .and_then(|v| v.as_u64())
+            {
                 self.layout_seq = self.layout_seq.max(n);
             }
         }
@@ -1594,7 +1975,12 @@ impl OutgoingCall {
             }
             e
         });
-        let parsed = parsed.or_else(|| layout.map(|l| super::live_event::LiveEvent { layout: l, ..self.event.clone() }));
+        let parsed = parsed.or_else(|| {
+            layout.map(|l| super::live_event::LiveEvent {
+                layout: l,
+                ..self.event.clone()
+            })
+        });
         match parsed {
             Some(e) if e != self.event => {
                 tracing::info!(phase = %e.phase, seq = e.seq, town_hall = e.town_hall, "event live state");
@@ -1608,7 +1994,11 @@ impl OutgoingCall {
     /// The curtain Teams shows while the event starts (`live`) or ends
     /// for attendees: a user-level "ufd" state; its state id.
     pub async fn publish_curtain(&mut self, live: bool) -> Result<Option<String>> {
-        let link = self.state_links.0.clone().context("This meeting can't start for attendees")?;
+        let link = self
+            .state_links
+            .0
+            .clone()
+            .context("This meeting can't start for attendees")?;
         self.state_seq += 1;
         let body = serde_json::json!({
             "from": self.me.0,
@@ -1625,7 +2015,11 @@ impl OutgoingCall {
 
     /// Remove a state we published (the curtain).
     pub async fn remove_own_state(&mut self, state_id: &str) -> Result<()> {
-        let link = self.state_links.1.clone().context("This meeting can't remove states")?;
+        let link = self
+            .state_links
+            .1
+            .clone()
+            .context("This meeting can't remove states")?;
         self.state_seq += 1;
         let body = serde_json::json!({ "from": self.me.0, "sequenceNumber": self.state_seq, "scope": "specified", "stateIds": [state_id] });
         cc_post(&self.http, &self.skype_token, &link, &body, "Remove state").await?;
@@ -1635,9 +2029,19 @@ impl OutgoingCall {
     /// Send live ("On with preview"): put these sources on the live
     /// screen (Teams' setMeetingLayout with the production layout and the
     /// next layout sequence number, as its production studio counts them).
-    pub async fn set_meeting_layout(&mut self, sources: &[super::live_event::LayoutSource]) -> Result<()> {
-        let link = self.layout_link.clone().context("This meeting can't send a layout live")?;
-        let status = signaling::trouter_callback(&self.callbacks.0, &self.callbacks.1, "conversation/setMeetingLayoutStatus/");
+    pub async fn set_meeting_layout(
+        &mut self,
+        sources: &[super::live_event::LayoutSource],
+    ) -> Result<()> {
+        let link = self
+            .layout_link
+            .clone()
+            .context("This meeting can't send a layout live")?;
+        let status = signaling::trouter_callback(
+            &self.callbacks.0,
+            &self.callbacks.1,
+            "conversation/setMeetingLayoutStatus/",
+        );
         let op = uuid::Uuid::new_v4().to_string();
         let from = super::meeting_options::state_from(&self.me.0);
         self.layout_seq = self.layout_seq.max(self.event.layout.sequence);
@@ -1645,34 +2049,71 @@ impl OutgoingCall {
         self.layout_seq += 1;
         // Teams names your own source by this call's endpoint (Ue: the
         // call's participantId and endpointId).
-        let me_id = self.me.0["id"].as_str().unwrap_or_default().to_ascii_lowercase();
+        let me_id = self.me.0["id"]
+            .as_str()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
         let sources: Vec<super::live_event::LayoutSource> = sources
             .iter()
             .cloned()
             .map(|mut s| {
                 if s.id.eq_ignore_ascii_case(&me_id) {
-                    s.participant_id = self.me.0["participantId"].as_str().unwrap_or_default().to_string();
-                    s.endpoint_id = self.me.0["endpointId"].as_str().unwrap_or_default().to_string();
+                    s.participant_id = self.me.0["participantId"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_string();
+                    s.endpoint_id = self.me.0["endpointId"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_string();
                 }
                 s
             })
             .collect();
-        let body = super::live_event::set_layout_body(&from, &format!("{}_Preview", self.call_id), &sources, seq, &status, &op);
+        let body = super::live_event::set_layout_body(
+            &from,
+            &format!("{}_Preview", self.call_id),
+            &sources,
+            seq,
+            &status,
+            &op,
+        );
         tracing::info!(seq, sources = sources.len(), body = %body, "send live: setting the meeting layout");
-        cc_post(&self.http, &self.skype_token, &link, &body, "Meeting layout").await?;
+        cc_post(
+            &self.http,
+            &self.skype_token,
+            &link,
+            &body,
+            "Meeting layout",
+        )
+        .await?;
         Ok(())
     }
 
     /// Start (`live`) or end the event for attendees: Teams'
     /// updateMeetingLiveState with the live state's sequence number.
     pub async fn update_live_state(&mut self, live: bool) -> Result<()> {
-        let link = self.live_state_link.clone().context("This meeting has no green room")?;
-        let status = signaling::trouter_callback(&self.callbacks.0, &self.callbacks.1, "conversation/updateMeetingLiveStateStatus/");
+        let link = self
+            .live_state_link
+            .clone()
+            .context("This meeting has no green room")?;
+        let status = signaling::trouter_callback(
+            &self.callbacks.0,
+            &self.callbacks.1,
+            "conversation/updateMeetingLiveStateStatus/",
+        );
         let op = uuid::Uuid::new_v4().to_string();
         let from = super::meeting_options::state_from(&self.me.0);
         let body = super::live_event::live_state_body(&from, live, self.event.seq, &status, &op);
         tracing::info!(live, seq = self.event.seq, "event live state: updating");
-        cc_post(&self.http, &self.skype_token, &link, &body, "Meeting live state").await?;
+        cc_post(
+            &self.http,
+            &self.skype_token,
+            &link,
+            &body,
+            "Meeting live state",
+        )
+        .await?;
         Ok(())
     }
 
@@ -1712,19 +2153,33 @@ impl OutgoingCall {
         self.state_seq += 1;
         let body = super::meeting_options::settings_body(&self.me.0, settings, self.state_seq);
         // Teams' calling stack PUTs this one.
-        cc_send(&self.http, reqwest::Method::PUT, &self.skype_token, &link, &body, "Meeting settings").await?;
+        cc_send(
+            &self.http,
+            reqwest::Method::PUT,
+            &self.skype_token,
+            &link,
+            &body,
+            "Meeting settings",
+        )
+        .await?;
         Ok(())
     }
 
     /// Teams' Interpreter: turn it on for the meeting, or off for everyone
     /// (the organizer's Turn off for all).
     pub async fn set_ai_interpretation(&mut self, on: bool) -> Result<()> {
-        self.update_meeting_settings(super::ai_interpreter::settings(on)).await
+        self.update_meeting_settings(super::ai_interpreter::settings(on))
+            .await
     }
 
     /// Teams' consecutive interpretation: on for everyone in two languages.
-    pub async fn set_ai_interpretation_turn_by_turn(&mut self, first: &str, second: &str) -> Result<()> {
-        self.update_meeting_settings(super::ai_interpreter::turn_by_turn_settings(first, second)).await
+    pub async fn set_ai_interpretation_turn_by_turn(
+        &mut self,
+        first: &str,
+        second: &str,
+    ) -> Result<()> {
+        self.update_meeting_settings(super::ai_interpreter::turn_by_turn_settings(first, second))
+            .await
     }
 
     /// Listen to a language's interpretation: join its meeting group
@@ -1732,17 +2187,34 @@ impl OutgoingCall {
     /// 500/5406 (6 times, 1.5 s apart). Returns the operation id; the
     /// result comes back as a joinMeetingGroupStatus event.
     pub async fn join_meeting_group(&self, label: &str) -> Result<String> {
-        let link = self.group_links.0.clone().context("This meeting has no language groups")?;
+        let link = self
+            .group_links
+            .0
+            .clone()
+            .context("This meeting has no language groups")?;
         let op = uuid::Uuid::new_v4().to_string();
-        let status = signaling::trouter_callback(&self.callbacks.0, &self.callbacks.1, "conversation/joinMeetingGroupStatus/");
+        let status = signaling::trouter_callback(
+            &self.callbacks.0,
+            &self.callbacks.1,
+            "conversation/joinMeetingGroupStatus/",
+        );
         let body = super::ai_interpreter::join_group_body(&self.me.0, label, &status, &op);
         let mut tries = 0;
         loop {
-            match cc_post(&self.http, &self.skype_token, &link, &body, "Join meeting group").await {
+            match cc_post(
+                &self.http,
+                &self.skype_token,
+                &link,
+                &body,
+                "Join meeting group",
+            )
+            .await
+            {
                 Ok(_) => break,
                 Err(e) => {
                     let t = format!("{e:#}");
-                    let again = (t.contains("404") && t.contains("6011")) || (t.contains("500") && t.contains("5406"));
+                    let again = (t.contains("404") && t.contains("6011"))
+                        || (t.contains("500") && t.contains("5406"));
                     if !again || tries >= 6 {
                         return Err(e);
                     }
@@ -1757,18 +2229,36 @@ impl OutgoingCall {
 
     /// Stop listening to the interpretation: leave the language group.
     pub async fn leave_meeting_group(&self, group: &str) -> Result<()> {
-        let link = self.group_links.1.clone().context("This meeting has no language groups")?;
+        let link = self
+            .group_links
+            .1
+            .clone()
+            .context("This meeting has no language groups")?;
         let op = uuid::Uuid::new_v4().to_string();
-        let status = signaling::trouter_callback(&self.callbacks.0, &self.callbacks.1, "conversation/leaveMeetingGroupStatus/");
+        let status = signaling::trouter_callback(
+            &self.callbacks.0,
+            &self.callbacks.1,
+            "conversation/leaveMeetingGroupStatus/",
+        );
         let body = super::ai_interpreter::leave_group_body(&self.me.0, group, &status, &op);
-        cc_post(&self.http, &self.skype_token, &link, &body, "Leave meeting group").await?;
+        cc_post(
+            &self.http,
+            &self.skype_token,
+            &link,
+            &body,
+            "Leave meeting group",
+        )
+        .await?;
         Ok(())
     }
 
     /// Our AI voice choice for Interpreter (Teams' aiVoiceConsent
     /// participant property, scope self).
     pub async fn set_ai_voice_consent(&mut self, value: &str) -> Result<()> {
-        let link = self.properties_link.clone().context("This meeting can't update participants")?;
+        let link = self
+            .properties_link
+            .clone()
+            .context("This meeting can't update participants")?;
         self.state_seq += 1;
         let op = uuid::Uuid::new_v4().to_string();
         let from = serde_json::json!({
@@ -1783,7 +2273,14 @@ impl OutgoingCall {
             "links": { "updateParticipantPropertiesStatus": signaling::trouter_callback(&self.callbacks.0, &self.callbacks.1, "conversation/updateParticipantPropertiesStatus/") },
             "operationId": op,
         });
-        cc_post(&self.http, &self.skype_token, &link, &body, "AI voice consent").await?;
+        cc_post(
+            &self.http,
+            &self.skype_token,
+            &link,
+            &body,
+            "AI voice consent",
+        )
+        .await?;
         Ok(())
     }
 
@@ -1791,7 +2288,10 @@ impl OutgoingCall {
     pub fn my_endpoint(&self) -> (String, String) {
         (
             self.me.0["id"].as_str().unwrap_or_default().to_string(),
-            self.me.0["endpointId"].as_str().unwrap_or_default().to_string(),
+            self.me.0["endpointId"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
         )
     }
 
@@ -1809,7 +2309,14 @@ impl OutgoingCall {
             state_type,
             self.state_seq,
         );
-        cc_post(&self.http, &self.skype_token, &link, &body, "Remove state for everyone").await?;
+        cc_post(
+            &self.http,
+            &self.skype_token,
+            &link,
+            &body,
+            "Remove state for everyone",
+        )
+        .await?;
         Ok(())
     }
 
@@ -1910,12 +2417,19 @@ impl OutgoingCall {
     /// Park the call (Teams' Park Call); the pickup code comes on
     /// `call/transferCompletion`.
     pub async fn park(&self) -> Result<()> {
-        let link = self.transfer_link.as_deref().context("This call can't be parked")?;
+        let link = self
+            .transfer_link
+            .as_deref()
+            .context("This call can't be parked")?;
         let mut details = self.me.0.clone();
         if let Some(o) = details.as_object_mut() {
             o.remove("displayName");
         }
-        let me = details.get("id").and_then(|i| i.as_str()).unwrap_or_default().to_string();
+        let me = details
+            .get("id")
+            .and_then(|i| i.as_str())
+            .unwrap_or_default()
+            .to_string();
         let (surl, epid) = self.callbacks.clone();
         super::incoming::request_park(&self.http, &self.skype_token, link, &me, details, |p| {
             signaling::trouter_callback(&surl, &epid, p)
@@ -1952,7 +2466,10 @@ impl OutgoingCall {
 
     /// Teams' verification numbers when the call is end-to-end encrypted.
     pub fn e2ee_numbers(&self) -> Vec<String> {
-        self.media.as_ref().map(|m| m.e2ee_numbers()).unwrap_or_default()
+        self.media
+            .as_ref()
+            .map(|m| m.e2ee_numbers())
+            .unwrap_or_default()
     }
 
     /// The call negotiated video we can send (camera button usable).
@@ -1976,13 +2493,17 @@ impl OutgoingCall {
     /// Send what we typed for real-time text since the last; false when
     /// the call has no meeting data channel.
     pub fn send_real_time_text(&self, text: &str) -> bool {
-        self.media.as_ref().is_some_and(|m| m.send_real_time_text(text))
+        self.media
+            .as_ref()
+            .is_some_and(|m| m.send_real_time_text(text))
     }
 
     /// Sign language mode: whether we are signing; false when the call
     /// has no meeting data channel.
     pub fn send_sign_language(&self, detected: bool, duration_ms: u64) -> bool {
-        self.media.as_ref().is_some_and(|m| m.send_sign_language(detected, duration_ms))
+        self.media
+            .as_ref()
+            .is_some_and(|m| m.send_sign_language(detected, duration_ms))
     }
 
     /// Our data source id in the meeting (whose real-time text is ours).
@@ -2186,7 +2707,9 @@ impl OutgoingCall {
     pub fn network_strength(&self) -> super::network_quality::Strength {
         self.media
             .as_ref()
-            .map_or(super::network_quality::Strength::Good, |m| m.network_strength())
+            .map_or(super::network_quality::Strength::Good, |m| {
+                m.network_strength()
+            })
     }
 
     /// Turn the camera on or off.
@@ -2427,7 +2950,11 @@ pub fn roster_legs(json: &str) -> Vec<(String, serde_json::Value)> {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
         return Vec::new();
     };
-    if !v.get("callAgentPath").and_then(|p| p.as_str()).is_some_and(|p| p.starts_with("conversation/rosterUpdate")) {
+    if !v
+        .get("callAgentPath")
+        .and_then(|p| p.as_str())
+        .is_some_and(|p| p.starts_with("conversation/rosterUpdate"))
+    {
         return Vec::new();
     }
     let Some(parts) = v.pointer("/body/participants").and_then(|p| p.as_object()) else {
@@ -2438,7 +2965,11 @@ pub fn roster_legs(json: &str) -> Vec<(String, serde_json::Value)> {
         .filter_map(|(mri, p)| {
             // A roster event keys endpoints by id (the parsed form uses
             // `endpointDetails`); each has a participantId and callLinks.
-            let ep = p.get("endpoints")?.as_object()?.values().find(|e| e.pointer("/callLinks/replacement").is_some())?;
+            let ep = p
+                .get("endpoints")?
+                .as_object()?
+                .values()
+                .find(|e| e.pointer("/callLinks/replacement").is_some())?;
             let replaces = ep.pointer("/callLinks/replacement")?.as_str()?;
             let leg = ep.get("participantId")?.as_str()?;
             Some((
@@ -2453,11 +2984,15 @@ pub fn roster_legs(json: &str) -> Vec<(String, serde_json::Value)> {
 /// `endpointDetails[].callLinks.replacement` (Teams'
 /// `setParticipantCallLinks`): what a merge names in `replacementDetails`.
 pub fn leg_replacement(participant: &serde_json::Value) -> Option<serde_json::Value> {
-    participant.get("endpointDetails")?.as_array()?.iter().find_map(|e| {
-        let replaces = e.pointer("/callLinks/replacement")?.as_str()?;
-        let leg = e.get("participantId")?.as_str()?;
-        Some(serde_json::json!({ "replaces": replaces, "replacementTargetParticipantId": leg }))
-    })
+    participant
+        .get("endpointDetails")?
+        .as_array()?
+        .iter()
+        .find_map(|e| {
+            let replaces = e.pointer("/callLinks/replacement")?.as_str()?;
+            let leg = e.get("participantId")?.as_str()?;
+            Some(serde_json::json!({ "replaces": replaces, "replacementTargetParticipantId": leg }))
+        })
 }
 
 /// POST JSON to a Teams service link; the JSON reply (Null when empty).
@@ -2486,7 +3021,10 @@ async fn cc_bearer() -> Option<String> {
         crate::auth::oauth::refresh().await.ok()?;
         config = Config::load().ok()?;
     }
-    config.get_ic3_token().filter(|t| !t.is_expired()).map(|t| t.token)
+    config
+        .get_ic3_token()
+        .filter(|t| !t.is_expired())
+        .map(|t| t.token)
 }
 
 /// A conversation request with the given method (Teams PUTs some, such as
@@ -2512,13 +3050,17 @@ async fn cc_send(
     };
     let bearer = cc_bearer().await;
     let signed = bearer.is_some();
-    let mut resp = send(bearer).await.with_context(|| format!("{what} failed to send"))?;
+    let mut resp = send(bearer)
+        .await
+        .with_context(|| format!("{what} failed to send"))?;
     // A conversation that doesn't take the user's token yet (Teams asks
     // the service's WWW-Authenticate for the token types it takes): the
     // Skype token.
     if signed && resp.status() == reqwest::StatusCode::UNAUTHORIZED {
         tracing::info!("{what}: the call refused the IC3 token, sending the Skype token");
-        resp = send(None).await.with_context(|| format!("{what} failed to send"))?;
+        resp = send(None)
+            .await
+            .with_context(|| format!("{what} failed to send"))?;
     }
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
@@ -2583,8 +3125,14 @@ pub struct LiveInkingSender {
 
 impl LiveInkingSender {
     pub async fn send(&self, event_data: &str) -> Result<()> {
-        let body = super::content_sharing::live_inking_body(&self.me, event_data, &uuid::Uuid::new_v4().to_string());
-        cc_post(&self.http, &self.token, &self.link, &body, "LiveInking").await.map(|_| ())
+        let body = super::content_sharing::live_inking_body(
+            &self.me,
+            event_data,
+            &uuid::Uuid::new_v4().to_string(),
+        );
+        cc_post(&self.http, &self.token, &self.link, &body, "LiveInking")
+            .await
+            .map(|_| ())
     }
 }
 
@@ -2732,7 +3280,14 @@ fn controller_link(create_response: &str) -> Option<String> {
 /// attributes (scope "self").
 /// (Teams sends `source` 1 for a screen, 2 for a window, and the screen's
 /// logical width, work-area height and full height.)
-fn screen_sharer_body(from: serde_json::Value, source: u8, size: Option<(u32, u32, u32)>, seq: u64, op: &str, status_link: &str) -> serde_json::Value {
+fn screen_sharer_body(
+    from: serde_json::Value,
+    source: u8,
+    size: Option<(u32, u32, u32)>,
+    seq: u64,
+    op: &str,
+    status_link: &str,
+) -> serde_json::Value {
     let size = size.map(|(w, h, full)| serde_json::json!({ "width": w, "height": h, "offset": 0, "fullHeight": full }));
     serde_json::json!({
         "from": from.clone(),
@@ -2928,7 +3483,11 @@ impl CallEnded {
         Some(Self {
             code: num("code"),
             sub_code: num("subCode"),
-            phrase: end.get("phrase").and_then(|p| p.as_str()).unwrap_or("call ended").to_string(),
+            phrase: end
+                .get("phrase")
+                .and_then(|p| p.as_str())
+                .unwrap_or("call ended")
+                .to_string(),
         })
     }
 
@@ -2989,7 +3548,9 @@ fn end_late_leg(
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(_) => return,
             };
-            if ev.kind != EventKind::Call || event_call_tag(&ev.json).as_deref() != Some(tag.as_str()) {
+            if ev.kind != EventKind::Call
+                || event_call_tag(&ev.json).as_deref() != Some(tag.as_str())
+            {
                 continue;
             }
             let Some(Ok(late)) = read_answer(&ev.json) else {
@@ -3035,11 +3596,13 @@ fn endpoint_in_lobby(create_response: &str, endpoint_id: &str) -> bool {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(create_response) else {
         return false;
     };
-    let Some(participants) = ["/roster/participants", "/conversationResponse/roster/participants"]
-        .iter()
-        .find_map(|p| v.pointer(p))
-        .and_then(|p| p.as_object())
-    else {
+    let Some(participants) = [
+        "/roster/participants",
+        "/conversationResponse/roster/participants",
+    ]
+    .iter()
+    .find_map(|p| v.pointer(p))
+    .and_then(|p| p.as_object()) else {
         return false;
     };
     participants
@@ -3063,7 +3626,11 @@ pub struct LegLinks {
 /// acknowledgements of our re-offers carry `callLeg: null` and give none.
 pub fn leg_retarget(json: &str) -> Option<LegLinks> {
     let v: serde_json::Value = serde_json::from_str(json).ok()?;
-    if !v.get("callAgentPath")?.as_str()?.starts_with("call/mediaAcknowledgement") {
+    if !v
+        .get("callAgentPath")?
+        .as_str()?
+        .starts_with("call/mediaAcknowledgement")
+    {
         return None;
     }
     let links = v.pointer("/body/links")?;
@@ -3118,7 +3685,13 @@ pub async fn place_transfer_call(
     call_tag: &str,
     cancel: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<OutgoingCall> {
-    start_tagged(thread_id, Target::PersonWith(target_mri, extras), Some(call_tag.to_string()), cancel).await
+    start_tagged(
+        thread_id,
+        Target::PersonWith(target_mri, extras),
+        Some(call_tag.to_string()),
+        cancel,
+    )
+    .await
 }
 
 /// Retrieve a parked call with its pickup code (Teams' `startUnparkCall`:
@@ -3128,17 +3701,30 @@ pub async fn unpark_call(
     pickup_code: i64,
     cancel: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<OutgoingCall> {
-    let extras = signaling::CallExtras { unpark_code: Some(pickup_code), ..Default::default() };
-    start_tagged(thread_id, Target::PersonWith(signaling::CALL_PARK_MRI, &extras), None, cancel).await
+    let extras = signaling::CallExtras {
+        unpark_code: Some(pickup_code),
+        ..Default::default()
+    };
+    start_tagged(
+        thread_id,
+        Target::PersonWith(signaling::CALL_PARK_MRI, &extras),
+        None,
+        cancel,
+    )
+    .await
 }
 
 /// Call your own voicemail (Teams' `startVoicemailCall`, from Settings ▸
 /// Calls ▸ Record a greeting): a 1:1 call to yourself whose callee is your
 /// voicemail endpoint, asking for its greeting resource, so the voicemail
 /// service answers and lets you record your greeting.
-pub async fn call_own_voicemail(cancel: tokio::sync::oneshot::Receiver<()>) -> Result<OutgoingCall> {
+pub async fn call_own_voicemail(
+    cancel: tokio::sync::oneshot::Receiver<()>,
+) -> Result<OutgoingCall> {
     let config = Config::load()?;
-    let oid = config.object_id().context("Signed-in user has no object id")?;
+    let oid = config
+        .object_id()
+        .context("Signed-in user has no object id")?;
     let me = format!("8:orgid:{oid}");
     let extras = signaling::CallExtras {
         voicemail: Some(signaling::VOICEMAIL_GREETING.to_string()),
@@ -3150,11 +3736,18 @@ pub async fn call_own_voicemail(cancel: tokio::sync::oneshot::Receiver<()>) -> R
 /// Teams' test call to your intelligent call delegation (its
 /// `TestCallToPA` intent: a 1:1 call to yourself, no chat thread, audio
 /// only, answered by your personal attendant).
-pub async fn call_personal_attendant(cancel: tokio::sync::oneshot::Receiver<()>) -> Result<OutgoingCall> {
+pub async fn call_personal_attendant(
+    cancel: tokio::sync::oneshot::Receiver<()>,
+) -> Result<OutgoingCall> {
     let config = Config::load()?;
-    let oid = config.object_id().context("Signed-in user has no object id")?;
+    let oid = config
+        .object_id()
+        .context("Signed-in user has no object id")?;
     let me = format!("8:orgid:{oid}");
-    let extras = signaling::CallExtras { personal_attendant: true, ..Default::default() };
+    let extras = signaling::CallExtras {
+        personal_attendant: true,
+        ..Default::default()
+    };
     start_tagged("", Target::PersonWith(&me, &extras), None, cancel).await
 }
 
@@ -3167,7 +3760,13 @@ pub async fn place_call_tagged(
     call_tag: &str,
     cancel: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<OutgoingCall> {
-    start_tagged(thread_id, Target::Person(callee_mri, false), Some(call_tag.to_string()), cancel).await
+    start_tagged(
+        thread_id,
+        Target::Person(callee_mri, false),
+        Some(call_tag.to_string()),
+        cancel,
+    )
+    .await
 }
 
 /// A Teams meeting, from its join link
@@ -3195,10 +3794,15 @@ impl MeetingLink {
         // A scheduled meeting's chat (`@thread.v2`), or the channel a
         // channel meeting was started in (`@thread.tacv2`, the meeting
         // keyed by its post's message id).
-        let body = thread
-            .strip_prefix("19:")
-            .and_then(|t| t.strip_suffix("@thread.v2").or_else(|| t.strip_suffix("@thread.tacv2")));
-        let valid_thread = body.is_some_and(|b| !b.is_empty() && b.chars().all(|c| c.is_ascii_alphanumeric() || "_-=".contains(c)));
+        let body = thread.strip_prefix("19:").and_then(|t| {
+            t.strip_suffix("@thread.v2")
+                .or_else(|| t.strip_suffix("@thread.tacv2"))
+        });
+        let valid_thread = body.is_some_and(|b| {
+            !b.is_empty()
+                && b.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "_-=".contains(c))
+        });
         if !valid_thread || message.is_empty() || !message.bytes().all(|b| b.is_ascii_digit()) {
             return None;
         }
@@ -3302,7 +3906,13 @@ pub async fn join_meeting_with(
     how: JoinHow<'_>,
     cancel: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<OutgoingCall> {
-    start_tagged(&link.thread_id, Target::Meeting(link, how), Some(call_tag.to_string()), cancel).await
+    start_tagged(
+        &link.thread_id,
+        Target::Meeting(link, how),
+        Some(call_tag.to_string()),
+        cancel,
+    )
+    .await
 }
 
 /// A meeting's conversation we're in without a call: Teams keeps the main
@@ -3341,11 +3951,25 @@ impl KeptConversation {
     /// Leave the conversation (`POST links.leave`).
     pub async fn leave(self) -> Result<()> {
         let link = self.leave_link.clone().unwrap_or_else(|| {
-            let (path, query) = self.controller.split_once('?').unwrap_or((&self.controller, ""));
+            let (path, query) = self
+                .controller
+                .split_once('?')
+                .unwrap_or((&self.controller, ""));
             let path = path.trim_end_matches('/');
-            if query.is_empty() { format!("{path}/leave") } else { format!("{path}/leave?{query}") }
+            if query.is_empty() {
+                format!("{path}/leave")
+            } else {
+                format!("{path}/leave?{query}")
+            }
         });
-        cc_post(&self.http, &self.skype_token, &link, &leave_body(&self.me), "Leave the kept conversation").await?;
+        cc_post(
+            &self.http,
+            &self.skype_token,
+            &link,
+            &leave_body(&self.me),
+            "Leave the kept conversation",
+        )
+        .await?;
         tracing::info!("left the main meeting's conversation");
         Ok(())
     }
@@ -3354,14 +3978,24 @@ impl KeptConversation {
 /// Join a meeting's conversation again without a call, at its own URL
 /// (`conversation_url`, from the call we just left there): see
 /// [`KeptConversation`].
-pub async fn keep_conversation(join_url: &str, link: &MeetingLink, conversation_url: &str) -> Result<KeptConversation> {
+pub async fn keep_conversation(
+    join_url: &str,
+    link: &MeetingLink,
+    conversation_url: &str,
+) -> Result<KeptConversation> {
     let config = Config::load()?;
-    let ic3_token = config.get_ic3_token().context("No calling (IC3) token")?.token;
+    let ic3_token = config
+        .get_ic3_token()
+        .context("No calling (IC3) token")?
+        .token;
     let skype_token = config.get_skype_token().context("Not signed in")?.token;
-    let oid = config.object_id().context("Signed-in user has no object id")?;
+    let oid = config
+        .object_id()
+        .context("Signed-in user has no object id")?;
     let tenant_id = config.tenant_id().context("No tenant id")?;
     let display_name = config.display_name().unwrap_or_default();
-    let (surl, endpoint_id) = crate::trouter::current_endpoint().context("Push channel is not connected")?;
+    let (surl, endpoint_id) =
+        crate::trouter::current_endpoint().context("Push channel is not connected")?;
     let tag = new_call_tag();
     let surl = format!("{}/x{tag}/", surl.trim_end_matches('/'));
     let caller_mri = format!("8:orgid:{oid}");
@@ -3383,8 +4017,14 @@ pub async fn keep_conversation(join_url: &str, link: &MeetingLink, conversation_
     };
     let http = reqwest::Client::new();
     let organizer = link.organizer_id.as_deref().zip(link.tenant_id.as_deref());
-    let (controller, leave_link) =
-        signaling::join_conversation_without_call(&http, conversation_url, &params, &link.message_id, organizer).await?;
+    let (controller, leave_link) = signaling::join_conversation_without_call(
+        &http,
+        conversation_url,
+        &params,
+        &link.message_id,
+        organizer,
+    )
+    .await?;
     tracing::info!(tag = %tag, "kept the main meeting's conversation (no call)");
     Ok(KeptConversation {
         join_url: join_url.to_string(),
@@ -3421,7 +4061,12 @@ pub async fn preheat_meeting(
     call_tag: &str,
     cancel: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<OutgoingCall> {
-    start(&link.thread_id, Target::MeetingPreheat(link, call_tag), cancel).await
+    start(
+        &link.thread_id,
+        Target::MeetingPreheat(link, call_tag),
+        cancel,
+    )
+    .await
 }
 
 /// Teams' ECS `meetingJoin.joinOngoingMeetingInPreheatedFlow` (Teams
@@ -3456,16 +4101,25 @@ pub async fn resolve_meeting_id(meeting_id: &str, passcode: &str) -> Result<(Mee
     }
     let mut config = Config::load()?;
     if config.get_ic3_token().is_none_or(|t| t.is_expired()) {
-        crate::auth::oauth::refresh().await.context("Token refresh failed")?;
+        crate::auth::oauth::refresh()
+            .await
+            .context("Token refresh failed")?;
         config = Config::load()?;
     }
-    let ic3_token = config.get_ic3_token().context("No calling (IC3) token")?.token;
-    let oid = config.object_id().context("Signed-in user has no object id")?;
+    let ic3_token = config
+        .get_ic3_token()
+        .context("No calling (IC3) token")?
+        .token;
+    let oid = config
+        .object_id()
+        .context("Signed-in user has no object id")?;
     let tenant_id = config.tenant_id().context("No tenant id")?;
     let display_name = config.display_name().unwrap_or_default();
     let region = config.get_region_gtms().context("No region endpoints")?;
-    let epconv_url = call_test::derive_epconv_url(&region).context("No conversation service URL")?;
-    let (surl, endpoint_id) = crate::trouter::current_endpoint().context("Push channel is not connected")?;
+    let epconv_url =
+        call_test::derive_epconv_url(&region).context("No conversation service URL")?;
+    let (surl, endpoint_id) =
+        crate::trouter::current_endpoint().context("Push channel is not connected")?;
     let surl = format!("{}/x{}/", surl.trim_end_matches('/'), new_call_tag());
     let caller_mri = format!("8:orgid:{oid}");
     let participant_id = uuid::Uuid::new_v4().to_string();
@@ -3489,8 +4143,18 @@ pub async fn resolve_meeting_id(meeting_id: &str, passcode: &str) -> Result<(Mee
         "passcode": if pass.is_empty() { serde_json::Value::Null } else { pass.clone().into() },
         "meetingUrl": format!("https://teams.microsoft.com/meet/{code}?p={pass}"),
     });
-    let (thread, organizer, tenant, subject) = signaling::resolve_meeting_code(&reqwest::Client::new(), &epconv_url, &params, &data).await?;
-    Ok((MeetingLink { thread_id: thread, message_id: "0".into(), organizer_id: organizer, tenant_id: tenant }, subject))
+    let (thread, organizer, tenant, subject) =
+        signaling::resolve_meeting_code(&reqwest::Client::new(), &epconv_url, &params, &data)
+            .await?;
+    Ok((
+        MeetingLink {
+            thread_id: thread,
+            message_id: "0".into(),
+            organizer_id: organizer,
+            tenant_id: tenant,
+        },
+        subject,
+    ))
 }
 
 /// Start or join a group chat's call (`19:…@thread.v2`), as Teams does:
@@ -3525,7 +4189,9 @@ pub async fn start_channel_meeting(
 /// invite the bot, which plays its prompt, records you and plays it back.
 pub async fn start_test_call(cancel: tokio::sync::oneshot::Receiver<()>) -> Result<OutgoingCall> {
     let config = Config::load()?;
-    let oid = config.object_id().context("Signed-in user has no object id")?;
+    let oid = config
+        .object_id()
+        .context("Signed-in user has no object id")?;
     let thread = signaling::echo_thread_id(&oid);
     match crate::api::client::TeamsClient::new().await {
         Ok(client) => {
@@ -3568,7 +4234,8 @@ pub fn room_invite_body(
         "autoAcceptAuthorization": validation_code.map(|c| serde_json::json!({ "token": c })),
     });
     if let Some((organizer, tenant)) = meeting_info {
-        invitation["meetingInfo"] = serde_json::json!({ "organizerId": organizer, "tenantId": tenant });
+        invitation["meetingInfo"] =
+            serde_json::json!({ "organizerId": organizer, "tenantId": tenant });
     }
     serde_json::json!({
         "participants": {
@@ -3663,7 +4330,8 @@ async fn start_tagged(
     // those who subscribe to it.
     // Meetings and group calls offer receive slots and a data line, as
     // Teams does: others' video comes as the media control plane asks.
-    let meeting_media = cfg!(feature = "video") && !matches!(target, Target::Person(..) | Target::PersonWith(..));
+    let meeting_media =
+        cfg!(feature = "video") && !matches!(target, Target::Person(..) | Target::PersonWith(..));
     let offer = if let (Target::Person(_, video), true) = (&target, cfg!(feature = "video")) {
         local.receive_video = true;
         local.camera_on = *video;
@@ -3686,7 +4354,9 @@ async fn start_tagged(
     // everyone in it (shares are tagged with it). A new call gets a new id.
     let joins_ongoing = matches!(
         target,
-        Target::Meeting(..) | Target::MeetingPreheat(..) | Target::Group(signaling::GroupCallKind::Join)
+        Target::Meeting(..)
+            | Target::MeetingPreheat(..)
+            | Target::Group(signaling::GroupCallKind::Join)
     );
     let ongoing = if joins_ongoing {
         match crate::api::client::TeamsClient::new().await {
@@ -3761,7 +4431,8 @@ async fn start_tagged(
                 .await?
         }
         Target::PersonWith(callee, extras) => {
-            signaling::create_1to1_call_with(&http, &epconv_url, &params, &offer, callee, extras).await?
+            signaling::create_1to1_call_with(&http, &epconv_url, &params, &offer, callee, extras)
+                .await?
         }
         Target::Group(kind) => {
             signaling::create_group_call(&http, &epconv_url, &params, &offer, &members, kind)
@@ -3776,7 +4447,16 @@ async fn start_tagged(
                 conversation_url: how.kept.map(|k| k.controller.as_str()),
                 as_attendee: how.as_attendee,
             };
-            signaling::join_meeting(&http, &epconv_url, &params, &offer, &link.message_id, organizer, &opts).await?
+            signaling::join_meeting(
+                &http,
+                &epconv_url,
+                &params,
+                &offer,
+                &link.message_id,
+                organizer,
+                &opts,
+            )
+            .await?
         }
         Target::MeetingPreheat(link, _) => {
             let organizer = link.organizer_id.as_deref().zip(link.tenant_id.as_deref());
@@ -3784,7 +4464,10 @@ async fn start_tagged(
             // joinOngoingMeetingInPreheatedFlow (on for ost-test1) the
             // preheat joins that call where it is, as Teams' join of an
             // ongoing meeting does (preheatService joinExistingCall).
-            let live = preheat_joins_ongoing().then_some(ongoing.as_ref()).flatten().and_then(ongoing_join);
+            let live = preheat_joins_ongoing()
+                .then_some(ongoing.as_ref())
+                .flatten()
+                .and_then(ongoing_join);
             let opts = signaling::MeetingJoinOptions {
                 preheat: true,
                 conversation_url: live.map(|(url, _)| url),
@@ -3792,9 +4475,20 @@ async fn start_tagged(
                 ..Default::default()
             };
             if live.is_some() {
-                tracing::info!("pre-join: the meeting is going on; preheating its call where it is");
+                tracing::info!(
+                    "pre-join: the meeting is going on; preheating its call where it is"
+                );
             }
-            signaling::join_meeting(&http, &epconv_url, &params, &offer, &link.message_id, organizer, &opts).await?
+            signaling::join_meeting(
+                &http,
+                &epconv_url,
+                &params,
+                &offer,
+                &link.message_id,
+                organizer,
+                &opts,
+            )
+            .await?
         }
         Target::ChannelMeeting(subject) => {
             signaling::create_channel_meeting(&http, &epconv_url, &params, &offer, subject).await?
@@ -3827,13 +4521,20 @@ async fn start_tagged(
     let add_modality_link = conversation_link(&created.response_body, "addParticipantAndModality");
     let content_link = conversation_link(&created.response_body, "addModality");
     tracing::info!(content = content_link.is_some(), "content sharing link");
-    let group_message_id = meeting_message_id.or_else(|| group_chat_field(&created.response_body, "messageId"));
+    let group_message_id =
+        meeting_message_id.or_else(|| group_chat_field(&created.response_body, "messageId"));
     let (dial_in, phone_audio) = serde_json::from_str::<serde_json::Value>(&created.response_body)
         .ok()
         .map(|v| {
             let p = super::phone_audio::phone_audio(&v, false).unwrap_or_default();
             let d = super::phone_audio::dial_in(&v);
-            tracing::info!(available = p.available, dial_in = p.dial_in, dial_out = p.dial_out, details = d.is_some(), "phone audio");
+            tracing::info!(
+                available = p.available,
+                dial_in = p.dial_in,
+                dial_out = p.dial_out,
+                details = d.is_some(),
+                "phone audio"
+            );
             (d, p)
         })
         .unwrap_or_default();
@@ -3847,7 +4548,9 @@ async fn start_tagged(
     let notes_organizer = serde_json::from_str::<serde_json::Value>(&created.response_body)
         .ok()
         .and_then(|v| {
-            let mi = ["/meetingInfo", "/conversationResponse/meetingInfo"].iter().find_map(|p| v.pointer(p).cloned())?;
+            let mi = ["/meetingInfo", "/conversationResponse/meetingInfo"]
+                .iter()
+                .find_map(|p| v.pointer(p).cloned())?;
             let o = mi.get("organizerId")?.as_str()?.to_string();
             let t = mi.get("tenantId")?.as_str()?.to_string();
             (!o.is_empty() && !t.is_empty()).then(|| format!("{o}@{t}"))
@@ -3858,7 +4561,14 @@ async fn start_tagged(
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&created.response_body) {
             n.apply(&v);
             tracing::debug!(details = %super::meeting_notes::debug_summary(&v), "meeting join: notes states");
-            tracing::info!(collab = v.pointer("/conversationResponse/meetingDetails/collabDetails").or_else(|| v.pointer("/meetingDetails/collabDetails")).is_some(), notes = !n.resource_uri.is_empty(), "meeting join: notes");
+            tracing::info!(
+                collab = v
+                    .pointer("/conversationResponse/meetingDetails/collabDetails")
+                    .or_else(|| v.pointer("/meetingDetails/collabDetails"))
+                    .is_some(),
+                notes = !n.resource_uri.is_empty(),
+                "meeting join: notes"
+            );
         }
         n
     };
@@ -3894,18 +4604,24 @@ async fn start_tagged(
     let capability = serde_json::from_str::<serde_json::Value>(&created.response_body)
         .ok()
         .and_then(|v| super::meeting_options::meeting_capability(&v));
-    tracing::info!(?capability, has_settings = settings_link.is_some(), "meeting capability");
+    tracing::info!(
+        ?capability,
+        has_settings = settings_link.is_some(),
+        "meeting capability"
+    );
     tracing::info!(members = members.len(), "group call members named");
     tracing::info!("call placed; waiting for the answer");
     // A town hall's attendee isn't answered: the roster puts our endpoint
     // in the meeting's stream (Teams' configureStreamingMode).
     let streaming_in = |json: &serde_json::Value| {
-        super::live_stream::self_streaming(json, params.caller_mri, params.endpoint_id).map(|lobby| Acceptance {
-            streaming: true,
-            in_lobby: lobby,
-            stream_roster: Some(json.clone()),
-            ..Default::default()
-        })
+        super::live_stream::self_streaming(json, params.caller_mri, params.endpoint_id).map(
+            |lobby| Acceptance {
+                streaming: true,
+                in_lobby: lobby,
+                stream_roster: Some(json.clone()),
+                ..Default::default()
+            },
+        )
     };
     let joined_streaming = meeting_join
         .then(|| serde_json::from_str::<serde_json::Value>(&created.response_body).ok())
@@ -3939,9 +4655,14 @@ async fn start_tagged(
             }
             if meeting_join
                 && ev.json.contains("rosterUpdate")
-                && let Some(a) = serde_json::from_str::<serde_json::Value>(&ev.json).ok().and_then(|v| streaming_in(&v))
+                && let Some(a) = serde_json::from_str::<serde_json::Value>(&ev.json)
+                    .ok()
+                    .and_then(|v| streaming_in(&v))
             {
-                tracing::info!(lobby = a.in_lobby, "the meeting streams to us (a town hall's attendee): streaming mode");
+                tracing::info!(
+                    lobby = a.in_lobby,
+                    "the meeting streams to us (a town hall's attendee): streaming mode"
+                );
                 return Ok(a);
             }
             match read_answer(&ev.json) {
@@ -4010,7 +4731,11 @@ async fn start_tagged(
 
     super::incoming::debug_dump("sdp-call-offer", &offer);
     super::incoming::debug_dump("sdp-call-answer", &acceptance.sdp);
-    let parsed = if acceptance.streaming { None } else { WebRtcOffer::parse(&acceptance.sdp) };
+    let parsed = if acceptance.streaming {
+        None
+    } else {
+        WebRtcOffer::parse(&acceptance.sdp)
+    };
     let media = match parsed {
         None if acceptance.streaming => None,
         Some(answer) => match WebRtcAudioSession::start_as_offerer(local, answer.clone()).await {
@@ -4022,7 +4747,12 @@ async fn start_tagged(
                     m.set_held(true);
                 }
                 // We asked for E2EE and the callee's answer said yes.
-                m.set_e2ee(answer.e2ee && offer.lines().any(|l| l.trim_end() == super::webrtc_audio::E2EE_ATTRIBUTE));
+                m.set_e2ee(
+                    answer.e2ee
+                        && offer
+                            .lines()
+                            .any(|l| l.trim_end() == super::webrtc_audio::E2EE_ATTRIBUTE),
+                );
                 Some(m)
             }
             Err(e) => {
@@ -4103,18 +4833,28 @@ async fn start_tagged(
             .unwrap_or_default(),
         meet_now: serde_json::from_str::<serde_json::Value>(&created.response_body)
             .is_ok_and(|v| super::meeting_options::is_meet_now(&v)),
-        ai_indicator: serde_json::from_str::<serde_json::Value>(&created.response_body)
-            .is_ok_and(|v| {
+        ai_indicator: serde_json::from_str::<serde_json::Value>(&created.response_body).is_ok_and(
+            |v| {
                 let shown = super::meeting_options::shows_ai_indicator(&v);
                 tracing::info!(
                     shown,
-                    kind = v.pointer("/meetingDetails/meetingType").and_then(|t| t.as_str()).unwrap_or(""),
-                    channel = v.pointer("/meetingDetails/isChannelMeeting").and_then(|t| t.as_bool()).unwrap_or(false),
-                    private = v.pointer("/meetingDetails/isPrivateMeeting").and_then(|t| t.as_bool()).unwrap_or(false),
+                    kind = v
+                        .pointer("/meetingDetails/meetingType")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or(""),
+                    channel = v
+                        .pointer("/meetingDetails/isChannelMeeting")
+                        .and_then(|t| t.as_bool())
+                        .unwrap_or(false),
+                    private = v
+                        .pointer("/meetingDetails/isPrivateMeeting")
+                        .and_then(|t| t.as_bool())
+                        .unwrap_or(false),
                     "AI indicator"
                 );
                 shown
-            }),
+            },
+        ),
         meeting_info: serde_json::from_str::<serde_json::Value>(&created.response_body)
             .ok()
             .and_then(|v| {
@@ -4123,8 +4863,14 @@ async fn start_tagged(
                     .find_map(|p| v.pointer(p).and_then(|d| d.as_object()))
                     .map(|o| o.keys().cloned().collect())
                     .unwrap_or_default();
-                super::meeting_info::from_join_response(&v)
-                    .inspect(|i| tracing::info!(subject = !i.title.is_empty(), instance_subject = !i.instance_subject.is_empty(), ?keys, "meeting info from the join"))
+                super::meeting_info::from_join_response(&v).inspect(|i| {
+                    tracing::info!(
+                        subject = !i.title.is_empty(),
+                        instance_subject = !i.instance_subject.is_empty(),
+                        ?keys,
+                        "meeting info from the join"
+                    )
+                })
             }),
         artifacts_link: serde_json::from_str::<serde_json::Value>(&created.response_body)
             .ok()
@@ -4162,15 +4908,22 @@ async fn start_tagged(
         endpoint_state,
         in_lobby: {
             let held = endpoint_in_lobby(&created.response_body, params.endpoint_id);
-            tracing::info!(held, acceptance_without_modalities = acceptance.in_lobby, "lobby check");
+            tracing::info!(
+                held,
+                acceptance_without_modalities = acceptance.in_lobby,
+                "lobby check"
+            );
             held
         },
         meeting_started: serde_json::from_str::<serde_json::Value>(&created.response_body)
             .ok()
             .and_then(|v| {
-                ["/state/isMeetingActivated", "/conversationResponse/state/isMeetingActivated"]
-                    .iter()
-                    .find_map(|p| v.pointer(p).and_then(|b| b.as_bool()))
+                [
+                    "/state/isMeetingActivated",
+                    "/conversationResponse/state/isMeetingActivated",
+                ]
+                .iter()
+                .find_map(|p| v.pointer(p).and_then(|b| b.as_bool()))
             })
             .unwrap_or(true),
         leave_link: leave_url.clone(),
@@ -4184,7 +4937,11 @@ async fn start_tagged(
         preheated: preheat,
         joined_details: serde_json::from_str::<serde_json::Value>(&created.response_body)
             .ok()
-            .and_then(|v| ["/meetingDetails", "/conversationResponse/meetingDetails"].iter().find_map(|p| v.pointer(p).cloned()))
+            .and_then(|v| {
+                ["/meetingDetails", "/conversationResponse/meetingDetails"]
+                    .iter()
+                    .find_map(|p| v.pointer(p).cloned())
+            })
             .map(|d| serde_json::json!({ "meetingDetails": d })),
     })
 }
@@ -4193,17 +4950,44 @@ async fn start_tagged(
 mod tests {
     #[test]
     fn room_invitation_as_teams_sends_it() {
-        let b = room_invite_body(&serde_json::json!({"id": "8:orgid:me"}), "8:orgid:room", "OST Test Room", "19:meeting_x@thread.v2", Some("0"), Some(0x1234), false, Some(("o".into(), "t".into())), serde_json::json!({}));
+        let b = room_invite_body(
+            &serde_json::json!({"id": "8:orgid:me"}),
+            "8:orgid:room",
+            "OST Test Room",
+            "19:meeting_x@thread.v2",
+            Some("0"),
+            Some(0x1234),
+            false,
+            Some(("o".into(), "t".into())),
+            serde_json::json!({}),
+        );
         assert_eq!(b["participants"]["to"][0]["id"], "8:orgid:room");
         let i = &b["participantInvitationData"]["invitationData"];
-        assert_eq!((i["proximitySource"].as_i64(), i["deviceType"].as_str()), (Some(1), Some("computer")));
+        assert_eq!(
+            (i["proximitySource"].as_i64(), i["deviceType"].as_str()),
+            (Some(1), Some("computer"))
+        );
         assert_eq!(i["autoAcceptAuthorization"]["token"], 0x1234);
         assert_eq!(i["meetingInfo"]["tenantId"], "t");
-        let b = room_invite_body(&serde_json::json!({}), "8:orgid:room", "", "19:x", None, None, true, None, serde_json::json!({}));
-        assert!(b["participantInvitationData"]["invitationData"]["autoAcceptAuthorization"].is_null());
-        assert_eq!(b["participantInvitationData"]["invitationData"]["proximitySource"], 2);
+        let b = room_invite_body(
+            &serde_json::json!({}),
+            "8:orgid:room",
+            "",
+            "19:x",
+            None,
+            None,
+            true,
+            None,
+            serde_json::json!({}),
+        );
+        assert!(
+            b["participantInvitationData"]["invitationData"]["autoAcceptAuthorization"].is_null()
+        );
+        assert_eq!(
+            b["participantInvitationData"]["invitationData"]["proximitySource"],
+            2
+        );
     }
-
 
     use super::*;
 
@@ -4215,22 +4999,45 @@ mod tests {
                 id: "8:orgid:b".into(),
                 participant_id: "new-b".into(),
                 display_name: Some("B".into()),
-                replacement: Some(serde_json::json!({ "replaces": "https://cc/leg-b/replacement", "replacementTargetParticipantId": "leg-b" })),
+                replacement: Some(
+                    serde_json::json!({ "replaces": "https://cc/leg-b/replacement", "replacementTargetParticipantId": "leg-b" }),
+                ),
             },
-            MergePerson { id: "8:orgid:c".into(), participant_id: "new-c".into(), display_name: None, replacement: None },
+            MergePerson {
+                id: "8:orgid:c".into(),
+                participant_id: "new-c".into(),
+                display_name: None,
+                replacement: None,
+            },
         ];
         let b = merge_body(&from, "19:x@thread.v2", &people, |p| format!("cb/{p}"));
-        assert_eq!(b["groupChat"], serde_json::json!({ "threadId": "19:x@thread.v2", "messageId": null }));
+        assert_eq!(
+            b["groupChat"],
+            serde_json::json!({ "threadId": "19:x@thread.v2", "messageId": null })
+        );
         assert!(b["groupContext"].is_null());
         assert_eq!(b["participants"]["from"], from);
-        assert_eq!(b["participants"]["to"][0]["replacementDetails"]["replaces"], "https://cc/leg-b/replacement");
+        assert_eq!(
+            b["participants"]["to"][0]["replacementDetails"]["replaces"],
+            "https://cc/leg-b/replacement"
+        );
         assert_eq!(b["participants"]["to"][0]["participantId"], "new-b");
-        assert!(b["participants"]["to"][1].get("replacementDetails").is_none());
-        assert_eq!(b["links"]["addParticipantSuccess"], "cb/conversation/addParticipantSuccess/");
+        assert!(
+            b["participants"]["to"][1]
+                .get("replacementDetails")
+                .is_none()
+        );
+        assert_eq!(
+            b["links"]["addParticipantSuccess"],
+            "cb/conversation/addParticipantSuccess/"
+        );
         // The leg comes from the roster's endpoint call links.
         let p = serde_json::json!({ "id": "8:orgid:b", "endpointDetails": [{ "participantId": "leg-b", "callLinks": { "replacement": "https://cc/leg-b/replacement" } }] });
         assert_eq!(leg_replacement(&p), people[0].replacement);
-        assert_eq!(leg_replacement(&serde_json::json!({ "endpointDetails": [{ "participantId": "x" }] })), None);
+        assert_eq!(
+            leg_replacement(&serde_json::json!({ "endpointDetails": [{ "participantId": "x" }] })),
+            None
+        );
     }
 
     #[test]
@@ -4246,8 +5053,12 @@ mod tests {
                 "8:orgid:C": { "details": {}, "endpoints": { "ep2": { "participantId": "leg-c" } } }
             } }
         });
-        let legs: std::collections::HashMap<_, _> = roster_legs(&ev.to_string()).into_iter().collect();
-        assert_eq!(legs["8:orgid:b"], serde_json::json!({ "replaces": "https://cc/leg-b/replacement", "replacementTargetParticipantId": "leg-b" }));
+        let legs: std::collections::HashMap<_, _> =
+            roster_legs(&ev.to_string()).into_iter().collect();
+        assert_eq!(
+            legs["8:orgid:b"],
+            serde_json::json!({ "replaces": "https://cc/leg-b/replacement", "replacementTargetParticipantId": "leg-b" })
+        );
         assert!(!legs.contains_key("8:orgid:c"));
         // Not a roster event.
         assert!(roster_legs(r#"{"callAgentPath":"call/end/","body":{}}"#).is_empty());
@@ -4274,15 +5085,23 @@ mod tests {
         let end = CallEnded::from_event(room).expect("an end");
         assert_eq!((end.code, end.sub_code), (403, 5745));
         assert!(end.not_allowed_in_breakout_room());
-        assert_eq!(end.to_string(), "Conversation ending after breakout room is not open. (403)");
+        assert_eq!(
+            end.to_string(),
+            "Conversation ending after breakout room is not open. (403)"
+        );
         let denied = r#"{"callAgentPath":"call/end/","body":{"callEnd":{"code":0,"subCode":5854,"phrase":"DeniedInLobby"}}}"#;
         let end = CallEnded::from_event(denied).expect("an end");
         assert_eq!((end.code, end.sub_code), (0, 5854));
         assert!(!end.not_allowed_in_breakout_room());
-        assert!(CallEnded::from_event(r#"{"callAgentPath":"call/acceptance/","body":{}}"#).is_none());
+        assert!(
+            CallEnded::from_event(r#"{"callAgentPath":"call/acceptance/","body":{}}"#).is_none()
+        );
         // An error made from it still reads as before and can be told apart.
         let e = anyhow::Error::new(CallEnded::from_event(room).unwrap());
-        assert!(e.downcast_ref::<CallEnded>().is_some_and(CallEnded::not_allowed_in_breakout_room));
+        assert!(
+            e.downcast_ref::<CallEnded>()
+                .is_some_and(CallEnded::not_allowed_in_breakout_room)
+        );
     }
 
     /// A call's answer is only ever taken from its own callbacks: the
@@ -4310,11 +5129,22 @@ mod tests {
         let lobby = r#"{"callAgentPath":"call/acceptance/","body":{"callAcceptance":{"acceptedCallModalities":[],"links":{"acknowledgement":"https://cc.skype.com/ack"},"mediaContent":{"contentType":"application/sdp-ngc-1.0","blob":"v=0"}}}}"#;
         let a = read_answer(lobby).expect("answer").expect("accepted");
         assert!(a.in_lobby);
-        let joined = lobby.replace(r#""acceptedCallModalities":[]"#, r#""acceptedCallModalities":["Audio"]"#);
-        assert!(!read_answer(&joined).expect("answer").expect("accepted").in_lobby);
+        let joined = lobby.replace(
+            r#""acceptedCallModalities":[]"#,
+            r#""acceptedCallModalities":["Audio"]"#,
+        );
+        assert!(
+            !read_answer(&joined)
+                .expect("answer")
+                .expect("accepted")
+                .in_lobby
+        );
         let admitted = r#"{"callAgentPath":"conversation/conversationUpdate/","body":{"activeModalities":{"call":{"links":{}},"lobby":null},"links":{"mute":"https://conv.skype.com/mute","admit":"https://conv.skype.com/admit"}}}"#;
         let body = lobby_admission(admitted).expect("admission");
-        assert_eq!(conversation_link(&body.to_string(), "mute").as_deref(), Some("https://conv.skype.com/mute"));
+        assert_eq!(
+            conversation_link(&body.to_string(), "mute").as_deref(),
+            Some("https://conv.skype.com/mute")
+        );
         let roster = r#"{"roster":{"participants":{"8:teamsvisitor:x":{"endpoints":{"ep1":{"lobby":{}}}},"8:orgid:y":{"endpoints":{"ep2":{"call":{}}}}}}}"#;
         assert!(endpoint_in_lobby(roster, "ep1"));
         assert!(!endpoint_in_lobby(roster, "ep2"));
@@ -4350,11 +5180,20 @@ mod tests {
             preheat_join_body(&me, false, 1),
             serde_json::json!({ "from": me, "endpointState": { "endpointStateSequenceNumber": 1, "endpointProperties": { "preheatProperties": 0 } } })
         );
-        assert_eq!(preheat_join_body(&me, true, 1)["endpointState"]["state"], serde_json::json!({ "isMuted": true }));
+        assert_eq!(
+            preheat_join_body(&me, true, 1)["endpointState"]["state"],
+            serde_json::json!({ "isMuted": true })
+        );
         let leave = leave_body(&me);
         assert_eq!(leave["participants"]["from"], me);
-        assert_eq!(leave["conversationTransactionEnd"]["phrase"], "ConversationEndNoModalityConnected");
-        assert_eq!(leave["callTransactionEnd"]["phrase"], "CallEndReasonLocalUserInitiated");
+        assert_eq!(
+            leave["conversationTransactionEnd"]["phrase"],
+            "ConversationEndNoModalityConnected"
+        );
+        assert_eq!(
+            leave["callTransactionEnd"]["phrase"],
+            "CallEndReasonLocalUserInitiated"
+        );
     }
 
     #[test]
@@ -4490,9 +5329,15 @@ mod tests {
         assert!(MeetingLink::parse("https://teams.microsoft.com/meet/299487569045?p=x").is_none());
         // A channel meeting: the channel's thread and the meeting post.
         let c = MeetingLink::parse("https://teams.microsoft.com/l/meetup-join/19%3aekCPvoD9glVOIeBqbQQXdfV-vTnBPkGFtas97c_IYnA1%40thread.tacv2/1794372973956?context=%7b%22Tid%22%3a%222716d134-5614-4856-a48d-2002edd9a570%22%2c%22Oid%22%3a%224287e791-1b98-4963-8b94-281c50472683%22%7d").unwrap();
-        assert_eq!(c.thread_id, "19:ekCPvoD9glVOIeBqbQQXdfV-vTnBPkGFtas97c_IYnA1@thread.tacv2");
+        assert_eq!(
+            c.thread_id,
+            "19:ekCPvoD9glVOIeBqbQQXdfV-vTnBPkGFtas97c_IYnA1@thread.tacv2"
+        );
         assert_eq!(c.message_id, "1794372973956");
-        assert!(MeetingLink::parse("https://teams.microsoft.com/l/meetup-join/19%3a%40thread.tacv2/1").is_none());
+        assert!(
+            MeetingLink::parse("https://teams.microsoft.com/l/meetup-join/19%3a%40thread.tacv2/1")
+                .is_none()
+        );
     }
 
     #[test]
@@ -4522,12 +5367,20 @@ mod tests {
         // lobby call's leg moves to the meeting's call hub.
         let moved = r#"{"body":{"debugContent":{},"links":{"callLeg":"https://cc/v1/active/89306a7a/204715502/a4/","hold":"https://cc/v1/active/89306a7a/204715502/a4/hold","transfer":"https://cc/v1/active/89306a7a/204715502/a4/transfer","mediaRenegotiation":"https://cc/v1/active/89306a7a/204715502/a4/renegotiate","updateMediaDescriptions":"https://cc/v1/active/89306a7a/204715502/a4/updateMediaDescriptions"},"mediaAcknowledgement":{"code":0,"phrase":"Participant retarget was successful.","reason":"noError"}},"callAgentPath":"call/mediaAcknowledgement/"}"#;
         let links = leg_retarget(moved).unwrap();
-        assert_eq!(links.call_leg, "https://cc/v1/active/89306a7a/204715502/a4/");
+        assert_eq!(
+            links.call_leg,
+            "https://cc/v1/active/89306a7a/204715502/a4/"
+        );
         assert!(links.hold.unwrap().ends_with("/hold"));
         // A plain acknowledgement moves nothing.
         let ack = r#"{"body":{"debugContent":{},"links":{"callLeg":null},"mediaAcknowledgement":{"code":0,"phrase":"Success"}},"callAgentPath":"call/mediaAcknowledgement/"}"#;
         assert!(leg_retarget(ack).is_none());
-        assert!(leg_retarget(r#"{"callAgentPath":"call/acceptance/","body":{"links":{"callLeg":"x"}}}"#).is_none());
+        assert!(
+            leg_retarget(
+                r#"{"callAgentPath":"call/acceptance/","body":{"links":{"callLeg":"x"}}}"#
+            )
+            .is_none()
+        );
     }
 
     #[test]

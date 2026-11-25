@@ -12,7 +12,8 @@ use zbus::zvariant::Value;
 const APP_URI: &str = "application://io.github.RandyNorthrup.ost.desktop";
 
 async fn connection() -> Option<&'static zbus::Connection> {
-    static CONN: tokio::sync::OnceCell<Option<zbus::Connection>> = tokio::sync::OnceCell::const_new();
+    static CONN: tokio::sync::OnceCell<Option<zbus::Connection>> =
+        tokio::sync::OnceCell::const_new();
     CONN.get_or_init(|| async {
         match zbus::Connection::session().await {
             Ok(c) => Some(c),
@@ -28,7 +29,9 @@ async fn connection() -> Option<&'static zbus::Connection> {
 
 /// Show `count` on the launcher entry (hidden at 0).
 pub async fn update(count: i64) {
-    let Some(conn) = connection().await else { return };
+    let Some(conn) = connection().await else {
+        return;
+    };
     let mut props: HashMap<&str, Value<'_>> = HashMap::new();
     props.insert("count", Value::from(count.max(0)));
     props.insert("count-visible", Value::from(count > 0));

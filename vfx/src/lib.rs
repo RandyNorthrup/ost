@@ -49,7 +49,9 @@ pub struct Animated {
 }
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
 }
 
 impl Animated {
@@ -63,7 +65,8 @@ impl Animated {
     }
 
     pub fn frame(&self) -> Option<Arc<Picture>> {
-        self.wanted.store(now_ms(), std::sync::atomic::Ordering::Relaxed);
+        self.wanted
+            .store(now_ms(), std::sync::atomic::Ordering::Relaxed);
         self.frame.lock().unwrap().clone()
     }
 
@@ -83,7 +86,11 @@ pub struct Picture {
 impl Picture {
     /// I420 data as it is (`data` holds width x height x 3/2 bytes).
     pub fn from_i420(width: u32, height: u32, data: Vec<u8>) -> Self {
-        Self { width, height, data }
+        Self {
+            width,
+            height,
+            data,
+        }
     }
 
     /// From RGBA pixels.
@@ -104,7 +111,11 @@ impl Picture {
                 }
             }
         }
-        Self { width: w as u32, height: h as u32, data }
+        Self {
+            width: w as u32,
+            height: h as u32,
+            data,
+        }
     }
 }
 
@@ -156,7 +167,9 @@ pub mod implicit {
     /// A person's luma, squeezed into LUMA_MIN…255.
     pub fn encode(y: u8) -> u8 {
         let y = (y as f32).clamp(RANGE_LOW, RANGE_HIGH);
-        (255.0 - (RANGE_HIGH - y) * CF).round().clamp(LUMA_MIN as f32, 255.0) as u8
+        (255.0 - (RANGE_HIGH - y) * CF)
+            .round()
+            .clamp(LUMA_MIN as f32, 255.0) as u8
     }
 
     /// RestorePixel: 240 − (255 − y) × 32/28.
@@ -173,13 +186,19 @@ pub fn apply_implicit_mask(data: &mut [u8], mask: &[f32], w: usize, h: usize) {
         return;
     }
     let (cw, ch) = (w / 2, h / 2);
-    let at = |x: usize, y: usize| mask[(y * MASK / h).min(MASK - 1) * MASK + (x * MASK / w).min(MASK - 1)];
+    let at = |x: usize, y: usize| {
+        mask[(y * MASK / h).min(MASK - 1) * MASK + (x * MASK / w).min(MASK - 1)]
+    };
     let (yp, uv) = data.split_at_mut(w * h);
     let (up, vp) = uv.split_at_mut(cw * ch);
     for y in 0..h {
         for x in 0..w {
             let i = y * w + x;
-            yp[i] = if at(x, y) >= 0.5 { implicit::encode(yp[i]) } else { 0 };
+            yp[i] = if at(x, y) >= 0.5 {
+                implicit::encode(yp[i])
+            } else {
+                0
+            };
         }
     }
     for cy in 0..ch {
@@ -233,7 +252,10 @@ pub fn implicit_mask_rgba(
         return;
     }
     let luma = |x: isize, y: isize| -> u8 {
-        let (x, y) = (x.clamp(0, w as isize - 1) as usize, y.clamp(0, h as isize - 1) as usize);
+        let (x, y) = (
+            x.clamp(0, w as isize - 1) as usize,
+            y.clamp(0, h as isize - 1) as usize,
+        );
         yp[y * strides.0 + x]
     };
     for y in 0..h {
@@ -287,12 +309,20 @@ pub fn detected_backdrop() -> Option<[u8; 3]> {
 
 pub fn rgb_to_yuv(c: [u8; 3]) -> [f32; 3] {
     let (r, g, b) = (c[0] as f32, c[1] as f32, c[2] as f32);
-    [0.257 * r + 0.504 * g + 0.098 * b + 16.0, -0.148 * r - 0.291 * g + 0.439 * b + 128.0, 0.439 * r - 0.368 * g - 0.071 * b + 128.0]
+    [
+        0.257 * r + 0.504 * g + 0.098 * b + 16.0,
+        -0.148 * r - 0.291 * g + 0.439 * b + 128.0,
+        0.439 * r - 0.368 * g - 0.071 * b + 128.0,
+    ]
 }
 
 pub fn yuv_to_rgb(y: f32, u: f32, v: f32) -> [u8; 3] {
     let (y, u, v) = (y - 16.0, u - 128.0, v - 128.0);
-    [(1.164 * y + 1.596 * v).clamp(0.0, 255.0) as u8, (1.164 * y - 0.392 * u - 0.813 * v).clamp(0.0, 255.0) as u8, (1.164 * y + 2.017 * u).clamp(0.0, 255.0) as u8]
+    [
+        (1.164 * y + 1.596 * v).clamp(0.0, 255.0) as u8,
+        (1.164 * y - 0.392 * u - 0.813 * v).clamp(0.0, 255.0) as u8,
+        (1.164 * y + 2.017 * u).clamp(0.0, 255.0) as u8,
+    ]
 }
 
 fn settings() -> &'static Mutex<Settings> {
@@ -328,10 +358,11 @@ impl Segmenter {
     /// `rgb`: MASK x MASK x 3 bytes. The mask, MASK x MASK.
     pub fn segment(&self, rgb: &[u8]) -> anyhow::Result<Vec<f32>> {
         // PP-HumanSeg's input: RGB scaled to −1..1 (mean 0.5, std 0.5).
-        let input: Tensor = tract_ndarray::Array4::<f32>::from_shape_fn((1, 3, MASK, MASK), |(_, c, y, x)| {
-            rgb[(y * MASK + x) * 3 + c] as f32 / 127.5 - 1.0
-        })
-        .into();
+        let input: Tensor =
+            tract_ndarray::Array4::<f32>::from_shape_fn((1, 3, MASK, MASK), |(_, c, y, x)| {
+                rgb[(y * MASK + x) * 3 + c] as f32 / 127.5 - 1.0
+            })
+            .into();
         let out = self.model.run(tvec!(input.into()))?;
         let logits = out[0].to_plain_array_view::<f32>()?;
         let mut mask = vec![0f32; MASK * MASK];
@@ -355,7 +386,11 @@ fn rgb_at(data: &[u8], w: usize, h: usize, x: usize, y: usize) -> [u8; 3] {
     let r = 1.164 * yv + 1.596 * v;
     let g = 1.164 * yv - 0.392 * u - 0.813 * v;
     let b = 1.164 * yv + 2.017 * u;
-    [r.clamp(0.0, 255.0) as u8, g.clamp(0.0, 255.0) as u8, b.clamp(0.0, 255.0) as u8]
+    [
+        r.clamp(0.0, 255.0) as u8,
+        g.clamp(0.0, 255.0) as u8,
+        b.clamp(0.0, 255.0) as u8,
+    ]
 }
 
 /// The frame shrunk to the model's input.
@@ -396,27 +431,36 @@ impl Default for Processor {
 
 impl Processor {
     pub fn new() -> Self {
-        Self { to_worker: None, newest: Arc::new(Mutex::new(None)), mask: vec![0.0; MASK * MASK], have_mask: false, fitted: None, blur: Vec::new() }
+        Self {
+            to_worker: None,
+            newest: Arc::new(Mutex::new(None)),
+            mask: vec![0.0; MASK * MASK],
+            have_mask: false,
+            fitted: None,
+            blur: Vec::new(),
+        }
     }
 
     fn worker(&mut self) -> Option<&mpsc::SyncSender<Vec<u8>>> {
         if self.to_worker.is_none() {
             let (tx, rx) = mpsc::sync_channel::<Vec<u8>>(1);
             let newest = self.newest.clone();
-            let spawned = std::thread::Builder::new().name("ost-vfx-segment".into()).spawn(move || {
-                let seg = match Segmenter::new() {
-                    Ok(s) => s,
-                    Err(e) => {
-                        eprintln!("ost-vfx: the segmentation model didn't load: {e}");
-                        return;
+            let spawned = std::thread::Builder::new()
+                .name("ost-vfx-segment".into())
+                .spawn(move || {
+                    let seg = match Segmenter::new() {
+                        Ok(s) => s,
+                        Err(e) => {
+                            eprintln!("ost-vfx: the segmentation model didn't load: {e}");
+                            return;
+                        }
+                    };
+                    while let Ok(rgb) = rx.recv() {
+                        if let Ok(mask) = seg.segment(&rgb) {
+                            *newest.lock().unwrap() = Some(mask);
+                        }
                     }
-                };
-                while let Ok(rgb) = rx.recv() {
-                    if let Ok(mask) = seg.segment(&rgb) {
-                        *newest.lock().unwrap() = Some(mask);
-                    }
-                }
-            });
+                });
             if spawned.is_ok() {
                 self.to_worker = Some(tx);
             }
@@ -495,12 +539,19 @@ impl Processor {
         };
         let back: &[u8] = match (&s.background, picture) {
             (Background::Blur(kind), _) => {
-                blur_i420(data, w, h, if *kind == Blur::Portrait { 4 } else { 8 }, &mut self.blur);
+                blur_i420(
+                    data,
+                    w,
+                    h,
+                    if *kind == Blur::Portrait { 4 } else { 8 },
+                    &mut self.blur,
+                );
                 &self.blur
             }
             (_, Some(p)) => {
                 let key = Arc::as_ptr(&p);
-                if !matches!(&self.fitted, Some((fw, fh, k, _)) if *fw == w && *fh == h && *k == key) {
+                if !matches!(&self.fitted, Some((fw, fh, k, _)) if *fw == w && *fh == h && *k == key)
+                {
                     self.fitted = Some((w, h, key, fit_cover(&p, w, h)));
                 }
                 &self.fitted.as_ref().unwrap().3
@@ -640,7 +691,12 @@ pub mod filter {
         }
         s.next_seq += 1;
         let seq = s.next_seq;
-        s.inbound = Some(Frame { width, height, seq, data: i420_to_nv12(i420, width as usize, height as usize) });
+        s.inbound = Some(Frame {
+            width,
+            height,
+            seq,
+            data: i420_to_nv12(i420, width as usize, height as usize),
+        });
         cv.notify_all();
         if let Some((f, at)) = &s.outbound
             && f.width == width
@@ -709,7 +765,10 @@ fn alpha_at(mask: &[f32], w: usize, h: usize, x: usize, y: usize) -> f32 {
     let x0 = fx.floor().clamp(0.0, (MASK - 1) as f32) as usize;
     let y0 = fy.floor().clamp(0.0, (MASK - 1) as f32) as usize;
     let (x1, y1) = ((x0 + 1).min(MASK - 1), (y0 + 1).min(MASK - 1));
-    let (tx, ty) = ((fx - x0 as f32).clamp(0.0, 1.0), (fy - y0 as f32).clamp(0.0, 1.0));
+    let (tx, ty) = (
+        (fx - x0 as f32).clamp(0.0, 1.0),
+        (fy - y0 as f32).clamp(0.0, 1.0),
+    );
     let a = mask[y0 * MASK + x0] * (1.0 - tx) + mask[y0 * MASK + x1] * tx;
     let b = mask[y1 * MASK + x0] * (1.0 - tx) + mask[y1 * MASK + x1] * tx;
     let p = a * (1.0 - ty) + b * ty;
@@ -744,7 +803,11 @@ pub fn composite(data: &mut [u8], back: &[u8], mask: &[f32], w: usize, h: usize)
 /// stretched back.
 pub fn blur_i420(data: &[u8], w: usize, h: usize, f: usize, out: &mut Vec<u8>) {
     out.resize(w * h * 3 / 2, 0);
-    let planes = [(0, w, h), (w * h, w / 2, h / 2), (w * h + w * h / 4, w / 2, h / 2)];
+    let planes = [
+        (0, w, h),
+        (w * h, w / 2, h / 2),
+        (w * h + w * h / 4, w / 2, h / 2),
+    ];
     for (off, pw, ph) in planes {
         let f = f.max(1);
         let (sw, sh) = (pw.div_ceil(f).max(1), ph.div_ceil(f).max(1));
@@ -798,7 +861,10 @@ pub fn blur_i420(data: &[u8], w: usize, h: usize, f: usize, out: &mut Vec<u8>) {
 pub fn fit_cover(p: &Picture, w: usize, h: usize) -> Vec<u8> {
     let (pw, ph) = (p.width as usize, p.height as usize);
     let scale = (w as f32 / pw as f32).max(h as f32 / ph as f32);
-    let (ox, oy) = ((pw as f32 * scale - w as f32) / 2.0, (ph as f32 * scale - h as f32) / 2.0);
+    let (ox, oy) = (
+        (pw as f32 * scale - w as f32) / 2.0,
+        (ph as f32 * scale - h as f32) / 2.0,
+    );
     let mut out = vec![0u8; w * h * 3 / 2];
     let sample = |plane_off: usize, plane_w: usize, plane_h: usize, x: f32, y: f32| -> u8 {
         let (xi, yi) = ((x as usize).min(plane_w - 1), (y as usize).min(plane_h - 1));
@@ -812,7 +878,10 @@ pub fn fit_cover(p: &Picture, w: usize, h: usize) -> Vec<u8> {
     let (cw, ch, pcw, pch) = (w / 2, h / 2, pw / 2, ph / 2);
     for y in 0..ch {
         for x in 0..cw {
-            let (sx, sy) = ((x as f32 * 2.0 + ox) / scale / 2.0, (y as f32 * 2.0 + oy) / scale / 2.0);
+            let (sx, sy) = (
+                (x as f32 * 2.0 + ox) / scale / 2.0,
+                (y as f32 * 2.0 + oy) / scale / 2.0,
+            );
             out[w * h + y * cw + x] = sample(pw * ph, pcw, pch, sx, sy);
             out[w * h + cw * ch + y * cw + x] = sample(pw * ph + pcw * pch, pcw, pch, sx, sy);
         }
@@ -843,7 +912,9 @@ pub fn soften(yplane: &mut [u8], mask: &[f32], w: usize, h: usize, scratch: &mut
                 continue;
             }
             let (x0, x1) = (x.saturating_sub(r), (x + r + 1).min(w));
-            let total = sum[y1 * (w + 1) + x1] + sum[y0 * (w + 1) + x0] - sum[y0 * (w + 1) + x1] - sum[y1 * (w + 1) + x0];
+            let total = sum[y1 * (w + 1) + x1] + sum[y0 * (w + 1) + x0]
+                - sum[y0 * (w + 1) + x1]
+                - sum[y1 * (w + 1) + x0];
             let mean = total as f32 / ((y1 - y0) * (x1 - x0)) as f32;
             let v = scratch[y * w + x] as f32;
             // Only small differences are smoothed (an edge is kept).
@@ -860,13 +931,16 @@ pub fn brighten(yplane: &mut [u8]) {
     if yplane.is_empty() {
         return;
     }
-    let mean = yplane.iter().step_by(7).map(|&v| v as u32).sum::<u32>() as f32 / yplane.iter().step_by(7).count() as f32;
+    let mean = yplane.iter().step_by(7).map(|&v| v as u32).sum::<u32>() as f32
+        / yplane.iter().step_by(7).count() as f32;
     if mean >= 110.0 {
         return;
     }
     // Bring the mean towards 120: y' = 255 (y / 255)^g.
     let g = ((120.0f32 / 255.0).ln() / (mean.max(8.0) / 255.0).ln()).clamp(0.45, 1.0);
-    let lut: Vec<u8> = (0..256).map(|v| (255.0 * (v as f32 / 255.0).powf(g)).round() as u8).collect();
+    let lut: Vec<u8> = (0..256)
+        .map(|v| (255.0 * (v as f32 / 255.0).powf(g)).round() as u8)
+        .collect();
     for v in yplane.iter_mut() {
         *v = lut[*v as usize];
     }
@@ -902,10 +976,22 @@ mod tests {
     fn soft_focus_evens_out_skin_but_keeps_edges() {
         let (w, h) = (16usize, 16usize);
         // Gentle noise on the left, a hard edge in the middle.
-        let mut y: Vec<u8> = (0..w * h).map(|i| if i % w < 8 { 120 + (i % 3) as u8 * 6 } else { 240 }).collect();
+        let mut y: Vec<u8> = (0..w * h)
+            .map(|i| {
+                if i % w < 8 {
+                    120 + (i % 3) as u8 * 6
+                } else {
+                    240
+                }
+            })
+            .collect();
         let before = y.clone();
         soften(&mut y, &vec![1.0; MASK * MASK], w, h, &mut Vec::new());
-        let spread = |v: &[u8]| (0..h).flat_map(|r| v[r * w + 2..r * w + 5].to_vec()).fold((255u8, 0u8), |(lo, hi), p| (lo.min(p), hi.max(p)));
+        let spread = |v: &[u8]| {
+            (0..h)
+                .flat_map(|r| v[r * w + 2..r * w + 5].to_vec())
+                .fold((255u8, 0u8), |(lo, hi), p| (lo.min(p), hi.max(p)))
+        };
         let (lo0, hi0) = spread(&before);
         let (lo1, hi1) = spread(&y);
         assert!(hi1 - lo1 < hi0 - lo0, "{lo1}..{hi1} vs {lo0}..{hi0}");
@@ -927,8 +1013,12 @@ mod tests {
         let mut frame = i420.clone();
         filter::apply(w as u32, h as u32, &mut frame);
         assert_eq!(frame, i420, "no result yet: the frame is unchanged");
-        let f = filter::next_frame(0, std::time::Duration::from_millis(10)).expect("a frame for the app");
-        filter::put_processed(filter::Frame { data: vec![200; f.data.len()], ..f });
+        let f = filter::next_frame(0, std::time::Duration::from_millis(10))
+            .expect("a frame for the app");
+        filter::put_processed(filter::Frame {
+            data: vec![200; f.data.len()],
+            ..f
+        });
         filter::apply(w as u32, h as u32, &mut frame);
         assert!(frame.iter().all(|&v| v == 200));
         filter::set_active(false);
@@ -966,11 +1056,18 @@ mod tests {
     #[test]
     fn portrait_blur_is_lighter_than_standard() {
         let (w, h) = (64usize, 64usize);
-        let data: Vec<u8> = (0..w * h * 3 / 2).map(|i| if (i / 4) % 2 == 0 { 0 } else { 255 }).collect();
+        let data: Vec<u8> = (0..w * h * 3 / 2)
+            .map(|i| if (i / 4) % 2 == 0 { 0 } else { 255 })
+            .collect();
         let (mut a, mut b) = (Vec::new(), Vec::new());
         blur_i420(&data, w, h, 8, &mut a);
         blur_i420(&data, w, h, 4, &mut b);
-        let dev = |v: &[u8]| v[..w * h].iter().map(|&p| (p as i32 - 128).abs()).sum::<i32>();
+        let dev = |v: &[u8]| {
+            v[..w * h]
+                .iter()
+                .map(|&p| (p as i32 - 128).abs())
+                .sum::<i32>()
+        };
         assert!(dev(&b) >= dev(&a));
     }
 
@@ -981,16 +1078,25 @@ mod tests {
         assert_eq!(implicit::encode(240), 255);
         assert_eq!(implicit::encode(0), 59, "below the video range is clamped");
         for y in [16u8, 60, 128, 200, 240] {
-            assert!((implicit::decode(implicit::encode(y)) as i32 - y as i32).abs() <= 1, "{y}");
+            assert!(
+                (implicit::decode(implicit::encode(y)) as i32 - y as i32).abs() <= 1,
+                "{y}"
+            );
         }
         // A frame: the left half is the person, the right half background.
         let (w, h) = (16usize, 8usize);
         let mut frame = vec![100u8; w * h * 3 / 2];
-        let mask: Vec<f32> = (0..MASK * MASK).map(|i| if i % MASK < MASK / 2 { 1.0 } else { 0.0 }).collect();
+        let mask: Vec<f32> = (0..MASK * MASK)
+            .map(|i| if i % MASK < MASK / 2 { 1.0 } else { 0.0 })
+            .collect();
         apply_implicit_mask(&mut frame, &mask, w, h);
         assert_eq!(frame[0], implicit::encode(100));
         assert_eq!(frame[w - 1], 0);
-        assert_eq!(frame[w * h + w / 2 - 1], 128, "the background's colour is neutral");
+        assert_eq!(
+            frame[w * h + w / 2 - 1],
+            128,
+            "the background's colour is neutral"
+        );
         // Received: the person is opaque with its luma back, the rest clear
         // (and a pixel next to the background is eroded away).
         let (yp, uv) = frame.split_at(w * h);

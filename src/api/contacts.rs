@@ -252,7 +252,11 @@ pub fn tagged_from(v: &serde_json::Value) -> Vec<(String, String, String)> {
         .unwrap_or_default();
     list.iter()
         .filter(|c| {
-            c["systemTags"].as_array().into_iter().flatten().any(|t| t["displayName"].as_str() == Some("Tagged"))
+            c["systemTags"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|t| t["displayName"].as_str() == Some("Tagged"))
         })
         .filter_map(|c| {
             Some((
@@ -265,7 +269,9 @@ pub fn tagged_from(v: &serde_json::Value) -> Vec<(String, String, String)> {
 }
 
 pub async fn tagged(client: &TeamsClient) -> Result<Vec<(String, String, String)>> {
-    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let base = client
+        .middle_tier_url()
+        .context("No Teams middle-tier endpoint")?;
     let token = super::directory::middle_tier_token().await?;
     let mut out = Vec::new();
     let mut skip = String::new();
@@ -274,9 +280,22 @@ pub async fn tagged(client: &TeamsClient) -> Result<Vec<(String, String, String)
         if !skip.is_empty() {
             url.push_str(&format!("&skipToken={skip}"));
         }
-        let v: serde_json::Value = client.http().get(url).bearer_auth(&token).send().await?.error_for_status().context("Contacts")?.json().await?;
+        let v: serde_json::Value = client
+            .http()
+            .get(url)
+            .bearer_auth(&token)
+            .send()
+            .await?
+            .error_for_status()
+            .context("Contacts")?
+            .json()
+            .await?;
         out.extend(tagged_from(&v));
-        skip = v["skipToken"].as_str().or(v["nextSkipToken"].as_str()).unwrap_or_default().to_string();
+        skip = v["skipToken"]
+            .as_str()
+            .or(v["nextSkipToken"].as_str())
+            .unwrap_or_default()
+            .to_string();
         if skip.is_empty() {
             break;
         }
@@ -299,7 +318,9 @@ pub fn notify_body(mri: &str, tenant: &str) -> serde_json::Value {
 /// Notify when available: `POST {mt}/beta/contactsv3/`; returns the
 /// contact's id.
 pub async fn notify_when_available(client: &TeamsClient, mri: &str) -> Result<String> {
-    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let base = client
+        .middle_tier_url()
+        .context("No Teams middle-tier endpoint")?;
     let token = super::directory::middle_tier_token().await?;
     let tenant = client.tenant_id().unwrap_or_default();
     let v: serde_json::Value = client
@@ -318,8 +339,15 @@ pub async fn notify_when_available(client: &TeamsClient, mri: &str) -> Result<St
 
 /// Turn off notifications: `PATCH {mt}/beta/contactsv3/{id}?isConcatenatedId=false`
 /// with the tag deleted, as Teams does.
-pub async fn stop_notify(client: &TeamsClient, contact_id: &str, mri: &str, email: &str) -> Result<()> {
-    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+pub async fn stop_notify(
+    client: &TeamsClient,
+    contact_id: &str,
+    mri: &str,
+    email: &str,
+) -> Result<()> {
+    let base = client
+        .middle_tier_url()
+        .context("No Teams middle-tier endpoint")?;
     let token = super::directory::middle_tier_token().await?;
     let id = contact_id.replace('/', "-");
     let enc: String = url::form_urlencoded::byte_serialize(id.as_bytes()).collect();
@@ -343,13 +371,20 @@ mod tagged_tests {
     fn notify_when_available_is_teams() {
         // Teams' request for ost-test1's 1:1 (2026-11-09).
         assert_eq!(
-            notify_body("8:orgid:5050c9d6-b8a7-41f2-830a-0c51777b7dc3", "2716d134-5614-4856-a48d-2002edd9a570").to_string(),
+            notify_body(
+                "8:orgid:5050c9d6-b8a7-41f2-830a-0c51777b7dc3",
+                "2716d134-5614-4856-a48d-2002edd9a570"
+            )
+            .to_string(),
             r#"{"mri":"8:orgid:5050c9d6-b8a7-41f2-830a-0c51777b7dc3","names":[],"systemTags":[{"displayName":"Tagged"}],"webAccounts":[{"service":{"name":"Profile"},"source":{"type":"Profile"},"userId":"OID:5050c9d6-b8a7-41f2-830a-0c51777b7dc3@2716d134-5614-4856-a48d-2002edd9a570"}]}"#
         );
         let v = serde_json::json!({"contacts": [
             {"id": "c1", "mri": "8:orgid:A", "defaultEmail": "a@x", "systemTags": [{"displayName": "Tagged"}]},
             {"id": "c2", "mri": "8:orgid:b", "systemTags": []}]});
-        assert_eq!(tagged_from(&v), vec![("8:orgid:a".to_string(), "c1".to_string(), "a@x".to_string())]);
+        assert_eq!(
+            tagged_from(&v),
+            vec![("8:orgid:a".to_string(), "c1".to_string(), "a@x".to_string())]
+        );
     }
 }
 
@@ -375,7 +410,9 @@ impl PeopleList {
 
 /// The list's MRIs (`GET {mt}/beta/userSettings/{list}`: `{value: [mri]}`).
 pub async fn people_list(client: &TeamsClient, list: PeopleList) -> Result<Vec<String>> {
-    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let base = client
+        .middle_tier_url()
+        .context("No Teams middle-tier endpoint")?;
     let token = super::directory::middle_tier_token().await?;
     let resp = client
         .http()
@@ -393,15 +430,31 @@ pub async fn people_list(client: &TeamsClient, list: PeopleList) -> Result<Vec<S
 }
 
 fn list_mris(v: &serde_json::Value) -> Vec<String> {
-    v["value"].as_array().into_iter().flatten().filter_map(|m| m.as_str().map(str::to_lowercase)).collect()
+    v["value"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|m| m.as_str().map(str::to_lowercase))
+        .collect()
 }
 
 /// Add or remove someone (`POST {mt}/beta/userSettings/{list}/manage` with
 /// `{add: [mri]}` or `{remove: [mri]}`).
-pub async fn manage_people_list(client: &TeamsClient, list: PeopleList, mri: &str, add: bool) -> Result<()> {
-    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+pub async fn manage_people_list(
+    client: &TeamsClient,
+    list: PeopleList,
+    mri: &str,
+    add: bool,
+) -> Result<()> {
+    let base = client
+        .middle_tier_url()
+        .context("No Teams middle-tier endpoint")?;
     let token = super::directory::middle_tier_token().await?;
-    let body = if add { serde_json::json!({ "add": [mri] }) } else { serde_json::json!({ "remove": [mri] }) };
+    let body = if add {
+        serde_json::json!({ "add": [mri] })
+    } else {
+        serde_json::json!({ "remove": [mri] })
+    };
     let resp = client
         .http()
         .post(format!("{base}/beta/userSettings/{}/manage", list.path()))

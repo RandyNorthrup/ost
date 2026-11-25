@@ -239,7 +239,9 @@ impl App {
             // Messages pane keys
             KeyCode::Up | KeyCode::Char('k') if self.active_pane == Pane::Messages => {
                 // Past the oldest message: load older ones.
-                if let (Some(limit), Some(chat_id)) = (self.messages.wants_older(), self.current_chat_id.clone()) {
+                if let (Some(limit), Some(chat_id)) =
+                    (self.messages.wants_older(), self.current_chat_id.clone())
+                {
                     self.status_message = Some("Loading older messages…".to_string());
                     self.status_is_error = false;
                     backend.send(BackendCommand::LoadMessages { chat_id, limit });
@@ -488,7 +490,8 @@ impl App {
         match response {
             BackendResponse::Teams(Ok(teams)) => {
                 self.teams_loaded(backend);
-                self.sidebar.update_teams(teams, self.current_chat_id.as_deref());
+                self.sidebar
+                    .update_teams(teams, self.current_chat_id.as_deref());
                 self.sidebar.loading = false;
                 self.close_stale_search();
                 // If this is the first data load and we have teams, select the first
@@ -556,7 +559,8 @@ impl App {
             BackendResponse::UserInfo(Ok(info)) => {
                 self.user_name = info.display_name;
                 // The notes chat is named after you ("{you} (You)").
-                self.sidebar.rename_chat("48:notes", crate::api::notes_name(&self.user_name));
+                self.sidebar
+                    .rename_chat("48:notes", crate::api::notes_name(&self.user_name));
             }
             BackendResponse::UserInfo(Err(e)) => {
                 self.set_error(format!("Failed to load user info: {:#}", e));
@@ -587,7 +591,10 @@ impl App {
                 self.reload_lists(backend);
                 self.reload_current(backend);
             }
-            BackendResponse::Push { changed, new_from_others } => {
+            BackendResponse::Push {
+                changed,
+                new_from_others,
+            } => {
                 self.on_push(changed, new_from_others, backend);
             }
             BackendResponse::ClientError(msg) => {
@@ -627,7 +634,10 @@ impl App {
         }
         if reload_current {
             self.reload_current(backend);
-            if current.as_deref().is_some_and(|c| new_from_others.iter().any(|i| base(i) == c)) {
+            if current
+                .as_deref()
+                .is_some_and(|c| new_from_others.iter().any(|i| base(i) == c))
+            {
                 self.mark_current_read(backend);
             }
         }

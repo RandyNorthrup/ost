@@ -34,7 +34,11 @@ pub fn docs_url() -> String {
 
 /// The privacy statement, and its section on what feedback shares.
 pub fn privacy_url(section: &str) -> String {
-    let anchor = if section.is_empty() { String::new() } else { format!("#{section}") };
+    let anchor = if section.is_empty() {
+        String::new()
+    } else {
+        format!("#{section}")
+    };
     format!("{}/blob/main/PRIVACY.md{anchor}", repo_url())
 }
 
@@ -63,8 +67,17 @@ const URL_BUDGET: usize = 7600;
 
 /// The issue's title: "Problem: " / "Compliment: " and the text's first line.
 pub fn title(r: &Report) -> String {
-    let lead = if r.kind == "compliment" { "Compliment" } else { "Problem" };
-    let first = r.text.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or_default();
+    let lead = if r.kind == "compliment" {
+        "Compliment"
+    } else {
+        "Problem"
+    };
+    let first = r
+        .text
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or_default();
     let mut t: String = first.chars().take(80).collect();
     if first.chars().count() > 80 {
         t.push('…');
@@ -79,7 +92,11 @@ fn enc(s: &str) -> String {
 /// The new-issue address with the form filled in; `logs` are the masked
 /// log lines (used only when the reporter chose to share them).
 pub fn issue_url(r: &Report, version: &str, os: &str, logs: &str) -> String {
-    let template = if r.kind == "compliment" { "give-a-compliment.yml" } else { "report-a-problem.yml" };
+    let template = if r.kind == "compliment" {
+        "give-a-compliment.yml"
+    } else {
+        "report-a-problem.yml"
+    };
     let mut details = r.context.clone();
     if !r.files.is_empty() {
         if !details.is_empty() {
@@ -87,11 +104,18 @@ pub fn issue_url(r: &Report, version: &str, os: &str, logs: &str) -> String {
         }
         details.push_str("Screenshots and files: paste or drop them here (OST put the first on the clipboard).\n");
         for f in &r.files {
-            let name = std::path::Path::new(f).file_name().and_then(|n| n.to_str()).unwrap_or(f);
+            let name = std::path::Path::new(f)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(f);
             details.push_str(&format!("- {name}\n"));
         }
     }
-    let contact = if r.contact { "Yes, you may contact me" } else { "No, don't contact me" };
+    let contact = if r.contact {
+        "Yes, you may contact me"
+    } else {
+        "No, don't contact me"
+    };
     let fields = [
         ("template", template.to_string()),
         ("title", title(r)),
@@ -103,7 +127,14 @@ pub fn issue_url(r: &Report, version: &str, os: &str, logs: &str) -> String {
         ("os", os.to_string()),
     ];
     let mut url = format!("{}/issues/new?", repo_url());
-    url.push_str(&fields.iter().filter(|(_, v)| !v.is_empty()).map(|(k, v)| format!("{k}={}", enc(v))).collect::<Vec<_>>().join("&"));
+    url.push_str(
+        &fields
+            .iter()
+            .filter(|(_, v)| !v.is_empty())
+            .map(|(k, v)| format!("{k}={}", enc(v)))
+            .collect::<Vec<_>>()
+            .join("&"),
+    );
     if r.share_logs && !logs.is_empty() {
         // The newest lines, as many as fit.
         let room = URL_BUDGET.saturating_sub(url.len() + 6);
@@ -159,16 +190,22 @@ pub fn mask_line(line: &str) -> String {
 pub fn masked_tail(log: &str, n: usize) -> String {
     let lines: Vec<&str> = log.lines().collect();
     let start = lines.len().saturating_sub(n);
-    lines[start..].iter().map(|l| mask_line(l)).collect::<Vec<_>>().join("\n")
+    lines[start..]
+        .iter()
+        .map(|l| mask_line(l))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// The operating system as the issue names it (os-release's PRETTY_NAME).
 pub fn os_name() -> String {
-    let pretty = std::fs::read_to_string("/etc/os-release").ok().and_then(|s| {
-        s.lines()
-            .find_map(|l| l.strip_prefix("PRETTY_NAME="))
-            .map(|v| v.trim_matches('"').to_string())
-    });
+    let pretty = std::fs::read_to_string("/etc/os-release")
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find_map(|l| l.strip_prefix("PRETTY_NAME="))
+                .map(|v| v.trim_matches('"').to_string())
+        });
     let base = pretty.unwrap_or_else(|| std::env::consts::OS.to_string());
     format!("{base} ({})", std::env::consts::ARCH)
 }
@@ -178,7 +215,13 @@ mod tests {
     use super::*;
 
     fn report() -> Report {
-        Report { kind: "problem".into(), text: "Search shows nothing\nsecond line".into(), area: "Find in chat".into(), contact: true, ..Default::default() }
+        Report {
+            kind: "problem".into(),
+            text: "Search shows nothing\nsecond line".into(),
+            area: "Find in chat".into(),
+            contact: true,
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -188,7 +231,11 @@ mod tests {
         assert!(u.contains("&contact=Yes%2C+you+may+contact+me"));
         assert!(u.contains("&area=Find+in+chat&version=0.1.0&os=Arch+Linux+%28x86_64%29"));
         assert!(!u.contains("logs="), "logs only when shared");
-        let c = Report { kind: "compliment".into(), text: "Nice".into(), ..Default::default() };
+        let c = Report {
+            kind: "compliment".into(),
+            text: "Nice".into(),
+            ..Default::default()
+        };
         let cu = issue_url(&c, "1", "x", "");
         assert!(cu.contains("template=give-a-compliment.yml&title=Compliment%3A+Nice"));
         assert!(cu.contains("contact=No%2C+don%27t+contact+me"));
@@ -198,7 +245,9 @@ mod tests {
     fn shared_logs_fit_the_address() {
         let mut r = report();
         r.share_logs = true;
-        let logs: String = (0..2000).map(|i| format!("2026-11-10T10:00:00Z INFO line {i} with some text\n")).collect();
+        let logs: String = (0..2000)
+            .map(|i| format!("2026-11-10T10:00:00Z INFO line {i} with some text\n"))
+            .collect();
         let u = issue_url(&r, "1", "x", &logs);
         assert!(u.len() <= URL_BUDGET, "{}", u.len());
         assert!(u.contains("line+1999"), "the newest lines are kept");
@@ -219,18 +268,32 @@ mod tests {
     fn logs_lose_what_identifies_people() {
         let l = r#"INFO chat opened name="Randy Northrup" thread=19:ef213c7c46cf4036b11608300e96fee4@thread.v2 from=8:orgid:4287e791-1b98-4963-8b94-281c50472683 mail=ost-test1@scnetsolutions.com url=https://x.com/a?code=abc phone +1 (555) 010-2030 auth=Bearer abc.def oid 4287e791-1b98-4963-8b94-281c50472683"#;
         let m = mask_line(l);
-        for gone in ["Randy", "ef213c7c", "4287e791", "ost-test1", "code=abc", "555", "abc.def"] {
+        for gone in [
+            "Randy",
+            "ef213c7c",
+            "4287e791",
+            "ost-test1",
+            "code=abc",
+            "555",
+            "abc.def",
+        ] {
             assert!(!m.contains(gone), "{gone} in {m}");
         }
         assert!(m.contains("INFO chat opened name=\"…\""), "{m}");
         let t = mask_line("2026-11-10T10:00:00.123Z  INFO call 555-010-2030 took 1234567 ms");
-        assert!(t.starts_with("2026-11-10T10:00:00.123Z"), "timestamps stay: {t}");
+        assert!(
+            t.starts_with("2026-11-10T10:00:00.123Z"),
+            "timestamps stay: {t}"
+        );
         assert!(t.contains("<number>") && t.contains("1234567"), "{t}");
     }
 
     #[test]
     fn titles_are_short() {
-        let r = Report { text: "x".repeat(200), ..Default::default() };
+        let r = Report {
+            text: "x".repeat(200),
+            ..Default::default()
+        };
         assert_eq!(title(&r).chars().count(), "Problem: ".len() + 81);
     }
 }

@@ -1307,7 +1307,10 @@ pub async fn entitlements(client: &TeamsClient) -> Result<HashMap<String, String
 }
 
 /// Several apps' definitions at once (Teams' batchedDefinitions).
-pub async fn definitions(client: &TeamsClient, app_ids: &[String]) -> Result<Vec<serde_json::Value>> {
+pub async fn definitions(
+    client: &TeamsClient,
+    app_ids: &[String],
+) -> Result<Vec<serde_json::Value>> {
     let base = client
         .middle_tier_url()
         .context("No Teams middle-tier endpoint")?;
@@ -1431,7 +1434,10 @@ pub async fn details(client: &TeamsClient, app_id: &str) -> Result<AppDetails> {
 /// browser" page, so it's read from the same assets' CDN
 /// (`teams.public.onecdn.static.microsoft/evergreen-assets/…`).
 pub fn evergreen_asset_url(url: &str) -> String {
-    for host in ["https://teams.cloud.microsoft/v2/evergreen-assets/", "https://teams.microsoft.com/v2/evergreen-assets/"] {
+    for host in [
+        "https://teams.cloud.microsoft/v2/evergreen-assets/",
+        "https://teams.microsoft.com/v2/evergreen-assets/",
+    ] {
         if let Some(rest) = url.strip_prefix(host) {
             return format!("https://teams.public.onecdn.static.microsoft/evergreen-assets/{rest}");
         }
@@ -1444,10 +1450,15 @@ mod evergreen_tests {
     #[test]
     fn client_assets_come_from_the_cdn() {
         assert_eq!(
-            super::evergreen_asset_url("https://teams.cloud.microsoft/v2/evergreen-assets/apps/project_agent_statusagentlogo.png?v=2.0.0"),
+            super::evergreen_asset_url(
+                "https://teams.cloud.microsoft/v2/evergreen-assets/apps/project_agent_statusagentlogo.png?v=2.0.0"
+            ),
             "https://teams.public.onecdn.static.microsoft/evergreen-assets/apps/project_agent_statusagentlogo.png?v=2.0.0"
         );
-        assert_eq!(super::evergreen_asset_url("https://x.example/a.png"), "https://x.example/a.png");
+        assert_eq!(
+            super::evergreen_asset_url("https://x.example/a.png"),
+            "https://x.example/a.png"
+        );
     }
 }
 
@@ -1458,7 +1469,11 @@ pub async fn app_for_bot(client: &TeamsClient, bot: &str) -> Option<(String, Str
     let id = bot.strip_prefix("28:").unwrap_or(bot).to_ascii_lowercase();
     let defs = catalog(client).await.ok()?;
     let def = defs.iter().find(|d| bot_of(d).contains(&id))?;
-    Some((str_at(def, "id").to_string(), str_at(def, "name").to_string(), super::tabs::https_only(str_at(def, "largeImageUrl"))))
+    Some((
+        str_at(def, "id").to_string(),
+        str_at(def, "name").to_string(),
+        super::tabs::https_only(str_at(def, "largeImageUrl")),
+    ))
 }
 
 /// A definition's bot ids, lowercase.
@@ -1467,7 +1482,11 @@ fn bot_of(def: &serde_json::Value) -> Vec<String> {
         .and_then(|b| b.as_array())
         .into_iter()
         .flatten()
-        .filter_map(|b| b.get("id").or_else(|| b.get("botId")).and_then(|v| v.as_str()))
+        .filter_map(|b| {
+            b.get("id")
+                .or_else(|| b.get("botId"))
+                .and_then(|v| v.as_str())
+        })
         .map(|v| v.strip_prefix("28:").unwrap_or(v).to_ascii_lowercase())
         .collect()
 }
@@ -1910,7 +1929,11 @@ pub fn device_permissions(def: &serde_json::Value) -> Vec<DevicePermission> {
                 "openexternal" => ("openExternal", "External links", ""),
                 _ => return None,
             };
-            Some(DevicePermission { kind: kind.into(), title: title.into(), subtitle: subtitle.into() })
+            Some(DevicePermission {
+                kind: kind.into(),
+                title: title.into(),
+                subtitle: subtitle.into(),
+            })
         })
         .collect()
 }
@@ -1928,14 +1951,28 @@ pub struct PermissionApp {
 /// `installedAppsPermissions`): your installed apps that ask for device
 /// permissions, the ones installed in your teams, and any app whose
 /// permissions you changed; by name, 100 at most.
-pub async fn permission_apps(client: &TeamsClient, team_threads: &[String], changed: &[String]) -> Result<Vec<PermissionApp>> {
+pub async fn permission_apps(
+    client: &TeamsClient,
+    team_threads: &[String],
+    changed: &[String],
+) -> Result<Vec<PermissionApp>> {
     let defs = catalog(client).await?;
-    let by_id: HashMap<String, &serde_json::Value> = defs.iter().filter_map(|d| Some((d.get("id")?.as_str()?.to_lowercase(), d))).collect();
-    let mut ids: Vec<String> = entitlements(client).await.unwrap_or_default().into_keys().collect();
+    let by_id: HashMap<String, &serde_json::Value> = defs
+        .iter()
+        .filter_map(|d| Some((d.get("id")?.as_str()?.to_lowercase(), d)))
+        .collect();
+    let mut ids: Vec<String> = entitlements(client)
+        .await
+        .unwrap_or_default()
+        .into_keys()
+        .collect();
     // Your teams' apps, whatever their state (Teams lists suggested ones
     // too), with the definitions their reply carries.
     let mut team_defs: HashMap<String, serde_json::Value> = HashMap::new();
-    for (id, d) in super::store_content::teams_entitled_definitions(client, team_threads).await.unwrap_or_default() {
+    for (id, d) in super::store_content::teams_entitled_definitions(client, team_threads)
+        .await
+        .unwrap_or_default()
+    {
         ids.push(id.clone());
         if d.is_object() {
             team_defs.insert(id, d);
@@ -1946,7 +1983,11 @@ pub async fn permission_apps(client: &TeamsClient, team_threads: &[String], chan
     ids.dedup();
     let mut out = Vec::new();
     for id in ids {
-        let def = match by_id.get(&id).map(|d| (*d).clone()).or_else(|| team_defs.get(&id).cloned()) {
+        let def = match by_id
+            .get(&id)
+            .map(|d| (*d).clone())
+            .or_else(|| team_defs.get(&id).cloned())
+        {
             Some(d) => d,
             None => match definition(client, &id).await {
                 Ok(d) => d,
@@ -1991,8 +2032,13 @@ mod device_permission_tests {
         assert_eq!(p.len(), 1);
         assert_eq!(p[0].title, "Media (Camera, microphone, speakers)");
         assert_eq!(p[0].subtitle, "Only when app is open and in view");
-        let all = device_permissions(&serde_json::json!({"devicePermissions": ["Geolocation", "Notifications", "OpenExternal"]}));
-        assert_eq!(all.iter().map(|d| d.kind.as_str()).collect::<Vec<_>>(), ["geolocation", "notifications", "openExternal"]);
+        let all = device_permissions(
+            &serde_json::json!({"devicePermissions": ["Geolocation", "Notifications", "OpenExternal"]}),
+        );
+        assert_eq!(
+            all.iter().map(|d| d.kind.as_str()).collect::<Vec<_>>(),
+            ["geolocation", "notifications", "openExternal"]
+        );
         assert_eq!(all[2].subtitle, "");
     }
 }

@@ -11,7 +11,15 @@ async fn main() -> anyhow::Result<()> {
     };
     let client = TeamsClient::new().await?;
     match op.as_str() {
-        "add" => add_chat_members(&client, chat, std::slice::from_ref(mri), SharedHistory::None).await?,
+        "add" => {
+            add_chat_members(
+                &client,
+                chat,
+                std::slice::from_ref(mri),
+                SharedHistory::None,
+            )
+            .await?
+        }
         "remove" => remove_chat_member(&client, chat, mri).await?,
         _ => anyhow::bail!("add or remove"),
     }

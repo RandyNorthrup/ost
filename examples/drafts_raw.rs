@@ -9,15 +9,37 @@ use teams_cli::api::client::TeamsClient;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let method = args.first().map(String::as_str).unwrap_or("GET").to_ascii_uppercase();
+    let method = args
+        .first()
+        .map(String::as_str)
+        .unwrap_or("GET")
+        .to_ascii_uppercase();
     let client = TeamsClient::new().await?;
     let base = format!("{}/v1/users/ME/drafts", client.chat_service_url());
-    let read = |p: &str| -> anyhow::Result<serde_json::Value> { Ok(serde_json::from_str(&std::fs::read_to_string(p)?)?) };
+    let read = |p: &str| -> anyhow::Result<serde_json::Value> {
+        Ok(serde_json::from_str(&std::fs::read_to_string(p)?)?)
+    };
     let resp = match method.as_str() {
         "GET" => client.chat_get(&format!("{base}?pageSize=200")).await?,
         "POST" => client.chat_post(&base, &read(&args[1])?).await?,
-        "PUT" => client.chat_request(reqwest::Method::PUT, &format!("{base}/{}", args[1]), &read(&args[2])?).await?,
-        "DELETE" => client.chat_request(reqwest::Method::DELETE, &format!("{base}/{}", args[1]), &serde_json::Value::Null).await?,
+        "PUT" => {
+            client
+                .chat_request(
+                    reqwest::Method::PUT,
+                    &format!("{base}/{}", args[1]),
+                    &read(&args[2])?,
+                )
+                .await?
+        }
+        "DELETE" => {
+            client
+                .chat_request(
+                    reqwest::Method::DELETE,
+                    &format!("{base}/{}", args[1]),
+                    &serde_json::Value::Null,
+                )
+                .await?
+        }
         m => anyhow::bail!("unknown method {m}"),
     };
     println!("status {}", resp.status());

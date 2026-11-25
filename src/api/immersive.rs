@@ -13,7 +13,7 @@
 //!   `/owners/remove`, `/members {userIds}`, `/members/remove {userId}`).
 
 use anyhow::{Context, Result};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::client::TeamsClient;
 
@@ -42,7 +42,17 @@ fn check_id(id: &str) -> Result<()> {
 pub fn management_enabled(ecs_flag: Option<&Value>, policy: Option<&Value>) -> bool {
     let flag = ecs_flag.and_then(Value::as_bool).unwrap_or(false);
     let allowed = policy
-        .and_then(|p| p.as_str().map(str::to_string).or_else(|| p.as_bool().map(|b| if b { "Enabled".into() } else { "Disabled".into() })))
+        .and_then(|p| {
+            p.as_str().map(str::to_string).or_else(|| {
+                p.as_bool().map(|b| {
+                    if b {
+                        "Enabled".into()
+                    } else {
+                        "Disabled".into()
+                    }
+                })
+            })
+        })
         .is_some_and(|s| s.eq_ignore_ascii_case("enabled"));
     flag && allowed
 }
@@ -51,7 +61,12 @@ pub fn management_enabled(ecs_flag: Option<&Value>, policy: Option<&Value>) -> b
 /// sensitivityLabelId}]` sorted by name (Graph's `$orderBy`).
 pub async fn list(client: &TeamsClient) -> Result<Value> {
     let path = "/me/memberOf?$filter=resourceBehaviorOptions/any(i:i%20eq%20'teams.immersive')&$count=true&$select=id,displayName,description,classification,assignedLabels&$orderBy=displayName";
-    let v: Value = client.graph_get_with(path, &[("ConsistencyLevel", "eventual")]).await?.json().await.context("Collections")?;
+    let v: Value = client
+        .graph_get_with(path, &[("ConsistencyLevel", "eventual")])
+        .await?
+        .json()
+        .await
+        .context("Collections")?;
     Ok(Value::Array(collections_from(&v)))
 }
 
@@ -69,7 +84,12 @@ pub fn collections_from(v: &Value) -> Vec<Value> {
 async fn worlds(method: reqwest::Method, path: &str, body: Option<&Value>) -> Result<Value> {
     let token = crate::auth::oauth::access_token_for(&format!("{RESOURCE}/.default")).await?;
     let trace = uuid::Uuid::new_v4().simple().to_string();
-    let span: String = uuid::Uuid::new_v4().simple().to_string().chars().take(16).collect();
+    let span: String = uuid::Uuid::new_v4()
+        .simple()
+        .to_string()
+        .chars()
+        .take(16)
+        .collect();
     let mut req = reqwest::Client::new()
         .request(method, format!("{}{path}", endpoint()))
         .bearer_auth(token)
@@ -98,23 +118,46 @@ pub fn create_body(name: &str, description: &str) -> Value {
 }
 
 pub async fn create(name: &str, description: &str) -> Result<Value> {
-    anyhow::ensure!(!name.trim().is_empty(), crate::i18n::tr_id("Collection name is required", "immersiveContent:kd4bhsueb"));
-    worlds(reqwest::Method::POST, "/v3.0/collections", Some(&create_body(name, description))).await
+    anyhow::ensure!(
+        !name.trim().is_empty(),
+        crate::i18n::tr_id("Collection name is required", "immersiveContent:kd4bhsueb")
+    );
+    worlds(
+        reqwest::Method::POST,
+        "/v3.0/collections",
+        Some(&create_body(name, description)),
+    )
+    .await
 }
 
 pub async fn get(id: &str) -> Result<Value> {
     check_id(id)?;
-    worlds(reqwest::Method::GET, &format!("/v3.0/collections/{id}"), None).await
+    worlds(
+        reqwest::Method::GET,
+        &format!("/v3.0/collections/{id}"),
+        None,
+    )
+    .await
 }
 
 pub async fn update(id: &str, name: &str, description: &str) -> Result<Value> {
     check_id(id)?;
-    worlds(reqwest::Method::PATCH, &format!("/v3.0/collections/{id}"), Some(&create_body(name, description))).await
+    worlds(
+        reqwest::Method::PATCH,
+        &format!("/v3.0/collections/{id}"),
+        Some(&create_body(name, description)),
+    )
+    .await
 }
 
 pub async fn delete(id: &str) -> Result<()> {
     check_id(id)?;
-    worlds(reqwest::Method::DELETE, &format!("/v3.0/collections/{id}"), None).await?;
+    worlds(
+        reqwest::Method::DELETE,
+        &format!("/v3.0/collections/{id}"),
+        None,
+    )
+    .await?;
     Ok(())
 }
 
@@ -129,9 +172,24 @@ pub async fn people(client: &TeamsClient, id: &str) -> Result<Value> {
                              "jobTitle": p.get("jobTitle").cloned().unwrap_or(Value::Null), "userPrincipalName": p.get("userPrincipalName").cloned().unwrap_or_default() }))
             .collect()
     };
-    let owners = read(client.graph_get(&format!("/groups/{id}/owners")).await?.json().await?);
-    let all = read(client.graph_get(&format!("/groups/{id}/members")).await?.json().await?);
-    let members: Vec<Value> = all.into_iter().filter(|m| !owners.iter().any(|o| o["id"] == m["id"])).collect();
+    let owners = read(
+        client
+            .graph_get(&format!("/groups/{id}/owners"))
+            .await?
+            .json()
+            .await?,
+    );
+    let all = read(
+        client
+            .graph_get(&format!("/groups/{id}/members"))
+            .await?
+            .json()
+            .await?,
+    );
+    let members: Vec<Value> = all
+        .into_iter()
+        .filter(|m| !owners.iter().any(|o| o["id"] == m["id"]))
+        .collect();
     Ok(json!({ "owners": owners, "members": members }))
 }
 
@@ -141,13 +199,23 @@ pub async fn add_people(id: &str, owners: &[String], members: &[String]) -> Resu
     check_id(id)?;
     for o in owners {
         check_id(o)?;
-        worlds(reqwest::Method::POST, &format!("/v3.0/collections/{id}/owners"), Some(&json!({ "userId": o }))).await?;
+        worlds(
+            reqwest::Method::POST,
+            &format!("/v3.0/collections/{id}/owners"),
+            Some(&json!({ "userId": o })),
+        )
+        .await?;
     }
     let mut all: Vec<String> = owners.iter().chain(members).cloned().collect();
     all.sort();
     all.dedup();
     if !all.is_empty() {
-        worlds(reqwest::Method::POST, &format!("/v3.0/collections/{id}/members"), Some(&json!({ "userIds": all }))).await?;
+        worlds(
+            reqwest::Method::POST,
+            &format!("/v3.0/collections/{id}/members"),
+            Some(&json!({ "userIds": all })),
+        )
+        .await?;
     }
     Ok(())
 }
@@ -163,7 +231,12 @@ pub async fn change_person(id: &str, user: &str, what: &str) -> Result<()> {
         "remove" => "members/remove",
         _ => anyhow::bail!("Not a change"),
     };
-    worlds(reqwest::Method::POST, &format!("/v3.0/collections/{id}/{path}"), Some(&json!({ "userId": user }))).await?;
+    worlds(
+        reqwest::Method::POST,
+        &format!("/v3.0/collections/{id}/{path}"),
+        Some(&json!({ "userId": user })),
+    )
+    .await?;
     Ok(())
 }
 
@@ -173,13 +246,33 @@ mod tests {
 
     #[test]
     fn bodies_and_lists_as_teams() {
-        assert_eq!(create_body(" OST TEST 212 c ", ""), json!({ "DisplayName": "OST TEST 212 c" }));
-        assert_eq!(create_body("A", "d"), json!({ "DisplayName": "A", "Description": "d" }));
+        assert_eq!(
+            create_body(" OST TEST 212 c ", ""),
+            json!({ "DisplayName": "OST TEST 212 c" })
+        );
+        assert_eq!(
+            create_body("A", "d"),
+            json!({ "DisplayName": "A", "Description": "d" })
+        );
         let v = json!({ "value": [{ "id": "g1", "displayName": "A", "description": null, "assignedLabels": [] }] });
-        assert_eq!(collections_from(&v), vec![json!({ "id": "g1", "displayName": "A", "description": null, "sensitivityLabelId": null })]);
-        assert!(management_enabled(Some(&json!(true)), Some(&json!("Enabled"))));
-        assert!(!management_enabled(Some(&json!(false)), Some(&json!("Enabled"))));
+        assert_eq!(
+            collections_from(&v),
+            vec![
+                json!({ "id": "g1", "displayName": "A", "description": null, "sensitivityLabelId": null })
+            ]
+        );
+        assert!(management_enabled(
+            Some(&json!(true)),
+            Some(&json!("Enabled"))
+        ));
+        assert!(!management_enabled(
+            Some(&json!(false)),
+            Some(&json!("Enabled"))
+        ));
         assert!(!management_enabled(None, Some(&json!("Enabled"))));
-        assert!(!management_enabled(Some(&json!(true)), Some(&json!("Disabled"))));
+        assert!(!management_enabled(
+            Some(&json!(true)),
+            Some(&json!("Disabled"))
+        ));
     }
 }

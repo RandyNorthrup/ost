@@ -30,7 +30,9 @@ pub fn socket() -> String {
         let _ = std_listener.set_nonblocking(true);
         let path = format!("/{secret}");
         crate::backend::runtime().spawn(async move {
-            let Ok(listener) = tokio::net::TcpListener::from_std(std_listener) else { return };
+            let Ok(listener) = tokio::net::TcpListener::from_std(std_listener) else {
+                return;
+            };
             while let Ok((stream, _)) = listener.accept().await {
                 let path = path.clone();
                 tokio::spawn(async move {
@@ -60,8 +62,14 @@ const INTERVAL: Duration = Duration::from_millis(66);
 
 async fn serve(stream: tokio::net::TcpStream, path: &str) -> anyhow::Result<()> {
     use futures::{SinkExt, StreamExt};
-    use tokio_tungstenite::tungstenite::{Message, handshake::server::{ErrorResponse, Request, Response}};
-    #[allow(clippy::result_large_err, reason = "tungstenite's handshake callback returns its own ErrorResponse")]
+    use tokio_tungstenite::tungstenite::{
+        Message,
+        handshake::server::{ErrorResponse, Request, Response},
+    };
+    #[allow(
+        clippy::result_large_err,
+        reason = "tungstenite's handshake callback returns its own ErrorResponse"
+    )]
     let check = |req: &Request, resp: Response| -> Result<Response, ErrorResponse> {
         if req.uri().path() == path {
             Ok(resp)

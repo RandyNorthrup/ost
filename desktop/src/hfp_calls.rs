@@ -105,9 +105,19 @@ fn is_gateway(uid: u32, comm: &str, own: Option<u32>) -> bool {
 /// system services read it; only the gateway sees OST's modem and acts on
 /// its calls.
 async fn from_gateway(conn: &zbus::Connection, hdr: Option<&Header<'_>>) -> bool {
-    let Some(sender) = hdr.and_then(|h| h.sender()) else { return false };
-    let key = format!("{} {}", conn.unique_name().map(|n| n.as_str()).unwrap_or_default(), sender.as_str());
-    if let Some(ok) = CALLERS.lock().ok().and_then(|c| c.as_ref().and_then(|c| c.get(&key).copied())) {
+    let Some(sender) = hdr.and_then(|h| h.sender()) else {
+        return false;
+    };
+    let key = format!(
+        "{} {}",
+        conn.unique_name().map(|n| n.as_str()).unwrap_or_default(),
+        sender.as_str()
+    );
+    if let Some(ok) = CALLERS
+        .lock()
+        .ok()
+        .and_then(|c| c.as_ref().and_then(|c| c.get(&key).copied()))
+    {
         return ok;
     }
     let ok = async {
@@ -117,7 +127,14 @@ async fn from_gateway(conn: &zbus::Connection, hdr: Option<&Header<'_>>) -> bool
         let pid = dbus.get_connection_unix_process_id(name).await.ok()?;
         let comm = std::fs::read_to_string(format!("/proc/{pid}/comm")).ok()?;
         let ok = is_gateway(uid, &comm, own_uid());
-        tracing::debug!(sender = sender.as_str(), uid, pid, comm = comm.trim(), ok, "hfp: modem client");
+        tracing::debug!(
+            sender = sender.as_str(),
+            uid,
+            pid,
+            comm = comm.trim(),
+            ok,
+            "hfp: modem client"
+        );
         Some(ok)
     }
     .await
@@ -167,7 +184,9 @@ impl Modems {
             OwnedValue::try_from(x.into()).ok()
         }
         let props = |list: Vec<(&str, Option<OwnedValue>)>| -> HashMap<String, OwnedValue> {
-            list.into_iter().filter_map(|(k, x)| Some((k.to_string(), x?))).collect()
+            list.into_iter()
+                .filter_map(|(k, x)| Some((k.to_string(), x?)))
+                .collect()
         };
         let mut ifaces = HashMap::new();
         ifaces.insert(
@@ -184,9 +203,15 @@ impl Modems {
         );
         ifaces.insert(
             "org.freedesktop.ModemManager1.Modem.Modem3gpp".to_string(),
-            props(vec![("RegistrationState", v(mm::REGISTRATION_HOME)), ("OperatorName", v("OST"))]),
+            props(vec![
+                ("RegistrationState", v(mm::REGISTRATION_HOME)),
+                ("OperatorName", v("OST")),
+            ]),
         );
-        ifaces.insert("org.freedesktop.ModemManager1.Modem.Voice".to_string(), HashMap::new());
+        ifaces.insert(
+            "org.freedesktop.ModemManager1.Modem.Voice".to_string(),
+            HashMap::new(),
+        );
         if let Ok(path) = OwnedObjectPath::try_from(mm::MODEM) {
             out.insert(path, ifaces);
         }
@@ -260,9 +285,14 @@ impl Voice {
         self.calls.clone()
     }
     /// The headset dialling (ATD, AT+BLDN): Teams places no call from it.
-    async fn create_call(&self, _properties: HashMap<String, OwnedValue>) -> zbus::fdo::Result<OwnedObjectPath> {
+    async fn create_call(
+        &self,
+        _properties: HashMap<String, OwnedValue>,
+    ) -> zbus::fdo::Result<OwnedObjectPath> {
         tracing::info!("hfp: the headset asked to place a call; not supported");
-        Err(zbus::fdo::Error::NotSupported("OST places calls from its own window".into()))
+        Err(zbus::fdo::Error::NotSupported(
+            "OST places calls from its own window".into(),
+        ))
     }
     async fn delete_call(&self, _path: OwnedObjectPath) -> zbus::fdo::Result<()> {
         Ok(())
@@ -283,10 +313,17 @@ struct Call {
 
 impl Call {
     /// The command comes from this user's gateway, and Teams' checks pass.
-    async fn allowed(&self, what: &str, conn: &zbus::Connection, hdr: &Header<'_>) -> zbus::fdo::Result<()> {
+    async fn allowed(
+        &self,
+        what: &str,
+        conn: &zbus::Connection,
+        hdr: &Header<'_>,
+    ) -> zbus::fdo::Result<()> {
         if !from_gateway(conn, Some(hdr)).await {
             tracing::info!(what, sender = ?hdr.sender(), "hfp: call command from another program refused");
-            return Err(zbus::fdo::Error::AccessDenied("only the user's Bluetooth audio gateway controls OST's calls".into()));
+            return Err(zbus::fdo::Error::AccessDenied(
+                "only the user's Bluetooth audio gateway controls OST's calls".into(),
+            ));
         }
         let ctx = hfp::context();
         ctx.gate().map_err(|why| {
@@ -320,9 +357,14 @@ impl Call {
         #[zbus(header)] hdr: Header<'_>,
     ) -> zbus::fdo::Result<()> {
         let ringing = self.state == mm::CALL_STATE_RINGING_IN;
-        self.allowed(if ringing { "reject" } else { "end" }, conn, &hdr).await?;
+        self.allowed(if ringing { "reject" } else { "end" }, conn, &hdr)
+            .await?;
         tracing::info!(ringing, "hfp: headset hung up");
-        (self.on_action)(if ringing { Action::Reject } else { Action::HangUp });
+        (self.on_action)(if ringing {
+            Action::Reject
+        } else {
+            Action::HangUp
+        });
         Ok(())
     }
     async fn start(&self) -> zbus::fdo::Result<()> {
@@ -346,7 +388,11 @@ impl Call {
     /// The caller's name, for the gateway only (other local users can read
     /// properties under ModemManager's name on the system bus).
     #[zbus(property)]
-    async fn number(&self, #[zbus(connection)] conn: &zbus::Connection, #[zbus(header)] hdr: Option<Header<'_>>) -> String {
+    async fn number(
+        &self,
+        #[zbus(connection)] conn: &zbus::Connection,
+        #[zbus(header)] hdr: Option<Header<'_>>,
+    ) -> String {
         if hdr.is_some() && !from_gateway(conn, hdr.as_ref()).await {
             return String::new();
         }
@@ -357,12 +403,20 @@ impl Call {
         false
     }
     #[zbus(signal, name = "StateChanged")]
-    async fn state_changed_signal(emitter: &SignalEmitter<'_>, old: i32, new: i32, reason: u32) -> zbus::Result<()>;
+    async fn state_changed_signal(
+        emitter: &SignalEmitter<'_>,
+        old: i32,
+        new: i32,
+        reason: u32,
+    ) -> zbus::Result<()>;
 }
 
 /// The headset's caller id: PipeWire passes it on in +CLIP, quoted.
 fn caller_id(peer: &str) -> String {
-    peer.chars().filter(|c| *c != '"' && !c.is_control()).take(32).collect()
+    peer.chars()
+        .filter(|c| *c != '"' && !c.is_control())
+        .take(32)
+        .collect()
 }
 
 /// Which bus a gateway looks for the modem on.
@@ -395,9 +449,13 @@ impl Blocked {
             }
             (Blocked::NotAllowed, BusKind::Session) => "the session bus refused the name".into(),
             (Blocked::HeldBy(who), BusKind::System) => {
-                format!("{who} holds org.freedesktop.ModemManager1 on the system bus (ModemManager runs; see desktop/packaging/install-hfp-calls.sh)")
+                format!(
+                    "{who} holds org.freedesktop.ModemManager1 on the system bus (ModemManager runs; see desktop/packaging/install-hfp-calls.sh)"
+                )
             }
-            (Blocked::HeldBy(who), BusKind::Session) => format!("{who} holds org.freedesktop.ModemManager1 on the session bus"),
+            (Blocked::HeldBy(who), BusKind::Session) => {
+                format!("{who} holds org.freedesktop.ModemManager1 on the session bus")
+            }
             (Blocked::Failed(e), _) => e.clone(),
         }
     }
@@ -406,7 +464,9 @@ impl Blocked {
 /// The bus's policy refused the request.
 fn access_denied(e: &zbus::Error) -> bool {
     match e {
-        zbus::Error::MethodError(name, _, _) => name.as_str() == "org.freedesktop.DBus.Error.AccessDenied",
+        zbus::Error::MethodError(name, _, _) => {
+            name.as_str() == "org.freedesktop.DBus.Error.AccessDenied"
+        }
         zbus::Error::FDO(f) => matches!(**f, zbus::fdo::Error::AccessDenied(_)),
         _ => false,
     }
@@ -435,11 +495,25 @@ impl Bus {
         let asked = Arc::new(AtomicBool::new(false));
         let server = conn.object_server();
         server.at(mm::ROOT, Manager).await?;
-        server.at(mm::ROOT, Modems { asked: asked.clone() }).await?;
+        server
+            .at(
+                mm::ROOT,
+                Modems {
+                    asked: asked.clone(),
+                },
+            )
+            .await?;
         server.at(mm::MODEM, Modem).await?;
         server.at(mm::MODEM, Modem3gpp).await?;
         server.at(mm::MODEM, Voice { calls: Vec::new() }).await?;
-        Ok(Bus { kind, conn, asked, owned: false, blocked: None, retry_at: None })
+        Ok(Bus {
+            kind,
+            conn,
+            asked,
+            owned: false,
+            blocked: None,
+            retry_at: None,
+        })
     }
 
     /// Who holds the name, for the log: its process name.
@@ -477,9 +551,10 @@ impl Bus {
         } else {
             self.retry_at = Some(Instant::now() + RETRY);
             if blocked != self.blocked
-                && let Some(b) = &blocked {
-                    tracing::info!(bus = ?self.kind, "hfp: can't offer calls to Bluetooth headsets here: {}", b.describe(self.kind));
-                }
+                && let Some(b) = &blocked
+            {
+                tracing::info!(bus = ?self.kind, "hfp: can't offer calls to Bluetooth headsets here: {}", b.describe(self.kind));
+            }
         }
         self.blocked = blocked;
     }
@@ -494,7 +569,10 @@ impl Bus {
     }
 
     async fn voice(&self) -> zbus::Result<zbus::object_server::InterfaceRef<Voice>> {
-        self.conn.object_server().interface::<_, Voice>(mm::MODEM).await
+        self.conn
+            .object_server()
+            .interface::<_, Voice>(mm::MODEM)
+            .await
     }
 
     async fn announce(&self, path: &OwnedObjectPath) -> zbus::Result<()> {
@@ -506,18 +584,35 @@ impl Bus {
         self.conn.object_server().at(path.as_ref(), call).await?;
         let voice = self.voice().await?;
         voice.get_mut().await.calls.push(path.clone());
-        voice.get().await.calls_changed(voice.signal_emitter()).await?;
+        voice
+            .get()
+            .await
+            .calls_changed(voice.signal_emitter())
+            .await?;
         Voice::call_added(voice.signal_emitter(), path.as_ref()).await
     }
 
-    async fn set_state(&self, path: &OwnedObjectPath, old: i32, state: i32, reason: u32) -> zbus::Result<()> {
-        let call = self.conn.object_server().interface::<_, Call>(path.as_ref()).await?;
+    async fn set_state(
+        &self,
+        path: &OwnedObjectPath,
+        old: i32,
+        state: i32,
+        reason: u32,
+    ) -> zbus::Result<()> {
+        let call = self
+            .conn
+            .object_server()
+            .interface::<_, Call>(path.as_ref())
+            .await?;
         {
             let mut c = call.get_mut().await;
             c.state = state;
             c.reason = reason;
         }
-        call.get().await.state_changed(call.signal_emitter()).await?;
+        call.get()
+            .await
+            .state_changed(call.signal_emitter())
+            .await?;
         Call::state_changed_signal(call.signal_emitter(), old, state, reason).await
     }
 
@@ -525,23 +620,38 @@ impl Bus {
         let server = self.conn.object_server();
         if let Ok(call) = server.interface::<_, Call>(path.as_ref()).await {
             call.get_mut().await.state = mm::CALL_STATE_TERMINATED;
-            let _ = Call::state_changed_signal(call.signal_emitter(), old, mm::CALL_STATE_TERMINATED, mm::REASON_TERMINATED).await;
+            let _ = Call::state_changed_signal(
+                call.signal_emitter(),
+                old,
+                mm::CALL_STATE_TERMINATED,
+                mm::REASON_TERMINATED,
+            )
+            .await;
         }
         let voice = self.voice().await?;
         voice.get_mut().await.calls.retain(|p| p != path);
-        voice.get().await.calls_changed(voice.signal_emitter()).await?;
+        voice
+            .get()
+            .await
+            .calls_changed(voice.signal_emitter())
+            .await?;
         Voice::call_deleted(voice.signal_emitter(), path.as_ref()).await?;
         let _ = server.remove::<Call, _>(path.as_ref()).await;
         Ok(())
     }
 }
 
-async fn run(mut rx: tokio::sync::watch::Receiver<CallView>, on_action: OnAction) -> zbus::Result<()> {
+async fn run(
+    mut rx: tokio::sync::watch::Receiver<CallView>,
+    on_action: OnAction,
+) -> zbus::Result<()> {
     let mut buses = Vec::new();
     for kind in [BusKind::System, BusKind::Session] {
         match Bus::open(kind).await {
             Ok(bus) => buses.push(bus),
-            Err(e) => tracing::info!(bus = ?kind, "hfp: no D-Bus connection for headset calls: {e}"),
+            Err(e) => {
+                tracing::info!(bus = ?kind, "hfp: no D-Bus connection for headset calls: {e}")
+            }
         }
     }
     if buses.is_empty() {
@@ -585,15 +695,18 @@ async fn run(mut rx: tokio::sync::watch::Receiver<CallView>, on_action: OnAction
         let view = rx.borrow_and_update().clone();
         let target = view.phase.mm_state();
         if !offered
-            && let Some(bus) = buses.iter().find(|b| b.owned && b.asked.load(Ordering::SeqCst)) {
-                offered = true;
-                check_at = None;
-                tracing::info!(bus = ?bus.kind, "hfp: PipeWire's HFP gateway takes call commands from OST: a Bluetooth headset's answer and hang-up are offered");
-                if let Some((path, state)) = &current {
-                    bus.announce(path).await?;
-                    tracing::info!(call = %path.as_str(), state, "hfp: call announced to the headset");
-                }
+            && let Some(bus) = buses
+                .iter()
+                .find(|b| b.owned && b.asked.load(Ordering::SeqCst))
+        {
+            offered = true;
+            check_at = None;
+            tracing::info!(bus = ?bus.kind, "hfp: PipeWire's HFP gateway takes call commands from OST: a Bluetooth headset's answer and hang-up are offered");
+            if let Some((path, state)) = &current {
+                bus.announce(path).await?;
+                tracing::info!(call = %path.as_str(), state, "hfp: call announced to the headset");
             }
+        }
         if check_at.is_some_and(|t| Instant::now() >= t) {
             check_at = None;
             let why: Vec<String> = buses
@@ -604,7 +717,10 @@ async fn run(mut rx: tokio::sync::watch::Receiver<CallView>, on_action: OnAction
                     (None, BusKind::Session) => "Session bus: the gateway doesn't read the modem (stock PipeWire; contrib/pipewire's patch)".into(),
                 })
                 .collect();
-            tracing::info!("hfp: PipeWire's HFP gateway doesn't take call commands from OST: a Bluetooth headset's answer and hang-up aren't offered, its mute works. {}", why.join("; "));
+            tracing::info!(
+                "hfp: PipeWire's HFP gateway doesn't take call commands from OST: a Bluetooth headset's answer and hang-up aren't offered, its mute works. {}",
+                why.join("; ")
+            );
         }
         match (&current, target) {
             (None, None) => {}
@@ -617,7 +733,13 @@ async fn run(mut rx: tokio::sync::watch::Receiver<CallView>, on_action: OnAction
                     (mm::CALL_DIRECTION_OUTGOING, mm::REASON_OUTGOING_STARTED)
                 };
                 for bus in &buses {
-                    let call = Call { state, reason, direction, number: caller_id(&view.peer), on_action: on_action.clone() };
+                    let call = Call {
+                        state,
+                        reason,
+                        direction,
+                        number: caller_id(&view.peer),
+                        on_action: on_action.clone(),
+                    };
                     bus.add_call(&path, call).await?;
                 }
                 tracing::info!(call = %path.as_str(), state, incoming = view.incoming, "hfp: call reported to the headset");
@@ -625,7 +747,11 @@ async fn run(mut rx: tokio::sync::watch::Receiver<CallView>, on_action: OnAction
             }
             (Some((path, old)), Some(state)) if *old != state => {
                 let (path, old) = (path.clone(), *old);
-                let reason = if old == mm::CALL_STATE_RINGING_IN { mm::REASON_ACCEPTED } else { 0 };
+                let reason = if old == mm::CALL_STATE_RINGING_IN {
+                    mm::REASON_ACCEPTED
+                } else {
+                    0
+                };
                 for bus in &buses {
                     bus.set_state(&path, old, state, reason).await?;
                 }
@@ -669,7 +795,15 @@ mod tests {
 
     #[test]
     fn blocked_reasons_point_to_the_setup() {
-        assert!(Blocked::NotAllowed.describe(BusKind::System).contains("install-hfp-calls.sh"));
-        assert!(Blocked::HeldBy("ModemManager (pid 9)".into()).describe(BusKind::System).contains("ModemManager (pid 9)"));
+        assert!(
+            Blocked::NotAllowed
+                .describe(BusKind::System)
+                .contains("install-hfp-calls.sh")
+        );
+        assert!(
+            Blocked::HeldBy("ModemManager (pid 9)".into())
+                .describe(BusKind::System)
+                .contains("ModemManager (pid 9)")
+        );
     }
 }

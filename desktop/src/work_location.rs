@@ -30,13 +30,20 @@ use std::time::{Duration, Instant};
 
 use teams_cli::api::{self, client::TeamsClient, places};
 
-#[zbus::proxy(interface = "org.freedesktop.NetworkManager", default_service = "org.freedesktop.NetworkManager", default_path = "/org/freedesktop/NetworkManager")]
+#[zbus::proxy(
+    interface = "org.freedesktop.NetworkManager",
+    default_service = "org.freedesktop.NetworkManager",
+    default_path = "/org/freedesktop/NetworkManager"
+)]
 trait NetworkManager {
     #[zbus(property)]
     fn primary_connection(&self) -> zbus::Result<zbus::zvariant::OwnedObjectPath>;
 }
 
-#[zbus::proxy(interface = "org.freedesktop.NetworkManager.Connection.Active", default_service = "org.freedesktop.NetworkManager")]
+#[zbus::proxy(
+    interface = "org.freedesktop.NetworkManager.Connection.Active",
+    default_service = "org.freedesktop.NetworkManager"
+)]
 trait ActiveConnection {
     #[zbus(property, name = "Type")]
     fn kind(&self) -> zbus::Result<String>;
@@ -44,13 +51,19 @@ trait ActiveConnection {
     fn devices(&self) -> zbus::Result<Vec<zbus::zvariant::OwnedObjectPath>>;
 }
 
-#[zbus::proxy(interface = "org.freedesktop.NetworkManager.Device.Wireless", default_service = "org.freedesktop.NetworkManager")]
+#[zbus::proxy(
+    interface = "org.freedesktop.NetworkManager.Device.Wireless",
+    default_service = "org.freedesktop.NetworkManager"
+)]
 trait Wireless {
     #[zbus(property)]
     fn active_access_point(&self) -> zbus::Result<zbus::zvariant::OwnedObjectPath>;
 }
 
-#[zbus::proxy(interface = "org.freedesktop.NetworkManager.AccessPoint", default_service = "org.freedesktop.NetworkManager")]
+#[zbus::proxy(
+    interface = "org.freedesktop.NetworkManager.AccessPoint",
+    default_service = "org.freedesktop.NetworkManager"
+)]
 trait AccessPoint {
     #[zbus(property)]
     fn ssid(&self) -> zbus::Result<Vec<u8>>;
@@ -71,24 +84,45 @@ pub enum Network {
 
 /// NetworkManager's primary connection.
 pub async fn current_network() -> Network {
-    let Ok(conn) = zbus::Connection::system().await else { return Network::Offline };
-    let Ok(nm) = NetworkManagerProxy::new(&conn).await else { return Network::Offline };
-    let Ok(primary) = nm.primary_connection().await else { return Network::Offline };
+    let Ok(conn) = zbus::Connection::system().await else {
+        return Network::Offline;
+    };
+    let Ok(nm) = NetworkManagerProxy::new(&conn).await else {
+        return Network::Offline;
+    };
+    let Ok(primary) = nm.primary_connection().await else {
+        return Network::Offline;
+    };
     if primary.as_str() == "/" {
         return Network::Offline;
     }
     let wifi = async {
-        let active = ActiveConnectionProxy::builder(&conn).path(primary).ok()?.build().await.ok()?;
+        let active = ActiveConnectionProxy::builder(&conn)
+            .path(primary)
+            .ok()?
+            .build()
+            .await
+            .ok()?;
         if active.kind().await.ok()? != "802-11-wireless" {
             return Some(None);
         }
         let device = active.devices().await.ok()?.into_iter().next()?;
-        let wireless = WirelessProxy::builder(&conn).path(device).ok()?.build().await.ok()?;
+        let wireless = WirelessProxy::builder(&conn)
+            .path(device)
+            .ok()?
+            .build()
+            .await
+            .ok()?;
         let ap_path = wireless.active_access_point().await.ok()?;
         if ap_path.as_str() == "/" {
             return None;
         }
-        let ap = AccessPointProxy::builder(&conn).path(ap_path).ok()?.build().await.ok()?;
+        let ap = AccessPointProxy::builder(&conn)
+            .path(ap_path)
+            .ok()?
+            .build()
+            .await
+            .ok()?;
         let ssid = String::from_utf8_lossy(&ap.ssid().await.ok()?).to_string();
         let bssid = ap.hw_address().await.ok()?.to_lowercase();
         Some(Some((ssid, bssid)))
@@ -130,9 +164,10 @@ static SINK: std::sync::Mutex<Option<Sink>> = std::sync::Mutex::new(None);
 fn notify(kind: &str, data: serde_json::Value) {
     tracing::info!("WORKLOC banner {kind} {data}");
     if let Ok(sink) = SINK.lock()
-        && let Some(sink) = sink.as_ref() {
-            sink(kind, data);
-        }
+        && let Some(sink) = sink.as_ref()
+    {
+        sink(kind, data);
+    }
 }
 
 /// Set the check-in's mode (the policy and your switch, from Settings'
@@ -203,40 +238,73 @@ pub fn action_for(network: &Network, allow_list: &[String]) -> Action {
 /// A Places flight, at Teams' bundled default (config-prod) unless ECS
 /// says otherwise.
 fn places_flag(key: &str, default: bool) -> bool {
-    api::ecs::setting("places", key).and_then(|v| v.as_bool()).unwrap_or(default)
+    api::ecs::setting("places", key)
+        .and_then(|v| v.as_bool())
+        .unwrap_or(default)
 }
 
-async fn process(m: Mode, network: &Network, allow: &mut Option<(Instant, Vec<String>)>) -> anyhow::Result<String> {
+async fn process(
+    m: Mode,
+    network: &Network,
+    allow: &mut Option<(Instant, Vec<String>)>,
+) -> anyhow::Result<String> {
     if *network == Network::Offline {
         return Ok("offline".into());
     }
     let client = TeamsClient::new().await?;
-    let epid = api::presence::changes().borrow().epid.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let epid = api::presence::changes()
+        .borrow()
+        .epid
+        .clone()
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     // Teams keeps the tenant's list a day (DEFAULT_SSID_ALLOW_LIST_TTL).
-    if allow.as_ref().map(|(t, _)| t.elapsed() > Duration::from_secs(86_400)).unwrap_or(true) {
-        *allow = Some((Instant::now(), places::ssid_allow_list(&client, &epid).await?));
+    if allow
+        .as_ref()
+        .map(|(t, _)| t.elapsed() > Duration::from_secs(86_400))
+        .unwrap_or(true)
+    {
+        *allow = Some((
+            Instant::now(),
+            places::ssid_allow_list(&client, &epid).await?,
+        ));
     }
     let list = allow.as_ref().map(|(_, l)| l.clone()).unwrap_or_default();
     let with_ssid = places_flag("useSSIDForIC3LSNetworkApiRequest", true);
     match action_for(network, &list) {
-        Action::Skip => Ok(format!("nothing to do ({network:?}, {} office networks)", list.len())),
+        Action::Skip => Ok(format!(
+            "nothing to do ({network:?}, {} office networks)",
+            list.len()
+        )),
         // Never set (Teams' collect step: not consented, not acknowledged,
         // first-run banner not seen): look the network up without checking
         // in, and on any place (404 reads as "In the office", SSID match)
         // raise the first-run banner.
         Action::Report if m == Mode::Ask => {
-            let Network::Wifi(ssid, bssid) = network else { return Ok("not on Wi-Fi".into()) };
-            let r = places::resolve_network(&client, &epid, bssid, with_ssid.then_some(ssid.as_str())).await?;
+            let Network::Wifi(ssid, bssid) = network else {
+                return Ok("not on Wi-Fi".into());
+            };
+            let r =
+                places::resolve_network(&client, &epid, bssid, with_ssid.then_some(ssid.as_str()))
+                    .await?;
             let (building, place) = match &r {
                 places::Detected::Building { id, name } => (name.clone(), id.clone()),
                 _ => (String::new(), String::new()),
             };
-            notify("firstRun", serde_json::json!({ "building": building, "placeId": place }));
+            notify(
+                "firstRun",
+                serde_json::json!({ "building": building, "placeId": place }),
+            );
             Ok(format!("first run: {r:?}"))
         }
         Action::Report => {
-            let Network::Wifi(ssid, bssid) = network else { return Ok("not on Wi-Fi".into()) };
-            let body = places::network_body(bssid, with_ssid.then_some(ssid.as_str()), chrono::Utc::now());
+            let Network::Wifi(ssid, bssid) = network else {
+                return Ok("not on Wi-Fi".into());
+            };
+            let body = places::network_body(
+                bssid,
+                with_ssid.then_some(ssid.as_str()),
+                chrono::Utc::now(),
+            );
             let r = places::report_network(&client, &epid, &body).await?;
             Ok(format!("{r:?}"))
         }
@@ -253,7 +321,11 @@ async fn process(m: Mode, network: &Network, allow: &mut Option<(Instant, Vec<St
                 return Ok(format!("{reason}: work location not from a check-in"));
             }
             // A stationary device stays checked in at its building.
-            let home = crate::backend::load_settings().get("deviceHomeBuildingId").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let home = crate::backend::load_settings()
+                .get("deviceHomeBuildingId")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
             if reason == "WIRED_CONNECTION" && !home.is_empty() && home == building_id {
                 return Ok(format!("{reason}: at this device's stationary building"));
             }
@@ -279,7 +351,11 @@ pub fn checkout_banner(reason: &str, device_home_building: &str) -> bool {
 /// getCurrentVerifiedLocation), or None when none is set.
 async fn my_work_location(client: &TeamsClient) -> Option<(String, String)> {
     let oid = client.object_id()?;
-    let p = api::presence::get_presences(client.http(), &[format!("8:orgid:{oid}")]).await.ok()?.into_iter().next()?;
+    let p = api::presence::get_presences(client.http(), &[format!("8:orgid:{oid}")])
+        .await
+        .ok()?
+        .into_iter()
+        .next()?;
     (!p.work_location.is_empty()).then_some((p.work_location_source, p.work_location_building_id))
 }
 
@@ -292,8 +368,14 @@ mod tests {
         let list = vec!["Condor Cave".to_string()];
         let wifi = |s: &str| Network::Wifi(s.into(), "f4:92:bf:78:c4:67".into());
         assert_eq!(action_for(&wifi("Condor Cave"), &list), Action::Report);
-        assert_eq!(action_for(&wifi("Cafe"), &list), Action::CheckOut("SSID_MISMATCH"));
-        assert_eq!(action_for(&Network::Wired, &list), Action::CheckOut("WIRED_CONNECTION"));
+        assert_eq!(
+            action_for(&wifi("Cafe"), &list),
+            Action::CheckOut("SSID_MISMATCH")
+        );
+        assert_eq!(
+            action_for(&Network::Wired, &list),
+            Action::CheckOut("WIRED_CONNECTION")
+        );
         assert_eq!(action_for(&Network::Offline, &list), Action::Skip);
         // An empty allow list: Teams unsubscribes (EMPTY_SSID_ALLOWLIST).
         assert_eq!(action_for(&wifi("Condor Cave"), &[]), Action::Skip);

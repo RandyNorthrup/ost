@@ -123,7 +123,9 @@ impl Context {
             return Err("the selected microphone isn't a Bluetooth hands-free device");
         }
         if self.bt_mics.len() > 1 {
-            return Err("more than 1 Bluetooth hands-free device; HFP call controls are not available");
+            return Err(
+                "more than 1 Bluetooth hands-free device; HFP call controls are not available",
+            );
         }
         Ok(())
     }
@@ -148,7 +150,10 @@ struct Prefs {
     sync: bool,
 }
 
-static PREFS: Mutex<Prefs> = Mutex::new(Prefs { mic: None, sync: true });
+static PREFS: Mutex<Prefs> = Mutex::new(Prefs {
+    mic: None,
+    sync: true,
+});
 /// The microphone whose gain OST zeroed for its mute, if any.
 static ZEROED: Mutex<Option<String>> = Mutex::new(None);
 
@@ -171,7 +176,11 @@ pub fn context() -> Context {
     let mic = mic.or_else(|| {
         // The system default, only worth asking about with a Bluetooth
         // microphone around.
-        if bt_mics.is_empty() { None } else { crate::calling::pw_defaults::default_endpoints().0 }
+        if bt_mics.is_empty() {
+            None
+        } else {
+            crate::calling::pw_defaults::default_endpoints().0
+        }
     });
     Context { sync, mic, bt_mics }
 }
@@ -198,13 +207,18 @@ pub fn sync_app_mute(in_call: bool, muted: bool) {
             .ok();
         Mutex::new(tx)
     });
-    let _ = tx.lock().unwrap_or_else(|e| e.into_inner()).send((in_call, muted));
+    let _ = tx
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .send((in_call, muted));
 }
 
 fn apply_app_mute(in_call: bool, muted: bool) {
     let ctx = context();
     let mut zeroed = ZEROED.lock().unwrap_or_else(|e| e.into_inner());
-    let want = (in_call && muted && ctx.gate().is_ok()).then(|| ctx.mic.clone()).flatten();
+    let want = (in_call && muted && ctx.gate().is_ok())
+        .then(|| ctx.mic.clone())
+        .flatten();
     if *zeroed == want {
         return;
     }
@@ -278,12 +292,19 @@ mod watch {
     static CMD: OnceLock<Mutex<pw::channel::Sender<Cmd>>> = OnceLock::new();
 
     pub fn bt_mics() -> Vec<String> {
-        MICS.lock().unwrap_or_else(|e| e.into_inner()).iter().map(|(_, m)| m.name.clone()).collect()
+        MICS.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .map(|(_, m)| m.name.clone())
+            .collect()
     }
 
     pub fn set_gain_muted(mic: &str, muted: bool) {
         if let Some(tx) = CMD.get() {
-            let _ = tx.lock().unwrap_or_else(|e| e.into_inner()).send(Cmd::SetMuted(mic.to_string(), muted));
+            let _ = tx
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .send(Cmd::SetMuted(mic.to_string(), muted));
         }
     }
 
@@ -308,24 +329,33 @@ mod watch {
     fn volumes_of(pod: &spa::pod::Pod) -> Option<Vec<f32>> {
         use spa::pod::{Value, ValueArray, deserialize::PodDeserializer};
         let (_, value) = PodDeserializer::deserialize_any_from(pod.as_bytes()).ok()?;
-        let Value::Object(obj) = value else { return None };
-        obj.properties.into_iter().find(|p| p.key == spa::sys::SPA_PROP_channelVolumes).and_then(|p| match p.value {
-            Value::ValueArray(ValueArray::Float(v)) => Some(v),
-            _ => None,
-        })
+        let Value::Object(obj) = value else {
+            return None;
+        };
+        obj.properties
+            .into_iter()
+            .find(|p| p.key == spa::sys::SPA_PROP_channelVolumes)
+            .and_then(|p| match p.value {
+                Value::ValueArray(ValueArray::Float(v)) => Some(v),
+                _ => None,
+            })
     }
 
     /// An input route of a device: (route index, its profile device).
     fn input_route_of(pod: &spa::pod::Pod) -> Option<(i32, i32)> {
         use spa::pod::{Value, deserialize::PodDeserializer};
         let (_, value) = PodDeserializer::deserialize_any_from(pod.as_bytes()).ok()?;
-        let Value::Object(obj) = value else { return None };
+        let Value::Object(obj) = value else {
+            return None;
+        };
         let (mut index, mut device, mut input) = (None, None, false);
         for p in obj.properties {
             match (p.key, p.value) {
                 (spa::sys::SPA_PARAM_ROUTE_index, Value::Int(i)) => index = Some(i),
                 (spa::sys::SPA_PARAM_ROUTE_device, Value::Int(d)) => device = Some(d),
-                (spa::sys::SPA_PARAM_ROUTE_direction, Value::Id(d)) => input = d.0 == spa::sys::SPA_DIRECTION_INPUT,
+                (spa::sys::SPA_PARAM_ROUTE_direction, Value::Id(d)) => {
+                    input = d.0 == spa::sys::SPA_DIRECTION_INPUT
+                }
                 _ => {}
             }
         }
@@ -334,12 +364,21 @@ mod watch {
 
     /// The device route that sets the headset's gain.
     fn route_pod(index: i32, device: i32, volumes: Vec<f32>) -> Option<Vec<u8>> {
-        use spa::pod::{Object, Property, PropertyFlags, Value, ValueArray, serialize::PodSerializer};
-        let prop = |key, value| Property { key, flags: PropertyFlags::empty(), value };
+        use spa::pod::{
+            Object, Property, PropertyFlags, Value, ValueArray, serialize::PodSerializer,
+        };
+        let prop = |key, value| Property {
+            key,
+            flags: PropertyFlags::empty(),
+            value,
+        };
         let props = Value::Object(Object {
             type_: spa::utils::SpaTypes::ObjectParamProps.as_raw(),
             id: spa::param::ParamType::Route.as_raw(),
-            properties: vec![prop(spa::sys::SPA_PROP_channelVolumes, Value::ValueArray(ValueArray::Float(volumes)))],
+            properties: vec![prop(
+                spa::sys::SPA_PROP_channelVolumes,
+                Value::ValueArray(ValueArray::Float(volumes)),
+            )],
         });
         let value = Value::Object(Object {
             type_: spa::utils::SpaTypes::ObjectParamRoute.as_raw(),
@@ -353,7 +392,12 @@ mod watch {
                 prop(spa::sys::SPA_PARAM_ROUTE_save, Value::Bool(false)),
             ],
         });
-        Some(PodSerializer::serialize(std::io::Cursor::new(Vec::new()), &value).ok()?.0.into_inner())
+        Some(
+            PodSerializer::serialize(std::io::Cursor::new(Vec::new()), &value)
+                .ok()?
+                .0
+                .into_inner(),
+        )
     }
 
     fn run(rx: pw::channel::Receiver<Cmd>, on_gain: GainHandler) -> anyhow::Result<()> {
@@ -364,7 +408,8 @@ mod watch {
         let registry = core.get_registry_rc()?;
         let on_gain = Rc::new(on_gain);
         // Bound nodes and their listeners, by global id.
-        let nodes: Rc<RefCell<HashMap<u32, (pw::node::Node, pw::node::NodeListener)>>> = Rc::default();
+        let nodes: Rc<RefCell<HashMap<u32, (pw::node::Node, pw::node::NodeListener)>>> =
+            Rc::default();
         // Bound Bluetooth devices, their listeners and input routes.
         type Routes = Rc<RefCell<Vec<(i32, i32)>>>;
         type Devices = HashMap<u32, (pw::device::Device, pw::device::DeviceListener, Routes)>;
@@ -541,7 +586,11 @@ mod tests {
     #[test]
     fn gate_is_teams_checks() {
         let bt = "Headset (HFP)".to_string();
-        let mut c = Context { sync: true, mic: Some(bt.clone()), bt_mics: vec![bt.clone()] };
+        let mut c = Context {
+            sync: true,
+            mic: Some(bt.clone()),
+            bt_mics: vec![bt.clone()],
+        };
         assert!(c.gate().is_ok());
         c.sync = false;
         assert!(c.gate().is_err());

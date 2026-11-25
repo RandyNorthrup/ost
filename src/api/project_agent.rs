@@ -67,11 +67,23 @@ pub fn offered(flag: impl Fn(&str) -> Option<Value>, copilot: bool, locale: &str
 
 /// Whether the tenant offers the agent (its templated app is listed).
 pub fn in_templated_apps(reply: &Value, app: &str) -> bool {
-    reply["value"].as_array().into_iter().flatten().any(|t| t["id"].as_str().is_some_and(|id| id.eq_ignore_ascii_case(app)))
+    reply["value"].as_array().into_iter().flatten().any(|t| {
+        t["id"]
+            .as_str()
+            .is_some_and(|id| id.eq_ignore_ascii_case(app))
+    })
 }
 
 /// Teams' create request (the hook's input as the resolver sends it).
-pub fn create_body(channel: &str, team_thread: &str, group: &str, me: &str, prompt: &str, image: &str, now: chrono::DateTime<chrono::Utc>) -> Value {
+pub fn create_body(
+    channel: &str,
+    team_thread: &str,
+    group: &str,
+    me: &str,
+    prompt: &str,
+    image: &str,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Value {
     let name: String = format!("{channel} Agent").chars().take(30).collect();
     let start = now + chrono::Duration::hours(1);
     let end = start + chrono::Duration::days(90);
@@ -98,10 +110,27 @@ pub fn create_body(channel: &str, team_thread: &str, group: &str, me: &str, prom
 
 /// Add the Channel Agent to a new team's first channel as Teams does.
 /// Ok(false) when the tenant doesn't offer it (Teams stops silently).
-pub async fn add_to_new_team(client: &TeamsClient, channel: &str, team_thread: &str, group: &str, prompt: &str) -> Result<bool> {
-    let mt = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+pub async fn add_to_new_team(
+    client: &TeamsClient,
+    channel: &str,
+    team_thread: &str,
+    group: &str,
+    prompt: &str,
+) -> Result<bool> {
+    let mt = client
+        .middle_tier_url()
+        .context("No Teams middle-tier endpoint")?;
     let mt_token = super::directory::middle_tier_token().await?;
-    let templated: Value = client.http().get(format!("{mt}/beta/users/apps/templatedApps")).bearer_auth(&mt_token).send().await?.error_for_status().context("Templated apps")?.json().await?;
+    let templated: Value = client
+        .http()
+        .get(format!("{mt}/beta/users/apps/templatedApps"))
+        .bearer_auth(&mt_token)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Templated apps")?
+        .json()
+        .await?;
     let app = app_id();
     if !in_templated_apps(&templated, &app) {
         tracing::info!("channel agent: not offered in this tenant");
@@ -109,18 +138,33 @@ pub async fn add_to_new_team(client: &TeamsClient, channel: &str, team_thread: &
     }
     // enableProjectAgentAutoInstallDelay: Teams lets the new team's site
     // settle first (projectAgentAutoInstallDelayMs, 40 s).
-    if super::ecs::setting("messaging", "enableProjectAgentAutoInstallDelay").and_then(|v| v.as_bool()).unwrap_or(false) {
-        let ms = super::ecs::setting("messaging", "projectAgentAutoInstallDelayMs").and_then(|v| v.as_u64()).unwrap_or(40_000);
+    if super::ecs::setting("messaging", "enableProjectAgentAutoInstallDelay")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        let ms = super::ecs::setting("messaging", "projectAgentAutoInstallDelayMs")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(40_000);
         tokio::time::sleep(std::time::Duration::from_millis(ms.min(120_000))).await;
     }
     let base = client
         .region_endpoint("calling_TeamsCopilotAggregatorUrl")
         .unwrap_or_else(|| "https://teams.cloud.microsoft/api/tca/api/v1".into());
     let base = base.trim_end_matches('/').to_string();
-    let token = crate::auth::oauth::access_token_for(&format!("{}/.default", resource())).await.context("Channel Agent sign-in")?;
+    let token = crate::auth::oauth::access_token_for(&format!("{}/.default", resource()))
+        .await
+        .context("Channel Agent sign-in")?;
     let me = client.object_id().unwrap_or_default();
     let image = "https://teams.cloud.microsoft/v2/evergreen-assets/apps/project_agent_statusagentlogo.png?v=2.0.0";
-    let body = create_body(channel, team_thread, group, &me, prompt, image, chrono::Utc::now());
+    let body = create_body(
+        channel,
+        team_thread,
+        group,
+        &me,
+        prompt,
+        image,
+        chrono::Utc::now(),
+    );
     let r = client
         .http()
         .post(format!("{base}/agents?agentType=0"))
@@ -138,7 +182,10 @@ pub async fn add_to_new_team(client: &TeamsClient, channel: &str, team_thread: &
     // Teams takes 2xx and 500 with an agent id as made.
     let id = reply["agentId"].as_str().unwrap_or_default();
     tracing::info!("channel agent: {status} agent={}", !id.is_empty());
-    anyhow::ensure!(!id.is_empty() && (status.is_success() || status.as_u16() == 500), "The Channel Agent wasn't made ({status})");
+    anyhow::ensure!(
+        !id.is_empty() && (status.is_success() || status.as_u16() == 500),
+        "The Channel Agent wasn't made ({status})"
+    );
     Ok(true)
 }
 
@@ -158,14 +205,27 @@ pub fn is_welcome(message: &Value) -> bool {
 /// `projectAgentWelcomeMessageWaitTimeoutSeconds` (600 s), looking at the
 /// channel's newest messages every 20 s.
 pub async fn wait_for_welcome(client: &TeamsClient, channel: &str) -> Result<bool> {
-    let limit = super::ecs::setting("messaging", "projectAgentWelcomeMessageWaitTimeoutSeconds").and_then(|v| v.as_u64()).unwrap_or(600);
-    let url = format!("{}/v1/users/ME/conversations/{}/messages?pageSize=10&view=msnp24Equivalent", client.chat_service_url(), channel);
+    let limit = super::ecs::setting("messaging", "projectAgentWelcomeMessageWaitTimeoutSeconds")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(600);
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}/messages?pageSize=10&view=msnp24Equivalent",
+        client.chat_service_url(),
+        channel
+    );
     let start = std::time::Instant::now();
     while start.elapsed().as_secs() < limit {
         tokio::time::sleep(std::time::Duration::from_secs(20)).await;
-        let Ok(r) = client.chat_get(&url).await else { continue };
+        let Ok(r) = client.chat_get(&url).await else {
+            continue;
+        };
         let v: Value = r.json().await.unwrap_or(Value::Null);
-        if v["messages"].as_array().into_iter().flatten().any(is_welcome) {
+        if v["messages"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(is_welcome)
+        {
             return Ok(true);
         }
     }
@@ -178,8 +238,13 @@ mod tests {
 
     #[test]
     fn offered_as_teams() {
-        let ecs = |pairs: Vec<(&'static str, Value)>| move |k: &str| pairs.iter().find(|(n, _)| *n == k).map(|(_, v)| v.clone());
-        let base = vec![("enableProjectAgentAutoCreationToggle", json!(true)), ("enableStatusReportAgent", json!(true))];
+        let ecs = |pairs: Vec<(&'static str, Value)>| {
+            move |k: &str| pairs.iter().find(|(n, _)| *n == k).map(|(_, v)| v.clone())
+        };
+        let base = vec![
+            ("enableProjectAgentAutoCreationToggle", json!(true)),
+            ("enableStatusReportAgent", json!(true)),
+        ];
         assert!(offered(ecs(base.clone()), true, "en-us"));
         assert!(!offered(ecs(base.clone()), false, "en-us"));
         let mut team = base.clone();
@@ -189,19 +254,42 @@ mod tests {
         loc.push(("projectAgentSupportedLocales", json!(["de-de"])));
         assert!(!offered(ecs(loc.clone()), true, "en-US"));
         assert!(offered(ecs(loc), true, "de-DE"));
-        assert!(!offered(ecs(vec![("enableStatusReportAgent", json!(true))]), true, "en-us"));
+        assert!(!offered(
+            ecs(vec![("enableStatusReportAgent", json!(true))]),
+            true,
+            "en-us"
+        ));
     }
 
     #[test]
     fn create_body_as_teams() {
-        let now = chrono::DateTime::parse_from_rfc3339("2026-11-21T03:44:00Z").unwrap().with_timezone(&chrono::Utc);
-        let b = create_body("A channel with a rather long name", "19:t@thread.tacv2", "g", "me", "p", "i", now);
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-21T03:44:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let b = create_body(
+            "A channel with a rather long name",
+            "19:t@thread.tacv2",
+            "g",
+            "me",
+            "p",
+            "i",
+            now,
+        );
         assert_eq!(b["agentName"], "A channel with a rather long n");
         assert_eq!(b["recurrence"]["pattern"]["weekly"]["daysOfTheWeek"][0], 6);
-        assert_eq!(b["recurrence"]["range"]["startDate"], "2026-11-21T04:44:00.000Z");
-        assert_eq!(b["threadListInformation"]["channelList"][0]["channelId"], "19:t@thread.tacv2");
+        assert_eq!(
+            b["recurrence"]["range"]["startDate"],
+            "2026-11-21T04:44:00.000Z"
+        );
+        assert_eq!(
+            b["threadListInformation"]["channelList"][0]["channelId"],
+            "19:t@thread.tacv2"
+        );
         assert_eq!(b["approvalList"][0], "me");
-        assert!(in_templated_apps(&json!({"value": [{"id": "5EBB964D-4dd7-4ea6-acd5-a5f310390c5b"}]}), "5ebb964d-4dd7-4ea6-acd5-a5f310390c5b"));
+        assert!(in_templated_apps(
+            &json!({"value": [{"id": "5EBB964D-4dd7-4ea6-acd5-a5f310390c5b"}]}),
+            "5ebb964d-4dd7-4ea6-acd5-a5f310390c5b"
+        ));
         assert!(!in_templated_apps(&json!({"value": []}), "x"));
     }
 }

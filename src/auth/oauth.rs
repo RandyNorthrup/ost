@@ -280,25 +280,53 @@ pub async fn begin_sign_in() -> Result<PendingSignIn> {
 /// served from `app_origin`, minted from the stored browser sign-in, as
 /// Teams on the web answers an app's GetToken. The hub's refresh token is
 /// left as it is.
-pub async fn brokered_token(app_client_id: &str, app_origin: &str, scope: &str, claims: Option<&str>) -> Result<(String, Option<u64>)> {
+pub async fn brokered_token(
+    app_client_id: &str,
+    app_origin: &str,
+    scope: &str,
+    claims: Option<&str>,
+) -> Result<(String, Option<u64>)> {
     let tokens = brokered_tokens(app_client_id, app_origin, scope, claims).await?;
     Ok((tokens.access_token, tokens.expires_in))
 }
 
 /// [`brokered_token`] with the whole answer (the app's OpenID token too, for
 /// the account Teams returns with it).
-pub async fn brokered_tokens(app_client_id: &str, app_origin: &str, scope: &str, claims: Option<&str>) -> Result<TokenSet> {
+pub async fn brokered_tokens(
+    app_client_id: &str,
+    app_origin: &str,
+    scope: &str,
+    claims: Option<&str>,
+) -> Result<TokenSet> {
     let config = Config::load()?;
     anyhow::ensure!(
         config.auth_flow.as_deref() == Some(super::TEAMS_WEB_FLOW),
         "Embedded apps' tokens need the browser sign-in"
     );
-    let rt = config.get_refresh_token().context("Not signed in (no refresh token)")?;
-    let tenant = config.tenant_id.clone().unwrap_or_else(|| "organizations".into());
-    let client = AadClient::new(reqwest::Client::new(), app_client_id, &tenant).with_origin(Some(super::spa::ORIGIN));
-    let full_scope = if scope.contains("openid") { scope.to_string() } else { format!("{scope} openid profile offline_access") };
+    let rt = config
+        .get_refresh_token()
+        .context("Not signed in (no refresh token)")?;
+    let tenant = config
+        .tenant_id
+        .clone()
+        .unwrap_or_else(|| "organizations".into());
+    let client = AadClient::new(reqwest::Client::new(), app_client_id, &tenant)
+        .with_origin(Some(super::spa::ORIGIN));
+    let full_scope = if scope.contains("openid") {
+        scope.to_string()
+    } else {
+        format!("{scope} openid profile offline_access")
+    };
     let tokens = client
-        .broker_refresh(app_client_id, &rt, &full_scope, super::spa::CLIENT_ID, super::spa::REDIRECT_URI, &super::spa::app_redirect_uri(app_origin), claims)
+        .broker_refresh(
+            app_client_id,
+            &rt,
+            &full_scope,
+            super::spa::CLIENT_ID,
+            super::spa::REDIRECT_URI,
+            &super::spa::app_redirect_uri(app_origin),
+            claims,
+        )
         .await?;
     Ok(tokens)
 }
@@ -323,17 +351,29 @@ pub async fn finish_sign_in(pending: PendingSignIn) -> Result<Vec<&'static str>>
 
 /// Redeem a browser sign-in's code (Teams on the web's sign-in, see
 /// [`super::spa`]) and store every token OST needs, as [`finish_sign_in`].
-pub async fn finish_browser_sign_in(pending: &super::spa::BrowserSignIn, code: &str) -> Result<Vec<&'static str>> {
+pub async fn finish_browser_sign_in(
+    pending: &super::spa::BrowserSignIn,
+    code: &str,
+) -> Result<Vec<&'static str>> {
     let client = build_client(&AuthConfig::teams_web());
     let tokens = client
-        .redeem_code(code, pending.verifier(), super::spa::REDIRECT_URI, super::spa::SIGN_IN_SCOPE)
+        .redeem_code(
+            code,
+            pending.verifier(),
+            super::spa::REDIRECT_URI,
+            super::spa::SIGN_IN_SCOPE,
+        )
         .await
         .context("Failed to redeem the sign-in")?;
     store_sign_in(&client, &tokens, Some(super::TEAMS_WEB_FLOW)).await
 }
 
 /// Store a sign-in's tokens and mint the other audiences from it.
-async fn store_sign_in(client: &AadClient, tokens: &TokenSet, flow: Option<&str>) -> Result<Vec<&'static str>> {
+async fn store_sign_in(
+    client: &AadClient,
+    tokens: &TokenSet,
+    flow: Option<&str>,
+) -> Result<Vec<&'static str>> {
     // Single load-mutate-save, so a partial failure never leaves half a login.
     let mut config = Config::load()?;
     config.auth_flow = flow.map(str::to_string);

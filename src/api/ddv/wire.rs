@@ -17,7 +17,7 @@
 use std::io::Write;
 use std::sync::atomic::{AtomicI64, Ordering};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 // Bond CompactBinary field types.
 const BT_STOP: u8 = 0;
@@ -91,20 +91,34 @@ static SEQ: AtomicI64 = AtomicI64::new(0);
 
 fn ids() -> (&'static str, &'static str) {
     static IDS: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
-    let (a, b) = IDS.get_or_init(|| (uuid::Uuid::new_v4().to_string().to_uppercase(), uuid::Uuid::new_v4().to_string().to_uppercase()));
+    let (a, b) = IDS.get_or_init(|| {
+        (
+            uuid::Uuid::new_v4().to_string().to_uppercase(),
+            uuid::Uuid::new_v4().to_string().to_uppercase(),
+        )
+    });
     (a, b)
 }
 
 fn os_version() -> String {
     std::fs::read_to_string("/etc/os-release")
         .ok()
-        .and_then(|s| s.lines().find_map(|l| l.strip_prefix("VERSION_ID=").map(|v| v.trim_matches('"').to_string())))
+        .and_then(|s| {
+            s.lines().find_map(|l| {
+                l.strip_prefix("VERSION_ID=")
+                    .map(|v| v.trim_matches('"').to_string())
+            })
+        })
         .unwrap_or_default()
 }
 
 fn utc_offset() -> String {
     let secs = chrono::Local::now().offset().local_minus_utc();
-    let (sign, m) = if secs < 0 { ('-', -secs / 60) } else { ('+', secs / 60) };
+    let (sign, m) = if secs < 0 {
+        ('-', -secs / 60)
+    } else {
+        ('+', secs / 60)
+    };
     format!("{sign}{:02}:{:02}", m / 60, m % 60)
 }
 
@@ -139,7 +153,10 @@ pub fn record(at_ms: u64, name: &str, data: &serde_json::Value) -> Vec<u8> {
     ext(&mut o, 33, |o| str_field(o, 3, &utc_offset()));
     str_field(&mut o, 60, name);
     // Data: the event's fields as strings (as Teams sends all of its own).
-    let mut props: Vec<(String, String)> = vec![("AppInfo.ClientType".into(), APP_NAME.into()), ("AppInfo.Version".into(), env!("CARGO_PKG_VERSION").into())];
+    let mut props: Vec<(String, String)> = vec![
+        ("AppInfo.ClientType".into(), APP_NAME.into()),
+        ("AppInfo.Version".into(), env!("CARGO_PKG_VERSION").into()),
+    ];
     if let Some(map) = data.as_object() {
         for (k, v) in map {
             let s = match v {
@@ -172,7 +189,9 @@ fn url(target: (std::net::Ipv4Addr, Option<u16>)) -> String {
 }
 
 fn post(http: &reqwest::Client, url: &str, body: Vec<u8>) -> reqwest::RequestBuilder {
-    let host = std::fs::read_to_string("/etc/hostname").map(|h| h.trim().to_string()).unwrap_or_default();
+    let host = std::fs::read_to_string("/etc/hostname")
+        .map(|h| h.trim().to_string())
+        .unwrap_or_default();
     // The viewer wants the length even of the empty Connect POST (Teams
     // sends "Content-Length: 0"); without it Microsoft's Diagnostic Data
     // Viewer answers 411 and then stops answering anyone (seen on winpc,
@@ -203,11 +222,19 @@ fn client() -> Result<reqwest::Client> {
 pub async fn handshake(target: (std::net::Ipv4Addr, Option<u16>)) -> Result<()> {
     let http = client()?;
     let u = url(target);
-    let r = http.get(&u).header("Accept", "*/*").send().await.context("Diagnostic Data Viewer")?;
+    let r = http
+        .get(&u)
+        .header("Accept", "*/*")
+        .send()
+        .await
+        .context("Diagnostic Data Viewer")?;
     if !r.status().is_success() {
         bail!("Diagnostic Data Viewer: HTTP {}", r.status().as_u16());
     }
-    let r = post(&http, &u, Vec::new()).send().await.context("Diagnostic Data Viewer")?;
+    let r = post(&http, &u, Vec::new())
+        .send()
+        .await
+        .context("Diagnostic Data Viewer")?;
     if !r.status().is_success() {
         bail!("Diagnostic Data Viewer: HTTP {}", r.status().as_u16());
     }
@@ -215,12 +242,20 @@ pub async fn handshake(target: (std::net::Ipv4Addr, Option<u16>)) -> Result<()> 
 }
 
 /// One event to the viewer at `connection` (raw-deflated, as Teams sends).
-pub async fn send(connection: &str, at_ms: u64, name: &str, data: &serde_json::Value) -> Result<()> {
+pub async fn send(
+    connection: &str,
+    at_ms: u64,
+    name: &str,
+    data: &serde_json::Value,
+) -> Result<()> {
     let target = super::parse_connection_string(connection)?;
     let mut z = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
     z.write_all(&record(at_ms, name, data))?;
     let body = z.finish()?;
-    let r = post(&client()?, &url(target), body).send().await.context("Diagnostic Data Viewer")?;
+    let r = post(&client()?, &url(target), body)
+        .send()
+        .await
+        .context("Diagnostic Data Viewer")?;
     if !r.status().is_success() {
         bail!("Diagnostic Data Viewer: HTTP {}", r.status().as_u16());
     }
@@ -233,14 +268,21 @@ mod tests {
 
     #[test]
     fn records_are_bond_compact_like_teams() {
-        let r = record(1_763_550_000_000, "Ost.UpdateCheck", &serde_json::json!({ "status": 200, "url": "u" }));
+        let r = record(
+            1_763_550_000_000,
+            "Ost.UpdateCheck",
+            &serde_json::json!({ "status": 200, "url": "u" }),
+        );
         // 1 ver "3.0", then 2 name.
         assert_eq!(&r[..5], &[0x29, 3, b'3', b'.', b'0']);
         assert_eq!(r[5], 0x49);
         assert_eq!(r[6] as usize, "Ost.UpdateCheck".len());
         assert_eq!(*r.last().unwrap(), BT_STOP);
         // Field 60 goes as an id byte after the type.
-        let pos = r.windows(2).position(|w| w == [(6 << 5) | BT_STRING, 60]).unwrap();
+        let pos = r
+            .windows(2)
+            .position(|w| w == [(6 << 5) | BT_STRING, 60])
+            .unwrap();
         assert!(pos > 7);
     }
 

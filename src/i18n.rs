@@ -51,7 +51,11 @@ pub const IDS: &str = include_str!("../desktop/i18n/ids.json");
 pub fn install(catalogue: Option<&str>, locale: &str) -> anyhow::Result<()> {
     let cat = Catalogue::new(IDS, catalogue, locale)?;
     *CATALOGUE.write().unwrap() = Some(Arc::new(cat));
-    *LOCALE.write().unwrap() = if catalogue.is_some() { locale.to_string() } else { String::new() };
+    *LOCALE.write().unwrap() = if catalogue.is_some() {
+        locale.to_string()
+    } else {
+        String::new()
+    };
     Ok(())
 }
 
@@ -70,7 +74,7 @@ pub fn locale() -> String {
 /// "A, B und C" in de-de, "A、B、C" in ja-jp. An empty locale is en-us, as
 /// [`locale`] is in English.
 pub fn list_and(items: &[String], locale: &str) -> String {
-    use icu_list::{options::ListFormatterOptions, ListFormatter};
+    use icu_list::{ListFormatter, options::ListFormatterOptions};
     let tag = if locale.is_empty() { "en-us" } else { locale };
     let loc = icu_locale_core::Locale::try_from_str(tag)
         .unwrap_or_else(|_| icu_locale_core::Locale::try_from_str("en-us").expect("en-us"));
@@ -83,89 +87,118 @@ pub fn list_and(items: &[String], locale: &str) -> String {
 }
 
 impl Catalogue {
-fn new(ids: &str, catalogue: Option<&str>, locale: &str) -> anyhow::Result<Self> {
-    let strings = match catalogue {
-        Some(c) => {
-            let v: Value = serde_json::from_str(c)?;
-            match v.get("strings") {
-                Some(Value::Object(m)) if !m.is_empty() => m.clone(),
-                _ => anyhow::bail!("catalogue has no strings"),
+    fn new(ids: &str, catalogue: Option<&str>, locale: &str) -> anyhow::Result<Self> {
+        let strings = match catalogue {
+            Some(c) => {
+                let v: Value = serde_json::from_str(c)?;
+                match v.get("strings") {
+                    Some(Value::Object(m)) if !m.is_empty() => m.clone(),
+                    _ => anyhow::bail!("catalogue has no strings"),
+                }
+            }
+            None => serde_json::Map::new(),
+        };
+        let rows_in: Vec<Vec<Value>> = serde_json::from_str(ids)?;
+        let mut index = HashMap::with_capacity(rows_in.len() * 2);
+        let mut rows = Vec::with_capacity(rows_in.len());
+        let mut english = HashMap::new();
+        for (i, r) in rows_in.iter().enumerate() {
+            let s = |k: usize| r.get(k).and_then(Value::as_str).unwrap_or_default();
+            let (source, dis, id) = (s(0), s(1), s(2));
+            // Teams' translation, else OST's English plural forms.
+            rows.push(
+                strings
+                    .get(id)
+                    .cloned()
+                    .or_else(|| r.get(4).cloned())
+                    .unwrap_or(Value::Null),
+            );
+            index.insert(key(source, dis), i);
+            // the id names the string too: tr_id("…", "<ns>:<key>")
+            index.insert(key(source, id), i);
+            if let Some(Value::String(t)) = strings.get(id)
+                && !source.contains('%')
+            {
+                english
+                    .entry(t.clone())
+                    .or_insert_with(|| source.to_string());
             }
         }
-        None => serde_json::Map::new(),
-    };
-    let rows_in: Vec<Vec<Value>> = serde_json::from_str(ids)?;
-    let mut index = HashMap::with_capacity(rows_in.len() * 2);
-    let mut rows = Vec::with_capacity(rows_in.len());
-    let mut english = HashMap::new();
-    for (i, r) in rows_in.iter().enumerate() {
-        let s = |k: usize| r.get(k).and_then(Value::as_str).unwrap_or_default();
-        let (source, dis, id) = (s(0), s(1), s(2));
-        // Teams' translation, else OST's English plural forms.
-        rows.push(strings.get(id).cloned().or_else(|| r.get(4).cloned()).unwrap_or(Value::Null));
-        index.insert(key(source, dis), i);
-        // the id names the string too: tr_id("…", "<ns>:<key>")
-        index.insert(key(source, id), i);
-        if let Some(Value::String(t)) = strings.get(id)
-            && !source.contains('%')
-        {
-            english.entry(t.clone()).or_insert_with(|| source.to_string());
+        let base = locale.split('-').next().unwrap_or_default();
+        let lang = if locale == "pt-br" {
+            "pt-br".to_string()
+        } else {
+            base.to_string()
+        };
+        let zero = match base {
+            "ar" => '\u{660}',
+            "fa" => '\u{6f0}',
+            _ => '0',
+        };
+        Ok(Catalogue {
+            index,
+            rows,
+            lang,
+            zero,
+            english,
+        })
+    }
+
+    fn row(&self, source: &str, dis: &str) -> Option<&Value> {
+        let i = self
+            .index
+            .get(&key(source, dis))
+            .or_else(|| (!dis.is_empty()).then(|| self.index.get(source)).flatten())?;
+        self.rows.get(*i)
+    }
+
+    /// A plural message's form for `n`: an exact `=N` form first, else the
+    /// language's category, else "other"; its `%n` in the language's digits,
+    /// `%N` as written.
+    fn form(&self, forms: &serde_json::Map<String, Value>, n: i64) -> Option<String> {
+        let pick = forms
+            .get(&format!("={n}"))
+            .or_else(|| forms.get(plural_category(&self.lang, n.unsigned_abs())))
+            .or_else(|| forms.get("other"))?;
+        Some(
+            pick.as_str()?
+                .replace("%n", &number_in(n, self.zero))
+                .replace("%N", &n.to_string()),
+        )
+    }
+
+    fn lookup(&self, source: &str, dis: &str, n: Option<i64>) -> Option<String> {
+        match self.row(source, dis)? {
+            Value::String(s) => Some(match n {
+                Some(n) => s
+                    .replace("%n", &number_in(n, self.zero))
+                    .replace("%N", &n.to_string()),
+                None => s.clone(),
+            }),
+            Value::Object(forms) => self.form(forms, n.unwrap_or(0)),
+            _ => None,
         }
     }
-    let base = locale.split('-').next().unwrap_or_default();
-    let lang = if locale == "pt-br" { "pt-br".to_string() } else { base.to_string() };
-    let zero = match base {
-        "ar" => '\u{660}',
-        "fa" => '\u{6f0}',
-        _ => '0',
-    };
-    Ok(Catalogue { index, rows, lang, zero, english })
-}
 
-fn row(&self, source: &str, dis: &str) -> Option<&Value> {
-    let i = self.index.get(&key(source, dis)).or_else(|| (!dis.is_empty()).then(|| self.index.get(source)).flatten())?;
-    self.rows.get(*i)
-}
-
-/// A plural message's form for `n`: an exact `=N` form first, else the
-/// language's category, else "other"; its `%n` in the language's digits,
-/// `%N` as written.
-fn form(&self, forms: &serde_json::Map<String, Value>, n: i64) -> Option<String> {
-    let pick = forms
-        .get(&format!("={n}"))
-        .or_else(|| forms.get(plural_category(&self.lang, n.unsigned_abs())))
-        .or_else(|| forms.get("other"))?;
-    Some(pick.as_str()?.replace("%n", &number_in(n, self.zero)).replace("%N", &n.to_string()))
-}
-
-fn lookup(&self, source: &str, dis: &str, n: Option<i64>) -> Option<String> {
-    match self.row(source, dis)? {
-        Value::String(s) => Some(match n {
-            Some(n) => s.replace("%n", &number_in(n, self.zero)).replace("%N", &n.to_string()),
-            None => s.clone(),
-        }),
-        Value::Object(forms) => self.form(forms, n.unwrap_or(0)),
-        _ => None,
-    }
-}
-
-/// A message with several counts (its segments), each count by name.
-fn lookup_counts(&self, source: &str, dis: &str, counts: &[(&str, i64)]) -> Option<String> {
-    let Value::Array(segs) = self.row(source, dis)? else { return None };
-    let mut out = String::new();
-    for s in segs {
-        match s {
-            Value::String(t) => out.push_str(t),
-            Value::Object(o) => {
-                let var = o.get("var")?.as_str()?;
-                let n = counts.iter().find(|(k, _)| *k == var)?.1;
-                out.push_str(&self.form(o.get("forms")?.as_object()?, n)?);
+    /// A message with several counts (its segments), each count by name.
+    fn lookup_counts(&self, source: &str, dis: &str, counts: &[(&str, i64)]) -> Option<String> {
+        let Value::Array(segs) = self.row(source, dis)? else {
+            return None;
+        };
+        let mut out = String::new();
+        for s in segs {
+            match s {
+                Value::String(t) => out.push_str(t),
+                Value::Object(o) => {
+                    let var = o.get("var")?.as_str()?;
+                    let n = counts.iter().find(|(k, _)| *k == var)?.1;
+                    out.push_str(&self.form(o.get("forms")?.as_object()?, n)?);
+                }
+                _ => return None,
             }
-            _ => return None,
         }
+        Some(out)
     }
-    Some(out)
-}
 }
 
 thread_local! {
@@ -188,14 +221,17 @@ pub fn in_english<R>(f: impl FnOnce() -> R) -> R {
 
 fn english_catalogue() -> Option<Arc<Catalogue>> {
     static EN: std::sync::OnceLock<Option<Arc<Catalogue>>> = std::sync::OnceLock::new();
-    EN.get_or_init(|| Catalogue::new(IDS, None, "en-us").ok().map(Arc::new)).clone()
+    EN.get_or_init(|| Catalogue::new(IDS, None, "en-us").ok().map(Arc::new))
+        .clone()
 }
 
 /// OST's English for a whole text shown in the app language (a window
 /// title, a label), for reports; the text itself when it isn't one of
 /// OST's translated strings.
 pub fn english(text: &str) -> String {
-    current().and_then(|c| c.english.get(text).cloned()).unwrap_or_else(|| text.to_string())
+    current()
+        .and_then(|c| c.english.get(text).cloned())
+        .unwrap_or_else(|| text.to_string())
 }
 
 fn current() -> Option<Arc<Catalogue>> {
@@ -225,7 +261,11 @@ fn number_in(n: i64, zero: char) -> String {
         return s;
     }
     s.chars()
-        .map(|c| c.to_digit(10).and_then(|d| char::from_u32(zero as u32 + d)).unwrap_or(c))
+        .map(|c| {
+            c.to_digit(10)
+                .and_then(|d| char::from_u32(zero as u32 + d))
+                .unwrap_or(c)
+        })
         .collect()
 }
 
@@ -264,7 +304,13 @@ pub fn tr_id_n(source: &str, id: &str, n: i64) -> String {
 pub fn tr_id_counts(source: &str, id: &str, counts: &[(&str, i64)]) -> String {
     current()
         .and_then(|c| c.lookup_counts(source, id, counts))
-        .unwrap_or_else(|| counts.iter().map(|(k, n)| format!("{n} {k}")).collect::<Vec<_>>().join(" "))
+        .unwrap_or_else(|| {
+            counts
+                .iter()
+                .map(|(k, n)| format!("{n} {k}"))
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
 }
 
 /// A translated text's placeholders `%1`…`%9` filled with `args`, in one
@@ -459,11 +505,23 @@ mod tests {
         let cat = r#"{"strings":{"calling:ka":"Anruf beendet","messaging:kb":"%1 hat %2 zum Chat hinzugefügt.","messaging:kc_mf":{"one":"%n weitere Person","other":"%n weitere Personen"}}}"#;
         let de = Catalogue::new(TEST_IDS, Some(cat), "de-de").unwrap();
         assert_eq!(t(&de, "Call ended", "", None).unwrap(), "Anruf beendet");
-        assert_eq!(fill(&t(&de, "%1 added %2 to the chat.", "messaging:kb", None).unwrap(), &["Ann", "Bo %1"]), "Ann hat Bo %1 zum Chat hinzugefügt.");
+        assert_eq!(
+            fill(
+                &t(&de, "%1 added %2 to the chat.", "messaging:kb", None).unwrap(),
+                &["Ann", "Bo %1"]
+            ),
+            "Ann hat Bo %1 zum Chat hinzugefügt."
+        );
         // the same English under another id Teams hasn't translated: English
         assert_eq!(t(&de, "%1 added %2 to the chat.", "", None), None);
-        assert_eq!(t(&de, "%n others", "", Some(1)).unwrap(), "1 weitere Person");
-        assert_eq!(t(&de, "%n others", "", Some(4)).unwrap(), "4 weitere Personen");
+        assert_eq!(
+            t(&de, "%n others", "", Some(1)).unwrap(),
+            "1 weitere Person"
+        );
+        assert_eq!(
+            t(&de, "%n others", "", Some(4)).unwrap(),
+            "4 weitere Personen"
+        );
         assert_eq!(t(&de, "Not OST's", "", None), None);
         let cat = r#"{"strings":{"messaging:kc_mf":{"one":"%n آخر","two":"اثنان آخران","few":"%n آخرين","other":"%n آخر"}}}"#;
         let ar = Catalogue::new(TEST_IDS, Some(cat), "ar-sa").unwrap();
@@ -478,23 +536,42 @@ mod tests {
     fn several_counts_and_raw_counts() {
         let ids = r#"[["{hour}h {min}m {sec}s","messaging:kd_mf","messaging:kd_mf",[],[{"var":"hour","forms":{"=0":"","other":"%nh"}}," ",{"var":"min","forms":{"=0":"","other":"%nm"}}," ",{"var":"sec","forms":{"=0":"","other":"%ns"}}]],["and will expire in %n days.","messaging:ke_mf","messaging:ke_mf",[],{"=1":"and will expire in %N day.","other":"and will expire in %N days."}]]"#;
         let en = Catalogue::new(ids, None, "en-us").unwrap();
-        let c = |cat: &Catalogue, h, m, s| cat.lookup_counts("{hour}h {min}m {sec}s", "messaging:kd_mf", &[("hour", h), ("min", m), ("sec", s)]).unwrap().trim().to_string();
+        let c = |cat: &Catalogue, h, m, s| {
+            cat.lookup_counts(
+                "{hour}h {min}m {sec}s",
+                "messaging:kd_mf",
+                &[("hour", h), ("min", m), ("sec", s)],
+            )
+            .unwrap()
+            .trim()
+            .to_string()
+        };
         assert_eq!(c(&en, 0, 11, 0), "11m");
         assert_eq!(c(&en, 1, 0, 5), "1h  5s");
         let cat = r#"{"strings":{"messaging:kd_mf":[{"var":"hour","forms":{"=0":"","other":"%nس"}}," ",{"var":"min","forms":{"=0":"","other":"%nد"}}," ",{"var":"sec","forms":{"=0":"","other":"%nث"}}],"messaging:ke_mf":{"other":"في غضون %N يوماً."}}}"#;
         let ar = Catalogue::new(ids, Some(cat), "ar-sa").unwrap();
         // Teams: "٥د ٥٤ث" (#), but "في غضون 120 يوماً" ({remainingDays})
         assert_eq!(c(&ar, 0, 5, 54), "٥د ٥٤ث");
-        assert_eq!(ar.lookup("and will expire in %n days.", "messaging:ke_mf", Some(120)).unwrap(), "في غضون 120 يوماً.");
+        assert_eq!(
+            ar.lookup("and will expire in %n days.", "messaging:ke_mf", Some(120))
+                .unwrap(),
+            "في غضون 120 يوماً."
+        );
     }
 
     #[test]
     fn reports_in_english() {
         let cat = r#"{"strings":{"calling:ka":"Anruf beendet"}}"#;
         let de = Catalogue::new(TEST_IDS, Some(cat), "de-de").unwrap();
-        assert_eq!(de.english.get("Anruf beendet").map(String::as_str), Some("Call ended"));
+        assert_eq!(
+            de.english.get("Anruf beendet").map(String::as_str),
+            Some("Call ended")
+        );
         // in_english: OST's English on this thread, whatever is installed
-        assert_eq!(in_english(|| tr_id_n("%n others", "messaging:k7xsi91tl_mf", 1)), "1 other");
+        assert_eq!(
+            in_english(|| tr_id_n("%n others", "messaging:k7xsi91tl_mf", 1)),
+            "1 other"
+        );
         assert_eq!(english("not translated"), "not translated");
     }
 
@@ -503,7 +580,10 @@ mod tests {
         // nothing installed in tests: OST's English, plural forms included
         assert_eq!(tr("Call ended"), "Call ended");
         assert_eq!(tr_id_n("%n others", "messaging:k7xsi91tl_mf", 1), "1 other");
-        assert_eq!(tr_id_n("%n others", "messaging:k7xsi91tl_mf", 2), "2 others");
+        assert_eq!(
+            tr_id_n("%n others", "messaging:k7xsi91tl_mf", 2),
+            "2 others"
+        );
     }
 
     #[test]

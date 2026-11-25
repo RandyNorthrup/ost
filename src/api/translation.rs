@@ -62,7 +62,10 @@ pub fn language_code(locale: &str) -> String {
     let Some(first) = l[1.min(l.len())..].find('-').map(|i| i + 1) else {
         return l;
     };
-    let second = l[first + 1..].find('-').map(|i| i + first + 1).unwrap_or(l.len());
+    let second = l[first + 1..]
+        .find('-')
+        .map(|i| i + first + 1)
+        .unwrap_or(l.len());
     // A four-letter script subtag stays.
     let end = if second - first == 5 { second } else { first };
     l[..end].to_string()
@@ -72,7 +75,11 @@ pub fn language_code(locale: &str) -> String {
 /// never want translated.
 pub fn default_settings(locale: &str) -> Settings {
     let target = language_code(locale);
-    Settings { target: target.clone(), mode: Mode::Suggest, known: vec![target] }
+    Settings {
+        target: target.clone(),
+        mode: Mode::Suggest,
+        known: vec![target],
+    }
 }
 
 /// The language Teams reads from a message's languageStamp property
@@ -112,7 +119,10 @@ pub fn source_language(stamp: &str, target: &str, tuner: &serde_json::Value) -> 
     if scores.last().is_some_and(|(c, _)| c.is_empty()) {
         scores.pop();
     }
-    let low = Source { code: code.clone(), high: false };
+    let low = Source {
+        code: code.clone(),
+        high: false,
+    };
     let length_entry = scores.last().is_some_and(|(c, _)| *c == "length");
     if length.is_none() && !length_entry {
         return Some(low);
@@ -120,11 +130,18 @@ pub fn source_language(stamp: &str, target: &str, tuner: &serde_json::Value) -> 
     let Some(pe) = tuner
         .get("settingsData")
         .and_then(|d| d.as_array())
-        .and_then(|d| d.iter().find(|e| e.get("detector").and_then(|x| x.as_str()) == Some(detector)))
+        .and_then(|d| {
+            d.iter()
+                .find(|e| e.get("detector").and_then(|x| x.as_str()) == Some(detector))
+        })
     else {
         return Some(low);
     };
-    let Some(min_confidence) = pe.get("minConfidence").and_then(|x| x.as_i64()).filter(|c| *c != 0) else {
+    let Some(min_confidence) = pe
+        .get("minConfidence")
+        .and_then(|x| x.as_i64())
+        .filter(|c| *c != 0)
+    else {
         return Some(low);
     };
     if target.is_empty() {
@@ -139,8 +156,15 @@ pub fn source_language(stamp: &str, target: &str, tuner: &serde_json::Value) -> 
             return Some(low);
         }
         // Text that also reads well as your language is yours.
-        if scores.iter().find(|(c, _)| *c == target).is_some_and(|(_, s)| *s >= min_confidence) {
-            return Some(Source { code: target.to_string(), high: false });
+        if scores
+            .iter()
+            .find(|(c, _)| *c == target)
+            .is_some_and(|(_, s)| *s >= min_confidence)
+        {
+            return Some(Source {
+                code: target.to_string(),
+                high: false,
+            });
         }
     }
     Some(Source { code, high: true })
@@ -152,12 +176,14 @@ fn min_chars(pe: &serde_json::Value, code: &str) -> i64 {
         "ar" | "fa" | "ku" => "arabic",
         "ru" | "uk" | "bg" | "sr" | "sr-cyrl" | "mk" | "uz" => "cyrillic",
         "zh" | "zh-chs" | "zh-cht" | "ja" | "ko" => "han",
-        "vi" | "en" | "de" | "fr" | "es" | "it" | "pt" | "ca" | "nl" | "pl" | "tr" | "sv" | "cs" | "da" | "hu" | "no" | "nb"
-        | "ro" | "fi" | "ms" | "sk" | "et" | "hr" | "lt" | "sl" | "id" | "lv" | "gl" | "is" | "sq" | "nn" | "cy" | "af" | "mt"
-        | "ga" | "eo" | "so" | "sw" | "bs" | "eu" | "az" | "ht" | "la" | "za" | "sr-latn" => "latin",
+        "vi" | "en" | "de" | "fr" | "es" | "it" | "pt" | "ca" | "nl" | "pl" | "tr" | "sv"
+        | "cs" | "da" | "hu" | "no" | "nb" | "ro" | "fi" | "ms" | "sk" | "et" | "hr" | "lt"
+        | "sl" | "id" | "lv" | "gl" | "is" | "sq" | "nn" | "cy" | "af" | "mt" | "ga" | "eo"
+        | "so" | "sw" | "bs" | "eu" | "az" | "ht" | "la" | "za" | "sr-latn" => "latin",
         _ => "",
     };
-    let get = |o: Option<&serde_json::Value>, k: &str| o.and_then(|m| m.get(k)).and_then(|x| x.as_i64());
+    let get =
+        |o: Option<&serde_json::Value>, k: &str| o.and_then(|m| m.get(k)).and_then(|x| x.as_i64());
     get(pe.get("minCharMapOverrides"), code)
         .or_else(|| get(pe.get("minCharMap"), script))
         .or_else(|| get(pe.get("minCharMap"), "others"))
@@ -168,8 +194,14 @@ fn min_chars(pe: &serde_json::Value, code: &str) -> i64 {
 /// in Ask me mode for a trusted language that isn't yours, and in
 /// Auto-translate mode once you've gone back to the original of a message
 /// it translated (Teams' shouldSuggestTranslation).
-pub fn suggest(settings: &Settings, source: Option<&Source>, showing_original_of_auto: bool) -> bool {
-    let Some(src) = source.filter(|s| s.high) else { return false };
+pub fn suggest(
+    settings: &Settings,
+    source: Option<&Source>,
+    showing_original_of_auto: bool,
+) -> bool {
+    let Some(src) = source.filter(|s| s.high) else {
+        return false;
+    };
     if is_known(settings, &src.code) {
         return false;
     }
@@ -206,38 +238,93 @@ mod tests {
         assert_eq!(language_code("zh-TW"), "zh-cht");
         assert_eq!(language_code("zh-CN"), "zh-chs");
         assert_eq!(language_code("pt_BR"), "pt");
-        assert_eq!(default_settings("en-US"), Settings { target: "en".into(), mode: Mode::Suggest, known: vec!["en".into()] });
+        assert_eq!(
+            default_settings("en-US"),
+            Settings {
+                target: "en".into(),
+                mode: Mode::Suggest,
+                known: vec!["en".into()]
+            }
+        );
     }
 
     #[test]
     fn stamps_as_teams_reads_them() {
         let t = tuner();
         // OST TEST 139, German from OST Test 2: trusted.
-        let de = source_language("languages=de:100;nl:54;sk:49;length:101;&detector=Bling", "en", &t).unwrap();
-        assert_eq!(de, Source { code: "de".into(), high: true });
+        let de = source_language(
+            "languages=de:100;nl:54;sk:49;length:101;&detector=Bling",
+            "en",
+            &t,
+        )
+        .unwrap();
+        assert_eq!(
+            de,
+            Source {
+                code: "de".into(),
+                high: true
+            }
+        );
         // A table that also reads as English (99 ≥ 70): yours.
-        let table = source_language("languages=de:100;en:99;fr:95;length:51;&detector=Bling", "en", &t).unwrap();
-        assert_eq!(table, Source { code: "en".into(), high: false });
+        let table = source_language(
+            "languages=de:100;en:99;fr:95;length:51;&detector=Bling",
+            "en",
+            &t,
+        )
+        .unwrap();
+        assert_eq!(
+            table,
+            Source {
+                code: "en".into(),
+                high: false
+            }
+        );
         // Too short to trust.
-        let short = source_language("languages=de:100;nl:30;length:17;&detector=Bling", "en", &t).unwrap();
+        let short =
+            source_language("languages=de:100;nl:30;length:17;&detector=Bling", "en", &t).unwrap();
         assert!(!short.high);
         // No length, unknown detector, nothing detected.
         assert!(!source_language("languages=de:100;", "en", &t).unwrap().high);
-        assert!(!source_language("languages=de:100;length:80;&detector=Other", "en", &t).unwrap().high);
+        assert!(
+            !source_language("languages=de:100;length:80;&detector=Other", "en", &t)
+                .unwrap()
+                .high
+        );
         assert_eq!(source_language("languages=null:0;", "en", &t), None);
         assert_eq!(source_language("", "en", &t), None);
         // Your own language is trusted as is.
-        assert!(source_language("languages=en:100;length:5;&detector=Bling", "en", &t).unwrap().high);
+        assert!(
+            source_language("languages=en:100;length:5;&detector=Bling", "en", &t)
+                .unwrap()
+                .high
+        );
     }
 
     #[test]
     fn suggestions_and_auto_translation_follow_the_mode() {
-        let de = Source { code: "de".into(), high: true };
+        let de = Source {
+            code: "de".into(),
+            high: true,
+        };
         let mut s = default_settings("en-US");
         assert!(suggest(&s, Some(&de), false));
         assert!(!auto_translate(&s, Some(&de)));
-        assert!(!suggest(&s, Some(&Source { code: "de".into(), high: false }), false));
-        assert!(!suggest(&s, Some(&Source { code: "en".into(), high: true }), false));
+        assert!(!suggest(
+            &s,
+            Some(&Source {
+                code: "de".into(),
+                high: false
+            }),
+            false
+        ));
+        assert!(!suggest(
+            &s,
+            Some(&Source {
+                code: "en".into(),
+                high: true
+            }),
+            false
+        ));
         s.known.push("de".into());
         assert!(!suggest(&s, Some(&de), false));
         s.known.pop();

@@ -20,9 +20,20 @@ pub fn render(graph: &str, out: &str, width: u32, height: u32) -> anyhow::Result
     let o = CString::new(out)?;
     let mut err = vec![0 as core::ffi::c_char; 512];
     // SAFETY: NUL-terminated inputs; `err` has room for the message.
-    let r = unsafe { ost_clip_render(g.as_ptr(), o.as_ptr(), width as i32, height as i32, err.as_mut_ptr(), err.len() as i32) };
+    let r = unsafe {
+        ost_clip_render(
+            g.as_ptr(),
+            o.as_ptr(),
+            width as i32,
+            height as i32,
+            err.as_mut_ptr(),
+            err.len() as i32,
+        )
+    };
     if r != 0 {
-        let msg = unsafe { std::ffi::CStr::from_ptr(err.as_ptr()) }.to_string_lossy().to_string();
+        let msg = unsafe { std::ffi::CStr::from_ptr(err.as_ptr()) }
+            .to_string_lossy()
+            .to_string();
         anyhow::bail!("Couldn't make the clip: {msg}");
     }
     Ok(())

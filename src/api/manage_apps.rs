@@ -53,17 +53,30 @@ pub struct InstalledApp {
 /// Teams' burnt-in multimodal AI bot (config-prod multiModalAiBotId).
 const MULTIMODAL_AI_BOT: &str = "875394b0-da93-4f18-8a00-33dd8c4c4613";
 
-const PERSONAL_STATES: [&str; 4] = ["Installed", "AdminPreInstalled", "InstalledAndFavorited", "PreConsented"];
+const PERSONAL_STATES: [&str; 4] = [
+    "Installed",
+    "AdminPreInstalled",
+    "InstalledAndFavorited",
+    "PreConsented",
+];
 const TEAM_STATES: [&str; 3] = ["Installed", "AdminPreInstalled", "InstalledAndFavorited"];
 
 /// Teams' copy link for an app (`$$t`: `{deepLinkDomain}/l/app/{id}` with
 /// `source=manage-apps-copy-link`).
 pub fn copy_link(id: &str) -> String {
-    format!("https://teams.microsoft.com/l/app/{}?source=manage-apps-copy-link", tabs::encode_uri_component(id))
+    format!(
+        "https://teams.microsoft.com/l/app/{}?source=manage-apps-copy-link",
+        tabs::encode_uri_component(id)
+    )
 }
 
 fn app_from(d: &serde_json::Value) -> InstalledApp {
-    let s = |k: &str| d.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let s = |k: &str| {
+        d.get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     let id = s("id");
     InstalledApp {
         link: copy_link(&id),
@@ -87,23 +100,32 @@ pub fn merge(
 ) -> Vec<InstalledApp> {
     let mut out: Vec<InstalledApp> = Vec::new();
     let mut index: HashMap<String, usize> = HashMap::new();
-    let put = |app: InstalledApp, out: &mut Vec<InstalledApp>, index: &mut HashMap<String, usize>| {
-        let key = app.id.to_lowercase();
-        if let Some(&i) = index.get(&key) {
-            out[i] = app;
-        } else {
-            index.insert(key, out.len());
-            out.push(app);
-        }
-    };
+    let put =
+        |app: InstalledApp, out: &mut Vec<InstalledApp>, index: &mut HashMap<String, usize>| {
+            let key = app.id.to_lowercase();
+            if let Some(&i) = index.get(&key) {
+                out[i] = app;
+            } else {
+                index.insert(key, out.len());
+                out.push(app);
+            }
+        };
     // Shared apps first, your own over them (Teams' Map([...shared,
     // ...personal]), by app id only: a shared Planner beside your own
     // Planner shows twice in Teams, measured on winpc 2026-11-21).
     // Teams keeps shared apps in its store by id, so that's their order.
     let mut shared_sorted: Vec<&serde_json::Value> = shared.iter().collect();
-    shared_sorted.sort_by_key(|d| d.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_lowercase());
+    shared_sorted.sort_by_key(|d| {
+        d.get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_lowercase()
+    });
     for d in shared_sorted {
-        if d.get("state").and_then(|v| v.as_str()).is_some_and(|s| s != "Installed") {
+        if d.get("state")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| s != "Installed")
+        {
             continue;
         }
         let mut a = app_from(d);
@@ -118,10 +140,16 @@ pub fn merge(
         if !PERSONAL_STATES.contains(&state.as_str()) {
             continue;
         }
-        let Some(d) = definitions.get(id) else { continue };
+        let Some(d) = definitions.get(id) else {
+            continue;
+        };
         let mut a = app_from(d);
         a.personal = true;
-        let own = d.get("tenantId").and_then(|v| v.as_str()).is_some_and(|t| !t.is_empty()) && d.get("externalId").is_some();
+        let own = d
+            .get("tenantId")
+            .and_then(|v| v.as_str())
+            .is_some_and(|t| !t.is_empty())
+            && d.get("externalId").is_some();
         a.source = if own {
             "built"
         } else if state == "AdminPreInstalled" || state == "PreConsented" {
@@ -138,7 +166,11 @@ pub fn merge(
             if !TEAM_STATES.contains(&state) {
                 continue;
             }
-            let id = d.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_lowercase();
+            let id = d
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_lowercase();
             if let Some(&i) = index.get(&id) {
                 out[i].teams.push(place.clone());
             } else {
@@ -152,14 +184,26 @@ pub fn merge(
     let bot_of = |id: &str| -> String {
         definitions
             .get(id)
-            .or_else(|| shared.iter().find(|d| d.get("id").and_then(|v| v.as_str()) == Some(id)))
-            .and_then(|d| d.pointer("/bots/0/botId").or_else(|| d.pointer("/bots/0/id")).and_then(|v| v.as_str()))
+            .or_else(|| {
+                shared
+                    .iter()
+                    .find(|d| d.get("id").and_then(|v| v.as_str()) == Some(id))
+            })
+            .and_then(|d| {
+                d.pointer("/bots/0/botId")
+                    .or_else(|| d.pointer("/bots/0/id"))
+                    .and_then(|v| v.as_str())
+            })
             .unwrap_or_default()
             .to_lowercase()
     };
     out.retain(|a| {
         let bot = bot_of(&a.id);
-        !a.id.is_empty() && !hidden.iter().any(|h| h.eq_ignore_ascii_case(&a.id) || (!bot.is_empty() && h.to_lowercase().trim_start_matches("28:") == bot))
+        !a.id.is_empty()
+            && !hidden.iter().any(|h| {
+                h.eq_ignore_ascii_case(&a.id)
+                    || (!bot.is_empty() && h.to_lowercase().trim_start_matches("28:") == bot)
+            })
     });
     out
 }
@@ -168,7 +212,10 @@ pub fn merge(
 /// threads: each `teamsEntitlements[thread]` entry's definition with its
 /// state.
 pub fn team_apps_from(agg: &serde_json::Value, thread: &str) -> Vec<serde_json::Value> {
-    let defs = agg.pointer("/value/definitions").cloned().unwrap_or_default();
+    let defs = agg
+        .pointer("/value/definitions")
+        .cloned()
+        .unwrap_or_default();
     agg.pointer("/value/teamsEntitlements")
         .and_then(|t| t.get(thread))
         .and_then(|l| l.as_array())
@@ -176,7 +223,11 @@ pub fn team_apps_from(agg: &serde_json::Value, thread: &str) -> Vec<serde_json::
         .flatten()
         .filter_map(|e| {
             let id = e.get("id")?.as_str()?;
-            let mut d = defs.get(id).cloned().filter(|d| d.is_object()).unwrap_or_else(|| serde_json::json!({ "id": id }));
+            let mut d = defs
+                .get(id)
+                .cloned()
+                .filter(|d| d.is_object())
+                .unwrap_or_else(|| serde_json::json!({ "id": id }));
             d["state"] = e.get("state").cloned().unwrap_or_default();
             Some(d)
         })
@@ -193,7 +244,11 @@ pub fn sort(apps: &mut [InstalledApp], how: &str, mru: &[String]) {
             apps.reverse()
         }
         _ => {
-            let pos: HashMap<String, usize> = mru.iter().enumerate().map(|(i, a)| (a.to_lowercase(), i)).collect();
+            let pos: HashMap<String, usize> = mru
+                .iter()
+                .enumerate()
+                .map(|(i, a)| (a.to_lowercase(), i))
+                .collect();
             apps.sort_by_key(|a| pos.get(&a.id.to_lowercase()).copied().unwrap_or(usize::MAX));
         }
     }
@@ -205,7 +260,9 @@ pub async fn installed(client: &TeamsClient, how: &str) -> Result<Vec<InstalledA
     let (base, token) = tabs::middle_tier(client).await?;
     let agg: serde_json::Value = client
         .http()
-        .post(format!("{base}/beta/users/apps/aggregatedEntitlements?appbarview=userpinned"))
+        .post(format!(
+            "{base}/beta/users/apps/aggregatedEntitlements?appbarview=userpinned"
+        ))
         .bearer_auth(&token)
         .json(&serde_json::json!([]))
         .send()
@@ -221,11 +278,27 @@ pub async fn installed(client: &TeamsClient, how: &str) -> Result<Vec<InstalledA
         .flat_map(|o| o.values())
         .filter_map(|l| l.as_array())
         .flatten()
-        .filter_map(|e| Some((e.get("id")?.as_str()?.to_string(), e.get("state")?.as_str()?.to_string())))
+        .filter_map(|e| {
+            Some((
+                e.get("id")?.as_str()?.to_string(),
+                e.get("state")?.as_str()?.to_string(),
+            ))
+        })
         .collect();
-    let definitions = agg.pointer("/value/definitions").cloned().unwrap_or_default();
+    let definitions = agg
+        .pointer("/value/definitions")
+        .cloned()
+        .unwrap_or_default();
     let shared: Vec<serde_json::Value> = async {
-        let v: serde_json::Value = client.http().get(format!("{base}/beta/users/apps/entitlements")).bearer_auth(&token).send().await?.error_for_status()?.json().await?;
+        let v: serde_json::Value = client
+            .http()
+            .get(format!("{base}/beta/users/apps/entitlements"))
+            .bearer_auth(&token)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
         anyhow::Ok(v.as_array().cloned().unwrap_or_default())
     }
     .await
@@ -237,21 +310,46 @@ pub async fn installed(client: &TeamsClient, how: &str) -> Result<Vec<InstalledA
         .json()
         .await?;
     let mut teams = Vec::new();
-    for t in joined.get("value").and_then(|v| v.as_array()).into_iter().flatten() {
-        if t.get("isArchived").and_then(|v| v.as_bool()).unwrap_or(false) {
+    for t in joined
+        .get("value")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+    {
+        if t.get("isArchived")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             continue;
         }
-        let group = t.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let group = t
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
         if uuid::Uuid::parse_str(&group).is_err() {
             continue;
         }
         // The team's thread (Graph leaves internalId empty here): its
         // General channel's id.
-        let mut thread = t.get("internalId").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let mut thread = t
+            .get("internalId")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
         if thread.is_empty() {
             thread = async {
-                let v: serde_json::Value = client.graph_get(&format!("/teams/{group}/primaryChannel?$select=id")).await?.json().await?;
-                anyhow::Ok(v.get("id").and_then(|i| i.as_str()).unwrap_or_default().to_string())
+                let v: serde_json::Value = client
+                    .graph_get(&format!("/teams/{group}/primaryChannel?$select=id"))
+                    .await?
+                    .json()
+                    .await?;
+                anyhow::Ok(
+                    v.get("id")
+                        .and_then(|i| i.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                )
             }
             .await
             .unwrap_or_default();
@@ -261,7 +359,11 @@ pub async fn installed(client: &TeamsClient, how: &str) -> Result<Vec<InstalledA
         }
         let place = AppPlace {
             thread,
-            name: t.get("displayName").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+            name: t
+                .get("displayName")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
             group_id: group,
         };
         teams.push((place, Vec::new()));
@@ -274,7 +376,9 @@ pub async fn installed(client: &TeamsClient, how: &str) -> Result<Vec<InstalledA
     if !threads.is_empty() {
         let agg: serde_json::Value = client
             .http()
-            .post(format!("{base}/beta/users/apps/aggregatedEntitlements?appbarview=userpinned"))
+            .post(format!(
+                "{base}/beta/users/apps/aggregatedEntitlements?appbarview=userpinned"
+            ))
             .bearer_auth(&token)
             .json(&threads)
             .send()
@@ -289,11 +393,15 @@ pub async fn installed(client: &TeamsClient, how: &str) -> Result<Vec<InstalledA
     }
     // Teams hides the multimodal AI bot (ECS calling.enableMultiModalAiHideBot,
     // on; multiModalAiBotId, Teams' default below when ECS leaves it out).
-    let hide = super::ecs::setting("calling", "enableMultiModalAiHideBot").and_then(|v| v.as_bool()).unwrap_or(true);
+    let hide = super::ecs::setting("calling", "enableMultiModalAiHideBot")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
     let hidden: Vec<String> = if hide {
-        vec![super::ecs::setting("calling", "multiModalAiBotId")
-            .and_then(|v| v.as_str().map(str::to_string))
-            .unwrap_or_else(|| MULTIMODAL_AI_BOT.to_string())]
+        vec![
+            super::ecs::setting("calling", "multiModalAiBotId")
+                .and_then(|v| v.as_str().map(str::to_string))
+                .unwrap_or_else(|| MULTIMODAL_AI_BOT.to_string()),
+        ]
     } else {
         Vec::new()
     };
@@ -307,16 +415,32 @@ pub async fn installed(client: &TeamsClient, how: &str) -> Result<Vec<InstalledA
 /// users/apps/entitlements/{app}`) or a team (`DELETE {mt}/beta/teams/
 /// {team thread}/apps/entitlements/{app}`), as Teams. Remove does.
 pub async fn uninstall(client: &TeamsClient, app_id: &str, thread: &str) -> Result<()> {
-    anyhow::ensure!(!app_id.is_empty() && app_id.len() < 200 && !app_id.contains(['/', '?', '#']), "Not an app");
+    anyhow::ensure!(
+        !app_id.is_empty() && app_id.len() < 200 && !app_id.contains(['/', '?', '#']),
+        "Not an app"
+    );
     let (base, token) = tabs::middle_tier(client).await?;
     let app = tabs::encode_uri_component(app_id);
     let url = if thread.is_empty() {
         format!("{base}/beta/users/apps/entitlements/{app}")
     } else {
-        anyhow::ensure!(thread.starts_with("19:") && thread.len() < 200, "Not a team");
-        format!("{base}/beta/teams/{}/apps/entitlements/{app}", tabs::encode_uri_component(thread))
+        anyhow::ensure!(
+            thread.starts_with("19:") && thread.len() < 200,
+            "Not a team"
+        );
+        format!(
+            "{base}/beta/teams/{}/apps/entitlements/{app}",
+            tabs::encode_uri_component(thread)
+        )
     };
-    client.http().delete(url).bearer_auth(token).send().await?.error_for_status().context("Remove app")?;
+    client
+        .http()
+        .delete(url)
+        .bearer_auth(token)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Remove app")?;
     Ok(())
 }
 
@@ -325,13 +449,23 @@ pub async fn uninstall(client: &TeamsClient, app_id: &str, thread: &str) -> Resu
 /// a new one (`POST {mt}/beta/users/tenantapps/definitions/appPackage`,
 /// the zip as the body). Returns the staged app's id.
 pub async fn submit_app(client: &TeamsClient, package: &std::path::Path) -> Result<String> {
-    anyhow::ensure!(package.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")), "Choose an app package (.zip)");
+    anyhow::ensure!(
+        package
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("zip")),
+        "Choose an app package (.zip)"
+    );
     let body = std::fs::read(package).context("Read the app package")?;
-    anyhow::ensure!(body.len() < 50 * 1024 * 1024, "The app package is too large");
+    anyhow::ensure!(
+        body.len() < 50 * 1024 * 1024,
+        "The app package is too large"
+    );
     let (base, token) = tabs::middle_tier(client).await?;
     let v: serde_json::Value = client
         .http()
-        .post(format!("{base}/beta/users/tenantapps/definitions/appPackage"))
+        .post(format!(
+            "{base}/beta/users/tenantapps/definitions/appPackage"
+        ))
         .bearer_auth(token)
         .header("content-type", "application/zip")
         .body(body)
@@ -342,7 +476,10 @@ pub async fn submit_app(client: &TeamsClient, package: &std::path::Path) -> Resu
         .json()
         .await
         .unwrap_or_default();
-    Ok(v.get("id").and_then(|i| i.as_str()).unwrap_or_default().to_string())
+    Ok(v.get("id")
+        .and_then(|i| i.as_str())
+        .unwrap_or_default()
+        .to_string())
 }
 
 #[cfg(test)]
@@ -356,27 +493,44 @@ mod tests {
             "pl": {"id": "pl", "name": "Planner", "officeAssetId": "WA1"},
             "perm": {"id": "perm", "name": "Chat"},
         });
-        let personal = vec![("p1".to_string(), "Installed".to_string()), ("pl".to_string(), "Installed".to_string()), ("perm".to_string(), "InstalledAndPermanent".to_string())];
+        let personal = vec![
+            ("p1".to_string(), "Installed".to_string()),
+            ("pl".to_string(), "Installed".to_string()),
+            ("perm".to_string(), "InstalledAndPermanent".to_string()),
+        ];
         let shared = vec![
             serde_json::json!({"id": "s1", "name": "Surveys", "state": "Installed"}),
             serde_json::json!({"id": "s2", "name": "Planner", "officeAssetId": "WA1", "state": "Installed"}),
         ];
-        let team = AppPlace { thread: "19:t@thread.tacv2".into(), name: "OST Test Team".into(), group_id: "g".into() };
-        let teams = vec![(team.clone(), vec![
-            serde_json::json!({"id": "p1", "name": "Praise", "state": "Installed"}),
-            serde_json::json!({"id": "l1", "name": "Lists", "state": "Installed"}),
-            serde_json::json!({"id": "c1", "name": "Copilot", "state": "PreConsented"}),
-            serde_json::json!({"id": "w1", "name": "Website", "state": "InstalledAndPermanent"}),
-        ])];
+        let team = AppPlace {
+            thread: "19:t@thread.tacv2".into(),
+            name: "OST Test Team".into(),
+            group_id: "g".into(),
+        };
+        let teams = vec![(
+            team.clone(),
+            vec![
+                serde_json::json!({"id": "p1", "name": "Praise", "state": "Installed"}),
+                serde_json::json!({"id": "l1", "name": "Lists", "state": "Installed"}),
+                serde_json::json!({"id": "c1", "name": "Copilot", "state": "PreConsented"}),
+                serde_json::json!({"id": "w1", "name": "Website", "state": "InstalledAndPermanent"}),
+            ],
+        )];
         let mut apps = merge(&personal, &defs, &shared, &teams, &[]);
         let names: Vec<&str> = apps.iter().map(|a| a.name.as_str()).collect();
         // A shared Planner and your own Planner are two rows, as in Teams.
         assert_eq!(names, ["Surveys", "Planner", "Praise", "Planner", "Lists"]);
         assert_eq!(apps[2].teams, vec![team.clone()]);
         assert!(apps[2].personal && !apps[4].personal);
-        assert_eq!(apps[2].link, "https://teams.microsoft.com/l/app/p1?source=manage-apps-copy-link");
+        assert_eq!(
+            apps[2].link,
+            "https://teams.microsoft.com/l/app/p1?source=manage-apps-copy-link"
+        );
         sort(&mut apps, "recent", &["l1".to_string(), "p1".to_string()]);
-        assert_eq!(apps.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["l1", "p1", "s1", "s2", "pl"]);
+        assert_eq!(
+            apps.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(),
+            ["l1", "p1", "s1", "s2", "pl"]
+        );
         sort(&mut apps, "za", &[]);
         assert_eq!(apps[0].name, "Surveys");
         sort(&mut apps, "az", &[]);

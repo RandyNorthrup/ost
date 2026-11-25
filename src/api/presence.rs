@@ -182,14 +182,20 @@ pub async fn set_work_location(http: &reqwest::Client, location: Option<&str>) -
         .await
         .context("Work location request failed")?;
     if !resp.status().is_success() {
-        bail!("Setting work location failed: HTTP {}", resp.status().as_u16());
+        bail!(
+            "Setting work location failed: HTTP {}",
+            resp.status().as_u16()
+        );
     }
     Ok(())
 }
 
 /// Teams' work location body: the location's number (Office 1, Remote 2;
 /// none 0) and, when set, the end of today (23:59:59.999 local) in UTC.
-pub fn work_location_body(location: Option<&str>, now: chrono::DateTime<chrono::Local>) -> Result<serde_json::Value> {
+pub fn work_location_body(
+    location: Option<&str>,
+    now: chrono::DateTime<chrono::Local>,
+) -> Result<serde_json::Value> {
     let n = match location {
         None => return Ok(serde_json::json!({ "location": 0 })),
         Some("Office") => 1,
@@ -499,7 +505,9 @@ pub fn note_html(editor_html: &str) -> String {
     let (html, mentions) = super::messages::teams_html_and_mentions(editor_html);
     // Spans of the same person next to each other (words joined by
     // &nbsp; or a space) become one.
-    let open = |i: usize| format!("<span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"{i}\">");
+    let open = |i: usize| {
+        format!("<span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"{i}\">")
+    };
     let mut out = String::new();
     let mut rest = html.as_str();
     let mut next = 0;
@@ -536,9 +544,13 @@ pub fn note_html(editor_html: &str) -> String {
             }
             name.push_str(super::strip_html(&body[..end]).trim());
             after = &body[(end + "</span>".len()).min(body.len())..];
-            let sep = ["&nbsp;", "\u{a0}", " "].iter().find(|s| after.starts_with(*s));
+            let sep = ["&nbsp;", "\u{a0}", " "]
+                .iter()
+                .find(|s| after.starts_with(*s));
             match (sep, mentions.get(j + 1)) {
-                (Some(sep), Some(m)) if m.mri == mentions[i].mri && after[sep.len()..].starts_with(&open(j + 1)) => {
+                (Some(sep), Some(m))
+                    if m.mri == mentions[i].mri && after[sep.len()..].starts_with(&open(j + 1)) =>
+                {
                     after = &after[sep.len()..];
                     j += 1;
                 }
@@ -558,7 +570,10 @@ pub fn note_html(editor_html: &str) -> String {
     }
     out.push_str(rest);
     // One paragraph, as Teams' note editor keeps it.
-    let inner = out.replace("</p><p>", " ").replace("<p>", "").replace("</p>", "");
+    let inner = out
+        .replace("</p><p>", " ")
+        .replace("<p>", "")
+        .replace("</p>", "");
     format!("<p>{}</p>", inner.trim())
 }
 
@@ -567,14 +582,22 @@ pub fn note_html_any(message: &str) -> String {
     if message.trim_start().starts_with('<') {
         note_html(message)
     } else {
-        format!("<p>{}</p>", message.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;"))
+        format!(
+            "<p>{}</p>",
+            message
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+        )
     }
 }
 
 /// The note's plain text (what the profile shows while editing).
 pub fn note_plain(editor_html: &str) -> String {
     if editor_html.trim_start().starts_with('<') {
-        super::strip_html(&note_html(editor_html)).trim().to_string()
+        super::strip_html(&note_html(editor_html))
+            .trim()
+            .to_string()
     } else {
         editor_html.to_string()
     }
@@ -624,13 +647,26 @@ mod expiry_tests {
     #[test]
     fn work_location_bodies_are_teams() {
         use chrono::TimeZone;
-        let now = chrono::Local.with_ymd_and_hms(2026, 11, 10, 9, 0, 0).unwrap();
-        assert_eq!(work_location_body(None, now).unwrap(), serde_json::json!({ "location": 0 }));
+        let now = chrono::Local
+            .with_ymd_and_hms(2026, 11, 10, 9, 0, 0)
+            .unwrap();
+        assert_eq!(
+            work_location_body(None, now).unwrap(),
+            serde_json::json!({ "location": 0 })
+        );
         let office = work_location_body(Some("Office"), now).unwrap();
         assert_eq!(office["location"], 1);
-        let end = chrono::DateTime::parse_from_rfc3339(office["expirationTime"].as_str().unwrap()).unwrap().with_timezone(&chrono::Local);
-        assert_eq!((end.date_naive(), end.format("%H:%M:%S%.3f").to_string()), (now.date_naive(), "23:59:59.999".to_string()));
-        assert_eq!(work_location_body(Some("Remote"), now).unwrap()["location"], 2);
+        let end = chrono::DateTime::parse_from_rfc3339(office["expirationTime"].as_str().unwrap())
+            .unwrap()
+            .with_timezone(&chrono::Local);
+        assert_eq!(
+            (end.date_naive(), end.format("%H:%M:%S%.3f").to_string()),
+            (now.date_naive(), "23:59:59.999".to_string())
+        );
+        assert_eq!(
+            work_location_body(Some("Remote"), now).unwrap()["location"],
+            2
+        );
         assert!(work_location_body(Some("Moon"), now).is_err());
     }
     use chrono::{Datelike, TimeZone, Timelike};
@@ -776,32 +812,54 @@ fn parse_presences(v: &serde_json::Value) -> Vec<UserPresence> {
                     .unwrap_or_default()
                     .to_string()
             };
-            let message = p.pointer("/note/message").and_then(|m| m.as_str()).unwrap_or_default();
+            let message = p
+                .pointer("/note/message")
+                .and_then(|m| m.as_str())
+                .unwrap_or_default();
             let pinned = message.contains("<pinnednote>");
             let body = message.replace("<pinnednote></pinnednote>", "");
             Some(UserPresence {
                 mri,
                 availability: field("availability"),
                 activity: field("activity"),
-                note_html: if body.trim().is_empty() { String::new() } else { super::messages::sanitize_html_marking(&body, &[]) },
+                note_html: if body.trim().is_empty() {
+                    String::new()
+                } else {
+                    super::messages::sanitize_html_marking(&body, &[])
+                },
                 note_text: super::strip_html(&body).trim().to_string(),
                 note_pinned: pinned,
-                note_expiry: p.pointer("/note/expiry").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
+                note_expiry: p
+                    .pointer("/note/expiry")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
                 forced_until: p
                     .pointer("/forcedAvailability/expiry")
                     .and_then(|x| x.as_str())
                     .filter(|_| p.pointer("/forcedAvailability/availability").is_some())
                     .unwrap_or_default()
                     .to_string(),
-                last_active: p.get("lastActiveTime").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
-                out_of_office: p.pointer("/calendarData/isOutOfOffice").and_then(|x| x.as_bool()).unwrap_or(false),
+                last_active: p
+                    .get("lastActiveTime")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                out_of_office: p
+                    .pointer("/calendarData/isOutOfOffice")
+                    .and_then(|x| x.as_bool())
+                    .unwrap_or(false),
                 work_location: p
                     .pointer("/workLocation/location")
                     .and_then(|x| x.as_str())
                     .filter(|l| *l != "Unknown")
                     .unwrap_or_default()
                     .to_string(),
-                work_location_source: p.pointer("/workLocation/locationSource").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
+                work_location_source: p
+                    .pointer("/workLocation/locationSource")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
                 work_location_building: p
                     .pointer("/workLocation/approximateDetails/name")
                     .and_then(|x| x.as_str())
@@ -829,7 +887,11 @@ mod presence_tests {
         let p = &parse_presences(&v)[0];
         assert!(p.note_pinned);
         assert_eq!(p.note_text, "OST probe OST Test 1");
-        assert!(p.note_html.contains("class=\"mention\"") && p.note_html.contains("OST Test 1"), "{}", p.note_html);
+        assert!(
+            p.note_html.contains("class=\"mention\"") && p.note_html.contains("OST Test 1"),
+            "{}",
+            p.note_html
+        );
     }
 
     #[test]
@@ -846,7 +908,13 @@ mod presence_tests {
         assert_eq!(p.work_location_building_id, "a93350e7");
         let v = serde_json::json!([{"mri": "8:orgid:a", "presence": {"workLocation": {"location": "Remote"}}}]);
         let p = &parse_presences(&v)[0];
-        assert_eq!((p.work_location_source.as_str(), p.work_location_building.as_str()), ("", ""));
+        assert_eq!(
+            (
+                p.work_location_source.as_str(),
+                p.work_location_building.as_str()
+            ),
+            ("", "")
+        );
     }
 
     #[test]

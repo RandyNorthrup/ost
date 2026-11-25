@@ -20,7 +20,10 @@ pub const AVATARS_APP: &str = "96a116ab-6847-4d22-90f3-f4dd6af74938";
 /// "Avatar builder") and name, from its definition.
 pub fn app_info(def: &serde_json::Value) -> serde_json::Value {
     let facts = teams_cli::api::app_host::facts_from(def);
-    let studio = facts.static_tabs.iter().find(|t| t.content_url.starts_with("https://"));
+    let studio = facts
+        .static_tabs
+        .iter()
+        .find(|t| t.content_url.starts_with("https://"));
     serde_json::json!({
         "appId": AVATARS_APP,
         "name": def["name"].as_str().map(str::to_string).unwrap_or_else(|| crate::backend::tr("Avatars")),
@@ -37,7 +40,9 @@ pub fn app_info(def: &serde_json::Value) -> serde_json::Value {
 }
 
 fn https(u: Option<&str>) -> String {
-    u.filter(|u| u.starts_with("https://")).unwrap_or_default().to_string()
+    u.filter(|u| u.starts_with("https://"))
+        .unwrap_or_default()
+        .to_string()
 }
 
 const TO_DRAW: u32 = 1;
@@ -72,7 +77,12 @@ pub fn decode(b: &[u8]) -> Option<FromPage> {
             let seq = u64::from_le_bytes(b.get(12..20)?.try_into().ok()?);
             let data = b.get(20..)?.to_vec();
             (width > 0 && height > 0 && data.len() >= width as usize * height as usize * 3 / 2)
-                .then_some(FromPage::Drawn(ost_vfx::filter::Frame { width, height, seq, data }))
+                .then_some(FromPage::Drawn(ost_vfx::filter::Frame {
+                    width,
+                    height,
+                    seq,
+                    data,
+                }))
         }
         MODEL => Some(FromPage::Model(b[4..].to_vec())),
         _ => None,
@@ -96,7 +106,9 @@ pub fn socket() -> String {
         let _ = std_listener.set_nonblocking(true);
         let path = format!("/{secret}");
         crate::backend::runtime().spawn(async move {
-            let Ok(listener) = tokio::net::TcpListener::from_std(std_listener) else { return };
+            let Ok(listener) = tokio::net::TcpListener::from_std(std_listener) else {
+                return;
+            };
             while let Ok((stream, _)) = listener.accept().await {
                 let path = path.clone();
                 tokio::spawn(async move {
@@ -117,7 +129,10 @@ async fn serve(stream: tokio::net::TcpStream, path: &str) -> anyhow::Result<()> 
         Message,
         handshake::server::{ErrorResponse, Request, Response},
     };
-    #[allow(clippy::result_large_err, reason = "tungstenite's handshake callback returns its own ErrorResponse")]
+    #[allow(
+        clippy::result_large_err,
+        reason = "tungstenite's handshake callback returns its own ErrorResponse"
+    )]
     let check = |req: &Request, resp: Response| -> Result<Response, ErrorResponse> {
         if req.uri().path() == path {
             Ok(resp)
@@ -134,12 +149,18 @@ async fn serve(stream: tokio::net::TcpStream, path: &str) -> anyhow::Result<()> 
         let mut after = 0u64;
         let mut lip_sync = false;
         loop {
-            let r = tokio::task::spawn_blocking(move || ost_vfx::avatar::next_request(after, Duration::from_millis(500))).await?;
+            let r = tokio::task::spawn_blocking(move || {
+                ost_vfx::avatar::next_request(after, Duration::from_millis(500))
+            })
+            .await?;
             let Some(r) = r else { continue };
             after = r.seq;
             if !r.visemes.is_empty() && !lip_sync {
                 lip_sync = true;
-                tracing::info!(bytes = r.visemes.len(), "avatar lip sync: the viseme model's output reaches the app");
+                tracing::info!(
+                    bytes = r.visemes.len(),
+                    "avatar lip sync: the viseme model's output reaches the app"
+                );
             }
             tx.send(Message::Binary(encode_request(&r).into())).await?;
         }
@@ -154,7 +175,11 @@ async fn serve(stream: tokio::net::TcpStream, path: &str) -> anyhow::Result<()> 
                 Some(FromPage::Drawn(f)) => {
                     drawn += 1;
                     if drawn == 1 {
-                        tracing::info!(width = f.width, height = f.height, "Avatars app drew its first frame");
+                        tracing::info!(
+                            width = f.width,
+                            height = f.height,
+                            "Avatars app drew its first frame"
+                        );
                         since = std::time::Instant::now();
                     } else if drawn.is_multiple_of(300) {
                         let fps = 299.0 / since.elapsed().as_secs_f64();
@@ -164,7 +189,11 @@ async fn serve(stream: tokio::net::TcpStream, path: &str) -> anyhow::Result<()> 
                     ost_vfx::avatar::put_output(f);
                 }
                 Some(FromPage::Model(m)) => match ost_vfx::avatar::set_viseme_model(&m) {
-                    Ok(()) => tracing::info!(bytes = m.len(), loaded = ost_vfx::avatar::has_viseme_model(), "avatar viseme model"),
+                    Ok(()) => tracing::info!(
+                        bytes = m.len(),
+                        loaded = ost_vfx::avatar::has_viseme_model(),
+                        "avatar viseme model"
+                    ),
                     Err(e) => tracing::warn!("avatar viseme model: {e:#}"),
                 },
                 None => {}
@@ -189,16 +218,38 @@ mod tests {
             "staticTabs": [{ "entityId": "Customize Avatar", "name": "Avatar builder", "scopes": ["personal"],
                 "contentUrl": "https://mesh.public.onecdn.static.microsoft/mesh/avatars/prod/studio?appSessionId={appSessionId}" }] });
         let i = app_info(&def);
-        assert!(i["url"].as_str().unwrap().ends_with("/video?appSessionId={appSessionId}"));
-        assert!(i["studio"].as_str().unwrap().ends_with("/studio?appSessionId={appSessionId}"));
+        assert!(
+            i["url"]
+                .as_str()
+                .unwrap()
+                .ends_with("/video?appSessionId={appSessionId}")
+        );
+        assert!(
+            i["studio"]
+                .as_str()
+                .unwrap()
+                .ends_with("/studio?appSessionId={appSessionId}")
+        );
         assert_eq!(i["studioName"], "Avatar builder");
         assert_eq!(i["studioEntity"], "Customize Avatar");
-        assert_eq!((i["icon"].as_str(), i["outline"].as_str(), i["accentColor"].as_str()), (Some("https://x/c.png"), Some(""), Some("#121212")));
+        assert_eq!(
+            (
+                i["icon"].as_str(),
+                i["outline"].as_str(),
+                i["accentColor"].as_str()
+            ),
+            (Some("https://x/c.png"), Some(""), Some("#121212"))
+        );
     }
 
     #[test]
     fn requests_and_drawn_frames_cross_the_wire() {
-        let r = ost_vfx::avatar::Request { width: 4, height: 2, seq: 9, visemes: vec![1, 2, 3, 4] };
+        let r = ost_vfx::avatar::Request {
+            width: 4,
+            height: 2,
+            seq: 9,
+            visemes: vec![1, 2, 3, 4],
+        };
         let b = encode_request(&r);
         assert_eq!(b.len(), 24 + 4);
         assert_eq!(&b[0..4], &1u32.to_le_bytes());
@@ -207,12 +258,17 @@ mod tests {
         drawn.extend_from_slice(&9u64.to_le_bytes());
         drawn.extend_from_slice(&[7; 12]);
         match decode(&drawn) {
-            Some(FromPage::Drawn(f)) => assert_eq!((f.width, f.height, f.seq, f.data.len()), (4, 2, 9, 12)),
+            Some(FromPage::Drawn(f)) => {
+                assert_eq!((f.width, f.height, f.seq, f.data.len()), (4, 2, 9, 12))
+            }
             other => panic!("{other:?}"),
         }
         // Too little picture for its size.
         assert!(decode(&drawn[..30]).is_none());
-        assert_eq!(decode(&[2, 0, 0, 0, 5, 6]), Some(FromPage::Model(vec![5, 6])));
+        assert_eq!(
+            decode(&[2, 0, 0, 0, 5, 6]),
+            Some(FromPage::Model(vec![5, 6]))
+        );
         assert!(decode(&[3, 0, 0, 0]).is_none());
     }
 }

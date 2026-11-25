@@ -32,7 +32,9 @@ pub const FIRST_PARTY_BOT: &str = "28:c739e0df-765e-4f78-9f68-6dcfaa84bbff";
 
 /// The languages Interpreter translates into (live ECS
 /// `aiInterpretationLanguages`).
-pub const LANGUAGES: [&str; 10] = ["de", "en", "es", "fr", "it", "ja", "ko", "pt", "zh-cn", "zh-tw"];
+pub const LANGUAGES: [&str; 10] = [
+    "de", "en", "es", "fr", "it", "ja", "ko", "pt", "zh-cn", "zh-tw",
+];
 
 /// Teams' default balance (`RD`), and where the slider ends.
 pub const DEFAULT_BALANCE: f32 = 0.8;
@@ -73,7 +75,11 @@ fn details(json: &Value) -> Option<&Value> {
 pub fn meeting_state(json: &Value) -> Option<MeetingState> {
     let d = details(json)?;
     let cap = d.get("meetingCapability");
-    let flag = |k: &str| cap.and_then(|c| c.get(k)).and_then(Value::as_bool).unwrap_or(false);
+    let flag = |k: &str| {
+        cap.and_then(|c| c.get(k))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    };
     let turn_by_turn = cap
         .and_then(|c| c.pointer("/aiInterpretationSettings/interpretationMode"))
         .and_then(Value::as_str)
@@ -83,14 +89,23 @@ pub fn meeting_state(json: &Value) -> Option<MeetingState> {
         .and_then(Value::as_array)
         .map(|a| {
             a.iter()
-                .filter_map(|g| Some((g.get("id")?.as_str()?.to_string(), g.get("label")?.as_str()?.to_string())))
+                .filter_map(|g| {
+                    Some((
+                        g.get("id")?.as_str()?.to_string(),
+                        g.get("label")?.as_str()?.to_string(),
+                    ))
+                })
                 .collect()
         })
         .unwrap_or_default();
     let turn_by_turn_languages = cap
         .and_then(|c| c.pointer("/aiInterpretationSettings/turnByTurnModeTargetLanguages"))
         .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(|l| l.as_str().filter(|l| !l.is_empty()).map(str::to_string)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|l| l.as_str().filter(|l| !l.is_empty()).map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default();
     Some(MeetingState {
         enabled: flag("aiInterpretationEnabled") && !turn_by_turn,
@@ -110,7 +125,10 @@ pub fn self_group(roster: &Value, me: &str, endpoint_id: &str) -> Option<Option<
         .pointer("/participants")
         .or_else(|| roster.pointer("/body/participants"))?
         .as_object()?;
-    let p = participants.iter().find(|(k, _)| k.eq_ignore_ascii_case(me)).map(|(_, v)| v)?;
+    let p = participants
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(me))
+        .map(|(_, v)| v)?;
     let ep = p.get("endpoints")?.get(endpoint_id)?;
     Some(
         ep.pointer("/call/meetingGroupDetails/groups/languageGroup/0/id")
@@ -124,15 +142,27 @@ pub fn self_group(roster: &Value, me: &str, endpoint_id: &str) -> Option<Option<
 /// group: the output bot's endpoints in that group (their audio
 /// `sourceId`s).
 pub fn interpreter_sources(roster: &Value, group: &str) -> Vec<u32> {
-    let Some(participants) = roster.pointer("/participants").or_else(|| roster.pointer("/body/participants")).and_then(Value::as_object) else {
+    let Some(participants) = roster
+        .pointer("/participants")
+        .or_else(|| roster.pointer("/body/participants"))
+        .and_then(Value::as_object)
+    else {
         return Vec::new();
     };
     let mut out = Vec::new();
     for (id, p) in participants {
-        if ![OUTPUT_BOT, INPUT_BOT, FIRST_PARTY_BOT].iter().any(|b| b.eq_ignore_ascii_case(id)) {
+        if ![OUTPUT_BOT, INPUT_BOT, FIRST_PARTY_BOT]
+            .iter()
+            .any(|b| b.eq_ignore_ascii_case(id))
+        {
             continue;
         }
-        for ep in p.get("endpoints").and_then(Value::as_object).into_iter().flat_map(|e| e.values()) {
+        for ep in p
+            .get("endpoints")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flat_map(|e| e.values())
+        {
             let in_group = ep
                 .pointer("/call/meetingGroupDetails/groups/languageGroup/0/id")
                 .or_else(|| ep.pointer("/meetingGroupDetails/groups/languageGroup/0/id"))
@@ -141,7 +171,12 @@ pub fn interpreter_sources(roster: &Value, group: &str) -> Vec<u32> {
             if !in_group {
                 continue;
             }
-            for s in ep.pointer("/call/mediaStreams").and_then(Value::as_array).into_iter().flatten() {
+            for s in ep
+                .pointer("/call/mediaStreams")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
                 if s.get("type").and_then(Value::as_str) == Some("audio")
                     && let Some(src) = s.get("sourceId").and_then(Value::as_u64)
                 {
@@ -159,7 +194,11 @@ pub fn interpreter_sources(roster: &Value, group: &str) -> Vec<u32> {
 /// (people only: the interpreter bots are left out), as Teams counts the
 /// people using Interpreter.
 pub fn group_members(roster: &Value) -> Vec<(String, bool)> {
-    let Some(participants) = roster.pointer("/participants").or_else(|| roster.pointer("/body/participants")).and_then(Value::as_object) else {
+    let Some(participants) = roster
+        .pointer("/participants")
+        .or_else(|| roster.pointer("/body/participants"))
+        .and_then(Value::as_object)
+    else {
         return Vec::new();
     };
     participants
@@ -226,10 +265,19 @@ pub fn voice_consent_property(value: &str, seq: u64) -> Value {
 /// The join's result (`joinMeetingGroupResponse` / `leaveMeetingGroupResponse`):
 /// (operation id, code); code 0 is success.
 pub fn group_response(json: &Value) -> Option<(String, i64)> {
-    let r = ["/body/joinMeetingGroupResponse", "/joinMeetingGroupResponse", "/body/leaveMeetingGroupResponse", "/leaveMeetingGroupResponse"]
-        .iter()
-        .find_map(|p| json.pointer(p))?;
-    let op = r.get("operationId").and_then(Value::as_str).unwrap_or_default().to_string();
+    let r = [
+        "/body/joinMeetingGroupResponse",
+        "/joinMeetingGroupResponse",
+        "/body/leaveMeetingGroupResponse",
+        "/leaveMeetingGroupResponse",
+    ]
+    .iter()
+    .find_map(|p| json.pointer(p))?;
+    let op = r
+        .get("operationId")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
     let code = r
         .get("code")
         .or_else(|| r.pointer("/result/code"))
@@ -269,13 +317,17 @@ static LISTENING: std::sync::Mutex<Option<Listening>> = std::sync::Mutex::new(No
 /// Start (or update) balancing: the interpreter's sources and the balance;
 /// `None` stops it.
 pub fn set_listening(state: Option<(Vec<u32>, f32)>) {
-    *LISTENING.lock().unwrap_or_else(|e| e.into_inner()) = state.map(|(sources, balance)| Listening { sources, balance });
+    *LISTENING.lock().unwrap_or_else(|e| e.into_inner()) =
+        state.map(|(sources, balance)| Listening { sources, balance });
 }
 
 /// Whether we listen to an interpretation (the meeting's audio then comes
 /// per speaker, x-much2, as Teams desktop asks while it balances).
 pub fn listening() -> bool {
-    LISTENING.lock().unwrap_or_else(|e| e.into_inner()).is_some()
+    LISTENING
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_some()
 }
 
 /// How loud one speaker's audio plays: the interpreter's sources and
@@ -286,7 +338,11 @@ pub fn gain_for(source: u32) -> f32 {
     match g.as_ref() {
         Some(l) if !l.sources.is_empty() => {
             let (interp, others) = gains(l.balance);
-            if l.sources.contains(&source) { interp } else { others }
+            if l.sources.contains(&source) {
+                interp
+            } else {
+                others
+            }
         }
         _ => 1.0,
     }
@@ -319,13 +375,19 @@ mod tests {
             "meetingGroups": {"groups": {"languageGroup": [{"id": "g1", "label": "es"}, {"id": "g2", "label": "fr"}]}}}});
         let s = meeting_state(&v).unwrap();
         assert!(s.enabled && !s.for_all);
-        assert_eq!(s.groups, vec![("g1".into(), "es".into()), ("g2".into(), "fr".into())]);
+        assert_eq!(
+            s.groups,
+            vec![("g1".into(), "es".into()), ("g2".into(), "fr".into())]
+        );
         let tbt = json!({"meetingDetails": {"meetingCapability": {"aiInterpretationEnabled": true,
             "aiInterpretationSettings": {"interpretationMode": "TurnByTurn"}}}});
         assert!(!meeting_state(&tbt).unwrap().enabled);
         assert!(meeting_state(&tbt).unwrap().turn_by_turn);
         let t = turn_by_turn_settings("en", "es");
-        assert_eq!(t["aiInterpretationSettingsJson"], r#"{"interpretationMode":"TurnByTurn","turnByTurnModeTargetLanguages":["en","es"]}"#);
+        assert_eq!(
+            t["aiInterpretationSettingsJson"],
+            r#"{"interpretationMode":"TurnByTurn","turnByTurnModeTargetLanguages":["en","es"]}"#
+        );
     }
 
     #[test]
@@ -348,9 +410,18 @@ mod tests {
         let j = join_group_body(&from, "es", "cb/conversation/joinMeetingGroupStatus/", "op");
         assert_eq!(j["meetingGroupLabel"], "es");
         assert_eq!(j["groupPreferences"]["muteDefaultAudio"], false);
-        assert_eq!(leave_group_body(&from, "g1", "cb", "op")["meetingGroup"], "g1");
-        assert_eq!(settings(false)["aiInterpretationEnabledForAllParticipants"], false);
-        assert_eq!(voice_consent_property("1", 2)["aiVoiceConsent"]["value"]["aiVoiceConsentValue"], "1");
+        assert_eq!(
+            leave_group_body(&from, "g1", "cb", "op")["meetingGroup"],
+            "g1"
+        );
+        assert_eq!(
+            settings(false)["aiInterpretationEnabledForAllParticipants"],
+            false
+        );
+        assert_eq!(
+            voice_consent_property("1", 2)["aiVoiceConsent"]["value"]["aiVoiceConsentValue"],
+            "1"
+        );
         let (i, o) = gains(0.8);
         assert!((i - 1.0).abs() < 1e-6 && (o - 0.2).abs() < 1e-6);
         assert_eq!(gains(-1.0), (0.0, 1.0));

@@ -40,7 +40,11 @@ pub const DEFAULT_REGIONAL: &str = "https://teams.microsoft.com/api/teamsevents/
 pub fn regional_endpoint(client: &TeamsClient) -> String {
     client
         .region_endpoint("virtualEventsService")
-        .map(|u| u.trim_end_matches('/').trim_end_matches("/beta").to_string())
+        .map(|u| {
+            u.trim_end_matches('/')
+                .trim_end_matches("/beta")
+                .to_string()
+        })
         .unwrap_or_else(|| DEFAULT_REGIONAL.to_string())
 }
 
@@ -71,13 +75,24 @@ fn iso(t: chrono::DateTime<chrono::Utc>) -> String {
 }
 
 /// A Discover request's address (relative to the service), as Teams asks.
-pub fn discover_query(list: DiscoverList, now: chrono::DateTime<chrono::Utc>, filter: &DiscoverFilter) -> String {
+pub fn discover_query(
+    list: DiscoverList,
+    now: chrono::DateTime<chrono::Utc>,
+    filter: &DiscoverFilter,
+) -> String {
     let soon = now + chrono::Duration::minutes(5);
-    let status = if filter.my_events { "&includeRequesterStatus=Registered&includeRequesterStatus=Invited" } else { "&includeRequesterStatus=AllInOrg" };
+    let status = if filter.my_events {
+        "&includeRequesterStatus=Registered&includeRequesterStatus=Invited"
+    } else {
+        "&includeRequesterStatus=AllInOrg"
+    };
     let tail = format!("&returnRequesterProperties=true&eventStatus=Published{status}");
     if !filter.from.is_empty() && !filter.to.is_empty() {
         // A chosen range (Teams: the regional service, 100, by start).
-        return format!("/eventOverviews?pageSize=100&sortBy=StartTime&startFrom={}&startTo={}{tail}", filter.from, filter.to);
+        return format!(
+            "/eventOverviews?pageSize=100&sortBy=StartTime&startFrom={}&startTo={}{tail}",
+            filter.from, filter.to
+        );
     }
     match list {
         DiscoverList::Now => format!(
@@ -85,8 +100,14 @@ pub fn discover_query(list: DiscoverList, now: chrono::DateTime<chrono::Utc>, fi
             iso(soon),
             iso(now)
         ),
-        DiscoverList::Upcoming => format!("/eventOverviews?pageSize=21&sortBy=StartTime&sortOrder=Ascending&startFrom={}{tail}", iso(soon)),
-        DiscoverList::Past => format!("/eventOverviews?pageSize=9&sortBy=EndTime&sortOrder=Descending&endTo={}{tail}", iso(now)),
+        DiscoverList::Upcoming => format!(
+            "/eventOverviews?pageSize=21&sortBy=StartTime&sortOrder=Ascending&startFrom={}{tail}",
+            iso(soon)
+        ),
+        DiscoverList::Past => format!(
+            "/eventOverviews?pageSize=9&sortBy=EndTime&sortOrder=Descending&endTo={}{tail}",
+            iso(now)
+        ),
     }
 }
 
@@ -167,15 +188,28 @@ pub fn card_presenters(speakers: &[Value], owner: Option<&Value>) -> Vec<String>
     let bypass = |p: &Value| {
         p.get("sessionsProps")
             .and_then(Value::as_array)
-            .is_some_and(|a| a.iter().any(|x| x.get("allowBypassLobby").and_then(Value::as_bool) == Some(true)))
+            .is_some_and(|a| {
+                a.iter()
+                    .any(|x| x.get("allowBypassLobby").and_then(Value::as_bool) == Some(true))
+            })
     };
-    let s = |p: &Value, k: &str| p.pointer(k).and_then(Value::as_str).unwrap_or_default().to_string();
+    let s = |p: &Value, k: &str| {
+        p.pointer(k)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
     let external = |p: &Value| {
-        s(p, "/identity/tenantId").is_empty() || (p.get("isGroup").and_then(Value::as_bool) != Some(true) && s(p, "/identity/mri").is_empty())
+        s(p, "/identity/tenantId").is_empty()
+            || (p.get("isGroup").and_then(Value::as_bool) != Some(true)
+                && s(p, "/identity/mri").is_empty())
     };
     let email = |n: &str| {
         let (a, b) = n.split_once('@').unwrap_or(("", ""));
-        !a.is_empty() && !n.contains(char::is_whitespace) && b.split_once('.').is_some_and(|(x, y)| !x.is_empty() && !y.is_empty() && !b.contains('@'))
+        !a.is_empty()
+            && !n.contains(char::is_whitespace)
+            && b.split_once('.')
+                .is_some_and(|(x, y)| !x.is_empty() && !y.is_empty() && !b.contains('@'))
     };
     let shown = |p: &&Value| {
         !s(p, "/displayName").is_empty()
@@ -189,7 +223,11 @@ pub fn card_presenters(speakers: &[Value], owner: Option<&Value>) -> Vec<String>
         .filter(shown)
         .map(|p| {
             let n = s(p, "/displayName");
-            if external(p) && email(&n) { crate::i18n::tr("Guest Speaker") } else { n }
+            if external(p) && email(&n) {
+                crate::i18n::tr("Guest Speaker")
+            } else {
+                n
+            }
         })
         .collect();
     if !names.is_empty() {
@@ -231,11 +269,16 @@ pub fn registration_answers(questions: &[Value], values: &Value) -> Vec<(String,
                 "Boolean" => Value::Bool(v.as_bool().unwrap_or(false)),
                 "MultiChoice" => match v {
                     Value::Array(a) => Value::Array(a.clone()),
-                    other => json!([other.as_str().map(str::to_string).unwrap_or_else(|| other.to_string())]),
+                    other => json!([other
+                        .as_str()
+                        .map(str::to_string)
+                        .unwrap_or_else(|| other.to_string())]),
                 },
-                "Text" | "Note" | "SingleChoice" | "PromoEmailConsent" => {
-                    Value::String(v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string()))
-                }
+                "Text" | "Note" | "SingleChoice" | "PromoEmailConsent" => Value::String(
+                    v.as_str()
+                        .map(str::to_string)
+                        .unwrap_or_else(|| v.to_string()),
+                ),
                 _ => return None,
             };
             Some((id.to_string(), answer))
@@ -252,7 +295,12 @@ pub fn cards_from(reply: &Value, ams_v2: &str) -> Vec<EventCard> {
         .flatten()
         .filter_map(|r| {
             let e = r.get("eventDetails")?;
-            let s = |p: &str| e.pointer(p).and_then(Value::as_str).unwrap_or_default().to_string();
+            let s = |p: &str| {
+                e.pointer(p)
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string()
+            };
             let promo = s("/theme/promoImage");
             let role = r
                 .get("roles")
@@ -262,13 +310,40 @@ pub fn cards_from(reply: &Value, ams_v2: &str) -> Vec<EventCard> {
                 .unwrap_or_default()
                 .to_string();
             let session = r.pointer("/eventSessions/0");
-            let speakers = session.and_then(|x| x.get("speakers")).and_then(Value::as_array).cloned().unwrap_or_default();
+            let speakers = session
+                .and_then(|x| x.get("speakers"))
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
             // A room: Teams keeps it as a speaker of purpose "room".
-            let is_room = |p: &Value| p.get("userType").and_then(Value::as_str) == Some("Room") || p.get("userPurpose").and_then(Value::as_str) == Some("room");
-            let rooms: Vec<String> = speakers.iter().filter(|p| is_room(p)).filter_map(|p| p.get("displayName").and_then(Value::as_str).map(str::to_string)).collect();
-            let by = speakers.iter().find(|p| !is_room(p)).and_then(|p| p.get("displayName")).and_then(Value::as_str).unwrap_or_default().to_string();
+            let is_room = |p: &Value| {
+                p.get("userType").and_then(Value::as_str) == Some("Room")
+                    || p.get("userPurpose").and_then(Value::as_str) == Some("room")
+            };
+            let rooms: Vec<String> = speakers
+                .iter()
+                .filter(|p| is_room(p))
+                .filter_map(|p| {
+                    p.get("displayName")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
+                .collect();
+            let by = speakers
+                .iter()
+                .find(|p| !is_room(p))
+                .and_then(|p| p.get("displayName"))
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
             let by_names = card_presenters(&speakers, e.get("owner"));
-            let ctx = |k: &str| session.and_then(|x| x.pointer(&format!("/meetingContext/{k}"))).and_then(Value::as_str).unwrap_or_default().to_string();
+            let ctx = |k: &str| {
+                session
+                    .and_then(|x| x.pointer(&format!("/meetingContext/{k}")))
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string()
+            };
             Some(EventCard {
                 id: s("/id"),
                 title: s("/title"),
@@ -296,19 +371,40 @@ pub fn cards_from(reply: &Value, ams_v2: &str) -> Vec<EventCard> {
                 thread_id: ctx("threadId"),
                 backroom_thread_id: ctx("backroomThreadId"),
                 update_link: ctx("meetingUpdateLink"),
-                session_id: session.and_then(|x| x.get("id")).and_then(Value::as_str).unwrap_or_default().to_string(),
-                discoverable: e.pointer("/access/isDiscoverable").and_then(Value::as_bool).unwrap_or(false),
-                access: s("/access/accessType"),
-                invite_only: e.pointer("/access/inviteOnly").and_then(Value::as_bool).unwrap_or(false),
-                registration: e.pointer("/access/isRegistrationEnabled").and_then(Value::as_bool).unwrap_or(false),
-                registration_status: session
+                session_id: session
                     .and_then(|x| x.get("id"))
-                    .and_then(Value::as_str)
-                    .and_then(|sid| r.pointer(&format!("/requesterPropertiesBySession/{sid}/registrationStatus")))
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_string(),
-                terms_url: r.pointer("/registrationInfo/termsOfUseUrl").and_then(Value::as_str).unwrap_or_default().to_string(),
+                discoverable: e
+                    .pointer("/access/isDiscoverable")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                access: s("/access/accessType"),
+                invite_only: e
+                    .pointer("/access/inviteOnly")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                registration: e
+                    .pointer("/access/isRegistrationEnabled")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                registration_status: session
+                    .and_then(|x| x.get("id"))
+                    .and_then(Value::as_str)
+                    .and_then(|sid| {
+                        r.pointer(&format!(
+                            "/requesterPropertiesBySession/{sid}/registrationStatus"
+                        ))
+                    })
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                terms_url: r
+                    .pointer("/registrationInfo/termsOfUseUrl")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
                 questions: registration_questions(r.get("registrationInfo")),
             })
         })
@@ -318,18 +414,29 @@ pub fn cards_from(reply: &Value, ams_v2: &str) -> Vec<EventCard> {
 /// A promo picture's address in Teams' media store (as Teams fetches it:
 /// `{amsV2}/v1/objects/{id}/views/imgpsh_fullsize?v=1`).
 pub fn promo_url(ams_v2: &str, id: &str) -> String {
-    let ok = !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    let ok = !id.is_empty()
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
     if !ok || ams_v2.is_empty() {
         return String::new();
     }
-    format!("{}/v1/objects/{id}/views/imgpsh_fullsize?v=1", ams_v2.trim_end_matches('/'))
+    format!(
+        "{}/v1/objects/{id}/views/imgpsh_fullsize?v=1",
+        ams_v2.trim_end_matches('/')
+    )
 }
 
 async fn token() -> Result<String> {
     crate::auth::oauth::access_token_for(&format!("{RESOURCE}/.default")).await
 }
 
-async fn send(method: reqwest::Method, url: &str, body: Option<&Value>, api_v2: bool) -> Result<reqwest::Response> {
+async fn send(
+    method: reqwest::Method,
+    url: &str,
+    body: Option<&Value>,
+    api_v2: bool,
+) -> Result<reqwest::Response> {
     let t = token().await?;
     let mut req = reqwest::Client::new()
         .request(method, url)
@@ -348,9 +455,21 @@ async fn send(method: reqwest::Method, url: &str, body: Option<&Value>, api_v2: 
         let text = resp.text().await.unwrap_or_default();
         let msg = serde_json::from_str::<Value>(&text)
             .ok()
-            .and_then(|v| v.get("ErrorMessage").or_else(|| v.get("message")).and_then(Value::as_str).map(str::to_string))
+            .and_then(|v| {
+                v.get("ErrorMessage")
+                    .or_else(|| v.get("message"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
             .unwrap_or_default();
-        anyhow::bail!("The events service answered {status}{}", if msg.is_empty() { String::new() } else { format!(": {msg}") });
+        anyhow::bail!(
+            "The events service answered {status}{}",
+            if msg.is_empty() {
+                String::new()
+            } else {
+                format!(": {msg}")
+            }
+        );
     }
     Ok(resp)
 }
@@ -373,11 +492,27 @@ pub async fn discover(client: &TeamsClient, filter: &DiscoverFilter) -> Result<V
     let base = regional_endpoint(client);
     let url = |l| format!("{base}{}", discover_query(l, now, filter));
     if !filter.from.is_empty() && !filter.to.is_empty() {
-        let r = get_json(&format!("{}{}", regional_endpoint(client), discover_query(DiscoverList::Upcoming, now, filter)), false).await?;
+        let r = get_json(
+            &format!(
+                "{}{}",
+                regional_endpoint(client),
+                discover_query(DiscoverList::Upcoming, now, filter)
+            ),
+            false,
+        )
+        .await?;
         return Ok(json!({ "filtered": cards_from(&r, &ams) }));
     }
-    let (un, uu, up) = (url(DiscoverList::Now), url(DiscoverList::Upcoming), url(DiscoverList::Past));
-    let (a, b, c) = tokio::join!(get_json(&un, true), get_json(&uu, true), get_json(&up, true));
+    let (un, uu, up) = (
+        url(DiscoverList::Now),
+        url(DiscoverList::Upcoming),
+        url(DiscoverList::Past),
+    );
+    let (a, b, c) = tokio::join!(
+        get_json(&un, true),
+        get_json(&uu, true),
+        get_json(&up, true)
+    );
     let (a, b, c) = (a?, b?, c?);
     let short = |v: &Value| v.to_string().chars().take(400).collect::<String>();
     tracing::debug!(base = %base, now = %short(&a), upcoming = %short(&b), past = %short(&c), "events: discover replies");
@@ -388,7 +523,10 @@ pub async fn discover(client: &TeamsClient, filter: &DiscoverFilter) -> Result<V
     });
     if filter.my_events {
         let mut o = out;
-        let all: Vec<Value> = ["now", "upcoming", "past"].iter().flat_map(|k| o[*k].as_array().cloned().unwrap_or_default()).collect();
+        let all: Vec<Value> = ["now", "upcoming", "past"]
+            .iter()
+            .flat_map(|k| o[*k].as_array().cloned().unwrap_or_default())
+            .collect();
         o["filtered"] = Value::Array(all);
         return Ok(o);
     }
@@ -421,7 +559,14 @@ async fn get_json_owned(url: String) -> Result<Value> {
 /// Your event capacity options (Teams' eventFeatureDetails).
 pub async fn feature_details(client: &TeamsClient) -> Result<Value> {
     let oid = client.object_id().context("Not signed in")?;
-    get_json(&format!("{}/users/{oid}/eventFeatureDetails", regional_endpoint(client)), false).await
+    get_json(
+        &format!(
+            "{}/users/{oid}/eventFeatureDetails",
+            regional_endpoint(client)
+        ),
+        false,
+    )
+    .await
 }
 
 /// What the New event form gives.
@@ -527,8 +672,16 @@ pub fn person(email: &str, display_name: &str, object_id: &str, tenant_id: &str)
 /// session's lobby setting, rooms are `userType` Room / `userPurpose` room.
 pub fn person_body(p: &Person, session: Option<&str>) -> Value {
     let room = p.user_type == "Room";
-    let user_type = if p.user_type.is_empty() { if p.group { "Group" } else { "ADUser" } } else { p.user_type.as_str() };
-    let upn = if p.upn.is_empty() { p.email.as_str() } else { p.upn.as_str() };
+    let user_type = if p.user_type.is_empty() {
+        if p.group { "Group" } else { "ADUser" }
+    } else {
+        p.user_type.as_str()
+    };
+    let upn = if p.upn.is_empty() {
+        p.email.as_str()
+    } else {
+        p.upn.as_str()
+    };
     let mut o = json!({
         "email": p.email,
         "displayName": p.name,
@@ -537,32 +690,56 @@ pub fn person_body(p: &Person, session: Option<&str>) -> Value {
     });
     let m = o.as_object_mut().expect("an object");
     if let Some(sid) = session {
-        let props = if sid.is_empty() { json!([{ "allowBypassLobby": false }]) } else { json!([{ "sessionId": sid, "allowBypassLobby": false }]) };
+        let props = if sid.is_empty() {
+            json!([{ "allowBypassLobby": false }])
+        } else {
+            json!([{ "sessionId": sid, "allowBypassLobby": false }])
+        };
         m.insert("sessionsProps".into(), props);
     }
     if p.group {
         m.insert("isGroup".into(), json!(true));
     }
     m.insert("userType".into(), json!(user_type));
-    m.insert("userPurpose".into(), json!(if room { "room" } else { "unknown" }));
+    m.insert(
+        "userPurpose".into(),
+        json!(if room { "room" } else { "unknown" }),
+    );
     o
 }
 
 /// A person from an event reply (`team`, `presenters`, `attendees`,
 /// session `speakers`).
 pub fn person_from(v: &Value) -> Person {
-    let s = |p: &str| v.pointer(p).and_then(Value::as_str).unwrap_or_default().to_string();
+    let s = |p: &str| {
+        v.pointer(p)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
     let email = s("/email");
     // The service keeps a room as an ADUser of purpose "room".
-    let user_type = if s("/userPurpose") == "room" { "Room".to_string() } else { s("/userType") };
+    let user_type = if s("/userPurpose") == "room" {
+        "Room".to_string()
+    } else {
+        s("/userType")
+    };
     let group = v.get("isGroup").and_then(Value::as_bool).unwrap_or(false) || user_type == "Group";
     let object_id = s("/identity/objectId");
     Person {
         name: s("/displayName"),
-        detail: if group { email.clone() } else { email.split('@').next().unwrap_or_default().to_uppercase() },
+        detail: if group {
+            email.clone()
+        } else {
+            email.split('@').next().unwrap_or_default().to_uppercase()
+        },
         email,
         mri: s("/identity/mri"),
-        object_id: if object_id.is_empty() { s("/id") } else { object_id },
+        object_id: if object_id.is_empty() {
+            s("/id")
+        } else {
+            object_id
+        },
         tenant_id: s("/identity/tenantId"),
         upn: s("/identity/upn"),
         group,
@@ -573,7 +750,11 @@ pub fn person_from(v: &Value) -> Person {
 
 /// The people of a list in an event reply.
 pub fn people_from(v: Option<&Value>) -> Vec<Person> {
-    v.and_then(Value::as_array).into_iter().flatten().map(person_from).collect()
+    v.and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(person_from)
+        .collect()
 }
 
 /// The time zone details Teams sends with an event (its time zone keys are
@@ -581,7 +762,11 @@ pub fn people_from(v: Option<&Value>) -> Vec<Person> {
 pub fn time_zone_details(iana: &str, utc_offset_minutes: i64) -> Value {
     let windows = super::search::windows_zone(iana);
     let key = windows.replace(" Standard Time", "St").replace(' ', "");
-    let iana = super::events_tz::ZONES.iter().find(|z| z.0 == key).map(|z| z.1).unwrap_or(iana);
+    let iana = super::events_tz::ZONES
+        .iter()
+        .find(|z| z.0 == key)
+        .map(|z| z.1)
+        .unwrap_or(iana);
     json!({
         "timeZone": key,
         "utcOffset": utc_offset_minutes,
@@ -601,18 +786,27 @@ pub fn zone_details(key: &str) -> Option<Value> {
         let m: i64 = o.get(4..6)?.parse().ok()?;
         Some(sign * (h * 60 + m))
     });
-    Some(json!({ "timeZone": k, "utcOffset": off.unwrap_or(0), "ianaTimeZone": iana, "windowsTimeZone": k, "localizedTimeZoneString": k }))
+    Some(
+        json!({ "timeZone": k, "utcOffset": off.unwrap_or(0), "ianaTimeZone": iana, "windowsTimeZone": k, "localizedTimeZoneString": k }),
+    )
 }
 
 /// This device's zone as Teams' key.
 pub fn local_zone_key() -> String {
     let iana = super::find::local_timezone();
-    super::search::windows_zone(&iana).replace(" Standard Time", "St").replace(' ', "")
+    super::search::windows_zone(&iana)
+        .replace(" Standard Time", "St")
+        .replace(' ', "")
 }
 
 /// Teams' zone list for the picker: [key, label] in Teams' order.
 pub fn zones() -> Value {
-    Value::Array(super::events_tz::ZONES.iter().map(|z| json!([z.0, z.2])).collect())
+    Value::Array(
+        super::events_tz::ZONES
+            .iter()
+            .map(|z| json!([z.0, z.2]))
+            .collect(),
+    )
 }
 
 /// The new event as Teams sends it (`POST events`): a draft with you as the
@@ -748,16 +942,30 @@ fn merge_options(o: &mut Value, changes: Option<&Value>) {
 /// Teams' default promo pictures (ECS `virtualEvents.
 /// oneEventsDefaultPromoImages`, 2026-11-16); a new event gets one.
 pub const DEFAULT_PROMO_IMAGES: [&str; 12] = [
-    "0-ea-d8-cb957d5c7670b8102f391ac3b8d2dcab", "0-ea-d9-7aa2763990eb6501cee5a1f10d1a64de", "0-ea-d1-844c96573cb54bea119d491e901da436",
-    "0-ea-d4-9d0a5e76a96eeaf05a069df75c809e19", "0-ea-d12-f5f8bfa8939e0e526fb957efa7eba7ce", "0-ea-d10-c479e6b1249707acb0dc80b12f1828a4",
-    "0-ea-d10-7ce1ec7262e6ddd449b707d3a7bd47fb", "0-ea-d12-f8379ddb570a56396c8b483fc469b987", "0-ea-d10-95ab29d1e8818087793edbc92fa7a7da",
-    "0-ea-d12-d5cefd297ac4bfc461bcb599f90e4afb", "0-ea-d11-339f679162f8a786f523cabee1c66fc5", "0-ea-d8-03b7cf6be16d773074d3cf105e7aea72",
+    "0-ea-d8-cb957d5c7670b8102f391ac3b8d2dcab",
+    "0-ea-d9-7aa2763990eb6501cee5a1f10d1a64de",
+    "0-ea-d1-844c96573cb54bea119d491e901da436",
+    "0-ea-d4-9d0a5e76a96eeaf05a069df75c809e19",
+    "0-ea-d12-f5f8bfa8939e0e526fb957efa7eba7ce",
+    "0-ea-d10-c479e6b1249707acb0dc80b12f1828a4",
+    "0-ea-d10-7ce1ec7262e6ddd449b707d3a7bd47fb",
+    "0-ea-d12-f8379ddb570a56396c8b483fc469b987",
+    "0-ea-d10-95ab29d1e8818087793edbc92fa7a7da",
+    "0-ea-d12-d5cefd297ac4bfc461bcb599f90e4afb",
+    "0-ea-d11-339f679162f8a786f523cabee1c66fc5",
+    "0-ea-d8-03b7cf6be16d773074d3cf105e7aea72",
 ];
 
 /// A default promo picture for a new event (ECS's list, else Teams').
 pub fn default_promo() -> String {
     let list: Vec<String> = super::ecs::setting("virtualEvents", "oneEventsDefaultPromoImages")
-        .and_then(|v| v.as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()))
+        .and_then(|v| {
+            v.as_array().map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect()
+            })
+        })
         .filter(|l: &Vec<String>| !l.is_empty())
         .unwrap_or_else(|| DEFAULT_PROMO_IMAGES.iter().map(|s| s.to_string()).collect());
     let i = (uuid::Uuid::new_v4().as_u128() % list.len() as u128) as usize;
@@ -777,9 +985,19 @@ pub fn owner_of(client: &TeamsClient) -> Value {
 /// Save a new event as a draft (Save and continue); its id.
 pub async fn create_draft(client: &TeamsClient, e: &NewEvent) -> Result<Value> {
     anyhow::ensure!(!e.title.trim().is_empty(), "The event needs a name");
-    let promo = if e.promo_image.is_empty() { default_promo() } else { e.promo_image.clone() };
+    let promo = if e.promo_image.is_empty() {
+        default_promo()
+    } else {
+        e.promo_image.clone()
+    };
     let body = create_body(e, &owner_of(client), tz_for(e), &promo);
-    let r = send(reqwest::Method::POST, &format!("{}/events", regional_endpoint(client)), Some(&body), false).await?;
+    let r = send(
+        reqwest::Method::POST,
+        &format!("{}/events", regional_endpoint(client)),
+        Some(&body),
+        false,
+    )
+    .await?;
     let v: Value = r.json().await.context("The new event")?;
     let ams = client.ams_v2_url().unwrap_or_default();
     Ok(json!({
@@ -801,7 +1019,10 @@ fn tz_for(e: &NewEvent) -> Value {
 
 fn event_path(id: &str) -> Result<String> {
     anyhow::ensure!(
-        !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '@'),
+        !id.is_empty()
+            && id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '@'),
         "Not an event id"
     );
     Ok(id.to_string())
@@ -811,17 +1032,27 @@ fn event_path(id: &str) -> Result<String> {
 /// sessions, registration and your roles.
 pub async fn overview(client: &TeamsClient, id: &str) -> Result<Value> {
     let id = event_path(id)?;
-    let v = get_json(&format!("{}/events/{}/overview", regional_endpoint(client), urlencoding(&id)), false).await?;
+    let v = get_json(
+        &format!(
+            "{}/events/{}/overview",
+            regional_endpoint(client),
+            urlencoding(&id)
+        ),
+        false,
+    )
+    .await?;
     let ams = client.ams_v2_url().unwrap_or_default();
     let card = cards_from(&json!({ "results": [{ "eventDetails": v.get("event").cloned().unwrap_or_default(),
                                                  "eventSessions": v.get("sessions").cloned().unwrap_or_default(),
                                                  "registrationInfo": v.get("registrationInfo").or_else(|| v.get("registration")).cloned().unwrap_or_default(),
                                                  "roles": v.get("roles").cloned().unwrap_or_default() }] }), &ams)
         .pop();
-    Ok(json!({ "card": card, "description": v.pointer("/event/description").cloned().unwrap_or_default(),
+    Ok(
+        json!({ "card": card, "description": v.pointer("/event/description").cloned().unwrap_or_default(),
                "access": v.pointer("/event/access/accessType").cloned().unwrap_or_default(),
                "inviteOnly": v.pointer("/event/access/inviteOnly").cloned().unwrap_or_default(),
-               "registration": v.pointer("/event/access/isRegistrationEnabled").cloned().unwrap_or_default() }))
+               "registration": v.pointer("/event/access/isRegistrationEnabled").cloned().unwrap_or_default() }),
+    )
 }
 
 fn urlencoding(s: &str) -> String {
@@ -838,18 +1069,27 @@ pub async fn people(client: &TeamsClient, id: &str) -> Result<Value> {
     // The event itself (`GET events/{id}`: owner, team, presenters with the
     // rooms, attendees), as People & emails reads it.
     let attendees_url = format!("{base}/attendees?status={statuses}&pageSize=20&skip=0&count=true");
-    let (event, attendees) = tokio::join!(
-        get_json(&base, false),
-        get_json(&attendees_url, false)
-    );
+    let (event, attendees) = tokio::join!(get_json(&base, false), get_json(&attendees_url, false));
     let event = event?;
     let names = |k: &str| -> Vec<Value> {
-        event.get(k).and_then(Value::as_array).into_iter().flatten()
-            .map(|p| json!(p.get("displayName").or_else(|| p.get("email")).cloned().unwrap_or_default()))
+        event
+            .get(k)
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .map(|p| {
+                json!(
+                    p.get("displayName")
+                        .or_else(|| p.get("email"))
+                        .cloned()
+                        .unwrap_or_default()
+                )
+            })
             .collect()
     };
     let presenters = people_from(event.get("presenters"));
-    let (rooms, speakers): (Vec<Person>, Vec<Person>) = presenters.into_iter().partition(|p| p.user_type == "Room");
+    let (rooms, speakers): (Vec<Person>, Vec<Person>) =
+        presenters.into_iter().partition(|p| p.user_type == "Room");
     let mut organizers = vec![person_from(event.get("owner").unwrap_or(&Value::Null))];
     organizers.extend(people_from(event.get("team")));
     Ok(json!({
@@ -871,7 +1111,15 @@ pub async fn people(client: &TeamsClient, id: &str) -> Result<Value> {
 pub async fn registrations(client: &TeamsClient, id: &str) -> Result<Value> {
     let id = event_path(id)?;
     let statuses = "Waitlisted,PendingApproval,Registered,Canceled";
-    get_json(&format!("{}/events/{}/attendees?status={statuses}&pageSize=20&skip=0&count=true", regional_endpoint(client), urlencoding(&id)), false).await
+    get_json(
+        &format!(
+            "{}/events/{}/attendees?status={statuses}&pageSize=20&skip=0&count=true",
+            regional_endpoint(client),
+            urlencoding(&id)
+        ),
+        false,
+    )
+    .await
 }
 
 /// Publish an event (the draft card's Publish event ▸ "Ready to publish
@@ -881,11 +1129,19 @@ pub async fn registrations(client: &TeamsClient, id: &str) -> Result<Value> {
 pub async fn publish(client: &TeamsClient, id: &str) -> Result<Value> {
     let id = event_path(id)?;
     let body = json!({ "state": "Published", "meetingOptions": null });
-    let r = send(reqwest::Method::PATCH, &format!("{}/events/{}", regional_endpoint(client), urlencoding(&id)), Some(&body), false).await?;
+    let r = send(
+        reqwest::Method::PATCH,
+        &format!("{}/events/{}", regional_endpoint(client), urlencoding(&id)),
+        Some(&body),
+        false,
+    )
+    .await?;
     let v: Value = r.json().await.context("The published event")?;
-    Ok(json!({ "id": v.get("id").cloned().unwrap_or_default(), "state": v.get("state").cloned().unwrap_or_default(),
+    Ok(
+        json!({ "id": v.get("id").cloned().unwrap_or_default(), "state": v.get("state").cloned().unwrap_or_default(),
                "isDiscoverable": v.get("isDiscoverable").cloned().unwrap_or(Value::Bool(false)),
-               "embedCode": if v.get("type").and_then(Value::as_str) == Some("Townhall") { json!(embed_code(&id)) } else { Value::Null } }))
+               "embedCode": if v.get("type").and_then(Value::as_str) == Some("Townhall") { json!(embed_code(&id)) } else { Value::Null } }),
+    )
 }
 
 /// Your registration for an event (Teams' get-virtual-event-attendee-
@@ -894,7 +1150,11 @@ pub async fn publish(client: &TeamsClient, id: &str) -> Result<Value> {
 pub async fn my_registration(client: &TeamsClient, id: &str) -> Result<Value> {
     let id = event_path(id)?;
     let oid = client.object_id().context("Not signed in")?;
-    let url = format!("{}/events/{}/users/{oid}/registration", regional_endpoint(client), urlencoding(&id));
+    let url = format!(
+        "{}/events/{}/users/{oid}/registration",
+        regional_endpoint(client),
+        urlencoding(&id)
+    );
     match get_json(&url, false).await {
         Ok(v) => Ok(v),
         Err(e) if e.to_string().contains("404") => Ok(Value::Null),
@@ -909,10 +1169,22 @@ pub async fn my_registration(client: &TeamsClient, id: &str) -> Result<Value> {
 /// offset in minutes), your names and email, the answers
 /// (`{Id, Answer}`), the terms of use (null without any). Add to calendar
 /// sends the same with `registrationType` "AddToCalendar".
-pub fn register_body(iana: &str, utc_offset_minutes: i64, first: &str, last: &str, email: &str, answers: &[(String, Value)], terms: Option<bool>) -> Value {
+pub fn register_body(
+    iana: &str,
+    utc_offset_minutes: i64,
+    first: &str,
+    last: &str,
+    email: &str,
+    answers: &[(String, Value)],
+    terms: Option<bool>,
+) -> Value {
     let sign = if utc_offset_minutes < 0 { '-' } else { '+' };
     let off = utc_offset_minutes.abs();
-    let localized = if off == 0 { format!("GMT {iana}") } else { format!("GMT{sign}{:02}:{:02} {iana}", off / 60, off % 60) };
+    let localized = if off == 0 {
+        format!("GMT {iana}")
+    } else {
+        format!("GMT{sign}{:02}:{:02} {iana}", off / 60, off % 60)
+    };
     json!({
         "language": "en-us",
         "timeZoneDetails": {
@@ -932,7 +1204,17 @@ pub fn register_body(iana: &str, utc_offset_minutes: i64, first: &str, last: &st
 /// meetingJoinUrl, registrationType}`.
 pub async fn register(client: &TeamsClient, id: &str, body: &Value) -> Result<Value> {
     let id = event_path(id)?;
-    let r = send(reqwest::Method::POST, &format!("{}/events/{}/attendee/register", regional_endpoint(client), urlencoding(&id)), Some(body), false).await?;
+    let r = send(
+        reqwest::Method::POST,
+        &format!(
+            "{}/events/{}/attendee/register",
+            regional_endpoint(client),
+            urlencoding(&id)
+        ),
+        Some(body),
+        false,
+    )
+    .await?;
     r.json().await.context("The registration")
 }
 
@@ -942,10 +1224,22 @@ pub async fn register(client: &TeamsClient, id: &str, body: &Value) -> Result<Va
 pub async fn unregister(client: &TeamsClient, id: &str, registration_id: &str) -> Result<()> {
     let id = event_path(id)?;
     anyhow::ensure!(
-        !registration_id.is_empty() && registration_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-'),
+        !registration_id.is_empty()
+            && registration_id
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() || c == '-'),
         "Not a registration"
     );
-    send(reqwest::Method::POST, &format!("{}/events/{id}/attendees/{registration_id}/cancel", regional_endpoint(client)), None, false).await?;
+    send(
+        reqwest::Method::POST,
+        &format!(
+            "{}/events/{id}/attendees/{registration_id}/cancel",
+            regional_endpoint(client)
+        ),
+        None,
+        false,
+    )
+    .await?;
     Ok(())
 }
 
@@ -960,7 +1254,11 @@ pub async fn set_discoverable(client: &TeamsClient, id: &str, on: bool) -> Resul
     let id = event_path(id)?;
     let base = format!("{}/events/{}", regional_endpoint(client), urlencoding(&id));
     let ov = get_json(&format!("{base}/overview"), false).await?;
-    let etag = ov.pointer("/event/eTag").and_then(Value::as_str).unwrap_or_default().to_string();
+    let etag = ov
+        .pointer("/event/eTag")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
     let t = token().await?;
     let mut req = reqwest::Client::new()
         .patch(&base)
@@ -972,9 +1270,16 @@ pub async fn set_discoverable(client: &TeamsClient, id: &str, on: bool) -> Resul
         req = req.header("If-Match", etag);
     }
     let r = req.send().await.context("The events service")?;
-    anyhow::ensure!(r.status().is_success(), "The events service answered {}", r.status());
+    anyhow::ensure!(
+        r.status().is_success(),
+        "The events service answered {}",
+        r.status()
+    );
     let v: Value = r.json().await.unwrap_or_default();
-    Ok(v.pointer("/access/isDiscoverable").or_else(|| v.get("isDiscoverable")).and_then(Value::as_bool).unwrap_or(on))
+    Ok(v.pointer("/access/isDiscoverable")
+        .or_else(|| v.get("isDiscoverable"))
+        .and_then(Value::as_bool)
+        .unwrap_or(on))
 }
 
 /// Teams' "Copy embed code" for a published town hall (the share dialog's
@@ -991,7 +1296,13 @@ pub fn embed_code(event_id: &str) -> String {
 /// event's attendees are emailed (Teams' dialog says so).
 pub async fn cancel(client: &TeamsClient, id: &str) -> Result<()> {
     let id = event_path(id)?;
-    send(reqwest::Method::DELETE, &format!("{}/events/{id}", regional_endpoint(client)), None, false).await?;
+    send(
+        reqwest::Method::DELETE,
+        &format!("{}/events/{id}", regional_endpoint(client)),
+        None,
+        false,
+    )
+    .await?;
     Ok(())
 }
 
@@ -999,14 +1310,33 @@ pub async fn cancel(client: &TeamsClient, id: &str) -> Result<()> {
 /// page; Discover's lists), with Teams' paging token.
 pub async fn see_more(client: &TeamsClient, section: &str, skip: &str) -> Result<Value> {
     let ams = client.ams_v2_url().unwrap_or_default();
-    let tok = if skip.is_empty() { String::new() } else { format!("&skipToken={}", urlencoding(skip)) };
+    let tok = if skip.is_empty() {
+        String::new()
+    } else {
+        format!("&skipToken={}", urlencoding(skip))
+    };
     let now = chrono::Utc::now();
     let f = DiscoverFilter::default();
     let url = match section {
-        "Draft" | "Published" | "Past" => format!("{}/eventOverviews?manageFilterType={section}&pageSize=25&includeTotalCount=true&eventTypes=Townhall,Webinar{tok}", regional_endpoint(client)),
-        "upcoming" => format!("{}{}{tok}", regional_endpoint(client), discover_query(DiscoverList::Upcoming, now, &f).replace("pageSize=21", "pageSize=25")),
-        "past" => format!("{}{}{tok}", regional_endpoint(client), discover_query(DiscoverList::Past, now, &f).replace("pageSize=9", "pageSize=25")),
-        "now" => format!("{}{}{tok}", regional_endpoint(client), discover_query(DiscoverList::Now, now, &f).replace("pageSize=9", "pageSize=25")),
+        "Draft" | "Published" | "Past" => format!(
+            "{}/eventOverviews?manageFilterType={section}&pageSize=25&includeTotalCount=true&eventTypes=Townhall,Webinar{tok}",
+            regional_endpoint(client)
+        ),
+        "upcoming" => format!(
+            "{}{}{tok}",
+            regional_endpoint(client),
+            discover_query(DiscoverList::Upcoming, now, &f).replace("pageSize=21", "pageSize=25")
+        ),
+        "past" => format!(
+            "{}{}{tok}",
+            regional_endpoint(client),
+            discover_query(DiscoverList::Past, now, &f).replace("pageSize=9", "pageSize=25")
+        ),
+        "now" => format!(
+            "{}{}{tok}",
+            regional_endpoint(client),
+            discover_query(DiscoverList::Now, now, &f).replace("pageSize=9", "pageSize=25")
+        ),
         _ => anyhow::bail!("Not a section"),
     };
     let r = get_json(&url, !matches!(section, "Draft" | "Published" | "Past")).await?;
@@ -1028,9 +1358,15 @@ pub async fn event_form(client: &TeamsClient, id: &str) -> Result<Value> {
     let sessions = sessions.unwrap_or_default();
     let session = sessions.get(0).cloned().unwrap_or_default();
     let presenters = people_from(e.get("presenters"));
-    let (mut rooms, people): (Vec<Person>, Vec<Person>) = presenters.into_iter().partition(|p| p.user_type == "Room");
-    let (viewing_rooms, attendees): (Vec<Person>, Vec<Person>) = people_from(e.get("attendees")).into_iter().partition(|p| p.user_type == "Room");
-    rooms.extend(viewing_rooms.into_iter().map(|r| Person { room_role: "AttendeeViewing".into(), ..r }));
+    let (mut rooms, people): (Vec<Person>, Vec<Person>) =
+        presenters.into_iter().partition(|p| p.user_type == "Room");
+    let (viewing_rooms, attendees): (Vec<Person>, Vec<Person>) = people_from(e.get("attendees"))
+        .into_iter()
+        .partition(|p| p.user_type == "Room");
+    rooms.extend(viewing_rooms.into_iter().map(|r| Person {
+        room_role: "AttendeeViewing".into(),
+        ..r
+    }));
     Ok(json!({
         "id": e.get("id").cloned().unwrap_or_default(),
         "title": e.get("title").cloned().unwrap_or_default(),
@@ -1062,7 +1398,11 @@ pub async fn event_form(client: &TeamsClient, id: &str) -> Result<Value> {
 /// discoverability, the people with the session's lobby setting and the
 /// meeting options; captured 2026-11-18).
 pub fn update_body(e: &NewEvent) -> Value {
-    let to_ms = |s: &str| chrono::DateTime::parse_from_rfc3339(s).map(|d| iso(d.with_timezone(&chrono::Utc))).unwrap_or_else(|_| s.to_string());
+    let to_ms = |s: &str| {
+        chrono::DateTime::parse_from_rfc3339(s)
+            .map(|d| iso(d.with_timezone(&chrono::Utc)))
+            .unwrap_or_else(|_| s.to_string())
+    };
     let mut options = new_meeting_options(e, e.event_type == "Townhall");
     merge_options(&mut options, e.meeting_options.as_ref());
     json!({
@@ -1080,7 +1420,13 @@ pub fn update_body(e: &NewEvent) -> Value {
 
 pub async fn update(client: &TeamsClient, id: &str, e: &NewEvent) -> Result<()> {
     let id = event_path(id)?;
-    send(reqwest::Method::PATCH, &format!("{}/events/{id}", regional_endpoint(client)), Some(&update_body(e)), false).await?;
+    send(
+        reqwest::Method::PATCH,
+        &format!("{}/events/{id}", regional_endpoint(client)),
+        Some(&update_body(e)),
+        false,
+    )
+    .await?;
     Ok(())
 }
 
@@ -1089,7 +1435,13 @@ pub async fn update(client: &TeamsClient, id: &str, e: &NewEvent) -> Result<()> 
 /// (`communicationProperties.disableAttendeeEmails`).
 pub async fn patch(client: &TeamsClient, id: &str, body: &Value) -> Result<()> {
     let id = event_path(id)?;
-    send(reqwest::Method::PATCH, &format!("{}/events/{id}", regional_endpoint(client)), Some(body), false).await?;
+    send(
+        reqwest::Method::PATCH,
+        &format!("{}/events/{id}", regional_endpoint(client)),
+        Some(body),
+        false,
+    )
+    .await?;
     Ok(())
 }
 
@@ -1098,9 +1450,19 @@ pub async fn patch(client: &TeamsClient, id: &str, body: &Value) -> Result<()> {
 pub async fn duplicate(client: &TeamsClient, id: &str, e: &NewEvent) -> Result<Value> {
     let id = event_path(id)?;
     anyhow::ensure!(!e.title.trim().is_empty(), "The event needs a name");
-    let promo = if e.promo_image.is_empty() { default_promo() } else { e.promo_image.clone() };
+    let promo = if e.promo_image.is_empty() {
+        default_promo()
+    } else {
+        e.promo_image.clone()
+    };
     let body = create_body(e, &owner_of(client), tz_for(e), &promo);
-    let r = send(reqwest::Method::POST, &format!("{}/events/{id}/duplicate", regional_endpoint(client)), Some(&body), false).await?;
+    let r = send(
+        reqwest::Method::POST,
+        &format!("{}/events/{id}/duplicate", regional_endpoint(client)),
+        Some(&body),
+        false,
+    )
+    .await?;
     let v: Value = r.json().await.context("The new event")?;
     let ams = client.ams_v2_url().unwrap_or_default();
     Ok(json!({
@@ -1127,23 +1489,51 @@ pub fn template_body(e: &NewEvent, name: &str, description: &str) -> Value {
     if !description.is_empty() {
         m.insert("eventTemplateDescription".into(), json!(description));
     }
-    m.insert("theme".into(), json!({ "primaryColor": "#5B5FC7", "promoImage": e.promo_image }));
+    m.insert(
+        "theme".into(),
+        json!({ "primaryColor": "#5B5FC7", "promoImage": e.promo_image }),
+    );
     b
 }
 
-pub async fn save_as_template(client: &TeamsClient, id: &str, e: &NewEvent, name: &str, description: &str) -> Result<Value> {
+pub async fn save_as_template(
+    client: &TeamsClient,
+    id: &str,
+    e: &NewEvent,
+    name: &str,
+    description: &str,
+) -> Result<Value> {
     let id = event_path(id)?;
-    anyhow::ensure!(!name.trim().is_empty(), crate::i18n::tr_id("Template name is required", "virtualEvents:k8tdaiazv"));
-    let r = send(reqwest::Method::POST, &format!("{}/events/{id}/saveAsTemplate", regional_endpoint(client)), Some(&template_body(e, name, description)), false).await?;
+    anyhow::ensure!(
+        !name.trim().is_empty(),
+        crate::i18n::tr_id("Template name is required", "virtualEvents:k8tdaiazv")
+    );
+    let r = send(
+        reqwest::Method::POST,
+        &format!("{}/events/{id}/saveAsTemplate", regional_endpoint(client)),
+        Some(&template_body(e, name, description)),
+        false,
+    )
+    .await?;
     let v: Value = r.json().await.context("The template")?;
-    Ok(json!({ "id": v.get("id").cloned().unwrap_or_default(), "name": v.get("name").cloned().unwrap_or_default() }))
+    Ok(
+        json!({ "id": v.get("id").cloned().unwrap_or_default(), "name": v.get("name").cloned().unwrap_or_default() }),
+    )
 }
 
 /// Your saved templates (`GET eventTemplates`), as Create's cards.
 pub async fn templates(client: &TeamsClient) -> Result<Value> {
     let ams = client.ams_v2_url().unwrap_or_default();
-    let v = get_json(&format!("{}/eventTemplates", regional_endpoint(client)), false).await?;
-    let list = v.as_array().cloned().or_else(|| v.get("value").and_then(Value::as_array).cloned()).unwrap_or_default();
+    let v = get_json(
+        &format!("{}/eventTemplates", regional_endpoint(client)),
+        false,
+    )
+    .await?;
+    let list = v
+        .as_array()
+        .cloned()
+        .or_else(|| v.get("value").and_then(Value::as_array).cloned())
+        .unwrap_or_default();
     Ok(Value::Array(list.iter().map(|t| {
         let d = t.get("eventTemplateData").cloned().unwrap_or_default();
         let presenters = people_from(d.get("presenters"));
@@ -1174,14 +1564,32 @@ pub async fn templates(client: &TeamsClient) -> Result<Value> {
 /// A template's Delete (`DELETE eventTemplates/{id}`; Teams asks nothing).
 pub async fn delete_template(client: &TeamsClient, id: &str) -> Result<()> {
     anyhow::ensure!(uuid::Uuid::parse_str(id).is_ok(), "Not a template");
-    send(reqwest::Method::DELETE, &format!("{}/eventTemplates/{id}", regional_endpoint(client)), None, false).await?;
+    send(
+        reqwest::Method::DELETE,
+        &format!("{}/eventTemplates/{id}", regional_endpoint(client)),
+        None,
+        false,
+    )
+    .await?;
     Ok(())
 }
 
 /// Edit template's Save (`PATCH eventTemplates/{id}`).
-pub async fn update_template(client: &TeamsClient, id: &str, e: &NewEvent, name: &str, description: &str) -> Result<()> {
+pub async fn update_template(
+    client: &TeamsClient,
+    id: &str,
+    e: &NewEvent,
+    name: &str,
+    description: &str,
+) -> Result<()> {
     anyhow::ensure!(uuid::Uuid::parse_str(id).is_ok(), "Not a template");
-    send(reqwest::Method::PATCH, &format!("{}/eventTemplates/{id}", regional_endpoint(client)), Some(&template_body(e, name, description)), false).await?;
+    send(
+        reqwest::Method::PATCH,
+        &format!("{}/eventTemplates/{id}", regional_endpoint(client)),
+        Some(&template_body(e, name, description)),
+        false,
+    )
+    .await?;
     Ok(())
 }
 
@@ -1196,7 +1604,11 @@ pub const TOWN_HALL_TEMPLATE: &str = "firstparty_21f91ef7-6265-4064-b78b-41ab668
 /// dialog's shape.
 pub async fn template_options(client: &TeamsClient, town_hall: bool) -> Result<Value> {
     let (base, token) = super::tabs::middle_tier(client).await?;
-    let id = if town_hall { TOWN_HALL_TEMPLATE } else { WEBINAR_TEMPLATE };
+    let id = if town_hall {
+        TOWN_HALL_TEMPLATE
+    } else {
+        WEBINAR_TEMPLATE
+    };
     let v: Value = client
         .http()
         .get(format!("{base}//beta/meetingTemplates/details/{id}?isChannelMeeting=false&language=en-us&useCategoriesV2=true"))
@@ -1217,8 +1629,12 @@ pub async fn template_options(client: &TeamsClient, town_hall: bool) -> Result<V
 pub fn search_flags(kind: &str) -> &'static str {
     match kind {
         "team" => "includeDLs=false&enableGuest=false&includeBots=true&skypeTeamsInfo=true",
-        "presenters" => "includeDLs=false&enableGuest=true&includeBots=true&includeMTOUsers=true&skypeTeamsInfo=true",
-        _ => "includeDLs=true&enableGuest=true&includeBots=true&includeMTOUsers=true&skypeTeamsInfo=true",
+        "presenters" => {
+            "includeDLs=false&enableGuest=true&includeBots=true&includeMTOUsers=true&skypeTeamsInfo=true"
+        }
+        _ => {
+            "includeDLs=true&enableGuest=true&includeBots=true&includeMTOUsers=true&skypeTeamsInfo=true"
+        }
     }
 }
 
@@ -1226,7 +1642,10 @@ pub async fn search_people(client: &TeamsClient, kind: &str, query: &str) -> Res
     let (base, token) = super::tabs::middle_tier(client).await?;
     let v: Value = client
         .http()
-        .post(format!("{base}/beta/users/searchV2?{}&source=oneEvents", search_flags(kind)))
+        .post(format!(
+            "{base}/beta/users/searchV2?{}&source=oneEvents",
+            search_flags(kind)
+        ))
         .bearer_auth(&token)
         .header("content-type", "text/plain")
         .body(query.to_string())
@@ -1237,49 +1656,109 @@ pub async fn search_people(client: &TeamsClient, kind: &str, query: &str) -> Res
         .await
         .context("Search")?;
     let tid = client.tenant_id().unwrap_or_default();
-    Ok(v["value"].as_array().into_iter().flatten().filter_map(|r| {
-        let c = super::channels::add_candidate_from(r)?;
-        let user_type = if c.group { "Group".to_string() } else if c.is_guest { "Guest".to_string() } else { "ADUser".to_string() };
-        let tenant = r.get("tenantId").and_then(Value::as_str).map(str::to_string)
-            .or_else(|| r.get("id").and_then(Value::as_str).and_then(|i| i.split('@').nth(1)).map(str::to_string))
-            .unwrap_or_else(|| tid.clone());
-        Some(Person {
-            name: c.name, email: c.mail.clone(), mri: c.mri, object_id: c.object_id, tenant_id: tenant,
-            upn: r.get("userPrincipalName").and_then(Value::as_str).unwrap_or(&c.mail).to_string(),
-            user_type, group: c.group, detail: c.detail, room_role: String::new(),
+    Ok(v["value"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| {
+            let c = super::channels::add_candidate_from(r)?;
+            let user_type = if c.group {
+                "Group".to_string()
+            } else if c.is_guest {
+                "Guest".to_string()
+            } else {
+                "ADUser".to_string()
+            };
+            let tenant = r
+                .get("tenantId")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .or_else(|| {
+                    r.get("id")
+                        .and_then(Value::as_str)
+                        .and_then(|i| i.split('@').nth(1))
+                        .map(str::to_string)
+                })
+                .unwrap_or_else(|| tid.clone());
+            Some(Person {
+                name: c.name,
+                email: c.mail.clone(),
+                mri: c.mri,
+                object_id: c.object_id,
+                tenant_id: tenant,
+                upn: r
+                    .get("userPrincipalName")
+                    .and_then(Value::as_str)
+                    .unwrap_or(&c.mail)
+                    .to_string(),
+                user_type,
+                group: c.group,
+                detail: c.detail,
+                room_role: String::new(),
+            })
         })
-    }).collect())
+        .collect())
 }
 
 /// Add a room: Teams' room search for the event's time
 /// (`findmeetinglocations` with the time slot and availability), each room
 /// resolved to its Teams account. [person, availability ("Free", "Busy")].
-pub async fn search_rooms(client: &TeamsClient, query: &str, start: &str, end: &str, zone: &str) -> Result<Value> {
+pub async fn search_rooms(
+    client: &TeamsClient,
+    query: &str,
+    start: &str,
+    end: &str,
+    zone: &str,
+) -> Result<Value> {
     let found = super::rooms::meeting_locations_at(client, query, start, end, zone).await?;
     let emails: Vec<String> = found.iter().map(|r| r.0.clone()).collect();
-    let rooms = super::rooms::resolve(client, &emails).await.unwrap_or_default();
+    let rooms = super::rooms::resolve(client, &emails)
+        .await
+        .unwrap_or_default();
     let tid = client.tenant_id().unwrap_or_default();
-    Ok(Value::Array(found.iter().filter_map(|(email, name, avail, oid)| {
-        let r = rooms.iter().find(|r| r.email.eq_ignore_ascii_case(email));
-        let mri = r.map(|r| r.mri.clone()).unwrap_or_else(|| format!("8:orgid:{oid}"));
-        (!oid.is_empty() || r.is_some()).then(|| json!({
+    Ok(Value::Array(
+        found
+            .iter()
+            .filter_map(|(email, name, avail, oid)| {
+                let r = rooms.iter().find(|r| r.email.eq_ignore_ascii_case(email));
+                let mri = r
+                    .map(|r| r.mri.clone())
+                    .unwrap_or_else(|| format!("8:orgid:{oid}"));
+                (!oid.is_empty() || r.is_some()).then(|| json!({
             "name": name, "email": email, "mri": mri,
             "objectId": mri.trim_start_matches("8:orgid:"), "tenantId": tid, "upn": email,
             "userType": "Room", "group": false, "detail": email, "availability": avail,
         }))
-    }).collect()))
+            })
+            .collect(),
+    ))
 }
 
 /// Copy join details: the meeting's invitation as Teams copies it (the
 /// scheduler's `views.html` for the session's meeting, a data URL).
 pub async fn join_details(link: &str) -> Result<String> {
-    anyhow::ensure!(link.starts_with("https://api.scheduler.teams.microsoft.com/"), "Not a meeting");
+    anyhow::ensure!(
+        link.starts_with("https://api.scheduler.teams.microsoft.com/"),
+        "Not a meeting"
+    );
     // Teams' meeting scheduling service (ECS meetingSchedulingServiceAuthResource);
     // Teams asks with the thread's own form ("19:meeting_…", not "19_meeting_…").
-    let token = crate::auth::oauth::access_token_for("7557eb47-c689-4224-abcf-aef9bd7573df/.default").await?;
+    let token =
+        crate::auth::oauth::access_token_for("7557eb47-c689-4224-abcf-aef9bd7573df/.default")
+            .await?;
     let link = link.replace("/19_meeting_", "/19:meeting_");
-    let v: Value = reqwest::Client::new().get(&link).bearer_auth(token).send().await?.error_for_status()?.json().await?;
-    let html = v.pointer("/views/html").and_then(Value::as_str).context("The meeting's invitation")?;
+    let v: Value = reqwest::Client::new()
+        .get(&link)
+        .bearer_auth(token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let html = v
+        .pointer("/views/html")
+        .and_then(Value::as_str)
+        .context("The meeting's invitation")?;
     let data = html.strip_prefix("data:text/html,").unwrap_or(html);
     // Form-encoded ("+" for a space).
     Ok(url::form_urlencoded::parse(format!("x={data}").as_bytes())
@@ -1313,10 +1792,24 @@ pub const APP_ID: &str = "a63f7012-8cc9-42d5-99c3-e35f526fab17";
 /// The app bar's pinned apps from your entitlements (`isAppBarPinned`,
 /// `appBarOrder`), as Teams keeps them.
 pub fn pinned_from(v: &Value) -> Vec<(String, f64)> {
-    let mut out: Vec<(String, f64)> = v.pointer("/value/userEntitlements").and_then(Value::as_object).into_iter()
-        .flat_map(|o| o.values()).filter_map(Value::as_array).flatten()
-        .filter(|e| e.get("isAppBarPinned").and_then(Value::as_bool).unwrap_or(false))
-        .filter_map(|e| Some((e.get("id")?.as_str()?.to_string(), e.get("appBarOrder").and_then(Value::as_f64).unwrap_or(0.0))))
+    let mut out: Vec<(String, f64)> = v
+        .pointer("/value/userEntitlements")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flat_map(|o| o.values())
+        .filter_map(Value::as_array)
+        .flatten()
+        .filter(|e| {
+            e.get("isAppBarPinned")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .filter_map(|e| {
+            Some((
+                e.get("id")?.as_str()?.to_string(),
+                e.get("appBarOrder").and_then(Value::as_f64).unwrap_or(0.0),
+            ))
+        })
         .collect();
     out.dedup_by(|a, b| a.0.eq_ignore_ascii_case(&b.0));
     out
@@ -1324,15 +1817,27 @@ pub fn pinned_from(v: &Value) -> Vec<(String, f64)> {
 
 async fn pinned_now(client: &TeamsClient) -> Result<Vec<(String, f64)>> {
     let (base, token) = super::tabs::middle_tier(client).await?;
-    let v: Value = client.http()
-        .post(format!("{base}/beta/users/apps/aggregatedEntitlements?appbarview=userpinned"))
-        .bearer_auth(&token).json(&json!([])).send().await?.error_for_status()?.json().await?;
+    let v: Value = client
+        .http()
+        .post(format!(
+            "{base}/beta/users/apps/aggregatedEntitlements?appbarview=userpinned"
+        ))
+        .bearer_auth(&token)
+        .json(&json!([]))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
     Ok(pinned_from(&v))
 }
 
 /// Whether Events is pinned to your app bar (Teams' entitlements).
 pub async fn is_pinned(client: &TeamsClient) -> Result<bool> {
-    Ok(pinned_now(client).await?.iter().any(|(id, _)| id.eq_ignore_ascii_case(APP_ID)))
+    Ok(pinned_now(client)
+        .await?
+        .iter()
+        .any(|(id, _)| id.eq_ignore_ascii_case(APP_ID)))
 }
 
 /// The body Teams posts to pin or unpin Events: every pinned app with its
@@ -1340,20 +1845,34 @@ pub async fn is_pinned(client: &TeamsClient) -> Result<bool> {
 /// [{"appId": "a63f7012-…", "appBarOrder": 10}, …]}`).
 pub fn pinned_body(now: &[(String, f64)], pin: bool) -> Value {
     let mut list: Vec<Value> = Vec::new();
-    let others: Vec<&(String, f64)> = now.iter().filter(|(id, _)| !id.eq_ignore_ascii_case(APP_ID)).collect();
+    let others: Vec<&(String, f64)> = now
+        .iter()
+        .filter(|(id, _)| !id.eq_ignore_ascii_case(APP_ID))
+        .collect();
     if pin {
         let next = others.iter().map(|(_, o)| *o).fold(0.0_f64, f64::max) + 1.0;
         list.push(json!({ "appId": APP_ID, "appBarOrder": next as i64 }));
     }
-    list.extend(others.iter().map(|(id, o)| json!({ "appId": id, "appBarOrder": *o as i64 })));
+    list.extend(
+        others
+            .iter()
+            .map(|(id, o)| json!({ "appId": id, "appBarOrder": *o as i64 })),
+    );
     json!({ "appBarPinnedApps": list })
 }
 
 pub async fn set_pinned(client: &TeamsClient, pin: bool) -> Result<()> {
     let now = pinned_now(client).await?;
     let (base, token) = super::tabs::middle_tier(client).await?;
-    client.http().post(format!("{base}/beta/users/apps/pinned")).bearer_auth(&token).json(&pinned_body(&now, pin))
-        .send().await?.error_for_status().context("Pin app")?;
+    client
+        .http()
+        .post(format!("{base}/beta/users/apps/pinned"))
+        .bearer_auth(&token)
+        .json(&pinned_body(&now, pin))
+        .send()
+        .await?
+        .error_for_status()
+        .context("Pin app")?;
     Ok(())
 }
 
@@ -1361,11 +1880,21 @@ pub async fn set_pinned(client: &TeamsClient, pin: bool) -> Result<()> {
 /// emailtemplates`).
 pub async fn email_templates(client: &TeamsClient, id: &str) -> Result<Value> {
     let id = event_path(id)?;
-    get_json(&format!("{}/events/{id}/emailtemplates", regional_endpoint(client)), false).await
+    get_json(
+        &format!("{}/events/{id}/emailtemplates", regional_endpoint(client)),
+        false,
+    )
+    .await
 }
 
 fn template_path(id: &str) -> Result<String> {
-    anyhow::ensure!(!id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'), "Not a template id");
+    anyhow::ensure!(
+        !id.is_empty()
+            && id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
+        "Not a template id"
+    );
     Ok(id.to_string())
 }
 
@@ -1374,7 +1903,14 @@ fn template_path(id: &str) -> Result<String> {
 /// footer, sendTimeInterval, adO4867893_IsBodyEditableStatusCode}`.
 pub async fn email_template(client: &TeamsClient, id: &str, template: &str) -> Result<Value> {
     let (id, template) = (event_path(id)?, template_path(template)?);
-    get_json(&format!("{}/events/{id}/emailtemplates/{template}", regional_endpoint(client)), false).await
+    get_json(
+        &format!(
+            "{}/events/{id}/emailtemplates/{template}",
+            regional_endpoint(client)
+        ),
+        false,
+    )
+    .await
 }
 
 /// Only the fields Teams' email editor saves: `subject`, `body`,
@@ -1387,18 +1923,37 @@ pub fn email_template_patch(v: &Value) -> Value {
             out.insert(k.into(), json!(s));
         }
     }
-    if let Some(t) = v.get("sendTimeInterval").filter(|t| t.as_object().is_some_and(|o| !o.is_empty())) {
+    if let Some(t) = v
+        .get("sendTimeInterval")
+        .filter(|t| t.as_object().is_some_and(|o| !o.is_empty()))
+    {
         let n = |k: &str| t.get(k).and_then(Value::as_i64).unwrap_or(0);
-        out.insert("sendTimeInterval".into(), json!({ "hours": n("hours"), "days": n("days") }));
+        out.insert(
+            "sendTimeInterval".into(),
+            json!({ "hours": n("hours"), "days": n("days") }),
+        );
     }
     Value::Object(out)
 }
 
 /// Save an email template (`PATCH events/{id}/emailtemplates/{templateId}`).
-pub async fn update_email_template(client: &TeamsClient, id: &str, template: &str, v: &Value) -> Result<Value> {
+pub async fn update_email_template(
+    client: &TeamsClient,
+    id: &str,
+    template: &str,
+    v: &Value,
+) -> Result<Value> {
     let (id, template) = (event_path(id)?, template_path(template)?);
-    let r = send(reqwest::Method::PATCH, &format!("{}/events/{id}/emailtemplates/{template}", regional_endpoint(client)),
-                 Some(&email_template_patch(v)), false).await?;
+    let r = send(
+        reqwest::Method::PATCH,
+        &format!(
+            "{}/events/{id}/emailtemplates/{template}",
+            regional_endpoint(client)
+        ),
+        Some(&email_template_patch(v)),
+        false,
+    )
+    .await?;
     Ok(r.json().await.unwrap_or_else(|_| json!({})))
 }
 
@@ -1408,15 +1963,29 @@ pub async fn theme(client: &TeamsClient, id: &str) -> Result<Value> {
     let id = event_path(id)?;
     let v = get_json(&format!("{}/events/{id}", regional_endpoint(client)), false).await?;
     let ams = client.ams_v2_url().unwrap_or_default();
-    let img = |k: &str| v.pointer(&format!("/theme/{k}")).and_then(Value::as_str).unwrap_or_default().to_string();
-    Ok(json!({ "eTag": v.get("eTag").or_else(|| v.get("etag")).cloned().unwrap_or(json!("*")),
+    let img = |k: &str| {
+        v.pointer(&format!("/theme/{k}"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    Ok(
+        json!({ "eTag": v.get("eTag").or_else(|| v.get("etag")).cloned().unwrap_or(json!("*")),
                "primaryColor": v.pointer("/theme/primaryColor").cloned().unwrap_or_default(),
                "promoImage": img("promoImage"), "logoImage": img("logoImage"),
                "promoUrl": promo_url(&ams, &img("promoImage")), "logoUrl": promo_url(&ams, &img("logoImage")),
-               "communicationProperties": v.get("communicationProperties").cloned().unwrap_or_default() }))
+               "communicationProperties": v.get("communicationProperties").cloned().unwrap_or_default() }),
+    )
 }
 
-async fn send_if_match(client: &TeamsClient, method: reqwest::Method, url: &str, body: Option<&Value>, etag: &str, skype: bool) -> Result<Value> {
+async fn send_if_match(
+    client: &TeamsClient,
+    method: reqwest::Method,
+    url: &str,
+    body: Option<&Value>,
+    etag: &str,
+    skype: bool,
+) -> Result<Value> {
     let t = token().await?;
     let mut req = reqwest::Client::new()
         .request(method, url)
@@ -1439,11 +2008,28 @@ async fn send_if_match(client: &TeamsClient, method: reqwest::Method, url: &str,
 
 /// The Branding dialog's theme colour (`PATCH events/{id}/theme
 /// {primaryColor}` with `If-Match`).
-pub async fn set_theme_color(client: &TeamsClient, id: &str, etag: &str, color: &str) -> Result<Value> {
+pub async fn set_theme_color(
+    client: &TeamsClient,
+    id: &str,
+    etag: &str,
+    color: &str,
+) -> Result<Value> {
     let id = event_path(id)?;
-    anyhow::ensure!(color.len() == 7 && color.starts_with('#') && color[1..].chars().all(|c| c.is_ascii_hexdigit()), "Not a colour");
-    send_if_match(client, reqwest::Method::PATCH, &format!("{}/events/{id}/theme", regional_endpoint(client)),
-                  Some(&json!({ "primaryColor": color })), etag, false).await
+    anyhow::ensure!(
+        color.len() == 7
+            && color.starts_with('#')
+            && color[1..].chars().all(|c| c.is_ascii_hexdigit()),
+        "Not a colour"
+    );
+    send_if_match(
+        client,
+        reqwest::Method::PATCH,
+        &format!("{}/events/{id}/theme", regional_endpoint(client)),
+        Some(&json!({ "primaryColor": color })),
+        etag,
+        false,
+    )
+    .await
 }
 
 /// Teams' image checks: PNG or JPG, at most 5 MB.
@@ -1452,10 +2038,20 @@ pub const MAX_THEME_IMAGE: usize = 5 * 1024 * 1024;
 /// The cover image or logo (`PATCH events/{id}/theme/promo|logo {imageId,
 /// image: data URL}` with `If-Match` and `x-skypetoken`; the service
 /// hosts it): `bytes` a PNG or JPEG, `current` the image it replaces.
-pub async fn set_theme_image(client: &TeamsClient, id: &str, etag: &str, which: &str, current: &str, bytes: &[u8]) -> Result<Value> {
+pub async fn set_theme_image(
+    client: &TeamsClient,
+    id: &str,
+    etag: &str,
+    which: &str,
+    current: &str,
+    bytes: &[u8],
+) -> Result<Value> {
     let id = event_path(id)?;
     anyhow::ensure!(which == "promo" || which == "logo", "Not a theme image");
-    anyhow::ensure!(bytes.len() <= MAX_THEME_IMAGE, "Choose a file smaller than 5 MB.");
+    anyhow::ensure!(
+        bytes.len() <= MAX_THEME_IMAGE,
+        "Choose a file smaller than 5 MB."
+    );
     let mime = if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
         "image/png"
     } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
@@ -1464,15 +2060,25 @@ pub async fn set_theme_image(client: &TeamsClient, id: &str, etag: &str, which: 
         anyhow::bail!("Choose a PNG or JPG file.")
     };
     use base64::Engine as _;
-    let data = format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes));
+    let data = format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    );
     let mut body = json!({ "image": data });
     if !current.is_empty() {
         body["imageId"] = json!(current);
     } else if which == "logo" {
         body["imageId"] = json!("null");
     }
-    send_if_match(client, reqwest::Method::PATCH, &format!("{}/events/{id}/theme/{which}", regional_endpoint(client)),
-                  Some(&body), etag, true).await
+    send_if_match(
+        client,
+        reqwest::Method::PATCH,
+        &format!("{}/events/{id}/theme/{which}", regional_endpoint(client)),
+        Some(&body),
+        etag,
+        true,
+    )
+    .await
 }
 
 /// A town hall's Manage apps card (measured in Teams desktop 26304 on winpc,
@@ -1484,17 +2090,23 @@ pub async fn set_theme_image(client: &TeamsClient, id: &str, etag: &str, which: 
 /// (`GET {mt}/beta/chats/{thread}/apps/chatentitlements`). Teams listed
 /// Custom Streaming above AI Producer, the reverse of the allowlist.
 pub async fn townhall_apps(client: &TeamsClient, thread: &str) -> Result<Value> {
-    anyhow::ensure!(thread.starts_with("19:") && thread.ends_with("@thread.v2"), "Not a meeting chat");
-    let mut ids: Vec<String> = super::ecs::setting("extensibility", "baseTownhallAppEntityAllowlist")
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default();
+    anyhow::ensure!(
+        thread.starts_with("19:") && thread.ends_with("@thread.v2"),
+        "Not a meeting chat"
+    );
+    let mut ids: Vec<String> =
+        super::ecs::setting("extensibility", "baseTownhallAppEntityAllowlist")
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
     ids.retain(|i| uuid::Uuid::parse_str(i).is_ok());
     ids.reverse();
     if ids.is_empty() {
         return Ok(json!({ "apps": [] }));
     }
     let defs = super::app_details::definitions(client, &ids).await?;
-    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let base = client
+        .middle_tier_url()
+        .context("No Teams middle-tier endpoint")?;
     let token = super::directory::middle_tier_token().await?;
     let installed: String = client
         .http()
@@ -1515,7 +2127,11 @@ pub async fn townhall_apps(client: &TeamsClient, thread: &str) -> Result<Value> 
 pub fn townhall_rows(ids: &[String], defs: &[Value], installed: &str) -> Vec<Value> {
     ids.iter()
         .filter_map(|id| {
-            let def = defs.iter().find(|d| d.get("id").and_then(Value::as_str).is_some_and(|x| x.eq_ignore_ascii_case(id)))?;
+            let def = defs.iter().find(|d| {
+                d.get("id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|x| x.eq_ignore_ascii_case(id))
+            })?;
             let app = super::store_content::store_app(def, None);
             Some(json!({
                 "id": app.id, "name": app.name, "icon": app.icon, "config_url": app.config_url,
@@ -1529,9 +2145,16 @@ pub fn townhall_rows(ids: &[String], defs: &[Value], installed: &str) -> Vec<Val
 /// event meeting's chat (`POST {mt}/beta/chats/{thread}/apps/entitlements`
 /// with its definition), before its tab configuration opens.
 pub async fn townhall_app_install(client: &TeamsClient, thread: &str, app: &str) -> Result<Value> {
-    anyhow::ensure!(thread.starts_with("19:") && thread.ends_with("@thread.v2") && uuid::Uuid::parse_str(app).is_ok(), "Not an app");
+    anyhow::ensure!(
+        thread.starts_with("19:")
+            && thread.ends_with("@thread.v2")
+            && uuid::Uuid::parse_str(app).is_ok(),
+        "Not an app"
+    );
     let def = super::app_details::definition(client, app).await?;
-    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let base = client
+        .middle_tier_url()
+        .context("No Teams middle-tier endpoint")?;
     let token = super::directory::middle_tier_token().await?;
     client
         .http()
@@ -1551,8 +2174,14 @@ pub async fn townhall_app_install(client: &TeamsClient, thread: &str, app: &str)
 /// properties set to null), then the app (`DELETE {mt}/beta/chats/{thread}/
 /// apps/entitlements/{app}`).
 pub async fn townhall_app_remove(client: &TeamsClient, thread: &str, app: &str) -> Result<Value> {
-    anyhow::ensure!(thread.starts_with("19:") && uuid::Uuid::parse_str(app).is_ok(), "Not an app");
-    for t in super::tab_add::chat_tabs(client, thread).await.unwrap_or_default() {
+    anyhow::ensure!(
+        thread.starts_with("19:") && uuid::Uuid::parse_str(app).is_ok(),
+        "Not an app"
+    );
+    for t in super::tab_add::chat_tabs(client, thread)
+        .await
+        .unwrap_or_default()
+    {
         if t.app_id.eq_ignore_ascii_case(app) {
             super::tab_add::remove_property(client, thread, &t.id).await?;
         }
@@ -1568,12 +2197,24 @@ pub async fn townhall_app_remove(client: &TeamsClient, thread: &str, app: &str) 
 /// hasHighlights, sourceUrl, sourceDriveId, sourceItemId}]`).
 pub async fn sessions(client: &TeamsClient, id: &str) -> Result<Value> {
     let id = event_path(id)?;
-    let v = get_json(&format!("{}/events/{id}/sessions", regional_endpoint(client)), false).await?;
-    Ok(v.get("value").cloned().filter(Value::is_array).unwrap_or(if v.is_array() { v } else { json!([]) }))
+    let v = get_json(
+        &format!("{}/events/{id}/sessions", regional_endpoint(client)),
+        false,
+    )
+    .await?;
+    Ok(v.get("value")
+        .cloned()
+        .filter(Value::is_array)
+        .unwrap_or(if v.is_array() { v } else { json!([]) }))
 }
 
 fn session_path(s: &str) -> Result<&str> {
-    anyhow::ensure!(!s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_@".contains(c)), "Not a session id");
+    anyhow::ensure!(
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || "-_@".contains(c)),
+        "Not a session id"
+    );
     Ok(s)
 }
 
@@ -1581,12 +2222,20 @@ fn session_path(s: &str) -> Result<&str> {
 /// events/{id}/sessions/{sid}/recordings` with the recording (see
 /// [`super::event_highlights::recording_body`]) and the Skype token, as
 /// its virtual events transport sends it.
-pub async fn add_session_recording(client: &TeamsClient, id: &str, session: &str, body: &Value) -> Result<Value> {
+pub async fn add_session_recording(
+    client: &TeamsClient,
+    id: &str,
+    session: &str,
+    body: &Value,
+) -> Result<Value> {
     let id = event_path(id)?;
     let session = session_path(session)?;
     let t = token().await?;
     let resp = reqwest::Client::new()
-        .post(format!("{}/events/{id}/sessions/{session}/recordings", regional_endpoint(client)))
+        .post(format!(
+            "{}/events/{id}/sessions/{session}/recordings",
+            regional_endpoint(client)
+        ))
         .bearer_auth(t)
         .header("content-type", "application/json")
         .header("x-ms-correlation-id", uuid::Uuid::new_v4().to_string())
@@ -1600,33 +2249,76 @@ pub async fn add_session_recording(client: &TeamsClient, id: &str, session: &str
     if !status.is_success() {
         // Teams tells "RecordingAlreadyExists" apart from other failures.
         let v = serde_json::from_str::<Value>(&text).unwrap_or_default();
-        let code = v.get("ErrorCode").or_else(|| v.get("code")).or_else(|| v.get("errorCode")).map(|c| c.as_str().map(str::to_string).unwrap_or_else(|| c.to_string())).unwrap_or_default();
-        let msg = v.get("ErrorMessage").or_else(|| v.get("message")).and_then(Value::as_str).unwrap_or_default();
+        let code = v
+            .get("ErrorCode")
+            .or_else(|| v.get("code"))
+            .or_else(|| v.get("errorCode"))
+            .map(|c| {
+                c.as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| c.to_string())
+            })
+            .unwrap_or_default();
+        let msg = v
+            .get("ErrorMessage")
+            .or_else(|| v.get("message"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         tracing::warn!(%status, %code, message = %msg.chars().take(300).collect::<String>(), "events: session recording refused");
-        anyhow::bail!("The events service answered {status}{}", if code.is_empty() { String::new() } else { format!(": {code}") });
+        anyhow::bail!(
+            "The events service answered {status}{}",
+            if code.is_empty() {
+                String::new()
+            } else {
+                format!(": {code}")
+            }
+        );
     }
     Ok(serde_json::from_str(&text).unwrap_or_else(|_| json!({})))
 }
 
 /// Teams' deleteSessionRecording: `DELETE events/{id}/sessions/{sid}/
 /// recordings/{rid}`.
-pub async fn delete_session_recording(client: &TeamsClient, id: &str, session: &str, recording: &str) -> Result<()> {
+pub async fn delete_session_recording(
+    client: &TeamsClient,
+    id: &str,
+    session: &str,
+    recording: &str,
+) -> Result<()> {
     let id = event_path(id)?;
     let session = session_path(session)?;
     let recording = session_path(recording)?;
-    send(reqwest::Method::DELETE, &format!("{}/events/{id}/sessions/{session}/recordings/{recording}", regional_endpoint(client)), None, false).await?;
+    send(
+        reqwest::Method::DELETE,
+        &format!(
+            "{}/events/{id}/sessions/{session}/recordings/{recording}",
+            regional_endpoint(client)
+        ),
+        None,
+        false,
+    )
+    .await?;
     Ok(())
 }
 
 /// Extend for 60 days (Teams' updateSessionRecording: `PATCH events/{id}/
 /// sessions/{sid}/recordings/{rid}` `{expirationDurationExtensionDays}`).
-pub async fn extend_session_recording(client: &TeamsClient, id: &str, session: &str, recording: &str, days: i64) -> Result<Value> {
+pub async fn extend_session_recording(
+    client: &TeamsClient,
+    id: &str,
+    session: &str,
+    recording: &str,
+    days: i64,
+) -> Result<Value> {
     let id = event_path(id)?;
     let session = session_path(session)?;
     let recording = session_path(recording)?;
     let t = token().await?;
     let resp = reqwest::Client::new()
-        .patch(format!("{}/events/{id}/sessions/{session}/recordings/{recording}", regional_endpoint(client)))
+        .patch(format!(
+            "{}/events/{id}/sessions/{session}/recordings/{recording}",
+            regional_endpoint(client)
+        ))
         .bearer_auth(t)
         .header("content-type", "application/json")
         .header("x-ms-correlation-id", uuid::Uuid::new_v4().to_string())
@@ -1647,17 +2339,29 @@ mod tests {
 
     #[test]
     fn townhall_card_rows() {
-        let ids = vec!["a59fe11a-7ae8-4569-94d1-081c83ab59b6".to_string(), "e7fb100c-8c81-4e3f-9c78-bb1407080cdc".to_string()];
+        let ids = vec![
+            "a59fe11a-7ae8-4569-94d1-081c83ab59b6".to_string(),
+            "e7fb100c-8c81-4e3f-9c78-bb1407080cdc".to_string(),
+        ];
         let defs = vec![
             json!({"id": "e7fb100c-8c81-4e3f-9c78-bb1407080cdc", "name": "AI Producer", "largeImageUrl": "https://x/ai.png"}),
             json!({"id": "a59fe11a-7ae8-4569-94d1-081c83ab59b6", "name": "Custom Streaming", "largeImageUrl": "https://x/cs.png",
                    "configurableTabs": [{"configurationUrl": "https://teams.microsoft.com/extensibility-apps/meetingstream/rtmp/config?host=teams"}]}),
         ];
-        let rows = townhall_rows(&ids, &defs, r#"{"value":[{"appId":"a59fe11a-7ae8-4569-94d1-081c83ab59b6"}]}"#);
+        let rows = townhall_rows(
+            &ids,
+            &defs,
+            r#"{"value":[{"appId":"a59fe11a-7ae8-4569-94d1-081c83ab59b6"}]}"#,
+        );
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0]["name"], "Custom Streaming");
         assert_eq!(rows[0]["added"], true);
-        assert!(rows[0]["config_url"].as_str().unwrap().contains("meetingstream/rtmp/config"));
+        assert!(
+            rows[0]["config_url"]
+                .as_str()
+                .unwrap()
+                .contains("meetingstream/rtmp/config")
+        );
         assert_eq!(rows[1]["name"], "AI Producer");
         assert_eq!(rows[1]["added"], false);
     }
@@ -1666,27 +2370,54 @@ mod tests {
     fn email_template_patch_keeps_the_editor_fields() {
         let v = json!({ "subject": "S", "body": "<p>{{eventName}}</p>", "senderName": "OST", "footer": "x", "templateId": "t",
                         "sendTimeInterval": { "hours": 2 } });
-        assert_eq!(email_template_patch(&v), json!({ "subject": "S", "body": "<p>{{eventName}}</p>", "senderName": "OST",
-                                                     "sendTimeInterval": { "hours": 2, "days": 0 } }));
-        assert_eq!(email_template_patch(&json!({ "sendTimeInterval": {}, "subject": "A" })), json!({ "subject": "A" }));
+        assert_eq!(
+            email_template_patch(&v),
+            json!({ "subject": "S", "body": "<p>{{eventName}}</p>", "senderName": "OST",
+                                                     "sendTimeInterval": { "hours": 2, "days": 0 } })
+        );
+        assert_eq!(
+            email_template_patch(&json!({ "sendTimeInterval": {}, "subject": "A" })),
+            json!({ "subject": "A" })
+        );
     }
 
     fn at(s: &str) -> chrono::DateTime<chrono::Utc> {
-        chrono::DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&chrono::Utc)
+        chrono::DateTime::parse_from_rfc3339(s)
+            .unwrap()
+            .with_timezone(&chrono::Utc)
     }
 
     #[test]
     fn registers_as_teams_does() {
         // Teams desktop's Register (Discover, captured 2026-11-19).
-        let b = register_body("America/Los_Angeles", -480, "OST", "Test 1", "ost-test1@scnetsolutions.com", &[], None);
+        let b = register_body(
+            "America/Los_Angeles",
+            -480,
+            "OST",
+            "Test 1",
+            "ost-test1@scnetsolutions.com",
+            &[],
+            None,
+        );
         assert_eq!(
             b,
             json!({"language": "en-us", "timeZoneDetails": {"ianaTimeZone": "America/Los_Angeles", "windowsTimeZone": "America/Los_Angeles",
                 "localizedTimeZoneString": "GMT-08:00 America/Los_Angeles", "utcOffset": -480, "timeZone": "America/Los_Angeles"},
                 "firstName": "OST", "lastName": "Test 1", "email": "ost-test1@scnetsolutions.com", "answers": [], "hasAcceptedTermsOfUse": null})
         );
-        let a = register_body("Asia/Kolkata", 330, "a", "b", "c", &[("q1".into(), json!("yes"))], Some(true));
-        assert_eq!(a["timeZoneDetails"]["localizedTimeZoneString"], "GMT+05:30 Asia/Kolkata");
+        let a = register_body(
+            "Asia/Kolkata",
+            330,
+            "a",
+            "b",
+            "c",
+            &[("q1".into(), json!("yes"))],
+            Some(true),
+        );
+        assert_eq!(
+            a["timeZoneDetails"]["localizedTimeZoneString"],
+            "GMT+05:30 Asia/Kolkata"
+        );
         assert_eq!(a["answers"], json!([{"Id": "q1", "Answer": "yes"}]));
         assert_eq!(a["hasAcceptedTermsOfUse"], true);
     }
@@ -1698,7 +2429,14 @@ mod tests {
             "requesterPropertiesBySession": {"s1": {"registrationStatus": "Registered", "roles": []}}}]});
         let c = &cards_from(&r, "")[0];
         assert!(c.registration && c.discoverable);
-        assert_eq!((c.registration_status.as_str(), c.questions.len(), c.terms_url.as_str()), ("Registered", 0, ""));
+        assert_eq!(
+            (
+                c.registration_status.as_str(),
+                c.questions.len(),
+                c.terms_url.as_str()
+            ),
+            ("Registered", 0, "")
+        );
     }
 
     #[test]
@@ -1723,7 +2461,10 @@ mod tests {
             json!({"displayName": "guest@example.com", "identity": {}}),
             p("A", json!({})),
         ];
-        assert_eq!(card_presenters(&list, Some(&owner)), vec!["Guest Speaker", "A", "B"]);
+        assert_eq!(
+            card_presenters(&list, Some(&owner)),
+            vec!["Guest Speaker", "A", "B"]
+        );
         // The card reads the event's owner from the reply.
         let r = json!({"results": [{"eventDetails": {"id": "e1", "owner": owner}, "eventSessions": [{"id": "s1", "speakers": []}]}]});
         assert_eq!(cards_from(&r, "")[0].by_names, vec!["OST Test 2"]);
@@ -1739,32 +2480,65 @@ mod tests {
             {"id": "q5", "type": "Note", "order": 5}
         ]});
         let q = registration_questions(Some(&info));
-        assert_eq!(q.iter().map(|x| x["id"].as_str().unwrap()).collect::<Vec<_>>(), vec!["q1", "q2", "q3", "q4", "q5"]);
+        assert_eq!(
+            q.iter()
+                .map(|x| x["id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["q1", "q2", "q3", "q4", "q5"]
+        );
         // Unset questions (a multiple choice nobody ticked) are left out.
-        let a = registration_answers(&q, &json!({"q1": "OST", "q2": "Blue", "q4": false, "q5": null}));
-        assert_eq!(a, vec![("q1".into(), json!("OST")), ("q2".into(), json!("Blue")), ("q4".into(), json!(false))]);
+        let a = registration_answers(
+            &q,
+            &json!({"q1": "OST", "q2": "Blue", "q4": false, "q5": null}),
+        );
+        assert_eq!(
+            a,
+            vec![
+                ("q1".into(), json!("OST")),
+                ("q2".into(), json!("Blue")),
+                ("q4".into(), json!(false))
+            ]
+        );
         let a = registration_answers(&q, &json!({"q3": ["x", "y"], "q4": true}));
-        assert_eq!(a, vec![("q3".into(), json!(["x", "y"])), ("q4".into(), json!(true))]);
+        assert_eq!(
+            a,
+            vec![("q3".into(), json!(["x", "y"])), ("q4".into(), json!(true))]
+        );
     }
 
     #[test]
     fn discover_asks_as_teams() {
         let now = at("2026-11-16T22:53:50.241Z");
         let f = DiscoverFilter::default();
-        assert_eq!(discover_query(DiscoverList::Now, now, &f),
-            "/eventOverviews?pageSize=9&sortBy=StartTime&sortOrder=Ascending&startTo=2026-11-16T22:58:50.241Z&endFrom=2026-11-16T22:53:50.241Z&returnRequesterProperties=true&eventStatus=Published&includeRequesterStatus=AllInOrg");
-        assert_eq!(discover_query(DiscoverList::Upcoming, now, &f),
-            "/eventOverviews?pageSize=21&sortBy=StartTime&sortOrder=Ascending&startFrom=2026-11-16T22:58:50.241Z&returnRequesterProperties=true&eventStatus=Published&includeRequesterStatus=AllInOrg");
-        assert_eq!(discover_query(DiscoverList::Past, now, &f),
-            "/eventOverviews?pageSize=9&sortBy=EndTime&sortOrder=Descending&endTo=2026-11-16T22:53:50.241Z&returnRequesterProperties=true&eventStatus=Published&includeRequesterStatus=AllInOrg");
-        let mine = DiscoverFilter { my_events: true, ..Default::default() };
-        assert!(discover_query(DiscoverList::Past, now, &mine).ends_with("&includeRequesterStatus=Registered&includeRequesterStatus=Invited"));
+        assert_eq!(
+            discover_query(DiscoverList::Now, now, &f),
+            "/eventOverviews?pageSize=9&sortBy=StartTime&sortOrder=Ascending&startTo=2026-11-16T22:58:50.241Z&endFrom=2026-11-16T22:53:50.241Z&returnRequesterProperties=true&eventStatus=Published&includeRequesterStatus=AllInOrg"
+        );
+        assert_eq!(
+            discover_query(DiscoverList::Upcoming, now, &f),
+            "/eventOverviews?pageSize=21&sortBy=StartTime&sortOrder=Ascending&startFrom=2026-11-16T22:58:50.241Z&returnRequesterProperties=true&eventStatus=Published&includeRequesterStatus=AllInOrg"
+        );
+        assert_eq!(
+            discover_query(DiscoverList::Past, now, &f),
+            "/eventOverviews?pageSize=9&sortBy=EndTime&sortOrder=Descending&endTo=2026-11-16T22:53:50.241Z&returnRequesterProperties=true&eventStatus=Published&includeRequesterStatus=AllInOrg"
+        );
+        let mine = DiscoverFilter {
+            my_events: true,
+            ..Default::default()
+        };
+        assert!(
+            discover_query(DiscoverList::Past, now, &mine)
+                .ends_with("&includeRequesterStatus=Registered&includeRequesterStatus=Invited")
+        );
     }
 
     #[test]
     fn manage_asks_as_teams() {
         let q = manage_queries();
-        assert_eq!(q[2].1, "/eventOverviews?manageFilterType=Draft&pageSize=4&includeTotalCount=true&eventTypes=Townhall,Webinar");
+        assert_eq!(
+            q[2].1,
+            "/eventOverviews?manageFilterType=Draft&pageSize=4&includeTotalCount=true&eventTypes=Townhall,Webinar"
+        );
         assert_eq!(q.len(), 5);
     }
 
@@ -1780,83 +2554,188 @@ mod tests {
         assert_eq!(c[0].title, "OST TEST 209 draft event");
         assert_eq!(c[0].state, "Draft");
         assert_eq!(c[0].role, "Organizer");
-        assert_eq!(c[0].promo_image, "https://us-prod.asyncgw.teams.microsoft.com/v1/objects/0-ea-d1-844c96573cb54bea119d491e901da436/views/imgpsh_fullsize?v=1");
+        assert_eq!(
+            c[0].promo_image,
+            "https://us-prod.asyncgw.teams.microsoft.com/v1/objects/0-ea-d1-844c96573cb54bea119d491e901da436/views/imgpsh_fullsize?v=1"
+        );
         assert_eq!(c[0].join_url, "https://teams.microsoft.com/l/meetup-join/x");
         assert_eq!(promo_url("https://x", "../evil"), "");
     }
 
     #[test]
     fn a_new_draft_is_sent_as_teams_sends_it() {
-        let e = NewEvent { title: "OST TEST".into(), start: "2026-11-16T23:30:00Z".into(), end: "2026-11-17T00:00:00Z".into(),
-                           access: "Organization".into(), allow_mic: true, allow_camera: true, reactions: true, chat: true, qna: true,
-                           ..Default::default() };
-        let b = create_body(&e, &json!({"displayName": "OST Test 1"}), time_zone_details("America/Los_Angeles", -480), DEFAULT_PROMO_IMAGES[2]);
-        assert_eq!(b["theme"], json!({"primaryColor": "#5B5FC7", "promoImage": "0-ea-d1-844c96573cb54bea119d491e901da436"}));
+        let e = NewEvent {
+            title: "OST TEST".into(),
+            start: "2026-11-16T23:30:00Z".into(),
+            end: "2026-11-17T00:00:00Z".into(),
+            access: "Organization".into(),
+            allow_mic: true,
+            allow_camera: true,
+            reactions: true,
+            chat: true,
+            qna: true,
+            ..Default::default()
+        };
+        let b = create_body(
+            &e,
+            &json!({"displayName": "OST Test 1"}),
+            time_zone_details("America/Los_Angeles", -480),
+            DEFAULT_PROMO_IMAGES[2],
+        );
+        assert_eq!(
+            b["theme"],
+            json!({"primaryColor": "#5B5FC7", "promoImage": "0-ea-d1-844c96573cb54bea119d491e901da436"})
+        );
         assert_eq!(b["type"], "Webinar");
         assert_eq!(b["eventTime"]["startTime"], "2026-11-16T23:30:00.000Z");
         assert_eq!(b["eventTime"]["timeZoneDetails"]["timeZone"], "PacificSt");
-        assert_eq!(b["access"], json!({"accessType": "Private", "inviteOnly": false, "isRegistrationEnabled": false}));
+        assert_eq!(
+            b["access"],
+            json!({"accessType": "Private", "inviteOnly": false, "isRegistrationEnabled": false})
+        );
         assert_eq!(b["attendees"], json!([]));
         assert_eq!(b["presenters"], json!([]));
         assert_eq!(b["meetingOptions"]["attendeeRestrictions"], "UnRestricted");
         assert_eq!(b["meetingOptions"]["allowMeetingChat"], "Enabled");
-        let p = create_body(&NewEvent { access: "Public".into(), ..Default::default() }, &json!({}), json!({}), "");
+        let p = create_body(
+            &NewEvent {
+                access: "Public".into(),
+                ..Default::default()
+            },
+            &json!({}),
+            json!({}),
+            "",
+        );
         assert_eq!(p["access"]["accessType"], "Public");
         assert_eq!(p["meetingOptions"]["attendeeRestrictions"], "DisableAv");
         assert_eq!(p["eventCapacityProperties"], Value::Null);
-        let big = create_body(&NewEvent { capacity: 10000, base_experience: true, ..Default::default() }, &json!({}), json!({}), "");
-        assert_eq!(big["eventCapacityProperties"], json!({"maxEventCapacity": 10000, "isBaseEventExperience": true}));
+        let big = create_body(
+            &NewEvent {
+                capacity: 10000,
+                base_experience: true,
+                ..Default::default()
+            },
+            &json!({}),
+            json!({}),
+            "",
+        );
+        assert_eq!(
+            big["eventCapacityProperties"],
+            json!({"maxEventCapacity": 10000, "isBaseEventExperience": true})
+        );
     }
 
     #[test]
     fn a_town_hall_is_sent_as_teams_sends_it() {
         // Teams' town hall template, defaults kept (captured 2026-11-17).
-        let e = NewEvent { event_type: "Townhall".into(), title: "OST TEST 184 town hall".into(), access: "Public".into(),
-                           green_room: true, qna: true, capacity: 3000, large_audience: true, ..Default::default() };
+        let e = NewEvent {
+            event_type: "Townhall".into(),
+            title: "OST TEST 184 town hall".into(),
+            access: "Public".into(),
+            green_room: true,
+            qna: true,
+            capacity: 3000,
+            large_audience: true,
+            ..Default::default()
+        };
         let b = create_body(&e, &json!({}), json!({}), "");
         assert_eq!(b["type"], "Townhall");
-        assert_eq!(b["access"], json!({"accessType": "Public", "inviteOnly": false, "isRegistrationEnabled": false}));
-        assert_eq!(b["eventCapacityProperties"], json!({"maxEventCapacity": 3000, "isBaseEventExperience": false}));
-        assert_eq!(b["commentStreamProperties"], json!({"isCommentStreamEnabled": true, "isPolicyAndLicenseCheckEnabled": true,
-            "isSeparateBackroomChatThreadEnabled": true, "useBackroomChatAsMainThread": false, "useStreamingThreadForApps": true}));
+        assert_eq!(
+            b["access"],
+            json!({"accessType": "Public", "inviteOnly": false, "isRegistrationEnabled": false})
+        );
+        assert_eq!(
+            b["eventCapacityProperties"],
+            json!({"maxEventCapacity": 3000, "isBaseEventExperience": false})
+        );
+        assert_eq!(
+            b["commentStreamProperties"],
+            json!({"isCommentStreamEnabled": true, "isPolicyAndLicenseCheckEnabled": true,
+            "isSeparateBackroomChatThreadEnabled": true, "useBackroomChatAsMainThread": false, "useStreamingThreadForApps": true})
+        );
         let o = &b["meetingOptions"];
         assert_eq!(o["attendeeRestrictions"], "DisableAudio,DisableVideo");
         assert_eq!(o["allowMeetingChat"], Value::Null);
-        assert!(o.get("allowTeamsMeetingReactions").is_none() && o.get("autoAdmittedUsers").is_none());
+        assert!(
+            o.get("allowTeamsMeetingReactions").is_none() && o.get("autoAdmittedUsers").is_none()
+        );
         assert_eq!(o["stagingRoomEnabled"], true);
         assert_eq!(o["yammerQNAEnabled"], true);
         assert_eq!(o["attendeeViewModes"], Value::Null);
         // A webinar keeps its comment stream off.
-        let w = create_body(&NewEvent { event_type: "Webinar".into(), ..Default::default() }, &json!({}), json!({}), "");
-        assert_eq!(w["commentStreamProperties"]["isCommentStreamEnabled"], false);
-        assert!(w["meetingOptions"].get("allowTeamsMeetingReactions").is_some());
+        let w = create_body(
+            &NewEvent {
+                event_type: "Webinar".into(),
+                ..Default::default()
+            },
+            &json!({}),
+            json!({}),
+            "",
+        );
+        assert_eq!(
+            w["commentStreamProperties"]["isCommentStreamEnabled"],
+            false
+        );
+        assert!(
+            w["meetingOptions"]
+                .get("allowTeamsMeetingReactions")
+                .is_some()
+        );
     }
 
     #[test]
     fn the_embed_code_is_teams_town_hall_player() {
-        assert_eq!(embed_code("e1@t1"), "<iframe src=\"https://teams.microsoft.com/convene/townhall?eventId=e1@t1\" width=\"1280\" height=\"720\" frameborder=\"0\" scrolling=\"no\" allowfullscreen style=\"border:none;\" allow=\"autoplay; camera; microphone\"></iframe>");
+        assert_eq!(
+            embed_code("e1@t1"),
+            "<iframe src=\"https://teams.microsoft.com/convene/townhall?eventId=e1@t1\" width=\"1280\" height=\"720\" frameborder=\"0\" scrolling=\"no\" allowfullscreen style=\"border:none;\" allow=\"autoplay; camera; microphone\"></iframe>"
+        );
     }
 
     #[test]
     fn people_rooms_and_zones_are_sent_as_teams_sends_them() {
         // Captured 2026-11-18 (Teams desktop's POST events).
-        let p = Person { name: "OST Test 3".into(), email: "ost-test3@x.com".into(), mri: "8:orgid:01c4".into(), object_id: "01c4".into(),
-                         tenant_id: "2716".into(), upn: "ost-test3@x.com".into(), user_type: "ADUser".into(), ..Default::default() };
+        let p = Person {
+            name: "OST Test 3".into(),
+            email: "ost-test3@x.com".into(),
+            mri: "8:orgid:01c4".into(),
+            object_id: "01c4".into(),
+            tenant_id: "2716".into(),
+            upn: "ost-test3@x.com".into(),
+            user_type: "ADUser".into(),
+            ..Default::default()
+        };
         let b = person_body(&p, Some(""));
         assert_eq!(b["sessionsProps"], json!([{ "allowBypassLobby": false }]));
-        assert_eq!(b["identity"], json!({ "mri": "8:orgid:01c4", "objectId": "01c4", "tenantId": "2716", "upn": "ost-test3@x.com" }));
+        assert_eq!(
+            b["identity"],
+            json!({ "mri": "8:orgid:01c4", "objectId": "01c4", "tenantId": "2716", "upn": "ost-test3@x.com" })
+        );
         assert_eq!(b["userPurpose"], "unknown");
-        let room = Person { user_type: "Room".into(), ..p.clone() };
+        let room = Person {
+            user_type: "Room".into(),
+            ..p.clone()
+        };
         assert_eq!(person_body(&room, Some("79cd"))["userPurpose"], "room");
-        assert_eq!(person_body(&room, Some("79cd"))["sessionsProps"][0]["sessionId"], "79cd");
+        assert_eq!(
+            person_body(&room, Some("79cd"))["sessionsProps"][0]["sessionId"],
+            "79cd"
+        );
         assert!(person_body(&p, None).get("sessionsProps").is_none());
-        let e = NewEvent { team: vec![p.clone()], presenters: vec![p.clone()], rooms: vec![room], ..Default::default() };
+        let e = NewEvent {
+            team: vec![p.clone()],
+            presenters: vec![p.clone()],
+            rooms: vec![room],
+            ..Default::default()
+        };
         let c = create_body(&e, &json!({}), json!({}), "");
         assert_eq!(c["presenters"].as_array().unwrap().len(), 2);
         assert_eq!(c["presenters"][1]["userType"], "Room");
         assert_eq!(c["team"][0]["userType"], "ADUser");
         let z = zone_details("PacificSt").unwrap();
-        assert_eq!(z, json!({ "timeZone": "PacificSt", "utcOffset": -480, "ianaTimeZone": "US/Pacific", "windowsTimeZone": "PacificSt", "localizedTimeZoneString": "PacificSt" }));
+        assert_eq!(
+            z,
+            json!({ "timeZone": "PacificSt", "utcOffset": -480, "ianaTimeZone": "US/Pacific", "windowsTimeZone": "PacificSt", "localizedTimeZoneString": "PacificSt" })
+        );
         assert_eq!(zone_details("IndianSt").unwrap()["utcOffset"], 330);
         assert_eq!(super::super::events_tz::ZONES.len(), 140);
     }
@@ -1864,28 +2743,60 @@ mod tests {
     #[test]
     fn filtered_discover_pickers_and_pins_ask_as_teams() {
         let now = at("2026-11-19T03:08:30.973Z");
-        let f = DiscoverFilter { my_events: true, from: "2026-11-18T08:00:00.000Z".into(), to: "2026-12-01T07:59:59.999Z".into() };
-        assert_eq!(discover_query(DiscoverList::Upcoming, now, &f),
-            "/eventOverviews?pageSize=100&sortBy=StartTime&startFrom=2026-11-18T08:00:00.000Z&startTo=2026-12-01T07:59:59.999Z&returnRequesterProperties=true&eventStatus=Published&includeRequesterStatus=Registered&includeRequesterStatus=Invited");
-        assert_eq!(search_flags("team"), "includeDLs=false&enableGuest=false&includeBots=true&skypeTeamsInfo=true");
+        let f = DiscoverFilter {
+            my_events: true,
+            from: "2026-11-18T08:00:00.000Z".into(),
+            to: "2026-12-01T07:59:59.999Z".into(),
+        };
+        assert_eq!(
+            discover_query(DiscoverList::Upcoming, now, &f),
+            "/eventOverviews?pageSize=100&sortBy=StartTime&startFrom=2026-11-18T08:00:00.000Z&startTo=2026-12-01T07:59:59.999Z&returnRequesterProperties=true&eventStatus=Published&includeRequesterStatus=Registered&includeRequesterStatus=Invited"
+        );
+        assert_eq!(
+            search_flags("team"),
+            "includeDLs=false&enableGuest=false&includeBots=true&skypeTeamsInfo=true"
+        );
         assert!(search_flags("attendees").starts_with("includeDLs=true"));
         let now = vec![("3b64df9d".to_string(), 3.0), ("14d6962d".to_string(), 1.0)];
         let b = pinned_body(&now, true);
-        assert_eq!(b["appBarPinnedApps"][0], json!({ "appId": APP_ID, "appBarOrder": 4 }));
+        assert_eq!(
+            b["appBarPinnedApps"][0],
+            json!({ "appId": APP_ID, "appBarOrder": 4 })
+        );
         assert_eq!(b["appBarPinnedApps"].as_array().unwrap().len(), 3);
         let mut with = now.clone();
         with.push((APP_ID.to_string(), 10.0));
-        assert_eq!(pinned_body(&with, false)["appBarPinnedApps"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            pinned_body(&with, false)["appBarPinnedApps"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
         let v = json!({"value": {"userEntitlements": {"u": [{"id": APP_ID, "isAppBarPinned": true, "appBarOrder": 10}, {"id": "x", "state": "Installed"}]}}});
         assert_eq!(pinned_from(&v), vec![(APP_ID.to_string(), 10.0)]);
     }
 
     #[test]
     fn edits_and_templates_are_sent_as_teams_sends_them() {
-        let e = NewEvent { event_type: "Webinar".into(), title: "OST TEST 212".into(), description: "<p>x</p>".into(), session_id: "79cd".into(),
-                           presenters: vec![Person { name: "P".into(), ..Default::default() }], allow_mic: true, allow_camera: true, ..Default::default() };
+        let e = NewEvent {
+            event_type: "Webinar".into(),
+            title: "OST TEST 212".into(),
+            description: "<p>x</p>".into(),
+            session_id: "79cd".into(),
+            presenters: vec![Person {
+                name: "P".into(),
+                ..Default::default()
+            }],
+            allow_mic: true,
+            allow_camera: true,
+            ..Default::default()
+        };
         let u = update_body(&e);
-        assert_eq!(u["access"], json!({ "isRegistrationEnabled": false, "isDiscoverable": false }));
+        assert_eq!(
+            u["access"],
+            json!({ "isRegistrationEnabled": false, "isDiscoverable": false })
+        );
         assert_eq!(u["presenters"][0]["sessionsProps"][0]["sessionId"], "79cd");
         assert_eq!(u["meetingOptions"]["attendeeRestrictions"], "UnRestricted");
         let t = template_body(&e, "OST TEST 212 template", "");

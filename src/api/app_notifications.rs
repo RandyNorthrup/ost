@@ -36,7 +36,11 @@ pub fn default_customizations() -> Value {
 
 /// The app ids in the order Teams meets them: the feed's (newest first),
 /// then the saved settings'.
-pub fn app_ids(feed_messages: &Value, graph_settings: &Value, customizations: &Value) -> Vec<String> {
+pub fn app_ids(
+    feed_messages: &Value,
+    graph_settings: &Value,
+    customizations: &Value,
+) -> Vec<String> {
     let hidden: Vec<String> = customizations
         .as_array()
         .into_iter()
@@ -52,17 +56,31 @@ pub fn app_ids(feed_messages: &Value, graph_settings: &Value, customizations: &V
         }
     };
     let mut msgs: Vec<&Value> = feed_messages.as_array().into_iter().flatten().collect();
-    msgs.sort_by(|a, b| b["composetime"].as_str().unwrap_or_default().cmp(a["composetime"].as_str().unwrap_or_default()));
+    msgs.sort_by(|a, b| {
+        b["composetime"]
+            .as_str()
+            .unwrap_or_default()
+            .cmp(a["composetime"].as_str().unwrap_or_default())
+    });
     for m in msgs {
         let a = &m["properties"]["activity"];
-        let a: Value = a.as_str().and_then(|s| serde_json::from_str(s).ok()).unwrap_or_else(|| a.clone());
+        let a: Value = a
+            .as_str()
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or_else(|| a.clone());
         if a["activityType"].as_str() == Some("msGraph")
-            && let Some(id) = a.pointer("/activityContext/teamsAppId").and_then(Value::as_str)
+            && let Some(id) = a
+                .pointer("/activityContext/teamsAppId")
+                .and_then(Value::as_str)
         {
             add(id);
         }
     }
-    for k in graph_settings.as_object().into_iter().flat_map(|o| o.keys()) {
+    for k in graph_settings
+        .as_object()
+        .into_iter()
+        .flat_map(|o| o.keys())
+    {
         add(k);
     }
     out
@@ -72,11 +90,29 @@ pub fn app_ids(feed_messages: &Value, graph_settings: &Value, customizations: &V
 /// on by default (not for defaultAppSettings OnlyFeed).
 pub fn app_rows(definition: &Value, customizations: &Value) -> (Vec<Value>, bool) {
     let id = definition["id"].as_str().unwrap_or_default().to_lowercase();
-    let custom = customizations.as_array().into_iter().flatten().find(|c| c["appId"].as_str().map(str::to_lowercase).as_deref() == Some(id.as_str()));
+    let custom = customizations
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|c| c["appId"].as_str().map(str::to_lowercase).as_deref() == Some(id.as_str()));
     let toast_default = custom.and_then(|c| c["defaultAppSettings"].as_str()) != Some("OnlyFeed");
-    let items: Vec<&Value> = definition.pointer("/activities/activityItems").and_then(Value::as_array).into_iter().flatten().collect();
-    let label = |t: &str| items.iter().find(|i| i["type"].as_str() == Some(t)).and_then(|i| i["description"].as_str()).unwrap_or(t).to_string();
-    let groups = custom.and_then(|c| c["settingsAggregation"].as_array()).filter(|g| !g.is_empty());
+    let items: Vec<&Value> = definition
+        .pointer("/activities/activityItems")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .collect();
+    let label = |t: &str| {
+        items
+            .iter()
+            .find(|i| i["type"].as_str() == Some(t))
+            .and_then(|i| i["description"].as_str())
+            .unwrap_or(t)
+            .to_string()
+    };
+    let groups = custom
+        .and_then(|c| c["settingsAggregation"].as_array())
+        .filter(|g| !g.is_empty());
     let rows = match groups {
         Some(g) => g
             .iter()
@@ -99,9 +135,19 @@ pub fn app_rows(definition: &Value, customizations: &Value) -> (Vec<Value>, bool
 /// A row's choice: 0 BannerAndFeed, 1 OnlyFeed, 2 Off (Teams' `is` + `Lo`).
 pub fn level(app_settings: &Value, sub_types: &[&str], toast_default: bool) -> u8 {
     let get = |cat: &str, t: &str, d: bool| app_settings[cat][t].as_bool().unwrap_or(d);
-    let generation = sub_types.iter().any(|t| get("activityGenerationSettings", t, true));
-    let toast = sub_types.iter().any(|t| get("toastSettings", t, toast_default));
-    if !generation { 2 } else if toast { 0 } else { 1 }
+    let generation = sub_types
+        .iter()
+        .any(|t| get("activityGenerationSettings", t, true));
+    let toast = sub_types
+        .iter()
+        .any(|t| get("toastSettings", t, toast_default));
+    if !generation {
+        2
+    } else if toast {
+        0
+    } else {
+        1
+    }
 }
 
 /// The userGraphSettings patch for a row's choice.
@@ -140,9 +186,16 @@ mod tests {
             { "composetime": "2026-11-20T04:48:55Z", "properties": { "activity": { "activityType": "msGraph", "activityContext": { "teamsAppId": "2a84919f-59d8-4441-a975-2a8c2643b741" } } } },
             { "composetime": "2026-11-19T04:48:55Z", "properties": { "activity": { "activityType": "msGraph", "activityContext": { "teamsAppId": "5db56dd0-534d-467b-aeda-d622bee2574a" } } } },
         ]);
-        let custom = json!([{ "appId": "2a84919f-59d8-4441-a975-2a8c2643b741", "hideAppSettings": true }]);
+        let custom =
+            json!([{ "appId": "2a84919f-59d8-4441-a975-2a8c2643b741", "hideAppSettings": true }]);
         let ids = app_ids(&feed, &json!({ CALENDAR_APP: {} }), &custom);
-        assert_eq!(ids, vec!["981bbfd0-5eb8-4393-8158-bfff69d2d6b5", "5db56dd0-534d-467b-aeda-d622bee2574a"]);
+        assert_eq!(
+            ids,
+            vec![
+                "981bbfd0-5eb8-4393-8158-bfff69d2d6b5",
+                "5db56dd0-534d-467b-aeda-d622bee2574a"
+            ]
+        );
     }
 
     #[test]
@@ -155,12 +208,21 @@ mod tests {
             "settingsAggregation": [{ "key": "recapIsReadyForFollowedMeetings", "subTypes": ["recapIsReadyForFollowedMeetingsV2", "recapIsReadyForFollowedMeetings"] }, { "key": "recapIsReady", "subTypes": ["recapIsReadyV2", "recapIsReady"] }] }]);
         let (rows, toast) = app_rows(&def, &custom);
         assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0]["label"], "When meeting recap is ready for meetings I follow");
+        assert_eq!(
+            rows[0]["label"],
+            "When meeting recap is ready for meetings I follow"
+        );
         assert!(!toast);
-        assert_eq!(level(&json!({}), &["recapIsReadyV2", "recapIsReady"], toast), 1);
+        assert_eq!(
+            level(&json!({}), &["recapIsReadyV2", "recapIsReady"], toast),
+            1
+        );
         let p = level_patch("a", &["x", "y"], 0);
         assert_eq!(p["a"]["toastSettings"]["y"], true);
         assert_eq!(level(&p["a"], &["x"], false), 0);
-        assert_eq!(switch_patch("a", &[vec!["x"]], false)["a"]["appNotificationEnabled"], false);
+        assert_eq!(
+            switch_patch("a", &[vec!["x"]], false)["a"]["appNotificationEnabled"],
+            false
+        );
     }
 }

@@ -44,7 +44,10 @@ pub fn request_open_chat(thread_id: String, name: String) {
     if let Some(qt) = QT_THREAD.get() {
         let _ = qt.queue(move |mut this| {
             this.as_mut().activate_requested();
-            this.as_mut().open_chat_requested(QString::from(thread_id.as_str()), QString::from(name.as_str()));
+            this.as_mut().open_chat_requested(
+                QString::from(thread_id.as_str()),
+                QString::from(name.as_str()),
+            );
         });
     }
 }
@@ -52,7 +55,11 @@ pub fn request_open_chat(thread_id: String, name: String) {
 /// A running profile's instance socket (main.rs's), if one answers.
 fn profile_socket(profile: &str) -> Option<std::os::unix::net::UnixStream> {
     let dir = std::env::var_os("XDG_RUNTIME_DIR")?;
-    let name = if profile.is_empty() { "ost-desktop.sock".to_string() } else { format!("ost-desktop-{profile}.sock") };
+    let name = if profile.is_empty() {
+        "ost-desktop.sock".to_string()
+    } else {
+        format!("ost-desktop-{profile}.sock")
+    };
     std::os::unix::net::UnixStream::connect(std::path::PathBuf::from(dir).join(name)).ok()
 }
 
@@ -67,9 +74,20 @@ unsafe extern "C" {
     fn ost_save_clipboard_image(path: *const core::ffi::c_char) -> bool;
     /// A picture-only clipboard saved as a PNG for the compose box (1),
     /// none (0) or unreadable (-1), with its size (src/native.cpp).
-    fn ost_save_clipboard_picture(path: *const core::ffi::c_char, width: *mut i32, height: *mut i32) -> i32;
+    fn ost_save_clipboard_picture(
+        path: *const core::ffi::c_char,
+        width: *mut i32,
+        height: *mut i32,
+    ) -> i32;
     /// A picture scaled to fit `side`, as RGBA (src/native.cpp).
-    fn ost_image_rgba(path: *const core::ffi::c_char, side: i32, out: *mut u8, cap: usize, width: *mut i32, height: *mut i32) -> bool;
+    fn ost_image_rgba(
+        path: *const core::ffi::c_char,
+        side: i32,
+        out: *mut u8,
+        cap: usize,
+        width: *mut i32,
+        height: *mut i32,
+    ) -> bool;
     /// Teams' taskbar badge on the window icon (src/native.cpp): the
     /// unread count, or with none, the presence glyph of `kind`.
     fn ost_set_taskbar_badge(count: i32, kind: *const core::ffi::c_char);
@@ -78,7 +96,11 @@ unsafe extern "C" {
     /// Make the banner window a layer-shell surface (src/native.cpp).
     fn ost_banner_prepare(title: *const core::ffi::c_char) -> bool;
     /// Put the banner window in a corner (src/native.cpp).
-    fn ost_banner_place(title: *const core::ffi::c_char, corner: *const core::ffi::c_char, margin: i32);
+    fn ost_banner_place(
+        title: *const core::ffi::c_char,
+        corner: *const core::ffi::c_char,
+        margin: i32,
+    );
     /// The Sharing control bar's window as a layer-shell surface (Wayland).
     fn ost_toolbar_prepare(title: *const core::ffi::c_char) -> bool;
     fn ost_toolbar_place(title: *const core::ffi::c_char, x: i32, y: i32);
@@ -709,7 +731,12 @@ pub mod qobject {
         /// Open a chat (and message) in another account's window: that
         /// window comes forward and opens it, or the account is started.
         #[qinvokable]
-        fn open_in_account(self: Pin<&mut Backend>, profile: &QString, thread_id: &QString, name: &QString);
+        fn open_in_account(
+            self: Pin<&mut Backend>,
+            profile: &QString,
+            thread_id: &QString,
+            name: &QString,
+        );
 
         /// A sign-in web view is about to load `url` (`silent`: the hidden
         /// renewal's view). True when it's the browser sign-in's return
@@ -754,7 +781,14 @@ pub mod qobject {
         /// from_oid}; `from` the first result (25 a page, appended).
         /// Results land in find_json under `key`.
         #[qinvokable]
-        fn find_in_chat(self: Pin<&mut Backend>, key: &QString, thread: &QString, keywords: &QString, filters_json: &QString, from: i32);
+        fn find_in_chat(
+            self: Pin<&mut Backend>,
+            key: &QString,
+            thread: &QString,
+            keywords: &QString,
+            filters_json: &QString,
+            from: i32,
+        );
         /// A Find in chat file result's ··· action: "download" or
         /// "favorite" (Teams' Download and Favorite), by its address.
         #[qinvokable]
@@ -763,7 +797,14 @@ pub mod qobject {
         /// `filters_json` (api::search::Filters); `from` pages Messages and
         /// Files (appended). Results land in search_page_json under `key`.
         #[qinvokable]
-        fn search_page(self: Pin<&mut Backend>, key: &QString, tab: &QString, keywords: &QString, filters_json: &QString, from: i32);
+        fn search_page(
+            self: Pin<&mut Backend>,
+            key: &QString,
+            tab: &QString,
+            keywords: &QString,
+            filters_json: &QString,
+            from: i32,
+        );
         /// In ▾'s suggestions (chats, channels, teams) for `keyword`.
         #[qinvokable]
         fn search_in_suggest(self: Pin<&mut Backend>, keyword: &QString);
@@ -813,7 +854,12 @@ pub mod qobject {
         fn help_search(self: &Backend, query: &QString) -> QString;
         /// Open the feedback form from any window (feedback_requested).
         #[qinvokable]
-        fn request_feedback(self: Pin<&mut Backend>, kind: &QString, area: &QString, context: &QString);
+        fn request_feedback(
+            self: Pin<&mut Backend>,
+            kind: &QString,
+            area: &QString,
+            context: &QString,
+        );
         /// Teams' post-call "How was the call quality?" for the call that
         /// just ended (`kind`: oneToOne, group, meeting, pstn, interop,
         /// screenshareFromChat; `video`: it could carry video), as an
@@ -826,7 +872,12 @@ pub mod qobject {
         /// (`reasons_json`: the ticked item ids): the reasons and the
         /// call's technical details, no one's name.
         #[qinvokable]
-        fn call_quality_details(self: &Backend, kind: &QString, duration_s: i32, reasons_json: &QString) -> QString;
+        fn call_quality_details(
+            self: &Backend,
+            kind: &QString,
+            duration_s: i32,
+            reasons_json: &QString,
+        ) -> QString;
         /// Paste the clipboard's picture into `dir`; its path, or "".
         #[qinvokable]
         fn paste_clipboard_image(self: &Backend, dir: &QString) -> QString;
@@ -960,7 +1011,13 @@ pub mod qobject {
         /// A meeting chat's Report a concern (its thread and meeting, no
         /// call).
         #[qinvokable]
-        fn report_meeting_chat(self: Pin<&mut Backend>, thread: &QString, ical_uid: &QString, comment: &QString, reported_json: &QString);
+        fn report_meeting_chat(
+            self: Pin<&mut Backend>,
+            thread: &QString,
+            ical_uid: &QString,
+            comment: &QString,
+            reported_json: &QString,
+        );
         /// Translate a message (Teams' Translate) or show its original.
         #[qinvokable]
         fn translate_message(self: Pin<&mut Backend>, message_id: &QString, on: bool);
@@ -995,7 +1052,11 @@ pub mod qobject {
         /// tone, length, thread_id, context_type}); compose_copilot_update
         /// follows with `request`.
         #[qinvokable]
-        fn compose_copilot_rewrite(self: Pin<&mut Backend>, request: &QString, rewrite_json: &QString);
+        fn compose_copilot_rewrite(
+            self: Pin<&mut Backend>,
+            request: &QString,
+            rewrite_json: &QString,
+        );
         /// Teams' regional formats in effect (read once: changes apply
         /// after a restart) as Qt format strings: {culture, shortDate,
         /// shortDateNoYear, longDate, longDateNoYear, shortTime, longTime,
@@ -1038,7 +1099,13 @@ pub mod qobject {
         /// Teams' Save and restart / Restart: keep the choices and start
         /// OST again.
         #[qinvokable]
-        fn save_regional_and_restart(self: Pin<&mut Backend>, follow_os: bool, app_language: &QString, date_format: &QString, time_format: &QString);
+        fn save_regional_and_restart(
+            self: Pin<&mut Backend>,
+            follow_os: bool,
+            app_language: &QString,
+            date_format: &QString,
+            time_format: &QString,
+        );
         /// Settings ▸ General ▸ Translation: your settings as JSON
         /// {target, mode, known} (Teams' defaults until you change them).
         #[qinvokable]
@@ -1277,7 +1344,12 @@ pub mod qobject {
         /// object_url, share_url, share_id}}. The
         /// answer comes back in share_done.
         #[qinvokable]
-        fn share_action(self: Pin<&mut Backend>, op: &QString, item_json: &QString, args_json: &QString);
+        fn share_action(
+            self: Pin<&mut Backend>,
+            op: &QString,
+            item_json: &QString,
+            args_json: &QString,
+        );
 
         /// A bot card's action as Teams sends it (api::bot_invoke): the
         /// message ({thread_id, server_message_id, client_message_id,
@@ -1318,7 +1390,12 @@ pub mod qobject {
         /// store for `chat_id`'s members, as Teams does once the recorder
         /// is done; video_clip_uploaded(path, {id, error}) follows.
         #[qinvokable]
-        fn video_clip_upload(self: Pin<&mut Backend>, chat_id: &QString, path: &QString, thumb: &QString);
+        fn video_clip_upload(
+            self: Pin<&mut Backend>,
+            chat_id: &QString,
+            path: &QString,
+            thumb: &QString,
+        );
         /// Render the recorder's edit (`spec_json`: {segments: [{path,
         /// start_ms, end_ms}], music: {path, level} | null}) into one MP4;
         /// clip_rendered({path, duration, error}) follows.
@@ -1410,14 +1487,32 @@ pub mod qobject {
         /// (`clip_json`: {id, duration (ms), width, height}), as Teams'
         /// message carries it.
         #[qinvokable]
-        fn send_with_clip(self: Pin<&mut Backend>, clip_json: &QString, editor_html: &QString, media_json: &QString);
+        fn send_with_clip(
+            self: Pin<&mut Backend>,
+            clip_json: &QString,
+            editor_html: &QString,
+            media_json: &QString,
+        );
 
         #[qinvokable]
-        fn card_invoke(self: Pin<&mut Backend>, op: &QString, target_json: &QString, action_json: &QString, inputs_json: &QString, automatic: bool);
+        fn card_invoke(
+            self: Pin<&mut Backend>,
+            op: &QString,
+            target_json: &QString,
+            action_json: &QString,
+            inputs_json: &QString,
+            automatic: bool,
+        );
         /// A bot message's Action.Submit suggested action: Teams' invoke
         /// (its name, the value's JSON as the invoke value) for the message.
         #[qinvokable]
-        fn suggested_invoke(self: Pin<&mut Backend>, message_id: &QString, target_json: &QString, name: &QString, value: &QString);
+        fn suggested_invoke(
+            self: Pin<&mut Backend>,
+            message_id: &QString,
+            target_json: &QString,
+            name: &QString,
+            value: &QString,
+        );
         /// Teams' Download in the Attendance view: save the report file
         /// (the service's name) to Downloads.
         #[qinvokable]
@@ -1433,7 +1528,12 @@ pub mod qobject {
         /// `audio_only` for "Audio only". A failure comes back as
         /// meeting_action_failed(command).
         #[qinvokable]
-        fn recorder_command(self: Pin<&mut Backend>, command: &QString, language: &QString, audio_only: bool);
+        fn recorder_command(
+            self: Pin<&mut Backend>,
+            command: &QString,
+            language: &QString,
+            audio_only: bool,
+        );
         /// Turn live captions on or off for you, as Teams does: on asks the
         /// meeting's recorder for captions (unless they run already) and
         /// then says so in our endpoint metadata; off only says so.
@@ -1519,7 +1619,13 @@ pub mod qobject {
         /// for real (with the mic as chosen; `with_audio` false: Don't use
         /// audio or Phone audio), else the meeting is joined as before.
         #[qinvokable]
-        fn join_meeting_from_prejoin(self: Pin<&mut Backend>, join_url: &QString, title: &QString, mic_on: bool, with_audio: bool);
+        fn join_meeting_from_prejoin(
+            self: Pin<&mut Backend>,
+            join_url: &QString,
+            title: &QString,
+            mic_on: bool,
+            with_audio: bool,
+        );
         /// The pre-join window went away without joining (Cancel, Escape,
         /// closed): leave its preheated call, as Teams does.
         #[qinvokable]
@@ -1594,7 +1700,12 @@ pub mod qobject {
         /// Teams changes it: `change` "read" (to `newest_reply`), "clear"
         /// (the Mark as unread bookmark) or "unread" (from `newest_reply`).
         #[qinvokable]
-        fn set_thread_read(self: Pin<&mut Backend>, root_id: &QString, change: &QString, newest_reply: &QString);
+        fn set_thread_read(
+            self: Pin<&mut Backend>,
+            root_id: &QString,
+            change: &QString,
+            newest_reply: &QString,
+        );
 
         /// Edit one of our messages in place, as Teams does: the editor's
         /// rich text (formatting kept) and the quote it keeps (JSON, or
@@ -1714,7 +1825,13 @@ pub mod qobject {
         /// The screen being shared (the call window's Screen): logical
         /// width and height, work-area height, device pixel ratio.
         #[qinvokable]
-        fn set_share_screen(self: Pin<&mut Backend>, width: f64, height: f64, work_height: f64, dpr: f64);
+        fn set_share_screen(
+            self: Pin<&mut Backend>,
+            width: f64,
+            height: f64,
+            work_height: f64,
+            dpr: f64,
+        );
         /// Add background: `{id, url, name}`, or "" for none.
         #[qinvokable]
         fn set_presenter_background(self: Pin<&mut Backend>, json: &QString);
@@ -1760,7 +1877,12 @@ pub mod qobject {
         /// renderer): `session_url` with Teams' parameters; `extra` a JSON
         /// object of more parameters (Annotate's).
         #[qinvokable]
-        fn content_board_frame_url(self: &Backend, session_url: &QString, initiator: bool, extra: &QString) -> QString;
+        fn content_board_frame_url(
+            self: &Backend,
+            session_url: &QString,
+            initiator: bool,
+            extra: &QString,
+        ) -> QString;
         /// Keep the board Whiteboard reported for the meeting (`kind`
         /// "whiteboard" or "annotation"), as Teams does.
         #[qinvokable]
@@ -1768,7 +1890,13 @@ pub mod qobject {
         /// PowerPoint Live's host configuration for a session (its slide
         /// show form and Initialize message).
         #[qinvokable]
-        fn content_ppt_config(self: &Backend, session: &QString, presenter_name: &QString, attendees: i32, dark: bool) -> QString;
+        fn content_ppt_config(
+            self: &Backend,
+            session: &QString,
+            presenter_name: &QString,
+            attendees: i32,
+            dark: bool,
+        ) -> QString;
         /// PowerPoint Live's host script (ppt_host.js).
         #[qinvokable]
         fn ppt_host_script(self: &Backend) -> QString;
@@ -1787,17 +1915,37 @@ pub mod qobject {
         /// In control of a presenter's screen: our mouse (0 move, 1 wheel,
         /// 2 button) at x, y (0–1 over the picture).
         #[qinvokable]
-        fn control_mouse(self: Pin<&mut Backend>, kind: i32, button: i32, down: bool, x: f64, y: f64, wheel: i32);
+        fn control_mouse(
+            self: Pin<&mut Backend>,
+            kind: i32,
+            button: i32,
+            down: bool,
+            x: f64,
+            y: f64,
+            wheel: i32,
+        );
         /// In control: our key (Qt key, native scan code).
         #[qinvokable]
         fn control_key(self: Pin<&mut Backend>, key: i32, scan_code: u32, up: bool, repeat: bool);
         /// A presenter's mode laid out on a stage (Teams' compositor).
         #[qinvokable]
-        fn presenter_layout(self: &Backend, layout: &QString, w: f64, h: f64, content_aspect: f64, presenter_aspect: f64) -> QString;
+        fn presenter_layout(
+            self: &Backend,
+            layout: &QString,
+            w: f64,
+            h: f64,
+            content_aspect: f64,
+            presenter_aspect: f64,
+        ) -> QString;
         /// Give / take control happened: `kind` request, withdrawn,
         /// given, takenBack, stopped, denied, hasControl, controlEnded.
         #[qsignal]
-        fn screen_control_notice(self: Pin<&mut Backend>, kind: QString, mri: QString, name: QString);
+        fn screen_control_notice(
+            self: Pin<&mut Backend>,
+            kind: QString,
+            mri: QString,
+            name: QString,
+        );
 
         /// Raise or lower your hand in the meeting.
         #[qinvokable]
@@ -1900,7 +2048,12 @@ pub mod qobject {
         /// Some window asked for Feedback (Report a problem / Give a
         /// compliment): the main window opens the form.
         #[qsignal]
-        fn feedback_requested(self: Pin<&mut Backend>, kind: QString, area: QString, context: QString);
+        fn feedback_requested(
+            self: Pin<&mut Backend>,
+            kind: QString,
+            area: QString,
+            context: QString,
+        );
 
         /// A profile or team picture asked for with photo_for is ready.
         #[qsignal]
@@ -1934,7 +2087,12 @@ pub mod qobject {
         /// Open a Word, Excel or PowerPoint file in OST (Office for the
         /// web in Teams' app host), as Teams' "Teams" choice does.
         #[qsignal]
-        fn open_in_teams_requested(self: Pin<&mut Backend>, url: QString, name: QString, item_json: QString);
+        fn open_in_teams_requested(
+            self: Pin<&mut Backend>,
+            url: QString,
+            name: QString,
+            item_json: QString,
+        );
 
         /// The Loop page host's native call answered (a token may be in
         /// `json`: pass it on, never log it).
@@ -1993,7 +2151,14 @@ pub mod qobject {
         /// A Write with Copilot answer: the HTML so far (or whole, once
         /// `done`), its text, or an error.
         #[qsignal]
-        fn compose_copilot_update(self: Pin<&mut Backend>, request: QString, html: QString, text: QString, done: bool, error: QString);
+        fn compose_copilot_update(
+            self: Pin<&mut Backend>,
+            request: QString,
+            html: QString,
+            text: QString,
+            done: bool,
+            error: QString,
+        );
         /// Copilot in the meeting: the pane's launch for the call in
         /// progress (api::meeting_copilot::launch: url, context,
         /// contextualChat, capabilities), answered by meeting_copilot_ready.
@@ -2019,7 +2184,12 @@ pub mod qobject {
 
         /// A calendar_action finished: its op, its result (JSON) and an error.
         #[qsignal]
-        fn calendar_action_done(self: Pin<&mut Backend>, op: QString, result: QString, error: QString);
+        fn calendar_action_done(
+            self: Pin<&mut Backend>,
+            op: QString,
+            result: QString,
+            error: QString,
+        );
 
         /// Open the pre-join for a meeting (a meeting-start notification's Join).
         #[qsignal]
@@ -2288,10 +2458,21 @@ pub mod qobject {
         /// A message from a chat window (its compose's rich text, media and
         /// quote), to that chat.
         #[qinvokable]
-        fn send_chat_window_message(self: Pin<&mut Backend>, chat_id: &QString, editor_html: &QString, media_json: &QString, quote_json: &QString);
+        fn send_chat_window_message(
+            self: Pin<&mut Backend>,
+            chat_id: &QString,
+            editor_html: &QString,
+            media_json: &QString,
+            quote_json: &QString,
+        );
         /// Files from a chat window, to that chat.
         #[qinvokable]
-        fn send_chat_window_files(self: Pin<&mut Backend>, chat_id: &QString, paths: &QString, text: &QString);
+        fn send_chat_window_files(
+            self: Pin<&mut Backend>,
+            chat_id: &QString,
+            paths: &QString,
+            text: &QString,
+        );
         /// A new post from a channel window (its compose's rich text,
         /// media and quote).
         #[qinvokable]
@@ -2408,14 +2589,29 @@ pub mod qobject {
         /// `thread`, in the team `team_thread`): `kind` context, naa, sso
         /// or saveTab; answered by app_host_reply with the same `id`.
         #[qinvokable]
-        fn app_host_request(self: Pin<&mut Backend>, app_id: &QString, thread: &QString, team_thread: &QString, tab_id: &QString, kind: &QString, id: &QString, payload: &QString);
+        fn app_host_request(
+            self: Pin<&mut Backend>,
+            app_id: &QString,
+            thread: &QString,
+            team_thread: &QString,
+            tab_id: &QString,
+            kind: &QString,
+            id: &QString,
+            payload: &QString,
+        );
         /// Load an app's details for Teams' About dialog.
         #[qinvokable]
         fn app_details_load(self: Pin<&mut Backend>, app_id: &QString);
         /// Load an app's reviews: `sort` "recent", "highest" or "lowest",
         /// `first` of them; `append` adds the next page to what's shown.
         #[qinvokable]
-        fn app_reviews_load(self: Pin<&mut Backend>, app_id: &QString, sort: &QString, first: i32, append: bool);
+        fn app_reviews_load(
+            self: Pin<&mut Backend>,
+            app_id: &QString,
+            sort: &QString,
+            first: i32,
+            append: bool,
+        );
         /// Hide a chat from the list until something newer is said, or show
         /// it again (Teams' Hide / Unhide).
         #[qinvokable]
@@ -2460,25 +2656,54 @@ pub mod qobject {
         fn agent_store_load(self: Pin<&mut Backend>, conversation_id: &QString, channel: bool);
         /// Search the agent Store for a conversation.
         #[qinvokable]
-        fn agent_store_search(self: Pin<&mut Backend>, conversation_id: &QString, channel: bool, query: &QString);
+        fn agent_store_search(
+            self: Pin<&mut Backend>,
+            conversation_id: &QString,
+            channel: bool,
+            query: &QString,
+        );
         /// Add an app as Teams' Add does: for you, and to a conversation
         /// when `conversation_id` isn't empty.
         #[qinvokable]
-        fn add_app(self: Pin<&mut Backend>, app_id: &QString, conversation_id: &QString, channel: bool);
+        fn add_app(
+            self: Pin<&mut Backend>,
+            app_id: &QString,
+            conversation_id: &QString,
+            channel: bool,
+        );
         /// Share an app (Teams' Share form): `targets_json` as the Forward
         /// dialog's picks.
         #[qinvokable]
-        fn share_app(self: Pin<&mut Backend>, app_id: &QString, targets_json: &QString, note: &QString, card: bool);
+        fn share_app(
+            self: Pin<&mut Backend>,
+            app_id: &QString,
+            targets_json: &QString,
+            note: &QString,
+            card: bool,
+        );
         /// The conversation the last share went to (the "shared" dialog's
         /// View opens it).
         #[qinvokable]
         fn shared_conversation(self: &Backend) -> QString;
         /// Report a review of an app (Teams' Report review).
         #[qinvokable]
-        fn report_app_review(self: Pin<&mut Backend>, app_id: &QString, review_id: &QString, reason: &QString, comment: &QString);
+        fn report_app_review(
+            self: Pin<&mut Backend>,
+            app_id: &QString,
+            review_id: &QString,
+            reason: &QString,
+            comment: &QString,
+        );
         /// Post a review of an app (Teams' Write a review).
         #[qinvokable]
-        fn post_app_review(self: Pin<&mut Backend>, app_id: &QString, rating: i32, title: &QString, content: &QString, anonymous: bool);
+        fn post_app_review(
+            self: Pin<&mut Backend>,
+            app_id: &QString,
+            rating: i32,
+            title: &QString,
+            content: &QString,
+            anonymous: bool,
+        );
         /// Copy link to tab: Teams' deep link, as rich text with the tab's
         /// name (`tab_json` is the tab as channelTabsJson gives it).
         #[qinvokable]
@@ -2525,10 +2750,20 @@ pub mod qobject {
         /// (with `mode: "tab"`): `kind` "chat", "meeting" or "channel";
         /// `team_thread` is a channel's team (its General thread).
         #[qinvokable]
-        fn tab_store_load(self: Pin<&mut Backend>, conversation_id: &QString, team_thread: &QString, kind: &QString);
+        fn tab_store_load(
+            self: Pin<&mut Backend>,
+            conversation_id: &QString,
+            team_thread: &QString,
+            kind: &QString,
+        );
         /// Search the Add a tab picker (agent_search_json, `mode: "tab"`).
         #[qinvokable]
-        fn tab_store_search(self: Pin<&mut Backend>, conversation_id: &QString, kind: &QString, query: &QString);
+        fn tab_store_search(
+            self: Pin<&mut Backend>,
+            conversation_id: &QString,
+            kind: &QString,
+            query: &QString,
+        );
         /// Teams' Website configuration's error for a URL (empty when it's
         /// fine or empty).
         #[qinvokable]
@@ -2538,10 +2773,23 @@ pub mod qobject {
         /// websiteUrl, removeUrl, suggestedDisplayName); a channel when
         /// `team_id` is set. Outcome as add_website_tab's.
         #[qinvokable]
-        fn add_app_tab(self: Pin<&mut Backend>, team_id: &QString, conversation_id: &QString, app_id: &QString, app_name: &QString, settings: &QString, post: bool);
+        fn add_app_tab(
+            self: Pin<&mut Backend>,
+            team_id: &QString,
+            conversation_id: &QString,
+            app_id: &QString,
+            app_name: &QString,
+            settings: &QString,
+            post: bool,
+        );
         /// A channel's New list (`existing` false) or Existing list tab.
         #[qinvokable]
-        fn add_list_tab(self: Pin<&mut Backend>, team_id: &QString, channel_id: &QString, existing: bool);
+        fn add_list_tab(
+            self: Pin<&mut Backend>,
+            team_id: &QString,
+            channel_id: &QString,
+            existing: bool,
+        );
         /// A channel's New page: the "Untitled page" tab, which Loop's page
         /// container then makes the page for (docs/spec/loop-host.md).
         #[qinvokable]
@@ -2559,13 +2807,23 @@ pub mod qobject {
         /// pageName or saveComponentUrl; answered by loop_host_reply with
         /// the same `id`.
         #[qinvokable]
-        fn loop_host_request(self: Pin<&mut Backend>, kind: &QString, id: &QString, payload: &QString);
+        fn loop_host_request(
+            self: Pin<&mut Backend>,
+            kind: &QString,
+            id: &QString,
+            payload: &QString,
+        );
         /// Installed apps' compose actions ("+"): `kind` "list" (your apps
         /// with compose commands) or "invoke" ({bot, appId, kind
         /// fetchTask | submitAction | query | fetchCommands, command, args,
         /// conversation}); answered by compose_app_reply with the same `id`.
         #[qinvokable]
-        fn compose_app_request(self: Pin<&mut Backend>, kind: &QString, id: &QString, payload: &QString);
+        fn compose_app_request(
+            self: Pin<&mut Backend>,
+            kind: &QString,
+            id: &QString,
+            payload: &QString,
+        );
         /// The Events app (docs/spec/events.md): `kind` discover, manage,
         /// features, create, overview or cancel; answered by events_reply
         /// with the same `id`.
@@ -2575,14 +2833,24 @@ pub mod qobject {
         /// meeting-notes service, or {create, title} to make them) or made
         /// (share a page just made); answered by call_notes_reply.
         #[qinvokable]
-        fn call_notes_request(self: Pin<&mut Backend>, kind: &QString, id: &QString, payload: &QString);
+        fn call_notes_request(
+            self: Pin<&mut Backend>,
+            kind: &QString,
+            id: &QString,
+            payload: &QString,
+        );
         /// Look a pasted Loop link up for Add an existing page (to
         /// pageLinkJson).
         #[qinvokable]
         fn resolve_page_link(self: Pin<&mut Backend>, link: &QString);
         /// Add an existing Loop page as a channel tab (Confirm).
         #[qinvokable]
-        fn add_existing_page(self: Pin<&mut Backend>, team_id: &QString, channel_id: &QString, link: &QString);
+        fn add_existing_page(
+            self: Pin<&mut Backend>,
+            team_id: &QString,
+            channel_id: &QString,
+            link: &QString,
+        );
         /// Save a website tab as Teams' Website configuration does (a
         /// channel when `team_id` is set); the outcome goes to
         /// channelTabResult as op "add", and the tabs reload.
@@ -2729,7 +2997,12 @@ pub mod qobject {
         /// Quick access). Ops may carry a "<tag>:" prefix. The answer comes back in
         /// drive_action_done.
         #[qinvokable]
-        fn drive_action(self: Pin<&mut Backend>, op: &QString, item_json: &QString, args_json: &QString);
+        fn drive_action(
+            self: Pin<&mut Backend>,
+            op: &QString,
+            item_json: &QString,
+            args_json: &QString,
+        );
 
         /// Change an event's title and time (UTC).
         #[qinvokable]
@@ -2915,7 +3188,12 @@ pub mod qobject {
         fn banner_reply(self: Pin<&mut Backend>, chat_id: &QString, text: &QString);
         /// A banner's quick reaction: react with `key` to the message.
         #[qinvokable]
-        fn banner_react(self: Pin<&mut Backend>, chat_id: &QString, message_id: &QString, key: &QString);
+        fn banner_react(
+            self: Pin<&mut Backend>,
+            chat_id: &QString,
+            message_id: &QString,
+            key: &QString,
+        );
         /// A notification was opened: its chat, where Settings ▸ General ▸
         /// Opening content says (a window of its own, or the main window).
         #[qinvokable]
@@ -2963,7 +3241,13 @@ pub mod qobject {
         /// "requery" (after signing in; arg = the sign-in result). The card
         /// comes back as app_link_card_fetched.
         #[qinvokable]
-        fn app_link_action(self: Pin<&mut Backend>, op: &QString, url: &QString, chat_id: &QString, arg: &QString);
+        fn app_link_action(
+            self: Pin<&mut Backend>,
+            op: &QString,
+            url: &QString,
+            chat_id: &QString,
+            arg: &QString,
+        );
         #[qsignal]
         fn app_link_card_fetched(self: Pin<&mut Backend>, url: QString, json: QString);
         /// The next message's app link card (compose's, maybe collapsed),
@@ -2987,7 +3271,12 @@ pub mod qobject {
         /// your office building `office_id`/`office_name` when another),
         /// all: [{id, name}]}, only buildings the search matches.
         #[qinvokable]
-        fn building_options(self: &Backend, query: &QString, office_id: &QString, office_name: &QString) -> QString;
+        fn building_options(
+            self: &Backend,
+            query: &QString,
+            office_id: &QString,
+            office_name: &QString,
+        ) -> QString;
         /// Read whether Teams Premium's trial can be started.
         #[qinvokable]
         fn load_premium(self: Pin<&mut Backend>);
@@ -3067,7 +3356,12 @@ pub mod qobject {
         /// middle-tier setting; value "true"/"false"). The outcome goes to
         /// settings_json (and settings_error on failure).
         #[qinvokable]
-        fn change_setting(self: Pin<&mut Backend>, kind: &QString, name: &QString, value_json: &QString);
+        fn change_setting(
+            self: Pin<&mut Backend>,
+            kind: &QString,
+            name: &QString,
+            value_json: &QString,
+        );
         /// Load the read receipts setting from Teams (into read_receipts).
         #[qinvokable]
         fn load_read_receipts(self: Pin<&mut Backend>);
@@ -3109,36 +3403,57 @@ enum PendingSave {
     File(api::files::FileAttachment),
     /// A video clip (its `…/views/video` address).
     Clip(String),
-    Zip { op: String, items: Vec<api::drive::DriveItem>, name: String },
+    Zip {
+        op: String,
+        items: Vec<api::drive::DriveItem>,
+        name: String,
+    },
 }
 
 /// Microsoft Edge's command on this desktop, if it is installed.
 fn edge_command() -> Option<String> {
     let path = std::env::var_os("PATH")?;
-    ["microsoft-edge-stable", "microsoft-edge", "microsoft-edge-beta", "microsoft-edge-dev"]
-        .into_iter()
-        .find(|c| std::env::split_paths(&path).any(|d| d.join(c).is_file()))
-        .map(str::to_string)
+    [
+        "microsoft-edge-stable",
+        "microsoft-edge",
+        "microsoft-edge-beta",
+        "microsoft-edge-dev",
+    ]
+    .into_iter()
+    .find(|c| std::env::split_paths(&path).any(|d| d.join(c).is_file()))
+    .map(str::to_string)
 }
 
 /// Open a web address as Settings ▸ Files and links says: in Microsoft Edge
 /// when chosen (and installed), else the desktop's default browser.
 pub fn open_web_address(url: &str) {
     // Teams' default is Microsoft Edge when it is there.
-    let edge = load_settings().get("linkBrowser").and_then(|v| v.as_str()).unwrap_or("edge") == "edge";
+    let edge = load_settings()
+        .get("linkBrowser")
+        .and_then(|v| v.as_str())
+        .unwrap_or("edge")
+        == "edge";
     let cmd = if edge { edge_command() } else { None };
-    let _ = std::process::Command::new(cmd.as_deref().unwrap_or("xdg-open")).arg(url).spawn();
+    let _ = std::process::Command::new(cmd.as_deref().unwrap_or("xdg-open"))
+        .arg(url)
+        .spawn();
 }
 
 /// Settings ▸ Files and links ▸ "Always ask where to save downloaded file"
 /// (this device's, as in Teams).
 fn ask_where_to_save() -> bool {
-    load_settings().get("askDownloadLocation").and_then(|v| v.as_str().map(|s| s == "true").or(v.as_bool())).unwrap_or(false)
+    load_settings()
+        .get("askDownloadLocation")
+        .and_then(|v| v.as_str().map(|s| s == "true").or(v.as_bool()))
+        .unwrap_or(false)
 }
 
 /// Save a finished download where the user picked: it was saved in the
 /// picked folder under its own name; give it the picked name.
-fn place_download(saved: std::path::PathBuf, target: Option<&std::path::Path>) -> std::path::PathBuf {
+fn place_download(
+    saved: std::path::PathBuf,
+    target: Option<&std::path::Path>,
+) -> std::path::PathBuf {
     match target {
         Some(t) if t != saved => match std::fs::rename(&saved, t) {
             Ok(()) => t.to_path_buf(),
@@ -3780,9 +4095,15 @@ fn interp() -> &'static std::sync::Mutex<Interp> {
 /// on this device.
 fn interpreter_prefs() -> (String, String, f32) {
     let s = load_settings();
-    let p = s.get("aiInterpretationSettings").cloned().unwrap_or_default();
+    let p = s
+        .get("aiInterpretationSettings")
+        .cloned()
+        .unwrap_or_default();
     let language = p["targetLanguage"].as_str().unwrap_or_default().to_string();
-    let voice = p["interpretedVoice"].as_str().unwrap_or_default().to_string();
+    let voice = p["interpretedVoice"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
     let balance = s
         .get("ai_interpretation_volume_rate")
         .and_then(|v| v.as_f64())
@@ -3835,7 +4156,10 @@ fn interpreter_json() -> String {
 
 fn emit_interpreter(qt: &cxx_qt::CxxQtThread<qobject::Backend>) {
     let text = interpreter_json();
-    let _ = qt.queue(move |mut this| this.as_mut().set_call_interpreter_json(QString::from(text.as_str())));
+    let _ = qt.queue(move |mut this| {
+        this.as_mut()
+            .set_call_interpreter_json(QString::from(text.as_str()))
+    });
 }
 
 /// Balance the interpretation while we're in a group with an interpreter
@@ -3859,14 +4183,20 @@ async fn apply_interpreter_listening() {
 /// licence, or the meeting has it on for everyone (with the policy
 /// "Enabled" or unset).
 async fn interpreter_available(for_all: bool) -> bool {
-    let ecs = |k: &str, d: bool| api::ecs::setting("calling", k).and_then(|v| v.as_bool()).unwrap_or(d);
+    let ecs = |k: &str, d: bool| {
+        api::ecs::setting("calling", k)
+            .and_then(|v| v.as_bool())
+            .unwrap_or(d)
+    };
     if !ecs("enableAiInterpretation", true) {
         return false;
     }
     if ecs("aiInterpretationPolicyAndLicenseBypass", false) {
         return true;
     }
-    let Ok(client) = TeamsClient::new().await else { return false };
+    let Ok(client) = TeamsClient::new().await else {
+        return false;
+    };
     let policy = api::custom_emoji::effective_policies(&client, &["teamsMeetingPolicy"])
         .await
         .ok()
@@ -3885,13 +4215,22 @@ async fn interpreter_available(for_all: bool) -> bool {
             find(&v)
         });
     let enabled = policy.as_deref() == Some("Enabled");
-    let copilot = api::ecs::license(&client).await.and_then(|l| l["isCopilot"].as_bool()).unwrap_or(false);
+    let copilot = api::ecs::license(&client)
+        .await
+        .and_then(|l| l["isCopilot"].as_bool())
+        .unwrap_or(false);
     tracing::info!(?policy, copilot, for_all, "interpreter: availability");
-    (enabled && copilot) || (for_all && ecs("enableAiInterpretationEnabledForAllParticipants", true) && (enabled || policy.is_none()))
+    (enabled && copilot)
+        || (for_all
+            && ecs("enableAiInterpretationEnabledForAllParticipants", true)
+            && (enabled || policy.is_none()))
 }
 
 /// The meeting turned Interpreter on or off, or its groups changed.
-async fn interpreter_meeting_changed(qt: &cxx_qt::CxxQtThread<qobject::Backend>, m: teams_cli::calling::ai_interpreter::MeetingState) {
+async fn interpreter_meeting_changed(
+    qt: &cxx_qt::CxxQtThread<qobject::Backend>,
+    m: teams_cli::calling::ai_interpreter::MeetingState,
+) {
     let join = {
         let mut i = interp().lock().unwrap_or_else(|e| e.into_inner());
         let on = m.enabled;
@@ -3902,7 +4241,11 @@ async fn interpreter_meeting_changed(qt: &cxx_qt::CxxQtThread<qobject::Backend>,
         }
         if on { i.pending.take() } else { None }
     };
-    let for_all = interp().lock().unwrap_or_else(|e| e.into_inner()).meeting.for_all;
+    let for_all = interp()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .meeting
+        .for_all;
     let available = interpreter_available(for_all).await;
     interp().lock().unwrap_or_else(|e| e.into_inner()).available = available;
     apply_interpreter_listening().await;
@@ -3938,11 +4281,18 @@ async fn interpreter_join(qt: &cxx_qt::CxxQtThread<qobject::Backend>, language: 
 /// A roster update (or a group join's result): are we in a language group,
 /// and which sources are the interpreter's there.
 async fn interpreter_roster(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else { return };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
+        return;
+    };
     if let Some((op, code)) = teams_cli::calling::ai_interpreter::group_response(&v) {
         tracing::info!(%op, code, "interpreter: meeting group result");
     }
-    let me = call_slot().lock().await.outgoing.as_ref().map(|c| c.my_endpoint());
+    let me = call_slot()
+        .lock()
+        .await
+        .outgoing
+        .as_ref()
+        .map(|c| c.my_endpoint());
     let Some((mri, endpoint)) = me else { return };
     let body = v.get("body").unwrap_or(&v);
     let changed = {
@@ -3963,7 +4313,10 @@ async fn interpreter_roster(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &s
         if let Some(g) = i.my_group.clone() {
             let sources = teams_cli::calling::ai_interpreter::interpreter_sources(body, &g);
             if !sources.is_empty() && sources != i.sources {
-                tracing::info!(?sources, "interpreter: the interpreter's audio in our group");
+                tracing::info!(
+                    ?sources,
+                    "interpreter: the interpreter's audio in our group"
+                );
                 i.sources = sources;
                 changed = true;
             }
@@ -3982,11 +4335,19 @@ async fn interpreter_roster(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &s
 /// A meeting joined: Interpreter's state from the join, and whether we may
 /// turn it on.
 async fn interpreter_joined(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
-    let m = call_slot().lock().await.outgoing.as_ref().map(|c| c.interpretation().clone());
+    let m = call_slot()
+        .lock()
+        .await
+        .outgoing
+        .as_ref()
+        .map(|c| c.interpretation().clone());
     let Some(m) = m else { return };
     {
         let mut i = interp().lock().unwrap_or_else(|e| e.into_inner());
-        *i = Interp { meeting: m.clone(), ..Default::default() };
+        *i = Interp {
+            meeting: m.clone(),
+            ..Default::default()
+        };
     }
     let available = interpreter_available(m.for_all).await;
     interp().lock().unwrap_or_else(|e| e.into_inner()).available = available;
@@ -4001,7 +4362,12 @@ async fn describe_media(d: Describe<'_>) -> anyhow::Result<()> {
     match d {
         Describe::Placed(o) => o.describe_media(o.camera_on(), o.is_sharing()).await,
         Describe::Answered(link, body) => {
-            teams_cli::calling::incoming::post_media_descriptions(&CallAuth::load().await?, &link, &body).await
+            teams_cli::calling::incoming::post_media_descriptions(
+                &CallAuth::load().await?,
+                &link,
+                &body,
+            )
+            .await
         }
         Describe::Nothing => Ok(()),
     }
@@ -4022,19 +4388,24 @@ async fn offer_screen(kind: teams_cli::calling::screencast::Source) -> anyhow::R
 }
 
 /// Teams' Content from camera: share this camera as the screen is.
-async fn offer_camera_content(camera: teams_cli::calling::content_camera::ContentCamera) -> anyhow::Result<bool> {
+async fn offer_camera_content(
+    camera: teams_cli::calling::content_camera::ContentCamera,
+) -> anyhow::Result<bool> {
     {
         let mut slot = call_slot().lock().await;
         let call = MediaCall::of(&mut slot).context("The call has ended")?;
         anyhow::ensure!(call.can_share(), "This call can't take shared content");
     }
-    let (capture, frames) = teams_cli::calling::screencast::ScreenCapture::from_content_camera(&camera);
+    let (capture, frames) =
+        teams_cli::calling::screencast::ScreenCapture::from_content_camera(&camera);
     offer_capture(capture, frames).await
 }
 
 /// The content camera of Content from camera's setup dialog.
-fn content_camera() -> &'static std::sync::Mutex<Option<teams_cli::calling::content_camera::ContentCamera>> {
-    static C: std::sync::Mutex<Option<teams_cli::calling::content_camera::ContentCamera>> = std::sync::Mutex::new(None);
+fn content_camera()
+-> &'static std::sync::Mutex<Option<teams_cli::calling::content_camera::ContentCamera>> {
+    static C: std::sync::Mutex<Option<teams_cli::calling::content_camera::ContentCamera>> =
+        std::sync::Mutex::new(None);
     &C
 }
 
@@ -4066,8 +4437,12 @@ async fn offer_capture(
 /// for or given up; the answer comes back through [`reoffer_reply`].
 async fn sync_unmixed_audio() {
     let mut guard = call_slot().lock().await;
-    let Some(call) = guard.outgoing.as_mut() else { return };
-    let Some(change) = call.unmixed_change() else { return };
+    let Some(call) = guard.outgoing.as_mut() else {
+        return;
+    };
+    let Some(change) = call.unmixed_change() else {
+        return;
+    };
     if call.reoffer_pending() {
         tracing::info!("spatial audio: a re-offer is pending; renegotiating later");
         return;
@@ -4136,7 +4511,11 @@ async fn reoffer_reply(
         }
         (Ok((Reoffer::Camera(false), _)), _) => Ok((Some(false), None)),
         (Ok((Reoffer::Unmixed(on), taken)), _) => {
-            tracing::info!(asked = on, taken, "spatial audio: meeting audio renegotiated");
+            tracing::info!(
+                asked = on,
+                taken,
+                "spatial audio: meeting audio renegotiated"
+            );
             Ok((None, None))
         }
         (Err(e), _) => Err(e),
@@ -4205,16 +4584,28 @@ fn watched_call() -> &'static tokio::sync::Mutex<Option<teams_cli::calling::live
 }
 
 /// The live meetings' calls the Live meetings dialog watches, by thread.
-fn watched_meetings() -> &'static tokio::sync::Mutex<HashMap<String, teams_cli::calling::live_roster::LiveRoster>> {
-    static W: OnceLock<tokio::sync::Mutex<HashMap<String, teams_cli::calling::live_roster::LiveRoster>>> = OnceLock::new();
+fn watched_meetings()
+-> &'static tokio::sync::Mutex<HashMap<String, teams_cli::calling::live_roster::LiveRoster>> {
+    static W: OnceLock<
+        tokio::sync::Mutex<HashMap<String, teams_cli::calling::live_roster::LiveRoster>>,
+    > = OnceLock::new();
     W.get_or_init(Default::default)
 }
 
 /// {threadId: [{id, name}]} for the Live meetings dialog's avatar rows.
-fn meeting_rosters_json(map: &HashMap<String, teams_cli::calling::live_roster::LiveRoster>) -> String {
+fn meeting_rosters_json(
+    map: &HashMap<String, teams_cli::calling::live_roster::LiveRoster>,
+) -> String {
     let mut out = serde_json::Map::new();
     for (thread, sub) in map {
-        out.insert(thread.clone(), serde_json::Value::Array(sub.others().map(|p| serde_json::json!({"id": p.id, "name": p.name})).collect()));
+        out.insert(
+            thread.clone(),
+            serde_json::Value::Array(
+                sub.others()
+                    .map(|p| serde_json::json!({"id": p.id, "name": p.name}))
+                    .collect(),
+            ),
+        );
     }
     serde_json::Value::Object(out).to_string()
 }
@@ -4230,7 +4621,11 @@ fn live_roster_json(w: &teams_cli::calling::live_roster::LiveRoster) -> String {
 
 /// Run a breakout rooms action on the meeting `link` names and read the
 /// rooms and settings back (the state call_breakout_rooms_json shows).
-async fn breakout_run(action: &str, args: &serde_json::Value, link: &outgoing::MeetingLink) -> anyhow::Result<serde_json::Value> {
+async fn breakout_run(
+    action: &str,
+    args: &serde_json::Value,
+    link: &outgoing::MeetingLink,
+) -> anyhow::Result<serde_json::Value> {
     use api::breakout_rooms as br;
     let main = br::Coords::new(
         link.tenant_id.as_deref().unwrap_or_default(),
@@ -4238,7 +4633,13 @@ async fn breakout_run(action: &str, args: &serde_json::Value, link: &outgoing::M
         &link.thread_id,
         &link.message_id,
     )?;
-    let me = call_slot().lock().await.outgoing.as_ref().map(|c| c.participant_id().to_string()).unwrap_or_default();
+    let me = call_slot()
+        .lock()
+        .await
+        .outgoing
+        .as_ref()
+        .map(|c| c.participant_id().to_string())
+        .unwrap_or_default();
     breakout_run_at(action, args, &main, &br::new_version(&me)).await
 }
 
@@ -4259,10 +4660,19 @@ async fn breakout_run_at(
     let str_of = |v: &serde_json::Value| v.as_str().unwrap_or_default().to_string();
     let rooms_now = || async { br::list(&client, &main).await };
     let pick = |rooms: &[br::Room], threads: &serde_json::Value| -> Vec<br::Coords> {
-        let wanted: Vec<String> = threads.as_array().map(|a| a.iter().map(str_of).collect()).unwrap_or_default();
-        rooms.iter().filter(|r| wanted.is_empty() || wanted.contains(&r.coords.thread)).map(|r| r.coords.clone()).collect()
+        let wanted: Vec<String> = threads
+            .as_array()
+            .map(|a| a.iter().map(str_of).collect())
+            .unwrap_or_default();
+        rooms
+            .iter()
+            .filter(|r| wanted.is_empty() || wanted.contains(&r.coords.thread))
+            .map(|r| r.coords.clone())
+            .collect()
     };
-    let find = |rooms: &[br::Room], thread: &str| rooms.iter().find(|r| r.coords.thread == thread).cloned();
+    let find = |rooms: &[br::Room], thread: &str| {
+        rooms.iter().find(|r| r.coords.thread == thread).cloned()
+    };
     let mut csv_warnings: Vec<String> = Vec::new();
     match action {
         "refresh" => {}
@@ -4312,19 +4722,22 @@ async fn breakout_run_at(
         }
         "add" => br::add_room(&client, &main, &str_of(&args["name"]), &[], &version).await?,
         "rename" => {
-            let mut room = find(&rooms_now().await?, &str_of(&args["thread"])).context("No such room")?;
+            let mut room =
+                find(&rooms_now().await?, &str_of(&args["thread"])).context("No such room")?;
             room.name = str_of(&args["name"]);
             br::update_room(&client, &room, &version).await?;
         }
         "delete" => {
-            let room = find(&rooms_now().await?, &str_of(&args["thread"])).context("No such room")?;
+            let room =
+                find(&rooms_now().await?, &str_of(&args["thread"])).context("No such room")?;
             br::delete_room(&client, &room.coords, &version).await?;
         }
         "delete_all" => br::delete_all(&client, &main, &rooms_now().await?, &version).await?,
         // Teams' Download CSV template: saved to Downloads.
         "csv_template" => {
             let dir = download_dir().context("No Downloads folder")?;
-            let path = api::files::save_unique(&dir, br::CSV_TEMPLATE_NAME, br::CSV_TEMPLATE.as_bytes())?;
+            let path =
+                api::files::save_unique(&dir, br::CSV_TEMPLATE_NAME, br::CSV_TEMPLATE.as_bytes())?;
             tracing::info!(path = %path.display(), "breakout CSV template saved");
         }
         // Teams' Import from CSV: the rooms and their people from the file,
@@ -4332,19 +4745,37 @@ async fn breakout_run_at(
         // are replaced.
         "import_csv" => {
             let path = std::path::PathBuf::from(str_of(&args["path"]));
-            if path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()) != Some("csv".into()) {
-                anyhow::bail!("We couldn't import this file. The file type, size, or content isn't supported. Please update the file and try again.");
+            if path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.to_ascii_lowercase())
+                != Some("csv".into())
+            {
+                anyhow::bail!(
+                    "We couldn't import this file. The file type, size, or content isn't supported. Please update the file and try again."
+                );
             }
             let text = std::fs::read_to_string(&path).context("We couldn't import this file. The file type, size, or content isn't supported. Please update the file and try again.")?;
             let import = br::parse_csv(&text)?;
-            let invitees = api::meeting_options::get(&client, &main.tenant, &main.organizer, &main.thread, &main.message).await?.invitees;
+            let invitees = api::meeting_options::get(
+                &client,
+                &main.tenant,
+                &main.organizer,
+                &main.thread,
+                &main.message,
+            )
+            .await?
+            .invitees;
             let mut warnings: Vec<&str> = import.warnings.clone();
             let mut rooms = Vec::new();
             for (name, emails) in &import.rooms {
                 let mut people = Vec::new();
                 for email in emails {
                     let found = invitees.iter().find(|i| {
-                        i["upn"].as_str().or(i["email"].as_str()).is_some_and(|u| u.eq_ignore_ascii_case(email))
+                        i["upn"]
+                            .as_str()
+                            .or(i["email"].as_str())
+                            .is_some_and(|u| u.eq_ignore_ascii_case(email))
                     });
                     match found {
                         Some(i) if i["mri"].is_string() && i["objectId"].is_string() => people.push(json!({
@@ -4358,18 +4789,35 @@ async fn breakout_run_at(
                         }
                     }
                 }
-                rooms.push(br::NewRoom { name: name.clone(), participants: people });
+                rooms.push(br::NewRoom {
+                    name: name.clone(),
+                    participants: people,
+                });
             }
             let existing = rooms_now().await?;
             if !existing.is_empty() {
-                br::delete_all(&client, &main, &existing, &(if version.is_empty() { String::new() } else { br::new_version(version.split('_').next().unwrap_or_default()) })).await?;
+                br::delete_all(
+                    &client,
+                    &main,
+                    &existing,
+                    &(if version.is_empty() {
+                        String::new()
+                    } else {
+                        br::new_version(version.split('_').next().unwrap_or_default())
+                    }),
+                )
+                .await?;
             }
             br::create(&client, &main, &rooms, None, &version).await?;
             tracing::info!(rooms = rooms.len(), ?warnings, "breakout rooms imported");
             csv_warnings = warnings.iter().map(|w| w.to_string()).collect();
         }
         "announce" => {
-            let threads: Vec<String> = rooms_now().await?.into_iter().map(|r| r.coords.thread).collect();
+            let threads: Vec<String> = rooms_now()
+                .await?
+                .into_iter()
+                .map(|r| r.coords.thread)
+                .collect();
             br::announce(&client, &main, &threads, &str_of(&args["message"])).await?;
         }
         other => anyhow::bail!("Unknown breakout action {other}"),
@@ -4437,10 +4885,15 @@ fn phone_json(call: &OutgoingCall, state: &str, number: &str, error: &str) -> St
 static PHONE_NUMBER: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 
 /// Your dial plan's normalization rules (Teams' dialPlanPolicy), once read.
-static DIAL_PLAN: std::sync::RwLock<Option<teams_cli::calling::phone_audio::DialPlan>> = std::sync::RwLock::new(None);
+static DIAL_PLAN: std::sync::RwLock<Option<teams_cli::calling::phone_audio::DialPlan>> =
+    std::sync::RwLock::new(None);
 
 fn dial_plan() -> teams_cli::calling::phone_audio::DialPlan {
-    DIAL_PLAN.read().ok().and_then(|p| p.clone()).unwrap_or_default()
+    DIAL_PLAN
+        .read()
+        .ok()
+        .and_then(|p| p.clone())
+        .unwrap_or_default()
 }
 
 /// Read your dial plan (effective policy tenantDialPlan) once.
@@ -4455,7 +4908,10 @@ async fn load_dial_plan() {
     .await;
     match r {
         Ok(v) => {
-            let policy = v.pointer("/tenantDialPlan/value").cloned().unwrap_or_default();
+            let policy = v
+                .pointer("/tenantDialPlan/value")
+                .cloned()
+                .unwrap_or_default();
             let plan = teams_cli::calling::phone_audio::DialPlan::from_policy(&policy);
             tracing::info!(rules = plan.has_rules(), "dial plan");
             if let Ok(mut w) = DIAL_PLAN.write() {
@@ -4482,7 +4938,9 @@ impl JoinedView {
             timers: call.timers().clone(),
             phone: phone_json(call, "", "", ""),
             event: event_json(&call.event(), "", ""),
-            stream: call.streaming().then(|| (call.stream().cloned(), call.in_lobby())),
+            stream: call
+                .streaming()
+                .then(|| (call.stream().cloned(), call.in_lobby())),
             breakout: call
                 .joined_details()
                 .and_then(teams_cli::calling::breakout::assigned_rooms_at_join)
@@ -4504,10 +4962,13 @@ fn stream_json(lobby: bool, url: &str, player: &str) -> String {
 }
 
 /// The loopback server playing the town hall we watch, and the stream it serves.
-static STREAM_PROXY: std::sync::Mutex<Option<(String, teams_cli::calling::live_stream::StreamProxy)>> = std::sync::Mutex::new(None);
+static STREAM_PROXY: std::sync::Mutex<
+    Option<(String, teams_cli::calling::live_stream::StreamProxy)>,
+> = std::sync::Mutex::new(None);
 
 /// The audio recap chapter being played (its loopback HLS proxy).
-static RECAP_AUDIO_PROXY: std::sync::Mutex<Option<teams_cli::calling::live_stream::StreamProxy>> = std::sync::Mutex::new(None);
+static RECAP_AUDIO_PROXY: std::sync::Mutex<Option<teams_cli::calling::live_stream::StreamProxy>> =
+    std::sync::Mutex::new(None);
 
 fn stop_stream_proxy() {
     if let Ok(mut p) = STREAM_PROXY.lock() {
@@ -4591,8 +5052,14 @@ fn dispose_preheat(mut p: Preheat) {
 /// else 15 s after the window opened from whether it allows PSTN
 /// conferencing. The call stays until Join now or Cancel, or a minute
 /// (Teams then leaves it).
-async fn preheat_for_prejoin(qt: cxx_qt::CxxQtThread<qobject::Backend>, url: String, link: outgoing::MeetingLink) {
-    use teams_cli::calling::phone_audio::{PSTN_CAPABILITIES_TIMEOUT, has_meeting_details, prejoin_fallback, prejoin_pstn};
+async fn preheat_for_prejoin(
+    qt: cxx_qt::CxxQtThread<qobject::Backend>,
+    url: String,
+    link: outgoing::MeetingLink,
+) {
+    use teams_cli::calling::phone_audio::{
+        PSTN_CAPABILITIES_TIMEOUT, has_meeting_details, prejoin_fallback, prejoin_pstn,
+    };
     let opened = tokio::time::Instant::now();
     let tag = outgoing::new_call_tag();
     let stop = std::sync::Arc::new(tokio::sync::Notify::new());
@@ -4603,19 +5070,36 @@ async fn preheat_for_prejoin(qt: cxx_qt::CxxQtThread<qobject::Backend>, url: Str
             old.stop.notify_one();
             dispose_preheat(old);
         }
-        slot.preheat = Some(Preheat { url, tag: tag.clone(), call: None, cancel: Some(cancel_tx), stop: stop.clone(), breakout: None, joining: false });
+        slot.preheat = Some(Preheat {
+            url,
+            tag: tag.clone(),
+            call: None,
+            cancel: Some(cancel_tx),
+            stop: stop.clone(),
+            breakout: None,
+            joining: false,
+        });
     }
     let ours = |slot: &CallSlot| slot.preheat.as_ref().is_some_and(|p| p.tag == tag);
     let publish = |available: bool, how: &'static str| {
         let tag = tag.clone();
         let qt = qt.clone();
         async move {
-            if call_slot().lock().await.preheat.as_ref().is_none_or(|p| p.tag != tag) {
+            if call_slot()
+                .lock()
+                .await
+                .preheat
+                .as_ref()
+                .is_none_or(|p| p.tag != tag)
+            {
                 return;
             }
             tracing::info!(available, how, "pre-join phone audio");
             let json = serde_json::json!({ "checked": true, "available": available }).to_string();
-            let _ = qt.queue(move |mut this| this.as_mut().set_prejoin_phone_json(QString::from(json.as_str())));
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .set_prejoin_phone_json(QString::from(json.as_str()))
+            });
         }
     };
     let mut events = teams_cli::event_hub::subscribe();
@@ -4754,7 +5238,8 @@ async fn leave_and_keep_main(main: OutgoingCall, main_url: String) {
         Ok(()) => tracing::info!("left the main meeting for its breakout room"),
         Err(e) => tracing::warn!("leaving the main meeting: {}", short_error(&e)),
     }
-    let (Some(conversation), Some(link)) = (conversation, outgoing::MeetingLink::parse(&main_url)) else {
+    let (Some(conversation), Some(link)) = (conversation, outgoing::MeetingLink::parse(&main_url))
+    else {
         tracing::warn!("the main meeting's conversation is unknown; not kept");
         return;
     };
@@ -4768,7 +5253,10 @@ async fn leave_and_keep_main(main: OutgoingCall, main_url: String) {
                 }
             }
         }
-        Err(e) => tracing::warn!("keeping the main meeting's conversation: {}", short_error(&e)),
+        Err(e) => tracing::warn!(
+            "keeping the main meeting's conversation: {}",
+            short_error(&e)
+        ),
     }
 }
 
@@ -4807,7 +5295,11 @@ async fn leave_moved_from(call: OutgoingCall) {
 /// none), so a room remote offers Captions only then.
 pub(crate) async fn call_has_captions() -> bool {
     let slot = call_slot().lock().await;
-    slot.outgoing.is_some() || slot.active.as_ref().is_some_and(|a| a.in_meeting_conversation())
+    slot.outgoing.is_some()
+        || slot
+            .active
+            .as_ref()
+            .is_some_and(|a| a.in_meeting_conversation())
 }
 
 // Live captions in the meeting we're in: one we joined (outgoing), or one
@@ -4829,7 +5321,10 @@ async fn captions_has_recorder() -> bool {
 async fn captions_meeting_info() -> (String, String) {
     let slot = call_slot().lock().await;
     match (&slot.outgoing, &slot.active) {
-        (Some(c), _) => c.meeting_info().map(|i| (i.title, i.ical_uid)).unwrap_or_default(),
+        (Some(c), _) => c
+            .meeting_info()
+            .map(|i| (i.title, i.ical_uid))
+            .unwrap_or_default(),
         (None, Some(a)) => {
             let m = a.recorder_meeting();
             (m.title, m.ical_uid)
@@ -4843,7 +5338,11 @@ async fn captions_command(
     command: teams_cli::calling::recorder::Command,
     meeting: &teams_cli::calling::recorder::Meeting,
 ) -> anyhow::Result<()> {
-    let auth = if call_slot().lock().await.outgoing.is_none() { Some(CallAuth::load().await?) } else { None };
+    let auth = if call_slot().lock().await.outgoing.is_none() {
+        Some(CallAuth::load().await?)
+    } else {
+        None
+    };
     let slot = call_slot().lock().await;
     match (&slot.outgoing, &slot.active, &auth) {
         (Some(c), _, _) => c.recorder_command(command, meeting).await,
@@ -4853,8 +5352,14 @@ async fn captions_command(
 }
 
 /// Invite the meeting's recorder.
-async fn captions_add_recorder(meeting: &teams_cli::calling::recorder::Meeting) -> anyhow::Result<()> {
-    let auth = if call_slot().lock().await.outgoing.is_none() { Some(CallAuth::load().await?) } else { None };
+async fn captions_add_recorder(
+    meeting: &teams_cli::calling::recorder::Meeting,
+) -> anyhow::Result<()> {
+    let auth = if call_slot().lock().await.outgoing.is_none() {
+        Some(CallAuth::load().await?)
+    } else {
+        None
+    };
     let slot = call_slot().lock().await;
     match (&slot.outgoing, &slot.active, &auth) {
         (Some(c), _, _) => c.add_recorder(meeting).await,
@@ -4865,7 +5370,11 @@ async fn captions_add_recorder(meeting: &teams_cli::calling::recorder::Meeting) 
 
 /// Say in our endpoint metadata whether we want live captions.
 async fn captions_pref(on: bool) -> anyhow::Result<()> {
-    let auth = if call_slot().lock().await.outgoing.is_none() { Some(CallAuth::load().await?) } else { None };
+    let auth = if call_slot().lock().await.outgoing.is_none() {
+        Some(CallAuth::load().await?)
+    } else {
+        None
+    };
     let slot = call_slot().lock().await;
     match (&slot.outgoing, &slot.active, &auth) {
         (Some(c), _, _) => c.publish_captions_pref(on).await,
@@ -4882,7 +5391,12 @@ fn call_slot() -> &'static tokio::sync::Mutex<CallSlot> {
 /// A scheduled meeting's notes we claimed through Teams' collab object
 /// service and are making: the meeting, who asked, the claim's secret and
 /// the service's region (kept in memory only, until committed).
-type NotesClaim = (api::meeting_notes::Meeting, api::meeting_notes::CollabCaller, String, String);
+type NotesClaim = (
+    api::meeting_notes::Meeting,
+    api::meeting_notes::CollabCaller,
+    String,
+    String,
+);
 fn notes_claim() -> &'static tokio::sync::Mutex<Option<NotesClaim>> {
     static CLAIM: OnceLock<tokio::sync::Mutex<Option<NotesClaim>>> = OnceLock::new();
     CLAIM.get_or_init(Default::default)
@@ -4891,7 +5405,12 @@ fn notes_claim() -> &'static tokio::sync::Mutex<Option<NotesClaim>> {
 /// The meeting artifacts service's region (Teams' regional `mcps`): the
 /// region of the events service the tenant was given, else "us".
 fn notes_region(client: &TeamsClient) -> String {
-    api::events::regional_endpoint(client).rsplit('/').next().filter(|r| r.len() <= 8).unwrap_or("us").to_string()
+    api::events::regional_endpoint(client)
+        .rsplit('/')
+        .next()
+        .filter(|r| r.len() <= 8)
+        .unwrap_or("us")
+        .to_string()
 }
 
 /// Where our own RTT lines are kept apart from everyone else's (Teams
@@ -4955,8 +5474,14 @@ async fn room_incoming(
         if let Some(auth) = auth {
             auth.probe_video(call).await;
         }
-        let tenant = teams_cli::config::Config::load().ok().and_then(|c| c.tenant_id());
-        Some((crate::room_host::decide(call, tenant.as_deref()), call.has_video(), call.meeting_details().cloned()))
+        let tenant = teams_cli::config::Config::load()
+            .ok()
+            .and_then(|c| c.tenant_id());
+        Some((
+            crate::room_host::decide(call, tenant.as_deref()),
+            call.has_video(),
+            call.meeting_details().cloned(),
+        ))
     })
     .await;
     let (decision, offered, details) = match checked {
@@ -4971,11 +5496,22 @@ async fn room_incoming(
     // Teams Rooms' auto exit goes by the meeting's details (its type and
     // schedule; a channel's Meet now is ad hoc too); without them, by its
     // chat.
-    let kind = details.as_ref().map(teams_cli::calling::room_mode::meeting_kind);
+    let kind = details
+        .as_ref()
+        .map(teams_cli::calling::room_mode::meeting_kind);
     if let Some(d) = &details {
-        let keys: Vec<&String> = d.as_object().map(|o| o.keys().collect()).unwrap_or_default();
+        let keys: Vec<&String> = d
+            .as_object()
+            .map(|o| o.keys().collect())
+            .unwrap_or_default();
         let (meeting_type, end_time) = (d.get("meetingType").cloned(), d.get("endTime").cloned());
-        tracing::info!(?kind, ?meeting_type, ?end_time, ?keys, "room mode: meeting details");
+        tracing::info!(
+            ?kind,
+            ?meeting_type,
+            ?end_time,
+            ?keys,
+            "room mode: meeting details"
+        );
     }
     let auto_exit = match &kind {
         Some(k) => k.adhoc,
@@ -4991,10 +5527,12 @@ async fn room_incoming(
     {
         Ok(t) => t,
         Err(_) => (
-            teams_cli::calling::room_mode::call_title(&teams_cli::calling::room_mode::CallConversation {
-                others: vec![peer.clone()],
-                ..Default::default()
-            }),
+            teams_cli::calling::room_mode::call_title(
+                &teams_cli::calling::room_mode::CallConversation {
+                    others: vec![peer.clone()],
+                    ..Default::default()
+                },
+            ),
             None,
         ),
     };
@@ -5005,7 +5543,12 @@ async fn room_incoming(
     };
     let meeting_end = kind
         .and_then(|k| k.end)
-        .or_else(|| thread_meeting.as_ref().map(|m| m.end.clone()).filter(|e| !e.is_empty() && !e.starts_with("0001-")))
+        .or_else(|| {
+            thread_meeting
+                .as_ref()
+                .map(|m| m.end.clone())
+                .filter(|e| !e.is_empty() && !e.starts_with("0001-"))
+        })
         .unwrap_or_default();
     tracing::info!(%title, %meeting_end, auto_exit, "room mode: call title");
     let accept = match decision {
@@ -5017,17 +5560,20 @@ async fn room_incoming(
     };
     let _ = qt.queue(move |mut this| {
         this.as_mut().set_call_peer(QString::from(peer.as_str()));
-        this.as_mut().set_call_peer_id(QString::from(peer_id.as_str()));
+        this.as_mut()
+            .set_call_peer_id(QString::from(peer_id.as_str()));
         this.as_mut().set_call_video_offered(offered);
         this.as_mut().set_call_meeting(conference);
         this.as_mut().set_call_scheduled(false);
         this.as_mut().set_call_adhoc_meeting(false);
         this.as_mut().rust_mut().roster.clear();
         this.as_mut().rust_mut().room_auto_exit = auto_exit;
-        this.as_mut().set_room_meeting_end(QString::from(meeting_end.as_str()));
+        this.as_mut()
+            .set_room_meeting_end(QString::from(meeting_end.as_str()));
         // The meeting's chat: its calendar entry (end time) for Teams Rooms'
         // end-of-meeting auto exit.
-        this.as_mut().set_call_thread_id(QString::from(thread.as_deref().unwrap_or_default()));
+        this.as_mut()
+            .set_call_thread_id(QString::from(thread.as_deref().unwrap_or_default()));
         this.as_mut().rust_mut().room_saw_others = false;
         this.as_mut().rust_mut().room_escalated = false;
         this.as_mut().rust_mut().room_call_title = title;
@@ -5049,7 +5595,9 @@ async fn room_incoming(
 fn update_instant_meeting(join_url: String, title: String, started: bool) {
     runtime().spawn(async move {
         let result = match TeamsClient::new().await {
-            Ok(client) => api::calendar::update_instant_meeting(&client, &join_url, &title, started).await,
+            Ok(client) => {
+                api::calendar::update_instant_meeting(&client, &join_url, &title, started).await
+            }
             Err(e) => Err(e),
         };
         match result {
@@ -5059,9 +5607,18 @@ fn update_instant_meeting(join_url: String, title: String, started: bool) {
     });
 }
 
-async fn room_call_title(thread: Option<&str>, caller: &str, caller_id: &str) -> (String, Option<api::ThreadMeeting>) {
-    use teams_cli::calling::room_mode::{call_title, conversation_kind, CallConversation, ConversationKind};
-    let mut conv = CallConversation { others: vec![caller.to_string()], ..Default::default() };
+async fn room_call_title(
+    thread: Option<&str>,
+    caller: &str,
+    caller_id: &str,
+) -> (String, Option<api::ThreadMeeting>) {
+    use teams_cli::calling::room_mode::{
+        CallConversation, ConversationKind, call_title, conversation_kind,
+    };
+    let mut conv = CallConversation {
+        others: vec![caller.to_string()],
+        ..Default::default()
+    };
     let Some(thread) = thread.filter(|t| t.starts_with("19:")) else {
         return (call_title(&conv), None);
     };
@@ -5088,13 +5645,24 @@ async fn room_call_title(thread: Option<&str>, caller: &str, caller_id: &str) ->
             .and_then(|v| v.as_str())
             .filter(|t| !t.trim().is_empty())
             .map(str::to_string)
-            .or_else(|| meeting.as_ref().map(|m| m.subject.clone()).filter(|_| kind == ConversationKind::PrivateMeeting));
+            .or_else(|| {
+                meeting
+                    .as_ref()
+                    .map(|m| m.subject.clone())
+                    .filter(|_| kind == ConversationKind::PrivateMeeting)
+            });
         conv.huddle = p.get("conversationType").and_then(|v| v.as_str()) == Some("huddleGroupCall");
-        let keys: Vec<&String> = p.as_object().map(|o| o.keys().collect()).unwrap_or_default();
+        let keys: Vec<&String> = p
+            .as_object()
+            .map(|o| o.keys().collect())
+            .unwrap_or_default();
         tracing::info!(?kind, ?keys, "room mode: the call's chat");
     }
     if conv.topic.is_none() && matches!(kind, ConversationKind::Group | ConversationKind::Other) {
-        let me = client.object_id().map(|o| format!("8:orgid:{o}").to_ascii_lowercase()).unwrap_or_default();
+        let me = client
+            .object_id()
+            .map(|o| format!("8:orgid:{o}").to_ascii_lowercase())
+            .unwrap_or_default();
         match api::chat_members(&client, thread).await {
             Ok(members) => {
                 let others: Vec<String> = members
@@ -5113,7 +5681,10 @@ async fn room_call_title(thread: Option<&str>, caller: &str, caller_id: &str) ->
     (call_title(&conv), meeting)
 }
 
-async fn take_transfer(qt: cxx_qt::CxxQtThread<qobject::Backend>, request: teams_cli::calling::incoming::TransferRequest) {
+async fn take_transfer(
+    qt: cxx_qt::CxxQtThread<qobject::Backend>,
+    request: teams_cli::calling::incoming::TransferRequest,
+) {
     let auth = match CallAuth::load().await {
         Ok(a) => a,
         Err(e) => {
@@ -5121,8 +5692,15 @@ async fn take_transfer(qt: cxx_qt::CxxQtThread<qobject::Backend>, request: teams
             return;
         }
     };
-    let my_oid = teams_cli::config::Config::load().ok().and_then(|c| c.object_id()).unwrap_or_default();
-    let target_oid = request.target_mri.strip_prefix("8:orgid:").unwrap_or_default().to_string();
+    let my_oid = teams_cli::config::Config::load()
+        .ok()
+        .and_then(|c| c.object_id())
+        .unwrap_or_default();
+    let target_oid = request
+        .target_mri
+        .strip_prefix("8:orgid:")
+        .unwrap_or_default()
+        .to_string();
     let chat = outgoing::one_to_one_chat_id(&my_oid, &target_oid).unwrap_or_default();
     let extras = teams_cli::calling::signaling::CallExtras {
         transferor: Some(request.transferor.clone()),
@@ -5133,17 +5711,21 @@ async fn take_transfer(qt: cxx_qt::CxxQtThread<qobject::Backend>, request: teams
     };
     let tag = outgoing::new_call_tag();
     let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
-    let result = outgoing::place_transfer_call(&chat, &request.target_mri, &extras, &tag, cancel_rx).await;
+    let result =
+        outgoing::place_transfer_call(&chat, &request.target_mri, &extras, &tag, cancel_rx).await;
     match result {
         Ok(call) => {
             tracing::info!("transferred call connected");
             if let Some(link) = &request.acceptance_link
-                && let Err(e) = teams_cli::calling::incoming::answer_transfer_request(&auth, link, None).await
+                && let Err(e) =
+                    teams_cli::calling::incoming::answer_transfer_request(&auth, link, None).await
             {
                 tracing::warn!("transfer acceptance: {}", short_error(&e));
             }
             if let Some(link) = &request.completion_link
-                && let Err(e) = teams_cli::calling::incoming::answer_transfer_request(&auth, link, Some(0)).await
+                && let Err(e) =
+                    teams_cli::calling::incoming::answer_transfer_request(&auth, link, Some(0))
+                        .await
             {
                 tracing::warn!("transfer completion: {}", short_error(&e));
             }
@@ -5171,7 +5753,8 @@ async fn take_transfer(qt: cxx_qt::CxxQtThread<qobject::Backend>, request: teams
                 this.as_mut().set_call_held(false);
                 this.as_mut().set_call_held_by_peer(false);
                 this.as_mut().set_call_e2ee(e2ee);
-                this.as_mut().set_call_e2ee_numbers(QString::from(e2ee_numbers.as_str()));
+                this.as_mut()
+                    .set_call_e2ee_numbers(QString::from(e2ee_numbers.as_str()));
                 this.as_mut().set_call_peer(QString::from(name.as_str()));
                 this.as_mut().set_call_peer_id(QString::from(mri.as_str()));
             });
@@ -5179,7 +5762,9 @@ async fn take_transfer(qt: cxx_qt::CxxQtThread<qobject::Backend>, request: teams
         Err(e) => {
             tracing::warn!("transferred call failed: {}", short_error(&e));
             if let Some(link) = &request.completion_link {
-                let _ = teams_cli::calling::incoming::answer_transfer_request(&auth, link, Some(500)).await;
+                let _ =
+                    teams_cli::calling::incoming::answer_transfer_request(&auth, link, Some(500))
+                        .await;
             }
         }
     }
@@ -5188,7 +5773,11 @@ async fn take_transfer(qt: cxx_qt::CxxQtThread<qobject::Backend>, request: teams
 /// What [`qobject::Backend::place_and_show`] places.
 enum Placement {
     /// A 1:1 call in this chat.
-    Person { chat_id: String, callee: String, video: bool },
+    Person {
+        chat_id: String,
+        callee: String,
+        video: bool,
+    },
     /// Retrieving a parked call with its pickup code.
     Unpark(i64),
     /// Your own voicemail, to record your greeting.
@@ -5209,8 +5798,15 @@ async fn set_first_held(slot: &mut CallSlot, held: bool) -> anyhow::Result<()> {
 /// Show the consult as it stands in the call window.
 fn publish_consult(qt: &cxx_qt::CxxQtThread<qobject::Backend>, slot: &CallSlot) {
     let view = slot.consult_state.view();
-    let text = if view.is_null() { String::new() } else { view.to_string() };
-    let _ = qt.queue(move |mut this| this.as_mut().set_call_consult_json(QString::from(text.as_str())));
+    let text = if view.is_null() {
+        String::new()
+    } else {
+        view.to_string()
+    };
+    let _ = qt.queue(move |mut this| {
+        this.as_mut()
+            .set_call_consult_json(QString::from(text.as_str()))
+    });
 }
 
 /// The consult call is over (they hung up or didn't answer, or you ended
@@ -5234,7 +5830,8 @@ async fn consult_ended(qt: &cxx_qt::CxxQtThread<qobject::Backend>, slot: &mut Ca
 /// and Enterprise Voice), read as the call connects.
 fn spawn_call_park_check(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
     runtime().spawn(async move {
-        let park = async { api::preferences::call_park_available(&TeamsClient::new().await?).await }.await;
+        let park =
+            async { api::preferences::call_park_available(&TeamsClient::new().await?).await }.await;
         match park {
             Ok(on) => {
                 tracing::info!(on, "call park available");
@@ -5257,10 +5854,13 @@ fn spawn_call_stats_logger(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             tick += 1;
-            health_sampler().lock().unwrap_or_else(|e| e.into_inner()).sample(
-                &teams_cli::calling::call_health::current(),
-                chrono::Utc::now().timestamp_millis(),
-            );
+            health_sampler()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .sample(
+                    &teams_cli::calling::call_health::current(),
+                    chrono::Utc::now().timestamp_millis(),
+                );
             // Talking with the mic off (Teams checks with each stats poll).
             let muted = {
                 let slot = call_slot().lock().await;
@@ -5276,9 +5876,13 @@ fn spawn_call_stats_logger(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
                     let slot = call_slot().lock().await;
                     slot.outgoing.as_ref().map(|c| c.network_strength())
                 };
-                if let (Some(w), Some(strength)) =
-                    (echo_watch().lock().unwrap_or_else(|e| e.into_inner()).as_mut(), strength)
-                {
+                if let (Some(w), Some(strength)) = (
+                    echo_watch()
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .as_mut(),
+                    strength,
+                ) {
                     w.second(muted, signal, strength);
                     w.devices(&teams_cli::calling::device_health::devices());
                 }
@@ -5286,7 +5890,8 @@ fn spawn_call_stats_logger(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
                 if now != speaking_muted {
                     speaking_muted = now;
                     tracing::info!(speaking_muted = now, "speaking while muted");
-                    let _ = qt.queue(move |mut this| this.as_mut().set_call_speaking_while_muted(now));
+                    let _ =
+                        qt.queue(move |mut this| this.as_mut().set_call_speaking_while_muted(now));
                 }
             }
             // Teams' network strength (your name tag's bars), each second.
@@ -5406,7 +6011,8 @@ fn group_chat_ids(chats_json: &str) -> Vec<String> {
 }
 
 fn health_sampler() -> &'static std::sync::Mutex<teams_cli::calling::call_health::Sampler> {
-    static S: OnceLock<std::sync::Mutex<teams_cli::calling::call_health::Sampler>> = OnceLock::new();
+    static S: OnceLock<std::sync::Mutex<teams_cli::calling::call_health::Sampler>> =
+        OnceLock::new();
     S.get_or_init(Default::default)
 }
 
@@ -5421,7 +6027,10 @@ const CLIP_DOWNLOAD_NAME: &str = "MicrosoftTeams-video.mp4";
 
 /// Teams Premium's trial for QML: the offer, and a trial you have (its
 /// days left; Teams counts it as yours from when it is set up).
-fn premium_json(s: &api::premium::TrialState, entity: Option<&serde_json::Value>) -> serde_json::Value {
+fn premium_json(
+    s: &api::premium::TrialState,
+    entity: Option<&serde_json::Value>,
+) -> serde_json::Value {
     let mut v = json!(s);
     let state = entity.and_then(api::premium::entity_state);
     let in_trial = matches!(state, Some(0) | Some(1));
@@ -5429,7 +6038,15 @@ fn premium_json(s: &api::premium::TrialState, entity: Option<&serde_json::Value>
     // "trial" (the "N days left" pill, Teams Premium benefits) and
     // "canceled" (state 2: the "Get Premium" pill, Get Teams Premium and
     // Teams Premium benefits while Premium lasts).
-    let mode = if in_trial { "trial" } else if state == Some(2) { "canceled" } else if s.offered() && entity.is_none() { "offer" } else { "none" };
+    let mode = if in_trial {
+        "trial"
+    } else if state == Some(2) {
+        "canceled"
+    } else if s.offered() && entity.is_none() {
+        "offer"
+    } else {
+        "none"
+    };
     v["mode"] = json!(mode);
     v["offered"] = json!(mode == "offer");
     v["inTrial"] = json!(in_trial);
@@ -5439,7 +6056,13 @@ fn premium_json(s: &api::premium::TrialState, entity: Option<&serde_json::Value>
 }
 
 unsafe extern "C" {
-    fn ost_picture_to_jpeg(src: *const core::ffi::c_char, dst: *const core::ffi::c_char, quality: i32, w: *mut i32, h: *mut i32) -> i32;
+    fn ost_picture_to_jpeg(
+        src: *const core::ffi::c_char,
+        dst: *const core::ffi::c_char,
+        quality: i32,
+        w: *mut i32,
+        h: *mut i32,
+    ) -> i32;
 }
 
 /// A Graphics pane pick as the body keeps it (Outlook's, captured
@@ -5447,11 +6070,21 @@ unsafe extern "C" {
 /// size, a sticker as its own picture; with the picture's size.
 fn graphics_data_uri(path: &std::path::Path, sticker: bool) -> anyhow::Result<(String, i32, i32)> {
     if sticker {
-        let mime = if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("gif")) { "image/gif" } else { "image/png" };
+        let mime = if path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("gif"))
+        {
+            "image/gif"
+        } else {
+            "image/png"
+        };
         return Ok((api::event_form::file_data_uri(path, mime)?, 100, 100));
     }
     let jpeg = path.with_extension("q50.jpg");
-    let c = |p: &std::path::Path| std::ffi::CString::new(p.to_string_lossy().as_bytes()).map_err(|_| anyhow::anyhow!("Bad path"));
+    let c = |p: &std::path::Path| {
+        std::ffi::CString::new(p.to_string_lossy().as_bytes())
+            .map_err(|_| anyhow::anyhow!("Bad path"))
+    };
     let (src, dst) = (c(path)?, c(&jpeg)?);
     let (mut w, mut h) = (0, 0);
     // SAFETY: NUL-terminated paths and two ints to write.
@@ -5465,7 +6098,10 @@ fn graphics_data_uri(path: &std::path::Path, sticker: bool) -> anyhow::Result<(S
 /// Where downloads go: Settings ▸ Files and links' location, else
 /// $XDG_DOWNLOAD_DIR, else ~/Downloads.
 fn download_dir() -> Option<std::path::PathBuf> {
-    if let Some(dir) = load_settings().get("downloadDir").and_then(|d| d.as_str()).filter(|d| !d.is_empty())
+    if let Some(dir) = load_settings()
+        .get("downloadDir")
+        .and_then(|d| d.as_str())
+        .filter(|d| !d.is_empty())
         && std::path::Path::new(dir).is_dir()
     {
         return Some(std::path::PathBuf::from(dir));
@@ -5491,7 +6127,8 @@ fn file_downloaded(in_meeting: bool) -> String {
 /// Teams' test call report while the test call runs (sampled each
 /// second by the call's stats logger, finished in end_call_ui).
 fn echo_watch() -> &'static std::sync::Mutex<Option<teams_cli::calling::echo_report::Watch>> {
-    static W: OnceLock<std::sync::Mutex<Option<teams_cli::calling::echo_report::Watch>>> = OnceLock::new();
+    static W: OnceLock<std::sync::Mutex<Option<teams_cli::calling::echo_report::Watch>>> =
+        OnceLock::new();
     W.get_or_init(Default::default)
 }
 
@@ -5513,7 +6150,10 @@ fn camera_device() -> Option<String> {
     }
     // OST_CAMERA_DEVICE=/dev/videoN: this instance's camera (tests on a
     // machine other instances share, whose settings file is common).
-    if let Some(d) = std::env::var("OST_CAMERA_DEVICE").ok().filter(|d| d.starts_with("/dev/video")) {
+    if let Some(d) = std::env::var("OST_CAMERA_DEVICE")
+        .ok()
+        .filter(|d| d.starts_with("/dev/video"))
+    {
         return Some(d);
     }
     load_settings()
@@ -5538,7 +6178,8 @@ fn banners_available() -> bool {
 /// Someone's short name for group chat banners (Teams' rule,
 /// api::directory::short_name), from their profile, remembered.
 async fn sender_short_name(mri: &str, display: &str) -> String {
-    static NAMES: OnceLock<std::sync::Mutex<std::collections::HashMap<String, String>>> = OnceLock::new();
+    static NAMES: OnceLock<std::sync::Mutex<std::collections::HashMap<String, String>>> =
+        OnceLock::new();
     let names = NAMES.get_or_init(Default::default);
     if let Some(n) = names.lock().ok().and_then(|n| n.get(mri).cloned()) {
         return n;
@@ -5550,10 +6191,15 @@ async fn sender_short_name(mri: &str, display: &str) -> String {
     .await
     .ok()
     .and_then(|r| r.into_iter().next());
-    let Some(p) = record else { return display.to_string() };
+    let Some(p) = record else {
+        return display.to_string();
+    };
     let field = |k: &str| p[k].as_str().unwrap_or_default().to_string();
-    let full = Some(field("displayName")).filter(|d| !d.is_empty()).unwrap_or_else(|| display.to_string());
-    let short = api::directory::short_name(&app_locale(), &field("surname"), &field("givenName"), &full);
+    let full = Some(field("displayName"))
+        .filter(|d| !d.is_empty())
+        .unwrap_or_else(|| display.to_string());
+    let short =
+        api::directory::short_name(&app_locale(), &field("surname"), &field("givenName"), &full);
     if let Ok(mut n) = names.lock() {
         n.insert(mri.to_string(), short.clone());
     }
@@ -5649,7 +6295,10 @@ fn teams_sound_file(kind: &str) -> &'static str {
     }
 }
 
-fn notify_prefs(settings_json: &str, local: &serde_json::Map<String, serde_json::Value>) -> NotifyPrefs {
+fn notify_prefs(
+    settings_json: &str,
+    local: &serde_json::Map<String, serde_json::Value>,
+) -> NotifyPrefs {
     let all: serde_json::Value = serde_json::from_str(settings_json).unwrap_or_default();
     let ups = &all["props"]["userPersonalSettings"];
     let t = |k: &str| &ups["toastSettings"][k];
@@ -5660,20 +6309,31 @@ fn notify_prefs(settings_json: &str, local: &serde_json::Map<String, serde_json:
         mute_all: on_off(t("muteGenericNotifications"), false),
         allow_urgent_when_muted: l("allowUrgentWhenMuted").as_deref() == Some("true"),
         chat_banners: flag(t("Chat"), true),
-        personal_mention_banners: flag(t("Mention_Person"), true) && flag(t("MentionInChat_Person_v2"), true),
+        personal_mention_banners: flag(t("Mention_Person"), true)
+            && flag(t("MentionInChat_Person_v2"), true),
         previews: on_off(t("ShowPreviewInToasts"), true),
         during_calls: !on_off(t("MuteNotificationsDuringMeetings"), false),
         sound: ups["soundsSettings"]["alertSound"].as_str() != Some("Off"),
         sound_when_busy: on_off(t("PlayNotificationSoundsWhenBusyOrInMeetings"), true),
         meet_now: flag(t("HuddleStartedNotification"), false),
-        meeting_start: t("MeetingWentLiveNotification").as_bool().unwrap_or_else(|| on_off(t("MeetingWentLiveNotification"), true)),
-        join_bar: t("liveMeetingStatusBanner").as_bool().unwrap_or_else(|| on_off(t("liveMeetingStatusBanner"), true)),
+        meeting_start: t("MeetingWentLiveNotification")
+            .as_bool()
+            .unwrap_or_else(|| on_off(t("MeetingWentLiveNotification"), true)),
+        join_bar: t("liveMeetingStatusBanner")
+            .as_bool()
+            .unwrap_or_else(|| on_off(t("liveMeetingStatusBanner"), true)),
         seconds: l("toastSeconds").and_then(|s| s.parse().ok()).unwrap_or(5),
         flash: l("flashTaskbar").as_deref() != Some("false"),
         sound_file: teams_sound_file(t("alertSoundType").as_str().unwrap_or("Default")).to_string(),
-        urgent_sound_file: teams_sound_file(t("alertUrgentSoundType").as_str().unwrap_or("DefaultUrgent")).to_string(),
+        urgent_sound_file: teams_sound_file(
+            t("alertUrgentSoundType")
+                .as_str()
+                .unwrap_or("DefaultUrgent"),
+        )
+        .to_string(),
         urgent_sounds: on_off(t("PlayNotificationSoundsForUrgentAndPriority"), true),
-        call_sounds: ups["soundsSettings"]["incomingCallsAndMeetingStartSound"].as_str() != Some("Off"),
+        call_sounds: ups["soundsSettings"]["incomingCallsAndMeetingStartSound"].as_str()
+            != Some("Off"),
     }
 }
 
@@ -5709,7 +6369,9 @@ fn typing_text(names: &[String]) -> String {
     let template = match names.len() {
         1 if template == "%1, %2, and %3 others are typing" => "%1 is typing".to_string(),
         2 if template == "%1, %2, and %3 others are typing" => "%1 and %2 are typing".to_string(),
-        3 if template == "%1, %2, and %3 others are typing" => "%1, %2, and %4 are typing".to_string(),
+        3 if template == "%1, %2, and %3 others are typing" => {
+            "%1, %2, and %4 are typing".to_string()
+        }
         _ => template,
     };
     let at = |i: usize| names.get(i).map(String::as_str).unwrap_or_default();
@@ -5783,7 +6445,8 @@ fn short_error(e: &anyhow::Error) -> String {
 }
 
 /// Channel id → its last activity (ms), from the chat service's list.
-static CHANNEL_ACTIVITY: std::sync::Mutex<std::collections::BTreeMap<String, i64>> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+static CHANNEL_ACTIVITY: std::sync::Mutex<std::collections::BTreeMap<String, i64>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
 
 async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
     let client = TeamsClient::new().await?;
@@ -5902,12 +6565,18 @@ fn emoticon_files() -> &'static std::sync::Mutex<HashMap<String, String>> {
 fn state_file(stem: &str) -> std::path::PathBuf {
     let base = std::env::var_os("XDG_STATE_HOME")
         .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state")))
+        .or_else(|| {
+            std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state"))
+        })
         .unwrap_or_else(std::env::temp_dir);
     profile_state_path(&base, stem, teams_cli::config::profile().as_deref())
 }
 
-fn profile_state_path(base: &std::path::Path, stem: &str, profile: Option<&str>) -> std::path::PathBuf {
+fn profile_state_path(
+    base: &std::path::Path,
+    stem: &str,
+    profile: Option<&str>,
+) -> std::path::PathBuf {
     match profile {
         Some(p) => base.join("ost").join(format!("{stem}-{p}.json")),
         None => base.join("ost").join(format!("{stem}.json")),
@@ -6004,7 +6673,12 @@ fn editor() -> &'static api::editor::Editor {
             match e {
                 api::editor::Event::Critiques { doc, critiques } => {
                     let json = serde_json::to_string(&critiques).unwrap_or_else(|_| "[]".into());
-                    let _ = qt.queue(move |mut this| this.as_mut().editor_critiques(QString::from(doc.as_str()), QString::from(json.as_str())));
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut().editor_critiques(
+                            QString::from(doc.as_str()),
+                            QString::from(json.as_str()),
+                        )
+                    });
                 }
                 api::editor::Event::Settings(s) => {
                     for l in &s.languages {
@@ -6021,13 +6695,29 @@ fn editor() -> &'static api::editor::Editor {
 
 /// Upload a local folder and what is in it into a OneDrive folder (the
 /// picker's Upload ▸ Folder); the files uploaded.
-fn upload_tree<'a>(client: &'a TeamsClient, drive_id: &'a str, parent_id: &'a str, dir: &'a std::path::Path) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<usize>> + Send + 'a>> {
+fn upload_tree<'a>(
+    client: &'a TeamsClient,
+    drive_id: &'a str,
+    parent_id: &'a str,
+    dir: &'a std::path::Path,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<usize>> + Send + 'a>> {
     Box::pin(async move {
-        let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("Folder").to_string();
+        let name = dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Folder")
+            .to_string();
         let folder = api::drive::new_folder(client, drive_id, parent_id, &name).await?;
-        let drive = if folder.drive_id.is_empty() { drive_id.to_string() } else { folder.drive_id.clone() };
+        let drive = if folder.drive_id.is_empty() {
+            drive_id.to_string()
+        } else {
+            folder.drive_id.clone()
+        };
         let mut n = 0;
-        let mut entries: Vec<_> = std::fs::read_dir(dir)?.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+        let mut entries: Vec<_> = std::fs::read_dir(dir)?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .collect();
         entries.sort();
         for p in entries {
             if p.is_dir() {
@@ -6047,22 +6737,43 @@ fn compose_copilot() -> &'static api::compose_copilot::Copilot {
     static C: OnceLock<api::compose_copilot::Copilot> = OnceLock::new();
     C.get_or_init(|| {
         let flights = api::ecs::setting("augloop", "runtimeFlights").map(|r| {
-            let x = api::ecs::setting("augloop", "experimentationRuntimeFlights").unwrap_or_default();
-            api::compose_copilot::flights(&serde_json::json!({"runtimeFlights": r, "experimentationRuntimeFlights": x}))
+            let x =
+                api::ecs::setting("augloop", "experimentationRuntimeFlights").unwrap_or_default();
+            api::compose_copilot::flights(
+                &serde_json::json!({"runtimeFlights": r, "experimentationRuntimeFlights": x}),
+            )
         });
-        let flights = flights.unwrap_or_else(|| api::compose_copilot::flights(&serde_json::json!({})));
-        api::compose_copilot::Copilot::start(runtime().handle(), &app_locale().to_lowercase(), flights, |e| {
-            let Some(qt) = QT_THREAD.get() else { return };
-            let (request, html, done, error) = match e {
-                api::compose_copilot::Event::Partial { request, html } => (request, html, false, String::new()),
-                api::compose_copilot::Event::Done { request, html } => (request, html, true, String::new()),
-                api::compose_copilot::Event::Failed { request, error } => (request, String::new(), true, error),
-            };
-            let text = api::compose_copilot::streaming_text(&html);
-            let _ = qt.queue(move |mut this| {
-                this.as_mut().compose_copilot_update(QString::from(request.as_str()), QString::from(html.as_str()), QString::from(text.as_str()), done, QString::from(error.as_str()))
-            });
-        })
+        let flights =
+            flights.unwrap_or_else(|| api::compose_copilot::flights(&serde_json::json!({})));
+        api::compose_copilot::Copilot::start(
+            runtime().handle(),
+            &app_locale().to_lowercase(),
+            flights,
+            |e| {
+                let Some(qt) = QT_THREAD.get() else { return };
+                let (request, html, done, error) = match e {
+                    api::compose_copilot::Event::Partial { request, html } => {
+                        (request, html, false, String::new())
+                    }
+                    api::compose_copilot::Event::Done { request, html } => {
+                        (request, html, true, String::new())
+                    }
+                    api::compose_copilot::Event::Failed { request, error } => {
+                        (request, String::new(), true, error)
+                    }
+                };
+                let text = api::compose_copilot::streaming_text(&html);
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut().compose_copilot_update(
+                        QString::from(request.as_str()),
+                        QString::from(html.as_str()),
+                        QString::from(text.as_str()),
+                        done,
+                        QString::from(error.as_str()),
+                    )
+                });
+            },
+        )
     })
 }
 
@@ -6098,13 +6809,20 @@ static TENANT_ID: OnceLock<String> = OnceLock::new();
 fn ringtone_choice(v: &serde_json::Value) -> (String, String) {
     match v {
         serde_json::Value::String(n) => ("Regular".into(), n.clone()),
-        _ => (v["type"].as_str().unwrap_or("Regular").into(), v["name"].as_str().unwrap_or("Ring").into()),
+        _ => (
+            v["type"].as_str().unwrap_or("Regular").into(),
+            v["name"].as_str().unwrap_or("Ring").into(),
+        ),
     }
 }
 
 /// A Call handling and forwarding change ({op, targetType, target,
 /// seconds}) applied to the current callRedirectionSettings as Teams does.
-fn forwarding_change(cur: &serde_json::Value, v: &serde_json::Value, voicemail_allowed: bool) -> serde_json::Value {
+fn forwarding_change(
+    cur: &serde_json::Value,
+    v: &serde_json::Value,
+    voicemail_allowed: bool,
+) -> serde_json::Value {
     use api::call_forwarding as cf;
     let t = v["targetType"].as_str();
     let target = v["target"].as_str().filter(|s| !s.is_empty());
@@ -6124,7 +6842,9 @@ fn forwarding_change(cur: &serde_json::Value, v: &serde_json::Value, voicemail_a
 /// a plain launch: a running window of that account comes forward (its
 /// instance socket), else it starts, signing in first if it must.
 fn launch_profile(profile: &str) {
-    let Ok(exe) = std::env::current_exe() else { return };
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
     let mut cmd = std::process::Command::new(exe);
     if profile.is_empty() {
         cmd.env_remove("OST_PROFILE");
@@ -6144,8 +6864,15 @@ fn call_group_change(cur: &serde_json::Value, v: &serde_json::Value) -> Option<s
     match v["op"].as_str().unwrap_or_default() {
         "add" => cf::call_group_add(cur, member),
         "remove" => Some(cf::call_group_remove(cur, member)),
-        "order" => Some(cf::call_group_order(cur, v["order"].as_str().unwrap_or("simultaneous"))),
-        "move" => Some(cf::call_group_move(cur, member, v["to"].as_u64().unwrap_or(0) as usize)),
+        "order" => Some(cf::call_group_order(
+            cur,
+            v["order"].as_str().unwrap_or("simultaneous"),
+        )),
+        "move" => Some(cf::call_group_move(
+            cur,
+            member,
+            v["to"].as_u64().unwrap_or(0) as usize,
+        )),
         _ => None,
     }
 }
@@ -6154,15 +6881,28 @@ fn call_group_change(cur: &serde_json::Value, v: &serde_json::Value) -> Option<s
 /// delegationSettings shape).
 fn delegation_change(cur: &serde_json::Value, v: &serde_json::Value) -> serde_json::Value {
     use api::call_delegation as cd;
-    let mut d = if cur.is_object() { cur.clone() } else { json!({}) };
+    let mut d = if cur.is_object() {
+        cur.clone()
+    } else {
+        json!({})
+    };
     let mut list = cd::delegates_of(&json!({ "delegationSettings": d }));
     let mri = v["mri"].as_str().unwrap_or_default();
     match v["op"].as_str().unwrap_or_default() {
-        "add" if !list.iter().any(|x| x["userMri"].as_str() == Some(mri)) => list.push(cd::add_body(mri, "")),
+        "add" if !list.iter().any(|x| x["userMri"].as_str() == Some(mri)) => {
+            list.push(cd::add_body(mri, ""))
+        }
         "remove" => list.retain(|x| x["userMri"].as_str() != Some(mri)),
         "action" => {
-            for x in list.iter_mut().filter(|x| x["userMri"].as_str() == Some(mri)) {
-                let body = cd::edit_body(&x["allowedActions"], v["action"].as_str().unwrap_or_default(), v["on"].as_bool().unwrap_or(false));
+            for x in list
+                .iter_mut()
+                .filter(|x| x["userMri"].as_str() == Some(mri))
+            {
+                let body = cd::edit_body(
+                    &x["allowedActions"],
+                    v["action"].as_str().unwrap_or_default(),
+                    v["on"].as_bool().unwrap_or(false),
+                );
                 x["allowedActions"] = body["allowedActions"].clone();
             }
         }
@@ -6174,9 +6914,17 @@ fn delegation_change(cur: &serde_json::Value, v: &serde_json::Value) -> serde_js
 }
 
 pub fn compose_copilot_state(license: Option<&serde_json::Value>) -> serde_json::Value {
-    let on = |ns: &str, key: &str, dflt: bool| api::ecs::setting(ns, key).and_then(|v| v.as_bool()).unwrap_or(dflt);
-    let licensed = license.and_then(|l| l["isCopilot"].as_bool()).unwrap_or(false);
-    let allowed = licensed && on("compose", "enableComposeCopilot", false) && on("augloop", "enableAugLoopService", false);
+    let on = |ns: &str, key: &str, dflt: bool| {
+        api::ecs::setting(ns, key)
+            .and_then(|v| v.as_bool())
+            .unwrap_or(dflt)
+    };
+    let licensed = license
+        .and_then(|l| l["isCopilot"].as_bool())
+        .unwrap_or(false);
+    let allowed = licensed
+        && on("compose", "enableComposeCopilot", false)
+        && on("augloop", "enableAugLoopService", false);
     // Copilot in meetings (Teams' MeetingCollabButton: Calling's
     // enableMeetingCollab with the licence check, useAIFeatureLicense).
     let meeting = licensed && on("calling", "enableMeetingCollab", true);
@@ -6189,8 +6937,16 @@ pub fn compose_copilot_state(license: Option<&serde_json::Value>) -> serde_json:
     // list's Copilot (chatList.enableBizChatMetaOSChatListEntryPoint, the
     // user's shouldShowMetaOSCopilotApp, the app installed) with its
     // Settings switch (messaging.enableMetaOSCopilotToggleInSettings).
-    let text = |ns: &str, key: &str, dflt: &str| api::ecs::setting(ns, key).and_then(|v| v.as_str().map(str::to_string)).unwrap_or_else(|| dflt.to_string());
-    let channel = if licensed { on("copilot", "enableBizChatCopilotInChannelLicensed", true) } else { on("copilot", "enableBizChatCopilotInChannelUnlicensed", false) };
+    let text = |ns: &str, key: &str, dflt: &str| {
+        api::ecs::setting(ns, key)
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_else(|| dflt.to_string())
+    };
+    let channel = if licensed {
+        on("copilot", "enableBizChatCopilotInChannelLicensed", true)
+    } else {
+        on("copilot", "enableBizChatCopilotInChannelUnlicensed", false)
+    };
     serde_json::json!({
         "allowed": allowed, "proofread": allowed && on("compose", "enableComposeRewriteProofread", false), "meeting": meeting, "rename": licensed,
         "licensed": licensed,
@@ -6218,13 +6974,19 @@ pub fn compose_copilot_state(license: Option<&serde_json::Value>) -> serde_json:
 
 /// Editor's options by language, as its service lists them.
 fn editor_categories() -> &'static std::sync::Mutex<HashMap<String, Vec<api::editor::Category>>> {
-    static C: OnceLock<std::sync::Mutex<HashMap<String, Vec<api::editor::Category>>>> = OnceLock::new();
+    static C: OnceLock<std::sync::Mutex<HashMap<String, Vec<api::editor::Category>>>> =
+        OnceLock::new();
     C.get_or_init(Default::default)
 }
 
 fn load_editor_categories(lang: &str) {
     static LOADING: OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> = OnceLock::new();
-    if !LOADING.get_or_init(Default::default).lock().unwrap().insert(lang.to_string()) {
+    if !LOADING
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap()
+        .insert(lang.to_string())
+    {
         return;
     }
     let lang = lang.to_string();
@@ -6249,11 +7011,20 @@ fn load_editor_categories(lang: &str) {
 /// client preferences: editorCritiques {language: {id: "0"|"1"}} and
 /// editorAutoCorrect [languages] (unset: your first language).
 fn editor_critique_values(map: &serde_json::Map<String, serde_json::Value>) -> serde_json::Value {
-    map.get("editorCritiques").and_then(|v| v.as_str()).and_then(|s| serde_json::from_str(s).ok()).unwrap_or_else(|| serde_json::json!({}))
+    map.get("editorCritiques")
+        .and_then(|v| v.as_str())
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_else(|| serde_json::json!({}))
 }
 
-fn editor_autocorrect_languages(map: &serde_json::Map<String, serde_json::Value>, languages: &[String]) -> Vec<String> {
-    map.get("editorAutoCorrect").and_then(|v| v.as_str()).and_then(|s| serde_json::from_str(s).ok()).unwrap_or_else(|| languages.first().cloned().into_iter().collect())
+fn editor_autocorrect_languages(
+    map: &serde_json::Map<String, serde_json::Value>,
+    languages: &[String],
+) -> Vec<String> {
+    map.get("editorAutoCorrect")
+        .and_then(|v| v.as_str())
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_else(|| languages.first().cloned().into_iter().collect())
 }
 
 /// Tell the Editor session your options that differ from Editor's defaults
@@ -6261,18 +7032,30 @@ fn editor_autocorrect_languages(map: &serde_json::Map<String, serde_json::Value>
 fn apply_editor_overrides() {
     let map = load_settings();
     let values = editor_critique_values(&map);
-    let languages = proofing_settings().lock().unwrap().as_ref().map(|s| s.languages.clone()).unwrap_or_default();
+    let languages = proofing_settings()
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|s| s.languages.clone())
+        .unwrap_or_default();
     let cats = editor_categories().lock().unwrap();
     let mut overrides = Vec::new();
     for lang in &languages {
         let Some(list) = cats.get(lang) else { continue };
         for c in list.iter().filter(|c| c.priority <= 0) {
-            let entries = std::iter::once((c.id.clone(), c.name.clone(), 1)).chain(c.critiques.iter().filter(|t| t.priority <= 0).map(|t| (t.id.clone(), t.name.clone(), t.default)));
+            let entries = std::iter::once((c.id.clone(), c.name.clone(), 1)).chain(
+                c.critiques
+                    .iter()
+                    .filter(|t| t.priority <= 0)
+                    .map(|t| (t.id.clone(), t.name.clone(), t.default)),
+            );
             for (id, name, default) in entries {
                 if let Some(v) = values[lang][&id].as_str()
                     && v.parse::<i64>().ok() != Some(default)
                 {
-                    overrides.push(serde_json::json!({"id": id, "value": v, "languageId": lang, "name": name}));
+                    overrides.push(
+                        serde_json::json!({"id": id, "value": v, "languageId": lang, "name": name}),
+                    );
                 }
             }
         }
@@ -6293,9 +7076,12 @@ static RESTART: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::n
 /// links: date and time ("timezone") or region and language ("region"),
 /// in KDE Plasma or GNOME; None elsewhere (the link is then not shown).
 fn os_settings_command(kind: &str) -> Option<(&'static str, Vec<&'static str>)> {
-    let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_uppercase();
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP")
+        .unwrap_or_default()
+        .to_uppercase();
     let on_path = |p: &str| {
-        std::env::var_os("PATH").is_some_and(|path| std::env::split_paths(&path).any(|d| d.join(p).is_file()))
+        std::env::var_os("PATH")
+            .is_some_and(|path| std::env::split_paths(&path).any(|d| d.join(p).is_file()))
     };
     if desktop.contains("KDE") && on_path("systemsettings") {
         let module = match kind {
@@ -6364,11 +7150,20 @@ fn quit_application() {
 /// Teams does: regionalFollowOs (on unless turned off), appLanguage,
 /// regionalDateFormat, regionalTimeFormat.
 fn regional_choice(map: &serde_json::Map<String, serde_json::Value>) -> api::regional::Choice {
-    let get = |k: &str| map.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let get = |k: &str| {
+        map.get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     let app_language = get("appLanguage");
     api::regional::Choice {
         follow_os: get("regionalFollowOs") != "false",
-        app_language: if app_language.is_empty() { app_locale().to_lowercase() } else { app_language },
+        app_language: if app_language.is_empty() {
+            app_locale().to_lowercase()
+        } else {
+            app_language
+        },
         date_format: get("regionalDateFormat"),
         time_format: get("regionalTimeFormat"),
     }
@@ -6380,7 +7175,11 @@ fn regional_in_effect() -> &'static (String, api::regional::Formats) {
     static R: OnceLock<(String, api::regional::Formats)> = OnceLock::new();
     R.get_or_init(|| {
         let c = regional_choice(&load_settings());
-        let culture = if c.follow_os { app_locale() } else { c.app_language.clone() };
+        let culture = if c.follow_os {
+            app_locale()
+        } else {
+            c.app_language.clone()
+        };
         (culture, api::regional::resolve(&c, &app_locale()))
     })
 }
@@ -6402,14 +7201,26 @@ pub fn install_app_language() -> &'static str {
     }
     let culture = regional_in_effect().0.clone();
     let wanted = api::regional::string_locale(&culture);
-    let catalogue = if wanted == "en-us" { None } else { app_language_catalogue(wanted) };
+    let catalogue = if wanted == "en-us" {
+        None
+    } else {
+        app_language_catalogue(wanted)
+    };
     // OST's one translator (QML, backend and engine): Teams' wording from
     // the catalogue, else OST's English.
-    let installed = catalogue.as_ref().and_then(|p| match std::fs::read_to_string(p).map_err(anyhow::Error::from).and_then(|t| teams_cli::i18n::install(Some(&t), wanted)) {
-        Ok(()) => Some(()),
-        Err(e) => {
-            tracing::warn!("app language {wanted}: its catalogue didn't load ({}); showing English", short_error(&e));
-            None
+    let installed = catalogue.as_ref().and_then(|p| {
+        match std::fs::read_to_string(p)
+            .map_err(anyhow::Error::from)
+            .and_then(|t| teams_cli::i18n::install(Some(&t), wanted))
+        {
+            Ok(()) => Some(()),
+            Err(e) => {
+                tracing::warn!(
+                    "app language {wanted}: its catalogue didn't load ({}); showing English",
+                    short_error(&e)
+                );
+                None
+            }
         }
     });
     let strings = if installed.is_some() { wanted } else { "en-us" };
@@ -6423,7 +7234,10 @@ pub fn install_app_language() -> &'static str {
     // SAFETY: plain Qt calls with a NUL-terminated string, on the GUI
     // thread, after the application exists and before the QML engine.
     unsafe { ost_install_translator(c.as_ptr(), rtl) };
-    tracing::info!("app language {culture}: strings {strings}{}", if rtl { ", right to left" } else { "" });
+    tracing::info!(
+        "app language {culture}: strings {strings}{}",
+        if rtl { ", right to left" } else { "" }
+    );
     strings
 }
 
@@ -6434,11 +7248,26 @@ pub fn install_app_language() -> &'static str {
 /// # Safety
 /// `source` and `disambiguation` are NUL-terminated; `out` has `cap` bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ost_i18n_lookup(source: *const core::ffi::c_char, disambiguation: *const core::ffi::c_char, n: i32, out: *mut core::ffi::c_char, cap: usize) -> usize {
+pub unsafe extern "C" fn ost_i18n_lookup(
+    source: *const core::ffi::c_char,
+    disambiguation: *const core::ffi::c_char,
+    n: i32,
+    out: *mut core::ffi::c_char,
+    cap: usize,
+) -> usize {
     // SAFETY: the caller passes NUL-terminated strings.
-    let (s, d) = unsafe { (std::ffi::CStr::from_ptr(source), std::ffi::CStr::from_ptr(disambiguation)) };
-    let (Ok(s), Ok(d)) = (s.to_str(), d.to_str()) else { return 0 };
-    let Some(t) = teams_cli::i18n::lookup(s, d, (n >= 0).then_some(n as i64)) else { return 0 };
+    let (s, d) = unsafe {
+        (
+            std::ffi::CStr::from_ptr(source),
+            std::ffi::CStr::from_ptr(disambiguation),
+        )
+    };
+    let (Ok(s), Ok(d)) = (s.to_str(), d.to_str()) else {
+        return 0;
+    };
+    let Some(t) = teams_cli::i18n::lookup(s, d, (n >= 0).then_some(n as i64)) else {
+        return 0;
+    };
     if t.len() <= cap {
         // SAFETY: `out` has room for `cap` >= t.len() bytes.
         unsafe { std::ptr::copy_nonoverlapping(t.as_ptr(), out.cast(), t.len()) };
@@ -6466,7 +7295,11 @@ fn app_language_catalogue(locale: &str) -> Option<std::path::PathBuf> {
     let current = std::fs::read_to_string(&path)
         .ok()
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-        .is_some_and(|v| v["ids"] == fp.as_str() && v["teamsVersion"] == res.teams_version.as_str() && v["strings"].is_object());
+        .is_some_and(|v| {
+            v["ids"] == fp.as_str()
+                && v["teamsVersion"] == res.teams_version.as_str()
+                && v["strings"].is_object()
+        });
     if current {
         return Some(path);
     }
@@ -6477,20 +7310,37 @@ fn app_language_catalogue(locale: &str) -> Option<std::path::PathBuf> {
             return None;
         }
     };
-    tracing::info!("app language {locale}: getting Teams' strings ({} files, Teams {})", res.files.get(locale).map_or(0, |f| f.len()), res.teams_version);
+    tracing::info!(
+        "app language {locale}: getting Teams' strings ({} files, Teams {})",
+        res.files.get(locale).map_or(0, |f| f.len()),
+        res.teams_version
+    );
     let started = std::time::Instant::now();
-    let built = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(anyhow::Error::from).and_then(|rt| {
-        rt.block_on(async {
-            let client = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(5)).timeout(std::time::Duration::from_secs(30)).build()?;
-            tokio::time::timeout(std::time::Duration::from_secs(45), ts::fetch(&client, &res, &ids, &fp, locale))
+    let built = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(anyhow::Error::from)
+        .and_then(|rt| {
+            rt.block_on(async {
+                let client = reqwest::Client::builder()
+                    .connect_timeout(std::time::Duration::from_secs(5))
+                    .timeout(std::time::Duration::from_secs(30))
+                    .build()?;
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(45),
+                    ts::fetch(&client, &res, &ids, &fp, locale),
+                )
                 .await
                 .map_err(|_| anyhow::anyhow!("timed out"))?
-        })
-    });
+            })
+        });
     let cat = match built {
         Ok(c) => c,
         Err(e) => {
-            tracing::warn!("app language {locale}: Teams' strings unavailable ({}); showing English", short_error(&e));
+            tracing::warn!(
+                "app language {locale}: Teams' strings unavailable ({}); showing English",
+                short_error(&e)
+            );
             return None;
         }
     };
@@ -6505,7 +7355,11 @@ fn app_language_catalogue(locale: &str) -> Option<std::path::PathBuf> {
         tracing::warn!("app language {locale}: caching its catalogue failed: {e}");
         return None;
     }
-    tracing::info!("app language {locale}: built {} strings from Teams' resources in {} ms", cat["strings"].as_object().map_or(0, |m| m.len()), started.elapsed().as_millis());
+    tracing::info!(
+        "app language {locale}: built {} strings from Teams' resources in {} ms",
+        cat["strings"].as_object().map_or(0, |m| m.len()),
+        started.elapsed().as_millis()
+    );
     Some(path)
 }
 
@@ -6524,8 +7378,15 @@ pub fn tr_n(source: &str, n: i32) -> String {
 /// Your translation settings (Settings ▸ General ▸ Translation), kept on
 /// this device as Teams does: translationTarget, translationMode and
 /// translationKnown (a JSON list); Teams' defaults are your app language.
-fn translation_settings_in(map: &serde_json::Map<String, serde_json::Value>) -> api::translation::Settings {
-    let get = |k: &str| map.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+fn translation_settings_in(
+    map: &serde_json::Map<String, serde_json::Value>,
+) -> api::translation::Settings {
+    let get = |k: &str| {
+        map.get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     let mut s = api::translation::default_settings(&app_locale());
     let target = get("translationTarget");
     if !target.is_empty() {
@@ -6592,7 +7453,9 @@ fn load_translation_languages() {
     }
     runtime().spawn(async move {
         let langs = match TeamsClient::new().await {
-            Ok(client) => api::msgactions::translation_languages(&client, &app_locale().to_lowercase()).await,
+            Ok(client) => {
+                api::msgactions::translation_languages(&client, &app_locale().to_lowercase()).await
+            }
             Err(e) => Err(e),
         };
         match langs {
@@ -6627,7 +7490,11 @@ fn translation_language_name(code: &str) -> String {
 }
 
 unsafe extern "C" {
-    fn ost_language_display(code: *const core::ffi::c_char, out: *mut core::ffi::c_char, cap: usize) -> usize;
+    fn ost_language_display(
+        code: *const core::ffi::c_char,
+        out: *mut core::ffi::c_char,
+        cap: usize,
+    ) -> usize;
 }
 
 /// A translation language as Teams lists it under "Translate messages
@@ -6646,25 +7513,38 @@ fn language_display(code: &str) -> Option<(String, String)> {
 /// Messages Teams translated by itself (Auto-translate all messages): See
 /// original on one brings back "Translate | Never translate …".
 fn auto_translated() -> &'static std::sync::Mutex<std::collections::HashSet<(String, String)>> {
-    static A: OnceLock<std::sync::Mutex<std::collections::HashSet<(String, String)>>> = OnceLock::new();
+    static A: OnceLock<std::sync::Mutex<std::collections::HashSet<(String, String)>>> =
+        OnceLock::new();
     A.get_or_init(Default::default)
 }
 
 /// Translate these messages as Teams' automatic translation does (with
 /// the languages you never want translated), once each.
 fn auto_translate_messages(chat_id: &str, ids: Vec<String>, settings: api::translation::Settings) {
-    static PENDING: OnceLock<std::sync::Mutex<std::collections::HashSet<(String, String)>>> = OnceLock::new();
+    static PENDING: OnceLock<std::sync::Mutex<std::collections::HashSet<(String, String)>>> =
+        OnceLock::new();
     let pending = PENDING.get_or_init(Default::default);
     let ids: Vec<String> = {
         let mut p = pending.lock().unwrap();
-        ids.into_iter().filter(|id| p.insert((chat_id.to_string(), id.clone()))).collect()
+        ids.into_iter()
+            .filter(|id| p.insert((chat_id.to_string(), id.clone())))
+            .collect()
     };
     for id in ids {
         let chat_id = chat_id.to_string();
         let settings = settings.clone();
         runtime().spawn(async move {
             let result = match TeamsClient::new().await {
-                Ok(client) => api::msgactions::translate_with(&client, &chat_id, &id, &settings.target, Some(&settings.known)).await,
+                Ok(client) => {
+                    api::msgactions::translate_with(
+                        &client,
+                        &chat_id,
+                        &id,
+                        &settings.target,
+                        Some(&settings.known),
+                    )
+                    .await
+                }
                 Err(e) => Err(e),
             };
             let key = (chat_id, id);
@@ -6705,13 +7585,16 @@ fn with_lies(
 /// meeting chats), as a chat window takes it.
 fn is_chat_id(id: &str) -> bool {
     // (Your own notes chat, 48:notes, is a chat too.)
-    id == "48:notes" || (id.starts_with("19:") && id.contains('@') && !id.contains(';') && !id.ends_with("@thread.tacv2"))
+    id == "48:notes"
+        || (id.starts_with("19:")
+            && id.contains('@')
+            && !id.contains(';')
+            && !id.ends_with("@thread.tacv2"))
 }
 
 fn window_conversation(key: &str) -> &str {
     key.strip_prefix("win:").unwrap_or(key)
 }
-
 
 /// The post composer's fields for the next channel post.
 #[derive(Debug, Clone, Default)]
@@ -6733,7 +7616,12 @@ struct NextPost {
 impl NextPost {
     fn from_json(s: &str) -> Option<NextPost> {
         let v: serde_json::Value = serde_json::from_str(s).ok()?;
-        let f = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+        let f = |k: &str| {
+            v.get(k)
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
         let n = |k: &str| v.get(k).and_then(|x| x.as_u64()).unwrap_or(0) as u32;
         Some(NextPost {
             subject: f("subject"),
@@ -6747,7 +7635,12 @@ impl NextPost {
             cross_post: v
                 .get("crossPost")
                 .and_then(|x| x.as_array())
-                .map(|a| a.iter().filter_map(|c| c.as_str().map(str::to_string)).filter(|c| c.ends_with("@thread.tacv2")).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|c| c.as_str().map(str::to_string))
+                        .filter(|c| c.ends_with("@thread.tacv2"))
+                        .collect()
+                })
                 .unwrap_or_default(),
         })
     }
@@ -6755,7 +7648,10 @@ impl NextPost {
 
 /// The channel a window's key belongs to.
 fn window_channel(key: &str) -> &str {
-    window_conversation(key).split(';').next().unwrap_or_default()
+    window_conversation(key)
+        .split(';')
+        .next()
+        .unwrap_or_default()
 }
 
 /// A thread window's messages with what is being sent to it; translations
@@ -6777,7 +7673,8 @@ fn with_thread_lies(
 async fn load_thread(thread: &str) -> anyhow::Result<()> {
     let client = TeamsClient::new().await?;
     let channel = window_channel(thread).to_string();
-    let page = api::messages::read_timeline_page(&client, window_conversation(thread), 200, None).await?;
+    let page =
+        api::messages::read_timeline_page(&client, window_conversation(thread), 200, None).await?;
     let mut timeline = page.messages;
     {
         let here = deleted_here().lock().unwrap();
@@ -7045,7 +7942,11 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             if json.contains("breakoutDetails")
                 && let Some(rooms) = teams_cli::calling::breakout::assigned_rooms(json)
             {
-                tracing::info!(rooms = rooms.len(), open = rooms.iter().filter(|r| r.open).count(), "pre-join: breakout rooms (kept for Join now)");
+                tracing::info!(
+                    rooms = rooms.len(),
+                    open = rooms.iter().filter(|r| r.open).count(),
+                    "pre-join: breakout rooms (kept for Join now)"
+                );
                 p.breakout = Some(serde_json::to_string(&rooms).unwrap_or_default());
             }
             return;
@@ -7068,7 +7969,11 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 if json.contains("breakoutDetails")
                     && let Some(rooms) = teams_cli::calling::breakout::assigned_rooms(json)
                 {
-                    tracing::info!(rooms = rooms.len(), open = rooms.iter().filter(|r| r.open).count(), "main meeting (kept): breakout rooms");
+                    tracing::info!(
+                        rooms = rooms.len(),
+                        open = rooms.iter().filter(|r| r.open).count(),
+                        "main meeting (kept): breakout rooms"
+                    );
                 }
             }
             return;
@@ -7083,7 +7988,11 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             .and_then(|v| v["callTag"].as_str().map(str::to_string))
     {
         let mut slot = call_slot().lock().await;
-        if let Some((pending, _, _)) = slot.lobby_return.as_mut().filter(|(c, _, _)| c.call_tag() == tag) {
+        if let Some((pending, _, _)) = slot
+            .lobby_return
+            .as_mut()
+            .filter(|(c, _, _)| c.call_tag() == tag)
+        {
             if let Some(links) = teams_cli::calling::outgoing::leg_retarget(json) {
                 pending.retarget(links);
             }
@@ -7091,11 +8000,16 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 tracing::info!("the main meeting's lobby call ended; staying in the room");
                 slot.lobby_return = None;
                 drop(slot);
-                let _ = qt.queue(|mut this| this.as_mut().meeting_move_failed(QString::default(), QString::default()));
+                let _ = qt.queue(|mut this| {
+                    this.as_mut()
+                        .meeting_move_failed(QString::default(), QString::default())
+                });
                 return;
             }
             if let Some(update) = teams_cli::calling::outgoing::lobby_admission(json) {
-                let Some((mut call, url, title)) = slot.lobby_return.take() else { return };
+                let Some((mut call, url, title)) = slot.lobby_return.take() else {
+                    return;
+                };
                 call.admit_from_lobby(&update);
                 let room = slot.outgoing.take();
                 if let Some(r) = room.as_ref() {
@@ -7113,7 +8027,8 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                         this.as_mut().reset_meeting_view(&link, &url, &title);
                     }
                     this.as_mut().set_call_breakout_json(QString::default());
-                    this.as_mut().set_call_breakout_room_json(QString::default());
+                    this.as_mut()
+                        .set_call_breakout_room_json(QString::default());
                     this.as_mut().set_call_state(QString::from("connecting"));
                 });
                 seed_roster(qt, &call).await;
@@ -7134,16 +8049,24 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             .and_then(|v| v["callTag"].as_str().map(str::to_string))
     {
         let mut slot = call_slot().lock().await;
-        if slot.held_main.as_ref().is_some_and(|(c, _, _)| c.call_tag() == tag) {
+        if slot
+            .held_main
+            .as_ref()
+            .is_some_and(|(c, _, _)| c.call_tag() == tag)
+        {
             if teams_cli::calling::incoming::is_call_end_event(json) {
                 tracing::info!("the held main meeting ended");
                 slot.held_main = None;
                 drop(slot);
-                let _ = qt.queue(|mut this| this.as_mut().set_call_held_meeting_json(QString::default()));
+                let _ = qt
+                    .queue(|mut this| this.as_mut().set_call_held_meeting_json(QString::default()));
             } else if let Some(rooms) = teams_cli::calling::breakout::all_rooms(json) {
                 drop(slot);
                 let text = serde_json::to_string(&rooms).unwrap_or_default();
-                let _ = qt.queue(move |mut this| this.as_mut().set_call_breakout_all_json(QString::from(text.as_str())));
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut()
+                        .set_call_breakout_all_json(QString::from(text.as_str()))
+                });
             }
             return;
         }
@@ -7166,7 +8089,10 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         }
         if changed {
             let out = meeting_rosters_json(&map);
-            let _ = qt.queue(move |mut this| this.as_mut().set_live_meeting_rosters_json(QString::from(out.as_str())));
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .set_live_meeting_rosters_json(QString::from(out.as_str()))
+            });
         }
         if map.values().any(|s| s.owns(json)) {
             return;
@@ -7194,11 +8120,16 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         return;
     }
     // A notification about a meeting (its kind and fields, never values).
-    if json.contains("\"notificationType\"") && !json.contains("HuddleMeetingStart")
-        && let Ok(v) = serde_json::from_str::<serde_json::Value>(json) {
-            let keys: Vec<&String> = v.as_object().map(|o| o.keys().collect()).unwrap_or_default();
-            tracing::info!(kind = %v["notificationType"], ?keys, "call notification");
-        }
+    if json.contains("\"notificationType\"")
+        && !json.contains("HuddleMeetingStart")
+        && let Ok(v) = serde_json::from_str::<serde_json::Value>(json)
+    {
+        let keys: Vec<&String> = v
+            .as_object()
+            .map(|o| o.keys().collect())
+            .unwrap_or_default();
+        tracing::info!(kind = %v["notificationType"], ?keys, "call notification");
+    }
     if let Some(start) = teams_cli::calling::incoming::meeting_start(json) {
         tracing::info!(thread = %start.thread_id, "meeting started in a chat");
         let qt2 = qt.clone();
@@ -7226,7 +8157,10 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             .unwrap_or_default();
         let captions = serde_json::from_str::<serde_json::Value>(json)
             .ok()
-            .and_then(|v| v.get("body").map(teams_cli::calling::transcript::results_from_live))
+            .and_then(|v| {
+                v.get("body")
+                    .map(teams_cli::calling::transcript::results_from_live)
+            })
             .unwrap_or_default();
         if !rows.is_empty() || !captions.is_empty() {
             let _ = qt.queue(move |mut this| {
@@ -7245,14 +8179,23 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     if json.contains("\"callAgentPath\":\"ost/controlInput/\"") {
         if let Some(bytes) = serde_json::from_str::<serde_json::Value>(json)
             .ok()
-            .and_then(|v| v.pointer("/body/bytes")?.as_array().map(|a| a.iter().filter_map(|b| b.as_u64().map(|b| b as u8)).collect::<Vec<u8>>()))
+            .and_then(|v| {
+                v.pointer("/body/bytes")?.as_array().map(|a| {
+                    a.iter()
+                        .filter_map(|b| b.as_u64().map(|b| b as u8))
+                        .collect::<Vec<u8>>()
+                })
+            })
         {
             presenting::control_input(bytes);
         }
         return;
     }
     if json.contains("\"callAgentPath\":\"ost/screenControl/\"") {
-        if let Some(body) = serde_json::from_str::<serde_json::Value>(json).ok().and_then(|v| v.get("body").cloned()) {
+        if let Some(body) = serde_json::from_str::<serde_json::Value>(json)
+            .ok()
+            .and_then(|v| v.get("body").cloned())
+        {
             let _ = qt.queue(move |this| this.screen_control_event(body));
         }
         return;
@@ -7262,7 +8205,10 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         let body = serde_json::from_str::<serde_json::Value>(json)
             .ok()
             .and_then(|v| v.get("body").cloned());
-        let source = body.as_ref().and_then(|b| b.get("sourceId")?.as_u64()).and_then(|s| u32::try_from(s).ok());
+        let source = body
+            .as_ref()
+            .and_then(|b| b.get("sourceId")?.as_u64())
+            .and_then(|s| u32::try_from(s).ok());
         let detected = body.as_ref().and_then(|b| b.get("signDetected")?.as_bool());
         if let (Some(source), Some(detected)) = (source, detected) {
             let _ = qt.queue(move |mut this| {
@@ -7274,7 +8220,10 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                     .map(|p| p.id.clone());
                 match mri {
                     Some(mri) => this.as_mut().set_signing(&mri, detected),
-                    None => tracing::debug!(source, "sign language event from a source not in the roster"),
+                    None => tracing::debug!(
+                        source,
+                        "sign language event from a source not in the roster"
+                    ),
                 }
             });
         }
@@ -7286,9 +8235,16 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             .ok()
             .and_then(|v| v.get("body").cloned());
         let source = body.as_ref().and_then(|b| b.get("sourceId")?.as_u64());
-        let text = body.as_ref().and_then(|b| b.get("s")?.as_str().map(str::to_string));
+        let text = body
+            .as_ref()
+            .and_then(|b| b.get("s")?.as_str().map(str::to_string));
         if let (Some(source), Some(text)) = (source.and_then(|s| u32::try_from(s).ok()), text) {
-            let own = call_slot().lock().await.outgoing.as_ref().and_then(|c| c.data_source_id());
+            let own = call_slot()
+                .lock()
+                .await
+                .outgoing
+                .as_ref()
+                .and_then(|c| c.data_source_id());
             let _ = qt.queue(move |mut this| this.as_mut().receive_rtt(source, text, own));
         }
         return;
@@ -7357,37 +8313,62 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         && let Some(state) = teams_cli::calling::breakout::room_state(json)
     {
         let text = serde_json::to_string(&state).unwrap_or_default();
-        tracing::info!(closed = state.closed, allow_return = state.allow_return, "in a breakout room");
-        let _ = qt.queue(move |mut this| this.as_mut().set_call_breakout_room_json(QString::from(text.as_str())));
+        tracing::info!(
+            closed = state.closed,
+            allow_return = state.allow_return,
+            "in a breakout room"
+        );
+        let _ = qt.queue(move |mut this| {
+            this.as_mut()
+                .set_call_breakout_room_json(QString::from(text.as_str()))
+        });
     }
     // The meeting's rooms, as its organizer sees them.
     if json.contains("allBreakoutRooms")
         && let Some(rooms) = teams_cli::calling::breakout::all_rooms(json)
     {
         let text = serde_json::to_string(&rooms).unwrap_or_default();
-        tracing::info!(rooms = rooms.len(), open = rooms.iter().filter(|r| r.open).count(), "meeting breakout rooms");
-        let _ = qt.queue(move |mut this| this.as_mut().set_call_breakout_all_json(QString::from(text.as_str())));
+        tracing::info!(
+            rooms = rooms.len(),
+            open = rooms.iter().filter(|r| r.open).count(),
+            "meeting breakout rooms"
+        );
+        let _ = qt.queue(move |mut this| {
+            this.as_mut()
+                .set_call_breakout_all_json(QString::from(text.as_str()))
+        });
     }
     // Breakout rooms assigned to us (opened, closed, changed).
     if json.contains("breakoutDetails")
         && let Some(rooms) = teams_cli::calling::breakout::assigned_rooms(json)
     {
         let text = serde_json::to_string(&rooms).unwrap_or_default();
-        tracing::info!(rooms = rooms.len(), open = rooms.iter().filter(|r| r.open).count(), "breakout rooms");
-        let _ = qt.queue(move |mut this| this.as_mut().set_call_breakout_json(QString::from(text.as_str())));
+        tracing::info!(
+            rooms = rooms.len(),
+            open = rooms.iter().filter(|r| r.open).count(),
+            "breakout rooms"
+        );
+        let _ = qt.queue(move |mut this| {
+            this.as_mut()
+                .set_call_breakout_json(QString::from(text.as_str()))
+        });
     }
     // Waiting in a lobby: once an organizer writes, the lobby chat thread
     // arrives (activeModalities.groupChat.lobbyThreadId) and Teams offers
     // its Lobby chat.
     if json.contains("lobbyThreadId")
         && let Ok(v) = serde_json::from_str::<serde_json::Value>(json)
-        && let Some(id) = v.pointer("/body/activeModalities/groupChat/lobbyThreadId").and_then(|t| t.as_str()).filter(|t| t.starts_with("19:"))
+        && let Some(id) = v
+            .pointer("/body/activeModalities/groupChat/lobbyThreadId")
+            .and_then(|t| t.as_str())
+            .filter(|t| t.starts_with("19:"))
     {
         let id = id.to_string();
         tracing::info!("lobby chat thread from the call");
         let _ = qt.queue(move |mut this| {
             if this.rust().call_lobby_thread.to_string() != id {
-                this.as_mut().set_call_lobby_thread(QString::from(id.as_str()));
+                this.as_mut()
+                    .set_call_lobby_thread(QString::from(id.as_str()));
             }
         });
     }
@@ -7432,7 +8413,9 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             } else {
                 // A meeting we were invited into (a Teams Room's): its
                 // recorder, for captions.
-                slot.active.as_mut().and_then(|call| call.apply_processing(&v).then(|| call.processing()))
+                slot.active
+                    .as_mut()
+                    .and_then(|call| call.apply_processing(&v).then(|| call.processing()))
             }
         };
         if let Some(p) = changed {
@@ -7440,12 +8423,10 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             let _ = qt.queue(move |mut this| this.as_mut().show_processing(p));
         }
         // A town hall's stream: our place in it, and the stream on offer.
-        let stream = call_slot()
-            .lock()
-            .await
-            .outgoing
-            .as_mut()
-            .and_then(|call| call.apply_stream(&v).then(|| (call.stream().cloned(), call.in_lobby())));
+        let stream = call_slot().lock().await.outgoing.as_mut().and_then(|call| {
+            call.apply_stream(&v)
+                .then(|| (call.stream().cloned(), call.in_lobby()))
+        });
         if let Some((choice, lobby)) = stream {
             update_stream(choice, lobby, qt.clone());
         }
@@ -7457,7 +8438,8 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     }
     // The meeting's answer to "Call me", or to adding a room (Teams' join
     // with a room).
-    if (json.contains("conversation/addParticipantSuccess") || json.contains("conversation/addParticipantFailure"))
+    if (json.contains("conversation/addParticipantSuccess")
+        || json.contains("conversation/addParticipantFailure"))
         && let Ok(v) = serde_json::from_str::<serde_json::Value>(json)
     {
         let mut slot = call_slot().lock().await;
@@ -7475,7 +8457,10 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                     (false, text)
                 }
             };
-            let _ = qt.queue(move |mut this| this.as_mut().room_add_result(ok, QString::from(text.as_str())));
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .room_add_result(ok, QString::from(text.as_str()))
+            });
             return;
         }
         if let Some(call) = slot.outgoing.as_mut()
@@ -7495,7 +8480,8 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             let connected = !mri.is_empty();
             let _ = qt.queue(move |mut this| {
                 this.as_mut().rust_mut().phone_mri = mri;
-                this.as_mut().set_call_phone_json(QString::from(json.as_str()));
+                this.as_mut()
+                    .set_call_phone_json(QString::from(json.as_str()));
                 // Teams mutes the computer's mic and speaker once the
                 // phone carries the meeting's audio.
                 if connected {
@@ -7509,7 +8495,10 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         }
     }
     // The meeting locked or unlocked, or changed what attendees may do.
-    if json.contains("conversationUpdate") || json.contains("meetingCapability") || json.contains("layoutDetails") {
+    if json.contains("conversationUpdate")
+        || json.contains("meetingCapability")
+        || json.contains("layoutDetails")
+    {
         tracing::debug!(event = %json.chars().take(3000).collect::<String>(), "conversation update");
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(json) {
             let changed = call_slot()
@@ -7523,12 +8512,10 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 let _ = qt.queue(move |mut this| this.as_mut().show_capability(cap, true));
             }
             // Interpreter turned on or off, or its language groups changed.
-            let interp = call_slot()
-                .lock()
-                .await
-                .outgoing
-                .as_mut()
-                .and_then(|call| call.apply_interpretation(&v).then(|| call.interpretation().clone()));
+            let interp = call_slot().lock().await.outgoing.as_mut().and_then(|call| {
+                call.apply_interpretation(&v)
+                    .then(|| call.interpretation().clone())
+            });
             if let Some(m) = interp {
                 tracing::info!(?m, "interpreter: the meeting's state");
                 interpreter_meeting_changed(qt, m).await;
@@ -7542,34 +8529,60 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 .and_then(|call| call.apply_event(&v).then(|| call.event()));
             if let Some(e) = event {
                 let text = event_json(&e, "", "");
-                let _ = qt.queue(move |mut this| this.as_mut().set_call_event_json(QString::from(text.as_str())));
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut()
+                        .set_call_event_json(QString::from(text.as_str()))
+                });
             }
             // The meeting's notes were made or claimed.
-            if let Some(d) = ["/body/meetingDetails/collabDetails", "/meetingDetails/collabDetails", "/conversationUpdate/meetingDetails/collabDetails"]
-                .iter()
-                .find_map(|p| v.pointer(p))
+            if let Some(d) = [
+                "/body/meetingDetails/collabDetails",
+                "/meetingDetails/collabDetails",
+                "/conversationUpdate/meetingDetails/collabDetails",
+            ]
+            .iter()
+            .find_map(|p| v.pointer(p))
             {
-                let resources = d.get("resources").and_then(|r| r.as_array()).map(|r| r.len()).unwrap_or(0);
+                let resources = d
+                    .get("resources")
+                    .and_then(|r| r.as_array())
+                    .map(|r| r.len())
+                    .unwrap_or(0);
                 // Who the call elected (ids and status only).
                 let leaders: Vec<String> = d
                     .get("collabLeaders")
                     .and_then(|l| l.as_array())
                     .into_iter()
                     .flatten()
-                    .map(|l| format!("{}:{}:{}", l["type"].as_str().unwrap_or(""), l.pointer("/participant/id").and_then(|x| x.as_str()).unwrap_or(""), l["status"]))
+                    .map(|l| {
+                        format!(
+                            "{}:{}:{}",
+                            l["type"].as_str().unwrap_or(""),
+                            l.pointer("/participant/id")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or(""),
+                            l["status"]
+                        )
+                    })
                     .collect();
-                tracing::info!(resources, ?leaders, notes = teams_cli::calling::meeting_notes::collab_notes_location(&v).is_some(), "meeting: collab details");
+                tracing::info!(
+                    resources,
+                    ?leaders,
+                    notes = teams_cli::calling::meeting_notes::collab_notes_location(&v).is_some(),
+                    "meeting: collab details"
+                );
                 tracing::debug!(details = %teams_cli::calling::meeting_notes::debug_summary(&v), "meeting: notes states");
             }
-            let notes = call_slot()
-                .lock()
-                .await
-                .outgoing
-                .as_mut()
-                .and_then(|call| call.apply_notes(&v).then(|| call.notes().resource_uri.clone()));
+            let notes = call_slot().lock().await.outgoing.as_mut().and_then(|call| {
+                call.apply_notes(&v)
+                    .then(|| call.notes().resource_uri.clone())
+            });
             if let Some(uri) = notes {
                 tracing::info!(shared = !uri.is_empty(), "meeting notes changed");
-                let _ = qt.queue(move |mut this| this.as_mut().set_call_notes_url(QString::from(uri.as_str())));
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut()
+                        .set_call_notes_url(QString::from(uri.as_str()))
+                });
                 // As Teams' Notes panel (its load and create flows): while
                 // the notes are open, whenever the call names you
                 // auto-elected (status 0) you acknowledge it, also after
@@ -7578,11 +8591,22 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                     let slot = call_slot().lock().await;
                     if let Some(call) = slot.outgoing.as_ref() {
                         let me = call.my_endpoint().0;
-                        let elected = call.notes().leaders.as_ref().is_some_and(|l| l.iter().any(|x| x.status == 0 && x.id.eq_ignore_ascii_case(&me)));
+                        let elected = call.notes().leaders.as_ref().is_some_and(|l| {
+                            l.iter()
+                                .any(|x| x.status == 0 && x.id.eq_ignore_ascii_case(&me))
+                        });
                         if elected {
-                            match call.publish_meeting_states(call.notes().claim(), "Meeting notes claim").await {
-                                Ok(()) => tracing::info!("meeting notes: acknowledged the election"),
-                                Err(e) => tracing::info!("meeting notes: acknowledging: {}", short_error(&e)),
+                            match call
+                                .publish_meeting_states(call.notes().claim(), "Meeting notes claim")
+                                .await
+                            {
+                                Ok(()) => {
+                                    tracing::info!("meeting notes: acknowledged the election")
+                                }
+                                Err(e) => tracing::info!(
+                                    "meeting notes: acknowledging: {}",
+                                    short_error(&e)
+                                ),
                             }
                         }
                     }
@@ -7601,12 +8625,15 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             };
             if let Some((p, dial)) = phone {
                 let _ = qt.queue(move |mut this| {
-                    let mut j: serde_json::Value = serde_json::from_str(&this.rust().call_phone_json.to_string()).unwrap_or_else(|_| serde_json::json!({}));
+                    let mut j: serde_json::Value =
+                        serde_json::from_str(&this.rust().call_phone_json.to_string())
+                            .unwrap_or_else(|_| serde_json::json!({}));
                     j["available"] = p.available.into();
                     j["dialIn"] = p.dial_in.into();
                     j["dialOut"] = p.dial_out.into();
                     j["dial"] = dial.unwrap_or(serde_json::Value::Null);
-                    this.as_mut().set_call_phone_json(QString::from(j.to_string().as_str()));
+                    this.as_mut()
+                        .set_call_phone_json(QString::from(j.to_string().as_str()));
                 });
             }
             // The meeting timer changed (someone's start, pause, …).
@@ -7617,11 +8644,16 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 .as_mut()
                 .and_then(|call| call.apply_timer(&v).then(|| call.timers().clone()));
             if let Some(t) = timers {
-                tracing::info!(state = t.adhoc.state(), sequence = t.sequence, "meeting timer changed");
+                tracing::info!(
+                    state = t.adhoc.state(),
+                    sequence = t.sequence,
+                    "meeting timer changed"
+                );
                 let _ = qt.queue(move |mut this| {
                     // Teams' clock skew: measured from live updates.
                     if let Some(stamp) = t.stamp_ms {
-                        this.as_mut().rust_mut().timer_skew_ms = chrono::Utc::now().timestamp_millis() - stamp;
+                        this.as_mut().rust_mut().timer_skew_ms =
+                            chrono::Utc::now().timestamp_millis() - stamp;
                     }
                     this.as_mut().show_timers(t, true);
                 });
@@ -7677,7 +8709,11 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     // Teams' test call ends once the Echo bot, having played your
     // recording back, leaves.
     if let Some(active) = teams_cli::calling::echo_report::echo_bot_active(json) {
-        let ended = match echo_watch().lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+        let ended = match echo_watch()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_mut()
+        {
             Some(w) if active => {
                 w.bot_seen = true;
                 false
@@ -7787,7 +8823,8 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         drop(slot);
         let _ = qt.queue(move |mut this| {
             this.as_mut().set_call_peer(QString::from(peer.as_str()));
-            this.as_mut().set_call_peer_id(QString::from(peer_id.as_str()));
+            this.as_mut()
+                .set_call_peer_id(QString::from(peer_id.as_str()));
             // The call carries on in the same window: keep the clock.
             this.as_mut().set_call_continues(true);
             // Answered at once, with no ringing (Teams accepts a
@@ -7815,7 +8852,13 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         // check; it rings on the console only when that doesn't accept it.
         let room = teams_cli::calling::room_mode::is_active();
         if room {
-            runtime().spawn(room_incoming(qt.clone(), call_id.clone(), peer.clone(), peer_id.clone(), video));
+            runtime().spawn(room_incoming(
+                qt.clone(),
+                call_id.clone(),
+                peer.clone(),
+                peer_id.clone(),
+                video,
+            ));
         } else {
             let _ = qt.queue(move |mut this| {
                 this.as_mut().set_call_peer(QString::from(peer.as_str()));
@@ -7857,7 +8900,9 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 slot.ringing = None;
                 drop(slot);
                 tracing::info!("call missed");
-                teams_cli::calling::hid_telephony::push_notification(teams_cli::calling::hid_telephony::AspEvent::MissedCall);
+                teams_cli::calling::hid_telephony::push_notification(
+                    teams_cli::calling::hid_telephony::AspEvent::MissedCall,
+                );
                 let _ = qt.queue(|mut this| this.as_mut().end_call_ui());
             }
         });
@@ -7916,15 +8961,20 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         drop(slot);
         // Teams keeps the call window on "Call is parked" with the code.
         let _ = qt.queue(move |mut this| {
-            this.as_mut().set_call_park_code(QString::from(code.as_str()));
-            this.as_mut().set_status_text(QString::from(tr("Call is parked")));
+            this.as_mut()
+                .set_call_park_code(QString::from(code.as_str()));
+            this.as_mut()
+                .set_status_text(QString::from(tr("Call is parked")));
             this.as_mut().set_call_state(QString::from("parked"));
         });
         return;
     }
     // Someone transferring or parking our call asks us to make the new call.
     if let Some(request) = teams_cli::calling::incoming::transfer_request(json) {
-        tracing::info!(park = request.park_type.is_some(), "transfer requested of us");
+        tracing::info!(
+            park = request.park_type.is_some(),
+            "transfer requested of us"
+        );
         runtime().spawn(take_transfer(qt.clone(), request));
         return;
     }
@@ -7957,12 +9007,15 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 tracing::info!(%phrase, "transfer failed");
                 {
                     let mut slot = call_slot().lock().await;
-                    let (next, _) = slot.consult_state.step(teams_cli::calling::consult::Event::Failed);
+                    let (next, _) = slot
+                        .consult_state
+                        .step(teams_cli::calling::consult::Event::Failed);
                     slot.consult_state = next;
                     publish_consult(qt, &slot);
                 }
                 let _ = qt.queue(move |mut this| {
-                    this.as_mut().set_status_text(QString::from(tr("Transfer failed").as_str()))
+                    this.as_mut()
+                        .set_status_text(QString::from(tr("Transfer failed").as_str()))
                 });
             }
         }
@@ -7982,7 +9035,11 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         // back) is not the end of the one we're in.
         let ended_id = serde_json::from_str::<serde_json::Value>(json)
             .ok()
-            .and_then(|v| v.pointer("/body/debugContent/callId").and_then(|c| c.as_str()).map(str::to_string));
+            .and_then(|v| {
+                v.pointer("/body/debugContent/callId")
+                    .and_then(|c| c.as_str())
+                    .map(str::to_string)
+            });
         if let Some(id) = ended_id {
             let mut slot = call_slot().lock().await;
             if slot.moved_from.as_ref().is_some_and(|c| c.call_id() == id) {
@@ -8002,7 +9059,8 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                         this.as_mut().reset_meeting_view(&link, &url, &title);
                     }
                     this.as_mut().set_call_breakout_json(QString::default());
-                    this.as_mut().set_call_breakout_room_json(QString::default());
+                    this.as_mut()
+                        .set_call_breakout_room_json(QString::default());
                 });
                 seed_roster(qt, &call).await;
                 call_slot().lock().await.outgoing = Some(call);
@@ -8022,13 +9080,16 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         let reason = teams_cli::calling::incoming::end_reason(json);
         if let Some(r) = reason {
             tracing::info!(reason = r.key(), "call ended for a reason");
-            let _ = qt.queue(move |mut this| this.as_mut().set_call_end_reason(QString::from(r.key())));
+            let _ =
+                qt.queue(move |mut this| this.as_mut().set_call_end_reason(QString::from(r.key())));
         }
         let mut slot = call_slot().lock().await;
         // After a transfer or park replaced the answered call, every
         // untagged end (its call/end, then its conversation's end) is that
         // call's; the call we're now in has its own tag.
-        if slot.replaced_peer.is_some() && teams_cli::calling::incoming::end_sender(json) == slot.replaced_peer {
+        if slot.replaced_peer.is_some()
+            && teams_cli::calling::incoming::end_sender(json) == slot.replaced_peer
+        {
             tracing::info!("the call a consult transfer replaced ended");
             return;
         }
@@ -8052,7 +9113,10 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         // While consulting, the consult call carries on as the call.
         if was_active && let Some(consult) = slot.consult.take() {
             tracing::info!("the held call ended; the consult call carries on");
-            let name = slot.consult_state.target().map(|t| (t.name.clone(), t.mri.clone()));
+            let name = slot
+                .consult_state
+                .target()
+                .map(|t| (t.name.clone(), t.mri.clone()));
             slot.consult_state = Default::default();
             slot.consult_tag = None;
             slot.outgoing = Some(consult);
@@ -8074,7 +9138,9 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         if was_ringing && json.contains("\"code\":487") {
             // The caller gave up (487): a missed call. Teams tells a Teams
             // device (its Teams button then opens Calls).
-            teams_cli::calling::hid_telephony::push_notification(teams_cli::calling::hid_telephony::AspEvent::MissedCall);
+            teams_cli::calling::hid_telephony::push_notification(
+                teams_cli::calling::hid_telephony::AspEvent::MissedCall,
+            );
         }
         if was_ringing || was_active {
             tracing::info!(was_ringing, was_active, "call ended by the other side");
@@ -8117,14 +9183,35 @@ async fn load_controls(
     link: teams_cli::calling::outgoing::MeetingLink,
     changes: Vec<(String, serde_json::Value)>,
 ) {
-    let (tenant, organizer) = (link.tenant_id.clone().unwrap_or_default(), link.organizer_id.clone().unwrap_or_default());
+    let (tenant, organizer) = (
+        link.tenant_id.clone().unwrap_or_default(),
+        link.organizer_id.clone().unwrap_or_default(),
+    );
     let result = async {
         let client = TeamsClient::new().await?;
         if changes.is_empty() {
-            api::meeting_options::get(&client, &tenant, &organizer, &link.thread_id, &link.message_id).await
+            api::meeting_options::get(
+                &client,
+                &tenant,
+                &organizer,
+                &link.thread_id,
+                &link.message_id,
+            )
+            .await
         } else {
-            let c: Vec<(&str, serde_json::Value)> = changes.iter().map(|(n, v)| (n.as_str(), v.clone())).collect();
-            api::meeting_options::set(&client, &tenant, &organizer, &link.thread_id, &link.message_id, &c).await
+            let c: Vec<(&str, serde_json::Value)> = changes
+                .iter()
+                .map(|(n, v)| (n.as_str(), v.clone()))
+                .collect();
+            api::meeting_options::set(
+                &client,
+                &tenant,
+                &organizer,
+                &link.thread_id,
+                &link.message_id,
+                &c,
+            )
+            .await
         }
     }
     .await;
@@ -8143,7 +9230,10 @@ async fn load_controls(
             json!({ "options": [], "error": short_error(&e) }).to_string()
         }
     };
-    let _ = qt.queue(move |mut this| this.as_mut().set_call_controls_json(QString::from(json.as_str())));
+    let _ = qt.queue(move |mut this| {
+        this.as_mut()
+            .set_call_controls_json(QString::from(json.as_str()))
+    });
 }
 
 /// The names Meeting options' people pickers show ({mri: name}: the
@@ -8159,23 +9249,32 @@ async fn picker_people(
     let mut mris: Vec<String> = o
         .invitees
         .iter()
-        .chain(o.options.iter().flat_map(|op| op["selectedPeople"].as_array().into_iter().flatten()))
+        .chain(
+            o.options
+                .iter()
+                .flat_map(|op| op["selectedPeople"].as_array().into_iter().flatten()),
+        )
         .filter_map(|p| p["mri"].as_str().map(str::to_string))
         .collect();
     mris.push(organizer_mri.clone());
     mris.sort();
     mris.dedup();
     let records = match TeamsClient::new().await {
-        Ok(client) => api::directory::short_profile_records(&client, &mris).await.unwrap_or_else(|e| {
-            tracing::info!("picker names: {}", short_error(&e));
-            Vec::new()
-        }),
+        Ok(client) => api::directory::short_profile_records(&client, &mris)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::info!("picker names: {}", short_error(&e));
+                Vec::new()
+            }),
         Err(_) => Vec::new(),
     };
     let mut names = serde_json::Map::new();
-    let mut organizer_person = json!({ "mri": organizer_mri, "objectId": organizer, "tenantId": tenant });
+    let mut organizer_person =
+        json!({ "mri": organizer_mri, "objectId": organizer, "tenantId": tenant });
     for r in &records {
-        let Some(mri) = r["mri"].as_str() else { continue };
+        let Some(mri) = r["mri"].as_str() else {
+            continue;
+        };
         if let Some(n) = r["displayName"].as_str().filter(|n| !n.is_empty()) {
             names.insert(mri.to_string(), json!(n));
         }
@@ -8343,7 +9442,13 @@ fn swap_src(m: &mut api::messages::MessageView, from: &str, to: &str) {
 /// A message's video clips with their posters cached (`thumb_local`).
 async fn localize_videos(client: &TeamsClient, m: &mut api::messages::MessageView) {
     for v in m.videos.iter_mut() {
-        let img = api::messages::InlineImage { id: format!("{}-thumb", v.id), url: v.thumb_url.clone(), width: 0, height: 0, local_path: String::new() };
+        let img = api::messages::InlineImage {
+            id: format!("{}-thumb", v.id),
+            url: v.thumb_url.clone(),
+            width: 0,
+            height: 0,
+            local_path: String::new(),
+        };
         match cached_image(client, &img).await {
             Ok(path) => v.thumb_local = format!("file://{}", path.display()),
             Err(e) => tracing::warn!("clip poster download failed: {}", short_error(&e)),
@@ -8355,29 +9460,61 @@ async fn localize_videos(client: &TeamsClient, m: &mut api::messages::MessageVie
 async fn localize_recap(client: &TeamsClient, m: &mut api::messages::MessageView) {
     let mid = m.id.clone();
     let Some(r) = m.recap.as_mut() else { return };
-    for (i, rec) in r.recordings.iter_mut().enumerate().filter(|(_, x)| !x.thumbnail_url.is_empty()) {
-        let img = api::messages::InlineImage { id: format!("{mid}-recap{i}"), url: rec.thumbnail_url.clone(), width: 0, height: 0, local_path: String::new() };
+    for (i, rec) in r
+        .recordings
+        .iter_mut()
+        .enumerate()
+        .filter(|(_, x)| !x.thumbnail_url.is_empty())
+    {
+        let img = api::messages::InlineImage {
+            id: format!("{mid}-recap{i}"),
+            url: rec.thumbnail_url.clone(),
+            width: 0,
+            height: 0,
+            local_path: String::new(),
+        };
         match cached_image(client, &img).await {
             Ok(path) => rec.thumb_local = format!("file://{}", path.display()),
-            Err(e) => tracing::warn!("recap thumbnail download failed ({}): {}", reqwest::Url::parse(&rec.thumbnail_url).ok().and_then(|u| u.host_str().map(str::to_string)).unwrap_or_default(), short_error(&e)),
+            Err(e) => tracing::warn!(
+                "recap thumbnail download failed ({}): {}",
+                reqwest::Url::parse(&rec.thumbnail_url)
+                    .ok()
+                    .and_then(|u| u.host_str().map(str::to_string))
+                    .unwrap_or_default(),
+                short_error(&e)
+            ),
         }
     }
 }
 
 /// Where played clips are kept: the cache's ost/videos (owner-only).
 fn clip_cache_path(id: &str, quality: &str) -> anyhow::Result<std::path::PathBuf> {
-    anyhow::ensure!(!id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'), "Bad clip id");
-    anyhow::ensure!(quality.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'), "Bad quality");
+    anyhow::ensure!(
+        !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
+        "Bad clip id"
+    );
+    anyhow::ensure!(
+        quality
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_'),
+        "Bad quality"
+    );
     let base = std::env::var_os("XDG_CACHE_HOME")
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
         .ok_or_else(|| anyhow::anyhow!("No cache directory"))?;
-    let name = if quality.is_empty() { format!("{id}.mp4") } else { format!("{id}-{quality}.mp4") };
+    let name = if quality.is_empty() {
+        format!("{id}.mp4")
+    } else {
+        format!("{id}-{quality}.mp4")
+    };
     Ok(base.join("ost").join("videos").join(name))
 }
 
 async fn localize_banner(client: &TeamsClient, m: &mut api::messages::MessageView) {
-    let Some(a) = m.announcement.as_mut() else { return };
+    let Some(a) = m.announcement.as_mut() else {
+        return;
+    };
     if a.image_url.is_empty() {
         return;
     }
@@ -8457,7 +9594,9 @@ async fn public_image_file(client: &TeamsClient, url: &str) -> anyhow::Result<st
         .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
         .ok_or_else(|| anyhow::anyhow!("No cache directory"))?;
     let dir = base.join("ost").join("images");
-    let hash = url.bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
+    let hash = url.bytes().fold(0xcbf29ce484222325u64, |h, b| {
+        (h ^ b as u64).wrapping_mul(0x100000001b3)
+    });
     let path = dir.join(format!("app-{hash:016x}"));
     if path.exists() {
         // Pictures cached before SVGs were fixed for Qt.
@@ -8468,14 +9607,26 @@ async fn public_image_file(client: &TeamsClient, url: &str) -> anyhow::Result<st
         }
         return Ok(path);
     }
-    let fetched = client.http().get(url).send().await?.error_for_status()?.bytes().await?;
+    let fetched = client
+        .http()
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
     let bytes: Vec<u8> = teams_cli::svg::for_qt(&fetched).unwrap_or_else(|| fetched.to_vec());
     std::fs::create_dir_all(&dir)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
         std::fs::set_permissions(base.join("ost"), std::fs::Permissions::from_mode(0o700))?;
-        let mut f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&path)?;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&path)?;
         std::io::Write::write_all(&mut f, &bytes)?;
     }
     #[cfg(not(unix))]
@@ -8598,9 +9749,17 @@ fn roam_slots() -> &'static std::sync::Mutex<HashMap<String, RoamSlot>> {
 fn draft_teams_form(d: &Draft) -> (String, String) {
     if !d.edit_html.is_empty() {
         let media: Vec<api::messages::ComposeMedia> =
-            serde_json::from_value(serde_json::Value::Array(d.edit_media.clone())).unwrap_or_default();
+            serde_json::from_value(serde_json::Value::Array(d.edit_media.clone()))
+                .unwrap_or_default();
         let (html, mentions) = api::messages::teams_html_with_media(&d.edit_html, &media);
-        return (html, if mentions.is_empty() { String::new() } else { serde_json::to_string(&mentions).unwrap_or_default() });
+        return (
+            html,
+            if mentions.is_empty() {
+                String::new()
+            } else {
+                serde_json::to_string(&mentions).unwrap_or_default()
+            },
+        );
     }
     if d.html.is_empty() {
         return (api::outbox::plain_html(&d.text), String::new());
@@ -8608,19 +9767,34 @@ fn draft_teams_form(d: &Draft) -> (String, String) {
     let media: Vec<api::messages::ComposeMedia> =
         serde_json::from_value(serde_json::Value::Array(d.media.clone())).unwrap_or_default();
     let (html, mentions) = api::messages::teams_html_with_media(&d.html, &media);
-    (html, if mentions.is_empty() { String::new() } else { serde_json::to_string(&mentions).unwrap_or_default() })
+    (
+        html,
+        if mentions.is_empty() {
+            String::new()
+        } else {
+            serde_json::to_string(&mentions).unwrap_or_default()
+        },
+    )
 }
 
 /// The same draft text, give or take whitespace (Teams' HTML vs ours).
 fn same_draft_html(a: &str, b: &str) -> bool {
-    let norm = |s: &str| s.replace("&nbsp;", " ").split_whitespace().collect::<Vec<_>>().join(" ");
+    let norm = |s: &str| {
+        s.replace("&nbsp;", " ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
     norm(a) == norm(b)
 }
 
 /// A drafts.json entry: older versions kept [text, time].
 #[derive(serde::Deserialize)]
 #[serde(untagged)]
-#[allow(clippy::large_enum_variant, reason = "only lives while drafts.json is read")]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "only lives while drafts.json is read"
+)]
 enum StoredDraft {
     Rich(Draft),
     Plain(String, u64),
@@ -8688,7 +9862,10 @@ fn settings_path() -> Option<std::path::PathBuf> {
 /// Settings ▸ Privacy ▸ Extended diagnostics data (Teams' clientPreferences
 /// diagnosticsLogs.shouldPersistLogsIntoIDB, kept on this device).
 pub fn extended_diagnostics() -> bool {
-    load_settings().get("shouldPersistLogsIntoIDB").and_then(|v| v.as_str()) == Some("true")
+    load_settings()
+        .get("shouldPersistLogsIntoIDB")
+        .and_then(|v| v.as_str())
+        == Some("true")
 }
 
 pub(crate) fn load_settings() -> serde_json::Map<String, serde_json::Value> {
@@ -8698,7 +9875,9 @@ pub(crate) fn load_settings() -> serde_json::Map<String, serde_json::Value> {
         .unwrap_or_default()
 }
 
-pub(crate) fn save_settings(map: &serde_json::Map<String, serde_json::Value>) -> anyhow::Result<()> {
+pub(crate) fn save_settings(
+    map: &serde_json::Map<String, serde_json::Value>,
+) -> anyhow::Result<()> {
     let path = settings_path().ok_or_else(|| anyhow::anyhow!("No config directory"))?;
     let dir = path.parent().expect("settings file has a directory");
     std::fs::create_dir_all(dir)?;
@@ -8719,8 +9898,9 @@ static ROOM_NAMES: std::sync::Mutex<std::collections::BTreeMap<String, (String, 
     std::sync::Mutex::new(std::collections::BTreeMap::new());
 /// The rooms' presence activity and when it was read (Cast's room list
 /// shows it: "In a meeting", "Presenting"; refreshed every 30 s).
-static ROOM_ACTIVITY: std::sync::Mutex<std::collections::BTreeMap<String, (String, std::time::Instant)>> =
-    std::sync::Mutex::new(std::collections::BTreeMap::new());
+static ROOM_ACTIVITY: std::sync::Mutex<
+    std::collections::BTreeMap<String, (String, std::time::Instant)>,
+> = std::sync::Mutex::new(std::collections::BTreeMap::new());
 
 fn room_names() -> std::collections::BTreeMap<String, (String, String)> {
     ROOM_NAMES.lock().unwrap_or_else(|e| e.into_inner()).clone()
@@ -8730,12 +9910,18 @@ fn room_names() -> std::collections::BTreeMap<String, (String, String)> {
 /// under each room: "Available", "Offline").
 async fn rooms_json(client: &TeamsClient, rooms: Vec<(String, String, String)>) -> String {
     let mris: Vec<String> = rooms.iter().map(|r| r.0.clone()).collect();
-    let presences = teams_cli::api::presence::get_presences(client.http(), &mris).await.unwrap_or_default();
+    let presences = teams_cli::api::presence::get_presences(client.http(), &mris)
+        .await
+        .unwrap_or_default();
     let mut cache = ROOM_NAMES.lock().unwrap_or_else(|e| e.into_inner());
     let out: Vec<serde_json::Value> = rooms
         .into_iter()
         .map(|(mri, name, email)| {
-            let status = presences.iter().find(|p| p.mri == mri).map(|p| p.availability.clone()).unwrap_or_default();
+            let status = presences
+                .iter()
+                .find(|p| p.mri == mri)
+                .map(|p| p.availability.clone())
+                .unwrap_or_default();
             cache.insert(mri.clone(), (name.clone(), status.clone()));
             serde_json::json!({"mri": mri, "name": name, "email": email, "status": status})
         })
@@ -8758,10 +9944,16 @@ fn apply_audio_devices(map: &serde_json::Map<String, serde_json::Value>) {
     // OST_MIC_DEVICE=<name>: this instance's microphone (tests on a machine
     // whose settings file other instances share, e.g. a PipeWire null sink's
     // monitor playing test speech).
-    let mic = std::env::var("OST_MIC_DEVICE").ok().filter(|d| !d.is_empty()).or_else(|| get("micDevice"));
+    let mic = std::env::var("OST_MIC_DEVICE")
+        .ok()
+        .filter(|d| !d.is_empty())
+        .or_else(|| get("micDevice"));
     // OST_SPEAKER_DEVICE=<name>: the same for its speaker (e.g. a null
     // sink whose monitor records what the call plays).
-    let speaker = std::env::var("OST_SPEAKER_DEVICE").ok().filter(|d| !d.is_empty()).or_else(|| get("speakerDevice"));
+    let speaker = std::env::var("OST_SPEAKER_DEVICE")
+        .ok()
+        .filter(|d| !d.is_empty())
+        .or_else(|| get("speakerDevice"));
     teams_cli::calling::audio::set_preferred_devices(mic, speaker);
     // Teams' "Sync device buttons" (on unless turned off, kept on this
     // device as Teams' audioDeviceSyncEnabled) and the microphone whose
@@ -8772,14 +9964,18 @@ fn apply_audio_devices(map: &serde_json::Map<String, serde_json::Value>) {
     teams_cli::calling::hfp::set_preferences(get("micDevice"), sync);
     // Teams' Secondary Ringer and "Automatically adjust mic sensitivity".
     teams_cli::calling::ringtone::set_secondary(get("secondaryRinger").filter(|d| d != "none"));
-    teams_cli::calling::apm::set_auto_gain(map.get("autoGainControl").and_then(|v| v.as_str()) != Some("off"));
+    teams_cli::calling::apm::set_auto_gain(
+        map.get("autoGainControl").and_then(|v| v.as_str()) != Some("off"),
+    );
     // Teams' Efficiency mode: "auto" (the default) when this device is low
     // on resources, "on" always, "off" never.
-    teams_cli::calling::webrtc_video::set_efficiency(match map.get("efficiencyMode").and_then(|v| v.as_str()) {
-        Some("on") => true,
-        Some("off") => false,
-        _ => low_end_device(),
-    });
+    teams_cli::calling::webrtc_video::set_efficiency(
+        match map.get("efficiencyMode").and_then(|v| v.as_str()) {
+            Some("on") => true,
+            Some("off") => false,
+            _ => low_end_device(),
+        },
+    );
     // Teams' Noise suppression switch (on unless turned off).
     teams_cli::calling::apm::set_noise_level(
         if map.get("noiseSuppression").and_then(|v| v.as_str()) == Some("off") {
@@ -8829,11 +10025,17 @@ fn speaker_spatial_capable() -> bool {
     let chosen = teams_cli::calling::audio::preferred_devices().1;
     let speaker = chosen.or_else(|| teams_cli::calling::pw_defaults::default_endpoints().1);
     let endpoints = teams_cli::calling::room_devices::audio_endpoints();
-    let Some(e) = endpoints.iter().find(|e| e.sink && Some(&e.name) == speaker.as_ref()) else {
+    let Some(e) = endpoints
+        .iter()
+        .find(|e| e.sink && Some(&e.name) == speaker.as_ref())
+    else {
         return false;
     };
     // PipeWire leaves audio.channels out for some sinks: stereo then.
-    teams_cli::calling::spatial::speaker_capable(if e.channels == 0 { 2 } else { e.channels }, &e.bus)
+    teams_cli::calling::spatial::speaker_capable(
+        if e.channels == 0 { 2 } else { e.channels },
+        &e.bus,
+    )
 }
 
 /// Start OST when you sign in to the desktop (an XDG autostart entry).
@@ -8918,10 +10120,12 @@ fn team_picture_changed(group: &str, etag: &str) -> bool {
         Some(_) => true,
         // First sight: stale only if a picture is already cached.
         None => std::fs::read_dir(&dir)
-            .map(|d| d.flatten().any(|e| {
-                let n = e.file_name().to_string_lossy().to_string();
-                n.starts_with(&format!("team-{oid}-")) && !n.ends_with(".etag")
-            }))
+            .map(|d| {
+                d.flatten().any(|e| {
+                    let n = e.file_name().to_string_lossy().to_string();
+                    n.starts_with(&format!("team-{oid}-")) && !n.ends_with(".etag")
+                })
+            })
             .unwrap_or(false),
     }
 }
@@ -8936,7 +10140,9 @@ fn photo_target(id: &str, my_oid: Option<&str>) -> Option<(api::directory::Photo
     // A group chat without its own picture: Teams' merged picture of its
     // members.
     if let Some(thread) = id.strip_prefix("chat:") {
-        let valid = thread.starts_with("19:") && thread.len() < 200 && !thread.contains(['/', '?', '#', ' ']);
+        let valid = thread.starts_with("19:")
+            && thread.len() < 200
+            && !thread.contains(['/', '?', '#', ' ']);
         return valid.then(|| (PhotoOwner::Chat, thread.to_string()));
     }
     let (owner, oid) = if id == "me" {
@@ -9057,7 +10263,10 @@ impl qobject::Backend {
         // Teams reads "Turn off my camera and mic when my screen locks" when
         // it starts ("Restart Teams to apply this setting").
         LOCK_MEDIA_OFF.store(
-            load_settings().get("turnOffMediaOnDeviceLock").and_then(|v| v.as_str()) == Some("true"),
+            load_settings()
+                .get("turnOffMediaOnDeviceLock")
+                .and_then(|v| v.as_str())
+                == Some("true"),
             std::sync::atomic::Ordering::SeqCst,
         );
         runtime().spawn(crate::lock_watch::run());
@@ -9090,8 +10299,13 @@ impl qobject::Backend {
                 let _ = qt.queue(move |this| {
                     // Teams' mute from the device acts on a call only.
                     let state = this.call_state.to_string();
-                    if matches!(state.as_str(), "calling" | "connecting" | "connected" | "lobby") {
-                        this.on_headset_action(teams_cli::calling::hid_telephony::Action::SetMuted(muted));
+                    if matches!(
+                        state.as_str(),
+                        "calling" | "connecting" | "connected" | "lobby"
+                    ) {
+                        this.on_headset_action(
+                            teams_cli::calling::hid_telephony::Action::SetMuted(muted),
+                        );
                     }
                 });
             }
@@ -9171,7 +10385,8 @@ impl qobject::Backend {
                     self.as_mut().set_has_credentials(false);
                     self.as_mut().set_signed_in(false);
                 } else {
-                    self.as_mut().set_status_text(QString::from(short_error(&e).as_str()));
+                    self.as_mut()
+                        .set_status_text(QString::from(short_error(&e).as_str()));
                 }
                 return true;
             }
@@ -9187,7 +10402,10 @@ impl qobject::Backend {
                         if !missing.is_empty() {
                             tracing::warn!("signed in without: {}", missing.join(", "));
                         }
-                        tracing::info!("browser sign-in {}", if silent { "renewed" } else { "complete" });
+                        tracing::info!(
+                            "browser sign-in {}",
+                            if silent { "renewed" } else { "complete" }
+                        );
                         this.as_mut().set_has_credentials(true);
                         this.as_mut().refresh();
                     }
@@ -9197,7 +10415,8 @@ impl qobject::Backend {
                             this.as_mut().set_has_credentials(false);
                             this.as_mut().set_signed_in(false);
                         } else {
-                            this.as_mut().set_status_text(QString::from(short_error(&e).as_str()));
+                            this.as_mut()
+                                .set_status_text(QString::from(short_error(&e).as_str()));
                         }
                     }
                 }
@@ -9210,7 +10429,9 @@ impl qobject::Backend {
         if !teams_cli::auth::browser_sign_in() || !self.rust().renew_page.is_empty() {
             return;
         }
-        let hint = teams_cli::config::Config::load().ok().and_then(|c| c.user_principal_name());
+        let hint = teams_cli::config::Config::load()
+            .ok()
+            .and_then(|c| c.user_principal_name());
         let pending = teams_cli::auth::spa::BrowserSignIn::new(hint.as_deref(), true);
         let url = pending.url.clone();
         self.as_mut().rust_mut().renew_sign_in_pending = Some(pending);
@@ -9222,13 +10443,24 @@ impl qobject::Backend {
         let all = teams_cli::config::accounts();
         // Teams lists accounts in the order they were added: "before" marks
         // those added before this one.
-        let mine = all.iter().position(|a| a.profile == me).unwrap_or(usize::MAX);
+        let mine = all
+            .iter()
+            .position(|a| a.profile == me)
+            .unwrap_or(usize::MAX);
         // One entry per account (Teams lists users, not OST's profiles): a
         // second profile of the same account isn't listed.
-        let my_upn = all.get(mine).map(|a| a.upn.to_lowercase()).unwrap_or_default();
+        let my_upn = all
+            .get(mine)
+            .map(|a| a.upn.to_lowercase())
+            .unwrap_or_default();
         let mut seen = std::collections::HashSet::from([my_upn]);
         // (an account's organisation as any of its profiles recorded it)
-        let org_of = |upn: &str| all.iter().find(|x| x.upn.eq_ignore_ascii_case(upn) && !x.org.is_empty()).map(|x| x.org.clone()).unwrap_or_default();
+        let org_of = |upn: &str| {
+            all.iter()
+                .find(|x| x.upn.eq_ignore_ascii_case(upn) && !x.org.is_empty())
+                .map(|x| x.org.clone())
+                .unwrap_or_default()
+        };
         let list: Vec<serde_json::Value> = all
             .iter()
             .enumerate()
@@ -9239,7 +10471,9 @@ impl qobject::Backend {
     }
 
     pub fn other_accounts_hub_json(mut self: Pin<&mut Self>) -> QString {
-        let list: Vec<serde_json::Value> = serde_json::from_str(&self.as_mut().other_accounts_json().to_string()).unwrap_or_default();
+        let list: Vec<serde_json::Value> =
+            serde_json::from_str(&self.as_mut().other_accounts_json().to_string())
+                .unwrap_or_default();
         let all = teams_cli::config::accounts();
         let pins = teams_cli::config::hub_pins();
         let out: Vec<serde_json::Value> = list
@@ -9252,12 +10486,20 @@ impl qobject::Backend {
                     .iter()
                     .filter(|x| x.upn.to_lowercase() == upn)
                     .map(|x| {
-                        let hub = teams_cli::config::hub_summary(&x.profile).unwrap_or_else(|| json!({}));
+                        let hub =
+                            teams_cli::config::hub_summary(&x.profile).unwrap_or_else(|| json!({}));
                         (profile_socket(&x.profile).is_some(), x.profile.clone(), hub)
                     })
                     .collect();
-                cands.sort_by(|p, q| (q.0, q.2["updated"].as_str().unwrap_or_default()).cmp(&(p.0, p.2["updated"].as_str().unwrap_or_default())));
-                let (running, profile, hub) = cands.into_iter().next().unwrap_or((false, a["profile"].as_str().unwrap_or_default().to_string(), json!({})));
+                cands.sort_by(|p, q| {
+                    (q.0, q.2["updated"].as_str().unwrap_or_default())
+                        .cmp(&(p.0, p.2["updated"].as_str().unwrap_or_default()))
+                });
+                let (running, profile, hub) = cands.into_iter().next().unwrap_or((
+                    false,
+                    a["profile"].as_str().unwrap_or_default().to_string(),
+                    json!({}),
+                ));
                 a["profile"] = json!(profile);
                 a["running"] = json!(running);
                 a["missed"] = hub.get("missed").cloned().unwrap_or(json!(0));
@@ -9271,7 +10513,9 @@ impl qobject::Backend {
     }
 
     pub fn pinned_orgs_json(mut self: Pin<&mut Self>) -> QString {
-        let others: Vec<serde_json::Value> = serde_json::from_str(&self.as_mut().other_accounts_hub_json().to_string()).unwrap_or_default();
+        let others: Vec<serde_json::Value> =
+            serde_json::from_str(&self.as_mut().other_accounts_hub_json().to_string())
+                .unwrap_or_default();
         let me = teams_cli::config::profile().unwrap_or_default();
         let all = teams_cli::config::accounts();
         let mine = all.iter().find(|a| a.profile == me);
@@ -9297,7 +10541,10 @@ impl qobject::Backend {
     pub fn set_org_pinned(self: Pin<&mut Self>, upn: &QString, on: bool) -> bool {
         let upn = upn.to_string();
         let pins = teams_cli::config::hub_pins();
-        if on && pins.len() >= teams_cli::config::MAX_PINNED_ORGS && !pins.contains(&upn.to_lowercase()) {
+        if on
+            && pins.len() >= teams_cli::config::MAX_PINNED_ORGS
+            && !pins.contains(&upn.to_lowercase())
+        {
             return false;
         }
         match teams_cli::config::set_hub_pin(&upn, on) {
@@ -9315,7 +10562,12 @@ impl qobject::Backend {
         }
     }
 
-    pub fn open_in_account(self: Pin<&mut Self>, profile: &QString, thread_id: &QString, name: &QString) {
+    pub fn open_in_account(
+        self: Pin<&mut Self>,
+        profile: &QString,
+        thread_id: &QString,
+        name: &QString,
+    ) {
         use std::io::Write;
         let profile = profile.to_string();
         // The instance socket's protocol is one line; tabs and newlines
@@ -9323,7 +10575,11 @@ impl qobject::Backend {
         let clean = |s: String| s.replace(['\t', '\n', '\r'], " ");
         match profile_socket(&profile) {
             Some(mut s) => {
-                let line = format!("open\t{}\t{}\n", clean(thread_id.to_string()), clean(name.to_string()));
+                let line = format!(
+                    "open\t{}\t{}\n",
+                    clean(thread_id.to_string()),
+                    clean(name.to_string())
+                );
                 if let Err(e) = s.write_all(line.as_bytes()) {
                     tracing::warn!("couldn't reach the other account's window: {e}");
                 }
@@ -9334,7 +10590,8 @@ impl qobject::Backend {
 
     pub fn add_account(self: Pin<&mut Self>) {
         let list = teams_cli::config::accounts();
-        let profile = teams_cli::config::new_profile_name(&list, &teams_cli::config::profile_folders());
+        let profile =
+            teams_cli::config::new_profile_name(&list, &teams_cli::config::profile_folders());
         launch_profile(&profile);
     }
 
@@ -9344,9 +10601,14 @@ impl qobject::Backend {
 
     pub fn note_account_presence(self: Pin<&mut Self>, availability: &QString) {
         let avail = availability.to_string();
-        let mine = teams_cli::config::accounts().into_iter().find(|a| a.profile == teams_cli::config::profile().unwrap_or_default());
+        let mine = teams_cli::config::accounts()
+            .into_iter()
+            .find(|a| a.profile == teams_cli::config::profile().unwrap_or_default());
         if let Some(a) = mine.filter(|a| a.availability != avail) {
-            let _ = teams_cli::config::record_account(Some(teams_cli::config::Account { availability: avail, ..a }));
+            let _ = teams_cli::config::record_account(Some(teams_cli::config::Account {
+                availability: avail,
+                ..a
+            }));
         }
     }
 
@@ -9521,7 +10783,11 @@ impl qobject::Backend {
         self.as_mut().show_processing(Default::default());
         let group = runtime().block_on(async {
             let mut slot = call_slot().lock().await;
-            let thread = slot.ringing.as_ref().filter(|_| !room).and_then(|c| c.group_thread().map(str::to_string));
+            let thread = slot
+                .ringing
+                .as_ref()
+                .filter(|_| !room)
+                .and_then(|c| c.group_thread().map(str::to_string));
             if thread.is_some()
                 && let Some(rung) = slot.ringing.take()
             {
@@ -9540,12 +10806,20 @@ impl qobject::Backend {
                 .chats
                 .iter()
                 .find(|c| c.get("id").and_then(|i| i.as_str()) == Some(thread.as_str()))
-                .and_then(|c| c.get("name").or_else(|| c.get("title")).and_then(|n| n.as_str()))
+                .and_then(|c| {
+                    c.get("name")
+                        .or_else(|| c.get("title"))
+                        .and_then(|n| n.as_str())
+                })
                 .map(str::to_string)
                 .unwrap_or_else(|| self.rust().call_peer.to_string());
             tracing::info!(%thread, "answering a group call: joining its conversation");
             self.as_mut().set_call_state(QString::default());
-            self.as_mut().start_group_call(thread, QString::from(name.as_str()), Some(teams_cli::calling::signaling::GroupCallKind::Join));
+            self.as_mut().start_group_call(
+                thread,
+                QString::from(name.as_str()),
+                Some(teams_cli::calling::signaling::GroupCallKind::Join),
+            );
             return;
         }
         self.as_mut().set_call_state(QString::from("connecting"));
@@ -9580,13 +10854,25 @@ impl qobject::Backend {
                     let can_share = active.can_share();
                     let e2ee = active.is_e2ee();
                     let e2ee_numbers = active.e2ee_numbers().join(" ");
-                    tracing::info!(has_audio, can_video, camera, can_share, e2ee, "call answered");
+                    tracing::info!(
+                        has_audio,
+                        can_video,
+                        camera,
+                        can_share,
+                        e2ee,
+                        "call answered"
+                    );
                     // Invited into a meeting: Teams' answer describes what
                     // our lines do, so the meeting knows our camera sends
                     // (the others' clients then ask for it).
                     if let Some((link, body)) = active.media_descriptions_request() {
                         let described = async {
-                            teams_cli::calling::incoming::post_media_descriptions(&CallAuth::load().await?, &link, &body).await
+                            teams_cli::calling::incoming::post_media_descriptions(
+                                &CallAuth::load().await?,
+                                &link,
+                                &body,
+                            )
+                            .await
                         }
                         .await;
                         if let Err(e) = described {
@@ -9599,8 +10885,12 @@ impl qobject::Backend {
                     // presented (they can be newer than the attach's roster).
                     let (tx, rx) = tokio::sync::oneshot::channel();
                     let _ = qt.queue(move |this| {
-                        let seen: Vec<(String, Vec<String>)> =
-                            this.rust().roster.iter().map(|p| (p.id.clone(), p.content_sessions.clone())).collect();
+                        let seen: Vec<(String, Vec<String>)> = this
+                            .rust()
+                            .roster
+                            .iter()
+                            .map(|p| (p.id.clone(), p.content_sessions.clone()))
+                            .collect();
                         let _ = tx.send(seen);
                     });
                     let seen = rx.await.unwrap_or_default();
@@ -9613,7 +10903,8 @@ impl qobject::Backend {
                     let _ = qt.queue(move |mut this| {
                         for p in this.as_mut().rust_mut().roster.iter_mut() {
                             if p.content_sessions.is_empty()
-                                && let Some((_, s)) = seen.iter().find(|(id, s)| id == &p.id && !s.is_empty())
+                                && let Some((_, s)) =
+                                    seen.iter().find(|(id, s)| id == &p.id && !s.is_empty())
                             {
                                 p.content_sessions = s.clone();
                             }
@@ -9628,7 +10919,8 @@ impl qobject::Backend {
                         this.as_mut().set_call_can_share(can_share);
                         this.as_mut().set_call_camera_on(camera);
                         this.as_mut().set_call_e2ee(e2ee);
-                        this.as_mut().set_call_e2ee_numbers(QString::from(e2ee_numbers.as_str()));
+                        this.as_mut()
+                            .set_call_e2ee_numbers(QString::from(e2ee_numbers.as_str()));
                         this.as_mut().set_call_muted(false);
                         this.as_mut().set_call_state(QString::from("connected"));
                     });
@@ -9662,12 +10954,18 @@ impl qobject::Backend {
             let Some(oid) = config.as_ref().and_then(|c| c.object_id()) else {
                 return;
             };
-            let tenant = config.as_ref().and_then(|c| c.tenant_id()).unwrap_or_default();
+            let tenant = config
+                .as_ref()
+                .and_then(|c| c.tenant_id())
+                .unwrap_or_default();
             let name = config.and_then(|c| c.display_name()).unwrap_or_default();
             let (mri, qr_name, qr_qt) = (format!("8:orgid:{oid}"), name.clone(), qt.clone());
             crate::room_host::start(oid, move |salt| {
-                let rows = crate::room_host::qr_rows(&crate::room_host::qr_link(&mri, &tenant, salt, &qr_name));
-                let _ = qr_qt.queue(move |mut this| this.as_mut().set_room_qr(QString::from(rows.as_str())));
+                let rows = crate::room_host::qr_rows(&crate::room_host::qr_link(
+                    &mri, &tenant, salt, &qr_name,
+                ));
+                let _ = qr_qt
+                    .queue(move |mut this| this.as_mut().set_room_qr(QString::from(rows.as_str())));
             });
             let _ = qt.queue(move |mut this| {
                 this.as_mut().set_room_name(QString::from(name.as_str()));
@@ -9746,7 +11044,15 @@ impl qobject::Backend {
             return;
         };
         self.as_mut().remember_header_call(video);
-        self.place_and_show(Placement::Person { chat_id, callee: callee.clone(), video }, peer, callee);
+        self.place_and_show(
+            Placement::Person {
+                chat_id,
+                callee: callee.clone(),
+                video,
+            },
+            peer,
+            callee,
+        );
     }
 
     /// Retrieve a parked call with its pickup code (Teams' Calls ▸ Park ▸
@@ -9759,7 +11065,11 @@ impl qobject::Backend {
             return;
         };
         tracing::info!("retrieving a parked call");
-        self.place_and_show(Placement::Unpark(code), QString::from(tr("Parked call")), String::new());
+        self.place_and_show(
+            Placement::Unpark(code),
+            QString::from(tr("Parked call")),
+            String::new(),
+        );
     }
 
     /// Teams' Record a greeting (`startVoicemailCall`): a call to your own
@@ -9769,7 +11079,11 @@ impl qobject::Backend {
             return;
         }
         tracing::info!("calling own voicemail to record a greeting");
-        self.place_and_show(Placement::Voicemail, QString::from(tr("Voicemail")), String::new());
+        self.place_and_show(
+            Placement::Voicemail,
+            QString::from(tr("Voicemail")),
+            String::new(),
+        );
     }
 
     /// Intelligent call delegation's Make a test call (Teams' TestCallToPA):
@@ -9779,13 +11093,21 @@ impl qobject::Backend {
             return;
         }
         tracing::info!("test call to the personal attendant");
-        self.place_and_show(Placement::Attendant, QString::from(teams_cli::i18n::tr_id("Test call with your Call Delegation", "calling:k3eze0lt").as_str()), String::new());
+        self.place_and_show(
+            Placement::Attendant,
+            QString::from(
+                teams_cli::i18n::tr_id("Test call with your Call Delegation", "calling:k3eze0lt")
+                    .as_str(),
+            ),
+            String::new(),
+        );
     }
 
     /// Park the call (Teams' Park Call): the pickup code comes back on the
     /// transfer's completion, and the call ends for us.
     pub fn park_call(mut self: Pin<&mut Self>) {
-        self.as_mut().set_status_text(QString::from(tr("Parking...")));
+        self.as_mut()
+            .set_status_text(QString::from(tr("Parking...")));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let slot = call_slot().lock().await;
@@ -9802,17 +11124,27 @@ impl qobject::Backend {
             if let Err(e) = result {
                 tracing::warn!("park: {}", short_error(&e));
                 let msg = tr("Call couldn't be parked");
-                let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut().set_status_text(QString::from(msg.as_str()))
+                });
             }
         });
     }
 
     /// Place a 1:1 call (or an unpark) and show it as Teams does.
-    fn place_and_show(mut self: Pin<&mut Self>, placement: Placement, peer: QString, callee: String) {
+    fn place_and_show(
+        mut self: Pin<&mut Self>,
+        placement: Placement,
+        peer: QString,
+        callee: String,
+    ) {
         let video = matches!(placement, Placement::Person { video: true, .. });
-        self.as_mut().set_call_continues(matches!(placement, Placement::Unpark(_)));
-        self.as_mut().set_call_voicemail(matches!(placement, Placement::Voicemail));
-        self.as_mut().set_call_attendant_test(matches!(placement, Placement::Attendant));
+        self.as_mut()
+            .set_call_continues(matches!(placement, Placement::Unpark(_)));
+        self.as_mut()
+            .set_call_voicemail(matches!(placement, Placement::Voicemail));
+        self.as_mut()
+            .set_call_attendant_test(matches!(placement, Placement::Attendant));
         self.as_mut().set_call_peer(peer);
         self.as_mut()
             .set_call_peer_id(QString::from(callee.as_str()));
@@ -9832,7 +11164,11 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let unpark = matches!(placement, Placement::Unpark(_));
             let result = match placement {
-                Placement::Person { chat_id, callee, video } => outgoing::place_call(&chat_id, &callee, video, cancel_rx).await,
+                Placement::Person {
+                    chat_id,
+                    callee,
+                    video,
+                } => outgoing::place_call(&chat_id, &callee, video, cancel_rx).await,
                 Placement::Unpark(code) => outgoing::unpark_call("", code, cancel_rx).await,
                 Placement::Voicemail => outgoing::call_own_voicemail(cancel_rx).await,
                 Placement::Attendant => outgoing::call_personal_attendant(cancel_rx).await,
@@ -9877,7 +11213,8 @@ impl qobject::Backend {
                             this.as_mut().set_call_peer(QString::from(name.as_str()));
                         }
                         this.as_mut().set_call_e2ee(e2ee);
-                        this.as_mut().set_call_e2ee_numbers(QString::from(e2ee_numbers.as_str()));
+                        this.as_mut()
+                            .set_call_e2ee_numbers(QString::from(e2ee_numbers.as_str()));
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_dtmf(can_dtmf);
                         this.as_mut().set_call_can_video(can_video);
@@ -9966,16 +11303,26 @@ impl qobject::Backend {
     }
 
     pub fn watch_live_meetings(self: Pin<&mut Self>, meetings_json: &QString) {
-        let wanted: Vec<(String, String)> = serde_json::from_str::<Vec<serde_json::Value>>(&meetings_json.to_string())
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|m| Some((m["threadId"].as_str()?.to_string(), m["callId"].as_str().unwrap_or_default().to_string())))
-            .collect();
+        let wanted: Vec<(String, String)> =
+            serde_json::from_str::<Vec<serde_json::Value>>(&meetings_json.to_string())
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|m| {
+                    Some((
+                        m["threadId"].as_str()?.to_string(),
+                        m["callId"].as_str().unwrap_or_default().to_string(),
+                    ))
+                })
+                .collect();
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let mut map = watched_meetings().lock().await;
             // Leave the calls no longer shown.
-            let gone: Vec<String> = map.keys().filter(|t| !wanted.iter().any(|(w, _)| w == *t)).cloned().collect();
+            let gone: Vec<String> = map
+                .keys()
+                .filter(|t| !wanted.iter().any(|(w, _)| w == *t))
+                .cloned()
+                .collect();
             for t in gone {
                 if let Some(sub) = map.remove(&t) {
                     sub.leave().await;
@@ -9996,10 +11343,23 @@ impl qobject::Backend {
                             continue;
                         }
                     };
-                    let id = if live.call_id.is_empty() { call_id.clone() } else { live.call_id.clone() };
-                    match teams_cli::calling::live_roster::LiveRoster::subscribe_tagged(thread, &live.conversation_url, &id).await {
+                    let id = if live.call_id.is_empty() {
+                        call_id.clone()
+                    } else {
+                        live.call_id.clone()
+                    };
+                    match teams_cli::calling::live_roster::LiveRoster::subscribe_tagged(
+                        thread,
+                        &live.conversation_url,
+                        &id,
+                    )
+                    .await
+                    {
                         Ok(sub) => {
-                            tracing::info!(people = sub.roster.len(), "watching a live meeting's call");
+                            tracing::info!(
+                                people = sub.roster.len(),
+                                "watching a live meeting's call"
+                            );
                             map.insert(thread.clone(), sub);
                         }
                         Err(e) => tracing::warn!("live meeting roster: {}", short_error(&e)),
@@ -10007,7 +11367,10 @@ impl qobject::Backend {
                 }
             }
             let out = meeting_rosters_json(&map);
-            let _ = qt.queue(move |mut this| this.as_mut().set_live_meeting_rosters_json(QString::from(out.as_str())));
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .set_live_meeting_rosters_json(QString::from(out.as_str()))
+            });
         });
     }
 
@@ -10041,7 +11404,8 @@ impl qobject::Backend {
             return;
         }
         // Teams' window is titled with the bot's name.
-        self.as_mut().start_group_call_as(String::new(), QString::from("Echo"), None, true);
+        self.as_mut()
+            .start_group_call_as(String::new(), QString::from("Echo"), None, true);
     }
 
     fn start_group_call_as(
@@ -10078,7 +11442,8 @@ impl qobject::Backend {
         self.as_mut().load_call_chat_members();
         self.as_mut().set_call_scheduled(false);
         // A channel's Meet now (no group call kind) is a meeting, ad hoc.
-        self.as_mut().set_call_adhoc_meeting(kind.is_none() && !test);
+        self.as_mut()
+            .set_call_adhoc_meeting(kind.is_none() && !test);
         self.as_mut().set_call_ai_indicator(false);
         self.as_mut().show_processing(Default::default());
         self.as_mut().show_transcript(Vec::new(), true);
@@ -10104,7 +11469,13 @@ impl qobject::Backend {
                     let can_dtmf = call.can_dtmf();
                     let can_video = call.can_send_video();
                     let can_share = call.can_share();
-                    tracing::info!(has_audio, can_dtmf, can_video, can_share, "group call started");
+                    tracing::info!(
+                        has_audio,
+                        can_dtmf,
+                        can_video,
+                        can_share,
+                        "group call started"
+                    );
                     // The group call's dial-in (Teams' Join info ▸ Call me).
                     let phone = phone_json(&call, "", "", "");
                     seed_roster(&qt, &call).await;
@@ -10112,7 +11483,8 @@ impl qobject::Backend {
                     drop(slot);
                     spawn_call_stats_logger(qt.clone());
                     let _ = qt.queue(move |mut this| {
-                        this.as_mut().set_call_phone_json(QString::from(phone.as_str()));
+                        this.as_mut()
+                            .set_call_phone_json(QString::from(phone.as_str()));
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_dtmf(can_dtmf);
                         this.as_mut().set_call_can_video(can_video);
@@ -10131,7 +11503,9 @@ impl qobject::Backend {
                     tracing::info!("group call ended: {msg}");
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_status_text(QString::from(
-                            tr("Couldn't start the call: %1").replace("%1", &msg).as_str(),
+                            tr("Couldn't start the call: %1")
+                                .replace("%1", &msg)
+                                .as_str(),
                         ));
                         this.as_mut().end_call_ui();
                     });
@@ -10145,43 +11519,86 @@ impl qobject::Backend {
         let subject = self.rust().call_peer.to_string();
         let link = outgoing::MeetingLink::parse(&self.rust().last_join.0.to_string());
         let thread = self.rust().call_thread_id.to_string();
-        let transcript = self.rust().call_recording_state.to_string().contains("ranscrib");
+        let transcript = self
+            .rust()
+            .call_recording_state
+            .to_string()
+            .contains("ranscrib");
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let (call_id, ical_uid, call_thread) = {
                 let slot = call_slot().lock().await;
                 slot.outgoing
                     .as_ref()
-                    .map(|c| (c.call_id().to_string(), c.meeting_info().map(|i| i.ical_uid).unwrap_or_default(), c.thread().to_string()))
+                    .map(|c| {
+                        (
+                            c.call_id().to_string(),
+                            c.meeting_info().map(|i| i.ical_uid).unwrap_or_default(),
+                            c.thread().to_string(),
+                        )
+                    })
                     .unwrap_or_default()
             };
             let client = TeamsClient::new().await.ok();
-            let oid = client.as_ref().and_then(|c| c.object_id()).unwrap_or_default();
-            let tid = client.as_ref().and_then(|c| c.tenant_id()).unwrap_or_default();
+            let oid = client
+                .as_ref()
+                .and_then(|c| c.object_id())
+                .unwrap_or_default();
+            let tid = client
+                .as_ref()
+                .and_then(|c| c.tenant_id())
+                .unwrap_or_default();
             let site = match &client {
                 Some(c) => api::app_host::sharepoint_host(c).await,
                 None => String::new(),
             };
             let m = api::meeting_copilot::Meeting {
                 call_id,
-                thread_id: link.as_ref().map(|l| l.thread_id.clone()).filter(|t| !t.is_empty()).unwrap_or(if call_thread.is_empty() { thread } else { call_thread }),
-                organizer_id: link.as_ref().and_then(|l| l.organizer_id.clone()).unwrap_or_else(|| oid.clone()),
-                organizer_tenant: link.as_ref().and_then(|l| l.tenant_id.clone()).unwrap_or_else(|| tid.clone()),
+                thread_id: link
+                    .as_ref()
+                    .map(|l| l.thread_id.clone())
+                    .filter(|t| !t.is_empty())
+                    .unwrap_or(if call_thread.is_empty() {
+                        thread
+                    } else {
+                        call_thread
+                    }),
+                organizer_id: link
+                    .as_ref()
+                    .and_then(|l| l.organizer_id.clone())
+                    .unwrap_or_else(|| oid.clone()),
+                organizer_tenant: link
+                    .as_ref()
+                    .and_then(|l| l.tenant_id.clone())
+                    .unwrap_or_else(|| tid.clone()),
                 ical_uid,
-                message_id: link.as_ref().map(|l| l.message_id.clone()).unwrap_or_else(|| "0".into()),
+                message_id: link
+                    .as_ref()
+                    .map(|l| l.message_id.clone())
+                    .unwrap_or_else(|| "0".into()),
                 subject,
                 transcript_running: transcript,
                 user_oid: oid,
                 tenant_id: tid,
-                my_site: site.strip_suffix(".sharepoint.com").map(|t| format!("{t}-my.sharepoint.com")).unwrap_or_default(),
+                my_site: site
+                    .strip_suffix(".sharepoint.com")
+                    .map(|t| format!("{t}-my.sharepoint.com"))
+                    .unwrap_or_default(),
                 culture: "en-us".into(),
                 theme,
                 app_session: uuid::Uuid::new_v4().to_string(),
                 host_session: uuid::Uuid::new_v4().to_string(),
             };
-            tracing::info!(has_call = !m.call_id.is_empty(), has_ical = !m.ical_uid.is_empty(), "meeting Copilot launch");
+            tracing::info!(
+                has_call = !m.call_id.is_empty(),
+                has_ical = !m.ical_uid.is_empty(),
+                "meeting Copilot launch"
+            );
             let v = api::meeting_copilot::launch(&m).to_string();
-            let _ = qt.queue(move |mut this| this.as_mut().meeting_copilot_ready(QString::from(v.as_str())));
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .meeting_copilot_ready(QString::from(v.as_str()))
+            });
         });
     }
 
@@ -10200,30 +11617,50 @@ impl qobject::Backend {
                 let client = TeamsClient::new().await?;
                 let mpd = api::video_clips::manifest(&client, &url).await.ok();
                 if !path.exists() {
-                    let bytes = api::video_clips::playable(&client, &url, Some(quality.as_str()).filter(|q| !q.is_empty()), mpd.as_deref()).await?;
+                    let bytes = api::video_clips::playable(
+                        &client,
+                        &url,
+                        Some(quality.as_str()).filter(|q| !q.is_empty()),
+                        mpd.as_deref(),
+                    )
+                    .await?;
                     if let Some(dir) = path.parent() {
                         std::fs::create_dir_all(dir)?;
                     }
                     write_private(&path, &bytes)?;
                 }
-                let qualities = mpd.as_deref().map(api::video_clips::renditions).unwrap_or_default();
-                anyhow::Ok(json!({ "path": format!("file://{}", path.display()), "qualities": qualities }))
+                let qualities = mpd
+                    .as_deref()
+                    .map(api::video_clips::renditions)
+                    .unwrap_or_default();
+                anyhow::Ok(
+                    json!({ "path": format!("file://{}", path.display()), "qualities": qualities }),
+                )
             }
             .await;
             let mut v = result.unwrap_or_else(|e| json!({ "error": short_error(&e) }));
             v["id"] = json!(id);
             v["quality"] = json!(quality);
             let s = v.to_string();
-            let _ = qt.queue(move |mut this| this.as_mut().video_clip_ready(QString::from(id.as_str()), QString::from(s.as_str())));
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .video_clip_ready(QString::from(id.as_str()), QString::from(s.as_str()))
+            });
         });
     }
 
     pub fn recorder_file(self: Pin<&mut Self>, name: &QString) -> QString {
         let name = name.to_string();
-        let safe = std::path::Path::new(&name).file_name().and_then(|n| n.to_str()).unwrap_or("recording").to_string();
+        let safe = std::path::Path::new(&name)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("recording")
+            .to_string();
         let Some(base) = std::env::var_os("XDG_CACHE_HOME")
             .map(std::path::PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+            .or_else(|| {
+                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache"))
+            })
         else {
             return QString::default();
         };
@@ -10252,36 +11689,64 @@ impl qobject::Backend {
         let path = path.to_string();
         let src = std::path::PathBuf::from(path.strip_prefix("file://").unwrap_or(&path));
         let Some(dir) = download_dir() else { return };
-        let msg = match std::fs::read(&src).map_err(anyhow::Error::from).and_then(|b| api::files::save_unique(&dir, RECORDING_DOWNLOAD_NAME, &b)) {
-            Ok(p) => tr("Saved %1 to %2").replace("%1", p.file_name().and_then(|n| n.to_str()).unwrap_or(RECORDING_DOWNLOAD_NAME)).replace("%2", &dir.display().to_string()),
+        let msg = match std::fs::read(&src)
+            .map_err(anyhow::Error::from)
+            .and_then(|b| api::files::save_unique(&dir, RECORDING_DOWNLOAD_NAME, &b))
+        {
+            Ok(p) => tr("Saved %1 to %2")
+                .replace(
+                    "%1",
+                    p.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(RECORDING_DOWNLOAD_NAME),
+                )
+                .replace("%2", &dir.display().to_string()),
             Err(e) => short_error(&e),
         };
         self.as_mut().set_status_text(QString::from(msg.as_str()));
     }
 
-    pub fn video_clip_upload(self: Pin<&mut Self>, chat_id: &QString, path: &QString, thumb: &QString) {
+    pub fn video_clip_upload(
+        self: Pin<&mut Self>,
+        chat_id: &QString,
+        path: &QString,
+        thumb: &QString,
+    ) {
         let (chat, path, thumb) = (chat_id.to_string(), path.to_string(), thumb.to_string());
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
-                let file = |p: &str| std::path::PathBuf::from(p.strip_prefix("file://").unwrap_or(p));
+                let file =
+                    |p: &str| std::path::PathBuf::from(p.strip_prefix("file://").unwrap_or(p));
                 let original = std::fs::read(file(&path)).context("Reading the recording")?;
                 let poster = std::fs::read(file(&thumb)).unwrap_or_default();
                 let client = TeamsClient::new().await?;
                 let id = api::video_clips::upload(&client, &chat, original, poster).await?;
                 let base = client.ams_url().context("No media store address")?;
-                anyhow::Ok(json!({ "id": id, "url": format!("{base}/v1/objects/{id}/views/video") }))
+                anyhow::Ok(
+                    json!({ "id": id, "url": format!("{base}/v1/objects/{id}/views/video") }),
+                )
             }
             .await;
-            let v = result.unwrap_or_else(|e| json!({ "error": short_error(&e) })).to_string();
-            let _ = qt.queue(move |mut this| this.as_mut().video_clip_uploaded(QString::from(path.as_str()), QString::from(v.as_str())));
+            let v = result
+                .unwrap_or_else(|e| json!({ "error": short_error(&e) }))
+                .to_string();
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .video_clip_uploaded(QString::from(path.as_str()), QString::from(v.as_str()))
+            });
         });
     }
 
     pub fn render_clip(self: Pin<&mut Self>, spec_json: &QString) {
-        let spec: serde_json::Value = serde_json::from_str(&spec_json.to_string()).unwrap_or_default();
+        let spec: serde_json::Value =
+            serde_json::from_str(&spec_json.to_string()).unwrap_or_default();
         let qt = self.qt_thread();
-        let out = self.recorder_file(&QString::from(format!("clip-{}.mp4", chrono::Utc::now().timestamp_millis()).as_str())).to_string();
+        let out = self
+            .recorder_file(&QString::from(
+                format!("clip-{}.mp4", chrono::Utc::now().timestamp_millis()).as_str(),
+            ))
+            .to_string();
         runtime().spawn_blocking(move || {
             let result = (|| {
                 let local = |p: &str| p.strip_prefix("file://").unwrap_or(p).to_string();
@@ -10298,21 +11763,33 @@ impl qobject::Backend {
                     })
                     .collect();
                 anyhow::ensure!(!segments.is_empty(), "Nothing to render");
-                let music = spec["music"]["path"].as_str().map(|p| api::video_clips::Music { path: local(p), level: spec["music"]["level"].as_f64().unwrap_or(0.15) });
+                let music = spec["music"]["path"]
+                    .as_str()
+                    .map(|p| api::video_clips::Music {
+                        path: local(p),
+                        level: spec["music"]["level"].as_f64().unwrap_or(0.15),
+                    });
                 let graph = api::video_clips::edit_graph(&segments, music.as_ref(), 1280, 720);
                 crate::clip_edit::render(&graph, &out, 1280, 720)?;
-                let duration: u64 = segments.iter().map(|s| s.end_ms.saturating_sub(s.start_ms)).sum();
+                let duration: u64 = segments
+                    .iter()
+                    .map(|s| s.end_ms.saturating_sub(s.start_ms))
+                    .sum();
                 anyhow::Ok(json!({ "path": format!("file://{out}"), "duration": duration }))
             })();
-            let v = result.unwrap_or_else(|e| json!({ "error": short_error(&e) })).to_string();
-            let _ = qt.queue(move |mut this| this.as_mut().clip_rendered(QString::from(v.as_str())));
+            let v = result
+                .unwrap_or_else(|e| json!({ "error": short_error(&e) }))
+                .to_string();
+            let _ =
+                qt.queue(move |mut this| this.as_mut().clip_rendered(QString::from(v.as_str())));
         });
     }
 
     pub fn video_backgrounds(self: Pin<&mut Self>) -> QString {
         let list = crate::video_effects::catalog();
         if list.is_empty() {
-            static LOADING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            static LOADING: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
             if !LOADING.swap(true, std::sync::atomic::Ordering::SeqCst) {
                 let qt = self.qt_thread();
                 runtime().spawn(async move {
@@ -10373,11 +11850,14 @@ impl qobject::Backend {
             runtime().spawn(async move {
                 let result = async {
                     let client = TeamsClient::new().await?;
-                    teams_cli::api::app_details::definition(&client, crate::avatars::AVATARS_APP).await
+                    teams_cli::api::app_details::definition(&client, crate::avatars::AVATARS_APP)
+                        .await
                 }
                 .await;
                 match result {
-                    Ok(def) => *CACHE.lock().unwrap() = Some(crate::avatars::app_info(&def).to_string()),
+                    Ok(def) => {
+                        *CACHE.lock().unwrap() = Some(crate::avatars::app_info(&def).to_string())
+                    }
                     Err(e) => tracing::warn!("Avatars app: {}", short_error(&e)),
                 }
                 LOADING.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -10433,7 +11913,9 @@ impl qobject::Backend {
     }
 
     pub fn save_video_frame(&self, key: &QString, path: &QString) -> bool {
-        let Some(f) = teams_cli::calling::frames::latest(&key.to_string()) else { return false };
+        let Some(f) = teams_cli::calling::frames::latest(&key.to_string()) else {
+            return false;
+        };
         // A quarter-size picture, written off the GUI thread: test runs save
         // several a second during a call without loading the machine.
         let path = path.to_string();
@@ -10472,11 +11954,21 @@ impl qobject::Backend {
     }
 
     pub fn preview_color_at(self: Pin<&mut Self>, fx: f64, fy: f64) -> QString {
-        QString::from(crate::video_effects::preview_colour_at(fx, fy).map(crate::video_effects::hex).unwrap_or_default().as_str())
+        QString::from(
+            crate::video_effects::preview_colour_at(fx, fy)
+                .map(crate::video_effects::hex)
+                .unwrap_or_default()
+                .as_str(),
+        )
     }
 
     pub fn green_screen_detected(self: Pin<&mut Self>) -> QString {
-        QString::from(ost_vfx::detected_backdrop().map(crate::video_effects::hex).unwrap_or_default().as_str())
+        QString::from(
+            ost_vfx::detected_backdrop()
+                .map(crate::video_effects::hex)
+                .unwrap_or_default()
+                .as_str(),
+        )
     }
 
     pub fn video_filter_socket(self: Pin<&mut Self>) -> QString {
@@ -10493,7 +11985,10 @@ impl qobject::Backend {
 
     pub fn add_video_background(self: Pin<&mut Self>, url: &QString) -> QString {
         let raw = url.to_string();
-        let path = raw.strip_prefix("file://").map(str::to_string).unwrap_or(raw);
+        let path = raw
+            .strip_prefix("file://")
+            .map(str::to_string)
+            .unwrap_or(raw);
         let out = match crate::video_effects::add_upload(std::path::Path::new(&path)) {
             Ok(id) => serde_json::json!({ "id": id }),
             Err(e) => {
@@ -10514,10 +12009,18 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let name = url.rsplit('/').next().unwrap_or_default().to_string();
-                anyhow::ensure!(!name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-'), "Bad track name");
+                anyhow::ensure!(
+                    !name.is_empty()
+                        && name
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-'),
+                    "Bad track name"
+                );
                 let base = std::env::var_os("XDG_CACHE_HOME")
                     .map(std::path::PathBuf::from)
-                    .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+                    .or_else(|| {
+                        std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache"))
+                    })
                     .context("No cache directory")?;
                 let path = base.join("ost").join("music").join(&name);
                 if !path.exists() {
@@ -10528,14 +12031,21 @@ impl qobject::Backend {
                 anyhow::Ok(format!("file://{}", path.display()))
             }
             .await;
-            let path = result.unwrap_or_else(|e| { tracing::warn!("music: {}", short_error(&e)); String::new() });
-            let _ = qt.queue(move |mut this| this.as_mut().music_ready(QString::from(url.as_str()), QString::from(path.as_str())));
+            let path = result.unwrap_or_else(|e| {
+                tracing::warn!("music: {}", short_error(&e));
+                String::new()
+            });
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .music_ready(QString::from(url.as_str()), QString::from(path.as_str()))
+            });
         });
     }
 
     pub fn hubble_search(self: Pin<&mut Self>, tag: &QString, searches_json: &QString) {
         let tag = tag.to_string();
-        let list: Vec<serde_json::Value> = serde_json::from_str(&searches_json.to_string()).unwrap_or_default();
+        let list: Vec<serde_json::Value> =
+            serde_json::from_str(&searches_json.to_string()).unwrap_or_default();
         let searches: Vec<api::hubble::Search> = list
             .iter()
             .map(|s| api::hubble::Search {
@@ -10562,21 +12072,38 @@ impl qobject::Backend {
                 }
             };
             let v = serde_json::to_string(&results).unwrap_or_else(|_| "[]".into());
-            let _ = qt.queue(move |mut this| this.as_mut().hubble_results(QString::from(tag.as_str()), QString::from(v.as_str())));
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .hubble_results(QString::from(tag.as_str()), QString::from(v.as_str()))
+            });
         });
     }
 
-    pub fn send_with_clip(mut self: Pin<&mut Self>, clip_json: &QString, editor_html: &QString, media_json: &QString) {
-        let clip: serde_json::Value = serde_json::from_str(&clip_json.to_string()).unwrap_or_default();
+    pub fn send_with_clip(
+        mut self: Pin<&mut Self>,
+        clip_json: &QString,
+        editor_html: &QString,
+        media_json: &QString,
+    ) {
+        let clip: serde_json::Value =
+            serde_json::from_str(&clip_json.to_string()).unwrap_or_default();
         let id = clip["id"].as_str().unwrap_or_default().to_string();
         if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
             return;
         }
         // The media store's address, from the uploaded clip's own.
         let url = clip["url"].as_str().unwrap_or_default().to_string();
-        let Some(base) = url.split_once("/v1/objects/").map(|(b, _)| b.to_string()).filter(|_| api::messages::is_ams_url(&url)) else { return };
-        let media: Vec<api::messages::ComposeMedia> = serde_json::from_str(&media_json.to_string()).unwrap_or_default();
-        let (text, mentions) = api::messages::teams_html_with_media(&editor_html.to_string(), &media);
+        let Some(base) = url
+            .split_once("/v1/objects/")
+            .map(|(b, _)| b.to_string())
+            .filter(|_| api::messages::is_ams_url(&url))
+        else {
+            return;
+        };
+        let media: Vec<api::messages::ComposeMedia> =
+            serde_json::from_str(&media_json.to_string()).unwrap_or_default();
+        let (text, mentions) =
+            api::messages::teams_html_with_media(&editor_html.to_string(), &media);
         let card = api::video_clips::new_card_id();
         let html = api::video_clips::clip_html(
             &base,
@@ -10590,7 +12117,11 @@ impl qobject::Backend {
         if chat_id.is_empty() {
             return;
         }
-        let mentions = if mentions.is_empty() { String::new() } else { serde_json::to_string(&mentions).unwrap_or_default() };
+        let mentions = if mentions.is_empty() {
+            String::new()
+        } else {
+            serde_json::to_string(&mentions).unwrap_or_default()
+        };
         self.as_mut().rust_mut().next_ams_refs = vec![id];
         self.enqueue_with(chat_id, html, mentions);
     }
@@ -10601,7 +12132,8 @@ impl qobject::Backend {
             return;
         }
         if ask_where_to_save() {
-            self.as_mut().ask_save(PendingSave::Clip(url), CLIP_DOWNLOAD_NAME);
+            self.as_mut()
+                .ask_save(PendingSave::Clip(url), CLIP_DOWNLOAD_NAME);
             return;
         }
         let Some(dir) = download_dir() else { return };
@@ -10614,7 +12146,9 @@ impl qobject::Backend {
         // Only OST's own picture cache.
         let Some(cache) = std::env::var_os("XDG_CACHE_HOME")
             .map(std::path::PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+            .or_else(|| {
+                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache"))
+            })
             .map(|b| b.join("ost").join("images"))
         else {
             return;
@@ -10623,11 +12157,25 @@ impl qobject::Backend {
             return;
         }
         let Some(dir) = download_dir() else { return };
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("png").to_string();
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("png")
+            .to_string();
         let base = name.to_string();
-        let base = if base.trim().is_empty() || base.contains(['/', '\\']) { "image".to_string() } else { base };
-        let file_name = if base.contains('.') { base } else { format!("{base}.{ext}") };
-        let result = std::fs::read(&path).map_err(anyhow::Error::from).and_then(|bytes| api::files::save_unique(&dir, &file_name, &bytes));
+        let base = if base.trim().is_empty() || base.contains(['/', '\\']) {
+            "image".to_string()
+        } else {
+            base
+        };
+        let file_name = if base.contains('.') {
+            base
+        } else {
+            format!("{base}.{ext}")
+        };
+        let result = std::fs::read(&path)
+            .map_err(anyhow::Error::from)
+            .and_then(|bytes| api::files::save_unique(&dir, &file_name, &bytes));
         let msg = match result {
             Ok(_) => file_downloaded(false),
             Err(e) => short_error(&e),
@@ -10635,8 +12183,17 @@ impl qobject::Backend {
         self.as_mut().set_status_text(QString::from(msg.as_str()));
     }
 
-    fn run_clip_download(mut self: Pin<&mut Self>, url: String, dir: std::path::PathBuf, target: Option<std::path::PathBuf>) {
-        self.as_mut().set_status_text(QString::from(tr("Downloading %1…").replace("%1", CLIP_DOWNLOAD_NAME).as_str()));
+    fn run_clip_download(
+        mut self: Pin<&mut Self>,
+        url: String,
+        dir: std::path::PathBuf,
+        target: Option<std::path::PathBuf>,
+    ) {
+        self.as_mut().set_status_text(QString::from(
+            tr("Downloading %1…")
+                .replace("%1", CLIP_DOWNLOAD_NAME)
+                .as_str(),
+        ));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -10647,10 +12204,24 @@ impl qobject::Backend {
             }
             .await;
             let msg = match result {
-                Ok(path) => tr("Saved %1 to %2").replace("%1", path.file_name().and_then(|n| n.to_str()).unwrap_or(CLIP_DOWNLOAD_NAME)).replace("%2", &path.parent().map(|p| p.display().to_string()).unwrap_or_default()),
+                Ok(path) => tr("Saved %1 to %2")
+                    .replace(
+                        "%1",
+                        path.file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or(CLIP_DOWNLOAD_NAME),
+                    )
+                    .replace(
+                        "%2",
+                        &path
+                            .parent()
+                            .map(|p| p.display().to_string())
+                            .unwrap_or_default(),
+                    ),
                 Err(e) => short_error(&e),
             };
-            let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
+            let _ = qt
+                .queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
         });
     }
 
@@ -10662,29 +12233,51 @@ impl qobject::Backend {
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let set = match TeamsClient::new().await {
-                Ok(client) => api::smart_replies::for_chat(&client, &chat).await.unwrap_or_else(|e| {
-                    tracing::debug!("suggested replies unavailable: {}", short_error(&e));
-                    None
-                }),
+                Ok(client) => api::smart_replies::for_chat(&client, &chat)
+                    .await
+                    .unwrap_or_else(|e| {
+                        tracing::debug!("suggested replies unavailable: {}", short_error(&e));
+                        None
+                    }),
                 Err(_) => None,
             };
             let json = serde_json::to_string(&set).unwrap_or_else(|_| "null".into());
-            let _ = qt.queue(move |mut this| this.as_mut().smart_replies_ready(QString::from(chat.as_str()), QString::from(json.as_str())));
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .smart_replies_ready(QString::from(chat.as_str()), QString::from(json.as_str()))
+            });
         });
     }
 
-    pub fn card_invoke(mut self: Pin<&mut Self>, op: &QString, target_json: &QString, action_json: &QString, inputs_json: &QString, automatic: bool) {
+    pub fn card_invoke(
+        mut self: Pin<&mut Self>,
+        op: &QString,
+        target_json: &QString,
+        action_json: &QString,
+        inputs_json: &QString,
+        automatic: bool,
+    ) {
         let op = op.to_string();
-        let target: api::bot_invoke::Target = serde_json::from_str(&target_json.to_string()).unwrap_or_default();
-        let action: serde_json::Value = serde_json::from_str(&action_json.to_string()).unwrap_or_default();
-        let inputs: serde_json::Value = serde_json::from_str(&inputs_json.to_string()).unwrap_or(json!({}));
+        let target: api::bot_invoke::Target =
+            serde_json::from_str(&target_json.to_string()).unwrap_or_default();
+        let action: serde_json::Value =
+            serde_json::from_str(&action_json.to_string()).unwrap_or_default();
+        let inputs: serde_json::Value =
+            serde_json::from_str(&inputs_json.to_string()).unwrap_or(json!({}));
         // A messageBack (a plain Action.Submit, msteams messageBack, or a
         // hero card's button): its displayText goes to the chat first, as
         // Teams' BotMessageBack (a Text message not fanned out to bots).
         let message_back = api::bot_invoke::message_back(&action, &inputs);
         if let Some(text) = message_back.as_ref().and_then(|m| m.display_text.clone()) {
             let chat = target.thread_id.clone();
-            let mut o = self.outgoing(&chat, chat.clone(), text, String::new(), None, String::new());
+            let mut o = self.outgoing(
+                &chat,
+                chat.clone(),
+                text,
+                String::new(),
+                None,
+                String::new(),
+            );
             o.url_preview = None;
             o.url_preview_on_send = false;
             o.app_card = None;
@@ -10698,23 +12291,50 @@ impl qobject::Backend {
                 let client = TeamsClient::new().await?;
                 // Teams names the bot's app when it knows it.
                 if target.app_id.is_empty()
-                    && let Some((app, _, _)) = api::app_details::app_for_bot(&client, &target.bot_mri).await {
-                        target.app_id = app;
-                    }
-                let kind = action["type"].as_str().unwrap_or_default().to_ascii_lowercase();
+                    && let Some((app, _, _)) =
+                        api::app_details::app_for_bot(&client, &target.bot_mri).await
+                {
+                    target.app_id = app;
+                }
+                let kind = action["type"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_ascii_lowercase();
                 let (name, text, value) = if kind == "action.execute" {
-                    (Some("adaptiveCard/action"), None, api::bot_invoke::execute_value(&action, &inputs, automatic))
+                    (
+                        Some("adaptiveCard/action"),
+                        None,
+                        api::bot_invoke::execute_value(&action, &inputs, automatic),
+                    )
                 } else if let Some(mb) = message_back {
                     (Some("messageback"), mb.text, mb.value)
                 } else {
-                    (None, None, api::bot_invoke::submit_value(&action["data"], &inputs))
+                    (
+                        None,
+                        None,
+                        api::bot_invoke::submit_value(&action["data"], &inputs),
+                    )
                 };
-                tracing::info!("card action {op}: {} text={}", name.unwrap_or("invoke"), text.is_some());
-                let reply = api::bot_invoke::invoke(&client, &target, name, text.as_deref(), value, automatic).await?;
+                tracing::info!(
+                    "card action {op}: {} text={}",
+                    name.unwrap_or("invoke"),
+                    text.is_some()
+                );
+                let reply = api::bot_invoke::invoke(
+                    &client,
+                    &target,
+                    name,
+                    text.as_deref(),
+                    value,
+                    automatic,
+                )
+                .await?;
                 Ok(match api::bot_invoke::outcome(&reply) {
                     api::bot_invoke::Outcome::Sent => json!({ "kind": "sent" }),
                     api::bot_invoke::Outcome::Card(card) => json!({ "kind": "card", "card": card }),
-                    api::bot_invoke::Outcome::Message(m) => json!({ "kind": "message", "message": m }),
+                    api::bot_invoke::Outcome::Message(m) => {
+                        json!({ "kind": "message", "message": m })
+                    }
                     api::bot_invoke::Outcome::Error(e) => json!({ "kind": "error", "message": e }),
                 })
             }
@@ -10726,22 +12346,39 @@ impl qobject::Backend {
                     (String::new(), short_error(&e))
                 }
             };
-            let _ = qt.queue(move |mut this| this.as_mut().card_invoke_done(QString::from(op.as_str()), QString::from(value.as_str()), QString::from(error.as_str())));
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().card_invoke_done(
+                    QString::from(op.as_str()),
+                    QString::from(value.as_str()),
+                    QString::from(error.as_str()),
+                )
+            });
         });
     }
 
-    pub fn suggested_invoke(self: Pin<&mut Self>, message_id: &QString, target_json: &QString, name: &QString, value: &QString) {
+    pub fn suggested_invoke(
+        self: Pin<&mut Self>,
+        message_id: &QString,
+        target_json: &QString,
+        name: &QString,
+        value: &QString,
+    ) {
         let id = message_id.to_string();
-        let mut target: api::bot_invoke::Target = serde_json::from_str(&target_json.to_string()).unwrap_or_default();
+        let mut target: api::bot_invoke::Target =
+            serde_json::from_str(&target_json.to_string()).unwrap_or_default();
         let name = name.to_string();
         // Teams' transport: the value's JSON when it is an object, else {}.
-        let value = serde_json::from_str::<serde_json::Value>(&value.to_string()).ok().filter(|v| v.is_object()).unwrap_or_else(|| json!({}));
+        let value = serde_json::from_str::<serde_json::Value>(&value.to_string())
+            .ok()
+            .filter(|v| v.is_object())
+            .unwrap_or_else(|| json!({}));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
                 if target.app_id.is_empty()
-                    && let Some((app, _, _)) = api::app_details::app_for_bot(&client, &target.bot_mri).await
+                    && let Some((app, _, _)) =
+                        api::app_details::app_for_bot(&client, &target.bot_mri).await
                 {
                     target.app_id = app;
                 }
@@ -10756,14 +12393,26 @@ impl qobject::Backend {
                     short_error(&e)
                 }
             };
-            let _ = qt.queue(move |mut this| this.as_mut().suggested_invoke_done(QString::from(id.as_str()), QString::from(error.as_str())));
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().suggested_invoke_done(
+                    QString::from(id.as_str()),
+                    QString::from(error.as_str()),
+                )
+            });
         });
     }
 
-    pub fn share_action(self: Pin<&mut Self>, op: &QString, item_json: &QString, args_json: &QString) {
+    pub fn share_action(
+        self: Pin<&mut Self>,
+        op: &QString,
+        item_json: &QString,
+        args_json: &QString,
+    ) {
         let op = op.to_string();
-        let item: api::sharing::ItemRef = serde_json::from_str(&item_json.to_string()).unwrap_or_default();
-        let args: serde_json::Value = serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
+        let item: api::sharing::ItemRef =
+            serde_json::from_str(&item_json.to_string()).unwrap_or_default();
+        let args: serde_json::Value =
+            serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
         let group_chats = group_chat_ids(&self.rust().chats_json.to_string());
         let qt = self.qt_thread();
         runtime().spawn(async move {
@@ -10843,12 +12492,14 @@ impl qobject::Backend {
 
     pub fn chat_notes_load(mut self: Pin<&mut Self>, chat: &QString, create: bool, recreate: bool) {
         let chat = chat.to_string();
-        let mut busy: serde_json::Value = serde_json::from_str(&self.rust().chat_notes_json.to_string()).unwrap_or(json!({}));
+        let mut busy: serde_json::Value =
+            serde_json::from_str(&self.rust().chat_notes_json.to_string()).unwrap_or(json!({}));
         if busy.get("chat").and_then(|c| c.as_str()) != Some(chat.as_str()) {
             busy = json!({ "chat": chat, "state": "preparing" });
         }
         busy["busy"] = json!(true);
-        self.as_mut().set_chat_notes_json(QString::from(busy.to_string().as_str()));
+        self.as_mut()
+            .set_chat_notes_json(QString::from(busy.to_string().as_str()));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -10870,14 +12521,16 @@ impl qobject::Backend {
                 };
                 state["chat"] = json!(chat);
                 state["busy"] = json!(false);
-                this.as_mut().set_chat_notes_json(QString::from(state.to_string().as_str()));
+                this.as_mut()
+                    .set_chat_notes_json(QString::from(state.to_string().as_str()));
             });
         });
     }
 
     pub fn interpreter_action(self: Pin<&mut Self>, action: &QString, args_json: &QString) {
         let action = action.to_string();
-        let args: serde_json::Value = serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
+        let args: serde_json::Value =
+            serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let (old_language, old_voice, old_balance) = interpreter_prefs();
@@ -10987,14 +12640,22 @@ impl qobject::Backend {
         action: &QString,
         args_json: &QString,
     ) {
-        let (thread, organizer, action) = (thread.to_string(), organizer.to_string(), action.to_string());
-        let args: serde_json::Value = serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
-        let mut busy: serde_json::Value = serde_json::from_str(&self.rust().meeting_breakout_json.to_string()).unwrap_or(json!({}));
+        let (thread, organizer, action) = (
+            thread.to_string(),
+            organizer.to_string(),
+            action.to_string(),
+        );
+        let args: serde_json::Value =
+            serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
+        let mut busy: serde_json::Value =
+            serde_json::from_str(&self.rust().meeting_breakout_json.to_string())
+                .unwrap_or(json!({}));
         if busy.get("thread").and_then(|t| t.as_str()) != Some(thread.as_str()) {
             busy = json!({ "thread": thread });
         }
         busy["busy"] = json!(true);
-        self.as_mut().set_meeting_breakout_json(QString::from(busy.to_string().as_str()));
+        self.as_mut()
+            .set_meeting_breakout_json(QString::from(busy.to_string().as_str()));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -11067,9 +12728,12 @@ impl qobject::Backend {
 
     pub fn breakout_action(self: Pin<&mut Self>, action: &QString, args_json: &QString) {
         let action = action.to_string();
-        let args: serde_json::Value = serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
+        let args: serde_json::Value =
+            serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
         // From a room joined over the held main meeting, the main meeting.
-        let held: serde_json::Value = serde_json::from_str(&self.rust().call_held_meeting_json.to_string()).unwrap_or_default();
+        let held: serde_json::Value =
+            serde_json::from_str(&self.rust().call_held_meeting_json.to_string())
+                .unwrap_or_default();
         let link = held["url"]
             .as_str()
             .and_then(outgoing::MeetingLink::parse)
@@ -11085,7 +12749,10 @@ impl qobject::Backend {
             let error = match &result {
                 Ok(state) => {
                     let text = state.to_string();
-                    let _ = qt.queue(move |mut this| this.as_mut().set_call_breakout_rooms_json(QString::from(text.as_str())));
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut()
+                            .set_call_breakout_rooms_json(QString::from(text.as_str()))
+                    });
                     String::new()
                 }
                 Err(e) => {
@@ -11094,7 +12761,12 @@ impl qobject::Backend {
                 }
             };
             tracing::info!(action, ok = error.is_empty(), "breakout rooms action");
-            let _ = qt.queue(move |this| this.breakout_action_done(QString::from(action.as_str()), QString::from(error.as_str())));
+            let _ = qt.queue(move |this| {
+                this.breakout_action_done(
+                    QString::from(action.as_str()),
+                    QString::from(error.as_str()),
+                )
+            });
         });
     }
 
@@ -11102,7 +12774,13 @@ impl qobject::Backend {
         let (url, title) = (join_url.to_string(), title.to_string());
         let (main_url, main_title) = self.rust().last_join.clone();
         let me = self.rust().user_mri.to_string().to_ascii_lowercase();
-        let mine: Vec<_> = self.rust().roster.iter().filter(|p| p.id == me).cloned().collect();
+        let mine: Vec<_> = self
+            .rust()
+            .roster
+            .iter()
+            .filter(|p| p.id == me)
+            .cloned()
+            .collect();
         self.as_mut().rust_mut().held_self = mine;
         let qt = self.qt_thread();
         runtime().spawn(async move {
@@ -11186,8 +12864,10 @@ impl qobject::Backend {
                     this.as_mut().reset_meeting_view(&link, &url, &title);
                 }
                 this.as_mut().set_call_held_meeting_json(QString::default());
-                this.as_mut().set_call_breakout_json(QString::from(breakout.as_str()));
-                this.as_mut().set_call_breakout_room_json(QString::from(breakout_room.as_str()));
+                this.as_mut()
+                    .set_call_breakout_json(QString::from(breakout.as_str()));
+                this.as_mut()
+                    .set_call_breakout_room_json(QString::from(breakout_room.as_str()));
                 // Through "connecting" back to "connected", as a join goes
                 // (the window takes up the meeting's own time again).
                 this.as_mut().set_call_state(QString::from("connecting"));
@@ -11200,7 +12880,11 @@ impl qobject::Backend {
 
     pub fn current_meeting(self: Pin<&mut Self>) -> QString {
         let (url, title) = self.rust().last_join.clone();
-        QString::from(json!({ "url": url.to_string(), "title": title.to_string() }).to_string().as_str())
+        QString::from(
+            json!({ "url": url.to_string(), "title": title.to_string() })
+                .to_string()
+                .as_str(),
+        )
     }
 
     pub fn move_meeting(mut self: Pin<&mut Self>, join_url: &QString, title: &QString) {
@@ -11229,7 +12913,12 @@ impl qobject::Backend {
                     let _ = call.set_camera(false, None);
                 }
                 if let Some(st) = call.stats().await {
-                    tracing::info!(played = st.audio_samples_received, sent = st.packets_sent, held = call.is_held(), "moving: the meeting we leave, audio so far");
+                    tracing::info!(
+                        played = st.audio_samples_received,
+                        sent = st.packets_sent,
+                        held = call.is_held(),
+                        "moving: the meeting we leave, audio so far"
+                    );
                 }
                 if slot.left_calls.len() >= 16 {
                     slot.left_calls.remove(0);
@@ -11249,7 +12938,10 @@ impl qobject::Backend {
                 this.as_mut().set_call_camera_on(false);
                 this.as_mut().set_call_state(QString::default());
                 // Teams joins as any meeting: the conversation, then the call.
-                this.as_mut().start_meeting_join(&QString::from(url.as_str()), &QString::from(title.as_str()));
+                this.as_mut().start_meeting_join(
+                    &QString::from(url.as_str()),
+                    &QString::from(title.as_str()),
+                );
             });
         });
     }
@@ -11263,16 +12955,29 @@ impl qobject::Backend {
         };
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let (tenant, organizer) = (link.tenant_id.clone().unwrap_or_default(), link.organizer_id.clone().unwrap_or_default());
+            let (tenant, organizer) = (
+                link.tenant_id.clone().unwrap_or_default(),
+                link.organizer_id.clone().unwrap_or_default(),
+            );
             let result = async {
                 let client = TeamsClient::new().await?;
-                api::meeting_options::lobby_chat_thread(&client, &tenant, &organizer, &link.thread_id, &link.message_id).await
+                api::meeting_options::lobby_chat_thread(
+                    &client,
+                    &tenant,
+                    &organizer,
+                    &link.thread_id,
+                    &link.message_id,
+                )
+                .await
             }
             .await;
             match result {
                 Ok(id) => {
                     tracing::info!("lobby chat thread ready");
-                    let _ = qt.queue(move |mut this| this.as_mut().set_call_lobby_thread(QString::from(id.as_str())));
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut()
+                            .set_call_lobby_thread(QString::from(id.as_str()))
+                    });
                 }
                 Err(e) => tracing::warn!("lobby chat: {}", short_error(&e)),
             }
@@ -11303,7 +13008,9 @@ impl qobject::Backend {
         let Some(link) = self.call_meeting_link() else {
             return;
         };
-        let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(&changes_json.to_string()) else {
+        let Ok(serde_json::Value::Object(map)) =
+            serde_json::from_str::<serde_json::Value>(&changes_json.to_string())
+        else {
             return;
         };
         let changes: Vec<(String, serde_json::Value)> = map.into_iter().collect();
@@ -11336,12 +13043,14 @@ impl qobject::Backend {
                 Ok(found) if !found.is_empty() => {
                     let _ = qt.queue(move |mut this| {
                         let mut map: serde_json::Map<String, serde_json::Value> =
-                            serde_json::from_str(&this.rust().people_names_json.to_string()).unwrap_or_default();
+                            serde_json::from_str(&this.rust().people_names_json.to_string())
+                                .unwrap_or_default();
                         for (mri, name) in found {
                             map.insert(mri, json!(name));
                         }
                         let text = serde_json::Value::Object(map).to_string();
-                        this.as_mut().set_people_names_json(QString::from(text.as_str()));
+                        this.as_mut()
+                            .set_people_names_json(QString::from(text.as_str()));
                     });
                 }
                 Ok(_) => {}
@@ -11353,7 +13062,8 @@ impl qobject::Backend {
     pub fn load_ddv(mut self: Pin<&mut Self>) {
         let mut v = serde_json::to_value(api::ddv::state()).unwrap_or_else(|_| json!({}));
         v["events"] = json!(api::ddv::events());
-        self.as_mut().set_ddv_json(QString::from(v.to_string().as_str()));
+        self.as_mut()
+            .set_ddv_json(QString::from(v.to_string().as_str()));
     }
 
     pub fn set_ddv_enabled(mut self: Pin<&mut Self>, on: bool) {
@@ -11372,7 +13082,8 @@ impl qobject::Backend {
         let mut v = serde_json::to_value(api::ddv::state()).unwrap_or_else(|_| json!({}));
         v["state"] = json!("connecting");
         v["connectionString"] = json!(connection.to_string().trim());
-        self.as_mut().set_ddv_json(QString::from(v.to_string().as_str()));
+        self.as_mut()
+            .set_ddv_json(QString::from(v.to_string().as_str()));
     }
 
     pub fn load_presences(self: Pin<&mut Self>, mris_json: &QString) {
@@ -11386,12 +13097,14 @@ impl qobject::Backend {
                 Ok(found) => {
                     let _ = qt.queue(move |mut this| {
                         let mut map: serde_json::Map<String, serde_json::Value> =
-                            serde_json::from_str(&this.rust().people_presence_json.to_string()).unwrap_or_default();
+                            serde_json::from_str(&this.rust().people_presence_json.to_string())
+                                .unwrap_or_default();
                         for p in found {
                             map.insert(p.mri.clone(), json!(p.availability));
                         }
                         let text = serde_json::Value::Object(map).to_string();
-                        this.as_mut().set_people_presence_json(QString::from(text.as_str()));
+                        this.as_mut()
+                            .set_people_presence_json(QString::from(text.as_str()));
                     });
                 }
                 Err(e) => tracing::warn!("presence: {}", short_error(&e)),
@@ -11427,9 +13140,9 @@ impl qobject::Backend {
             return;
         }
         let Some(link) = outgoing::MeetingLink::parse(&join_url.to_string()) else {
-            self.as_mut().set_status_text(QString::from(
-                tr("Looks like the meeting URL is incorrect. Please check the URL and try again."),
-            ));
+            self.as_mut().set_status_text(QString::from(tr(
+                "Looks like the meeting URL is incorrect. Please check the URL and try again.",
+            )));
             return;
         };
         // Breakout rooms are the last meeting's (but a held main
@@ -11438,8 +13151,10 @@ impl qobject::Backend {
         if self.rust().call_held_meeting_json.is_empty() {
             self.as_mut().set_call_breakout_all_json(QString::default());
         }
-        self.as_mut().set_call_breakout_room_json(QString::default());
-        self.as_mut().set_call_breakout_rooms_json(QString::default());
+        self.as_mut()
+            .set_call_breakout_room_json(QString::default());
+        self.as_mut()
+            .set_call_breakout_rooms_json(QString::default());
         self.as_mut().reset_meeting_view(&link, join_url, title);
         self.as_mut().set_call_state(QString::from("connecting"));
         tracing::info!("join meeting");
@@ -11451,7 +13166,9 @@ impl qobject::Backend {
         // A participant moving from the main meeting into one of its
         // rooms (not in a room now): Teams keeps the main meeting's
         // conversation once the room answers.
-        let into_room = undo.as_ref().is_some_and(|u| u.breakout_room_json.is_empty());
+        let into_room = undo
+            .as_ref()
+            .is_some_and(|u| u.breakout_room_json.is_empty());
         let (target_url, target_title) = (join_url.clone(), title.clone());
         runtime().spawn(async move {
             // Into a room or back (a move, or an organizer's Join over the
@@ -11905,7 +13622,12 @@ impl qobject::Backend {
     /// change while we're in it (Teams' locked / unlocked notice).
     /// The call window set for a meeting about to be joined (or resumed):
     /// its title, links and an empty roster.
-    fn reset_meeting_view(mut self: Pin<&mut Self>, link: &outgoing::MeetingLink, join_url: &QString, title: &QString) {
+    fn reset_meeting_view(
+        mut self: Pin<&mut Self>,
+        link: &outgoing::MeetingLink,
+        join_url: &QString,
+        title: &QString,
+    ) {
         let title = if title.is_empty() {
             QString::from(tr("Meeting"))
         } else {
@@ -11970,7 +13692,8 @@ impl qobject::Backend {
 
     /// The call window for a joined (or resumed) meeting.
     fn show_joined(mut self: Pin<&mut Self>, v: JoinedView, in_lobby: bool) {
-        self.as_mut().set_call_invite_url(QString::from(v.invite.as_str()));
+        self.as_mut()
+            .set_call_invite_url(QString::from(v.invite.as_str()));
         self.as_mut().rust_mut().call_meet_now = v.meet_now;
         self.as_mut().show_capability(v.capability, false);
         runtime().spawn(interpreter_joined(self.qt_thread()));
@@ -11984,13 +13707,16 @@ impl qobject::Backend {
         self.as_mut().set_call_can_video(v.can_video);
         self.as_mut().set_call_can_share(v.can_share);
         self.as_mut().set_call_lobby_presenter(v.started);
-        self.as_mut().set_call_phone_json(QString::from(v.phone.as_str()));
-        self.as_mut().set_call_event_json(QString::from(v.event.as_str()));
+        self.as_mut()
+            .set_call_phone_json(QString::from(v.phone.as_str()));
+        self.as_mut()
+            .set_call_event_json(QString::from(v.event.as_str()));
         if let Some((choice, lobby)) = v.stream.clone() {
             // A town hall's attendee: the stream plays where the stage is;
             // its lobby is the event's welcome screen, not the meeting
             // lobby.
-            self.as_mut().set_call_stream_json(QString::from(stream_json(lobby, "", "").as_str()));
+            self.as_mut()
+                .set_call_stream_json(QString::from(stream_json(lobby, "", "").as_str()));
             update_stream(choice, lobby, self.qt_thread());
             self.as_mut().set_call_state(QString::from("connected"));
             return;
@@ -11999,12 +13725,14 @@ impl qobject::Backend {
         // before the call shows as connected (where Teams starts from).
         if !v.breakout.is_empty() && self.rust().call_breakout_json.is_empty() {
             tracing::info!("the join assigns us a breakout room");
-            self.as_mut().set_call_breakout_json(QString::from(v.breakout.as_str()));
+            self.as_mut()
+                .set_call_breakout_json(QString::from(v.breakout.as_str()));
         }
         runtime().spawn(load_dial_plan());
         // Held in the lobby: Teams keeps the pre-join screen until someone
         // admits us.
-        self.as_mut().set_call_state(QString::from(if in_lobby { "lobby" } else { "connected" }));
+        self.as_mut()
+            .set_call_state(QString::from(if in_lobby { "lobby" } else { "connected" }));
     }
 
     fn show_capability(
@@ -12030,7 +13758,8 @@ impl qobject::Backend {
             self.as_mut().set_call_copilot_only(cap.copilot_only);
         }
         if self.rust().call_everyone_presents != cap.everyone_presents {
-            self.as_mut().set_call_everyone_presents(cap.everyone_presents);
+            self.as_mut()
+                .set_call_everyone_presents(cap.everyone_presents);
         }
         if self.rust().call_ai_facilitator != cap.facilitator {
             self.as_mut().set_call_ai_facilitator(cap.facilitator);
@@ -12039,7 +13768,8 @@ impl qobject::Backend {
             self.as_mut().refresh_timer_facilitator();
         }
         if self.rust().call_ai_facilitator_voice != cap.facilitator_speech {
-            self.as_mut().set_call_ai_facilitator_voice(cap.facilitator_speech);
+            self.as_mut()
+                .set_call_ai_facilitator_voice(cap.facilitator_speech);
         }
         self.as_mut().rust_mut().call_ai_facilitator_live_notes = cap.facilitator_live_notes;
     }
@@ -12078,7 +13808,13 @@ impl qobject::Backend {
                 .find(|x| x.id == id)
                 .map(|x| x.name.clone())
                 .filter(|n| !n.is_empty())
-                .unwrap_or_else(|| if id == me { my_name.clone() } else { String::new() })
+                .unwrap_or_else(|| {
+                    if id == me {
+                        my_name.clone()
+                    } else {
+                        String::new()
+                    }
+                })
         });
         let state = QString::from(p.indicator_state());
         let tip = QString::from(tip.as_str());
@@ -12179,35 +13915,54 @@ impl qobject::Backend {
 
     pub fn send_live(self: Pin<&mut Self>, sources: &QString) {
         let qt = self.qt_thread();
-        let sources: Vec<teams_cli::calling::live_event::LayoutSource> = serde_json::from_str::<serde_json::Value>(&sources.to_string())
-            .ok()
-            .and_then(|v| v.as_array().cloned())
-            .unwrap_or_default()
-            .iter()
-            .map(|p| {
-                let s = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
-                teams_cli::calling::live_event::LayoutSource {
-                    id: s("id"),
-                    participant_id: s("participantId"),
-                    endpoint_id: s("endpointId"),
-                    modality: if s("modality").is_empty() { "VIDEO".into() } else { s("modality") },
-                }
-            })
-            .collect();
+        let sources: Vec<teams_cli::calling::live_event::LayoutSource> =
+            serde_json::from_str::<serde_json::Value>(&sources.to_string())
+                .ok()
+                .and_then(|v| v.as_array().cloned())
+                .unwrap_or_default()
+                .iter()
+                .map(|p| {
+                    let s = |k: &str| {
+                        p.get(k)
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_string()
+                    };
+                    teams_cli::calling::live_event::LayoutSource {
+                        id: s("id"),
+                        participant_id: s("participantId"),
+                        endpoint_id: s("endpointId"),
+                        modality: if s("modality").is_empty() {
+                            "VIDEO".into()
+                        } else {
+                            s("modality")
+                        },
+                    }
+                })
+                .collect();
         runtime().spawn(async move {
-            let show = |busy: &'static str, failed: &'static str, e: teams_cli::calling::live_event::LiveEvent| {
+            let show = |busy: &'static str,
+                        failed: &'static str,
+                        e: teams_cli::calling::live_event::LiveEvent| {
                 let text = event_json(&e, busy, failed);
-                let _ = qt.queue(move |mut this| this.as_mut().set_call_event_json(QString::from(text.as_str())));
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut()
+                        .set_call_event_json(QString::from(text.as_str()))
+                });
             };
             let e = {
                 let slot = call_slot().lock().await;
-                let Some(call) = slot.outgoing.as_ref() else { return };
+                let Some(call) = slot.outgoing.as_ref() else {
+                    return;
+                };
                 call.event()
             };
             show("sendingLive", "", e);
             let (r, e) = {
                 let mut slot = call_slot().lock().await;
-                let Some(call) = slot.outgoing.as_mut() else { return };
+                let Some(call) = slot.outgoing.as_mut() else {
+                    return;
+                };
                 (call.set_meeting_layout(&sources).await, call.event())
             };
             match r {
@@ -12228,13 +13983,20 @@ impl qobject::Backend {
     pub fn set_event_live(self: Pin<&mut Self>, live: bool) {
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let show = |busy: &'static str, failed: &'static str, e: teams_cli::calling::live_event::LiveEvent| {
+            let show = |busy: &'static str,
+                        failed: &'static str,
+                        e: teams_cli::calling::live_event::LiveEvent| {
                 let text = event_json(&e, busy, failed);
-                let _ = qt.queue(move |mut this| this.as_mut().set_call_event_json(QString::from(text.as_str())));
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut()
+                        .set_call_event_json(QString::from(text.as_str()))
+                });
             };
             let (curtain, event) = {
                 let mut slot = call_slot().lock().await;
-                let Some(call) = slot.outgoing.as_mut() else { return };
+                let Some(call) = slot.outgoing.as_mut() else {
+                    return;
+                };
                 let e = call.event();
                 // Teams: no-op once live, ended or already changing.
                 if !e.staging || (live && e.phase != "staging") || (!live && e.phase != "live") {
@@ -12250,10 +14012,15 @@ impl qobject::Backend {
                     None
                 }
             };
-            tokio::time::sleep(std::time::Duration::from_secs(teams_cli::calling::live_event::CURTAIN_SECONDS)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(
+                teams_cli::calling::live_event::CURTAIN_SECONDS,
+            ))
+            .await;
             let result = {
                 let mut slot = call_slot().lock().await;
-                let Some(call) = slot.outgoing.as_mut() else { return };
+                let Some(call) = slot.outgoing.as_mut() else {
+                    return;
+                };
                 let r = call.update_live_state(live).await;
                 if let Some(id) = curtain.as_deref()
                     && let Err(e) = call.remove_own_state(id).await
@@ -12280,8 +14047,10 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = match call_slot().lock().await.outgoing.as_mut() {
                 Some(call) => {
-                    call.update_meeting_settings(serde_json::json!({ "attendeeRestrictions": bits }))
-                        .await
+                    call.update_meeting_settings(
+                        serde_json::json!({ "attendeeRestrictions": bits }),
+                    )
+                    .await
                 }
                 None => return,
             };
@@ -12295,7 +14064,12 @@ impl qobject::Backend {
         });
     }
 
-    pub fn recorder_command(self: Pin<&mut Self>, command: &QString, language: &QString, audio_only: bool) {
+    pub fn recorder_command(
+        self: Pin<&mut Self>,
+        command: &QString,
+        language: &QString,
+        audio_only: bool,
+    ) {
         use teams_cli::calling::recorder::{Command, Meeting};
         let name = command.to_string();
         let transcribing = self.rust().processing.transcript.is_some();
@@ -12323,7 +14097,13 @@ impl qobject::Backend {
         let language = language.to_string();
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let Some(info) = call_slot().lock().await.outgoing.as_ref().map(|c| c.meeting_info().unwrap_or_default()) else {
+            let Some(info) = call_slot()
+                .lock()
+                .await
+                .outgoing
+                .as_ref()
+                .map(|c| c.meeting_info().unwrap_or_default())
+            else {
                 return;
             };
             let meeting = Meeting {
@@ -12341,27 +14121,41 @@ impl qobject::Backend {
             };
             if let Err(e) = result {
                 tracing::warn!(command = %name, "recorder: {}", short_error(&e));
-                let _ = qt.queue(move |this| this.meeting_action_failed(QString::from(name.as_str())));
+                let _ =
+                    qt.queue(move |this| this.meeting_action_failed(QString::from(name.as_str())));
             }
         });
     }
 
     /// Add rows to the Transcript pane (`reset`: start over).
-    fn show_transcript(mut self: Pin<&mut Self>, rows: Vec<teams_cli::calling::transcript::Entry>, reset: bool) {
+    fn show_transcript(
+        mut self: Pin<&mut Self>,
+        rows: Vec<teams_cli::calling::transcript::Entry>,
+        reset: bool,
+    ) {
         if reset {
             self.as_mut().rust_mut().transcript.clear();
         }
         let now = chrono::Utc::now().timestamp_millis();
-        teams_cli::calling::transcript::merge_live(&mut self.as_mut().rust_mut().transcript, rows, now);
+        teams_cli::calling::transcript::merge_live(
+            &mut self.as_mut().rust_mut().transcript,
+            rows,
+            now,
+        );
         let json = serde_json::to_string(&self.rust().transcript).unwrap_or_else(|_| "[]".into());
         if self.rust().call_transcript_json.to_string() != json {
-            self.as_mut().set_call_transcript_json(QString::from(json.as_str()));
+            self.as_mut()
+                .set_call_transcript_json(QString::from(json.as_str()));
         }
     }
 
     fn show_captions(mut self: Pin<&mut Self>, rows: Vec<teams_cli::calling::transcript::Entry>) {
         let now = chrono::Utc::now().timestamp_millis();
-        teams_cli::calling::transcript::merge_captions(&mut self.as_mut().rust_mut().captions, rows, now);
+        teams_cli::calling::transcript::merge_captions(
+            &mut self.as_mut().rust_mut().captions,
+            rows,
+            now,
+        );
         self.publish_captions();
     }
 
@@ -12370,10 +14164,14 @@ impl qobject::Backend {
     fn publish_captions(mut self: Pin<&mut Self>) {
         let me = self.rust().user_mri.to_string();
         let mut rows = self.rust().captions.clone();
-        rows.extend(teams_cli::calling::rtt::typing_order(&self.rust().rtt_typing, &me));
+        rows.extend(teams_cli::calling::rtt::typing_order(
+            &self.rust().rtt_typing,
+            &me,
+        ));
         let json = serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into());
         if self.rust().call_captions_json.to_string() != json {
-            self.as_mut().set_call_captions_json(QString::from(json.as_str()));
+            self.as_mut()
+                .set_call_captions_json(QString::from(json.as_str()));
         }
     }
 
@@ -12393,7 +14191,11 @@ impl qobject::Backend {
         self.as_mut().set_call_captions_on(false);
     }
 
-    fn show_timers(mut self: Pin<&mut Self>, t: teams_cli::calling::meeting_timer::Timers, live: bool) {
+    fn show_timers(
+        mut self: Pin<&mut Self>,
+        t: teams_cli::calling::meeting_timer::Timers,
+        live: bool,
+    ) {
         self.as_mut().rust_mut().agenda_seen = t.agenda.clone();
         let json = serde_json::json!({
             "adhoc": t.adhoc.0,
@@ -12408,13 +14210,21 @@ impl qobject::Backend {
             "live": live,
             "facilitator": self.timer_facilitator(),
         });
-        self.as_mut().set_call_timer_json(QString::from(json.to_string().as_str()));
+        self.as_mut()
+            .set_call_timer_json(QString::from(json.to_string().as_str()));
     }
 
     /// Facilitator as the meeting timer sees it (Teams' `isFacilitatorOn`).
     fn timer_facilitator(&self) -> bool {
-        let cap = teams_cli::calling::meeting_options::MeetingCapability { facilitator: self.rust().call_ai_facilitator, ..Default::default() };
-        teams_cli::calling::meeting_options::facilitator_on(&cap, self.rust().call_meet_now, teams_cli::calling::meeting_options::meet_now_agenda_disabled())
+        let cap = teams_cli::calling::meeting_options::MeetingCapability {
+            facilitator: self.rust().call_ai_facilitator,
+            ..Default::default()
+        };
+        teams_cli::calling::meeting_options::facilitator_on(
+            &cap,
+            self.rust().call_meet_now,
+            teams_cli::calling::meeting_options::meet_now_agenda_disabled(),
+        )
     }
 
     /// The timer strip's Facilitator flag after Facilitator was turned on
@@ -12422,13 +14232,16 @@ impl qobject::Backend {
     fn refresh_timer_facilitator(mut self: Pin<&mut Self>) {
         let on = self.timer_facilitator();
         let text = self.rust().call_timer_json.to_string();
-        let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&text) else { return };
+        let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&text) else {
+            return;
+        };
         if v.get("facilitator").and_then(|f| f.as_bool()) == Some(on) {
             return;
         }
         tracing::info!(on, "meeting timer: Facilitator changed");
         v["facilitator"] = serde_json::json!(on);
-        self.as_mut().set_call_timer_json(QString::from(v.to_string().as_str()));
+        self.as_mut()
+            .set_call_timer_json(QString::from(v.to_string().as_str()));
     }
 
     pub fn meeting_timer(self: Pin<&mut Self>, action: &QString, arg: i32) {
@@ -12436,7 +14249,9 @@ impl qobject::Backend {
         let skew = self.rust().timer_skew_ms;
         runtime().spawn(async move {
             let slot = call_slot().lock().await;
-            let Some(call) = slot.outgoing.as_ref() else { return };
+            let Some(call) = slot.outgoing.as_ref() else {
+                return;
+            };
             let now = chrono::Utc::now().timestamp_millis();
             let t = &call.timers().adhoc;
             let next = match action.as_str() {
@@ -12446,7 +14261,9 @@ impl qobject::Backend {
                 "reset" => t.reset(),
                 "cancel" => t.cancel(),
                 "cancelOverTime" => t.cancel_over_time(),
-                "startWith" => t.start_with(i64::from(arg).clamp(0, teams_cli::calling::meeting_timer::MAX_MS)),
+                "startWith" => {
+                    t.start_with(i64::from(arg).clamp(0, teams_cli::calling::meeting_timer::MAX_MS))
+                }
                 "add" => t.add_minutes(i64::from(arg), now, skew),
                 other => {
                     tracing::warn!(other, "meeting timer: unknown action");
@@ -12487,7 +14304,11 @@ impl qobject::Backend {
                 let draft = args["title"].as_str().unwrap_or_default();
                 // A held new topic always goes out once named.
                 let held = args["isNew"].as_bool().unwrap_or(false);
-                (agenda::rename(&sections, index, draft).or_else(|| held.then(|| sections.clone())), None)
+                (
+                    agenda::rename(&sections, index, draft)
+                        .or_else(|| held.then(|| sections.clone())),
+                    None,
+                )
             }
             "discussed" => (agenda::toggle_discussed(&sections, index), None),
             // A topic's lifecycle stage as the Facilitator would set it
@@ -12504,13 +14325,21 @@ impl qobject::Backend {
             }
             "delete" => (agenda::delete_topic(&sections, index), None),
             "move" => (
-                agenda::move_topic(&sections, args["from"].as_u64().unwrap_or(0) as usize, args["to"].as_u64().unwrap_or(0) as usize),
+                agenda::move_topic(
+                    &sections,
+                    args["from"].as_u64().unwrap_or(0) as usize,
+                    args["to"].as_u64().unwrap_or(0) as usize,
+                ),
                 None,
             ),
             "resize" => {
                 publish = args["publish"].as_bool().unwrap_or(false);
                 (
-                    agenda::resize(&sections, args["divider"].as_u64().unwrap_or(0) as usize, args["deltaMs"].as_f64().unwrap_or(0.0) as i64),
+                    agenda::resize(
+                        &sections,
+                        args["divider"].as_u64().unwrap_or(0) as usize,
+                        args["deltaMs"].as_f64().unwrap_or(0.0) as i64,
+                    ),
                     None,
                 )
             }
@@ -12520,13 +14349,21 @@ impl qobject::Backend {
                 (None, None)
             }
         };
-        let Some(next) = next else { return QString::default() };
+        let Some(next) = next else {
+            return QString::default();
+        };
         if publish {
-            let timer = if action == "cancel" { agenda::cancel(&seen) } else { agenda::with_sections(&seen, next.clone()) };
+            let timer = if action == "cancel" {
+                agenda::cancel(&seen)
+            } else {
+                agenda::with_sections(&seen, next.clone())
+            };
             tracing::info!(action, topics = next.len(), "agenda: publishing an edit");
             runtime().spawn(async move {
                 let slot = call_slot().lock().await;
-                let Some(call) = slot.outgoing.as_ref() else { return };
+                let Some(call) = slot.outgoing.as_ref() else {
+                    return;
+                };
                 if let Err(e) = call.publish_agenda(&timer).await {
                     tracing::warn!("agenda: {}", short_error(&e));
                 }
@@ -12555,7 +14392,8 @@ impl qobject::Backend {
         });
         let json = serde_json::json!({ "values": report.values }).to_string();
         if self.rust().call_health_json.to_string() != json {
-            self.as_mut().set_call_health_json(QString::from(json.as_str()));
+            self.as_mut()
+                .set_call_health_json(QString::from(json.as_str()));
         }
     }
 
@@ -12595,7 +14433,10 @@ impl qobject::Backend {
                 Ok(client) => api::directory::privacy_statement_url(&client).await,
                 Err(_) => api::directory::MICROSOFT_PRIVACY_STATEMENT.to_string(),
             };
-            let _ = qt.queue(move |mut this| this.as_mut().set_call_privacy_url(QString::from(url.as_str())));
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .set_call_privacy_url(QString::from(url.as_str()))
+            });
         });
     }
 
@@ -12649,7 +14490,11 @@ impl qobject::Backend {
         }
         let me = self.rust().user_mri.to_string();
         for m in &messages {
-            tracing::info!(signed = m.signed, duration_ms = m.duration_ms, "sign language event sent");
+            tracing::info!(
+                signed = m.signed,
+                duration_ms = m.duration_ms,
+                "sign language event sent"
+            );
             self.as_mut().set_signing(&me, m.signed);
         }
         runtime().spawn(async move {
@@ -12677,7 +14522,8 @@ impl qobject::Backend {
         tracing::info!(detected, signers = set.len(), "active signers");
         let json = serde_json::to_string(&set).unwrap_or_else(|_| "[]".into());
         self.as_mut().rust_mut().active_signers = set;
-        self.as_mut().set_call_signing_json(QString::from(json.as_str()));
+        self.as_mut()
+            .set_call_signing_json(QString::from(json.as_str()));
     }
 
     /// Someone's real-time text arrived from data source `source`.
@@ -12690,7 +14536,11 @@ impl qobject::Backend {
             .map(|p| (p.id.clone(), p.name.clone()))
             .unwrap_or_default();
         let now = chrono::Utc::now().timestamp_millis();
-        let updates = self.as_mut().rust_mut().rtt_lines.receive(source, &user_id, &name, &text, now);
+        let updates = self
+            .as_mut()
+            .rust_mut()
+            .rtt_lines
+            .receive(source, &user_id, &name, &text, now);
         if !self.rust().call_rtt_on && updates.iter().any(|u| !u.text.is_empty()) {
             self.as_mut().turn_rtt_on(false);
         }
@@ -12699,9 +14549,11 @@ impl qobject::Backend {
         }
         // You, typing on another device: Teams empties this one's box.
         let me = self.rust().user_mri.to_string();
-        let mine_elsewhere = updates
-            .iter()
-            .any(|u| u.user_id.eq_ignore_ascii_case(&me) && Some(u.source) != own_source && !u.text.is_empty());
+        let mine_elsewhere = updates.iter().any(|u| {
+            u.user_id.eq_ignore_ascii_case(&me)
+                && Some(u.source) != own_source
+                && !u.text.is_empty()
+        });
         self.as_mut().show_rtt(updates);
         if mine_elsewhere && !self.rust().rtt_box.is_empty() {
             self.as_mut().rust_mut().rtt_box.clear();
@@ -12715,7 +14567,11 @@ impl qobject::Backend {
         let me = self.rust().user_mri.to_string();
         let name = self.rust().user_name.to_string();
         let now = chrono::Utc::now().timestamp_millis();
-        let updates = self.as_mut().rust_mut().rtt_lines.receive(OWN_RTT_SOURCE, &me, &name, &chunk, now);
+        let updates =
+            self.as_mut()
+                .rust_mut()
+                .rtt_lines
+                .receive(OWN_RTT_SOURCE, &me, &name, &chunk, now);
         self.as_mut().show_rtt(updates);
         let _ = rtt_outbox().send(chunk);
     }
@@ -12780,7 +14636,11 @@ impl qobject::Backend {
             let result = if !on {
                 // Teams sends no stop: the recorder stops captions once no
                 // endpoint wants them.
-                if was_published { captions_pref(false).await } else { Ok(()) }
+                if was_published {
+                    captions_pref(false).await
+                } else {
+                    Ok(())
+                }
             } else if running {
                 if !call_has_captions().await {
                     return;
@@ -12792,10 +14652,20 @@ impl qobject::Backend {
                     title,
                     ical_uid,
                     organizer,
-                    spoken_language: if language.is_empty() { "en-us".into() } else { language },
+                    spoken_language: if language.is_empty() {
+                        "en-us".into()
+                    } else {
+                        language
+                    },
                 };
                 match ensure_recorder(&meeting).await {
-                    Ok(()) => captions_command(teams_cli::calling::recorder::Command::StartCaptions, &meeting).await,
+                    Ok(()) => {
+                        captions_command(
+                            teams_cli::calling::recorder::Command::StartCaptions,
+                            &meeting,
+                        )
+                        .await
+                    }
                     Err(e) => Err(e),
                 }
             };
@@ -12816,7 +14686,10 @@ impl qobject::Backend {
     /// Once the recorder runs captions for a meeting where we turned them
     /// on, say so in our endpoint metadata (Teams' setStatus(started)).
     fn publish_captions_if_started(mut self: Pin<&mut Self>) {
-        if !(self.rust().call_captions_on && self.rust().processing.captions && !self.rust().captions_published) {
+        if !(self.rust().call_captions_on
+            && self.rust().processing.captions
+            && !self.rust().captions_published)
+        {
             return;
         }
         self.as_mut().rust_mut().captions_published = true;
@@ -12829,23 +14702,34 @@ impl qobject::Backend {
 
     pub fn set_captions_language(mut self: Pin<&mut Self>, language: &QString) {
         let language = language.to_string();
-        self.as_mut().set_call_captions_language(QString::from(language.as_str()));
+        self.as_mut()
+            .set_call_captions_language(QString::from(language.as_str()));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             if !call_has_captions().await {
                 return;
             }
-            let meeting = teams_cli::calling::recorder::Meeting { spoken_language: language, ..Default::default() };
-            let result = captions_command(teams_cli::calling::recorder::Command::SetCaptionsLanguage, &meeting).await;
+            let meeting = teams_cli::calling::recorder::Meeting {
+                spoken_language: language,
+                ..Default::default()
+            };
+            let result = captions_command(
+                teams_cli::calling::recorder::Command::SetCaptionsLanguage,
+                &meeting,
+            )
+            .await;
             if let Err(e) = result {
                 tracing::warn!("captions language: {}", short_error(&e));
-                let _ = qt.queue(|this| this.meeting_action_failed(QString::from("setCaptionsLanguage")));
+                let _ = qt
+                    .queue(|this| this.meeting_action_failed(QString::from("setCaptionsLanguage")));
             }
         });
     }
 
     pub fn update_call_accessibility(self: Pin<&mut Self>, patch: &QString) {
-        let Ok(patch) = serde_json::from_str::<serde_json::Value>(&patch.to_string()) else { return };
+        let Ok(patch) = serde_json::from_str::<serde_json::Value>(&patch.to_string()) else {
+            return;
+        };
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -12857,7 +14741,8 @@ impl qobject::Backend {
                 Ok(all) => {
                     let json = all.to_string();
                     let _ = qt.queue(move |mut this| {
-                        this.as_mut().set_call_accessibility_json(QString::from(json.as_str()))
+                        this.as_mut()
+                            .set_call_accessibility_json(QString::from(json.as_str()))
                     });
                 }
                 Err(e) => tracing::warn!("accessibility settings: {}", short_error(&e)),
@@ -12882,10 +14767,14 @@ impl qobject::Backend {
                     api::preferences::call_accessibility_defaults()
                 }
             };
-            let auto = all.get("startCaptionsAutomatically").and_then(|v| v.as_bool()) == Some(true);
+            let auto = all
+                .get("startCaptionsAutomatically")
+                .and_then(|v| v.as_bool())
+                == Some(true);
             let json = all.to_string();
             let _ = qt.queue(move |mut this| {
-                this.as_mut().set_call_accessibility_json(QString::from(json.as_str()));
+                this.as_mut()
+                    .set_call_accessibility_json(QString::from(json.as_str()));
                 if start_captions && auto {
                     tracing::info!("captions: always on");
                     this.set_captions(true);
@@ -12915,13 +14804,10 @@ impl qobject::Backend {
         let qt = self.qt_thread();
         runtime().spawn(async move {
             use teams_cli::calling::meeting_info as mi;
-            let Some((info, dial)) = call_slot()
-                .lock()
-                .await
-                .outgoing
-                .as_ref()
-                .and_then(|c| c.meeting_info().map(|i| (i, c.dial_in().map(|d| d.to_json()))))
-            else {
+            let Some((info, dial)) = call_slot().lock().await.outgoing.as_ref().and_then(|c| {
+                c.meeting_info()
+                    .map(|i| (i, c.dial_in().map(|d| d.to_json())))
+            }) else {
                 return;
             };
             let event = if info.ical_uid.is_empty() {
@@ -12953,7 +14839,10 @@ impl qobject::Backend {
                     .or_else(|| Some(mi::single_schedule_text(s, e, &tz))),
                 _ => None,
             };
-            let body = event.as_ref().map(|e| e.body_html.clone()).unwrap_or_default();
+            let body = event
+                .as_ref()
+                .map(|e| e.body_html.clone())
+                .unwrap_or_default();
             let copy = mi::copy_join_info(&body, &info.join_url);
             // "Nov 6, 3:00 PM", as the report dialog's meeting card shows it.
             let start_text = info
@@ -12979,10 +14868,15 @@ impl qobject::Backend {
                 "dial": dial,
             })
             .to_string();
-            tracing::info!(has_event = event.is_some(), body = body.len(), "meeting info loaded");
+            tracing::info!(
+                has_event = event.is_some(),
+                body = body.len(),
+                "meeting info loaded"
+            );
             let _ = qt.queue(move |mut this| {
                 this.as_mut().rust_mut().meeting_join_info = copy;
-                this.as_mut().set_call_meeting_info_json(QString::from(json.as_str()));
+                this.as_mut()
+                    .set_call_meeting_info_json(QString::from(json.as_str()));
             });
         });
     }
@@ -13050,14 +14944,19 @@ impl qobject::Backend {
     }
 
     pub fn disconnect_phone_audio(self: Pin<&mut Self>) {
-        let phone: serde_json::Value = serde_json::from_str(&self.rust().call_phone_json.to_string()).unwrap_or_default();
+        let phone: serde_json::Value =
+            serde_json::from_str(&self.rust().call_phone_json.to_string()).unwrap_or_default();
         let mri = self.rust().phone_mri.clone();
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let slot = call_slot().lock().await;
-            let Some(call) = slot.outgoing.as_ref() else { return };
+            let Some(call) = slot.outgoing.as_ref() else {
+                return;
+            };
             if !mri.is_empty()
-                && let Err(e) = call.remove(&mri, phone["number"].as_str().unwrap_or("")).await
+                && let Err(e) = call
+                    .remove(&mri, phone["number"].as_str().unwrap_or(""))
+                    .await
             {
                 tracing::warn!("disconnecting the phone: {}", short_error(&e));
             }
@@ -13065,18 +14964,21 @@ impl qobject::Backend {
             let json = phone_json(call, "", "", "");
             let _ = qt.queue(move |mut this| {
                 this.as_mut().rust_mut().phone_mri.clear();
-                this.as_mut().set_call_phone_json(QString::from(json.as_str()));
+                this.as_mut()
+                    .set_call_phone_json(QString::from(json.as_str()));
             });
         });
     }
 
     pub fn check_prejoin_phone(mut self: Pin<&mut Self>, join_url: &QString) {
         let url = join_url.to_string();
-        self.as_mut().set_prejoin_phone_json(QString::from(r#"{"checked":false,"available":false}"#));
+        self.as_mut()
+            .set_prejoin_phone_json(QString::from(r#"{"checked":false,"available":false}"#));
         self.as_mut().set_prejoin_event_json(QString::default());
         // A meeting started now (Meet now) has nothing to preheat yet.
         if url.is_empty() {
-            self.as_mut().set_prejoin_phone_json(QString::from(r#"{"checked":true,"available":false}"#));
+            self.as_mut()
+                .set_prejoin_phone_json(QString::from(r#"{"checked":true,"available":false}"#));
             return;
         }
         // Teams joins the meeting hidden while its pre-join window is open
@@ -13091,15 +14993,23 @@ impl qobject::Backend {
         }
         // A link OST can't join (not a meetup-join link): the meeting's
         // invitation in your calendar says whether it has dial-in.
-        let event_id = serde_json::from_str::<serde_json::Value>(&self.rust().calendar_json.to_string())
-            .ok()
-            .and_then(|v| {
-                v.as_array()?
-                    .iter()
-                    .find(|e| e["join_url"].as_str().is_some_and(|u| !u.is_empty() && u == url))
-                    .and_then(|e| e["id"].as_str().map(str::to_string))
-            });
-        tracing::info!(found = event_id.is_some(), "pre-join phone audio: the meeting's calendar event");
+        let event_id =
+            serde_json::from_str::<serde_json::Value>(&self.rust().calendar_json.to_string())
+                .ok()
+                .and_then(|v| {
+                    v.as_array()?
+                        .iter()
+                        .find(|e| {
+                            e["join_url"]
+                                .as_str()
+                                .is_some_and(|u| !u.is_empty() && u == url)
+                        })
+                        .and_then(|e| e["id"].as_str().map(str::to_string))
+                });
+        tracing::info!(
+            found = event_id.is_some(),
+            "pre-join phone audio: the meeting's calendar event"
+        );
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let dial = match event_id {
@@ -13110,7 +15020,11 @@ impl qobject::Backend {
                 .await
                 {
                     Ok(body) => {
-                        tracing::info!(body = body.len(), dial_block = body.contains("tel:"), "pre-join invitation read");
+                        tracing::info!(
+                            body = body.len(),
+                            dial_block = body.contains("tel:"),
+                            "pre-join invitation read"
+                        );
                         teams_cli::calling::phone_audio::dial_in_from_invite(&body)
                     }
                     Err(e) => {
@@ -13121,8 +15035,12 @@ impl qobject::Backend {
                 None => None,
             };
             tracing::info!(available = dial.is_some(), "pre-join phone audio checked");
-            let json = serde_json::json!({ "checked": true, "available": dial.is_some() }).to_string();
-            let _ = qt.queue(move |mut this| this.as_mut().set_prejoin_phone_json(QString::from(json.as_str())));
+            let json =
+                serde_json::json!({ "checked": true, "available": dial.is_some() }).to_string();
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .set_prejoin_phone_json(QString::from(json.as_str()))
+            });
         });
         runtime().spawn(load_dial_plan());
     }
@@ -13143,7 +15061,13 @@ impl qobject::Backend {
         self.as_mut().join_meeting(join_url, title);
     }
 
-    pub fn join_meeting_from_prejoin(mut self: Pin<&mut Self>, join_url: &QString, title: &QString, mic_on: bool, with_audio: bool) {
+    pub fn join_meeting_from_prejoin(
+        mut self: Pin<&mut Self>,
+        join_url: &QString,
+        title: &QString,
+        mic_on: bool,
+        with_audio: bool,
+    ) {
         if !self.rust().call_state.is_empty() {
             return;
         }
@@ -13175,7 +15099,10 @@ impl qobject::Backend {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                     let mut slot = call_slot().lock().await;
-                    let still = slot.preheat.as_ref().is_some_and(|p| p.url == url && p.call.is_none() && p.cancel.is_some());
+                    let still = slot
+                        .preheat
+                        .as_ref()
+                        .is_some_and(|p| p.url == url && p.call.is_none() && p.cancel.is_some());
                     if !still {
                         break;
                     }
@@ -13188,7 +15115,8 @@ impl qobject::Backend {
                         break;
                     }
                 }
-                let _ = qt.queue(move |this| this.join_meeting_from_prejoin(&j, &t, mic_on, with_audio));
+                let _ = qt
+                    .queue(move |this| this.join_meeting_from_prejoin(&j, &t, mic_on, with_audio));
             });
             return;
         }
@@ -13222,8 +15150,10 @@ impl qobject::Backend {
         if self.rust().call_held_meeting_json.is_empty() {
             self.as_mut().set_call_breakout_all_json(QString::default());
         }
-        self.as_mut().set_call_breakout_room_json(QString::default());
-        self.as_mut().set_call_breakout_rooms_json(QString::default());
+        self.as_mut()
+            .set_call_breakout_room_json(QString::default());
+        self.as_mut()
+            .set_call_breakout_rooms_json(QString::default());
         self.as_mut().reset_meeting_view(&link, join_url, title);
         self.as_mut().set_call_state(QString::from("connecting"));
         tracing::info!(mic_on, with_audio, "join meeting (preheated)");
@@ -13234,7 +15164,11 @@ impl qobject::Backend {
                 Ok(()) => {
                     let view = JoinedView::of(&call);
                     let in_lobby = call.in_lobby();
-                    tracing::info!(has_audio = view.has_audio, in_lobby, "meeting joined (preheated)");
+                    tracing::info!(
+                        has_audio = view.has_audio,
+                        in_lobby,
+                        "meeting joined (preheated)"
+                    );
                     seed_roster(&qt, &call).await;
                     let id = call.call_id().to_string();
                     let mut slot = call_slot().lock().await;
@@ -13246,7 +15180,8 @@ impl qobject::Backend {
                         this.as_mut().set_call_muted(muted);
                         // Rooms assigned while preheated: where Teams starts.
                         if let Some(b) = breakout {
-                            this.as_mut().set_call_breakout_json(QString::from(b.as_str()));
+                            this.as_mut()
+                                .set_call_breakout_json(QString::from(b.as_str()));
                         }
                         this.as_mut().show_joined(view, in_lobby);
                     });
@@ -13258,7 +15193,11 @@ impl qobject::Backend {
                         tracing::warn!("leaving the preheated call: {}", short_error(&e));
                     }
                     let _ = qt.queue(move |mut this| {
-                        this.as_mut().set_status_text(QString::from(tr("Couldn't join the meeting: %1").replace("%1", &msg).as_str()));
+                        this.as_mut().set_status_text(QString::from(
+                            tr("Couldn't join the meeting: %1")
+                                .replace("%1", &msg)
+                                .as_str(),
+                        ));
                         this.as_mut().end_call_ui();
                     });
                 }
@@ -13285,19 +15224,19 @@ impl qobject::Backend {
 
     pub fn download_attendance_list(mut self: Pin<&mut Self>) {
         let Some(dir) = download_dir() else { return };
-        let bytes = teams_cli::calling::meeting_options::utf16le_with_bom(
-            &self.rust().attendance.tsv(),
-        );
-        let msg = match teams_cli::api::files::save_unique(&dir, "meetingAttendanceList.csv", &bytes) {
-            Ok(path) => {
-                tracing::info!(path = %path.display(), "attendance list saved");
-                file_downloaded(true)
-            }
-            Err(e) => {
-                tracing::warn!("attendance list: {}", short_error(&e));
-                teams_cli::i18n::tr_id("The file didn't download.", "calling:k7tmqi8qv")
-            }
-        };
+        let bytes =
+            teams_cli::calling::meeting_options::utf16le_with_bom(&self.rust().attendance.tsv());
+        let msg =
+            match teams_cli::api::files::save_unique(&dir, "meetingAttendanceList.csv", &bytes) {
+                Ok(path) => {
+                    tracing::info!(path = %path.display(), "attendance list saved");
+                    file_downloaded(true)
+                }
+                Err(e) => {
+                    tracing::warn!("attendance list: {}", short_error(&e));
+                    teams_cli::i18n::tr_id("The file didn't download.", "calling:k7tmqi8qv")
+                }
+            };
         self.as_mut().set_status_text(QString::from(msg.as_str()));
     }
 
@@ -13308,8 +15247,12 @@ impl qobject::Backend {
         message: &QString,
         call_id: &QString,
     ) {
-        let (thread, organizer, message, call) =
-            (thread.to_string(), organizer.to_string(), message.to_string(), call_id.to_string());
+        let (thread, organizer, message, call) = (
+            thread.to_string(),
+            organizer.to_string(),
+            message.to_string(),
+            call_id.to_string(),
+        );
         let key = format!("{thread}|{message}");
         // Keep the history while another report loads.
         let mut state: serde_json::Value =
@@ -13320,21 +15263,31 @@ impl qobject::Backend {
         state["loading"] = json!(true);
         state["error"] = json!("");
         state["callId"] = json!(call);
-        self.as_mut().set_attendance_json(QString::from(state.to_string().as_str()));
+        self.as_mut()
+            .set_attendance_json(QString::from(state.to_string().as_str()));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let message = (!message.is_empty()).then_some(message);
             let result = async {
                 let client = TeamsClient::new().await?;
-                let reports = api::attendance::history(&client, &thread, &organizer, message.as_deref()).await?;
+                let reports =
+                    api::attendance::history(&client, &thread, &organizer, message.as_deref())
+                        .await?;
                 // A chat's call-ended message names the call by its
                 // ngcCallId; the reports go by their own callId.
                 let call = if call.is_empty() {
-                    reports.first().and_then(|r| r["callId"].as_str()).unwrap_or_default().to_string()
+                    reports
+                        .first()
+                        .and_then(|r| r["callId"].as_str())
+                        .unwrap_or_default()
+                        .to_string()
                 } else {
                     reports
                         .iter()
-                        .find(|r| r["callId"].as_str() == Some(&call) || r["ngcCallId"].as_str() == Some(&call))
+                        .find(|r| {
+                            r["callId"].as_str() == Some(&call)
+                                || r["ngcCallId"].as_str() == Some(&call)
+                        })
                         .and_then(|r| r["callId"].as_str())
                         .map(str::to_string)
                         .unwrap_or(call)
@@ -13342,14 +15295,16 @@ impl qobject::Backend {
                 let report = if call.is_empty() {
                     serde_json::Value::Null
                 } else {
-                    api::attendance::report(&client, &thread, &call, &organizer, message.as_deref()).await?
+                    api::attendance::report(&client, &thread, &call, &organizer, message.as_deref())
+                        .await?
                 };
                 anyhow::Ok((reports, call, report))
             }
             .await;
             let _ = qt.queue(move |mut this| {
                 let mut state: serde_json::Value =
-                    serde_json::from_str(&this.rust().attendance_json.to_string()).unwrap_or(json!({}));
+                    serde_json::from_str(&this.rust().attendance_json.to_string())
+                        .unwrap_or(json!({}));
                 if state["key"] != json!(key) {
                     return;
                 }
@@ -13365,19 +15320,30 @@ impl qobject::Backend {
                         state["error"] = json!(short_error(&e));
                     }
                 }
-                this.as_mut().set_attendance_json(QString::from(state.to_string().as_str()));
+                this.as_mut()
+                    .set_attendance_json(QString::from(state.to_string().as_str()));
             });
         });
     }
 
-    pub fn download_attendance_report(self: Pin<&mut Self>, thread: &QString, organizer: &QString, call_id: &QString) {
+    pub fn download_attendance_report(
+        self: Pin<&mut Self>,
+        thread: &QString,
+        organizer: &QString,
+        call_id: &QString,
+    ) {
         let Some(dir) = download_dir() else { return };
-        let (thread, organizer, call) = (thread.to_string(), organizer.to_string(), call_id.to_string());
+        let (thread, organizer, call) = (
+            thread.to_string(),
+            organizer.to_string(),
+            call_id.to_string(),
+        );
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                let (name, bytes) = api::attendance::file(&client, &thread, &call, &organizer).await?;
+                let (name, bytes) =
+                    api::attendance::file(&client, &thread, &call, &organizer).await?;
                 let name = name.unwrap_or_else(|| "Attendance report.csv".to_string());
                 api::files::save_unique(&dir, &name, &bytes)
             }
@@ -13392,7 +15358,8 @@ impl qobject::Backend {
                     teams_cli::i18n::tr_id("The file didn't download.", "calling:k7tmqi8qv")
                 }
             };
-            let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
+            let _ = qt
+                .queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
         });
     }
 
@@ -13420,12 +15387,19 @@ impl qobject::Backend {
             .iter()
             .map(|(path, name)| serde_json::json!({ "path": path, "name": name }))
             .collect();
-        QString::from(serde_json::json!({ "devices": list, "current": current }).to_string().as_str())
+        QString::from(
+            serde_json::json!({ "devices": list, "current": current })
+                .to_string()
+                .as_str(),
+        )
     }
 
     pub fn set_camera_device(mut self: Pin<&mut Self>, path: &QString) {
         let path = path.to_string();
-        self.as_mut().set_setting(&QString::from("cameraDevice"), &QString::from(path.as_str()));
+        self.as_mut().set_setting(
+            &QString::from("cameraDevice"),
+            &QString::from(path.as_str()),
+        );
         if !self.rust().call_camera_on {
             return;
         }
@@ -13519,7 +15493,8 @@ impl qobject::Backend {
                 Ok(None) => {}
                 Err(e) => {
                     tracing::info!("camera: {}", short_error(&e));
-                    this.as_mut().set_status_text(QString::from(tr("Your camera failed").as_str()));
+                    this.as_mut()
+                        .set_status_text(QString::from(tr("Your camera failed").as_str()));
                 }
             });
         });
@@ -13590,7 +15565,8 @@ impl qobject::Backend {
     }
 
     pub fn set_share_sound(mut self: Pin<&mut Self>, on: bool) {
-        static SOUND: std::sync::Mutex<Option<teams_cli::calling::system_sound::SystemSound>> = std::sync::Mutex::new(None);
+        static SOUND: std::sync::Mutex<Option<teams_cli::calling::system_sound::SystemSound>> =
+            std::sync::Mutex::new(None);
         let mut sound = SOUND.lock().unwrap_or_else(|e| e.into_inner());
         if !on {
             *sound = None;
@@ -13612,7 +15588,10 @@ impl qobject::Backend {
     pub fn content_camera_open(mut self: Pin<&mut Self>, device: &QString) -> bool {
         let device = device.to_string();
         let mut slot = content_camera().lock().unwrap_or_else(|e| e.into_inner());
-        if slot.as_ref().is_some_and(|c| c.device() == device && !c.ended()) {
+        if slot
+            .as_ref()
+            .is_some_and(|c| c.device() == device && !c.ended())
+        {
             return true;
         }
         *slot = None;
@@ -13637,7 +15616,12 @@ impl qobject::Backend {
     }
 
     pub fn content_camera_close(self: Pin<&mut Self>) {
-        if content_camera().lock().unwrap_or_else(|e| e.into_inner()).take().is_some() {
+        if content_camera()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+            .is_some()
+        {
             tracing::info!("content camera: dialog closed");
         }
     }
@@ -13656,20 +15640,30 @@ impl qobject::Backend {
             zoom_enabled: v["zoomEnabled"].as_bool().unwrap_or(false),
             normalized_quad: quad,
         };
-        if let Some(c) = content_camera().lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        if let Some(c) = content_camera()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
             c.apply(o);
         }
     }
 
     pub fn content_camera_rotate(self: Pin<&mut Self>) {
-        if let Some(c) = content_camera().lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        if let Some(c) = content_camera()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
             c.rotate();
         }
     }
 
     pub fn content_camera_state(self: Pin<&mut Self>) -> QString {
         let slot = content_camera().lock().unwrap_or_else(|e| e.into_inner());
-        let Some(c) = slot.as_ref() else { return QString::default() };
+        let Some(c) = slot.as_ref() else {
+            return QString::default();
+        };
         let st = c.state();
         QString::from(
             serde_json::json!({
@@ -13700,7 +15694,13 @@ impl qobject::Backend {
         if !self.as_mut().content_camera_open(device) {
             return;
         }
-        let Some(camera) = content_camera().lock().unwrap_or_else(|e| e.into_inner()).take() else { return };
+        let Some(camera) = content_camera()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+        else {
+            return;
+        };
         camera.set_preview(false);
         // Control (Teams: give control is for screens and windows).
         self.as_mut().rust_mut().presenting.kind = None;
@@ -13715,7 +15715,9 @@ impl qobject::Backend {
                 Err(e) => {
                     tracing::warn!("content from camera: {}", short_error(&e));
                     let _ = qt.queue(move |mut this| {
-                        this.as_mut().set_status_text(QString::from(tr("Couldn't share your content").as_str()));
+                        this.as_mut().set_status_text(QString::from(
+                            tr("Couldn't share your content").as_str(),
+                        ));
                     });
                 }
             }
@@ -13753,7 +15755,8 @@ impl qobject::Backend {
             } else if let Err(e) = result {
                 tracing::warn!("share: {}", short_error(&e));
                 let _ = qt.queue(move |mut this| {
-                    this.as_mut().set_status_text(QString::from(tr("Couldn't share your content").as_str()));
+                    this.as_mut()
+                        .set_status_text(QString::from(tr("Couldn't share your content").as_str()));
                 });
             } else if !on {
                 let _ = qt.queue(|mut this| this.as_mut().set_call_sharing(false));
@@ -13847,14 +15850,16 @@ impl qobject::Backend {
         // Teams' appState: hooked until a call connects (a ringing call is
         // still on hook, "pulsing").
         let hooked = matches!(state.as_str(), "" | "ended" | "ringing");
-        teams_cli::calling::hid_telephony::set_app_state(teams_cli::calling::hid_telephony::AppState {
-            hooked,
-            ringing: state == "ringing",
-            muted: !hooked && self.call_muted,
-            in_prejoin: prejoin,
-            prejoin_muted,
-            held: !hooked && self.call_held,
-        });
+        teams_cli::calling::hid_telephony::set_app_state(
+            teams_cli::calling::hid_telephony::AppState {
+                hooked,
+                ringing: state == "ringing",
+                muted: !hooked && self.call_muted,
+                in_prejoin: prejoin,
+                prejoin_muted,
+                held: !hooked && self.call_held,
+            },
+        );
         // The Bluetooth headset's view of the call, and the app's mute as
         // its microphone gain (Teams' VoIP call coordinator reports).
         use std::sync::atomic::Ordering;
@@ -13865,14 +15870,25 @@ impl qobject::Backend {
         }
         let incoming = HFP_INCOMING.load(Ordering::SeqCst);
         let phase = teams_cli::calling::hfp::Phase::of(&state, self.call_held, incoming);
-        crate::hfp_calls::set_call(crate::hfp_calls::CallView { phase, incoming, peer: self.call_peer.to_string() });
-        let in_call = matches!(state.as_str(), "calling" | "connecting" | "connected" | "lobby");
+        crate::hfp_calls::set_call(crate::hfp_calls::CallView {
+            phase,
+            incoming,
+            peer: self.call_peer.to_string(),
+        });
+        let in_call = matches!(
+            state.as_str(),
+            "calling" | "connecting" | "connected" | "lobby"
+        );
         let muted = in_call && self.call_muted;
         teams_cli::calling::hfp::sync_app_mute(in_call, muted);
     }
 
     pub fn headset_status(&self) -> QString {
-        QString::from(serde_json::to_string(&teams_cli::calling::hid_telephony::status()).unwrap_or_default().as_str())
+        QString::from(
+            serde_json::to_string(&teams_cli::calling::hid_telephony::status())
+                .unwrap_or_default()
+                .as_str(),
+        )
     }
 
     pub fn headset_take_control(&self) {
@@ -13880,10 +15896,16 @@ impl qobject::Backend {
     }
 
     /// A headset button, as Teams' HID service acts on it.
-    fn on_headset_action(mut self: Pin<&mut Self>, action: teams_cli::calling::hid_telephony::Action) {
+    fn on_headset_action(
+        mut self: Pin<&mut Self>,
+        action: teams_cli::calling::hid_telephony::Action,
+    ) {
         use teams_cli::calling::hid_telephony::{Action, AspEvent};
         let state = self.call_state.to_string();
-        let in_call = matches!(state.as_str(), "calling" | "connecting" | "connected" | "lobby");
+        let in_call = matches!(
+            state.as_str(),
+            "calling" | "connecting" | "connected" | "lobby"
+        );
         tracing::info!(?action, state = %state, "headset button");
         match action {
             Action::Answer if state == "ringing" => self.accept_call(false),
@@ -13955,7 +15977,11 @@ impl qobject::Backend {
 
     /// Sign language mode in the meeting: publish `kind` ("dhhSigner" or
     /// "signLanguageInterpreter") with its content, or take it back ("").
-    pub fn set_sign_language_state(mut self: Pin<&mut Self>, kind: &QString, content_json: &QString) {
+    pub fn set_sign_language_state(
+        mut self: Pin<&mut Self>,
+        kind: &QString,
+        content_json: &QString,
+    ) {
         let kind = kind.to_string();
         // Teams detects signing only for a Signer (isVideoDHHSigner).
         self.as_mut().rust_mut().sign_signer = kind == "dhhSigner";
@@ -13972,11 +15998,15 @@ impl qobject::Backend {
                 }
             });
         }
-        let content: serde_json::Value = serde_json::from_str(&content_json.to_string()).unwrap_or_else(|_| json!({}));
+        let content: serde_json::Value =
+            serde_json::from_str(&content_json.to_string()).unwrap_or_else(|_| json!({}));
         runtime().spawn(async move {
             let mut slot = call_slot().lock().await;
             let result = match slot.outgoing.as_mut() {
-                Some(call) => call.sign_language_state((!kind.is_empty()).then_some((kind.as_str(), content))).await,
+                Some(call) => {
+                    call.sign_language_state((!kind.is_empty()).then_some((kind.as_str(), content)))
+                        .await
+                }
                 None => Ok(()),
             };
             if let Err(e) = result {
@@ -14016,9 +16046,13 @@ impl qobject::Backend {
         use teams_cli::calling::consult::{Action, Event, Person};
         let oid = oid.to_string().trim().to_ascii_lowercase();
         let name = name.to_string();
-        let my_oid = teams_cli::config::Config::load().ok().and_then(|c| c.object_id()).unwrap_or_default();
+        let my_oid = teams_cli::config::Config::load()
+            .ok()
+            .and_then(|c| c.object_id())
+            .unwrap_or_default();
         let Some(chat) = outgoing::one_to_one_chat_id(&my_oid, &oid) else {
-            self.as_mut().set_status_text(QString::from(tr("Consult: not someone you can call")));
+            self.as_mut()
+                .set_status_text(QString::from(tr("Consult: not someone you can call")));
             return;
         };
         let mri = format!("8:orgid:{oid}");
@@ -14029,7 +16063,10 @@ impl qobject::Backend {
         runtime().spawn(async move {
             {
                 let mut slot = call_slot().lock().await;
-                let (next, action) = slot.consult_state.step(Event::Start(Person { mri: mri.clone(), name }));
+                let (next, action) = slot.consult_state.step(Event::Start(Person {
+                    mri: mri.clone(),
+                    name,
+                }));
                 if action != Action::HoldAndCall {
                     return;
                 }
@@ -14049,8 +16086,16 @@ impl qobject::Backend {
             let mut slot = call_slot().lock().await;
             slot.cancel_consult = None;
             match result {
-                Ok(call) if matches!(slot.consult_state, teams_cli::calling::consult::Consult::Placing { .. }) => {
-                    tracing::info!(replace = call.replace_link().is_some(), "consult call answered");
+                Ok(call)
+                    if matches!(
+                        slot.consult_state,
+                        teams_cli::calling::consult::Consult::Placing { .. }
+                    ) =>
+                {
+                    tracing::info!(
+                        replace = call.replace_link().is_some(),
+                        "consult call answered"
+                    );
                     slot.consult = Some(call);
                     let (next, _) = slot.consult_state.step(Event::Answered);
                     slot.consult_state = next;
@@ -14065,7 +16110,9 @@ impl qobject::Backend {
                     tracing::info!("consult call failed: {}", short_error(&e));
                     let msg = tr("Consult: %1").replace("%1", &short_error(&e));
                     consult_ended(&qt, &mut slot).await;
-                    let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut().set_status_text(QString::from(msg.as_str()))
+                    });
                 }
             }
         });
@@ -14083,7 +16130,10 @@ impl qobject::Backend {
             let target = next.target().map(|t| t.mri.clone()).unwrap_or_default();
             slot.consult_state = next;
             publish_consult(&qt, &slot);
-            let replaces = slot.consult.as_ref().and_then(|c| c.replace_link().map(str::to_string));
+            let replaces = slot
+                .consult
+                .as_ref()
+                .and_then(|c| c.replace_link().map(str::to_string));
             tracing::info!(replaces = replaces.is_some(), "consult transfer");
             let result = match (slot.active.as_ref(), slot.outgoing.as_ref()) {
                 (Some(call), _) => match CallAuth::load().await {
@@ -14099,7 +16149,9 @@ impl qobject::Backend {
                 slot.consult_state = next;
                 publish_consult(&qt, &slot);
                 let msg = tr("Transfer failed");
-                let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut().set_status_text(QString::from(msg.as_str()))
+                });
             }
         });
     }
@@ -14126,13 +16178,28 @@ impl qobject::Backend {
                 .active
                 .as_ref()
                 .and_then(|c| c.remote_leg(&first_peer))
-                .or_else(|| slot.outgoing.as_ref().and_then(|c| c.remote_leg(&first_peer)))
-                .or_else(|| slot.roster_legs.get(&first_peer.to_ascii_lowercase()).cloned());
+                .or_else(|| {
+                    slot.outgoing
+                        .as_ref()
+                        .and_then(|c| c.remote_leg(&first_peer))
+                })
+                .or_else(|| {
+                    slot.roster_legs
+                        .get(&first_peer.to_ascii_lowercase())
+                        .cloned()
+                });
             let result = async {
-                let my_oid = teams_cli::config::Config::load().ok().and_then(|c| c.object_id()).context("Not signed in")?;
+                let my_oid = teams_cli::config::Config::load()
+                    .ok()
+                    .and_then(|c| c.object_id())
+                    .context("Not signed in")?;
                 // Teams' getCallingConversationWith: the chat of everyone
                 // in both calls, which the merged call takes as its group.
-                let members = vec![format!("8:orgid:{my_oid}"), first_peer.clone(), target.mri.clone()];
+                let members = vec![
+                    format!("8:orgid:{my_oid}"),
+                    first_peer.clone(),
+                    target.mri.clone(),
+                ];
                 let client = TeamsClient::new().await?;
                 let thread = api::create_group_chat(&client, &members, "").await?;
                 let consult = consult_call.as_ref().context("No consult call")?;
@@ -14194,8 +16261,10 @@ impl qobject::Backend {
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_call_held(false);
                         this.as_mut().set_call_peer(QString::from(names.as_str()));
-                        this.as_mut().set_call_thread_id(QString::from(thread.as_str()));
-                        this.as_mut().set_status_text(QString::from(tr("Calls merged")));
+                        this.as_mut()
+                            .set_call_thread_id(QString::from(thread.as_str()));
+                        this.as_mut()
+                            .set_status_text(QString::from(tr("Calls merged")));
                     });
                 }
                 Err(e) => {
@@ -14204,7 +16273,9 @@ impl qobject::Backend {
                     slot.consult_state = next;
                     publish_consult(&qt, &slot);
                     let msg = tr("Couldn't merge calls");
-                    let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut().set_status_text(QString::from(msg.as_str()))
+                    });
                 }
             }
         });
@@ -14257,7 +16328,11 @@ impl qobject::Backend {
     /// roster's order).
     fn apply_roster(mut self: Pin<&mut Self>, delta: Vec<teams_cli::calling::roster::Participant>) {
         // Someone who left ends their RTT line where it stood.
-        let left: Vec<String> = delta.iter().filter(|p| !p.active).map(|p| p.id.clone()).collect();
+        let left: Vec<String> = delta
+            .iter()
+            .filter(|p| !p.active)
+            .map(|p| p.id.clone())
+            .collect();
         let mut ended = Vec::new();
         for id in &left {
             ended.extend(self.as_mut().rust_mut().rtt_lines.end_user(id));
@@ -14285,16 +16360,28 @@ impl qobject::Backend {
         // Teams Rooms' auto exit: an ad-hoc meeting nobody else is left in.
         // Its getInCallParticipants: everyone connected (people, guests,
         // phone numbers) but calling bots and the room's own endpoints.
-        if self.rust().room_mode && self.rust().room_auto_exit && self.rust().call_state.to_string() == "connected" {
-            let others = roster.iter().filter(|p| p.id != me && p.active && !p.id.starts_with("28:")).count();
-            if teams_cli::calling::room_mode::adhoc_escalated(others) && !self.rust().room_escalated {
-                tracing::info!(others, "room mode: the ad-hoc meeting escalated; it waits for its end");
+        if self.rust().room_mode
+            && self.rust().room_auto_exit
+            && self.rust().call_state.to_string() == "connected"
+        {
+            let others = roster
+                .iter()
+                .filter(|p| p.id != me && p.active && !p.id.starts_with("28:"))
+                .count();
+            if teams_cli::calling::room_mode::adhoc_escalated(others) && !self.rust().room_escalated
+            {
+                tracing::info!(
+                    others,
+                    "room mode: the ad-hoc meeting escalated; it waits for its end"
+                );
                 self.as_mut().rust_mut().room_escalated = true;
             }
             if others > 0 {
                 self.as_mut().rust_mut().room_saw_others = true;
             } else if self.rust().room_saw_others && !self.rust().room_escalated {
-                tracing::info!("room mode: leaving ad-hoc call because no other participants left in the call");
+                tracing::info!(
+                    "room mode: leaving ad-hoc call because no other participants left in the call"
+                );
                 self.as_mut().rust_mut().room_saw_others = false;
                 self.as_mut().hang_up();
             }
@@ -14329,9 +16416,16 @@ impl qobject::Backend {
         }
         let share_source = presenter.and_then(|p| p.1);
         // Give / take control: the presenter we watch; who left.
-        let watched = roster.iter().find(|p| p.id != me && p.share_source.is_some()).cloned();
+        let watched = roster
+            .iter()
+            .find(|p| p.id != me && p.share_source.is_some())
+            .cloned();
         if let Some(w) = watched.as_ref() {
-            let mine = roster.iter().find(|p| p.id == me).map(|p| p.data_sources.clone()).unwrap_or_default();
+            let mine = roster
+                .iter()
+                .find(|p| p.id == me)
+                .map(|p| p.data_sources.clone())
+                .unwrap_or_default();
             if self.rust().presenting_viewing.is_none() {
                 tracing::info!(presenter_data = ?w.data_sources, presenter_share_data = ?w.share_data_source, my_data = ?mine, "screen control: data sources");
             }
@@ -14344,7 +16438,8 @@ impl qobject::Backend {
             .filter(|p| p.id != me)
             .filter(|p| {
                 p.weather_person.as_deref().is_some_and(|w| {
-                    serde_json::from_str::<teams_cli::calling::presenter_mode::Published>(w).is_ok_and(|l| l.mode().cuts_background())
+                    serde_json::from_str::<teams_cli::calling::presenter_mode::Published>(w)
+                        .is_ok_and(|l| l.mode().cuts_background())
                 })
             })
             .filter_map(|p| p.video_source)
@@ -14356,7 +16451,10 @@ impl qobject::Backend {
                 .filter(|p| p.id != me && p.active)
                 .map(|p| (p.id.clone(), p.name.clone()))
                 .collect();
-            let (mri, name) = (self.rust().user_mri.to_string(), self.rust().user_name.to_string());
+            let (mri, name) = (
+                self.rust().user_mri.to_string(),
+                self.rust().user_name.to_string(),
+            );
             self.as_mut()
                 .rust_mut()
                 .attendance
@@ -14397,7 +16495,10 @@ impl qobject::Backend {
                     .iter()
                     .filter_map(|(mri, src, _)| Some((mri.clone(), shown.get(src)?.clone().into())))
                     .collect();
-                let masked_keys: Vec<String> = masked.iter().filter_map(|s| shown.get(s).cloned()).collect();
+                let masked_keys: Vec<String> = masked
+                    .iter()
+                    .filter_map(|s| shown.get(s).cloned())
+                    .collect();
                 teams_cli::calling::frames::set_implicit_masks(&masked_keys);
                 let json = serde_json::Value::Object(keys).to_string();
                 let _ = qt.queue(move |mut this| {
@@ -14415,8 +16516,16 @@ impl qobject::Backend {
     /// lobby to (not an attendee, not anonymous; your role from the roster).
     fn publish_lobby(mut self: Pin<&mut Self>) {
         let me = self.rust().user_mri.to_string().to_ascii_lowercase();
-        let role = self.rust().roster.iter().find(|p| p.id == me).map(|p| p.role.clone());
-        let shown = teams_cli::calling::roster::sees_lobby(role.as_deref(), me.starts_with("8:teamsvisitor:"));
+        let role = self
+            .rust()
+            .roster
+            .iter()
+            .find(|p| p.id == me)
+            .map(|p| p.role.clone());
+        let shown = teams_cli::calling::roster::sees_lobby(
+            role.as_deref(),
+            me.starts_with("8:teamsvisitor:"),
+        );
         let people: Vec<serde_json::Value> = if shown {
             self.rust()
                 .lobby_people
@@ -14428,7 +16537,8 @@ impl qobject::Backend {
         };
         let text = serde_json::to_string(&people).unwrap_or_else(|_| "[]".into());
         if self.rust().call_lobby_json.to_string() != text {
-            self.as_mut().set_call_lobby_json(QString::from(text.as_str()));
+            self.as_mut()
+                .set_call_lobby_json(QString::from(text.as_str()));
         }
     }
 
@@ -14442,7 +16552,10 @@ impl qobject::Backend {
         self.as_mut().rust_mut().presenting.control = Default::default();
         self.as_mut().content_reset();
         if self.rust().call_test && self.rust().call_test_report.is_empty() {
-            let watch = echo_watch().lock().unwrap_or_else(|e| e.into_inner()).take();
+            let watch = echo_watch()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take();
             let mut report = watch.map(|w| w.report).unwrap_or_default();
             let (inputs, outputs) = teams_cli::calling::audio::list_devices();
             if inputs.is_empty() {
@@ -14470,7 +16583,8 @@ impl qobject::Backend {
                 camera.map(|c| c.1).as_deref(),
             );
             tracing::info!(report = %rows, "test call report");
-            self.as_mut().set_call_test_report(QString::from(rows.to_string().as_str()));
+            self.as_mut()
+                .set_call_test_report(QString::from(rows.to_string().as_str()));
         }
         self.as_mut().set_call_held(false);
         self.as_mut().set_call_held_by_peer(false);
@@ -14487,7 +16601,8 @@ impl qobject::Backend {
             self.as_mut().set_call_state(QString::from("ended"));
         }
         self.as_mut().set_call_camera_on(false);
-        self.as_mut().set_call_network_strength(QString::from("Good"));
+        self.as_mut()
+            .set_call_network_strength(QString::from("Good"));
         self.as_mut().set_call_can_video(false);
         self.as_mut().set_call_can_share(false);
         self.as_mut().set_call_sharing(false);
@@ -14565,10 +16680,18 @@ impl qobject::Backend {
     fn maybe_chat_bubble(self: Pin<&mut Self>, m: &teams_cli::event_hub::PushedMessage) {
         let in_call = self.rust().call_state.to_string() == "connected";
         let thread = self.rust().call_thread_id.to_string();
-        if !in_call || thread.is_empty() || m.conversation_id != thread || self.rust().call_chat_bubbles_suppressed {
+        if !in_call
+            || thread.is_empty()
+            || m.conversation_id != thread
+            || self.rust().call_chat_bubbles_suppressed
+        {
             return;
         }
-        let mine = self.rust().my_mri.as_deref().is_some_and(|me| me.eq_ignore_ascii_case(&m.sender_mri))
+        let mine = self
+            .rust()
+            .my_mri
+            .as_deref()
+            .is_some_and(|me| me.eq_ignore_ascii_case(&m.sender_mri))
             || (!m.sender_name.is_empty() && m.sender_name == self.rust().user_name.to_string());
         if mine || m.text.trim().is_empty() {
             return;
@@ -14602,7 +16725,8 @@ impl qobject::Backend {
         let prefs = notify_prefs(&self.rust().settings_json.to_string(), &load_settings());
         // Muted for this call (More ▸ Settings ▸ Mute notifications), or
         // notifications off during calls and meetings.
-        let in_call = ["connected", "connecting", "calling"].contains(&self.rust().call_state.to_string().as_str());
+        let in_call = ["connected", "connecting", "calling"]
+            .contains(&self.rust().call_state.to_string().as_str());
         let banners_on = (!prefs.mute_all || (m.urgent && prefs.allow_urgent_when_muted))
             && !(in_call && (self.rust().call_notifications_muted || !prefs.during_calls));
         let mentioned = self
@@ -14657,7 +16781,11 @@ impl qobject::Backend {
         // channel reply) over where it was said. Previews off: "Message
         // preview hidden".
         let one_on_one = m.conversation_id.ends_with("@unq.gbl.spaces");
-        let sender = if m.sender_name.is_empty() { tr("Unknown User") } else { m.sender_name.clone() };
+        let sender = if m.sender_name.is_empty() {
+            tr("Unknown User")
+        } else {
+            m.sender_name.clone()
+        };
         let preview: String = if prefs.previews {
             m.text.chars().take(NOTIFICATION_BODY_CHARS).collect()
         } else {
@@ -14670,22 +16798,45 @@ impl qobject::Backend {
             } else {
                 tr("%1 @mentioned you").replace("%1", &sender)
             };
-            let place = if chat_name.is_empty() { tr("Chat with %1").replace("%1", &sender) } else { chat_name.clone() };
+            let place = if chat_name.is_empty() {
+                tr("Chat with %1").replace("%1", &sender)
+            } else {
+                chat_name.clone()
+            };
             (title, place, preview.clone())
         } else if one_on_one {
-            let title = if m.urgent { tr("%1 sent an urgent message").replace("%1", &sender) } else { sender.clone() };
+            let title = if m.urgent {
+                tr("%1 sent an urgent message").replace("%1", &sender)
+            } else {
+                sender.clone()
+            };
             (title, String::new(), preview.clone())
         } else {
-            let title = if chat_name.is_empty() { tr("Unknown") } else { chat_name.clone() };
-            (title, String::new(), tr("%1: %2").replace("%1", &sender).replace("%2", &preview))
+            let title = if chat_name.is_empty() {
+                tr("Unknown")
+            } else {
+                chat_name.clone()
+            };
+            (
+                title,
+                String::new(),
+                tr("%1: %2").replace("%1", &sender).replace("%2", &preview),
+            )
         };
         let (title, subtitle, text) = if decision == Toast::Redacted {
-            (tr("You have a new notification"), String::new(), String::new())
+            (
+                tr("You have a new notification"),
+                String::new(),
+                String::new(),
+            )
         } else {
             (title, subtitle, text)
         };
         let chat_id = m.conversation_id.clone();
-        let busy = matches!(availability.as_str(), "Busy" | "DoNotDisturb" | "InACall" | "InAMeeting") || in_call;
+        let busy = matches!(
+            availability.as_str(),
+            "Busy" | "DoNotDisturb" | "InACall" | "InAMeeting"
+        ) || in_call;
         let silent = !prefs.sound || (busy && !prefs.sound_when_busy);
         let timeout = prefs.seconds * 1000;
         if prefs.flash {
@@ -14712,20 +16863,31 @@ impl qobject::Backend {
             // hello" (their short name, which needs their profile once).
             let group = !mention && !one_on_one && decision != Toast::Redacted;
             if group && !m.sender_mri.is_empty() {
-                let (mri, display, preview) = (m.sender_mri.clone(), sender.clone(), preview.clone());
+                let (mri, display, preview) =
+                    (m.sender_mri.clone(), sender.clone(), preview.clone());
                 let qt = self.qt_thread();
                 runtime().spawn(async move {
                     let short = sender_short_name(&mri, &display).await;
                     let mut banner = banner;
-                    banner["text"] = serde_json::Value::String(tr("%1: %2").replace("%1", &short).replace("%2", &preview));
-                    let _ = qt.queue(move |mut this| this.as_mut().banner_requested(QString::from(banner.to_string().as_str())));
+                    banner["text"] = serde_json::Value::String(
+                        tr("%1: %2").replace("%1", &short).replace("%2", &preview),
+                    );
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut()
+                            .banner_requested(QString::from(banner.to_string().as_str()))
+                    });
                 });
                 return;
             }
-            self.as_mut().banner_requested(QString::from(banner.to_string().as_str()));
+            self.as_mut()
+                .banner_requested(QString::from(banner.to_string().as_str()));
             return;
         }
-        let body = if subtitle.is_empty() { text } else { format!("{subtitle}\n{text}") };
+        let body = if subtitle.is_empty() {
+            text
+        } else {
+            format!("{subtitle}\n{text}")
+        };
         std::thread::spawn(move || {
             let shown = notify_rust::Notification::new()
                 .appname("OST")
@@ -14744,8 +16906,15 @@ impl qobject::Backend {
                             // Settings ▸ General ▸ Opening content in OST
                             // windows: the chat in a window of its own, or in
                             // the main window.
-                            if load_settings().get("openContentIn").and_then(|v| v.as_str()) == Some("popout") {
-                                this.as_mut().open_chat_window_requested(QString::from(chat_id.as_str()), QString::from(chat_name.as_str()));
+                            if load_settings()
+                                .get("openContentIn")
+                                .and_then(|v| v.as_str())
+                                == Some("popout")
+                            {
+                                this.as_mut().open_chat_window_requested(
+                                    QString::from(chat_id.as_str()),
+                                    QString::from(chat_name.as_str()),
+                                );
                                 return;
                             }
                             this.as_mut().select_chat(
@@ -14779,15 +16948,24 @@ impl qobject::Backend {
         let mut start = start;
         if start.initiator_name.is_empty() && !start.initiator.is_empty() {
             let known: serde_json::Map<String, serde_json::Value> =
-                serde_json::from_str(&self.rust().people_names_json.to_string()).unwrap_or_default();
-            if let Some(n) = known.get(&start.initiator).and_then(|n| n.as_str()).filter(|n| !n.is_empty()) {
+                serde_json::from_str(&self.rust().people_names_json.to_string())
+                    .unwrap_or_default();
+            if let Some(n) = known
+                .get(&start.initiator)
+                .and_then(|n| n.as_str())
+                .filter(|n| !n.is_empty())
+            {
                 start.initiator_name = n.to_string();
             } else {
                 let qt2 = qt.clone();
                 runtime().spawn(async move {
                     let name = async {
                         let client = TeamsClient::new().await?;
-                        api::directory::short_profiles(&client, std::slice::from_ref(&start.initiator)).await
+                        api::directory::short_profiles(
+                            &client,
+                            std::slice::from_ref(&start.initiator),
+                        )
+                        .await
                     }
                     .await
                     .ok()
@@ -14796,7 +16974,8 @@ impl qobject::Backend {
                     .unwrap_or_else(|| tr("Someone"));
                     start.initiator_name = name;
                     let qt3 = qt2.clone();
-                    let _ = qt2.queue(move |mut this| this.as_mut().notify_meeting_start(start, qt3));
+                    let _ =
+                        qt2.queue(move |mut this| this.as_mut().notify_meeting_start(start, qt3));
                 });
                 return;
             }
@@ -14806,14 +16985,28 @@ impl qobject::Backend {
         // (an invitation that came after it loaded, or another week shown)
         // is looked up around now first; a failed lookup counts as found,
         // as in Teams.
-        static LOOKED_UP: OnceLock<std::sync::Mutex<HashMap<String, Option<serde_json::Value>>>> = OnceLock::new();
-        let thread_enc = start.thread_id.replace(':', "%3a").replace('@', "%40").to_lowercase();
-        let in_calendar = |e: &serde_json::Value| e["join_url"].as_str().is_some_and(|u| u.to_lowercase().contains(&thread_enc));
+        static LOOKED_UP: OnceLock<std::sync::Mutex<HashMap<String, Option<serde_json::Value>>>> =
+            OnceLock::new();
+        let thread_enc = start
+            .thread_id
+            .replace(':', "%3a")
+            .replace('@', "%40")
+            .to_lowercase();
+        let in_calendar = |e: &serde_json::Value| {
+            e["join_url"]
+                .as_str()
+                .is_some_and(|u| u.to_lowercase().contains(&thread_enc))
+        };
         let mut looked_up: Option<Option<serde_json::Value>> = None;
         if start.scheduled {
-            let calendar: Vec<serde_json::Value> = serde_json::from_str(&self.rust().calendar_json.to_string()).unwrap_or_default();
+            let calendar: Vec<serde_json::Value> =
+                serde_json::from_str(&self.rust().calendar_json.to_string()).unwrap_or_default();
             if !calendar.iter().any(in_calendar) {
-                let known = LOOKED_UP.get_or_init(Default::default).lock().ok().and_then(|mut m| m.remove(&start.call_id));
+                let known = LOOKED_UP
+                    .get_or_init(Default::default)
+                    .lock()
+                    .ok()
+                    .and_then(|mut m| m.remove(&start.call_id));
                 match known {
                     Some(found) => looked_up = Some(found),
                     None => {
@@ -14874,24 +17067,38 @@ impl qobject::Backend {
         // default, as in Teams), unless everything is muted. A scheduled
         // meeting: Meeting start notifications (on by default).
         let prefs = notify_prefs(&self.rust().settings_json.to_string(), &load_settings());
-        let banners_on = (if start.scheduled { prefs.meeting_start } else { prefs.meet_now }) && !prefs.mute_all;
+        let banners_on = (if start.scheduled {
+            prefs.meeting_start
+        } else {
+            prefs.meet_now
+        }) && !prefs.mute_all;
         if start.scheduled {
             // Teams' live-meeting checks: the meeting is in your calendar
             // (by its thread), from 15 minutes before its start to 5 after
             // its end, and you didn't decline it.
-            let calendar: Vec<serde_json::Value> = serde_json::from_str(&self.rust().calendar_json.to_string()).unwrap_or_default();
+            let calendar: Vec<serde_json::Value> =
+                serde_json::from_str(&self.rust().calendar_json.to_string()).unwrap_or_default();
             let now = chrono::Utc::now();
             let fetched = looked_up.clone().flatten();
             // Not found by the lookup (null): not in your calendar.
             let lookup_missed = fetched.as_ref().is_some_and(|v| v.is_null());
-            let event = calendar.iter().find(|e| in_calendar(e)).or(fetched.as_ref().filter(|v| v.is_object()));
-            let at = |e: &serde_json::Value, k: &str| e[k].as_str().and_then(|x| chrono::DateTime::parse_from_rfc3339(x).ok());
+            let event = calendar
+                .iter()
+                .find(|e| in_calendar(e))
+                .or(fetched.as_ref().filter(|v| v.is_object()));
+            let at = |e: &serde_json::Value, k: &str| {
+                e[k].as_str()
+                    .and_then(|x| chrono::DateTime::parse_from_rfc3339(x).ok())
+            };
             let ok = match event {
                 Some(e) => {
                     let declined = e["response"].as_str() == Some("declined");
-                    let window = at(e, "start_utc").zip(at(e, "end_utc")).is_none_or(|(s, en)| {
-                        now >= s - chrono::Duration::minutes(15) && now <= en + chrono::Duration::minutes(5)
-                    });
+                    let window = at(e, "start_utc")
+                        .zip(at(e, "end_utc"))
+                        .is_none_or(|(s, en)| {
+                            now >= s - chrono::Duration::minutes(15)
+                                && now <= en + chrono::Duration::minutes(5)
+                        });
                     !declined && window
                 }
                 None => !lookup_missed,
@@ -14903,7 +17110,9 @@ impl qobject::Backend {
             }
             // The live meeting join bar (Show meeting join bar).
             if prefs.join_bar && !in_it && !mine {
-                let mut live: Vec<serde_json::Value> = serde_json::from_str(&self.rust().live_meetings_json.to_string()).unwrap_or_default();
+                let mut live: Vec<serde_json::Value> =
+                    serde_json::from_str(&self.rust().live_meetings_json.to_string())
+                        .unwrap_or_default();
                 live.retain(|m| m["threadId"].as_str() != Some(start.thread_id.as_str()));
                 live.push(serde_json::json!({
                     "threadId": start.thread_id, "callId": start.call_id,
@@ -14922,7 +17131,9 @@ impl qobject::Backend {
                     "startedAt": now.to_rfc3339(),
                     "initiator": start.initiator, "initiatorName": start.initiator_name,
                 }));
-                self.as_mut().set_live_meetings_json(QString::from(serde_json::Value::Array(live).to_string().as_str()));
+                self.as_mut().set_live_meetings_json(QString::from(
+                    serde_json::Value::Array(live).to_string().as_str(),
+                ));
             }
         }
         let muted = chat_muted(&self.rust().chats, &start.thread_id);
@@ -14956,15 +17167,29 @@ impl qobject::Backend {
         };
         // A scheduled meeting is named by its subject; Teams' string is
         // "{{meetingCaller}} started the meeting", its actions Join and Chat.
-        let chat_name = if start.scheduled && !start.subject.is_empty() { start.subject.clone() } else { chat_name };
+        let chat_name = if start.scheduled && !start.subject.is_empty() {
+            start.subject.clone()
+        } else {
+            chat_name
+        };
         let (title, body) = if decision == Toast::Redacted {
             (tr("You have a new notification"), String::new())
         } else if start.scheduled {
-            (chat_name.clone(), tr("%1 started the meeting").replace("%1", &who))
+            (
+                chat_name.clone(),
+                tr("%1 started the meeting").replace("%1", &who),
+            )
         } else {
-            (chat_name.clone(), tr("%1 started a meeting").replace("%1", &who))
+            (
+                chat_name.clone(),
+                tr("%1 started a meeting").replace("%1", &who),
+            )
         };
-        let second = if start.scheduled { ("chat", tr("Chat")) } else { ("message", tr("Message")) };
+        let second = if start.scheduled {
+            ("chat", tr("Chat"))
+        } else {
+            ("message", tr("Message"))
+        };
         let chat_id = start.thread_id.clone();
         let (scheduled, join_url) = (start.scheduled, start.join_url.clone());
         if banners_available() {
@@ -14984,7 +17209,8 @@ impl qobject::Backend {
                 "sound": "teams_meet_up_reminder",
                 "actions": [{ "id": "join", "label": tr("Join") }, { "id": second.0, "label": second.1 }],
             });
-            self.as_mut().banner_requested(QString::from(banner.to_string().as_str()));
+            self.as_mut()
+                .banner_requested(QString::from(banner.to_string().as_str()));
             return;
         }
         std::thread::spawn(move || {
@@ -15009,7 +17235,14 @@ impl qobject::Backend {
                             );
                             this.as_mut().activate_requested();
                             if join {
-                                if scheduled && !join_url.is_empty() { this.as_mut().prejoin_requested(QString::from(join_url.as_str()), QString::from(chat_name.as_str())) } else { this.as_mut().join_group_call(); }
+                                if scheduled && !join_url.is_empty() {
+                                    this.as_mut().prejoin_requested(
+                                        QString::from(join_url.as_str()),
+                                        QString::from(chat_name.as_str()),
+                                    )
+                                } else {
+                                    this.as_mut().join_group_call();
+                                }
                             }
                         });
                     }
@@ -15255,7 +17488,10 @@ impl qobject::Backend {
         let q = query.to_string().trim().to_string();
         let generation = self.rust().new_chat_people_generation + 1;
         self.as_mut().rust_mut().new_chat_people_generation = generation;
-        let (my_mail, my_name) = (self.rust().user_mail.to_string(), self.rust().user_name.to_string());
+        let (my_mail, my_name) = (
+            self.rust().user_mail.to_string(),
+            self.rust().user_name.to_string(),
+        );
         // Your chats, for Teams' local chat search.
         let mut local: Vec<api::search::LocalChat> = self
             .rust()
@@ -15264,16 +17500,28 @@ impl qobject::Backend {
             .map(|c| api::search::LocalChat {
                 id: c["id"].as_str().unwrap_or_default().to_string(),
                 // A named group chat's own name (Teams leaves unnamed ones out).
-                topic: if c["named"].as_bool().unwrap_or(false) { c["name"].as_str().unwrap_or_default().to_string() } else { String::new() },
+                topic: if c["named"].as_bool().unwrap_or(false) {
+                    c["name"].as_str().unwrap_or_default().to_string()
+                } else {
+                    String::new()
+                },
                 group: c["isGroup"].as_bool().unwrap_or(false),
                 meeting: c["meeting"].as_bool().unwrap_or(false),
-                time: c["time"].as_str().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok()).map(|t| t.timestamp_millis()).unwrap_or(0),
+                time: c["time"]
+                    .as_str()
+                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                    .map(|t| t.timestamp_millis())
+                    .unwrap_or(0),
                 channel_team: String::new(),
             })
             .collect();
         // And your teams' channels (Teams searches its teams store too).
-        let teams: serde_json::Value = serde_json::from_str(&self.rust().teams_json.to_string()).unwrap_or_default();
-        let activity = CHANNEL_ACTIVITY.lock().map(|m| m.clone()).unwrap_or_default();
+        let teams: serde_json::Value =
+            serde_json::from_str(&self.rust().teams_json.to_string()).unwrap_or_default();
+        let activity = CHANNEL_ACTIVITY
+            .lock()
+            .map(|m| m.clone())
+            .unwrap_or_default();
         for t in teams.as_array().into_iter().flatten() {
             for ch in t["channels"].as_array().into_iter().flatten() {
                 let id = ch["id"].as_str().unwrap_or_default().to_string();
@@ -15400,7 +17648,12 @@ impl qobject::Backend {
         });
     }
 
-    pub fn set_thread_read(self: Pin<&mut Self>, root_id: &QString, change: &QString, newest_reply: &QString) {
+    pub fn set_thread_read(
+        self: Pin<&mut Self>,
+        root_id: &QString,
+        change: &QString,
+        newest_reply: &QString,
+    ) {
         use api::msgactions::HorizonChange;
         let id = root_id.to_string();
         let newest = newest_reply.to_string().parse::<i64>().unwrap_or(0);
@@ -15412,7 +17665,9 @@ impl qobject::Backend {
         };
         let at = id.clone();
         self.message_action(&at, move |client, chat| {
-            Box::pin(async move { api::msgactions::set_thread_horizon(&client, &chat, &id, change).await })
+            Box::pin(async move {
+                api::msgactions::set_thread_horizon(&client, &chat, &id, change).await
+            })
         });
     }
 
@@ -15470,9 +17725,17 @@ impl qobject::Backend {
         extras_json: &QString,
     ) {
         let id = message_id.to_string();
-        let x: serde_json::Value = serde_json::from_str(&extras_json.to_string()).unwrap_or_default();
+        let x: serde_json::Value =
+            serde_json::from_str(&extras_json.to_string()).unwrap_or_default();
         let strs = |v: &serde_json::Value, k: &str| -> Vec<String> {
-            v.get(k).and_then(|a| a.as_array()).map(|a| a.iter().filter_map(|s| s.as_str().map(str::to_string)).collect()).unwrap_or_default()
+            v.get(k)
+                .and_then(|a| a.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|s| s.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default()
         };
         let media: Vec<api::messages::ComposeMedia> =
             serde_json::from_str(&media_json.to_string()).unwrap_or_default();
@@ -15481,11 +17744,18 @@ impl qobject::Backend {
         let quote: Option<api::messages::Quote> =
             serde_json::from_str(&quote_json.to_string()).ok();
         let mut extras = api::messages::EditExtras {
-            importance: x.get("importance").and_then(|v| v.as_str()).map(str::to_string),
+            importance: x
+                .get("importance")
+                .and_then(|v| v.as_str())
+                .map(str::to_string),
             removed_files: x
                 .get("removedFiles")
                 .and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|u| u.as_str().map(str::to_string)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|u| u.as_str().map(str::to_string))
+                        .collect()
+                })
                 .unwrap_or_default(),
             loop_component: x
                 .get("loop")
@@ -15495,13 +17765,29 @@ impl qobject::Backend {
             // post's composer fields (TASK-0265).
             removed_loops: strs(&x, "removedLoops"),
             removed_clips: strs(&x, "removedClips"),
-            subject: x.get("subject").and_then(|v| v.as_str()).map(|s| s.trim().chars().take(250).collect()),
-            reply_permission: x.get("replyPermission").and_then(|v| v.as_str()).filter(|v| matches!(*v, "Everyone" | "AuthorAndOwners")).map(str::to_string),
+            subject: x
+                .get("subject")
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim().chars().take(250).collect()),
+            reply_permission: x
+                .get("replyPermission")
+                .and_then(|v| v.as_str())
+                .filter(|v| matches!(*v, "Everyone" | "AuthorAndOwners"))
+                .map(str::to_string),
             post: x.get("post").and_then(|v| v.as_bool()).unwrap_or(false),
             cross_channels: x.get("crossChannels").and_then(|v| v.as_array()).map(|a| {
-                a.iter().filter_map(|c| c.as_str()).filter(|c| c.ends_with("@thread.tacv2")).map(str::to_string).collect()
+                a.iter()
+                    .filter_map(|c| c.as_str())
+                    .filter(|c| c.ends_with("@thread.tacv2"))
+                    .map(str::to_string)
+                    .collect()
             }),
-            team_id: x.get("teamId").and_then(|v| v.as_str()).filter(|t| t.ends_with("@thread.tacv2")).unwrap_or_default().to_string(),
+            team_id: x
+                .get("teamId")
+                .and_then(|v| v.as_str())
+                .filter(|t| t.ends_with("@thread.tacv2"))
+                .unwrap_or_default()
+                .to_string(),
             ..Default::default()
         };
         // A clip recorded in the edit goes before the text, as a send puts
@@ -15510,8 +17796,16 @@ impl qobject::Backend {
         let clip_id = clip["id"].as_str().unwrap_or_default().to_string();
         if !clip_id.is_empty() {
             let url = clip["url"].as_str().unwrap_or_default().to_string();
-            let ok_id = clip_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
-            let Some(base) = url.split_once("/v1/objects/").map(|(b, _)| b.to_string()).filter(|_| ok_id && api::messages::is_ams_url(&url)) else { return };
+            let ok_id = clip_id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-');
+            let Some(base) = url
+                .split_once("/v1/objects/")
+                .map(|(b, _)| b.to_string())
+                .filter(|_| ok_id && api::messages::is_ams_url(&url))
+            else {
+                return;
+            };
             html = api::video_clips::clip_html(
                 &base,
                 &clip_id,
@@ -15532,7 +17826,11 @@ impl qobject::Backend {
             .map(str::to_string)
             .collect();
         let kept_files = x.get("keptFiles").and_then(|v| v.as_u64()).unwrap_or(0);
-        if html.trim().is_empty() && lines.is_empty() && kept_files == 0 && extras.loop_component.is_none() {
+        if html.trim().is_empty()
+            && lines.is_empty()
+            && kept_files == 0
+            && extras.loop_component.is_none()
+        {
             return;
         }
         if !lines.is_empty() {
@@ -15553,7 +17851,8 @@ impl qobject::Backend {
                             api::cloud_attach::send_record(&client, &chat, &f).await
                         }
                         None => {
-                            let p = std::path::PathBuf::from(l.strip_prefix("file://").unwrap_or(l));
+                            let p =
+                                std::path::PathBuf::from(l.strip_prefix("file://").unwrap_or(l));
                             api::files::upload_for_chat(&client, &chat, &p).await
                         }
                     };
@@ -15567,7 +17866,16 @@ impl qobject::Backend {
                         }
                     }
                 }
-                let r = api::messages::edit_message_with(&client, &chat, &id, &html, quote.as_ref(), Some(&mentions), &extras).await;
+                let r = api::messages::edit_message_with(
+                    &client,
+                    &chat,
+                    &id,
+                    &html,
+                    quote.as_ref(),
+                    Some(&mentions),
+                    &extras,
+                )
+                .await;
                 if busy {
                     let _ = qt.queue(|mut this| this.as_mut().set_busy(false));
                 }
@@ -15636,7 +17944,8 @@ impl qobject::Backend {
         // that one (Teams: one tone per emoticon).
         let replaces: Option<String> = on
             .then(|| {
-                let shown: serde_json::Value = serde_json::from_str(&self.shown_json_of(&chat_id)).ok()?;
+                let shown: serde_json::Value =
+                    serde_json::from_str(&self.shown_json_of(&chat_id)).ok()?;
                 let common = api::messages::common_key(&key);
                 let m = shown
                     .as_array()?
@@ -15749,22 +18058,41 @@ impl qobject::Backend {
         // the lobby chat thread is how its messages reach us (no
         // conversationUpdate then); a meeting thread that is the lobby's
         // chat (meetingChatType "lobby") becomes the call's lobby chat.
-        if self.rust().call_state.to_string() == "lobby" && self.rust().call_lobby_thread.is_empty() {
+        if self.rust().call_state.to_string() == "lobby" && self.rust().call_lobby_thread.is_empty()
+        {
             let main = self.rust().call_thread_id.to_string();
-            let candidates: Vec<String> = ids.iter().filter(|i| i.starts_with("19:meeting_") && **i != main).cloned().collect();
+            let candidates: Vec<String> = ids
+                .iter()
+                .filter(|i| i.starts_with("19:meeting_") && **i != main)
+                .cloned()
+                .collect();
             if !candidates.is_empty() {
                 let qt = self.qt_thread();
                 runtime().spawn(async move {
-                    let Ok(client) = TeamsClient::new().await else { return };
+                    let Ok(client) = TeamsClient::new().await else {
+                        return;
+                    };
                     for id in candidates {
-                        let url = format!("{}/v1/threads/{}?view=msnp24Equivalent", client.chat_service_url(), id);
-                        let Ok(resp) = client.chat_get(&url).await else { continue };
-                        let Ok(v) = resp.json::<serde_json::Value>().await else { continue };
-                        if v.pointer("/properties/meetingChatType").and_then(|t| t.as_str()) == Some("lobby") {
+                        let url = format!(
+                            "{}/v1/threads/{}?view=msnp24Equivalent",
+                            client.chat_service_url(),
+                            id
+                        );
+                        let Ok(resp) = client.chat_get(&url).await else {
+                            continue;
+                        };
+                        let Ok(v) = resp.json::<serde_json::Value>().await else {
+                            continue;
+                        };
+                        if v.pointer("/properties/meetingChatType")
+                            .and_then(|t| t.as_str())
+                            == Some("lobby")
+                        {
                             tracing::info!("lobby chat thread from a chat push");
                             let _ = qt.queue(move |mut this| {
                                 if this.rust().call_lobby_thread.is_empty() {
-                                    this.as_mut().set_call_lobby_thread(QString::from(id.as_str()));
+                                    this.as_mut()
+                                        .set_call_lobby_thread(QString::from(id.as_str()));
                                 }
                             });
                             break;
@@ -15874,14 +18202,20 @@ impl qobject::Backend {
                             && let Some(upn) = c.user_principal_name()
                         {
                             let me = teams_cli::config::profile().unwrap_or_default();
-                            let org = teams_cli::config::accounts().into_iter().find(|a| a.profile == me).map(|a| a.org).unwrap_or_default();
-                            let _ = teams_cli::config::record_account(Some(teams_cli::config::Account {
-                                upn,
-                                name: c.display_name().unwrap_or_default(),
-                                object_id: c.object_id().unwrap_or_default(),
-                                org,
-                                ..Default::default()
-                            }));
+                            let org = teams_cli::config::accounts()
+                                .into_iter()
+                                .find(|a| a.profile == me)
+                                .map(|a| a.org)
+                                .unwrap_or_default();
+                            let _ = teams_cli::config::record_account(Some(
+                                teams_cli::config::Account {
+                                    upn,
+                                    name: c.display_name().unwrap_or_default(),
+                                    object_id: c.object_id().unwrap_or_default(),
+                                    org,
+                                    ..Default::default()
+                                },
+                            ));
                         }
                         this.as_mut().rust_mut().my_mri = cfg
                             .and_then(|c| c.object_id())
@@ -15923,7 +18257,10 @@ impl qobject::Backend {
                                 let state = compose_copilot_state(license.as_ref()).to_string();
                                 tracing::info!("compose Copilot: {state}");
                                 if let Some(qt) = QT_THREAD.get() {
-                                    let _ = qt.queue(move |mut this| this.as_mut().set_compose_copilot_json(QString::from(state.as_str())));
+                                    let _ = qt.queue(move |mut this| {
+                                        this.as_mut()
+                                            .set_compose_copilot_json(QString::from(state.as_str()))
+                                    });
                                 }
                             }
                             // The apps that unfurl links (app link cards).
@@ -15983,23 +18320,34 @@ impl qobject::Backend {
     fn check_channel_layout(self: Pin<&mut Self>, channel: String) {
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let Ok(client) = TeamsClient::new().await else { return };
-            let Ok(Some(modality)) = api::messages::thread_modality(&client, &channel).await else { return };
+            let Ok(client) = TeamsClient::new().await else {
+                return;
+            };
+            let Ok(Some(modality)) = api::messages::thread_modality(&client, &channel).await else {
+                return;
+            };
             let _ = qt.queue(move |mut this| {
-                let mut teams: serde_json::Value = serde_json::from_str(&this.rust().teams_json.to_string()).unwrap_or_default();
+                let mut teams: serde_json::Value =
+                    serde_json::from_str(&this.rust().teams_json.to_string()).unwrap_or_default();
                 let mut changed = false;
                 for t in teams.as_array_mut().into_iter().flatten() {
                     for c in t["channels"].as_array_mut().into_iter().flatten() {
-                        if c["id"].as_str() == Some(channel.as_str()) && c["layout"].as_str() != Some(modality.as_str()) {
+                        if c["id"].as_str() == Some(channel.as_str())
+                            && c["layout"].as_str() != Some(modality.as_str())
+                        {
                             c["layout"] = json!(modality);
                             changed = true;
                         }
                     }
                 }
-                this.as_mut().rust_mut().channel_layouts.insert(channel.clone(), modality.clone());
+                this.as_mut()
+                    .rust_mut()
+                    .channel_layouts
+                    .insert(channel.clone(), modality.clone());
                 if changed {
                     tracing::info!(%modality, "channel layout from the chat service");
-                    this.as_mut().set_teams_json(QString::from(teams.to_string().as_str()));
+                    this.as_mut()
+                        .set_teams_json(QString::from(teams.to_string().as_str()));
                 }
             });
         });
@@ -16032,38 +18380,62 @@ impl qobject::Backend {
                 }
                 match result {
                     Ok(list) => {
-                        let mine: Vec<_> = list.into_iter().filter(|s| s.conversation == chat_id).collect();
+                        let mine: Vec<_> = list
+                            .into_iter()
+                            .filter(|s| s.conversation == chat_id)
+                            .collect();
                         let json = serde_json::to_string(&mine).unwrap_or_else(|_| "[]".into());
-                        this.as_mut().set_scheduled_json(QString::from(json.as_str()));
+                        this.as_mut()
+                            .set_scheduled_json(QString::from(json.as_str()));
                     }
-                    Err(e) => tracing::debug!("scheduled messages unavailable: {}", short_error(&e)),
+                    Err(e) => {
+                        tracing::debug!("scheduled messages unavailable: {}", short_error(&e))
+                    }
                 }
             });
         });
     }
 
     pub fn set_next_schedule(mut self: Pin<&mut Self>, ms: &QString) {
-        self.as_mut().rust_mut().next_schedule_ms = ms.to_string().parse::<i64>().ok().filter(|m| *m > 0);
+        self.as_mut().rust_mut().next_schedule_ms =
+            ms.to_string().parse::<i64>().ok().filter(|m| *m > 0);
     }
 
-    pub fn find_in_chat(mut self: Pin<&mut Self>, key: &QString, thread: &QString, keywords: &QString, filters_json: &QString, from: i32) {
+    pub fn find_in_chat(
+        mut self: Pin<&mut Self>,
+        key: &QString,
+        thread: &QString,
+        keywords: &QString,
+        filters_json: &QString,
+        from: i32,
+    ) {
         let key = key.to_string();
         let thread = thread.to_string();
         let keywords = keywords.to_string().trim().to_string();
-        let filters: api::find::Filters = serde_json::from_str(&filters_json.to_string()).unwrap_or_default();
+        let filters: api::find::Filters =
+            serde_json::from_str(&filters_json.to_string()).unwrap_or_default();
         let from = from.max(0) as usize;
         // Earlier pages stay while the next one loads.
-        let mut shown: serde_json::Value = serde_json::from_str(&self.rust().find_json.to_string()).unwrap_or_default();
+        let mut shown: serde_json::Value =
+            serde_json::from_str(&self.rust().find_json.to_string()).unwrap_or_default();
         if from == 0 || shown["key"] != key.as_str() {
             shown = json!({ "key": key, "hits": [], "terms": [], "total": 0, "more": false });
         }
         shown["loading"] = true.into();
         shown["error"] = "".into();
         self.as_mut().rust_mut().find_key = key.clone();
-        self.as_mut().set_find_json(QString::from(shown.to_string().as_str()));
-        if thread.is_empty() || (keywords.is_empty() && filters.from_mail.is_empty() && filters.start.is_empty() && !filters.attachment && !filters.mentions) {
+        self.as_mut()
+            .set_find_json(QString::from(shown.to_string().as_str()));
+        if thread.is_empty()
+            || (keywords.is_empty()
+                && filters.from_mail.is_empty()
+                && filters.start.is_empty()
+                && !filters.attachment
+                && !filters.mentions)
+        {
             shown["loading"] = false.into();
-            self.as_mut().set_find_json(QString::from(shown.to_string().as_str()));
+            self.as_mut()
+                .set_find_json(QString::from(shown.to_string().as_str()));
             return;
         }
         let qt = self.qt_thread();
@@ -16074,11 +18446,26 @@ impl qobject::Backend {
                 let tenant = client.tenant_id().unwrap_or_default();
                 let mut filters = filters;
                 // A channel's Files search names its folder.
-                if filters.files && thread.ends_with("@thread.tacv2") && filters.channel_path.is_empty() {
-                    let folder = api::drive::channel_folder(&client, &filters.channel_group, &thread).await?;
+                if filters.files
+                    && thread.ends_with("@thread.tacv2")
+                    && filters.channel_path.is_empty()
+                {
+                    let folder =
+                        api::drive::channel_folder(&client, &filters.channel_group, &thread)
+                            .await?;
                     filters.channel_path = api::find::folder_path(&folder.web_url);
                 }
-                api::find::search(&client, &thread, &keywords, &filters, from, &api::find::local_timezone(), &oid, &tenant).await
+                api::find::search(
+                    &client,
+                    &thread,
+                    &keywords,
+                    &filters,
+                    from,
+                    &api::find::local_timezone(),
+                    &oid,
+                    &tenant,
+                )
+                .await
             }
             .await;
             let _ = qt.queue(move |mut this| {
@@ -16101,13 +18488,15 @@ impl qobject::Backend {
                         shown["error"] = short_error(&e).into();
                     }
                 }
-                this.as_mut().set_find_json(QString::from(shown.to_string().as_str()));
+                this.as_mut()
+                    .set_find_json(QString::from(shown.to_string().as_str()));
             });
         });
     }
 
     pub fn feedback_issue_url(self: Pin<&mut Self>, report_json: &QString) -> QString {
-        let mut report: teams_cli::feedback::Report = serde_json::from_str(&report_json.to_string()).unwrap_or_default();
+        let mut report: teams_cli::feedback::Report =
+            serde_json::from_str(&report_json.to_string()).unwrap_or_default();
         // The report goes to GitHub in English, whatever the app language:
         // where it was sent from, as OST's English.
         report.area = teams_cli::i18n::english(&report.area);
@@ -16120,17 +18509,27 @@ impl qobject::Backend {
             String::new()
         };
         let version = format!("OST desktop {}", env!("CARGO_PKG_VERSION"));
-        let url = teams_cli::feedback::issue_url(&report, &version, &teams_cli::feedback::os_name(), &logs);
+        let url = teams_cli::feedback::issue_url(
+            &report,
+            &version,
+            &teams_cli::feedback::os_name(),
+            &logs,
+        );
         // The diagnostic data a report carries (View Diagnostic Data).
-        api::ddv::record("Ost.Feedback.Report", json!({
-            "kind": report.kind, "area": report.area, "version": version, "os": teams_cli::feedback::os_name(),
-            "logsIncluded": !logs.is_empty(), "contact": report.contact, "files": report.files.len(),
-            "destination": teams_cli::feedback::repo(), "url": url,
-        }));
+        api::ddv::record(
+            "Ost.Feedback.Report",
+            json!({
+                "kind": report.kind, "area": report.area, "version": version, "os": teams_cli::feedback::os_name(),
+                "logsIncluded": !logs.is_empty(), "contact": report.contact, "files": report.files.len(),
+                "destination": teams_cli::feedback::repo(), "url": url,
+            }),
+        );
         // GitHub takes pictures by paste: the first one goes on the clipboard.
         let picture = report.files.iter().find(|f| {
             let f = f.to_ascii_lowercase();
-            [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"].iter().any(|e| f.ends_with(e))
+            [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"]
+                .iter()
+                .any(|e| f.ends_with(e))
         });
         if let Some(Ok(p)) = picture.map(|p| std::ffi::CString::new(p.as_str())) {
             // SAFETY: a NUL-terminated path, read by Qt before returning.
@@ -16153,13 +18552,21 @@ impl qobject::Backend {
 
     pub fn smart_reply_feedback_categories(&self, kinds_json: &QString) -> QString {
         let kinds: Vec<String> = serde_json::from_str(&kinds_json.to_string()).unwrap_or_default();
-        QString::from(serde_json::to_string(&api::smart_replies::feedback_categories(&kinds)).unwrap_or_else(|_| "[]".into()).as_str())
+        QString::from(
+            serde_json::to_string(&api::smart_replies::feedback_categories(&kinds))
+                .unwrap_or_else(|_| "[]".into())
+                .as_str(),
+        )
     }
 
     pub fn smart_reply_feedback_url(&self, json: &QString) -> QString {
         let v: serde_json::Value = serde_json::from_str(&json.to_string()).unwrap_or_default();
         let list = |k: &str| -> Vec<String> {
-            v[k].as_array().into_iter().flatten().filter_map(|x| x.as_str().map(str::to_string)).collect()
+            v[k].as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .collect()
         };
         let suggestions = list("suggestions");
         let last = v["last_message"].as_str().unwrap_or_default().to_string();
@@ -16171,11 +18578,15 @@ impl qobject::Backend {
             attach.then_some((suggestions.as_slice(), last.as_str())),
         );
         let version = format!("OST desktop {}", env!("CARGO_PKG_VERSION"));
-        let url = teams_cli::feedback::issue_url(&report, &version, &teams_cli::feedback::os_name(), "");
-        api::ddv::record("Ost.Feedback.SuggestedReplies", json!({
-            "categories": list("categories"), "kinds": list("kinds"), "messageAttached": attach,
-            "version": version, "os": teams_cli::feedback::os_name(), "destination": teams_cli::feedback::repo(), "url": url,
-        }));
+        let url =
+            teams_cli::feedback::issue_url(&report, &version, &teams_cli::feedback::os_name(), "");
+        api::ddv::record(
+            "Ost.Feedback.SuggestedReplies",
+            json!({
+                "categories": list("categories"), "kinds": list("kinds"), "messageAttached": attach,
+                "version": version, "os": teams_cli::feedback::os_name(), "destination": teams_cli::feedback::repo(), "url": url,
+            }),
+        );
         QString::from(url.as_str())
     }
 
@@ -16195,18 +18606,30 @@ impl qobject::Backend {
         let kind = cqf::CallKind::parse(&kind.to_string());
         // Teams asks only while Settings ▸ Privacy ▸ Surveys is on (its
         // synced userEnableSurveysNotification, on unless "false").
-        let surveys_on = serde_json::from_str::<serde_json::Value>(&self.rust().settings_json.to_string())
-            .ok()
-            .and_then(|v| v.pointer("/props/userEnableSurveysNotification").and_then(|x| x.as_str()).map(|x| x != "false"))
-            .unwrap_or(true);
+        let surveys_on =
+            serde_json::from_str::<serde_json::Value>(&self.rust().settings_json.to_string())
+                .ok()
+                .and_then(|v| {
+                    v.pointer("/props/userEnableSurveysNotification")
+                        .and_then(|x| x.as_str())
+                        .map(|x| x != "false")
+                })
+                .unwrap_or(true);
         // --cqf-always (harness) or OST_CQF_ALWAYS=1: opted in and asked
         // after every call instead of Teams' sample (tests on a machine
         // whose settings file other instances share).
-        let always = std::env::args().any(|a| a == "--cqf-always") || std::env::var("OST_CQF_ALWAYS").as_deref() == Ok("1");
-        let opted_in = surveys_on && (always || load_settings().get("callQualitySurvey").and_then(|v| v.as_str()) == Some("true"));
+        let always = std::env::args().any(|a| a == "--cqf-always")
+            || std::env::var("OST_CQF_ALWAYS").as_deref() == Ok("1");
+        let opted_in = surveys_on
+            && (always
+                || load_settings()
+                    .get("callQualitySurvey")
+                    .and_then(|v| v.as_str())
+                    == Some("true"));
         let rand = |n: usize| (uuid::Uuid::new_v4().as_u128() % n.max(1) as u128) as usize;
         let roll = rand(1_000_000) as f64 / 1_000_000.0;
-        let asked = opted_in && (cqf::sampled(kind, roll) || (always && kind.sampling_rate() > 0.0));
+        let asked =
+            opted_in && (cqf::sampled(kind, roll) || (always && kind.sampling_rate() > 0.0));
         tracing::info!(opted_in, asked, ?kind, "call quality survey");
         if !asked {
             return QString::default();
@@ -16225,42 +18648,75 @@ impl qobject::Backend {
                 .unwrap_or_else(|e| e.into_inner())
                 .report(&teams_cli::calling::call_health::current(), &state)
         });
-        let mut metrics: Vec<(String, String)> = report.values.into_iter().map(|(k, v)| (k, v.value)).collect();
+        let mut metrics: Vec<(String, String)> = report
+            .values
+            .into_iter()
+            .map(|(k, v)| (k, v.value))
+            .collect();
         metrics.sort();
         self.as_mut().rust_mut().cqf_metrics = metrics;
         QString::from(cqf::questionnaire(kind, video, rand).to_string().as_str())
     }
 
-    pub fn call_quality_details(&self, kind: &QString, duration_s: i32, reasons_json: &QString) -> QString {
+    pub fn call_quality_details(
+        &self,
+        kind: &QString,
+        duration_s: i32,
+        reasons_json: &QString,
+    ) -> QString {
         use teams_cli::calling::quality_survey as cqf;
-        let reasons: Vec<String> = serde_json::from_str(&reasons_json.to_string()).unwrap_or_default();
+        let reasons: Vec<String> =
+            serde_json::from_str(&reasons_json.to_string()).unwrap_or_default();
         QString::from(
-            cqf::report_details(cqf::CallKind::parse(&kind.to_string()), duration_s.max(0) as u64, &reasons, &self.cqf_metrics)
-                .as_str(),
+            cqf::report_details(
+                cqf::CallKind::parse(&kind.to_string()),
+                duration_s.max(0) as u64,
+                &reasons,
+                &self.cqf_metrics,
+            )
+            .as_str(),
         )
     }
 
-    pub fn request_feedback(self: Pin<&mut Self>, kind: &QString, area: &QString, context: &QString) {
+    pub fn request_feedback(
+        self: Pin<&mut Self>,
+        kind: &QString,
+        area: &QString,
+        context: &QString,
+    ) {
         self.feedback_requested(kind.clone(), area.clone(), context.clone());
     }
 
     pub fn help_library(&self) -> QString {
         let lib = teams_cli::help::library(crate::help_bundle::FILES);
-        QString::from(serde_json::to_string(&lib).unwrap_or_else(|_| "[]".into()).as_str())
+        QString::from(
+            serde_json::to_string(&lib)
+                .unwrap_or_else(|_| "[]".into())
+                .as_str(),
+        )
     }
 
     pub fn help_search(&self, query: &QString) -> QString {
         let lib = teams_cli::help::library(crate::help_bundle::FILES);
         let found = teams_cli::help::search(&lib, &query.to_string());
-        QString::from(serde_json::to_string(&found).unwrap_or_else(|_| "[]".into()).as_str())
+        QString::from(
+            serde_json::to_string(&found)
+                .unwrap_or_else(|_| "[]".into())
+                .as_str(),
+        )
     }
 
     pub fn feedback_dir(&self) -> QString {
         let base = std::env::var_os("XDG_CACHE_HOME")
             .map(std::path::PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+            .or_else(|| {
+                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache"))
+            })
             .unwrap_or_else(std::env::temp_dir);
-        let dir = base.join("ost").join("feedback").join(chrono::Local::now().format("%Y-%m-%d %H-%M-%S").to_string());
+        let dir = base
+            .join("ost")
+            .join("feedback")
+            .join(chrono::Local::now().format("%Y-%m-%d %H-%M-%S").to_string());
         let _ = std::fs::create_dir_all(&dir);
         QString::from(dir.display().to_string().as_str())
     }
@@ -16268,12 +18724,16 @@ impl qobject::Backend {
     pub fn paste_compose_picture(&self) -> QString {
         let base = std::env::var_os("XDG_CACHE_HOME")
             .map(std::path::PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+            .or_else(|| {
+                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache"))
+            })
             .unwrap_or_else(std::env::temp_dir);
         let dir = base.join("ost").join("pasted");
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join(format!("{}.png", uuid::Uuid::new_v4()));
-        let Ok(c) = std::ffi::CString::new(path.display().to_string()) else { return QString::default() };
+        let Ok(c) = std::ffi::CString::new(path.display().to_string()) else {
+            return QString::default();
+        };
         let (mut w, mut h) = (0i32, 0i32);
         // SAFETY: a NUL-terminated path and two live ints, written by Qt.
         let r = unsafe { ost_save_clipboard_picture(c.as_ptr(), &mut w, &mut h) };
@@ -16289,7 +18749,9 @@ impl qobject::Backend {
         let dir = std::path::PathBuf::from(dir.to_string());
         let n = std::fs::read_dir(&dir).map(|d| d.count()).unwrap_or(0) + 1;
         let path = dir.join(format!("Pasted image {n}.png"));
-        let Ok(c) = std::ffi::CString::new(path.display().to_string()) else { return QString::default() };
+        let Ok(c) = std::ffi::CString::new(path.display().to_string()) else {
+            return QString::default();
+        };
         // SAFETY: a NUL-terminated path, written by Qt before returning.
         if unsafe { ost_save_clipboard_image(c.as_ptr()) } {
             QString::from(path.display().to_string().as_str())
@@ -16298,23 +18760,34 @@ impl qobject::Backend {
         }
     }
 
-    pub fn search_page(mut self: Pin<&mut Self>, key: &QString, tab: &QString, keywords: &QString, filters_json: &QString, from: i32) {
+    pub fn search_page(
+        mut self: Pin<&mut Self>,
+        key: &QString,
+        tab: &QString,
+        keywords: &QString,
+        filters_json: &QString,
+        from: i32,
+    ) {
         let key = key.to_string();
         let tab = tab.to_string();
         let keywords = keywords.to_string().trim().to_string();
-        let filters: api::search::Filters = serde_json::from_str(&filters_json.to_string()).unwrap_or_default();
+        let filters: api::search::Filters =
+            serde_json::from_str(&filters_json.to_string()).unwrap_or_default();
         let from = from.max(0) as usize;
-        let mut shown: serde_json::Value = serde_json::from_str(&self.rust().search_page_json.to_string()).unwrap_or_default();
+        let mut shown: serde_json::Value =
+            serde_json::from_str(&self.rust().search_page_json.to_string()).unwrap_or_default();
         if from == 0 || shown["key"] != key.as_str() {
             shown = json!({ "key": key, "tab": tab, "page": null });
         }
         shown["loading"] = true.into();
         shown["error"] = "".into();
         self.as_mut().rust_mut().search_page_key = key.clone();
-        self.as_mut().set_search_page_json(QString::from(shown.to_string().as_str()));
+        self.as_mut()
+            .set_search_page_json(QString::from(shown.to_string().as_str()));
         if keywords.is_empty() {
             shown["loading"] = false.into();
-            self.as_mut().set_search_page_json(QString::from(shown.to_string().as_str()));
+            self.as_mut()
+                .set_search_page_json(QString::from(shown.to_string().as_str()));
             return;
         }
         let qt = self.qt_thread();
@@ -16323,10 +18796,31 @@ impl qobject::Backend {
                 let client = TeamsClient::new().await?;
                 let oid = client.object_id().unwrap_or_default();
                 let tenant = client.tenant_id().unwrap_or_default();
-                let mut page = api::search::search(&client, &tab, &keywords, &filters, from, &api::find::local_timezone(), &oid, &tenant).await?;
+                let mut page = api::search::search(
+                    &client,
+                    &tab,
+                    &keywords,
+                    &filters,
+                    from,
+                    &api::find::local_timezone(),
+                    &oid,
+                    &tenant,
+                )
+                .await?;
                 // Images: the pictures, cached as the chat caches them.
-                for h in page.images.hits.iter_mut().filter(|h| !h.image_ams.is_empty()) {
-                    let img = api::messages::InlineImage { id: h.image_id.clone(), url: h.image_ams.clone(), width: 0, height: 0, local_path: String::new() };
+                for h in page
+                    .images
+                    .hits
+                    .iter_mut()
+                    .filter(|h| !h.image_ams.is_empty())
+                {
+                    let img = api::messages::InlineImage {
+                        id: h.image_id.clone(),
+                        url: h.image_ams.clone(),
+                        width: 0,
+                        height: 0,
+                        local_path: String::new(),
+                    };
                     if let Ok(path) = cached_image(&client, &img).await {
                         h.image_url = format!("file://{}", path.display());
                     }
@@ -16346,7 +18840,10 @@ impl qobject::Backend {
                         // More results: the earlier pages stay, the next appended.
                         if from > 0 {
                             for k in ["messages", "files", "images"] {
-                                let mut hits = shown["page"][k]["hits"].as_array().cloned().unwrap_or_default();
+                                let mut hits = shown["page"][k]["hits"]
+                                    .as_array()
+                                    .cloned()
+                                    .unwrap_or_default();
                                 hits.extend(p[k]["hits"].as_array().cloned().unwrap_or_default());
                                 p[k]["hits"] = hits.into();
                             }
@@ -16358,7 +18855,8 @@ impl qobject::Backend {
                         shown["error"] = short_error(&e).into();
                     }
                 }
-                this.as_mut().set_search_page_json(QString::from(shown.to_string().as_str()));
+                this.as_mut()
+                    .set_search_page_json(QString::from(shown.to_string().as_str()));
             });
         });
     }
@@ -16402,14 +18900,20 @@ impl qobject::Backend {
             }
             .await;
             let people: Vec<serde_json::Value> = match result {
-                Ok(p) => p.iter().map(|p| json!({ "mri": p.mri, "name": p.name, "mail": p.mail })).collect(),
+                Ok(p) => p
+                    .iter()
+                    .map(|p| json!({ "mri": p.mri, "name": p.name, "mail": p.mail }))
+                    .collect(),
                 Err(e) => {
                     tracing::warn!("find people: {}", short_error(&e));
                     Vec::new()
                 }
             };
             let v = json!({ "keyword": keyword, "people": people });
-            let _ = qt.queue(move |mut this| this.as_mut().set_find_people_json(QString::from(v.to_string().as_str())));
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .set_find_people_json(QString::from(v.to_string().as_str()))
+            });
         });
     }
 
@@ -16425,7 +18929,12 @@ impl qobject::Backend {
             None
         };
         let qt = self.qt_thread();
-        self.as_mut().set_status_text(QString::from(if op == "download" { teams_cli::i18n::tr_id("Downloading...", "files:k9b1qlyvw") } else { String::new() }));
+        self.as_mut()
+            .set_status_text(QString::from(if op == "download" {
+                teams_cli::i18n::tr_id("Downloading...", "files:k9b1qlyvw")
+            } else {
+                String::new()
+            }));
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
@@ -16447,7 +18956,8 @@ impl qobject::Backend {
                 Ok(m) => m,
                 Err(e) => short_error(&e),
             };
-            let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
+            let _ = qt
+                .queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
         });
     }
 
@@ -16462,7 +18972,9 @@ impl qobject::Backend {
             .await;
             let _ = qt.queue(move |mut this| match result {
                 Ok(()) => this.as_mut().load_scheduled(),
-                Err(e) => this.as_mut().set_status_text(QString::from(short_error(&e).as_str())),
+                Err(e) => this
+                    .as_mut()
+                    .set_status_text(QString::from(short_error(&e).as_str())),
             });
         });
     }
@@ -16475,16 +18987,30 @@ impl qobject::Backend {
         media_json: &QString,
         send_at_ms: &QString,
     ) {
-        let Ok(at_ms) = send_at_ms.to_string().parse::<i64>() else { return };
+        let Ok(at_ms) = send_at_ms.to_string().parse::<i64>() else {
+            return;
+        };
         let media: Vec<api::messages::ComposeMedia> =
             serde_json::from_str(&media_json.to_string()).unwrap_or_default();
-        let (html, mentions) = api::messages::teams_html_with_media(&editor_html.to_string(), &media);
+        let (html, mentions) =
+            api::messages::teams_html_with_media(&editor_html.to_string(), &media);
         let chat_id = self.rust().current_chat_id.to_string();
         if chat_id.is_empty() || html.trim().is_empty() {
             return;
         }
-        let mentions = if mentions.is_empty() { String::new() } else { serde_json::to_string(&mentions).unwrap_or_default() };
-        let mut o = self.outgoing(&chat_id, chat_id.clone(), html, mentions, None, String::new());
+        let mentions = if mentions.is_empty() {
+            String::new()
+        } else {
+            serde_json::to_string(&mentions).unwrap_or_default()
+        };
+        let mut o = self.outgoing(
+            &chat_id,
+            chat_id.clone(),
+            html,
+            mentions,
+            None,
+            String::new(),
+        );
         if !client_message_id.is_empty() {
             o.client_message_id = client_message_id.to_string();
         }
@@ -16500,7 +19026,8 @@ impl qobject::Backend {
                 Ok(()) => this.as_mut().load_scheduled(),
                 Err(e) => {
                     tracing::warn!("scheduled edit failed: {}", short_error(&e));
-                    this.as_mut().set_status_text(QString::from(tr("Failed to edit scheduled message")))
+                    this.as_mut()
+                        .set_status_text(QString::from(tr("Failed to edit scheduled message")))
                 }
             });
         });
@@ -16519,7 +19046,8 @@ impl qobject::Backend {
                 Ok(_) => this.as_mut().load_scheduled(),
                 Err(e) => {
                     tracing::warn!("schedule failed: {}", short_error(&e));
-                    this.as_mut().set_status_text(QString::from(tr("Failed to schedule.")))
+                    this.as_mut()
+                        .set_status_text(QString::from(tr("Failed to schedule.")))
                 }
             });
         });
@@ -16659,7 +19187,9 @@ impl qobject::Backend {
     /// chat, and the thread windows of that channel).
     fn reload_where(mut self: Pin<&mut Self>, chat: &str) {
         let channel = chat.split(';').next().unwrap_or_default().to_string();
-        if self.rust().current_chat_id.to_string() == channel || self.rust().current_chat_id.to_string() == chat {
+        if self.rust().current_chat_id.to_string() == channel
+            || self.rust().current_chat_id.to_string() == chat
+        {
             self.as_mut().reload_messages();
         }
         let open: Vec<String> = self
@@ -16676,7 +19206,10 @@ impl qobject::Backend {
 
     pub fn open_thread_window(mut self: Pin<&mut Self>, channel_id: &QString, root_id: &QString) {
         let (channel, root) = (channel_id.to_string(), root_id.to_string());
-        if !channel.ends_with("@thread.tacv2") || root.is_empty() || !root.bytes().all(|b| b.is_ascii_digit()) {
+        if !channel.ends_with("@thread.tacv2")
+            || root.is_empty()
+            || !root.bytes().all(|b| b.is_ascii_digit())
+        {
             return;
         }
         let thread = format!("{channel};messageid={root}");
@@ -16689,7 +19222,10 @@ impl qobject::Backend {
 
     pub fn close_thread_window(mut self: Pin<&mut Self>, channel_id: &QString, root_id: &QString) {
         let thread = format!("{};messageid={}", channel_id, root_id);
-        self.as_mut().rust_mut().thread_windows.retain(|t| *t != thread);
+        self.as_mut()
+            .rust_mut()
+            .thread_windows
+            .retain(|t| *t != thread);
         server_timelines().lock().unwrap().remove(&thread);
         self.as_mut().refresh_thread_windows();
     }
@@ -16722,7 +19258,10 @@ impl qobject::Backend {
 
     pub fn close_chat_window(mut self: Pin<&mut Self>, chat_id: &QString) {
         let key = format!("win:{}", chat_id);
-        self.as_mut().rust_mut().thread_windows.retain(|t| *t != key);
+        self.as_mut()
+            .rust_mut()
+            .thread_windows
+            .retain(|t| *t != key);
         server_timelines().lock().unwrap().remove(&key);
         self.as_mut().refresh_thread_windows();
     }
@@ -16740,17 +19279,35 @@ impl qobject::Backend {
         }
         let media: Vec<api::messages::ComposeMedia> =
             serde_json::from_str(&media_json.to_string()).unwrap_or_default();
-        let (html, mentions) = api::messages::teams_html_with_media(&editor_html.to_string(), &media);
+        let (html, mentions) =
+            api::messages::teams_html_with_media(&editor_html.to_string(), &media);
         if html.trim().is_empty() {
             return;
         }
-        let mentions = if mentions.is_empty() { String::new() } else { serde_json::to_string(&mentions).unwrap_or_default() };
-        let quote: Option<api::messages::Quote> = serde_json::from_str(&quote_json.to_string()).ok();
-        let o = self.outgoing(&format!("win:{chat}"), chat.clone(), html, mentions, quote, String::new());
+        let mentions = if mentions.is_empty() {
+            String::new()
+        } else {
+            serde_json::to_string(&mentions).unwrap_or_default()
+        };
+        let quote: Option<api::messages::Quote> =
+            serde_json::from_str(&quote_json.to_string()).ok();
+        let o = self.outgoing(
+            &format!("win:{chat}"),
+            chat.clone(),
+            html,
+            mentions,
+            quote,
+            String::new(),
+        );
         self.submit_outgoing(o);
     }
 
-    pub fn send_chat_window_files(self: Pin<&mut Self>, chat_id: &QString, paths: &QString, text: &QString) {
+    pub fn send_chat_window_files(
+        self: Pin<&mut Self>,
+        chat_id: &QString,
+        paths: &QString,
+        text: &QString,
+    ) {
         let chat = chat_id.to_string();
         if !is_chat_id(&chat) {
             return;
@@ -16760,7 +19317,10 @@ impl qobject::Backend {
 
     pub fn close_channel_window(mut self: Pin<&mut Self>, channel_id: &QString) {
         let key = format!("win:{}", channel_id);
-        self.as_mut().rust_mut().thread_windows.retain(|t| *t != key);
+        self.as_mut()
+            .rust_mut()
+            .thread_windows
+            .retain(|t| *t != key);
         server_timelines().lock().unwrap().remove(&key);
         self.as_mut().refresh_thread_windows();
     }
@@ -16785,7 +19345,10 @@ impl qobject::Backend {
         }
         if html.len() > api::outbox::MAX_MESSAGE_CONTENT_SIZE {
             self.as_mut()
-                .set_status_text(QString::from(&teams_cli::i18n::tr_id("Message is too large to send.", "messaging:k9etc63g")));
+                .set_status_text(QString::from(&teams_cli::i18n::tr_id(
+                    "Message is too large to send.",
+                    "messaging:k9etc63g",
+                )));
             return;
         }
         let mentions = if mentions.is_empty() {
@@ -16795,7 +19358,14 @@ impl qobject::Backend {
         };
         let quote: Option<api::messages::Quote> =
             serde_json::from_str(&quote_json.to_string()).ok();
-        let mut o = self.outgoing(&format!("win:{channel}"), channel.clone(), html, mentions, quote, String::new());
+        let mut o = self.outgoing(
+            &format!("win:{channel}"),
+            channel.clone(),
+            html,
+            mentions,
+            quote,
+            String::new(),
+        );
         self.as_mut().apply_next_post(&mut o);
         self.submit_outgoing(o);
     }
@@ -16842,7 +19412,10 @@ impl qobject::Backend {
         also_channel: bool,
     ) {
         let (channel, root) = (channel_id.to_string(), root_id.to_string());
-        if !channel.ends_with("@thread.tacv2") || root.is_empty() || !root.bytes().all(|b| b.is_ascii_digit()) {
+        if !channel.ends_with("@thread.tacv2")
+            || root.is_empty()
+            || !root.bytes().all(|b| b.is_ascii_digit())
+        {
             return;
         }
         let media: Vec<api::messages::ComposeMedia> =
@@ -16854,7 +19427,10 @@ impl qobject::Backend {
         }
         if html.len() > api::outbox::MAX_MESSAGE_CONTENT_SIZE {
             self.as_mut()
-                .set_status_text(QString::from(&teams_cli::i18n::tr_id("Message is too large to send.", "messaging:k9etc63g")));
+                .set_status_text(QString::from(&teams_cli::i18n::tr_id(
+                    "Message is too large to send.",
+                    "messaging:k9etc63g",
+                )));
             return;
         }
         let mentions = if mentions.is_empty() {
@@ -16865,7 +19441,14 @@ impl qobject::Backend {
         let quote: Option<api::messages::Quote> =
             serde_json::from_str(&quote_json.to_string()).ok();
         let thread = format!("{channel};messageid={root}");
-        let mut o = self.outgoing(&thread, thread.clone(), html, mentions, quote, String::new());
+        let mut o = self.outgoing(
+            &thread,
+            thread.clone(),
+            html,
+            mentions,
+            quote,
+            String::new(),
+        );
         o.shared_in_main = also_channel;
         let _rt = runtime().enter();
         outbox().submit(o);
@@ -16904,13 +19487,18 @@ impl qobject::Backend {
         let schedule = self.as_mut().rust_mut().next_schedule_ms.take();
         if content.len() > api::outbox::MAX_MESSAGE_CONTENT_SIZE {
             // Teams' words for each.
-            let text = if schedule.is_some() { tr("Failed to schedule. Message too large.") } else { teams_cli::i18n::tr_id("Message is too large to send.", "messaging:k9etc63g") };
+            let text = if schedule.is_some() {
+                tr("Failed to schedule. Message too large.")
+            } else {
+                teams_cli::i18n::tr_id("Message is too large to send.", "messaging:k9etc63g")
+            };
             self.as_mut().set_status_text(QString::from(text));
             return;
         }
         if schedule.is_some_and(|ms| ms <= chrono::Utc::now().timestamp_millis()) {
-            self.as_mut()
-                .set_status_text(QString::from(tr("This message was scheduled for a time in the past.")));
+            self.as_mut().set_status_text(QString::from(tr(
+                "This message was scheduled for a time in the past.",
+            )));
             return;
         }
         let chat_id = self.rust().current_chat_id.to_string();
@@ -16987,7 +19575,8 @@ impl qobject::Backend {
             blur_hash: Vec::new(),
             // Compose sets it before each send (none when it has none).
             url_preview: self.rust().next_url_preview.clone(),
-            url_preview_on_send: self.rust().next_url_preview_on_send && self.rust().next_app_card.is_none(),
+            url_preview_on_send: self.rust().next_url_preview_on_send
+                && self.rust().next_app_card.is_none(),
             app_card: self
                 .rust()
                 .next_app_card
@@ -17176,7 +19765,8 @@ impl qobject::Backend {
             };
             let _ = qt.queue(move |mut this| {
                 if outcome == "ok" {
-                    this.as_mut().toast(&tr("%1 was added").replace("%1", &name), "success");
+                    this.as_mut()
+                        .toast(&tr("%1 was added").replace("%1", &name), "success");
                     this.as_mut().load_custom_emoji();
                 }
                 this.as_mut()
@@ -17314,7 +19904,9 @@ impl qobject::Backend {
     }
 
     pub fn file_size(&self, path: &QString) -> i64 {
-        std::fs::metadata(path.to_string()).map(|m| m.len() as i64).unwrap_or(-1)
+        std::fs::metadata(path.to_string())
+            .map(|m| m.len() as i64)
+            .unwrap_or(-1)
     }
 
     pub fn copy_text(mut self: Pin<&mut Self>, text: &QString) {
@@ -17327,7 +19919,10 @@ impl qobject::Backend {
     }
 
     pub fn copy_html(self: Pin<&mut Self>, html: &QString, text: &QString) {
-        if let (Ok(t), Ok(h)) = (std::ffi::CString::new(text.to_string()), std::ffi::CString::new(html.to_string())) {
+        if let (Ok(t), Ok(h)) = (
+            std::ffi::CString::new(text.to_string()),
+            std::ffi::CString::new(html.to_string()),
+        ) {
             // SAFETY: NUL-terminated strings, copied by Qt before returning.
             unsafe { ost_set_clipboard(t.as_ptr(), h.as_ptr()) };
         }
@@ -17656,11 +20251,17 @@ impl qobject::Backend {
             _ => Mode::Off,
         };
         let qt = std::sync::Mutex::new(self.qt_thread());
-        let sink: crate::work_location::Sink = Box::new(move |kind: &str, data: serde_json::Value| {
-            let (kind, json) = (kind.to_string(), data.to_string());
-            let Ok(qt) = qt.lock() else { return };
-            let _ = qt.queue(move |mut this| this.as_mut().work_location_banner(QString::from(kind.as_str()), QString::from(json.as_str())));
-        });
+        let sink: crate::work_location::Sink =
+            Box::new(move |kind: &str, data: serde_json::Value| {
+                let (kind, json) = (kind.to_string(), data.to_string());
+                let Ok(qt) = qt.lock() else { return };
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut().work_location_banner(
+                        QString::from(kind.as_str()),
+                        QString::from(json.as_str()),
+                    )
+                });
+            });
         crate::work_location::set_mode(m, runtime(), sink);
     }
 
@@ -17668,9 +20269,14 @@ impl qobject::Backend {
         let location = location.to_string();
         let before = self.rust().my_work_location.clone();
         let before_detail = self.rust().my_work_location_detail.clone();
-        self.as_mut().set_my_work_location(QString::from(location.as_str()));
+        self.as_mut()
+            .set_my_work_location(QString::from(location.as_str()));
         // Set by hand: no check-in's building any more.
-        self.as_mut().set_my_work_location_detail(QString::from(json!({ "building": "", "source": "ForcedLocation" }).to_string().as_str()));
+        self.as_mut().set_my_work_location_detail(QString::from(
+            json!({ "building": "", "source": "ForcedLocation" })
+                .to_string()
+                .as_str(),
+        ));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let http = reqwest::Client::new();
@@ -17702,7 +20308,13 @@ impl qobject::Backend {
 
     /// Send a meeting's security report: the call's (its id and meeting)
     /// when `chat_ical` is None, else a meeting chat's.
-    fn send_meeting_report(mut self: Pin<&mut Self>, thread: String, chat_ical: Option<String>, comment: String, reported_json: String) {
+    fn send_meeting_report(
+        mut self: Pin<&mut Self>,
+        thread: String,
+        chat_ical: Option<String>,
+        comment: String,
+        reported_json: String,
+    ) {
         let reported: Vec<String> = serde_json::from_str(&reported_json).unwrap_or_default();
         self.as_mut().set_report_result(QString::from("sending"));
         let qt = self.qt_thread();
@@ -17710,13 +20322,19 @@ impl qobject::Backend {
             let (call_id, ical) = match chat_ical {
                 Some(ical) => (String::new(), ical),
                 None => match call_slot().lock().await.outgoing.as_ref() {
-                    Some(c) => (c.call_id().to_string(), c.meeting_info().map(|i| i.ical_uid).unwrap_or_default()),
+                    Some(c) => (
+                        c.call_id().to_string(),
+                        c.meeting_info().map(|i| i.ical_uid).unwrap_or_default(),
+                    ),
                     None => (String::new(), String::new()),
                 },
             };
             let result = async {
                 let client = TeamsClient::new().await?;
-                api::msgactions::report_meeting(&client, &thread, &call_id, &ical, &reported, &comment).await
+                api::msgactions::report_meeting(
+                    &client, &thread, &call_id, &ical, &reported, &comment,
+                )
+                .await
             }
             .await;
             if let Err(e) = &result {
@@ -17737,9 +20355,14 @@ impl qobject::Backend {
         editor().close(&doc.to_string());
     }
 
-    pub fn compose_copilot_rewrite(self: Pin<&mut Self>, request: &QString, rewrite_json: &QString) {
+    pub fn compose_copilot_rewrite(
+        self: Pin<&mut Self>,
+        request: &QString,
+        rewrite_json: &QString,
+    ) {
         let request = request.to_string();
-        let mut r: api::compose_copilot::Rewrite = serde_json::from_str(&rewrite_json.to_string()).unwrap_or_default();
+        let mut r: api::compose_copilot::Rewrite =
+            serde_json::from_str(&rewrite_json.to_string()).unwrap_or_default();
         if r.tenant_id.is_empty() {
             r.tenant_id = TENANT_ID.get().cloned().unwrap_or_default();
         }
@@ -17756,7 +20379,10 @@ impl qobject::Backend {
 
     pub fn editor_settings_json(self: Pin<&mut Self>) -> QString {
         let s = proofing_settings().lock().unwrap().clone();
-        let supported: Vec<_> = api::editor::supported_languages().iter().map(|(c, n, e)| serde_json::json!({"code": c, "native": n, "english": e})).collect();
+        let supported: Vec<_> = api::editor::supported_languages()
+            .iter()
+            .map(|(c, n, e)| serde_json::json!({"code": c, "native": n, "english": e}))
+            .collect();
         let map = load_settings();
         // With no spellcheck languages saved, Teams' Editor checks (and its
         // Settings list) your app language.
@@ -17781,7 +20407,11 @@ impl qobject::Backend {
         let lang = language.to_string().to_lowercase();
         let cached = editor_categories().lock().unwrap().get(&lang).cloned();
         match cached {
-            Some(c) => QString::from(serde_json::to_string(&c).unwrap_or_else(|_| "[]".into()).as_str()),
+            Some(c) => QString::from(
+                serde_json::to_string(&c)
+                    .unwrap_or_else(|_| "[]".into())
+                    .as_str(),
+            ),
             None => {
                 load_editor_categories(&lang);
                 QString::from("[]")
@@ -17790,7 +20420,9 @@ impl qobject::Backend {
     }
 
     pub fn editor_set_languages(self: Pin<&mut Self>, languages_json: &QString) {
-        let Ok(l) = serde_json::from_str::<Vec<String>>(&languages_json.to_string()) else { return };
+        let Ok(l) = serde_json::from_str::<Vec<String>>(&languages_json.to_string()) else {
+            return;
+        };
         let l: Vec<String> = l.into_iter().take(api::editor::MAX_LANGUAGES).collect();
         if let Some(s) = proofing_settings().lock().unwrap().as_mut() {
             s.languages = l.clone();
@@ -17807,16 +20439,19 @@ impl qobject::Backend {
 
     pub fn open_os_settings(&self, kind: &QString) {
         if let Some((program, args)) = os_settings_command(&kind.to_string())
-            && let Err(e) = std::process::Command::new(program).args(args).spawn() {
-                tracing::warn!("system settings ({program}): {e}");
-            }
+            && let Err(e) = std::process::Command::new(program).args(args).spawn()
+        {
+            tracing::warn!("system settings ({program}): {e}");
+        }
     }
 
     pub fn third_party_notices_url(&self) -> QString {
         const NOTICES: &str = include_str!("../THIRD-PARTY-NOTICES.md");
         let dir = std::env::var_os("XDG_CACHE_HOME")
             .map(std::path::PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+            .or_else(|| {
+                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache"))
+            })
             .unwrap_or_else(std::env::temp_dir)
             .join("ost");
         let path = dir.join("THIRD-PARTY-NOTICES.md");
@@ -17871,9 +20506,18 @@ impl qobject::Backend {
     pub fn regional_options_json(self: Pin<&mut Self>) -> QString {
         use teams_cli::api::regional as r;
         let c = regional_choice(&load_settings());
-        let os = r::resolve(&r::Choice { follow_os: true, ..Default::default() }, &app_locale());
+        let os = r::resolve(
+            &r::Choice {
+                follow_os: true,
+                ..Default::default()
+            },
+            &app_locale(),
+        );
         let os_language = app_locale().to_lowercase();
-        let time_formats: Vec<_> = r::TIME_FORMATS.iter().map(|(s, l)| serde_json::json!({"short": s, "long": l})).collect();
+        let time_formats: Vec<_> = r::TIME_FORMATS
+            .iter()
+            .map(|(s, l)| serde_json::json!({"short": s, "long": l}))
+            .collect();
         QString::from(
             serde_json::json!({
                 "followOs": c.follow_os,
@@ -17890,13 +20534,31 @@ impl qobject::Backend {
         )
     }
 
-    pub fn save_regional_and_restart(self: Pin<&mut Self>, follow_os: bool, app_language: &QString, date_format: &QString, time_format: &QString) {
+    pub fn save_regional_and_restart(
+        self: Pin<&mut Self>,
+        follow_os: bool,
+        app_language: &QString,
+        date_format: &QString,
+        time_format: &QString,
+    ) {
         let mut map = load_settings();
-        map.insert("regionalFollowOs".into(), serde_json::Value::String(follow_os.to_string()));
+        map.insert(
+            "regionalFollowOs".into(),
+            serde_json::Value::String(follow_os.to_string()),
+        );
         if !follow_os {
-            map.insert("appLanguage".into(), serde_json::Value::String(app_language.to_string()));
-            map.insert("regionalDateFormat".into(), serde_json::Value::String(date_format.to_string()));
-            map.insert("regionalTimeFormat".into(), serde_json::Value::String(time_format.to_string()));
+            map.insert(
+                "appLanguage".into(),
+                serde_json::Value::String(app_language.to_string()),
+            );
+            map.insert(
+                "regionalDateFormat".into(),
+                serde_json::Value::String(date_format.to_string()),
+            );
+            map.insert(
+                "regionalTimeFormat".into(),
+                serde_json::Value::String(time_format.to_string()),
+            );
         }
         if let Err(e) = save_settings(&map) {
             tracing::warn!("saving settings failed: {}", short_error(&e));
@@ -17909,7 +20571,11 @@ impl qobject::Backend {
 
     pub fn translation_settings_json(self: Pin<&mut Self>) -> QString {
         let s = translation_settings();
-        QString::from(serde_json::json!({"target": s.target, "mode": s.mode.name(), "known": s.known}).to_string().as_str())
+        QString::from(
+            serde_json::json!({"target": s.target, "mode": s.mode.name(), "known": s.known})
+                .to_string()
+                .as_str(),
+        )
     }
 
     pub fn translation_languages_json(self: Pin<&mut Self>) -> QString {
@@ -17992,15 +20658,23 @@ impl qobject::Backend {
 
     /// Put the post composer's fields on a new channel post.
     fn apply_next_post(mut self: Pin<&mut Self>, o: &mut api::outbox::Outgoing) {
-        let Some(p) = self.as_mut().rust_mut().next_post.take() else { return };
-        if !o.conversation_id.ends_with("@thread.tacv2") || o.conversation_id.contains(";messageid=") {
+        let Some(p) = self.as_mut().rust_mut().next_post.take() else {
+            return;
+        };
+        if !o.conversation_id.ends_with("@thread.tacv2")
+            || o.conversation_id.contains(";messageid=")
+        {
             return;
         }
         o.subject = p.subject.trim().chars().take(250).collect();
         o.threads_layout = p.threads;
         if !p.threads {
             o.reply_permission = p.reply_permission;
-            o.cross_post_channels = p.cross_post.into_iter().filter(|c| *c != o.conversation_id).collect();
+            o.cross_post_channels = p
+                .cross_post
+                .into_iter()
+                .filter(|c| *c != o.conversation_id)
+                .collect();
         }
         if !p.threads && !p.theme.is_empty() && p.theme.parse::<u8>().is_ok_and(|t| t < 12) {
             o.title = p.title.trim().chars().take(44).collect();
@@ -18030,7 +20704,9 @@ impl qobject::Backend {
                 let client = TeamsClient::new().await?;
                 let base = client.ams_url().context("No media store address")?;
                 let bytes = std::fs::read(&img.path).context("Reading the banner picture")?;
-                let id = client.ams_upload_image(&o.conversation_id, bytes, "image.png").await?;
+                let id = client
+                    .ams_upload_image(&o.conversation_id, bytes, "image.png")
+                    .await?;
                 anyhow::Ok((format!("{base}/v1/objects/{id}/views/imgpsh_fullsize"), id))
             }
             .await;
@@ -18044,7 +20720,9 @@ impl qobject::Backend {
                     outbox().submit(o);
                 }
                 Err(e) => this.as_mut().set_status_text(QString::from(
-                    tr("Couldn't upload the picture: %1").replace("%1", &short_error(&e)).as_str(),
+                    tr("Couldn't upload the picture: %1")
+                        .replace("%1", &short_error(&e))
+                        .as_str(),
                 )),
             });
         });
@@ -18209,10 +20887,13 @@ impl qobject::Backend {
                         }
                         // Layouts the chat service told us the list lacks.
                         let fixes = this.rust().channel_layouts.clone();
-                        let mut v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+                        let mut v: serde_json::Value =
+                            serde_json::from_str(&text).unwrap_or_default();
                         let gone = this.rust().deleted_teams.clone();
                         if let Some(a) = v.as_array_mut() {
-                            a.retain(|t| !gone.contains(t["thread_id"].as_str().unwrap_or_default()));
+                            a.retain(|t| {
+                                !gone.contains(t["thread_id"].as_str().unwrap_or_default())
+                            });
                         }
                         for t in v.as_array_mut().into_iter().flatten() {
                             for c in t["channels"].as_array_mut().into_iter().flatten() {
@@ -18221,7 +20902,8 @@ impl qobject::Backend {
                                 }
                             }
                         }
-                        this.as_mut().set_teams_json(QString::from(v.to_string().as_str()))
+                        this.as_mut()
+                            .set_teams_json(QString::from(v.to_string().as_str()))
                     });
                     // Every team's tags: the @ picker offers them, and a
                     // mention of a tag you are in mentions you (as Teams'
@@ -18236,7 +20918,10 @@ impl qobject::Backend {
                         }
                     }
                     let text = serde_json::Value::Object(all).to_string();
-                    let _ = qt.queue(move |mut this| this.as_mut().set_team_tags_json(QString::from(text.as_str())));
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut()
+                            .set_team_tags_json(QString::from(text.as_str()))
+                    });
                 }
                 Err(e) => tracing::warn!("teams failed: {}", short_error(&e)),
             }
@@ -18404,7 +21089,10 @@ impl qobject::Backend {
     }
 
     pub fn set_noise_suppression(mut self: Pin<&mut Self>, on: bool) {
-        self.as_mut().set_setting(&QString::from("noiseSuppression"), &QString::from(if on { "on" } else { "off" }));
+        self.as_mut().set_setting(
+            &QString::from("noiseSuppression"),
+            &QString::from(if on { "on" } else { "off" }),
+        );
         teams_cli::calling::apm::set_noise_level(if on {
             teams_cli::calling::apm::NoiseLevel::High
         } else {
@@ -18427,12 +21115,18 @@ impl qobject::Backend {
     }
 
     pub fn set_spatial_state(self: Pin<&mut Self>, valid: bool, positions: &QString) {
-        let list: Vec<serde_json::Value> = serde_json::from_str(&positions.to_string()).unwrap_or_default();
+        let list: Vec<serde_json::Value> =
+            serde_json::from_str(&positions.to_string()).unwrap_or_default();
         let placed: Vec<(u32, f32, f32)> = list
             .iter()
             .filter_map(|p| {
                 let id = p.get("id")?.as_str()?;
-                let source = self.rust().roster.iter().find(|r| r.id == id)?.audio_source?;
+                let source = self
+                    .rust()
+                    .roster
+                    .iter()
+                    .find(|r| r.id == id)?
+                    .audio_source?;
                 let num = |k: &str| p.get(k).and_then(|v| v.as_f64()).map(|v| v as f32);
                 Some((u32::try_from(source).ok()?, num("x")?, num("y")?))
             })
@@ -18445,7 +21139,13 @@ impl qobject::Backend {
         teams_cli::calling::spatial::set_positions(&placed);
         let now = teams_cli::calling::spatial::active();
         if was != now || placed.len() != list.len() {
-            tracing::info!(on = now, valid, placed = placed.len(), tiles = list.len(), "spatial audio");
+            tracing::info!(
+                on = now,
+                valid,
+                placed = placed.len(),
+                tiles = list.len(),
+                "spatial audio"
+            );
         }
         tracing::debug!(?placed, "spatial audio positions");
     }
@@ -18459,7 +21159,10 @@ impl qobject::Backend {
     }
 
     pub fn set_camera_auto_controls(mut self: Pin<&mut Self>, path: &QString, on: bool) -> bool {
-        self.as_mut().set_setting(&QString::from("autoCameraControls"), &QString::from(if on { "true" } else { "false" }));
+        self.as_mut().set_setting(
+            &QString::from("autoCameraControls"),
+            &QString::from(if on { "true" } else { "false" }),
+        );
         teams_cli::calling::camera_controls::set_preferred_auto(Some(on));
         match teams_cli::calling::camera_controls::set_auto(&path.to_string(), on) {
             Ok(_) => true,
@@ -18481,7 +21184,9 @@ impl qobject::Backend {
     }
 
     pub fn set_camera_control(&self, path: &QString, id: i64, value: i64) -> bool {
-        let Ok(id) = u32::try_from(id) else { return false };
+        let Ok(id) = u32::try_from(id) else {
+            return false;
+        };
         match teams_cli::calling::camera_controls::set(&path.to_string(), id, value) {
             Ok(()) => true,
             Err(e) => {
@@ -18499,8 +21204,10 @@ impl qobject::Backend {
 
     pub fn set_music_mode(mut self: Pin<&mut Self>, on: bool, echo_cancellation: bool) {
         let v = |b: bool| QString::from(if b { "on" } else { "off" });
-        self.as_mut().set_setting(&QString::from("musicMode"), &v(on));
-        self.as_mut().set_setting(&QString::from("musicModeEcho"), &v(echo_cancellation));
+        self.as_mut()
+            .set_setting(&QString::from("musicMode"), &v(on));
+        self.as_mut()
+            .set_setting(&QString::from("musicModeEcho"), &v(echo_cancellation));
         tracing::info!(on, echo_cancellation, "music mode");
         teams_cli::calling::apm::set_music_mode(on, echo_cancellation);
     }
@@ -18514,7 +21221,8 @@ impl qobject::Backend {
     ) -> QString {
         use teams_cli::calling::ubar;
         let facts: ubar::Facts = serde_json::from_str(&facts.to_string()).unwrap_or_default();
-        let widths: HashMap<String, f64> = serde_json::from_str(&widths.to_string()).unwrap_or_default();
+        let widths: HashMap<String, f64> =
+            serde_json::from_str(&widths.to_string()).unwrap_or_default();
         // "default": every other control's slot (56, or 36 on the compact bar).
         let other = widths.get("default").copied().unwrap_or(56.0);
         let arranged = ubar::arrange(
@@ -18523,7 +21231,11 @@ impl qobject::Backend {
             divider,
             available,
         );
-        QString::from(serde_json::to_string(&arranged).unwrap_or_default().as_str())
+        QString::from(
+            serde_json::to_string(&arranged)
+                .unwrap_or_default()
+                .as_str(),
+        )
     }
 
     pub fn card_image(self: Pin<&mut Self>, url: &QString) -> QString {
@@ -18741,13 +21453,20 @@ impl qobject::Backend {
     /// again, and tell the views (a team picture changed from OST).
     fn forget_photos(mut self: Pin<&mut Self>, id: &str) {
         let prefix = format!("{id}\u{1f}");
-        self.as_mut().rust_mut().photos.retain(|k, _| !k.starts_with(&prefix));
+        self.as_mut()
+            .rust_mut()
+            .photos
+            .retain(|k, _| !k.starts_with(&prefix));
         if let Some((owner, oid)) = photo_target(id, None)
             && let Some(dir) = photo_dir()
             && let Ok(entries) = std::fs::read_dir(&dir)
         {
             let oid_key = if owner == api::directory::PhotoOwner::Chat {
-                format!("{:08x}", oid.bytes().fold(0x811c9dc5u32, |h, b| (h ^ b as u32).wrapping_mul(0x01000193)))
+                format!(
+                    "{:08x}",
+                    oid.bytes().fold(0x811c9dc5u32, |h, b| (h ^ b as u32)
+                        .wrapping_mul(0x01000193))
+                )
             } else {
                 oid.clone()
             };
@@ -18778,7 +21497,12 @@ impl qobject::Backend {
         }
         // A bot (28:…): Teams shows its app's icon.
         if id.starts_with("28:") {
-            if self.as_mut().rust_mut().photo_fetching.insert(id_key.clone()) {
+            if self
+                .as_mut()
+                .rust_mut()
+                .photo_fetching
+                .insert(id_key.clone())
+            {
                 let qt = self.qt_thread();
                 let id2 = id.clone();
                 runtime().spawn(async move {
@@ -18791,23 +21515,40 @@ impl qobject::Backend {
                         let own = if app.is_empty() {
                             None
                         } else {
-                            api::app_details::definition(&client, app).await.ok().map(|d| {
-                                d.get("largeImageUrl").and_then(|v| v.as_str()).filter(|u| u.starts_with("https://")).unwrap_or_default().to_string()
-                            })
+                            api::app_details::definition(&client, app)
+                                .await
+                                .ok()
+                                .map(|d| {
+                                    d.get("largeImageUrl")
+                                        .and_then(|v| v.as_str())
+                                        .filter(|u| u.starts_with("https://"))
+                                        .unwrap_or_default()
+                                        .to_string()
+                                })
                         };
                         let icon = match own.filter(|i| !i.is_empty()) {
                             Some(i) => i,
-                            None => api::app_details::app_for_bot(&client, bot).await.ok_or_else(|| anyhow::anyhow!("no app for {bot}"))?.2,
+                            None => {
+                                api::app_details::app_for_bot(&client, bot)
+                                    .await
+                                    .ok_or_else(|| anyhow::anyhow!("no app for {bot}"))?
+                                    .2
+                            }
                         };
                         let icon = api::app_details::evergreen_asset_url(&icon);
                         anyhow::ensure!(!icon.is_empty(), "no icon");
-                        let path = api::emoticons::remote_image_file(&icon, &cache_base(), None).await?;
+                        let path =
+                            api::emoticons::remote_image_file(&icon, &cache_base(), None).await?;
                         anyhow::Ok(format!("file://{}", path.display()))
                     }
                     .await;
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().rust_mut().photo_fetching.remove(&id_key);
-                        let url = result.map_err(|e| tracing::debug!("bot icon unavailable: {}", short_error(&e))).ok();
+                        let url = result
+                            .map_err(|e| {
+                                tracing::debug!("bot icon unavailable: {}", short_error(&e))
+                            })
+                            .ok();
                         this.as_mut().rust_mut().photos.insert(id_key, url);
                         this.as_mut().photo_ready(QString::from(id2.as_str()));
                     });
@@ -18836,7 +21577,11 @@ impl qobject::Backend {
         });
         // Thread ids aren't file names: chats are keyed by their hash.
         let oid_key = if owner == api::directory::PhotoOwner::Chat {
-            format!("{:08x}", oid.bytes().fold(0x811c9dc5u32, |h, b| (h ^ b as u32).wrapping_mul(0x01000193)))
+            format!(
+                "{:08x}",
+                oid.bytes().fold(0x811c9dc5u32, |h, b| (h ^ b as u32)
+                    .wrapping_mul(0x01000193))
+            )
         } else {
             oid.clone()
         };
@@ -18887,17 +21632,29 @@ impl qobject::Backend {
         if let Some(known) = self.rust().thumbnails.get(&url) {
             return QString::from(known.as_deref().unwrap_or(""));
         }
-        if url.is_empty() || !self.as_mut().rust_mut().thumbnail_fetching.insert(url.clone()) {
+        if url.is_empty()
+            || !self
+                .as_mut()
+                .rust_mut()
+                .thumbnail_fetching
+                .insert(url.clone())
+        {
             return QString::default();
         }
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                let Some(bytes) = api::files::thumbnail(&client, &url).await? else { return anyhow::Ok(None) };
-                let dir = photo_dir().ok_or_else(|| anyhow::anyhow!("No cache directory"))?.with_file_name("thumbnails");
+                let Some(bytes) = api::files::thumbnail(&client, &url).await? else {
+                    return anyhow::Ok(None);
+                };
+                let dir = photo_dir()
+                    .ok_or_else(|| anyhow::anyhow!("No cache directory"))?
+                    .with_file_name("thumbnails");
                 std::fs::create_dir_all(&dir)?;
-                let name = url.bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
+                let name = url.bytes().fold(0xcbf29ce484222325u64, |h, b| {
+                    (h ^ b as u64).wrapping_mul(0x100000001b3)
+                });
                 let path = dir.join(format!("{name:016x}.jpg"));
                 write_private(&path, &bytes)?;
                 anyhow::Ok(Some(format!("file://{}", path.display())))
@@ -18909,7 +21666,10 @@ impl qobject::Backend {
                     tracing::debug!("thumbnail unavailable: {}", short_error(&e));
                     None
                 });
-                this.as_mut().rust_mut().thumbnails.insert(url.clone(), found);
+                this.as_mut()
+                    .rust_mut()
+                    .thumbnails
+                    .insert(url.clone(), found);
                 this.as_mut().thumbnail_ready(QString::from(url.as_str()));
             });
         });
@@ -18923,7 +21683,11 @@ impl qobject::Backend {
             let mut slots = roam_slots().lock().unwrap();
             for (chat, d) in &all {
                 if let Some(r) = d.roam.as_ref().filter(|r| !r.id.is_empty()) {
-                    slots.entry(chat.clone()).or_default().id.get_or_insert_with(|| r.id.clone());
+                    slots
+                        .entry(chat.clone())
+                        .or_default()
+                        .id
+                        .get_or_insert_with(|| r.id.clone());
                 }
             }
             all
@@ -18931,7 +21695,12 @@ impl qobject::Backend {
     }
 
     pub fn set_draft(self: Pin<&mut Self>, chat_id: &QString, text: &QString) {
-        self.store_draft(chat_id.to_string(), text.to_string(), String::new(), Vec::new());
+        self.store_draft(
+            chat_id.to_string(),
+            text.to_string(),
+            String::new(),
+            Vec::new(),
+        );
     }
 
     pub fn save_draft(
@@ -18942,7 +21711,12 @@ impl qobject::Backend {
         media_json: &QString,
     ) {
         let media = serde_json::from_str(&media_json.to_string()).unwrap_or_default();
-        self.store_draft(chat_id.to_string(), text.to_string(), html.to_string(), media);
+        self.store_draft(
+            chat_id.to_string(),
+            text.to_string(),
+            html.to_string(),
+            media,
+        );
     }
 
     fn store_draft(
@@ -19006,9 +21780,16 @@ impl qobject::Backend {
         let name = self.rust().user_name.to_string();
         let draft = self.as_mut().drafts_mut().get(&chat).cloned();
         // A stable clientmessageid for the draft's life.
-        let cmid = match draft.as_ref().and_then(|d| d.roam.as_ref()).map(|r| r.client_message_id.clone()).filter(|c| !c.is_empty()) {
+        let cmid = match draft
+            .as_ref()
+            .and_then(|d| d.roam.as_ref())
+            .map(|r| r.client_message_id.clone())
+            .filter(|c| !c.is_empty())
+        {
             Some(c) => c,
-            None => (uuid::Uuid::new_v4().as_u128() as u64 % 9_000_000_000_000_000_000 + 1_000_000_000_000_000_000).to_string(),
+            None => (uuid::Uuid::new_v4().as_u128() as u64 % 9_000_000_000_000_000_000
+                + 1_000_000_000_000_000_000)
+                .to_string(),
         };
         if let Some(d) = self.as_mut().drafts_mut().get_mut(&chat) {
             let r = d.roam.get_or_insert_with(Default::default);
@@ -19021,7 +21802,9 @@ impl qobject::Backend {
             slot.generation += 1;
             (slot.generation, slot.busy.clone())
         };
-        let current = move |chat: &str| roam_slots().lock().unwrap().get(chat).map(|s| s.generation) == Some(generation);
+        let current = move |chat: &str| {
+            roam_slots().lock().unwrap().get(chat).map(|s| s.generation) == Some(generation)
+        };
         let qt = self.qt_thread();
         runtime().spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(400)).await;
@@ -19032,7 +21815,11 @@ impl qobject::Backend {
             if !current(&chat) {
                 return;
             }
-            let id = roam_slots().lock().unwrap().get(&chat).and_then(|s| s.id.clone());
+            let id = roam_slots()
+                .lock()
+                .unwrap()
+                .get(&chat)
+                .and_then(|s| s.id.clone());
             let result: anyhow::Result<Option<String>> = async {
                 let client = TeamsClient::new().await?;
                 match (&form, &id) {
@@ -19044,7 +21831,9 @@ impl qobject::Backend {
                     }
                     (Some((content, mentions)), id) => {
                         // A thread view's draft: the channel and its post.
-                        let (conv, reply_to) = chat.split_once(";messageid=").unwrap_or((chat.as_str(), ""));
+                        let (conv, reply_to) = chat
+                            .split_once(";messageid=")
+                            .unwrap_or((chat.as_str(), ""));
                         let o = api::drafts::Outgoing {
                             chat: conv,
                             reply_to,
@@ -19124,7 +21913,11 @@ impl qobject::Backend {
                 client_message_id: r.client_message_id.clone(),
                 text: v.text.clone(),
                 edit_html: v.edit_html.clone(),
-                edit_media: v.edit_media.iter().filter_map(|m| serde_json::to_value(m).ok()).collect(),
+                edit_media: v
+                    .edit_media
+                    .iter()
+                    .filter_map(|m| serde_json::to_value(m).ok())
+                    .collect(),
                 time: r.time_ms.max(0) as u64,
             })
         };
@@ -19133,19 +21926,38 @@ impl qobject::Backend {
         chats.dedup();
         let mut arrived = Vec::new();
         for chat in chats {
-            let known = roam_slots().lock().unwrap().get(&chat).and_then(|s| s.id.clone());
+            let known = roam_slots()
+                .lock()
+                .unwrap()
+                .get(&chat)
+                .and_then(|s| s.id.clone());
             let local = self.as_mut().drafts_mut().get(&chat).cloned();
-            let untouched = local.as_ref().is_some_and(|d| d.roam.as_ref().is_some_and(|r| r.synced > 0 && d.time <= r.synced));
-            let mine = known.as_ref().and_then(|k| roamed.iter().find(|r| &r.id == k && r.chat == chat));
+            let untouched = local.as_ref().is_some_and(|d| {
+                d.roam
+                    .as_ref()
+                    .is_some_and(|r| r.synced > 0 && d.time <= r.synced)
+            });
+            let mine = known
+                .as_ref()
+                .and_then(|k| roamed.iter().find(|r| &r.id == k && r.chat == chat));
             let adopt = |this: &mut Pin<&mut Self>, rd: RemoteDraft| {
-                roam_slots().lock().unwrap().entry(chat.clone()).or_default().id = Some(rd.id.clone());
+                roam_slots()
+                    .lock()
+                    .unwrap()
+                    .entry(chat.clone())
+                    .or_default()
+                    .id = Some(rd.id.clone());
                 let old = this.as_mut().drafts_mut().remove(&chat).unwrap_or_default();
                 this.as_mut().drafts_mut().insert(
                     chat.clone(),
                     Draft {
                         text: rd.text.clone(),
                         time: rd.time.min(now),
-                        roam: Some(RoamState { id: rd.id.clone(), client_message_id: rd.client_message_id.clone(), synced: now }),
+                        roam: Some(RoamState {
+                            id: rd.id.clone(),
+                            client_message_id: rd.client_message_id.clone(),
+                            synced: now,
+                        }),
                         edit_html: rd.edit_html.clone(),
                         edit_media: rd.edit_media.clone(),
                         conflict: old.conflict.filter(|c| c.id != rd.id),
@@ -19155,9 +21967,18 @@ impl qobject::Backend {
             };
             // The draft this device shares: deleted or changed elsewhere.
             if let Some(r) = mine {
-                let synced = local.as_ref().and_then(|d| d.roam.as_ref()).map(|r| r.synced).unwrap_or_default();
+                let synced = local
+                    .as_ref()
+                    .and_then(|d| d.roam.as_ref())
+                    .map(|r| r.synced)
+                    .unwrap_or_default();
                 if r.deleted {
-                    roam_slots().lock().unwrap().entry(chat.clone()).or_default().id = None;
+                    roam_slots()
+                        .lock()
+                        .unwrap()
+                        .entry(chat.clone())
+                        .or_default()
+                        .id = None;
                     if local.is_some() && untouched {
                         self.as_mut().drafts_mut().remove(&chat);
                         tracing::info!("DRAFT cleared on another device: {chat}");
@@ -19165,22 +21986,32 @@ impl qobject::Backend {
                     }
                     continue;
                 }
-                let ours = local.as_ref().map(|d| draft_teams_form(d).0).unwrap_or_default();
-                if r.time_ms as u64 > synced && !same_draft_html(&ours, &r.content)
-                    && let Some(rd) = view(r) {
-                        if local.is_none() || untouched {
-                            adopt(&mut self, rd);
-                            tracing::info!("DRAFT changed on another device: {chat}");
-                        } else if let Some(d) = self.as_mut().drafts_mut().get_mut(&chat) {
-                            d.conflict = Some(rd);
-                        }
-                        arrived.push(chat.clone());
-                        continue;
+                let ours = local
+                    .as_ref()
+                    .map(|d| draft_teams_form(d).0)
+                    .unwrap_or_default();
+                if r.time_ms as u64 > synced
+                    && !same_draft_html(&ours, &r.content)
+                    && let Some(rd) = view(r)
+                {
+                    if local.is_none() || untouched {
+                        adopt(&mut self, rd);
+                        tracing::info!("DRAFT changed on another device: {chat}");
+                    } else if let Some(d) = self.as_mut().drafts_mut().get_mut(&chat) {
+                        d.conflict = Some(rd);
                     }
+                    arrived.push(chat.clone());
+                    continue;
+                }
             }
             // Another device's own draft for this chat (a different id).
             let local = self.as_mut().drafts_mut().get(&chat).cloned();
-            let Some(r) = roamed.iter().find(|r| r.chat == chat && !r.deleted && Some(&r.id) != known.as_ref()) else { continue };
+            let Some(r) = roamed
+                .iter()
+                .find(|r| r.chat == chat && !r.deleted && Some(&r.id) != known.as_ref())
+            else {
+                continue;
+            };
             let Some(rd) = view(r) else { continue };
             match &local {
                 None => {
@@ -19190,9 +22021,18 @@ impl qobject::Backend {
                 }
                 Some(d) if same_draft_html(&draft_teams_form(d).0, &r.content) => {
                     if known.is_none() {
-                        roam_slots().lock().unwrap().entry(chat.clone()).or_default().id = Some(r.id.clone());
+                        roam_slots()
+                            .lock()
+                            .unwrap()
+                            .entry(chat.clone())
+                            .or_default()
+                            .id = Some(r.id.clone());
                         if let Some(d) = self.as_mut().drafts_mut().get_mut(&chat) {
-                            d.roam = Some(RoamState { id: r.id.clone(), client_message_id: r.client_message_id.clone(), synced: now });
+                            d.roam = Some(RoamState {
+                                id: r.id.clone(),
+                                client_message_id: r.client_message_id.clone(),
+                                synced: now,
+                            });
                         }
                     }
                 }
@@ -19240,18 +22080,35 @@ impl qobject::Backend {
 
     pub fn resolve_draft_conflict(mut self: Pin<&mut Self>, chat_id: &QString, use_it: bool) {
         let chat = chat_id.to_string();
-        let Some(conflict) = self.as_mut().drafts_mut().get_mut(&chat).and_then(|d| d.conflict.take()) else { return };
+        let Some(conflict) = self
+            .as_mut()
+            .drafts_mut()
+            .get_mut(&chat)
+            .and_then(|d| d.conflict.take())
+        else {
+            return;
+        };
         // Teams: "Use this version" makes the other device's draft this
         // chat's and deletes the one it replaces; Discard deletes it.
         let gone = if use_it {
-            let old = roam_slots().lock().unwrap().entry(chat.clone()).or_default().id.replace(conflict.id.clone());
+            let old = roam_slots()
+                .lock()
+                .unwrap()
+                .entry(chat.clone())
+                .or_default()
+                .id
+                .replace(conflict.id.clone());
             let now = chrono::Utc::now().timestamp_millis() as u64;
             self.as_mut().drafts_mut().insert(
                 chat.clone(),
                 Draft {
                     text: conflict.text.clone(),
                     time: now,
-                    roam: Some(RoamState { id: conflict.id.clone(), client_message_id: conflict.client_message_id.clone(), synced: now }),
+                    roam: Some(RoamState {
+                        id: conflict.id.clone(),
+                        client_message_id: conflict.client_message_id.clone(),
+                        synced: now,
+                    }),
                     edit_html: conflict.edit_html.clone(),
                     edit_media: conflict.edit_media.clone(),
                     ..Default::default()
@@ -19472,7 +22329,18 @@ impl qobject::Backend {
         if name == "theme" {
             self.as_mut().set_theme_mode(QString::from(value.as_str()));
         }
-        if ["micDevice", "speakerDevice", "secondaryRinger", "autoGainControl", "efficiencyMode", "ttyMode", "spatialAudio", "audioDeviceSyncEnabled"].contains(&name.as_str()) {
+        if [
+            "micDevice",
+            "speakerDevice",
+            "secondaryRinger",
+            "autoGainControl",
+            "efficiencyMode",
+            "ttyMode",
+            "spatialAudio",
+            "audioDeviceSyncEnabled",
+        ]
+        .contains(&name.as_str())
+        {
             apply_audio_devices(&map);
         }
         // Spatial audio turned on or off (or a speaker chosen that can or
@@ -19482,7 +22350,16 @@ impl qobject::Backend {
         if ["spatialAudio", "speakerDevice"].contains(&name.as_str()) {
             runtime().spawn(sync_unmixed_audio());
         }
-        if ["videoBackground", "videoBlur", "adjustBrightness", "softFocus", "greenScreen", "greenScreenColor"].contains(&name.as_str()) {
+        if [
+            "videoBackground",
+            "videoBlur",
+            "adjustBrightness",
+            "softFocus",
+            "greenScreen",
+            "greenScreenColor",
+        ]
+        .contains(&name.as_str())
+        {
             crate::video_effects::apply(&map);
         }
         if name == "editorCritiques" || name == "editorAutoCorrect" {
@@ -19504,11 +22381,16 @@ impl qobject::Backend {
     fn load_engagement(self: Pin<&mut Self>) {
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let result = async { api::engagement::load_completed_actions(&TeamsClient::new().await?).await }.await;
+            let result =
+                async { api::engagement::load_completed_actions(&TeamsClient::new().await?).await }
+                    .await;
             match result {
                 Ok(list) => {
                     let text = json!(list).to_string();
-                    let _ = qt.queue(move |mut this| this.as_mut().set_esp_actions_json(QString::from(text.as_str())));
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut()
+                            .set_esp_actions_json(QString::from(text.as_str()))
+                    });
                 }
                 Err(e) => tracing::info!("engagement state: {}", short_error(&e)),
             }
@@ -19517,14 +22399,18 @@ impl qobject::Backend {
 
     pub fn record_engagement_action(mut self: Pin<&mut Self>, action: &QString) {
         let action = action.to_string();
-        let mut done: Vec<String> = serde_json::from_str(&self.rust().esp_actions_json.to_string()).unwrap_or_default();
+        let mut done: Vec<String> =
+            serde_json::from_str(&self.rust().esp_actions_json.to_string()).unwrap_or_default();
         if done.contains(&action) {
             return;
         }
         done.push(action.clone());
-        self.as_mut().set_esp_actions_json(QString::from(json!(done).to_string().as_str()));
+        self.as_mut()
+            .set_esp_actions_json(QString::from(json!(done).to_string().as_str()));
         runtime().spawn(async move {
-            let result = async { api::engagement::record_action(&TeamsClient::new().await?, &action).await }.await;
+            let result =
+                async { api::engagement::record_action(&TeamsClient::new().await?, &action).await }
+                    .await;
             if let Err(e) = result {
                 tracing::warn!("engagement action {action}: {}", short_error(&e));
             }
@@ -19562,10 +22448,16 @@ impl qobject::Backend {
                     // accounts' Accounts and orgs show it).
                     let me = teams_cli::config::profile().unwrap_or_default();
                     if !org.is_empty()
-                        && let Some(a) = teams_cli::config::accounts().into_iter().find(|a| a.profile == me)
+                        && let Some(a) = teams_cli::config::accounts()
+                            .into_iter()
+                            .find(|a| a.profile == me)
                         && a.org != org
                     {
-                        let _ = teams_cli::config::record_account(Some(teams_cli::config::Account { org: org.clone(), ..a }));
+                        let _ =
+                            teams_cli::config::record_account(Some(teams_cli::config::Account {
+                                org: org.clone(),
+                                ..a
+                            }));
                     }
                 });
             }
@@ -19639,7 +22531,8 @@ impl qobject::Backend {
         runtime().spawn(async move {
             // Teams' Store home: its feed and header menus (the store
             // content doc over the ranked catalog).
-            let result = async { api::store_content::store_home(&TeamsClient::new().await?).await }.await;
+            let result =
+                async { api::store_content::store_home(&TeamsClient::new().await?).await }.await;
             let _ = qt.queue(move |mut this| {
                 this.as_mut().set_store_busy(false);
                 let text = match result {
@@ -19652,9 +22545,17 @@ impl qobject::Backend {
     }
 
     pub fn load_permission_apps(mut self: Pin<&mut Self>, team_threads_json: &QString) {
-        let teams: Vec<String> = serde_json::from_str(&team_threads_json.to_string()).unwrap_or_default();
-        let changed: Vec<String> = self.as_mut().saved_app_permissions().as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
-        self.as_mut().set_permission_apps_json(QString::from(json!({ "loading": true, "apps": [] }).to_string().as_str()));
+        let teams: Vec<String> =
+            serde_json::from_str(&team_threads_json.to_string()).unwrap_or_default();
+        let changed: Vec<String> = self
+            .as_mut()
+            .saved_app_permissions()
+            .as_object()
+            .map(|o| o.keys().cloned().collect())
+            .unwrap_or_default();
+        self.as_mut().set_permission_apps_json(QString::from(
+            json!({ "loading": true, "apps": [] }).to_string().as_str(),
+        ));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async { api::app_details::permission_apps(&TeamsClient::new().await?, &teams, &changed).await }.await;
@@ -19679,7 +22580,9 @@ impl qobject::Backend {
 
     pub fn app_permissions_load(mut self: Pin<&mut Self>, app_id: &QString) {
         let app = app_id.to_string();
-        self.as_mut().set_app_permissions_json(QString::from(json!({ "app": app, "loading": true }).to_string().as_str()));
+        self.as_mut().set_app_permissions_json(QString::from(
+            json!({ "app": app, "loading": true }).to_string().as_str(),
+        ));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async { api::app_details::definition(&TeamsClient::new().await?, &app).await }.await;
@@ -19712,7 +22615,9 @@ impl qobject::Backend {
 
     /// App permissions changed on this device: {appId: {kind: bool}}.
     fn saved_app_permissions(self: Pin<&mut Self>) -> serde_json::Value {
-        let raw = self.setting(&QString::from("appDevicePermissions")).to_string();
+        let raw = self
+            .setting(&QString::from("appDevicePermissions"))
+            .to_string();
         serde_json::from_str(&raw).unwrap_or_else(|_| json!({}))
     }
 
@@ -19725,7 +22630,12 @@ impl qobject::Backend {
             .unwrap_or_else(|| api::app_details::device_permissions_preapproved(&app))
     }
 
-    pub fn set_app_permission(mut self: Pin<&mut Self>, app_id: &QString, kind: &QString, on: bool) {
+    pub fn set_app_permission(
+        mut self: Pin<&mut Self>,
+        app_id: &QString,
+        kind: &QString,
+        on: bool,
+    ) {
         let (app, kind) = (app_id.to_string().to_lowercase(), kind.to_string());
         let mut saved = self.as_mut().saved_app_permissions();
         if !saved.get(&app).is_some_and(|v| v.is_object()) {
@@ -19733,32 +22643,49 @@ impl qobject::Backend {
         }
         saved[&app][&kind] = json!(on);
         let text = saved.to_string();
-        self.as_mut().set_setting(&QString::from("appDevicePermissions"), &QString::from(text.as_str()));
+        self.as_mut().set_setting(
+            &QString::from("appDevicePermissions"),
+            &QString::from(text.as_str()),
+        );
         // Show the change.
-        let current: serde_json::Value = serde_json::from_str(&self.rust().app_permissions_json.to_string()).unwrap_or_default();
-        if current.get("app").and_then(|a| a.as_str()).is_some_and(|a| a.eq_ignore_ascii_case(&app)) {
+        let current: serde_json::Value =
+            serde_json::from_str(&self.rust().app_permissions_json.to_string()).unwrap_or_default();
+        if current
+            .get("app")
+            .and_then(|a| a.as_str())
+            .is_some_and(|a| a.eq_ignore_ascii_case(&app))
+        {
             let mut c = current;
             if let Some(items) = c.get_mut("items").and_then(|i| i.as_array_mut()) {
-                for it in items.iter_mut().filter(|it| it.get("kind").and_then(|k| k.as_str()) == Some(kind.as_str())) {
+                for it in items
+                    .iter_mut()
+                    .filter(|it| it.get("kind").and_then(|k| k.as_str()) == Some(kind.as_str()))
+                {
                     it["on"] = json!(on);
                 }
             }
-            self.as_mut().set_app_permissions_json(QString::from(c.to_string().as_str()));
+            self.as_mut()
+                .set_app_permissions_json(QString::from(c.to_string().as_str()));
         }
     }
 
     pub fn store_page_load(mut self: Pin<&mut Self>, id: &QString) {
         let id = id.to_string();
-        self.as_mut().set_store_page_json(QString::from(json!({ "id": id, "loading": true }).to_string().as_str()));
+        self.as_mut().set_store_page_json(QString::from(
+            json!({ "id": id, "loading": true }).to_string().as_str(),
+        ));
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let result = async { api::store_content::store_page(&TeamsClient::new().await?, &id).await }.await;
+            let result =
+                async { api::store_content::store_page(&TeamsClient::new().await?, &id).await }
+                    .await;
             let _ = qt.queue(move |mut this| {
                 let v = match result {
                     Ok(p) => json!(p),
                     Err(e) => json!({ "id": id, "error": short_error(&e) }),
                 };
-                this.as_mut().set_store_page_json(QString::from(v.to_string().as_str()));
+                this.as_mut()
+                    .set_store_page_json(QString::from(v.to_string().as_str()));
             });
         });
     }
@@ -19854,15 +22781,22 @@ impl qobject::Backend {
 
     pub fn store_search(mut self: Pin<&mut Self>, query: &QString) {
         let q = query.to_string();
-        self.as_mut().set_store_search_json(QString::from(json!({ "query": q, "loading": true }).to_string().as_str()));
+        self.as_mut().set_store_search_json(QString::from(
+            json!({ "query": q, "loading": true }).to_string().as_str(),
+        ));
         if q.trim().is_empty() {
             return;
         }
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let result = async { api::store_content::search_store(&TeamsClient::new().await?, q.trim()).await }.await;
+            let result = async {
+                api::store_content::search_store(&TeamsClient::new().await?, q.trim()).await
+            }
+            .await;
             let _ = qt.queue(move |mut this| {
-                let current: serde_json::Value = serde_json::from_str(&this.rust().store_search_json.to_string()).unwrap_or_default();
+                let current: serde_json::Value =
+                    serde_json::from_str(&this.rust().store_search_json.to_string())
+                        .unwrap_or_default();
                 if current.get("query").and_then(|x| x.as_str()) != Some(q.as_str()) {
                     return;
                 }
@@ -19870,7 +22804,8 @@ impl qobject::Backend {
                     Ok(r) => json!({ "query": q, "results": r }),
                     Err(e) => json!({ "query": q, "results": [], "error": short_error(&e) }),
                 };
-                this.as_mut().set_store_search_json(QString::from(v.to_string().as_str()));
+                this.as_mut()
+                    .set_store_search_json(QString::from(v.to_string().as_str()));
             });
         });
     }
@@ -19901,8 +22836,13 @@ impl qobject::Backend {
             .await;
             let _ = qt.queue(move |mut this| {
                 let text = match result {
-                    Ok(tabs) => json!({ "channel": channel, "kind": "channel", "tabs": tabs }).to_string(),
-                    Err(e) => json!({ "channel": channel, "kind": "channel", "error": short_error(&e) }).to_string(),
+                    Ok(tabs) => {
+                        json!({ "channel": channel, "kind": "channel", "tabs": tabs }).to_string()
+                    }
+                    Err(e) => {
+                        json!({ "channel": channel, "kind": "channel", "error": short_error(&e) })
+                            .to_string()
+                    }
                 };
                 this.as_mut()
                     .set_channel_tabs_json(QString::from(text.as_str()));
@@ -19937,7 +22877,10 @@ impl qobject::Backend {
             std::fs::copy(crate::log_path(), dir.join("ost-desktop.log"))?;
             // Extended diagnostics: the earlier sessions too.
             if crate::previous_log_path().exists() {
-                std::fs::copy(crate::previous_log_path(), dir.join("ost-desktop.previous.log"))?;
+                std::fs::copy(
+                    crate::previous_log_path(),
+                    dir.join("ost-desktop.previous.log"),
+                )?;
             }
             std::fs::write(
                 dir.join("version.txt"),
@@ -19954,7 +22897,11 @@ impl qobject::Backend {
     }
 
     pub fn app_host_page(&self, title: &QString) -> QString {
-        let esc = |t: &str| t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+        let esc = |t: &str| {
+            t.replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+        };
         QString::from(
             format!(
                 "<!doctype html><html lang=\"en-us\"><head><meta charset=\"utf-8\"><title>{}</title>\
@@ -19972,12 +22919,21 @@ impl qobject::Backend {
 
     pub fn meeting_board_frame_url(&self, stored: &QString, params: &QString) -> QString {
         let p: serde_json::Value = serde_json::from_str(&params.to_string()).unwrap_or_default();
-        let s = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let s = |k: &str| {
+            p.get(k)
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
         let url = api::app_host::board_frame_url(
             &stored.to_string(),
-            p.get("tabStart").and_then(|v| v.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
+            p.get("tabStart")
+                .and_then(|v| v.as_i64())
+                .unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
             &s("correlation"),
-            p.get("initiator").and_then(|v| v.as_bool()).unwrap_or(false),
+            p.get("initiator")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             &s("meetingId"),
             &s("user"),
             &s("tenant"),
@@ -19986,9 +22942,25 @@ impl qobject::Backend {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn app_host_request(self: Pin<&mut Self>, app_id: &QString, thread: &QString, team_thread: &QString, tab_id: &QString, kind: &QString, id: &QString, payload: &QString) {
-        let (app, thread, team, tab, kind, id, payload) =
-            (app_id.to_string(), thread.to_string(), team_thread.to_string(), tab_id.to_string(), kind.to_string(), id.to_string(), payload.to_string());
+    pub fn app_host_request(
+        self: Pin<&mut Self>,
+        app_id: &QString,
+        thread: &QString,
+        team_thread: &QString,
+        tab_id: &QString,
+        kind: &QString,
+        id: &QString,
+        payload: &QString,
+    ) {
+        let (app, thread, team, tab, kind, id, payload) = (
+            app_id.to_string(),
+            thread.to_string(),
+            team_thread.to_string(),
+            tab_id.to_string(),
+            kind.to_string(),
+            id.to_string(),
+            payload.to_string(),
+        );
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let p: serde_json::Value = serde_json::from_str(&payload).unwrap_or_default();
@@ -20227,14 +23199,13 @@ impl qobject::Backend {
 
     pub fn app_details_load(mut self: Pin<&mut Self>, app_id: &QString) {
         let app = app_id.to_string();
-        self.as_mut()
-            .set_app_details_json(QString::from(json!({ "app": app, "loading": true }).to_string().as_str()));
+        self.as_mut().set_app_details_json(QString::from(
+            json!({ "app": app, "loading": true }).to_string().as_str(),
+        ));
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let result = async {
-                api::app_details::details(&TeamsClient::new().await?, &app).await
-            }
-            .await;
+            let result =
+                async { api::app_details::details(&TeamsClient::new().await?, &app).await }.await;
             let _ = qt.queue(move |mut this| {
                 let text = match result {
                     Ok(d) => {
@@ -20243,7 +23214,8 @@ impl qobject::Backend {
                     }
                     Err(e) => json!({ "app": app, "error": short_error(&e) }).to_string(),
                 };
-                this.as_mut().set_app_details_json(QString::from(text.as_str()));
+                this.as_mut()
+                    .set_app_details_json(QString::from(text.as_str()));
             });
         });
     }
@@ -20286,7 +23258,8 @@ impl qobject::Backend {
                         let mut reviews = Vec::new();
                         if append {
                             let shown: serde_json::Value =
-                                serde_json::from_str(&this.rust().app_reviews_json.to_string()).unwrap_or_default();
+                                serde_json::from_str(&this.rust().app_reviews_json.to_string())
+                                    .unwrap_or_default();
                             if shown["app"] == app.as_str() && shown["sort"] == sort.as_str() {
                                 reviews = shown["reviews"].as_array().cloned().unwrap_or_default();
                             }
@@ -20296,9 +23269,12 @@ impl qobject::Backend {
                                 "next": page.next, "more": !page.next.is_empty() })
                         .to_string()
                     }
-                    Err(e) => json!({ "app": app, "sort": sort, "error": short_error(&e) }).to_string(),
+                    Err(e) => {
+                        json!({ "app": app, "sort": sort, "error": short_error(&e) }).to_string()
+                    }
                 };
-                this.as_mut().set_app_reviews_json(QString::from(text.as_str()));
+                this.as_mut()
+                    .set_app_reviews_json(QString::from(text.as_str()));
             });
         });
     }
@@ -20334,7 +23310,13 @@ impl qobject::Backend {
 
     pub fn remove_chat_history(mut self: Pin<&mut Self>, chat_id: &QString) {
         let id = chat_id.to_string();
-        if let Some(c) = self.as_mut().rust_mut().chats.iter_mut().find(|c| c["id"].as_str() == Some(id.as_str())) {
+        if let Some(c) = self
+            .as_mut()
+            .rust_mut()
+            .chats
+            .iter_mut()
+            .find(|c| c["id"].as_str() == Some(id.as_str()))
+        {
             c["hidden"] = json!(true);
         }
         self.as_mut().publish_chats();
@@ -20346,11 +23328,20 @@ impl qobject::Backend {
                 .iter()
                 .find(|c| {
                     let cid = c["id"].as_str().unwrap_or_default();
-                    cid != id && !cid.starts_with("48:") && !c["hidden"].as_bool().unwrap_or(false) && !c["empty"].as_bool().unwrap_or(false)
+                    cid != id
+                        && !cid.starts_with("48:")
+                        && !c["hidden"].as_bool().unwrap_or(false)
+                        && !c["empty"].as_bool().unwrap_or(false)
                 })
-                .map(|c| (c["id"].as_str().unwrap_or_default().to_string(), c["name"].as_str().unwrap_or_default().to_string()));
+                .map(|c| {
+                    (
+                        c["id"].as_str().unwrap_or_default().to_string(),
+                        c["name"].as_str().unwrap_or_default().to_string(),
+                    )
+                });
             if let Some((nid, name)) = next {
-                self.as_mut().select_chat(&QString::from(nid.as_str()), &QString::from(name.as_str()));
+                self.as_mut()
+                    .select_chat(&QString::from(nid.as_str()), &QString::from(name.as_str()));
             }
         }
         let qt = self.qt_thread();
@@ -20363,7 +23354,10 @@ impl qobject::Backend {
             let _ = qt.queue(move |mut this| {
                 if let Err(e) = &result {
                     tracing::warn!("remove chat history failed: {}", short_error(e));
-                    this.as_mut().toast(&tr("Something went wrong on our end. Please try again."), "error");
+                    this.as_mut().toast(
+                        &tr("Something went wrong on our end. Please try again."),
+                        "error",
+                    );
                 }
                 this.as_mut().reload_chats();
             });
@@ -20391,7 +23385,8 @@ impl qobject::Backend {
                 }
                 Err(e) => {
                     tracing::warn!("leave chat failed: {}", short_error(&e));
-                    this.as_mut().toast(&tr("Unable to leave the chat"), "error");
+                    this.as_mut()
+                        .toast(&tr("Unable to leave the chat"), "error");
                 }
             });
         });
@@ -20410,7 +23405,8 @@ impl qobject::Backend {
                 let n = members.len();
                 let _ = qt.queue(move |mut this| {
                     let mut map: serde_json::Map<String, serde_json::Value> =
-                        serde_json::from_str(&this.rust().chat_member_counts_json.to_string()).unwrap_or_default();
+                        serde_json::from_str(&this.rust().chat_member_counts_json.to_string())
+                            .unwrap_or_default();
                     map.insert(id, json!(n));
                     this.as_mut().set_chat_member_counts_json(QString::from(
                         serde_json::Value::Object(map).to_string().as_str(),
@@ -20423,10 +23419,7 @@ impl qobject::Backend {
     pub fn folders_load(self: Pin<&mut Self>) {
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let result = async {
-                api::folders::folders(&TeamsClient::new().await?).await
-            }
-            .await;
+            let result = async { api::folders::folders(&TeamsClient::new().await?).await }.await;
             let _ = qt.queue(move |mut this| match result {
                 Ok(f) => {
                     let text = serde_json::to_string(&f).unwrap_or_default();
@@ -20442,11 +23435,20 @@ impl qobject::Backend {
         use api::folders;
         let action = action.to_string();
         let args: serde_json::Value = serde_json::from_str(&args.to_string()).unwrap_or_default();
-        let arg = |args: &serde_json::Value, k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let arg = |args: &serde_json::Value, k: &str| {
+            args.get(k)
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
         let current = self.rust().folders.clone();
         let version = current.version;
         // Expanding and collapsing show at once (Teams' optimistic update).
-        if action == "expand" || action == "collapse" || action == "expandAll" || action == "collapseAll" {
+        if action == "expand"
+            || action == "collapse"
+            || action == "expandAll"
+            || action == "collapseAll"
+        {
             let open = action.starts_with("expand");
             let ids: Vec<String> = if action.ends_with("All") {
                 current.folders.iter().map(|f| f.id.clone()).collect()
@@ -20465,7 +23467,11 @@ impl qobject::Backend {
         let order: Vec<String> = args
             .get("order")
             .and_then(|o| o.as_array())
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
             .unwrap_or_default();
         if action == "reorder" {
             let mut next = current.clone();
@@ -20488,8 +23494,10 @@ impl qobject::Backend {
                         folders::set_expanded(&client, version, &f, action == "expand").await
                     }
                     "expandAll" | "collapseAll" => {
-                        let ids: Vec<String> = current.folders.iter().map(|f| f.id.clone()).collect();
-                        folders::set_all_expanded(&client, version, &ids, action == "expandAll").await
+                        let ids: Vec<String> =
+                            current.folders.iter().map(|f| f.id.clone()).collect();
+                        folders::set_all_expanded(&client, version, &ids, action == "expandAll")
+                            .await
                     }
                     "create" => {
                         let item = a("item");
@@ -20510,9 +23518,18 @@ impl qobject::Backend {
                     "delete" => folders::delete(&client, version, &a("id")).await,
                     "move" => {
                         let from = a("from");
-                        folders::move_item(&client, version, &a("item"), &a("to"), (!from.is_empty()).then_some(from.as_str())).await
+                        folders::move_item(
+                            &client,
+                            version,
+                            &a("item"),
+                            &a("to"),
+                            (!from.is_empty()).then_some(from.as_str()),
+                        )
+                        .await
                     }
-                    "remove" => folders::remove_item(&client, version, &a("item"), &a("from")).await,
+                    "remove" => {
+                        folders::remove_item(&client, version, &a("item"), &a("from")).await
+                    }
                     "reorder" => folders::reorder_items(&client, version, &a("id"), &order).await,
                     _ => anyhow::bail!("Unknown section action"),
                 }
@@ -20534,13 +23551,25 @@ impl qobject::Backend {
             return;
         }
         // Shown at once (Teams' optimistic update), the rest after them.
-        let mut teams: Vec<serde_json::Value> = serde_json::from_str(&self.rust().teams_json.to_string()).unwrap_or_default();
-        let rank = |t: &serde_json::Value| order.iter().position(|o| Some(o.as_str()) == t["thread_id"].as_str()).unwrap_or(usize::MAX);
+        let mut teams: Vec<serde_json::Value> =
+            serde_json::from_str(&self.rust().teams_json.to_string()).unwrap_or_default();
+        let rank = |t: &serde_json::Value| {
+            order
+                .iter()
+                .position(|o| Some(o.as_str()) == t["thread_id"].as_str())
+                .unwrap_or(usize::MAX)
+        };
         teams.sort_by_key(rank);
-        let all: Vec<String> = teams.iter().filter_map(|t| t["thread_id"].as_str().map(str::to_string)).collect();
-        self.as_mut().set_teams_json(QString::from(serde_json::Value::Array(teams).to_string().as_str()));
+        let all: Vec<String> = teams
+            .iter()
+            .filter_map(|t| t["thread_id"].as_str().map(str::to_string))
+            .collect();
+        self.as_mut().set_teams_json(QString::from(
+            serde_json::Value::Array(teams).to_string().as_str(),
+        ));
         runtime().spawn(async move {
-            let result = async { api::teams::set_teams_order(&TeamsClient::new().await?, &all).await }.await;
+            let result =
+                async { api::teams::set_teams_order(&TeamsClient::new().await?, &all).await }.await;
             match result {
                 Ok(()) => tracing::info!("team order saved"),
                 Err(e) => tracing::warn!("team order failed: {}", short_error(&e)),
@@ -20555,12 +23584,16 @@ impl qobject::Backend {
         }
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let result = async {
-                api::app_details::definition(&TeamsClient::new().await?, &app).await
-            }
-            .await;
+            let result =
+                async { api::app_details::definition(&TeamsClient::new().await?, &app).await }
+                    .await;
             let Ok(def) = result else { return };
-            let s = |k: &str| def.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let s = |k: &str| {
+                def.get(k)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string()
+            };
             let entry = json!({
                 "privacy": api::tabs::https_url(&s("privacyUrl")),
                 "terms": api::tabs::https_url(&s("termsOfUseUrl")),
@@ -20568,7 +23601,8 @@ impl qobject::Backend {
             });
             let _ = qt.queue(move |mut this| {
                 let mut map: serde_json::Map<String, serde_json::Value> =
-                    serde_json::from_str(&this.rust().app_links_json.to_string()).unwrap_or_default();
+                    serde_json::from_str(&this.rust().app_links_json.to_string())
+                        .unwrap_or_default();
                 map.insert(app, entry);
                 this.as_mut().set_app_links_json(QString::from(
                     serde_json::Value::Object(map).to_string().as_str(),
@@ -20579,14 +23613,13 @@ impl qobject::Backend {
 
     pub fn app_similar_load(mut self: Pin<&mut Self>, app_id: &QString) {
         let app = app_id.to_string();
-        self.as_mut()
-            .set_app_similar_json(QString::from(json!({ "app": app, "apps": [] }).to_string().as_str()));
+        self.as_mut().set_app_similar_json(QString::from(
+            json!({ "app": app, "apps": [] }).to_string().as_str(),
+        ));
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let result = async {
-                api::app_details::similar(&TeamsClient::new().await?, &app).await
-            }
-            .await;
+            let result =
+                async { api::app_details::similar(&TeamsClient::new().await?, &app).await }.await;
             let _ = qt.queue(move |mut this| {
                 let apps = result.unwrap_or_else(|e| {
                     tracing::info!("more like this: {}", short_error(&e));
@@ -20602,7 +23635,9 @@ impl qobject::Backend {
     pub fn agent_store_load(mut self: Pin<&mut Self>, conversation_id: &QString, channel: bool) {
         let conv = conversation_id.to_string();
         self.as_mut().set_agent_store_json(QString::from(
-            json!({ "conversation": conv, "loading": true }).to_string().as_str(),
+            json!({ "conversation": conv, "loading": true })
+                .to_string()
+                .as_str(),
         ));
         let qt = self.qt_thread();
         runtime().spawn(async move {
@@ -20629,10 +23664,17 @@ impl qobject::Backend {
         });
     }
 
-    pub fn agent_store_search(mut self: Pin<&mut Self>, conversation_id: &QString, channel: bool, query: &QString) {
+    pub fn agent_store_search(
+        mut self: Pin<&mut Self>,
+        conversation_id: &QString,
+        channel: bool,
+        query: &QString,
+    ) {
         let conv = conversation_id.to_string();
         let q = query.to_string();
-        self.as_mut().set_agent_search_json(QString::from(json!({ "query": q, "loading": true }).to_string().as_str()));
+        self.as_mut().set_agent_search_json(QString::from(
+            json!({ "query": q, "loading": true }).to_string().as_str(),
+        ));
         if q.trim().is_empty() {
             return;
         }
@@ -20641,16 +23683,22 @@ impl qobject::Backend {
             let result = async {
                 let client = TeamsClient::new().await?;
                 let apps = if channel {
-                    api::store_content::channel_apps(&client, &conv).await.unwrap_or_default()
+                    api::store_content::channel_apps(&client, &conv)
+                        .await
+                        .unwrap_or_default()
                 } else {
-                    api::store_content::chat_apps(&client, &conv).await.unwrap_or_default()
+                    api::store_content::chat_apps(&client, &conv)
+                        .await
+                        .unwrap_or_default()
                 };
                 api::store_content::search_agents(&client, q.trim(), channel, &apps).await
             }
             .await;
             let _ = qt.queue(move |mut this| {
                 // Only the newest query's answer shows.
-                let current: serde_json::Value = serde_json::from_str(&this.rust().agent_search_json.to_string()).unwrap_or_default();
+                let current: serde_json::Value =
+                    serde_json::from_str(&this.rust().agent_search_json.to_string())
+                        .unwrap_or_default();
                 if current.get("query").and_then(|x| x.as_str()) != Some(q.as_str()) {
                     return;
                 }
@@ -20658,12 +23706,18 @@ impl qobject::Backend {
                     Ok(r) => json!({ "query": q, "results": r }),
                     Err(e) => json!({ "query": q, "results": [], "error": short_error(&e) }),
                 };
-                this.as_mut().set_agent_search_json(QString::from(v.to_string().as_str()));
+                this.as_mut()
+                    .set_agent_search_json(QString::from(v.to_string().as_str()));
             });
         });
     }
 
-    pub fn add_app(mut self: Pin<&mut Self>, app_id: &QString, conversation_id: &QString, channel: bool) {
+    pub fn add_app(
+        mut self: Pin<&mut Self>,
+        app_id: &QString,
+        conversation_id: &QString,
+        channel: bool,
+    ) {
         let app = app_id.to_string();
         let conv = conversation_id.to_string();
         // A channel's app goes to its team: Teams names the team by its
@@ -20676,7 +23730,11 @@ impl qobject::Backend {
                 .into_iter()
                 .flatten()
                 .find(|t| {
-                    t["channels"].as_array().into_iter().flatten().any(|c| c["id"].as_str() == Some(conv.as_str()))
+                    t["channels"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .any(|c| c["id"].as_str() == Some(conv.as_str()))
                 })
                 .and_then(|t| t["thread_id"].as_str())
                 .unwrap_or_default()
@@ -20685,7 +23743,9 @@ impl qobject::Backend {
             String::new()
         };
         self.as_mut().set_app_added_json(QString::from(
-            json!({ "app": app, "conversation": conv, "busy": true }).to_string().as_str(),
+            json!({ "app": app, "conversation": conv, "busy": true })
+                .to_string()
+                .as_str(),
         ));
         let qt = self.qt_thread();
         runtime().spawn(async move {
@@ -20757,8 +23817,12 @@ impl qobject::Backend {
         reason: &QString,
         comment: &QString,
     ) {
-        let (app, review, reason, comment) =
-            (app_id.to_string(), review_id.to_string(), reason.to_string(), comment.to_string());
+        let (app, review, reason, comment) = (
+            app_id.to_string(),
+            review_id.to_string(),
+            reason.to_string(),
+            comment.to_string(),
+        );
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -20770,7 +23834,8 @@ impl qobject::Backend {
                 Ok(()) => {}
                 Err(e) => {
                     tracing::warn!("report review failed: {}", short_error(&e));
-                    this.as_mut().toast(&tr("Couldn't report the review"), "error");
+                    this.as_mut()
+                        .toast(&tr("Couldn't report the review"), "error");
                 }
             });
         });
@@ -20793,8 +23858,15 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                api::app_details::post_review(&client, &app, rating.clamp(1, 5) as u8, &title, &content, anonymous)
-                    .await
+                api::app_details::post_review(
+                    &client,
+                    &app,
+                    rating.clamp(1, 5) as u8,
+                    &title,
+                    &content,
+                    anonymous,
+                )
+                .await
             }
             .await;
             let _ = qt.queue(move |mut this| match result {
@@ -20805,7 +23877,8 @@ impl qobject::Backend {
                 }
                 Err(e) => {
                     tracing::warn!("post review failed: {}", short_error(&e));
-                    this.as_mut().toast(&tr("Couldn't post your review"), "error");
+                    this.as_mut()
+                        .toast(&tr("Couldn't post your review"), "error");
                 }
             });
         });
@@ -20846,8 +23919,12 @@ impl qobject::Backend {
             .and_then(|c| c.tenant_id())
             .unwrap_or_default();
         // A chat's tab (no team) links as a chat's.
-        let (link, html) =
-            api::tabs::copy_link_in(&t, &channel_id.to_string(), team_id.to_string().is_empty(), &tenant);
+        let (link, html) = api::tabs::copy_link_in(
+            &t,
+            &channel_id.to_string(),
+            team_id.to_string().is_empty(),
+            &tenant,
+        );
         let (Ok(link), Ok(html)) = (std::ffi::CString::new(link), std::ffi::CString::new(html))
         else {
             return;
@@ -20870,7 +23947,40 @@ impl qobject::Backend {
             arg.to_string(),
         );
         // Your teams and channels' ops are about all your teams.
-        if !channel.ends_with("@thread.tacv2") && !op.starts_with("chat-notify") && !matches!(op.as_str(), "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "notify-tagged" | "notify-on" | "notify-off" | "people-list" | "people-list-add" | "people-list-remove" | "meeting-chat-report-info" | "chat-apps" | "chat-app-remove" | "cross-team-analytics" | "invitations" | "invitation-answer" | "create-team" | "channel-agent-offered" | "channel-agent-add" | "channel-agent-wait" | "group-people" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
+        if !channel.ends_with("@thread.tacv2")
+            && !op.starts_with("chat-notify")
+            && !matches!(
+                op.as_str(),
+                "quick-saved"
+                    | "quick-followed"
+                    | "quick-unsave"
+                    | "quick-unfollow"
+                    | "notify-tagged"
+                    | "notify-on"
+                    | "notify-off"
+                    | "people-list"
+                    | "people-list-add"
+                    | "people-list-remove"
+                    | "meeting-chat-report-info"
+                    | "chat-apps"
+                    | "chat-app-remove"
+                    | "cross-team-analytics"
+                    | "invitations"
+                    | "invitation-answer"
+                    | "create-team"
+                    | "channel-agent-offered"
+                    | "channel-agent-add"
+                    | "channel-agent-wait"
+                    | "group-people"
+                    | "team-templates"
+                    | "team-template"
+                    | "my-groups"
+                    | "teams-suggested"
+                    | "teams-find"
+                    | "team-join"
+                    | "team-join-code"
+            )
+        {
             return;
         }
         // The team's thread id and the channel's facts, from the list.
@@ -20883,12 +23993,17 @@ impl qobject::Backend {
             .find(|t| t["id"].as_str() == Some(team.as_str()))
             .cloned()
             .unwrap_or_default();
-        let team_thread = team_entry["thread_id"].as_str().unwrap_or_default().to_string();
+        let team_thread = team_entry["thread_id"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
         let general = team_entry["channels"]
             .as_array()
             .into_iter()
             .flatten()
-            .any(|c| c["id"].as_str() == Some(channel.as_str()) && c["general"].as_bool() == Some(true));
+            .any(|c| {
+                c["id"].as_str() == Some(channel.as_str()) && c["general"].as_bool() == Some(true)
+            });
         if op == "copy-link" || op == "team-link" {
             let tenant = teams_cli::config::Config::load()
                 .ok()
@@ -20904,7 +24019,13 @@ impl qobject::Backend {
                     .and_then(|c| c["name"].as_str())
                     .unwrap_or("General")
                     .to_string();
-                api::channels::team_link(&team_thread, &general, team_entry["name"].as_str().unwrap_or_default(), &team, &tenant)
+                api::channels::team_link(
+                    &team_thread,
+                    &general,
+                    team_entry["name"].as_str().unwrap_or_default(),
+                    &team,
+                    &tenant,
+                )
             } else {
                 api::channels::channel_link(&channel, &arg, &team, &tenant)
             };
@@ -21703,25 +24824,39 @@ impl qobject::Backend {
                 // A chat's tabs (no team) are its thread properties.
                 if team.is_empty() {
                     return match op.as_str() {
-                        "rename" => api::tab_add::rename_property(&client, &channel, &tab, &arg).await.map(|_| String::new()),
-                        "remove" => api::tab_add::remove_property(&client, &channel, &tab).await.map(|_| String::new()),
+                        "rename" => api::tab_add::rename_property(&client, &channel, &tab, &arg)
+                            .await
+                            .map(|_| String::new()),
+                        "remove" => api::tab_add::remove_property(&client, &channel, &tab)
+                            .await
+                            .map(|_| String::new()),
                         _ => Err(anyhow::anyhow!("Unknown tab change")),
                     };
                 }
                 match op.as_str() {
-                    "rename" => api::tabs::rename(&client, &channel, &tab, &arg).await.map(|_| String::new()),
-                    "remove" => api::tabs::remove(&client, &channel, &tab).await.map(|_| String::new()),
-                    "left" | "right" => {
-                        api::tabs::move_tab(&client, &channel, &tab, op == "right").await.map(|_| String::new())
-                    }
+                    "rename" => api::tabs::rename(&client, &channel, &tab, &arg)
+                        .await
+                        .map(|_| String::new()),
+                    "remove" => api::tabs::remove(&client, &channel, &tab)
+                        .await
+                        .map(|_| String::new()),
+                    "left" | "right" => api::tabs::move_tab(&client, &channel, &tab, op == "right")
+                        .await
+                        .map(|_| String::new()),
                     // A drag and drop: arg is the place among the movable tabs.
                     "to" => {
                         let to: usize = arg.parse().context("No such place")?;
-                        api::tabs::move_tab_to(&client, &channel, &tab, to).await.map(|_| String::new())
+                        api::tabs::move_tab_to(&client, &channel, &tab, to)
+                            .await
+                            .map(|_| String::new())
                     }
                     "converse" => {
-                        let tabs = api::tabs::channel_tabs(&client, &team, &channel, &tabs_name).await?;
-                        let t = tabs.iter().find(|t| t.id == tab).context("The tab is gone")?;
+                        let tabs =
+                            api::tabs::channel_tabs(&client, &team, &channel, &tabs_name).await?;
+                        let t = tabs
+                            .iter()
+                            .find(|t| t.id == tab)
+                            .context("The tab is gone")?;
                         api::tabs::start_conversation(&client, &channel, t).await
                     }
                     _ => Err(anyhow::anyhow!("Unknown tab change")),
@@ -21733,7 +24868,8 @@ impl qobject::Backend {
                     tracing::warn!("tab {op} failed: {e:#}");
                 }
                 let root = result.as_ref().map(|r| r.clone()).unwrap_or_default();
-                let outcome = json!({ "op": op, "tab": tab, "ok": result.is_ok(), "root": root }).to_string();
+                let outcome =
+                    json!({ "op": op, "tab": tab, "ok": result.is_ok(), "root": root }).to_string();
                 this.as_mut()
                     .set_channel_tab_result(QString::from(outcome.as_str()));
                 this.as_mut().reload_tabs(&team, &channel);
@@ -21747,7 +24883,11 @@ impl qobject::Backend {
             self.as_mut().chat_tabs_load(&QString::from(conversation));
         } else {
             let name = QString::from(self.rust().channel_tabs_name.as_str());
-            self.as_mut().channel_tabs_load(&QString::from(team), &QString::from(conversation), &name);
+            self.as_mut().channel_tabs_load(
+                &QString::from(team),
+                &QString::from(conversation),
+                &name,
+            );
         }
     }
 
@@ -21780,10 +24920,21 @@ impl qobject::Backend {
         }
     }
 
-    pub fn tab_store_load(mut self: Pin<&mut Self>, conversation_id: &QString, team_thread: &QString, kind: &QString) {
-        let (conv, team, kind_s) = (conversation_id.to_string(), team_thread.to_string(), kind.to_string());
+    pub fn tab_store_load(
+        mut self: Pin<&mut Self>,
+        conversation_id: &QString,
+        team_thread: &QString,
+        kind: &QString,
+    ) {
+        let (conv, team, kind_s) = (
+            conversation_id.to_string(),
+            team_thread.to_string(),
+            kind.to_string(),
+        );
         self.as_mut().set_agent_store_json(QString::from(
-            json!({ "conversation": conv, "mode": "tab", "loading": true }).to_string().as_str(),
+            json!({ "conversation": conv, "mode": "tab", "loading": true })
+                .to_string()
+                .as_str(),
         ));
         let qt = self.qt_thread();
         let conv2 = conv.clone();
@@ -21807,9 +24958,18 @@ impl qobject::Backend {
         });
     }
 
-    pub fn tab_store_search(mut self: Pin<&mut Self>, _conversation_id: &QString, kind: &QString, query: &QString) {
+    pub fn tab_store_search(
+        mut self: Pin<&mut Self>,
+        _conversation_id: &QString,
+        kind: &QString,
+        query: &QString,
+    ) {
         let (kind_s, q) = (kind.to_string(), query.to_string());
-        self.as_mut().set_agent_search_json(QString::from(json!({ "query": q, "mode": "tab", "loading": true }).to_string().as_str()));
+        self.as_mut().set_agent_search_json(QString::from(
+            json!({ "query": q, "mode": "tab", "loading": true })
+                .to_string()
+                .as_str(),
+        ));
         if q.trim().is_empty() {
             return;
         }
@@ -21843,24 +25003,47 @@ impl qobject::Backend {
         settings: &QString,
         post: bool,
     ) {
-        let (team, conv, app, app_name) = (team_id.to_string(), conversation_id.to_string(), app_id.to_string(), app_name.to_string());
-        let settings: serde_json::Value = serde_json::from_str(&settings.to_string()).unwrap_or_default();
+        let (team, conv, app, app_name) = (
+            team_id.to_string(),
+            conversation_id.to_string(),
+            app_id.to_string(),
+            app_name.to_string(),
+        );
+        let settings: serde_json::Value =
+            serde_json::from_str(&settings.to_string()).unwrap_or_default();
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                api::tab_add::add_app_tab(&client, &conv, !team.is_empty(), &app, &app_name, &settings, post).await
+                api::tab_add::add_app_tab(
+                    &client,
+                    &conv,
+                    !team.is_empty(),
+                    &app,
+                    &app_name,
+                    &settings,
+                    post,
+                )
+                .await
             }
             .await;
             let _ = qt.queue(move |mut this| this.as_mut().tab_added(&team, &conv, result));
         });
     }
 
-    pub fn add_list_tab(self: Pin<&mut Self>, team_id: &QString, channel_id: &QString, existing: bool) {
+    pub fn add_list_tab(
+        self: Pin<&mut Self>,
+        team_id: &QString,
+        channel_id: &QString,
+        existing: bool,
+    ) {
         let (team, conv) = (team_id.to_string(), channel_id.to_string());
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let result = async { api::tab_add::add_list_tab(&TeamsClient::new().await?, &conv, existing).await }.await;
+            let result = async {
+                api::tab_add::add_list_tab(&TeamsClient::new().await?, &conv, existing).await
+            }
+            .await;
             let _ = qt.queue(move |mut this| this.as_mut().tab_added(&team, &conv, result));
         });
     }
@@ -21869,7 +25052,9 @@ impl qobject::Backend {
         let (team, conv) = (team_id.to_string(), channel_id.to_string());
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let result = async { api::tab_add::add_new_page_tab(&TeamsClient::new().await?, &conv).await }.await;
+            let result =
+                async { api::tab_add::add_new_page_tab(&TeamsClient::new().await?, &conv).await }
+                    .await;
             let _ = qt.queue(move |mut this| this.as_mut().tab_added(&team, &conv, result));
         });
     }
@@ -21903,7 +25088,12 @@ impl qobject::Backend {
         QString::from(include_str!("loop_bridge.js"))
     }
 
-    pub fn loop_host_request(self: Pin<&mut Self>, kind: &QString, id: &QString, payload: &QString) {
+    pub fn loop_host_request(
+        self: Pin<&mut Self>,
+        kind: &QString,
+        id: &QString,
+        payload: &QString,
+    ) {
         let (kind, id, payload) = (kind.to_string(), id.to_string(), payload.to_string());
         let qt = self.qt_thread();
         runtime().spawn(async move {
@@ -22097,7 +25287,12 @@ impl qobject::Backend {
         });
     }
 
-    pub fn compose_app_request(self: Pin<&mut Self>, kind: &QString, id: &QString, payload: &QString) {
+    pub fn compose_app_request(
+        self: Pin<&mut Self>,
+        kind: &QString,
+        id: &QString,
+        payload: &QString,
+    ) {
         let (kind, id, payload) = (kind.to_string(), id.to_string(), payload.to_string());
         let qt = self.qt_thread();
         runtime().spawn(async move {
@@ -23025,7 +26220,12 @@ impl qobject::Backend {
         });
     }
 
-    pub fn call_notes_request(self: Pin<&mut Self>, kind: &QString, id: &QString, payload: &QString) {
+    pub fn call_notes_request(
+        self: Pin<&mut Self>,
+        kind: &QString,
+        id: &QString,
+        payload: &QString,
+    ) {
         let (kind, id, payload) = (kind.to_string(), id.to_string(), payload.to_string());
         let qt = self.qt_thread();
         runtime().spawn(async move {
@@ -23179,22 +26379,37 @@ impl qobject::Backend {
         let link = link.to_string();
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let result = async { api::tab_add::resolve_page_link(&TeamsClient::new().await?, &link).await }.await;
+            let result =
+                async { api::tab_add::resolve_page_link(&TeamsClient::new().await?, &link).await }
+                    .await;
             let _ = qt.queue(move |mut this| {
                 let v = match result {
                     Ok(p) => json!({ "link": link, "page": p }),
                     Err(e) => json!({ "link": link, "error": short_error(&e) }),
                 };
-                this.as_mut().set_page_link_json(QString::from(v.to_string().as_str()));
+                this.as_mut()
+                    .set_page_link_json(QString::from(v.to_string().as_str()));
             });
         });
     }
 
-    pub fn add_existing_page(self: Pin<&mut Self>, team_id: &QString, channel_id: &QString, link: &QString) {
-        let (team, conv, link) = (team_id.to_string(), channel_id.to_string(), link.to_string());
+    pub fn add_existing_page(
+        self: Pin<&mut Self>,
+        team_id: &QString,
+        channel_id: &QString,
+        link: &QString,
+    ) {
+        let (team, conv, link) = (
+            team_id.to_string(),
+            channel_id.to_string(),
+            link.to_string(),
+        );
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let result = async { api::tab_add::add_existing_page(&TeamsClient::new().await?, &conv, &link).await }.await;
+            let result = async {
+                api::tab_add::add_existing_page(&TeamsClient::new().await?, &conv, &link).await
+            }
+            .await;
             let _ = qt.queue(move |mut this| this.as_mut().tab_added(&team, &conv, result));
         });
     }
@@ -23213,7 +26428,8 @@ impl qobject::Backend {
             "error": result.as_ref().err().map(short_error).unwrap_or_default(),
         })
         .to_string();
-        self.as_mut().set_channel_tab_result(QString::from(outcome.as_str()));
+        self.as_mut()
+            .set_channel_tab_result(QString::from(outcome.as_str()));
         self.as_mut().reload_tabs(team, conv);
     }
 
@@ -23229,7 +26445,12 @@ impl qobject::Backend {
         url: &QString,
         post: bool,
     ) {
-        let (team, conv, name, url) = (team_id.to_string(), conversation_id.to_string(), name.to_string(), url.to_string());
+        let (team, conv, name, url) = (
+            team_id.to_string(),
+            conversation_id.to_string(),
+            name.to_string(),
+            url.to_string(),
+        );
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -23249,7 +26470,8 @@ impl qobject::Backend {
                     "ok": result.is_ok(),
                 })
                 .to_string();
-                this.as_mut().set_channel_tab_result(QString::from(outcome.as_str()));
+                this.as_mut()
+                    .set_channel_tab_result(QString::from(outcome.as_str()));
                 this.as_mut().reload_tabs(&team, &conv);
             });
         });
@@ -23341,9 +26563,9 @@ impl qobject::Backend {
                 match result {
                     Ok((op, v)) => {
                         if op == "shortcut" {
-                            this.as_mut().set_status_text(QString::from(
-                                tr("Added a shortcut in your OneDrive"),
-                            ));
+                            this.as_mut().set_status_text(QString::from(tr(
+                                "Added a shortcut in your OneDrive",
+                            )));
                         }
                         this.as_mut()
                             .set_channel_files_json(QString::from(v.to_string().as_str()));
@@ -23487,9 +26709,15 @@ impl qobject::Backend {
                 // Graph's times the same way.
                 let rows = if view == "folder" && !filters.is_empty() {
                     // Filter by: only the rows SharePoint gives back.
-                    let rows = api::list_rows::for_folder_filtered(&client, &drive_id, &item_id, &filters).await?;
+                    let rows =
+                        api::list_rows::for_folder_filtered(&client, &drive_id, &item_id, &filters)
+                            .await?;
                     if let Some(items) = out.get_mut("items").and_then(|i| i.as_array_mut()) {
-                        items.retain(|it| it["sp_item"].as_str().is_some_and(|id| rows.contains_key(&id.to_ascii_lowercase())));
+                        items.retain(|it| {
+                            it["sp_item"]
+                                .as_str()
+                                .is_some_and(|id| rows.contains_key(&id.to_ascii_lowercase()))
+                        });
                     }
                     rows
                 } else if view == "folder" {
@@ -23507,20 +26735,28 @@ impl qobject::Backend {
                     let now = chrono::Local::now();
                     let items: Vec<api::drive::DriveItem> =
                         serde_json::from_value(items).unwrap_or_default();
-                    out["items"] = json!(items
-                        .iter()
-                        .map(|it| api::list_rows::decorate(it, rows.get(&it.sp_item.to_ascii_lowercase()), now))
-                        .collect::<Vec<_>>());
+                    out["items"] = json!(
+                        items
+                            .iter()
+                            .map(|it| api::list_rows::decorate(
+                                it,
+                                rows.get(&it.sp_item.to_ascii_lowercase()),
+                                now
+                            ))
+                            .collect::<Vec<_>>()
+                    );
                 }
                 // Which items are favorites (the menu's Add to / Remove
                 // from favorites).
                 if out.get("items").is_some() {
-                    out["favorite_ids"] = json!(api::drive::favorites(&client)
-                        .await
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(|f| f.id)
-                        .collect::<Vec<_>>());
+                    out["favorite_ids"] = json!(
+                        api::drive::favorites(&client)
+                            .await
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|f| f.id)
+                            .collect::<Vec<_>>()
+                    );
                 }
                 anyhow::Ok(out)
             }
@@ -23537,8 +26773,12 @@ impl qobject::Backend {
     }
 
     pub fn drive_set_filters(mut self: Pin<&mut Self>, filters_json: &QString) {
-        let filters: Vec<api::list_rows::ColumnFilter> = serde_json::from_str(&filters_json.to_string()).unwrap_or_default();
-        self.as_mut().rust_mut().drive_filters = filters.into_iter().filter(|f| !f.values.is_empty()).collect();
+        let filters: Vec<api::list_rows::ColumnFilter> =
+            serde_json::from_str(&filters_json.to_string()).unwrap_or_default();
+        self.as_mut().rust_mut().drive_filters = filters
+            .into_iter()
+            .filter(|f| !f.values.is_empty())
+            .collect();
         self.drive_reload();
     }
 
@@ -23546,7 +26786,11 @@ impl qobject::Backend {
         let field = field.to_string();
         let (_, drive_id, item_id) = self.rust().drive_view.clone();
         let filters = self.rust().drive_filters.clone();
-        self.as_mut().set_drive_filter_values_json(QString::from(json!({ "field": field, "loading": true }).to_string().as_str()));
+        self.as_mut().set_drive_filter_values_json(QString::from(
+            json!({ "field": field, "loading": true })
+                .to_string()
+                .as_str(),
+        ));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -23624,8 +26868,11 @@ impl qobject::Backend {
             r.pending_saves.insert(id, pending);
             id
         };
-        let folder = download_dir().map(|d| d.display().to_string()).unwrap_or_default();
-        self.as_mut().save_as_requested(id, QString::from(name), QString::from(folder.as_str()));
+        let folder = download_dir()
+            .map(|d| d.display().to_string())
+            .unwrap_or_default();
+        self.as_mut()
+            .save_as_requested(id, QString::from(name), QString::from(folder.as_str()));
     }
 
     pub fn open_web_link(&self, url: &cxx_qt_lib::QUrl) {
@@ -23633,7 +26880,8 @@ impl qobject::Backend {
     }
 
     pub fn install_link_handler(mut self: Pin<&mut Self>) {
-        let ptr = unsafe { self.as_mut().get_unchecked_mut() } as *mut Self as *mut core::ffi::c_void;
+        let ptr =
+            unsafe { self.as_mut().get_unchecked_mut() } as *mut Self as *mut core::ffi::c_void;
         unsafe { ost_install_link_handler(ptr) };
     }
 
@@ -23646,17 +26894,25 @@ impl qobject::Backend {
     }
 
     pub fn save_as_answer(mut self: Pin<&mut Self>, id: i32, path: &QString) {
-        let Some(pending) = self.as_mut().rust_mut().pending_saves.remove(&id) else { return };
+        let Some(pending) = self.as_mut().rust_mut().pending_saves.remove(&id) else {
+            return;
+        };
         let path = path.to_string();
         let path = path.strip_prefix("file://").unwrap_or(&path).to_string();
         if path.is_empty() {
             if let PendingSave::Zip { op, .. } = pending {
-                self.as_mut().drive_action_done(QString::from(op.as_str()), QString::default(), QString::from("canceled"));
+                self.as_mut().drive_action_done(
+                    QString::from(op.as_str()),
+                    QString::default(),
+                    QString::from("canceled"),
+                );
             }
             return;
         }
         let target = std::path::PathBuf::from(&path);
-        let Some(dir) = target.parent().map(|p| p.to_path_buf()) else { return };
+        let Some(dir) = target.parent().map(|p| p.to_path_buf()) else {
+            return;
+        };
         match pending {
             PendingSave::Drive(item) => self.as_mut().run_drive_download(item, dir, Some(target)),
             PendingSave::File(file) => self.as_mut().run_file_download(file, dir, Some(target)),
@@ -23680,7 +26936,12 @@ impl qobject::Backend {
         }
     }
 
-    fn run_drive_download(mut self: Pin<&mut Self>, item: api::drive::DriveItem, dir: std::path::PathBuf, target: Option<std::path::PathBuf>) {
+    fn run_drive_download(
+        mut self: Pin<&mut Self>,
+        item: api::drive::DriveItem,
+        dir: std::path::PathBuf,
+        target: Option<std::path::PathBuf>,
+    ) {
         self.as_mut().set_status_text(QString::from(
             teams_cli::i18n::tr_id("Downloading...", "files:k9b1qlyvw").as_str(),
         ));
@@ -23737,15 +26998,19 @@ impl qobject::Backend {
                 for p in &paths {
                     api::drive::upload(&client, &drive_id, &folder_id, p).await?;
                 }
-                let names: Vec<&str> = paths.iter().filter_map(|p| p.file_name().and_then(|n| n.to_str())).collect();
+                let names: Vec<&str> = paths
+                    .iter()
+                    .filter_map(|p| p.file_name().and_then(|n| n.to_str()))
+                    .collect();
                 anyhow::Ok(names.join(", "))
             }
             .await;
             let _ = qt.queue(move |mut this| match result {
                 Ok(names) => {
                     // Teams' toast for an upload done ("Uploaded <name>").
-                    this.as_mut()
-                        .set_status_text(QString::from(tr("Uploaded %1").replace("%1", &names).as_str()));
+                    this.as_mut().set_status_text(QString::from(
+                        tr("Uploaded %1").replace("%1", &names).as_str(),
+                    ));
                     this.as_mut().drive_reload();
                 }
                 Err(e) => this
@@ -23852,16 +27117,35 @@ impl qobject::Backend {
         });
     }
 
-    pub fn drive_action(mut self: Pin<&mut Self>, op: &QString, item_json: &QString, args_json: &QString) {
+    pub fn drive_action(
+        mut self: Pin<&mut Self>,
+        op: &QString,
+        item_json: &QString,
+        args_json: &QString,
+    ) {
         let op = op.to_string();
-        let item: api::drive::DriveItem = serde_json::from_str(&item_json.to_string()).unwrap_or_default();
-        let args: serde_json::Value = serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
+        let item: api::drive::DriveItem =
+            serde_json::from_str(&item_json.to_string()).unwrap_or_default();
+        let args: serde_json::Value =
+            serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
         // A zip waits for its place when asked to.
         if op.rsplit(':').next() == Some("zip") && ask_where_to_save() {
-            let more: Vec<api::drive::DriveItem> = serde_json::from_value(args["more"].clone()).unwrap_or_default();
+            let more: Vec<api::drive::DriveItem> =
+                serde_json::from_value(args["more"].clone()).unwrap_or_default();
             let items: Vec<api::drive::DriveItem> = std::iter::once(item).chain(more).collect();
-            let name = args["name"].as_str().filter(|n| !n.is_empty()).map(str::to_string).unwrap_or_else(|| format!("{}.zip", items[0].name));
-            self.as_mut().ask_save(PendingSave::Zip { op, items, name: name.clone() }, &name);
+            let name = args["name"]
+                .as_str()
+                .filter(|n| !n.is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("{}.zip", items[0].name));
+            self.as_mut().ask_save(
+                PendingSave::Zip {
+                    op,
+                    items,
+                    name: name.clone(),
+                },
+                &name,
+            );
             return;
         }
         let qt = self.qt_thread();
@@ -23874,18 +27158,27 @@ impl qobject::Backend {
             runtime().spawn(async move {
                 let result: anyhow::Result<serde_json::Value> = async {
                     let client = TeamsClient::new().await?;
-                    let (info, origin, confidential) = api::rename_suggestions::file_info(&client, &item.drive_id, &item.id).await?;
+                    let (info, origin, confidential) =
+                        api::rename_suggestions::file_info(&client, &item.drive_id, &item.id)
+                            .await?;
                     if kind == "rename_check" || confidential {
                         return Ok(json!({ "confidential": confidential }));
                     }
                     let part_op = format!("{op}_part");
                     let q = qt.clone();
-                    let outcome = api::rename_suggestions::suggest(&info, &origin, &lang, move |names| {
-                        let v = json!({ "names": names }).to_string();
-                        let o = part_op.clone();
-                        let _ = q.queue(move |mut this| this.as_mut().drive_action_done(QString::from(o.as_str()), QString::from(v.as_str()), QString::default()));
-                    })
-                    .await?;
+                    let outcome =
+                        api::rename_suggestions::suggest(&info, &origin, &lang, move |names| {
+                            let v = json!({ "names": names }).to_string();
+                            let o = part_op.clone();
+                            let _ = q.queue(move |mut this| {
+                                this.as_mut().drive_action_done(
+                                    QString::from(o.as_str()),
+                                    QString::from(v.as_str()),
+                                    QString::default(),
+                                )
+                            });
+                        })
+                        .await?;
                     Ok(match outcome {
                         Ok(names) => json!({ "names": names }),
                         Err(code) => json!({ "error": code }),
@@ -23899,7 +27192,13 @@ impl qobject::Backend {
                         (String::new(), short_error(&e))
                     }
                 };
-                let _ = qt.queue(move |mut this| this.as_mut().drive_action_done(QString::from(op.as_str()), QString::from(v.as_str()), QString::from(e.as_str())));
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut().drive_action_done(
+                        QString::from(op.as_str()),
+                        QString::from(v.as_str()),
+                        QString::from(e.as_str()),
+                    )
+                });
             });
             return;
         }
@@ -24325,7 +27624,8 @@ impl qobject::Backend {
 
     pub fn delete_event(mut self: Pin<&mut Self>, id: &QString) {
         let id = id.to_string();
-        self.as_mut().set_status_text(QString::from(tr("Deleting…")));
+        self.as_mut()
+            .set_status_text(QString::from(tr("Deleting…")));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -24347,7 +27647,8 @@ impl qobject::Backend {
 
     pub fn calendar_action(mut self: Pin<&mut Self>, op: &QString, args_json: &QString) {
         let op = op.to_string();
-        let args: serde_json::Value = serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
+        let args: serde_json::Value =
+            serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
         let me = api::calendar::Me {
             name: self.rust().user_name.to_string(),
             mail: self.rust().user_mail.to_string(),
@@ -24677,7 +27978,8 @@ impl qobject::Backend {
             .map(|a| a.trim().to_string())
             .filter(|a| !a.is_empty())
             .collect();
-        self.as_mut().set_status_text(QString::from(tr("Scheduling...")));
+        self.as_mut()
+            .set_status_text(QString::from(tr("Scheduling...")));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -24715,7 +28017,8 @@ impl qobject::Backend {
         let app_type = app_type.to_string();
         // Channels: the teams list's unread flags, and channel threads in
         // the unread set.
-        let mut teams: serde_json::Value = serde_json::from_str(&self.rust().teams_json.to_string()).unwrap_or_default();
+        let mut teams: serde_json::Value =
+            serde_json::from_str(&self.rust().teams_json.to_string()).unwrap_or_default();
         let channel_ids: HashSet<String> = teams
             .as_array()
             .into_iter()
@@ -24741,14 +28044,19 @@ impl qobject::Backend {
         let mut teams_changed = false;
         for t in teams.as_array_mut().into_iter().flatten() {
             for c in t["channels"].as_array_mut().into_iter().flatten() {
-                if c["unread"] == json!(true) && c["id"].as_str().is_some_and(|id| ids.iter().any(|i| i == id)) {
+                if c["unread"] == json!(true)
+                    && c["id"]
+                        .as_str()
+                        .is_some_and(|id| ids.iter().any(|i| i == id))
+                {
                     c["unread"] = json!(false);
                     teams_changed = true;
                 }
             }
         }
         if teams_changed {
-            self.as_mut().set_teams_json(QString::from(teams.to_string().as_str()));
+            self.as_mut()
+                .set_teams_json(QString::from(teams.to_string().as_str()));
         }
         for id in &ids {
             self.as_mut().rust_mut().unread.remove(id);
@@ -24805,12 +28113,7 @@ impl qobject::Backend {
                 }
             }
         }
-        *LAST.lock().unwrap() = Some((
-            status.clone(),
-            choice,
-            std::time::Instant::now(),
-            true,
-        ));
+        *LAST.lock().unwrap() = Some((status.clone(), choice, std::time::Instant::now(), true));
         let forced = (status != "Reset").then(|| status.clone());
         if let (Some(f), Some(me)) = (forced.clone(), self.rust().my_mri.clone()) {
             self.as_mut().rust_mut().presence.insert(me, f);
@@ -24825,14 +28128,20 @@ impl qobject::Backend {
         };
         let until = forced.as_ref().and(until);
         let until_iso = until
-            .map(|t| t.with_timezone(&chrono::Utc).to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+            .map(|t| {
+                t.with_timezone(&chrono::Utc)
+                    .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+            })
             .unwrap_or_default();
-        self.as_mut().set_my_status_ends(QString::from(until_iso.as_str()));
+        self.as_mut()
+            .set_my_status_ends(QString::from(until_iso.as_str()));
         let me = self.rust().my_mri.clone();
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let http = reqwest::Client::new();
-            let sent = teams_cli::api::presence::force_availability_until(&http, forced.as_deref(), until).await;
+            let sent =
+                teams_cli::api::presence::force_availability_until(&http, forced.as_deref(), until)
+                    .await;
             if let Err(e) = &sent {
                 tracing::warn!("set status failed: {}", short_error(e));
             }
@@ -24844,12 +28153,17 @@ impl qobject::Backend {
             if sent.is_ok()
                 && forced.is_none()
                 && let Some(me) = me
-                && let Ok(list) = teams_cli::api::presence::get_presences(&http, std::slice::from_ref(&me)).await
+                && let Ok(list) =
+                    teams_cli::api::presence::get_presences(&http, std::slice::from_ref(&me)).await
                 && let Some(p) = list.into_iter().next()
             {
                 let _ = qt.queue(move |mut this| {
-                    this.as_mut().set_my_status_ends(QString::from(p.forced_until.as_str()));
-                    this.as_mut().rust_mut().presence.insert(p.mri, p.availability);
+                    this.as_mut()
+                        .set_my_status_ends(QString::from(p.forced_until.as_str()));
+                    this.as_mut()
+                        .rust_mut()
+                        .presence
+                        .insert(p.mri, p.availability);
                     this.as_mut().publish_chats();
                 });
             }
@@ -24923,7 +28237,10 @@ impl qobject::Backend {
     }
 
     pub fn room_devices(&self) -> QString {
-        let meeting_room_mode = load_settings().get("pushToRoomAudio").and_then(|v| v.as_str()) != Some("false");
+        let meeting_room_mode = load_settings()
+            .get("pushToRoomAudio")
+            .and_then(|v| v.as_str())
+            != Some("false");
         let rooms = teams_cli::calling::room_devices::find(meeting_room_mode);
         QString::from(serde_json::to_string(&rooms).unwrap_or_default().as_str())
     }
@@ -24935,8 +28252,19 @@ impl qobject::Backend {
             let q = query.trim().to_string();
             let result = async {
                 let client = TeamsClient::new().await?;
-                let rooms = teams_cli::api::rooms::rooms(&client, (!q.is_empty()).then_some(q.as_str())).await?;
-                anyhow::Ok(rooms_json(&client, rooms.into_iter().map(|r| (r.mri, r.name, r.email)).collect()).await)
+                let rooms =
+                    teams_cli::api::rooms::rooms(&client, (!q.is_empty()).then_some(q.as_str()))
+                        .await?;
+                anyhow::Ok(
+                    rooms_json(
+                        &client,
+                        rooms
+                            .into_iter()
+                            .map(|r| (r.mri, r.name, r.email))
+                            .collect(),
+                    )
+                    .await,
+                )
             }
             .await;
             let json = match result {
@@ -24947,7 +28275,10 @@ impl qobject::Backend {
                 }
             };
             tracing::info!(query = %query, rooms = %json, "rooms found");
-            let _ = qt.queue(move |mut this| this.as_mut().tenant_rooms_ready(QString::from(query.as_str()), QString::from(json.as_str())));
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .tenant_rooms_ready(QString::from(query.as_str()), QString::from(json.as_str()))
+            });
         });
     }
 
@@ -24964,7 +28295,11 @@ impl qobject::Backend {
     }
 
     pub fn room_remote_open(&self, room_mri: &QString, room_name: &QString) {
-        crate::room_remote::open(room_mri.to_string(), room_name.to_string(), self.call_thread_id().to_string());
+        crate::room_remote::open(
+            room_mri.to_string(),
+            room_name.to_string(),
+            self.call_thread_id().to_string(),
+        );
     }
 
     pub fn room_remote_command(&self, name: &QString) {
@@ -24979,14 +28314,26 @@ impl qobject::Backend {
         crate::room_ble::set_scanning(scan);
         let (state, beacons) = crate::room_ble::snapshot();
         let names = room_names();
-        let activity = ROOM_ACTIVITY.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        let unknown: Vec<String> = beacons.iter().map(|b| b.mri.clone()).filter(|m| !names.contains_key(m)).collect();
+        let activity = ROOM_ACTIVITY
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let unknown: Vec<String> = beacons
+            .iter()
+            .map(|b| b.mri.clone())
+            .filter(|m| !names.contains_key(m))
+            .collect();
         // Known rooms' presence is read again after 30 s (Teams' list
         // follows the rooms' presence).
         let stale: Vec<String> = beacons
             .iter()
             .map(|b| b.mri.clone())
-            .filter(|m| names.contains_key(m) && activity.get(m).is_none_or(|(_, at)| at.elapsed() > std::time::Duration::from_secs(30)))
+            .filter(|m| {
+                names.contains_key(m)
+                    && activity
+                        .get(m)
+                        .is_none_or(|(_, at)| at.elapsed() > std::time::Duration::from_secs(30))
+            })
             .collect();
         if !stale.is_empty() {
             // Marked read now so the next poll doesn't ask again.
@@ -24998,23 +28345,42 @@ impl qobject::Backend {
         }
         if !unknown.is_empty() || !stale.is_empty() {
             runtime().spawn(async move {
-                let Ok(client) = TeamsClient::new().await else { return };
+                let Ok(client) = TeamsClient::new().await else {
+                    return;
+                };
                 let all: Vec<String> = unknown.iter().chain(stale.iter()).cloned().collect();
-                let presences = teams_cli::api::presence::get_presences(client.http(), &all).await.unwrap_or_default();
-                let found = if unknown.is_empty() { Vec::new() } else { teams_cli::api::directory::short_profiles(&client, &unknown).await.unwrap_or_default() };
+                let presences = teams_cli::api::presence::get_presences(client.http(), &all)
+                    .await
+                    .unwrap_or_default();
+                let found = if unknown.is_empty() {
+                    Vec::new()
+                } else {
+                    teams_cli::api::directory::short_profiles(&client, &unknown)
+                        .await
+                        .unwrap_or_default()
+                };
                 let mut cache = ROOM_NAMES.lock().unwrap_or_else(|e| e.into_inner());
                 for (mri, name) in found {
-                    let status = presences.iter().find(|p| p.mri == mri).map(|p| p.availability.clone()).unwrap_or_default();
+                    let status = presences
+                        .iter()
+                        .find(|p| p.mri == mri)
+                        .map(|p| p.availability.clone())
+                        .unwrap_or_default();
                     cache.insert(mri, (name, status));
                 }
                 for mri in &stale {
-                    if let (Some(p), Some(entry)) = (presences.iter().find(|p| &p.mri == mri), cache.get_mut(mri)) {
+                    if let (Some(p), Some(entry)) =
+                        (presences.iter().find(|p| &p.mri == mri), cache.get_mut(mri))
+                    {
                         entry.1 = p.availability.clone();
                     }
                 }
                 let mut a = ROOM_ACTIVITY.lock().unwrap_or_else(|e| e.into_inner());
                 for p in &presences {
-                    a.insert(p.mri.clone(), (p.activity.clone(), std::time::Instant::now()));
+                    a.insert(
+                        p.mri.clone(),
+                        (p.activity.clone(), std::time::Instant::now()),
+                    );
                 }
             });
         }
@@ -25034,28 +28400,44 @@ impl qobject::Backend {
         let (mri, name) = (mri.to_string(), name.to_string());
         // Teams looks the room up in its Bluetooth table when adding it,
         // however it was picked: heard nearby, its code goes along.
-        let code = u16::try_from(code)
-            .ok()
-            .or_else(|| crate::room_ble::snapshot().1.into_iter().find(|b| b.mri == mri).and_then(|b| b.code));
+        let code = u16::try_from(code).ok().or_else(|| {
+            crate::room_ble::snapshot()
+                .1
+                .into_iter()
+                .find(|b| b.mri == mri)
+                .and_then(|b| b.code)
+        });
         let qt = self.qt_thread();
         runtime().spawn(async move {
             // The room's address for our endpoint's meetingRoom (Teams
             // publishes {email, mri} once it adds the room).
             let email = match TeamsClient::new().await {
-                Ok(client) => api::directory::short_profile_records(&client, std::slice::from_ref(&mri))
-                    .await
-                    .ok()
-                    .and_then(|r| r.into_iter().next())
-                    .and_then(|r| r.get("email").or_else(|| r.get("userPrincipalName")).and_then(|e| e.as_str()).map(str::to_string))
-                    .unwrap_or_default(),
+                Ok(client) => {
+                    api::directory::short_profile_records(&client, std::slice::from_ref(&mri))
+                        .await
+                        .ok()
+                        .and_then(|r| r.into_iter().next())
+                        .and_then(|r| {
+                            r.get("email")
+                                .or_else(|| r.get("userPrincipalName"))
+                                .and_then(|e| e.as_str())
+                                .map(str::to_string)
+                        })
+                        .unwrap_or_default()
+                }
                 Err(_) => String::new(),
             };
             let mut slot = call_slot().lock().await;
-            let Some(call) = slot.outgoing.as_mut() else { return };
+            let Some(call) = slot.outgoing.as_mut() else {
+                return;
+            };
             if let Err(e) = call.add_room(&mri, &name, code, false).await {
                 tracing::warn!("adding the room: {}", short_error(&e));
                 let text = short_error(&e);
-                let _ = qt.queue(move |mut this| this.as_mut().room_add_result(false, QString::from(text.as_str())));
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut()
+                        .room_add_result(false, QString::from(text.as_str()))
+                });
                 return;
             }
             if let Err(e) = call.publish_meeting_room(&mri, &email).await {
@@ -25083,7 +28465,9 @@ impl qobject::Backend {
     pub fn load_profile_card(mut self: Pin<&mut Self>, who: &QString) {
         let who = who.to_string();
         let oid = who.trim_start_matches("8:orgid:").to_string();
-        self.as_mut().set_profile_card_json(QString::from(json!({ "id": oid, "loading": true }).to_string().as_str()));
+        self.as_mut().set_profile_card_json(QString::from(
+            json!({ "id": oid, "loading": true }).to_string().as_str(),
+        ));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -25125,7 +28509,11 @@ impl qobject::Backend {
 
     pub fn test_notification(mut self: Pin<&mut Self>) {
         let prefs = notify_prefs(&self.rust().settings_json.to_string(), &load_settings());
-        let body = if prefs.previews { tr("Message preview.") } else { tr("Message preview hidden") };
+        let body = if prefs.previews {
+            tr("Message preview.")
+        } else {
+            tr("Message preview hidden")
+        };
         let timeout = prefs.seconds * 1000;
         let silent = !prefs.sound;
         if banners_available() {
@@ -25139,7 +28527,8 @@ impl qobject::Backend {
                 "silent": silent,
                 "sound": prefs.sound_file,
             });
-            self.as_mut().banner_requested(QString::from(banner.to_string().as_str()));
+            self.as_mut()
+                .banner_requested(QString::from(banner.to_string().as_str()));
             return;
         }
         std::thread::spawn(move || {
@@ -25191,7 +28580,9 @@ impl qobject::Backend {
         runtime().spawn(async move {
             match exclude_from_capture(&title).await {
                 Ok(()) => tracing::info!(%title, "kept out of screen shares"),
-                Err(e) => tracing::warn!("keeping {title} out of screen shares: {}", short_error(&e)),
+                Err(e) => {
+                    tracing::warn!("keeping {title} out of screen shares: {}", short_error(&e))
+                }
             }
         });
     }
@@ -25207,7 +28598,13 @@ impl qobject::Backend {
             _ => c"BR".to_owned(),
         };
         // SAFETY: on the Qt thread; both are C strings.
-        unsafe { ost_banner_place(BANNER_WINDOW_TITLE.as_ptr(), corner.as_ptr(), BANNER_EDGE_MARGIN) }
+        unsafe {
+            ost_banner_place(
+                BANNER_WINDOW_TITLE.as_ptr(),
+                corner.as_ptr(),
+                BANNER_EDGE_MARGIN,
+            )
+        }
     }
 
     pub fn banner_reply(self: Pin<&mut Self>, chat_id: &QString, text: &QString) {
@@ -25218,7 +28615,12 @@ impl qobject::Backend {
         self.enqueue(chat, api::outbox::plain_html(&body));
     }
 
-    pub fn banner_react(self: Pin<&mut Self>, chat_id: &QString, message_id: &QString, key: &QString) {
+    pub fn banner_react(
+        self: Pin<&mut Self>,
+        chat_id: &QString,
+        message_id: &QString,
+        key: &QString,
+    ) {
         let (chat, message, key) = (chat_id.to_string(), message_id.to_string(), key.to_string());
         if chat.is_empty() || message.is_empty() || key.is_empty() {
             return;
@@ -25233,24 +28635,39 @@ impl qobject::Backend {
             .await;
             let _ = qt.queue(move |mut this| match result {
                 Ok(()) => this.as_mut().reload_where(&chat),
-                Err(e) => tracing::warn!("reaction from a notification not sent: {}", short_error(&e)),
+                Err(e) => {
+                    tracing::warn!("reaction from a notification not sent: {}", short_error(&e))
+                }
             });
         });
     }
 
-    pub fn open_from_notification(mut self: Pin<&mut Self>, chat_id: &QString, chat_name: &QString) {
+    pub fn open_from_notification(
+        mut self: Pin<&mut Self>,
+        chat_id: &QString,
+        chat_name: &QString,
+    ) {
         if chat_id.is_empty() {
             return;
         }
-        if load_settings().get("openContentIn").and_then(|v| v.as_str()) == Some("popout") {
-            self.as_mut().open_chat_window_requested(chat_id.clone(), chat_name.clone());
+        if load_settings()
+            .get("openContentIn")
+            .and_then(|v| v.as_str())
+            == Some("popout")
+        {
+            self.as_mut()
+                .open_chat_window_requested(chat_id.clone(), chat_name.clone());
             return;
         }
         self.as_mut().select_chat(chat_id, chat_name);
         self.as_mut().activate_requested();
     }
 
-    pub fn join_from_notification(mut self: Pin<&mut Self>, chat_id: &QString, chat_name: &QString) {
+    pub fn join_from_notification(
+        mut self: Pin<&mut Self>,
+        chat_id: &QString,
+        chat_name: &QString,
+    ) {
         if chat_id.is_empty() {
             return;
         }
@@ -25279,7 +28696,10 @@ impl qobject::Backend {
                 tracing::warn!("recognition status: {}", short_error(&e));
                 json!({ "loaded": true, "error": short_error(&e) })
             });
-            let _ = qt.queue(move |mut this| this.as_mut().set_recognition_json(QString::from(v.to_string().as_str())));
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .set_recognition_json(QString::from(v.to_string().as_str()))
+            });
         });
     }
 
@@ -25295,7 +28715,9 @@ impl qobject::Backend {
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
-                if let Some(path) = std::env::var_os("OST_VOICE_PROFILE_WAV").filter(|p| !p.is_empty()) {
+                if let Some(path) =
+                    std::env::var_os("OST_VOICE_PROFILE_WAV").filter(|p| !p.is_empty())
+                {
                     return anyhow::Ok(Some(std::fs::read(path)?));
                 }
                 let client = TeamsClient::new().await?;
@@ -25335,8 +28757,15 @@ impl qobject::Backend {
     pub fn apply_voice_isolation(mut self: Pin<&mut Self>) {
         use teams_cli::calling::voice_isolation as vi;
         let has = vi::has_profile();
-        let noise = self.as_mut().setting(&QString::from("noiseSuppression")).to_string() != "off";
-        let mode = self.as_mut().setting(&QString::from("noiseSuppressionMode")).to_string();
+        let noise = self
+            .as_mut()
+            .setting(&QString::from("noiseSuppression"))
+            .to_string()
+            != "off";
+        let mode = self
+            .as_mut()
+            .setting(&QString::from("noiseSuppressionMode"))
+            .to_string();
         let on = has && noise && (mode == "Pns" || mode.is_empty());
         vi::set_enabled(on);
         let ready = vi::ready();
@@ -25348,7 +28777,10 @@ impl qobject::Backend {
                         let _ = qt.queue(|mut this| this.as_mut().apply_voice_isolation());
                     }
                     Err(e) => {
-                        tracing::warn!("voice isolation not ready, standard noise suppression: {}", short_error(&e));
+                        tracing::warn!(
+                            "voice isolation not ready, standard noise suppression: {}",
+                            short_error(&e)
+                        );
                         // A recording the model can't use is no profile.
                         if !vi::has_profile() {
                             let _ = qt.queue(|mut this| this.as_mut().apply_voice_isolation());
@@ -25358,7 +28790,8 @@ impl qobject::Backend {
             });
         }
         let v = json!({ "profile": has, "on": on, "ready": ready, "mode": if mode.is_empty() { if has { "Pns" } else { "Auto" } } else { mode.as_str() } });
-        self.as_mut().set_voice_isolation_json(QString::from(v.to_string().as_str()));
+        self.as_mut()
+            .set_voice_isolation_json(QString::from(v.to_string().as_str()));
     }
 
     pub fn recognition_passive_voice(self: Pin<&mut Self>, on: bool) {
@@ -25382,7 +28815,10 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                api::biometric::Biometric::new(&client).await?.remove_face().await
+                api::biometric::Biometric::new(&client)
+                    .await?
+                    .remove_face()
+                    .await
             }
             .await;
             if let Err(e) = &result {
@@ -25410,13 +28846,25 @@ impl qobject::Backend {
                 }
             };
             let _ = qt.queue(move |mut this| {
-                this.as_mut().url_preview_fetched(QString::from(url.as_str()), QString::from(json.as_str()))
+                this.as_mut()
+                    .url_preview_fetched(QString::from(url.as_str()), QString::from(json.as_str()))
             });
         });
     }
 
-    pub fn app_link_action(self: Pin<&mut Self>, op: &QString, url: &QString, chat_id: &QString, arg: &QString) {
-        let (op, url, chat, arg) = (op.to_string(), url.to_string(), chat_id.to_string(), arg.to_string());
+    pub fn app_link_action(
+        self: Pin<&mut Self>,
+        op: &QString,
+        url: &QString,
+        chat_id: &QString,
+        arg: &QString,
+    ) {
+        let (op, url, chat, arg) = (
+            op.to_string(),
+            url.to_string(),
+            chat_id.to_string(),
+            arg.to_string(),
+        );
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let found = async {
@@ -25441,7 +28889,10 @@ impl qobject::Backend {
                 }
             };
             let _ = qt.queue(move |mut this| {
-                this.as_mut().app_link_card_fetched(QString::from(url.as_str()), QString::from(json.as_str()))
+                this.as_mut().app_link_card_fetched(
+                    QString::from(url.as_str()),
+                    QString::from(json.as_str()),
+                )
             });
         });
     }
@@ -25451,14 +28902,19 @@ impl qobject::Backend {
         let chat = chat_id.to_string();
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let Ok(client) = TeamsClient::new().await else { return };
+            let Ok(client) = TeamsClient::new().await else {
+                return;
+            };
             // Teams asks the link's app first and makes a URL preview only
             // when no app unfurls it.
             match api::link_unfurl::unfurl(&client, &url, &chat).await {
                 Ok(Some(card)) => {
                     let json = serde_json::to_string(&card).unwrap_or_default();
                     let _ = qt.queue(move |mut this| {
-                        this.as_mut().app_link_card_fetched(QString::from(url.as_str()), QString::from(json.as_str()))
+                        this.as_mut().app_link_card_fetched(
+                            QString::from(url.as_str()),
+                            QString::from(json.as_str()),
+                        )
                     });
                     return;
                 }
@@ -25474,7 +28930,8 @@ impl qobject::Backend {
                 }
             };
             let _ = qt.queue(move |mut this| {
-                this.as_mut().url_preview_fetched(QString::from(url.as_str()), QString::from(json.as_str()))
+                this.as_mut()
+                    .url_preview_fetched(QString::from(url.as_str()), QString::from(json.as_str()))
             });
         });
     }
@@ -25494,20 +28951,37 @@ impl qobject::Backend {
     }
 
     pub fn remove_url_preview(self: Pin<&mut Self>, message_json: &QString) {
-        let m: serde_json::Value = serde_json::from_str(&message_json.to_string()).unwrap_or_default();
-        let Some(preview) = m.get("url_preview").cloned().and_then(|p| serde_json::from_value::<api::url_preview::UrlPreview>(p).ok()) else { return };
-        let id = m.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let m: serde_json::Value =
+            serde_json::from_str(&message_json.to_string()).unwrap_or_default();
+        let Some(preview) = m
+            .get("url_preview")
+            .cloned()
+            .and_then(|p| serde_json::from_value::<api::url_preview::UrlPreview>(p).ok())
+        else {
+            return;
+        };
+        let id = m
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
         let message_id = id.clone();
         self.message_action(&message_id, move |client, chat| {
-            Box::pin(async move { api::url_preview::remove_from_message(&client, &chat, &id, &preview).await })
+            Box::pin(async move {
+                api::url_preview::remove_from_message(&client, &chat, &id, &preview).await
+            })
         });
     }
 
     pub fn load_url_preview_policy(self: Pin<&mut Self>) {
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let Ok(client) = TeamsClient::new().await else { return };
-            let policy = api::custom_emoji::messaging_policy(&client).await.unwrap_or_default();
+            let Ok(client) = TeamsClient::new().await else {
+                return;
+            };
+            let policy = api::custom_emoji::messaging_policy(&client)
+                .await
+                .unwrap_or_default();
             let blocked = api::custom_emoji::find_bool(&policy, "allowUrlPreviews") == Some(false);
             let _ = qt.queue(move |mut this| this.as_mut().set_url_previews_blocked(blocked));
         });
@@ -25516,27 +28990,39 @@ impl qobject::Backend {
     pub fn load_work_location_policy(self: Pin<&mut Self>) {
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let Ok(client) = TeamsClient::new().await else { return };
-            let policy = api::custom_emoji::effective_policies(&client, &["teamsWorkLocationDetectionPolicy"])
-                .await
-                .unwrap_or_default();
+            let Ok(client) = TeamsClient::new().await else {
+                return;
+            };
+            let policy = api::custom_emoji::effective_policies(
+                &client,
+                &["teamsWorkLocationDetectionPolicy"],
+            )
+            .await
+            .unwrap_or_default();
             let p = &policy["teamsWorkLocationDetectionPolicy"]["value"];
             let v = json!({
                 "detection": p["enableWorkLocationDetection"].as_bool().unwrap_or(false),
                 "userDefault": p["userSettingsDefault"].as_str().unwrap_or_default(),
             });
             let _ = qt.queue(move |mut this| {
-                this.as_mut().set_work_location_policy_json(QString::from(v.to_string().as_str()))
+                this.as_mut()
+                    .set_work_location_policy_json(QString::from(v.to_string().as_str()))
             });
         });
     }
 
     pub fn load_buildings(mut self: Pin<&mut Self>, suggested_id: &QString) {
-        self.as_mut().set_buildings_json(QString::from(json!({ "loading": true, "buildings": [], "suggested": null }).to_string().as_str()));
+        self.as_mut().set_buildings_json(QString::from(
+            json!({ "loading": true, "buildings": [], "suggested": null })
+                .to_string()
+                .as_str(),
+        ));
         let suggested_id = suggested_id.to_string();
         // Teams' places worker: getBuildings with the flight, else
         // findPlaces; the banner's building by id (buildingById).
-        let new_api = api::ecs::setting("places", "enableNewGetBuildingsAPIInMeControl").and_then(|v| v.as_bool()).unwrap_or(false);
+        let new_api = api::ecs::setting("places", "enableNewGetBuildingsAPIInMeControl")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         let qt = self.qt_thread();
         runtime().spawn(async move {
             // --stationary-test's --stationary-fixture=<file>: Places
@@ -25586,13 +29072,33 @@ impl qobject::Backend {
         });
     }
 
-    pub fn building_options(&self, query: &QString, office_id: &QString, office_name: &QString) -> QString {
-        use teams_cli::api::places::{matching, suggested, Building};
+    pub fn building_options(
+        &self,
+        query: &QString,
+        office_id: &QString,
+        office_name: &QString,
+    ) -> QString {
+        use teams_cli::api::places::{Building, matching, suggested};
         let all = matching(&query.to_string(), &self.rust().buildings);
-        let office = Building { id: office_id.to_string(), name: office_name.to_string(), ..Default::default() };
+        let office = Building {
+            id: office_id.to_string(),
+            name: office_name.to_string(),
+            ..Default::default()
+        };
         let pick = |b: &&Building| json!({ "id": b.id, "name": b.name });
-        let sug: Vec<_> = suggested(self.rust().buildings_suggested.as_ref(), Some(&office), &all).iter().map(pick).collect();
-        QString::from(json!({ "suggested": sug, "all": all.iter().map(pick).collect::<Vec<_>>() }).to_string().as_str())
+        let sug: Vec<_> = suggested(
+            self.rust().buildings_suggested.as_ref(),
+            Some(&office),
+            &all,
+        )
+        .iter()
+        .map(pick)
+        .collect();
+        QString::from(
+            json!({ "suggested": sug, "all": all.iter().map(pick).collect::<Vec<_>>() })
+                .to_string()
+                .as_str(),
+        )
     }
 
     pub fn load_premium(self: Pin<&mut Self>) {
@@ -25614,15 +29120,20 @@ impl qobject::Backend {
                     json!({ "offered": false, "error": short_error(&e) })
                 }
             };
-            let _ = qt.queue(move |mut this| this.as_mut().set_premium_json(QString::from(v.to_string().as_str())));
+            let _ = qt.queue(move |mut this| {
+                this.as_mut()
+                    .set_premium_json(QString::from(v.to_string().as_str()))
+            });
         });
     }
 
     pub fn start_premium_trial(mut self: Pin<&mut Self>) {
-        let mut v: serde_json::Value = serde_json::from_str(&self.rust().premium_json.to_string()).unwrap_or_else(|_| json!({}));
+        let mut v: serde_json::Value = serde_json::from_str(&self.rust().premium_json.to_string())
+            .unwrap_or_else(|_| json!({}));
         v["starting"] = json!(true);
         v["error"] = serde_json::Value::Null;
-        self.as_mut().set_premium_json(QString::from(v.to_string().as_str()));
+        self.as_mut()
+            .set_premium_json(QString::from(v.to_string().as_str()));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let http = reqwest::Client::new();
@@ -25631,7 +29142,10 @@ impl qobject::Backend {
             // the licence (authz).
             let result = async {
                 let first = api::premium::acquire(&http).await?;
-                let mut entity = first.get("lowFrictionEntityDetails").cloned().unwrap_or(serde_json::Value::Null);
+                let mut entity = first
+                    .get("lowFrictionEntityDetails")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null);
                 for _ in 0..60 {
                     if api::premium::entity_state(&entity) == Some(1) {
                         break;
@@ -25641,13 +29155,18 @@ impl qobject::Backend {
                         entity = e;
                     }
                 }
-                anyhow::ensure!(api::premium::entity_state(&entity) == Some(1), "The trial didn't become active");
+                anyhow::ensure!(
+                    api::premium::entity_state(&entity) == Some(1),
+                    "The trial didn't become active"
+                );
                 let _ = api::ecs::refresh_license().await;
                 anyhow::Ok(entity)
             }
             .await;
             let _ = qt.queue(move |mut this| {
-                let mut v: serde_json::Value = serde_json::from_str(&this.rust().premium_json.to_string()).unwrap_or_else(|_| json!({}));
+                let mut v: serde_json::Value =
+                    serde_json::from_str(&this.rust().premium_json.to_string())
+                        .unwrap_or_else(|_| json!({}));
                 v["starting"] = json!(false);
                 match result {
                     Ok(entity) => {
@@ -25661,21 +29180,26 @@ impl qobject::Backend {
                     }
                     Err(e) => v["error"] = json!(short_error(&e)),
                 }
-                this.as_mut().set_premium_json(QString::from(v.to_string().as_str()));
+                this.as_mut()
+                    .set_premium_json(QString::from(v.to_string().as_str()));
             });
         });
     }
 
     pub fn cancel_premium_trial(mut self: Pin<&mut Self>) {
-        let mut v: serde_json::Value = serde_json::from_str(&self.rust().premium_json.to_string()).unwrap_or_else(|_| json!({}));
+        let mut v: serde_json::Value = serde_json::from_str(&self.rust().premium_json.to_string())
+            .unwrap_or_else(|_| json!({}));
         v["canceling"] = json!(true);
         v["error"] = serde_json::Value::Null;
-        self.as_mut().set_premium_json(QString::from(v.to_string().as_str()));
+        self.as_mut()
+            .set_premium_json(QString::from(v.to_string().as_str()));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = api::premium::cancel(&reqwest::Client::new()).await;
             let _ = qt.queue(move |mut this| {
-                let mut v: serde_json::Value = serde_json::from_str(&this.rust().premium_json.to_string()).unwrap_or_else(|_| json!({}));
+                let mut v: serde_json::Value =
+                    serde_json::from_str(&this.rust().premium_json.to_string())
+                        .unwrap_or_else(|_| json!({}));
                 v["canceling"] = json!(false);
                 match result {
                     Ok(()) => {
@@ -25685,7 +29209,8 @@ impl qobject::Backend {
                     }
                     Err(e) => v["cancelError"] = json!(short_error(&e)),
                 }
-                this.as_mut().set_premium_json(QString::from(v.to_string().as_str()));
+                this.as_mut()
+                    .set_premium_json(QString::from(v.to_string().as_str()));
             });
         });
     }
@@ -25698,9 +29223,23 @@ impl qobject::Backend {
         // Open containing folder with the file selected (the desktop's file
         // manager, org.freedesktop.FileManager1), else just the folder.
         let reveal = |p: &std::path::Path| {
-            let uri = format!("['file://{}']", p.display().to_string().replace('\'', "%27"));
+            let uri = format!(
+                "['file://{}']",
+                p.display().to_string().replace('\'', "%27")
+            );
             let shown = std::process::Command::new("gdbus")
-                .args(["call", "--session", "--dest", "org.freedesktop.FileManager1", "--object-path", "/org/freedesktop/FileManager1", "--method", "org.freedesktop.FileManager1.ShowItems", &uri, ""])
+                .args([
+                    "call",
+                    "--session",
+                    "--dest",
+                    "org.freedesktop.FileManager1",
+                    "--object-path",
+                    "/org/freedesktop/FileManager1",
+                    "--method",
+                    "org.freedesktop.FileManager1.ShowItems",
+                    &uri,
+                    "",
+                ])
                 .output()
                 .is_ok_and(|o| o.status.success());
             if !shown && let Some(d) = p.parent() {
@@ -25709,7 +29248,10 @@ impl qobject::Backend {
         };
         match action.as_str() {
             "open" => {
-                if api::downloads::list().iter().any(|d| d.download.path == path && d.exists) {
+                if api::downloads::list()
+                    .iter()
+                    .any(|d| d.download.path == path && d.exists)
+                {
                     open(std::path::Path::new(&path));
                 }
             }
@@ -25718,7 +29260,10 @@ impl qobject::Backend {
                     if let Some(d) = download_dir() {
                         open(&d);
                     }
-                } else if api::downloads::list().iter().any(|d| d.download.path == path) {
+                } else if api::downloads::list()
+                    .iter()
+                    .any(|d| d.download.path == path)
+                {
                     reveal(std::path::Path::new(&path));
                 }
             }
@@ -25735,12 +29280,21 @@ impl qobject::Backend {
             _ => {}
         }
         let v = json!(api::downloads::list());
-        self.as_mut().set_downloads_json(QString::from(v.to_string().as_str()));
+        self.as_mut()
+            .set_downloads_json(QString::from(v.to_string().as_str()));
     }
 
     pub fn check_for_updates(mut self: Pin<&mut Self>) {
-        let checked: i64 = load_settings().get("updateCheckedAt").and_then(|v| v.as_str()).and_then(|v| v.parse().ok()).unwrap_or(0);
-        self.as_mut().set_update_json(QString::from(json!({ "state": "checking", "checkedAt": checked }).to_string().as_str()));
+        let checked: i64 = load_settings()
+            .get("updateCheckedAt")
+            .and_then(|v| v.as_str())
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        self.as_mut().set_update_json(QString::from(
+            json!({ "state": "checking", "checkedAt": checked })
+                .to_string()
+                .as_str(),
+        ));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let http = reqwest::Client::new();
@@ -25784,7 +29338,10 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                api::biometric::Biometric::new(&client).await?.remove_voice().await
+                api::biometric::Biometric::new(&client)
+                    .await?
+                    .remove_voice()
+                    .await
             }
             .await;
             if let Err(e) = &result {
@@ -25804,7 +29361,10 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                let zip = api::biometric::Biometric::new(&client).await?.export(&kind).await?;
+                let zip = api::biometric::Biometric::new(&client)
+                    .await?
+                    .export(&kind)
+                    .await?;
                 let path = dir.join(format!("{kind}_profile.zip"));
                 std::fs::write(&path, zip)?;
                 api::downloads::record(&path);
@@ -25812,13 +29372,17 @@ impl qobject::Backend {
             }
             .await;
             let text = match result {
-                Ok(p) => tr("Downloaded %1").replace("%1", p.file_name().and_then(|n| n.to_str()).unwrap_or_default()),
+                Ok(p) => tr("Downloaded %1").replace(
+                    "%1",
+                    p.file_name().and_then(|n| n.to_str()).unwrap_or_default(),
+                ),
                 Err(e) => {
                     tracing::warn!("biometric export: {}", short_error(&e));
                     tr("Something went wrong. Please try again.")
                 }
             };
-            let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(text.as_str())));
+            let _ = qt
+                .queue(move |mut this| this.as_mut().set_status_text(QString::from(text.as_str())));
         });
     }
 
@@ -25851,7 +29415,15 @@ impl qobject::Backend {
                     .unwrap()
                     .first()
                     .and_then(|(_, s)| s["Version"].as_str().map(str::to_string));
-                let outcome = api::biometric::face_signature(client.http(), &token, &jpeg, pose, &oid, version.as_deref()).await?;
+                let outcome = api::biometric::face_signature(
+                    client.http(),
+                    &token,
+                    &jpeg,
+                    pose,
+                    &oid,
+                    version.as_deref(),
+                )
+                .await?;
                 let code = match outcome {
                     api::biometric::FaceOutcome::Signed(sig) => {
                         face_session().lock().unwrap().push((jpeg, sig));
@@ -25884,7 +29456,8 @@ impl qobject::Backend {
             });
             let right = pose == api::biometric::HeadPose::Right;
             let _ = qt.queue(move |mut this| {
-                this.as_mut().face_capture_result(QString::from(code.as_str()));
+                this.as_mut()
+                    .face_capture_result(QString::from(code.as_str()));
                 if right {
                     this.as_mut().load_recognition();
                 }
@@ -25916,7 +29489,8 @@ impl qobject::Backend {
         if !mic.is_empty() && Some(&mic) != previous.0.as_ref() {
             teams_cli::calling::audio::set_preferred_devices(Some(mic), previous.1.clone());
         }
-        let Some((capture, frames)) = teams_cli::calling::audio::AudioCapture::start_at(16000) else {
+        let Some((capture, frames)) = teams_cli::calling::audio::AudioCapture::start_at(16000)
+        else {
             teams_cli::calling::audio::set_preferred_devices(previous.0, previous.1);
             return false;
         };
@@ -25929,13 +29503,23 @@ impl qobject::Backend {
                 }
             }
         });
-        *slot = Some(VoiceCapture { _capture: capture, samples, previous });
+        *slot = Some(VoiceCapture {
+            _capture: capture,
+            samples,
+            previous,
+        });
         true
     }
 
     pub fn voice_capture_end(self: Pin<&mut Self>) {
-        let Some(cap) = voice_capture().lock().unwrap().take() else { return };
-        let VoiceCapture { _capture, samples, previous } = cap;
+        let Some(cap) = voice_capture().lock().unwrap().take() else {
+            return;
+        };
+        let VoiceCapture {
+            _capture,
+            samples,
+            previous,
+        } = cap;
         drop(_capture);
         teams_cli::calling::audio::set_preferred_devices(previous.0, previous.1);
         let pcm = samples.lock().map(|s| s.clone()).unwrap_or_default();
@@ -25943,7 +29527,10 @@ impl qobject::Backend {
     }
 
     pub fn voice_capture_cancel(self: Pin<&mut Self>) {
-        if let Some(VoiceCapture { _capture, previous, .. }) = voice_capture().lock().unwrap().take() {
+        if let Some(VoiceCapture {
+            _capture, previous, ..
+        }) = voice_capture().lock().unwrap().take()
+        {
             drop(_capture);
             teams_cli::calling::audio::set_preferred_devices(previous.0, previous.1);
         }
@@ -25970,14 +29557,27 @@ impl qobject::Backend {
                 let client = TeamsClient::new().await?;
                 let bio = api::biometric::Biometric::new(&client).await?;
                 let token = bio.cognition_token("voice").await?;
-                let threshold = api::ecs::setting("biometricEnrollment", "enrollmentErrorThresholdInPercentage")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(25.0);
-                match api::biometric::voice_signature(&token, locale, &wav, api::biometric::VOICE_TEXT, threshold).await {
-                    Ok(api::biometric::VoiceOutcome::Signed(sig)) => match bio.store_voice(locale, &wav, &sig).await {
-                        Ok(()) => Ok("COMPLETE".to_string()),
-                        Err(e) => Ok(short_error(&e)),
-                    },
+                let threshold = api::ecs::setting(
+                    "biometricEnrollment",
+                    "enrollmentErrorThresholdInPercentage",
+                )
+                .and_then(|v| v.as_f64())
+                .unwrap_or(25.0);
+                match api::biometric::voice_signature(
+                    &token,
+                    locale,
+                    &wav,
+                    api::biometric::VOICE_TEXT,
+                    threshold,
+                )
+                .await
+                {
+                    Ok(api::biometric::VoiceOutcome::Signed(sig)) => {
+                        match bio.store_voice(locale, &wav, &sig).await {
+                            Ok(()) => Ok("COMPLETE".to_string()),
+                            Err(e) => Ok(short_error(&e)),
+                        }
+                    }
                     Ok(api::biometric::VoiceOutcome::Refused(code)) => Ok(code),
                     Err(e) => {
                         tracing::warn!("voice signature: {}", short_error(&e));
@@ -25992,25 +29592,41 @@ impl qobject::Backend {
             });
             tracing::info!(code, "voice capture");
             let _ = qt.queue(move |mut this| {
-                this.as_mut().voice_capture_result(QString::from(code.as_str()));
+                this.as_mut()
+                    .voice_capture_result(QString::from(code.as_str()));
                 this.as_mut().load_recognition();
             });
         });
     }
 
     pub fn office_app_name(self: Pin<&mut Self>) -> QString {
-        QString::from(office_app().map(|(_, name)| name).unwrap_or_default().as_str())
+        QString::from(
+            office_app()
+                .map(|(_, name)| name)
+                .unwrap_or_default()
+                .as_str(),
+        )
     }
 
     pub fn open_file(self: Pin<&mut Self>, url: &QString, name: &QString, item_json: &QString) {
         let (url, name) = (url.to_string(), name.to_string());
-        let item: Option<api::drive::DriveItem> =
-            serde_json::from_str(&item_json.to_string()).ok().filter(|i: &api::drive::DriveItem| !i.id.is_empty());
+        let item: Option<api::drive::DriveItem> = serde_json::from_str(&item_json.to_string())
+            .ok()
+            .filter(|i: &api::drive::DriveItem| !i.id.is_empty());
         // Unset: Teams' default choice, Teams.
-        let choice = load_settings().get("fileOpenIn").and_then(|v| v.as_str()).filter(|v| !v.is_empty()).unwrap_or("teams").to_string();
+        let choice = load_settings()
+            .get("fileOpenIn")
+            .and_then(|v| v.as_str())
+            .filter(|v| !v.is_empty())
+            .unwrap_or("teams")
+            .to_string();
         // Teams' "Teams" choice: Office for the web inside OST.
         if choice == "teams" && api::office_open::app_for(&name).is_some() {
-            let (u, n, j) = (QString::from(url.as_str()), QString::from(name.as_str()), item_json.clone());
+            let (u, n, j) = (
+                QString::from(url.as_str()),
+                QString::from(name.as_str()),
+                item_json.clone(),
+            );
             self.open_in_teams_requested(u, n, j);
             return;
         }
@@ -26037,7 +29653,9 @@ impl qobject::Backend {
                     let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
                 }
                 Err(e) => {
-                    let msg = tr("%1 didn't open: %2").replace("%1", &name).replace("%2", &short_error(&e));
+                    let msg = tr("%1 didn't open: %2")
+                        .replace("%1", &name)
+                        .replace("%2", &short_error(&e));
                     let _ = qt.queue(move |mut this| this.as_mut().toast(&msg, "error"));
                 }
             }
@@ -26045,7 +29663,12 @@ impl qobject::Backend {
     }
 
     pub fn download_location(self: Pin<&mut Self>) -> QString {
-        QString::from(download_dir().map(|d| d.display().to_string()).unwrap_or_default().as_str())
+        QString::from(
+            download_dir()
+                .map(|d| d.display().to_string())
+                .unwrap_or_default()
+                .as_str(),
+        )
     }
 
     pub fn load_settings(self: Pin<&mut Self>) {
@@ -26114,22 +29737,34 @@ impl qobject::Backend {
         });
     }
 
-    pub fn change_setting(mut self: Pin<&mut Self>, kind: &QString, name: &QString, value_json: &QString) {
+    pub fn change_setting(
+        mut self: Pin<&mut Self>,
+        kind: &QString,
+        name: &QString,
+        value_json: &QString,
+    ) {
         let (kind, name) = (kind.to_string(), name.to_string());
-        let value: serde_json::Value = serde_json::from_str(&value_json.to_string()).unwrap_or(serde_json::Value::Null);
+        let value: serde_json::Value =
+            serde_json::from_str(&value_json.to_string()).unwrap_or(serde_json::Value::Null);
         // Shown at once; put back if the save fails.
         let before = self.rust().settings_json.to_string();
-        let mut all: serde_json::Value = serde_json::from_str(&before).unwrap_or_else(|_| json!({ "props": {}, "mt": {} }));
+        let mut all: serde_json::Value =
+            serde_json::from_str(&before).unwrap_or_else(|_| json!({ "props": {}, "mt": {} }));
         if kind == "mt" && name == "ringtone" {
             // Kept with the rest of the calling settings, as Teams reads it.
             let (kind, rname) = ringtone_choice(&value);
-            let body = api::preferences::ringtone_body_for(&all["mt"]["voice"]["ringtoneSettings"], &kind, &rname);
+            let body = api::preferences::ringtone_body_for(
+                &all["mt"]["voice"]["ringtoneSettings"],
+                &kind,
+                &rname,
+            );
             all["mt"]["voice"]["ringtoneSettings"] = body;
         } else if kind == "mt" && name == "forwarding" {
             // Teams 26304's call handling for Teams Phone users: the whole
             // callRedirectionSettings, changed as Teams changes it.
             let cur = all["mt"]["voice"]["callRedirectionSettings"].clone();
-            let vm = all["mt"]["callingPolicy"]["allowVoicemail"].as_str() != Some("AlwaysDisabled");
+            let vm =
+                all["mt"]["callingPolicy"]["allowVoicemail"].as_str() != Some("AlwaysDisabled");
             let next = forwarding_change(&cur, &value, vm);
             all["mt"]["voice"]["callRedirectionSettings"] = next;
         } else if kind == "mt" && name == "callGroup" {
@@ -26141,7 +29776,8 @@ impl qobject::Backend {
             all["mt"]["delegation"] = delegation_change(&all["mt"]["delegation"], &value);
         } else if kind == "mt" && name == "attendant" {
             let base = all["mt"]["attendant"].clone();
-            all["mt"]["attendant"] = api::preferences::merged(if base.is_object() { base } else { json!({}) }, &value);
+            all["mt"]["attendant"] =
+                api::preferences::merged(if base.is_object() { base } else { json!({}) }, &value);
         } else if kind == "mt" && name == "bookings" {
             // Follow-ups: {op: "load"} reads the booking page; any other
             // value is the page's changed fields, shown at once.
@@ -26157,16 +29793,21 @@ impl qobject::Backend {
             // Teams' voicemail mutation sends the whole settings with the
             // change (settings-app $a / bA / rg), and shows them at once.
             let base = all["mt"]["vm"].clone();
-            all["mt"]["vm"] = api::preferences::merged(if base.is_object() { base } else { json!({}) }, &value);
+            all["mt"]["vm"] =
+                api::preferences::merged(if base.is_object() { base } else { json!({}) }, &value);
         } else if kind == "mt" {
             all["mt"][&name] = value.clone();
         } else if value.is_object() {
-            let base = all["props"].get(&name).cloned().unwrap_or_else(|| json!({}));
+            let base = all["props"]
+                .get(&name)
+                .cloned()
+                .unwrap_or_else(|| json!({}));
             all["props"][&name] = api::preferences::merged(base, &value);
         } else {
             all["props"][&name] = value.clone();
         }
-        self.as_mut().set_settings_json(QString::from(all.to_string().as_str()));
+        self.as_mut()
+            .set_settings_json(QString::from(all.to_string().as_str()));
         self.as_mut().set_settings_error(QString::default());
         let qt = self.qt_thread();
         let load_qt = qt.clone();
@@ -26185,21 +29826,39 @@ impl qobject::Backend {
                     api::preferences::set_voice_setting(&client, "redirection", &b).await?;
                     anyhow::Ok(None)
                 } else if kind == "mt" && name == "ringtone" {
-                    let current: serde_json::Value = serde_json::from_str(&before).unwrap_or_default();
+                    let current: serde_json::Value =
+                        serde_json::from_str(&before).unwrap_or_default();
                     let (kind, rname) = ringtone_choice(&value);
-                    let body = api::preferences::ringtone_body_for(&current["mt"]["voice"]["ringtoneSettings"], &kind, &rname);
+                    let body = api::preferences::ringtone_body_for(
+                        &current["mt"]["voice"]["ringtoneSettings"],
+                        &kind,
+                        &rname,
+                    );
                     api::preferences::set_voice_setting(&client, "ringtone", &body).await?;
                     anyhow::Ok(None)
                 } else if kind == "mt" && name == "forwarding" {
-                    let current: serde_json::Value = serde_json::from_str(&before).unwrap_or_default();
-                    let vm = current["mt"]["callingPolicy"]["allowVoicemail"].as_str() != Some("AlwaysDisabled");
-                    let body = forwarding_change(&current["mt"]["voice"]["callRedirectionSettings"], &value, vm);
+                    let current: serde_json::Value =
+                        serde_json::from_str(&before).unwrap_or_default();
+                    let vm = current["mt"]["callingPolicy"]["allowVoicemail"].as_str()
+                        != Some("AlwaysDisabled");
+                    let body = forwarding_change(
+                        &current["mt"]["voice"]["callRedirectionSettings"],
+                        &value,
+                        vm,
+                    );
                     api::preferences::set_voice_setting(&client, "redirection", &body).await?;
                     anyhow::Ok(None)
                 } else if kind == "mt" && name == "callGroup" {
-                    let current: serde_json::Value = serde_json::from_str(&before).unwrap_or_default();
-                    match call_group_change(&current["mt"]["voice"]["callRedirectionSettings"], &value) {
-                        Some(body) => api::preferences::set_voice_setting(&client, "redirection", &body).await?,
+                    let current: serde_json::Value =
+                        serde_json::from_str(&before).unwrap_or_default();
+                    match call_group_change(
+                        &current["mt"]["voice"]["callRedirectionSettings"],
+                        &value,
+                    ) {
+                        Some(body) => {
+                            api::preferences::set_voice_setting(&client, "redirection", &body)
+                                .await?
+                        }
                         None => anyhow::bail!("call group full"),
                     }
                     anyhow::Ok(None)
@@ -26209,15 +29868,25 @@ impl qobject::Backend {
                     match value["op"].as_str().unwrap_or_default() {
                         "add" => cd::add_delegate(&client, &mri).await?,
                         "remove" => cd::remove_delegate(&client, &mri).await?,
-                        "tone" => cd::set_warning_tone(&client, value["on"].as_bool().unwrap_or(false)).await?,
+                        "tone" => {
+                            cd::set_warning_tone(&client, value["on"].as_bool().unwrap_or(false))
+                                .await?
+                        }
                         "action" => {
-                            let current: serde_json::Value = serde_json::from_str(&before).unwrap_or_default();
-                            let actions = cd::delegates_of(&json!({ "delegationSettings": current["mt"]["delegation"] }))
-                                .into_iter()
-                                .find(|d| d["userMri"].as_str() == Some(mri.as_str()))
-                                .map(|d| d["allowedActions"].clone())
-                                .unwrap_or_default();
-                            let body = cd::edit_body(&actions, value["action"].as_str().unwrap_or_default(), value["on"].as_bool().unwrap_or(false));
+                            let current: serde_json::Value =
+                                serde_json::from_str(&before).unwrap_or_default();
+                            let actions = cd::delegates_of(
+                                &json!({ "delegationSettings": current["mt"]["delegation"] }),
+                            )
+                            .into_iter()
+                            .find(|d| d["userMri"].as_str() == Some(mri.as_str()))
+                            .map(|d| d["allowedActions"].clone())
+                            .unwrap_or_default();
+                            let body = cd::edit_body(
+                                &actions,
+                                value["action"].as_str().unwrap_or_default(),
+                                value["on"].as_bool().unwrap_or(false),
+                            );
                             cd::edit_delegate(&client, &mri, &body).await?
                         }
                         _ => {}
@@ -26228,11 +29897,25 @@ impl qobject::Backend {
                     // where Bookings is allowed also makes the follow-up
                     // booking page and saves its ids.
                     use api::call_delegation as cd;
-                    let current: serde_json::Value = serde_json::from_str(&before).unwrap_or_default();
+                    let current: serde_json::Value =
+                        serde_json::from_str(&before).unwrap_or_default();
                     let base = current["mt"]["attendant"].clone();
-                    let mut next = api::preferences::merged(if base.is_object() { base.clone() } else { json!({}) }, &value);
-                    let first_on = cd::wants_bookings(&current["mt"]["attendantPolicy"], &base, value["isEnabled"].as_bool() == Some(true))
-                        && api::ecs::setting("calling", "enableBookingsByDefaultForPA").and_then(|v| v.as_bool()).unwrap_or(true);
+                    let mut next = api::preferences::merged(
+                        if base.is_object() {
+                            base.clone()
+                        } else {
+                            json!({})
+                        },
+                        &value,
+                    );
+                    let first_on =
+                        cd::wants_bookings(
+                            &current["mt"]["attendantPolicy"],
+                            &base,
+                            value["isEnabled"].as_bool() == Some(true),
+                        ) && api::ecs::setting("calling", "enableBookingsByDefaultForPA")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true);
                     if first_on {
                         next["enableBookingCalendar"] = json!(true);
                     }
@@ -26245,7 +29928,10 @@ impl qobject::Backend {
                                 next["bookingCode"] = json!(code);
                                 cd::set_attendant(&client, &next).await?;
                             }
-                            Err(e) => tracing::warn!("follow-up booking page not made: {}", short_error(&e)),
+                            Err(e) => tracing::warn!(
+                                "follow-up booking page not made: {}",
+                                short_error(&e)
+                            ),
                         }
                     }
                     anyhow::Ok(None)
@@ -26253,56 +29939,86 @@ impl qobject::Backend {
                     // Teams' bookingCalendarDetails / updateBookingService
                     // for the page the intelligent call delegation keeps.
                     use api::call_delegation as cd;
-                    let current: serde_json::Value = serde_json::from_str(&before).unwrap_or_default();
+                    let current: serde_json::Value =
+                        serde_json::from_str(&before).unwrap_or_default();
                     let s = &current["mt"]["attendant"];
-                    let (service, code) = (s["bookingServiceId"].as_str().unwrap_or_default().to_string(), s["bookingCode"].as_str().unwrap_or_default().to_string());
+                    let (service, code) = (
+                        s["bookingServiceId"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_string(),
+                        s["bookingCode"].as_str().unwrap_or_default().to_string(),
+                    );
                     let email = client.user_principal_name().unwrap_or_default();
                     if service.is_empty() || code.is_empty() {
                         anyhow::bail!("no follow-up booking page yet");
                     }
                     if value["op"].as_str() == Some("load") {
-                        let details = cd::bookings_service(&client, &email, &service, &code).await?;
+                        let details =
+                            cd::bookings_service(&client, &email, &service, &code).await?;
                         let _ = load_qt.queue(move |mut this| {
-                            let mut all: serde_json::Value = serde_json::from_str(&this.rust().settings_json.to_string()).unwrap_or_else(|_| json!({ "props": {}, "mt": {} }));
+                            let mut all: serde_json::Value =
+                                serde_json::from_str(&this.rust().settings_json.to_string())
+                                    .unwrap_or_else(|_| json!({ "props": {}, "mt": {} }));
                             all["mt"]["bookings"] = details;
-                            this.as_mut().set_settings_json(QString::from(all.to_string().as_str()));
+                            this.as_mut()
+                                .set_settings_json(QString::from(all.to_string().as_str()));
                         });
                     } else {
                         let mut next = current["mt"]["bookings"].clone();
                         for (k, v) in value.as_object().cloned().unwrap_or_default() {
                             next[&k] = v;
                         }
-                        cd::update_bookings_service(&client, &email, &service, &code, &next).await?;
+                        cd::update_bookings_service(&client, &email, &service, &code, &next)
+                            .await?;
                     }
                     anyhow::Ok(None)
                 } else if kind == "mt" && name == "voicemail" {
-                    let current: serde_json::Value = serde_json::from_str(&before).unwrap_or_default();
+                    let current: serde_json::Value =
+                        serde_json::from_str(&before).unwrap_or_default();
                     let base = current["mt"]["vm"].clone();
-                    let body = api::preferences::merged(if base.is_object() { base } else { json!({}) }, &value);
+                    let body = api::preferences::merged(
+                        if base.is_object() { base } else { json!({}) },
+                        &value,
+                    );
                     api::preferences::set_voice_setting(&client, "voicemail", &body).await?;
                     anyhow::Ok(None)
                 } else if kind == "mt" {
-                    api::preferences::set_middle_tier_setting(&client, &name, value.as_bool().unwrap_or(false)).await?;
+                    api::preferences::set_middle_tier_setting(
+                        &client,
+                        &name,
+                        value.as_bool().unwrap_or(false),
+                    )
+                    .await?;
                     if name == "useEndToEndEncryption" {
-                        teams_cli::calling::webrtc_audio::set_prefer_e2ee(value.as_bool().unwrap_or(false));
+                        teams_cli::calling::webrtc_audio::set_prefer_e2ee(
+                            value.as_bool().unwrap_or(false),
+                        );
                     }
                     anyhow::Ok(None)
                 } else {
-                    Ok(Some(api::preferences::set_property(&client, &name, &value).await?))
+                    Ok(Some(
+                        api::preferences::set_property(&client, &name, &value).await?,
+                    ))
                 }
             }
             .await;
             let _ = qt.queue(move |mut this| match result {
                 Ok(Some(saved)) => {
-                    let mut all: serde_json::Value = serde_json::from_str(&this.rust().settings_json.to_string()).unwrap_or_else(|_| json!({ "props": {}, "mt": {} }));
+                    let mut all: serde_json::Value =
+                        serde_json::from_str(&this.rust().settings_json.to_string())
+                            .unwrap_or_else(|_| json!({ "props": {}, "mt": {} }));
                     all["props"][&name] = saved;
-                    this.as_mut().set_settings_json(QString::from(all.to_string().as_str()));
+                    this.as_mut()
+                        .set_settings_json(QString::from(all.to_string().as_str()));
                 }
                 Ok(None) => {}
                 Err(e) => {
                     tracing::warn!("setting {name} not saved: {}", short_error(&e));
-                    this.as_mut().set_settings_json(QString::from(before.as_str()));
-                    this.as_mut().set_settings_error(QString::from(name.as_str()));
+                    this.as_mut()
+                        .set_settings_json(QString::from(before.as_str()));
+                    this.as_mut()
+                        .set_settings_error(QString::from(name.as_str()));
                 }
             });
         });
@@ -26347,14 +30063,29 @@ impl qobject::Backend {
     pub fn send_files_html(self: Pin<&mut Self>, paths: &QString, editor_html: &QString) {
         let chat_id = self.rust().current_chat_id.to_string();
         let html = editor_html.to_string();
-        self.send_files_in(chat_id.clone(), chat_id, paths, &QString::default(), Some(html));
+        self.send_files_in(
+            chat_id.clone(),
+            chat_id,
+            paths,
+            &QString::default(),
+            Some(html),
+        );
     }
 
     /// Files into a thread window's thread: uploaded to the channel's
     /// folder, sent as a reply.
-    pub fn send_thread_files(self: Pin<&mut Self>, channel_id: &QString, root_id: &QString, paths: &QString, text: &QString) {
+    pub fn send_thread_files(
+        self: Pin<&mut Self>,
+        channel_id: &QString,
+        root_id: &QString,
+        paths: &QString,
+        text: &QString,
+    ) {
         let (channel, root) = (channel_id.to_string(), root_id.to_string());
-        if !channel.ends_with("@thread.tacv2") || root.is_empty() || !root.bytes().all(|b| b.is_ascii_digit()) {
+        if !channel.ends_with("@thread.tacv2")
+            || root.is_empty()
+            || !root.bytes().all(|b| b.is_ascii_digit())
+        {
             return;
         }
         let thread = format!("{channel};messageid={root}");
@@ -26363,19 +30094,33 @@ impl qobject::Backend {
 
     /// Upload `paths` for `chat_id`'s files and send them, with `text`, to
     /// `conversation`.
-    fn send_files_in(mut self: Pin<&mut Self>, chat_id: String, conversation: String, paths: &QString, text: &QString, editor_html: Option<String>) {
+    fn send_files_in(
+        mut self: Pin<&mut Self>,
+        chat_id: String,
+        conversation: String,
+        paths: &QString,
+        text: &QString,
+        editor_html: Option<String>,
+    ) {
         let text = text.to_string();
         // Formatted text (the compose box's HTML) goes as Teams HTML, with
         // its mentions and the delivery option set for this message.
         let importance = std::mem::take(&mut self.as_mut().rust_mut().next_importance);
         let rich = editor_html.filter(|h| !h.trim().is_empty()).map(|h| {
             let (html, mentions) = api::messages::teams_html_with_media(&h, &[]);
-            let mentions = if mentions.is_empty() { String::new() } else { serde_json::to_string(&mentions).unwrap_or_default() };
+            let mentions = if mentions.is_empty() {
+                String::new()
+            } else {
+                serde_json::to_string(&mentions).unwrap_or_default()
+            };
             (html, mentions)
         });
         // Each line is a local path (file:// tolerated) or, for a file
         // picked from OneDrive or SharePoint, "cloud:" and its CloudFile.
-        #[allow(clippy::large_enum_variant, reason = "a short list of picked files, read once")]
+        #[allow(
+            clippy::large_enum_variant,
+            reason = "a short list of picked files, read once"
+        )]
         enum Part {
             Local(std::path::PathBuf),
             Cloud(api::cloud_attach::CloudFile),
@@ -26387,7 +30132,9 @@ impl qobject::Backend {
             .filter(|l| !l.is_empty())
             .filter_map(|l| match l.strip_prefix("cloud:") {
                 Some(j) => serde_json::from_str(j).ok().map(Part::Cloud),
-                None => Some(Part::Local(std::path::PathBuf::from(l.strip_prefix("file://").unwrap_or(l)))),
+                None => Some(Part::Local(std::path::PathBuf::from(
+                    l.strip_prefix("file://").unwrap_or(l),
+                ))),
             })
             .collect();
         if chat_id.is_empty() || parts.is_empty() {
@@ -26401,7 +30148,16 @@ impl qobject::Backend {
                 Part::Cloud(_) => None,
             })
             .collect();
-        let shared: Vec<String> = parts.iter().filter_map(|p| if let Part::Cloud(f) = p { Some(f.name.clone()) } else { None }).collect();
+        let shared: Vec<String> = parts
+            .iter()
+            .filter_map(|p| {
+                if let Part::Cloud(f) = p {
+                    Some(f.name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
         if !names.is_empty() {
             self.as_mut().set_status_text(QString::from(
                 tr("Uploading %1").replace("%1", &names.join(", ")).as_str(),
@@ -26417,12 +30173,33 @@ impl qobject::Backend {
                         Part::Local(p) => api::files::upload_for_chat(&client, &chat_id, p).await?,
                         // Shared with the chat as Teams does (a channel
                         // post invites no one).
-                        Part::Cloud(f) => api::cloud_attach::send_record(&client, &conversation, f).await?,
+                        Part::Cloud(f) => {
+                            api::cloud_attach::send_record(&client, &conversation, f).await?
+                        }
                     });
                 }
                 match &rich {
-                    Some((html, mentions)) => api::files::send_html_with_files_as(&client, &conversation, html, files, &importance, mentions).await,
-                    None if !importance.is_empty() => api::files::send_with_files_marked(&client, &conversation, &text, files, &importance).await,
+                    Some((html, mentions)) => {
+                        api::files::send_html_with_files_as(
+                            &client,
+                            &conversation,
+                            html,
+                            files,
+                            &importance,
+                            mentions,
+                        )
+                        .await
+                    }
+                    None if !importance.is_empty() => {
+                        api::files::send_with_files_marked(
+                            &client,
+                            &conversation,
+                            &text,
+                            files,
+                            &importance,
+                        )
+                        .await
+                    }
                     None => api::files::send_with_files(&client, &conversation, &text, files).await,
                 }
             }
@@ -26436,7 +30213,8 @@ impl qobject::Backend {
                         this.as_mut().reload_where(&sent_to);
                         // Teams' toast after sending a cloud file.
                         if let Some(name) = shared.first() {
-                            this.as_mut().toast(&tr("You've shared %1").replace("%1", name), "success");
+                            this.as_mut()
+                                .toast(&tr("You've shared %1").replace("%1", name), "success");
                         }
                     }
                     Err(e) => this
@@ -26456,7 +30234,10 @@ impl qobject::Backend {
             serde_json::from_str(&media_json.to_string()).unwrap_or_default();
         // Captioned stickers are pictures we drew, and pasted pictures are
         // the clipboard's: upload them to AMS first.
-        if media.iter().any(|m| (m.kind == "image" || m.kind == "pasted") && m.id.is_empty()) {
+        if media
+            .iter()
+            .any(|m| (m.kind == "image" || m.kind == "pasted") && m.id.is_empty())
+        {
             let chat_id = self.rust().current_chat_id.to_string();
             let editor_html = editor_html.to_string();
             let qt = self.qt_thread();
@@ -26529,7 +30310,12 @@ impl qobject::Backend {
         self.as_mut().run_file_download(file, dir, None);
     }
 
-    fn run_file_download(mut self: Pin<&mut Self>, file: api::files::FileAttachment, dir: std::path::PathBuf, target: Option<std::path::PathBuf>) {
+    fn run_file_download(
+        mut self: Pin<&mut Self>,
+        file: api::files::FileAttachment,
+        dir: std::path::PathBuf,
+        target: Option<std::path::PathBuf>,
+    ) {
         self.as_mut().set_status_text(QString::from(
             teams_cli::i18n::tr_id("Downloading...", "files:k9b1qlyvw").as_str(),
         ));
@@ -26605,9 +30391,18 @@ mod draft_tests {
     #[test]
     fn each_account_keeps_its_own_outbox_and_drafts() {
         let base = std::path::Path::new("/s");
-        assert_eq!(profile_state_path(base, "outbox", None), std::path::Path::new("/s/ost/outbox.json"));
-        assert_eq!(profile_state_path(base, "outbox", Some("test2")), std::path::Path::new("/s/ost/outbox-test2.json"));
-        assert_eq!(profile_state_path(base, "drafts", Some("test3")), std::path::Path::new("/s/ost/drafts-test3.json"));
+        assert_eq!(
+            profile_state_path(base, "outbox", None),
+            std::path::Path::new("/s/ost/outbox.json")
+        );
+        assert_eq!(
+            profile_state_path(base, "outbox", Some("test2")),
+            std::path::Path::new("/s/ost/outbox-test2.json")
+        );
+        assert_eq!(
+            profile_state_path(base, "drafts", Some("test3")),
+            std::path::Path::new("/s/ost/drafts-test3.json")
+        );
     }
 
     #[test]
@@ -26645,10 +30440,15 @@ mod draft_tests {
             },
         );
         let saved = serde_json::to_string(&all).unwrap();
-        assert!(!saved.contains("\"html\":\"\""), "plain drafts leave html out: {saved}");
+        assert!(
+            !saved.contains("\"html\":\"\""),
+            "plain drafts leave html out: {saved}"
+        );
         assert_eq!(parse_drafts(&saved), all);
         // Old and new entries side by side.
-        let mixed = parse_drafts(r#"{"x":["old",1],"y":{"text":"new","html":"<p><i>new</i></p>","time":2}}"#);
+        let mixed = parse_drafts(
+            r#"{"x":["old",1],"y":{"text":"new","html":"<p><i>new</i></p>","time":2}}"#,
+        );
         assert_eq!(mixed["x"].text, "old");
         assert_eq!(mixed["y"].html, "<p><i>new</i></p>");
         assert!(mixed["y"].media.is_empty());
@@ -26662,23 +30462,50 @@ mod draft_tests {
             Draft {
                 text: "mine".into(),
                 time: 7,
-                roam: Some(RoamState { id: "1794831861119".into(), client_message_id: "348".into(), synced: 8 }),
-                conflict: Some(RemoteDraft { id: "1794831900000".into(), text: "theirs".into(), edit_html: "<p>theirs</p>".into(), time: 9, ..Default::default() }),
+                roam: Some(RoamState {
+                    id: "1794831861119".into(),
+                    client_message_id: "348".into(),
+                    synced: 8,
+                }),
+                conflict: Some(RemoteDraft {
+                    id: "1794831900000".into(),
+                    text: "theirs".into(),
+                    edit_html: "<p>theirs</p>".into(),
+                    time: 9,
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
         );
         let saved = serde_json::to_string(&all).unwrap();
-        assert!(!saved.contains("edit_html\":\"\""), "empty edit forms are left out: {saved}");
+        assert!(
+            !saved.contains("edit_html\":\"\""),
+            "empty edit forms are left out: {saved}"
+        );
         assert_eq!(parse_drafts(&saved), all);
     }
 
     #[test]
     fn a_draft_roams_in_teams_sent_form() {
-        let plain = Draft { text: "a < b".into(), ..Default::default() };
+        let plain = Draft {
+            text: "a < b".into(),
+            ..Default::default()
+        };
         assert_eq!(draft_teams_form(&plain).0, api::outbox::plain_html("a < b"));
-        let taken = Draft { text: "hi".into(), edit_html: "<p>hi <b>there</b></p>".into(), ..Default::default() };
-        assert!(draft_teams_form(&taken).0.contains("<b>there</b>"), "{}", draft_teams_form(&taken).0);
-        assert!(same_draft_html("<p>OST&nbsp;draft  probe</p>", "<p>OST draft probe</p>"));
+        let taken = Draft {
+            text: "hi".into(),
+            edit_html: "<p>hi <b>there</b></p>".into(),
+            ..Default::default()
+        };
+        assert!(
+            draft_teams_form(&taken).0.contains("<b>there</b>"),
+            "{}",
+            draft_teams_form(&taken).0
+        );
+        assert!(same_draft_html(
+            "<p>OST&nbsp;draft  probe</p>",
+            "<p>OST draft probe</p>"
+        ));
         assert!(!same_draft_html("<p>a</p>", "<p>b</p>"));
     }
 
@@ -26690,7 +30517,10 @@ mod draft_tests {
     #[test]
     fn preview_leaves_pictures_out() {
         assert_eq!(draft_preview("hi \u{fffc} there"), "hi  there");
-        assert_eq!(draft_preview("A table:\u{fdd0}A1\u{fdd0}B1\u{fdd1}"), "A table: A1 B1 ");
+        assert_eq!(
+            draft_preview("A table:\u{fdd0}A1\u{fdd0}B1\u{fdd1}"),
+            "A table: A1 B1 "
+        );
     }
 }
 
@@ -26717,11 +30547,26 @@ mod toast_tests {
     fn toasts_follow_teams_presence_rule() {
         let none = serde_json::Map::new();
         let d = notify_prefs("{}", &none);
-        assert!(!d.mute_all && d.chat_banners && d.previews && d.during_calls && d.sound && !d.meet_now && d.flash);
+        assert!(
+            !d.mute_all
+                && d.chat_banners
+                && d.previews
+                && d.during_calls
+                && d.sound
+                && !d.meet_now
+                && d.flash
+        );
         assert_eq!(d.seconds, 5);
         let saved = r#"{"props":{"userPersonalSettings":{"toastSettings":{"muteGenericNotifications":"On","Chat":false,"ShowPreviewInToasts":"Off","MuteNotificationsDuringMeetings":"On","HuddleStartedNotification":true},"soundsSettings":{"alertSound":"Off"}}}}"#;
         let p = notify_prefs(saved, &none);
-        assert!(p.mute_all && !p.chat_banners && !p.previews && !p.during_calls && !p.sound && p.meet_now);
+        assert!(
+            p.mute_all
+                && !p.chat_banners
+                && !p.previews
+                && !p.during_calls
+                && !p.sound
+                && p.meet_now
+        );
         assert_eq!(toast_decision("Available", false, false), Toast::Show);
         assert_eq!(toast_decision("Busy", false, false), Toast::Show);
         assert_eq!(toast_decision("DoNotDisturb", false, false), Toast::Drop);
@@ -26798,8 +30643,31 @@ mod tests {
 
 /// Word, PowerPoint and Excel files (Teams' setting names these three).
 fn is_office_file(name: &str) -> bool {
-    let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
-    matches!(ext.as_str(), "doc" | "docx" | "docm" | "dot" | "dotx" | "ppt" | "pptx" | "pptm" | "pps" | "ppsx" | "pot" | "potx" | "xls" | "xlsx" | "xlsm" | "xlsb" | "xlt" | "xltx")
+    let ext = name
+        .rsplit_once('.')
+        .map(|(_, e)| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    matches!(
+        ext.as_str(),
+        "doc"
+            | "docx"
+            | "docm"
+            | "dot"
+            | "dotx"
+            | "ppt"
+            | "pptx"
+            | "pptm"
+            | "pps"
+            | "ppsx"
+            | "pot"
+            | "potx"
+            | "xls"
+            | "xlsx"
+            | "xlsm"
+            | "xlsb"
+            | "xlt"
+            | "xltx"
+    )
 }
 
 /// The desktop's default app for Word files: its .desktop id and name
@@ -26807,12 +30675,19 @@ fn is_office_file(name: &str) -> bool {
 fn office_app() -> Option<(String, String)> {
     static APP: std::sync::OnceLock<Option<(String, String)>> = std::sync::OnceLock::new();
     APP.get_or_init(|| {
-        const DOCX: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-        let home = std::env::var("XDG_DATA_HOME")
-            .ok()
-            .or_else(|| std::env::var("HOME").ok().map(|h| format!("{h}/.local/share")));
-        let dirs = std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
-        let data: Vec<String> = home.into_iter().chain(dirs.split(':').map(str::to_string)).collect();
+        const DOCX: &str =
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        let home = std::env::var("XDG_DATA_HOME").ok().or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .map(|h| format!("{h}/.local/share"))
+        });
+        let dirs =
+            std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
+        let data: Vec<String> = home
+            .into_iter()
+            .chain(dirs.split(':').map(str::to_string))
+            .collect();
         // The chosen default, else the first app that says it opens Word
         // files (the MIME cache xdg-open falls back to).
         let chosen = std::process::Command::new("xdg-mime")
@@ -26823,10 +30698,14 @@ fn office_app() -> Option<(String, String)> {
             .filter(|id| id.ends_with(".desktop"));
         let id = chosen.or_else(|| {
             data.iter()
-                .filter_map(|d| std::fs::read_to_string(format!("{d}/applications/mimeinfo.cache")).ok())
+                .filter_map(|d| {
+                    std::fs::read_to_string(format!("{d}/applications/mimeinfo.cache")).ok()
+                })
                 .find_map(|text| {
-                    text.lines()
-                        .find_map(|l| l.strip_prefix(&format!("{DOCX}=")).and_then(|v| v.split(';').find(|x| !x.is_empty()).map(str::to_string)))
+                    text.lines().find_map(|l| {
+                        l.strip_prefix(&format!("{DOCX}="))
+                            .and_then(|v| v.split(';').find(|x| !x.is_empty()).map(str::to_string))
+                    })
                 })
         })?;
         let name = data
@@ -26855,20 +30734,32 @@ fn system_time_zone() -> String {
     {
         return name;
     }
-    std::fs::read_to_string("/etc/timezone").map(|s| s.trim().to_string()).ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "UTC".into())
+    std::fs::read_to_string("/etc/timezone")
+        .map(|s| s.trim().to_string())
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "UTC".into())
 }
 
 /// ".../zoneinfo/America/Los_Angeles" → "America/Los_Angeles".
 fn zone_from_path(p: &str) -> Option<String> {
-    p.split_once("zoneinfo/").map(|(_, z)| z.trim_start_matches("posix/").to_string()).filter(|z| !z.is_empty())
+    p.split_once("zoneinfo/")
+        .map(|(_, z)| z.trim_start_matches("posix/").to_string())
+        .filter(|z| !z.is_empty())
 }
 
 #[cfg(test)]
 mod time_zone_tests {
     #[test]
     fn zone_names_come_from_the_zoneinfo_link() {
-        assert_eq!(super::zone_from_path("/usr/share/zoneinfo/America/Los_Angeles").as_deref(), Some("America/Los_Angeles"));
-        assert_eq!(super::zone_from_path("../usr/share/zoneinfo/posix/Europe/Berlin").as_deref(), Some("Europe/Berlin"));
+        assert_eq!(
+            super::zone_from_path("/usr/share/zoneinfo/America/Los_Angeles").as_deref(),
+            Some("America/Los_Angeles")
+        );
+        assert_eq!(
+            super::zone_from_path("../usr/share/zoneinfo/posix/Europe/Berlin").as_deref(),
+            Some("Europe/Berlin")
+        );
         assert_eq!(super::zone_from_path("/etc/foo"), None);
     }
 }
@@ -26876,10 +30767,16 @@ mod time_zone_tests {
 /// A device with few resources (Efficiency mode's "Use only when resources
 /// are low"): fewer than 4 processors or less than 8 GB of memory.
 fn low_end_device() -> bool {
-    let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
     let mem_kb = std::fs::read_to_string("/proc/meminfo")
         .ok()
-        .and_then(|m| m.lines().find(|l| l.starts_with("MemTotal:")).and_then(|l| l.split_whitespace().nth(1)?.parse::<u64>().ok()))
+        .and_then(|m| {
+            m.lines()
+                .find(|l| l.starts_with("MemTotal:"))
+                .and_then(|l| l.split_whitespace().nth(1)?.parse::<u64>().ok())
+        })
         .unwrap_or(u64::MAX);
     is_low_end(cores, mem_kb)
 }
@@ -26926,15 +30823,32 @@ mod mark_all_tests {
     use std::collections::HashSet;
     #[test]
     fn mark_all_read_keeps_to_its_app_type() {
-        let unread: Vec<String> = ["19:a@unq.gbl.spaces", "19:meeting_x@thread.v2", "19:c@thread.tacv2", "19:old@thread.skype"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+        let unread: Vec<String> = [
+            "19:a@unq.gbl.spaces",
+            "19:meeting_x@thread.v2",
+            "19:c@thread.tacv2",
+            "19:old@thread.skype",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
         let channels: HashSet<String> = ["19:old@thread.skype".to_string()].into_iter().collect();
-        assert_eq!(super::mark_all_targets("unified", &unread, &channels).len(), 4);
-        assert_eq!(super::mark_all_targets("chat", &unread, &channels), vec!["19:a@unq.gbl.spaces", "19:meeting_x@thread.v2"]);
-        assert_eq!(super::mark_all_targets("channel", &unread, &channels), vec!["19:c@thread.tacv2", "19:old@thread.skype"]);
-        assert_eq!(super::mark_all_targets("split_channel", &unread, &channels).len(), 2);
+        assert_eq!(
+            super::mark_all_targets("unified", &unread, &channels).len(),
+            4
+        );
+        assert_eq!(
+            super::mark_all_targets("chat", &unread, &channels),
+            vec!["19:a@unq.gbl.spaces", "19:meeting_x@thread.v2"]
+        );
+        assert_eq!(
+            super::mark_all_targets("channel", &unread, &channels),
+            vec!["19:c@thread.tacv2", "19:old@thread.skype"]
+        );
+        assert_eq!(
+            super::mark_all_targets("split_channel", &unread, &channels).len(),
+            2
+        );
         assert!(super::mark_all_targets("engage_community", &unread, &channels).is_empty());
     }
 }
@@ -26948,12 +30862,26 @@ mod chat_copilot_gate_tests {
     fn licence_decides_open_copilot() {
         let licensed = serde_json::json!({ "isCopilot": true });
         let s = super::compose_copilot_state(Some(&licensed));
-        assert_eq!((s["chat"].as_bool(), s["channel"].as_bool(), s["meetingChat"].as_bool()), (Some(true), Some(true), Some(true)));
+        assert_eq!(
+            (
+                s["chat"].as_bool(),
+                s["channel"].as_bool(),
+                s["meetingChat"].as_bool()
+            ),
+            (Some(true), Some(true), Some(true))
+        );
         // A post's view (channel L2 header) also needs channels.enableChannelCopilotInL2Header (on).
         assert_eq!(s["channelPost"].as_bool(), Some(true));
         let unlicensed = serde_json::json!({ "isCopilot": false });
         let s = super::compose_copilot_state(Some(&unlicensed));
-        assert_eq!((s["chat"].as_bool(), s["channel"].as_bool(), s["meetingChat"].as_bool()), (Some(false), Some(false), Some(false)));
+        assert_eq!(
+            (
+                s["chat"].as_bool(),
+                s["channel"].as_bool(),
+                s["meetingChat"].as_bool()
+            ),
+            (Some(false), Some(false), Some(false))
+        );
         let s = super::compose_copilot_state(None);
         assert_eq!(s["chat"].as_bool(), Some(false));
     }
@@ -26982,12 +30910,29 @@ async fn exclude_from_capture_once(title: &str) -> anyhow::Result<()> {
     std::fs::write(&path, script)?;
     let conn = zbus::Connection::session().await?;
     let name = format!("ost-exclude-{pid}");
-    let scripting = zbus::Proxy::new(&conn, "org.kde.KWin", "/Scripting", "org.kde.kwin.Scripting").await?;
+    let scripting = zbus::Proxy::new(
+        &conn,
+        "org.kde.KWin",
+        "/Scripting",
+        "org.kde.kwin.Scripting",
+    )
+    .await?;
     let _: Result<bool, _> = scripting.call("unloadScript", &(name.as_str(),)).await;
-    let id: i32 = scripting.call("loadScript", &(path.to_string_lossy().as_ref(), name.as_str())).await?;
+    let id: i32 = scripting
+        .call(
+            "loadScript",
+            &(path.to_string_lossy().as_ref(), name.as_str()),
+        )
+        .await?;
     anyhow::ensure!(id >= 0, "KWin didn't load the script");
     let script_path = format!("/Scripting/Script{id}");
-    let s = zbus::Proxy::new(&conn, "org.kde.KWin", script_path.as_str(), "org.kde.kwin.Script").await?;
+    let s = zbus::Proxy::new(
+        &conn,
+        "org.kde.KWin",
+        script_path.as_str(),
+        "org.kde.kwin.Script",
+    )
+    .await?;
     let () = s.call("run", &()).await?;
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     let _: Result<bool, _> = scripting.call("unloadScript", &(name.as_str(),)).await;
@@ -27004,7 +30949,16 @@ fn picture_blur_hash(path: &str) -> Option<String> {
     let (mut w, mut h) = (0i32, 0i32);
     // SAFETY: a NUL-terminated path, a buffer of `buf.len()` bytes and two
     // live ints; Qt writes at most that many bytes.
-    let ok = unsafe { ost_image_rgba(c.as_ptr(), SIDE, buf.as_mut_ptr(), buf.len(), &mut w, &mut h) };
+    let ok = unsafe {
+        ost_image_rgba(
+            c.as_ptr(),
+            SIDE,
+            buf.as_mut_ptr(),
+            buf.len(),
+            &mut w,
+            &mut h,
+        )
+    };
     if !ok || w <= 0 || h <= 0 {
         return None;
     }

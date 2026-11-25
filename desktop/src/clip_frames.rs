@@ -24,7 +24,13 @@ pub mod qobject {
         /// microphone `mic_id` ("" for the default), muted unless `mic_on`
         /// (the microphone opens now: Qt's encoder waits for audio).
         #[qinvokable]
-        fn prepare(self: Pin<&mut ClipFrames>, mic_id: &QString, mic_on: bool, width: i32, height: i32) -> bool;
+        fn prepare(
+            self: Pin<&mut ClipFrames>,
+            mic_id: &QString,
+            mic_on: bool,
+            width: i32,
+            height: i32,
+        ) -> bool;
         /// Start recording to `path` (a local file), after prepare.
         #[qinvokable]
         fn start(self: Pin<&mut ClipFrames>, path: &QString) -> bool;
@@ -81,7 +87,10 @@ unsafe extern "C" {
         width: i32,
         height: i32,
     ) -> bool;
-    fn ost_clip_frames_start(helper: *mut core::ffi::c_void, path: *const core::ffi::c_char) -> bool;
+    fn ost_clip_frames_start(
+        helper: *mut core::ffi::c_void,
+        path: *const core::ffi::c_char,
+    ) -> bool;
     fn ost_clip_frames_pause(helper: *mut core::ffi::c_void);
     fn ost_clip_frames_resume(helper: *mut core::ffi::c_void);
     fn ost_clip_frames_stop(helper: *mut core::ffi::c_void);
@@ -98,7 +107,13 @@ fn c(s: &QString) -> CString {
 }
 
 impl qobject::ClipFrames {
-    pub fn prepare(self: Pin<&mut Self>, mic_id: &QString, mic_on: bool, width: i32, height: i32) -> bool {
+    pub fn prepare(
+        self: Pin<&mut Self>,
+        mic_id: &QString,
+        mic_on: bool,
+        width: i32,
+        height: i32,
+    ) -> bool {
         let m = c(mic_id);
         unsafe { ost_clip_frames_prepare(helper(self), m.as_ptr(), mic_on, width, height) }
     }
@@ -135,19 +150,29 @@ extern "C" fn ost_clip_frames_recorded(helper: *mut core::ffi::c_void, ms: i64) 
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn ost_clip_frames_stopped(helper: *mut core::ffi::c_void, path: *const core::ffi::c_char) {
+extern "C" fn ost_clip_frames_stopped(
+    helper: *mut core::ffi::c_void,
+    path: *const core::ffi::c_char,
+) {
     if helper.is_null() || path.is_null() {
         return;
     }
-    let p = unsafe { CStr::from_ptr(path) }.to_string_lossy().to_string();
+    let p = unsafe { CStr::from_ptr(path) }
+        .to_string_lossy()
+        .to_string();
     unsafe { item(helper) }.stopped(QString::from(p.as_str()));
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn ost_clip_frames_failed(helper: *mut core::ffi::c_void, message: *const core::ffi::c_char) {
+extern "C" fn ost_clip_frames_failed(
+    helper: *mut core::ffi::c_void,
+    message: *const core::ffi::c_char,
+) {
     if helper.is_null() || message.is_null() {
         return;
     }
-    let m = unsafe { CStr::from_ptr(message) }.to_string_lossy().to_string();
+    let m = unsafe { CStr::from_ptr(message) }
+        .to_string_lossy()
+        .to_string();
     unsafe { item(helper) }.failed(QString::from(m.as_str()));
 }

@@ -61,7 +61,10 @@ pub struct Meeting {
 
 /// Teams' copilotReferenceId for a meeting: SHA-256 of its call id, hex.
 pub fn reference_id(call_id: &str) -> String {
-    Sha256::digest(call_id.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(call_id.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// The launch payload Teams puts in the app's subEntityId (base64 of
@@ -93,7 +96,14 @@ pub fn content_url(m: &Meeting) -> String {
         q.append_pair("OID", &format!("{}@{}", m.user_oid, m.tenant_id))
             .append_pair("hostApp", "hub")
             .append_pair("isanonymous", "true")
-            .append_pair("culture", if m.culture.is_empty() { "en-us" } else { &m.culture });
+            .append_pair(
+                "culture",
+                if m.culture.is_empty() {
+                    "en-us"
+                } else {
+                    &m.culture
+                },
+            );
         if !m.my_site.is_empty() {
             q.append_pair("mysite", &m.my_site);
         }
@@ -101,7 +111,14 @@ pub fn content_url(m: &Meeting) -> String {
             .append_pair("hostClientType", "desktop")
             .append_pair("sessionId", &m.app_session)
             .append_pair("renderingSurface", "copilotSidePanel")
-            .append_pair("theme", if m.theme.is_empty() { "default" } else { &m.theme })
+            .append_pair(
+                "theme",
+                if m.theme.is_empty() {
+                    "default"
+                } else {
+                    &m.theme
+                },
+            )
             // Teams names the user's ring (ECS Segmentation.TeamsRing,
             // "ring3_6" for ost-test1; the ringId OST's context gives apps).
             .append_pair("hostRing", &super::ecs::ring())
@@ -189,7 +206,8 @@ pub fn launch_recap(m: &Meeting, vroom_id: &str, cmmid: &str) -> Value {
     let mc = &mut v["contextualChat"]["contentItems"][0]["meetingContext"];
     mc["sessionType"] = Value::String(entry.into());
     mc["vroomId"] = Value::String(vroom_id.into());
-    v["contextualChat"]["contentItems"][0]["scenarioName"] = Value::String("TeamsMeetingRecapCopilot".into());
+    v["contextualChat"]["contentItems"][0]["scenarioName"] =
+        Value::String("TeamsMeetingRecapCopilot".into());
     v
 }
 
@@ -217,9 +235,14 @@ pub fn launch_search(m: &Meeting, search_session: &str, query: &str, cmmid: &str
     })
     .to_string();
     let mut v = launch(m);
-    v["url"] = Value::String(content_url(m).replacen("/chat?", &format!("/chat/sessionanchor/{reference}?"), 1));
+    v["url"] = Value::String(content_url(m).replacen(
+        "/chat?",
+        &format!("/chat/sessionanchor/{reference}?"),
+        1,
+    ));
     v["context"]["subEntityId"] = Value::String(sub);
-    v["contextualChat"] = json!({ "contentType": "teams", "contentItems": [{ "contextType": "Search" }] });
+    v["contextualChat"] =
+        json!({ "contentType": "teams", "contentItems": [{ "contextType": "Search" }] });
     // Search adds no capabilities of its own (Teams' addConfiguredCapabilities
     // for the Search context): voice input stays.
     v["capabilities"] = json!([]);
@@ -257,22 +280,30 @@ struct Caller<'a> {
 /// conversation: the host settings, the context attributes (module 36414:
 /// SupportedScenario for a chat or channel, HasUnreadMessageTime when the
 /// conversation's unread time is known) and the base64 launch payload.
-fn conversation_sub_entity(caller: &Caller, cmmid: &str, variants: &[String], attributes: &Value) -> String {
+fn conversation_sub_entity(
+    caller: &Caller,
+    cmmid: &str,
+    variants: &[String],
+    attributes: &Value,
+) -> String {
     let mut info = json!({ "scope": caller.scope, "entryPoint": caller.entry_point, "copilotReferenceId": caller.reference });
     if let Some(s) = caller.sub_entry_point {
         info["subEntryPoint"] = json!(s);
     }
-    let mut payload = json!({ "id": "", "scenario": "Default", "chatType": "", "properties": {}, "version": 1 });
+    let mut payload =
+        json!({ "id": "", "scenario": "Default", "chatType": "", "properties": {}, "version": 1 });
     if !cmmid.is_empty() {
         payload["referral"] = json!({ "cmmid": cmmid });
     }
     payload["callerInfo"] = info;
     payload["serverVariants"] = json!(variants);
-    let mut sub = json!({ "hostSettings": { "enableDeeplinks": "true", "focusOnLoad": "Compose" } });
+    let mut sub =
+        json!({ "hostSettings": { "enableDeeplinks": "true", "focusOnLoad": "Compose" } });
     if attributes.as_array().is_some_and(|a| !a.is_empty()) {
         sub["contextAttributes"] = attributes.clone();
     }
-    sub["launchOptionPayload"] = json!(base64::engine::general_purpose::STANDARD.encode(payload.to_string()));
+    sub["launchOptionPayload"] =
+        json!(base64::engine::general_purpose::STANDARD.encode(payload.to_string()));
     sub.to_string()
 }
 
@@ -282,7 +313,9 @@ fn conversation_sub_entity(caller: &Caller, cmmid: &str, variants: &[String], at
 pub fn context_attributes(scenario: &str, unread_ms: Option<i64>) -> Value {
     let mut a = vec![json!({ "key": "SupportedScenario", "value": scenario })];
     if let Some(t) = unread_ms {
-        a.push(json!({ "key": "HasUnreadMessageTime", "value": if t > 0 { "true" } else { "false" } }));
+        a.push(
+            json!({ "key": "HasUnreadMessageTime", "value": if t > 0 { "true" } else { "false" } }),
+        );
     }
     Value::Array(a)
 }
@@ -300,12 +333,28 @@ fn anchored_url(m: &Meeting, reference: &str) -> String {
 /// reference (SHA-256 of its id); once the app is up the host tells it the
 /// chat (`contextualChatChanged`, with the chat's unread time when it had
 /// unread messages) and `updateCapabilities` [disableGPT5].
-pub fn launch_chat(m: &Meeting, chat_id: &str, unread_ms: Option<i64>, cmmid: &str, variants: &[String]) -> Value {
-    let caller = Caller { scope: "Chat", entry_point: "ChatPanel", sub_entry_point: None, reference: reference_id(chat_id) };
+pub fn launch_chat(
+    m: &Meeting,
+    chat_id: &str,
+    unread_ms: Option<i64>,
+    cmmid: &str,
+    variants: &[String],
+) -> Value {
+    let caller = Caller {
+        scope: "Chat",
+        entry_point: "ChatPanel",
+        sub_entry_point: None,
+        reference: reference_id(chat_id),
+    };
     let attributes = context_attributes("ViewChat", unread_ms);
     let mut v = launch(m);
     v["url"] = json!(anchored_url(m, &caller.reference));
-    v["context"]["subEntityId"] = json!(conversation_sub_entity(&caller, cmmid, variants, &attributes));
+    v["context"]["subEntityId"] = json!(conversation_sub_entity(
+        &caller,
+        cmmid,
+        variants,
+        &attributes
+    ));
     let mut chat = json!({ "context": "Chat", "chatId": chat_id });
     if let Some(t) = unread_ms.filter(|t| *t > 0) {
         chat["unreadMessageTime"] = json!(t);
@@ -345,13 +394,27 @@ pub struct ChannelThread {
 /// host then tells the app the thread (`channelContext`, "ViewChannel") and
 /// [disableGPT5].
 pub fn launch_channel(m: &Meeting, t: &ChannelThread, cmmid: &str, variants: &[String]) -> Value {
-    let team = if t.team_in_reference { t.team_id.as_str() } else { "" };
+    let team = if t.team_in_reference {
+        t.team_id.as_str()
+    } else {
+        ""
+    };
     let reference = reference_id(&format!("{team}-{}-{}", t.channel_id, t.reply_chain_id));
-    let caller = Caller { scope: "Channel", entry_point: "ChannelL2", sub_entry_point: None, reference };
+    let caller = Caller {
+        scope: "Channel",
+        entry_point: "ChannelL2",
+        sub_entry_point: None,
+        reference,
+    };
     let attributes = context_attributes("ViewChannel", None);
     let mut v = launch(m);
     v["url"] = json!(anchored_url(m, &caller.reference));
-    v["context"]["subEntityId"] = json!(conversation_sub_entity(&caller, cmmid, variants, &attributes));
+    v["context"]["subEntityId"] = json!(conversation_sub_entity(
+        &caller,
+        cmmid,
+        variants,
+        &attributes
+    ));
     v["contextualChat"] = json!({
         "contentType": "teams",
         "contentItems": [{ "contextType": "Channel", "channelContext": {
@@ -374,12 +437,33 @@ pub fn launch_channel(m: &Meeting, t: &ChannelThread, cmmid: &str, variants: &[S
 /// SHA-256 of the call id; the meeting context's session is the live
 /// meeting's (PrivateViewDuringMeeting) or "Recap", with the recording as
 /// its vroomId, and no capabilities.
-pub fn launch_meeting_chat(m: &Meeting, vroom_id: &str, live: bool, transcript: bool, cmmid: &str, variants: &[String]) -> Value {
-    let entry = if transcript { "ChatPanel" } else { "MeetingChatNoTranscript" };
-    let caller = Caller { scope: "Meeting", entry_point: entry, sub_entry_point: (!transcript).then_some(entry), reference: reference_id(&m.call_id) };
+pub fn launch_meeting_chat(
+    m: &Meeting,
+    vroom_id: &str,
+    live: bool,
+    transcript: bool,
+    cmmid: &str,
+    variants: &[String],
+) -> Value {
+    let entry = if transcript {
+        "ChatPanel"
+    } else {
+        "MeetingChatNoTranscript"
+    };
+    let caller = Caller {
+        scope: "Meeting",
+        entry_point: entry,
+        sub_entry_point: (!transcript).then_some(entry),
+        reference: reference_id(&m.call_id),
+    };
     let mut v = launch(m);
     v["url"] = json!(anchored_url(m, &caller.reference));
-    v["context"]["subEntityId"] = json!(conversation_sub_entity(&caller, cmmid, variants, &json!([])));
+    v["context"]["subEntityId"] = json!(conversation_sub_entity(
+        &caller,
+        cmmid,
+        variants,
+        &json!([])
+    ));
     v["contextualChat"] = json!({
         "contentType": "teams",
         "contentItems": [{
@@ -408,28 +492,61 @@ mod tests {
     use super::*;
 
     fn decode_sub(v: &Value) -> (Value, Value) {
-        let sub: Value = serde_json::from_str(v["context"]["subEntityId"].as_str().unwrap()).unwrap();
-        let payload: Value = serde_json::from_slice(&base64::engine::general_purpose::STANDARD.decode(sub["launchOptionPayload"].as_str().unwrap()).unwrap()).unwrap();
+        let sub: Value =
+            serde_json::from_str(v["context"]["subEntityId"].as_str().unwrap()).unwrap();
+        let payload: Value = serde_json::from_slice(
+            &base64::engine::general_purpose::STANDARD
+                .decode(sub["launchOptionPayload"].as_str().unwrap())
+                .unwrap(),
+        )
+        .unwrap();
         (sub, payload)
     }
 
     #[test]
     fn chat_launch_is_teams_own() {
         // Measured: OST TEST group call's header Copilot on winpc.
-        let variants: Vec<String> = ["feature.enableChatPrefetch", "cdxteamsimplicitlong"].iter().map(|s| s.to_string()).collect();
-        let v = launch_chat(&meeting(), "19:0786033da79d46d5969877f18eb9bcc1@thread.v2", Some(1795036427598), CHAT_PANEL_CMMID, &variants);
+        let variants: Vec<String> = ["feature.enableChatPrefetch", "cdxteamsimplicitlong"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let v = launch_chat(
+            &meeting(),
+            "19:0786033da79d46d5969877f18eb9bcc1@thread.v2",
+            Some(1795036427598),
+            CHAT_PANEL_CMMID,
+            &variants,
+        );
         let r = "caec159e3cf54080815034f4a13c3ecdd10201400fb79874b77c80a3af339be1";
-        assert!(v["url"].as_str().unwrap().starts_with(&format!("https://m365copilotapp.svc.cloud.microsoft/chat/sessionanchor/{r}?OID=")));
+        assert!(v["url"].as_str().unwrap().starts_with(&format!(
+            "https://m365copilotapp.svc.cloud.microsoft/chat/sessionanchor/{r}?OID="
+        )));
         let (sub, payload) = decode_sub(&v);
-        assert_eq!(sub["contextAttributes"], json!([{ "key": "SupportedScenario", "value": "ViewChat" }, { "key": "HasUnreadMessageTime", "value": "true" }]));
-        assert_eq!(payload, json!({ "id": "", "scenario": "Default", "chatType": "", "properties": {}, "version": 1, "referral": { "cmmid": "cmmnho609kr" },
-            "callerInfo": { "scope": "Chat", "entryPoint": "ChatPanel", "copilotReferenceId": r }, "serverVariants": variants }));
-        assert_eq!(v["contextualChat"]["contentItems"][0]["chatContext"], json!({ "context": "Chat", "chatId": "19:0786033da79d46d5969877f18eb9bcc1@thread.v2", "unreadMessageTime": 1795036427598_i64 }));
+        assert_eq!(
+            sub["contextAttributes"],
+            json!([{ "key": "SupportedScenario", "value": "ViewChat" }, { "key": "HasUnreadMessageTime", "value": "true" }])
+        );
+        assert_eq!(
+            payload,
+            json!({ "id": "", "scenario": "Default", "chatType": "", "properties": {}, "version": 1, "referral": { "cmmid": "cmmnho609kr" },
+            "callerInfo": { "scope": "Chat", "entryPoint": "ChatPanel", "copilotReferenceId": r }, "serverVariants": variants })
+        );
+        assert_eq!(
+            v["contextualChat"]["contentItems"][0]["chatContext"],
+            json!({ "context": "Chat", "chatId": "19:0786033da79d46d5969877f18eb9bcc1@thread.v2", "unreadMessageTime": 1795036427598_i64 })
+        );
         assert_eq!(v["capabilities"], json!([{ "name": "disableGPT5" }]));
         // Nothing unread: no unread time.
         let v = launch_chat(&meeting(), "19:x@thread.v2", None, CHAT_PANEL_CMMID, &[]);
-        assert_eq!(v["contextualChat"]["contextAttributes"], json!([{ "key": "SupportedScenario", "value": "ViewChat" }]));
-        assert!(v["contextualChat"]["contentItems"][0]["chatContext"].get("unreadMessageTime").is_none());
+        assert_eq!(
+            v["contextualChat"]["contextAttributes"],
+            json!([{ "key": "SupportedScenario", "value": "ViewChat" }])
+        );
+        assert!(
+            v["contextualChat"]["contentItems"][0]["chatContext"]
+                .get("unreadMessageTime")
+                .is_none()
+        );
     }
 
     #[test]
@@ -444,10 +561,21 @@ mod tests {
         };
         let v = launch_channel(&meeting(), &t, CHANNEL_L2_CMMID, &[]);
         // Measured: the frame's anchor for OST threads test's OST TEST 81 thread.
-        assert!(v["url"].as_str().unwrap().contains("/chat/sessionanchor/73c5697eb7fd8d3af336cb8d0c86fc7e53d9b4d960f7fc8ada3a0952ae2bef74?"));
+        assert!(v["url"].as_str().unwrap().contains(
+            "/chat/sessionanchor/73c5697eb7fd8d3af336cb8d0c86fc7e53d9b4d960f7fc8ada3a0952ae2bef74?"
+        ));
         let (sub, payload) = decode_sub(&v);
-        assert_eq!(sub["contextAttributes"], json!([{ "key": "SupportedScenario", "value": "ViewChannel" }]));
-        assert_eq!((payload["callerInfo"]["scope"].as_str(), payload["callerInfo"]["entryPoint"].as_str()), (Some("Channel"), Some("ChannelL2")));
+        assert_eq!(
+            sub["contextAttributes"],
+            json!([{ "key": "SupportedScenario", "value": "ViewChannel" }])
+        );
+        assert_eq!(
+            (
+                payload["callerInfo"]["scope"].as_str(),
+                payload["callerInfo"]["entryPoint"].as_str()
+            ),
+            (Some("Channel"), Some("ChannelL2"))
+        );
         let c = &v["contextualChat"]["contentItems"][0];
         assert_eq!(c["contextType"], "Channel");
         assert_eq!(c["channelContext"]["teamId"], t.team_id.as_str());
@@ -468,11 +596,16 @@ mod tests {
             team_in_reference: true,
         };
         let v = launch_channel(&meeting(), &t, CHANNEL_L2_CMMID, &[]);
-        assert!(v["url"].as_str().unwrap().contains("/chat/sessionanchor/a375eae6b9882b4c9e417115f0f2e0a8c76312fb8d16c6283db259045a75130a?"));
+        assert!(v["url"].as_str().unwrap().contains(
+            "/chat/sessionanchor/a375eae6b9882b4c9e417115f0f2e0a8c76312fb8d16c6283db259045a75130a?"
+        ));
         let (_, payload) = decode_sub(&v);
         assert_eq!(payload["referral"]["cmmid"], "cmmce9gzagp");
         assert_eq!(payload["callerInfo"]["entryPoint"], "ChannelL2");
-        assert_eq!(v["contextualChat"]["contentItems"][0]["channelContext"]["groupId"], "1fac3ae3-c9c0-4ddb-90bb-58f52209c181");
+        assert_eq!(
+            v["contextualChat"]["contentItems"][0]["channelContext"]["groupId"],
+            "1fac3ae3-c9c0-4ddb-90bb-58f52209c181"
+        );
     }
 
     #[test]
@@ -480,19 +613,37 @@ mod tests {
         let mut m = meeting();
         m.call_id = "26943b81-750d-4061-abcb-3681fb8b4122".into();
         let v = launch_meeting_chat(&m, "SPO_x_01T", false, true, MEETING_CHAT_PANEL_CMMID, &[]);
-        assert!(v["url"].as_str().unwrap().contains("/chat/sessionanchor/2bc77d8763fe657bdef3fe99bbaa30cb3ba852aa44d0b674c90f7a28992063dc?"));
+        assert!(v["url"].as_str().unwrap().contains(
+            "/chat/sessionanchor/2bc77d8763fe657bdef3fe99bbaa30cb3ba852aa44d0b674c90f7a28992063dc?"
+        ));
         let (sub, payload) = decode_sub(&v);
         assert!(sub.get("contextAttributes").is_none());
-        assert_eq!(payload["callerInfo"], json!({ "scope": "Meeting", "entryPoint": "ChatPanel", "copilotReferenceId": reference_id(&m.call_id) }));
+        assert_eq!(
+            payload["callerInfo"],
+            json!({ "scope": "Meeting", "entryPoint": "ChatPanel", "copilotReferenceId": reference_id(&m.call_id) })
+        );
         assert_eq!(payload["serverVariants"], json!([]));
         let mc = &v["contextualChat"]["contentItems"][0]["meetingContext"];
-        assert_eq!((mc["sessionType"].as_str(), mc["vroomId"].as_str(), mc["eventId"].as_str()), (Some("Recap"), Some("SPO_x_01T"), Some("")));
+        assert_eq!(
+            (
+                mc["sessionType"].as_str(),
+                mc["vroomId"].as_str(),
+                mc["eventId"].as_str()
+            ),
+            (Some("Recap"), Some("SPO_x_01T"), Some(""))
+        );
         assert!(mc.get("isTranscriptRunningDuringMeeting").is_none());
         assert_eq!(v["capabilities"], json!([]));
         let v = launch_meeting_chat(&m, "", true, false, MEETING_CHAT_NO_TRANSCRIPT_CMMID, &[]);
         let (_, payload) = decode_sub(&v);
-        assert_eq!(payload["callerInfo"]["subEntryPoint"], "MeetingChatNoTranscript");
-        assert_eq!(v["contextualChat"]["contentItems"][0]["meetingContext"]["sessionType"], "PrivateViewDuringMeeting");
+        assert_eq!(
+            payload["callerInfo"]["subEntryPoint"],
+            "MeetingChatNoTranscript"
+        );
+        assert_eq!(
+            v["contextualChat"]["contentItems"][0]["meetingContext"]["sessionType"],
+            "PrivateViewDuringMeeting"
+        );
     }
 
     fn meeting() -> Meeting {
@@ -518,14 +669,22 @@ mod tests {
     #[test]
     fn the_reference_is_the_call_ids_hash() {
         // Measured: this call's copilotReferenceId in Teams' launch payload.
-        assert_eq!(reference_id("58ff6acc-d237-4fe8-a41a-f228efde81f1"), "0f8806193913b2cf161b4626f94ae72a0089671aeebaed0a42013e628eeba16c");
+        assert_eq!(
+            reference_id("58ff6acc-d237-4fe8-a41a-f228efde81f1"),
+            "0f8806193913b2cf161b4626f94ae72a0089671aeebaed0a42013e628eeba16c"
+        );
     }
 
     #[test]
     fn the_payload_is_teams_own() {
         // Teams' payload for that call, byte for byte.
         let teams = "eyJpZCI6IiIsInNjZW5hcmlvIjoiRGVmYXVsdCIsImNoYXRUeXBlIjoiIiwicHJvcGVydGllcyI6e30sInZlcnNpb24iOjEsInJlZmVycmFsIjp7ImNtbWlkIjoiY21tMzVnMDRxYnMifSwiY2FsbGVySW5mbyI6eyJzY29wZSI6Ik1lZXRpbmciLCJlbnRyeVBvaW50IjoiUHJpdmF0ZVZpZXdEdXJpbmdNZWV0aW5nIiwiY29waWxvdFJlZmVyZW5jZUlkIjoiMGY4ODA2MTkzOTEzYjJjZjE2MWI0NjI2Zjk0YWU3MmEwMDg5NjcxYWVlYmFlZDBhNDIwMTNlNjI4ZWViYTE2YyJ9LCJzZXJ2ZXJWYXJpYW50cyI6W119";
-        let decode = |s: &str| serde_json::from_slice::<Value>(&base64::engine::general_purpose::STANDARD.decode(s).unwrap()).unwrap();
+        let decode = |s: &str| {
+            serde_json::from_slice::<Value>(
+                &base64::engine::general_purpose::STANDARD.decode(s).unwrap(),
+            )
+            .unwrap()
+        };
         assert_eq!(decode(&launch_payload(&meeting())), decode(teams));
     }
 
@@ -534,33 +693,70 @@ mod tests {
         let m = meeting();
         let u = content_url(&m);
         assert!(u.starts_with("https://m365copilotapp.svc.cloud.microsoft/chat?OID=4287e791-1b98-4963-8b94-281c50472683%402716d134"));
-        assert!(u.contains("renderingSurface=copilotSidePanel") && u.contains("mysite=scnetsolutions-my.sharepoint.com"));
+        assert!(
+            u.contains("renderingSurface=copilotSidePanel")
+                && u.contains("mysite=scnetsolutions-my.sharepoint.com")
+        );
         // Teams names the ring between the theme and the parent session
         // ("general" until the ECS settings are in).
         assert!(u.contains("&theme=default&hostRing=general&parentSessionId=s0"));
         let c = contextual_chat(&m);
-        assert_eq!(c["contentItems"][0]["meetingContext"]["organizerId"], "4287e791-1b98-4963-8b94-281c50472683@2716d134-5614-4856-a48d-2002edd9a570");
-        assert_eq!(c["contentItems"][0]["meetingContext"]["isTranscriptRunningDuringMeeting"], true);
-        assert_eq!(c["contentItems"][0]["scenarioName"], "TeamsMeetingSidepaneWorkCopilot");
+        assert_eq!(
+            c["contentItems"][0]["meetingContext"]["organizerId"],
+            "4287e791-1b98-4963-8b94-281c50472683@2716d134-5614-4856-a48d-2002edd9a570"
+        );
+        assert_eq!(
+            c["contentItems"][0]["meetingContext"]["isTranscriptRunningDuringMeeting"],
+            true
+        );
+        assert_eq!(
+            c["contentItems"][0]["scenarioName"],
+            "TeamsMeetingSidepaneWorkCopilot"
+        );
         let sub: Value = serde_json::from_str(&sub_entity_id(&m)).unwrap();
         assert_eq!(sub["hostSettings"]["focusOnLoad"], "Compose");
-        assert_eq!(launch(&m)["context"]["renderingSurface"], "copilotSidePanel");
+        assert_eq!(
+            launch(&m)["context"]["renderingSurface"],
+            "copilotSidePanel"
+        );
         assert_eq!(launch(&m)["context"]["appIconPosition"], -17);
     }
     #[test]
     fn search_launch_anchors_on_the_session() {
         let m = meeting();
-        let v = launch_search(&m, "session-1", "what meetings do I have today", "cmmi7lmhneb");
+        let v = launch_search(
+            &m,
+            "session-1",
+            "what meetings do I have today",
+            "cmmi7lmhneb",
+        );
         let r = reference_id("session-1");
-        assert!(v["url"].as_str().unwrap().starts_with(&format!("https://m365copilotapp.svc.cloud.microsoft/chat/sessionanchor/{r}?OID=")));
-        let sub: Value = serde_json::from_str(v["context"]["subEntityId"].as_str().unwrap()).unwrap();
-        let payload: Value = serde_json::from_slice(&base64::engine::general_purpose::STANDARD.decode(sub["launchOptionPayload"].as_str().unwrap()).unwrap()).unwrap();
+        assert!(v["url"].as_str().unwrap().starts_with(&format!(
+            "https://m365copilotapp.svc.cloud.microsoft/chat/sessionanchor/{r}?OID="
+        )));
+        let sub: Value =
+            serde_json::from_str(v["context"]["subEntityId"].as_str().unwrap()).unwrap();
+        let payload: Value = serde_json::from_slice(
+            &base64::engine::general_purpose::STANDARD
+                .decode(sub["launchOptionPayload"].as_str().unwrap())
+                .unwrap(),
+        )
+        .unwrap();
         assert_eq!(payload["callerInfo"]["scope"], "Search");
-        assert_eq!(payload["callerInfo"]["entryPoint"], "SearchAutosuggestAskCopilot");
+        assert_eq!(
+            payload["callerInfo"]["entryPoint"],
+            "SearchAutosuggestAskCopilot"
+        );
         assert_eq!(payload["callerInfo"]["copilotReferenceId"], r.as_str());
         assert_eq!(payload["referral"]["cmmid"], "cmmi7lmhneb");
-        assert_eq!(v["contextualChat"]["contentItems"][0]["contextType"], "Search");
+        assert_eq!(
+            v["contextualChat"]["contentItems"][0]["contextType"],
+            "Search"
+        );
         assert_eq!(v["prompt"]["promptText"], "what meetings do I have today");
-        assert_eq!(v["prompt"]["queryAnnotations"][0]["messageAnnotationMetadata"]["searchType"], "AllTab");
+        assert_eq!(
+            v["prompt"]["queryAnnotations"][0]["messageAnnotationMetadata"]["searchType"],
+            "AllTab"
+        );
     }
 }

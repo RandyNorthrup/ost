@@ -59,7 +59,8 @@ struct Signal {
 
 #[cfg(feature = "video")]
 fn signal() -> std::sync::MutexGuard<'static, Signal> {
-    static SIGNAL: std::sync::LazyLock<std::sync::Mutex<Signal>> = std::sync::LazyLock::new(Default::default);
+    static SIGNAL: std::sync::LazyLock<std::sync::Mutex<Signal>> =
+        std::sync::LazyLock::new(Default::default);
     SIGNAL.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -77,7 +78,10 @@ static NEXT_DUE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::ne
 /// the first call in the process).
 pub fn now_ms() -> u64 {
     static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-    START.get_or_init(std::time::Instant::now).elapsed().as_millis() as u64
+    START
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_millis() as u64
 }
 
 /// Detection on or off: on while you are a signer in Sign language mode
@@ -127,7 +131,9 @@ pub fn push_frame(i420: &[u8], width: u32, height: u32, t_ms: u64) {
         return;
     }
     let (w, h) = (width as usize, height as usize);
-    let Some(i420) = i420.get(..w * h + 2 * (w / 2) * (h / 2)) else { return };
+    let Some(i420) = i420.get(..w * h + 2 * (w / 2) * (h / 2)) else {
+        return;
+    };
     let _ = worker.try_send(Frame {
         i420: i420.to_vec(),
         width,
@@ -151,18 +157,22 @@ pub fn tick(now_ms: u64) -> Vec<SignMessage> {
 #[cfg(feature = "video")]
 fn start_worker(mut detector: SignDetector) -> anyhow::Result<()> {
     let (tx, rx) = std::sync::mpsc::sync_channel::<Frame>(0);
-    std::thread::Builder::new().name("sign-detection".into()).spawn(move || {
-        for f in rx {
-            let signing = detector.push_frame(&f.i420, f.width, f.height, f.t_ms);
-            NEXT_DUE.store(detector.next_eval_ms(), Ordering::Relaxed);
-            let mut s = signal();
-            // A frame taken before detection was turned off doesn't count.
-            if s.on {
-                s.aggregator.push(signing, f.t_ms);
+    std::thread::Builder::new()
+        .name("sign-detection".into())
+        .spawn(move || {
+            for f in rx {
+                let signing = detector.push_frame(&f.i420, f.width, f.height, f.t_ms);
+                NEXT_DUE.store(detector.next_eval_ms(), Ordering::Relaxed);
+                let mut s = signal();
+                // A frame taken before detection was turned off doesn't count.
+                if s.on {
+                    s.aggregator.push(signing, f.t_ms);
+                }
             }
-        }
-    })?;
-    WORKER.set(tx).map_err(|_| anyhow::anyhow!("the sign language detection worker is already running"))
+        })?;
+    WORKER
+        .set(tx)
+        .map_err(|_| anyhow::anyhow!("the sign language detection worker is already running"))
 }
 
 /// The cached model's path under OST's cache folder (`~/.cache/ost`).
@@ -173,7 +183,10 @@ pub fn model_path(cache_dir: &Path) -> PathBuf {
 #[cfg(any(feature = "video", test))]
 fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
-    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// The cached model, when it's there and its hash checks out (a file that
@@ -199,7 +212,10 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     use std::io::Write;
     let dir = path.parent().unwrap_or(Path::new("."));
     std::fs::create_dir_all(dir)?;
-    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("download");
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("download");
     let tmp = dir.join(format!(".{name}.{}.part", std::process::id()));
     let result = (|| {
         let mut f = std::fs::File::create(&tmp)?;
@@ -219,7 +235,10 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
 #[cfg(feature = "video")]
 async fn download(path: &Path) -> anyhow::Result<Vec<u8>> {
     use anyhow::Context;
-    tracing::info!(url = MODEL_URL, "sign language detection model: downloading");
+    tracing::info!(
+        url = MODEL_URL,
+        "sign language detection model: downloading"
+    );
     let started = std::time::Instant::now();
     let mut resp = reqwest::Client::builder()
         .user_agent(concat!("OST/", env!("CARGO_PKG_VERSION")))
@@ -230,10 +249,21 @@ async fn download(path: &Path) -> anyhow::Result<Vec<u8>> {
         .context("sign language detection model request")?
         .error_for_status()
         .context("sign language detection model")?;
-    let mut bytes = Vec::with_capacity(resp.content_length().unwrap_or(0).min(MODEL_MAX_BYTES as u64) as usize);
-    while let Some(chunk) = resp.chunk().await.context("sign language detection model download")? {
+    let mut bytes = Vec::with_capacity(
+        resp.content_length()
+            .unwrap_or(0)
+            .min(MODEL_MAX_BYTES as u64) as usize,
+    );
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .context("sign language detection model download")?
+    {
         bytes.extend_from_slice(&chunk);
-        anyhow::ensure!(bytes.len() <= MODEL_MAX_BYTES, "the sign language detection model download is too large");
+        anyhow::ensure!(
+            bytes.len() <= MODEL_MAX_BYTES,
+            "the sign language detection model download is too large"
+        );
     }
     let (bytes, got) = tokio::task::spawn_blocking(move || {
         let got = sha256_hex(&bytes);
@@ -247,7 +277,12 @@ async fn download(path: &Path) -> anyhow::Result<Vec<u8>> {
     let path = path.to_path_buf();
     let (path, bytes) = tokio::task::spawn_blocking(move || {
         write_atomic(&path, &bytes)
-            .with_context(|| format!("saving the sign language detection model to {}", path.display()))
+            .with_context(|| {
+                format!(
+                    "saving the sign language detection model to {}",
+                    path.display()
+                )
+            })
             .map(|()| (path, bytes))
     })
     .await??;
@@ -299,9 +334,14 @@ mod tests {
     fn sign_detection_model_name_and_hash() {
         #[cfg(feature = "video")]
         assert_eq!(MODEL_FILE, ost_vfx::sign_detection::MODEL_FILE);
-        assert!(MODEL_URL.starts_with("https://huggingface.co/") && MODEL_URL.contains("/resolve/"));
+        assert!(
+            MODEL_URL.starts_with("https://huggingface.co/") && MODEL_URL.contains("/resolve/")
+        );
         assert_eq!(MODEL_SHA256.len(), 64);
-        assert_eq!(sha256_hex(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 
     #[test]
@@ -311,7 +351,11 @@ mod tests {
         write_atomic(&path, b"not the model").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"not the model");
         // No temporary file is left behind.
-        let left: Vec<_> = std::fs::read_dir(path.parent().unwrap()).unwrap().flatten().map(|e| e.file_name()).collect();
+        let left: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
         assert_eq!(left, vec![std::ffi::OsString::from(MODEL_FILE)]);
         // A file that doesn't match the hash isn't used, and is removed.
         assert!(read_cached(&path).is_none());

@@ -5,13 +5,23 @@
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let region = args.iter().find(|a| !a.starts_with("--")).cloned().unwrap_or_else(|| "us".into());
+    let region = args
+        .iter()
+        .find(|a| !a.starts_with("--"))
+        .cloned()
+        .unwrap_or_else(|| "us".into());
     let list = teams_cli::api::recaps::podcasts(&region).await?;
     let mut test = Vec::new();
     for p in list["items"].as_array().into_iter().flatten() {
-        let subject = p.pointer("/params/eventsWithTranscripts/0/event/subject").and_then(|s| s.as_str()).unwrap_or_default();
+        let subject = p
+            .pointer("/params/eventsWithTranscripts/0/event/subject")
+            .and_then(|s| s.as_str())
+            .unwrap_or_default();
         let id = p["id"].as_str().unwrap_or_default();
-        println!("{id} {} {subject}", p["status"].as_str().unwrap_or_default());
+        println!(
+            "{id} {} {subject}",
+            p["status"].as_str().unwrap_or_default()
+        );
         if subject.starts_with("OST TEST") && !id.is_empty() {
             test.push(id.to_string());
         }

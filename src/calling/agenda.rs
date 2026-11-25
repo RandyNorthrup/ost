@@ -28,7 +28,9 @@ pub const OPEN_DISCUSSION: &str = "Open discussion";
 pub const UNNAMED: &str = "Unnamed Topic";
 
 pub fn duration(s: &Value) -> i64 {
-    s.get("originalDuration").and_then(Value::as_f64).unwrap_or(0.0) as i64
+    s.get("originalDuration")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0) as i64
 }
 
 pub fn title(s: &Value) -> &str {
@@ -67,7 +69,9 @@ pub fn discussed(s: &Value) -> bool {
     if let Some(v) = s.get("isDiscussed").and_then(Value::as_bool) {
         return v;
     }
-    s.get("relevanceScore").and_then(Value::as_f64).is_some_and(|r| r >= DISCUSSED_SCORE)
+    s.get("relevanceScore")
+        .and_then(Value::as_f64)
+        .is_some_and(|r| r >= DISCUSSED_SCORE)
 }
 
 fn is_open_discussion(s: &Value) -> bool {
@@ -122,8 +126,16 @@ fn set_minutes(sections: &[Value], mins: &[i64]) -> Vec<Value> {
 /// How many minutes Add topic can free (Teams' `In`): at most 5, from
 /// Open discussion and from every other topic down to 1 minute.
 pub fn add_available(sections: &[Value]) -> i64 {
-    let open: i64 = sections.iter().filter(|s| is_open_discussion(s)).map(|s| minutes(duration(s))).sum();
-    let others: i64 = sections.iter().filter(|s| !is_open_discussion(s)).map(|s| minutes(duration(s)) - 1).sum();
+    let open: i64 = sections
+        .iter()
+        .filter(|s| is_open_discussion(s))
+        .map(|s| minutes(duration(s)))
+        .sum();
+    let others: i64 = sections
+        .iter()
+        .filter(|s| !is_open_discussion(s))
+        .map(|s| minutes(duration(s)) - 1)
+        .sum();
     (open + others).min(NEW_TOPIC_MINUTES)
 }
 
@@ -139,10 +151,19 @@ pub fn add_topic(sections: &[Value], elapsed_ms: i64) -> Option<(Vec<Value>, usi
         return None;
     }
     let ran = elapsed_within(sections, elapsed_ms);
-    let ran_min: Vec<i64> = ran.iter().map(|e| (*e as f64 / MINUTE as f64).ceil() as i64).collect();
+    let ran_min: Vec<i64> = ran
+        .iter()
+        .map(|e| (*e as f64 / MINUTE as f64).ceil() as i64)
+        .collect();
     let mut mins: Vec<i64> = sections
         .iter()
-        .map(|s| if is_open_discussion(s) { (duration(s) as f64 / MINUTE as f64).round() as i64 } else { minutes(duration(s)) })
+        .map(|s| {
+            if is_open_discussion(s) {
+                (duration(s) as f64 / MINUTE as f64).round() as i64
+            } else {
+                minutes(duration(s))
+            }
+        })
         .collect();
     let open = sections.iter().position(is_open_discussion);
     let mut taken = 0;
@@ -157,7 +178,8 @@ pub fn add_topic(sections: &[Value], elapsed_ms: i64) -> Option<(Vec<Value>, usi
                     .filter(|i| mins[*i] > floor(*i))
                     .max_by_key(|i| (mins[*i], std::cmp::Reverse(*i)))
             };
-            pick(&|i| ran_min[i].max(NEW_TOPIC_MINUTES), true).or_else(|| pick(&|i| ran_min[i].max(1), false))
+            pick(&|i| ran_min[i].max(NEW_TOPIC_MINUTES), true)
+                .or_else(|| pick(&|i| ran_min[i].max(1), false))
         };
         let Some(d) = donor else { break };
         mins[d] -= 1;
@@ -198,8 +220,12 @@ pub fn delete_topic(sections: &[Value], index: usize) -> Option<Vec<Value>> {
             .filter(|i| !discussed(&rest[*i]) && !is_open_discussion(&rest[*i]) && room(*i, &mins))
             .min_by_key(|i| (mins[*i], *i));
         let before = (0..index.min(rest.len())).rev().find(|i| room(*i, &mins));
-        let any = (0..rest.len()).filter(|i| room(*i, &mins)).min_by_key(|i| (mins[*i], *i));
-        let Some(t) = undiscussed.or(before).or(any) else { break };
+        let any = (0..rest.len())
+            .filter(|i| room(*i, &mins))
+            .min_by_key(|i| (mins[*i], *i));
+        let Some(t) = undiscussed.or(before).or(any) else {
+            break;
+        };
         mins[t] += 1;
     }
     Some(set_minutes(&rest, &mins))
@@ -223,10 +249,13 @@ pub fn rename(sections: &[Value], index: usize, draft: &str) -> Option<Vec<Value
     if taken.contains(&t.to_lowercase()) {
         // "Budget 2" when "Budget" exists counts from "Budget".
         let base = match t.rsplit_once(' ') {
-            Some((b, n)) if n.parse::<u32>().is_ok() && taken.contains(&b.to_lowercase()) => b.to_string(),
+            Some((b, n)) if n.parse::<u32>().is_ok() && taken.contains(&b.to_lowercase()) => {
+                b.to_string()
+            }
             _ => t.clone(),
         };
-        if let Some(n) = (2..=999).find(|n| !taken.contains(&format!("{base} {n}").to_lowercase())) {
+        if let Some(n) = (2..=999).find(|n| !taken.contains(&format!("{base} {n}").to_lowercase()))
+        {
             t = format!("{base} {n}");
         }
     }
@@ -250,7 +279,10 @@ pub fn toggle_discussed(sections: &[Value], index: usize) -> Option<Vec<Value>> 
     // With a lifecycle stage, Teams marks it Done (the person's override
     // too) or puts it back to NotStarted, dropping the override.
     if staged && let Some(o) = out[index].as_object_mut() {
-        o.insert("topicLifecycleStage".into(), json!(if v { DONE } else { NOT_STARTED }));
+        o.insert(
+            "topicLifecycleStage".into(),
+            json!(if v { DONE } else { NOT_STARTED }),
+        );
         if v {
             o.insert("topicLifecycleUserOverride".into(), json!(DONE));
         } else {
@@ -281,7 +313,10 @@ pub fn resize(sections: &[Value], divider: usize, delta_ms: i64) -> Option<Vec<V
     if divider + 1 >= sections.len() {
         return None;
     }
-    let mut mins: Vec<i64> = sections.iter().map(|s| minutes(duration(s)).min(MAX_MINUTES)).collect();
+    let mut mins: Vec<i64> = sections
+        .iter()
+        .map(|s| minutes(duration(s)).min(MAX_MINUTES))
+        .collect();
     let steps = (delta_ms as f64 / MINUTE as f64).round() as i64;
     let (grow, donors): (usize, Vec<usize>) = if steps >= 0 {
         (divider, (divider + 1..sections.len()).collect())
@@ -292,7 +327,9 @@ pub fn resize(sections: &[Value], divider: usize, delta_ms: i64) -> Option<Vec<V
         if mins[grow] >= MAX_MINUTES {
             break;
         }
-        let Some(d) = donors.iter().copied().find(|d| mins[*d] > 1) else { break };
+        let Some(d) = donors.iter().copied().find(|d| mins[*d] > 1) else {
+            break;
+        };
         mins[d] -= 1;
         mins[grow] += 1;
     }
@@ -341,7 +378,9 @@ mod tests {
     use super::*;
 
     fn agenda(spec: &[(&str, i64)]) -> Vec<Value> {
-        spec.iter().map(|(t, m)| json!({"title": t, "originalDuration": m * MINUTE})).collect()
+        spec.iter()
+            .map(|(t, m)| json!({"title": t, "originalDuration": m * MINUTE}))
+            .collect()
     }
 
     fn mins(s: &[Value]) -> Vec<i64> {
@@ -351,8 +390,12 @@ mod tests {
     #[test]
     fn discussed_takes_the_first_set_flag() {
         assert!(discussed(&json!({"relevanceScore": 3})));
-        assert!(!discussed(&json!({"relevanceScore": 3, "isDiscussed": false})));
-        assert!(discussed(&json!({"isDiscussed": false, "topicRelevanceUserOverride": true})));
+        assert!(!discussed(
+            &json!({"relevanceScore": 3, "isDiscussed": false})
+        ));
+        assert!(discussed(
+            &json!({"isDiscussed": false, "topicRelevanceUserOverride": true})
+        ));
         assert!(!discussed(&json!({})));
     }
 
@@ -408,7 +451,9 @@ mod tests {
 
     #[test]
     fn lifecycle_stage_decides_discussed_and_is_toggled() {
-        let s = vec![json!({"title": "A", "originalDuration": 300000, "isDiscussed": true, "topicLifecycleStage": "NotStarted"})];
+        let s = vec![
+            json!({"title": "A", "originalDuration": 300000, "isDiscussed": true, "topicLifecycleStage": "NotStarted"}),
+        ];
         assert!(!discussed(&s[0]));
         let done = toggle_discussed(&s, 0).unwrap();
         assert_eq!(done[0]["topicLifecycleStage"], json!("Done"));
@@ -419,9 +464,13 @@ mod tests {
         assert!(back[0].get("topicLifecycleUserOverride").is_none());
         assert_eq!(back[0]["isDiscussed"], json!(false));
         // The person's override wins over the Facilitator's stage.
-        assert!(discussed(&json!({"topicLifecycleStage": "InProgress", "topicLifecycleUserOverride": "Done"})));
+        assert!(discussed(
+            &json!({"topicLifecycleStage": "InProgress", "topicLifecycleUserOverride": "Done"})
+        ));
         // A stage Teams doesn't know: the older rule.
-        assert!(discussed(&json!({"topicLifecycleStage": "InProgress", "isDiscussed": true})));
+        assert!(discussed(
+            &json!({"topicLifecycleStage": "InProgress", "isDiscussed": true})
+        ));
     }
 
     #[test]
@@ -445,11 +494,16 @@ mod tests {
 
     #[test]
     fn edits_publish_the_whole_agenda() {
-        let t = Timer(json!({"state": "InProgress", "remainingDuration": 600000, "sections": agenda(&[("A", 10)])}));
+        let t = Timer(
+            json!({"state": "InProgress", "remainingDuration": 600000, "sections": agenda(&[("A", 10)])}),
+        );
         let grown = with_sections(&t, agenda(&[("A", 12)]));
         assert_eq!(grown.remaining_ms(), 720000);
         let c = Timer(json!({"state": "Cancelled", "remainingDuration": 0, "sections": []}));
-        assert_eq!(with_sections(&c, agenda(&[("A", 7)])).remaining_ms(), 420000);
+        assert_eq!(
+            with_sections(&c, agenda(&[("A", 7)])).remaining_ms(),
+            420000
+        );
         let gone = cancel(&grown);
         assert_eq!(gone.state(), "Cancelled");
         assert_eq!(gone.0["sections"], json!([]));

@@ -348,10 +348,18 @@ fn main() {
                     continue;
                 }
                 println!("cargo:rerun-if-changed={}", cat.path().display());
-                for f in std::fs::read_dir(cat.path()).into_iter().flatten().flatten() {
+                for f in std::fs::read_dir(cat.path())
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                {
                     let p = f.path();
                     if p.extension().and_then(|e| e.to_str()) == Some("md") {
-                        let rel = format!("{}/{}", cat.file_name().to_string_lossy(), f.file_name().to_string_lossy());
+                        let rel = format!(
+                            "{}/{}",
+                            cat.file_name().to_string_lossy(),
+                            f.file_name().to_string_lossy()
+                        );
                         files.push((rel, std::fs::canonicalize(&p).expect("help article")));
                     }
                 }
@@ -360,10 +368,20 @@ fn main() {
         files.sort();
         let list: String = files
             .iter()
-            .map(|(rel, abs)| format!("    ({rel:?}, include_str!({:?})),\n", abs.display().to_string()))
+            .map(|(rel, abs)| {
+                format!(
+                    "    ({rel:?}, include_str!({:?})),\n",
+                    abs.display().to_string()
+                )
+            })
             .collect();
-        let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR")).join("help_files.rs");
-        std::fs::write(out, format!("pub static FILES: &[(&str, &str)] = &[\n{list}];\n")).expect("help_files.rs");
+        let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"))
+            .join("help_files.rs");
+        std::fs::write(
+            out,
+            format!("pub static FILES: &[(&str, &str)] = &[\n{list}];\n"),
+        )
+        .expect("help_files.rs");
     }
     resources.sort();
     let module = QmlModule::new("com.ost.desktop")
@@ -400,8 +418,13 @@ fn main() {
         .qt_module("Multimedia")
         .qrc_resources(resources)
         .qrc(&shader_qrc);
-    let builder = if webengine.is_none() { builder.qt_module("WebEngineQuick") } else { builder };
-    let webengine_includes: Vec<std::path::PathBuf> = webengine.map(|l| l.include_paths).unwrap_or_default();
+    let builder = if webengine.is_none() {
+        builder.qt_module("WebEngineQuick")
+    } else {
+        builder
+    };
+    let webengine_includes: Vec<std::path::PathBuf> =
+        webengine.map(|l| l.include_paths).unwrap_or_default();
     // SAFETY: only adds source files and include paths to the C++ build.
     let builder = unsafe {
         builder.cc_builder(|cc| {
@@ -437,7 +460,13 @@ fn main() {
     // include path (openSUSE: /usr/include/ffmpeg), as its pkg-config says.
     let ffmpeg_includes: Vec<String> = std::process::Command::new("pkg-config")
         .arg("--cflags-only-I")
-        .args(["libavfilter", "libavformat", "libavcodec", "libavutil", "libswscale"])
+        .args([
+            "libavfilter",
+            "libavformat",
+            "libavcodec",
+            "libavutil",
+            "libswscale",
+        ])
         .output()
         .ok()
         .filter(|o| o.status.success())
@@ -467,7 +496,11 @@ fn bake_shaders() -> std::path::PathBuf {
     println!("cargo::rerun-if-changed=shaders");
     let qsb = find_qsb().expect("qsb (Qt Shader Tools) is needed to build OST: install qt6-shader-baker (Debian/Ubuntu) or qt6-shadertools (Arch)");
     let mut files: Vec<String> = Vec::new();
-    let mut entries: Vec<_> = std::fs::read_dir("shaders").expect("shaders").flatten().map(|e| e.path()).collect();
+    let mut entries: Vec<_> = std::fs::read_dir("shaders")
+        .expect("shaders")
+        .flatten()
+        .map(|e| e.path())
+        .collect();
     entries.sort();
     for src in entries {
         if src.extension().and_then(|e| e.to_str()) != Some("frag") {
@@ -477,17 +510,35 @@ fn bake_shaders() -> std::path::PathBuf {
         let name = format!("{}.qsb", src.file_name().unwrap().to_string_lossy());
         let dst = out.join(&name);
         let ok = std::process::Command::new(&qsb)
-            .args(["--glsl", "100es,120,150", "--hlsl", "50", "--msl", "12", "-o"])
+            .args([
+                "--glsl",
+                "100es,120,150",
+                "--hlsl",
+                "50",
+                "--msl",
+                "12",
+                "-o",
+            ])
             .arg(&dst)
             .arg(&src)
             .status()
             .map(|s| s.success())
             .unwrap_or(false);
         assert!(ok, "qsb failed on {}", src.display());
-        files.push(format!("    <file alias=\"shaders/{name}\">{}</file>\n", dst.display()));
+        files.push(format!(
+            "    <file alias=\"shaders/{name}\">{}</file>\n",
+            dst.display()
+        ));
     }
     let qrc = out.join("shaders.qrc");
-    std::fs::write(&qrc, format!("<RCC>\n  <qresource prefix=\"/qt/qml/com/ost/desktop\">\n{}  </qresource>\n</RCC>\n", files.concat())).expect("shaders.qrc");
+    std::fs::write(
+        &qrc,
+        format!(
+            "<RCC>\n  <qresource prefix=\"/qt/qml/com/ost/desktop\">\n{}  </qresource>\n</RCC>\n",
+            files.concat()
+        ),
+    )
+    .expect("shaders.qrc");
     qrc
 }
 
@@ -502,7 +553,9 @@ fn qmake_query(key: &str) -> Vec<String> {
     qmakes.extend(["qmake6", "qmake"].map(std::ffi::OsString::from));
     let mut out = Vec::new();
     for qmake in qmakes {
-        if let Ok(o) = std::process::Command::new(&qmake).args(["-query", key]).output()
+        if let Ok(o) = std::process::Command::new(&qmake)
+            .args(["-query", key])
+            .output()
             && o.status.success()
         {
             let d = String::from_utf8_lossy(&o.stdout).trim().to_string();
@@ -522,7 +575,10 @@ fn qmake_query(key: &str) -> Vec<String> {
 fn webengine_apart() -> Option<pkg_config::Library> {
     let libs = qmake_query("QT_INSTALL_LIBS");
     let first = libs.first()?;
-    if std::path::Path::new(first).join("libQt6WebEngineQuick.prl").exists() {
+    if std::path::Path::new(first)
+        .join("libQt6WebEngineQuick.prl")
+        .exists()
+    {
         return None;
     }
     pkg_config::Config::new().probe("Qt6WebEngineQuick").ok()
@@ -530,12 +586,27 @@ fn webengine_apart() -> Option<pkg_config::Library> {
 
 fn find_qsb() -> Option<std::path::PathBuf> {
     let mut dirs: Vec<std::path::PathBuf> = Vec::new();
-    for key in ["QT_HOST_BINS", "QT_HOST_LIBEXECS", "QT_INSTALL_BINS", "QT_INSTALL_LIBEXECS"] {
+    for key in [
+        "QT_HOST_BINS",
+        "QT_HOST_LIBEXECS",
+        "QT_INSTALL_BINS",
+        "QT_INSTALL_LIBEXECS",
+    ] {
         dirs.extend(qmake_query(key).into_iter().map(std::path::PathBuf::from));
     }
-    dirs.extend(["/usr/lib/qt6/bin", "/usr/lib/qt6/libexec", "/usr/lib/x86_64-linux-gnu/qt6/bin", "/usr/lib/x86_64-linux-gnu/qt6/libexec"].map(std::path::PathBuf::from));
+    dirs.extend(
+        [
+            "/usr/lib/qt6/bin",
+            "/usr/lib/qt6/libexec",
+            "/usr/lib/x86_64-linux-gnu/qt6/bin",
+            "/usr/lib/x86_64-linux-gnu/qt6/libexec",
+        ]
+        .map(std::path::PathBuf::from),
+    );
     if let Some(path) = std::env::var_os("PATH") {
         dirs.extend(std::env::split_paths(&path));
     }
-    dirs.into_iter().map(|d| d.join("qsb")).find(|p| p.is_file())
+    dirs.into_iter()
+        .map(|d| d.join("qsb"))
+        .find(|p| p.is_file())
 }

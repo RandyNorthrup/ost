@@ -173,7 +173,11 @@ fn wanted() -> (bool, NoiseLevel, bool) {
     } else if music_mode() {
         // Noise suppression stays the user's switch (Teams turns it off
         // when music mode starts, and lets you turn it back on).
-        (MUSIC_ECHO.load(std::sync::atomic::Ordering::Relaxed), noise_level(), false)
+        (
+            MUSIC_ECHO.load(std::sync::atomic::Ordering::Relaxed),
+            noise_level(),
+            false,
+        )
     } else {
         (true, noise_level(), auto_gain())
     }
@@ -182,7 +186,9 @@ fn wanted() -> (bool, NoiseLevel, bool) {
 fn reconfigure() {
     if let Some(p) = current() {
         let (echo, noise, gain) = wanted();
-        p.lock().unwrap_or_else(|e| e.into_inner()).configure(echo, noise, gain);
+        p.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .configure(echo, noise, gain);
     }
 }
 
@@ -233,15 +239,21 @@ mod tests {
     fn cancels_a_played_echo() {
         let mut p = Processor::new().expect("apm");
         p.configure(true, NoiseLevel::Off, false);
-        let tone = |i: usize| ((i as f32 * 2.0 * std::f32::consts::PI * 700.0 / 48000.0).sin() * 6000.0) as i16;
+        let tone = |i: usize| {
+            ((i as f32 * 2.0 * std::f32::consts::PI * 700.0 / 48000.0).sin() * 6000.0) as i16
+        };
         let mut before = 0.0;
         let mut after = 0.0;
         for n in 0..600 {
             let mut far: Vec<i16> = (0..CHUNK).map(|i| tone(n * CHUNK + i)).collect();
             p.render(&mut far);
             // The microphone hears it 20 ms later at half level.
-            let mut near: Vec<i16> = (0..CHUNK).map(|i| tone((n * CHUNK + i).saturating_sub(960)) / 2).collect();
-            let rms = |f: &[i16]| (f.iter().map(|&s| (s as f64).powi(2)).sum::<f64>() / f.len() as f64).sqrt();
+            let mut near: Vec<i16> = (0..CHUNK)
+                .map(|i| tone((n * CHUNK + i).saturating_sub(960)) / 2)
+                .collect();
+            let rms = |f: &[i16]| {
+                (f.iter().map(|&s| (s as f64).powi(2)).sum::<f64>() / f.len() as f64).sqrt()
+            };
             let input = rms(&near);
             p.capture(&mut near, 20);
             if n == 10 {

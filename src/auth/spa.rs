@@ -31,7 +31,8 @@ pub const ORIGIN: &str = "https://teams.cloud.microsoft";
 const AUTHORITY: &str = "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize";
 /// What the sign-in asks for: the Teams middle tier (the primary token),
 /// with the user's profile and a refresh token.
-pub const SIGN_IN_SCOPE: &str = "https://api.spaces.skype.com/.default openid profile offline_access";
+pub const SIGN_IN_SCOPE: &str =
+    "https://api.spaces.skype.com/.default openid profile offline_access";
 
 /// A browser sign-in waiting for its return address to be reached.
 #[derive(Clone)]
@@ -71,7 +72,11 @@ impl BrowserSignIn {
                 q.append_pair("prompt", "select_account");
             }
         }
-        Self { verifier, state, url: url.to_string() }
+        Self {
+            verifier,
+            state,
+            url: url.to_string(),
+        }
     }
 
     /// Whether `url` is the return address (the web view should stop there).
@@ -86,14 +91,31 @@ impl BrowserSignIn {
         // MSAL asks for the answer in the fragment; accept the query too.
         let params: Vec<(String, String)> = parsed
             .fragment()
-            .map(|f| url::form_urlencoded::parse(f.as_bytes()).into_owned().collect())
+            .map(|f| {
+                url::form_urlencoded::parse(f.as_bytes())
+                    .into_owned()
+                    .collect()
+            })
             .filter(|p: &Vec<(String, String)>| !p.is_empty())
             .unwrap_or_else(|| parsed.query_pairs().into_owned().collect());
         let get = |k: &str| params.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
         if let Some(err) = get("error") {
             let desc = get("error_description").unwrap_or_default();
-            let first = desc.lines().next().unwrap_or_default().chars().take(200).collect::<String>();
-            bail!("Sign-in failed: {err}{}", if first.is_empty() { String::new() } else { format!(": {first}") });
+            let first = desc
+                .lines()
+                .next()
+                .unwrap_or_default()
+                .chars()
+                .take(200)
+                .collect::<String>();
+            bail!(
+                "Sign-in failed: {err}{}",
+                if first.is_empty() {
+                    String::new()
+                } else {
+                    format!(": {first}")
+                }
+            );
         }
         if get("state").as_deref() != Some(self.state.as_str()) {
             bail!("Sign-in answer doesn't match this sign-in");
@@ -112,7 +134,10 @@ impl BrowserSignIn {
 /// for Viva Engage, `brk-multihub://outlook.office.com` for Outlook):
 /// `brk-multihub://<the host the app page is served from>`.
 pub fn app_redirect_uri(app_origin: &str) -> String {
-    let host = app_origin.trim_start_matches("https://").trim_start_matches("http://").trim_end_matches('/');
+    let host = app_origin
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_end_matches('/');
     format!("brk-multihub://{host}")
 }
 
@@ -121,7 +146,10 @@ pub fn app_redirect_uri(app_origin: &str) -> String {
 /// interaction Azure AD now requires).
 pub fn needs_renewal(err: &anyhow::Error) -> bool {
     let s = format!("{err:#}");
-    s.contains("AADSTS700084") || s.contains("AADSTS50173") || s.contains("interaction_required") || s.contains("AADSTS70043")
+    s.contains("AADSTS700084")
+        || s.contains("AADSTS50173")
+        || s.contains("interaction_required")
+        || s.contains("AADSTS70043")
 }
 
 fn random_token(bytes: usize) -> String {
@@ -146,34 +174,61 @@ mod tests {
         assert_eq!(q["login_hint"], "ost-test1@scnetsolutions.com");
         assert_eq!(q["prompt"], "select_account");
         // The challenge is the verifier's SHA-256, base64url without padding.
-        assert_eq!(q["code_challenge"], URL_SAFE_NO_PAD.encode(Sha256::digest(s.verifier().as_bytes())));
+        assert_eq!(
+            q["code_challenge"],
+            URL_SAFE_NO_PAD.encode(Sha256::digest(s.verifier().as_bytes()))
+        );
         assert!(s.verifier().len() >= 43);
-        assert_eq!(url::Url::parse(&BrowserSignIn::new(None, true).url).unwrap().query_pairs().find(|(k, _)| k == "prompt").unwrap().1, "none");
+        assert_eq!(
+            url::Url::parse(&BrowserSignIn::new(None, true).url)
+                .unwrap()
+                .query_pairs()
+                .find(|(k, _)| k == "prompt")
+                .unwrap()
+                .1,
+            "none"
+        );
     }
 
     #[test]
     fn return_address_gives_the_code_or_the_error() {
         let s = BrowserSignIn::new(None, true);
-        let ok = format!("{REDIRECT_URI}#code=abc&client_info=x&state={}&session_state=y", s.state);
+        let ok = format!(
+            "{REDIRECT_URI}#code=abc&client_info=x&state={}&session_state=y",
+            s.state
+        );
         assert!(BrowserSignIn::is_redirect(&ok));
         assert_eq!(s.code_from(&ok).unwrap(), "abc");
         let wrong_state = format!("{REDIRECT_URI}#code=abc&state=other");
         assert!(s.code_from(&wrong_state).is_err());
-        let err = format!("{REDIRECT_URI}#error=login_required&error_description=AADSTS50058%3A+no+session&state={}", s.state);
+        let err = format!(
+            "{REDIRECT_URI}#error=login_required&error_description=AADSTS50058%3A+no+session&state={}",
+            s.state
+        );
         let e = s.code_from(&err).unwrap_err().to_string();
         assert!(e.contains("login_required") && e.contains("AADSTS50058"));
-        assert!(!BrowserSignIn::is_redirect("https://login.microsoftonline.com/common/login"));
+        assert!(!BrowserSignIn::is_redirect(
+            "https://login.microsoftonline.com/common/login"
+        ));
     }
 
     #[test]
     fn brokered_apps_return_to_brk_multihub_on_their_host() {
-        assert_eq!(app_redirect_uri("https://engage.cloud.microsoft"), "brk-multihub://engage.cloud.microsoft");
-        assert_eq!(app_redirect_uri("https://outlook.office.com/"), "brk-multihub://outlook.office.com");
+        assert_eq!(
+            app_redirect_uri("https://engage.cloud.microsoft"),
+            "brk-multihub://engage.cloud.microsoft"
+        );
+        assert_eq!(
+            app_redirect_uri("https://outlook.office.com/"),
+            "brk-multihub://outlook.office.com"
+        );
     }
 
     #[test]
     fn renewal_errors_are_recognised() {
-        assert!(needs_renewal(&anyhow::anyhow!("token refresh rejected (400): invalid_grant: AADSTS700084: The refresh token was issued to a single page app")));
+        assert!(needs_renewal(&anyhow::anyhow!(
+            "token refresh rejected (400): invalid_grant: AADSTS700084: The refresh token was issued to a single page app"
+        )));
         assert!(!needs_renewal(&anyhow::anyhow!("network down")));
     }
 }

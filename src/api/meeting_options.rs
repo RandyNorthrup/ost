@@ -26,7 +26,14 @@ pub fn facilitator_path(organizer: &str, thread: &str, message: &str) -> String 
 /// `POST …/facilitator/options/…` with `{"options": [{"name":
 /// "IsGroupCopilotEnabled", "type": "Boolean", "currentValue": on}]}`;
 /// the reply lists the option as saved.
-pub async fn set_facilitator(client: &TeamsClient, tenant: &str, organizer: &str, thread: &str, message: &str, on: bool) -> Result<bool> {
+pub async fn set_facilitator(
+    client: &TeamsClient,
+    tenant: &str,
+    organizer: &str,
+    thread: &str,
+    message: &str,
+    on: bool,
+) -> Result<bool> {
     check_ids(tenant, organizer, thread, message)?;
     let (base, token) = super::tabs::middle_tier(client).await?;
     let v: Value = client
@@ -43,7 +50,9 @@ pub async fn set_facilitator(client: &TeamsClient, tenant: &str, organizer: &str
     if v["success"] != json!(true) {
         bail!("Facilitator wasn't changed");
     }
-    Ok(v.pointer("/options/0/currentValue").and_then(Value::as_bool).unwrap_or(on))
+    Ok(v.pointer("/options/0/currentValue")
+        .and_then(Value::as_bool)
+        .unwrap_or(on))
 }
 
 /// The options URL's path under the middle tier.
@@ -58,7 +67,9 @@ pub(crate) fn check_ids(tenant: &str, organizer: &str, thread: &str, message: &s
     let guid = |s: &str| uuid::Uuid::parse_str(s).is_ok();
     let thread_ok = thread.starts_with("19:")
         && (thread.ends_with("@thread.v2") || thread.ends_with("@thread.tacv2"))
-        && thread[3..].chars().all(|c| c.is_ascii_alphanumeric() || "_-=@.".contains(c));
+        && thread[3..]
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "_-=@.".contains(c));
     let message_ok = !message.is_empty() && message.bytes().all(|b| b.is_ascii_digit());
     if !guid(tenant) || !guid(organizer) || !thread_ok || !message_ok {
         bail!("Not a meeting");
@@ -81,17 +92,33 @@ pub struct MeetingOptions {
 impl MeetingOptions {
     fn from_reply(v: &Value) -> Self {
         let list = |k: &str| v[k].as_array().cloned().unwrap_or_default();
-        MeetingOptions { options: list("options"), invitees: list("invitees"), translations: v["translations"].clone() }
+        MeetingOptions {
+            options: list("options"),
+            invitees: list("invitees"),
+            translations: v["translations"].clone(),
+        }
     }
 }
 
 /// The meeting's options, as Teams lists them.
-pub async fn get(client: &TeamsClient, tenant: &str, organizer: &str, thread: &str, message: &str) -> Result<MeetingOptions> {
+pub async fn get(
+    client: &TeamsClient,
+    tenant: &str,
+    organizer: &str,
+    thread: &str,
+    message: &str,
+) -> Result<MeetingOptions> {
     check_ids(tenant, organizer, thread, message)?;
     let (base, token) = super::tabs::middle_tier(client).await?;
     // Teams asks in its app language: the reply's `translations` (the
     // dialog's labels and descriptions) come back in it.
-    let mut req = client.http().get(format!("{base}{}", options_path(tenant, organizer, thread, message))).bearer_auth(&token);
+    let mut req = client
+        .http()
+        .get(format!(
+            "{base}{}",
+            options_path(tenant, organizer, thread, message)
+        ))
+        .bearer_auth(&token);
     let lang = crate::i18n::locale();
     if !lang.is_empty() {
         req = req.header("accept-language", lang);
@@ -111,7 +138,13 @@ pub async fn get(client: &TeamsClient, tenant: &str, organizer: &str, thread: &s
 /// meetings/lobby/getOrCreateLobbyChatThreadId` with `{messageId,
 /// organizerId, tenantId, threadId}` answers `{lobbyThreadId}`, a
 /// LobbyChat thread the people waiting join as masked, read-only members.
-pub async fn lobby_chat_thread(client: &TeamsClient, tenant: &str, organizer: &str, thread: &str, message: &str) -> Result<String> {
+pub async fn lobby_chat_thread(
+    client: &TeamsClient,
+    tenant: &str,
+    organizer: &str,
+    thread: &str,
+    message: &str,
+) -> Result<String> {
     check_ids(tenant, organizer, thread, message)?;
     let (base, token) = super::tabs::middle_tier(client).await?;
     let v: Value = client
@@ -215,7 +248,10 @@ pub async fn set(
     let (base, token) = super::tabs::middle_tier(client).await?;
     let resp = client
         .http()
-        .post(format!("{base}{}", options_path(tenant, organizer, thread, message)))
+        .post(format!(
+            "{base}{}",
+            options_path(tenant, organizer, thread, message)
+        ))
         .bearer_auth(&token)
         .json(&post_body(&options, changes))
         .send()
@@ -223,7 +259,10 @@ pub async fn set(
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
     if !status.is_success() {
-        bail!("Meeting options: {status} {}", text.chars().take(300).collect::<String>());
+        bail!(
+            "Meeting options: {status} {}",
+            text.chars().take(300).collect::<String>()
+        );
     }
     let v: Value = serde_json::from_str(&text).context("Meeting options")?;
     if v["success"] != json!(true) {
@@ -263,7 +302,10 @@ mod tests {
             json!({"values":["en-us"],"currentValue":"en-us","name":"MeetingSpokenLanguage","type":"List"}),
             json!({"values":["en-us"],"currentValue":"en-us","name":"MeetingSpokenLanguage","type":"List"}),
         ];
-        assert_eq!(post_body(&got, &[])["options"].as_array().map(|a| a.len()), Some(1));
+        assert_eq!(
+            post_body(&got, &[])["options"].as_array().map(|a| a.len()),
+            Some(1)
+        );
     }
 
     #[test]
@@ -293,7 +335,9 @@ mod tests {
     fn picked_people_as_teams() {
         // The GET lists picked people without userType; Apply sends them
         // as Teams' picker does.
-        let got = vec![json!({"name":"CoOrganizers","type":"PeopleSelection","selectedPeople":[{"mri":"8:orgid:b","objectId":"b","tenantId":"t","upn":"b@x"}]})];
+        let got = vec![
+            json!({"name":"CoOrganizers","type":"PeopleSelection","selectedPeople":[{"mri":"8:orgid:b","objectId":"b","tenantId":"t","upn":"b@x"}]}),
+        ];
         assert_eq!(
             post_body(&got, &[])["options"][0]["selectedPeople"],
             json!([{"upn":"b@x","mri":"8:orgid:b","objectId":"b","userType":"Member","tenantId":"t"}])

@@ -73,7 +73,10 @@ pub fn set_implicit_masks(keys: &[String]) {
 }
 
 pub fn implicit_mask(key: &str) -> bool {
-    masked().lock().unwrap_or_else(|e| e.into_inner()).contains(key)
+    masked()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .contains(key)
 }
 
 /// Forget `key`'s frames (its video stopped).

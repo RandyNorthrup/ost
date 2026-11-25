@@ -70,7 +70,9 @@ fn room() -> std::sync::MutexGuard<'static, RoomSide> {
 }
 
 /// Run `f` on the Qt thread and wait for its result.
-async fn on_qt<T: Send + 'static>(f: impl FnOnce(std::pin::Pin<&mut qobject::Backend>) -> T + Send + 'static) -> Option<T> {
+async fn on_qt<T: Send + 'static>(
+    f: impl FnOnce(std::pin::Pin<&mut qobject::Backend>) -> T + Send + 'static,
+) -> Option<T> {
     let qt = QT.get()?;
     let (tx, rx) = tokio::sync::oneshot::channel();
     qt.queue(move |this| {
@@ -96,7 +98,10 @@ pub fn start(qt: Qt) {
         use tokio::sync::broadcast::error::RecvError;
         loop {
             match events.recv().await {
-                Ok(ev) if ev.kind == EventKind::Call && ev.json.contains("\"sessionNotification\"") => {
+                Ok(ev)
+                    if ev.kind == EventKind::Call
+                        && ev.json.contains("\"sessionNotification\"") =>
+                {
                     if let Some(s) = rr::incoming_session(&ev.json) {
                         tokio::spawn(on_incoming_session(s));
                     }
@@ -146,7 +151,12 @@ async fn room_now() -> Option<(RoomState, Capabilities, String)> {
             captions: *this.call_captions_on(),
             layout: shown.to_string(),
         };
-        let caps = Capabilities { mute: true, camera: video_allowed, captions, layouts };
+        let caps = Capabilities {
+            mute: true,
+            camera: video_allowed,
+            captions,
+            layouts,
+        };
         (state, caps, this.call_state().to_string())
     })
     .await
@@ -161,28 +171,56 @@ async fn on_incoming_session(s: rr::IncomingSession) {
         tracing::info!("room remote: not a room, session ignored");
         return;
     }
-    let Some((state, thread)) = on_qt(|this| (this.call_state().to_string(), this.call_thread_id().to_string())).await else {
+    let Some((state, thread)) = on_qt(|this| {
+        (
+            this.call_state().to_string(),
+            this.call_thread_id().to_string(),
+        )
+    })
+    .await
+    else {
         return;
     };
     if state != "connected" || thread != s.thread_id {
         tracing::info!(%state, same_meeting = (thread == s.thread_id), "room remote: not in that meeting, session ignored");
         return;
     }
-    let Some((surl, _)) = teams_cli::trouter::current_endpoint() else { return };
+    let Some((surl, _)) = teams_cli::trouter::current_endpoint() else {
+        return;
+    };
     let Some(session) = rr::session_id_of(&s.accept) else {
         tracing::info!("room remote: no session id in the accept link");
         return;
     };
-    let Some((http, token)) = client().await else { return };
-    let debug = rr::Debug { chain_id: s.chain_id.clone(), cause_id: rr::teams_id() };
+    let Some((http, token)) = client().await else {
+        return;
+    };
+    let debug = rr::Debug {
+        chain_id: s.chain_id.clone(),
+        cause_id: rr::teams_id(),
+    };
     let me = teams_cli::trouter::registrar::calling_registration_id();
-    let body = rr::acceptance_body(&rr::session_link(&surl, &session, "receive"), &rr::session_link(&surl, &session, "end"), me, &debug);
-    room().sessions.insert(session.clone(), RoomSession { controller: s.controller_endpoint.clone(), chain: s.chain_id.clone(), ..Default::default() });
+    let body = rr::acceptance_body(
+        &rr::session_link(&surl, &session, "receive"),
+        &rr::session_link(&surl, &session, "end"),
+        me,
+        &debug,
+    );
+    room().sessions.insert(
+        session.clone(),
+        RoomSession {
+            controller: s.controller_endpoint.clone(),
+            chain: s.chain_id.clone(),
+            ..Default::default()
+        },
+    );
     match rr::post(&http, &token, &s.accept, &body, &s.chain_id).await {
         Ok((status, reply)) if (200..300).contains(&status) => {
             tracing::info!(status, "room remote: session accepted");
             tracing::debug!(%reply, "room remote: acceptance reply");
-            let links = serde_json::from_str(&reply).ok().and_then(|v| rr::active_links(&v));
+            let links = serde_json::from_str(&reply)
+                .ok()
+                .and_then(|v| rr::active_links(&v));
             if let (Some(sess), Some((broadcast, _))) = (room().sessions.get_mut(&session), links) {
                 sess.url = broadcast;
             }
@@ -203,16 +241,30 @@ async fn on_incoming_session(s: rr::IncomingSession) {
 /// Better Together path.
 async fn on_message(json: String) {
     let v: serde_json::Value = serde_json::from_str(&json).unwrap_or_default();
-    let url = v.get("url").and_then(|u| u.as_str()).unwrap_or_default().to_string();
+    let url = v
+        .get("url")
+        .and_then(|u| u.as_str())
+        .unwrap_or_default()
+        .to_string();
     let body = v.get("body").cloned().unwrap_or_default();
-    let path = url.split("/bettertogether").nth(1).unwrap_or_default().to_string();
+    let path = url
+        .split("/bettertogether")
+        .nth(1)
+        .unwrap_or_default()
+        .to_string();
     tracing::info!(%path, command = ?body.get("command"), "room remote: message");
     tracing::debug!(%body, "room remote: message body");
-    let session = path.strip_prefix("/session/").and_then(|p| p.split('/').next()).map(str::to_string);
+    let session = path
+        .strip_prefix("/session/")
+        .and_then(|p| p.split('/').next())
+        .map(str::to_string);
     // Ours as the controller: our session's links, or the paired room.
     let ours = {
         let r = remote();
-        let from = body.get("registrationId").and_then(|f| f.as_str()).unwrap_or_default();
+        let from = body
+            .get("registrationId")
+            .and_then(|f| f.as_str())
+            .unwrap_or_default();
         (!r.session.is_empty() && session.as_deref() == Some(r.session.as_str()))
             || (session.is_none() && !r.room_endpoint.is_empty() && from == r.room_endpoint)
     };
@@ -227,7 +279,9 @@ async fn on_message(json: String) {
         }
         return;
     }
-    let Ok(m) = serde_json::from_value::<Message>(body.clone()) else { return };
+    let Ok(m) = serde_json::from_value::<Message>(body.clone()) else {
+        return;
+    };
     if teams_cli::calling::room_mode::is_active() {
         room_command(session, m).await;
     }
@@ -237,8 +291,12 @@ async fn on_message(json: String) {
 /// with its sender.
 fn session_of(link: Option<String>, m: &Message) -> Option<String> {
     let r = room();
-    link.filter(|id| r.sessions.contains_key(id))
-        .or_else(|| r.sessions.iter().find(|(_, s)| s.controller == m.registration_id).map(|(id, _)| id.clone()))
+    link.filter(|id| r.sessions.contains_key(id)).or_else(|| {
+        r.sessions
+            .iter()
+            .find(|(_, s)| s.controller == m.registration_id)
+            .map(|(id, _)| id.clone())
+    })
 }
 
 async fn room_command(link: Option<String>, m: Message) {
@@ -247,9 +305,10 @@ async fn room_command(link: Option<String>, m: Message) {
         return;
     };
     if let Some(s) = room().sessions.get_mut(&id)
-        && !m.debug_content.chain_id.is_empty() {
-            s.chain = m.debug_content.chain_id.clone();
-        }
+        && !m.debug_content.chain_id.is_empty()
+    {
+        s.chain = m.debug_content.chain_id.clone();
+    }
     let name = m.name();
     if name == command::RESPONSE {
         return;
@@ -266,7 +325,12 @@ async fn room_command(link: Option<String>, m: Message) {
         return;
     }
     if !room().sessions.get(&id).is_some_and(|s| s.paired) {
-        respond(&id, &m, Err((bt::ERROR_NOT_PAIRED, "Device is not paired".to_string()))).await;
+        respond(
+            &id,
+            &m,
+            Err((bt::ERROR_NOT_PAIRED, "Device is not paired".to_string())),
+        )
+        .await;
         return;
     }
     let result = run_command(&name).await;
@@ -276,19 +340,38 @@ async fn room_command(link: Option<String>, m: Message) {
 /// Teams Rooms' RemoteControllerPairCommand.
 async fn pair(id: &str, m: &Message) {
     let details = m.details();
-    let salt = details.get("salt").and_then(|s| s.as_array()).and_then(|a| a.first()).and_then(|v| v.as_u64()).unwrap_or(0);
+    let salt = details
+        .get("salt")
+        .and_then(|s| s.as_array())
+        .and_then(|a| a.first())
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     let valid = crate::room_host::salt_valid((salt & 0xffff) as u32);
     tracing::info!(valid, "room remote: pairing");
     if !valid {
-        respond(id, m, Err(("INVALID_SALT", "Invalid salt received".to_string()))).await;
+        respond(
+            id,
+            m,
+            Err(("INVALID_SALT", "Invalid salt received".to_string())),
+        )
+        .await;
         return;
     }
-    let Some((state, caps, _)) = room_now().await else { return };
+    let Some((state, caps, _)) = room_now().await else {
+        return;
+    };
     let config = teams_cli::config::Config::load().ok();
-    let name = config.as_ref().and_then(|c| c.display_name()).unwrap_or_default();
+    let name = config
+        .as_ref()
+        .and_then(|c| c.display_name())
+        .unwrap_or_default();
     let info = rr::RoomInfo {
         client_type: "desktop".into(),
-        client_version: format!("{}/{}", env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_VERSION")),
+        client_version: format!(
+            "{}/{}",
+            env!("CARGO_PKG_VERSION"),
+            env!("CARGO_PKG_VERSION")
+        ),
         device_name: hostname(),
         endpoint_id: teams_cli::trouter::registrar::calling_registration_id().to_string(),
         user_display_name: name,
@@ -306,12 +389,16 @@ async fn pair(id: &str, m: &Message) {
 }
 
 fn hostname() -> String {
-    std::fs::read_to_string("/etc/hostname").map(|h| h.trim().to_string()).unwrap_or_default()
+    std::fs::read_to_string("/etc/hostname")
+        .map(|h| h.trim().to_string())
+        .unwrap_or_default()
 }
 
 /// Work one of the room's controls (Teams Rooms' command classes).
 async fn run_command(name: &str) -> Result<serde_json::Value, (&'static str, String)> {
-    let Some((state, caps, call)) = room_now().await else { return Err(("OPERATION_FAILED", "No room".into())) };
+    let Some((state, caps, call)) = room_now().await else {
+        return Err(("OPERATION_FAILED", "No room".into()));
+    };
     if call != "connected" {
         return Err(("NO_ACTIVE_CALL", "No active call going on.".into()));
     }
@@ -319,7 +406,12 @@ async fn run_command(name: &str) -> Result<serde_json::Value, (&'static str, Str
         s.to_ascii_lowercase()
     }
     let already = |what: &str| Err(("STATE_ALREADY_SET", format!("State already set {what}")));
-    let not_allowed = || Err(("ACTION_NOT_ALLOWED", format!("Action is disabled for current command={name}.")));
+    let not_allowed = || {
+        Err((
+            "ACTION_NOT_ALLOWED",
+            format!("Action is disabled for current command={name}."),
+        ))
+    };
     let ok = Ok(serde_json::json!({}));
     if name == lower(command::MUTE) || name == lower(command::UNMUTE) {
         if !caps.mute {
@@ -361,7 +453,12 @@ async fn run_command(name: &str) -> Result<serde_json::Value, (&'static str, Str
     }
     if name == lower(command::LEAVE_MEETING) {
         // Teams Rooms unpairs its remotes, then leaves.
-        let ids: Vec<String> = room().sessions.iter().filter(|(_, s)| s.paired).map(|(id, _)| id.clone()).collect();
+        let ids: Vec<String> = room()
+            .sessions
+            .iter()
+            .filter(|(_, s)| s.paired)
+            .map(|(id, _)| id.clone())
+            .collect();
         for id in ids {
             send(&id, command::UNPAIR, serde_json::json!({})).await;
             if let Some(s) = room().sessions.get_mut(&id) {
@@ -382,7 +479,10 @@ async fn run_command(name: &str) -> Result<serde_json::Value, (&'static str, Str
         on_qt(move |this| this.room_remote_layout_requested(QString::from(view))).await;
         return ok;
     }
-    Err(("INVALID_COMMAND_REQUEST", format!("Received unexpected command subtype on this command: {name}")))
+    Err((
+        "INVALID_COMMAND_REQUEST",
+        format!("Received unexpected command subtype on this command: {name}"),
+    ))
 }
 
 /// Answer a command with Teams' `response` (its result, `requestCauseId`
@@ -392,7 +492,11 @@ async fn respond(id: &str, m: &Message, result: Result<serde_json::Value, (&str,
         Ok(r) => bt::response_details(m, true, r),
         Err((code, why)) => {
             tracing::info!(command = %m.command, code, "room remote: command failed");
-            bt::response_details(m, false, serde_json::json!({ "errorCode": code, "errorDetails": why }))
+            bt::response_details(
+                m,
+                false,
+                serde_json::json!({ "errorCode": code, "errorDetails": why }),
+            )
         }
     };
     send(id, command::RESPONSE, details).await;
@@ -412,7 +516,9 @@ async fn send(id: &str, name: &str, details: serde_json::Value) -> bool {
             }
         }
     };
-    let Some((http, token)) = client().await else { return false };
+    let Some((http, token)) = client().await else {
+        return false;
+    };
     let me = teams_cli::trouter::registrar::calling_registration_id();
     let msg = rr::session_message(me, name, &details, seq, &chain);
     tracing::debug!(%msg, "room remote: sending");
@@ -432,7 +538,9 @@ async fn send(id: &str, name: &str, details: serde_json::Value) -> bool {
 /// Tell the paired remotes what changed (Teams Rooms' capabilityUpdate,
 /// then stateUpdate).
 async fn tell_changes() {
-    let Some((state, caps, _)) = room_now().await else { return };
+    let Some((state, caps, _)) = room_now().await else {
+        return;
+    };
     let (caps_update, state_changed) = {
         let r = room();
         let cu = r.told_caps.as_ref().and_then(|c| caps.update_from(c));
@@ -446,7 +554,12 @@ async fn tell_changes() {
         r.told_caps = Some(caps.clone());
         r.told_state = Some(state.clone());
     }
-    let ids: Vec<String> = room().sessions.iter().filter(|(_, s)| s.paired).map(|(id, _)| id.clone()).collect();
+    let ids: Vec<String> = room()
+        .sessions
+        .iter()
+        .filter(|(_, s)| s.paired)
+        .map(|(id, _)| id.clone())
+        .collect();
     for id in ids {
         if let Some(u) = &caps_update {
             send(&id, command::CAPABILITY_UPDATE, u.clone()).await;
@@ -514,7 +627,10 @@ fn publish(view: &str, error: Option<u8>) {
         .to_string()
     };
     if let Some(qt) = QT.get() {
-        let _ = qt.queue(move |mut this| this.as_mut().set_room_remote_json(QString::from(json.as_str())));
+        let _ = qt.queue(move |mut this| {
+            this.as_mut()
+                .set_room_remote_json(QString::from(json.as_str()))
+        });
     }
 }
 
@@ -525,7 +641,11 @@ async fn room_salt(room_mri: &str) -> Option<u16> {
     let started = std::time::Instant::now();
     let found = loop {
         let (_, rooms) = crate::room_ble::snapshot();
-        if let Some(code) = rooms.iter().find(|b| b.mri.eq_ignore_ascii_case(room_mri)).and_then(|b| b.code) {
+        if let Some(code) = rooms
+            .iter()
+            .find(|b| b.mri.eq_ignore_ascii_case(room_mri))
+            .and_then(|b| b.code)
+        {
             break Some(code);
         }
         if started.elapsed() >= SCAN_TIMEOUT {
@@ -554,7 +674,8 @@ pub fn open(room_mri: String, room_name: String, thread_id: String) {
     };
     publish("loading", None);
     runtime().spawn(async move {
-        let result = tokio::time::timeout(REMOTE_TIMEOUT, connect(room_mri, thread_id, generation)).await;
+        let result =
+            tokio::time::timeout(REMOTE_TIMEOUT, connect(room_mri, thread_id, generation)).await;
         if remote().generation != generation {
             return;
         }
@@ -578,11 +699,22 @@ async fn connect(room_mri: String, thread_id: String, generation: u64) -> Result
         tracing::info!("room remote: the room isn't nearby");
         return Err(rr::error::OUT_OF_PROXIMITY);
     };
-    let Some((surl, _)) = teams_cli::trouter::current_endpoint() else { return Err(rr::error::CONNECTION_FAILED) };
-    let Some((http, token)) = client().await else { return Err(rr::error::CONNECTION_FAILED) };
+    let Some((surl, _)) = teams_cli::trouter::current_endpoint() else {
+        return Err(rr::error::CONNECTION_FAILED);
+    };
+    let Some((http, token)) = client().await else {
+        return Err(rr::error::CONNECTION_FAILED);
+    };
     let config = teams_cli::config::Config::load().ok();
-    let me = config.as_ref().and_then(|c| c.object_id()).map(|o| format!("8:orgid:{o}")).unwrap_or_default();
-    let my_name = config.as_ref().and_then(|c| c.display_name()).unwrap_or_default();
+    let me = config
+        .as_ref()
+        .and_then(|c| c.object_id())
+        .map(|o| format!("8:orgid:{o}"))
+        .unwrap_or_default();
+    let my_name = config
+        .as_ref()
+        .and_then(|c| c.display_name())
+        .unwrap_or_default();
     let my_endpoint = teams_cli::trouter::registrar::calling_registration_id().to_string();
     let session = uuid::Uuid::new_v4().to_string();
     let chain = rr::teams_id();
@@ -594,8 +726,19 @@ async fn connect(room_mri: String, thread_id: String, generation: u64) -> Result
         r.chain = chain.clone();
         r.accepted = Some(tx);
     }
-    let debug = rr::Debug { chain_id: chain.clone(), cause_id: rr::teams_id() };
-    let body = rr::invitation_body(&me, &my_name, &my_endpoint, &room_mri, &links, &thread_id, &debug);
+    let debug = rr::Debug {
+        chain_id: chain.clone(),
+        cause_id: rr::teams_id(),
+    };
+    let body = rr::invitation_body(
+        &me,
+        &my_name,
+        &my_endpoint,
+        &room_mri,
+        &links,
+        &thread_id,
+        &debug,
+    );
     match rr::post(&http, &token, rr::SESSIONS_URL, &body, &debug.chain_id).await {
         Ok((status, reply)) if (200..300).contains(&status) => {
             tracing::info!(status, "room remote: session started");
@@ -633,7 +776,9 @@ async fn connect(room_mri: String, thread_id: String, generation: u64) -> Result
         }
     }
     // Teams checks the room is still near, then pairs with its salt.
-    let Some(salt) = room_salt(&room_mri).await.or(Some(salt)) else { return Err(rr::error::OUT_OF_PROXIMITY) };
+    let Some(salt) = room_salt(&room_mri).await.or(Some(salt)) else {
+        return Err(rr::error::OUT_OF_PROXIMITY);
+    };
     let details = serde_json::json!({
         "causeId": rr::teams_id(),
         "commandName": command::PAIR,
@@ -650,15 +795,31 @@ async fn connect(room_mri: String, thread_id: String, generation: u64) -> Result
         "meetingInfo": { "threadId": thread_id },
         "salt": [salt],
     });
-    let reply = command_to_room(command::PAIR, details).await.ok_or(rr::error::PAIRING_FAILED)?;
-    if reply.get("statusCode").and_then(|s| s.as_u64()) != Some(200) || reply.get("accepted").and_then(|a| a.as_bool()) == Some(false) {
+    let reply = command_to_room(command::PAIR, details)
+        .await
+        .ok_or(rr::error::PAIRING_FAILED)?;
+    if reply.get("statusCode").and_then(|s| s.as_u64()) != Some(200)
+        || reply.get("accepted").and_then(|a| a.as_bool()) == Some(false)
+    {
         tracing::info!(code = ?reply.get("errorCode"), "room remote: pairing refused");
         return Err(rr::error::PAIRING_FAILED);
     }
     let mut r = remote();
-    r.caps = Capabilities::from_json(reply.get("supportedCapabilities").unwrap_or(&serde_json::Value::Null));
-    r.state = RoomState::from_json(reply.get("initialState").unwrap_or(&serde_json::Value::Null));
-    if let Some(n) = reply.pointer("/roomEndpointInfo/userDisplayName").and_then(|n| n.as_str()).filter(|n| !n.is_empty()) {
+    r.caps = Capabilities::from_json(
+        reply
+            .get("supportedCapabilities")
+            .unwrap_or(&serde_json::Value::Null),
+    );
+    r.state = RoomState::from_json(
+        reply
+            .get("initialState")
+            .unwrap_or(&serde_json::Value::Null),
+    );
+    if let Some(n) = reply
+        .pointer("/roomEndpointInfo/userDisplayName")
+        .and_then(|n| n.as_str())
+        .filter(|n| !n.is_empty())
+    {
         r.room_name = n.to_string();
     }
     tracing::info!("room remote: paired");
@@ -679,7 +840,11 @@ async fn command_to_room(name: &str, details: serde_json::Value) -> Option<serde
     let (http, token) = client().await?;
     let me = teams_cli::trouter::registrar::calling_registration_id();
     let msg = rr::session_message(me, name, &details, seq, &chain);
-    let cause = msg.pointer("/debugContent/causeId").and_then(|c| c.as_str()).unwrap_or_default().to_string();
+    let cause = msg
+        .pointer("/debugContent/causeId")
+        .and_then(|c| c.as_str())
+        .unwrap_or_default()
+        .to_string();
     let (tx, rx) = tokio::sync::oneshot::channel();
     remote().waiting.insert(cause.clone(), tx);
     let sent = match rr::post(&http, &token, &url, &msg, &chain).await {
@@ -693,7 +858,14 @@ async fn command_to_room(name: &str, details: serde_json::Value) -> Option<serde
             false
         }
     };
-    let reply = if sent { tokio::time::timeout(Duration::from_secs(20), rx).await.ok().and_then(|r| r.ok()) } else { None };
+    let reply = if sent {
+        tokio::time::timeout(Duration::from_secs(20), rx)
+            .await
+            .ok()
+            .and_then(|r| r.ok())
+    } else {
+        None
+    };
     if reply.is_none() {
         remote().waiting.remove(&cause);
     }
@@ -750,18 +922,32 @@ async fn end_session(generation: u64) {
     if outgoing.is_empty() {
         return;
     }
-    let Some((http, token)) = client().await else { return };
+    let Some((http, token)) = client().await else {
+        return;
+    };
     let (seq, chain) = {
         let mut r = remote();
         r.seq += 1;
         (r.seq, r.chain.clone())
     };
-    let debug = rr::Debug { chain_id: chain, cause_id: rr::teams_id() };
+    let debug = rr::Debug {
+        chain_id: chain,
+        cause_id: rr::teams_id(),
+    };
     let me = teams_cli::trouter::registrar::calling_registration_id();
     let body = rr::end_body(me, seq, &debug);
     // DELETE on the session (live: the room's `end` link got it relayed;
     // a POST to the session was taken and went nowhere).
-    match rr::send(&http, reqwest::Method::DELETE, &token, &outgoing, &body, &debug.chain_id).await {
+    match rr::send(
+        &http,
+        reqwest::Method::DELETE,
+        &token,
+        &outgoing,
+        &body,
+        &debug.chain_id,
+    )
+    .await
+    {
         Ok((status, reply)) => {
             tracing::info!(status, "room remote: session ended");
             tracing::debug!(%reply, "room remote: end reply");
@@ -798,11 +984,17 @@ async fn controller_message(path: &str, body: serde_json::Value) {
         remote().accepted.take();
         return;
     }
-    let Ok(m) = serde_json::from_value::<Message>(body) else { return };
+    let Ok(m) = serde_json::from_value::<Message>(body) else {
+        return;
+    };
     let name = m.name();
     let d = m.details();
     if name == command::RESPONSE {
-        let cause = d.get("requestCauseId").and_then(|c| c.as_str()).unwrap_or_default().to_string();
+        let cause = d
+            .get("requestCauseId")
+            .and_then(|c| c.as_str())
+            .unwrap_or_default()
+            .to_string();
         if let Some(tx) = remote().waiting.remove(&cause) {
             let _ = tx.send(d);
         }
@@ -841,6 +1033,13 @@ async fn controller_message(path: &str, body: serde_json::Value) {
     }
     if let Some((http, token)) = client().await {
         let me = teams_cli::trouter::registrar::calling_registration_id();
-        let _ = rr::post(&http, &token, &url, &rr::session_message(me, command::RESPONSE, &ok, seq, &chain), &chain).await;
+        let _ = rr::post(
+            &http,
+            &token,
+            &url,
+            &rr::session_message(me, command::RESPONSE, &ok, seq, &chain),
+            &chain,
+        )
+        .await;
     }
 }

@@ -92,7 +92,9 @@ pub struct Card {
 /// array or its JSON text): the first entry's displayName.
 pub fn on_behalf_of_name(v: Option<&serde_json::Value>) -> String {
     let list = match v {
-        Some(serde_json::Value::String(t)) => serde_json::from_str::<serde_json::Value>(t).unwrap_or_default(),
+        Some(serde_json::Value::String(t)) => {
+            serde_json::from_str::<serde_json::Value>(t).unwrap_or_default()
+        }
         Some(other) => other.clone(),
         None => return String::new(),
     };
@@ -209,7 +211,8 @@ pub fn swift_cards(swift: &serde_json::Value) -> (Vec<Card>, String, bool) {
 }
 
 /// The announcement banner card's content type.
-pub const ANNOUNCEMENT_BANNER: &str = "application/vnd.microsoft.teams.messaging-announcementBanner";
+pub const ANNOUNCEMENT_BANNER: &str =
+    "application/vnd.microsoft.teams.messaging-announcementBanner";
 
 /// A channel announcement's banner (Teams' announcementBanner card with the
 /// post's `title`): the headline over a colour scheme ("0".."11") or a
@@ -247,19 +250,36 @@ pub fn announcement_from(props: Option<&serde_json::Value>) -> Option<Announceme
         Some(v) => v.clone(),
         None => serde_json::Value::Null,
     };
-    let str_at = |p: &str| content.pointer(p).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let str_at = |p: &str| {
+        content
+            .pointer(p)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     let num_at = |p: &str| {
         content
             .pointer(p)
-            .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            .and_then(|v| {
+                v.as_u64()
+                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            })
             .unwrap_or(0) as u32
     };
     let theme = {
         let t = str_at("/imageData/colorTheme");
-        if t.is_empty() { str_at("/colorTheme") } else { t }
+        if t.is_empty() {
+            str_at("/colorTheme")
+        } else {
+            t
+        }
     };
     Some(Announcement {
-        title: props.get("title").and_then(|t| t.as_str()).unwrap_or_default().to_string(),
+        title: props
+            .get("title")
+            .and_then(|t| t.as_str())
+            .unwrap_or_default()
+            .to_string(),
         color_theme: if theme.is_empty() { "0".into() } else { theme },
         image_url: str_at("/imageData/croppedImage/src"),
         image_width: num_at("/imageData/croppedImage/imageWidth"),
@@ -300,9 +320,21 @@ pub fn property_cards(props: Option<&serde_json::Value>) -> Vec<Card> {
                     .and_then(|v| v.as_str())
                     .unwrap_or_default()
                     .to_string(),
-                link_card: super::link_unfurl::is_link_card(c.get("cardClientId").and_then(|v| v.as_str()).unwrap_or_default()),
-                app_name: c.get("appName").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-                app_icon: super::tabs::https_only(c.get("appIcon").and_then(|v| v.as_str()).unwrap_or_default()),
+                link_card: super::link_unfurl::is_link_card(
+                    c.get("cardClientId")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default(),
+                ),
+                app_name: c
+                    .get("appName")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                app_icon: super::tabs::https_only(
+                    c.get("appIcon")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default(),
+                ),
             })
         })
         .collect()
@@ -896,7 +928,12 @@ fn meeting_prop(m: &serde_json::Value) -> serde_json::Value {
 fn meeting_title_of(meeting: &serde_json::Value) -> String {
     ["meetingtitle", "meetingTitle"]
         .iter()
-        .find_map(|k| meeting.get(*k).and_then(|v| v.as_str()).filter(|s| !s.is_empty()))
+        .find_map(|k| {
+            meeting
+                .get(*k)
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+        })
         .unwrap_or_default()
         .to_string()
 }
@@ -912,7 +949,13 @@ fn utc_time(v: Option<&serde_json::Value>) -> String {
             .unwrap_or_default(),
         Some(serde_json::Value::String(s)) => chrono::DateTime::parse_from_rfc3339(s)
             .map(|t| t.with_timezone(&chrono::Utc).to_rfc3339())
-            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s.trim_end_matches('Z'), "%Y-%m-%dT%H:%M:%S%.f").map(|t| t.and_utc().to_rfc3339()))
+            .or_else(|_| {
+                chrono::NaiveDateTime::parse_from_str(
+                    s.trim_end_matches('Z'),
+                    "%Y-%m-%dT%H:%M:%S%.f",
+                )
+                .map(|t| t.and_utc().to_rfc3339())
+            })
             .unwrap_or_default(),
         _ => String::new(),
     }
@@ -921,7 +964,9 @@ fn utc_time(v: Option<&serde_json::Value>) -> String {
 fn scheduled_meeting(meeting: &serde_json::Value) -> Option<ScheduledMeeting> {
     // (The chat service writes `scheduledmeetinginfo`; Teams' model calls
     // it scheduledMeetingInfo.)
-    let info = meeting.get("scheduledmeetinginfo").or_else(|| meeting.get("scheduledMeetingInfo"))?;
+    let info = meeting
+        .get("scheduledmeetinginfo")
+        .or_else(|| meeting.get("scheduledMeetingInfo"))?;
     let info = match info {
         serde_json::Value::String(s) => serde_json::from_str(s).ok()?,
         v => v.clone(),
@@ -929,10 +974,23 @@ fn scheduled_meeting(meeting: &serde_json::Value) -> Option<ScheduledMeeting> {
     if !info.is_object() {
         return None;
     }
-    let flag = |k: &str| info.get(k).is_some_and(|v| v.as_bool() == Some(true) || v.as_str() == Some("true"));
-    let s = |v: &serde_json::Value, k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
-    let recurring = info.get("eventRecurrencePattern").is_some_and(|p| !p.is_null() && p.as_str() != Some(""))
-        || matches!(info.get("eventType").and_then(|v| v.as_str()), Some("RecurringMaster" | "Occurrence" | "Exception"));
+    let flag = |k: &str| {
+        info.get(k)
+            .is_some_and(|v| v.as_bool() == Some(true) || v.as_str() == Some("true"))
+    };
+    let s = |v: &serde_json::Value, k: &str| {
+        v.get(k)
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
+    let recurring = info
+        .get("eventRecurrencePattern")
+        .is_some_and(|p| !p.is_null() && p.as_str() != Some(""))
+        || matches!(
+            info.get("eventType").and_then(|v| v.as_str()),
+            Some("RecurringMaster" | "Occurrence" | "Exception")
+        );
     Some(ScheduledMeeting {
         title: meeting_title_of(meeting),
         start: utc_time(info.get("startTime")),
@@ -1022,19 +1080,44 @@ fn call_id_of(content: &str) -> String {
 
 /// Fold each call's recordings and transcript into its ended row as
 /// Teams' recap card (only calls that have either get one).
-pub fn attach_recaps(raw: &[serde_json::Value], out: &mut [MessageView], now: chrono::DateTime<chrono::Utc>) {
+pub fn attach_recaps(
+    raw: &[serde_json::Value],
+    out: &mut [MessageView],
+    now: chrono::DateTime<chrono::Utc>,
+) {
     use std::collections::HashMap;
     let mut recaps: HashMap<String, Recap> = HashMap::new();
     let mut ends: HashMap<String, (String, String, String, String)> = HashMap::new();
     for m in raw {
-        let kind = m.get("messagetype").and_then(|v| v.as_str()).unwrap_or_default();
-        let content = m.get("content").and_then(|v| v.as_str()).unwrap_or_default();
+        let kind = m
+            .get("messagetype")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let content = m
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
         if kind == "Event/Call" && content.contains("<ended/>") {
             let id = xml_text(content, "callId");
             // The end's meetingDetails (camelCase on the wire: startTime, endTime,
             // subject, iCalUid; Teams' parser reads either case).
-            let either = |a: &str, b: &str| { let v = xml_text(content, a); if v.is_empty() { xml_text(content, b) } else { v } };
-            ends.insert(id, (either("subject", "Subject"), either("startTime", "StartTime"), either("endTime", "EndTime"), either("iCalUid", "ICalUid")));
+            let either = |a: &str, b: &str| {
+                let v = xml_text(content, a);
+                if v.is_empty() {
+                    xml_text(content, b)
+                } else {
+                    v
+                }
+            };
+            ends.insert(
+                id,
+                (
+                    either("subject", "Subject"),
+                    either("startTime", "StartTime"),
+                    either("endTime", "EndTime"),
+                    either("iCalUid", "ICalUid"),
+                ),
+            );
             continue;
         }
         if kind != "RichText/Media_CallRecording" && kind != "RichText/Media_CallTranscript" {
@@ -1059,27 +1142,49 @@ pub fn attach_recaps(raw: &[serde_json::Value], out: &mut [MessageView], now: ch
         if !types.contains("Recording") {
             continue;
         }
-        let doc = content.split("<Id type=\"AMSDocumentID\" value=\"").nth(1).and_then(|x| x.split('"').next()).unwrap_or_default().to_string();
+        let doc = content
+            .split("<Id type=\"AMSDocumentID\" value=\"")
+            .nth(1)
+            .and_then(|x| x.split('"').next())
+            .unwrap_or_default()
+            .to_string();
         if !doc.is_empty() && r.recordings.iter().any(|x| x.doc_id == doc) {
             continue;
         }
-        let item = content.split("type=\"onedriveForBusinessVideo\"").nth(1).unwrap_or_default();
+        let item = content
+            .split("type=\"onedriveForBusinessVideo\"")
+            .nth(1)
+            .unwrap_or_default();
         let item_attr = |name: &str| {
             let key = format!("{name}=\"");
-            item.split('>').next().and_then(|h| h.split(&key).nth(1)).and_then(|x| x.split('"').next()).unwrap_or_default().replace("&amp;", "&")
+            item.split('>')
+                .next()
+                .and_then(|h| h.split(&key).nth(1))
+                .and_then(|x| x.split('"').next())
+                .unwrap_or_default()
+                .replace("&amp;", "&")
         };
         let timestamp = xml_attr(content, "RecordingContent", "timestamp").unwrap_or_default();
-        let can_expire = xml_attr(content, "RecordingContent", "canVideoExpire").is_some_and(|v| v.eq_ignore_ascii_case("true"));
+        let can_expire = xml_attr(content, "RecordingContent", "canVideoExpire")
+            .is_some_and(|v| v.eq_ignore_ascii_case("true"));
         let expires_days = can_expire
             .then(|| chrono::DateTime::parse_from_rfc3339(&timestamp).ok())
             .flatten()
-            .map(|t| ((t.with_timezone(&chrono::Utc) + chrono::Duration::days(120) - now).num_seconds() + 86_399) / 86_400)
+            .map(|t| {
+                ((t.with_timezone(&chrono::Utc) + chrono::Duration::days(120) - now).num_seconds()
+                    + 86_399)
+                    / 86_400
+            })
             .map(|d| d.max(0));
-        let thumb = xml_attr(content, "URIObject", "url_thumbnail").filter(|u| u.starts_with("https://")).unwrap_or_default();
+        let thumb = xml_attr(content, "URIObject", "url_thumbnail")
+            .filter(|u| u.starts_with("https://"))
+            .unwrap_or_default();
         r.recordings.push(RecapRecording {
             thumbnail_url: thumb.replace("&amp;", "&"),
             thumb_local: String::new(),
-            duration_seconds: recording_seconds(&xml_attr(content, "RecordingContent", "duration").unwrap_or_default()),
+            duration_seconds: recording_seconds(
+                &xml_attr(content, "RecordingContent", "duration").unwrap_or_default(),
+            ),
             expires_days,
             odb_url: item_attr("uri"),
             drive_id: item_attr("driveId"),
@@ -1088,8 +1193,13 @@ pub fn attach_recaps(raw: &[serde_json::Value], out: &mut [MessageView], now: ch
             timestamp,
         });
     }
-    for m in out.iter_mut().filter(|m| m.kind == "call" && m.call_state == "ended") {
-        let Some(mut r) = recaps.get(&m.call_id).cloned() else { continue };
+    for m in out
+        .iter_mut()
+        .filter(|m| m.kind == "call" && m.call_state == "ended")
+    {
+        let Some(mut r) = recaps.get(&m.call_id).cloned() else {
+            continue;
+        };
         if r.recordings.is_empty() && !r.transcript {
             continue;
         }
@@ -1099,10 +1209,17 @@ pub fn attach_recaps(raw: &[serde_json::Value], out: &mut [MessageView], now: ch
             // Teams reads these times as UTC (it appends " +00:00").
             // On the wire: "11/19/2026 04:40:00" (or ISO without a zone).
             let utc = |t: &str| {
-                if let Ok(d) = chrono::NaiveDateTime::parse_from_str(t.trim(), "%m/%d/%Y %H:%M:%S") {
-                    return d.and_utc().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+                if let Ok(d) = chrono::NaiveDateTime::parse_from_str(t.trim(), "%m/%d/%Y %H:%M:%S")
+                {
+                    return d
+                        .and_utc()
+                        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
                 }
-                if t.is_empty() || t.ends_with('Z') || t.contains('+') { t.to_string() } else { format!("{t}Z") }
+                if t.is_empty() || t.ends_with('Z') || t.contains('+') {
+                    t.to_string()
+                } else {
+                    format!("{t}Z")
+                }
             };
             r.start = utc(start);
             r.end = utc(end);
@@ -1166,18 +1283,41 @@ pub fn recording_event(content: &str, now: chrono::DateTime<chrono::Utc>) -> Opt
         return None;
     }
     let status = attr("RecordingStatus", "status").unwrap_or_default();
-    let mri = |v: Option<String>| v.map(|v| if v.starts_with("8:") { v } else { format!("8:orgid:{v}") }).unwrap_or_default();
-    let event = |kind: &str, actor: String| ChatEvent { kind: kind.into(), actor, ..ChatEvent::default() };
+    let mri = |v: Option<String>| {
+        v.map(|v| {
+            if v.starts_with("8:") {
+                v
+            } else {
+                format!("8:orgid:{v}")
+            }
+        })
+        .unwrap_or_default()
+    };
+    let event = |kind: &str, actor: String| ChatEvent {
+        kind: kind.into(),
+        actor,
+        ..ChatEvent::default()
+    };
     match status.as_str() {
         "Initial" => {
             let auto = attr("RecordingInitiatorId", "isAutoRecording").as_deref() == Some("True");
-            let mut e = event("RecordingStarted", if auto { String::new() } else { mri(attr("RecordingInitiatorId", "value")) });
+            let mut e = event(
+                "RecordingStarted",
+                if auto {
+                    String::new()
+                } else {
+                    mri(attr("RecordingInitiatorId", "value"))
+                },
+            );
             if auto {
                 e.value = "auto".into();
             }
             Some(e)
         }
-        "ChunkFinished" => Some(event("RecordingStopped", mri(attr("RecordingTerminatorId", "value")))),
+        "ChunkFinished" => Some(event(
+            "RecordingStopped",
+            mri(attr("RecordingTerminatorId", "value")),
+        )),
         "Success" => {
             let mut e = event("RecordingSaved", mri(attr("RecordingStorage", "userId")));
             // Recordings expire 120 days after they start (Teams' default
@@ -1186,14 +1326,20 @@ pub fn recording_event(content: &str, now: chrono::DateTime<chrono::Utc>) -> Opt
                 && let Some(start) = attr("RecordingContent", "timestamp")
                     .and_then(|t| chrono::DateTime::parse_from_rfc3339(&t).ok())
             {
-                let left = (start.with_timezone(&chrono::Utc) + chrono::Duration::days(120) - now).num_seconds();
+                let left = (start.with_timezone(&chrono::Utc) + chrono::Duration::days(120) - now)
+                    .num_seconds();
                 e.value = ((left + 86_399) / 86_400).max(0).to_string();
             }
             e.link = content
                 .split("type=\"onedriveForBusinessVideo\" uri=\"")
                 .nth(1)
                 .and_then(|r| r.split('"').next())
-                .or_else(|| content.split("<a href=\"").nth(1).and_then(|r| r.split('"').next()))
+                .or_else(|| {
+                    content
+                        .split("<a href=\"")
+                        .nth(1)
+                        .and_then(|r| r.split('"').next())
+                })
                 .unwrap_or_default()
                 .replace("&amp;", "&");
             Some(e)
@@ -1243,9 +1389,19 @@ pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
         // (meetingMemberType "temp"): Teams says they're in the lobby.
         let lobby = kind == "MemberJoined"
             && !members.is_empty()
-            && members.iter().all(|m| m["meetingMemberType"].as_str() == Some("temp"));
-        return (matches!(kind, "MemberJoined" | "MemberLeft" | "AddMember" | "DeleteMember") && !targets.is_empty()).then(|| ChatEvent {
-            kind: if lobby { "LobbyJoined".into() } else { kind.into() },
+            && members
+                .iter()
+                .all(|m| m["meetingMemberType"].as_str() == Some("temp"));
+        return (matches!(
+            kind,
+            "MemberJoined" | "MemberLeft" | "AddMember" | "DeleteMember"
+        ) && !targets.is_empty())
+        .then(|| ChatEvent {
+            kind: if lobby {
+                "LobbyJoined".into()
+            } else {
+                kind.into()
+            },
             actor_added: targets.contains(&actor),
             actor,
             targets,
@@ -1280,7 +1436,11 @@ pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
     // event (AddCustomApp / DeleteCustomApp) instead.
     if kind == "AddMember" || kind == "DeleteMember" {
         targets.retain(|t| !t.starts_with("28:"));
-        if targets.is_empty() && tag_values(content, "target").iter().any(|t| t.starts_with("28:")) {
+        if targets.is_empty()
+            && tag_values(content, "target")
+                .iter()
+                .any(|t| t.starts_with("28:"))
+        {
             return None;
         }
     }
@@ -1310,7 +1470,10 @@ pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
             let share: i64 = first("sharehistorytime").parse().unwrap_or(-1);
             let days = (share >= 0 && event_time >= 0)
                 .then(|| ((event_time - share) as f64 / 86_400_000.0).round() as i64);
-            Some(ChatEvent { actor_added, ..ev("AddMember", targets, String::new(), days) })
+            Some(ChatEvent {
+                actor_added,
+                ..ev("AddMember", targets, String::new(), days)
+            })
         }
         "DeleteMember" => {
             (!targets.is_empty()).then(|| ev("DeleteMember", targets, String::new(), None))
@@ -1336,8 +1499,9 @@ pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
         // The chat's Notes were made (Teams' FileAdd row, module 75579
         // `Pa`: only for a Loop thread file): "Notes have been created in
         // this chat.", its "Notes" opening the Notes tab.
-        "FileAdd" => (first("type") == "loop" && first("subtype").eq_ignore_ascii_case("loopthread"))
-            .then(|| ev("NotesCreated", Vec::new(), String::new(), None)),
+        "FileAdd" => (first("type") == "loop"
+            && first("subtype").eq_ignore_ascii_case("loopthread"))
+        .then(|| ev("NotesCreated", Vec::new(), String::new(), None)),
         _ => None,
     }
 }
@@ -1351,7 +1515,12 @@ pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
 /// meeting's: "…the Planning Group: … helping with the meeting."), or
 /// "{initiator} and {target} joined …" when someone added them. None for
 /// other events.
-pub fn backroom_event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, kind: &str, title: &str) -> Option<String> {
+pub fn backroom_event_text(
+    e: &ChatEvent,
+    name: &dyn Fn(&str) -> String,
+    kind: &str,
+    title: &str,
+) -> Option<String> {
     use crate::i18n::{fill, tr_id, tr_id_n};
     if !matches!(e.kind.as_str(), "AddMember" | "MemberJoined") || e.targets.is_empty() {
         return None;
@@ -1363,7 +1532,10 @@ pub fn backroom_event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, kind: &
     // meeting-chat line, without shared history ("OST Test 1 added OST
     // Test 3 to the chat.", seen on winpc 2026-11-20).
     if !self_join && !e.actor_added {
-        let plain = ChatEvent { history_days: None, ..e.clone() };
+        let plain = ChatEvent {
+            history_days: None,
+            ..e.clone()
+        };
         return Some(event_text(&plain, name, true));
     }
     // Teams' module 121919 `Ma` shows the rich sentence (its Aria twin is
@@ -1372,28 +1544,46 @@ pub fn backroom_event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, kind: &
     // ManyTargets}{Event,Meeting}Backroom by how many were added.
     if self_join {
         let text = if event {
-            tr_id("%1 joined the Event Group Chat: %2 for organizers, presenters, and people helping with the event.", "messaging:kc2rbbia0")
+            tr_id(
+                "%1 joined the Event Group Chat: %2 for organizers, presenters, and people helping with the event.",
+                "messaging:kc2rbbia0",
+            )
         } else {
-            tr_id("%1 joined the Planning Group: %2 for organizers, presenters, and people helping with the meeting.", "messaging:k8tfy1qp9")
+            tr_id(
+                "%1 joined the Planning Group: %2 for organizers, presenters, and people helping with the meeting.",
+                "messaging:k8tfy1qp9",
+            )
         };
         return Some(fill(&text, &[&name(&ts[0]), title]));
     }
     let actor = name(&e.actor);
     Some(match (ts.len(), event) {
         (1, true) => fill(
-            &tr_id("%1 and %2 joined the Event Group Chat: %3 for organizers, presenters, and people helping with the event.", "messaging:kd2pf534f"),
+            &tr_id(
+                "%1 and %2 joined the Event Group Chat: %3 for organizers, presenters, and people helping with the event.",
+                "messaging:kd2pf534f",
+            ),
             &[&actor, &name(&ts[0]), title],
         ),
         (1, false) => fill(
-            &tr_id("%1 and %2 joined the Planning Group: %3 for organizers, presenters, and people helping with the meeting.", "messaging:kd4z24g30"),
+            &tr_id(
+                "%1 and %2 joined the Planning Group: %3 for organizers, presenters, and people helping with the meeting.",
+                "messaging:kd4z24g30",
+            ),
             &[&actor, &name(&ts[0]), title],
         ),
         (2, true) => fill(
-            &tr_id("%1 and %2 and %3 joined the Event Group Chat: %4 for organizers, presenters, and people helping with the event.", "messaging:kcux3ubsg"),
+            &tr_id(
+                "%1 and %2 and %3 joined the Event Group Chat: %4 for organizers, presenters, and people helping with the event.",
+                "messaging:kcux3ubsg",
+            ),
             &[&actor, &name(&ts[0]), &name(&ts[1]), title],
         ),
         (2, false) => fill(
-            &tr_id("%1 and %2 and %3 joined the Planning Group: %4 for organizers, presenters, and people helping with the meeting.", "messaging:k5hlqlh91"),
+            &tr_id(
+                "%1 and %2 and %3 joined the Planning Group: %4 for organizers, presenters, and people helping with the meeting.",
+                "messaging:k5hlqlh91",
+            ),
             &[&actor, &name(&ts[0]), &name(&ts[1]), title],
         ),
         // {{otherTargets}}: everyone after the first, as
@@ -1401,9 +1591,15 @@ pub fn backroom_event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, kind: &
         (n, event) => {
             let others = tr_id_n("%n others", "messaging:k7xsi91tl_mf", (n - 1) as i64);
             let text = if event {
-                tr_id("%1 and %2 and %3 joined the Event Group Chat: %4 for organizers, presenters, and people helping with the event.", "messaging:k69ip80jz")
+                tr_id(
+                    "%1 and %2 and %3 joined the Event Group Chat: %4 for organizers, presenters, and people helping with the event.",
+                    "messaging:k69ip80jz",
+                )
             } else {
-                tr_id("%1 and %2 and %3 joined the Planning Group: %4 for organizers, presenters, and people helping with the meeting.", "messaging:kajtcnui4")
+                tr_id(
+                    "%1 and %2 and %3 joined the Planning Group: %4 for organizers, presenters, and people helping with the meeting.",
+                    "messaging:kajtcnui4",
+                )
             };
             fill(&text, &[&actor, &name(&ts[0]), &others, title])
         }
@@ -1416,7 +1612,13 @@ pub fn event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, meeting: bool) -
     let n = ts.len();
     let t = |i: usize| ts.get(i).map(|m| name(m)).unwrap_or_default();
     // Teams' {{otherTargets}}: everyone after the first.
-    let others = || tr_id_n("%n others", "messaging:k7xsi91tl_mf", n.saturating_sub(1) as i64);
+    let others = || {
+        tr_id_n(
+            "%n others",
+            "messaging:k7xsi91tl_mf",
+            n.saturating_sub(1) as i64,
+        )
+    };
     let actor = name(&e.actor);
     // A sentence naming the targets, (one, two, many) as Teams words them,
     // after `lead` (the initiator) when given.
@@ -1456,15 +1658,39 @@ pub fn event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, meeting: bool) -
                     a,
                 ),
                 (Some(d), false) => targets(
-                    tr_id_n("%1 added %2 to the chat and shared chat history from the past %n days.", "messaging:k792viyfy_mf", d),
-                    tr_id_n("%1 added %2 and %3 to the chat and shared chat history from the past %n days.", "messaging:kdmtgu1af_mf", d),
-                    tr_id_n("%1 added %2 and %3 to the chat and shared chat history from the past %n days.", "messaging:k4nx62cv2_mf", d),
+                    tr_id_n(
+                        "%1 added %2 to the chat and shared chat history from the past %n days.",
+                        "messaging:k792viyfy_mf",
+                        d,
+                    ),
+                    tr_id_n(
+                        "%1 added %2 and %3 to the chat and shared chat history from the past %n days.",
+                        "messaging:kdmtgu1af_mf",
+                        d,
+                    ),
+                    tr_id_n(
+                        "%1 added %2 and %3 to the chat and shared chat history from the past %n days.",
+                        "messaging:k4nx62cv2_mf",
+                        d,
+                    ),
                     a,
                 ),
                 (Some(d), true) => targets(
-                    tr_id_n("%1 added %2 to the chat and shared chat history from the past %n days.", "messaging:k2pmdi3ui_mf", d),
-                    tr_id_n("%1 added %2 and %3 to the chat and shared chat history from the past %n days.", "messaging:k84c6snrv_mf", d),
-                    tr_id_n("%1 added %2 and %3 to the chat and shared chat history from the past %n days.", "messaging:kc0p2glne_mf", d),
+                    tr_id_n(
+                        "%1 added %2 to the chat and shared chat history from the past %n days.",
+                        "messaging:k2pmdi3ui_mf",
+                        d,
+                    ),
+                    tr_id_n(
+                        "%1 added %2 and %3 to the chat and shared chat history from the past %n days.",
+                        "messaging:k84c6snrv_mf",
+                        d,
+                    ),
+                    tr_id_n(
+                        "%1 added %2 and %3 to the chat and shared chat history from the past %n days.",
+                        "messaging:kc0p2glne_mf",
+                        d,
+                    ),
                     a,
                 ),
             }
@@ -1480,8 +1706,14 @@ pub fn event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, meeting: bool) -
             } else if !e.actor.starts_with("8:") {
                 targets(
                     tr_id("%1 was removed from the chat.", "messaging:k7brep05k"),
-                    tr_id("%1 and %2 were removed from the chat.", "messaging:k60k3ka6p"),
-                    tr_id("%1 and %2 were removed from the chat.", "messaging:k30qn5jeo"),
+                    tr_id(
+                        "%1 and %2 were removed from the chat.",
+                        "messaging:k60k3ka6p",
+                    ),
+                    tr_id(
+                        "%1 and %2 were removed from the chat.",
+                        "messaging:k30qn5jeo",
+                    ),
                     None,
                 )
             } else if meeting {
@@ -1500,18 +1732,42 @@ pub fn event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, meeting: bool) -
                 )
             }
         }
-        "TopicUpdate" if e.value.is_empty() => {
-            fill(&tr_id("%1 removed the group name for this conversation.", "messaging:k15gdmlel"), &[&actor])
+        "TopicUpdate" if e.value.is_empty() => fill(
+            &tr_id(
+                "%1 removed the group name for this conversation.",
+                "messaging:k15gdmlel",
+            ),
+            &[&actor],
+        ),
+        "TopicUpdate" if meeting => fill(
+            &tr_id("%1 named the meeting %2.", "messaging:k1lv3xtga"),
+            &[&actor, &e.value],
+        ),
+        "TopicUpdate" => fill(
+            &tr_id("%1 changed the group name to %2.", "messaging:k3gjqxx0p"),
+            &[&actor, &e.value],
+        ),
+        "ModalityUpdate" if e.value == "Conversational" => {
+            tr_id("The layout was changed to threads.", "channels:k3wdxw87c")
         }
-        "TopicUpdate" if meeting => fill(&tr_id("%1 named the meeting %2.", "messaging:k1lv3xtga"), &[&actor, &e.value]),
-        "TopicUpdate" => fill(&tr_id("%1 changed the group name to %2.", "messaging:k3gjqxx0p"), &[&actor, &e.value]),
-        "ModalityUpdate" if e.value == "Conversational" => tr_id("The layout was changed to threads.", "channels:k3wdxw87c"),
         "ModalityUpdate" => tr_id("The layout was changed to posts.", "channels:k2aqdncie"),
-        "PictureUpdate" => fill(&tr_id("%1 changed the group profile picture.", "messaging:k73iwuyt6"), &[&actor]),
+        "PictureUpdate" => fill(
+            &tr_id(
+                "%1 changed the group profile picture.",
+                "messaging:k73iwuyt6",
+            ),
+            &[&actor],
+        ),
         "MemberJoined" if meeting => targets(
             tr_id("%1 was invited to the meeting.", "messaging:kvs1jklf"),
-            tr_id("%1 and %2 were invited to the meeting.", "messaging:kamffwoum"),
-            tr_id("%1 and %2 were invited to the meeting.", "messaging:k6bdhq3p5"),
+            tr_id(
+                "%1 and %2 were invited to the meeting.",
+                "messaging:kamffwoum",
+            ),
+            tr_id(
+                "%1 and %2 were invited to the meeting.",
+                "messaging:k6bdhq3p5",
+            ),
             None,
         ),
         "MemberJoined" => targets(
@@ -1534,34 +1790,81 @@ pub fn event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, meeting: bool) -
         ),
         "MemberLeft" => targets(
             tr_id("%1 no longer has access to the chat.", "messaging:k7zr2lj2"),
-            tr_id("%1 and %2 no longer have access to the chat.", "messaging:k1c3c454j"),
-            tr_id("%1 and %2 no longer have access to the chat.", "messaging:k3ux2uy0g"),
+            tr_id(
+                "%1 and %2 no longer have access to the chat.",
+                "messaging:k1c3c454j",
+            ),
+            tr_id(
+                "%1 and %2 no longer have access to the chat.",
+                "messaging:k3ux2uy0g",
+            ),
             None,
         ),
-        "MemberRenamed" => fill(&tr_id("%1 changed their display name to %2.", "messaging:k4yt96aoj"), &[&actor, &e.value]),
-        "AddCustomApp" => fill(&tr_id("%1 added %2 here.", "messaging:k4xrrdiu9"), &[&actor, &e.value]),
-        "AgentAdded" => fill(&tr_id("%1 has been added to the channel.", "messaging:k5zwsygs5"), &[&e.value]),
-        "DeleteCustomApp" => fill(&tr_id("%1 removed %2 from the chat.", "messaging:k7cu8ni8u"), &[&actor, &e.value]),
-        "NotesCreated" => tr_id("Notes have been created in this chat.", "messaging:kb4iz28jx"),
+        "MemberRenamed" => fill(
+            &tr_id(
+                "%1 changed their display name to %2.",
+                "messaging:k4yt96aoj",
+            ),
+            &[&actor, &e.value],
+        ),
+        "AddCustomApp" => fill(
+            &tr_id("%1 added %2 here.", "messaging:k4xrrdiu9"),
+            &[&actor, &e.value],
+        ),
+        "AgentAdded" => fill(
+            &tr_id("%1 has been added to the channel.", "messaging:k5zwsygs5"),
+            &[&e.value],
+        ),
+        "DeleteCustomApp" => fill(
+            &tr_id("%1 removed %2 from the chat.", "messaging:k7cu8ni8u"),
+            &[&actor, &e.value],
+        ),
+        "NotesCreated" => tr_id(
+            "Notes have been created in this chat.",
+            "messaging:kb4iz28jx",
+        ),
         "Transcript" => tr_id("Transcript", "messaging:k42649b7m"),
-        "RecordingStarted" if e.value == "auto" => {
-            tr_id("Recording started automatically per the organizer's setting.", "messaging:k31yglod4")
+        "RecordingStarted" if e.value == "auto" => tr_id(
+            "Recording started automatically per the organizer's setting.",
+            "messaging:k31yglod4",
+        ),
+        "RecordingStarted" if e.actor.is_empty() => {
+            tr_id("Recording has started", "messaging:k8xknh78u")
         }
-        "RecordingStarted" if e.actor.is_empty() => tr_id("Recording has started", "messaging:k8xknh78u"),
-        "RecordingStarted" => fill(&tr_id("%1 started recording.", "messaging:k200fm25m"), &[&actor]),
-        "RecordingStopped" if e.actor.is_empty() => tr_id("Recording stopped.", "messaging:k264iktk2"),
-        "RecordingStopped" => fill(&tr_id("%1 stopped recording.", "messaging:k5nuhgy7r"), &[&actor]),
+        "RecordingStarted" => fill(
+            &tr_id("%1 started recording.", "messaging:k200fm25m"),
+            &[&actor],
+        ),
+        "RecordingStopped" if e.actor.is_empty() => {
+            tr_id("Recording stopped.", "messaging:k264iktk2")
+        }
+        "RecordingStopped" => fill(
+            &tr_id("%1 stopped recording.", "messaging:k5nuhgy7r"),
+            &[&actor],
+        ),
         "RecordingSaved" => {
             let saved = if e.actor.is_empty() {
-                tr_id("Recording has been saved to OneDrive", "messaging:k109bb8vc")
+                tr_id(
+                    "Recording has been saved to OneDrive",
+                    "messaging:k109bb8vc",
+                )
             } else {
-                fill(&tr_id("Recording has been saved to %1's OneDrive", "messaging:k6nyvxe9l"), &[&actor])
+                fill(
+                    &tr_id(
+                        "Recording has been saved to %1's OneDrive",
+                        "messaging:k6nyvxe9l",
+                    ),
+                    &[&actor],
+                )
             };
             // Teams follows it with its expiry as it stands
             // (calling_recording_saved_message_will_expire_mf, whose forms
             // start with a space: module 102719 appends it as is).
             match e.value.parse::<i64>() {
-                Ok(d) => format!("{saved} {}", tr_id_n("and will expire in %n days.", "messaging:ktajw8v_mf", d)),
+                Ok(d) => format!(
+                    "{saved} {}",
+                    tr_id_n("and will expire in %n days.", "messaging:ktajw8v_mf", d)
+                ),
                 Err(_) => saved,
             }
         }
@@ -1584,14 +1887,31 @@ pub fn duration_text(kind: &str, seconds: i64) -> String {
     let s = seconds.max(0);
     let (h, m, sec) = (s / 3600, s / 60 % 60, s % 60);
     let text = match kind {
-        "history" if h > 0 => tr_id_counts("{totalHour}h {min}m", "calling:kc0xcnca0_mf", &[("totalHour", h), ("min", m)]),
-        "history" => tr_id_counts("{totalMin}m {sec}s", "calling:k1yau8i0o_mf", &[("totalMin", s / 60), ("sec", sec)]),
+        "history" if h > 0 => tr_id_counts(
+            "{totalHour}h {min}m",
+            "calling:kc0xcnca0_mf",
+            &[("totalHour", h), ("min", m)],
+        ),
+        "history" => tr_id_counts(
+            "{totalMin}m {sec}s",
+            "calling:k1yau8i0o_mf",
+            &[("totalMin", s / 60), ("sec", sec)],
+        ),
         "attendance" => tr_id_counts(
             "{day}d {hour}h {min}m {sec}s",
             "meetingAnalytics:k31vmww9a_mf",
-            &[("day", s / 86_400), ("hour", h % 24), ("min", m), ("sec", sec)],
+            &[
+                ("day", s / 86_400),
+                ("hour", h % 24),
+                ("min", m),
+                ("sec", sec),
+            ],
         ),
-        _ => tr_id_counts("{hour}h {min}m {sec}s", "messaging:k5gsf29bb_mf", &[("hour", h % 24), ("min", m), ("sec", sec)]),
+        _ => tr_id_counts(
+            "{hour}h {min}m {sec}s",
+            "messaging:k5gsf29bb_mf",
+            &[("hour", h % 24), ("min", m), ("sec", sec)],
+        ),
     };
     // the empty parts' spaces (Teams' HTML collapses them)
     text.split_whitespace().collect::<Vec<_>>().join(" ")
@@ -1831,7 +2151,8 @@ async fn name_events(client: &TeamsClient, chat_id: &str, out: &mut [MessageView
         .flat_map(|m| m.reactions.iter_mut())
         .flat_map(|r| r.users.iter_mut())
     {
-        u.name = cached_name(&u.mri).unwrap_or_else(|| crate::i18n::tr_id("Unknown user", "messaging:kmddh5x4"));
+        u.name = cached_name(&u.mri)
+            .unwrap_or_else(|| crate::i18n::tr_id("Unknown user", "messaging:kmddh5x4"));
     }
     for f in out.iter_mut().filter_map(|m| m.forward.as_mut()) {
         if f.sender_name.is_empty() {
@@ -1873,7 +2194,11 @@ pub fn bot_kind_of(v: Option<&serde_json::Value>) -> String {
         _ => None,
     };
     parsed
-        .and_then(|p| p.get("botTelemetryMessageType").and_then(|x| x.as_str()).map(str::to_string))
+        .and_then(|p| {
+            p.get("botTelemetryMessageType")
+                .and_then(|x| x.as_str())
+                .map(str::to_string)
+        })
         .unwrap_or_default()
 }
 
@@ -1885,7 +2210,11 @@ pub fn bot_kind_of(v: Option<&serde_json::Value>) -> String {
 /// `{name, group}`, `group` being its "group" argument (Teams then shows
 /// the first statement with a menu of all of them). Not JSON: none.
 pub fn odsl_statements(value: &str) -> Vec<serde_json::Value> {
-    const HIDDEN: [&str; 3] = ["proactiveDiagnostics", "orchestratorMetadata", "CustomizationMetadata"];
+    const HIDDEN: [&str; 3] = [
+        "proactiveDiagnostics",
+        "orchestratorMetadata",
+        "CustomizationMetadata",
+    ];
     let v: serde_json::Value = match serde_json::from_str(&value.replace("&quot;", "\"")) {
         Ok(v) => v,
         Err(_) => return Vec::new(),
@@ -1923,9 +2252,15 @@ pub fn odsl_statements(value: &str) -> Vec<serde_json::Value> {
 pub fn odsl_arg(st: &serde_json::Value, name: &str) -> serde_json::Value {
     use serde_json::Value;
     match &st["arguments"] {
-        Value::Array(a) => a.iter().find(|x| x["name"].as_str() == Some(name)).map(|x| x["value"].clone()).unwrap_or(Value::Null),
+        Value::Array(a) => a
+            .iter()
+            .find(|x| x["name"].as_str() == Some(name))
+            .map(|x| x["value"].clone())
+            .unwrap_or(Value::Null),
         Value::Object(o) => {
-            let Some(x) = o.get(name) else { return Value::Null };
+            let Some(x) = o.get(name) else {
+                return Value::Null;
+            };
             match x["type"].as_str() {
                 Some("number") => x["number"].clone(),
                 Some("boolean") => x["boolean"].clone(),
@@ -1933,7 +2268,10 @@ pub fn odsl_arg(st: &serde_json::Value, name: &str) -> serde_json::Value {
                     Value::String(t) if !t.is_empty() => Value::String(t.clone()),
                     _ => Value::Null,
                 },
-                Some("jsonGrid") => x["json"].as_str().and_then(|t| serde_json::from_str(t).ok()).unwrap_or(Value::Null),
+                Some("jsonGrid") => x["json"]
+                    .as_str()
+                    .and_then(|t| serde_json::from_str(t).ok())
+                    .unwrap_or(Value::Null),
                 // The older form: `{name, value}` under any key.
                 _ => x.get("value").cloned().unwrap_or(Value::Null),
             }
@@ -1957,7 +2295,10 @@ fn odsl_strings(v: &serde_json::Value) -> serde_json::Map<String, serde_json::Va
             }
             serde_json::Value::Object(o) => {
                 // `{key, value}` pairs (LocalizedStringKeyValue).
-                if let (Some(k), Some(t)) = (o.get("key").and_then(|k| k.as_str()), o.get("value").and_then(|t| t.as_str())) {
+                if let (Some(k), Some(t)) = (
+                    o.get("key").and_then(|k| k.as_str()),
+                    o.get("value").and_then(|t| t.as_str()),
+                ) {
                     out.insert(k.to_uppercase(), serde_json::json!(t));
                 }
             }
@@ -2023,12 +2364,17 @@ pub fn odsl_command(name: &str, arg: impl Fn(&str) -> serde_json::Value) -> serd
     };
     match name {
         "plan" => {
-            let tasks: Vec<Value> = parse(arg("tasks")).as_array().map(|a| a.iter().map(task).collect()).unwrap_or_default();
+            let tasks: Vec<Value> = parse(arg("tasks"))
+                .as_array()
+                .map(|a| a.iter().map(task).collect())
+                .unwrap_or_default();
             if tasks.is_empty() {
                 return Value::Null;
             }
             let plan = parse(arg("planData"));
-            let hierarchical = tasks.iter().any(|t| !t["parent"].as_str().unwrap_or_default().is_empty() || t["summary"] == json!(true));
+            let hierarchical = tasks.iter().any(|t| {
+                !t["parent"].as_str().unwrap_or_default().is_empty() || t["summary"] == json!(true)
+            });
             json!({
                 "kind": "plan",
                 "title": text(&plan["title"]),
@@ -2042,7 +2388,10 @@ pub fn odsl_command(name: &str, arg: impl Fn(&str) -> serde_json::Value) -> serd
             })
         }
         "tasks" => {
-            let tasks: Vec<Value> = parse(arg("tasks")).as_array().map(|a| a.iter().map(task).collect()).unwrap_or_default();
+            let tasks: Vec<Value> = parse(arg("tasks"))
+                .as_array()
+                .map(|a| a.iter().map(task).collect())
+                .unwrap_or_default();
             json!({
                 "kind": "tasks",
                 "tasks": tasks,
@@ -2059,10 +2408,17 @@ pub fn odsl_command(name: &str, arg: impl Fn(&str) -> serde_json::Value) -> serd
                         // `[{name: "userId", value}]` pairs or `{userId, email}`.
                         if let Some(n) = x["name"].as_str() {
                             let v = text(&x["value"]);
-                            return (!v.is_empty()).then(|| if n == "email" { json!({ "email": v }) } else { json!({ "user_id": v }) });
+                            return (!v.is_empty()).then(|| {
+                                if n == "email" {
+                                    json!({ "email": v })
+                                } else {
+                                    json!({ "user_id": v })
+                                }
+                            });
                         }
                         let (u, e) = (text(&x["userId"]), text(&x["email"]));
-                        (!u.is_empty() || !e.is_empty()).then(|| json!({ "user_id": u, "email": e }))
+                        (!u.is_empty() || !e.is_empty())
+                            .then(|| json!({ "user_id": u, "email": e }))
                     })
                     .collect(),
                 _ => Vec::new(),
@@ -2176,11 +2532,27 @@ pub fn reasoning_view(arg: impl Fn(&str) -> serde_json::Value) -> serde_json::Va
                 steps.push(json!({ "title": cot["title"].as_str().unwrap_or_default(), "active": truthy(&it["active"]), "substeps": subs }));
             }
         }
-        let longest = items.iter().filter_map(|i| i["responseDurationMs"].as_f64()).fold(0.0_f64, f64::max);
-        let intents: Vec<String> = items.iter().map(|i| {
-            let ir = &i["intentResponse"];
-            format!("{} ({})", ir["intent"].as_str().filter(|s| !s.is_empty()).unwrap_or("Unknown"), ir["intentType"].as_str().filter(|s| !s.is_empty()).unwrap_or("Unknown"))
-        }).collect();
+        let longest = items
+            .iter()
+            .filter_map(|i| i["responseDurationMs"].as_f64())
+            .fold(0.0_f64, f64::max);
+        let intents: Vec<String> = items
+            .iter()
+            .map(|i| {
+                let ir = &i["intentResponse"];
+                format!(
+                    "{} ({})",
+                    ir["intent"]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or("Unknown"),
+                    ir["intentType"]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or("Unknown")
+                )
+            })
+            .collect();
         iters.push(json!({ "number": n, "seconds": (longest / 1000.0).floor() as i64, "intents": intents.join(", "), "active": items.iter().any(|i| truthy(&i["active"])) }));
     }
     // The service's strings: nested lists of {KEY: {value}} objects.
@@ -2232,13 +2604,23 @@ pub fn suggested_actions(v: Option<&serde_json::Value>) -> Vec<serde_json::Value
         Some(o) => o.clone(),
         None => return Vec::new(),
     };
-    let s = |v: &Value, p: &str| v.pointer(p).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    let s = |v: &Value, p: &str| {
+        v.pointer(p)
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     let text_of = |v: &Value| match v {
         Value::String(t) => t.clone(),
         other => other.to_string(),
     };
-    let Some(list) = v["actions"].as_array() else { return Vec::new() };
-    if list.iter().any(|a| !a["title"].is_string() || !a["type"].is_string()) {
+    let Some(list) = v["actions"].as_array() else {
+        return Vec::new();
+    };
+    if list
+        .iter()
+        .any(|a| !a["title"].is_string() || !a["type"].is_string())
+    {
         return Vec::new();
     }
     let compose = |a: &Value, title: &str| -> Option<Value> {
@@ -2250,7 +2632,12 @@ pub fn suggested_actions(v: Option<&serde_json::Value>) -> Vec<serde_json::Value
             return None;
         }
         let mut mentions = Vec::new();
-        for m in a.pointer("/value/data/mentions").and_then(|m| m.as_array()).into_iter().flatten() {
+        for m in a
+            .pointer("/value/data/mentions")
+            .and_then(|m| m.as_array())
+            .into_iter()
+            .flatten()
+        {
             // Teams drops the action when a mention isn't well formed.
             let id = match &m["id"] {
                 Value::Number(n) => n.to_string(),
@@ -2258,7 +2645,11 @@ pub fn suggested_actions(v: Option<&serde_json::Value>) -> Vec<serde_json::Value
                 _ => return None,
             };
             let mri = m.pointer("/mentioned/user/id").and_then(|x| x.as_str())?;
-            let app = if mri.starts_with("28:") { s(m, "/mentioned/user/appId") } else { String::new() };
+            let app = if mri.starts_with("28:") {
+                s(m, "/mentioned/user/appId")
+            } else {
+                String::new()
+            };
             mentions.push(json!({ "id": id.parse::<i64>().unwrap_or(0), "name": s(m, "/mentionText"), "mri": mri, "appId": app }));
         }
         Some(json!({ "title": title, "kind": "compose", "html": html, "mentions": mentions }))
@@ -2269,22 +2660,42 @@ pub fn suggested_actions(v: Option<&serde_json::Value>) -> Vec<serde_json::Value
             break;
         }
         let title = a["title"].as_str().unwrap_or_default();
-        let parsed = match a["type"].as_str().unwrap_or_default().to_lowercase().as_str() {
-            "imback" => (!a["value"].is_null() && a["value"] != json!("")).then(|| json!({ "title": title, "kind": "imBack", "text": text_of(&a["value"]) })),
+        let parsed = match a["type"]
+            .as_str()
+            .unwrap_or_default()
+            .to_lowercase()
+            .as_str()
+        {
+            "imback" => (!a["value"].is_null() && a["value"] != json!(""))
+                .then(|| json!({ "title": title, "kind": "imBack", "text": text_of(&a["value"]) })),
             "action.compose" => compose(a, title),
             "action.odsl" => {
-                let value = if a["value"].is_null() { String::new() } else { text_of(&a["value"]) };
-                Some(json!({ "title": title, "kind": "odsl", "statements": odsl_statements(&value), "value": value }))
+                let value = if a["value"].is_null() {
+                    String::new()
+                } else {
+                    text_of(&a["value"])
+                };
+                Some(
+                    json!({ "title": title, "kind": "odsl", "statements": odsl_statements(&value), "value": value }),
+                )
             }
             "action.submit" => a["value"].as_object().map(|o| {
-                let name = o.get("name").and_then(|n| n.as_str()).filter(|n| !n.is_empty()).unwrap_or("suggestedActions/submit");
-                let value = o.get("value").filter(|x| !x.is_null()).unwrap_or(&a["value"]);
+                let name = o
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or("suggestedActions/submit");
+                let value = o
+                    .get("value")
+                    .filter(|x| !x.is_null())
+                    .unwrap_or(&a["value"]);
                 json!({ "title": title, "kind": "invoke", "name": name, "value": text_of(value) })
             }),
             "openurl" => {
                 let url = text_of(&a["value"]);
                 let lower = url.to_lowercase();
-                (lower.starts_with("http://") || lower.starts_with("https://")).then(|| json!({ "title": title, "kind": "openUrl", "url": url }))
+                (lower.starts_with("http://") || lower.starts_with("https://"))
+                    .then(|| json!({ "title": title, "kind": "openUrl", "url": url }))
             }
             _ => None,
         };
@@ -2311,7 +2722,11 @@ pub fn mark_agent_adds(out: &mut [MessageView]) {
         return;
     }
     for e in out.iter_mut().filter_map(|m| m.event.as_mut()) {
-        if e.kind == "AddCustomApp" && e.targets.iter().any(|t| agents.contains(&t.to_ascii_lowercase())) {
+        if e.kind == "AddCustomApp"
+            && e.targets
+                .iter()
+                .any(|t| agents.contains(&t.to_ascii_lowercase()))
+        {
             e.kind = "AgentAdded".into();
         }
     }
@@ -2357,16 +2772,24 @@ fn channel_meeting(m: &serde_json::Value, content: &str) -> ChannelMeeting {
             .trim()
             .replace("&amp;", "&")
     };
-    let started_at = chrono::NaiveDateTime::parse_from_str(&tag("conversationStartTime"), "%m/%d/%Y %H:%M:%S")
-        .map(|t| t.and_utc().to_rfc3339())
-        .unwrap_or_default();
-    let s = |v: &serde_json::Value, k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    let started_at =
+        chrono::NaiveDateTime::parse_from_str(&tag("conversationStartTime"), "%m/%d/%Y %H:%M:%S")
+            .map(|t| t.and_utc().to_rfc3339())
+            .unwrap_or_default();
+    let s = |v: &serde_json::Value, k: &str| {
+        v.get(k)
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     ChannelMeeting {
         join_url: s(&meeting, "meetingJoinUrl"),
         title: s(&meeting, "meetingtitle"),
         started_at,
         conversation_url: tag("conversationUrl"),
-        linked_root: props.map(|p| s(p, "linkedRootMessageId")).unwrap_or_default(),
+        linked_root: props
+            .map(|p| s(p, "linkedRootMessageId"))
+            .unwrap_or_default(),
     }
 }
 
@@ -2439,7 +2862,9 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     if bot && !app_name.is_empty() {
         sender = app_name;
     }
-    let ai_agent = bot && m.pointer("/properties/botPoweredByAI").is_some_and(|v| v.as_bool() == Some(true) || v.as_str() == Some("true"));
+    let ai_agent = bot
+        && m.pointer("/properties/botPoweredByAI")
+            .is_some_and(|v| v.as_bool() == Some(true) || v.as_str() == Some("true"));
     let time = {
         let t = s("/originalarrivaltime");
         if t.is_empty() { s("/composetime") } else { t }
@@ -2457,10 +2882,24 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         sender,
         sender_mri,
         ai_agent,
-        sender_app: if bot { s("/properties/fromAppMetadata/id") } else { String::new() },
-        suggested: if bot { suggested_actions(m.pointer("/properties/suggestedActions")) } else { Vec::new() },
-        feedback_loop: bot && m.pointer("/properties/botFeedbackLoopEnabled").is_some_and(|v| v.as_bool() == Some(true) || v.as_str() == Some("true")),
-        bot_kind: if bot { bot_kind_of(m.pointer("/properties/botMetadata")) } else { String::new() },
+        sender_app: if bot {
+            s("/properties/fromAppMetadata/id")
+        } else {
+            String::new()
+        },
+        suggested: if bot {
+            suggested_actions(m.pointer("/properties/suggestedActions"))
+        } else {
+            Vec::new()
+        },
+        feedback_loop: bot
+            && m.pointer("/properties/botFeedbackLoopEnabled")
+                .is_some_and(|v| v.as_bool() == Some(true) || v.as_str() == Some("true")),
+        bot_kind: if bot {
+            bot_kind_of(m.pointer("/properties/botMetadata"))
+        } else {
+            String::new()
+        },
         time,
         mine,
         html: String::new(),
@@ -2476,8 +2915,13 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         files: Vec::new(),
         root_id: s("/rootMessageId"),
         on_behalf_of: on_behalf_of_name(m.pointer("/properties/onbehalfof")),
-        shared_in_main: matches!(m.pointer("/properties/isSharedInMain"), Some(serde_json::Value::Bool(true)))
-            || m.pointer("/properties/isSharedInMain").and_then(|v| v.as_str()) == Some("true"),
+        shared_in_main: matches!(
+            m.pointer("/properties/isSharedInMain"),
+            Some(serde_json::Value::Bool(true))
+        ) || m
+            .pointer("/properties/isSharedInMain")
+            .and_then(|v| v.as_str())
+            == Some("true"),
         mentions_me: false,
         event: None,
         meeting_title: meeting_title_of(&meeting_prop(m)),
@@ -2498,7 +2942,10 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         }
         return Some(MessageView {
             kind: "event".into(),
-            event: Some(ChatEvent { kind: "Transcript".into(), ..ChatEvent::default() }),
+            event: Some(ChatEvent {
+                kind: "Transcript".into(),
+                ..ChatEvent::default()
+            }),
             ..base
         });
     }
@@ -2619,7 +3066,11 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     } else {
         message_media(&content)
     };
-    let videos = if deleted { Vec::new() } else { inline_videos(&content) };
+    let videos = if deleted {
+        Vec::new()
+    } else {
+        inline_videos(&content)
+    };
     let files = if deleted {
         Vec::new()
     } else {
@@ -2666,12 +3117,19 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     let reader_html = if cards.is_empty() {
         String::new()
     } else {
-        let list: Vec<(String, serde_json::Value)> = cards.iter().map(|c| (c.content_type.clone(), c.content.clone())).collect();
+        let list: Vec<(String, serde_json::Value)> = cards
+            .iter()
+            .map(|c| (c.content_type.clone(), c.content.clone()))
+            .collect();
         super::reader_text::reader_html(&s("/content"), &kind, &list)
     };
     // Files, cards, pictures, GIFs and stickers keep emoticons small (as in
     // Teams, where any other image counts).
-    let may_be_big = files.is_empty() && cards.is_empty() && images.is_empty() && media.is_empty() && videos.is_empty();
+    let may_be_big = files.is_empty()
+        && cards.is_empty()
+        && images.is_empty()
+        && media.is_empty()
+        && videos.is_empty();
     let (marked, pic_tags) = if deleted {
         (String::new(), Vec::new())
     } else {
@@ -2702,7 +3160,10 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         // Text with its pictures after it: Teams draws no line for the
         // break that ends its last paragraph.
         let t = trailing_breaks_dropped(&without_empty_paragraphs(&head));
-        t.trim_end().strip_suffix("<p>").map(|s| s.trim_end().to_string()).unwrap_or(t)
+        t.trim_end()
+            .strip_suffix("<p>")
+            .map(|s| s.trim_end().to_string())
+            .unwrap_or(t)
     } else if flow.is_empty() {
         without_empty_paragraphs(&head)
     } else {
@@ -2749,7 +3210,11 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         deleted,
         reactions,
         follow_explicit,
-        url_preview: if deleted { None } else { super::url_preview::from_message(props, &content) },
+        url_preview: if deleted {
+            None
+        } else {
+            super::url_preview::from_message(props, &content)
+        },
         ..base
     })
 }
@@ -3077,7 +3542,10 @@ fn sanitize_core(html: &str, mine: &[String], mark_pics: bool) -> (String, Vec<S
         // text ("Video-Clip") goes with it.
         if name == "video" {
             if !closing {
-                if mark_pics && attr(tag, "itemtype").is_some_and(|t| t.ends_with("schema.skype.com/AMSVideo")) {
+                if mark_pics
+                    && attr(tag, "itemtype")
+                        .is_some_and(|t| t.ends_with("schema.skype.com/AMSVideo"))
+                {
                     out.push_str(&pic_marker(pics.len()));
                     pics.push(tag.to_string());
                 }
@@ -3223,8 +3691,10 @@ fn sanitize_core(html: &str, mine: &[String], mark_pics: bool) -> (String, Vec<S
         if name == "a"
             && !closing
             && mark_pics
-            && attr(tag, "itemtype").is_some_and(|t| t.ends_with("schema.skype.com/FluidAutoEmbedLink"))
-            && attr(tag, "href").is_some_and(|h| h.trim().to_ascii_lowercase().starts_with("https://"))
+            && attr(tag, "itemtype")
+                .is_some_and(|t| t.ends_with("schema.skype.com/FluidAutoEmbedLink"))
+            && attr(tag, "href")
+                .is_some_and(|h| h.trim().to_ascii_lowercase().starts_with("https://"))
         {
             out.push_str(&pic_marker(pics.len()));
             pics.push(tag.to_string());
@@ -3259,7 +3729,9 @@ fn sanitize_core(html: &str, mine: &[String], mark_pics: bool) -> (String, Vec<S
             continue;
         }
         if !closing && (name == "td" || name == "th") {
-            out.push_str(&format!("<{name} style=\"padding-left:5px;padding-right:5px;vertical-align:middle\">"));
+            out.push_str(&format!(
+                "<{name} style=\"padding-left:5px;padding-right:5px;vertical-align:middle\">"
+            ));
             continue;
         }
         out.push('<');
@@ -3396,7 +3868,8 @@ fn trailing_breaks_dropped(html: &str) -> String {
     while let Some(i) = rest.find("<br />") {
         let after = &rest[i + "<br />".len()..];
         // `<p><br /></p>` is a blank line and stays.
-        let alone = rest[..i].trim_end().ends_with("<p>") || (out.is_empty() && rest[..i].trim().is_empty());
+        let alone = rest[..i].trim_end().ends_with("<p>")
+            || (out.is_empty() && rest[..i].trim().is_empty());
         if after.trim_start().starts_with("</p>") && !alone {
             out.push_str(&rest[..i]);
             rest = after.trim_start();
@@ -3446,7 +3919,12 @@ fn split_flow(
             .and_then(|n| pics.get(n))
             .is_some_and(|t| t.starts_with("video"))
     };
-    let blank_before = |before: &str, at: &str| at.starts_with(&lead) && is_video(at) && before.contains("<p") && flow_text(before).is_empty();
+    let blank_before = |before: &str, at: &str| {
+        at.starts_with(&lead)
+            && is_video(at)
+            && before.contains("<p")
+            && flow_text(before).is_empty()
+    };
     if blank_before(&marked[..first], &marked[first..]) {
         flow.push(text_part("<p>&nbsp;</p>".to_string()));
     }
@@ -4059,7 +4537,9 @@ fn inline_videos(html: &str) -> Vec<VideoClip> {
         let num = |k: &str| attr(tag, k).and_then(|v| v.parse().ok()).unwrap_or(0);
         out.push(VideoClip {
             thumb_url: format!("{base}/views/thumbnail"),
-            duration: attr(tag, "data-duration").map(|d| iso_seconds(&d)).unwrap_or_default(),
+            duration: attr(tag, "data-duration")
+                .map(|d| iso_seconds(&d))
+                .unwrap_or_default(),
             width: num("width"),
             height: num("height"),
             id,
@@ -4072,7 +4552,11 @@ fn inline_videos(html: &str) -> Vec<VideoClip> {
 
 /// An ISO 8601 duration ("PT1M16.309S") in seconds.
 fn iso_seconds(d: &str) -> f64 {
-    let Some(t) = d.trim().strip_prefix("PT").or_else(|| d.trim().strip_prefix("pt")) else {
+    let Some(t) = d
+        .trim()
+        .strip_prefix("PT")
+        .or_else(|| d.trim().strip_prefix("pt"))
+    else {
         return 0.0;
     };
     let (mut total, mut num) = (0.0, String::new());
@@ -4095,7 +4579,10 @@ fn iso_seconds(d: &str) -> f64 {
 pub fn is_ams_url(url: &str) -> bool {
     url::Url::parse(url).is_ok_and(|u| {
         // AMS, or its v2 gateway (asyncgw), where recording thumbnails live.
-        u.scheme() == "https" && u.host_str().is_some_and(|h| h.ends_with(".asm.skype.com") || h.ends_with(".asyncgw.teams.microsoft.com"))
+        u.scheme() == "https"
+            && u.host_str().is_some_and(|h| {
+                h.ends_with(".asm.skype.com") || h.ends_with(".asyncgw.teams.microsoft.com")
+            })
     })
 }
 
@@ -4247,7 +4734,11 @@ pub fn edit_body(
         "crossPostChannels": [],
     });
     for k in ["replyPermission", "crossPostId"] {
-        if let Some(v) = props.get(k).and_then(|v| v.as_str()).filter(|v| !v.is_empty()) {
+        if let Some(v) = props
+            .get(k)
+            .and_then(|v| v.as_str())
+            .filter(|v| !v.is_empty())
+        {
             body["properties"][k] = v.into();
         }
     }
@@ -4327,21 +4818,39 @@ pub struct EditExtras {
 /// The message object Teams' cross-post calls carry: the edit's body with
 /// the message's own fields (link, sender, times) and the edit time as its
 /// version (captured 2026-11-24).
-pub fn cross_post_message(body: &serde_json::Value, original: &serde_json::Value) -> serde_json::Value {
+pub fn cross_post_message(
+    body: &serde_json::Value,
+    original: &serde_json::Value,
+) -> serde_json::Value {
     let mut m = body.clone();
     let o = |k: &str| original.get(k).cloned().unwrap_or_default();
-    let conv = original.get("conversationid").and_then(|c| c.as_str()).unwrap_or_default();
-    let id = original.get("id").and_then(|c| c.as_str()).unwrap_or_default();
+    let conv = original
+        .get("conversationid")
+        .and_then(|c| c.as_str())
+        .unwrap_or_default();
+    let id = original
+        .get("id")
+        .and_then(|c| c.as_str())
+        .unwrap_or_default();
     m["conversationLink"] = format!("conversation/{conv};messageid={id}").into();
     m["from"] = o("from");
     m["fromUserId"] = o("fromUserId");
     if m["fromUserId"].is_null() {
-        m["fromUserId"] = original.get("from").and_then(|f| f.as_str()).and_then(|f| f.rsplit("/contacts/").next()).unwrap_or_default().into();
+        m["fromUserId"] = original
+            .get("from")
+            .and_then(|f| f.as_str())
+            .and_then(|f| f.rsplit("/contacts/").next())
+            .unwrap_or_default()
+            .into();
     }
     m["composetime"] = o("composetime");
     m["originalarrivaltime"] = o("originalarrivaltime");
     m["state"] = 0.into();
-    m["version"] = m["properties"]["edittime"].as_i64().unwrap_or_default().to_string().into();
+    m["version"] = m["properties"]["edittime"]
+        .as_i64()
+        .unwrap_or_default()
+        .to_string()
+        .into();
     if let Some(o) = m.as_object_mut() {
         o.remove("crossPostChannels");
     }
@@ -4352,11 +4861,16 @@ pub fn cross_post_message(body: &serde_json::Value, original: &serde_json::Value
 /// crossposts/{id}` → successfulChannelIds: the others first, then the
 /// post's own).
 pub async fn cross_post_channels(client: &TeamsClient, cross_post_id: &str) -> Result<Vec<String>> {
-    anyhow::ensure!(cross_post_id.chars().all(|c| c.is_ascii_alphanumeric()), "Not a cross-post");
+    anyhow::ensure!(
+        cross_post_id.chars().all(|c| c.is_ascii_alphanumeric()),
+        "Not a cross-post"
+    );
     let (base, token) = super::teams::csa(client).await?;
     let v: serde_json::Value = client
         .http()
-        .get(format!("{base}/v1/teams/users/me/crossposts/{cross_post_id}"))
+        .get(format!(
+            "{base}/v1/teams/users/me/crossposts/{cross_post_id}"
+        ))
         .bearer_auth(token)
         .send()
         .await?
@@ -4365,17 +4879,36 @@ pub async fn cross_post_channels(client: &TeamsClient, cross_post_id: &str) -> R
         .await?;
     Ok(v.get("successfulChannelIds")
         .and_then(|a| a.as_array())
-        .map(|a| a.iter().filter_map(|c| c.as_str().map(str::to_string)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|c| c.as_str().map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default())
 }
 
 /// One CSA cross-post request; its reply's JSON.
-async fn cross_post_request(client: &TeamsClient, method: reqwest::Method, path: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
+async fn cross_post_request(
+    client: &TeamsClient,
+    method: reqwest::Method,
+    path: &str,
+    body: &serde_json::Value,
+) -> Result<serde_json::Value> {
     let (base, token) = super::teams::csa(client).await?;
-    let resp = client.http().request(method, format!("{base}/v1/teams/{path}")).bearer_auth(token).json(body).send().await?;
+    let resp = client
+        .http()
+        .request(method, format!("{base}/v1/teams/{path}"))
+        .bearer_auth(token)
+        .json(body)
+        .send()
+        .await?;
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
-    anyhow::ensure!(status.is_success(), "Cross-post: {status} {}", text.chars().take(200).collect::<String>());
+    anyhow::ensure!(
+        status.is_success(),
+        "Cross-post: {status} {}",
+        text.chars().take(200).collect::<String>()
+    );
     Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null))
 }
 
@@ -4383,7 +4916,12 @@ async fn cross_post_request(client: &TeamsClient, method: reqwest::Method, path:
 /// channels: `POST {csa}/v1/teams/users/me/crossposts` {message,
 /// parentChannelId, channelIds (the others), amsStorageLocations}).
 /// Returns the post's id in its channel.
-pub async fn new_cross_post(client: &TeamsClient, message: &serde_json::Value, channel: &str, others: &[String]) -> Result<String> {
+pub async fn new_cross_post(
+    client: &TeamsClient,
+    message: &serde_json::Value,
+    channel: &str,
+    others: &[String],
+) -> Result<String> {
     let v = cross_post_request(
         client,
         reqwest::Method::POST,
@@ -4391,7 +4929,10 @@ pub async fn new_cross_post(client: &TeamsClient, message: &serde_json::Value, c
         &serde_json::json!({ "message": message, "parentChannelId": channel, "channelIds": others, "amsStorageLocations": {} }),
     )
     .await?;
-    Ok(v.get("parentMessageId").and_then(|p| p.as_str()).unwrap_or_default().to_string())
+    Ok(v.get("parentMessageId")
+        .and_then(|p| p.as_str())
+        .unwrap_or_default()
+        .to_string())
 }
 
 /// Edit a post (as Teams' post composer saves it): a cross-posted post
@@ -4408,11 +4949,18 @@ async fn save_post_edit(
     body: serde_json::Value,
     x: &EditExtras,
 ) -> Result<()> {
-    let cross_id = original.pointer("/properties/crossPostId").and_then(|c| c.as_str()).unwrap_or_default();
+    let cross_id = original
+        .pointer("/properties/crossPostId")
+        .and_then(|c| c.as_str())
+        .unwrap_or_default();
     if !cross_id.is_empty() && cross_id.chars().all(|c| c.is_ascii_alphanumeric()) {
         let others = match &x.cross_channels {
             Some(c) => c.clone(),
-            None => cross_post_channels(client, cross_id).await?.into_iter().filter(|c| c != chat_id).collect(),
+            None => cross_post_channels(client, cross_id)
+                .await?
+                .into_iter()
+                .filter(|c| c != chat_id)
+                .collect(),
         };
         let mut channels: Vec<String> = others.into_iter().filter(|c| c != chat_id).collect();
         channels.push(chat_id.to_string());
@@ -4426,7 +4974,13 @@ async fn save_post_edit(
         .await?;
         return Ok(());
     }
-    let others: Vec<String> = x.cross_channels.clone().unwrap_or_default().into_iter().filter(|c| c != chat_id).collect();
+    let others: Vec<String> = x
+        .cross_channels
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|c| c != chat_id)
+        .collect();
     if !others.is_empty() && !x.team_id.is_empty() {
         let m = cross_post_message(&body, original);
         cross_post_request(
@@ -4438,7 +4992,9 @@ async fn save_post_edit(
         .await?;
         return Ok(());
     }
-    client.chat_request(reqwest::Method::PUT, url, &body).await?;
+    client
+        .chat_request(reqwest::Method::PUT, url, &body)
+        .await?;
     Ok(())
 }
 
@@ -4462,7 +5018,9 @@ pub fn ams_video_elements(html: &str) -> Vec<(String, String)> {
     let lower = html.to_ascii_lowercase();
     let mut at = 0;
     while let Some(i) = lower[at..].find("<video").map(|i| at + i) {
-        let Some(tag_end) = html[i..].find('>').map(|e| i + e + 1) else { break };
+        let Some(tag_end) = html[i..].find('>').map(|e| i + e + 1) else {
+            break;
+        };
         let tag = &html[i..tag_end];
         let end = match lower[tag_end..].find("</video>") {
             Some(e) if !tag.ends_with("/>") => tag_end + e + "</video>".len(),
@@ -4473,7 +5031,11 @@ pub fn ams_video_elements(html: &str) -> Vec<(String, String)> {
             continue;
         }
         let id = attr(tag, "src")
-            .and_then(|s| s.split("/v1/objects/").nth(1).map(|r| r.split('/').next().unwrap_or_default().to_string()))
+            .and_then(|s| {
+                s.split("/v1/objects/")
+                    .nth(1)
+                    .map(|r| r.split('/').next().unwrap_or_default().to_string())
+            })
             .unwrap_or_default();
         out.push((html[i..end].to_string(), id));
     }
@@ -4486,7 +5048,11 @@ pub fn ams_video_elements(html: &str) -> Vec<(String, String)> {
 /// span after the content with its card, the message's own Loop cards kept
 /// (their spans written back when the editor dropped them), and
 /// `amsreferences`.
-pub fn apply_edit_extras(body: &mut serde_json::Value, original: &serde_json::Value, x: &EditExtras) {
+pub fn apply_edit_extras(
+    body: &mut serde_json::Value,
+    original: &serde_json::Value,
+    x: &EditExtras,
+) {
     let props = original.get("properties").cloned().unwrap_or_default();
     let list = |k: &str| -> Vec<serde_json::Value> {
         match props.get(k) {
@@ -4511,35 +5077,63 @@ pub fn apply_edit_extras(body: &mut serde_json::Value, original: &serde_json::Va
             .filter(|f| !x.removed_files.contains(&url_of(f)))
             .collect();
         files.extend(x.added_files.iter().cloned());
-        body["properties"]["files"] = serde_json::Value::String(serde_json::to_string(&files).unwrap_or_else(|_| "[]".into()));
+        body["properties"]["files"] = serde_json::Value::String(
+            serde_json::to_string(&files).unwrap_or_else(|_| "[]".into()),
+        );
     }
     let mut content = body["content"].as_str().unwrap_or_default().to_string();
     // The message's own video clips (Teams' edit box shows them over the
     // text): those kept go back before it, as the message had them; one
     // taken out leaves its empty paragraph (captured 2026-11-24: "<p>&nbsp;
     // </p><p>text</p>").
-    let original_content = original.get("content").and_then(|c| c.as_str()).unwrap_or_default();
+    let original_content = original
+        .get("content")
+        .and_then(|c| c.as_str())
+        .unwrap_or_default();
     let videos = ams_video_elements(original_content);
     if !videos.is_empty() {
-        let kept: String = videos.iter().filter(|(_, id)| !x.removed_clips.contains(id)).map(|(h, _)| h.as_str()).collect();
+        let kept: String = videos
+            .iter()
+            .filter(|(_, id)| !x.removed_clips.contains(id))
+            .map(|(h, _)| h.as_str())
+            .collect();
         // (A clip recorded in the edit already brought its paragraph.)
-        let rest = content.strip_prefix("<p>&nbsp;</p>").unwrap_or(&content).to_string();
+        let rest = content
+            .strip_prefix("<p>&nbsp;</p>")
+            .unwrap_or(&content)
+            .to_string();
         content = format!("<p>&nbsp;</p>{kept}{rest}");
     }
     let mut cards: Vec<serde_json::Value> = list("cards");
-    let fluid = |c: &serde_json::Value| c["contentType"] == "application/vnd.microsoft.card.fluidEmbedCard";
+    let fluid =
+        |c: &serde_json::Value| c["contentType"] == "application/vnd.microsoft.card.fluidEmbedCard";
     // Loop components taken out: their card and span go.
     let removed: Vec<String> = cards
         .iter()
-        .filter(|c| fluid(c) && c.pointer("/content/componentUrl").and_then(|u| u.as_str()).is_some_and(|u| x.removed_loops.iter().any(|r| r == u)))
+        .filter(|c| {
+            fluid(c)
+                && c.pointer("/content/componentUrl")
+                    .and_then(|u| u.as_str())
+                    .is_some_and(|u| x.removed_loops.iter().any(|r| r == u))
+        })
         .filter_map(|c| c["cardClientId"].as_str().map(str::to_string))
         .collect();
     for id in &removed {
         content = content.replace(&super::outbox::loop_embed_span(id), "");
-        content = content.replace(&format!("<span itemtype=\"http://schema.skype.com/FluidEmbedCard\" itemid=\"{id}\"></span>"), "");
+        content = content.replace(
+            &format!(
+                "<span itemtype=\"http://schema.skype.com/FluidEmbedCard\" itemid=\"{id}\"></span>"
+            ),
+            "",
+        );
     }
     let cards_changed = !removed.is_empty() || x.loop_component.is_some();
-    cards.retain(|c| !(fluid(c) && c["cardClientId"].as_str().is_some_and(|id| removed.iter().any(|r| r == id))));
+    cards.retain(|c| {
+        !(fluid(c)
+            && c["cardClientId"]
+                .as_str()
+                .is_some_and(|id| removed.iter().any(|r| r == id)))
+    });
     // The others stay, span and card.
     for c in cards.iter().filter(|c| fluid(c)) {
         let id = c["cardClientId"].as_str().unwrap_or_default();
@@ -4549,11 +5143,14 @@ pub fn apply_edit_extras(body: &mut serde_json::Value, original: &serde_json::Va
     }
     if let Some(l) = &x.loop_component {
         content.push_str(&super::outbox::loop_embed_span(&l.card_client_id));
-        let new: Vec<serde_json::Value> = serde_json::from_str(&super::outbox::loop_embed_cards(l)).unwrap_or_default();
+        let new: Vec<serde_json::Value> =
+            serde_json::from_str(&super::outbox::loop_embed_cards(l)).unwrap_or_default();
         cards.extend(new);
     }
     if cards_changed {
-        body["properties"]["cards"] = serde_json::Value::String(serde_json::to_string(&cards).unwrap_or_else(|_| "[]".into()));
+        body["properties"]["cards"] = serde_json::Value::String(
+            serde_json::to_string(&cards).unwrap_or_else(|_| "[]".into()),
+        );
     }
     body["content"] = content.into();
     // The media-store objects still in it, and new ones.
@@ -4562,7 +5159,10 @@ pub fn apply_edit_extras(body: &mut serde_json::Value, original: &serde_json::Va
         .cloned()
         .unwrap_or_default()
         .into_iter()
-        .filter(|a| !a.as_str().is_some_and(|a| x.removed_clips.iter().any(|r| r == a)))
+        .filter(|a| {
+            !a.as_str()
+                .is_some_and(|a| x.removed_clips.iter().any(|r| r == a))
+        })
         .collect();
     for a in &x.ams_references {
         if !ams.iter().any(|v| v.as_str() == Some(a.as_str())) {
@@ -4578,8 +5178,15 @@ pub fn apply_edit_extras(body: &mut serde_json::Value, original: &serde_json::Va
         body["properties"]["replyPermission"] = r.clone().into();
     }
     if x.post {
-        let announcement = list("cards").iter().any(|c| c["contentType"] == ANNOUNCEMENT_BANNER);
-        body["postType"] = if announcement { "Announcement" } else { "Standard" }.into();
+        let announcement = list("cards")
+            .iter()
+            .any(|c| c["contentType"] == ANNOUNCEMENT_BANNER);
+        body["postType"] = if announcement {
+            "Announcement"
+        } else {
+            "Standard"
+        }
+        .into();
     }
 }
 
@@ -4817,7 +5424,11 @@ impl ConversationFacts {
         Self {
             cleared_ms: v
                 .pointer("/properties/clearHistoryTime")
-                .and_then(|h| h.as_str().and_then(|s| s.parse().ok()).or_else(|| h.as_u64()))
+                .and_then(|h| {
+                    h.as_str()
+                        .and_then(|s| s.parse().ok())
+                        .or_else(|| h.as_u64())
+                })
                 .filter(|t| *t > 0),
             modality: v
                 .pointer("/threadProperties/chatModalityType")
@@ -4832,8 +5443,17 @@ impl ConversationFacts {
 /// `properties.chatModalityType`), which members can read before they've
 /// opened the channel (their own conversation of it doesn't exist yet).
 pub async fn thread_modality(client: &TeamsClient, thread_id: &str) -> Result<Option<String>> {
-    let url = format!("{}/v1/threads/{}?view=msnp24Equivalent", client.chat_service_url(), thread_id);
-    let v: serde_json::Value = client.chat_get(&url).await?.json().await.context("Thread reply")?;
+    let url = format!(
+        "{}/v1/threads/{}?view=msnp24Equivalent",
+        client.chat_service_url(),
+        thread_id
+    );
+    let v: serde_json::Value = client
+        .chat_get(&url)
+        .await?
+        .json()
+        .await
+        .context("Thread reply")?;
     Ok(v.pointer("/properties/chatModalityType")
         .and_then(|m| m.as_str())
         .filter(|m| !m.is_empty())
@@ -4846,7 +5466,12 @@ pub async fn conversation_facts(client: &TeamsClient, chat_id: &str) -> Result<C
         client.chat_service_url(),
         chat_id
     );
-    let v: serde_json::Value = client.chat_get(&url).await?.json().await.context("Conversation reply")?;
+    let v: serde_json::Value = client
+        .chat_get(&url)
+        .await?
+        .json()
+        .await
+        .context("Conversation reply")?;
     Ok(ConversationFacts::from_reply(&v))
 }
 
@@ -4863,8 +5488,10 @@ pub async fn my_read_horizon(client: &TeamsClient, chat_id: &str) -> Result<Opti
         .await
         .context("Conversation reply")?;
     Ok(read_position(
-        v.pointer("/properties/consumptionhorizon").and_then(|h| h.as_str()),
-        v.pointer("/properties/consumptionHorizonBookmark").and_then(|h| h.as_str()),
+        v.pointer("/properties/consumptionhorizon")
+            .and_then(|h| h.as_str()),
+        v.pointer("/properties/consumptionHorizonBookmark")
+            .and_then(|h| h.as_str()),
     ))
 }
 
@@ -5696,12 +6323,21 @@ mod quote_tests {
         let msg = |from: &str| serde_json::json!({"id": "1", "messagetype": "RichText/Html", "content": html, "from": format!("https://x/contacts/{from}"), "imdisplayname": "X", "properties": {"mentions": mentions}});
         let v = view_of(&msg("8:orgid:x"), "8:orgid:me", "Me").unwrap();
         assert!(v.html.contains("OST test tag") && !v.html.contains("readonly"));
-        let tag = |mine| crate::api::teams::TeamTag { id: "tmu3aacUko".into(), name: "OST test tag".into(), count: 1, mine };
+        let tag = |mine| crate::api::teams::TeamTag {
+            id: "tmu3aacUko".into(),
+            name: "OST test tag".into(),
+            count: 1,
+            mine,
+        };
         crate::api::teams::note_tags_for_test(&[tag(true)]);
         let v = view_of(&msg("8:orgid:x"), "8:orgid:me", "Me").unwrap();
         assert!(v.mentions_me && v.mention_kind == "me" && v.html.contains("mention-me"));
         let own = view_of(&msg("8:orgid:me"), "8:orgid:me", "Me").unwrap();
-        assert!(own.edit_html.contains(r#"href="mention-tag:tmu3aacUko""#), "{}", own.edit_html);
+        assert!(
+            own.edit_html.contains(r#"href="mention-tag:tmu3aacUko""#),
+            "{}",
+            own.edit_html
+        );
         crate::api::teams::note_tags_for_test(&[tag(false)]);
     }
 
@@ -5794,7 +6430,9 @@ mod quote_tests {
         // Captured from a Channel Agent on winpc (2026-11-22, "OST TEST 246
         // agent"): a draft plan (typed object arguments), a Planner task, a
         // meeting to schedule and two bot-mention buttons.
-        let plan = &super::odsl_statements("{\"actions\":{\"odsl\":{\"statements\":[{\"name\":\"plan\",\"arguments\":{\"rawPlanData\":{\"type\":\"string\",\"name\":\"rawPlanData\",\"string\":\"{\\\"goal\\\":{\\\"title\\\":\\\"OST Test Project Launch\\\",\\\"dueDate\\\":\\\"2026-12-31\\\",\\\"description\\\":\\\"Launch the OST Test Project (OST TEST 246) by completing all required preparation, validation, and go-live activities within the available timeline.\\\"},\\\"tasks\\\":[{\\\"id\\\":\\\"m1\\\",\\\"title\\\":\\\"Project Launch Preparation\\\",\\\"startDateTime\\\":\\\"2026-11-23\\\",\\\"dueDateTime\\\":\\\"2026-12-04\\\",\\\"isMilestone\\\":true},{\\\"id\\\":\\\"t1\\\",\\\"title\\\":\\\"Define OST TEST 246 launch scope and objectives\\\",\\\"startDateTime\\\":\\\"2026-11-23\\\",\\\"dueDateTime\\\":\\\"2026-12-04\\\",\\\"parentId\\\":\\\"m1\\\"},{\\\"id\\\":\\\"m2\\\",\\\"title\\\":\\\"Validation and Readiness Review\\\",\\\"startDateTime\\\":\\\"2026-12-07\\\",\\\"dueDateTime\\\":\\\"2026-12-18\\\",\\\"isMilestone\\\":true},{\\\"id\\\":\\\"t2\\\",\\\"title\\\":\\\"Validate OST TEST 246 readiness against launch criteria\\\",\\\"startDateTime\\\":\\\"2026-12-07\\\",\\\"dueDateTime\\\":\\\"2026-12-18\\\",\\\"parentId\\\":\\\"m2\\\"},{\\\"id\\\":\\\"m3\\\",\\\"title\\\":\\\"Go-Live Execution\\\",\\\"startDateTime\\\":\\\"2026-12-21\\\",\\\"dueDateTime\\\":\\\"2026-12-31\\\",\\\"isMilestone\\\":true},{\\\"id\\\":\\\"t3\\\",\\\"title\\\":\\\"Execute OST TEST 246 go-live and confirm launch success\\\",\\\"startDateTime\\\":\\\"2026-12-21\\\",\\\"dueDateTime\\\":\\\"2026-12-31\\\",\\\"parentId\\\":\\\"m3\\\"}],\\\"taskDependencies\\\":[{\\\"predecessorId\\\":\\\"t1\\\",\\\"successorId\\\":\\\"t2\\\"},{\\\"predecessorId\\\":\\\"t2\\\",\\\"successorId\\\":\\\"t3\\\"}]}\"},\"planData\":{\"type\":\"string\",\"name\":\"plan\",\"string\":\"{\\\"title\\\":\\\"OST Test Project Launch\\\"}\"},\"tasks\":{\"type\":\"string\",\"name\":\"tasks\",\"string\":\"[{\\\"title\\\":\\\"Project Launch Preparation\\\",\\\"taskId\\\":\\\"m1\\\",\\\"planId\\\":\\\"\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-12-04\\\",\\\"startDate\\\":\\\"2026-11-23\\\",\\\"link\\\":\\\"\\\",\\\"planLink\\\":\\\"\\\",\\\"isSummaryTask\\\":true},{\\\"title\\\":\\\"Define OST TEST 246 launch scope and objectives\\\",\\\"taskId\\\":\\\"t1\\\",\\\"planId\\\":\\\"\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-12-04\\\",\\\"startDate\\\":\\\"2026-11-23\\\",\\\"link\\\":\\\"\\\",\\\"planLink\\\":\\\"\\\",\\\"parentId\\\":\\\"m1\\\"},{\\\"title\\\":\\\"Validation and Readiness Review\\\",\\\"taskId\\\":\\\"m2\\\",\\\"planId\\\":\\\"\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-12-18\\\",\\\"startDate\\\":\\\"2026-12-07\\\",\\\"link\\\":\\\"\\\",\\\"planLink\\\":\\\"\\\",\\\"isSummaryTask\\\":true},{\\\"title\\\":\\\"Validate OST TEST 246 readiness against launch criteria\\\",\\\"taskId\\\":\\\"t2\\\",\\\"planId\\\":\\\"\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-12-18\\\",\\\"startDate\\\":\\\"2026-12-07\\\",\\\"link\\\":\\\"\\\",\\\"planLink\\\":\\\"\\\",\\\"parentId\\\":\\\"m2\\\"},{\\\"title\\\":\\\"Go-Live Execution\\\",\\\"taskId\\\":\\\"m3\\\",\\\"planId\\\":\\\"\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-12-31\\\",\\\"startDate\\\":\\\"2026-12-21\\\",\\\"link\\\":\\\"\\\",\\\"planLink\\\":\\\"\\\",\\\"isSummaryTask\\\":true},{\\\"title\\\":\\\"Execute OST TEST 246 go-live and confirm launch success\\\",\\\"taskId\\\":\\\"t3\\\",\\\"planId\\\":\\\"\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-12-31\\\",\\\"startDate\\\":\\\"2026-12-21\\\",\\\"link\\\":\\\"\\\",\\\"planLink\\\":\\\"\\\",\\\"parentId\\\":\\\"m3\\\"}]\"},\"localizedStrings\":{\"type\":\"jsonGrid\",\"name\":\"localizedStrings\",\"json\":\"[[{\\\"ODSL_OPEN_IN_PLANNER_LABEL\\\":{\\\"value\\\":\\\"Open in Planner\\\",\\\"isLocalized\\\":true},\\\"ODSL_DUE_ON_LABEL\\\":{\\\"value\\\":\\\"Due on {0}\\\",\\\"isLocalized\\\":true},\\\"ODSL_NO_DUE_DATE_LABEL\\\":{\\\"value\\\":\\\"No due date\\\",\\\"isLocalized\\\":true},\\\"ODSL_SET_DUE_DATE_IN_PLANNER\\\":{\\\"value\\\":\\\"Set due date in Planner\\\",\\\"isLocalized\\\":true},\\\"ODSL_DRAFTWORKBACKPLAN_CREATE_LABEL\\\":{\\\"value\\\":\\\"Save to Planner\\\",\\\"isLocalized\\\":true},\\\"ODSL_DRAFTWORKBACKPLAN_DISCARD_LABEL\\\":{\\\"value\\\":\\\"Discard\\\",\\\"isLocalized\\\":true},\\\"ODSL_ASK_FOR_CHANGES_LABEL\\\":{\\\"value\\\":\\\"Ask for changes\\\",\\\"isLocalized\\\":true},\\\"ODSL_MAKES_THESE_CHANGES_LABEL\\\":{\\\"value\\\":\\\"make these changes:\\\",\\\"isLocalized\\\":true},\\\"ODSL_VIEW_IN_PLANNER_LABEL\\\":{\\\"value\\\":\\\"View in Planner\\\",\\\"isLocalized\\\":true},\\\"ODSL_STATUS_INDICATOR_COMMIT_PLAN_INPROGRESS_LABEL\\\":{\\\"value\\\":\\\"Saving to Planner...\\\",\\\"isLocalized\\\":true},\\\"ODSL_STATUS_INDICATOR_COMMIT_PLAN_ERROR_LABEL\\\":{\\\"value\\\":\\\"Failed to save tasks to Planner. Please try again.\\\",\\\"isLocalized\\\":true},\\\"ODSL_STATUS_INDICATOR_GOALS_EXHAUSTED_ERROR_LABEL\\\":{\\\"value\\\":\\\"You’ve hit the goal limit. Remove a goal to make space for this plan.\\\",\\\"isLocalized\\\":true}}]]\"},\"state\":{\"type\":\"string\",\"name\":\"state\",\"string\":\"DRAFT\"},\"locale\":{\"type\":\"string\",\"name\":\"locale\",\"string\":\"en-US\"}}}]},\"entities\":[\"chat\"]}}")[0];
+        let plan = &super::odsl_statements(
+            "{\"actions\":{\"odsl\":{\"statements\":[{\"name\":\"plan\",\"arguments\":{\"rawPlanData\":{\"type\":\"string\",\"name\":\"rawPlanData\",\"string\":\"{\\\"goal\\\":{\\\"title\\\":\\\"OST Test Project Launch\\\",\\\"dueDate\\\":\\\"2026-12-31\\\",\\\"description\\\":\\\"Launch the OST Test Project (OST TEST 246) by completing all required preparation, validation, and go-live activities within the available timeline.\\\"},\\\"tasks\\\":[{\\\"id\\\":\\\"m1\\\",\\\"title\\\":\\\"Project Launch Preparation\\\",\\\"startDateTime\\\":\\\"2026-11-23\\\",\\\"dueDateTime\\\":\\\"2026-12-04\\\",\\\"isMilestone\\\":true},{\\\"id\\\":\\\"t1\\\",\\\"title\\\":\\\"Define OST TEST 246 launch scope and objectives\\\",\\\"startDateTime\\\":\\\"2026-11-23\\\",\\\"dueDateTime\\\":\\\"2026-12-04\\\",\\\"parentId\\\":\\\"m1\\\"},{\\\"id\\\":\\\"m2\\\",\\\"title\\\":\\\"Validation and Readiness Review\\\",\\\"startDateTime\\\":\\\"2026-12-07\\\",\\\"dueDateTime\\\":\\\"2026-12-18\\\",\\\"isMilestone\\\":true},{\\\"id\\\":\\\"t2\\\",\\\"title\\\":\\\"Validate OST TEST 246 readiness against launch criteria\\\",\\\"startDateTime\\\":\\\"2026-12-07\\\",\\\"dueDateTime\\\":\\\"2026-12-18\\\",\\\"parentId\\\":\\\"m2\\\"},{\\\"id\\\":\\\"m3\\\",\\\"title\\\":\\\"Go-Live Execution\\\",\\\"startDateTime\\\":\\\"2026-12-21\\\",\\\"dueDateTime\\\":\\\"2026-12-31\\\",\\\"isMilestone\\\":true},{\\\"id\\\":\\\"t3\\\",\\\"title\\\":\\\"Execute OST TEST 246 go-live and confirm launch success\\\",\\\"startDateTime\\\":\\\"2026-12-21\\\",\\\"dueDateTime\\\":\\\"2026-12-31\\\",\\\"parentId\\\":\\\"m3\\\"}],\\\"taskDependencies\\\":[{\\\"predecessorId\\\":\\\"t1\\\",\\\"successorId\\\":\\\"t2\\\"},{\\\"predecessorId\\\":\\\"t2\\\",\\\"successorId\\\":\\\"t3\\\"}]}\"},\"planData\":{\"type\":\"string\",\"name\":\"plan\",\"string\":\"{\\\"title\\\":\\\"OST Test Project Launch\\\"}\"},\"tasks\":{\"type\":\"string\",\"name\":\"tasks\",\"string\":\"[{\\\"title\\\":\\\"Project Launch Preparation\\\",\\\"taskId\\\":\\\"m1\\\",\\\"planId\\\":\\\"\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-12-04\\\",\\\"startDate\\\":\\\"2026-11-23\\\",\\\"link\\\":\\\"\\\",\\\"planLink\\\":\\\"\\\",\\\"isSummaryTask\\\":true},{\\\"title\\\":\\\"Define OST TEST 246 launch scope and objectives\\\",\\\"taskId\\\":\\\"t1\\\",\\\"planId\\\":\\\"\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-12-04\\\",\\\"startDate\\\":\\\"2026-11-23\\\",\\\"link\\\":\\\"\\\",\\\"planLink\\\":\\\"\\\",\\\"parentId\\\":\\\"m1\\\"},{\\\"title\\\":\\\"Validation and Readiness Review\\\",\\\"taskId\\\":\\\"m2\\\",\\\"planId\\\":\\\"\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-12-18\\\",\\\"startDate\\\":\\\"2026-12-07\\\",\\\"link\\\":\\\"\\\",\\\"planLink\\\":\\\"\\\",\\\"isSummaryTask\\\":true},{\\\"title\\\":\\\"Validate OST TEST 246 readiness against launch criteria\\\",\\\"taskId\\\":\\\"t2\\\",\\\"planId\\\":\\\"\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-12-18\\\",\\\"startDate\\\":\\\"2026-12-07\\\",\\\"link\\\":\\\"\\\",\\\"planLink\\\":\\\"\\\",\\\"parentId\\\":\\\"m2\\\"},{\\\"title\\\":\\\"Go-Live Execution\\\",\\\"taskId\\\":\\\"m3\\\",\\\"planId\\\":\\\"\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-12-31\\\",\\\"startDate\\\":\\\"2026-12-21\\\",\\\"link\\\":\\\"\\\",\\\"planLink\\\":\\\"\\\",\\\"isSummaryTask\\\":true},{\\\"title\\\":\\\"Execute OST TEST 246 go-live and confirm launch success\\\",\\\"taskId\\\":\\\"t3\\\",\\\"planId\\\":\\\"\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-12-31\\\",\\\"startDate\\\":\\\"2026-12-21\\\",\\\"link\\\":\\\"\\\",\\\"planLink\\\":\\\"\\\",\\\"parentId\\\":\\\"m3\\\"}]\"},\"localizedStrings\":{\"type\":\"jsonGrid\",\"name\":\"localizedStrings\",\"json\":\"[[{\\\"ODSL_OPEN_IN_PLANNER_LABEL\\\":{\\\"value\\\":\\\"Open in Planner\\\",\\\"isLocalized\\\":true},\\\"ODSL_DUE_ON_LABEL\\\":{\\\"value\\\":\\\"Due on {0}\\\",\\\"isLocalized\\\":true},\\\"ODSL_NO_DUE_DATE_LABEL\\\":{\\\"value\\\":\\\"No due date\\\",\\\"isLocalized\\\":true},\\\"ODSL_SET_DUE_DATE_IN_PLANNER\\\":{\\\"value\\\":\\\"Set due date in Planner\\\",\\\"isLocalized\\\":true},\\\"ODSL_DRAFTWORKBACKPLAN_CREATE_LABEL\\\":{\\\"value\\\":\\\"Save to Planner\\\",\\\"isLocalized\\\":true},\\\"ODSL_DRAFTWORKBACKPLAN_DISCARD_LABEL\\\":{\\\"value\\\":\\\"Discard\\\",\\\"isLocalized\\\":true},\\\"ODSL_ASK_FOR_CHANGES_LABEL\\\":{\\\"value\\\":\\\"Ask for changes\\\",\\\"isLocalized\\\":true},\\\"ODSL_MAKES_THESE_CHANGES_LABEL\\\":{\\\"value\\\":\\\"make these changes:\\\",\\\"isLocalized\\\":true},\\\"ODSL_VIEW_IN_PLANNER_LABEL\\\":{\\\"value\\\":\\\"View in Planner\\\",\\\"isLocalized\\\":true},\\\"ODSL_STATUS_INDICATOR_COMMIT_PLAN_INPROGRESS_LABEL\\\":{\\\"value\\\":\\\"Saving to Planner...\\\",\\\"isLocalized\\\":true},\\\"ODSL_STATUS_INDICATOR_COMMIT_PLAN_ERROR_LABEL\\\":{\\\"value\\\":\\\"Failed to save tasks to Planner. Please try again.\\\",\\\"isLocalized\\\":true},\\\"ODSL_STATUS_INDICATOR_GOALS_EXHAUSTED_ERROR_LABEL\\\":{\\\"value\\\":\\\"You’ve hit the goal limit. Remove a goal to make space for this plan.\\\",\\\"isLocalized\\\":true}}]]\"},\"state\":{\"type\":\"string\",\"name\":\"state\",\"string\":\"DRAFT\"},\"locale\":{\"type\":\"string\",\"name\":\"locale\",\"string\":\"en-US\"}}}]},\"entities\":[\"chat\"]}}",
+        )[0];
         let c = &plan["command"];
         assert_eq!(c["kind"], "plan");
         assert_eq!(c["title"], "OST Test Project Launch");
@@ -5804,25 +6442,57 @@ mod quote_tests {
         assert_eq!(c["tasks"][0]["summary"], true);
         assert_eq!(c["tasks"][1]["parent"], "m1");
         assert_eq!(c["tasks"][1]["due"], "2026-12-04");
-        assert_eq!(c["strings"]["ODSL_DRAFTWORKBACKPLAN_CREATE_LABEL"], "Save to Planner");
-        assert_eq!(c["strings"]["ODSL_ASK_FOR_CHANGES_LABEL"], "Ask for changes");
+        assert_eq!(
+            c["strings"]["ODSL_DRAFTWORKBACKPLAN_CREATE_LABEL"],
+            "Save to Planner"
+        );
+        assert_eq!(
+            c["strings"]["ODSL_ASK_FOR_CHANGES_LABEL"],
+            "Ask for changes"
+        );
         assert_eq!(plan["raw"]["name"], "plan");
-        let tasks = &super::odsl_statements("{\"actions\":{\"odsl\":{\"statements\":[{\"name\":\"tasks\",\"arguments\":{\"tasks\":{\"type\":\"string\",\"name\":\"tasks\",\"string\":\"[{\\\"title\\\":\\\"Review the OST test project launch plan\\\",\\\"taskId\\\":\\\"adgwnAeVFUS6bhX0Fhf0nWUALIfg\\\",\\\"planId\\\":\\\"LzKNuPa0xEm6rfyRZ-A8E2UAHAXk\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-11-27T00:00:00.000Z\\\",\\\"assignments\\\":[\\\"4287e791-1b98-4963-8b94-281c50472683\\\"],\\\"aiAssistedTask\\\":false,\\\"link\\\":\\\"https://teams.microsoft.com/l/entity/com.microsoft.teamspace.tab.planner/mytasks?webUrl=https://tasks.teams.microsoft.com/teamsui/personalApp/alltasklists&context={\\\\\\\"subEntityId\\\\\\\":\\\\\\\"/v1/plan/LzKNuPa0xEm6rfyRZ-A8E2UAHAXk/view/board/task/adgwnAeVFUS6bhX0Fhf0nWUALIfg\\\\\\\"}\\\",\\\"planLink\\\":\\\"https://teams.microsoft.com/l/entity/com.microsoft.teamspace.tab.planner/mytasks?webUrl=https://tasks.teams.microsoft.com/teamsui/personalApp/alltasklists&context={\\\\\\\"subEntityId\\\\\\\":\\\\\\\"/v1/plan/LzKNuPa0xEm6rfyRZ-A8E2UAHAXk/view/board\\\\\\\"}\\\",\\\"requestedLanguage\\\":\\\"\\\",\\\"userQueryLanguage\\\":\\\"\\\"}]\"}}}]},\"entities\":[\"chat\"]}}")[0]["command"];
+        let tasks = &super::odsl_statements(
+            "{\"actions\":{\"odsl\":{\"statements\":[{\"name\":\"tasks\",\"arguments\":{\"tasks\":{\"type\":\"string\",\"name\":\"tasks\",\"string\":\"[{\\\"title\\\":\\\"Review the OST test project launch plan\\\",\\\"taskId\\\":\\\"adgwnAeVFUS6bhX0Fhf0nWUALIfg\\\",\\\"planId\\\":\\\"LzKNuPa0xEm6rfyRZ-A8E2UAHAXk\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-11-27T00:00:00.000Z\\\",\\\"assignments\\\":[\\\"4287e791-1b98-4963-8b94-281c50472683\\\"],\\\"aiAssistedTask\\\":false,\\\"link\\\":\\\"https://teams.microsoft.com/l/entity/com.microsoft.teamspace.tab.planner/mytasks?webUrl=https://tasks.teams.microsoft.com/teamsui/personalApp/alltasklists&context={\\\\\\\"subEntityId\\\\\\\":\\\\\\\"/v1/plan/LzKNuPa0xEm6rfyRZ-A8E2UAHAXk/view/board/task/adgwnAeVFUS6bhX0Fhf0nWUALIfg\\\\\\\"}\\\",\\\"planLink\\\":\\\"https://teams.microsoft.com/l/entity/com.microsoft.teamspace.tab.planner/mytasks?webUrl=https://tasks.teams.microsoft.com/teamsui/personalApp/alltasklists&context={\\\\\\\"subEntityId\\\\\\\":\\\\\\\"/v1/plan/LzKNuPa0xEm6rfyRZ-A8E2UAHAXk/view/board\\\\\\\"}\\\",\\\"requestedLanguage\\\":\\\"\\\",\\\"userQueryLanguage\\\":\\\"\\\"}]\"}}}]},\"entities\":[\"chat\"]}}",
+        )[0]["command"];
         assert_eq!(tasks["kind"], "tasks");
-        assert_eq!(tasks["tasks"][0]["title"], "Review the OST test project launch plan");
+        assert_eq!(
+            tasks["tasks"][0]["title"],
+            "Review the OST test project launch plan"
+        );
         assert_eq!(tasks["tasks"][0]["percent"], 0.0);
         assert_eq!(tasks["tasks"][0]["due"], "2026-11-27T00:00:00.000Z");
-        assert_eq!(tasks["tasks"][0]["assignments"][0], "4287e791-1b98-4963-8b94-281c50472683");
-        assert!(tasks["tasks"][0]["link"].as_str().unwrap().starts_with("https://teams.microsoft.com/l/entity/"));
-        let meet = &super::odsl_statements("{\"actions\":{\"odsl\":{\"statements\":[{\"name\":\"createMeeting\",\"arguments\":[{\"name\":\"subject\",\"value\":\"OST Test Project Launch\"},{\"name\":\"startTime\",\"value\":\"2026-11-23T18:00:00Z\"},{\"name\":\"durationInMinutes\",\"value\":30},{\"name\":\"body\",\"value\":\"Discuss the launch of the OST test project, review the plan, and align on next steps.\"},{\"name\":\"localizedStrings\",\"value\":[[{\"PROJECT_AGENT_SCHEDULE_MEETING_TEXT\":{\"value\":\"Schedule Meeting\",\"isLocalized\":true},\"PROJECT_AGENT_EDIT_MEETING_TEXT\":{\"value\":\"Edit\",\"isLocalized\":true},\"PROJECT_AGENT_DISCARD_MEETING_TEXT\":{\"value\":\"Discard meeting\",\"isLocalized\":true}}]]},{\"name\":\"locale\",\"value\":\"en-US\"},{\"name\":\"attendees\",\"value\":[{\"name\":\"userId\",\"value\":\"8:orgid:4287e791-1b98-4963-8b94-281c50472683\"}]}]}]},\"entities\":[\"meeting\"]}}")[0]["command"];
+        assert_eq!(
+            tasks["tasks"][0]["assignments"][0],
+            "4287e791-1b98-4963-8b94-281c50472683"
+        );
+        assert!(
+            tasks["tasks"][0]["link"]
+                .as_str()
+                .unwrap()
+                .starts_with("https://teams.microsoft.com/l/entity/")
+        );
+        let meet = &super::odsl_statements(
+            "{\"actions\":{\"odsl\":{\"statements\":[{\"name\":\"createMeeting\",\"arguments\":[{\"name\":\"subject\",\"value\":\"OST Test Project Launch\"},{\"name\":\"startTime\",\"value\":\"2026-11-23T18:00:00Z\"},{\"name\":\"durationInMinutes\",\"value\":30},{\"name\":\"body\",\"value\":\"Discuss the launch of the OST test project, review the plan, and align on next steps.\"},{\"name\":\"localizedStrings\",\"value\":[[{\"PROJECT_AGENT_SCHEDULE_MEETING_TEXT\":{\"value\":\"Schedule Meeting\",\"isLocalized\":true},\"PROJECT_AGENT_EDIT_MEETING_TEXT\":{\"value\":\"Edit\",\"isLocalized\":true},\"PROJECT_AGENT_DISCARD_MEETING_TEXT\":{\"value\":\"Discard meeting\",\"isLocalized\":true}}]]},{\"name\":\"locale\",\"value\":\"en-US\"},{\"name\":\"attendees\",\"value\":[{\"name\":\"userId\",\"value\":\"8:orgid:4287e791-1b98-4963-8b94-281c50472683\"}]}]}]},\"entities\":[\"meeting\"]}}",
+        )[0]["command"];
         assert_eq!(meet["kind"], "createMeeting");
         assert_eq!(meet["subject"], "OST Test Project Launch");
         assert_eq!(meet["start"], "2026-11-23T18:00:00Z");
         assert_eq!(meet["duration"], 30.0);
-        assert_eq!(meet["attendees"][0]["user_id"], "8:orgid:4287e791-1b98-4963-8b94-281c50472683");
-        assert_eq!(meet["strings"]["PROJECT_AGENT_SCHEDULE_MEETING_TEXT"], "Schedule Meeting");
-        assert_eq!(meet["strings"]["PROJECT_AGENT_DISCARD_MEETING_TEXT"], "Discard meeting");
-        let gbm = super::odsl_statements("{\"actions\":{\"odsl\":{\"statements\":[{\"name\":\"genericBotMention\",\"arguments\":[{\"name\":\"displayText\",\"value\":\"Provide answers\"},{\"name\":\"messageContent\",\"value\":\"here are my answers:\"},{\"name\":\"forceLineBreak\",\"value\":\"false\"}]},{\"name\":\"genericBotMention\",\"arguments\":[{\"name\":\"displayText\",\"value\":\"Draft a plan\"},{\"name\":\"messageContent\",\"value\":\"draft a plan using the available information\"},{\"name\":\"forceLineBreak\",\"value\":\"true\"}]}]}}}");
+        assert_eq!(
+            meet["attendees"][0]["user_id"],
+            "8:orgid:4287e791-1b98-4963-8b94-281c50472683"
+        );
+        assert_eq!(
+            meet["strings"]["PROJECT_AGENT_SCHEDULE_MEETING_TEXT"],
+            "Schedule Meeting"
+        );
+        assert_eq!(
+            meet["strings"]["PROJECT_AGENT_DISCARD_MEETING_TEXT"],
+            "Discard meeting"
+        );
+        let gbm = super::odsl_statements(
+            "{\"actions\":{\"odsl\":{\"statements\":[{\"name\":\"genericBotMention\",\"arguments\":[{\"name\":\"displayText\",\"value\":\"Provide answers\"},{\"name\":\"messageContent\",\"value\":\"here are my answers:\"},{\"name\":\"forceLineBreak\",\"value\":\"false\"}]},{\"name\":\"genericBotMention\",\"arguments\":[{\"name\":\"displayText\",\"value\":\"Draft a plan\"},{\"name\":\"messageContent\",\"value\":\"draft a plan using the available information\"},{\"name\":\"forceLineBreak\",\"value\":\"true\"}]}]}}}",
+        );
         assert_eq!(gbm.len(), 2);
         assert_eq!(gbm[0]["command"]["title"], "Provide answers");
         assert_eq!(gbm[0]["command"]["content"], "here are my answers:");
@@ -5830,14 +6500,27 @@ mod quote_tests {
         assert_eq!(gbm[1]["command"]["title"], "Draft a plan");
         assert_eq!(gbm[1]["command"]["line_break"], true);
         // From Teams' schema (not triggered live: the Facilitator's).
-        let more = super::odsl_statements("{\"actions\": {\"odsl\": {\"statements\": [{\"name\": \"questionsList\", \"arguments\": [{\"name\": \"questions\", \"value\": \"[{\\\"id\\\": \\\"q1\\\", \\\"topic\\\": \\\"Launch\\\", \\\"question\\\": \\\"When do we ship?\\\", \\\"timestamp\\\": \\\"2026-11-22T10:00:00Z\\\", \\\"from\\\": [\\\"8:orgid:a\\\"], \\\"reactionsCount\\\": 2, \\\"citations\\\": [{\\\"id\\\": 1, \\\"title\\\": \\\"Transcript\\\", \\\"link\\\": \\\"https://example.com/t\\\"}]}, {\\\"id\\\": \\\"q2\\\", \\\"topic\\\": \\\"Launch\\\", \\\"question\\\": \\\"Who signs off?\\\", \\\"timestamp\\\": \\\"2026-11-22T10:01:00Z\\\", \\\"from\\\": [\\\"8:orgid:b\\\"], \\\"reactionsCount\\\": 0, \\\"citations\\\": []}]\"}]}, {\"name\": \"agendaTimer\", \"arguments\": [{\"name\": \"action\", \"value\": \"start\"}, {\"name\": \"callId\", \"value\": \"call-1\"}, {\"name\": \"status\", \"value\": \"\"}]}]}}}");
-        assert_eq!(more[0]["command"]["questions"][1]["question"], "Who signs off?");
+        let more = super::odsl_statements(
+            "{\"actions\": {\"odsl\": {\"statements\": [{\"name\": \"questionsList\", \"arguments\": [{\"name\": \"questions\", \"value\": \"[{\\\"id\\\": \\\"q1\\\", \\\"topic\\\": \\\"Launch\\\", \\\"question\\\": \\\"When do we ship?\\\", \\\"timestamp\\\": \\\"2026-11-22T10:00:00Z\\\", \\\"from\\\": [\\\"8:orgid:a\\\"], \\\"reactionsCount\\\": 2, \\\"citations\\\": [{\\\"id\\\": 1, \\\"title\\\": \\\"Transcript\\\", \\\"link\\\": \\\"https://example.com/t\\\"}]}, {\\\"id\\\": \\\"q2\\\", \\\"topic\\\": \\\"Launch\\\", \\\"question\\\": \\\"Who signs off?\\\", \\\"timestamp\\\": \\\"2026-11-22T10:01:00Z\\\", \\\"from\\\": [\\\"8:orgid:b\\\"], \\\"reactionsCount\\\": 0, \\\"citations\\\": []}]\"}]}, {\"name\": \"agendaTimer\", \"arguments\": [{\"name\": \"action\", \"value\": \"start\"}, {\"name\": \"callId\", \"value\": \"call-1\"}, {\"name\": \"status\", \"value\": \"\"}]}]}}}",
+        );
+        assert_eq!(
+            more[0]["command"]["questions"][1]["question"],
+            "Who signs off?"
+        );
         assert_eq!(more[0]["command"]["questions"][0]["reactions"], 2);
-        assert_eq!(more[0]["command"]["questions"][0]["citations"][0]["title"], "Transcript");
+        assert_eq!(
+            more[0]["command"]["questions"][0]["citations"][0]["title"],
+            "Transcript"
+        );
         assert_eq!(more[1]["command"]["kind"], "agendaTimer");
         assert_eq!(more[1]["command"]["action"], "start");
         // Unknown commands carry none.
-        assert!(super::odsl_statements(r#"{"actions":{"odsl":{"statements":[{"name":"whiteboard","arguments":[]}]}}}"#)[0]["command"].is_null());
+        assert!(
+            super::odsl_statements(
+                r#"{"actions":{"odsl":{"statements":[{"name":"whiteboard","arguments":[]}]}}}"#
+            )[0]["command"]
+                .is_null()
+        );
     }
 
     #[test]
@@ -5847,24 +6530,44 @@ mod quote_tests {
         // part where the link was; the emoticon before it stays in the text.
         let content = "<p>\n<blockquote itemscope itemtype=\"http://schema.skype.com/Reply\" itemid=\"1795382862995\"><strong itemprop=\"mri\" itemid=\"8:orgid:4287e791-1b98-4963-8b94-281c50472683\">OST Test 1</strong><span itemprop=\"time\" itemid=\"1795382862995\"></span><p itemprop=\"preview\">OST TEST channel Agent OST TEST 206: create a weekly status report for this channel</p></blockquote>\n\n\n<p>Hi <span itemscope itemtype=\"http://schema.skype.com/Mention\" itemid=\"0\">OST Test 1</span>, here's this week's status report — since the channel launched today, it's a quiet note:</p>\n\n\n<p><span title=\"Page\" type=\"(1f4c4_pagefacingup)\" class=\"animated-emoticon-20-1f4c4_pagefacingup\" itemscope><img itemscope itemtype=\"http://schema.skype.com/Emoji\" itemid=\"1f4c4_pagefacingup\" src=\"https://statics.teams.cdn.office.net/evergreen-assets/personal-expressions/v2/assets/emoticons/1f4c4_pagefacingup/default/20_f.png\" title=\"Page\" alt=\"📄\" style=\"width:20px;height:20px\" /></span> <a href=\"https://scnetsolutions.sharepoint.com/:fl:/r/sites/OSTTEST206agentI/Shared%20Documents/OST%20TEST%20channel/Generated%20Docs/Weekly%20Status%20Report%20%E2%80%94%20Week%20of%20Nov%2017%E2%80%9322,%202026.loop?d=w84f81467346c4a1e868204716bccb9e1&amp;csf=1&amp;web=1&amp;nav=cz0lMkZzaXRlcyUyRk9TVFRFU1QyMDZhZ2VudEkmZD1iIWtVbnUwSkVJMmtHV0FKclFzWjZxRkx4ZnpqTUp0ZUpDaHRGZERXaGtIRE9EWFZhdnZCWXNSTE82THU5MlhadkUmZj0wMVI0RUFLQ1RIQ1Q0SUkzQlVEWkZJTkFRRU9GVjRaT1BCJmM9JTJGJmZsdWlkPTEmcD0lNDBmbHVpZHglMkZsb29wLXBhZ2UtY29udGFpbmVy\" itemtype=\"http://schema.skype.com/FluidAutoEmbedLink\" title=\"https://scnetsolutions.sharepoint.com/:fl:/r/sites/osttest206agenti/shared%20documents/ost%20test%20channel/generated%20docs/weekly%20status%20report%20%e2%80%94%20week%20of%20nov%2017%e2%80%9322,%202026.loop?d=w84f81467346c4a1e868204716bccb9e1&amp;csf=1&amp;web=1&amp;nav=cz0lmkzzaxrlcyuyrk9tvfrfu1qymdzhz2vudekmzd1iiwtvbnuwskvjmmthv0fkclfzwjzxrkx4znpqtup0zupdahrgzerxagtire9ewfzhdnzcwxnste82thu5mlhadkumzj0wmvi0ruflq1riq1q0sukzqlvewkzjtkfrru9gvjrat1bcjmm9jtjgjmzsdwlkptemcd0lndbmbhvpzhglmkzsb29wlxbhz2uty29udgfpbmvy\">Weekly Status Report — Week of Nov 17–22, 2026</a></p>\n\n\n<p>To set up a recurring weekly routine, what day and time would you like the report posted? (e.g., \"every Monday at 9 AM\")</p>\n\n</p>";
         let m = serde_json::json!({"id": "1795382871609", "messagetype": "RichText/Html", "content": content, "from": "https://x/contacts/28:3cf96df7-3ecf-460a-a065-d1ca251969e4", "imdisplayname": "Project-Agent-Prod"});
-        let v = view_of(&m, "8:orgid:4287e791-1b98-4963-8b94-281c50472683", "OST Test 1").unwrap();
+        let v = view_of(
+            &m,
+            "8:orgid:4287e791-1b98-4963-8b94-281c50472683",
+            "OST Test 1",
+        )
+        .unwrap();
         let loops: Vec<&FlowPart> = v.flow.iter().filter(|p| p.loop_url.is_some()).collect();
         assert_eq!(loops.len(), 1, "{:?}", v.flow);
         let url = loops[0].loop_url.as_deref().unwrap();
-        assert!(url.starts_with("https://scnetsolutions.sharepoint.com/:fl:/r/sites/OSTTEST206agentI/"), "{url}");
+        assert!(
+            url.starts_with("https://scnetsolutions.sharepoint.com/:fl:/r/sites/OSTTEST206agentI/"),
+            "{url}"
+        );
         assert!(url.contains("&csf=1&web=1&nav=cz0l"), "{url}");
         // The page's title (the link text) isn't left in the text.
-        let all: String = std::iter::once(v.html.clone()).chain(v.flow.iter().map(|p| p.html.clone())).collect();
+        let all: String = std::iter::once(v.html.clone())
+            .chain(v.flow.iter().map(|p| p.html.clone()))
+            .collect();
         assert!(!all.contains("Weekly Status Report"), "{all}");
         assert!(all.contains("what day and time would you like"), "{all}");
         // The text before it (the message's first text) ends with the page
         // emoticon; the text after it follows the card.
         let at = v.flow.iter().position(|p| p.loop_url.is_some()).unwrap();
         assert_eq!(at, 0, "{:?}", v.flow);
-        assert!(v.html.contains("1f4c4_pagefacingup") && v.html.contains("it's a quiet note"), "{}", v.html);
-        assert!(v.flow[at + 1].html.contains("recurring weekly routine"), "{:?}", v.flow);
+        assert!(
+            v.html.contains("1f4c4_pagefacingup") && v.html.contains("it's a quiet note"),
+            "{}",
+            v.html
+        );
+        assert!(
+            v.flow[at + 1].html.contains("recurring weekly routine"),
+            "{:?}",
+            v.flow
+        );
         // Without the marker (previews, search) it stays a link.
-        assert!(sanitize_html(content).contains("<a href=\"https://scnetsolutions.sharepoint.com/"));
+        assert!(
+            sanitize_html(content).contains("<a href=\"https://scnetsolutions.sharepoint.com/")
+        );
     }
 
     #[test]
@@ -6057,7 +6760,8 @@ mod quote_tests {
         // Shaped as Teams' edit PUTs captured on winpc 2026-11-23 (OST TEST
         // 95 in ost-test1's own chat): delivery option, a file added then
         // taken out, a Loop component.
-        let kept = serde_json::json!({"objectUrl": "https://x/Documents/a.txt", "fileName": "a.txt"});
+        let kept =
+            serde_json::json!({"objectUrl": "https://x/Documents/a.txt", "fileName": "a.txt"});
         let gone = serde_json::json!({"fileInfo": {"fileUrl": "https://x/Documents/b.loop"}, "fileName": "b.loop"});
         let original = serde_json::json!({
             "id": "1", "conversationid": "48:notes", "content": "<p>OST TEST 95 from the TUI</p>",
@@ -6065,18 +6769,30 @@ mod quote_tests {
         });
         let mut b = edit_body(&original, "<p>OST TEST 95 from the TUI</p>", None, 7);
         let added = serde_json::json!({"objectUrl": "https://x/Documents/c.docx"});
-        apply_edit_extras(&mut b, &original, &EditExtras {
-            importance: Some("high".into()),
-            removed_files: vec!["https://x/Documents/b.loop".into()],
-            added_files: vec![added.clone()],
-            loop_component: Some(super::super::outbox::LoopEmbed { component_url: "https://x/:fl:/p/l".into(), card_client_id: "54be7bb7".into() }),
-            ..Default::default()
-        });
+        apply_edit_extras(
+            &mut b,
+            &original,
+            &EditExtras {
+                importance: Some("high".into()),
+                removed_files: vec!["https://x/Documents/b.loop".into()],
+                added_files: vec![added.clone()],
+                loop_component: Some(super::super::outbox::LoopEmbed {
+                    component_url: "https://x/:fl:/p/l".into(),
+                    card_client_id: "54be7bb7".into(),
+                }),
+                ..Default::default()
+            },
+        );
         assert_eq!(b["properties"]["importance"], "high");
-        let files: Vec<serde_json::Value> = serde_json::from_str(b["properties"]["files"].as_str().unwrap()).unwrap();
+        let files: Vec<serde_json::Value> =
+            serde_json::from_str(b["properties"]["files"].as_str().unwrap()).unwrap();
         assert_eq!(files, vec![kept, added]);
-        assert_eq!(b["content"], "<p>OST TEST 95 from the TUI</p> \n        <span itemtype=\"http://schema.skype.com/FluidEmbedCard\" itemid=\"54be7bb7\"></span>");
-        let cards: serde_json::Value = serde_json::from_str(b["properties"]["cards"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            b["content"],
+            "<p>OST TEST 95 from the TUI</p> \n        <span itemtype=\"http://schema.skype.com/FluidEmbedCard\" itemid=\"54be7bb7\"></span>"
+        );
+        let cards: serde_json::Value =
+            serde_json::from_str(b["properties"]["cards"].as_str().unwrap()).unwrap();
         assert_eq!(cards[0]["content"]["sourceType"], "Compose");
         assert_eq!(b["amsreferences"], serde_json::json!([]));
         assert_eq!(b["crossPostChannels"], serde_json::json!([]));
@@ -6091,7 +6807,13 @@ mod quote_tests {
         apply_edit_extras(&mut b, &with_loop, &EditExtras::default());
         assert_eq!(b["properties"]["importance"], "high");
         assert_eq!(b["properties"]["files"], "[]");
-        assert!(b["content"].as_str().unwrap().starts_with("<p>y</p> \n        <span") && b["content"].as_str().unwrap().contains("itemid=\"c1\""));
+        assert!(
+            b["content"]
+                .as_str()
+                .unwrap()
+                .starts_with("<p>y</p> \n        <span")
+                && b["content"].as_str().unwrap().contains("itemid=\"c1\"")
+        );
     }
 
     #[test]
@@ -6109,23 +6831,45 @@ mod quote_tests {
             "amsreferences": ["0-wus-d10-abc"],
             "properties": {"importance": "", "files": "[]", "cards": card.to_string()}
         });
-        assert_eq!(ams_video_elements(original["content"].as_str().unwrap()), vec![(video.to_string(), "0-wus-d10-abc".to_string())]);
+        assert_eq!(
+            ams_video_elements(original["content"].as_str().unwrap()),
+            vec![(video.to_string(), "0-wus-d10-abc".to_string())]
+        );
         // Nothing taken out: clip and Loop stay where they were.
         let mut b = edit_body(&original, "<p>OST TEST 263 edit tools</p>", None, 1);
         apply_edit_extras(&mut b, &original, &EditExtras::default());
-        assert_eq!(b["content"], format!("<p>&nbsp;</p>{video}<p>OST TEST 263 edit tools</p>{span}"));
+        assert_eq!(
+            b["content"],
+            format!("<p>&nbsp;</p>{video}<p>OST TEST 263 edit tools</p>{span}")
+        );
         assert_eq!(b["amsreferences"], serde_json::json!(["0-wus-d10-abc"]));
         // The clip taken out: its empty paragraph stays.
         let mut b = edit_body(&original, "<p>OST TEST 263 edit tools</p>", None, 1);
-        apply_edit_extras(&mut b, &original, &EditExtras { removed_clips: vec!["0-wus-d10-abc".into()], ..Default::default() });
-        assert_eq!(b["content"], format!("<p>&nbsp;</p><p>OST TEST 263 edit tools</p>{span}"));
+        apply_edit_extras(
+            &mut b,
+            &original,
+            &EditExtras {
+                removed_clips: vec!["0-wus-d10-abc".into()],
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            b["content"],
+            format!("<p>&nbsp;</p><p>OST TEST 263 edit tools</p>{span}")
+        );
         assert_eq!(b["amsreferences"], serde_json::json!([]));
         assert_eq!(b["properties"]["cards"], card.to_string());
         // Both taken out.
         let mut b = edit_body(&original, "<p>OST TEST 263 edit tools</p>", None, 1);
-        apply_edit_extras(&mut b, &original, &EditExtras {
-            removed_clips: vec!["0-wus-d10-abc".into()], removed_loops: vec!["https://x/:fl:/p/l?nav=1".into()], ..Default::default()
-        });
+        apply_edit_extras(
+            &mut b,
+            &original,
+            &EditExtras {
+                removed_clips: vec!["0-wus-d10-abc".into()],
+                removed_loops: vec!["https://x/:fl:/p/l?nav=1".into()],
+                ..Default::default()
+            },
+        );
         assert_eq!(b["content"], "<p>&nbsp;</p><p>OST TEST 263 edit tools</p>");
         assert_eq!(b["properties"]["cards"], "[]");
     }
@@ -6140,19 +6884,37 @@ mod quote_tests {
             "originalarrivaltime": "2026-11-24T00:54:17.152Z", "content": "<p>Plain post for the edit test.</p>",
             "properties": {"importance": "", "subject": "OST TEST 265 plain post", "title": "", "files": "[]", "cards": "[]"}
         });
-        let mut b = edit_body(&original, "<p>Plain post for the edit test.</p>", None, 1795481734982);
+        let mut b = edit_body(
+            &original,
+            "<p>Plain post for the edit test.</p>",
+            None,
+            1795481734982,
+        );
         assert_eq!(b["properties"]["subject"], "OST TEST 265 plain post");
-        apply_edit_extras(&mut b, &original, &EditExtras {
-            subject: Some("OST TEST 265 plain post (edited)".into()), reply_permission: Some("AuthorAndOwners".into()), post: true, ..Default::default()
-        });
-        assert_eq!(b["properties"]["subject"], "OST TEST 265 plain post (edited)");
+        apply_edit_extras(
+            &mut b,
+            &original,
+            &EditExtras {
+                subject: Some("OST TEST 265 plain post (edited)".into()),
+                reply_permission: Some("AuthorAndOwners".into()),
+                post: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            b["properties"]["subject"],
+            "OST TEST 265 plain post (edited)"
+        );
         assert_eq!(b["properties"]["replyPermission"], "AuthorAndOwners");
         assert_eq!(b["properties"]["policyViolation"], serde_json::Value::Null);
         assert_eq!(b["postType"], "Standard");
         assert_eq!(b["crossPostChannels"], serde_json::json!([]));
         // Its cross-post form (the message in Teams' crosspost calls).
         let m = cross_post_message(&b, &original);
-        assert_eq!(m["conversationLink"], "conversation/19:782662e702f14fa7b33f95096b357dd8@thread.tacv2;messageid=1795481657152");
+        assert_eq!(
+            m["conversationLink"],
+            "conversation/19:782662e702f14fa7b33f95096b357dd8@thread.tacv2;messageid=1795481657152"
+        );
         assert_eq!(m["version"], "1795481734982");
         assert_eq!(m["fromUserId"], "8:orgid:me");
         assert!(m.get("crossPostChannels").is_none());
@@ -6161,7 +6923,10 @@ mod quote_tests {
         crossed["properties"]["crossPostId"] = "3ab611bfee5f4f9e8d127c572640c7a7".into();
         crossed["properties"]["replyPermission"] = "AuthorAndOwners".into();
         let b = edit_body(&crossed, "<p>x</p>", None, 2);
-        assert_eq!(b["properties"]["crossPostId"], "3ab611bfee5f4f9e8d127c572640c7a7");
+        assert_eq!(
+            b["properties"]["crossPostId"],
+            "3ab611bfee5f4f9e8d127c572640c7a7"
+        );
         assert_eq!(b["properties"]["replyPermission"], "AuthorAndOwners");
     }
 
@@ -6247,8 +7012,14 @@ mod tests {
             {"title": "x", "type": "imBack", "value": "x"}]});
         let a = super::suggested_actions(Some(&sa));
         assert_eq!(a.len(), 2);
-        assert_eq!((a[0]["title"].as_str(), a[0]["mentions"][0]["mri"].as_str()), (Some("@agent"), Some("28:3cf96df7")));
-        assert_eq!(a[1], serde_json::json!({"title": "x", "kind": "imBack", "text": "x"}));
+        assert_eq!(
+            (a[0]["title"].as_str(), a[0]["mentions"][0]["mri"].as_str()),
+            (Some("@agent"), Some("28:3cf96df7"))
+        );
+        assert_eq!(
+            a[1],
+            serde_json::json!({"title": "x", "kind": "imBack", "text": "x"})
+        );
         // Teams' other kinds: an Action.Submit invoke (its name and value,
         // or the default name and the whole value), an http(s) openUrl, an
         // ODSL statement; three at most; a bad title drops them all.
@@ -6259,17 +7030,34 @@ mod tests {
             {"title": "Send", "type": "action.submit", "value": {"k": "v"}},
             {"title": "Fourth", "type": "imBack", "value": "4"}]});
         let a = super::suggested_actions(Some(&more));
-        assert_eq!(a, vec![
-            serde_json::json!({"title": "Approve", "kind": "invoke", "name": "task/approve", "value": "{\"id\":1}"}),
-            serde_json::json!({"title": "Docs", "kind": "openUrl", "url": "https://learn.microsoft.com"}),
-            serde_json::json!({"title": "Send", "kind": "invoke", "name": "suggestedActions/submit", "value": "{\"k\":\"v\"}"}),
-        ]);
+        assert_eq!(
+            a,
+            vec![
+                serde_json::json!({"title": "Approve", "kind": "invoke", "name": "task/approve", "value": "{\"id\":1}"}),
+                serde_json::json!({"title": "Docs", "kind": "openUrl", "url": "https://learn.microsoft.com"}),
+                serde_json::json!({"title": "Send", "kind": "invoke", "name": "suggestedActions/submit", "value": "{\"k\":\"v\"}"}),
+            ]
+        );
         let odsl = serde_json::json!({"actions": [{"title": "Report", "type": "Action.ODSL", "value": {"actions": {}}}]});
         assert_eq!(super::suggested_actions(Some(&odsl))[0]["kind"], "odsl");
         // Its statements, the bookkeeping ones left out.
-        let st = super::odsl_statements(r#"{"actions":{"odsl":{"statements":[{"name":"orchestratorMetadata","arguments":[]},{"name":"tasks","arguments":[{"name":"group","value":"g1"}]},{"name":"statusReportConfiguration","arguments":{"a":{"name":"x","value":1}}}]}}}"#);
-        let names: Vec<(serde_json::Value, serde_json::Value)> = st.iter().map(|s| (s["name"].clone(), s["group"].clone())).collect();
-        assert_eq!(names, vec![(serde_json::json!("tasks"), serde_json::json!("g1")), (serde_json::json!("statusReportConfiguration"), serde_json::Value::Null)]);
+        let st = super::odsl_statements(
+            r#"{"actions":{"odsl":{"statements":[{"name":"orchestratorMetadata","arguments":[]},{"name":"tasks","arguments":[{"name":"group","value":"g1"}]},{"name":"statusReportConfiguration","arguments":{"a":{"name":"x","value":1}}}]}}}"#,
+        );
+        let names: Vec<(serde_json::Value, serde_json::Value)> = st
+            .iter()
+            .map(|s| (s["name"].clone(), s["group"].clone()))
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                (serde_json::json!("tasks"), serde_json::json!("g1")),
+                (
+                    serde_json::json!("statusReportConfiguration"),
+                    serde_json::Value::Null
+                )
+            ]
+        );
         // "tasks" is a command OST draws (an empty task list here).
         assert_eq!(st[0]["command"]["kind"], "tasks");
         assert!(st[1]["command"].is_null());
@@ -6289,22 +7077,43 @@ mod tests {
         let r = &super::odsl_statements(&value)[0]["reasoning"];
         assert_eq!(r["duration"], 69447.39);
         assert_eq!(r["active"], false);
-        assert_eq!(r["strings"]["REASONING_HEADER"], "Reasoned for 1 minute 9 seconds");
-        assert_eq!(r["steps"], serde_json::json!([
-            {"title": "Gathering info", "active": false, "substeps": []},
-            {"title": "Creating Loop page", "active": false, "substeps": [{"title": "Channel is brand new", "link": null}]}
-        ]));
-        assert_eq!(r["iterations"][1], serde_json::json!({"number": 3, "seconds": 3, "intents": "create_loop (Unknown)", "active": false}));
+        assert_eq!(
+            r["strings"]["REASONING_HEADER"],
+            "Reasoned for 1 minute 9 seconds"
+        );
+        assert_eq!(
+            r["steps"],
+            serde_json::json!([
+                {"title": "Gathering info", "active": false, "substeps": []},
+                {"title": "Creating Loop page", "active": false, "substeps": [{"title": "Channel is brand new", "link": null}]}
+            ])
+        );
+        assert_eq!(
+            r["iterations"][1],
+            serde_json::json!({"number": 3, "seconds": 3, "intents": "create_loop (Unknown)", "active": false})
+        );
         // No iterations and no goals: nothing.
-        assert!(super::odsl_statements(r#"{"actions":{"odsl":{"statements":[{"name":"reasoning","arguments":[]}]}}}"#)[0]["reasoning"].is_null());
+        assert!(
+            super::odsl_statements(
+                r#"{"actions":{"odsl":{"statements":[{"name":"reasoning","arguments":[]}]}}}"#
+            )[0]["reasoning"]
+                .is_null()
+        );
         // paMetrics carries no statements: nothing to draw.
         assert!(super::odsl_statements(r#"{"tca":{"alDurationMs":1}}"#).is_empty());
-        assert_eq!(super::odsl_statements("{&quot;actions&quot;:{&quot;odsl&quot;:{&quot;statements&quot;:[{&quot;name&quot;:&quot;reasoning&quot;}]}}}")[0]["name"], "reasoning");
+        assert_eq!(
+            super::odsl_statements(
+                "{&quot;actions&quot;:{&quot;odsl&quot;:{&quot;statements&quot;:[{&quot;name&quot;:&quot;reasoning&quot;}]}}}"
+            )[0]["name"],
+            "reasoning"
+        );
         let bad = serde_json::json!({"actions": [{"title": "ok", "type": "imBack", "value": "a"}, {"title": 1, "type": "imBack", "value": "b"}]});
         assert!(super::suggested_actions(Some(&bad)).is_empty());
         // botMetadata is a JSON string; its botTelemetryMessageType names
         // the bot message's kind (the Facilitator's see-more rule).
-        let meta = serde_json::json!("{\"replyToId\":\"1\",\"botTelemetryMessageType\":\"QuestionsSummarization\"}");
+        let meta = serde_json::json!(
+            "{\"replyToId\":\"1\",\"botTelemetryMessageType\":\"QuestionsSummarization\"}"
+        );
         assert_eq!(super::bot_kind_of(Some(&meta)), "QuestionsSummarization");
         assert_eq!(super::bot_kind_of(Some(&serde_json::json!("not json"))), "");
         assert_eq!(super::bot_kind_of(None), "");
@@ -6317,7 +7126,10 @@ mod tests {
         super::mark_agent_adds(&mut out);
         let e = out[0].event.as_ref().unwrap();
         assert_eq!(e.kind, "AgentAdded");
-        assert_eq!(super::event_text(e, &|_: &str| String::new(), false), "OST TEST channel Agent has been added to the channel.");
+        assert_eq!(
+            super::event_text(e, &|_: &str| String::new(), false),
+            "OST TEST channel Agent has been added to the channel."
+        );
         let plain = serde_json::json!({"id": "2", "messagetype": "RichText/Html", "content": "<p>x</p>", "from": "https://x/contacts/28:bot", "imdisplayname": "Workflows", "properties": {}});
         let v = super::view_of(&plain, "8:orgid:me", "Me").unwrap();
         assert_eq!((v.sender.as_str(), v.ai_agent), ("Workflows", false));
@@ -6328,7 +7140,10 @@ mod tests {
         // OST TEST 126: the Polls bot's card, sent for OST Test 1.
         let v = serde_json::json!([{ "displayName": "OST Test 1", "itemid": 0, "mentionType": "person", "mri": "8:orgid:4287e791" }]);
         assert_eq!(super::on_behalf_of_name(Some(&v)), "OST Test 1");
-        assert_eq!(super::on_behalf_of_name(Some(&serde_json::json!(v.to_string()))), "OST Test 1");
+        assert_eq!(
+            super::on_behalf_of_name(Some(&serde_json::json!(v.to_string()))),
+            "OST Test 1"
+        );
         assert_eq!(super::on_behalf_of_name(None), "");
     }
 
@@ -6338,7 +7153,10 @@ mod tests {
         let f = super::ConversationFacts::from_reply(&v);
         assert_eq!(f.cleared_ms, Some(1794433826361));
         assert_eq!(f.modality.as_deref(), Some("Conversational"));
-        assert_eq!(super::ConversationFacts::from_reply(&serde_json::json!({})), super::ConversationFacts::default());
+        assert_eq!(
+            super::ConversationFacts::from_reply(&serde_json::json!({})),
+            super::ConversationFacts::default()
+        );
     }
 
     #[test]
@@ -6373,9 +7191,15 @@ mod tests {
         use super::read_position;
         assert_eq!(read_position(Some("200;1000;x"), None), Some(200));
         // Marked unread after the last read: the bookmark wins.
-        assert_eq!(read_position(Some("200;1000;x"), Some("149;2000;y")), Some(149));
+        assert_eq!(
+            read_position(Some("200;1000;x"), Some("149;2000;y")),
+            Some(149)
+        );
         // Read again since: the horizon wins.
-        assert_eq!(read_position(Some("300;3000;x"), Some("149;2000;y")), Some(300));
+        assert_eq!(
+            read_position(Some("300;3000;x"), Some("149;2000;y")),
+            Some(300)
+        );
     }
 
     #[test]
@@ -6736,8 +7560,14 @@ mod tests {
         let v = message_view(&m, "8:orgid:me", "Me").unwrap();
         assert_eq!(v.videos.len(), 1);
         let c = &v.videos[0];
-        assert_eq!((c.id.as_str(), c.width, c.height), ("0-wus-d12-8635", 1280, 720));
-        assert_eq!(c.thumb_url, "https://us-api.asm.skype.com/v1/objects/0-wus-d12-8635/views/thumbnail");
+        assert_eq!(
+            (c.id.as_str(), c.width, c.height),
+            ("0-wus-d12-8635", 1280, 720)
+        );
+        assert_eq!(
+            c.thumb_url,
+            "https://us-api.asm.skype.com/v1/objects/0-wus-d12-8635/views/thumbnail"
+        );
         assert!((c.duration - 16.309).abs() < 1e-9);
         assert_eq!(v.flow.len(), 3);
         assert_eq!(v.flow[0].html, "<p>&nbsp;</p>");
@@ -6746,9 +7576,14 @@ mod tests {
         assert!(!v.text.contains("Video-Clip") && v.text.contains("OST TEST 135"));
         // A clip alone still shows, with Teams' default text.
         let mut alone = m.clone();
-        alone["content"] = serde_json::json!("<video src=\"https://us-api.asm.skype.com/v1/objects/0-wus-d12-8635/views/video\" itemtype=\"http://schema.skype.com/AMSVideo\" data-duration=\"PT1M2S\">Video-Clip</video>");
+        alone["content"] = serde_json::json!(
+            "<video src=\"https://us-api.asm.skype.com/v1/objects/0-wus-d12-8635/views/video\" itemtype=\"http://schema.skype.com/AMSVideo\" data-duration=\"PT1M2S\">Video-Clip</video>"
+        );
         let a = message_view(&alone, "8:orgid:me", "Me").unwrap();
-        assert_eq!((a.text.as_str(), a.flow.len(), a.videos[0].duration), ("Video Clip", 1, 62.0));
+        assert_eq!(
+            (a.text.as_str(), a.flow.len(), a.videos[0].duration),
+            ("Video Clip", 1, 62.0)
+        );
         // Only Teams' media store is fetched with our token.
         assert!(inline_videos("<video src=\"https://evil.example/v1/objects/x/views/video\" itemtype=\"http://schema.skype.com/AMSVideo\">").is_empty());
     }
@@ -6779,11 +7614,22 @@ mod tests {
         let m = serde_json::json!({"id": "1795393674811", "messagetype": "RichText/Html", "content": content, "from": "https://x/contacts/8:orgid:me", "imdisplayname": "Me"});
         let v = message_view(&m, "8:orgid:me", "Me").unwrap();
         assert_eq!(v.images.len(), 1);
-        assert!(v.html.ends_with("line six, the picture follows</p>"), "{}", v.html);
+        assert!(
+            v.html.ends_with("line six, the picture follows</p>"),
+            "{}",
+            v.html
+        );
         assert_eq!(v.flow[0].pic, Some(0));
-        assert!(v.flow[1].html.contains("<p><br />\r\nline seven"), "{}", v.flow[1].html);
+        assert!(
+            v.flow[1].html.contains("<p><br />\r\nline seven"),
+            "{}",
+            v.flow[1].html
+        );
         // A blank line of its own stays.
-        assert_eq!(trailing_breaks_dropped("<p><br /></p><p>a<br /> </p>"), "<p><br /></p><p>a</p>");
+        assert_eq!(
+            trailing_breaks_dropped("<p><br /></p><p>a<br /> </p>"),
+            "<p><br /></p><p>a</p>"
+        );
     }
 
     #[test]
@@ -6801,10 +7647,20 @@ mod tests {
         let qt = "<p>&nbsp;</p><table><tbody><tr><td><p>OST TEST 111</p></td><td><p>b</p></td></tr></tbody></table><p>&nbsp;</p>";
         let (html, _) = teams_html_and_mentions(qt);
         assert_eq!(html, qt);
-        let shown = sanitize_html("<table>\r\n<tbody>\r\n<tr>\r\n<td>\r\n<p>1</p>\r\n</td>\r\n</tr>\r\n</tbody>\r\n</table>");
+        let shown = sanitize_html(
+            "<table>\r\n<tbody>\r\n<tr>\r\n<td>\r\n<p>1</p>\r\n</td>\r\n</tr>\r\n</tbody>\r\n</table>",
+        );
         assert!(shown.starts_with("<table border=\"0.67\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:collapse;border-color:#D1D1D1;border-style:solid\">"), "{shown}");
-        assert!(shown.contains("<td style=\"padding-left:5px;padding-right:5px;vertical-align:middle\">"), "{shown}");
-        assert!(shown.contains("</td>") && shown.ends_with("</table>"), "{shown}");
+        assert!(
+            shown.contains(
+                "<td style=\"padding-left:5px;padding-right:5px;vertical-align:middle\">"
+            ),
+            "{shown}"
+        );
+        assert!(
+            shown.contains("</td>") && shown.ends_with("</table>"),
+            "{shown}"
+        );
     }
 
     #[test]
@@ -6922,7 +7778,10 @@ mod paging_and_event_tests {
     fn durations_as_teams_writes_them() {
         assert_eq!(duration_text("call", 660), "11m");
         assert_eq!(duration_text("call", 354), "5m 54s");
-        assert_eq!(duration_text("call", 25 * 3600 + 28 * 60 + 28), "1h 28m 28s");
+        assert_eq!(
+            duration_text("call", 25 * 3600 + 28 * 60 + 28),
+            "1h 28m 28s"
+        );
         assert_eq!(duration_text("history", 3900), "1h 5m");
         assert_eq!(duration_text("history", 3600), "1h");
         assert_eq!(duration_text("history", 65), "1m 5s");
@@ -6939,31 +7798,58 @@ mod paging_and_event_tests {
             _ => "Di".to_string(),
         };
         let t = "OST TEST 217 town hall 2";
-        let joined = ChatEvent { kind: "MemberJoined".into(), actor: "8:orgid:a".into(), targets: vec!["8:orgid:a".into()], ..Default::default() };
+        let joined = ChatEvent {
+            kind: "MemberJoined".into(),
+            actor: "8:orgid:a".into(),
+            targets: vec!["8:orgid:a".into()],
+            ..Default::default()
+        };
         assert_eq!(
             backroom_event_text(&joined, &names, "event", t).unwrap(),
             "Ann joined the Event Group Chat: OST TEST 217 town hall 2 for organizers, presenters, and people helping with the event."
         );
         // added together with the one who added them (Teams' `p`)
-        let with = ChatEvent { kind: "AddMember".into(), actor: "8:orgid:a".into(), targets: vec!["8:orgid:b".into()], actor_added: true, ..Default::default() };
+        let with = ChatEvent {
+            kind: "AddMember".into(),
+            actor: "8:orgid:a".into(),
+            targets: vec!["8:orgid:b".into()],
+            actor_added: true,
+            ..Default::default()
+        };
         assert_eq!(
             backroom_event_text(&with, &names, "meeting", t).unwrap(),
             "Ann and Bo joined the Planning Group: OST TEST 217 town hall 2 for organizers, presenters, and people helping with the meeting."
         );
-        let many = ChatEvent { targets: vec!["8:orgid:b".into(), "8:orgid:c".into(), "8:orgid:d".into()], ..with.clone() };
+        let many = ChatEvent {
+            targets: vec!["8:orgid:b".into(), "8:orgid:c".into(), "8:orgid:d".into()],
+            ..with.clone()
+        };
         assert_eq!(
             backroom_event_text(&many, &names, "event", t).unwrap(),
             "Ann and Bo and 2 others joined the Event Group Chat: OST TEST 217 town hall 2 for organizers, presenters, and people helping with the event."
         );
         // added by someone else: the chat's plain line, no shared history
         // (winpc: "OST Test 1 added OST Test 3 to the chat.")
-        let added = ChatEvent { actor_added: false, history_days: Some(0), ..with };
-        assert_eq!(backroom_event_text(&added, &names, "event", t).unwrap(), "Ann added Bo to the chat.");
+        let added = ChatEvent {
+            actor_added: false,
+            history_days: Some(0),
+            ..with
+        };
+        assert_eq!(
+            backroom_event_text(&added, &names, "event", t).unwrap(),
+            "Ann added Bo to the chat."
+        );
     }
 
     #[test]
     fn a_one_on_one_does_not_show_its_members_being_added() {
-        let add = MessageView { event: Some(ChatEvent { kind: "AddMember".into(), ..Default::default() }), ..Default::default() };
+        let add = MessageView {
+            event: Some(ChatEvent {
+                kind: "AddMember".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
         let text = MessageView::default();
         assert!(hidden_control("19:a_b@unq.gbl.spaces", &add));
         assert!(!hidden_control("19:a_b@unq.gbl.spaces", &text));
@@ -6998,17 +7884,62 @@ mod paging_and_event_tests {
             "Ann added Bo and 2 others to the chat and shared chat history from the past 3 days."
         );
         // Teams' plural message: its =0 and =1 forms, and one other
-        let all = ChatEvent { targets: many.targets[..2].to_vec(), history_days: Some(0), ..many.clone() };
-        assert_eq!(event_text(&all, &names, false), "Ann added Bo and Cy to the chat and shared all chat history.");
-        let day = ChatEvent { history_days: Some(1), ..many.clone() };
-        assert_eq!(event_text(&day, &names, true), "Ann added Bo and 2 others to the chat and shared chat history from the past day.");
-        let removed = ChatEvent { kind: "DeleteMember".into(), targets: vec!["8:orgid:b".into(), "8:orgid:c".into()], history_days: None, ..many.clone() };
-        assert_eq!(event_text(&removed, &names, false), "Ann removed Bo and Cy from the chat.");
-        let other = ChatEvent { kind: "MemberLeft".into(), targets: vec!["8:orgid:b".into(), "8:orgid:c".into()], ..removed.clone() };
-        assert_eq!(event_text(&other, &names, false), "Bo and Cy no longer have access to the chat.");
-        let one_other = ChatEvent { kind: "MemberJoined".into(), targets: vec!["8:orgid:b".into(), "8:orgid:c".into(), "8:orgid:d".into()], ..removed.clone() };
-        assert_eq!(event_text(&ChatEvent { targets: one_other.targets[..2].to_vec(), ..one_other.clone() }, &names, false), "Bo and Cy joined the conversation.");
-        assert_eq!(event_text(&one_other, &names, false), "Bo and 2 others joined the conversation.");
+        let all = ChatEvent {
+            targets: many.targets[..2].to_vec(),
+            history_days: Some(0),
+            ..many.clone()
+        };
+        assert_eq!(
+            event_text(&all, &names, false),
+            "Ann added Bo and Cy to the chat and shared all chat history."
+        );
+        let day = ChatEvent {
+            history_days: Some(1),
+            ..many.clone()
+        };
+        assert_eq!(
+            event_text(&day, &names, true),
+            "Ann added Bo and 2 others to the chat and shared chat history from the past day."
+        );
+        let removed = ChatEvent {
+            kind: "DeleteMember".into(),
+            targets: vec!["8:orgid:b".into(), "8:orgid:c".into()],
+            history_days: None,
+            ..many.clone()
+        };
+        assert_eq!(
+            event_text(&removed, &names, false),
+            "Ann removed Bo and Cy from the chat."
+        );
+        let other = ChatEvent {
+            kind: "MemberLeft".into(),
+            targets: vec!["8:orgid:b".into(), "8:orgid:c".into()],
+            ..removed.clone()
+        };
+        assert_eq!(
+            event_text(&other, &names, false),
+            "Bo and Cy no longer have access to the chat."
+        );
+        let one_other = ChatEvent {
+            kind: "MemberJoined".into(),
+            targets: vec!["8:orgid:b".into(), "8:orgid:c".into(), "8:orgid:d".into()],
+            ..removed.clone()
+        };
+        assert_eq!(
+            event_text(
+                &ChatEvent {
+                    targets: one_other.targets[..2].to_vec(),
+                    ..one_other.clone()
+                },
+                &names,
+                false
+            ),
+            "Bo and Cy joined the conversation."
+        );
+        assert_eq!(
+            event_text(&one_other, &names, false),
+            "Bo and 2 others joined the conversation."
+        );
         let topic = chat_event(
             "ThreadActivity/TopicUpdate",
             "<topicupdate><eventtime>1</eventtime><initiator>8:orgid:a</initiator><value>OST group test</value></topicupdate>",
@@ -7038,10 +7969,16 @@ mod paging_and_event_tests {
         // OST layout test's conversion to threads (Teams, 2026-11-11).
         let layout = "<modalityupdate><eventtime>1</eventtime><initiator>8:orgid:a</initiator><value>Conversational</value></modalityupdate>";
         let e = chat_event("ThreadActivity/ModalityUpdate", layout).unwrap();
-        assert_eq!(event_text(&e, &names, false), "The layout was changed to threads.");
+        assert_eq!(
+            event_text(&e, &names, false),
+            "The layout was changed to threads."
+        );
         let back = layout.replace("Conversational", "PostReply");
         let e = chat_event("ThreadActivity/ModalityUpdate", &back).unwrap();
-        assert_eq!(event_text(&e, &names, false), "The layout was changed to posts.");
+        assert_eq!(
+            event_text(&e, &names, false),
+            "The layout was changed to posts."
+        );
         // Adding Polls to OST group test (OST, 2026-11-09): the bot's
         // AddMember is hidden; the app events read as Teams words them.
         let bot = "<addmember><eventtime>1794234644843</eventtime><initiator>8:orgid:a</initiator><target>28:fd931076-bbfb-4a38-a85c-1f0fb5b61bee</target><detailedtargetinfo><id>28:fd931076-bbfb-4a38-a85c-1f0fb5b61bee</id></detailedtargetinfo></addmember>";
@@ -7051,13 +7988,25 @@ mod paging_and_event_tests {
         assert_eq!(event_text(&e, &names, false), "Ann added Polls here.");
         let del = add.replace("AddCustomApp", "DeleteCustomApp");
         let e = chat_event("ThreadActivity/DeleteCustomApp", &del).unwrap();
-        assert_eq!(event_text(&e, &names, false), "Ann removed Polls from the chat.");
+        assert_eq!(
+            event_text(&e, &names, false),
+            "Ann removed Polls from the chat."
+        );
         // Opening OST group test's Notes in Teams (2026-11-16, shortened).
         let notes = "<fileadd><eventtime>1794824035822</eventtime><initiator>8:orgid:a</initiator><target><id>fd75f050</id><uri>https://x.sharepoint.com/contentstorage/CSP_b2c9/Document%20Library/19_ef21_thread_v2/loop_loopThread.loop?nav=cz0</uri><type>loop</type><subtype>loopthread</subtype><creator>8:orgid:a</creator><createdAt>1794824028156</createdAt></target></fileadd>";
         let e = chat_event("ThreadActivity/FileAdd", notes).unwrap();
         assert_eq!(e.kind, "NotesCreated");
-        assert_eq!(event_text(&e, &names, false), "Notes have been created in this chat.");
-        assert!(chat_event("ThreadActivity/FileAdd", &notes.replace("<type>loop</type>", "<type>file</type>")).is_none());
+        assert_eq!(
+            event_text(&e, &names, false),
+            "Notes have been created in this chat."
+        );
+        assert!(
+            chat_event(
+                "ThreadActivity/FileAdd",
+                &notes.replace("<type>loop</type>", "<type>file</type>")
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -7084,7 +8033,11 @@ mod paging_and_event_tests {
         assert_eq!(v.root_id, "1794312901896");
         let mut thread_only = m.clone();
         thread_only["properties"] = serde_json::json!({});
-        assert!(!view_of(&thread_only, "8:orgid:me", "Me").unwrap().shared_in_main);
+        assert!(
+            !view_of(&thread_only, "8:orgid:me", "Me")
+                .unwrap()
+                .shared_in_main
+        );
     }
 
     #[test]
@@ -7094,16 +8047,38 @@ mod paging_and_event_tests {
         let v = serde_json::json!({"rcMetadataList": [{"rcMetadata": {"ch": 1794315486744_i64, "chb": 1794313462719_i64, "chbv": 1794313949207_i64, "f": 2, "sl2": []}, "rootMessageId": 1794312901896_i64}]});
         let h = super::super::msgactions::horizons_from(&v);
         let t = h["1794312901896"];
-        assert_eq!(t.unread_after(), 1794313462719, "the bookmark wins while set");
-        let mut tl = vec![MessageView { id: "1794312901896".into(), ..Default::default() }];
+        assert_eq!(
+            t.unread_after(),
+            1794313462719,
+            "the bookmark wins while set"
+        );
+        let mut tl = vec![MessageView {
+            id: "1794312901896".into(),
+            ..Default::default()
+        }];
         apply_thread_horizons(&mut tl, &h);
-        assert_eq!((tl[0].thread_read_to, tl[0].thread_bookmark), (1794315486744, 1794313462719));
+        assert_eq!(
+            (tl[0].thread_read_to, tl[0].thread_bookmark),
+            (1794315486744, 1794313462719)
+        );
         let cleared = serde_json::json!({"rcMetadataList": [{"rcMetadata": {"ch": 7, "chb": 0}, "rootMessageId": 5}]});
-        assert_eq!(super::super::msgactions::horizons_from(&cleared)["5"].unread_after(), 7);
+        assert_eq!(
+            super::super::msgactions::horizons_from(&cleared)["5"].unread_after(),
+            7
+        );
         use super::super::msgactions::HorizonChange;
-        assert_eq!(HorizonChange::UnreadFrom(1794313462720).body(), serde_json::json!({"chb": 1794313462719_i64}));
-        assert_eq!(HorizonChange::ClearBookmark.body(), serde_json::json!({"chb": 0}));
-        assert_eq!(HorizonChange::ReadTo(9).body(), serde_json::json!({"ch": 9}));
+        assert_eq!(
+            HorizonChange::UnreadFrom(1794313462720).body(),
+            serde_json::json!({"chb": 1794313462719_i64})
+        );
+        assert_eq!(
+            HorizonChange::ClearBookmark.body(),
+            serde_json::json!({"chb": 0})
+        );
+        assert_eq!(
+            HorizonChange::ReadTo(9).body(),
+            serde_json::json!({"ch": 9})
+        );
     }
 
     #[test]
@@ -7116,8 +8091,15 @@ mod paging_and_event_tests {
             serde_json::json!({"messagetype": "RichText/Media_CallRecording", "content": rec}),
             serde_json::json!({"messagetype": "Event/Call", "content": end}),
         ];
-        let mut out = vec![MessageView { kind: "call".into(), call_state: "ended".into(), call_id: "c1".into(), ..Default::default() }];
-        let now = chrono::DateTime::parse_from_rfc3339("2026-11-20T16:00:00Z").unwrap().with_timezone(&chrono::Utc);
+        let mut out = vec![MessageView {
+            kind: "call".into(),
+            call_state: "ended".into(),
+            call_id: "c1".into(),
+            ..Default::default()
+        }];
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-20T16:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
         attach_recaps(&raw, &mut out, now);
         let r = out[0].recap.as_ref().unwrap();
         assert_eq!(r.subject, "OST TEST");
@@ -7131,18 +8113,32 @@ mod paging_and_event_tests {
 
     #[test]
     fn recordings_are_teams_control_rows() {
-        let now = chrono::DateTime::parse_from_rfc3339("2026-11-10T16:40:00Z").unwrap().with_timezone(&chrono::Utc);
-        let rec = |status: &str, types: &str, extra: &str| format!(
-            "<URIObject type=\"Video.2/CallRecording.1\"><RecordingStatus status=\"{status}\" code=\"0\"></RecordingStatus><RecordingContent contentTypes=\"{types}\" timestamp=\"2026-11-08T23:57:07.8493222Z\" duration=\"0:07:23.8\" canVideoExpire=\"True\"><item type=\"onedriveForBusinessVideo\" uri=\"https://x-my.sharepoint.com/rec.mp4\" /></RecordingContent><RecordingInitiatorId value=\"8:orgid:me\" isAutoRecording=\"False\" /><RecordingTerminatorId value=\"8:orgid:me\" /><RecordingStorage type=\"MeetingOrganizerOneDrive\" userId=\"me\" />{extra}</URIObject>");
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-10T16:40:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let rec = |status: &str, types: &str, extra: &str| {
+            format!(
+                "<URIObject type=\"Video.2/CallRecording.1\"><RecordingStatus status=\"{status}\" code=\"0\"></RecordingStatus><RecordingContent contentTypes=\"{types}\" timestamp=\"2026-11-08T23:57:07.8493222Z\" duration=\"0:07:23.8\" canVideoExpire=\"True\"><item type=\"onedriveForBusinessVideo\" uri=\"https://x-my.sharepoint.com/rec.mp4\" /></RecordingContent><RecordingInitiatorId value=\"8:orgid:me\" isAutoRecording=\"False\" /><RecordingTerminatorId value=\"8:orgid:me\" /><RecordingStorage type=\"MeetingOrganizerOneDrive\" userId=\"me\" />{extra}</URIObject>"
+            )
+        };
         let names = |_: &str| "OST Test 1".to_string();
         let started = recording_event(&rec("Initial", "Recording", ""), now).unwrap();
-        assert_eq!(event_text(&started, &names, true), "OST Test 1 started recording.");
+        assert_eq!(
+            event_text(&started, &names, true),
+            "OST Test 1 started recording."
+        );
         let stopped = recording_event(&rec("ChunkFinished", "Recording", ""), now).unwrap();
-        assert_eq!(event_text(&stopped, &names, true), "OST Test 1 stopped recording.");
+        assert_eq!(
+            event_text(&stopped, &names, true),
+            "OST Test 1 stopped recording."
+        );
         // As Teams showed Sunday 4:07 PM's on Tuesday morning.
         let saved = recording_event(&rec("Success", "Recording+Transcript", ""), now).unwrap();
         assert_eq!(saved.actor, "8:orgid:me");
-        assert_eq!(event_text(&saved, &names, true), "Recording has been saved to OST Test 1's OneDrive and will expire in 119 days.");
+        assert_eq!(
+            event_text(&saved, &names, true),
+            "Recording has been saved to OST Test 1's OneDrive and will expire in 119 days."
+        );
         assert_eq!(saved.link, "https://x-my.sharepoint.com/rec.mp4");
         // Legacy transcript messages: nothing in a meeting chat.
         let legacy = serde_json::json!({"id": "1", "messagetype": "RichText/Media_CallTranscript", "conversationid": "19:meeting_x@thread.v2",
@@ -7157,15 +8153,39 @@ mod paging_and_event_tests {
     fn meeting_chat_members_from_json_events() {
         // As OST calendar test holds its guests leaving and joining.
         let left = chat_event("ThreadActivity/MemberLeft", r#"{"eventtime":1794200002535,"initiator":"8:orgid:me","members":[{"id":"8:teamsvisitor:dfeeb0b8","friendlyname":"OST Guest 1"}]}"#).unwrap();
-        let names = |id: &str| if id == "8:teamsvisitor:dfeeb0b8" { "OST Guest 1".to_string() } else { "Unknown user".to_string() };
-        assert_eq!(event_text(&left, &names, true), "OST Guest 1 left the chat.");
-        assert_eq!(left.names.get("8:teamsvisitor:dfeeb0b8").map(String::as_str), Some("OST Guest 1"));
+        let names = |id: &str| {
+            if id == "8:teamsvisitor:dfeeb0b8" {
+                "OST Guest 1".to_string()
+            } else {
+                "Unknown user".to_string()
+            }
+        };
+        assert_eq!(
+            event_text(&left, &names, true),
+            "OST Guest 1 left the chat."
+        );
+        assert_eq!(
+            left.names
+                .get("8:teamsvisitor:dfeeb0b8")
+                .map(String::as_str),
+            Some("OST Guest 1")
+        );
         let joined = chat_event("ThreadActivity/MemberJoined", r#"{"initiator":"8:orgid:me","members":[{"id":"8:teamsvisitor:dfeeb0b8","friendlyname":"OST Guest 1"}]}"#).unwrap();
         // A lobby chat's waiting person (as the lobby thread has it, 2026-11-11).
         let lobby = chat_event("ThreadActivity/MemberJoined", r#"{"eventtime":1794413917998,"initiator":"8:orgid:4287","members":[{"id":"8:teamsvisitor:e928","friendlyname":"Attendee","meetingMemberType":"temp"}]}"#).unwrap();
         assert_eq!(lobby.kind, "LobbyJoined");
-        assert_eq!(event_text(&lobby, &|id| lobby.names.get(id).cloned().unwrap_or_default(), true), "Attendee is in the lobby.");
-        assert_eq!(event_text(&joined, &names, true), "OST Guest 1 was invited to the meeting.");
+        assert_eq!(
+            event_text(
+                &lobby,
+                &|id| lobby.names.get(id).cloned().unwrap_or_default(),
+                true
+            ),
+            "Attendee is in the lobby."
+        );
+        assert_eq!(
+            event_text(&joined, &names, true),
+            "OST Guest 1 was invited to the meeting."
+        );
     }
 }
 
@@ -7178,7 +8198,10 @@ mod channel_meeting_tests {
         let m = serde_json::json!({"properties": {"meeting": "{\"meetingtitle\":null,\"organizerId\":\"o\",\"meetingJoinUrl\":\"https://teams.microsoft.com/l/meetup-join/19%3ax%40thread.tacv2/179?context=x\"}"}});
         let content = "<partlist alt =\"\"></partlist><callEventType>callStarted</callEventType>\n<conversationStartTime>11/11/2026 06:38:08</conversationStartTime>\n<conversationUrl>https://api.example/conv/d?i=1&amp;e=2</conversationUrl>\n<callId>bc</callId>";
         let c = channel_meeting(&m, content);
-        assert_eq!(c.join_url, "https://teams.microsoft.com/l/meetup-join/19%3ax%40thread.tacv2/179?context=x");
+        assert_eq!(
+            c.join_url,
+            "https://teams.microsoft.com/l/meetup-join/19%3ax%40thread.tacv2/179?context=x"
+        );
         assert_eq!(c.title, "");
         assert_eq!(c.started_at, "2026-11-11T06:38:08+00:00");
         assert_eq!(c.conversation_url, "https://api.example/conv/d?i=1&e=2");
@@ -7205,17 +8228,39 @@ mod channel_meeting_tests {
         let v = super::message_view(&m, "8:orgid:me", "Me").unwrap();
         assert_eq!(v.meeting_title, "OST TEST 265 channel meeting");
         let s = v.scheduled_meeting.unwrap();
-        assert_eq!((s.title.as_str(), s.start.as_str(), s.end.as_str()), ("OST TEST 265 channel meeting", "2026-11-24T18:00:00+00:00", "2026-11-24T18:30:00+00:00"));
+        assert_eq!(
+            (s.title.as_str(), s.start.as_str(), s.end.as_str()),
+            (
+                "OST TEST 265 channel meeting",
+                "2026-11-24T18:00:00+00:00",
+                "2026-11-24T18:30:00+00:00"
+            )
+        );
         assert!(!s.cancelled && !s.recurring);
-        assert_eq!((s.organizer_id.as_str(), s.join_url.starts_with("https://teams.microsoft.com/l/meetup-join/")), ("4287e791", true));
+        assert_eq!(
+            (
+                s.organizer_id.as_str(),
+                s.join_url
+                    .starts_with("https://teams.microsoft.com/l/meetup-join/")
+            ),
+            ("4287e791", true)
+        );
         let mut cancelled = meeting.clone();
         cancelled["scheduledmeetinginfo"]["isCancelled"] = serde_json::json!(true);
         cancelled["scheduledmeetinginfo"]["eventType"] = serde_json::json!("RecurringMaster");
         let m = serde_json::json!({"id": "1", "messagetype": "RichText/Html", "content": "<p>Cancelled</p>", "properties": {"meeting": cancelled.to_string()}});
-        let s = super::message_view(&m, "", "").unwrap().scheduled_meeting.unwrap();
+        let s = super::message_view(&m, "", "")
+            .unwrap()
+            .scheduled_meeting
+            .unwrap();
         assert!(s.cancelled && s.recurring);
         // A message without one has neither.
-        let plain = super::message_view(&serde_json::json!({"id": "2", "messagetype": "RichText/Html", "content": "<p>x</p>"}), "", "").unwrap();
+        let plain = super::message_view(
+            &serde_json::json!({"id": "2", "messagetype": "RichText/Html", "content": "<p>x</p>"}),
+            "",
+            "",
+        )
+        .unwrap();
         assert!(plain.scheduled_meeting.is_none() && plain.meeting_title.is_empty());
     }
 }

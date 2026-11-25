@@ -8,9 +8,13 @@ async fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
     let method: reqwest::Method = args.next().expect("method").parse()?;
     let path = args.next().expect("path");
-    let body: Option<serde_json::Value> = args.next().map(|b| serde_json::from_str(&b)).transpose()?;
+    let body: Option<serde_json::Value> =
+        args.next().map(|b| serde_json::from_str(&b)).transpose()?;
     match teams_cli::api::calendar::ows(method, &path, body.as_ref()).await {
-        Ok(v) => println!("ok {}", v.to_string().chars().take(4000).collect::<String>()),
+        Ok(v) => println!(
+            "ok {}",
+            v.to_string().chars().take(4000).collect::<String>()
+        ),
         Err(e) => println!("error: {e:#}"),
     }
     Ok(())

@@ -10,10 +10,18 @@ async fn main() -> anyhow::Result<()> {
     let client = TeamsClient::new().await?;
     let url = format!("{}/v1/users/ME/properties", client.chat_service_url());
     if args.get(1).map(String::as_str) == Some("--set") {
-        let (Some(name), Some(value)) = (args.get(2), args.get(3)) else { anyhow::bail!("--set <key> <json>") };
+        let (Some(name), Some(value)) = (args.get(2), args.get(3)) else {
+            anyhow::bail!("--set <key> <json>")
+        };
         let v: serde_json::Value = serde_json::from_str(value)?;
         let put = format!("{url}?name={name}");
-        client.chat_request(reqwest::Method::PUT, &put, &serde_json::json!({ name: v.to_string() })).await?;
+        client
+            .chat_request(
+                reqwest::Method::PUT,
+                &put,
+                &serde_json::json!({ name: v.to_string() }),
+            )
+            .await?;
         println!("set {name} = {v}");
         return Ok(());
     }

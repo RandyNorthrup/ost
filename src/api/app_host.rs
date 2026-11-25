@@ -53,7 +53,11 @@ pub struct StaticTab {
 /// The app's facts from its middle-tier definition (cached per app).
 pub async fn facts(client: &TeamsClient, app_id: &str) -> Result<AppFacts> {
     static CACHE: Mutex<Option<HashMap<String, AppFacts>>> = Mutex::new(None);
-    if let Some(f) = CACHE.lock().ok().and_then(|c| c.as_ref()?.get(app_id).cloned()) {
+    if let Some(f) = CACHE
+        .lock()
+        .ok()
+        .and_then(|c| c.as_ref()?.get(app_id).cloned())
+    {
         return Ok(f);
     }
     let (base, token) = super::tabs::middle_tier(client).await?;
@@ -69,7 +73,8 @@ pub async fn facts(client: &TeamsClient, app_id: &str) -> Result<AppFacts> {
         .await?;
     let f = facts_from(&d);
     if let Ok(mut c) = CACHE.lock() {
-        c.get_or_insert_with(HashMap::new).insert(app_id.to_string(), f.clone());
+        c.get_or_insert_with(HashMap::new)
+            .insert(app_id.to_string(), f.clone());
     }
     Ok(f)
 }
@@ -82,20 +87,43 @@ pub fn facts_from(d: &serde_json::Value) -> AppFacts {
             domains.push(s.to_string());
         }
     };
-    for v in d.get("validDomains").and_then(|v| v.as_array()).into_iter().flatten() {
+    for v in d
+        .get("validDomains")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+    {
         add(v.as_str().unwrap_or_default());
     }
-    let host = |u: &str| url::Url::parse(&u.replace(['{', '}'], "")).ok().and_then(|u| u.host_str().map(str::to_string));
-    for (list, key) in [("galleryTabs", "configurationUrl"), ("configurableTabs", "configurationUrl"), ("staticTabs", "contentUrl")] {
+    let host = |u: &str| {
+        url::Url::parse(&u.replace(['{', '}'], ""))
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_string))
+    };
+    for (list, key) in [
+        ("galleryTabs", "configurationUrl"),
+        ("configurableTabs", "configurationUrl"),
+        ("staticTabs", "contentUrl"),
+    ] {
         for t in d.get(list).and_then(|v| v.as_array()).into_iter().flatten() {
             if let Some(h) = t.get(key).and_then(|v| v.as_str()).and_then(host) {
                 add(&h);
             }
         }
     }
-    let s = |p: &str| d.pointer(p).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let s = |p: &str| {
+        d.pointer(p)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     let b = |k: &str| d.get(k).and_then(|v| v.as_bool()).unwrap_or(false);
-    let str_of = |t: &serde_json::Value, k: &str| t.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let str_of = |t: &serde_json::Value, k: &str| {
+        t.get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     let static_tabs = d
         .get("staticTabs")
         .and_then(|v| v.as_array())
@@ -106,7 +134,13 @@ pub fn facts_from(d: &serde_json::Value) -> AppFacts {
             name: str_of(t, "name"),
             content_url: str_of(t, "contentUrl"),
             website_url: str_of(t, "websiteUrl"),
-            scopes: t.get("scopes").and_then(|v| v.as_array()).into_iter().flatten().filter_map(|v| v.as_str().map(str::to_string)).collect(),
+            scopes: t
+                .get("scopes")
+                .and_then(|v| v.as_array())
+                .into_iter()
+                .flatten()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect(),
         })
         .collect();
     AppFacts {
@@ -126,7 +160,8 @@ pub fn facts_from(d: &serde_json::Value) -> AppFacts {
 /// and about tabs have no content address).
 pub fn personal_tab<'a>(f: &'a AppFacts, entity: &str) -> Option<&'a StaticTab> {
     let usable = |t: &&StaticTab| {
-        t.content_url.starts_with("https://") && (t.scopes.is_empty() || t.scopes.iter().any(|s| s.eq_ignore_ascii_case("personal")))
+        t.content_url.starts_with("https://")
+            && (t.scopes.is_empty() || t.scopes.iter().any(|s| s.eq_ignore_ascii_case("personal")))
     };
     f.static_tabs
         .iter()
@@ -164,20 +199,44 @@ pub fn joined_teams_from(teams: &[super::teams::ListTeam]) -> serde_json::Value 
 /// {mt}/beta/shareToOutlook/GetEmailIdForConversation?threadId=…
 /// &messageId=…&locale=en-us[&bodyType=…]`, and frames Outlook's compose
 /// for that draft.
-pub async fn share_to_outlook_email(client: &TeamsClient, thread: &str, message_id: &str, body_type: &str) -> Result<String> {
+pub async fn share_to_outlook_email(
+    client: &TeamsClient,
+    thread: &str,
+    message_id: &str,
+    body_type: &str,
+) -> Result<String> {
     // Teams sends the thread id as it is (19:…@thread.v2).
     anyhow::ensure!(
-        thread.starts_with("19:") && thread.chars().all(|c| c.is_ascii_alphanumeric() || ":@._-".contains(c)),
+        thread.starts_with("19:")
+            && thread
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || ":@._-".contains(c)),
         "Not a conversation id"
     );
     let (base, token) = super::tabs::middle_tier(client).await?;
     let e = super::tabs::encode_uri_component;
-    let mut url = format!("{base}/beta/shareToOutlook/GetEmailIdForConversation?threadId={thread}&messageId={}&locale=en-us", e(message_id));
+    let mut url = format!(
+        "{base}/beta/shareToOutlook/GetEmailIdForConversation?threadId={thread}&messageId={}&locale=en-us",
+        e(message_id)
+    );
     if !body_type.is_empty() {
         url.push_str(&format!("&bodyType={}", e(body_type)));
     }
-    let v: serde_json::Value = client.http().get(url).bearer_auth(&token).send().await?.error_for_status()?.json().await?;
-    let id = v.get("id").or_else(|| v.get("emailId")).and_then(|i| i.as_str()).or_else(|| v.as_str()).unwrap_or_default();
+    let v: serde_json::Value = client
+        .http()
+        .get(url)
+        .bearer_auth(&token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let id = v
+        .get("id")
+        .or_else(|| v.get("emailId"))
+        .and_then(|i| i.as_str())
+        .or_else(|| v.as_str())
+        .unwrap_or_default();
     anyhow::ensure!(!id.is_empty(), "No email draft for the conversation");
     Ok(id.to_string())
 }
@@ -198,7 +257,10 @@ pub async fn share_to_outlook_discard(client: &TeamsClient, email_id: &str) -> R
     let (base, token) = super::tabs::middle_tier(client).await?;
     client
         .http()
-        .delete(format!("{base}/v1/shareToOutlook/email?emailId={}", super::tabs::encode_uri_component(email_id)))
+        .delete(format!(
+            "{base}/v1/shareToOutlook/email?emailId={}",
+            super::tabs::encode_uri_component(email_id)
+        ))
         .bearer_auth(&token)
         .send()
         .await?
@@ -209,7 +271,9 @@ pub async fn share_to_outlook_discard(client: &TeamsClient, email_id: &str) -> R
 /// Whether a frame served from `origin` belongs to the app (Teams'
 /// isValidOriginForApp).
 pub fn origin_valid_for_app(origin: &str, valid_domains: &[String]) -> bool {
-    let Ok(u) = url::Url::parse(origin) else { return false };
+    let Ok(u) = url::Url::parse(origin) else {
+        return false;
+    };
     if u.scheme() != "https" {
         return false;
     }
@@ -222,7 +286,9 @@ pub fn origin_valid_for_app(origin: &str, valid_domains: &[String]) -> bool {
         }
         let pattern = format!(
             "^https://{}((/|\\?).*)?$",
-            regex::escape(&d).replace("\\.", "[.]").replace("\\*", "[^/^.]+")
+            regex::escape(&d)
+                .replace("\\.", "[.]")
+                .replace("\\*", "[^/^.]+")
         );
         regex::Regex::new(&pattern).is_ok_and(|r| r.is_match(&href))
     })
@@ -232,19 +298,41 @@ pub fn origin_valid_for_app(origin: &str, valid_domains: &[String]) -> bool {
 /// picks it (module 9883 `w`): a full-trust Microsoft app's first asked
 /// resource, else the app's webApplicationInfo resource (its
 /// `{teamSiteDomain}` filled), which an asked resource must match.
-pub fn sso_resource(f: &AppFacts, team_site_domain: &str, asked: Option<&serde_json::Value>) -> Result<String> {
+pub fn sso_resource(
+    f: &AppFacts,
+    team_site_domain: &str,
+    asked: Option<&serde_json::Value>,
+) -> Result<String> {
     let asked: Vec<String> = asked
         .and_then(|a| a.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default();
-    if f.full_trust && f.microsoft_owned && let Some(r) = asked.first() {
-        anyhow::ensure!(r.starts_with("https://") || r.starts_with("api://"), "Invalid resource");
+    if f.full_trust
+        && f.microsoft_owned
+        && let Some(r) = asked.first()
+    {
+        anyhow::ensure!(
+            r.starts_with("https://") || r.starts_with("api://"),
+            "Invalid resource"
+        );
         return Ok(r.clone());
     }
-    anyhow::ensure!(!f.web_app_resource.is_empty(), "App webApplicationInfo or resource not defined in manifest");
-    let mine = f.web_app_resource.replace("{teamSiteDomain}", team_site_domain);
+    anyhow::ensure!(
+        !f.web_app_resource.is_empty(),
+        "App webApplicationInfo or resource not defined in manifest"
+    );
+    let mine = f
+        .web_app_resource
+        .replace("{teamSiteDomain}", team_site_domain);
     if let Some(r) = asked.first() {
-        anyhow::ensure!(r.eq_ignore_ascii_case(&mine), "App resource defined in manifest and iframe origin do not match");
+        anyhow::ensure!(
+            r.eq_ignore_ascii_case(&mine),
+            "App resource defined in manifest and iframe origin do not match"
+        );
     }
     Ok(mine)
 }
@@ -256,14 +344,22 @@ pub fn sso_resource(f: &AppFacts, team_site_domain: &str, asked: Option<&serde_j
 /// same). Measured: OneNote and Storyline yes; Lists, Whiteboard, Q&A
 /// and Workflows no. Without the ECS list, the apps measured with it.
 pub fn deep_naa(app_id: &str) -> bool {
-    const MEASURED: [&str; 2] = ["0d820ecd-def2-4297-adad-78056cde7c78", "683f3525-d193-4a67-8d91-22093beab1ca"];
+    const MEASURED: [&str; 2] = [
+        "0d820ecd-def2-4297-adad-78056cde7c78",
+        "683f3525-d193-4a67-8d91-22093beab1ca",
+    ];
     super::ecs::setting("extensibility", "deeplyNestedAppAuthAllowList")
         .and_then(|l| deep_naa_in(&l, app_id))
         .unwrap_or_else(|| MEASURED.iter().any(|a| a.eq_ignore_ascii_case(app_id)))
 }
 
 fn deep_naa_in(list: &serde_json::Value, app_id: &str) -> Option<bool> {
-    Some(list.as_array()?.iter().filter_map(|v| v.as_str()).any(|a| a.eq_ignore_ascii_case(app_id)))
+    Some(
+        list.as_array()?
+            .iter()
+            .filter_map(|v| v.as_str())
+            .any(|a| a.eq_ignore_ascii_case(app_id)),
+    )
 }
 
 /// One id for this run of OST: Teams' `sessionId` in app contexts.
@@ -300,18 +396,32 @@ pub fn context_from(
     team_props: &serde_json::Value,
     team_members: &[serde_json::Value],
 ) -> serde_json::Value {
-    let p = |v: &serde_json::Value, k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    let p = |v: &serde_json::Value, k: &str| {
+        v.get(k)
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     let site = p(team_props, "sharepointSiteUrl");
     let (site_domain, site_path) = url::Url::parse(&site)
         .ok()
-        .map(|u| (u.host_str().unwrap_or_default().to_string(), u.path().trim_end_matches('/').to_string()))
+        .map(|u| {
+            (
+                u.host_str().unwrap_or_default().to_string(),
+                u.path().trim_end_matches('/').to_string(),
+            )
+        })
         .unwrap_or_default();
     // Teams' userTeamRole: 0 owner (Admin), 1 member, 2 guest.
     let role = team_members
         .iter()
         .find(|m| m.get("id").and_then(|i| i.as_str()) == Some(user.mri.as_str()))
         .and_then(|m| m.get("role").and_then(|r| r.as_str()))
-        .map(|r| match r { "Admin" => 0, "Guest" => 2, _ => 1 })
+        .map(|r| match r {
+            "Admin" => 0,
+            "Guest" => 2,
+            _ => 1,
+        })
         .unwrap_or(1);
     let mut c = serde_json::json!({
         "locale": "en-us",
@@ -408,10 +518,12 @@ fn iana_zone() -> String {
     std::env::var("TZ")
         .ok()
         .filter(|z| z.contains('/'))
-        .or_else(|| std::fs::read_link("/etc/localtime").ok().and_then(|p| {
-            let s = p.to_string_lossy().to_string();
-            s.split("zoneinfo/").nth(1).map(str::to_string)
-        }))
+        .or_else(|| {
+            std::fs::read_link("/etc/localtime").ok().and_then(|p| {
+                let s = p.to_string_lossy().to_string();
+                s.split("zoneinfo/").nth(1).map(str::to_string)
+            })
+        })
         .unwrap_or_else(|| "UTC".into())
 }
 
@@ -425,7 +537,13 @@ pub async fn sharepoint_host(client: &TeamsClient) -> String {
 /// (`mySiteDomain` `<tenant>-my.sharepoint.com`, `mySitePath`
 /// `/personal/<you>`), from Graph's drive address.
 pub async fn my_site(client: &TeamsClient) -> Option<(String, String)> {
-    let v: serde_json::Value = client.graph_get("/me/drive?$select=webUrl").await.ok()?.json().await.ok()?;
+    let v: serde_json::Value = client
+        .graph_get("/me/drive?$select=webUrl")
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()?;
     my_site_from(v.get("webUrl")?.as_str()?)
 }
 
@@ -442,8 +560,16 @@ async fn tenant_site_domain(client: &TeamsClient) -> String {
         return h;
     }
     let h = async {
-        let v: serde_json::Value = client.graph_get("/sites/root?$select=siteCollection").await.ok()?.json().await.ok()?;
-        v.pointer("/siteCollection/hostname").and_then(|h| h.as_str()).map(str::to_string)
+        let v: serde_json::Value = client
+            .graph_get("/sites/root?$select=siteCollection")
+            .await
+            .ok()?
+            .json()
+            .await
+            .ok()?;
+        v.pointer("/siteCollection/hostname")
+            .and_then(|h| h.as_str())
+            .map(str::to_string)
     }
     .await
     .unwrap_or_default();
@@ -458,30 +584,61 @@ async fn tenant_site_domain(client: &TeamsClient) -> String {
 /// [`context_from`] with the user from OST's sign-in and, for a channel,
 /// the channel's and team's thread properties read from the chat service
 /// (`thread` a channel or a chat; `team_thread` the channel's team).
-pub async fn context(client: &TeamsClient, app_id: &str, thread: &str, team_thread: &str) -> Result<serde_json::Value> {
+pub async fn context(
+    client: &TeamsClient,
+    app_id: &str,
+    thread: &str,
+    team_thread: &str,
+) -> Result<serde_json::Value> {
     let user = HostUser {
         tid: client.tenant_id().unwrap_or_default(),
         oid: client.object_id().unwrap_or_default(),
         upn: client.user_principal_name().unwrap_or_default(),
         mri: format!("8:orgid:{}", client.object_id().unwrap_or_default()),
     };
-    let manifest = facts(client, app_id).await.map(|f| f.manifest_version).unwrap_or_default();
+    let manifest = facts(client, app_id)
+        .await
+        .map(|f| f.manifest_version)
+        .unwrap_or_default();
     let is_channel = thread.ends_with("@thread.tacv2") || thread.ends_with("@thread.skype");
-    let (mut channel, mut team, mut members) = (serde_json::Value::Null, serde_json::Value::Null, Vec::new());
-    let team_id = if team_thread.is_empty() { thread } else { team_thread };
+    let (mut channel, mut team, mut members) =
+        (serde_json::Value::Null, serde_json::Value::Null, Vec::new());
+    let team_id = if team_thread.is_empty() {
+        thread
+    } else {
+        team_thread
+    };
     if is_channel {
-        channel = super::tab_add::thread_properties(client, thread).await.unwrap_or_default();
-        let url = format!("{}/v1/threads/{}?view=msnp24Equivalent", client.chat_service_url(), super::tabs::encode_uri_component(team_id));
+        channel = super::tab_add::thread_properties(client, thread)
+            .await
+            .unwrap_or_default();
+        let url = format!(
+            "{}/v1/threads/{}?view=msnp24Equivalent",
+            client.chat_service_url(),
+            super::tabs::encode_uri_component(team_id)
+        );
         if let Ok(r) = client.chat_get(&url).await
             && let Ok(v) = r.json::<serde_json::Value>().await
         {
             team = v.get("properties").cloned().unwrap_or_default();
-            members = v.get("members").and_then(|m| m.as_array()).cloned().unwrap_or_default();
+            members = v
+                .get("members")
+                .and_then(|m| m.as_array())
+                .cloned()
+                .unwrap_or_default();
         }
     }
-    let chat = if !is_channel && !thread.is_empty() { thread } else { "" };
+    let chat = if !is_channel && !thread.is_empty() {
+        thread
+    } else {
+        ""
+    };
     // Chats and personal apps carry the tenant's SharePoint host.
-    let site = if is_channel { String::new() } else { tenant_site_domain(client).await };
+    let site = if is_channel {
+        String::new()
+    } else {
+        tenant_site_domain(client).await
+    };
     Ok(context_from(
         app_id,
         &manifest,
@@ -502,12 +659,20 @@ pub async fn context(client: &TeamsClient, app_id: &str, thread: &str, team_thre
 /// &messageId=0&organizerId=8:orgid:{organizer}&tenantId=…&meetingTitle=…`
 /// answers `{url, shareUrl}`, the board's Whiteboard address (with its
 /// `encodedShareLink` once there is a board).
-pub async fn meeting_board(client: &TeamsClient, thread: &str, organizer_oid: &str, title: &str) -> Result<String> {
+pub async fn meeting_board(
+    client: &TeamsClient,
+    thread: &str,
+    organizer_oid: &str,
+    title: &str,
+) -> Result<String> {
     let (base, token) = super::tabs::middle_tier(client).await?;
     let q = board_query(client, thread, organizer_oid);
     let v: serde_json::Value = client
         .http()
-        .get(format!("{base}/beta/meetings/fluidboard?{q}&meetingTitle={}", super::tabs::encode_uri_component(title)))
+        .get(format!(
+            "{base}/beta/meetings/fluidboard?{q}&meetingTitle={}",
+            super::tabs::encode_uri_component(title)
+        ))
         .bearer_auth(&token)
         .send()
         .await?
@@ -515,7 +680,10 @@ pub async fn meeting_board(client: &TeamsClient, thread: &str, organizer_oid: &s
         .json()
         .await?;
     let url = v.get("url").and_then(|u| u.as_str()).unwrap_or_default();
-    anyhow::ensure!(url.starts_with("https://"), "No whiteboard url for this meeting");
+    anyhow::ensure!(
+        url.starts_with("https://"),
+        "No whiteboard url for this meeting"
+    );
     Ok(url.to_string())
 }
 
@@ -523,7 +691,12 @@ pub async fn meeting_board(client: &TeamsClient, thread: &str, organizer_oid: &s
 /// `getAnnotationUrl`): `GET {mt}/beta/meetings/annotation?threadId=…
 /// &organizerId=…&tenantId=…&meetingTitle=…` (no messageId) answers
 /// `{url, shareUrl}`.
-pub async fn meeting_annotation_board(client: &TeamsClient, thread: &str, organizer_oid: &str, title: &str) -> Result<String> {
+pub async fn meeting_annotation_board(
+    client: &TeamsClient,
+    thread: &str,
+    organizer_oid: &str,
+    title: &str,
+) -> Result<String> {
     let (base, token) = super::tabs::middle_tier(client).await?;
     let e = super::tabs::encode_uri_component;
     let q = format!(
@@ -543,7 +716,10 @@ pub async fn meeting_annotation_board(client: &TeamsClient, thread: &str, organi
         .json()
         .await?;
     let url = v.get("url").and_then(|u| u.as_str()).unwrap_or_default();
-    anyhow::ensure!(url.starts_with("https://"), "No annotation board for this meeting");
+    anyhow::ensure!(
+        url.starts_with("https://"),
+        "No annotation board for this meeting"
+    );
     Ok(url.to_string())
 }
 
@@ -551,12 +727,20 @@ pub async fn meeting_annotation_board(client: &TeamsClient, thread: &str, organi
 /// reports it (326418 `postAnnotationWhiteboard`): `POST {mt}/beta/
 /// meetings/annotation?threadId=…&messageId=…&organizerId=…&tenantId=…`,
 /// the address (without its proof token) as a JSON string.
-pub async fn save_meeting_annotation_board(client: &TeamsClient, thread: &str, organizer_oid: &str, url: &str) -> Result<()> {
+pub async fn save_meeting_annotation_board(
+    client: &TeamsClient,
+    thread: &str,
+    organizer_oid: &str,
+    url: &str,
+) -> Result<()> {
     let url = board_url_to_save(url).context("Not a whiteboard address")?;
     let (base, token) = super::tabs::middle_tier(client).await?;
     client
         .http()
-        .post(format!("{base}/beta/meetings/annotation?{}", board_query(client, thread, organizer_oid)))
+        .post(format!(
+            "{base}/beta/meetings/annotation?{}",
+            board_query(client, thread, organizer_oid)
+        ))
         .bearer_auth(&token)
         .json(&url)
         .send()
@@ -575,8 +759,19 @@ pub async fn save_meeting_annotation_board(client: &TeamsClient, thread: &str, o
 /// userTenantId, isNAAEnabled. `extra` adds Annotate's parameters
 /// (screenSharer, sharedScreenWidth…).
 #[allow(clippy::too_many_arguments)]
-pub fn shared_board_frame_url(session_url: &str, correlation: &str, initiator: bool, meeting_id: &str, call_id: &str, user: &str, tenant: &str, extra: &[(&str, String)]) -> Option<String> {
-    let mut u = url::Url::parse(session_url).ok().filter(|u| u.scheme() == "https")?;
+pub fn shared_board_frame_url(
+    session_url: &str,
+    correlation: &str,
+    initiator: bool,
+    meeting_id: &str,
+    call_id: &str,
+    user: &str,
+    tenant: &str,
+    extra: &[(&str, String)],
+) -> Option<String> {
+    let mut u = url::Url::parse(session_url)
+        .ok()
+        .filter(|u| u.scheme() == "https")?;
     {
         let mut q = u.query_pairs_mut();
         for (k, v) in extra {
@@ -616,13 +811,23 @@ fn board_query(client: &TeamsClient, thread: &str, organizer_oid: &str) -> Strin
 /// sent in `changeWhiteboardUrl`, without its `proofToken` (a credential;
 /// Teams' saved address has none).
 pub fn board_url_to_save(url: &str) -> Option<String> {
-    let mut u = url::Url::parse(url).ok().filter(|u| u.scheme() == "https")?;
+    let mut u = url::Url::parse(url)
+        .ok()
+        .filter(|u| u.scheme() == "https")?;
     let host = u.host_str()?.to_ascii_lowercase();
-    if !(host == "app.whiteboard.microsoft.com" || host == "whiteboard.cloud.microsoft" || host.ends_with(".whiteboard.microsoft.com")) {
+    if !(host == "app.whiteboard.microsoft.com"
+        || host == "whiteboard.cloud.microsoft"
+        || host.ends_with(".whiteboard.microsoft.com"))
+    {
         return None;
     }
     // The other parameters exactly as sent.
-    let kept: Vec<&str> = u.query().unwrap_or_default().split('&').filter(|p| !p.is_empty() && !p.starts_with("proofToken=") && *p != "proofToken").collect();
+    let kept: Vec<&str> = u
+        .query()
+        .unwrap_or_default()
+        .split('&')
+        .filter(|p| !p.is_empty() && !p.starts_with("proofToken=") && *p != "proofToken")
+        .collect();
     let query = kept.join("&");
     u.set_query(if query.is_empty() { None } else { Some(&query) });
     Some(u.to_string())
@@ -632,12 +837,20 @@ pub fn board_url_to_save(url: &str) -> Option<String> {
 /// (`changeWhiteboardUrl`): `POST {mt}/beta/meetings/v2/whiteboard?
 /// threadId=…&messageId=0&organizerId=…&tenantId=…` with the address as a
 /// JSON string; answered `{"success": true}`.
-pub async fn save_meeting_board(client: &TeamsClient, thread: &str, organizer_oid: &str, url: &str) -> Result<()> {
+pub async fn save_meeting_board(
+    client: &TeamsClient,
+    thread: &str,
+    organizer_oid: &str,
+    url: &str,
+) -> Result<()> {
     let url = board_url_to_save(url).context("Not a whiteboard address")?;
     let (base, token) = super::tabs::middle_tier(client).await?;
     client
         .http()
-        .post(format!("{base}/beta/meetings/v2/whiteboard?{}", board_query(client, thread, organizer_oid)))
+        .post(format!(
+            "{base}/beta/meetings/v2/whiteboard?{}",
+            board_query(client, thread, organizer_oid)
+        ))
         .bearer_auth(&token)
         .json(&url)
         .send()
@@ -652,8 +865,18 @@ pub async fn save_meeting_board(client: &TeamsClient, thread: &str, organizer_oi
 /// meetingId, teamsEnvV2, client, userRole, isEU, userId, userTenantId,
 /// isNAAEnabled.
 #[allow(clippy::too_many_arguments)]
-pub fn board_frame_url(stored: &str, tab_start: i64, correlation: &str, initiator: bool, meeting_id: &str, user: &str, tenant: &str) -> Option<String> {
-    let mut u = url::Url::parse(stored).ok().filter(|u| u.scheme() == "https")?;
+pub fn board_frame_url(
+    stored: &str,
+    tab_start: i64,
+    correlation: &str,
+    initiator: bool,
+    meeting_id: &str,
+    user: &str,
+    tenant: &str,
+) -> Option<String> {
+    let mut u = url::Url::parse(stored)
+        .ok()
+        .filter(|u| u.scheme() == "https")?;
     u.query_pairs_mut()
         .append_pair("tabStartTime", &tab_start.to_string())
         .append_pair("correlationId", correlation)
@@ -678,10 +901,22 @@ mod tests {
 
     #[test]
     fn deep_naa_follows_teams_allow_list() {
-        let list = serde_json::json!(["0d820ecd-def2-4297-adad-78056cde7c78", "683F3525-D193-4A67-8D91-22093BEAB1CA"]);
-        assert_eq!(deep_naa_in(&list, "0d820ecd-def2-4297-adad-78056cde7c78"), Some(true));
-        assert_eq!(deep_naa_in(&list, "683f3525-d193-4a67-8d91-22093beab1ca"), Some(true));
-        assert_eq!(deep_naa_in(&list, "26bc2873-6023-480c-a11b-76b66605ce8c"), Some(false));
+        let list = serde_json::json!([
+            "0d820ecd-def2-4297-adad-78056cde7c78",
+            "683F3525-D193-4A67-8D91-22093BEAB1CA"
+        ]);
+        assert_eq!(
+            deep_naa_in(&list, "0d820ecd-def2-4297-adad-78056cde7c78"),
+            Some(true)
+        );
+        assert_eq!(
+            deep_naa_in(&list, "683f3525-d193-4a67-8d91-22093beab1ca"),
+            Some(true)
+        );
+        assert_eq!(
+            deep_naa_in(&list, "26bc2873-6023-480c-a11b-76b66605ce8c"),
+            Some(false)
+        );
         assert_eq!(deep_naa_in(&serde_json::json!("x"), "a"), None);
     }
 
@@ -698,20 +933,64 @@ mod tests {
         assert!(board_url_to_save("http://app.whiteboard.microsoft.com/meeting").is_none());
         let f = board_frame_url("https://app.whiteboard.microsoft.com/meeting?embed=1&encodedShareLink=aHR0cA%3d%3d&shareLinkId=ae8a&meetingTitle=Meeting%20with%20OST%20Test%201",
             1794843119003, "c", true, "MCMx", "u", "t").unwrap();
-        let keys: Vec<String> = url::Url::parse(&f).unwrap().query_pairs().map(|(k, _)| k.into_owned()).collect();
-        assert_eq!(keys, ["embed", "encodedShareLink", "shareLinkId", "meetingTitle", "tabStartTime", "correlationId", "culture", "enableReactApp", "isInitiator",
-            "isEduUser", "meetingId", "teamsEnvV2", "client", "userRole", "isEU", "userId", "userTenantId", "isNAAEnabled"]);
+        let keys: Vec<String> = url::Url::parse(&f)
+            .unwrap()
+            .query_pairs()
+            .map(|(k, _)| k.into_owned())
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                "embed",
+                "encodedShareLink",
+                "shareLinkId",
+                "meetingTitle",
+                "tabStartTime",
+                "correlationId",
+                "culture",
+                "enableReactApp",
+                "isInitiator",
+                "isEduUser",
+                "meetingId",
+                "teamsEnvV2",
+                "client",
+                "userRole",
+                "isEU",
+                "userId",
+                "userTenantId",
+                "isNAAEnabled"
+            ]
+        );
     }
 
     #[test]
     fn channel_context_is_teams() {
-        let user = HostUser { tid: "t".into(), oid: "o".into(), upn: "u@x".into(), mri: "8:orgid:o".into() };
+        let user = HostUser {
+            tid: "t".into(),
+            oid: "o".into(),
+            upn: "u@x".into(),
+            mri: "8:orgid:o".into(),
+        };
         let channel = serde_json::json!({"topic": "OST test channel 2", "channelDocsFolderRelativeUrl": "/sites/OSTTestTeam/Shared Documents/OST test channel 2", "threadType": "topic"});
         let team = serde_json::json!({"spaceThreadTopic": "OST Test Team", "groupId": "g", "sharepointSiteUrl": "https://scnetsolutions.sharepoint.com/sites/OSTTestTeam"});
         let members = vec![serde_json::json!({"id": "8:orgid:o", "role": "Admin"})];
-        let c = context_from("0d820ecd-def2-4297-adad-78056cde7c78", "devPreview", &user, "", "", "19:c@thread.tacv2", &channel, "19:t@thread.tacv2", &team, &members);
+        let c = context_from(
+            "0d820ecd-def2-4297-adad-78056cde7c78",
+            "devPreview",
+            &user,
+            "",
+            "",
+            "19:c@thread.tacv2",
+            &channel,
+            "19:t@thread.tacv2",
+            &team,
+            &members,
+        );
         assert_eq!(c["channelName"], "OST test channel 2");
-        assert_eq!(c["channelRelativeUrl"], "/sites/OSTTestTeam/Shared Documents/OST test channel 2");
+        assert_eq!(
+            c["channelRelativeUrl"],
+            "/sites/OSTTestTeam/Shared Documents/OST test channel 2"
+        );
         assert_eq!(c["channelType"], "Regular");
         assert_eq!(c["teamId"], "19:t@thread.tacv2");
         assert_eq!(c["teamSiteDomain"], "scnetsolutions.sharepoint.com");
@@ -719,7 +998,18 @@ mod tests {
         assert_eq!(c["userTeamRole"], 0);
         assert_eq!(c["hostName"], "TeamsModern");
         assert_eq!(c["upn"], "u@x");
-        let chat = context_from("683f3525-d193-4a67-8d91-22093beab1ca", "1.25", &user, "19:a_b@unq.gbl.spaces", "x.sharepoint.com", "", &serde_json::Value::Null, "", &serde_json::Value::Null, &[]);
+        let chat = context_from(
+            "683f3525-d193-4a67-8d91-22093beab1ca",
+            "1.25",
+            &user,
+            "19:a_b@unq.gbl.spaces",
+            "x.sharepoint.com",
+            "",
+            &serde_json::Value::Null,
+            "",
+            &serde_json::Value::Null,
+            &[],
+        );
         assert_eq!(chat["channelId"], "");
         assert_eq!(chat["chatId"], "19:a_b@unq.gbl.spaces");
         // Teams' meetingId for a chat: base64 of "0#<chat>#0".
@@ -744,13 +1034,35 @@ mod tests {
         assert_eq!(personal_tab(&f, "").unwrap().entity_id, "shifts");
         assert_eq!(personal_tab(&f, "about").unwrap().entity_id, "shifts");
         assert!(personal_tab(&facts_from(&serde_json::json!({})), "").is_none());
-        let user = HostUser { tid: "t".into(), oid: "o".into(), upn: "u@x".into(), mri: "8:orgid:o".into() };
-        let c = context_from("95de633a-083e-42f5-b444-a4295d8e9314", "1.25", &user, "", "x.sharepoint.com", "", &serde_json::Value::Null, "", &serde_json::Value::Null, &[]);
+        let user = HostUser {
+            tid: "t".into(),
+            oid: "o".into(),
+            upn: "u@x".into(),
+            mri: "8:orgid:o".into(),
+        };
+        let c = context_from(
+            "95de633a-083e-42f5-b444-a4295d8e9314",
+            "1.25",
+            &user,
+            "",
+            "x.sharepoint.com",
+            "",
+            &serde_json::Value::Null,
+            "",
+            &serde_json::Value::Null,
+            &[],
+        );
         assert_eq!(c["teamSiteDomain"], "x.sharepoint.com");
         assert_eq!(c["chatId"], "");
         assert_eq!(c["channelId"], "");
-        assert!(c.get("defaultOneNoteSectionId").is_none(), "Teams gives Copilot no OneNote section");
-        assert_eq!(my_site_from("https://x-my.sharepoint.com/personal/u_x_com/Documents"), Some(("x-my.sharepoint.com".into(), "/personal/u_x_com".into())));
+        assert!(
+            c.get("defaultOneNoteSectionId").is_none(),
+            "Teams gives Copilot no OneNote section"
+        );
+        assert_eq!(
+            my_site_from("https://x-my.sharepoint.com/personal/u_x_com/Documents"),
+            Some(("x-my.sharepoint.com".into(), "/personal/u_x_com".into()))
+        );
     }
 
     #[test]
@@ -774,14 +1086,27 @@ mod tests {
 
     #[test]
     fn valid_domains_match_as_teams() {
-        let d = vec!["*.officeapps.live.com".to_string(), "www.microsoft365.com".to_string(), "*.resources.office.net".to_string()];
+        let d = vec![
+            "*.officeapps.live.com".to_string(),
+            "www.microsoft365.com".to_string(),
+            "*.resources.office.net".to_string(),
+        ];
         assert!(origin_valid_for_app("https://www.microsoft365.com", &d));
-        assert!(origin_valid_for_app("https://oauth.officeapps.live.com", &d));
-        assert!(origin_valid_for_app("https://fa000000128.resources.office.net", &d));
+        assert!(origin_valid_for_app(
+            "https://oauth.officeapps.live.com",
+            &d
+        ));
+        assert!(origin_valid_for_app(
+            "https://fa000000128.resources.office.net",
+            &d
+        ));
         // One label per `*`, https only, no look-alikes.
         assert!(!origin_valid_for_app("https://a.b.officeapps.live.com", &d));
         assert!(!origin_valid_for_app("http://www.microsoft365.com", &d));
-        assert!(!origin_valid_for_app("https://www.microsoft365.com.evil.example", &d));
+        assert!(!origin_valid_for_app(
+            "https://www.microsoft365.com.evil.example",
+            &d
+        ));
         assert!(!origin_valid_for_app("https://wwwxmicrosoft365.com", &d));
         assert!(!origin_valid_for_app("not a url", &d));
     }
@@ -795,7 +1120,10 @@ mod tests {
             "webApplicationInfo": {"id": "app", "resource": "https://onenote.com"}
         });
         let f = facts_from(&d);
-        assert_eq!(f.valid_domains, vec!["*.onenote.com", "www.microsoft365.com", "www.onenote.com"]);
+        assert_eq!(
+            f.valid_domains,
+            vec!["*.onenote.com", "www.microsoft365.com", "www.onenote.com"]
+        );
         assert_eq!(f.web_app_id, "app");
         assert_eq!(f.web_app_resource, "https://onenote.com");
         assert!(!f.microsoft_owned);

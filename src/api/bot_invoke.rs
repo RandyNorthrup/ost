@@ -43,7 +43,14 @@ pub struct Target {
 }
 
 /// Teams' invoke body (925701 `jt`).
-pub fn body(t: &Target, name: Option<&str>, text: Option<&str>, value: &Value, display_name: &str, aad_token: &str) -> Value {
+pub fn body(
+    t: &Target,
+    name: Option<&str>,
+    text: Option<&str>,
+    value: &Value,
+    display_name: &str,
+    aad_token: &str,
+) -> Value {
     let mut b = json!({
         "name": name,
         "text": text,
@@ -113,7 +120,9 @@ pub struct MessageBack {
 }
 
 fn str_opt(v: Option<&Value>) -> Option<String> {
-    v.and_then(|x| x.as_str()).filter(|s| !s.is_empty()).map(str::to_string)
+    v.and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 /// A JSON value as Teams sends it: an object stays, a string holding an
@@ -122,7 +131,10 @@ fn str_opt(v: Option<&Value>) -> Option<String> {
 fn as_object(v: &Value) -> Value {
     match v {
         Value::Object(_) => v.clone(),
-        Value::String(s) => serde_json::from_str::<Value>(s).ok().filter(|x| x.is_object()).unwrap_or_else(|| json!({})),
+        Value::String(s) => serde_json::from_str::<Value>(s)
+            .ok()
+            .filter(|x| x.is_object())
+            .unwrap_or_else(|| json!({})),
         _ => json!({}),
     }
 }
@@ -131,7 +143,11 @@ fn as_object(v: &Value) -> Value {
 /// hero card's `messageBack` button ({type, text, displayText, value});
 /// None when the action is not one (invoke, imBack, signin, task/fetch).
 pub fn message_back(action: &Value, inputs: &Value) -> Option<MessageBack> {
-    let kind = action.get("type").and_then(|t| t.as_str()).unwrap_or_default().to_ascii_lowercase();
+    let kind = action
+        .get("type")
+        .and_then(|t| t.as_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
     if kind == "messageback" {
         return Some(MessageBack {
             value: as_object(action.get("value").unwrap_or(&Value::Null)),
@@ -152,14 +168,27 @@ pub fn message_back(action: &Value, inputs: &Value) -> Option<MessageBack> {
         data = inputs.clone();
     }
     let ms = data.get("msteams").or_else(|| data.get("msTeams")).cloned();
-    match ms.as_ref().and_then(|m| m.get("type")).and_then(|t| t.as_str()).map(str::to_ascii_lowercase) {
+    match ms
+        .as_ref()
+        .and_then(|m| m.get("type"))
+        .and_then(|t| t.as_str())
+        .map(str::to_ascii_lowercase)
+    {
         None => {
             // Teams' `Ne`: a string's data is the text, the value and the
             // text shown; an object's is the value.
             if let Value::String(s) = &data {
-                Some(MessageBack { value: json!({}), text: Some(s.clone()), display_text: Some(s.clone()).filter(|s| !s.is_empty()) })
+                Some(MessageBack {
+                    value: json!({}),
+                    text: Some(s.clone()),
+                    display_text: Some(s.clone()).filter(|s| !s.is_empty()),
+                })
             } else {
-                Some(MessageBack { value: if data.is_object() { data } else { json!({}) }, text: None, display_text: None })
+                Some(MessageBack {
+                    value: if data.is_object() { data } else { json!({}) },
+                    text: None,
+                    display_text: None,
+                })
             }
         }
         Some(t) if t == "messageback" => {
@@ -176,7 +205,11 @@ pub fn message_back(action: &Value, inputs: &Value) -> Option<MessageBack> {
                     }
                 }
             }
-            Some(MessageBack { value: as_object(&v), text: str_opt(ms.get("text")), display_text: str_opt(ms.get("displayText")) })
+            Some(MessageBack {
+                value: as_object(&v),
+                text: str_opt(ms.get("text")),
+                display_text: str_opt(ms.get("displayText")),
+            })
         }
         _ => None,
     }
@@ -188,16 +221,32 @@ pub fn is_invoke_submit(data: &Value) -> bool {
 }
 
 /// Send an invoke; the bot's reply (Null when empty).
-pub async fn invoke(client: &TeamsClient, t: &Target, name: Option<&str>, text: Option<&str>, value: Value, automatic: bool) -> Result<Value> {
-    let token = crate::auth::oauth::access_token_for("https://api.spaces.skype.com/.default").await.unwrap_or_default();
+pub async fn invoke(
+    client: &TeamsClient,
+    t: &Target,
+    name: Option<&str>,
+    text: Option<&str>,
+    value: Value,
+    automatic: bool,
+) -> Result<Value> {
+    let token = crate::auth::oauth::access_token_for("https://api.spaces.skype.com/.default")
+        .await
+        .unwrap_or_default();
     let display = client.display_name().unwrap_or_default();
-    let url = format!("{}/v1/agents/{}/invoke", client.chat_service_url(), t.bot_mri);
+    let url = format!(
+        "{}/v1/agents/{}/invoke",
+        client.chat_service_url(),
+        t.bot_mri
+    );
     let b = body(t, name, text, &value, &display, &token);
     let mut headers = vec![("content-type", "application/json")];
     if automatic {
         headers.push(("X-MS-AutoRefreshRequestInThread", t.thread_id.as_str()));
     }
-    let resp = client.chat_request_with(reqwest::Method::POST, &url, &b, &headers).await.context("The app didn't answer")?;
+    let resp = client
+        .chat_request_with(reqwest::Method::POST, &url, &b, &headers)
+        .await
+        .context("The app didn't answer")?;
     let text = resp.text().await.unwrap_or_default();
     Ok(serde_json::from_str(&text).unwrap_or(Value::Null))
 }
@@ -234,12 +283,27 @@ pub fn outcome(reply: &Value) -> Outcome {
     let value = r.get("value").cloned().unwrap_or(Value::Null);
     match kind {
         "application/vnd.microsoft.card.adaptive" => {
-            let card = if let Value::String(s) = &value { serde_json::from_str(s).unwrap_or(Value::Null) } else { value };
-            if card.is_object() { Outcome::Card(card) } else { Outcome::Sent }
+            let card = if let Value::String(s) = &value {
+                serde_json::from_str(s).unwrap_or(Value::Null)
+            } else {
+                value
+            };
+            if card.is_object() {
+                Outcome::Card(card)
+            } else {
+                Outcome::Sent
+            }
         }
-        "application/vnd.microsoft.activity.message" => Outcome::Message(value.as_str().unwrap_or_default().to_string()),
-        "application/vnd.microsoft.error" | "application/vnd.microsoft.error.preconditionFailed" => Outcome::Error(
-            value.get("message").and_then(|m| m.as_str()).unwrap_or("Something went wrong. Please try again.").to_string(),
+        "application/vnd.microsoft.activity.message" => {
+            Outcome::Message(value.as_str().unwrap_or_default().to_string())
+        }
+        "application/vnd.microsoft.error"
+        | "application/vnd.microsoft.error.preconditionFailed" => Outcome::Error(
+            value
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("Something went wrong. Please try again.")
+                .to_string(),
         ),
         _ => Outcome::Sent,
     }
@@ -263,50 +327,132 @@ mod tests {
         let data = json!({ "msteams": { "type": "invoke", "title": null, "value": null }, "data": { "Type": "QuickPoll.SubmitVote", "Options": ["Red", "Blue"], "FormId": "F", "QuestionId": "Q" } });
         assert!(is_invoke_submit(&data));
         let v = submit_value(&data, &json!({ "choice": "1" }));
-        assert_eq!(v, json!({ "data": { "Type": "QuickPoll.SubmitVote", "Options": ["Red", "Blue"], "FormId": "F", "QuestionId": "Q" }, "choice": "1" }));
+        assert_eq!(
+            v,
+            json!({ "data": { "Type": "QuickPoll.SubmitVote", "Options": ["Red", "Blue"], "FormId": "F", "QuestionId": "Q" }, "choice": "1" })
+        );
         let b = body(&t, None, None, &v, "OST Test 1", "tok");
-        assert_eq!(b, json!({
-            "appId": "0e3bedea-4720-48b5-9e13-5a1ce1387d45", "messageType": "RichText/Media_Card", "value": v,
-            "imdisplayname": "OST Test 1", "userAadToken": "tok", "serverMessageId": "1794621026819",
-            "clientMessageId": "13086358480879058679", "conversation": { "id": "19:a@thread.v2" }
-        }));
+        assert_eq!(
+            b,
+            json!({
+                "appId": "0e3bedea-4720-48b5-9e13-5a1ce1387d45", "messageType": "RichText/Media_Card", "value": v,
+                "imdisplayname": "OST Test 1", "userAadToken": "tok", "serverMessageId": "1794621026819",
+                "clientMessageId": "13086358480879058679", "conversation": { "id": "19:a@thread.v2" }
+            })
+        );
     }
 
     #[test]
     fn message_back_is_teams() {
         // A plain Action.Submit: its data and inputs as the value, no text.
-        let plain = json!({ "type": "Action.Submit", "title": "Go", "data": { "action": "go", "id": 7 } });
+        let plain =
+            json!({ "type": "Action.Submit", "title": "Go", "data": { "action": "go", "id": 7 } });
         let mb = message_back(&plain, &json!({ "comment": "hi" })).unwrap();
-        assert_eq!(mb, MessageBack { value: json!({ "action": "go", "id": 7, "comment": "hi" }), text: None, display_text: None });
+        assert_eq!(
+            mb,
+            MessageBack {
+                value: json!({ "action": "go", "id": 7, "comment": "hi" }),
+                text: None,
+                display_text: None
+            }
+        );
         // A string's data is the text and is shown in the chat.
         let s = json!({ "type": "Action.Submit", "data": "help" });
-        assert_eq!(message_back(&s, &json!({})).unwrap(), MessageBack { value: json!({}), text: Some("help".into()), display_text: Some("help".into()) });
+        assert_eq!(
+            message_back(&s, &json!({})).unwrap(),
+            MessageBack {
+                value: json!({}),
+                text: Some("help".into()),
+                display_text: Some("help".into())
+            }
+        );
         // msteams messageBack: the data without msteams over msteams.value.
         let m = json!({ "type": "Action.Submit", "data": { "a": 1, "msteams": { "type": "messageBack", "text": "do", "displayText": "Doing it", "value": "{\"a\":0,\"b\":2}" } } });
-        assert_eq!(message_back(&m, &json!({})).unwrap(), MessageBack { value: json!({ "a": 1, "b": 2 }), text: Some("do".into()), display_text: Some("Doing it".into()) });
+        assert_eq!(
+            message_back(&m, &json!({})).unwrap(),
+            MessageBack {
+                value: json!({ "a": 1, "b": 2 }),
+                text: Some("do".into()),
+                display_text: Some("Doing it".into())
+            }
+        );
         // A hero card's messageBack button.
         let h = json!({ "type": "messageBack", "title": "List", "text": "list", "displayText": "List my flows", "value": { "k": "v" } });
-        assert_eq!(message_back(&h, &json!({})).unwrap(), MessageBack { value: json!({ "k": "v" }), text: Some("list".into()), display_text: Some("List my flows".into()) });
+        assert_eq!(
+            message_back(&h, &json!({})).unwrap(),
+            MessageBack {
+                value: json!({ "k": "v" }),
+                text: Some("list".into()),
+                display_text: Some("List my flows".into())
+            }
+        );
         // Invoke, imBack and signin aren't messageBacks.
         for t in ["invoke", "imBack", "signin", "task/fetch"] {
-            assert!(message_back(&json!({ "type": "Action.Submit", "data": { "msteams": { "type": t } } }), &json!({})).is_none());
+            assert!(
+                message_back(
+                    &json!({ "type": "Action.Submit", "data": { "msteams": { "type": t } } }),
+                    &json!({})
+                )
+                .is_none()
+            );
         }
-        let t = Target { thread_id: "19:a@unq.gbl.spaces".into(), server_message_id: "1".into(), bot_mri: "28:b".into(), app_id: "app".into(), ..Default::default() };
-        let b = body(&t, Some("messageback"), Some("do"), &json!({ "a": 1 }), "OST Test 1", "tok");
+        let t = Target {
+            thread_id: "19:a@unq.gbl.spaces".into(),
+            server_message_id: "1".into(),
+            bot_mri: "28:b".into(),
+            app_id: "app".into(),
+            ..Default::default()
+        };
+        let b = body(
+            &t,
+            Some("messageback"),
+            Some("do"),
+            &json!({ "a": 1 }),
+            "OST Test 1",
+            "tok",
+        );
         assert_eq!(b["name"], "messageback");
         assert_eq!(b["text"], "do");
-        assert!(body(&t, Some("messageback"), None, &json!({}), "OST Test 1", "tok").get("text").is_none());
+        assert!(
+            body(
+                &t,
+                Some("messageback"),
+                None,
+                &json!({}),
+                "OST Test 1",
+                "tok"
+            )
+            .get("text")
+            .is_none()
+        );
     }
 
     #[test]
     fn refreshes_and_replies_read_as_teams() {
         let action = json!({ "verb": "fetchAuthorVoteCard", "data": { "FormId": "F", "QuestionId": null }, "title": "Refresh", "type": "Action.Execute" });
-        assert_eq!(execute_value(&action, &json!({}), true),
-            json!({ "action": { "type": "Action.Execute", "verb": "fetchAuthorVoteCard", "data": { "FormId": "F", "QuestionId": null }, "title": "Refresh" }, "trigger": "automatic" }));
+        assert_eq!(
+            execute_value(&action, &json!({}), true),
+            json!({ "action": { "type": "Action.Execute", "verb": "fetchAuthorVoteCard", "data": { "FormId": "F", "QuestionId": null }, "title": "Refresh" }, "trigger": "automatic" })
+        );
         let card = json!({ "type": "AdaptiveCard", "body": [] });
-        assert_eq!(outcome(&json!({ "statusCode": 200, "type": "application/vnd.microsoft.card.adaptive", "value": card })), Outcome::Card(card));
-        assert_eq!(outcome(&json!({ "statusCode": 200, "type": "application/vnd.microsoft.activity.message", "value": "Thanks" })), Outcome::Message("Thanks".into()));
-        assert_eq!(outcome(&json!({ "statusCode": 400, "type": "application/vnd.microsoft.error", "value": { "code": "x", "message": "Nope" } })), Outcome::Error("Nope".into()));
+        assert_eq!(
+            outcome(
+                &json!({ "statusCode": 200, "type": "application/vnd.microsoft.card.adaptive", "value": card })
+            ),
+            Outcome::Card(card)
+        );
+        assert_eq!(
+            outcome(
+                &json!({ "statusCode": 200, "type": "application/vnd.microsoft.activity.message", "value": "Thanks" })
+            ),
+            Outcome::Message("Thanks".into())
+        );
+        assert_eq!(
+            outcome(
+                &json!({ "statusCode": 400, "type": "application/vnd.microsoft.error", "value": { "code": "x", "message": "Nope" } })
+            ),
+            Outcome::Error("Nope".into())
+        );
         assert_eq!(outcome(&Value::Null), Outcome::Sent);
     }
 }

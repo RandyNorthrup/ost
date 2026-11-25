@@ -76,18 +76,41 @@ pub fn signal_body(s: &Search, correlation: &str) -> Value {
 
 /// The items of a ProviderContentAnnotation's `data`.
 pub fn parse_items(data: &Value) -> Vec<Item> {
-    let groups = data.pointer("/Result/PartGroups").and_then(|g| g.as_array()).cloned().unwrap_or_default();
+    let groups = data
+        .pointer("/Result/PartGroups")
+        .and_then(|g| g.as_array())
+        .cloned()
+        .unwrap_or_default();
     let mut out = Vec::new();
     for g in groups {
         let text = |cat: &str| {
-            g["TextParts"].as_array().into_iter().flatten().find(|t| t["TextCategory"] == cat).and_then(|t| t["Text"].as_str()).unwrap_or_default().to_string()
+            g["TextParts"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|t| t["TextCategory"] == cat)
+                .and_then(|t| t["Text"].as_str())
+                .unwrap_or_default()
+                .to_string()
         };
         let id = text("Id");
         if id == SKIPPED {
             continue;
         }
-        let image = |cat: &str| g["ImageParts"].as_array().into_iter().flatten().find(|p| p["ImageCategory"] == cat).cloned();
-        let video = g["VideoParts"].as_array().into_iter().flatten().find(|p| p["VideoCategory"] == "Video").cloned();
+        let image = |cat: &str| {
+            g["ImageParts"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|p| p["ImageCategory"] == cat)
+                .cloned()
+        };
+        let video = g["VideoParts"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|p| p["VideoCategory"] == "Video")
+            .cloned();
         let pivot = text("PivotId");
         let (kind, main) = if let Some(v) = video {
             ("video", Some(v))
@@ -97,8 +120,13 @@ pub fn parse_items(data: &Value) -> Vec<Item> {
             ("image", image("Image"))
         };
         let Some(main) = main else { continue };
-        let thumb = image("LargeThumbnail").or_else(|| image("MediumThumbnail")).and_then(|p| p["SourceUrl"].as_str().map(str::to_string)).unwrap_or_default();
-        let Some(url) = main["SourceUrl"].as_str() else { continue };
+        let thumb = image("LargeThumbnail")
+            .or_else(|| image("MediumThumbnail"))
+            .and_then(|p| p["SourceUrl"].as_str().map(str::to_string))
+            .unwrap_or_default();
+        let Some(url) = main["SourceUrl"].as_str() else {
+            continue;
+        };
         out.push(Item {
             id,
             name: text("Description"),
@@ -120,8 +148,11 @@ pub fn is_hubble_url(url: &str) -> bool {
 /// Run the searches in one AugLoop session; the results in the same order
 /// (an empty list for a search that failed or timed out).
 pub async fn search(searches: &[Search], ui_language: &str) -> anyhow::Result<Vec<Vec<Item>>> {
-    let mut req = tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request("wss://augloop.svc.cloud.microsoft/")?;
-    req.headers_mut().insert("Origin", "https://teams.microsoft.com".parse()?);
+    let mut req = tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(
+        "wss://augloop.svc.cloud.microsoft/",
+    )?;
+    req.headers_mut()
+        .insert("Origin", "https://teams.microsoft.com".parse()?);
     let (mut ws, _) = tokio_tungstenite::connect_async(req).await?;
     let group = uuid::Uuid::new_v4().simple().to_string();
     let mut n = 0u32;
@@ -139,13 +170,18 @@ pub async fn search(searches: &[Search], ui_language: &str) -> anyhow::Result<Ve
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(20);
     // The session's answer.
     loop {
-        let Some(m) = tokio::time::timeout_at(deadline, ws.next()).await? else { anyhow::bail!("AugLoop closed") };
+        let Some(m) = tokio::time::timeout_at(deadline, ws.next()).await? else {
+            anyhow::bail!("AugLoop closed")
+        };
         if let Message::Text(t) = m? {
             let v: Value = serde_json::from_str(t.as_str()).unwrap_or_default();
             if v.get("sessionKey").is_some() {
                 break;
             }
-            if v.pointer("/H_/T_").and_then(|x| x.as_str()).is_some_and(|t| t.contains("Error")) {
+            if v.pointer("/H_/T_")
+                .and_then(|x| x.as_str())
+                .is_some_and(|t| t.contains("Error"))
+            {
                 anyhow::bail!("AugLoop refused the session");
             }
         }
@@ -160,7 +196,10 @@ pub async fn search(searches: &[Search], ui_language: &str) -> anyhow::Result<Ve
         "H_": h("AugLoop_Core_AddOperation", &["AugLoop_Core_OperationWithSiblingContext", "AugLoop_Core_Operation"])}], "groupId": "Seed", "groupSize": 1, "groupComplete": true,
         "H_": h("AugLoop_Session_Protocol_SyncMessage", &["AugLoop_Session_Protocol_Message"]), "messageId": mid});
     ws.send(Message::Text(seed.to_string().into())).await?;
-    let correlations: Vec<String> = searches.iter().map(|_| uuid::Uuid::new_v4().to_string()).collect();
+    let correlations: Vec<String> = searches
+        .iter()
+        .map(|_| uuid::Uuid::new_v4().to_string())
+        .collect();
     let ops: Vec<Value> = searches
         .iter()
         .zip(&correlations)
@@ -175,7 +214,9 @@ pub async fn search(searches: &[Search], ui_language: &str) -> anyhow::Result<Ve
     ws.send(Message::Text(sync.to_string().into())).await?;
     let mut results: Vec<Option<Vec<Item>>> = vec![None; searches.len()];
     while results.iter().any(|r| r.is_none()) {
-        let Ok(Some(m)) = tokio::time::timeout_at(deadline, ws.next()).await else { break };
+        let Ok(Some(m)) = tokio::time::timeout_at(deadline, ws.next()).await else {
+            break;
+        };
         let Message::Text(t) = m? else { continue };
         if t.as_str() == "~" {
             ws.send(Message::Text("~".into())).await?;
@@ -192,7 +233,9 @@ pub async fn search(searches: &[Search], ui_language: &str) -> anyhow::Result<Ve
         for op in v["ops"].as_array().into_iter().flatten() {
             for it in op["items"].as_array().into_iter().flatten() {
                 let body = &it["body"];
-                let Some(c) = body["correlationId"].as_str() else { continue };
+                let Some(c) = body["correlationId"].as_str() else {
+                    continue;
+                };
                 if let Some(i) = correlations.iter().position(|x| x == c)
                     && body.pointer("/data/Result").is_some()
                 {
@@ -211,12 +254,36 @@ mod tests {
 
     #[test]
     fn signals_as_stream_sends_them() {
-        let b = signal_body(&Search { query: "beach".into(), pivot: STOCK_IMAGES.into(), category: None, page_size: 50, page_offset: 0 }, "c1");
-        assert_eq!(b["contentProviders"][0]["queryParams"][1]["value"], "tags/any(p: p eq 'background')");
+        let b = signal_body(
+            &Search {
+                query: "beach".into(),
+                pivot: STOCK_IMAGES.into(),
+                category: None,
+                page_size: 50,
+                page_offset: 0,
+            },
+            "c1",
+        );
+        assert_eq!(
+            b["contentProviders"][0]["queryParams"][1]["value"],
+            "tags/any(p: p eq 'background')"
+        );
         assert_eq!(b["contentProviders"][0]["pageOffset"], "0");
         assert_eq!(b["H_"]["T_"], "AugLoop_Hubble_ContentSearchSignal");
-        let e = signal_body(&Search { query: String::new(), pivot: EMOJI.into(), category: Some("Hand gestures".into()), page_size: 50, page_offset: 0 }, "c2");
-        assert_eq!(e["contentProviders"][0]["queryParams"][1]["value"], "pivotNames/any(p: p eq 'Hand gestures')");
+        let e = signal_body(
+            &Search {
+                query: String::new(),
+                pivot: EMOJI.into(),
+                category: Some("Hand gestures".into()),
+                page_size: 50,
+                page_offset: 0,
+            },
+            "c2",
+        );
+        assert_eq!(
+            e["contentProviders"][0]["queryParams"][1]["value"],
+            "pivotNames/any(p: p eq 'Hand gestures')"
+        );
         assert_eq!(e["contentProviders"][0]["queryParams"][2]["value"], "1010");
     }
 
@@ -237,10 +304,26 @@ mod tests {
         ]}});
         let items = parse_items(&data);
         assert_eq!(items.len(), 3);
-        assert_eq!((items[0].kind.as_str(), items[0].name.as_str(), items[0].width), ("image", "Stones", 2048));
+        assert_eq!(
+            (
+                items[0].kind.as_str(),
+                items[0].name.as_str(),
+                items[0].width
+            ),
+            ("image", "Stones", 2048)
+        );
         assert!(items[0].thumb.ends_with("large.jpg"));
-        assert_eq!((items[1].kind.as_str(), items[1].url.as_str()), ("video", "https://cdn.hubblecontent.osi.office.net/videos/publish/b/1.mp4"));
-        assert_eq!((items[2].kind.as_str(), items[2].name.as_str()), ("sticker", "Grinning face"));
+        assert_eq!(
+            (items[1].kind.as_str(), items[1].url.as_str()),
+            (
+                "video",
+                "https://cdn.hubblecontent.osi.office.net/videos/publish/b/1.mp4"
+            )
+        );
+        assert_eq!(
+            (items[2].kind.as_str(), items[2].name.as_str()),
+            ("sticker", "Grinning face")
+        );
         assert!(items[2].url.ends_with("grin_color.svg"));
         assert!(is_hubble_url(&items[2].thumb) && !is_hubble_url("https://evil/x"));
     }

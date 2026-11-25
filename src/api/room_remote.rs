@@ -32,7 +32,8 @@ pub const SESSION_TYPE: &str = "roomControls";
 pub const SESSION_START: &str = "sessionStart";
 /// Where sessions are made (SlimCore's callControllerServiceUrl +
 /// `cc/v1/sessions`).
-pub const SESSIONS_URL: &str = "https://api.flightproxy.teams.microsoft.com/api/v2/ep/api.cc.skype.com/cc/v1/sessions";
+pub const SESSIONS_URL: &str =
+    "https://api.flightproxy.teams.microsoft.com/api/v2/ep/api.cc.skype.com/cc/v1/sessions";
 
 /// A session pushed to the room (event 122).
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -57,20 +58,45 @@ pub struct IncomingSession {
 pub fn incoming_session(json: &str) -> Option<IncomingSession> {
     let v: serde_json::Value = serde_json::from_str(json).ok()?;
     let n = v.get("sessionNotification")?;
-    let s = |p: &str| v.pointer(p).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    let s = |p: &str| {
+        v.pointer(p)
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     let details = match v.get("commandDetails") {
         Some(serde_json::Value::String(t)) => serde_json::from_str(t).unwrap_or_default(),
         Some(d) => d.clone(),
         None => serde_json::Value::Null,
     };
     Some(IncomingSession {
-        from: n.pointer("/from/id").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
-        to: n.pointer("/to/id").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
-        accept: n.pointer("/links/accept").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
-        reject: n.pointer("/links/reject").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
+        from: n
+            .pointer("/from/id")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        to: n
+            .pointer("/to/id")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        accept: n
+            .pointer("/links/accept")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        reject: n
+            .pointer("/links/reject")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string(),
         controller_endpoint: s("/registrationId"),
         command: s("/command"),
-        thread_id: details.pointer("/meetingInfo/threadId").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
+        thread_id: details
+            .pointer("/meetingInfo/threadId")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string(),
         chain_id: s("/debugContent/chainId"),
         cause_id: s("/debugContent/causeId"),
     })
@@ -90,12 +116,25 @@ pub struct Debug {
 
 /// POST a session request to a service link with the user's Skype token;
 /// the reply's status and body.
-pub async fn post(http: &reqwest::Client, skype_token: &str, url: &str, body: &serde_json::Value, chain: &str) -> Result<(u16, String)> {
+pub async fn post(
+    http: &reqwest::Client,
+    skype_token: &str,
+    url: &str,
+    body: &serde_json::Value,
+    chain: &str,
+) -> Result<(u16, String)> {
     send(http, reqwest::Method::POST, skype_token, url, body, chain).await
 }
 
 /// A session request with the given method.
-pub async fn send(http: &reqwest::Client, method: reqwest::Method, skype_token: &str, url: &str, body: &serde_json::Value, chain: &str) -> Result<(u16, String)> {
+pub async fn send(
+    http: &reqwest::Client,
+    method: reqwest::Method,
+    skype_token: &str,
+    url: &str,
+    body: &serde_json::Value,
+    chain: &str,
+) -> Result<(u16, String)> {
     if !crate::calling::incoming::is_service_link(url) {
         bail!("room remote: not a Teams service link");
     }
@@ -118,7 +157,13 @@ pub async fn send(http: &reqwest::Client, method: reqwest::Method, skype_token: 
 /// pair arrived so): the sender's endpoint, the command, its details as
 /// an object, and Teams' debug content (a fresh cause id, the session's
 /// chain).
-pub fn session_message(endpoint: &str, command: &str, details: &serde_json::Value, seq: u64, chain: &str) -> serde_json::Value {
+pub fn session_message(
+    endpoint: &str,
+    command: &str,
+    details: &serde_json::Value,
+    seq: u64,
+    chain: &str,
+) -> serde_json::Value {
     serde_json::json!({
         "registrationId": endpoint,
         "command": command,
@@ -142,7 +187,12 @@ pub fn end_body(endpoint: &str, seq: u64, debug: &Debug) -> serde_json::Value {
 /// The room's acceptance of a session (SlimCore's sendAcceptRequest):
 /// where the controller reaches it (`receive`) and where the session's end
 /// is told (`end`).
-pub fn acceptance_body(receive: &str, end: &str, endpoint: &str, debug: &Debug) -> serde_json::Value {
+pub fn acceptance_body(
+    receive: &str,
+    end: &str,
+    endpoint: &str,
+    debug: &Debug,
+) -> serde_json::Value {
     serde_json::json!({
         "debugContent": debug,
         "registrationId": endpoint,
@@ -209,7 +259,11 @@ impl SessionLinks {
 /// them (it relays the session's messages), so they stay on the socket's
 /// service front, as call callbacks do.
 pub fn session_link(surl: &str, session: &str, what: &str) -> String {
-    format!("{}/{}/session/{session}/{what}", surl.trim_end_matches('/'), super::better_together::TROUTER_PATH)
+    format!(
+        "{}/{}/session/{session}/{what}",
+        surl.trim_end_matches('/'),
+        super::better_together::TROUTER_PATH
+    )
 }
 
 /// The commands of a room remote (Teams' `He` names; compared lower case).
@@ -240,7 +294,16 @@ pub mod layout {
     pub const LARGE_GALLERY: &str = "showLargeGallery";
     pub const TOGETHER: &str = "showTogether";
     pub const FRONT_ROW: &str = "showFrontRow";
-    pub const ALL: [&str; 8] = [GALLERY, MIXED_GRID, PRIORITIZE_VIDEO, CONTENT, CONTENT_AND_GALLERY, LARGE_GALLERY, TOGETHER, FRONT_ROW];
+    pub const ALL: [&str; 8] = [
+        GALLERY,
+        MIXED_GRID,
+        PRIORITIZE_VIDEO,
+        CONTENT,
+        CONTENT_AND_GALLERY,
+        LARGE_GALLERY,
+        TOGETHER,
+        FRONT_ROW,
+    ];
 }
 
 /// The media controls (Teams' `Is`).
@@ -282,12 +345,20 @@ impl RoomState {
     }
 
     pub fn from_json(v: &serde_json::Value) -> Self {
-        let b = |k: &str| v.get(k).and_then(|x| x.as_bool().or_else(|| x.as_str().map(|s| s == "true"))).unwrap_or(false);
+        let b = |k: &str| {
+            v.get(k)
+                .and_then(|x| x.as_bool().or_else(|| x.as_str().map(|s| s == "true")))
+                .unwrap_or(false)
+        };
         Self {
             muted: b("toggleMute"),
             camera: b("toggleCamera"),
             captions: b("toggleCaptions"),
-            layout: v.get("stageLayout").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
+            layout: v
+                .get("stageLayout")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string(),
         }
     }
 }
@@ -329,7 +400,14 @@ impl Capabilities {
 
     pub fn from_json(v: &serde_json::Value) -> Self {
         let list = |k: &str| -> Vec<String> {
-            v.get(k).and_then(|x| x.as_array()).map(|a| a.iter().filter_map(|s| s.as_str().map(str::to_string)).collect()).unwrap_or_default()
+            v.get(k)
+                .and_then(|x| x.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|s| s.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default()
         };
         let media = list("mediaControls");
         Self {
@@ -356,7 +434,10 @@ impl Capabilities {
             u.insert(control::CAPTIONS.into(), flag(self.captions).into());
         }
         if self.layouts != before.layouts {
-            u.insert("stageLayoutControls".into(), serde_json::json!(self.layouts));
+            u.insert(
+                "stageLayoutControls".into(),
+                serde_json::json!(self.layouts),
+            );
         }
         (!u.is_empty()).then_some(serde_json::Value::Object(u))
     }
@@ -364,7 +445,12 @@ impl Capabilities {
     /// A remote's copy after a capabilityUpdate (Teams'
     /// RemoteControllerCapabilitiesUpdateCommand).
     pub fn apply(&mut self, update: &serde_json::Value) {
-        let on = |k: &str| update.get(k).and_then(|v| v.as_str()).map(|s| s != "disable");
+        let on = |k: &str| {
+            update
+                .get(k)
+                .and_then(|v| v.as_str())
+                .map(|s| s != "disable")
+        };
         if let Some(v) = on(control::CAMERA) {
             self.camera = v;
         }
@@ -375,7 +461,10 @@ impl Capabilities {
             self.captions = v;
         }
         if let Some(l) = update.get("stageLayoutControls").and_then(|x| x.as_array()) {
-            self.layouts = l.iter().filter_map(|s| s.as_str().map(str::to_string)).collect();
+            self.layouts = l
+                .iter()
+                .filter_map(|s| s.as_str().map(str::to_string))
+                .collect();
         }
     }
 }
@@ -431,8 +520,13 @@ pub fn is_session_path(url: &str) -> bool {
 /// Whether a Better Together command belongs to a room remote session
 /// (it names its session, or comes from a remote control endpoint).
 pub fn is_session_message(body: &str) -> bool {
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(body) else { return false };
-    if v.pointer("/transportDetails/endpointType").and_then(|t| t.as_str()) == Some("RemoteControl") {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(body) else {
+        return false;
+    };
+    if v.pointer("/transportDetails/endpointType")
+        .and_then(|t| t.as_str())
+        == Some("RemoteControl")
+    {
         return true;
     }
     let details = match v.get("commandDetails") {
@@ -455,10 +549,19 @@ pub fn acknowledgement(_url: &str, _body: &str) -> (u16, String) {
 /// `session` link is taken, 202, and goes nowhere), `session` is the
 /// session itself (its end).
 pub fn active_links(v: &serde_json::Value) -> Option<(String, String)> {
-    let links = ["/sessionAcceptanceResponse/links", "/sessionInvitationAcceptance/links"]
-        .iter()
-        .find_map(|p| v.pointer(p))?;
-    let get = |k: &str| links.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    let links = [
+        "/sessionAcceptanceResponse/links",
+        "/sessionInvitationAcceptance/links",
+    ]
+    .iter()
+    .find_map(|p| v.pointer(p))?;
+    let get = |k: &str| {
+        links
+            .get(k)
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     let (broadcast, session) = (get("broadcast"), get("session"));
     (!broadcast.is_empty()).then_some((broadcast, session))
 }
@@ -492,7 +595,10 @@ pub fn acceptance_of(v: &serde_json::Value) -> Option<String> {
     v.get("registrationId")
         .and_then(|r| r.as_str())
         .filter(|r| !r.is_empty())
-        .or_else(|| v.pointer("/sessionInvitationAcceptance/acceptedBy/endpointId").and_then(|r| r.as_str()))
+        .or_else(|| {
+            v.pointer("/sessionInvitationAcceptance/acceptedBy/endpointId")
+                .and_then(|r| r.as_str())
+        })
         .filter(|r| !r.is_empty())
         .map(str::to_string)
 }
@@ -540,17 +646,31 @@ mod tests {
                 "links": {"receive": "https://t/x/bettertogether/session/s/receive", "end": "https://t/x/end"}}});
         assert_eq!(acceptance_of(&acc).as_deref(), Some("room-ep"));
         assert!(acceptance_of(&serde_json::json!({"sessionInvitationAcceptance": {}})).is_none());
-        assert_eq!(outgoing_link_in(r#"{"links":{"outgoingSession":"https://cc/s/1"}}"#).as_deref(), Some("https://cc/s/1"));
+        assert_eq!(
+            outgoing_link_in(r#"{"links":{"outgoingSession":"https://cc/s/1"}}"#).as_deref(),
+            Some("https://cc/s/1")
+        );
         assert!(outgoing_link_in("{}").is_none());
         let reply = serde_json::json!({"sessionAcceptanceResponse": {"links": {"broadcast": "https://cc/a/b", "session": "https://cc/a"}}});
-        assert_eq!(active_links(&reply), Some(("https://cc/a/b".into(), "https://cc/a".into())));
+        assert_eq!(
+            active_links(&reply),
+            Some(("https://cc/a/b".into(), "https://cc/a".into()))
+        );
         let pushed = serde_json::json!({"registrationId": "r", "sessionInvitationAcceptance": {"links": {"broadcast": "https://cc/x/broadcast", "session": "https://cc/x"}}});
-        assert_eq!(active_links(&pushed).map(|l| l.0), Some("https://cc/x/broadcast".into()));
-        assert!(is_session_path("https://t/v4/f/a/bettertogether/session/s1/receive"));
+        assert_eq!(
+            active_links(&pushed).map(|l| l.0),
+            Some("https://cc/x/broadcast".into())
+        );
+        assert!(is_session_path(
+            "https://t/v4/f/a/bettertogether/session/s1/receive"
+        ));
         assert!(!is_session_path("https://t/v4/f/a/bettertogether/send"));
-        let remote_cmd = r#"{"registrationId":"c","command":"pair","commandDetails":"{\"sessionId\":\"s\"}"}"#;
+        let remote_cmd =
+            r#"{"registrationId":"c","command":"pair","commandDetails":"{\"sessionId\":\"s\"}"}"#;
         assert!(is_session_message(remote_cmd));
-        assert!(!is_session_message(r#"{"registrationId":"p","command":"pair","commandDetails":"{\"deviceName\":\"Phone\"}"}"#));
+        assert!(!is_session_message(
+            r#"{"registrationId":"p","command":"pair","commandDetails":"{\"deviceName\":\"Phone\"}"}"#
+        ));
     }
 
     #[test]
@@ -566,9 +686,17 @@ mod tests {
 
     #[test]
     fn capabilities_and_state_as_teams_sends_them() {
-        let caps = Capabilities { mute: true, camera: false, captions: true, layouts: vec![layout::GALLERY.into()] };
+        let caps = Capabilities {
+            mute: true,
+            camera: false,
+            captions: true,
+            layouts: vec![layout::GALLERY.into()],
+        };
         let j = caps.to_json();
-        assert_eq!(j["mediaControls"], serde_json::json!(["toggleMute", "toggleCaptions", "volume"]));
+        assert_eq!(
+            j["mediaControls"],
+            serde_json::json!(["toggleMute", "toggleCaptions", "volume"])
+        );
         assert_eq!(j["meetingControls"], serde_json::json!(["leaveMeeting"]));
         assert_eq!(Capabilities::from_json(&j), caps);
         let mut more = caps.clone();
@@ -576,14 +704,29 @@ mod tests {
         more.layouts.push(layout::CONTENT.into());
         let u = more.update_from(&caps).unwrap();
         assert_eq!(u["toggleCamera"], "enable");
-        assert_eq!(u["stageLayoutControls"], serde_json::json!(["showVideoGallery", "showContent"]));
+        assert_eq!(
+            u["stageLayoutControls"],
+            serde_json::json!(["showVideoGallery", "showContent"])
+        );
         assert!(caps.update_from(&caps).is_none());
         let mut copy = caps.clone();
         copy.apply(&u);
         assert_eq!(copy, more);
-        let st = RoomState { muted: true, camera: false, captions: false, layout: layout::GALLERY.into() };
+        let st = RoomState {
+            muted: true,
+            camera: false,
+            captions: false,
+            layout: layout::GALLERY.into(),
+        };
         assert_eq!(RoomState::from_json(&st.to_json()), st);
-        let p = pair_result(&RoomInfo { device_name: "room".into(), ..Default::default() }, &caps, &st);
+        let p = pair_result(
+            &RoomInfo {
+                device_name: "room".into(),
+                ..Default::default()
+            },
+            &caps,
+            &st,
+        );
         assert_eq!(p["accepted"], true);
         assert_eq!(p["initialState"]["toggleMute"], true);
         assert_eq!(p["roomEndpointInfo"]["deviceName"], "room");
@@ -591,10 +734,25 @@ mod tests {
 
     #[test]
     fn session_links_are_better_together_paths() {
-        let l = session_link("https://pub-ent-ussc-05-f.trouter.teams.microsoft.com:3443/v4/f/abc/", "s1", "receive");
-        assert_eq!(l, "https://pub-ent-ussc-05-f.trouter.teams.microsoft.com:3443/v4/f/abc/bettertogether/session/s1/receive");
+        let l = session_link(
+            "https://pub-ent-ussc-05-f.trouter.teams.microsoft.com:3443/v4/f/abc/",
+            "s1",
+            "receive",
+        );
+        assert_eq!(
+            l,
+            "https://pub-ent-ussc-05-f.trouter.teams.microsoft.com:3443/v4/f/abc/bettertogether/session/s1/receive"
+        );
         assert!(super::super::better_together::is_trouter_url(&l));
-        let b = acceptance_body("r", "e", "ep", &Debug { chain_id: "c".into(), cause_id: "k".into() });
+        let b = acceptance_body(
+            "r",
+            "e",
+            "ep",
+            &Debug {
+                chain_id: "c".into(),
+                cause_id: "k".into(),
+            },
+        );
         assert_eq!(b["sessionAcceptance"]["links"]["receive"], "r");
         assert_eq!(b["debugContent"]["chainId"], "c");
     }

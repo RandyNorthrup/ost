@@ -10,7 +10,13 @@ async fn main() -> anyhow::Result<()> {
         Some("stickers") => EMOJI,
         _ => STOCK_IMAGES,
     };
-    let s = Search { query: args.get(1).cloned().unwrap_or_default(), pivot: pivot.into(), category: args.get(2).cloned(), page_size: 50, page_offset: 0 };
+    let s = Search {
+        query: args.get(1).cloned().unwrap_or_default(),
+        pivot: pivot.into(),
+        category: args.get(2).cloned(),
+        page_size: 50,
+        page_offset: 0,
+    };
     let r = search(&[s], "en-us").await?;
     for it in &r[0] {
         println!("{} | {} | {} | {}", it.kind, it.name, it.url, it.thumb);

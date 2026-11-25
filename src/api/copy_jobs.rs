@@ -19,8 +19,10 @@ const JOB_TIMEOUT: Duration = Duration::from_secs(180);
 /// The item's own address (`https://host/<FileRef>`), which copy jobs take.
 pub async fn absolute_url(item: &ItemRef) -> Result<String> {
     let quote = |s: &str| {
-        url::form_urlencoded::byte_serialize(format!("'{}'", s.trim_matches(|c| c == '{' || c == '}')).as_bytes())
-            .collect::<String>()
+        url::form_urlencoded::byte_serialize(
+            format!("'{}'", s.trim_matches(|c| c == '{' || c == '}')).as_bytes(),
+        )
+        .collect::<String>()
     };
     let reply = get(&format!(
         "{}/_api/web/lists/getbyid(@a1)/GetItemByUniqueId(@a2)?$select=FileRef&@a1={}&@a2={}",
@@ -43,7 +45,9 @@ pub async fn stamp_color(site: &str, folder_url: &str, code: &str) -> Result<()>
         bail!("Not a folder color");
     }
     let path = folder_url.get(host(folder_url).len()..).unwrap_or_default();
-    let q: String = url::form_urlencoded::byte_serialize(format!("'{}'", path.replace('\'', "''")).as_bytes()).collect();
+    let q: String =
+        url::form_urlencoded::byte_serialize(format!("'{}'", path.replace('\'', "''")).as_bytes())
+            .collect();
     post(
         &format!("{}/_api/foldercoloring/stampcolor(DecodedUrl=@a1)?@a1={q}", site.trim_end_matches('/')),
         &json!({ "coloringInformation": { "__metadata": { "type": "SP.FolderColoringInformation" }, "ColorHex": code } }),
@@ -55,9 +59,16 @@ pub async fn stamp_color(site: &str, folder_url: &str, code: &str) -> Result<()>
 /// A site's and web's ids (`_api/site/id`, `_api/web/id`).
 pub async fn site_ids(site: &str) -> Result<(String, String)> {
     let site = site.trim_end_matches('/');
-    let (a, b) = (format!("{site}/_api/site/id"), format!("{site}/_api/web/id"));
+    let (a, b) = (
+        format!("{site}/_api/site/id"),
+        format!("{site}/_api/web/id"),
+    );
     let (x, y) = tokio::join!(get(&a), get(&b));
-    let id = |v: Result<Value>| v.ok().and_then(|v| v["d"]["Id"].as_str().map(str::to_string)).unwrap_or_default();
+    let id = |v: Result<Value>| {
+        v.ok()
+            .and_then(|v| v["d"]["Id"].as_str().map(str::to_string))
+            .unwrap_or_default()
+    };
     Ok((id(x), id(y)))
 }
 
@@ -67,7 +78,11 @@ pub async fn site_ids(site: &str) -> Result<(String, String)> {
 pub enum ShortcutPlace {
     Shortcuts,
     MyFiles,
-    Folder { site: String, drive: String, folder: String },
+    Folder {
+        site: String,
+        drive: String,
+        folder: String,
+    },
 }
 
 /// The body OneDrive's Add shortcut posts (its "Stasher").
@@ -85,24 +100,57 @@ pub fn shortcut_body(name: &str, item: &ItemRef, site_id: &str, web_id: &str) ->
 }
 
 /// Add shortcut: `personal` is your OneDrive's host (`https://x-my…`).
-pub async fn add_shortcut(item: &ItemRef, name: &str, personal: &str, place: &ShortcutPlace) -> Result<()> {
-    let ok = |s: &str| s.bytes().all(|b| b.is_ascii_alphanumeric() || b"!-_.".contains(&b));
+pub async fn add_shortcut(
+    item: &ItemRef,
+    name: &str,
+    personal: &str,
+    place: &ShortcutPlace,
+) -> Result<()> {
+    let ok = |s: &str| {
+        s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"!-_.".contains(&b))
+    };
     let url = match place {
-        ShortcutPlace::Shortcuts => format!("{}/_api/v2.1/drives/me/special/shortcuts/children", host(personal)),
-        ShortcutPlace::MyFiles => format!("{}/_api/v2.1/drives/me/items/root/children", host(personal)),
-        ShortcutPlace::Folder { site, drive, folder } => {
+        ShortcutPlace::Shortcuts => format!(
+            "{}/_api/v2.1/drives/me/special/shortcuts/children",
+            host(personal)
+        ),
+        ShortcutPlace::MyFiles => {
+            format!("{}/_api/v2.1/drives/me/items/root/children", host(personal))
+        }
+        ShortcutPlace::Folder {
+            site,
+            drive,
+            folder,
+        } => {
             let f = folder.trim_matches(|c| c == '{' || c == '}');
-            if !ok(drive) || !(f.is_empty() || f.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')) {
+            if !ok(drive)
+                || !(f.is_empty() || f.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-'))
+            {
                 bail!("Not a folder");
             }
-            let target = if f.is_empty() { "root".to_string() } else { format!("{{{f}}}") };
-            format!("{}/_api/v2.1/drives/{drive}/items/{target}/children", host(site))
+            let target = if f.is_empty() {
+                "root".to_string()
+            } else {
+                format!("{{{f}}}")
+            };
+            format!(
+                "{}/_api/v2.1/drives/{drive}/items/{target}/children",
+                host(site)
+            )
         }
     };
     let (site_id, web_id) = site_ids(&item.site).await?;
-    super::sharing::post_with(&url, &shortcut_body(name, item, &site_id, &web_id), &[("accept", "application/json"), ("content-type", "application/json")])
-        .await
-        .map_err(sp_message)?;
+    super::sharing::post_with(
+        &url,
+        &shortcut_body(name, item, &site_id, &web_id),
+        &[
+            ("accept", "application/json"),
+            ("content-type", "application/json"),
+        ],
+    )
+    .await
+    .map_err(sp_message)?;
     Ok(())
 }
 
@@ -121,12 +169,16 @@ fn percent_decode(s: &str) -> String {
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len()
-            && let Some(v) = std::str::from_utf8(&b[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok()) {
-                out.push(v);
-                i += 3;
-                continue;
-            }
+        if b[i] == b'%'
+            && i + 2 < b.len()
+            && let Some(v) = std::str::from_utf8(&b[i + 1..i + 3])
+                .ok()
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
+        {
+            out.push(v);
+            i += 3;
+            continue;
+        }
         out.push(b[i]);
         i += 1;
     }
@@ -171,18 +223,35 @@ pub fn job_errors(reply: &Value) -> Vec<String> {
         .flatten()
         .filter_map(|l| serde_json::from_str::<Value>(l.as_str()?).ok())
         .filter(|e| matches!(e["Event"].as_str(), Some("JobError" | "JobFatalError")))
-        .map(|e| e["Message"].as_str().unwrap_or("The job failed").to_string())
+        .map(|e| {
+            e["Message"]
+                .as_str()
+                .unwrap_or("The job failed")
+                .to_string()
+        })
         .collect()
 }
 
 /// Copy (or move) items into a folder and wait for SharePoint to finish.
 /// `site` is the sources' site; `names` renames them (Duplicate).
-pub async fn run(site: &str, sources: &[String], dest: &str, move_mode: bool, names: &[String]) -> Result<()> {
+pub async fn run(
+    site: &str,
+    sources: &[String],
+    dest: &str,
+    move_mode: bool,
+    names: &[String],
+) -> Result<()> {
     let site = site.trim_end_matches('/');
-    let reply = post(&format!("{site}/_api/site/CreateCopyJobs"), &create_body(sources, dest, move_mode, names))
-        .await
-        .map_err(sp_message)?;
-    let jobs = reply["d"]["CreateCopyJobs"]["results"].as_array().cloned().unwrap_or_default();
+    let reply = post(
+        &format!("{site}/_api/site/CreateCopyJobs"),
+        &create_body(sources, dest, move_mode, names),
+    )
+    .await
+    .map_err(sp_message)?;
+    let jobs = reply["d"]["CreateCopyJobs"]["results"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     if jobs.is_empty() {
         bail!("SharePoint didn't start the copy");
     }
@@ -194,9 +263,12 @@ pub async fn run(site: &str, sources: &[String], dest: &str, move_mode: bool, na
         }
         loop {
             tokio::time::sleep(Duration::from_millis(700)).await;
-            let p = post(&format!("{site}/_api/site/GetCopyJobProgress"), &json!({ "copyJobInfo": info }))
-                .await
-                .map_err(sp_message)?;
+            let p = post(
+                &format!("{site}/_api/site/GetCopyJobProgress"),
+                &json!({ "copyJobInfo": info }),
+            )
+            .await
+            .map_err(sp_message)?;
             if let Some(e) = job_errors(&p).into_iter().next() {
                 bail!(e);
             }
@@ -216,7 +288,10 @@ pub async fn run(site: &str, sources: &[String], dest: &str, move_mode: bool, na
 /// copied" (without OST's "SharePoint 500:" prefix).
 fn sp_message(e: anyhow::Error) -> anyhow::Error {
     let t = e.to_string();
-    match t.strip_prefix("SharePoint ").and_then(|r| r.split_once(": ")) {
+    match t
+        .strip_prefix("SharePoint ")
+        .and_then(|r| r.split_once(": "))
+    {
         Some((_, msg)) => anyhow::anyhow!(msg.to_string()),
         None => e,
     }
@@ -228,13 +303,23 @@ mod tests {
 
     #[test]
     fn shortcut_bodies_are_onedrives() {
-        let it = ItemRef { site: "https://x-my.sharepoint.com/personal/a/".into(), list: "{0E0A}".into(), item: "1dd3".into() };
-        assert_eq!(shortcut_body("ost-share-test", &it, "S", "W"), json!({"name":"ost-share-test","remoteItem":{"sharepointIds":{"listId":"0E0A","listItemUniqueId":"1dd3","siteId":"S","siteUrl":"https://x-my.sharepoint.com/personal/a","webId":"W"}},"file":{},"@microsoft.graph.conflictBehavior":"rename"}));
+        let it = ItemRef {
+            site: "https://x-my.sharepoint.com/personal/a/".into(),
+            list: "{0E0A}".into(),
+            item: "1dd3".into(),
+        };
+        assert_eq!(
+            shortcut_body("ost-share-test", &it, "S", "W"),
+            json!({"name":"ost-share-test","remoteItem":{"sharepointIds":{"listId":"0E0A","listItemUniqueId":"1dd3","siteId":"S","siteUrl":"https://x-my.sharepoint.com/personal/a","webId":"W"}},"file":{},"@microsoft.graph.conflictBehavior":"rename"})
+        );
     }
 
     #[test]
     fn duplicate_names_follow_onedrive() {
-        assert_eq!(duplicate_name("ost-share-test.txt", false), "ost-share-test Copy.txt");
+        assert_eq!(
+            duplicate_name("ost-share-test.txt", false),
+            "ost-share-test Copy.txt"
+        );
         assert_eq!(duplicate_name("Notes.v2", true), "Notes.v2 Copy");
         assert_eq!(duplicate_name(".env", false), ".env Copy");
         assert_eq!(duplicate_name("README", false), "README Copy");
@@ -258,7 +343,13 @@ mod tests {
                               "CustomizedItemName":{"results":["ost-share-test Copy.txt"]}}})
         );
         let m = create_body(&["s".into()], "d", true, &[]);
-        assert_eq!((m["options"]["IsMoveMode"].as_bool(), m["options"]["IgnoreVersionHistory"].as_bool()), (Some(true), Some(false)));
+        assert_eq!(
+            (
+                m["options"]["IsMoveMode"].as_bool(),
+                m["options"]["IgnoreVersionHistory"].as_bool()
+            ),
+            (Some(true), Some(false))
+        );
         assert!(m["options"].get("CustomizedItemName").is_none());
     }
 
@@ -268,14 +359,19 @@ mod tests {
             "{\"Event\": \"JobQueued\", \"JobId\": \"a\"}",
             "{\"Event\": \"JobError\", \"Message\": \"A file with this name already exists.\"}",
         ]}}}});
-        assert_eq!(job_errors(&reply), ["A file with this name already exists."]);
+        assert_eq!(
+            job_errors(&reply),
+            ["A file with this name already exists."]
+        );
         assert!(job_errors(&json!({})).is_empty());
     }
 
     #[test]
     fn folder_urls_are_decoded() {
         assert_eq!(
-            folder_url("https://x-my.sharepoint.com/personal/a/Documents/Microsoft%20Teams%20Chat%20Files/"),
+            folder_url(
+                "https://x-my.sharepoint.com/personal/a/Documents/Microsoft%20Teams%20Chat%20Files/"
+            ),
             "https://x-my.sharepoint.com/personal/a/Documents/Microsoft Teams Chat Files"
         );
         assert_eq!(folder_url("https://x/a%2"), "https://x/a%2");

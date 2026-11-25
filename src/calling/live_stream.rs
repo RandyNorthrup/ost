@@ -70,7 +70,10 @@ impl StreamChoice {
 }
 
 fn s(v: &Value, k: &str) -> String {
-    v.get(k).and_then(Value::as_str).unwrap_or_default().to_string()
+    v.get(k)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string()
 }
 
 /// The roster names the pipelines in words ("Middle Lane HLS Network");
@@ -89,14 +92,26 @@ fn detail(v: &Value) -> StreamDetail {
         urls: v
             .get("urls")
             .and_then(Value::as_array)
-            .map(|a| a.iter().filter_map(|u| u.as_str().map(str::to_string)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|u| u.as_str().map(str::to_string))
+                    .collect()
+            })
             .unwrap_or_default(),
         is_primary: v.get("isPrimary").and_then(Value::as_bool).unwrap_or(false),
         delivery_pipeline_type: pipeline(&s(v, "deliveryPipelineType")).to_string(),
         set_key_authorization_cookie_uri: s(v, "setKeyAuthorizationCookieUri"),
         key_authorization_token: s(v, "keyAuthorizationToken"),
-        decryption_key_id: v.pointer("/decryptionKey/id").and_then(Value::as_str).unwrap_or_default().to_string(),
-        decryption_key_value: v.pointer("/decryptionKey/value").and_then(Value::as_str).unwrap_or_default().to_string(),
+        decryption_key_id: v
+            .pointer("/decryptionKey/id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        decryption_key_value: v
+            .pointer("/decryptionKey/value")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
         set_cookie_url: s(v, "setCookieUrl"),
     }
 }
@@ -104,17 +119,30 @@ fn detail(v: &Value) -> StreamDetail {
 /// The participants of a roster update or a join response
 /// (`body.participants` / `roster.participants`).
 fn participants(json: &Value) -> Option<&serde_json::Map<String, Value>> {
-    ["/body/participants", "/roster/participants", "/participants", "/conversationResponse/roster/participants"]
-        .iter()
-        .find_map(|p| json.pointer(p)?.as_object())
+    [
+        "/body/participants",
+        "/roster/participants",
+        "/participants",
+        "/conversationResponse/roster/participants",
+    ]
+    .iter()
+    .find_map(|p| json.pointer(p)?.as_object())
 }
 
 /// Our own endpoint in streaming mode, as Teams reads the roster: Some(true)
 /// in the stream's lobby (`streamLobby`, the event hasn't started), Some(false)
 /// watching (`stream`), None when the roster doesn't put us there.
 pub fn self_streaming(json: &Value, my_mri: &str, endpoint_id: &str) -> Option<bool> {
-    let me = participants(json)?.iter().find(|(k, _)| k.eq_ignore_ascii_case(my_mri))?.1;
-    let ep = me.get("endpoints")?.as_object()?.iter().find(|(k, _)| k.eq_ignore_ascii_case(endpoint_id))?.1;
+    let me = participants(json)?
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(my_mri))?
+        .1;
+    let ep = me
+        .get("endpoints")?
+        .as_object()?
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(endpoint_id))?
+        .1;
     if ep.get("stream").is_some_and(|v| !v.is_null()) {
         Some(false)
     } else if ep.get("streamLobby").is_some_and(|v| !v.is_null()) {
@@ -133,8 +161,16 @@ pub fn streams(json: &Value, my_mri: &str) -> Option<Vec<StreamDetail>> {
         if mri.eq_ignore_ascii_case(my_mri) {
             continue;
         }
-        for ep in p.get("endpoints").and_then(Value::as_object).into_iter().flat_map(|e| e.values()) {
-            if let Some(list) = ep.pointer("/streamInformation/streams").and_then(Value::as_array) {
+        for ep in p
+            .get("endpoints")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flat_map(|e| e.values())
+        {
+            if let Some(list) = ep
+                .pointer("/streamInformation/streams")
+                .and_then(Value::as_array)
+            {
                 found = true;
                 out.extend(list.iter().map(detail));
             }
@@ -153,14 +189,28 @@ pub fn choose(streams: &[StreamDetail], use_ull: bool, use_hls: bool) -> StreamC
     } else {
         ("AMS", "AzureMediaPlayer")
     };
-    let primary = streams.iter().find(|s| s.is_primary && s.delivery_pipeline_type == pipeline).cloned();
-    let first_url = primary.as_ref().and_then(|p| p.urls.first().cloned()).unwrap_or_default();
+    let primary = streams
+        .iter()
+        .find(|s| s.is_primary && s.delivery_pipeline_type == pipeline)
+        .cloned();
+    let first_url = primary
+        .as_ref()
+        .and_then(|p| p.urls.first().cloned())
+        .unwrap_or_default();
     // The alternate: the same pipeline with URLs, none of them the primary's.
     let alt = streams
         .iter()
-        .find(|s| s.delivery_pipeline_type == pipeline && !s.urls.is_empty() && !s.urls.contains(&first_url))
+        .find(|s| {
+            s.delivery_pipeline_type == pipeline
+                && !s.urls.is_empty()
+                && !s.urls.contains(&first_url)
+        })
         .cloned();
-    StreamChoice { player_type: player.into(), stream: primary, alt_stream: alt }
+    StreamChoice {
+        player_type: player.into(),
+        stream: primary,
+        alt_stream: alt,
+    }
 }
 
 /// Teams' choice with ECS's Streaming settings (prod: HLS).
@@ -181,7 +231,11 @@ pub fn choose_as_teams(streams: &[StreamDetail]) -> StreamChoice {
 /// Rewrite an HLS playlist so every URI in it (media lines and `URI="…"`
 /// attributes: variants, segments, keys, maps) goes through `register`,
 /// resolved against the playlist's own address.
-pub fn rewrite_playlist(body: &str, base: &url::Url, mut register: impl FnMut(String) -> String) -> String {
+pub fn rewrite_playlist(
+    body: &str,
+    base: &url::Url,
+    mut register: impl FnMut(String) -> String,
+) -> String {
     let mut out = String::with_capacity(body.len() + 256);
     for line in body.lines() {
         let t = line.trim();
@@ -190,7 +244,10 @@ pub fn rewrite_playlist(body: &str, base: &url::Url, mut register: impl FnMut(St
             continue;
         }
         if !t.starts_with('#') {
-            let abs = base.join(t).map(|u| u.to_string()).unwrap_or_else(|_| t.to_string());
+            let abs = base
+                .join(t)
+                .map(|u| u.to_string())
+                .unwrap_or_else(|_| t.to_string());
             out.push_str(&register(abs));
             out.push('\n');
             continue;
@@ -200,7 +257,10 @@ pub fn rewrite_playlist(body: &str, base: &url::Url, mut register: impl FnMut(St
             let start = i + 5;
             if let Some(len) = t[start..].find('"') {
                 let uri = &t[start..start + len];
-                let abs = base.join(uri).map(|u| u.to_string()).unwrap_or_else(|_| uri.to_string());
+                let abs = base
+                    .join(uri)
+                    .map(|u| u.to_string())
+                    .unwrap_or_else(|_| uri.to_string());
                 out.push_str(&t[..start]);
                 out.push_str(&register(abs));
                 out.push_str(&t[start + len..]);
@@ -285,13 +345,19 @@ impl ProxyState {
             urls.push(u);
             urls.len() - 1
         });
-        format!("{prefix}/{i}.{}", ext.unwrap_or_else(|| extension_of(&urls[i])))
+        format!(
+            "{prefix}/{i}.{}",
+            ext.unwrap_or_else(|| extension_of(&urls[i]))
+        )
     }
 }
 
 /// Extensions FFmpeg's HLS demuxer opens segments by (its
 /// allowed_segment_extensions, the media ones).
-const MEDIA_EXTENSIONS: &[&str] = &["3gp", "aac", "ac3", "avi", "ec3", "flac", "m4a", "m4s", "m4v", "mkv", "mov", "mp2", "mp3", "mp4", "mpeg", "mpg", "oga", "ogg", "ogv", "opus", "ts", "wav", "webm"];
+const MEDIA_EXTENSIONS: &[&str] = &[
+    "3gp", "aac", "ac3", "avi", "ec3", "flac", "m4a", "m4s", "m4v", "mkv", "mov", "mp2", "mp3",
+    "mp4", "mpeg", "mpg", "oga", "ogg", "ogv", "opus", "ts", "wav", "webm",
+];
 
 /// A segment's media type from its first bytes: MPEG-TS, fragmented MP4,
 /// ADTS AAC (also after an ID3 timestamp, HLS packed audio) or MP3.
@@ -304,7 +370,9 @@ fn sniff_extension(head: &[u8]) -> Option<&'static str> {
     }
     let mut at = 0;
     if head.starts_with(b"ID3") && head.len() >= 10 {
-        let size = head[6..10].iter().fold(0usize, |n, b| (n << 7) | (*b as usize & 0x7f));
+        let size = head[6..10]
+            .iter()
+            .fold(0usize, |n, b| (n << 7) | (*b as usize & 0x7f));
         at = 10 + size;
     }
     match (head.get(at), head.get(at + 1)) {
@@ -321,13 +389,20 @@ fn sniff_extension(head: &[u8]) -> Option<&'static str> {
 /// Teams desktop as a town hall attendee, 2026-11-18); segments and
 /// playlists go without.
 fn is_key_request(url: &str) -> bool {
-    url.contains("/get-key/") || url::Url::parse(url).ok().and_then(|u| u.host_str().map(|h| h.contains(".keys."))).unwrap_or(false)
+    url.contains("/get-key/")
+        || url::Url::parse(url)
+            .ok()
+            .and_then(|u| u.host_str().map(|h| h.contains(".keys.")))
+            .unwrap_or(false)
 }
 
 impl StreamProxy {
     /// Serve the chosen stream; None when it has no URL.
     pub async fn start(choice: &StreamChoice) -> anyhow::Result<Self> {
-        let first = choice.url().ok_or_else(|| anyhow::anyhow!("The stream has no address"))?.to_string();
+        let first = choice
+            .url()
+            .ok_or_else(|| anyhow::anyhow!("The stream has no address"))?
+            .to_string();
         let detail = choice.detail_for(&first).cloned().unwrap_or_default();
         Self::serve(first, ProxyAuth::Key(detail.key_authorization_token)).await
     }
@@ -348,7 +423,9 @@ impl StreamProxy {
         let secret = uuid::Uuid::new_v4().simple().to_string();
         let prefix = format!("http://127.0.0.1:{port}/{secret}");
         let state = std::sync::Arc::new(ProxyState {
-            http: reqwest::Client::builder().timeout(std::time::Duration::from_secs(20)).build()?,
+            http: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(20))
+                .build()?,
             urls: std::sync::Mutex::new(Vec::new()),
             auth,
             served: Default::default(),
@@ -362,7 +439,8 @@ impl StreamProxy {
                     a = listener.accept() => match a { Ok(a) => a, Err(_) => break },
                     _ = &mut stopped => break,
                 };
-                let (state, prefix, path_prefix) = (state.clone(), prefix.clone(), path_prefix.clone());
+                let (state, prefix, path_prefix) =
+                    (state.clone(), prefix.clone(), path_prefix.clone());
                 tokio::spawn(async move {
                     // One request per connection is enough for FFmpeg.
                     let mut buf = vec![0u8; 8192];
@@ -377,7 +455,11 @@ impl StreamProxy {
                         }
                     }
                     let req = String::from_utf8_lossy(&buf[..n]).to_string();
-                    let path = req.split_whitespace().nth(1).unwrap_or_default().to_string();
+                    let path = req
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap_or_default()
+                        .to_string();
                     let idx = path
                         .strip_prefix(&path_prefix)
                         .and_then(|r| r.split('.').next())
@@ -407,7 +489,10 @@ impl StreamProxy {
                 });
             }
         });
-        Ok(Self { url, stop: Some(stop) })
+        Ok(Self {
+            url,
+            stop: Some(stop),
+        })
     }
 }
 
@@ -433,7 +518,11 @@ fn site_host(url: &str) -> Option<String> {
     (u.scheme() == "https" && host.ends_with(".sharepoint.com")).then_some(host)
 }
 
-async fn fetch(state: &ProxyState, upstream: &str, prefix: &str) -> anyhow::Result<(String, Vec<u8>)> {
+async fn fetch(
+    state: &ProxyState,
+    upstream: &str,
+    prefix: &str,
+) -> anyhow::Result<(String, Vec<u8>)> {
     let mut req = state.http.get(upstream);
     match &state.auth {
         ProxyAuth::Key(token) if is_key_request(upstream) && !token.is_empty() => {
@@ -441,8 +530,12 @@ async fn fetch(state: &ProxyState, upstream: &str, prefix: &str) -> anyhow::Resu
         }
         ProxyAuth::Site(host) => {
             // The token goes to its own site only.
-            anyhow::ensure!(site_host(upstream).as_deref() == Some(host.as_str()), "Not the file's site");
-            let token = crate::auth::oauth::access_token_for(&format!("https://{host}/.default")).await?;
+            anyhow::ensure!(
+                site_host(upstream).as_deref() == Some(host.as_str()),
+                "Not the file's site"
+            );
+            let token =
+                crate::auth::oauth::access_token_for(&format!("https://{host}/.default")).await?;
             req = req.bearer_auth(token);
         }
         _ => {}
@@ -457,28 +550,65 @@ async fn fetch(state: &ProxyState, upstream: &str, prefix: &str) -> anyhow::Resu
         .unwrap_or("application/octet-stream")
         .to_string();
     let body = r.bytes().await?.to_vec();
-    let is_playlist = ctype.contains("mpegurl") || upstream.split('?').next().is_some_and(|p| p.ends_with(".m3u8")) || body.starts_with(b"#EXTM3U");
+    let is_playlist = ctype.contains("mpegurl")
+        || upstream
+            .split('?')
+            .next()
+            .is_some_and(|p| p.ends_with(".m3u8"))
+        || body.starts_with(b"#EXTM3U");
     if is_playlist {
         let base = url::Url::parse(upstream)?;
         let mut text = String::from_utf8_lossy(&body).to_string();
-        if matches!(state.auth, ProxyAuth::Site(_)) && state.served.lock().map(|mut s| s.insert(upstream.to_string())).unwrap_or(false) {
+        if matches!(state.auth, ProxyAuth::Site(_))
+            && state
+                .served
+                .lock()
+                .map(|mut s| s.insert(upstream.to_string()))
+                .unwrap_or(false)
+        {
             text = from_the_start(&text);
         }
         // What the stream is made of (its tags, addresses left out).
         let tags: Vec<String> = text
             .lines()
-            .filter(|l| l.starts_with("#EXT-X-KEY") || l.starts_with("#EXT-X-STREAM-INF") || l.starts_with("#EXT-X-MEDIA:") || l.starts_with("#EXT-X-MAP"))
-            .map(|l| l.split(",URI=").next().unwrap_or_default().split("URI=").next().unwrap_or_default().chars().take(160).collect())
+            .filter(|l| {
+                l.starts_with("#EXT-X-KEY")
+                    || l.starts_with("#EXT-X-STREAM-INF")
+                    || l.starts_with("#EXT-X-MEDIA:")
+                    || l.starts_with("#EXT-X-MAP")
+            })
+            .map(|l| {
+                l.split(",URI=")
+                    .next()
+                    .unwrap_or_default()
+                    .split("URI=")
+                    .next()
+                    .unwrap_or_default()
+                    .chars()
+                    .take(160)
+                    .collect()
+            })
             .take(6)
             .collect();
         tracing::debug!(?tags, "stream proxy: playlist");
         if matches!(state.auth, ProxyAuth::Site(_)) {
-            let segments = text.lines().filter(|l| !l.trim().is_empty() && !l.starts_with('#')).count();
+            let segments = text
+                .lines()
+                .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+                .count();
             // (A segment's last path parts show its kind; no query.)
             let first: String = text
                 .lines()
                 .find(|l| !l.trim().is_empty() && !l.starts_with('#'))
-                .map(|l| l.split('?').next().unwrap_or_default().rsplit('/').take(2).collect::<Vec<_>>().join(" < "))
+                .map(|l| {
+                    l.split('?')
+                        .next()
+                        .unwrap_or_default()
+                        .rsplit('/')
+                        .take(2)
+                        .collect::<Vec<_>>()
+                        .join(" < ")
+                })
                 .unwrap_or_default()
                 .chars()
                 .take(120)
@@ -490,11 +620,17 @@ async fn fetch(state: &ProxyState, upstream: &str, prefix: &str) -> anyhow::Resu
         // under the type their first bytes show.
         let mut seg_ext: Option<&str> = None;
         if matches!(state.auth, ProxyAuth::Site(_))
-            && let Some(first) = text.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with('#'))
+            && let Some(first) = text
+                .lines()
+                .map(str::trim)
+                .find(|l| !l.is_empty() && !l.starts_with('#'))
             && let Ok(abs) = base.join(first)
             && !MEDIA_EXTENSIONS.contains(&extension_of(abs.as_str()))
         {
-            let head = Box::pin(fetch(state, abs.as_str(), prefix)).await.map(|(_, b)| b).unwrap_or_default();
+            let head = Box::pin(fetch(state, abs.as_str(), prefix))
+                .await
+                .map(|(_, b)| b)
+                .unwrap_or_default();
             seg_ext = sniff_extension(&head[..head.len().min(4096)]);
             tracing::info!(ext = seg_ext.unwrap_or(""), "recap audio: segment type");
         }
@@ -523,7 +659,10 @@ mod tests {
     #[test]
     fn growing_playlists_start_at_their_first_segment() {
         let live = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:10,\na/content\n#EXTINF:10,\nb/content\n#EXTINF:10,\nc/content\n#EXTINF:10,\nd/content\n";
-        assert_eq!(from_the_start(live), "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:10,\na/content\n");
+        assert_eq!(
+            from_the_start(live),
+            "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:10,\na/content\n"
+        );
         let done = format!("{live}#EXT-X-ENDLIST\n");
         assert_eq!(from_the_start(&done), done);
     }
@@ -543,8 +682,18 @@ mod tests {
     #[test]
     fn proxied_addresses_keep_their_extension() {
         assert_eq!(extension_of("https://cdn/live/abc/seg-1.ts?tok=1"), "ts");
-        assert_eq!(extension_of("https://t-my.sharepoint.com/_api/v2.1/drives/b/items/i/versions/current/streams/x.m3u8/content"), "m3u8");
-        assert_eq!(extension_of("https://t-my.sharepoint.com/_api/v2.1/drives/b/items/i/versions/current/streams/seg1.aac/content?a=1"), "aac");
+        assert_eq!(
+            extension_of(
+                "https://t-my.sharepoint.com/_api/v2.1/drives/b/items/i/versions/current/streams/x.m3u8/content"
+            ),
+            "m3u8"
+        );
+        assert_eq!(
+            extension_of(
+                "https://t-my.sharepoint.com/_api/v2.1/drives/b/items/i/versions/current/streams/seg1.aac/content?a=1"
+            ),
+            "aac"
+        );
         assert_eq!(extension_of("https://keys.example/k/1"), "bin");
     }
 
@@ -560,7 +709,14 @@ mod tests {
                 format!("L{}", seen.len())
             },
         );
-        assert_eq!(seen, vec!["https://keys.example/k/1", "https://cdn.example/live/abc/v1/index.m3u8", "https://cdn.example/live/abc/seg-1.ts"]);
+        assert_eq!(
+            seen,
+            vec![
+                "https://keys.example/k/1",
+                "https://cdn.example/live/abc/v1/index.m3u8",
+                "https://cdn.example/live/abc/seg-1.ts"
+            ]
+        );
         assert!(out.contains("URI=\"L1\",IV=0x1"));
         assert!(out.contains("\nL2\nL3\n"));
     }
@@ -596,11 +752,25 @@ mod tests {
         let c = choose(&all, false, true);
         assert_eq!(c.player_type, "HttpLiveStreamingPlayer");
         assert_eq!(c.url(), Some("https://a/hls/master.m3u8"));
-        assert_eq!(c.alt_stream.as_ref().unwrap().urls[0], "https://b/hls/master.m3u8");
-        assert_eq!(c.detail_for("https://a/hls/master.m3u8").unwrap().key_authorization_token, "t");
+        assert_eq!(
+            c.alt_stream.as_ref().unwrap().urls[0],
+            "https://b/hls/master.m3u8"
+        );
+        assert_eq!(
+            c.detail_for("https://a/hls/master.m3u8")
+                .unwrap()
+                .key_authorization_token,
+            "t"
+        );
         let u = choose(&all, true, true);
         assert_eq!(u.player_type, "UltraLowLatencyPlayer");
         assert_eq!(u.stream.unwrap().decryption_key_value, "v1");
-        assert!(streams(&json!({"body": {"participants": {"8:orgid:me": {}}}}), "8:orgid:me").is_none());
+        assert!(
+            streams(
+                &json!({"body": {"participants": {"8:orgid:me": {}}}}),
+                "8:orgid:me"
+            )
+            .is_none()
+        );
     }
 }

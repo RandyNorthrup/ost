@@ -61,7 +61,11 @@ pub fn profile() -> Option<String> {
     std::env::var("OST_PROFILE")
         .ok()
         .map(|p| p.trim().to_string())
-        .filter(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+        .filter(|p| {
+            !p.is_empty()
+                && p.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        })
 }
 
 /// The keyring account the tokens live under ("teams-tokens", or
@@ -75,7 +79,10 @@ fn keyring_account() -> String {
         Some(p) => format!("{KEYRING_ACCOUNT}:{p}"),
         None => KEYRING_ACCOUNT.to_string(),
     };
-    match std::env::var("FLATPAK_ID").ok().filter(|id| !id.trim().is_empty()) {
+    match std::env::var("FLATPAK_ID")
+        .ok()
+        .filter(|id| !id.trim().is_empty())
+    {
         Some(id) => format!("{account}@{}", id.trim()),
         None => account,
     }
@@ -398,7 +405,8 @@ pub struct Account {
 }
 
 fn accounts_path() -> Result<PathBuf> {
-    let proj_dirs = ProjectDirs::from("com", "teams-cli", "teams-cli").context("Could not determine config directory")?;
+    let proj_dirs = ProjectDirs::from("com", "teams-cli", "teams-cli")
+        .context("Could not determine config directory")?;
     Ok(proj_dirs.config_dir().join("accounts.json"))
 }
 
@@ -425,7 +433,10 @@ pub fn with_account(mut list: Vec<Account>, a: Account) -> Vec<Account> {
 /// changes); `None` removes it (signed out).
 pub fn record_account(a: Option<Account>) -> Result<()> {
     let me = profile().unwrap_or_default();
-    let list: Vec<Account> = accounts().into_iter().filter(|x| x.profile != me || a.is_some()).collect();
+    let list: Vec<Account> = accounts()
+        .into_iter()
+        .filter(|x| x.profile != me || a.is_some())
+        .collect();
     let list = match a {
         Some(a) => with_account(list, Account { profile: me, ..a }),
         None => list,
@@ -452,7 +463,11 @@ pub fn profile_dir(profile: &str) -> Result<PathBuf> {
         .context("Could not determine config directory")?
         .config_dir()
         .to_path_buf();
-    Ok(if profile.is_empty() { base } else { base.join("profiles").join(profile) })
+    Ok(if profile.is_empty() {
+        base
+    } else {
+        base.join("profiles").join(profile)
+    })
 }
 
 /// What each account's window last published for Teams' "Activity in
@@ -480,7 +495,8 @@ pub fn write_hub_summary(json: &str) -> Result<()> {
 pub const MAX_PINNED_ORGS: usize = 2;
 
 fn hub_pins_path() -> Result<PathBuf> {
-    let proj_dirs = ProjectDirs::from("com", "teams-cli", "teams-cli").context("Could not determine config directory")?;
+    let proj_dirs = ProjectDirs::from("com", "teams-cli", "teams-cli")
+        .context("Could not determine config directory")?;
     Ok(proj_dirs.config_dir().join("hub-pins.json"))
 }
 
@@ -534,11 +550,25 @@ mod account_tests {
 
     #[test]
     fn accounts_keep_one_per_profile_first_account_first() {
-        let a = Account { profile: "account2".into(), upn: "b@x".into(), ..Default::default() };
-        let first = Account { profile: String::new(), upn: "a@x".into(), ..Default::default() };
+        let a = Account {
+            profile: "account2".into(),
+            upn: "b@x".into(),
+            ..Default::default()
+        };
+        let first = Account {
+            profile: String::new(),
+            upn: "a@x".into(),
+            ..Default::default()
+        };
         let list = with_account(with_account(vec![], a.clone()), first.clone());
         assert_eq!(list[0].upn, "a@x");
-        let again = with_account(list, Account { availability: "Busy".into(), ..a });
+        let again = with_account(
+            list,
+            Account {
+                availability: "Busy".into(),
+                ..a
+            },
+        );
         assert_eq!(again.len(), 2);
         assert_eq!(again[1].availability, "Busy");
         assert_eq!(new_profile_name(&again, &["account3".into()]), "account4");
@@ -641,7 +671,12 @@ mod sign_out_tests {
         };
         c.forget_account();
         assert!(c.secrets().refresh_token.is_none() && c.get_access_token().is_none());
-        assert!(c.skype_token.is_none() && c.graph_token.is_none() && c.ic3_token.is_none() && c.recorder_token.is_none());
+        assert!(
+            c.skype_token.is_none()
+                && c.graph_token.is_none()
+                && c.ic3_token.is_none()
+                && c.recorder_token.is_none()
+        );
         assert!(c.tenant_id.is_none() && c.region_gtms.is_none() && c.license_details.is_none());
         assert!(!c.tokens_in_keyring);
 
@@ -651,6 +686,9 @@ mod sign_out_tests {
         assert_eq!(on_disk.trim(), "auth_flow = \"teams-web\"");
         let back: Config = toml::from_str(&on_disk).unwrap();
         assert_eq!(back.auth_flow.as_deref(), Some(crate::auth::TEAMS_WEB_FLOW));
-        assert_eq!(crate::auth::AuthConfig::for_flow(back.auth_flow.as_deref()).client_id, crate::auth::spa::CLIENT_ID);
+        assert_eq!(
+            crate::auth::AuthConfig::for_flow(back.auth_flow.as_deref()).client_id,
+            crate::auth::spa::CLIENT_ID
+        );
     }
 }

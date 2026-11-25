@@ -77,7 +77,14 @@ pub struct ClipMaskRust {
 
 impl Default for ClipMaskRust {
     fn default() -> Self {
-        Self { active: false, has_mask: false, worker: None, newest: Arc::new(Mutex::new(None)), busy: Arc::new(AtomicBool::new(false)), mask: vec![0.0; MASK * MASK] }
+        Self {
+            active: false,
+            has_mask: false,
+            worker: None,
+            newest: Arc::new(Mutex::new(None)),
+            busy: Arc::new(AtomicBool::new(false)),
+            mask: vec![0.0; MASK * MASK],
+        }
     }
 }
 
@@ -104,21 +111,23 @@ fn submit(r: &mut ClipMaskRust, rgb: Vec<u8>) {
     if r.worker.is_none() {
         let (tx, rx) = mpsc::sync_channel::<Vec<u8>>(1);
         let (newest, busy) = (r.newest.clone(), r.busy.clone());
-        let spawned = std::thread::Builder::new().name("ost-clip-segment".into()).spawn(move || {
-            let seg = match ost_vfx::Segmenter::new() {
-                Ok(s) => s,
-                Err(e) => {
-                    tracing::warn!("clip backdrop: the segmentation model didn't load: {e}");
-                    return;
+        let spawned = std::thread::Builder::new()
+            .name("ost-clip-segment".into())
+            .spawn(move || {
+                let seg = match ost_vfx::Segmenter::new() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::warn!("clip backdrop: the segmentation model didn't load: {e}");
+                        return;
+                    }
+                };
+                while let Ok(rgb) = rx.recv() {
+                    if let Ok(mask) = seg.segment(&rgb) {
+                        *newest.lock().unwrap() = Some(mask);
+                    }
+                    busy.store(false, Ordering::SeqCst);
                 }
-            };
-            while let Ok(rgb) = rx.recv() {
-                if let Ok(mask) = seg.segment(&rgb) {
-                    *newest.lock().unwrap() = Some(mask);
-                }
-                busy.store(false, Ordering::SeqCst);
-            }
-        });
+            });
         if spawned.is_ok() {
             r.worker = Some(tx);
         }
@@ -135,19 +144,26 @@ impl qobject::ClipMask {
     /// SAFETY: `sink` is the QVideoSink QML passes (or null).
     pub unsafe fn attach(self: Pin<&mut Self>, sink: *mut qobject::QObject) {
         // SAFETY: only the pointer is taken; C++ treats it as the item.
-        let item = unsafe { self.get_unchecked_mut() as *mut qobject::ClipMask as *mut core::ffi::c_void };
+        let item =
+            unsafe { self.get_unchecked_mut() as *mut qobject::ClipMask as *mut core::ffi::c_void };
         unsafe { ost_clip_mask_attach(item, sink as *mut core::ffi::c_void) }
     }
 
     pub fn refresh(mut self: Pin<&mut Self>) {
         if !self.rust().active {
             if self.rust().has_mask {
-                self.as_mut().rust_mut().mask.iter_mut().for_each(|m| *m = 0.0);
+                self.as_mut()
+                    .rust_mut()
+                    .mask
+                    .iter_mut()
+                    .for_each(|m| *m = 0.0);
                 self.as_mut().set_has_mask(false);
             }
             return;
         }
-        let Some(m) = self.rust().newest.lock().unwrap().take() else { return };
+        let Some(m) = self.rust().newest.lock().unwrap().take() else {
+            return;
+        };
         let first = !self.rust().has_mask;
         {
             let mut r = self.as_mut().rust_mut();
@@ -168,7 +184,9 @@ impl qobject::ClipMask {
 
     /// Called by Qt with a valid painter for the duration of the call.
     pub unsafe fn paint(self: Pin<&mut Self>, painter: *mut cxx_qt_lib::QPainter) {
-        let Some(painter) = (unsafe { painter.as_mut() }) else { return };
+        let Some(painter) = (unsafe { painter.as_mut() }) else {
+            return;
+        };
         let mut painter = unsafe { Pin::new_unchecked(painter) };
         let mut rgba = vec![0u8; MASK * MASK * 4];
         for (i, m) in self.rust().mask.iter().enumerate() {
@@ -176,9 +194,23 @@ impl qobject::ClipMask {
             rgba[i * 4..i * 4 + 4].copy_from_slice(&[v, v, v, 255]);
         }
         // QImage takes its own copy of the pixels (it frees them itself).
-        let image = unsafe { QImage::from_raw_bytes(rgba, MASK as i32, MASK as i32, QImageFormat::Format_RGBA8888) };
-        painter.as_mut().set_render_hint(QPainterRenderHint::SmoothPixmapTransform, true);
-        let target = QRect::new(0, 0, self.width().ceil() as i32, self.height().ceil() as i32);
+        let image = unsafe {
+            QImage::from_raw_bytes(
+                rgba,
+                MASK as i32,
+                MASK as i32,
+                QImageFormat::Format_RGBA8888,
+            )
+        };
+        painter
+            .as_mut()
+            .set_render_hint(QPainterRenderHint::SmoothPixmapTransform, true);
+        let target = QRect::new(
+            0,
+            0,
+            self.width().ceil() as i32,
+            self.height().ceil() as i32,
+        );
         painter.as_mut().draw_image(&target, &image);
     }
 }

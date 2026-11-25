@@ -47,7 +47,10 @@ pub struct ProofingSettings {
 #[derive(Debug, Clone)]
 pub enum Event {
     /// A compose box's critiques, in text order (complete each time).
-    Critiques { doc: String, critiques: Vec<Critique> },
+    Critiques {
+        doc: String,
+        critiques: Vec<Critique>,
+    },
     Settings(ProofingSettings),
 }
 
@@ -59,9 +62,16 @@ pub const MAX_LANGUAGES: usize = 3;
 pub fn supported_languages() -> &'static [(String, String, String)] {
     static L: std::sync::OnceLock<Vec<(String, String, String)>> = std::sync::OnceLock::new();
     L.get_or_init(|| {
-        let v: Vec<Value> = serde_json::from_str(include_str!("editor_languages.json")).expect("editor_languages.json");
+        let v: Vec<Value> = serde_json::from_str(include_str!("editor_languages.json"))
+            .expect("editor_languages.json");
         v.iter()
-            .filter_map(|l| Some((l["code"].as_str()?.to_string(), l["native"].as_str()?.to_string(), l["english"].as_str()?.to_string())))
+            .filter_map(|l| {
+                Some((
+                    l["code"].as_str()?.to_string(),
+                    l["native"].as_str()?.to_string(),
+                    l["english"].as_str()?.to_string(),
+                ))
+            })
             .collect()
     })
 }
@@ -91,7 +101,14 @@ pub struct CritiqueType {
 /// Teams_Win32); Teams shows those of priority 0.
 pub async fn categories(http: &reqwest::Client, language: &str) -> anyhow::Result<Vec<Category>> {
     let body = json!({"AppId": "Teams_Win32", "Descriptors": [{"Name": "LicenseType", "Value": "Subscription"}, {"Name": "FlightIds", "Value": "mc-officeEditorTonalEnabled;mc-officeEditorDNNGrammarEnabled"}], "LanguageId": language});
-    let v: Value = http.post("https://editor.svc.cloud.microsoft/NLEditor/Config/V2").json(&body).send().await?.error_for_status()?.json().await?;
+    let v: Value = http
+        .post("https://editor.svc.cloud.microsoft/NLEditor/Config/V2")
+        .json(&body)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
     Ok(parse_categories(&v))
 }
 
@@ -140,14 +157,26 @@ pub struct Editor {
 impl Editor {
     /// Start the session on `rt`; `events` is called from its task.
     /// `ui_language` ("en-us") checks text until you choose languages.
-    pub fn start(rt: &tokio::runtime::Handle, ui_language: &str, events: impl Fn(Event) + Send + Sync + 'static) -> Editor {
+    pub fn start(
+        rt: &tokio::runtime::Handle,
+        ui_language: &str,
+        events: impl Fn(Event) + Send + Sync + 'static,
+    ) -> Editor {
         let (tx, rx) = mpsc::unbounded_channel();
-        rt.spawn(run(rx, tx.clone(), ui_language.to_lowercase(), Box::new(events)));
+        rt.spawn(run(
+            rx,
+            tx.clone(),
+            ui_language.to_lowercase(),
+            Box::new(events),
+        ));
         Editor { tx }
     }
     /// The compose box `doc` now reads `text` (sent once typing pauses).
     pub fn set_text(&self, doc: &str, text: &str) {
-        let _ = self.tx.send(Cmd::Text { doc: doc.into(), text: text.into() });
+        let _ = self.tx.send(Cmd::Text {
+            doc: doc.into(),
+            text: text.into(),
+        });
     }
     pub fn close(&self, doc: &str) {
         let _ = self.tx.send(Cmd::Close { doc: doc.into() });
@@ -212,11 +241,20 @@ pub fn diff(old: &str, new: &str) -> (usize, usize, String) {
     while p > 0 && (0xD800..0xDC00).contains(&a[p - 1]) {
         p -= 1;
     }
-    let mut s = a[p..].iter().rev().zip(b[p..].iter().rev()).take_while(|(x, y)| x == y).count();
+    let mut s = a[p..]
+        .iter()
+        .rev()
+        .zip(b[p..].iter().rev())
+        .take_while(|(x, y)| x == y)
+        .count();
     while s > 0 && (0xDC00..0xE000).contains(&a[a.len() - s]) {
         s -= 1;
     }
-    (p, a.len() - p - s, String::from_utf16_lossy(&b[p..b.len() - s]))
+    (
+        p,
+        a.len() - p - s,
+        String::from_utf16_lossy(&b[p..b.len() - s]),
+    )
 }
 
 fn word_count(s: &str) -> usize {
@@ -228,23 +266,54 @@ fn word_count(s: &str) -> usize {
 fn apply_results(v: &Value, docs: &mut HashMap<String, Doc>) -> Vec<String> {
     let mut changed = Vec::new();
     for op in v["ops"].as_array().into_iter().flatten() {
-        let tile = op["parentPath"].as_array().and_then(|p| p.get(3)).and_then(|x| x.as_str()).unwrap_or_default();
-        let Some((name, doc)) = docs.iter_mut().find(|(_, d)| d.tile == tile) else { continue };
-        let kind = op.pointer("/H_/T_").and_then(|x| x.as_str()).unwrap_or_default();
+        let tile = op["parentPath"]
+            .as_array()
+            .and_then(|p| p.get(3))
+            .and_then(|x| x.as_str())
+            .unwrap_or_default();
+        let Some((name, doc)) = docs.iter_mut().find(|(_, d)| d.tile == tile) else {
+            continue;
+        };
+        let kind = op
+            .pointer("/H_/T_")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default();
         for it in op["items"].as_array().into_iter().flatten() {
             let id = it["id"].as_str().unwrap_or_default().to_string();
             if kind == "AugLoop_Core_DeleteOperation" {
                 doc.critiques.remove(&id);
             } else if kind == "AugLoop_Core_AddOperation" {
                 let b = &it["body"];
-                let Some(word) = b["context"].as_str() else { continue };
+                let Some(word) = b["context"].as_str() else {
+                    continue;
+                };
                 let start = b["range"]["start"].as_u64().unwrap_or(0) as usize;
                 let length = b["range"]["length"].as_u64().unwrap_or(0) as usize;
-                let suggestions = b["suggestions"].as_array().into_iter().flatten().filter_map(|s| s["text"].as_str().map(str::to_string)).collect();
+                let suggestions = b["suggestions"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|s| s["text"].as_str().map(str::to_string))
+                    .collect();
                 // Teams' suggestion actions: 1 change once, 2 change all, 4 autocorrect.
-                let autocorrect = b["suggestions"].get(0).and_then(|s| s["suggestionActions"].as_u64()).is_some_and(|a| a & 4 != 0);
+                let autocorrect = b["suggestions"]
+                    .get(0)
+                    .and_then(|s| s["suggestionActions"].as_u64())
+                    .is_some_and(|a| a & 4 != 0);
                 let language = b["language"].as_str().unwrap_or_default().to_string();
-                doc.critiques.insert(id.clone(), Critique { id, start, length, category: b["categoryName"].as_str().unwrap_or("Spelling").into(), word: word.into(), suggestions, autocorrect, language });
+                doc.critiques.insert(
+                    id.clone(),
+                    Critique {
+                        id,
+                        start,
+                        length,
+                        category: b["categoryName"].as_str().unwrap_or("Spelling").into(),
+                        word: word.into(),
+                        suggestions,
+                        autocorrect,
+                        language,
+                    },
+                );
             }
         }
         if !changed.contains(name) {
@@ -261,7 +330,10 @@ fn visible(doc: &Doc, ignored: &[String]) -> Vec<Critique> {
     let mut v: Vec<Critique> = doc
         .critiques
         .values()
-        .filter(|c| c.start + c.length <= text.len() && String::from_utf16_lossy(&text[c.start..c.start + c.length]) == c.word)
+        .filter(|c| {
+            c.start + c.length <= text.len()
+                && String::from_utf16_lossy(&text[c.start..c.start + c.length]) == c.word
+        })
         .filter(|c| !ignored.contains(&c.word))
         .cloned()
         .collect();
@@ -270,18 +342,37 @@ fn visible(doc: &Doc, ignored: &[String]) -> Vec<Critique> {
 }
 
 fn settings_from(v: &Value) -> Option<ProofingSettings> {
-    let body = v["ops"].as_array()?.iter().flat_map(|op| op["items"].as_array().into_iter().flatten()).map(|it| &it["body"]).find(|b| b.get("userDictionary").is_some() || b.get("languageSettings").is_some())?;
+    let body = v["ops"]
+        .as_array()?
+        .iter()
+        .flat_map(|op| op["items"].as_array().into_iter().flatten())
+        .map(|it| &it["body"])
+        .find(|b| b.get("userDictionary").is_some() || b.get("languageSettings").is_some())?;
     let languages = body["languageSettings"]["authoringLanguages"]
         .as_array()
         .into_iter()
         .flatten()
-        .filter_map(|l| l["locale"].as_str().or(l.as_str()).map(|s| s.to_lowercase()))
+        .filter_map(|l| {
+            l["locale"]
+                .as_str()
+                .or(l.as_str())
+                .map(|s| s.to_lowercase())
+        })
         .collect();
-    let dictionary = body["userDictionary"].as_array().into_iter().flatten().filter_map(|w| w.as_str().map(str::to_string)).collect();
-    Some(ProofingSettings { languages, dictionary })
+    let dictionary = body["userDictionary"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|w| w.as_str().map(str::to_string))
+        .collect();
+    Some(ProofingSettings {
+        languages,
+        dictionary,
+    })
 }
 
-type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+type Ws =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 struct Session {
     ws: Ws,
@@ -382,7 +473,10 @@ impl Session {
 }
 
 fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 async fn token() -> anyhow::Result<String> {
@@ -391,11 +485,24 @@ async fn token() -> anyhow::Result<String> {
 
 /// Open a session: Teams' SessionInit, the document, the token, the
 /// settings annotation (read), spelling critiques in `languages`.
-async fn connect(ui_language: &str, languages: &[String], overrides: &[Value]) -> anyhow::Result<(Session, tokio::time::Instant)> {
-    let mut req = tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request("wss://augloop.office.com/")?;
-    req.headers_mut().insert("Origin", "https://teams.microsoft.com".parse()?);
+async fn connect(
+    ui_language: &str,
+    languages: &[String],
+    overrides: &[Value],
+) -> anyhow::Result<(Session, tokio::time::Instant)> {
+    let mut req = tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(
+        "wss://augloop.office.com/",
+    )?;
+    req.headers_mut()
+        .insert("Origin", "https://teams.microsoft.com".parse()?);
     let (ws, _) = tokio_tungstenite::connect_async(req).await?;
-    let mut s = Session { ws, n: 0, seq: 0, group: uuid::Uuid::new_v4().to_string(), critique_token: String::new() };
+    let mut s = Session {
+        ws,
+        n: 0,
+        seq: 0,
+        group: uuid::Uuid::new_v4().to_string(),
+        critique_token: String::new(),
+    };
     let mid = s.mid();
     let init = json!({"protocolVersion": 2,
         "clientMetadata": {"appName": "Teams", "appPlatform": "Win32", "releaseAudienceGroup": "Production", "releaseChannel": "general", "sessionId": uuid::Uuid::new_v4().to_string(),
@@ -405,7 +512,10 @@ async fn connect(ui_language: &str, languages: &[String], overrides: &[Value]) -
     s.send(init).await?;
     // The session's answer (its sessionKey).
     loop {
-        let Some(m) = tokio::time::timeout(std::time::Duration::from_secs(20), s.ws.next()).await? else { anyhow::bail!("AugLoop closed") };
+        let Some(m) = tokio::time::timeout(std::time::Duration::from_secs(20), s.ws.next()).await?
+        else {
+            anyhow::bail!("AugLoop closed")
+        };
         if let Message::Text(t) = m?
             && t.as_str() != "~"
         {
@@ -413,12 +523,16 @@ async fn connect(ui_language: &str, languages: &[String], overrides: &[Value]) -
             if v.get("sessionKey").is_some() {
                 break;
             }
-            if v.pointer("/H_/T_").and_then(|x| x.as_str()).is_some_and(|t| t.contains("Error")) {
+            if v.pointer("/H_/T_")
+                .and_then(|x| x.as_str())
+                .is_some_and(|t| t.contains("Error"))
+            {
                 anyhow::bail!("AugLoop refused the session");
             }
         }
     }
-    s.activate("AugLoop_ProofingSettings_ProofingSettingsAnnotation", None).await?;
+    s.activate("AugLoop_ProofingSettings_ProofingSettingsAnnotation", None)
+        .await?;
     let mid = s.mid();
     let seed = json!({"cv": s.cv(), "seq": s.seq, "ops": [{"parentPath": ["session"], "items": [{"id": "documentRoot", "body": {"isReadonly": false, "H_": h("AugLoop_Core_Document", &["AugLoop_Core_TileGroup"])}}],
         "H_": h("AugLoop_Core_AddOperation", &["AugLoop_Core_OperationWithSiblingContext", "AugLoop_Core_Operation"])}], "groupId": "Seed", "groupSize": 1, "groupComplete": true,
@@ -427,16 +541,31 @@ async fn connect(ui_language: &str, languages: &[String], overrides: &[Value]) -
     s.send(seed).await?;
     s.provide_token(&token().await?).await?;
     s.signal(json!({"settingNames": ["userDictionary", "overriddenOptions", "languageSettings"], "H_": h("AugLoop_ProofingSettings_ReadSettingSignal", &["AugLoop_ProofingSettings_ProofingSettingSignal", "AugLoop_Signals_Signal"])})).await?;
-    let langs: Vec<String> = if languages.is_empty() { vec![ui_language.to_string()] } else { languages.to_vec() };
-    s.activate("AugLoop_Text_Critique", Some(critique_config(&langs, overrides))).await?;
+    let langs: Vec<String> = if languages.is_empty() {
+        vec![ui_language.to_string()]
+    } else {
+        languages.to_vec()
+    };
+    s.activate(
+        "AugLoop_Text_Critique",
+        Some(critique_config(&langs, overrides)),
+    )
+    .await?;
     // Tokens last over an hour; renew well before.
-    Ok((s, tokio::time::Instant::now() + std::time::Duration::from_secs(25 * 60)))
+    Ok((
+        s,
+        tokio::time::Instant::now() + std::time::Duration::from_secs(25 * 60),
+    ))
 }
 
 fn iana_timezone() -> String {
     std::fs::read_link("/etc/localtime")
         .ok()
-        .and_then(|p| p.to_str().and_then(|s| s.split("zoneinfo/").nth(1)).map(str::to_string))
+        .and_then(|p| {
+            p.to_str()
+                .and_then(|s| s.split("zoneinfo/").nth(1))
+                .map(str::to_string)
+        })
         .unwrap_or_else(|| "UTC".into())
 }
 
@@ -445,7 +574,12 @@ fn iana_timezone() -> String {
 const SEND_AFTER: std::time::Duration = std::time::Duration::from_millis(250);
 const FLUSH_AFTER: std::time::Duration = std::time::Duration::from_millis(1500);
 
-async fn run(mut rx: mpsc::UnboundedReceiver<Cmd>, requeue: mpsc::UnboundedSender<Cmd>, ui_language: String, events: Box<dyn Fn(Event) + Send + Sync>) {
+async fn run(
+    mut rx: mpsc::UnboundedReceiver<Cmd>,
+    requeue: mpsc::UnboundedSender<Cmd>,
+    ui_language: String,
+    events: Box<dyn Fn(Event) + Send + Sync>,
+) {
     let mut docs: HashMap<String, Doc> = HashMap::new();
     let mut languages: Vec<String> = Vec::new();
     let mut ignored: Vec<String> = Vec::new();
@@ -458,7 +592,18 @@ async fn run(mut rx: mpsc::UnboundedReceiver<Cmd>, requeue: mpsc::UnboundedSende
             match rx.recv().await {
                 None => return,
                 Some(Cmd::Text { doc, text }) if !text.trim().is_empty() => {
-                    docs.insert(doc, Doc { tile: uuid::Uuid::new_v4().to_string(), sent: String::new(), want: text, rev: 0, critiques: HashMap::new(), send_at: None, flush_at: None });
+                    docs.insert(
+                        doc,
+                        Doc {
+                            tile: uuid::Uuid::new_v4().to_string(),
+                            sent: String::new(),
+                            want: text,
+                            rev: 0,
+                            critiques: HashMap::new(),
+                            send_at: None,
+                            flush_at: None,
+                        },
+                    );
                 }
                 Some(Cmd::Text { .. }) | Some(Cmd::Close { .. }) => continue,
                 Some(Cmd::IgnoreAll(w)) => {
@@ -485,7 +630,10 @@ async fn run(mut rx: mpsc::UnboundedReceiver<Cmd>, requeue: mpsc::UnboundedSende
             }
         };
         backoff = 1;
-        let language = languages.first().cloned().unwrap_or_else(|| ui_language.clone());
+        let language = languages
+            .first()
+            .cloned()
+            .unwrap_or_else(|| ui_language.clone());
         let mut ok = true;
         for d in docs.values_mut() {
             d.critiques.clear();
@@ -497,7 +645,15 @@ async fn run(mut rx: mpsc::UnboundedReceiver<Cmd>, requeue: mpsc::UnboundedSende
         let mut reconnect_for_languages = false;
         let mut reconnect_at: Option<tokio::time::Instant> = None;
         while ok {
-            let next = docs.values().flat_map(|d| [d.send_at, d.flush_at]).flatten().chain(reconnect_at).min().unwrap_or_else(|| tokio::time::Instant::now() + std::time::Duration::from_secs(3600));
+            let next = docs
+                .values()
+                .flat_map(|d| [d.send_at, d.flush_at])
+                .flatten()
+                .chain(reconnect_at)
+                .min()
+                .unwrap_or_else(|| {
+                    tokio::time::Instant::now() + std::time::Duration::from_secs(3600)
+                });
             tokio::select! {
                 m = s.ws.next() => {
                     let Some(Ok(m)) = m else { break };
@@ -644,7 +800,15 @@ mod tests {
     }
 
     fn doc(text: &str) -> Doc {
-        Doc { tile: "t1".into(), sent: format!("{text}\n"), want: text.into(), rev: 0, critiques: HashMap::new(), send_at: None, flush_at: None }
+        Doc {
+            tile: "t1".into(),
+            sent: format!("{text}\n"),
+            want: text.into(),
+            rev: 0,
+            critiques: HashMap::new(),
+            send_at: None,
+            flush_at: None,
+        }
     }
 
     #[test]
@@ -656,7 +820,12 @@ mod tests {
             "H_":{"T_":"AugLoop_Core_AddOperation"}}]}"##).unwrap();
         assert_eq!(apply_results(&add, &mut docs), vec!["chat".to_string()]);
         let v = visible(&docs["chat"], &[]);
-        assert_eq!(v.iter().map(|c| (c.word.as_str(), c.start)).collect::<Vec<_>>(), [("Thsi", 0), ("tset", 10)]);
+        assert_eq!(
+            v.iter()
+                .map(|c| (c.word.as_str(), c.start))
+                .collect::<Vec<_>>(),
+            [("Thsi", 0), ("tset", 10)]
+        );
         assert_eq!(v[0].suggestions, ["This", "Tshi"]);
         // Ignore all hides the word; an edit that moves a range hides it until
         // AugLoop answers again.
@@ -674,8 +843,22 @@ mod tests {
             {"Id":"d1cf9ade","Name":"Ignore words in UPPERCASE","IsBinaryCritiqueType":true,"DefaultCritiqueValue":1,"CritiquePriority":0}]}]}"#).unwrap();
         let c = parse_categories(&v);
         assert_eq!(c[0].id, "19a112ec-21fd");
-        assert_eq!(c[0].critiques[0], CritiqueType { id: "d1cf9ade".into(), name: "Ignore words in UPPERCASE".into(), binary: true, default: 1, priority: 0 });
-        let cfg = critique_config(&["en-us".into()], &[json!({"id": "d1cf9ade", "value": "0", "languageId": "en-us", "name": "Ignore words in UPPERCASE"})]);
+        assert_eq!(
+            c[0].critiques[0],
+            CritiqueType {
+                id: "d1cf9ade".into(),
+                name: "Ignore words in UPPERCASE".into(),
+                binary: true,
+                default: 1,
+                priority: 0
+            }
+        );
+        let cfg = critique_config(
+            &["en-us".into()],
+            &[
+                json!({"id": "d1cf9ade", "value": "0", "languageId": "en-us", "name": "Ignore words in UPPERCASE"}),
+            ],
+        );
         assert_eq!(cfg["OverriddenCritiqueTypeOptions"][0]["value"], "0");
         assert_eq!(cfg["ProofingLanguages"], json!(["en-us"]));
     }
@@ -683,7 +866,13 @@ mod tests {
     #[test]
     fn settings_as_augloop_sends_them() {
         let v: Value = serde_json::from_str(r#"{"ops":[{"items":[{"body":{"userDictionary":["OST"],"languageSettings":{"authoringLanguages":[{"locale":"en-US","displayName":"English"},{"locale":"de-de"}]}}}]}]}"#).unwrap();
-        assert_eq!(settings_from(&v), Some(ProofingSettings { languages: vec!["en-us".into(), "de-de".into()], dictionary: vec!["OST".into()] }));
+        assert_eq!(
+            settings_from(&v),
+            Some(ProofingSettings {
+                languages: vec!["en-us".into(), "de-de".into()],
+                dictionary: vec!["OST".into()]
+            })
+        );
         assert_eq!(supported_languages().len(), 173);
         assert!(supported_languages().iter().any(|l| l.0 == "en-us"));
     }

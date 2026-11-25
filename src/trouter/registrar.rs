@@ -71,10 +71,15 @@ pub fn calling_registration_id() -> &'static str {
     ID.get_or_init(|| {
         // A second client of the same profile on one machine (the emulated
         // phone) names its own.
-        if let Some(id) = std::env::var("OST_CALLING_ENDPOINT_ID").ok().filter(|s| uuid::Uuid::parse_str(s).is_ok()) {
+        if let Some(id) = std::env::var("OST_CALLING_ENDPOINT_ID")
+            .ok()
+            .filter(|s| uuid::Uuid::parse_str(s).is_ok())
+        {
             return id;
         }
-        let path = crate::config::Config::config_dir().ok().map(|d| d.join("calling-endpoint-id"));
+        let path = crate::config::Config::config_dir()
+            .ok()
+            .map(|d| d.join("calling-endpoint-id"));
         if let Some(id) = path
             .as_ref()
             .and_then(|p| std::fs::read_to_string(p).ok())
@@ -118,7 +123,8 @@ pub async fn register_all(
             _ => uuid::Uuid::new_v4().to_string(),
         };
         let path = format!("{}{}", trouter_surl, entry.path_suffix);
-        let mut transports = vec![serde_json::json!({"context": entry.context, "path": path, "ttl": 86400})];
+        let mut transports =
+            vec![serde_json::json!({"context": entry.context, "path": path, "ttl": 86400})];
         if calling && let Some(base) = better_together {
             transports.push(serde_json::json!({
                 "context": crate::api::better_together::TRANSPORT_CONTEXT,

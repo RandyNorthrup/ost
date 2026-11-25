@@ -74,7 +74,12 @@ impl Default for Options {
 impl Options {
     /// Everything off (Teams' `resetScanVideoEffect`).
     pub fn off() -> Self {
-        Self { quad_enabled: false, cleanup_enabled: false, zoom_enabled: false, normalized_quad: NO_QUAD }
+        Self {
+            quad_enabled: false,
+            cleanup_enabled: false,
+            zoom_enabled: false,
+            normalized_quad: NO_QUAD,
+        }
     }
 
     /// Teams' defaults per content type (`n4`): a whiteboard detects edges
@@ -111,7 +116,16 @@ pub fn rotate_quad(q: &[f32; 8]) -> [f32; 8] {
     if is_trivial(q) {
         return *q;
     }
-    [1.0 - q[7], q[6], 1.0 - q[1], q[0], 1.0 - q[3], q[2], 1.0 - q[5], q[4]]
+    [
+        1.0 - q[7],
+        q[6],
+        1.0 - q[1],
+        q[0],
+        1.0 - q[3],
+        q[2],
+        1.0 - q[5],
+        q[4],
+    ]
 }
 
 /// Detections between a quad found and called stable.
@@ -308,16 +322,39 @@ impl Processor {
         } else {
             self.have_mask = false;
         }
-        let quad = if self.opts.zoom_enabled && !is_trivial(&self.quad) { self.quad } else { FULL_FRAME };
+        let quad = if self.opts.zoom_enabled && !is_trivial(&self.quad) {
+            self.quad
+        } else {
+            FULL_FRAME
+        };
         let corners = to_pixels(&quad, sw, sh);
         let fit = fit_rect(&corners, w, h);
         if self.opts.cleanup_enabled && self.have_mask {
             dilate(&self.mask, &mut self.mask_dil, 6);
         }
-        let mask = if self.opts.cleanup_enabled && self.have_mask { Some((&self.mask[..], &self.mask_dil[..])) } else { None };
-        rectify(src, sw, sh, &corners, fit, w, h, &mut self.rect, mask, (&mut self.out_mask, &mut self.out_keep));
+        let mask = if self.opts.cleanup_enabled && self.have_mask {
+            Some((&self.mask[..], &self.mask_dil[..]))
+        } else {
+            None
+        };
+        rectify(
+            src,
+            sw,
+            sh,
+            &corners,
+            fit,
+            w,
+            h,
+            &mut self.rect,
+            mask,
+            (&mut self.out_mask, &mut self.out_keep),
+        );
         if self.opts.cleanup_enabled {
-            let m = if mask.is_some() { Some((&self.out_mask[..], &self.out_keep[..])) } else { None };
+            let m = if mask.is_some() {
+                Some((&self.out_mask[..], &self.out_keep[..]))
+            } else {
+                None
+            };
             self.clean.run(&self.rect, w, h, fit, m, &mut self.out);
         } else {
             std::mem::swap(&mut self.out, &mut self.rect);
@@ -429,7 +466,11 @@ fn fit_rect(c: &[(f32, f32); 4], w: usize, h: usize) -> (usize, usize, usize, us
     let d = |a: (f32, f32), b: (f32, f32)| ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt();
     let qw = (d(c[0], c[1]) + d(c[3], c[2])) / 2.0;
     let qh = (d(c[0], c[3]) + d(c[1], c[2])) / 2.0;
-    let aspect = if qh > 1.0 { qw / qh } else { w as f32 / h as f32 };
+    let aspect = if qh > 1.0 {
+        qw / qh
+    } else {
+        w as f32 / h as f32
+    };
     let (mut bw, mut bh) = if aspect > w as f32 / h as f32 {
         (w, (w as f32 / aspect).round() as usize)
     } else {
@@ -459,7 +500,16 @@ fn square_to_quad(p: &[(f32, f32); 4]) -> [f32; 8] {
     let den = if den.abs() < 1e-9 { 1e-9 } else { den };
     let g = (sx * dy2 - dx2 * sy) / den;
     let hh = (dx1 * sy - sx * dy1) / den;
-    [x1 - x0 + g * x1, x3 - x0 + hh * x3, x0, y1 - y0 + g * y1, y3 - y0 + hh * y3, y0, g, hh]
+    [
+        x1 - x0 + g * x1,
+        x3 - x0 + hh * x3,
+        x0,
+        y1 - y0 + g * y1,
+        y3 - y0 + hh * y3,
+        y0,
+        g,
+        hh,
+    ]
 }
 
 #[inline]
@@ -517,7 +567,11 @@ fn rectify(
     for y in 0..bh {
         let v = (y as f32 + 0.5) / bh as f32;
         let u0 = 0.5 * du;
-        let (mut nx, mut ny, mut dd) = (m[0] * u0 + m[1] * v + m[2], m[3] * u0 + m[4] * v + m[5], m[6] * u0 + m[7] * v + 1.0);
+        let (mut nx, mut ny, mut dd) = (
+            m[0] * u0 + m[1] * v + m[2],
+            m[3] * u0 + m[4] * v + m[5],
+            m[6] * u0 + m[7] * v + 1.0,
+        );
         let (sx, sy_, sd) = (m[0] * du, m[3] * du, m[6] * du);
         let row = (by + y) * w + bx;
         for x in 0..bw {
@@ -526,7 +580,10 @@ fn rectify(
             oy[row + x] = bilinear(sy, sw, sh, px - 0.5, py - 0.5);
             if let Some((mk, dil)) = mask {
                 // Bilinear between mask cells (no 7 px steps at 720p).
-                let (fx, fy) = ((px * mx - 0.5).clamp(0.0, (MASK - 1) as f32), (py * my - 0.5).clamp(0.0, (MASK - 1) as f32));
+                let (fx, fy) = (
+                    (px * mx - 0.5).clamp(0.0, (MASK - 1) as f32),
+                    (py * my - 0.5).clamp(0.0, (MASK - 1) as f32),
+                );
                 let (ix, iy) = (fx as usize, fy as usize);
                 let (jx, jy) = ((ix + 1).min(MASK - 1), (iy + 1).min(MASK - 1));
                 let (ax, ay) = (fx - ix as f32, fy - iy as f32);
@@ -555,7 +612,11 @@ fn rectify(
     for y in 0..cbh {
         let v = (y as f32 + 0.5) / cbh as f32;
         let u0 = 0.5 * cdu;
-        let (mut nx, mut ny, mut dd) = (m[0] * u0 + m[1] * v + m[2], m[3] * u0 + m[4] * v + m[5], m[6] * u0 + m[7] * v + 1.0);
+        let (mut nx, mut ny, mut dd) = (
+            m[0] * u0 + m[1] * v + m[2],
+            m[3] * u0 + m[4] * v + m[5],
+            m[6] * u0 + m[7] * v + 1.0,
+        );
         let (sx, sy_, sd) = (m[0] * cdu, m[3] * cdu, m[6] * cdu);
         let row = (cby + y) * (w / 2) + cbx;
         for x in 0..cbw {
@@ -584,7 +645,15 @@ struct Cleaner {
 }
 
 impl Cleaner {
-    fn run(&mut self, src: &[u8], w: usize, h: usize, fit: (usize, usize, usize, usize), masks: Option<(&[u8], &[u8])>, out: &mut Vec<u8>) {
+    fn run(
+        &mut self,
+        src: &[u8],
+        w: usize,
+        h: usize,
+        fit: (usize, usize, usize, usize),
+        masks: Option<(&[u8], &[u8])>,
+        out: &mut Vec<u8>,
+    ) {
         let keep = masks.map(|m| m.1);
         let (bx, by, bw, bh) = fit;
         out.resize(src.len(), 0);
@@ -779,7 +848,16 @@ impl Cleaner {
     /// Divide every board pixel by its cell's white (bilinear between
     /// cells): white turns white, ink stays, darker and more saturated.
     #[allow(clippy::too_many_arguments)]
-    fn whiten(&self, sy: &[u8], su: &[u8], sv: &[u8], w: usize, h: usize, fit: (usize, usize, usize, usize), out: &mut [u8]) {
+    fn whiten(
+        &self,
+        sy: &[u8],
+        su: &[u8],
+        sv: &[u8],
+        w: usize,
+        h: usize,
+        fit: (usize, usize, usize, usize),
+        out: &mut [u8],
+    ) {
         let (bx, by, bw, bh) = fit;
         let (gw, gh) = self.grid;
         let cwid = w / 2;
@@ -870,13 +948,16 @@ pub fn detect_quad(src: &[u8], w: usize, h: usize) -> Option<[f32; 8]> {
             let l = (s / (f * f) as u32) as u8;
             ys[y * dw + x] = l;
             hist[l as usize] += 1;
-            let ci = ((y * f + f / 2) / 2).min(h / 2 - 1) * (w / 2) + ((x * f + f / 2) / 2).min(w / 2 - 1);
+            let ci = ((y * f + f / 2) / 2).min(h / 2 - 1) * (w / 2)
+                + ((x * f + f / 2) / 2).min(w / 2 - 1);
             let d = (su[ci] as i32 - 128).abs() + (sv[ci] as i32 - 128).abs();
             cd[y * dw + x] = d.min(255) as u8;
         }
     }
     let t = otsu(&hist, (dw * dh) as u32).max(90);
-    let mut m: Vec<u8> = (0..dw * dh).map(|i| (ys[i] >= t && cd[i] < 48) as u8).collect();
+    let mut m: Vec<u8> = (0..dw * dh)
+        .map(|i| (ys[i] >= t && cd[i] < 48) as u8)
+        .collect();
     // Close: dilate then erode (3 x 3), bridging thin ink strokes.
     m = morph(&m, dw, dh, true);
     m = morph(&m, dw, dh, false);
@@ -898,7 +979,11 @@ pub fn detect_quad(src: &[u8], w: usize, h: usize) -> Option<[f32; 8]> {
         }
     }
     let mean_in = sum_in as f32 / count as f32;
-    let mean_out = if n_out > 0 { sum_out as f32 / n_out as f32 } else { 0.0 };
+    let mean_out = if n_out > 0 {
+        sum_out as f32 / n_out as f32
+    } else {
+        0.0
+    };
     let edge = |f: &dyn Fn(usize) -> usize, n: usize| (0..n).any(|k| label[f(k)]);
     let touches = [
         edge(&|x| x, dw),
@@ -916,7 +1001,9 @@ pub fn detect_quad(src: &[u8], w: usize, h: usize) -> Option<[f32; 8]> {
     let mut pts = Vec::with_capacity(dh * 4);
     for y in 0..dh {
         let row = &label[y * dw..(y + 1) * dw];
-        let Some(x0) = row.iter().position(|&v| v) else { continue };
+        let Some(x0) = row.iter().position(|&v| v) else {
+            continue;
+        };
         let x1 = row.iter().rposition(|&v| v).unwrap();
         for (px, py) in [(x0, y), (x0, y + 1), (x1 + 1, y), (x1 + 1, y + 1)] {
             pts.push((px as f32, py as f32));
@@ -946,11 +1033,15 @@ pub fn detect_quad(src: &[u8], w: usize, h: usize) -> Option<[f32; 8]> {
     }
     // Clockwise on screen (y down), starting top left.
     let mut q = quad;
-    let signed: f32 = (0..4).map(|i| q[i].0 * q[(i + 1) % 4].1 - q[(i + 1) % 4].0 * q[i].1).sum();
+    let signed: f32 = (0..4)
+        .map(|i| q[i].0 * q[(i + 1) % 4].1 - q[(i + 1) % 4].0 * q[i].1)
+        .sum();
     if signed < 0.0 {
         q.reverse();
     }
-    let start = (0..4).min_by(|&a, &b| (q[a].0 + q[a].1).partial_cmp(&(q[b].0 + q[b].1)).unwrap()).unwrap();
+    let start = (0..4)
+        .min_by(|&a, &b| (q[a].0 + q[a].1).partial_cmp(&(q[b].0 + q[b].1)).unwrap())
+        .unwrap();
     let mut out = [0f32; 8];
     for i in 0..4 {
         let p = q[(start + i) % 4];
@@ -961,7 +1052,11 @@ pub fn detect_quad(src: &[u8], w: usize, h: usize) -> Option<[f32; 8]> {
 }
 
 fn otsu(hist: &[u32; 256], total: u32) -> u8 {
-    let sum: f64 = hist.iter().enumerate().map(|(i, &c)| i as f64 * c as f64).sum();
+    let sum: f64 = hist
+        .iter()
+        .enumerate()
+        .map(|(i, &c)| i as f64 * c as f64)
+        .sum();
     let (mut sum_b, mut w_b, mut best, mut best_t) = (0f64, 0f64, 0f64, 128u8);
     for (t, &c) in hist.iter().enumerate() {
         w_b += c as f64;
@@ -1075,9 +1170,15 @@ fn convex_hull(mut p: Vec<(f32, f32)>) -> Vec<(f32, f32)> {
     let mut hull: Vec<(f32, f32)> = Vec::with_capacity(p.len() * 2);
     for pass in 0..2 {
         let start = hull.len();
-        let iter: Box<dyn Iterator<Item = &(f32, f32)>> = if pass == 0 { Box::new(p.iter()) } else { Box::new(p.iter().rev()) };
+        let iter: Box<dyn Iterator<Item = &(f32, f32)>> = if pass == 0 {
+            Box::new(p.iter())
+        } else {
+            Box::new(p.iter().rev())
+        };
         for &q in iter {
-            while hull.len() >= start + 2 && cross(hull[hull.len() - 2], hull[hull.len() - 1], q) <= 0.0 {
+            while hull.len() >= start + 2
+                && cross(hull[hull.len() - 2], hull[hull.len() - 1], q) <= 0.0
+            {
                 hull.pop();
             }
             hull.push(q);
@@ -1104,7 +1205,11 @@ fn convex_hull(mut p: Vec<(f32, f32)>) -> Vec<(f32, f32)> {
 
 fn poly_area(p: &[(f32, f32)]) -> f32 {
     let n = p.len();
-    (0..n).map(|i| p[i].0 * p[(i + 1) % n].1 - p[(i + 1) % n].0 * p[i].1).sum::<f32>().abs() / 2.0
+    (0..n)
+        .map(|i| p[i].0 * p[(i + 1) % n].1 - p[(i + 1) % n].0 * p[i].1)
+        .sum::<f32>()
+        .abs()
+        / 2.0
 }
 
 /// The largest quadrilateral with corners on the hull.
@@ -1163,14 +1268,16 @@ mod tests {
     /// carrying dark strokes, lit unevenly.
     fn scene(w: usize, h: usize, quad: [(f32, f32); 4]) -> Vec<u8> {
         let mut f = vec![128u8; w * h * 3 / 2];
-        let inside = |x: f32, y: f32| (0..4).all(|i| cross(quad[i], quad[(i + 1) % 4], (x, y)) >= 0.0);
+        let inside =
+            |x: f32, y: f32| (0..4).all(|i| cross(quad[i], quad[(i + 1) % 4], (x, y)) >= 0.0);
         for y in 0..h {
             for x in 0..w {
                 let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
                 let v = if inside(px, py) {
                     // Brighter on the left (a window), strokes as bands.
                     let light = 210.0 - 40.0 * (x as f32 / w as f32);
-                    let stroke = ((x / 9) % 7 == 0 && (y / 30) % 3 == 1) || ((y / 5) % 13 == 0 && x % 100 < 60);
+                    let stroke = ((x / 9) % 7 == 0 && (y / 30) % 3 == 1)
+                        || ((y / 5) % 13 == 0 && x % 100 < 60);
                     if stroke { light * 0.35 } else { light }
                 } else {
                     95.0 + 10.0 * ((x * 7 + y * 3) % 5) as f32 / 5.0
@@ -1198,7 +1305,19 @@ mod tests {
         let q = [0.1, 0.2, 0.8, 0.15, 0.85, 0.9, 0.12, 0.8];
         let r = rotate_quad(&q);
         // Teams: [1 − q7, q6, 1 − q1, q0, 1 − q3, q2, 1 − q5, q4].
-        assert_eq!(r, [1.0 - 0.8, 0.12, 1.0 - 0.2, 0.1, 1.0 - 0.15, 0.8, 1.0 - 0.9, 0.85]);
+        assert_eq!(
+            r,
+            [
+                1.0 - 0.8,
+                0.12,
+                1.0 - 0.2,
+                0.1,
+                1.0 - 0.15,
+                0.8,
+                1.0 - 0.9,
+                0.85
+            ]
+        );
         // Four turns are no turn.
         let mut s = q;
         for _ in 0..4 {
@@ -1246,8 +1365,15 @@ mod tests {
         // A plain wall with darker things in front of it isn't a board.
         for y in 0..h {
             for x in 0..w {
-                let thing = (60..200).contains(&x) && (90..260).contains(&y) || (450..590).contains(&x) && (130..300).contains(&y);
-                f[y * w + x] = if y > 315 { 70 } else if thing { 60 } else { 118 };
+                let thing = (60..200).contains(&x) && (90..260).contains(&y)
+                    || (450..590).contains(&x) && (130..300).contains(&y);
+                f[y * w + x] = if y > 315 {
+                    70
+                } else if thing {
+                    60
+                } else {
+                    118
+                };
             }
         }
         assert!(detect_quad(&f, w, h).is_none());
@@ -1368,7 +1494,10 @@ mod tests {
         let over_ink = out[18 * w + 32] as i32;
         let over_white = out[10 * w + 32] as i32;
         assert!((over_ink - (ink as i32 + 120) / 2).abs() < 6, "{over_ink}");
-        assert!((over_white - (white as i32 + 120) / 2).abs() < 6, "{over_white}");
+        assert!(
+            (over_white - (white as i32 + 120) / 2).abs() < 6,
+            "{over_white}"
+        );
         // Beside them (inside the grown mask) the board as it was.
         assert_eq!(out[18 * w + 22], ink);
     }
@@ -1422,21 +1551,34 @@ mod tests {
         let truth = [(110.0, 60.0), (540.0, 80.0), (520.0, 310.0), (95.0, 290.0)];
         let f = scene(w, h, truth);
         let mut p = Processor::new();
-        p.apply(Options { cleanup_enabled: false, ..Options::defaults(Kind::Document) });
+        p.apply(Options {
+            cleanup_enabled: false,
+            ..Options::defaults(Kind::Document)
+        });
         for _ in 0..60 {
             p.process(w as u32, h as u32, &f);
         }
         let st = p.state();
         assert!(st.quad_stable);
         // Teams' Share: detection off, the stable quad kept.
-        p.apply(Options { quad_enabled: false, cleanup_enabled: false, zoom_enabled: true, normalized_quad: st.normalized_quad });
+        p.apply(Options {
+            quad_enabled: false,
+            cleanup_enabled: false,
+            zoom_enabled: true,
+            normalized_quad: st.normalized_quad,
+        });
         let grey = vec![100u8; w * h * 3 / 2];
         p.process(w as u32, h as u32, &grey);
         assert_eq!(p.state().normalized_quad, st.normalized_quad);
         assert!(!p.state().quad_enabled);
         // Scan Again: zeros, detection on again.
         p.apply(Options::off());
-        p.apply(Options { quad_enabled: true, cleanup_enabled: false, zoom_enabled: true, normalized_quad: NO_QUAD });
+        p.apply(Options {
+            quad_enabled: true,
+            cleanup_enabled: false,
+            zoom_enabled: true,
+            normalized_quad: NO_QUAD,
+        });
         assert_eq!(p.state().normalized_quad, NO_QUAD);
         assert!(!p.state().quad_stable);
     }
@@ -1447,7 +1589,12 @@ mod tests {
         let mut f = vec![128u8; w * h * 3 / 2];
         f[0] = 250; // top left luma
         let mut p = Processor::new();
-        p.apply(Options { quad_enabled: false, cleanup_enabled: false, zoom_enabled: true, normalized_quad: [0.1, 0.1, 0.9, 0.1, 0.9, 0.9, 0.1, 0.9] });
+        p.apply(Options {
+            quad_enabled: false,
+            cleanup_enabled: false,
+            zoom_enabled: true,
+            normalized_quad: [0.1, 0.1, 0.9, 0.1, 0.9, 0.9, 0.1, 0.9],
+        });
         p.process(w as u32, h as u32, &f);
         assert_eq!(p.state().frame_size, (64, 36));
         assert_eq!(p.rotate(), 90);

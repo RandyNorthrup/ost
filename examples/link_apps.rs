@@ -26,15 +26,23 @@ async fn main() -> anyhow::Result<()> {
             println!("match: {:?}", link_unfurl::app_for(&client, &arg).await?);
             return Ok(());
         }
-        match cat.iter().find(|d| d.get("id").and_then(|v| v.as_str()) == Some(arg.as_str())) {
+        match cat
+            .iter()
+            .find(|d| d.get("id").and_then(|v| v.as_str()) == Some(arg.as_str()))
+        {
             Some(d) => println!("{}", serde_json::to_string_pretty(d)?),
-            None => println!("{}", serde_json::to_string_pretty(&app_details::definition(&client, &arg).await?)?),
+            None => println!(
+                "{}",
+                serde_json::to_string_pretty(&app_details::definition(&client, &arg).await?)?
+            ),
         }
         return Ok(());
     }
     println!("catalog {} apps, {} entitlements", cat.len(), ents.len());
     for d in cat.iter() {
-        let Some((bot, domains, anon)) = link_unfurl::link_handler(d) else { continue };
+        let Some((bot, domains, anon)) = link_unfurl::link_handler(d) else {
+            continue;
+        };
         let id = d.get("id").and_then(|v| v.as_str()).unwrap_or_default();
         println!(
             "{id} {:?} bot={bot} anon={anon} domains={domains:?} ent={:?}",
@@ -43,8 +51,17 @@ async fn main() -> anyhow::Result<()> {
         );
     }
     for (id, state) in ents.iter() {
-        let name = cat.iter().find(|d| d.get("id").and_then(|v| v.as_str()).map(str::to_lowercase).as_deref() == Some(id.as_str()))
-            .and_then(|d| d.get("name").and_then(|v| v.as_str()).map(str::to_string)).unwrap_or_default();
+        let name = cat
+            .iter()
+            .find(|d| {
+                d.get("id")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_lowercase)
+                    .as_deref()
+                    == Some(id.as_str())
+            })
+            .and_then(|d| d.get("name").and_then(|v| v.as_str()).map(str::to_string))
+            .unwrap_or_default();
         println!("ENT {id} {state} {name:?}");
     }
     Ok(())

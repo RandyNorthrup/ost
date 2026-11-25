@@ -418,7 +418,11 @@ impl Sampler {
         };
         // OST's send-side estimate (transport-wide feedback on what we
         // send), as Teams' send limit.
-        put("network-sent-bw-estimate", mbps(super::send_bwe::current_bps() as f64), true);
+        put(
+            "network-sent-bw-estimate",
+            mbps(super::send_bwe::current_bps() as f64),
+            true,
+        );
         put(
             "network-received-bw-estimate",
             mbps(receive_estimate as f64),
@@ -629,7 +633,10 @@ pub fn ms(v: f64) -> String {
     if v == 0.0 || v.is_nan() {
         String::new()
     } else {
-        crate::i18n::fill(&crate::i18n::tr_id("%1 ms", "calling:kac1ob4uw"), &[&format!("{v:.2}")])
+        crate::i18n::fill(
+            &crate::i18n::tr_id("%1 ms", "calling:kac1ob4uw"),
+            &[&format!("{v:.2}")],
+        )
     }
 }
 
@@ -644,7 +651,10 @@ pub fn kbps(bits: f64) -> String {
     if b == 0.0 {
         String::new()
     } else {
-        crate::i18n::fill(&crate::i18n::tr_id("%1 Kbps", "calling:k390feyvg"), &[&trimmed(b / 1000.0)])
+        crate::i18n::fill(
+            &crate::i18n::tr_id("%1 Kbps", "calling:k390feyvg"),
+            &[&trimmed(b / 1000.0)],
+        )
     }
 }
 
@@ -654,7 +664,10 @@ pub fn mbps(bits: f64) -> String {
     if b == 0.0 {
         String::new()
     } else {
-        crate::i18n::fill(&crate::i18n::tr_id("%1 Mbps", "calling:k390i3c5e"), &[&trimmed(b / 1e6)])
+        crate::i18n::fill(
+            &crate::i18n::tr_id("%1 Mbps", "calling:k390i3c5e"),
+            &[&trimmed(b / 1e6)],
+        )
     }
 }
 
@@ -663,7 +676,10 @@ pub fn fps_text(v: f64) -> String {
     if v == 0.0 || v.is_nan() {
         String::new()
     } else {
-        crate::i18n::fill(&crate::i18n::tr_id("%1 fps", "calling:k6vnwbmb7"), &[&format!("{v:.2}")])
+        crate::i18n::fill(
+            &crate::i18n::tr_id("%1 fps", "calling:k6vnwbmb7"),
+            &[&format!("{v:.2}")],
+        )
     }
 }
 
@@ -672,7 +688,10 @@ pub fn packets_text(n: u64) -> String {
     if n == 0 {
         String::new()
     } else {
-        crate::i18n::fill(&crate::i18n::tr_id("%1 packets", "calling:k9hhqqyk5"), &[&n.to_string()])
+        crate::i18n::fill(
+            &crate::i18n::tr_id("%1 packets", "calling:k9hhqqyk5"),
+            &[&n.to_string()],
+        )
     }
 }
 

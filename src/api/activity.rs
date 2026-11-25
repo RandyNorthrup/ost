@@ -103,9 +103,16 @@ impl ThreadFacts {
     /// `properties`. A channel's name is its topic; a team's first
     /// channel's is `topicThreadTopic`, else "General".
     pub fn from_props(p: &serde_json::Value) -> Self {
-        let s = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
-        let map: std::collections::HashMap<String, serde_json::Value> =
-            p.as_object().map(|o| o.iter().map(|(k, v)| (k.clone(), v.clone())).collect()).unwrap_or_default();
+        let s = |k: &str| {
+            p.get(k)
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
+        let map: std::collections::HashMap<String, serde_json::Value> = p
+            .as_object()
+            .map(|o| o.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+            .unwrap_or_default();
         let topic = s("topic");
         let space = matches!(s("threadType").as_str(), "space" | "topic");
         let channel = if !space {
@@ -117,14 +124,25 @@ impl ThreadFacts {
         } else {
             "General".to_string()
         };
-        Self { team: s("spaceThreadTopic"), channel, backroom: super::chat::backroom_kind(&map).to_string(), topic }
+        Self {
+            team: s("spaceThreadTopic"),
+            channel,
+            backroom: super::chat::backroom_kind(&map).to_string(),
+            topic,
+        }
     }
 }
 
 /// A thread's facts, asked once per thread and session.
 pub async fn thread_facts(client: &TeamsClient, id: &str) -> Option<ThreadFacts> {
-    static KNOWN: std::sync::Mutex<Option<std::collections::HashMap<String, Option<ThreadFacts>>>> = std::sync::Mutex::new(None);
-    if let Some(k) = KNOWN.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|m| m.get(id).cloned()) {
+    static KNOWN: std::sync::Mutex<Option<std::collections::HashMap<String, Option<ThreadFacts>>>> =
+        std::sync::Mutex::new(None);
+    if let Some(k) = KNOWN
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .and_then(|m| m.get(id).cloned())
+    {
         return k;
     }
     let base = client.chat_service_url();
@@ -137,7 +155,10 @@ pub async fn thread_facts(client: &TeamsClient, id: &str) -> Option<ThreadFacts>
             Err(e) => Err(e.to_string()),
         }
     };
-    let conv = get(format!("{base}/v1/users/ME/conversations/{id}?view=msnp24Equivalent")).await;
+    let conv = get(format!(
+        "{base}/v1/users/ME/conversations/{id}?view=msnp24Equivalent"
+    ))
+    .await;
     let thread = get(format!("{base}/v1/threads/{id}?view=msnp24Equivalent")).await;
     let gone = |r: &Result<Option<serde_json::Value>, String>| matches!(r, Err(e) if e.contains("HTTP 404") || e.contains("HTTP 403"));
     let facts = match (&conv, &thread) {
@@ -172,18 +193,40 @@ pub async fn thread_facts(client: &TeamsClient, id: &str) -> Option<ThreadFacts>
     if let Err(e) = &thread
         && !gone(&thread)
     {
-        tracing::info!("activity: thread {} not read: {}", &id[..id.len().min(24)], e.chars().take(80).collect::<String>());
+        tracing::info!(
+            "activity: thread {} not read: {}",
+            &id[..id.len().min(24)],
+            e.chars().take(80).collect::<String>()
+        );
         return facts;
     }
-    KNOWN.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default).insert(id.to_string(), facts.clone());
+    KNOWN
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(Default::default)
+        .insert(id.to_string(), facts.clone());
     facts
 }
 
 /// Apps' definitions, asked once per app and session.
-async fn app_definitions(client: &TeamsClient, ids: &[String]) -> std::collections::HashMap<String, serde_json::Value> {
-    static KNOWN: std::sync::Mutex<Option<std::collections::HashMap<String, serde_json::Value>>> = std::sync::Mutex::new(None);
-    let known = |id: &str| KNOWN.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|m| m.get(id).cloned());
-    let missing: Vec<String> = ids.iter().filter(|i| known(&i.to_lowercase()).is_none()).cloned().collect();
+async fn app_definitions(
+    client: &TeamsClient,
+    ids: &[String],
+) -> std::collections::HashMap<String, serde_json::Value> {
+    static KNOWN: std::sync::Mutex<Option<std::collections::HashMap<String, serde_json::Value>>> =
+        std::sync::Mutex::new(None);
+    let known = |id: &str| {
+        KNOWN
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .and_then(|m| m.get(id).cloned())
+    };
+    let missing: Vec<String> = ids
+        .iter()
+        .filter(|i| known(&i.to_lowercase()).is_none())
+        .cloned()
+        .collect();
     if !missing.is_empty() {
         match super::app_details::definitions(client, &missing).await {
             Ok(defs) => {
@@ -198,7 +241,9 @@ async fn app_definitions(client: &TeamsClient, ids: &[String]) -> std::collectio
             Err(e) => tracing::warn!("activity: app definitions: {e}"),
         }
     }
-    ids.iter().filter_map(|i| known(&i.to_lowercase()).map(|d| (i.to_lowercase(), d))).collect()
+    ids.iter()
+        .filter_map(|i| known(&i.to_lowercase()).map(|d| (i.to_lowercase(), d)))
+        .collect()
 }
 
 /// The second pass: apps' activities worded from their manifests (those
@@ -214,7 +259,11 @@ async fn resolve(client: &TeamsClient, items: &mut Vec<ActivityItem>) {
                 app_ids.push(id.clone());
             }
         }
-        let thread = if p.app_subtype.is_some() { Some(&it.thread_id) } else { p.channel_thread.as_ref() };
+        let thread = if p.app_subtype.is_some() {
+            Some(&it.thread_id)
+        } else {
+            p.channel_thread.as_ref()
+        };
         if let Some(t) = thread.filter(|t| !t.is_empty() && !threads.contains(t)) {
             threads.push(t.clone());
         }
@@ -224,16 +273,21 @@ async fn resolve(client: &TeamsClient, items: &mut Vec<ActivityItem>) {
     }
     let defs = app_definitions(client, &app_ids).await;
     // (four at a time: the chat service throttles a burst)
-    let mut facts: std::collections::HashMap<String, Option<ThreadFacts>> = std::collections::HashMap::new();
+    let mut facts: std::collections::HashMap<String, Option<ThreadFacts>> =
+        std::collections::HashMap::new();
     for chunk in threads.chunks(4) {
         let got = futures::future::join_all(chunk.iter().map(|t| thread_facts(client, t))).await;
         facts.extend(chunk.iter().cloned().zip(got));
     }
     items.retain_mut(|it| {
-        let Some(p) = it.pending.take() else { return true };
+        let Some(p) = it.pending.take() else {
+            return true;
+        };
         let thread = facts.get(&it.thread_id).cloned().flatten();
         if let Some(sub) = &p.app_subtype {
-            let Some(def) = defs.get(&it.app_id.to_lowercase()) else { return false };
+            let Some(def) = defs.get(&it.app_id.to_lowercase()) else {
+                return false;
+            };
             // (a chat it names that can't be read: Teams drops it too)
             if !it.thread_id.is_empty() && facts.get(&it.thread_id).is_some_and(|f| f.is_none()) {
                 return false;
@@ -245,7 +299,12 @@ async fn resolve(client: &TeamsClient, items: &mut Vec<ActivityItem>) {
             if it.icon.is_empty() {
                 it.icon = app_icon(def);
             }
-            let loc = |k: &str| p.location.get(k).and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+            let loc = |k: &str| {
+                p.location
+                    .get(k)
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+            };
             if let Some(c) = loc("Custom") {
                 it.context = c.to_string();
             } else if loc("GroupChatId").is_some() {
@@ -271,19 +330,30 @@ async fn resolve(client: &TeamsClient, items: &mut Vec<ActivityItem>) {
 /// An app's icon (its largeImageUrl; one on Teams' own client path, like
 /// the Channel Agent's, from the assets' CDN).
 fn app_icon(def: &serde_json::Value) -> String {
-    super::tabs::https_only(&super::app_details::evergreen_asset_url(def["largeImageUrl"].as_str().unwrap_or_default()))
+    super::tabs::https_only(&super::app_details::evergreen_asset_url(
+        def["largeImageUrl"].as_str().unwrap_or_default(),
+    ))
 }
 
 /// An app's activity's headline (Teams' getFirstLineReasonString and
 /// doTitleTranslation): its type's templateText, each `{name}` replaced
 /// by that template parameter, then `{actor}` by who did it. `None` when
 /// the app has no such type or a parameter is missing (Teams' isMessageValid).
-pub fn graph_text(def: &serde_json::Value, subtype: &str, params: &serde_json::Value, actor: &str) -> Option<String> {
+pub fn graph_text(
+    def: &serde_json::Value,
+    subtype: &str,
+    params: &serde_json::Value,
+    actor: &str,
+) -> Option<String> {
     let template = def
         .pointer("/activities/activityItems")?
         .as_array()?
         .iter()
-        .find(|i| i["type"].as_str().is_some_and(|t| t.eq_ignore_ascii_case(subtype)))?
+        .find(|i| {
+            i["type"]
+                .as_str()
+                .is_some_and(|t| t.eq_ignore_ascii_case(subtype))
+        })?
         .get("templateText")
         .and_then(|t| t.as_str())
         .unwrap_or_default();
@@ -307,7 +377,10 @@ fn template_names(t: &str) -> Vec<String> {
     let mut rest = t;
     while let Some(i) = rest.find('{') {
         let after = &rest[i + 1..];
-        let word: String = after.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+        let word: String = after
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
         if !word.is_empty() && after[word.len()..].starts_with('}') {
             out.push(word.clone());
             rest = &after[word.len() + 1..];
@@ -326,8 +399,14 @@ fn chat_place(f: &ThreadFacts) -> String {
         return String::new();
     }
     match f.backroom.as_str() {
-        "event" => fill(&tr_id("Event Group Chat: %1", "activity:k2gijpv1u"), &[&f.topic]),
-        "meeting" => fill(&tr_id("Planning Group: %1", "activity:kav8nwl3t"), &[&f.topic]),
+        "event" => fill(
+            &tr_id("Event Group Chat: %1", "activity:k2gijpv1u"),
+            &[&f.topic],
+        ),
+        "meeting" => fill(
+            &tr_id("Planning Group: %1", "activity:kav8nwl3t"),
+            &[&f.topic],
+        ),
         _ => f.topic.clone(),
     }
 }
@@ -338,12 +417,21 @@ fn chat_place(f: &ThreadFacts) -> String {
 fn channel_place(f: Option<&ThreadFacts>, team_hint: &str) -> (String, String) {
     use crate::i18n::tr_id;
     let Some(f) = f else {
-        return (tr_id("Unavailable conversation", "activity:ktczwse8"), String::new());
+        return (
+            tr_id("Unavailable conversation", "activity:ktczwse8"),
+            String::new(),
+        );
     };
     // (not read this time: the team as the activity names it)
-    let team = Some(f.team.clone()).filter(|t| !t.is_empty()).unwrap_or_else(|| team_hint.to_string());
+    let team = Some(f.team.clone())
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| team_hint.to_string());
     let channel = f.channel.clone();
-    let channel = if channel == "General" { tr_id("General", "activity:k1y1nokmp") } else { channel };
+    let channel = if channel == "General" {
+        tr_id("General", "activity:k1y1nokmp")
+    } else {
+        channel
+    };
     (team, channel)
 }
 
@@ -394,7 +482,9 @@ fn item_of(m: &serde_json::Value) -> Option<ActivityItem> {
     // `activity` (and its `activityContext`, and some of that's values)
     // is JSON text, sometimes already an object.
     let json_of = |v: Option<&serde_json::Value>| match v {
-        Some(serde_json::Value::String(s)) => serde_json::from_str::<serde_json::Value>(s).unwrap_or_default(),
+        Some(serde_json::Value::String(s)) => {
+            serde_json::from_str::<serde_json::Value>(s).unwrap_or_default()
+        }
         Some(v) => v.clone(),
         None => serde_json::Value::Null,
     };
@@ -423,9 +513,17 @@ fn item_of(m: &serde_json::Value) -> Option<ActivityItem> {
     if graph {
         // Who it's attributed to stands for the app (Teams' getProfiles).
         let by = json_of(ctx.get("attributedToActor"));
-        if let Some(id) = by.get("Id").and_then(|v| v.as_str()).filter(|v| !v.is_empty()) {
+        if let Some(id) = by
+            .get("Id")
+            .and_then(|v| v.as_str())
+            .filter(|v| !v.is_empty())
+        {
             actor_mri = id.to_string();
-            actor = by.get("DisplayName").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            actor = by
+                .get("DisplayName")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
         }
         // Teams drops an app's activity without a valid link.
         if reqwest::Url::parse(&s("customTapAction")).is_err() {
@@ -445,7 +543,9 @@ fn item_of(m: &serde_json::Value) -> Option<ActivityItem> {
     let reply_chain = s("sourceReplyChainId");
     // A reply in a threads-layout conversation (Teams' J2 / eFe: a
     // threaded conversation and not the thread's first post).
-    let in_thread = c("chatModalityType") == "Conversational" && !reply_chain.is_empty() && reply_chain != message_id;
+    let in_thread = c("chatModalityType") == "Conversational"
+        && !reply_chain.is_empty()
+        && reply_chain != message_id;
     let channel = matches!(thread_type.as_str(), "space" | "topic");
     use crate::i18n::{fill, tr_id};
     let who = if actor.is_empty() {
@@ -458,9 +558,15 @@ fn item_of(m: &serde_json::Value) -> Option<ActivityItem> {
         ("teamMembershipChange", "addedToTeam") => (
             "addedToTeam",
             if is_app || actor.is_empty() {
-                fill(&tr_id("A team owner added you to %1", "activity:kblxnh5e8"), &[&topic])
+                fill(
+                    &tr_id("A team owner added you to %1", "activity:kblxnh5e8"),
+                    &[&topic],
+                )
             } else {
-                fill(&tr_id("%1 added you to %2", "activity:kd00tkje3"), &[&who, &topic])
+                fill(
+                    &tr_id("%1 added you to %2", "activity:kd00tkje3"),
+                    &[&who, &topic],
+                )
             },
             String::new(),
         ),
@@ -468,15 +574,27 @@ fn item_of(m: &serde_json::Value) -> Option<ActivityItem> {
         // TeamShareTeamOwnerNotifyTitle), in the team's channel.
         ("teamMembershipChange", "teamShareTeamOwnerNotify") => (
             "teamShare",
-            fill(&tr_id("%1 shared a channel with your team", "activity:kaa2vlwgg"), &[&who]),
+            fill(
+                &tr_id("%1 shared a channel with your team", "activity:kaa2vlwgg"),
+                &[&who],
+            ),
             in_where(&thread_type, &topic),
         ),
         ("reactionInChat" | "reaction", _) => (
             "reaction",
             if in_thread {
-                fill(&tr_id("%1 reacted to your message in a thread", "activity:kd5bl809d"), &[&who])
+                fill(
+                    &tr_id(
+                        "%1 reacted to your message in a thread",
+                        "activity:kd5bl809d",
+                    ),
+                    &[&who],
+                )
             } else {
-                fill(&tr_id("%1 reacted to your message", "activity:ku1d8rgk"), &[&who])
+                fill(
+                    &tr_id("%1 reacted to your message", "activity:ku1d8rgk"),
+                    &[&who],
+                )
             },
             in_where(&thread_type, &topic),
         ),
@@ -485,13 +603,19 @@ fn item_of(m: &serde_json::Value) -> Option<ActivityItem> {
         // Tag mentions filter shows it).
         ("mention", "tag") => (
             "tagMention",
-            fill(&tr_id("%1 mentioned %2", "activity:k20ny01cj"), &[&who, &c("tagname")]),
+            fill(
+                &tr_id("%1 mentioned %2", "activity:k20ny01cj"),
+                &[&who, &c("tagname")],
+            ),
             in_where(&thread_type, &topic),
         ),
         ("mention" | "mentionInChat", _) => (
             "mention",
             if in_thread {
-                fill(&tr_id("%1 mentioned you in a thread", "activity:k4748rov2"), &[&who])
+                fill(
+                    &tr_id("%1 mentioned you in a thread", "activity:k4748rov2"),
+                    &[&who],
+                )
             } else {
                 fill(&tr_id("%1 mentioned you", "activity:k75li603v"), &[&who])
             },
@@ -507,7 +631,11 @@ fn item_of(m: &serde_json::Value) -> Option<ActivityItem> {
             fill(&tr_id("Missed call from %1", "activity:kdp1gq3h3"), &[&who]),
             tr_id("OST call", "activity:kcgixikhw"),
         ),
-        ("call", "voicemail") => ("voicemail", fill(&tr_id("Voicemail from %1", "activity:k8rphovyq"), &[&who]), String::new()),
+        ("call", "voicemail") => (
+            "voicemail",
+            fill(&tr_id("Voicemail from %1", "activity:k8rphovyq"), &[&who]),
+            String::new(),
+        ),
         _ => {
             let k = if kind_raw.is_empty() {
                 "activity"
@@ -522,7 +650,12 @@ fn item_of(m: &serde_json::Value) -> Option<ActivityItem> {
         }
     };
     // A channel's place is its team and channel (read from the thread).
-    if channel && matches!(kind, "mention" | "tagMention" | "reaction" | "reply" | "teamShare") {
+    if channel
+        && matches!(
+            kind,
+            "mention" | "tagMention" | "reaction" | "reply" | "teamShare"
+        )
+    {
         pending.channel_thread = Some(s("sourceThreadId"));
     }
     // `isread` is a JSON boolean until the item is opened, then "true".
@@ -565,10 +698,26 @@ fn item_of(m: &serde_json::Value) -> Option<ActivityItem> {
         } else {
             String::new()
         },
-        reaction: if kind == "reaction" { super::emoticons::client_key(&sub).to_string() } else { String::new() },
-        app_id: if graph { c("teamsAppId") } else { String::new() },
-        icon: if graph { super::tabs::https_only(&super::app_details::evergreen_asset_url(&c("iconUrl"))) } else { String::new() },
-        link: if graph { s("customTapAction") } else { String::new() },
+        reaction: if kind == "reaction" {
+            super::emoticons::client_key(&sub).to_string()
+        } else {
+            String::new()
+        },
+        app_id: if graph {
+            c("teamsAppId")
+        } else {
+            String::new()
+        },
+        icon: if graph {
+            super::tabs::https_only(&super::app_details::evergreen_asset_url(&c("iconUrl")))
+        } else {
+            String::new()
+        },
+        link: if graph {
+            s("customTapAction")
+        } else {
+            String::new()
+        },
         pending: needs_more.then_some(pending),
     })
 }
@@ -649,17 +798,67 @@ mod tests {
         let qna = serde_json::json!({"activities": {"activityItems": [
             {"type": "teamsQnAEnabledForMeeting", "templateText": "Q&A is enabled for this event. Ask your questions!"},
             {"type": "newTeamsQnAQuestionPosted", "templateText": "{actor} {actors_count}asked a question"}]}});
-        assert_eq!(graph_text(&qna, "teamsQnAEnabledForMeeting", &serde_json::json!({}), "Q&A").as_deref(), Some("Q&A is enabled for this event. Ask your questions!"));
+        assert_eq!(
+            graph_text(
+                &qna,
+                "teamsQnAEnabledForMeeting",
+                &serde_json::json!({}),
+                "Q&A"
+            )
+            .as_deref(),
+            Some("Q&A is enabled for this event. Ask your questions!")
+        );
         // A parameter the template needs and the activity lacks: not shown.
-        assert_eq!(graph_text(&qna, "newTeamsQnAQuestionPosted", &serde_json::json!({}), "A"), None);
-        assert_eq!(graph_text(&qna, "newTeamsQnAQuestionPosted", &serde_json::json!({"actors_count": ""}), "Ann").as_deref(), Some("Ann asked a question"));
-        assert_eq!(graph_text(&qna, "unknown", &serde_json::json!({}), "A"), None);
+        assert_eq!(
+            graph_text(
+                &qna,
+                "newTeamsQnAQuestionPosted",
+                &serde_json::json!({}),
+                "A"
+            ),
+            None
+        );
+        assert_eq!(
+            graph_text(
+                &qna,
+                "newTeamsQnAQuestionPosted",
+                &serde_json::json!({"actors_count": ""}),
+                "Ann"
+            )
+            .as_deref(),
+            Some("Ann asked a question")
+        );
+        assert_eq!(
+            graph_text(&qna, "unknown", &serde_json::json!({}), "A"),
+            None
+        );
         // The type matches whatever its case (Audio Recap's "RecapPodcastReady").
         let recap = serde_json::json!({"activities": {"activityItems": [{"type": "RecapPodcastReady", "templateText": "{title}"}]}});
-        assert_eq!(graph_text(&recap, "recapPodcastReady", &serde_json::json!({"title": "Audio recap ready: X"}), "Audio Recap").as_deref(), Some("Audio recap ready: X"));
+        assert_eq!(
+            graph_text(
+                &recap,
+                "recapPodcastReady",
+                &serde_json::json!({"title": "Audio recap ready: X"}),
+                "Audio Recap"
+            )
+            .as_deref(),
+            Some("Audio recap ready: X")
+        );
         let cal = serde_json::json!({"activities": {"activityItems": [{"type": "privateMeetingUpdated", "templateText": "{actor} updated"}]}});
-        assert_eq!(graph_text(&cal, "privateMeetingUpdated", &serde_json::json!({}), "OST Test 1").as_deref(), Some("OST Test 1 updated"));
-        assert_eq!(template_names("Recap ready: {subject} {x y} {a_b}"), ["subject", "a_b"]);
+        assert_eq!(
+            graph_text(
+                &cal,
+                "privateMeetingUpdated",
+                &serde_json::json!({}),
+                "OST Test 1"
+            )
+            .as_deref(),
+            Some("OST Test 1 updated")
+        );
+        assert_eq!(
+            template_names("Recap ready: {subject} {x y} {a_b}"),
+            ["subject", "a_b"]
+        );
 
         let feed = serde_json::json!({ "messages": [
             msg("5", serde_json::json!({"activityType":"msGraph","activitySubtype":"recapIsReadyV2",
@@ -673,10 +872,22 @@ mod tests {
         ]});
         let items = parse_feed(&feed.to_string());
         assert_eq!(items.len(), 1);
-        assert_eq!((items[0].kind.as_str(), items[0].app_id.as_str(), items[0].actor_name.as_str()), ("app", "981bbfd0-5eb8-4393-8158-bfff69d2d6b5", "Ann"));
+        assert_eq!(
+            (
+                items[0].kind.as_str(),
+                items[0].app_id.as_str(),
+                items[0].actor_name.as_str()
+            ),
+            ("app", "981bbfd0-5eb8-4393-8158-bfff69d2d6b5", "Ann")
+        );
         let p = items[0].pending.as_ref().unwrap();
         assert_eq!(p.params["subject"], "OST TEST 73 agenda");
-        assert!(p.location["Custom"].as_str().unwrap().starts_with("<DateTimeRange>"));
+        assert!(
+            p.location["Custom"]
+                .as_str()
+                .unwrap()
+                .starts_with("<DateTimeRange>")
+        );
     }
 
     /// A bot's mention in a threads-layout channel (ost-test1's Channel
@@ -691,24 +902,50 @@ mod tests {
                 "sourceThreadTopic":"OST TEST 206 agent I","activityContext":{"chatModalityType":"Conversational"}}), true),
         ]});
         let items = parse_feed(&feed.to_string());
-        assert_eq!(items[0].title, "OST TEST channel Agent mentioned you in a thread");
+        assert_eq!(
+            items[0].title,
+            "OST TEST channel Agent mentioned you in a thread"
+        );
         assert_eq!(items[0].message_id, "1795382871609");
         let p = items[0].pending.as_ref().unwrap();
-        assert_eq!((p.channel_thread.as_deref(), p.source_app.as_str()), (Some("19:M@thread.tacv2"), "3372a6f1"));
+        assert_eq!(
+            (p.channel_thread.as_deref(), p.source_app.as_str()),
+            (Some("19:M@thread.tacv2"), "3372a6f1")
+        );
 
         // A team's first channel is named by topicThreadTopic.
-        let f = ThreadFacts::from_props(&serde_json::json!({"threadType":"space","spaceThreadTopic":"OST TEST 0195 teams team","topicThreadTopic":"OST TEST channel"}));
-        assert_eq!(channel_place(Some(&f), ""), ("OST TEST 0195 teams team".to_string(), "OST TEST channel".to_string()));
-        let g = ThreadFacts::from_props(&serde_json::json!({"threadType":"space","spaceThreadTopic":"T"}));
+        let f = ThreadFacts::from_props(
+            &serde_json::json!({"threadType":"space","spaceThreadTopic":"OST TEST 0195 teams team","topicThreadTopic":"OST TEST channel"}),
+        );
+        assert_eq!(
+            channel_place(Some(&f), ""),
+            (
+                "OST TEST 0195 teams team".to_string(),
+                "OST TEST channel".to_string()
+            )
+        );
+        let g = ThreadFacts::from_props(
+            &serde_json::json!({"threadType":"space","spaceThreadTopic":"T"}),
+        );
         assert_eq!(channel_place(Some(&g), "").1, "General");
         assert_eq!(channel_place(None, "T").0, "Unavailable conversation");
         // Meeting chats by their topic; an event's or meeting's backroom
         // chat with Teams' prefix.
-        let m = ThreadFacts::from_props(&serde_json::json!({"threadType":"meeting","topic":"OST TEST 212 recap long"}));
+        let m = ThreadFacts::from_props(
+            &serde_json::json!({"threadType":"meeting","topic":"OST TEST 212 recap long"}),
+        );
         assert_eq!(chat_place(&m), "OST TEST 212 recap long");
-        let ev = ThreadFacts { topic: "OST TEST 217 town hall".into(), backroom: "event".into(), ..Default::default() };
+        let ev = ThreadFacts {
+            topic: "OST TEST 217 town hall".into(),
+            backroom: "event".into(),
+            ..Default::default()
+        };
         assert_eq!(chat_place(&ev), "Event Group Chat: OST TEST 217 town hall");
-        let pl = ThreadFacts { topic: "X".into(), backroom: "meeting".into(), ..Default::default() };
+        let pl = ThreadFacts {
+            topic: "X".into(),
+            backroom: "meeting".into(),
+            ..Default::default()
+        };
         assert_eq!(chat_place(&pl), "Planning Group: X");
     }
 }

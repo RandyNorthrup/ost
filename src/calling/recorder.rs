@@ -34,9 +34,13 @@ pub enum Command {
     StartTranscription,
     StopTranscription,
     /// Recording and transcription (`audio_only`: Teams' "Audio only").
-    StartRecording { audio_only: bool },
+    StartRecording {
+        audio_only: bool,
+    },
     /// Recording only, the transcript already running.
-    StartRecordingOnly { audio_only: bool },
+    StartRecordingOnly {
+        audio_only: bool,
+    },
     /// Recording and transcription.
     StopRecording,
     /// Live captions (Teams' closed-captions service: processing mode
@@ -58,9 +62,9 @@ pub enum Command {
 impl Command {
     fn action(self) -> &'static str {
         match self {
-            Command::StartTranscription | Command::StartRecording { .. } | Command::StartRecordingOnly { .. } => {
-                "start"
-            }
+            Command::StartTranscription
+            | Command::StartRecording { .. }
+            | Command::StartRecordingOnly { .. } => "start",
             Command::StopTranscription | Command::StopRecording => "stop",
             Command::StartCaptions | Command::StartCopilot => "start",
             Command::StopCopilot => "stop",
@@ -71,7 +75,9 @@ impl Command {
     fn modes(self) -> &'static [&'static str] {
         match self {
             Command::StartTranscription | Command::StopTranscription => &["realTimeTranscript"],
-            Command::StartRecording { .. } | Command::StopRecording => &["recording", "realTimeTranscript"],
+            Command::StartRecording { .. } | Command::StopRecording => {
+                &["recording", "realTimeTranscript"]
+            }
             Command::StartRecordingOnly { .. } => &["recording"],
             Command::StartCaptions | Command::SetCaptionsLanguage => &["closedCaptions"],
             Command::StartCopilot | Command::StopCopilot => &["copilot"],
@@ -95,7 +101,10 @@ impl Command {
     pub fn needs_skype_token(self) -> bool {
         matches!(
             self,
-            Command::StartCaptions | Command::SetCaptionsLanguage | Command::StartCopilot | Command::StopCopilot
+            Command::StartCaptions
+                | Command::SetCaptionsLanguage
+                | Command::StartCopilot
+                | Command::StopCopilot
         )
     }
 }
@@ -154,8 +163,15 @@ pub fn body(
             "spokenLanguage": if meeting.spoken_language.is_empty() { "en-us" } else { meeting.spoken_language.as_str() },
             "type": "setLanguage",
         });
-    } else if command.action() == "start" && command != Command::StartCaptions && command != Command::StartCopilot {
-        let kind = if command.transcription() { "Meeting Transcript" } else { "Meeting Recording" };
+    } else if command.action() == "start"
+        && command != Command::StartCaptions
+        && command != Command::StartCopilot
+    {
+        let kind = if command.transcription() {
+            "Meeting Transcript"
+        } else {
+            "Meeting Recording"
+        };
         let mut p = json!({
             "recordingFeatures": features(),
             "recordingStorageSettings": [{
@@ -169,10 +185,16 @@ pub fn body(
             "exchangeId": Value::Null,
             "meetingOrganizer": meeting.organizer,
         });
-        if let Command::StartRecording { audio_only } | Command::StartRecordingOnly { audio_only } = command {
+        if let Command::StartRecording { audio_only } | Command::StartRecordingOnly { audio_only } =
+            command
+        {
             p["recordingMode"] = json!(if audio_only { "AudioOnly" } else { "Normal" });
         }
-        p["spokenLanguage"] = json!(if meeting.spoken_language.is_empty() { "en-us" } else { meeting.spoken_language.as_str() });
+        p["spokenLanguage"] = json!(if meeting.spoken_language.is_empty() {
+            "en-us"
+        } else {
+            meeting.spoken_language.as_str()
+        });
         p["type"] = json!("start");
         b["actionParameters"] = p;
     }
@@ -239,7 +261,10 @@ pub async fn invite(
     use super::signaling;
     let token = crate::auth::oauth::access_token_for(RECORDER_SCOPE).await?;
     let config = crate::config::Config::load()?;
-    let ic3 = config.get_ic3_token().context("No calling (IC3) token")?.token;
+    let ic3 = config
+        .get_ic3_token()
+        .context("No calling (IC3) token")?
+        .token;
     let mut from = me.clone();
     if let Some(o) = from.as_object_mut() {
         o.entry("languageId").or_insert_with(|| "en-US".into());
@@ -250,7 +275,10 @@ pub async fn invite(
         .post(link)
         .bearer_auth(ic3)
         .header("x-microsoft-skype-chain-id", call_id)
-        .header("x-microsoft-skype-message-id", uuid::Uuid::new_v4().to_string())
+        .header(
+            "x-microsoft-skype-message-id",
+            uuid::Uuid::new_v4().to_string(),
+        )
         .header("x-microsoft-skype-client", signaling::SKYPE_CLIENT_HEADER)
         .header("ms-teams-partition", signaling::TEAMS_PARTITION)
         .header("ms-teams-region", signaling::TEAMS_REGION)
@@ -262,7 +290,10 @@ pub async fn invite(
     let status = resp.status();
     if !status.is_success() {
         let text = resp.text().await.unwrap_or_default();
-        bail!("Inviting the recorder failed ({status}): {}", &text[..text.len().min(300)]);
+        bail!(
+            "Inviting the recorder failed ({status}): {}",
+            &text[..text.len().min(300)]
+        );
     }
     tracing::info!(%status, "recorder invited");
     Ok(())
@@ -295,7 +326,10 @@ pub async fn send(
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
     if !status.is_success() {
-        bail!("Recorder command failed ({status}): {}", &text[..text.len().min(300)]);
+        bail!(
+            "Recorder command failed ({status}): {}",
+            &text[..text.len().min(300)]
+        );
     }
     tracing::info!(%status, reply = %text.chars().take(120).collect::<String>(), "recorder command sent");
     Ok(())
@@ -378,7 +412,10 @@ impl Tracker {
         command: Command,
         meeting: &Meeting,
     ) -> Result<()> {
-        let url = self.url.clone().context("The meeting's recorder isn't in the call")?;
+        let url = self
+            .url
+            .clone()
+            .context("The meeting's recorder isn't in the call")?;
         let token = crate::auth::oauth::access_token_for(RECORDER_SCOPE).await?;
         let b = body(
             command,
@@ -419,12 +456,14 @@ mod tests {
     #[test]
     fn tracker_follows_the_recorder_from_join_to_roster() {
         // The recorder's endpoint: its command URL and processing modes.
-        let bot = |captions: &str, version: u64| json!({
-            "28:bdd75849-e0a6-4cce-8fc1-d7c0d4da43e5": {"state": "active", "version": version,
-                "endpoints": {"e1": {"endpointMetadata": {
-                    "commandUrl": "https://recorder.example/cmd",
-                    "processingModes": {"closedCaptions": {"state": captions, "userId": "8:orgid:room"}}}}}}
-        });
+        let bot = |captions: &str, version: u64| {
+            json!({
+                "28:bdd75849-e0a6-4cce-8fc1-d7c0d4da43e5": {"state": "active", "version": version,
+                    "endpoints": {"e1": {"endpointMetadata": {
+                        "commandUrl": "https://recorder.example/cmd",
+                        "processingModes": {"closedCaptions": {"state": captions, "userId": "8:orgid:room"}}}}}}
+            })
+        };
         // An attach's join answer (a Teams Room invited into a meeting)
         // with the recorder not running captions yet.
         let joined = json!({"links": {"updateEndpointMetadata": "https://cc/x"}, "roster": {"participants": bot("Inactive", 0)}});
@@ -454,8 +493,17 @@ mod tests {
 
     #[test]
     fn bodies_as_teams_sends_them() {
-        let now = chrono::Local.with_ymd_and_hms(2026, 11, 8, 17, 15, 15).unwrap();
-        let b = body(Command::StartTranscription, "8:orgid:a", "leg", &meeting(), now, "cid");
+        let now = chrono::Local
+            .with_ymd_and_hms(2026, 11, 8, 17, 15, 15)
+            .unwrap();
+        let b = body(
+            Command::StartTranscription,
+            "8:orgid:a",
+            "leg",
+            &meeting(),
+            now,
+            "cid",
+        );
         assert_eq!(b["action"], "start");
         assert_eq!(b["mode"], "transcription");
         assert_eq!(b["processingModes"], json!(["realTimeTranscript"]));
@@ -467,35 +515,101 @@ mod tests {
         assert!(b["actionParameters"].get("recordingMode").is_none());
         assert_eq!(b["participantSkypeToken"], "");
 
-        let r = body(Command::StartRecording { audio_only: false }, "8:orgid:a", "leg", &meeting(), now, "cid");
+        let r = body(
+            Command::StartRecording { audio_only: false },
+            "8:orgid:a",
+            "leg",
+            &meeting(),
+            now,
+            "cid",
+        );
         assert!(r.get("mode").is_none());
-        assert_eq!(r["processingModes"], json!(["recording", "realTimeTranscript"]));
+        assert_eq!(
+            r["processingModes"],
+            json!(["recording", "realTimeTranscript"])
+        );
         assert_eq!(r["actionParameters"]["recordingMode"], "Normal");
-        assert!(r["actionParameters"]["recordingStorageSettings"][0]["FileName"].as_str().unwrap().ends_with("-Meeting Recording"));
-        let a = body(Command::StartRecordingOnly { audio_only: true }, "8:orgid:a", "leg", &meeting(), now, "cid");
+        assert!(
+            r["actionParameters"]["recordingStorageSettings"][0]["FileName"]
+                .as_str()
+                .unwrap()
+                .ends_with("-Meeting Recording")
+        );
+        let a = body(
+            Command::StartRecordingOnly { audio_only: true },
+            "8:orgid:a",
+            "leg",
+            &meeting(),
+            now,
+            "cid",
+        );
         assert_eq!(a["processingModes"], json!(["recording"]));
         assert_eq!(a["actionParameters"]["recordingMode"], "AudioOnly");
 
-        let s = body(Command::StopRecording, "8:orgid:a", "leg", &meeting(), now, "cid");
+        let s = body(
+            Command::StopRecording,
+            "8:orgid:a",
+            "leg",
+            &meeting(),
+            now,
+            "cid",
+        );
         assert_eq!(s["action"], "stop");
         assert!(s.get("actionParameters").is_none());
-        let t = body(Command::StopTranscription, "8:orgid:a", "leg", &meeting(), now, "cid");
+        let t = body(
+            Command::StopTranscription,
+            "8:orgid:a",
+            "leg",
+            &meeting(),
+            now,
+            "cid",
+        );
         assert_eq!(t["mode"], "transcription");
         let mut keys: Vec<_> = t.as_object().unwrap().keys().cloned().collect();
         keys.sort();
-        assert_eq!(keys, ["action", "mode", "participantLegId", "participantMri", "participantSkypeToken", "processingModes", "timestamp"]);
+        assert_eq!(
+            keys,
+            [
+                "action",
+                "mode",
+                "participantLegId",
+                "participantMri",
+                "participantSkypeToken",
+                "processingModes",
+                "timestamp"
+            ]
+        );
     }
 
     #[test]
     fn copilot_only_bodies_as_teams_sends_them() {
-        let now = chrono::Local.with_ymd_and_hms(2026, 11, 18, 3, 15, 0).unwrap();
-        let c = body(Command::StartCopilot, "8:orgid:a", "leg", &meeting(), now, "cid");
+        let now = chrono::Local
+            .with_ymd_and_hms(2026, 11, 18, 3, 15, 0)
+            .unwrap();
+        let c = body(
+            Command::StartCopilot,
+            "8:orgid:a",
+            "leg",
+            &meeting(),
+            now,
+            "cid",
+        );
         assert_eq!(c["action"], "start");
         assert_eq!(c["mode"], "transcription");
         assert_eq!(c["processingModes"], json!(["copilot"]));
-        assert_eq!(c["actionParameters"], json!({ "spokenLanguage": "en-us", "type": "start" }));
+        assert_eq!(
+            c["actionParameters"],
+            json!({ "spokenLanguage": "en-us", "type": "start" })
+        );
         assert!(Command::StartCopilot.needs_skype_token());
-        let s = body(Command::StopCopilot, "8:orgid:a", "leg", &meeting(), now, "cid");
+        let s = body(
+            Command::StopCopilot,
+            "8:orgid:a",
+            "leg",
+            &meeting(),
+            now,
+            "cid",
+        );
         assert_eq!(s["action"], "stop");
         assert_eq!(s["processingModes"], json!(["copilot"]));
         assert!(s.get("actionParameters").is_none());
@@ -503,19 +617,49 @@ mod tests {
 
     #[test]
     fn captions_bodies_as_teams_sends_them() {
-        let now = chrono::Local.with_ymd_and_hms(2026, 11, 8, 17, 15, 15).unwrap();
-        let c = body(Command::StartCaptions, "8:orgid:a", "leg", &meeting(), now, "cid");
+        let now = chrono::Local
+            .with_ymd_and_hms(2026, 11, 8, 17, 15, 15)
+            .unwrap();
+        let c = body(
+            Command::StartCaptions,
+            "8:orgid:a",
+            "leg",
+            &meeting(),
+            now,
+            "cid",
+        );
         let mut keys: Vec<_> = c.as_object().unwrap().keys().cloned().collect();
         keys.sort();
-        assert_eq!(keys, ["action", "mode", "participantLegId", "participantMri", "participantSkypeToken", "processingModes", "timestamp"]);
+        assert_eq!(
+            keys,
+            [
+                "action",
+                "mode",
+                "participantLegId",
+                "participantMri",
+                "participantSkypeToken",
+                "processingModes",
+                "timestamp"
+            ]
+        );
         assert_eq!(c["action"], "start");
         assert_eq!(c["mode"], "transcription");
         assert_eq!(c["processingModes"], json!(["closedCaptions"]));
         let mut m = meeting();
         m.spoken_language = "de-de".into();
-        let l = body(Command::SetCaptionsLanguage, "8:orgid:a", "leg", &m, now, "cid");
+        let l = body(
+            Command::SetCaptionsLanguage,
+            "8:orgid:a",
+            "leg",
+            &m,
+            now,
+            "cid",
+        );
         assert_eq!(l["action"], "setLanguage");
-        assert_eq!(l["actionParameters"], json!({"spokenLanguage": "de-de", "type": "setLanguage"}));
+        assert_eq!(
+            l["actionParameters"],
+            json!({"spokenLanguage": "de-de", "type": "setLanguage"})
+        );
         assert!(Command::StartCaptions.needs_skype_token());
         assert!(!Command::StartTranscription.needs_skype_token());
     }
@@ -523,7 +667,14 @@ mod tests {
     #[test]
     fn invites_the_recorder_as_teams_does() {
         let from = json!({"id": "8:orgid:a", "displayName": "OST Test 1", "endpointId": "e", "participantId": "p"});
-        let b = invitation_body(&from, &meeting(), "call", "19:meeting_x@thread.v2", "tok", json!({"addParticipantSuccess": "s"}));
+        let b = invitation_body(
+            &from,
+            &meeting(),
+            "call",
+            "19:meeting_x@thread.v2",
+            "tok",
+            json!({"addParticipantSuccess": "s"}),
+        );
         assert_eq!(b["participants"]["to"][0]["id"], RECORDER_BOT_MRI);
         let bot = &b["participantInvitationData"]["botData"];
         assert_eq!(bot["mode"], "RecordingAndTranscription");
@@ -539,7 +690,10 @@ mod tests {
             "28:bdd": {"endpoints": {"e": {"endpointMetadata": {"commandUrl": "https://api.flightproxy.teams.microsoft.com/api/v2/ep/x/v2/oncommand/1"}}}},
             "8:orgid:a": {"endpoints": {"f": {"call": {}}}}
         }}});
-        assert_eq!(command_url(&ev).as_deref(), Some("https://api.flightproxy.teams.microsoft.com/api/v2/ep/x/v2/oncommand/1"));
+        assert_eq!(
+            command_url(&ev).as_deref(),
+            Some("https://api.flightproxy.teams.microsoft.com/api/v2/ep/x/v2/oncommand/1")
+        );
         assert_eq!(command_url(&json!({"body": {"participants": {}}})), None);
     }
 }

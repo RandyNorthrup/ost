@@ -17,7 +17,8 @@ use uuid;
 /// (16384): the service then refuses its presenters in town halls (403,
 /// subCode 5131, "Joining a town hall as a presenter or organizer isn't
 /// available on the web"); the desktop app, like OST, doesn't.
-pub const CLIENT_ENDPOINT_CAPABILITIES: u64 = 2 | 8 | 32 | 64 | 128 | 512 | 1024 | 4096 | 8192 | 131072 | 262144 | 524288 | 8388608;
+pub const CLIENT_ENDPOINT_CAPABILITIES: u64 =
+    2 | 8 | 32 | 64 | 128 | 512 | 1024 | 4096 | 8192 | 131072 | 262144 | 524288 | 8388608;
 
 /// Teams' `supportsCollabLeader`: the call may elect this endpoint to make
 /// a Meet now's notes (the conversation's `collabDetails.collabLeaders`,
@@ -872,7 +873,15 @@ pub async fn create_1to1_call_with(
     callee_mri: &str,
     extras: &CallExtras,
 ) -> Result<(ConversationCreated, ConversationJoined)> {
-    create_call(http, epconv_url, params, sdp_offer, Some(callee_mri), Some(extras)).await
+    create_call(
+        http,
+        epconv_url,
+        params,
+        sdp_offer,
+        Some(callee_mri),
+        Some(extras),
+    )
+    .await
 }
 
 /// Join a scheduled Teams meeting: a call request with no callee, tied to
@@ -904,7 +913,10 @@ pub async fn join_meeting(
         suppress_dialout: true,
         subject: None,
         meetup: false,
-        meeting_info: Some(meeting_info(organizer, (params.caller_oid, params.tenant_id))),
+        meeting_info: Some(meeting_info(
+            organizer,
+            (params.caller_oid, params.tenant_id),
+        )),
         scenario: None,
         two_step: true,
         preheat,
@@ -1179,12 +1191,18 @@ pub fn meeting_data_of(event_json: &str, tag: Option<&str>) -> Option<serde_json
     {
         return None;
     }
-    if !v.get("callAgentPath").and_then(|p| p.as_str()).is_some_and(|p| p.starts_with("conversation/")) {
+    if !v
+        .get("callAgentPath")
+        .and_then(|p| p.as_str())
+        .is_some_and(|p| p.starts_with("conversation/"))
+    {
         return None;
     }
     let md = v.pointer("/body/meetingData")?;
     let code = md.get("meetingCode")?.as_str().filter(|c| !c.is_empty())?;
-    Some(serde_json::json!({ "meetingCode": code, "passcode": md.get("passcode").cloned().unwrap_or(serde_json::Value::Null) }))
+    Some(
+        serde_json::json!({ "meetingCode": code, "passcode": md.get("passcode").cloned().unwrap_or(serde_json::Value::Null) }),
+    )
 }
 
 /// What a 1:1 call request can carry besides its callee (Teams' web calling
@@ -1274,7 +1292,9 @@ async fn join_conversation_only(
     params: &ConversationCallParams<'_>,
     opts: &CreateOptions<'_>,
 ) -> Result<(String, Option<String>)> {
-    join_conversation_with(http, epconv_url, params, opts, None).await.map(|(c, l, _)| (c, l))
+    join_conversation_with(http, epconv_url, params, opts, None)
+        .await
+        .map(|(c, l, _)| (c, l))
 }
 
 /// Join a meeting's conversation again, without a call, at its own URL
@@ -1299,7 +1319,10 @@ pub async fn join_conversation_without_call(
         suppress_dialout: true,
         subject: None,
         meetup: false,
-        meeting_info: Some(meeting_info(organizer, (params.caller_oid, params.tenant_id))),
+        meeting_info: Some(meeting_info(
+            organizer,
+            (params.caller_oid, params.tenant_id),
+        )),
         scenario: None,
         two_step: true,
         preheat: false,
@@ -1309,7 +1332,9 @@ pub async fn join_conversation_without_call(
         conversation_url: None,
         as_attendee: false,
     };
-    join_conversation_with(http, conversation_url, params, &opts, None).await.map(|(c, l, _)| (c, l))
+    join_conversation_with(http, conversation_url, params, &opts, None)
+        .await
+        .map(|(c, l, _)| (c, l))
 }
 
 /// The conversation-only join, by thread or (Teams' Join with an ID,
@@ -1375,7 +1400,10 @@ async fn join_conversation_with(
         .post(epconv_url)
         .header("Authorization", format!("Bearer {}", params.ic3_token))
         .header("x-microsoft-skype-chain-id", params.chain_id)
-        .header("x-microsoft-skype-message-id", uuid::Uuid::new_v4().to_string())
+        .header(
+            "x-microsoft-skype-message-id",
+            uuid::Uuid::new_v4().to_string(),
+        )
         .header("x-microsoft-skype-client", SKYPE_CLIENT_HEADER)
         .header("Referer", "https://teams.microsoft.com/")
         .header("ms-teams-partition", TEAMS_PARTITION)
@@ -1390,7 +1418,10 @@ async fn join_conversation_with(
     let headers = resp.headers().clone();
     let body = resp.text().await.unwrap_or_default();
     if !status.is_success() {
-        anyhow::bail!("Joining the meeting's conversation failed ({status}): {}", &body[..body.len().min(300)]);
+        anyhow::bail!(
+            "Joining the meeting's conversation failed ({status}): {}",
+            &body[..body.len().min(300)]
+        );
     }
     tracing::debug!(body = %&body[..body.len().min(4000)], "conversation-only join response");
     let v: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
@@ -1398,9 +1429,18 @@ async fn join_conversation_with(
         .pointer("/conversationController")
         .and_then(|c| c.as_str())
         .map(str::to_string)
-        .or_else(|| headers.get("location").and_then(|h| h.to_str().ok()).map(str::to_string))
+        .or_else(|| {
+            headers
+                .get("location")
+                .and_then(|h| h.to_str().ok())
+                .map(str::to_string)
+        })
         // Joined again at the conversation's own URL: that is its controller.
-        .or_else(|| epconv_url.contains("/conv/").then(|| epconv_url.to_string()))
+        .or_else(|| {
+            epconv_url
+                .contains("/conv/")
+                .then(|| epconv_url.to_string())
+        })
         .filter(|c| super::incoming::is_service_link(c))
         .context("No conversationController for the meeting's conversation")?;
     let leave = v
@@ -1442,14 +1482,22 @@ pub async fn resolve_meeting_code(
         conversation_url: None,
         as_attendee: false,
     };
-    let (_controller, leave, v) = join_conversation_with(http, epconv_url, params, &opts, Some(meeting_data)).await?;
+    let (_controller, leave, v) =
+        join_conversation_with(http, epconv_url, params, &opts, Some(meeting_data)).await?;
     let text = v.to_string();
-    let keys: Vec<&String> = v.as_object().map(|o| o.keys().collect()).unwrap_or_default();
+    let keys: Vec<&String> = v
+        .as_object()
+        .map(|o| o.keys().collect())
+        .unwrap_or_default();
     tracing::info!(?keys, "meeting code conversation");
     let thread = find_thread(&text);
     let organizer = find_uuid_after(&text, "\"organizerId\":\"");
     let tenant = find_uuid_after(&text, "\"tenantId\":\"");
-    let subject = v.get("subject").and_then(|s| s.as_str()).unwrap_or_default().to_string();
+    let subject = v
+        .get("subject")
+        .and_then(|s| s.as_str())
+        .unwrap_or_default()
+        .to_string();
     if let Some(leave) = leave {
         let _ = http
             .delete(&leave)
@@ -1465,14 +1513,21 @@ pub async fn resolve_meeting_code(
 /// The first meeting thread (`19:…@thread.v2` or `@thread.tacv2`) in a
 /// service answer.
 fn find_thread(text: &str) -> Option<String> {
-    let i = text.find("19:meeting_").or_else(|| text.find("\"19:").map(|i| i + 1))?;
+    let i = text
+        .find("19:meeting_")
+        .or_else(|| text.find("\"19:").map(|i| i + 1))?;
     let rest = &text[i..];
     let end = rest
         .find("@thread.v2")
         .map(|e| e + "@thread.v2".len())
-        .or_else(|| rest.find("@thread.tacv2").map(|e| e + "@thread.tacv2".len()))?;
+        .or_else(|| {
+            rest.find("@thread.tacv2")
+                .map(|e| e + "@thread.tacv2".len())
+        })?;
     let t = &rest[..end];
-    t.bytes().all(|b| b.is_ascii_alphanumeric() || b"_-:@.=".contains(&b)).then(|| t.to_string())
+    t.bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b"_-:@.=".contains(&b))
+        .then(|| t.to_string())
 }
 
 fn find_uuid_after(text: &str, key: &str) -> Option<String> {
@@ -1529,7 +1584,11 @@ async fn create_call_with(
     let to_voicemail = opts.extras.is_some_and(|e| e.voicemail.is_some());
     // A test call to your personal attendant names that endpoint.
     let to_attendant = opts.extras.is_some_and(|e| e.personal_attendant);
-    let to: Vec<serde_json::Value> = opts.to.iter().map(|id| callee_entry(id, to_voicemail, to_attendant)).collect();
+    let to: Vec<serde_json::Value> = opts
+        .to
+        .iter()
+        .map(|id| callee_entry(id, to_voicemail, to_attendant))
+        .collect();
     let tc = |path: &str| trouter_callback(params.trouter_surl, params.endpoint_id, path);
     let cause_id = &params.message_id[..8.min(params.message_id.len())];
 
@@ -1661,7 +1720,12 @@ async fn create_call_with(
         match join_conversation_only(http, epconv_url, params, opts).await {
             Ok((c, leave)) => {
                 if meeting_data.is_none() {
-                    meeting_data = await_meeting_data(&mut updates, surl_tag(params.trouter_surl), opts.meeting_data_wait).await;
+                    meeting_data = await_meeting_data(
+                        &mut updates,
+                        surl_tag(params.trouter_surl),
+                        opts.meeting_data_wait,
+                    )
+                    .await;
                 }
                 (c, leave)
             }
@@ -1688,7 +1752,11 @@ async fn create_call_with(
     };
     tracing::info!(
         "1:1 call: POST {} (single-shot epconv with SDP)",
-        if opts.two_step { "the meeting's conversation" } else { epconv_url }
+        if opts.two_step {
+            "the meeting's conversation"
+        } else {
+            epconv_url
+        }
     );
 
     let resp = http
@@ -2115,7 +2183,11 @@ mod preheat_tests {
             endpoint_properties(true),
             serde_json::json!({ "preheatProperties": 1, "additionalEndpointProperties": { "infoShownInReportMode": "FullInformation" } })
         );
-        assert!(endpoint_properties(false).get("preheatProperties").is_none());
+        assert!(
+            endpoint_properties(false)
+                .get("preheatProperties")
+                .is_none()
+        );
     }
 
     #[test]
@@ -2146,7 +2218,10 @@ mod preheat_tests {
         // Another call's, or a chat message's meetingData: null, isn't it.
         assert!(super::meeting_data_of(ev, Some("def456")).is_none());
         assert!(super::meeting_data_of(r#"{"callAgentPath":"conversation/conversationUpdate/","body":{"meetingData":null}}"#, None).is_none());
-        assert_eq!(super::surl_tag("https://t/v4/f/abc/xabc123/"), Some("abc123"));
+        assert_eq!(
+            super::surl_tag("https://t/v4/f/abc/xabc123/"),
+            Some("abc123")
+        );
         assert_eq!(super::surl_tag("https://t/v4/f/abc/"), None);
     }
 }
@@ -2158,18 +2233,32 @@ mod tests {
     #[test]
     fn transfer_and_unpark_calls_carry_teams_extras() {
         let mut inv = serde_json::json!({ "replaces": null, "transferor": null });
-        apply_call_extras(&mut inv, &CallExtras {
-            transferor: Some(serde_json::json!({ "details": { "id": "8:orgid:a" }, "authorizationToken": "t" })),
-            transfer_context: None,
-            unpark_code: None,
-            voicemail: None,
-            personal_attendant: false,
-        });
+        apply_call_extras(
+            &mut inv,
+            &CallExtras {
+                transferor: Some(
+                    serde_json::json!({ "details": { "id": "8:orgid:a" }, "authorizationToken": "t" }),
+                ),
+                transfer_context: None,
+                unpark_code: None,
+                voicemail: None,
+                personal_attendant: false,
+            },
+        );
         assert_eq!(inv["transferor"]["authorizationToken"], "t");
         assert!(inv.get("unparkContent").is_none());
         let mut inv = serde_json::json!({ "transferor": null });
-        apply_call_extras(&mut inv, &CallExtras { unpark_code: Some(42), ..Default::default() });
-        assert_eq!(inv["unparkContent"], serde_json::json!({ "pickupCode": 42 }));
+        apply_call_extras(
+            &mut inv,
+            &CallExtras {
+                unpark_code: Some(42),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            inv["unparkContent"],
+            serde_json::json!({ "pickupCode": 42 })
+        );
         assert!(inv["transferor"].is_null());
         assert_eq!(CALL_PARK_MRI, "4:*11");
     }
@@ -2178,18 +2267,42 @@ mod tests {
     /// greeting resource.
     #[test]
     fn attendant_test_call_names_the_attendant_endpoint() {
-        assert_eq!(callee_entry("8:orgid:me", false, true), serde_json::json!({ "id": "8:orgid:me", "endpointType": "personalAttendant" }));
-        assert_eq!(callee_entry("8:orgid:me", true, false), serde_json::json!({ "id": "8:orgid:me", "endpointType": "voicemail" }));
-        assert_eq!(callee_entry("8:orgid:x", false, false), serde_json::json!({ "id": "8:orgid:x" }));
+        assert_eq!(
+            callee_entry("8:orgid:me", false, true),
+            serde_json::json!({ "id": "8:orgid:me", "endpointType": "personalAttendant" })
+        );
+        assert_eq!(
+            callee_entry("8:orgid:me", true, false),
+            serde_json::json!({ "id": "8:orgid:me", "endpointType": "voicemail" })
+        );
+        assert_eq!(
+            callee_entry("8:orgid:x", false, false),
+            serde_json::json!({ "id": "8:orgid:x" })
+        );
     }
 
     #[test]
     fn voicemail_call_asks_for_the_greeting() {
         let mut inv = serde_json::json!({});
-        apply_call_extras(&mut inv, &CallExtras { voicemail: Some(VOICEMAIL_GREETING.into()), ..Default::default() });
-        assert_eq!(inv["voicemailSettings"], serde_json::json!({ "localResourcePath": "greeting" }));
+        apply_call_extras(
+            &mut inv,
+            &CallExtras {
+                voicemail: Some(VOICEMAIL_GREETING.into()),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            inv["voicemailSettings"],
+            serde_json::json!({ "localResourcePath": "greeting" })
+        );
         let mut inv = serde_json::json!({});
-        apply_call_extras(&mut inv, &CallExtras { voicemail: Some(String::new()), ..Default::default() });
+        apply_call_extras(
+            &mut inv,
+            &CallExtras {
+                voicemail: Some(String::new()),
+                ..Default::default()
+            },
+        );
         assert_eq!(inv["voicemailSettings"], serde_json::json!({}));
     }
 }

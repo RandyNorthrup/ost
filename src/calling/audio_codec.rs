@@ -60,7 +60,10 @@ pub fn dtmf_payload_type(section: &str, clock: u32) -> Option<u8> {
     section.lines().find_map(|l| {
         let rest = l.trim_end().strip_prefix("a=rtpmap:")?;
         let (pt, codec) = rest.split_once(' ')?;
-        codec.eq_ignore_ascii_case(&want).then(|| pt.parse().ok()).flatten()
+        codec
+            .eq_ignore_ascii_case(&want)
+            .then(|| pt.parse().ok())
+            .flatten()
     })
 }
 
@@ -89,7 +92,8 @@ fn lowpass_taps() -> &'static [f32] {
                 } else {
                     (2.0 * std::f32::consts::PI * fc * m).sin() / (std::f32::consts::PI * m)
                 };
-                let w = 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (n as f32 - 1.0)).cos();
+                let w =
+                    0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / (n as f32 - 1.0)).cos();
                 sinc * w
             })
             .collect();
@@ -204,18 +208,20 @@ impl Encoder {
     pub fn new(codec: Codec) -> Self {
         #[cfg(feature = "audio")]
         let opus = match codec {
-            Codec::Opus(_) => match opus::Encoder::new(CALL_RATE, opus::Channels::Mono, opus::Application::Voip) {
-                Ok(mut e) => {
-                    tune(&mut e, super::apm::music_mode());
-                    let _ = e.set_inband_fec(true);
-                    let _ = e.set_packet_loss_perc(5);
-                    Some(e)
+            Codec::Opus(_) => {
+                match opus::Encoder::new(CALL_RATE, opus::Channels::Mono, opus::Application::Voip) {
+                    Ok(mut e) => {
+                        tune(&mut e, super::apm::music_mode());
+                        let _ = e.set_inband_fec(true);
+                        let _ = e.set_packet_loss_perc(5);
+                        Some(e)
+                    }
+                    Err(e) => {
+                        tracing::warn!("Opus encoder: {e}");
+                        None
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!("Opus encoder: {e}");
-                    None
-                }
-            },
+            }
             Codec::Pcmu => None,
         };
         Encoder {
@@ -260,7 +266,10 @@ impl Encoder {
             }
             _ => {
                 let narrow = self.down.process(pcm);
-                let mut enc: Vec<u8> = narrow.iter().map(|&s| super::rtp::linear_to_ulaw(s)).collect();
+                let mut enc: Vec<u8> = narrow
+                    .iter()
+                    .map(|&s| super::rtp::linear_to_ulaw(s))
+                    .collect();
                 enc.resize(super::rtp::SAMPLES_PER_PACKET, 0xFF);
                 enc
             }
@@ -295,7 +304,10 @@ impl Decoder {
     /// The samples in one packet (empty for what it doesn't decode).
     pub fn decode(&mut self, pt: u8, payload: &[u8]) -> Vec<i16> {
         if pt == 0 {
-            let narrow: Vec<i16> = payload.iter().map(|&b| super::rtp::ulaw_to_linear(b)).collect();
+            let narrow: Vec<i16> = payload
+                .iter()
+                .map(|&b| super::rtp::ulaw_to_linear(b))
+                .collect();
             return self.up.process(&narrow);
         }
         #[cfg(feature = "audio")]
@@ -327,7 +339,10 @@ mod tests {
         assert_eq!(dtmf_payload_type(section, 48000), Some(110));
         assert_eq!(dtmf_payload_type(section, 8000), Some(126));
         // The media processor writes it in capitals.
-        assert_eq!(opus_payload_type("a=rtpmap:111 OPUS/48000/2\r\n"), Some(111));
+        assert_eq!(
+            opus_payload_type("a=rtpmap:111 OPUS/48000/2\r\n"),
+            Some(111)
+        );
         assert_eq!(opus_payload_type("a=rtpmap:0 PCMU/8000\r\n"), None);
         if cfg!(feature = "audio") {
             assert_eq!(choose(section), Codec::Opus(111));
@@ -339,7 +354,9 @@ mod tests {
     fn pcmu_round_trip_keeps_a_tone() {
         // A 1 kHz tone at 48 kHz survives 48 → 8 → 48 kHz.
         let tone: Vec<i16> = (0..FRAME * 10)
-            .map(|i| ((i as f32 * 2.0 * std::f32::consts::PI * 1000.0 / 48000.0).sin() * 8000.0) as i16)
+            .map(|i| {
+                ((i as f32 * 2.0 * std::f32::consts::PI * 1000.0 / 48000.0).sin() * 8000.0) as i16
+            })
             .collect();
         let mut enc = Encoder::new(Codec::Pcmu);
         let mut dec = Decoder::new(None);
@@ -350,7 +367,8 @@ mod tests {
             out.extend(dec.decode(0, &payload));
         }
         let tail = &out[out.len() / 2..];
-        let rms = (tail.iter().map(|&s| (s as f64).powi(2)).sum::<f64>() / tail.len() as f64).sqrt();
+        let rms =
+            (tail.iter().map(|&s| (s as f64).powi(2)).sum::<f64>() / tail.len() as f64).sqrt();
         assert!(rms > 4000.0 && rms < 7000.0, "rms {rms}");
     }
 
@@ -360,7 +378,9 @@ mod tests {
         let mut enc = Encoder::new(Codec::Opus(111));
         let mut dec = Decoder::new(Some(111));
         let tone: Vec<i16> = (0..FRAME * 20)
-            .map(|i| ((i as f32 * 2.0 * std::f32::consts::PI * 440.0 / 48000.0).sin() * 8000.0) as i16)
+            .map(|i| {
+                ((i as f32 * 2.0 * std::f32::consts::PI * 440.0 / 48000.0).sin() * 8000.0) as i16
+            })
             .collect();
         let mut out = Vec::new();
         for f in tone.chunks(FRAME) {
@@ -370,7 +390,8 @@ mod tests {
         }
         assert_eq!(out.len(), tone.len());
         let tail = &out[out.len() / 2..];
-        let rms = (tail.iter().map(|&s| (s as f64).powi(2)).sum::<f64>() / tail.len() as f64).sqrt();
+        let rms =
+            (tail.iter().map(|&s| (s as f64).powi(2)).sum::<f64>() / tail.len() as f64).sqrt();
         assert!(rms > 3000.0, "rms {rms}");
         assert!(dec.handles(111) && dec.handles(0) && !dec.handles(9));
     }
@@ -384,10 +405,15 @@ mod tests {
                 let t = i as f32 / 48000.0;
                 ((t * 2.0 * std::f32::consts::PI * 440.0).sin() * 4000.0
                     + (t * 2.0 * std::f32::consts::PI * 9300.0).sin() * 3000.0
-                    + (t * 2.0 * std::f32::consts::PI * 15100.0).sin() * 2000.0) as i16
+                    + (t * 2.0 * std::f32::consts::PI * 15100.0).sin() * 2000.0)
+                    as i16
             })
             .collect();
-        let bytes = |enc: &mut Encoder| sig.chunks(FRAME).map(|f| enc.encode(Some(f)).len()).sum::<usize>();
+        let bytes = |enc: &mut Encoder| {
+            sig.chunks(FRAME)
+                .map(|f| enc.encode(Some(f)).len())
+                .sum::<usize>()
+        };
         let mut speech = Encoder::new(Codec::Opus(111));
         let speech_bytes = bytes(&mut speech);
         super::super::apm::set_music_mode(true, true);

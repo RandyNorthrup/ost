@@ -49,7 +49,11 @@ fn yes() -> bool {
 impl UrlPreview {
     /// Teams' rule: two of picture, title and description.
     pub fn is_valid(&self) -> bool {
-        let (t, ti, d) = (!self.thumbnail.is_empty(), !self.title.is_empty(), !self.description.is_empty());
+        let (t, ti, d) = (
+            !self.thumbnail.is_empty(),
+            !self.title.is_empty(),
+            !self.description.is_empty(),
+        );
         [t, ti, d].into_iter().filter(|&x| x).count() >= 2
     }
 
@@ -65,7 +69,9 @@ impl UrlPreview {
 /// Links Teams makes no preview for: Teams' own message, channel, chat and
 /// meeting-recap links, mail links, Loop pages and non-web links.
 pub fn excluded(url: &str) -> bool {
-    let Ok(u) = url::Url::parse(url) else { return true };
+    let Ok(u) = url::Url::parse(url) else {
+        return true;
+    };
     if u.scheme() != "http" && u.scheme() != "https" {
         return true;
     }
@@ -106,7 +112,11 @@ fn attr(tag: &str, name: &str) -> Option<String> {
     if q == '"' || q == '\'' {
         rest[1..].find(q).map(|e| rest[1..1 + e].to_string())
     } else {
-        Some(rest.split(|c: char| c.is_whitespace() || c == '>').next()?.to_string())
+        Some(
+            rest.split(|c: char| c.is_whitespace() || c == '>')
+                .next()?
+                .to_string(),
+        )
     }
 }
 
@@ -124,7 +134,9 @@ pub fn unescape(s: &str) -> String {
 /// What Teams asks the service for: decoded, without trailing quote marks.
 fn query_url(url: &str) -> String {
     let decoded = percent_decode(url).unwrap_or_else(|| url.to_string());
-    decoded.trim_end_matches(['<', '>', '\'', '"', '`']).to_string()
+    decoded
+        .trim_end_matches(['<', '>', '\'', '"', '`'])
+        .to_string()
 }
 
 fn percent_decode(s: &str) -> Option<String> {
@@ -157,9 +169,17 @@ pub async fn fetch(client: &TeamsClient, url: &str) -> Result<Option<UrlPreview>
     let q = encode(&query_url(url));
     for path in ["richInfo", "info"] {
         let endpoint = format!("{base}/v1/url/{path}?url={q}");
-        let Ok(bytes) = client.ams_get(&endpoint).await else { continue };
-        let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) else { continue };
-        let p = if path == "richInfo" { preview_from_rich(url, &v) } else { preview_from_info(url, &v) };
+        let Ok(bytes) = client.ams_get(&endpoint).await else {
+            continue;
+        };
+        let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+            continue;
+        };
+        let p = if path == "richInfo" {
+            preview_from_rich(url, &v)
+        } else {
+            preview_from_info(url, &v)
+        };
         return Ok(p.filter(UrlPreview::is_valid));
     }
     Ok(None)
@@ -167,7 +187,9 @@ pub async fn fetch(client: &TeamsClient, url: &str) -> Result<Option<UrlPreview>
 
 /// encodeURIComponent.
 fn encode(s: &str) -> String {
-    url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>().replace('+', "%20")
+    url::form_urlencoded::byte_serialize(s.as_bytes())
+        .collect::<String>()
+        .replace('+', "%20")
 }
 
 fn s(v: &serde_json::Value, k: &str) -> String {
@@ -175,7 +197,9 @@ fn s(v: &serde_json::Value, k: &str) -> String {
 }
 
 fn preview_from_info(url: &str, v: &serde_json::Value) -> Option<UrlPreview> {
-    let meta = v.get("thumbnail_meta").and_then(|m| Some((m.get("width")?.as_u64()?, m.get("height")?.as_u64()?)));
+    let meta = v
+        .get("thumbnail_meta")
+        .and_then(|m| Some((m.get("width")?.as_u64()?, m.get("height")?.as_u64()?)));
     Some(UrlPreview {
         url: url.to_string(),
         title: s(v, "title"),
@@ -206,7 +230,10 @@ pub fn links_property(preview: Option<&UrlPreview>) -> String {
         inner.insert("previewurl".into(), p.thumbnail.clone().into());
     }
     if let Some((w, h)) = p.thumbnail_meta {
-        inner.insert("previewmeta".into(), serde_json::json!({ "width": w, "height": h }));
+        inner.insert(
+            "previewmeta".into(),
+            serde_json::json!({ "width": w, "height": h }),
+        );
     }
     if !p.title.is_empty() {
         inner.insert("title".into(), p.title.clone().into());
@@ -236,13 +263,18 @@ pub fn from_message(props: Option<&serde_json::Value>, html: &str) -> Option<Url
     let e = list.as_array()?.first()?;
     let pv = e.get("preview")?;
     let url = s(e, "url");
-    let meta = pv.get("previewmeta").and_then(|m| Some((m.get("width")?.as_u64()?, m.get("height")?.as_u64()?)));
+    let meta = pv
+        .get("previewmeta")
+        .and_then(|m| Some((m.get("width")?.as_u64()?, m.get("height")?.as_u64()?)));
     let p = UrlPreview {
         title: s(pv, "title").trim().to_string(),
         description: s(pv, "description"),
         thumbnail: safe_url(&s(pv, "previewurl")),
         thumbnail_meta: meta,
-        enabled: e.get("previewenabled").and_then(|b| b.as_bool()).unwrap_or(false),
+        enabled: e
+            .get("previewenabled")
+            .and_then(|b| b.as_bool())
+            .unwrap_or(false),
         url: safe_url(&url),
     };
     let first = first_link(html)?;
@@ -252,7 +284,10 @@ pub fn from_message(props: Option<&serde_json::Value>, html: &str) -> Option<Url
 /// Teams' sanitising of a preview's addresses: web links only.
 fn safe_url(u: &str) -> String {
     if u.starts_with("https://") || u.starts_with("http://") {
-        u.replace('\'', "%27").replace('"', "%22").replace('{', "%7B").replace('}', "%7D")
+        u.replace('\'', "%27")
+            .replace('"', "%22")
+            .replace('{', "%7B")
+            .replace('}', "%7D")
     } else {
         String::new()
     }
@@ -261,7 +296,9 @@ fn safe_url(u: &str) -> String {
 /// Pictures Teams shows: its URL proxy and media hosts only (others get the
 /// link placeholder).
 pub fn thumbnail_allowed(u: &str) -> bool {
-    let Ok(p) = url::Url::parse(u) else { return false };
+    let Ok(p) = url::Url::parse(u) else {
+        return false;
+    };
     let host = p.host_str().unwrap_or("");
     p.scheme() == "https"
         && (host == "urlp.asm.skype.com"
@@ -278,7 +315,10 @@ pub async fn remove_from_message(
     message_id: &str,
     preview: &UrlPreview,
 ) -> Result<()> {
-    let off = UrlPreview { enabled: false, ..preview.clone() };
+    let off = UrlPreview {
+        enabled: false,
+        ..preview.clone()
+    };
     let url = format!(
         "{}/v1/users/ME/conversations/{}/messages/{}/properties?name=links",
         client.chat_service_url(),
@@ -286,7 +326,11 @@ pub async fn remove_from_message(
         message_id
     );
     client
-        .chat_request(reqwest::Method::PUT, &url, &serde_json::json!({ "links": links_property(Some(&off)) }))
+        .chat_request(
+            reqwest::Method::PUT,
+            &url,
+            &serde_json::json!({ "links": links_property(Some(&off)) }),
+        )
         .await
         .map(|_| ())
 }
@@ -311,7 +355,10 @@ mod tests {
         // As Teams sent OST TEST 158 (2026-11-15).
         let want = r#"[{"@type":"http://schema.skype.com/HyperLink","itemid":"0","url":"https://www.rust-lang.org/","previewenabled":true,"preview":{"previewurl":"https://us-prod.asyncgw.teams.microsoft.com/urlp/v1/url/image/Thumbnail?url=https%3a%2f%2fwww.rust-lang.org%2fstatic%2fimages%2frust-social.jpg","title":"\n            Rust Programming Language\n        ","description":"A language empowering everyone to build reliable and efficient software."}}]"#;
         let got: serde_json::Value = serde_json::from_str(&links_property(Some(&rust()))).unwrap();
-        assert_eq!(got, serde_json::from_str::<serde_json::Value>(want).unwrap());
+        assert_eq!(
+            got,
+            serde_json::from_str::<serde_json::Value>(want).unwrap()
+        );
         assert_eq!(links_property(None), "[]");
     }
 
@@ -327,7 +374,11 @@ mod tests {
         assert!(from_message(Some(&off), html).is_none());
         assert!(from_message(Some(&props), r#"<a href="https://example.com/">x</a>"#).is_none());
         // Two of picture, title and description.
-        let thin = UrlPreview { thumbnail: String::new(), description: String::new(), ..rust() };
+        let thin = UrlPreview {
+            thumbnail: String::new(),
+            description: String::new(),
+            ..rust()
+        };
         assert!(!thin.is_valid());
     }
 
@@ -338,6 +389,9 @@ mod tests {
         assert!(excluded("mailto:someone@example.com"));
         assert!(excluded("https://contoso.sharepoint.com/sites/x/doc.docx"));
         assert!(!excluded("https://www.rust-lang.org/"));
-        assert_eq!(query_url("https://example.com/a%20b\""), "https://example.com/a b");
+        assert_eq!(
+            query_url("https://example.com/a%20b\""),
+            "https://example.com/a b"
+        );
     }
 }

@@ -37,14 +37,46 @@ pub struct DeviceCollection {
 }
 
 pub const COLLECTIONS: [DeviceCollection; 8] = [
-    DeviceCollection { key: "featured", linked: 24, icon: "star" },
-    DeviceCollection { key: "headsets", linked: 9, icon: "headset" },
-    DeviceCollection { key: "webcameras", linked: 5, icon: "video" },
-    DeviceCollection { key: "speakerphones", linked: 8, icon: "speaker-2" },
-    DeviceCollection { key: "deskphonesandteamsdisplays", linked: 7, icon: "device-meeting-room" },
-    DeviceCollection { key: "monitors", linked: 11, icon: "desktop" },
-    DeviceCollection { key: "teamsrooms", linked: 6, icon: "surface-hub" },
-    DeviceCollection { key: "roomsystemsaccessories", linked: 10, icon: "device-meeting-room-remote" },
+    DeviceCollection {
+        key: "featured",
+        linked: 24,
+        icon: "star",
+    },
+    DeviceCollection {
+        key: "headsets",
+        linked: 9,
+        icon: "headset",
+    },
+    DeviceCollection {
+        key: "webcameras",
+        linked: 5,
+        icon: "video",
+    },
+    DeviceCollection {
+        key: "speakerphones",
+        linked: 8,
+        icon: "speaker-2",
+    },
+    DeviceCollection {
+        key: "deskphonesandteamsdisplays",
+        linked: 7,
+        icon: "device-meeting-room",
+    },
+    DeviceCollection {
+        key: "monitors",
+        linked: 11,
+        icon: "desktop",
+    },
+    DeviceCollection {
+        key: "teamsrooms",
+        linked: 6,
+        icon: "surface-hub",
+    },
+    DeviceCollection {
+        key: "roomsystemsaccessories",
+        linked: 10,
+        icon: "device-meeting-room-remote",
+    },
 ];
 
 /// A collection's title and description, as Teams words them.
@@ -53,11 +85,15 @@ pub fn collection_text(key: &str) -> (String, String) {
         "featured" => (tr("Featured"), String::new()),
         "headsets" => (
             tr("Headsets"),
-            tr("Keep focused in calls and meetings with headsets designed for comfort and clear communication. "),
+            tr(
+                "Keep focused in calls and meetings with headsets designed for comfort and clear communication. ",
+            ),
         ),
         "webcameras" => (
             tr("Web cameras"),
-            tr("Find the web camera that suits your needs, whether you’re at home or in the office."),
+            tr(
+                "Find the web camera that suits your needs, whether you’re at home or in the office.",
+            ),
         ),
         "speakerphones" => (
             tr("Speakerphones"),
@@ -142,42 +178,78 @@ fn availability_name(n: i64) -> &'static str {
 
 /// The rank Teams' Availability sort gives (module 398085 `G`).
 fn availability_rank(name: &str) -> usize {
-    ["Available", "LowStock", "AvailableIn3Weeks", "OnBackOrder", "OutOfStock"]
-        .iter()
-        .position(|a| *a == name)
-        .unwrap_or(5)
+    [
+        "Available",
+        "LowStock",
+        "AvailableIn3Weeks",
+        "OnBackOrder",
+        "OutOfStock",
+    ]
+    .iter()
+    .position(|a| *a == name)
+    .unwrap_or(5)
 }
 
 fn https(s: &str) -> String {
-    if s.starts_with("https://") { s.to_string() } else { String::new() }
+    if s.starts_with("https://") {
+        s.to_string()
+    } else {
+        String::new()
+    }
 }
 
 pub fn device_from(d: &serde_json::Value) -> Device {
-    let s = |k: &str| d.get(k).and_then(|v| v.as_str()).unwrap_or_default().trim().to_string();
+    let s = |k: &str| {
+        d.get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .trim()
+            .to_string()
+    };
     let price = d.get("price").and_then(|v| v.as_f64()).unwrap_or(0.0);
     Device {
-        id: d.get("deviceId").map(|v| v.to_string().trim_matches('"').to_string()).unwrap_or_default(),
+        id: d
+            .get("deviceId")
+            .map(|v| v.to_string().trim_matches('"').to_string())
+            .unwrap_or_default(),
         name: s("deviceName"),
         maker: s("manufacturerName"),
         short: s("shortDescription"),
-        image: https(d.pointer("/thumbnailImage/blobURI").and_then(|v| v.as_str()).unwrap_or_default()),
-        image_alt: d.pointer("/thumbnailImage/altText").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+        image: https(
+            d.pointer("/thumbnailImage/blobURI")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default(),
+        ),
+        image_alt: d
+            .pointer("/thumbnailImage/altText")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
         price,
         price_text: price_text(price),
-        availability: availability_name(d.get("availabilityStatus").and_then(|v| v.as_i64()).unwrap_or(0)).to_string(),
+        availability: availability_name(
+            d.get("availabilityStatus")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0),
+        )
+        .to_string(),
     }
 }
 
 /// A collection's devices from the catalog, in Teams' default order.
 pub fn collection_devices(all: &[serde_json::Value], key: &str) -> Vec<Device> {
-    let Some(c) = COLLECTIONS.iter().find(|c| c.key == key) else { return Vec::new() };
+    let Some(c) = COLLECTIONS.iter().find(|c| c.key == key) else {
+        return Vec::new();
+    };
     // Teams' catalog filter (filterNullDeviceContent): devices without a
     // name or short description are left out.
     let mut out: Vec<Device> = all
         .iter()
         .filter(|d| {
             if c.key == "featured" {
-                d.get("isFeatured").and_then(|v| v.as_bool()).unwrap_or(false)
+                d.get("isFeatured")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
             } else {
                 d.get("collections")
                     .and_then(|v| v.as_array())
@@ -187,7 +259,11 @@ pub fn collection_devices(all: &[serde_json::Value], key: &str) -> Vec<Device> {
         .map(device_from)
         .filter(|d| !d.name.is_empty() && !d.short.is_empty())
         .collect();
-    out.sort_by(|a, b| availability_rank(&a.availability).cmp(&availability_rank(&b.availability)).then_with(|| a.id.cmp(&b.id)));
+    out.sort_by(|a, b| {
+        availability_rank(&a.availability)
+            .cmp(&availability_rank(&b.availability))
+            .then_with(|| a.id.cmp(&b.id))
+    });
     out
 }
 
@@ -201,13 +277,21 @@ fn setting_str(key: &str, default: &str) -> String {
 /// Where the catalog lives now (`…/{MARKET}_{locale}/` with a trailing
 /// slash), asking OneCDN's pointer for its version.
 async fn catalog_root(client: &TeamsClient) -> Result<String> {
-    let one_cdn = super::ecs::setting("marketplace", "enableCatalogOneCdn").and_then(|v| v.as_bool()).unwrap_or(true);
+    let one_cdn = super::ecs::setting("marketplace", "enableCatalogOneCdn")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
     let market = format!("{MARKET}_{LOCALE}");
     if !one_cdn {
-        let host = setting_str("deviceStoreCatalogCDNHost", "https://devicescatalog.teams.cdn.office.net");
+        let host = setting_str(
+            "deviceStoreCatalogCDNHost",
+            "https://devicescatalog.teams.cdn.office.net",
+        );
         return Ok(format!("{host}/catalogdata/{market}/"));
     }
-    let base = setting_str("catalogOneCdnBaseUrl", "https://res.cdn.office.net/devicescatalog");
+    let base = setting_str(
+        "catalogOneCdnBaseUrl",
+        "https://res.cdn.office.net/devicescatalog",
+    );
     let ttl = setting_str("catalogOneCdnTTL", "1httl");
     let vttl = setting_str("catalogOneCdnVersionTTL", "5mttl");
     // The pointer's body is the bare version (`2026/11/20`, not JSON).
@@ -231,7 +315,8 @@ async fn catalog_root(client: &TeamsClient) -> Result<String> {
 
 /// Every device in the catalog (kept an hour, as the CDN's TTL).
 pub async fn all_devices(client: &TeamsClient) -> Result<std::sync::Arc<Vec<serde_json::Value>>> {
-    static CACHE: Mutex<Option<(Instant, std::sync::Arc<Vec<serde_json::Value>>)>> = Mutex::new(None);
+    static CACHE: Mutex<Option<(Instant, std::sync::Arc<Vec<serde_json::Value>>)>> =
+        Mutex::new(None);
     if let Some((at, v)) = CACHE.lock().ok().and_then(|c| c.clone())
         && at.elapsed() < Duration::from_secs(3600)
     {
@@ -264,10 +349,18 @@ pub struct DevicePage {
 }
 
 pub async fn collection(client: &TeamsClient, key: &str) -> Result<DevicePage> {
-    anyhow::ensure!(COLLECTIONS.iter().any(|c| c.key == key), "No such device collection");
+    anyhow::ensure!(
+        COLLECTIONS.iter().any(|c| c.key == key),
+        "No such device collection"
+    );
     let all = all_devices(client).await?;
     let (title, description) = collection_text(key);
-    Ok(DevicePage { key: key.to_string(), title: title.trim().to_string(), description: description.trim().to_string(), devices: collection_devices(&all, key) })
+    Ok(DevicePage {
+        key: key.to_string(),
+        title: title.trim().to_string(),
+        description: description.trim().to_string(),
+        devices: collection_devices(&all, key),
+    })
 }
 
 /// One of a device's Highlights or Tech Specs rows.
@@ -325,15 +418,27 @@ pub fn details_from(d: &serde_json::Value) -> DeviceDetails {
     DeviceDetails {
         device: device_from(d),
         images,
-        full_description: d.get("fullDescription").and_then(|v| v.as_str()).unwrap_or_default().trim().to_string(),
+        full_description: d
+            .get("fullDescription")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
         highlights: entries(d.get("overview")),
         tech_specs: entries(d.get("techSpecs")),
-        fulfiller: d.get("fulfillerPartner").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+        fulfiller: d
+            .get("fulfillerPartner")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
     }
 }
 
 pub async fn details(client: &TeamsClient, id: &str) -> Result<DeviceDetails> {
-    anyhow::ensure!(!id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()), "Not a device");
+    anyhow::ensure!(
+        !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()),
+        "Not a device"
+    );
     let root = catalog_root(client).await?;
     let d: serde_json::Value = client
         .http()
@@ -359,12 +464,24 @@ mod tests {
 
     #[test]
     fn collections_and_order_follow_teams() {
-        let all = vec![dev(1004, &[9], false, 1), dev(100, &[9, 17], false, 1), dev(1000, &[9], true, 1), dev(7, &[9], false, 4), dev(5, &[5], false, 1)];
+        let all = vec![
+            dev(1004, &[9], false, 1),
+            dev(100, &[9, 17], false, 1),
+            dev(1000, &[9], true, 1),
+            dev(7, &[9], false, 4),
+            dev(5, &[5], false, 1),
+        ];
         // Measured on winpc: Headsets lists 100, 1000, 1004 … (the id as
         // text) with out-of-stock ones after.
-        let h: Vec<String> = collection_devices(&all, "headsets").into_iter().map(|d| d.id).collect();
+        let h: Vec<String> = collection_devices(&all, "headsets")
+            .into_iter()
+            .map(|d| d.id)
+            .collect();
         assert_eq!(h, ["100", "1000", "1004", "7"]);
-        let f: Vec<String> = collection_devices(&all, "featured").into_iter().map(|d| d.id).collect();
+        let f: Vec<String> = collection_devices(&all, "featured")
+            .into_iter()
+            .map(|d| d.id)
+            .collect();
         assert_eq!(f, ["1000"]);
         assert!(collection_devices(&all, "nope").is_empty());
     }

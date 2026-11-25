@@ -70,12 +70,21 @@ impl LiveRoster {
     /// keep their roster updates apart (Teams' Live meetings dialog watches
     /// each live meeting: `subscribedCallChangedEvent` with
     /// `requireJoinWithoutModality`).
-    pub async fn subscribe_tagged(thread_id: &str, conversation_url: &str, call_id: &str) -> Result<Self> {
+    pub async fn subscribe_tagged(
+        thread_id: &str,
+        conversation_url: &str,
+        call_id: &str,
+    ) -> Result<Self> {
         let tag = super::outgoing::new_call_tag();
         Self::subscribe_as(thread_id, conversation_url, call_id, Some(tag)).await
     }
 
-    async fn subscribe_as(thread_id: &str, conversation_url: &str, call_id: &str, tag: Option<String>) -> Result<Self> {
+    async fn subscribe_as(
+        thread_id: &str,
+        conversation_url: &str,
+        call_id: &str,
+        tag: Option<String>,
+    ) -> Result<Self> {
         if !super::incoming::is_service_link(conversation_url) {
             anyhow::bail!("Not a Teams conversation link");
         }

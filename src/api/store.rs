@@ -73,7 +73,11 @@ pub async fn apps(client: &TeamsClient) -> Result<Vec<App>> {
             let name = s(a, "/displayName");
             let external = s(a, "/externalId");
             (!id.is_empty() && !name.is_empty()).then(|| App {
-                teams_id: if external.is_empty() { id.clone() } else { external },
+                teams_id: if external.is_empty() {
+                    id.clone()
+                } else {
+                    external
+                },
                 id,
                 name,
                 short: {

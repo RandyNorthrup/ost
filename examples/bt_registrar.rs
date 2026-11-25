@@ -11,8 +11,15 @@ async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("--delete") {
         for id in &args[1..] {
-            let url = format!("https://communications.svc.cloud.microsoft/registrar/noam/v3/registrations/{id}");
-            let r = client.http().delete(&url).header("X-Skypetoken", &token).send().await?;
+            let url = format!(
+                "https://communications.svc.cloud.microsoft/registrar/noam/v3/registrations/{id}"
+            );
+            let r = client
+                .http()
+                .delete(&url)
+                .header("X-Skypetoken", &token)
+                .send()
+                .await?;
             println!("DELETE {id}: {}", r.status());
         }
         return Ok(());
@@ -29,12 +36,21 @@ async fn main() -> anyhow::Result<()> {
         re.replace(s, "/v4/f/<id>").to_string()
     };
     for url in urls {
-        let r = client.http().get(&url).header("X-Skypetoken", &token).send().await?;
+        let r = client
+            .http()
+            .get(&url)
+            .header("X-Skypetoken", &token)
+            .send()
+            .await?;
         let status = r.status();
         let text = r.text().await.unwrap_or_default();
         println!("== GET {url}: {status}");
-        let v: serde_json::Value = serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text.chars().take(400).collect()));
-        let list = v.get("registrations").cloned().or_else(|| v.as_array().map(|a| serde_json::Value::Array(a.clone())));
+        let v: serde_json::Value = serde_json::from_str(&text)
+            .unwrap_or(serde_json::Value::String(text.chars().take(400).collect()));
+        let list = v
+            .get("registrations")
+            .cloned()
+            .or_else(|| v.as_array().map(|a| serde_json::Value::Array(a.clone())));
         match list.and_then(|l| l.as_array().cloned()) {
             Some(regs) => {
                 for reg in regs {

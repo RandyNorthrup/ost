@@ -151,7 +151,11 @@ impl Tray for OstTray {
             .map(|(label, kind, key)| item(label, presence_png(kind), Action::Status(key)))
             .collect();
         status_rows.push(MenuItem::Separator);
-        status_rows.push(item(&tr("Reset Status"), RESET_PNG, Action::Status("Reset")));
+        status_rows.push(item(
+            &tr("Reset Status"),
+            RESET_PNG,
+            Action::Status("Reset"),
+        ));
         vec![
             item(&self.name_line, tray_png(&self.kind), Action::Show),
             SubMenu {

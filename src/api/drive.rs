@@ -144,10 +144,28 @@ fn parse_item(v: &serde_json::Value) -> Option<DriveItem> {
             .into_iter()
             .find(|u| u.starts_with("https://"))
             .unwrap_or_default(),
-        sp_site: [s(v, "/sharepointIds/siteUrl"), s(r, "/sharepointIds/siteUrl")].into_iter().find(|u| !u.is_empty()).unwrap_or_default(),
-        sp_list: [s(v, "/sharepointIds/listId"), s(r, "/sharepointIds/listId")].into_iter().find(|u| !u.is_empty()).unwrap_or_default(),
-        sp_item: [s(v, "/sharepointIds/listItemUniqueId"), s(r, "/sharepointIds/listItemUniqueId")].into_iter().find(|u| !u.is_empty()).unwrap_or_default(),
-        parent_name: [s(v, "/parentReference/name"), s(r, "/parentReference/name")].into_iter().find(|n| !n.is_empty()).unwrap_or_default(),
+        sp_site: [
+            s(v, "/sharepointIds/siteUrl"),
+            s(r, "/sharepointIds/siteUrl"),
+        ]
+        .into_iter()
+        .find(|u| !u.is_empty())
+        .unwrap_or_default(),
+        sp_list: [s(v, "/sharepointIds/listId"), s(r, "/sharepointIds/listId")]
+            .into_iter()
+            .find(|u| !u.is_empty())
+            .unwrap_or_default(),
+        sp_item: [
+            s(v, "/sharepointIds/listItemUniqueId"),
+            s(r, "/sharepointIds/listItemUniqueId"),
+        ]
+        .into_iter()
+        .find(|u| !u.is_empty())
+        .unwrap_or_default(),
+        parent_name: [s(v, "/parentReference/name"), s(r, "/parentReference/name")]
+            .into_iter()
+            .find(|n| !n.is_empty())
+            .unwrap_or_default(),
         special: s(v, "/specialFolder/name"),
         name,
         kind,
@@ -268,11 +286,20 @@ pub fn favorites_host(site_url: &str) -> Option<String> {
 /// `favorites/followedListItems/oneDrive.add` (or `.remove`) with the
 /// file's site and address.
 pub async fn set_favorite_by_url(site_url: &str, url: &str, on: bool) -> Result<()> {
-    let host = favorites_host(site_url).ok_or_else(|| anyhow::anyhow!("Not a SharePoint address: {site_url}"))?;
+    let host = favorites_host(site_url)
+        .ok_or_else(|| anyhow::anyhow!("Not a SharePoint address: {site_url}"))?;
     let action = if on { "add" } else { "remove" };
     let body = serde_json::json!({ "value": [{ "siteUrl": format!("{}/", site_url.trim_end_matches('/')), "url": url }] });
-    let json = [("accept", "application/json"), ("content-type", "application/json")];
-    super::sharing::post_with(&format!("{host}/_api/v2.1/favorites/followedListItems/oneDrive.{action}"), &body, &json).await?;
+    let json = [
+        ("accept", "application/json"),
+        ("content-type", "application/json"),
+    ];
+    super::sharing::post_with(
+        &format!("{host}/_api/v2.1/favorites/followedListItems/oneDrive.{action}"),
+        &body,
+        &json,
+    )
+    .await?;
     Ok(())
 }
 
@@ -280,7 +307,10 @@ pub async fn set_favorite_by_url(site_url: &str, url: &str, on: bool) -> Result<
 /// base64url), for `/shares/{id}`.
 pub fn share_id(url: &str) -> String {
     use base64::Engine;
-    format!("u!{}", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(url))
+    format!(
+        "u!{}",
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(url)
+    )
 }
 
 /// The drive item at a SharePoint or OneDrive address (a search result's).
@@ -318,16 +348,34 @@ pub async fn media(client: &TeamsClient) -> Result<Vec<DriveItem>> {
 /// 100), each with its size in pixels, when it was taken and a video's
 /// length: (item, raw extras {w, h, taken, duration}).
 pub async fn photos(client: &TeamsClient) -> Result<Vec<(DriveItem, serde_json::Value)>> {
-    let drive: serde_json::Value = client.graph_get("/me/drive?$select=webUrl").await?.json().await?;
+    let drive: serde_json::Value = client
+        .graph_get("/me/drive?$select=webUrl")
+        .await?
+        .json()
+        .await?;
     let web = drive["webUrl"].as_str().unwrap_or_default();
-    let site = web.rsplit_once('/').map(|(s, _)| s).unwrap_or(web).to_string();
-    let host = url::Url::parse(&site).ok().and_then(|u| u.host_str().map(str::to_string)).context("Your OneDrive")?;
+    let site = web
+        .rsplit_once('/')
+        .map(|(s, _)| s)
+        .unwrap_or(web)
+        .to_string();
+    let host = url::Url::parse(&site)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .context("Your OneDrive")?;
     anyhow::ensure!(host.ends_with(".sharepoint.com"), "Your OneDrive");
     let token = crate::auth::oauth::access_token_for(&format!("https://{host}/.default")).await?;
     let url = format!(
         "{site}/_api/v2.1/drives/me/items/root/items?%24filter=photo+ne+null+and+photo%2FtakenDateTime+ge+1900-01-01T00%3A00%3A00.000Z&orderby=photo%2FtakenDateTime+desc&select=createdBy%2CcreatedDateTime%2CcTag%2Cdescription%2CdriveId%2Cfile%2CfileSystemInfo%2Cid%2Cimage%2ClastModifiedDateTime%2Clocation%2Cname%2CparentReference%2Cphoto%2Cshared%2CsharepointIds%2Csize%2Cvideo%2CwebUrl&top=100"
     );
-    let v: serde_json::Value = reqwest::Client::new().get(url).bearer_auth(token).send().await?.error_for_status()?.json().await?;
+    let v: serde_json::Value = reqwest::Client::new()
+        .get(url)
+        .bearer_auth(token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
     Ok(photos_from(&v))
 }
 
@@ -398,8 +446,20 @@ pub async fn item_title(client: &TeamsClient, drive_id: &str, item_id: &str) -> 
     if drive_id.is_empty() || item_id.is_empty() {
         return None;
     }
-    let v: serde_json::Value = client.graph_get(&format!("/drives/{drive_id}/items/{item_id}/listItem/fields?$select=Title")).await.ok()?.json().await.ok()?;
-    v["Title"].as_str().map(str::trim).filter(|t| !t.is_empty()).map(str::to_string)
+    let v: serde_json::Value = client
+        .graph_get(&format!(
+            "/drives/{drive_id}/items/{item_id}/listItem/fields?$select=Title"
+        ))
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+    v["Title"]
+        .as_str()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string)
 }
 
 /// Meeting files: the recordings Teams keeps in your OneDrive's
@@ -545,10 +605,20 @@ pub async fn channel_folder(
     // comes from the item itself.
     if folder.sp_item.is_empty()
         && !folder.drive_id.is_empty()
-        && let Ok(r) = client.graph_get(&format!("/drives/{}/items/{}?$select=sharepointIds", folder.drive_id, folder.id)).await
+        && let Ok(r) = client
+            .graph_get(&format!(
+                "/drives/{}/items/{}?$select=sharepointIds",
+                folder.drive_id, folder.id
+            ))
+            .await
     {
         let ids: serde_json::Value = r.json().await.unwrap_or_default();
-        let g = |k: &str| ids["sharepointIds"][k].as_str().unwrap_or_default().to_string();
+        let g = |k: &str| {
+            ids["sharepointIds"][k]
+                .as_str()
+                .unwrap_or_default()
+                .to_string()
+        };
         folder.sp_site = g("siteUrl");
         folder.sp_list = g("listId");
         folder.sp_item = g("listItemUniqueId");
@@ -680,7 +750,10 @@ pub async fn rename(client: &TeamsClient, drive_id: &str, item_id: &str, name: &
         bail!("That name isn't allowed");
     }
     client
-        .graph_patch(&item_path(drive_id, item_id)?, &serde_json::json!({ "name": name.trim() }))
+        .graph_patch(
+            &item_path(drive_id, item_id)?,
+            &serde_json::json!({ "name": name.trim() }),
+        )
         .await?;
     Ok(())
 }
@@ -703,7 +776,11 @@ pub async fn root(client: &TeamsClient, drive_id: &str) -> Result<DriveItem> {
     } else {
         format!("/drives/{}/root", check_id(drive_id)?)
     };
-    let v: serde_json::Value = client.graph_get(&format!("{path}?{SELECT}")).await?.json().await?;
+    let v: serde_json::Value = client
+        .graph_get(&format!("{path}?{SELECT}"))
+        .await?
+        .json()
+        .await?;
     let mut item = parse_item(&v).context("The drive's folder didn't come back")?;
     // The root's own name is "root"; the picker shows the drive's.
     item.name = String::new();
@@ -718,7 +795,11 @@ pub async fn thumbnail(client: &TeamsClient, item: &DriveItem) -> Result<Option<
 
 /// The item's picture at one of Graph's sizes ("medium", "c320x180"),
 /// cached; None when it has none.
-pub async fn thumbnail_sized(client: &TeamsClient, item: &DriveItem, size: &str) -> Result<Option<PathBuf>> {
+pub async fn thumbnail_sized(
+    client: &TeamsClient,
+    item: &DriveItem,
+    size: &str,
+) -> Result<Option<PathBuf>> {
     if !size.bytes().all(|b| b.is_ascii_alphanumeric()) {
         bail!("Not a thumbnail size");
     }
@@ -729,7 +810,10 @@ pub async fn thumbnail_sized(client: &TeamsClient, item: &DriveItem, size: &str)
         .join("ost/thumbs");
     std::fs::create_dir_all(&dir)?;
     let Some(resp) = client
-        .graph_get_opt(&format!("{}/thumbnails/0/{size}/content", item_path(&item.drive_id, &item.id)?))
+        .graph_get_opt(&format!(
+            "{}/thumbnails/0/{size}/content",
+            item_path(&item.drive_id, &item.id)?
+        ))
         .await?
     else {
         return Ok(None);
@@ -753,9 +837,15 @@ pub struct Preview {
     pub path: String,
 }
 
-const TEXT_KINDS: &[&str] = &["txt", "md", "json", "xml", "log", "csv", "css", "js", "ts", "html", "htm", "yaml", "yml", "ini", "cfg", "py", "rs", "sh", "c", "h", "cpp", "java", "cs", "sql", "toml"];
+const TEXT_KINDS: &[&str] = &[
+    "txt", "md", "json", "xml", "log", "csv", "css", "js", "ts", "html", "htm", "yaml", "yml",
+    "ini", "cfg", "py", "rs", "sh", "c", "h", "cpp", "java", "cs", "sql", "toml",
+];
 const IMAGE_KINDS: &[&str] = &["png", "jpg", "jpeg", "gif", "bmp", "webp"];
-const OFFICE_KINDS: &[&str] = &["doc", "docx", "docm", "dot", "dotx", "rtf", "odt", "ppt", "pptx", "pptm", "pps", "ppsx", "odp", "xls", "xlsx", "xlsm", "xlsb", "ods"];
+const OFFICE_KINDS: &[&str] = &[
+    "doc", "docx", "docm", "dot", "dotx", "rtf", "odt", "ppt", "pptx", "pptm", "pps", "ppsx",
+    "odp", "xls", "xlsx", "xlsm", "xlsb", "ods",
+];
 /// Text previews stop here.
 const TEXT_LIMIT: usize = 1 << 20;
 
@@ -776,14 +866,31 @@ pub fn preview_kind(kind: &str) -> &'static str {
 pub async fn preview(client: &TeamsClient, item: &DriveItem) -> Result<Preview> {
     let kind = preview_kind(&item.kind);
     if kind == "none" || item.is_folder {
-        return Ok(Preview { kind: "none".into(), text: String::new(), path: String::new() });
+        return Ok(Preview {
+            kind: "none".into(),
+            text: String::new(),
+            path: String::new(),
+        });
     }
     let convert = kind == "pdf" && !item.kind.eq_ignore_ascii_case("pdf");
-    let url = format!("{}/content{}", item_path(&item.drive_id, &item.id)?, if convert { "?format=pdf" } else { "" });
-    let bytes = client.graph_get(&url).await?.bytes().await.context("Preview")?;
+    let url = format!(
+        "{}/content{}",
+        item_path(&item.drive_id, &item.id)?,
+        if convert { "?format=pdf" } else { "" }
+    );
+    let bytes = client
+        .graph_get(&url)
+        .await?
+        .bytes()
+        .await
+        .context("Preview")?;
     if kind == "text" {
         let cut = &bytes[..bytes.len().min(TEXT_LIMIT)];
-        return Ok(Preview { kind: "text".into(), text: String::from_utf8_lossy(cut).into_owned(), path: String::new() });
+        return Ok(Preview {
+            kind: "text".into(),
+            text: String::from_utf8_lossy(cut).into_owned(),
+            path: String::new(),
+        });
     }
     let dir = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
@@ -791,10 +898,18 @@ pub async fn preview(client: &TeamsClient, item: &DriveItem) -> Result<Preview> 
         .context("No cache folder")?
         .join("ost/preview");
     std::fs::create_dir_all(&dir)?;
-    let ext = if kind == "pdf" { "pdf".to_string() } else { item.kind.to_ascii_lowercase() };
+    let ext = if kind == "pdf" {
+        "pdf".to_string()
+    } else {
+        item.kind.to_ascii_lowercase()
+    };
     let path = dir.join(format!("{}.{ext}", check_id(&item.id)?));
     std::fs::write(&path, &bytes)?;
-    Ok(Preview { kind: kind.into(), text: String::new(), path: format!("file://{}", path.display()) })
+    Ok(Preview {
+        kind: kind.into(),
+        text: String::new(),
+        path: format!("file://{}", path.display()),
+    })
 }
 
 /// A folder the Move / Copy picker's search found, as Teams lists it.
@@ -840,20 +955,31 @@ pub fn date_filter_days(key: &str) -> Option<i64> {
 /// folders only (no OneNote notebooks or Site Assets), My files limited to
 /// your OneDrive's library (`docs`), and the date filter as " AND
 /// (LastModifiedTime>=…)" from midnight UTC that many days back.
-fn folder_query(q: &str, docs: Option<&str>, people: &[String], since_ms: Option<i64>) -> (String, String) {
+fn folder_query(
+    q: &str,
+    docs: Option<&str>,
+    people: &[String],
+    since_ms: Option<i64>,
+) -> (String, String) {
     let mut query = q.to_string();
     if let Some(d) = docs {
         query += &format!(" (path:\"{d}\" OR ParentLink:\"{d}*\" OR DocumentLink:\"{d}*\")");
     }
     // The Person filter (OneDrive's): each name as editor or author.
     if !people.is_empty() {
-        let names: Vec<String> = people.iter().map(|n| format!("ModifiedBy:\"{n}\" OR author:\"{n}\"")).collect();
+        let names: Vec<String> = people
+            .iter()
+            .map(|n| format!("ModifiedBy:\"{n}\" OR author:\"{n}\""))
+            .collect();
         query += &format!(" AND ({})", names.join(" OR "));
     }
     if let Some(ms) = since_ms {
         let day = ms - ms.rem_euclid(86_400_000);
         if let Some(t) = chrono::DateTime::from_timestamp_millis(day) {
-            query += &format!(" AND (LastModifiedTime>={} )", t.format("%Y-%m-%dT%H:%M:%S%.3fZ"));
+            query += &format!(
+                " AND (LastModifiedTime>={} )",
+                t.format("%Y-%m-%dT%H:%M:%S%.3fZ")
+            );
         }
     }
     let template = "({searchterms}) ContentTypeId:0x0120* NOT HtmlFileType:\"OneNote.Notebook\" NOT ParentLink:SiteAssets".to_string();
@@ -865,24 +991,47 @@ fn folder_query(q: &str, docs: Option<&str>, people: &[String], since_ms: Option
 /// OneDrive" for someone else's ("Shared" when unnamed), else the site's
 /// title (else the web address's last two parts); then its folders, with
 /// the library itself left out when it is Documents or Shared Documents.
-fn location(item_url: &str, web: &str, site_title: &str, template: i64, personal: &str) -> (Vec<String>, bool) {
-    let (item, web) = (super::copy_jobs::folder_url(item_url), super::copy_jobs::folder_url(web));
+fn location(
+    item_url: &str,
+    web: &str,
+    site_title: &str,
+    template: i64,
+    personal: &str,
+) -> (Vec<String>, bool) {
+    let (item, web) = (
+        super::copy_jobs::folder_url(item_url),
+        super::copy_jobs::folder_url(web),
+    );
     if web.is_empty() {
         return (Vec::new(), false);
     }
     // Under its web, else (a Loop workspace's items) just the site.
-    let rel = item.get(web.len() + 1..).filter(|_| item.to_lowercase().starts_with(&(web.to_lowercase() + "/"))).unwrap_or_default();
+    let rel = item
+        .get(web.len() + 1..)
+        .filter(|_| item.to_lowercase().starts_with(&(web.to_lowercase() + "/")))
+        .unwrap_or_default();
     let parts: Vec<&str> = rel.split('/').filter(|p| !p.is_empty()).collect();
-    let same = !personal.is_empty() && web.trim_end_matches('/').eq_ignore_ascii_case(personal.trim_end_matches('/'));
+    let same = !personal.is_empty()
+        && web
+            .trim_end_matches('/')
+            .eq_ignore_ascii_case(personal.trim_end_matches('/'));
     let first = if same {
         "My files".to_string()
     } else if template == 21 {
-        if site_title.is_empty() { "Shared".to_string() } else { format!("{site_title}'s OneDrive") }
+        if site_title.is_empty() {
+            "Shared".to_string()
+        } else {
+            format!("{site_title}'s OneDrive")
+        }
     } else if !site_title.is_empty() {
         site_title.to_string()
     } else {
         let w: Vec<&str> = web.split('/').collect();
-        if w.len() >= 2 { format!("{}-{}", w[w.len() - 2], w[w.len() - 1]) } else { String::new() }
+        if w.len() >= 2 {
+            format!("{}-{}", w[w.len() - 2], w[w.len() - 1])
+        } else {
+            String::new()
+        }
     };
     let mut out = vec![first];
     let folders = &parts[..parts.len().saturating_sub(1)];
@@ -894,31 +1043,61 @@ fn location(item_url: &str, web: &str, site_title: &str, template: i64, personal
     (out, same)
 }
 
-fn hit(h: &serde_json::Value, personal: &str, now: chrono::DateTime<chrono::Local>) -> Option<FolderHit> {
+fn hit(
+    h: &serde_json::Value,
+    personal: &str,
+    now: chrono::DateTime<chrono::Local>,
+) -> Option<FolderHit> {
     let r = &h["resource"];
     let f = &r["listItem"]["fields"];
     let mut item = parse_item(r)?;
     item.is_folder = true;
     item.kind.clear();
     if item.drive_id.is_empty() {
-        item.drive_id = r["parentReference"]["driveId"].as_str().unwrap_or_default().to_string();
+        item.drive_id = r["parentReference"]["driveId"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
     }
     let st = |k: &str| f[k].as_str().unwrap_or_default().to_string();
-    let web = [st("spWebUrl"), st("spSiteURL")].into_iter().find(|w| !w.is_empty()).unwrap_or_default();
-    let template = f["siteTemplateId"].as_i64().or_else(|| f["siteTemplateId"].as_str().and_then(|t| t.parse().ok())).unwrap_or(0);
+    let web = [st("spWebUrl"), st("spSiteURL")]
+        .into_iter()
+        .find(|w| !w.is_empty())
+        .unwrap_or_default();
+    let template = f["siteTemplateId"]
+        .as_i64()
+        .or_else(|| f["siteTemplateId"].as_str().and_then(|t| t.parse().ok()))
+        .unwrap_or(0);
     let (location, same_site) = location(&item.web_url, &web, &st("siteTitle"), template, personal);
     let modified_text = chrono::DateTime::parse_from_rfc3339(&item.modified)
         .map(|t| super::list_rows::activity_time(t.with_timezone(&chrono::Local), now))
         .unwrap_or_default();
     Some(FolderHit {
-        created_by: r["createdBy"]["user"]["displayName"].as_str().unwrap_or_default().to_string(),
+        created_by: r["createdBy"]["user"]["displayName"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string(),
         modified_text,
         location,
         same_site,
-        parent_id: r["parentReference"]["id"].as_str().unwrap_or_default().to_string(),
-        location_kind: if same_site || web.is_empty() { String::new() } else if template == 21 { "person".into() } else { "site".into() },
+        parent_id: r["parentReference"]["id"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string(),
+        location_kind: if same_site || web.is_empty() {
+            String::new()
+        } else if template == 21 {
+            "person".into()
+        } else {
+            "site".into()
+        },
         location_web: web,
-        location_author: st("authorOWSUSER").split('|').next().unwrap_or_default().trim().to_string(),
+        location_author: st("authorOWSUSER")
+            .split('|')
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
         item,
     })
 }
@@ -926,12 +1105,20 @@ fn hit(h: &serde_json::Value, personal: &str, now: chrono::DateTime<chrono::Loca
 /// Search for the Move/Copy picker, as Teams': folders only, in your
 /// OneDrive ("My files") or everything you can reach ("All files"), 25 by
 /// relevance; `days` is the date filter (see `date_filter_days`).
-pub async fn search_folders(client: &TeamsClient, query: &str, all: bool, days: Option<i64>, people: &[String]) -> Result<Vec<FolderHit>> {
+pub async fn search_folders(
+    client: &TeamsClient,
+    query: &str,
+    all: bool,
+    days: Option<i64>,
+    people: &[String],
+) -> Result<Vec<FolderHit>> {
     let q = query.trim();
     if q.is_empty() {
         return Ok(Vec::new());
     }
-    let personal = super::quick_access::personal_site(client).await.unwrap_or_default();
+    let personal = super::quick_access::personal_site(client)
+        .await
+        .unwrap_or_default();
     if !all && personal.is_empty() {
         bail!("Your OneDrive's address is unknown");
     }
@@ -946,7 +1133,12 @@ pub async fn search_folders(client: &TeamsClient, query: &str, all: bool, days: 
         "fields": ["id", "name", "size", "webUrl", "parentReference", "lastModifiedDateTime", "lastModifiedBy", "createdBy", "folder", "file", "sharepointIds",
             "IsContainer", "SiteTitle", "SPWebUrl", "SPSiteURL", "SiteTemplateId", "ParentLink", "AuthorOWSUSER"]
     }] });
-    let v: serde_json::Value = client.graph_post("/search/query", &body).await?.json().await.context("Search reply")?;
+    let v: serde_json::Value = client
+        .graph_post("/search/query", &body)
+        .await?
+        .json()
+        .await
+        .context("Search reply")?;
     Ok(v["value"][0]["hitsContainers"][0]["hits"]
         .as_array()
         .into_iter()
@@ -968,7 +1160,12 @@ pub async fn people_search(client: &TeamsClient, query: &str) -> Result<Vec<serd
             url::form_urlencoded::byte_serialize(q.as_bytes()).collect::<String>()
         )
     };
-    let v: serde_json::Value = client.graph_get(&path).await?.error_for_status()?.json().await?;
+    let v: serde_json::Value = client
+        .graph_get(&path)
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
     Ok(v["value"]
         .as_array()
         .into_iter()
@@ -984,28 +1181,56 @@ pub async fn people_search(client: &TeamsClient, query: &str) -> Result<Vec<serd
 /// Location's picture for a search hit (OneDrive's): a site's logo from
 /// your OneDrive's `siteiconmanager/getsitelogo` (saved in OST's cache), or
 /// the directory id of the person whose OneDrive it is (their drive's owner).
-pub async fn location_picture(client: &TeamsClient, web: &str, person: bool, author: &str) -> Result<serde_json::Value> {
+pub async fn location_picture(
+    client: &TeamsClient,
+    web: &str,
+    person: bool,
+    author: &str,
+) -> Result<serde_json::Value> {
     let web = web.trim_end_matches('/');
     let host = web.split('/').take(3).collect::<Vec<_>>().join("/");
     // OneDrive's picker shows the hit's author (AuthorOWSUSER's account) for
     // a person's OneDrive; the drive's owner when that's missing (a drive
     // you can't open whole has no owner to read).
     if person && !author.is_empty() && !author.contains('/') {
-        let v: serde_json::Value = client.graph_get(&format!("/users/{}?$select=id,displayName", url::form_urlencoded::byte_serialize(author.as_bytes()).collect::<String>())).await?.error_for_status()?.json().await?;
+        let v: serde_json::Value = client
+            .graph_get(&format!(
+                "/users/{}?$select=id,displayName",
+                url::form_urlencoded::byte_serialize(author.as_bytes()).collect::<String>()
+            ))
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
         return Ok(serde_json::json!({ "oid": v["id"], "name": v["displayName"] }));
     }
     if person {
         let hostname = host.trim_start_matches("https://");
         let path = web.strip_prefix(&host).unwrap_or_default();
-        let v: serde_json::Value = client.graph_get(&format!("/sites/{hostname}:{path}:/drive?$select=owner")).await?.error_for_status()?.json().await?;
-        return Ok(serde_json::json!({ "oid": v["owner"]["user"]["id"], "name": v["owner"]["user"]["displayName"] }));
+        let v: serde_json::Value = client
+            .graph_get(&format!("/sites/{hostname}:{path}:/drive?$select=owner"))
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        return Ok(
+            serde_json::json!({ "oid": v["owner"]["user"]["id"], "name": v["owner"]["user"]["displayName"] }),
+        );
     }
     let personal = super::quick_access::personal_site(client).await?;
     let q: String = url::form_urlencoded::byte_serialize(format!("'{web}'").as_bytes()).collect();
-    let url = format!("{}/_api/siteiconmanager/getsitelogo?siteUrl={q}", personal.trim_end_matches('/'));
+    let url = format!(
+        "{}/_api/siteiconmanager/getsitelogo?siteUrl={q}",
+        personal.trim_end_matches('/')
+    );
     let phost = url.split('/').take(3).collect::<Vec<_>>().join("/");
     let token = crate::auth::oauth::access_token_for(&format!("{phost}/.default")).await?;
-    let resp = reqwest::Client::new().get(&url).bearer_auth(token).send().await?.error_for_status()?;
+    let resp = reqwest::Client::new()
+        .get(&url)
+        .bearer_auth(token)
+        .send()
+        .await?
+        .error_for_status()?;
     let bytes = resp.bytes().await?;
     if bytes.is_empty() {
         bail!("No logo");
@@ -1016,7 +1241,10 @@ pub async fn location_picture(client: &TeamsClient, web: &str, person: bool, aut
         .context("No cache folder")?
         .join("ost/sitelogos");
     std::fs::create_dir_all(&dir)?;
-    let name: String = web.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
+    let name: String = web
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
     let path = dir.join(format!("{name}.img"));
     std::fs::write(&path, &bytes)?;
     Ok(serde_json::json!({ "path": format!("file://{}", path.display()) }))
@@ -1035,7 +1263,10 @@ pub async fn local_copy(client: &TeamsClient, item: &DriveItem) -> Result<PathBu
         .join("ost/open")
         .join(check_id(&item.id)?);
     std::fs::create_dir_all(&dir)?;
-    let name = Path::new(&item.name).file_name().and_then(|n| n.to_str()).context("Bad file name")?;
+    let name = Path::new(&item.name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .context("Bad file name")?;
     let bytes = client
         .graph_get(&format!("{}/content", item_path(&item.drive_id, &item.id)?))
         .await?
@@ -1053,23 +1284,45 @@ mod tests {
 
     #[test]
     fn favorites_go_to_your_onedrive() {
-        assert_eq!(favorites_host("https://x-my.sharepoint.com/personal/a_x_com").as_deref(), Some("https://x-my.sharepoint.com"));
-        assert_eq!(favorites_host("https://x.sharepoint.com/sites/OSTTestTeam").as_deref(), Some("https://x-my.sharepoint.com"));
+        assert_eq!(
+            favorites_host("https://x-my.sharepoint.com/personal/a_x_com").as_deref(),
+            Some("https://x-my.sharepoint.com")
+        );
+        assert_eq!(
+            favorites_host("https://x.sharepoint.com/sites/OSTTestTeam").as_deref(),
+            Some("https://x-my.sharepoint.com")
+        );
         assert_eq!(favorites_host("not a url"), None);
     }
 
     #[test]
     fn picker_search_asks_for_folders_as_teams_does() {
-        let (q, t) = folder_query("Recordings", Some("https://x-my.sharepoint.com/personal/a_b_com/Documents"), &[], None);
-        assert_eq!(q, "Recordings (path:\"https://x-my.sharepoint.com/personal/a_b_com/Documents\" OR ParentLink:\"https://x-my.sharepoint.com/personal/a_b_com/Documents*\" OR DocumentLink:\"https://x-my.sharepoint.com/personal/a_b_com/Documents*\")");
-        assert_eq!(t, "({searchterms}) ContentTypeId:0x0120* NOT HtmlFileType:\"OneNote.Notebook\" NOT ParentLink:SiteAssets");
+        let (q, t) = folder_query(
+            "Recordings",
+            Some("https://x-my.sharepoint.com/personal/a_b_com/Documents"),
+            &[],
+            None,
+        );
+        assert_eq!(
+            q,
+            "Recordings (path:\"https://x-my.sharepoint.com/personal/a_b_com/Documents\" OR ParentLink:\"https://x-my.sharepoint.com/personal/a_b_com/Documents*\" OR DocumentLink:\"https://x-my.sharepoint.com/personal/a_b_com/Documents*\")"
+        );
+        assert_eq!(
+            t,
+            "({searchterms}) ContentTypeId:0x0120* NOT HtmlFileType:\"OneNote.Notebook\" NOT ParentLink:SiteAssets"
+        );
         // Last 7 days from 2026-11-13 16:20 UTC: from midnight on the 6th.
-        let now = chrono::DateTime::parse_from_rfc3339("2026-11-13T16:20:00Z").unwrap().timestamp_millis();
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-13T16:20:00Z")
+            .unwrap()
+            .timestamp_millis();
         let (q, _) = folder_query("ost", None, &[], Some(now - 7 * 86_400_000));
         assert_eq!(q, "ost AND (LastModifiedTime>=2026-11-06T00:00:00.000Z )");
         // The Person filter, as OneDrive's search builds it.
         let (q, _) = folder_query("ost", None, &["OST Test 2".to_string()], None);
-        assert_eq!(q, "ost AND (ModifiedBy:\"OST Test 2\" OR author:\"OST Test 2\")");
+        assert_eq!(
+            q,
+            "ost AND (ModifiedBy:\"OST Test 2\" OR author:\"OST Test 2\")"
+        );
         assert_eq!(date_filter_days("last3Months"), Some(90));
         assert_eq!(date_filter_days("all"), None);
     }
@@ -1078,17 +1331,78 @@ mod tests {
     fn search_locations_read_as_onedrive_draws_them() {
         let me = "https://x-my.sharepoint.com/personal/a_b_com";
         let l = |u: &str, w: &str, t: &str, tpl: i64| location(u, w, t, tpl, me);
-        assert_eq!(l(&format!("{me}/Documents/Recordings"), me, "OST Test 1", 21), (vec!["My files".to_string()], true));
-        assert_eq!(l(&format!("{me}/Documents/Recordings/Old%20ones"), me, "OST Test 1", 21), (vec!["My files".to_string(), "Recordings".to_string()], true));
+        assert_eq!(
+            l(&format!("{me}/Documents/Recordings"), me, "OST Test 1", 21),
+            (vec!["My files".to_string()], true)
+        );
+        assert_eq!(
+            l(
+                &format!("{me}/Documents/Recordings/Old%20ones"),
+                me,
+                "OST Test 1",
+                21
+            ),
+            (vec!["My files".to_string(), "Recordings".to_string()], true)
+        );
         let team = "https://x.sharepoint.com/sites/OSTTestTeam";
-        assert_eq!(l(&format!("{team}/Shared%20Documents/OST%20threads%20test"), team, "OST Test Team", 64), (vec!["OST Test Team".to_string()], false));
-        assert_eq!(l(&format!("{team}/Shared%20Documents/General/Notes"), team, "OST Test Team", 64).0, ["OST Test Team", "General"]);
-        assert_eq!(l(&format!("{team}/SiteAssets/Notebook"), team, "OST Test Team", 64).0, ["OST Test Team", "SiteAssets"]);
+        assert_eq!(
+            l(
+                &format!("{team}/Shared%20Documents/OST%20threads%20test"),
+                team,
+                "OST Test Team",
+                64
+            ),
+            (vec!["OST Test Team".to_string()], false)
+        );
+        assert_eq!(
+            l(
+                &format!("{team}/Shared%20Documents/General/Notes"),
+                team,
+                "OST Test Team",
+                64
+            )
+            .0,
+            ["OST Test Team", "General"]
+        );
+        assert_eq!(
+            l(
+                &format!("{team}/SiteAssets/Notebook"),
+                team,
+                "OST Test Team",
+                64
+            )
+            .0,
+            ["OST Test Team", "SiteAssets"]
+        );
         let other = "https://x-my.sharepoint.com/personal/c_b_com";
-        assert_eq!(l(&format!("{other}/Documents/Plans"), other, "Randy Northrup", 21).0, ["Randy Northrup's OneDrive"]);
-        assert_eq!(l(&format!("{other}/Documents/Plans"), other, "", 21).0, ["Shared"]);
-        assert_eq!(l(&format!("{team}/Shared%20Documents/X"), team, "", 64).0, ["sites-OSTTestTeam"]);
-        assert_eq!(l("https://loop.cloud.microsoft/c/eyJz", "https://x.sharepoint.com/contentstorage/x8F", "My workspace", 70).0, ["My workspace"]);
+        assert_eq!(
+            l(
+                &format!("{other}/Documents/Plans"),
+                other,
+                "Randy Northrup",
+                21
+            )
+            .0,
+            ["Randy Northrup's OneDrive"]
+        );
+        assert_eq!(
+            l(&format!("{other}/Documents/Plans"), other, "", 21).0,
+            ["Shared"]
+        );
+        assert_eq!(
+            l(&format!("{team}/Shared%20Documents/X"), team, "", 64).0,
+            ["sites-OSTTestTeam"]
+        );
+        assert_eq!(
+            l(
+                "https://loop.cloud.microsoft/c/eyJz",
+                "https://x.sharepoint.com/contentstorage/x8F",
+                "My workspace",
+                70
+            )
+            .0,
+            ["My workspace"]
+        );
         assert!(l(&format!("{team}/X"), "", "T", 64).0.is_empty());
     }
 
@@ -1103,20 +1417,37 @@ mod tests {
             "parentReference": { "driveId": "b!d", "id": "01ROOT" },
             "listItem": { "fields": { "isContainer": true, "siteTitle": "OST Test 1", "spWebUrl": me, "siteTemplateId": 21 } }
         }});
-        let now = chrono::DateTime::parse_from_rfc3339("2026-11-13T16:20:00Z").unwrap().with_timezone(&chrono::Local);
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-13T16:20:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Local);
         let f = hit(&h, me, now).unwrap();
         assert!(f.item.is_folder);
         assert_eq!(f.item.kind, "");
-        assert_eq!((f.item.drive_id.as_str(), f.parent_id.as_str(), f.created_by.as_str()), ("b!d", "01ROOT", "SharePoint App"));
+        assert_eq!(
+            (
+                f.item.drive_id.as_str(),
+                f.parent_id.as_str(),
+                f.created_by.as_str()
+            ),
+            ("b!d", "01ROOT", "SharePoint App")
+        );
         assert_eq!(f.location, ["My files"]);
         assert!(f.same_site);
-        assert!(f.modified_text.ends_with("PM") || f.modified_text.ends_with("AM"), "{}", f.modified_text);
+        assert!(
+            f.modified_text.ends_with("PM") || f.modified_text.ends_with("AM"),
+            "{}",
+            f.modified_text
+        );
     }
 
     #[test]
     fn share_ids_are_graph_encoded() {
-        assert_eq!(share_id("https://onedrive.live.com/redir?resid=1231244193912!12&authKey=1201919!12921!1"),
-            "u!aHR0cHM6Ly9vbmVkcml2ZS5saXZlLmNvbS9yZWRpcj9yZXNpZD0xMjMxMjQ0MTkzOTEyITEyJmF1dGhLZXk9MTIwMTkxOSExMjkyMSEx");
+        assert_eq!(
+            share_id(
+                "https://onedrive.live.com/redir?resid=1231244193912!12&authKey=1201919!12921!1"
+            ),
+            "u!aHR0cHM6Ly9vbmVkcml2ZS5saXZlLmNvbS9yZWRpcj9yZXNpZD0xMjMxMjQ0MTkzOTEyITEyJmF1dGhLZXk9MTIwMTkxOSExMjkyMSEx"
+        );
     }
 
     #[test]
@@ -1134,7 +1465,10 @@ mod tests {
         let items = parse_items(&v);
         // Teams lists OneDrive's Shortcuts folder too (its own icon).
         assert_eq!(items.len(), 3);
-        assert_eq!((items[2].name.as_str(), items[2].special.as_str()), ("Shortcuts", "shortcuts"));
+        assert_eq!(
+            (items[2].name.as_str(), items[2].special.as_str()),
+            ("Shortcuts", "shortcuts")
+        );
         assert!(items[0].is_folder && items[0].child_count == 3 && items[0].sharing == "Private");
         assert_eq!(items[0].modified_by, "OST Test 1");
         assert_eq!(

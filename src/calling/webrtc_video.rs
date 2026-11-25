@@ -226,10 +226,24 @@ fn decode_loop(rx: mpsc::Receiver<VideoPacket>, want: Arc<AtomicBool>, key: &str
                         if super::frames::implicit_mask(key) {
                             // A presenter in Standout or Reporter: their
                             // background, cut out into the luma, clears.
-                            ost_vfx::implicit_mask_rgba(yuv.y(), yuv.u(), yuv.v(), yuv.strides(), w, h, &mut rgba);
+                            ost_vfx::implicit_mask_rgba(
+                                yuv.y(),
+                                yuv.u(),
+                                yuv.v(),
+                                yuv.strides(),
+                                w,
+                                h,
+                                &mut rgba,
+                            );
                             if decoded.is_multiple_of(150) {
                                 let clear = rgba.chunks_exact(4).filter(|p| p[3] == 0).count();
-                                tracing::info!(key, w, h, clear_percent = clear * 100 / (w * h).max(1), "presenter camera with implicit mask");
+                                tracing::info!(
+                                    key,
+                                    w,
+                                    h,
+                                    clear_percent = clear * 100 / (w * h).max(1),
+                                    "presenter camera with implicit mask"
+                                );
                             }
                         } else {
                             yuv.write_rgba8(&mut rgba);
@@ -455,7 +469,11 @@ const AVATAR: SendConfig = SendConfig {
 
 /// The capture size and rate for a camera device (the avatar's own).
 fn capture_format(device: Option<&str>) -> (u32, u32, u32) {
-    if device == Some(super::camera::AVATAR_DEVICE) { (AVATAR_W, AVATAR_H, AVATAR_FPS) } else { (SEND_W, SEND_H, SEND_FPS) }
+    if device == Some(super::camera::AVATAR_DEVICE) {
+        (AVATAR_W, AVATAR_H, AVATAR_FPS)
+    } else {
+        (SEND_W, SEND_H, SEND_FPS)
+    }
 }
 
 const CAMERA: SendConfig = SendConfig {
@@ -602,7 +620,11 @@ impl VideoSender {
         control: Option<Arc<SendControl>>,
     ) -> anyhow::Result<Self> {
         let (w, h, fps) = capture_format(device.as_deref());
-        let cfg = if device.as_deref() == Some(super::camera::AVATAR_DEVICE) { AVATAR } else { CAMERA };
+        let cfg = if device.as_deref() == Some(super::camera::AVATAR_DEVICE) {
+            AVATAR
+        } else {
+            CAMERA
+        };
         let (camera, frames) = super::camera::CameraCapture::start(device.as_deref(), w, h, fps)?;
         let stop = Arc::new(AtomicBool::new(false));
         let keyframe = Arc::new(AtomicBool::new(true));
@@ -702,7 +724,11 @@ fn send_loop(
         // A meeting's processor may ask for less (Teams' vdclc).
         let limits = control.as_ref().and_then(|c| c.get());
         let motion = cfg.health == super::call_health::Kind::ShareSend && screen_motion();
-        let (base_fps, base_kbps) = if motion { (MOTION_FPS, MOTION_KBPS) } else { (cfg.fps, cfg.kbps) };
+        let (base_fps, base_kbps) = if motion {
+            (MOTION_FPS, MOTION_KBPS)
+        } else {
+            (cfg.fps, cfg.kbps)
+        };
         let fps = limits.map_or(base_fps, |l| l.max_fps.clamp(1, 30));
         let kbps = limits.map_or(base_kbps, |l| l.max_kbps.clamp(50, 4000));
         // In a meeting, also what the send-side estimate leaves for video
@@ -714,7 +740,11 @@ fn send_loop(
         };
         // Efficiency mode: the camera at a lower resolution and bitrate.
         let efficient = cfg.effects && efficiency();
-        let kbps = if efficient { kbps.min(EFFICIENT_KBPS) } else { kbps };
+        let kbps = if efficient {
+            kbps.min(EFFICIENT_KBPS)
+        } else {
+            kbps
+        };
         // A little under the frame interval, so 15 fps cameras aren't halved.
         let min_gap = std::time::Duration::from_millis(1000 / fps as u64 * 8 / 10);
         let f = match frames.recv_timeout(std::time::Duration::from_millis(250)) {
@@ -763,7 +793,11 @@ fn send_loop(
         let (tw, th) = limits.map_or((f.width, f.height), |l| {
             fit_to_fs(f.width, f.height, l.max_fs)
         });
-        let (tw, th) = if efficient { fit_to_fs(tw, th, EFFICIENT_FS) } else { (tw, th) };
+        let (tw, th) = if efficient {
+            fit_to_fs(tw, th, EFFICIENT_FS)
+        } else {
+            (tw, th)
+        };
         let f = if (tw, th) != (f.width, f.height) {
             super::camera::YuvFrame {
                 width: tw,

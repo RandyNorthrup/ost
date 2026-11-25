@@ -47,12 +47,15 @@ const BUNDLED_VID_PIDS: &[(u16, &[u16])] = &[
     (
         0x0b0e,
         &[
-            0x3012, 0x3011, 0x3009, 0x306f, 0x3071, 0x3081, 0x3082, 0x3083, 0x3084, 0x3085,
-            0x3086, 0x3087, 0x3088, 0x3089, 0x308a, 0x308b, 0x308c, 0x308d, 0x308e, 0x308f,
-            0x3093, 0x3094, 0x3095, 0x3096, 0x3097, 0x3098, 0x3099,
+            0x3012, 0x3011, 0x3009, 0x306f, 0x3071, 0x3081, 0x3082, 0x3083, 0x3084, 0x3085, 0x3086,
+            0x3087, 0x3088, 0x3089, 0x308a, 0x308b, 0x308c, 0x308d, 0x308e, 0x308f, 0x3093, 0x3094,
+            0x3095, 0x3096, 0x3097, 0x3098, 0x3099,
         ],
     ),
-    (0x046d, &[0x0885, 0x0898, 0x08d2, 0x0867, 0x087c, 0x0963, 0x0967]),
+    (
+        0x046d,
+        &[0x0885, 0x0898, 0x08d2, 0x0867, 0x087c, 0x0963, 0x0967],
+    ),
     (0x2e43, &[0x0230]),
     (0x095d, &[0x9101, 0x9217, 0x095d, 0x92c8, 0x92c6]),
     (0x0499, &[0x4043]),
@@ -84,7 +87,11 @@ fn parse_vid_pids(v: &serde_json::Value) -> Option<Vec<(u16, Vec<u16>)>> {
         .map(|o| {
             Some((
                 hex(o.get("vendorId")?)?,
-                o.get("productIds")?.as_array()?.iter().filter_map(hex).collect(),
+                o.get("productIds")?
+                    .as_array()?
+                    .iter()
+                    .filter_map(hex)
+                    .collect(),
             ))
         })
         .collect()
@@ -116,7 +123,8 @@ pub fn room_response(
         .move_for_vid_pids
         .then(|| devices.iter().find(known).cloned())
         .flatten();
-    let suggest = select.is_none() && flags.suggest_for_vid_pids && devices.iter().any(|d| known(&d));
+    let suggest =
+        select.is_none() && flags.suggest_for_vid_pids && devices.iter().any(|d| known(&d));
     let (select, suggest) = if meeting_room_mode {
         (select, suggest)
     } else if select.is_some() {
@@ -197,12 +205,19 @@ pub fn composites(endpoints: &[Endpoint]) -> Vec<RoomDevice> {
             let speaker = mine.iter().find(|e| e.sink)?;
             let microphone = mine.iter().find(|e| !e.sink)?;
             if first.bus != "usb"
-                || matches!(first.form_factor.as_str(), "headset" | "headphone" | "handset")
+                || matches!(
+                    first.form_factor.as_str(),
+                    "headset" | "headphone" | "handset"
+                )
             {
                 return None;
             }
             Some(RoomDevice {
-                label: if first.product_name.is_empty() { speaker.name.clone() } else { first.product_name.clone() },
+                label: if first.product_name.is_empty() {
+                    speaker.name.clone()
+                } else {
+                    first.product_name.clone()
+                },
                 speaker: speaker.name.clone(),
                 microphone: microphone.name.clone(),
                 camera: None,
@@ -237,9 +252,14 @@ fn camera_of(vendor: u16, product: u16) -> Option<String> {
     for entry in std::fs::read_dir("/sys/class/video4linux").ok()?.flatten() {
         // …/videoN/device is the USB interface; its parent has the ids.
         let usb = entry.path().join("device").join("..");
-        if read(usb.join("idVendor")) == Some(vendor) && read(usb.join("idProduct")) == Some(product) {
+        if read(usb.join("idVendor")) == Some(vendor)
+            && read(usb.join("idProduct")) == Some(product)
+        {
             let path = format!("/dev/{}", entry.file_name().to_string_lossy());
-            if crate::calling::camera::list_devices().iter().any(|(p, _)| *p == path) {
+            if crate::calling::camera::list_devices()
+                .iter()
+                .any(|(p, _)| *p == path)
+            {
                 return Some(path);
             }
         }
@@ -276,8 +296,12 @@ fn pipewire_endpoints() -> Option<Vec<Endpoint>> {
 
     type Props = HashMap<String, String>;
     fn own(dict: Option<&pw::spa::utils::dict::DictRef>) -> Props {
-        dict.map(|d| d.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect())
-            .unwrap_or_default()
+        dict.map(|d| {
+            d.iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect()
+        })
+        .unwrap_or_default()
     }
     pw::init();
     let mainloop = pw::main_loop::MainLoopRc::new(None).ok()?;
@@ -323,7 +347,9 @@ fn pipewire_endpoints() -> Option<Vec<Endpoint>> {
             move |global| {
                 match global.type_ {
                     ObjectType::Device => {
-                        let Ok(device) = registry.bind::<pw::device::Device, _>(global) else { return };
+                        let Ok(device) = registry.bind::<pw::device::Device, _>(global) else {
+                            return;
+                        };
                         let id = global.id;
                         let devices = devices.clone();
                         let listener = device
@@ -335,11 +361,16 @@ fn pipewire_endpoints() -> Option<Vec<Endpoint>> {
                         keep.borrow_mut().push(Box::new((device, listener)));
                     }
                     ObjectType::Node => {
-                        let class = global.props.and_then(|p| p.get("media.class")).unwrap_or("");
+                        let class = global
+                            .props
+                            .and_then(|p| p.get("media.class"))
+                            .unwrap_or("");
                         if class != "Audio/Sink" && class != "Audio/Source" {
                             return;
                         }
-                        let Ok(node) = registry.bind::<pw::node::Node, _>(global) else { return };
+                        let Ok(node) = registry.bind::<pw::node::Node, _>(global) else {
+                            return;
+                        };
                         let nodes = nodes.clone();
                         let listener = node
                             .add_listener_local()
@@ -397,7 +428,10 @@ fn pipewire_endpoints() -> Option<Vec<Endpoint>> {
                     vendor_id: usb_id(&vendor),
                     product_id: usb_id(&product),
                     form_factor: get(n, dev, "device.form-factor"),
-                    channels: n.get("audio.channels").and_then(|c| c.parse().ok()).unwrap_or(0),
+                    channels: n
+                        .get("audio.channels")
+                        .and_then(|c| c.parse().ok())
+                        .unwrap_or(0),
                     product_name,
                     name,
                 })
@@ -453,7 +487,10 @@ mod tests {
         let c = composites(&list);
         assert_eq!(c.len(), 1);
         assert_eq!(c[0].label, "j model");
-        assert_eq!((c[0].speaker.as_str(), c[0].microphone.as_str()), ("Jabra Speaker", "Jabra Mic"));
+        assert_eq!(
+            (c[0].speaker.as_str(), c[0].microphone.as_str()),
+            ("Jabra Speaker", "Jabra Mic")
+        );
     }
 
     fn dev(label: &str, ids: (u16, u16)) -> RoomDevice {
@@ -483,7 +520,10 @@ mod tests {
         let r = room_response(vec![other.clone()], &list, true, ALL);
         assert_eq!((r.select, r.suggest, r.devices.len()), (None, false, 1));
         // Without auto-pick for known ids, Teams suggests instead.
-        let flags = Flags { move_for_vid_pids: false, ..ALL };
+        let flags = Flags {
+            move_for_vid_pids: false,
+            ..ALL
+        };
         let r = room_response(vec![jabra.clone()], &list, true, flags);
         assert_eq!((r.select, r.suggest), (None, true));
         // …and with meeting room mode off a suggestion is dropped.
@@ -492,13 +532,19 @@ mod tests {
     }
 
     fn vid_pids_bundled() -> Vec<(u16, Vec<u16>)> {
-        BUNDLED_VID_PIDS.iter().map(|(v, p)| (*v, p.to_vec())).collect()
+        BUNDLED_VID_PIDS
+            .iter()
+            .map(|(v, p)| (*v, p.to_vec()))
+            .collect()
     }
 
     #[test]
     fn ecs_lists_are_hex() {
         let v = serde_json::json!([{ "vendorId": "0b0e", "productIds": ["3012", "306F"] }]);
-        assert_eq!(parse_vid_pids(&v), Some(vec![(0x0b0e, vec![0x3012, 0x306f])]));
+        assert_eq!(
+            parse_vid_pids(&v),
+            Some(vec![(0x0b0e, vec![0x3012, 0x306f])])
+        );
         assert_eq!(usb_id("0x0b0e"), Some(0x0b0e));
         assert_eq!(usb_id("3012\n"), Some(0x3012));
     }

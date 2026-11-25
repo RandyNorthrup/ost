@@ -18,7 +18,10 @@ async fn main() -> anyhow::Result<()> {
             &url,
         )
         .bearer_auth(token)
-        .header("accept", std::env::var("SP_ACCEPT").unwrap_or_else(|_| "application/json;odata=verbose".into()))
+        .header(
+            "accept",
+            std::env::var("SP_ACCEPT").unwrap_or_else(|_| "application/json;odata=verbose".into()),
+        )
         .header("content-type", "application/json;odata=verbose");
     // SP_MERGE=1 updates an item the way OneDrive's Rename does.
     let req = if std::env::var_os("SP_MERGE").is_some() {
@@ -27,7 +30,11 @@ async fn main() -> anyhow::Result<()> {
         req
     };
     // SP_HEADERS="name: value; name: value" adds headers (as a browser sends them).
-    let mut req = if let Some(b) = args.get(1) { req.body(b.clone()) } else { req };
+    let mut req = if let Some(b) = args.get(1) {
+        req.body(b.clone())
+    } else {
+        req
+    };
     for h in std::env::var("SP_HEADERS").unwrap_or_default().split(';') {
         if let Some((k, v)) = h.split_once(':') {
             req = req.header(k.trim(), v.trim());

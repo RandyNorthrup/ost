@@ -80,8 +80,11 @@ impl SidebarState {
     pub fn update_teams(&mut self, teams: Vec<api::TeamInfo>, read: Option<&str>) {
         let selected = self.selected_key();
         let first_load = self.teams.is_empty();
-        let old: std::collections::HashMap<String, bool> =
-            self.teams.iter().map(|t| (t.id.clone(), t.expanded)).collect();
+        let old: std::collections::HashMap<String, bool> = self
+            .teams
+            .iter()
+            .map(|t| (t.id.clone(), t.expanded))
+            .collect();
         self.teams = teams
             .into_iter()
             .map(|t| Team {
@@ -140,7 +143,12 @@ impl SidebarState {
             changed |= c.unread != unread;
             c.unread = unread;
         }
-        for ch in self.teams.iter_mut().flat_map(|t| t.channels.iter_mut()).filter(|c| c.id == id) {
+        for ch in self
+            .teams
+            .iter_mut()
+            .flat_map(|t| t.channels.iter_mut())
+            .filter(|c| c.id == id)
+        {
             changed |= ch.unread != unread;
             ch.unread = unread;
         }
@@ -149,7 +157,10 @@ impl SidebarState {
 
     /// Whether `id` is one of the listed channels.
     pub fn is_channel(&self, id: &str) -> bool {
-        self.teams.iter().flat_map(|t| &t.channels).any(|c| c.id == id)
+        self.teams
+            .iter()
+            .flat_map(|t| &t.channels)
+            .any(|c| c.id == id)
     }
 
     /// Unread chats that aren't muted: Teams' Chat badge count.
@@ -485,7 +496,9 @@ fn render_item(buf: &mut Buffer, ctx: &RowCtx, item: &SidebarItem, state: &Sideb
                     .bg(Color::DarkGray)
                     .add_modifier(Modifier::BOLD)
             } else if unread {
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };

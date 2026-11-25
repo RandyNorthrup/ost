@@ -12,7 +12,7 @@
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 /// Teams' viewer disconnects after a day.
@@ -36,7 +36,10 @@ static STATE: Mutex<Option<DdvState>> = Mutex::new(None);
 static EVENTS: Mutex<Vec<(u64, String, serde_json::Value)>> = Mutex::new(Vec::new());
 
 fn now_secs() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// $XDG_CONFIG_HOME/ost/ddv.json (per device, beside desktop.json).
@@ -59,7 +62,9 @@ pub fn state() -> DdvState {
     }
     let mut s = g.clone().unwrap_or_default();
     // A day on, the connection is over.
-    if s.state == "connected" && now_secs().saturating_sub(s.connected_at) > CONNECTION_LIFETIME_SECS {
+    if s.state == "connected"
+        && now_secs().saturating_sub(s.connected_at) > CONNECTION_LIFETIME_SECS
+    {
         s.state = "idle".into();
         *g = Some(s.clone());
     }
@@ -130,7 +135,10 @@ pub async fn connect(connection_string: &str) -> Result<DdvState> {
 /// Note one piece of diagnostic data OST sends (an event name such as
 /// "Ost.UpdateCheck" and its fields); while viewing, it goes to the viewer.
 pub fn record(name: &str, data: serde_json::Value) {
-    let at = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+    let at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
     {
         let mut ev = EVENTS.lock().unwrap_or_else(|e| e.into_inner());
         ev.push((at, name.to_string(), data.clone()));
@@ -140,7 +148,11 @@ pub fn record(name: &str, data: serde_json::Value) {
         }
     }
     let s = state();
-    tracing::info!(event = name, viewing = s.enabled && s.state == "connected", "diagnostic data");
+    tracing::info!(
+        event = name,
+        viewing = s.enabled && s.state == "connected",
+        "diagnostic data"
+    );
     if s.enabled && s.state == "connected" {
         let name = name.to_string();
         if let Ok(rt) = tokio::runtime::Handle::try_current() {
@@ -172,7 +184,10 @@ mod tests {
     #[test]
     fn connection_strings_are_private_addresses() {
         assert!(parse_connection_string("10.10.11.64").is_ok());
-        assert_eq!(parse_connection_string("192.168.1.5:7070").unwrap().1, Some(7070));
+        assert_eq!(
+            parse_connection_string("192.168.1.5:7070").unwrap().1,
+            Some(7070)
+        );
         assert!(parse_connection_string("8.8.8.8").is_err());
         assert!(parse_connection_string("example.com").is_err());
         assert!(parse_connection_string("10.0.0.1:x").is_err());

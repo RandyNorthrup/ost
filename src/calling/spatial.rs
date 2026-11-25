@@ -44,7 +44,11 @@ struct State {
 }
 
 fn state() -> &'static Mutex<State> {
-    static S: Mutex<State> = Mutex::new(State { enabled: false, valid: false, positions: BTreeMap::new() });
+    static S: Mutex<State> = Mutex::new(State {
+        enabled: false,
+        valid: false,
+        positions: BTreeMap::new(),
+    });
     &S
 }
 
@@ -77,7 +81,10 @@ pub fn active() -> bool {
 /// and down the stage), as Teams' `setParticipantSpatialAudioPositions`.
 pub fn set_positions(positions: &[(u32, f32, f32)]) {
     let mut s = lock();
-    s.positions = positions.iter().map(|&(id, x, y)| (id, (x.clamp(0.0, 100.0), y.clamp(0.0, 100.0)))).collect();
+    s.positions = positions
+        .iter()
+        .map(|&(id, x, y)| (id, (x.clamp(0.0, 100.0), y.clamp(0.0, 100.0))))
+        .collect();
 }
 
 /// Where one speaker (an audio source) is heard: their tile's place as an
@@ -103,7 +110,8 @@ pub fn set_capable(on: bool) {
 /// play it (its MUCHv2 codec selection), or while Interpreter balances the
 /// interpretation against the meeting (enableLiveInterpretation).
 pub fn wants_unmixed() -> bool {
-    enabled() && CAPABLE.load(std::sync::atomic::Ordering::Relaxed) || super::ai_interpreter::listening()
+    enabled() && CAPABLE.load(std::sync::atomic::Ordering::Relaxed)
+        || super::ai_interpreter::listening()
 }
 
 /// Where a packet with these contributing sources is heard: the mean of
@@ -114,7 +122,10 @@ pub fn azimuth_for(csrcs: &[u32]) -> Option<f32> {
     if !(s.enabled && s.valid) {
         return None;
     }
-    let xs: Vec<f32> = csrcs.iter().filter_map(|c| s.positions.get(c).map(|p| p.0)).collect();
+    let xs: Vec<f32> = csrcs
+        .iter()
+        .filter_map(|c| s.positions.get(c).map(|p| p.0))
+        .collect();
     if xs.is_empty() {
         return None;
     }
@@ -141,14 +152,21 @@ pub struct Spatializer {
 impl Spatializer {
     pub fn new(rate: u32) -> Self {
         let max_delay = (MAX_ITD_S * rate as f32).ceil() as usize + 2;
-        Spatializer { rate, azimuth: 0.0, history: vec![0.0; max_delay] }
+        Spatializer {
+            rate,
+            azimuth: 0.0,
+            history: vec![0.0; max_delay],
+        }
     }
 
     fn gains(azimuth: f32) -> (f32, f32) {
         // Equal-power pan over the azimuth's angle.
         let angle = azimuth.clamp(-1.0, 1.0) * MAX_AZIMUTH_DEG.to_radians();
         let p = (angle / MAX_AZIMUTH_DEG.to_radians() + 1.0) * std::f32::consts::FRAC_PI_4;
-        (p.cos() * std::f32::consts::SQRT_2, p.sin() * std::f32::consts::SQRT_2)
+        (
+            p.cos() * std::f32::consts::SQRT_2,
+            p.sin() * std::f32::consts::SQRT_2,
+        )
     }
 
     fn delay(&self, azimuth: f32) -> f32 {
@@ -202,7 +220,11 @@ mod tests {
     }
 
     fn tone(n: usize) -> Vec<i16> {
-        (0..n).map(|i| ((i as f32 * 2.0 * std::f32::consts::PI * 440.0 / 48000.0).sin() * 8000.0) as i16).collect()
+        (0..n)
+            .map(|i| {
+                ((i as f32 * 2.0 * std::f32::consts::PI * 440.0 / 48000.0).sin() * 8000.0) as i16
+            })
+            .collect()
     }
 
     /// A voice from a tile on the left is louder in the left ear, and
@@ -215,11 +237,21 @@ mod tests {
             out.extend(s.process(&tone(960), Some(-1.0)));
         }
         let tail = &out[960 * 5..];
-        assert!(energy(tail, 0) > 4.0 * energy(tail, 1), "left {} right {}", energy(tail, 0), energy(tail, 1));
+        assert!(
+            energy(tail, 0) > 4.0 * energy(tail, 1),
+            "left {} right {}",
+            energy(tail, 0),
+            energy(tail, 1)
+        );
         let mut c = Spatializer::new(48_000);
         let centre = c.process(&tone(960), None);
         assert!(centre.iter().all(|f| f[0] == f[1]));
-        assert!((energy(&centre, 0) - energy(&tone(960).iter().map(|&x| [x, x]).collect::<Vec<_>>(), 0)).abs() < 1.0);
+        assert!(
+            (energy(&centre, 0)
+                - energy(&tone(960).iter().map(|&x| [x, x]).collect::<Vec<_>>(), 0))
+            .abs()
+                < 1.0
+        );
     }
 
     /// The mix is placed where its speakers' tiles are, only while spatial
@@ -239,6 +271,10 @@ mod tests {
         set_valid(false);
         assert_eq!(azimuth_for(&[10]), None);
         set_enabled(false);
-        assert!(speaker_capable(2, "pci") && !speaker_capable(1, "usb") && !speaker_capable(2, "bluetooth"));
+        assert!(
+            speaker_capable(2, "pci")
+                && !speaker_capable(1, "usb")
+                && !speaker_capable(2, "bluetooth")
+        );
     }
 }

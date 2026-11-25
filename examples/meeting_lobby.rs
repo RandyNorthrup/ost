@@ -6,12 +6,28 @@ use teams_cli::api::client::TeamsClient;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
-    let thread = args.next().ok_or_else(|| anyhow::anyhow!("usage: <thread id> [value]"))?;
+    let thread = args
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("usage: <thread id> [value]"))?;
     let client = TeamsClient::new().await?;
-    let tenant = client.tenant_id().ok_or_else(|| anyhow::anyhow!("no tenant"))?;
-    let me = client.object_id().ok_or_else(|| anyhow::anyhow!("no user id"))?;
+    let tenant = client
+        .tenant_id()
+        .ok_or_else(|| anyhow::anyhow!("no tenant"))?;
+    let me = client
+        .object_id()
+        .ok_or_else(|| anyhow::anyhow!("no user id"))?;
     let options = match args.next() {
-        Some(v) => teams_cli::api::meeting_options::set(&client, &tenant, &me, &thread, "0", &[("AutoAdmittedUsers", serde_json::json!(v))]).await?,
+        Some(v) => {
+            teams_cli::api::meeting_options::set(
+                &client,
+                &tenant,
+                &me,
+                &thread,
+                "0",
+                &[("AutoAdmittedUsers", serde_json::json!(v))],
+            )
+            .await?
+        }
         None => teams_cli::api::meeting_options::get(&client, &tenant, &me, &thread, "0").await?,
     };
     for o in &options.options {

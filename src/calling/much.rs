@@ -61,7 +61,11 @@ pub fn payload_type(section: &str) -> Option<u8> {
     section.lines().find_map(|l| {
         let rest = l.trim_end().strip_prefix("a=rtpmap:")?;
         let (pt, codec) = rest.split_once(' ')?;
-        codec.to_ascii_lowercase().starts_with("x-much2/").then(|| pt.parse().ok()).flatten()
+        codec
+            .to_ascii_lowercase()
+            .starts_with("x-much2/")
+            .then(|| pt.parse().ok())
+            .flatten()
     })
 }
 
@@ -84,7 +88,11 @@ pub struct MuchMixer {
 
 impl MuchMixer {
     pub fn new(rate: u32) -> Self {
-        MuchMixer { rate, speakers: HashMap::new(), unknown_kinds: Vec::new() }
+        MuchMixer {
+            rate,
+            speakers: HashMap::new(),
+            unknown_kinds: Vec::new(),
+        }
     }
 
     /// One packet's 20 ms, each speaker at their own place (`place`: a
@@ -109,7 +117,9 @@ impl MuchMixer {
             if pcm.is_empty() {
                 continue;
             }
-            let Some(sp) = self.speakers.get_mut(&s.source) else { continue };
+            let Some(sp) = self.speakers.get_mut(&s.source) else {
+                continue;
+            };
             // Interpreter's balance: the interpreter against everyone else.
             let gain = super::ai_interpreter::gain_for(s.source);
             let pcm: Vec<i16> = if (gain - 1.0).abs() < f32::EPSILON {
@@ -126,9 +136,15 @@ impl MuchMixer {
                 m[1] += i32::from(p[1]);
             }
         }
-        self.speakers.retain(|_, sp| now.duration_since(sp.seen) < IDLE);
+        self.speakers
+            .retain(|_, sp| now.duration_since(sp.seen) < IDLE);
         mix.iter()
-            .map(|m| [m[0].clamp(-32768, 32767) as i16, m[1].clamp(-32768, 32767) as i16])
+            .map(|m| {
+                [
+                    m[0].clamp(-32768, 32767) as i16,
+                    m[1].clamp(-32768, 32767) as i16,
+                ]
+            })
             .collect()
     }
 
@@ -143,11 +159,23 @@ impl MuchMixer {
     fn decode_one(&mut self, source: u32, frame: &[u8], now: Instant) -> Vec<i16> {
         let rate = self.rate;
         if let std::collections::hash_map::Entry::Vacant(e) = self.speakers.entry(source) {
-            let Ok(decoder) = opus::Decoder::new(rate, opus::Channels::Mono) else { return Vec::new() };
-            e.insert(Speaker { decoder, place: super::spatial::Spatializer::new(rate), seen: now });
-            tracing::info!(source, gain = super::ai_interpreter::gain_for(source), "x-much2: a speaker starts");
+            let Ok(decoder) = opus::Decoder::new(rate, opus::Channels::Mono) else {
+                return Vec::new();
+            };
+            e.insert(Speaker {
+                decoder,
+                place: super::spatial::Spatializer::new(rate),
+                seen: now,
+            });
+            tracing::info!(
+                source,
+                gain = super::ai_interpreter::gain_for(source),
+                "x-much2: a speaker starts"
+            );
         }
-        let Some(sp) = self.speakers.get_mut(&source) else { return Vec::new() };
+        let Some(sp) = self.speakers.get_mut(&source) else {
+            return Vec::new();
+        };
         sp.seen = now;
         let mut out = vec![0i16; rate as usize / 1000 * 120];
         match sp.decoder.decode(frame, &mut out, false) {
@@ -177,7 +205,10 @@ mod tests {
     const TWO_SPEAKERS: &str = "0244000002730016480beb4ca51b3866c2cf7ffac84659f261d913a470054400000348001a480beae73c7f5b9d9a16c3a7e556f5405c8b42fe2e3b1b143605";
 
     fn hex(s: &str) -> Vec<u8> {
-        (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
     }
 
     #[test]
@@ -185,8 +216,14 @@ mod tests {
         let p = hex(TWO_SPEAKERS);
         let s = parse(&p).expect("parses");
         assert_eq!(s.len(), 2);
-        assert_eq!((s[0].kind, s[0].source, s[0].frame.len()), (KIND_OPUS, 627, 22));
-        assert_eq!((s[1].kind, s[1].source, s[1].frame.len()), (KIND_OPUS, 840, 26));
+        assert_eq!(
+            (s[0].kind, s[0].source, s[0].frame.len()),
+            (KIND_OPUS, 627, 22)
+        );
+        assert_eq!(
+            (s[1].kind, s[1].source, s[1].frame.len()),
+            (KIND_OPUS, 840, 26)
+        );
         // Opus SILK-only wideband 20 ms frames (TOC 0x48).
         assert!(s.iter().all(|x| x.frame[0] == 0x48));
         // Truncated or trailing bytes don't parse.
@@ -208,9 +245,15 @@ mod tests {
     #[cfg(feature = "audio")]
     #[test]
     fn two_speakers_are_placed_apart() {
-        let mut enc = opus::Encoder::new(48_000, opus::Channels::Mono, opus::Application::Voip).unwrap();
+        let mut enc =
+            opus::Encoder::new(48_000, opus::Channels::Mono, opus::Application::Voip).unwrap();
         let tone = |f: f32, n: usize| -> Vec<i16> {
-            (0..960).map(|i| (((n * 960 + i) as f32 * 2.0 * std::f32::consts::PI * f / 48000.0).sin() * 8000.0) as i16).collect()
+            (0..960)
+                .map(|i| {
+                    (((n * 960 + i) as f32 * 2.0 * std::f32::consts::PI * f / 48000.0).sin()
+                        * 8000.0) as i16
+                })
+                .collect()
         };
         let mut m = MuchMixer::new(48_000);
         let place = |s: u32| Some(if s == 1 { -1.0 } else { 1.0 });

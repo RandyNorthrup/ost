@@ -28,7 +28,8 @@ pub struct Version {
 }
 
 fn quote(s: &str) -> String {
-    url::form_urlencoded::byte_serialize(format!("'{}'", s.replace('\'', "''")).as_bytes()).collect()
+    url::form_urlencoded::byte_serialize(format!("'{}'", s.replace('\'', "''")).as_bytes())
+        .collect()
 }
 
 /// `https://host/a/b` into (`https://host`, `/a/b`).
@@ -70,13 +71,22 @@ pub fn parse(reply: &Value, site: &str, file_url: &str) -> Vec<Version> {
             Version {
                 label: s(&v["VersionLabel"]),
                 modified: NaiveDateTime::parse_from_str(&s(&v["Created"]), "%Y-%m-%dT%H:%M:%S")
-                    .map(|t| Utc.from_utc_datetime(&t).with_timezone(&Local).format("%-m/%-d/%Y %-I:%M %p").to_string())
+                    .map(|t| {
+                        Utc.from_utc_datetime(&t)
+                            .with_timezone(&Local)
+                            .format("%-m/%-d/%Y %-I:%M %p")
+                            .to_string()
+                    })
                     .unwrap_or_default(),
                 size: super::list_rows::size_text(bytes),
                 by: s(&v["CreatedBy"]["Title"]),
                 by_email: s(&v["CreatedBy"]["Email"]),
                 by_oid: String::new(),
-                url: if current || rel.is_empty() { file_url.to_string() } else { format!("{}/{rel}", site.trim_end_matches('/')) },
+                url: if current || rel.is_empty() {
+                    file_url.to_string()
+                } else {
+                    format!("{}/{rel}", site.trim_end_matches('/'))
+                },
                 current,
             }
         })
@@ -89,7 +99,11 @@ pub async fn act(site: &str, file_url: &str, label: &str, restore: bool) -> Resu
     let url = format!(
         "{}/_api/web/GetFileByServerRelativePath(decodedUrl=@a1)/versions/{}(versionLabel=@a2)?@a1={}&@a2={}",
         site.trim_end_matches('/'),
-        if restore { "RestoreByLabel" } else { "RecycleByLabel" },
+        if restore {
+            "RestoreByLabel"
+        } else {
+            "RecycleByLabel"
+        },
         quote(&path),
         quote(label)
     );
@@ -115,15 +129,38 @@ mod tests {
         let file = "https://x-my.sharepoint.com/personal/a/Documents/ost-share-test.txt";
         let v = parse(&reply, site, file);
         assert_eq!(v.len(), 2);
-        assert_eq!((v[0].label.as_str(), v[0].size.as_str(), v[0].by.as_str(), v[0].current, v[0].url.as_str()), ("3.0", "56 bytes", "OST Test 1", true, file));
-        assert_eq!(v[1].url, "https://x-my.sharepoint.com/personal/a/_vti_history/1024/Documents/ost-share-test.txt");
-        let expect = Utc.with_ymd_and_hms(2026, 11, 12, 5, 57, 40).unwrap().with_timezone(&Local).format("%-m/%-d/%Y %-I:%M %p").to_string();
+        assert_eq!(
+            (
+                v[0].label.as_str(),
+                v[0].size.as_str(),
+                v[0].by.as_str(),
+                v[0].current,
+                v[0].url.as_str()
+            ),
+            ("3.0", "56 bytes", "OST Test 1", true, file)
+        );
+        assert_eq!(
+            v[1].url,
+            "https://x-my.sharepoint.com/personal/a/_vti_history/1024/Documents/ost-share-test.txt"
+        );
+        let expect = Utc
+            .with_ymd_and_hms(2026, 11, 12, 5, 57, 40)
+            .unwrap()
+            .with_timezone(&Local)
+            .format("%-m/%-d/%Y %-I:%M %p")
+            .to_string();
         assert_eq!(v[1].modified, expect);
     }
 
     #[test]
     fn paths_split_from_addresses() {
-        assert_eq!(split("https://h/personal/a/Documents/x y.txt").unwrap(), ("https://h".to_string(), "/personal/a/Documents/x y.txt".to_string()));
+        assert_eq!(
+            split("https://h/personal/a/Documents/x y.txt").unwrap(),
+            (
+                "https://h".to_string(),
+                "/personal/a/Documents/x y.txt".to_string()
+            )
+        );
         assert!(split("file:///etc/passwd").is_err());
         assert_eq!(quote("/a/it's.txt"), "%27%2Fa%2Fit%27%27s.txt%27");
     }

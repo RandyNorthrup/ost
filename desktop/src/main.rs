@@ -1,9 +1,9 @@
 //! OST desktop: a native Qt 6 / QML client on the OST engine.
 
 mod avatars;
-mod cameo_feed;
 mod backend;
 mod better_together;
+mod cameo_feed;
 mod clip_edit;
 mod clip_frames;
 mod clip_mask;
@@ -61,11 +61,10 @@ pub fn previous_log_path() -> std::path::PathBuf {
 /// The socket a running OST listens on, so launching it again brings that
 /// window back (Teams keeps a single instance).
 fn instance_socket() -> Option<std::path::PathBuf> {
-    std::env::var_os("XDG_RUNTIME_DIR")
-        .map(|d| match teams_cli::config::profile() {
-            Some(p) => std::path::PathBuf::from(d).join(format!("ost-desktop-{p}.sock")),
-            None => std::path::PathBuf::from(d).join("ost-desktop.sock"),
-        })
+    std::env::var_os("XDG_RUNTIME_DIR").map(|d| match teams_cli::config::profile() {
+        Some(p) => std::path::PathBuf::from(d).join(format!("ost-desktop-{p}.sock")),
+        None => std::path::PathBuf::from(d).join("ost-desktop.sock"),
+    })
 }
 
 /// When OST is already running: ask it to show its window, and return true.
@@ -92,7 +91,9 @@ fn hand_over_to_running_instance() -> bool {
                 if line.trim() == "activate" {
                     tracing::info!("another launch asked for the window");
                     backend::request_activate();
-                } else if let Some(rest) = line.trim_end_matches(['\n', '\r']).strip_prefix("open\t") {
+                } else if let Some(rest) =
+                    line.trim_end_matches(['\n', '\r']).strip_prefix("open\t")
+                {
                     // Another account's "Activity in other accounts and
                     // orgs" picked one of this account's chats.
                     let (thread, name) = rest.split_once('\t').unwrap_or((rest, ""));
@@ -144,20 +145,27 @@ fn main() {
         return;
     }
     let log = log_path();
-    let file = log.parent().and_then(|d| std::fs::create_dir_all(d).ok()).and_then(|_| {
-        // Settings ▸ Privacy ▸ Extended diagnostics data: keep earlier
-        // sessions' logs (Teams persists its logs past the in-memory
-        // buffer); otherwise each start begins a fresh log.
-        if backend::extended_diagnostics() {
-            if std::fs::metadata(&log).is_ok_and(|m| m.len() > EXTENDED_LOG_LIMIT) {
-                let _ = std::fs::rename(&log, previous_log_path());
+    let file = log
+        .parent()
+        .and_then(|d| std::fs::create_dir_all(d).ok())
+        .and_then(|_| {
+            // Settings ▸ Privacy ▸ Extended diagnostics data: keep earlier
+            // sessions' logs (Teams persists its logs past the in-memory
+            // buffer); otherwise each start begins a fresh log.
+            if backend::extended_diagnostics() {
+                if std::fs::metadata(&log).is_ok_and(|m| m.len() > EXTENDED_LOG_LIMIT) {
+                    let _ = std::fs::rename(&log, previous_log_path());
+                }
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&log)
+                    .ok()
+            } else {
+                let _ = std::fs::remove_file(previous_log_path());
+                std::fs::File::create(&log).ok()
             }
-            std::fs::OpenOptions::new().create(true).append(true).open(&log).ok()
-        } else {
-            let _ = std::fs::remove_file(previous_log_path());
-            std::fs::File::create(&log).ok()
-        }
-    });
+        });
     {
         use tracing_subscriber::prelude::*;
         let filter = || EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into());
@@ -187,7 +195,11 @@ fn main() {
     // its timers or rendering then.
     {
         let mut flags = std::env::var("QTWEBENGINE_CHROMIUM_FLAGS").unwrap_or_default();
-        for f in ["--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows"] {
+        for f in [
+            "--disable-background-timer-throttling",
+            "--disable-renderer-backgrounding",
+            "--disable-backgrounding-occluded-windows",
+        ] {
             if !flags.contains(f) {
                 flags = format!("{flags} {f}").trim().to_string();
             }
@@ -214,13 +226,28 @@ fn main() {
     if let Some(mut engine) = engine.as_mut() {
         // OST_QML_DIR (development): QML from a checkout instead of the
         // compiled-in copy.
-        if let Some(dir) = std::env::var("OST_QML_DIR").ok().filter(|d| !d.is_empty()).and_then(|d| std::ffi::CString::new(d).ok()) {
+        if let Some(dir) = std::env::var("OST_QML_DIR")
+            .ok()
+            .filter(|d| !d.is_empty())
+            .and_then(|d| std::ffi::CString::new(d).ok())
+        {
             // SAFETY: the engine is alive and owns the interceptor's use;
             // only the pointer is passed.
-            unsafe { ost_dev_qml_dir(engine.as_mut().get_unchecked_mut() as *mut QQmlApplicationEngine as *mut core::ffi::c_void, dir.as_ptr()) };
+            unsafe {
+                ost_dev_qml_dir(
+                    engine.as_mut().get_unchecked_mut() as *mut QQmlApplicationEngine
+                        as *mut core::ffi::c_void,
+                    dir.as_ptr(),
+                )
+            };
         }
         // SAFETY: the engine is alive and takes ownership of the provider.
-        unsafe { ost_add_icon_provider(engine.as_mut().get_unchecked_mut() as *mut QQmlApplicationEngine as *mut core::ffi::c_void) };
+        unsafe {
+            ost_add_icon_provider(
+                engine.as_mut().get_unchecked_mut() as *mut QQmlApplicationEngine
+                    as *mut core::ffi::c_void,
+            )
+        };
         engine.load(&QUrl::from("qrc:/qt/qml/com/ost/desktop/qml/Main.qml"));
     }
     if let Some(app) = app.as_mut() {
@@ -241,7 +268,9 @@ fn main() {
         && let Ok(exe) = std::env::current_exe()
     {
         use std::os::unix::process::CommandExt;
-        let err = std::process::Command::new(exe).args(std::env::args_os().skip(1)).exec();
+        let err = std::process::Command::new(exe)
+            .args(std::env::args_os().skip(1))
+            .exec();
         tracing::warn!("restart failed: {err}");
     }
     exit_without_static_teardown();

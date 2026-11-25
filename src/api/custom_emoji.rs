@@ -263,7 +263,10 @@ pub fn message_html(ams_v2: &str, e: &CustomEmoji) -> String {
 /// services-policies 929782). Teams maps some of them onto its settings
 /// (places.enableWorkLocationDetectionPolicy is
 /// teamsWorkLocationDetectionPolicy.enableWorkLocationDetection).
-pub async fn effective_policies(client: &TeamsClient, namespaces: &[&str]) -> Result<serde_json::Value> {
+pub async fn effective_policies(
+    client: &TeamsClient,
+    namespaces: &[&str],
+) -> Result<serde_json::Value> {
     let mt = client.middle_tier_url().context("No middle-tier address")?;
     let token = super::directory::middle_tier_token().await?;
     let resp = client

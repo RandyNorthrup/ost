@@ -48,7 +48,12 @@ pub fn add_order(orders: &[f64]) -> f64 {
 /// hyphens, no spaces; `https://x` and `https://localhost` pass). An
 /// empty field shows no error (Save just stays off).
 pub fn website_url_error(url: &str) -> Option<String> {
-    let err = || Some(crate::i18n::tr_id("That isn't a valid URL.", "extensibility:k3yoii7hk"));
+    let err = || {
+        Some(crate::i18n::tr_id(
+            "That isn't a valid URL.",
+            "extensibility:k3yoii7hk",
+        ))
+    };
     if url.is_empty() {
         return None;
     }
@@ -64,7 +69,9 @@ pub fn website_url_error(url: &str) -> Option<String> {
         None => (&rest[..end], None),
     };
     let host_ok = !host.is_empty()
-        && host.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+        && host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
         && !host.starts_with('.')
         && !host.starts_with('-');
     let port_ok = port.is_none_or(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()));
@@ -80,7 +87,10 @@ pub fn website_url_error(url: &str) -> Option<String> {
 /// most 128 characters), in the app language.
 pub fn tab_name_error(name: &str) -> Option<String> {
     if name.trim().is_empty() {
-        Some(crate::i18n::tr_id("Name is required", "extensibility:k7hld280c"))
+        Some(crate::i18n::tr_id(
+            "Name is required",
+            "extensibility:k7hld280c",
+        ))
     } else if name.chars().count() > 128 {
         Some("Tab name cannot exceed 128 characters.".into())
     } else {
@@ -132,7 +142,11 @@ fn check_thread(id: &str) -> Result<()> {
         && id[3..]
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"-_.@=".contains(&b));
-    if ok { Ok(()) } else { bail!("Not a conversation") }
+    if ok {
+        Ok(())
+    } else {
+        bail!("Not a conversation")
+    }
 }
 
 /// The `tab::` properties of a thread's property map, parsed, in Teams'
@@ -148,7 +162,11 @@ pub fn property_tabs(props: &serde_json::Value) -> Vec<serde_json::Value> {
             serde_json::Value::Object(_) => Some(v.clone()),
             _ => None,
         })
-        .filter(|t: &serde_json::Value| t.get("id").and_then(|i| i.as_str()).is_some_and(|i| i.starts_with("tab::")))
+        .filter(|t: &serde_json::Value| {
+            t.get("id")
+                .and_then(|i| i.as_str())
+                .is_some_and(|i| i.starts_with("tab::"))
+        })
         .collect();
     tabs.sort_by(|a, b| order_of(a).total_cmp(&order_of(b)));
     tabs
@@ -159,7 +177,10 @@ fn order_of(t: &serde_json::Value) -> f64 {
 }
 
 fn str_at(t: &serde_json::Value, p: &str) -> String {
-    t.pointer(p).and_then(|x| x.as_str()).unwrap_or_default().to_string()
+    t.pointer(p)
+        .and_then(|x| x.as_str())
+        .unwrap_or_default()
+        .to_string()
 }
 
 /// A thread's properties (`GET {chatsvc}/v1/threads/{id}?view=msnp24Equivalent`).
@@ -170,12 +191,22 @@ pub async fn thread_properties(client: &TeamsClient, thread_id: &str) -> Result<
         client.chat_service_url(),
         tabs::encode_uri_component(thread_id)
     );
-    let v: serde_json::Value = client.chat_get(&url).await?.json().await.context("Thread")?;
+    let v: serde_json::Value = client
+        .chat_get(&url)
+        .await?
+        .json()
+        .await
+        .context("Thread")?;
     Ok(v.get("properties").cloned().unwrap_or_default())
 }
 
 /// Set (or, with `None`, clear) a thread's `tab::` property.
-async fn put_property(client: &TeamsClient, thread_id: &str, tab_id: &str, value: Option<&str>) -> Result<()> {
+async fn put_property(
+    client: &TeamsClient,
+    thread_id: &str,
+    tab_id: &str,
+    value: Option<&str>,
+) -> Result<()> {
     check_thread(thread_id)?;
     tabs::check_tab(tab_id)?;
     let url = format!(
@@ -185,7 +216,9 @@ async fn put_property(client: &TeamsClient, thread_id: &str, tab_id: &str, value
         tabs::encode_uri_component(tab_id)
     );
     let body = serde_json::json!({ tab_id: value });
-    client.chat_request(reqwest::Method::PUT, &url, &body).await?;
+    client
+        .chat_request(reqwest::Method::PUT, &url, &body)
+        .await?;
     Ok(())
 }
 
@@ -196,7 +229,12 @@ pub async fn remove_property(client: &TeamsClient, thread_id: &str, tab_id: &str
 }
 
 /// Rename a chat's tab: its thread property with the new name.
-pub async fn rename_property(client: &TeamsClient, thread_id: &str, tab_id: &str, name: &str) -> Result<()> {
+pub async fn rename_property(
+    client: &TeamsClient,
+    thread_id: &str,
+    tab_id: &str,
+    name: &str,
+) -> Result<()> {
     let props = thread_properties(client, thread_id).await?;
     let tabs = property_tabs(&props);
     let others: Vec<String> = tabs
@@ -250,8 +288,16 @@ pub fn configured_property(old: &serde_json::Value, settings: &serde_json::Value
     let o = |p: &str| old.pointer(p).and_then(|v| v.as_str()).unwrap_or_default();
     let n = |k: &str| settings.get(k).and_then(|v| v.as_str()).unwrap_or_default();
     let order = old.get("order").and_then(|v| v.as_f64()).unwrap_or(10000.0);
-    let order = if order.fract() == 0.0 { serde_json::json!(order as i64) } else { serde_json::json!(order) };
-    let reply = old.get("replyChainId").cloned().filter(|v| !v.is_null()).unwrap_or(serde_json::json!(0));
+    let order = if order.fract() == 0.0 {
+        serde_json::json!(order as i64)
+    } else {
+        serde_json::json!(order)
+    };
+    let reply = old
+        .get("replyChainId")
+        .cloned()
+        .filter(|v| !v.is_null())
+        .unwrap_or(serde_json::json!(0));
     serde_json::to_string(&Prop {
         id: o("/id"),
         name: o("/name"),
@@ -264,7 +310,9 @@ pub fn configured_property(old: &serde_json::Value, settings: &serde_json::Value
             url: n("contentUrl"),
             website_url: n("websiteUrl"),
             entity_id: n("entityId"),
-            subtype: Some(o("/settings/subtype")).filter(|s| !s.is_empty()).unwrap_or("extension"),
+            subtype: Some(o("/settings/subtype"))
+                .filter(|s| !s.is_empty())
+                .unwrap_or("extension"),
             remove_url: n("removeUrl"),
         },
     })
@@ -277,15 +325,33 @@ pub fn configured_property(old: &serde_json::Value, settings: &serde_json::Value
 /// (see [`updated_property`], captured for Lists 2026-11-16); a tab the
 /// service made (the team's first Notes) takes Teams' configured shape
 /// ([`configured_property`]). Only https content addresses are taken.
-pub async fn set_settings(client: &TeamsClient, thread_id: &str, tab_id: &str, settings: &serde_json::Value) -> Result<()> {
-    let url = settings.get("contentUrl").and_then(|v| v.as_str()).unwrap_or_default();
-    anyhow::ensure!(url.starts_with("https://"), "The tab's address must be https");
+pub async fn set_settings(
+    client: &TeamsClient,
+    thread_id: &str,
+    tab_id: &str,
+    settings: &serde_json::Value,
+) -> Result<()> {
+    let url = settings
+        .get("contentUrl")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    anyhow::ensure!(
+        url.starts_with("https://"),
+        "The tab's address must be https"
+    );
     let props = thread_properties(client, thread_id).await?;
     let tabs = property_tabs(&props);
-    let old = tabs.iter().find(|t| str_at(t, "/id") == tab_id).context("No such tab")?;
+    let old = tabs
+        .iter()
+        .find(|t| str_at(t, "/id") == tab_id)
+        .context("No such tab")?;
     let property = if old.pointer("/settings/dateAdded").is_some() {
         let raw = raw_property(&props, tab_id).context("No such tab")?;
-        let others: Vec<String> = tabs.iter().filter(|t| str_at(t, "/id") != tab_id).map(|t| display_name(&str_at(t, "/name"))).collect();
+        let others: Vec<String> = tabs
+            .iter()
+            .filter(|t| str_at(t, "/id") != tab_id)
+            .map(|t| display_name(&str_at(t, "/name")))
+            .collect();
         updated_property(&raw, settings, &others)?
     } else {
         configured_property(old, settings)
@@ -318,7 +384,9 @@ pub fn display_name(stored: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' {
-            let hex = stored.get(i + 1..i + 3).and_then(|h| u8::from_str_radix(h, 16).ok());
+            let hex = stored
+                .get(i + 1..i + 3)
+                .and_then(|h| u8::from_str_radix(h, 16).ok());
             match hex {
                 Some(b) => {
                     out.push(b);
@@ -355,7 +423,11 @@ pub fn stored_name(name: &str, others: &[String]) -> String {
             n = n.max(k);
         }
     }
-    if n > -1 { format!("{encoded} ({})", n + 1) } else { encoded }
+    if n > -1 {
+        format!("{encoded} ({})", n + 1)
+    } else {
+        encoded
+    }
 }
 
 /// JSON with its objects' keys kept in order (Teams rewrites a tab's
@@ -481,9 +553,17 @@ fn given(settings: &serde_json::Value, key: &str) -> Option<serde_json::Value> {
 /// `removeUrl` and `websiteUrl` set from the page (left out when it gave
 /// none). Captured: Lists' "Untitled list" became "OST%20test%20list"
 /// with its list's address, `dateAdded` kept.
-pub fn updated_property(raw: &str, settings: &serde_json::Value, other_names: &[String]) -> Result<String> {
+pub fn updated_property(
+    raw: &str,
+    settings: &serde_json::Value,
+    other_names: &[String],
+) -> Result<String> {
     let mut t: ordered::Json = serde_json::from_str(raw).context("Tab property")?;
-    let name = settings.get("suggestedDisplayName").and_then(|v| v.as_str()).unwrap_or_default().trim();
+    let name = settings
+        .get("suggestedDisplayName")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .trim();
     let old_name = match t.get_mut("name") {
         Some(ordered::Json::Plain(serde_json::Value::String(s))) => s.clone(),
         _ => String::new(),
@@ -506,18 +586,39 @@ pub fn updated_property(raw: &str, settings: &serde_json::Value, other_names: &[
 /// "type":"tab:","settings":{"subtype":"extension","url","removeUrl",
 /// "websiteUrl","entityId","dateAdded"}}`, settings the app didn't give
 /// left out (OneNote's: no removeUrl).
-pub fn extension_property(id: &str, order: f64, app_id: &str, name: &str, settings: &serde_json::Value, date_added: &str) -> String {
-    let mut s = vec![("subtype".to_string(), ordered::Json::Plain("extension".into()))];
-    for (key, from) in [("url", "contentUrl"), ("removeUrl", "removeUrl"), ("websiteUrl", "websiteUrl"), ("entityId", "entityId")] {
+pub fn extension_property(
+    id: &str,
+    order: f64,
+    app_id: &str,
+    name: &str,
+    settings: &serde_json::Value,
+    date_added: &str,
+) -> String {
+    let mut s = vec![(
+        "subtype".to_string(),
+        ordered::Json::Plain("extension".into()),
+    )];
+    for (key, from) in [
+        ("url", "contentUrl"),
+        ("removeUrl", "removeUrl"),
+        ("websiteUrl", "websiteUrl"),
+        ("entityId", "entityId"),
+    ] {
         if let Some(v) = given(settings, from) {
             s.push((key.to_string(), ordered::Json::Plain(v)));
         }
     }
-    s.push(("dateAdded".to_string(), ordered::Json::Plain(date_added.into())));
+    s.push((
+        "dateAdded".to_string(),
+        ordered::Json::Plain(date_added.into()),
+    ));
     let p = |k: &str, v: serde_json::Value| (k.to_string(), ordered::Json::Plain(v));
     let t = ordered::Json::Object(vec![
         p("id", id.into()),
-        p("order", serde_json::from_str(&js_number(order)).unwrap_or_default()),
+        p(
+            "order",
+            serde_json::from_str(&js_number(order)).unwrap_or_default(),
+        ),
         p("definitionId", app_id.into()),
         p("directive", "extension-tab".into()),
         p("name", name.into()),
@@ -532,8 +633,15 @@ pub fn extension_property(id: &str, order: f64, app_id: &str, name: &str, settin
 async fn existing_tabs(client: &TeamsClient, thread_id: &str) -> Result<(Vec<f64>, Vec<String>)> {
     let props = thread_properties(client, thread_id).await?;
     let tabs = property_tabs(&props);
-    let orders = tabs.iter().map(order_of).filter(|o| o.is_finite() && *o < f64::MAX).collect();
-    let names = tabs.iter().map(|t| display_name(&str_at(t, "/name"))).collect();
+    let orders = tabs
+        .iter()
+        .map(order_of)
+        .filter(|o| o.is_finite() && *o < f64::MAX)
+        .collect();
+    let names = tabs
+        .iter()
+        .map(|t| display_name(&str_at(t, "/name")))
+        .collect();
     Ok((orders, names))
 }
 
@@ -554,11 +662,25 @@ pub async fn add_app_tab(
     settings: &serde_json::Value,
     post: bool,
 ) -> Result<String> {
-    let url = settings.get("contentUrl").and_then(|v| v.as_str()).unwrap_or_default();
-    anyhow::ensure!(url.starts_with("https://"), "The tab's address must be https");
-    anyhow::ensure!(!app_id.is_empty() && app_id.len() < 100 && !app_id.contains(['"', '\\', '/']), "Not an app");
+    let url = settings
+        .get("contentUrl")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    anyhow::ensure!(
+        url.starts_with("https://"),
+        "The tab's address must be https"
+    );
+    anyhow::ensure!(
+        !app_id.is_empty() && app_id.len() < 100 && !app_id.contains(['"', '\\', '/']),
+        "Not an app"
+    );
     let (orders, names) = existing_tabs(client, thread_id).await?;
-    let suggested = settings.get("suggestedDisplayName").and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty()).unwrap_or(app_name);
+    let suggested = settings
+        .get("suggestedDisplayName")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(app_name);
     let name = stored_name(suggested, &names);
     let id = format!("tab::{}", uuid::Uuid::new_v4());
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
@@ -567,7 +689,13 @@ pub async fn add_app_tab(
     record_used(app_id);
     if post {
         let root = post_link(client, thread_id, &id, &name, announcement(channel)).await?;
-        put_property(client, thread_id, &id, Some(&append_reply_chain(&property, &root)?)).await?;
+        put_property(
+            client,
+            thread_id,
+            &id,
+            Some(&append_reply_chain(&property, &root)?),
+        )
+        .await?;
     }
     Ok(id)
 }
@@ -590,12 +718,23 @@ pub fn list_tab_url(existing: bool) -> String {
 
 /// Add a channel's New list or Existing list tab ([`list_tab_url`]).
 /// Returns the tab's id.
-pub async fn add_list_tab(client: &TeamsClient, channel_id: &str, existing: bool) -> Result<String> {
+pub async fn add_list_tab(
+    client: &TeamsClient,
+    channel_id: &str,
+    existing: bool,
+) -> Result<String> {
     let (orders, names) = existing_tabs(client, channel_id).await?;
     let id = format!("tab::{}", uuid::Uuid::new_v4());
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let settings = serde_json::json!({ "contentUrl": list_tab_url(existing) });
-    let property = extension_property(&id, add_order(&orders), LISTS_APP, &stored_name("Untitled list", &names), &settings, &now);
+    let property = extension_property(
+        &id,
+        add_order(&orders),
+        LISTS_APP,
+        &stored_name("Untitled list", &names),
+        &settings,
+        &now,
+    );
     put_property(client, channel_id, &id, Some(&property)).await?;
     record_used(LISTS_APP);
     Ok(id)
@@ -608,7 +747,14 @@ pub async fn add_list_tab(client: &TeamsClient, channel_id: &str, existing: bool
 /// "isTabNameSynced","creatorUserMri","dateAdded"},"name"}` — the name
 /// last. Existing page: the page's link and `isTabNameSynced: true`; New
 /// page: no link yet, `isTabNameSynced: false` and the creator.
-pub fn page_property(id: &str, order: f64, component_url: Option<&str>, creator: &str, name: &str, date_added: &str) -> String {
+pub fn page_property(
+    id: &str,
+    order: f64,
+    component_url: Option<&str>,
+    creator: &str,
+    name: &str,
+    date_added: &str,
+) -> String {
     let p = |k: &str, v: serde_json::Value| (k.to_string(), ordered::Json::Plain(v));
     let mut s = Vec::new();
     if let Some(u) = component_url {
@@ -622,7 +768,10 @@ pub fn page_property(id: &str, order: f64, component_url: Option<&str>, creator:
     s.push(p("dateAdded", date_added.into()));
     let t = ordered::Json::Object(vec![
         p("id", id.into()),
-        p("order", serde_json::from_str(&js_number(order)).unwrap_or_default()),
+        p(
+            "order",
+            serde_json::from_str(&js_number(order)).unwrap_or_default(),
+        ),
         p("definitionId", PAGES_APP.into()),
         p("directive", "channel-page-tab".into()),
         p("type", "tab:".into()),
@@ -638,18 +787,33 @@ pub fn page_property(id: &str, order: f64, component_url: Option<&str>, creator:
 /// ([`crate::api::loop_page`]) and [`set_page_component_url`] points the
 /// tab at it. Returns the tab's id.
 pub async fn add_new_page_tab(client: &TeamsClient, channel_id: &str) -> Result<String> {
-    let me = client.object_id().map(|o| format!("8:orgid:{o}")).context("Not signed in")?;
+    let me = client
+        .object_id()
+        .map(|o| format!("8:orgid:{o}"))
+        .context("Not signed in")?;
     add_page_tab_without_link(client, channel_id, &me, "Untitled page").await
 }
 
 /// A Page tab whose page isn't made yet, named `name`, made by `creator`
 /// (an MRI): what a New page leaves until Loop has made the page (and,
 /// with someone else as its maker, what Teams hides). Returns the tab's id.
-pub async fn add_page_tab_without_link(client: &TeamsClient, channel_id: &str, creator: &str, name: &str) -> Result<String> {
+pub async fn add_page_tab_without_link(
+    client: &TeamsClient,
+    channel_id: &str,
+    creator: &str,
+    name: &str,
+) -> Result<String> {
     let (orders, names) = existing_tabs(client, channel_id).await?;
     let id = format!("tab::{}", uuid::Uuid::new_v4());
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-    let property = page_property(&id, add_order(&orders), None, creator, &stored_name(name, &names), &now);
+    let property = page_property(
+        &id,
+        add_order(&orders),
+        None,
+        creator,
+        &stored_name(name, &names),
+        &now,
+    );
     put_property(client, channel_id, &id, Some(&property)).await?;
     Ok(id)
 }
@@ -667,12 +831,26 @@ pub fn page_component_property(raw: &str, component_url: &str) -> Result<String>
 }
 
 /// Point a New page's tab at the page Loop made ([`page_component_property`]).
-pub async fn set_page_component_url(client: &TeamsClient, channel_id: &str, tab_id: &str, component_url: &str) -> Result<()> {
+pub async fn set_page_component_url(
+    client: &TeamsClient,
+    channel_id: &str,
+    tab_id: &str,
+    component_url: &str,
+) -> Result<()> {
     let u = url::Url::parse(component_url).context("Page link")?;
-    anyhow::ensure!(u.scheme() == "https" && u.host_str().is_some_and(|h| h.ends_with(".sharepoint.com")), "Page link");
+    anyhow::ensure!(
+        u.scheme() == "https" && u.host_str().is_some_and(|h| h.ends_with(".sharepoint.com")),
+        "Page link"
+    );
     let props = thread_properties(client, channel_id).await?;
     let raw = raw_property(&props, tab_id).context("No such tab")?;
-    put_property(client, channel_id, tab_id, Some(&page_component_property(&raw, component_url)?)).await
+    put_property(
+        client,
+        channel_id,
+        tab_id,
+        Some(&page_component_property(&raw, component_url)?),
+    )
+    .await
 }
 
 /// A Loop page a pasted link points to (Teams' Add an existing page).
@@ -691,33 +869,58 @@ pub struct LinkedPage {
 /// Graph's sharing id for a link (`u!` + unpadded base64url).
 fn share_id(link: &str) -> String {
     use base64::Engine as _;
-    format!("u!{}", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(link.as_bytes()))
+    format!(
+        "u!{}",
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(link.as_bytes())
+    )
 }
 
 /// Resolve a pasted Loop link (Teams: `GET graph/v1.0/shares/u!{link}`),
 /// for the page card: its name (without `.loop`), who edited it last.
 pub async fn resolve_page_link(client: &TeamsClient, link: &str) -> Result<LinkedPage> {
     let link = link.trim();
-    let u = url::Url::parse(link).ok().filter(|u| u.scheme() == "https").context("That isn't a valid link.")?;
+    let u = url::Url::parse(link)
+        .ok()
+        .filter(|u| u.scheme() == "https")
+        .context("That isn't a valid link.")?;
     let v: serde_json::Value = client
         .graph_get(&format!("/shares/{}/driveItem?$select=id,name,webUrl,lastModifiedBy,parentReference,sharepointIds", share_id(link)))
         .await?
         .json()
         .await
         .context("Page")?;
-    let s = |p: &str| v.pointer(p).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    let s = |p: &str| {
+        v.pointer(p)
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     let name = s("/name");
-    anyhow::ensure!(name.to_lowercase().ends_with(".loop") || name.to_lowercase().ends_with(".fluid"), "That link isn't a Loop page.");
+    anyhow::ensure!(
+        name.to_lowercase().ends_with(".loop") || name.to_lowercase().ends_with(".fluid"),
+        "That link isn't a Loop page."
+    );
     let web = s("/webUrl");
     let site = s("/sharepointIds/siteUrl");
     Ok(LinkedPage {
-        name: name.rsplit_once('.').map(|(n, _)| n.to_string()).unwrap_or(name.clone()),
+        name: name
+            .rsplit_once('.')
+            .map(|(n, _)| n.to_string())
+            .unwrap_or(name.clone()),
         edited_by: s("/lastModifiedBy/user/displayName"),
         web_url: web,
         drive_id: s("/parentReference/driveId"),
         item_id: s("/id"),
-        site: if site.is_empty() { format!("https://{}", u.host_str().unwrap_or_default()) } else { site },
-        nav: u.query_pairs().find(|(k, _)| k == "nav").map(|(_, v)| v.to_string()).unwrap_or_default(),
+        site: if site.is_empty() {
+            format!("https://{}", u.host_str().unwrap_or_default())
+        } else {
+            site
+        },
+        nav: u
+            .query_pairs()
+            .find(|(k, _)| k == "nav")
+            .map(|(_, v)| v.to_string())
+            .unwrap_or_default(),
     })
 }
 
@@ -726,11 +929,23 @@ pub async fn resolve_page_link(client: &TeamsClient, link: &str) -> Result<Linke
 /// {drive}/items/{item}/createLink {"type":"edit","scope":"organization"}`),
 /// the pasted link's `nav` kept on it, then the Page tab ([`page_property`])
 /// named after the page. Returns the tab's id.
-pub async fn add_existing_page(client: &TeamsClient, channel_id: &str, link: &str) -> Result<String> {
+pub async fn add_existing_page(
+    client: &TeamsClient,
+    channel_id: &str,
+    link: &str,
+) -> Result<String> {
     let page = resolve_page_link(client, link).await?;
     let site = url::Url::parse(&page.site).context("Page site")?;
-    anyhow::ensure!(site.host_str().is_some_and(|h| h.ends_with(".sharepoint.com")), "That link isn't a Loop page.");
-    let token = crate::auth::oauth::access_token_for(&format!("https://{}/.default", site.host_str().unwrap_or_default())).await?;
+    anyhow::ensure!(
+        site.host_str()
+            .is_some_and(|h| h.ends_with(".sharepoint.com")),
+        "That link isn't a Loop page."
+    );
+    let token = crate::auth::oauth::access_token_for(&format!(
+        "https://{}/.default",
+        site.host_str().unwrap_or_default()
+    ))
+    .await?;
     let made: serde_json::Value = client
         .http()
         .post(format!(
@@ -747,17 +962,35 @@ pub async fn add_existing_page(client: &TeamsClient, channel_id: &str, link: &st
         .context("Page link")?
         .json()
         .await?;
-    let mut component = made.pointer("/link/webUrl").and_then(|x| x.as_str()).context("Page link")?.to_string();
+    let mut component = made
+        .pointer("/link/webUrl")
+        .and_then(|x| x.as_str())
+        .context("Page link")?
+        .to_string();
     anyhow::ensure!(component.starts_with("https://"), "Page link");
     if !page.nav.is_empty() {
-        component.push_str(if component.contains('?') { "&nav=" } else { "?nav=" });
+        component.push_str(if component.contains('?') {
+            "&nav="
+        } else {
+            "?nav="
+        });
         component.push_str(&tabs::encode_uri_component(&page.nav));
     }
     let (orders, names) = existing_tabs(client, channel_id).await?;
     let id = format!("tab::{}", uuid::Uuid::new_v4());
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-    let me = client.object_id().map(|o| format!("8:orgid:{o}")).unwrap_or_default();
-    let property = page_property(&id, add_order(&orders), Some(&component), &me, &stored_name(&page.name, &names), &now);
+    let me = client
+        .object_id()
+        .map(|o| format!("8:orgid:{o}"))
+        .unwrap_or_default();
+    let property = page_property(
+        &id,
+        add_order(&orders),
+        Some(&component),
+        &me,
+        &stored_name(&page.name, &names),
+        &now,
+    );
     put_property(client, channel_id, &id, Some(&property)).await?;
     Ok(id)
 }
@@ -767,7 +1000,10 @@ pub async fn add_existing_page(client: &TeamsClient, channel_id: &str, link: &st
 pub async fn chat_member_upns(client: &TeamsClient, thread_id: &str) -> Result<Vec<String>> {
     check_thread(thread_id)?;
     let v: serde_json::Value = client
-        .graph_get(&format!("/chats/{}/members?$select=email", tabs::encode_uri_component(thread_id)))
+        .graph_get(&format!(
+            "/chats/{}/members?$select=email",
+            tabs::encode_uri_component(thread_id)
+        ))
         .await?
         .json()
         .await
@@ -776,7 +1012,12 @@ pub async fn chat_member_upns(client: &TeamsClient, thread_id: &str) -> Result<V
         .and_then(|x| x.as_array())
         .into_iter()
         .flatten()
-        .filter_map(|m| m.get("email").and_then(|e| e.as_str()).filter(|e| !e.is_empty()).map(str::to_string))
+        .filter_map(|m| {
+            m.get("email")
+                .and_then(|e| e.as_str())
+                .filter(|e| !e.is_empty())
+                .map(str::to_string)
+        })
         .collect())
 }
 
@@ -797,7 +1038,10 @@ pub async fn chat_tabs(client: &TeamsClient, chat_id: &str) -> Result<Vec<Tab>> 
         let (perms, icon, config) = tabs::app_facts(client, &tab.app_id).await;
         let (menu, context) = tabs::menus(tab.kind, true, perms, false, false);
         let unmovable = |m: &Vec<tabs::MenuItem>| -> Vec<tabs::MenuItem> {
-            m.iter().filter(|i| i.key != "moveLeft" && i.key != "moveRight").cloned().collect()
+            m.iter()
+                .filter(|i| i.key != "moveLeft" && i.key != "moveRight")
+                .cloned()
+                .collect()
         };
         tab.menu = unmovable(&menu);
         tab.context_menu = unmovable(&context);
@@ -816,15 +1060,22 @@ pub fn tab_from_property(t: &serde_json::Value, ctx: &tabs::TabContext) -> Tab {
     let app_id = str_at(t, "/definitionId");
     let kind = tabs::kind_of(&app_id, &id);
     let entity_id = str_at(t, "/settings/entityId");
-    let content = [str_at(t, "/settings/url"), str_at(t, "/settings/contentUrl")]
-        .into_iter()
-        .find(|u| !u.is_empty())
-        .unwrap_or_default();
+    let content = [
+        str_at(t, "/settings/url"),
+        str_at(t, "/settings/contentUrl"),
+    ]
+    .into_iter()
+    .find(|u| !u.is_empty())
+    .unwrap_or_default();
     Tab {
         name: display_name(&str_at(t, "/name")),
         content_url: tabs::fill(&content, ctx, &entity_id),
         content_template: tabs::https_template(&content),
-        website_url: tabs::https_only(&tabs::fill(&str_at(t, "/settings/websiteUrl"), ctx, &entity_id)),
+        website_url: tabs::https_only(&tabs::fill(
+            &str_at(t, "/settings/websiteUrl"),
+            ctx,
+            &entity_id,
+        )),
         order: order_of(t),
         draggable: false,
         opens_in_browser: kind == Kind::Website,
@@ -859,13 +1110,20 @@ pub async fn add_website(
         bail!(e);
     }
     if url.is_empty() {
-        bail!(crate::i18n::tr_id("That isn't a valid URL.", "extensibility:k3yoii7hk"));
+        bail!(crate::i18n::tr_id(
+            "That isn't a valid URL.",
+            "extensibility:k3yoii7hk"
+        ));
     }
     if let Some(e) = website_url_error(url) {
         bail!(e);
     }
     let props = thread_properties(client, thread_id).await?;
-    let orders: Vec<f64> = property_tabs(&props).iter().map(order_of).filter(|o| o.is_finite() && *o < f64::MAX).collect();
+    let orders: Vec<f64> = property_tabs(&props)
+        .iter()
+        .map(order_of)
+        .filter(|o| o.is_finite() && *o < f64::MAX)
+        .collect();
     let id = format!("tab::{}", uuid::Uuid::new_v4());
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let name = name.trim();
@@ -874,13 +1132,25 @@ pub async fn add_website(
     record_used(WEB_APP);
     if post {
         let root = post_link(client, thread_id, &id, name, announcement(channel)).await?;
-        put_property(client, thread_id, &id, Some(&append_reply_chain(&property, &root)?)).await?;
+        put_property(
+            client,
+            thread_id,
+            &id,
+            Some(&append_reply_chain(&property, &root)?),
+        )
+        .await?;
     }
     Ok(id)
 }
 
 /// Post `text` with the tab's link; the post's id.
-async fn post_link(client: &TeamsClient, thread_id: &str, tab_id: &str, tab_name: &str, text: &str) -> Result<String> {
+async fn post_link(
+    client: &TeamsClient,
+    thread_id: &str,
+    tab_id: &str,
+    tab_name: &str,
+    text: &str,
+) -> Result<String> {
     let me = client
         .object_id()
         .map(|o| format!("8:orgid:{o}"))
@@ -901,7 +1171,12 @@ async fn post_link(client: &TeamsClient, thread_id: &str, tab_id: &str, tab_name
         client.chat_service_url(),
         tabs::encode_uri_component(thread_id)
     );
-    let reply: serde_json::Value = client.chat_post(&url, &body).await?.json().await.context("Post")?;
+    let reply: serde_json::Value = client
+        .chat_post(&url, &body)
+        .await?
+        .json()
+        .await
+        .context("Post")?;
     Ok(reply
         .get("OriginalArrivalTime")
         .and_then(|v| v.as_i64())
@@ -971,13 +1246,20 @@ pub async fn apps_usage(client: &TeamsClient) -> Vec<String> {
 /// Teams' sort of the picker's apps (module 143369 `v8`): by place in
 /// the most-recently-used list, the rest after in their own order.
 pub fn sort_by_mru(ids: &mut [String], mru: &[String]) {
-    let pos: HashMap<String, usize> = mru.iter().enumerate().map(|(i, a)| (a.to_lowercase(), i)).collect();
+    let pos: HashMap<String, usize> = mru
+        .iter()
+        .enumerate()
+        .map(|(i, a)| (a.to_lowercase(), i))
+        .collect();
     ids.sort_by_key(|i| pos.get(&i.to_lowercase()).copied().unwrap_or(usize::MAX));
 }
 
 /// The states Teams' picker leaves out (module 143369 `h3`).
 pub fn offered_state(state: &str) -> bool {
-    !matches!(state, "NotInstalled" | "InstalledAndHidden" | "InstalledAndDeprecated" | "Featured")
+    !matches!(
+        state,
+        "NotInstalled" | "InstalledAndHidden" | "InstalledAndDeprecated" | "Featured"
+    )
 }
 
 /// Your apps and their states in Teams' order (aggregated user
@@ -986,7 +1268,9 @@ pub async fn your_apps(client: &TeamsClient) -> Result<Vec<(String, String)>> {
     let (base, token) = tabs::middle_tier(client).await?;
     let v: serde_json::Value = client
         .http()
-        .post(format!("{base}/beta/users/apps/aggregatedEntitlements?appbarview=userpinned"))
+        .post(format!(
+            "{base}/beta/users/apps/aggregatedEntitlements?appbarview=userpinned"
+        ))
         .bearer_auth(token)
         .json(&serde_json::json!([]))
         .send()
@@ -1003,7 +1287,10 @@ pub async fn your_apps(client: &TeamsClient) -> Result<Vec<(String, String)>> {
         .filter_map(|e| {
             Some((
                 e.get("id")?.as_str()?.to_string(),
-                e.get("state").and_then(|s| s.as_str()).unwrap_or_default().to_string(),
+                e.get("state")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
             ))
         })
         .collect())
@@ -1012,22 +1299,44 @@ pub async fn your_apps(client: &TeamsClient) -> Result<Vec<(String, String)>> {
 /// A conversation's app catalogue with each app's `state` there
 /// (`GET {mt}/beta/chats/{thread}/apps/definitionsv2`, paged with
 /// `x-ms-continuation`), kept for the session.
-pub async fn conversation_apps(client: &TeamsClient, thread_id: &str) -> Result<std::sync::Arc<Vec<serde_json::Value>>> {
-    static CACHE: Mutex<Option<HashMap<String, std::sync::Arc<Vec<serde_json::Value>>>>> = Mutex::new(None);
+pub async fn conversation_apps(
+    client: &TeamsClient,
+    thread_id: &str,
+) -> Result<std::sync::Arc<Vec<serde_json::Value>>> {
+    static CACHE: Mutex<Option<HashMap<String, std::sync::Arc<Vec<serde_json::Value>>>>> =
+        Mutex::new(None);
     check_thread(thread_id)?;
-    if let Some(c) = CACHE.lock().ok().and_then(|c| c.as_ref()?.get(thread_id).cloned()) {
+    if let Some(c) = CACHE
+        .lock()
+        .ok()
+        .and_then(|c| c.as_ref()?.get(thread_id).cloned())
+    {
         return Ok(c);
     }
     let (base, token) = tabs::middle_tier(client).await?;
     let mut all = Vec::new();
     let mut cont: Option<String> = None;
     for _ in 0..50 {
-        let mut rq = client.http().get(format!("{base}/beta/chats/{thread_id}/apps/definitionsv2")).bearer_auth(&token);
+        let mut rq = client
+            .http()
+            .get(format!("{base}/beta/chats/{thread_id}/apps/definitionsv2"))
+            .bearer_auth(&token);
         if let Some(c) = &cont {
             rq = rq.header("x-ms-continuation", c);
         }
-        let v: serde_json::Value = rq.send().await?.error_for_status().context("Conversation apps")?.json().await?;
-        all.extend(v.pointer("/value/appDefinitions").and_then(|a| a.as_array()).cloned().unwrap_or_default());
+        let v: serde_json::Value = rq
+            .send()
+            .await?
+            .error_for_status()
+            .context("Conversation apps")?
+            .json()
+            .await?;
+        all.extend(
+            v.pointer("/value/appDefinitions")
+                .and_then(|a| a.as_array())
+                .cloned()
+                .unwrap_or_default(),
+        );
         cont = v
             .pointer("/value/continuationToken")
             .and_then(|c| c.as_str())
@@ -1039,14 +1348,18 @@ pub async fn conversation_apps(client: &TeamsClient, thread_id: &str) -> Result<
     }
     let all = std::sync::Arc::new(all);
     if let Ok(mut c) = CACHE.lock() {
-        c.get_or_insert_with(HashMap::new).insert(thread_id.to_string(), all.clone());
+        c.get_or_insert_with(HashMap::new)
+            .insert(thread_id.to_string(), all.clone());
     }
     Ok(all)
 }
 
 /// App definitions (`POST {mt}/beta/users/apps/batchedDefinitions`), by
 /// lowercase id.
-pub async fn definitions(client: &TeamsClient, ids: &[String]) -> Result<HashMap<String, serde_json::Value>> {
+pub async fn definitions(
+    client: &TeamsClient,
+    ids: &[String],
+) -> Result<HashMap<String, serde_json::Value>> {
     let (base, token) = tabs::middle_tier(client).await?;
     let mut out = HashMap::new();
     for chunk in ids.chunks(50) {
@@ -1088,7 +1401,10 @@ pub async fn tab_store(
     let mut apps: Vec<(String, String)> = conv
         .iter()
         .filter_map(|d| {
-            let state = d.get("state").and_then(|s| s.as_str()).filter(|s| !s.is_empty() && *s != "None")?;
+            let state = d
+                .get("state")
+                .and_then(|s| s.as_str())
+                .filter(|s| !s.is_empty() && *s != "None")?;
             Some((d.get("id")?.as_str()?.to_string(), state.to_string()))
         })
         .collect();
@@ -1114,18 +1430,29 @@ pub async fn tab_store(
     let mut seen = HashSet::new();
     let mut ids: Vec<String> = apps
         .iter()
-        .filter(|(id, state)| offered_state(state) && !id.eq_ignore_ascii_case(PAGES_APP) && seen.insert(id.to_lowercase()))
+        .filter(|(id, state)| {
+            offered_state(state)
+                && !id.eq_ignore_ascii_case(PAGES_APP)
+                && seen.insert(id.to_lowercase())
+        })
         .map(|(id, _)| id.clone())
         .collect();
     let mut defs: HashMap<String, serde_json::Value> = conv
         .iter()
         .filter_map(|d| Some((d.get("id")?.as_str()?.to_lowercase(), d.clone())))
         .collect();
-    let missing: Vec<String> = ids.iter().filter(|i| !defs.contains_key(&i.to_lowercase())).cloned().collect();
+    let missing: Vec<String> = ids
+        .iter()
+        .filter(|i| !defs.contains_key(&i.to_lowercase()))
+        .cloned()
+        .collect();
     if !missing.is_empty() {
         defs.extend(definitions(client, &missing).await.unwrap_or_default());
     }
-    ids.retain(|id| defs.get(&id.to_lowercase()).is_some_and(|d| kind.supports(d)));
+    ids.retain(|id| {
+        defs.get(&id.to_lowercase())
+            .is_some_and(|d| kind.supports(d))
+    });
     sort_by_mru(&mut ids, &apps_usage(client).await);
     // The configuration page's address stays a template: the host fills it
     // from the tab's context (the team's site for SharePoint's
@@ -1141,11 +1468,18 @@ pub async fn tab_store(
         .collect();
     let excluded: HashSet<String> = ids.iter().map(|i| i.to_lowercase()).collect();
     let (collections, _, _) = store_content::ic_collections(client, kind, &excluded).await?;
-    Ok(InContext { installed, collections })
+    Ok(InContext {
+        installed,
+        collections,
+    })
 }
 
 /// The picker's search: the Store's matches that have a tab here.
-pub async fn tab_store_search(client: &TeamsClient, kind: IcKind, query: &str) -> Result<Vec<StoreApp>> {
+pub async fn tab_store_search(
+    client: &TeamsClient,
+    kind: IcKind,
+    query: &str,
+) -> Result<Vec<StoreApp>> {
     store_content::search_in_context(client, query, kind, &HashSet::new()).await
 }
 
@@ -1176,13 +1510,26 @@ mod tests {
             "apiUrl": "https://www.onenote.com/api/v1.0/x", "notebookSource": "Pick"});
         assert_eq!(stored_name("OST Notebook", &[]), "OST%20Notebook");
         assert_eq!(
-            extension_property("tab::0967ad02-4eb1-4e25-8802-bbd1e7e0e326", 110_000.0, "0d820ecd-def2-4297-adad-78056cde7c78", "OST%20Notebook", &set, "2026-11-16T15:10:41.974Z"),
+            extension_property(
+                "tab::0967ad02-4eb1-4e25-8802-bbd1e7e0e326",
+                110_000.0,
+                "0d820ecd-def2-4297-adad-78056cde7c78",
+                "OST%20Notebook",
+                &set,
+                "2026-11-16T15:10:41.974Z"
+            ),
             r#"{"id":"tab::0967ad02-4eb1-4e25-8802-bbd1e7e0e326","order":110000,"definitionId":"0d820ecd-def2-4297-adad-78056cde7c78","directive":"extension-tab","name":"OST%20Notebook","type":"tab:","settings":{"subtype":"extension","url":"https://m365.cloud.microsoft/launch/onenote/officeunihost/teams?auth=2&locale={locale}","websiteUrl":"https://m365.cloud.microsoft/launch/onenote?auth=2","entityId":"3604df1d-f46c-45b4-a6ac-3ad052836bda","dateAdded":"2026-11-16T15:10:41.974Z"}}"#
         );
         // A channel's New list, then the list made on its page (OST test
         // channel): the page's setSettings rewrites it in place.
-        let new_list = extension_property("tab::f2f8c4b5-a61c-465e-83c4-fa025ffd6563", 110_000.0, LISTS_APP, &stored_name("Untitled list", &[]),
-            &serde_json::json!({"contentUrl": list_tab_url(false)}), "2026-11-16T15:14:53.036Z");
+        let new_list = extension_property(
+            "tab::f2f8c4b5-a61c-465e-83c4-fa025ffd6563",
+            110_000.0,
+            LISTS_APP,
+            &stored_name("Untitled list", &[]),
+            &serde_json::json!({"contentUrl": list_tab_url(false)}),
+            "2026-11-16T15:14:53.036Z",
+        );
         assert_eq!(
             new_list,
             r#"{"id":"tab::f2f8c4b5-a61c-465e-83c4-fa025ffd6563","order":110000,"definitionId":"26bc2873-6023-480c-a11b-76b66605ce8c","directive":"extension-tab","name":"Untitled%20list","type":"tab:","settings":{"subtype":"extension","url":"https://{teamSiteDomain}{teamSitePath}/_layouts/15/teamsappstartup.aspx?launch=create&theme={theme}&locale={locale}&app=teamslist&teamId={teamId}&channelId={channelId}&ringId={ringId}&sid={sessionId}&asid={appSessionId}&userTeamRole={userTeamRole}","dateAdded":"2026-11-16T15:14:53.036Z"}}"#
@@ -1193,9 +1540,21 @@ mod tests {
             r#"{"id":"tab::f2f8c4b5-a61c-465e-83c4-fa025ffd6563","order":110000,"definitionId":"26bc2873-6023-480c-a11b-76b66605ce8c","directive":"extension-tab","name":"OST%20test%20list","type":"tab:","settings":{"subtype":"extension","url":"https://scnetsolutions.sharepoint.com/sites/OSTTestTeam/_layouts/15/FileBrowser.aspx?app=Teams&scenario=Lists&teamId={teamId}","dateAdded":"2026-11-16T15:14:53.036Z","entityId":""}}"#
         );
         // Existing list picked the same list: Teams numbered the name.
-        assert_eq!(stored_name("OST test list", &["Notes".into(), "OST test list".into()]), "OST%20test%20list (1)");
-        assert_eq!(stored_name("OST test list", &["ost test list (1)".into(), "OST test list".into()]), "OST%20test%20list (2)");
-        assert_eq!(stored_name("Untitled list", &["OST test list".into()]), "Untitled%20list");
+        assert_eq!(
+            stored_name("OST test list", &["Notes".into(), "OST test list".into()]),
+            "OST%20test%20list (1)"
+        );
+        assert_eq!(
+            stored_name(
+                "OST test list",
+                &["ost test list (1)".into(), "OST test list".into()]
+            ),
+            "OST%20test%20list (2)"
+        );
+        assert_eq!(
+            stored_name("Untitled list", &["OST test list".into()]),
+            "Untitled%20list"
+        );
         assert_eq!(display_name("OST%20test%20list (1)"), "OST test list (1)");
         assert_eq!(display_name("100% done"), "100% done");
         assert_eq!(display_name("Website"), "Website");
@@ -1205,11 +1564,25 @@ mod tests {
     fn page_tabs_are_teams_properties() {
         // New page and Existing page in OST test channel (2026-11-16).
         assert_eq!(
-            page_property("tab::1d556e44-09de-48f9-a4e4-2d8e6781a076", 130_000.0, None, "8:orgid:4287e791-1b98-4963-8b94-281c50472683", "Untitled%20page", "2026-11-16T15:20:47.685Z"),
+            page_property(
+                "tab::1d556e44-09de-48f9-a4e4-2d8e6781a076",
+                130_000.0,
+                None,
+                "8:orgid:4287e791-1b98-4963-8b94-281c50472683",
+                "Untitled%20page",
+                "2026-11-16T15:20:47.685Z"
+            ),
             r#"{"id":"tab::1d556e44-09de-48f9-a4e4-2d8e6781a076","order":130000,"definitionId":"5ae80e49-7ada-461a-a6bd-c5df2e0cdb06","directive":"channel-page-tab","type":"tab:","settings":{"isLieChannelPageTab":false,"isTabNameSynced":false,"creatorUserMri":"8:orgid:4287e791-1b98-4963-8b94-281c50472683","dateAdded":"2026-11-16T15:20:47.685Z"},"name":"Untitled%20page"}"#
         );
         assert_eq!(
-            page_property("tab::3695a39f-1e11-43d8-bd64-b34e28a2c8df", 140_000.0, Some("https://scnetsolutions.sharepoint.com/:fl:/s/OSTTestTeam/IQBu0v?nav=cz0l"), "8:orgid:x", "Loop%20paragraph", "2026-11-16T15:26:44.086Z"),
+            page_property(
+                "tab::3695a39f-1e11-43d8-bd64-b34e28a2c8df",
+                140_000.0,
+                Some("https://scnetsolutions.sharepoint.com/:fl:/s/OSTTestTeam/IQBu0v?nav=cz0l"),
+                "8:orgid:x",
+                "Loop%20paragraph",
+                "2026-11-16T15:26:44.086Z"
+            ),
             r#"{"id":"tab::3695a39f-1e11-43d8-bd64-b34e28a2c8df","order":140000,"definitionId":"5ae80e49-7ada-461a-a6bd-c5df2e0cdb06","directive":"channel-page-tab","type":"tab:","settings":{"componentUrl":"https://scnetsolutions.sharepoint.com/:fl:/s/OSTTestTeam/IQBu0v?nav=cz0l","isLieChannelPageTab":false,"isTabNameSynced":true,"dateAdded":"2026-11-16T15:26:44.086Z"},"name":"Loop%20paragraph"}"#
         );
         assert!(share_id("https://x.sharepoint.com/:fl:/r/a?b=1").starts_with("u!aHR0cHM6Ly94"));
@@ -1248,15 +1621,39 @@ mod tests {
 
     #[test]
     fn website_urls_as_teams_judges_them() {
-        for ok in ["https://example.com", "https://example", "https://x", "https://localhost", "https://example.com/x?y=1", "https://a-b.example.com:8443/p"] {
+        for ok in [
+            "https://example.com",
+            "https://example",
+            "https://x",
+            "https://localhost",
+            "https://example.com/x?y=1",
+            "https://a-b.example.com:8443/p",
+        ] {
             assert_eq!(website_url_error(ok).as_deref(), None, "{ok}");
         }
-        for bad in ["http://example", "example.com", "www.example.com", "HTTPS://example.com", "https://", "https://a b.com", "https://ex<ample.com", "https://example.com ", "https://exa%mple.com"] {
-            assert_eq!(website_url_error(bad).as_deref(), Some("That isn't a valid URL."), "{bad}");
+        for bad in [
+            "http://example",
+            "example.com",
+            "www.example.com",
+            "HTTPS://example.com",
+            "https://",
+            "https://a b.com",
+            "https://ex<ample.com",
+            "https://example.com ",
+            "https://exa%mple.com",
+        ] {
+            assert_eq!(
+                website_url_error(bad).as_deref(),
+                Some("That isn't a valid URL."),
+                "{bad}"
+            );
         }
         assert_eq!(website_url_error("").as_deref(), None);
         assert_eq!(tab_name_error(" ").as_deref(), Some("Name is required"));
-        assert_eq!(tab_name_error(&"x".repeat(129)).as_deref(), Some("Tab name cannot exceed 128 characters."));
+        assert_eq!(
+            tab_name_error(&"x".repeat(129)).as_deref(),
+            Some("Tab name cannot exceed 128 characters.")
+        );
         assert_eq!(tab_name_error("Website").as_deref(), None);
     }
 
@@ -1283,11 +1680,31 @@ mod tests {
 
     #[test]
     fn the_announcement_is_teams() {
-        let v = tabs::tab_link_post("19:x@thread.v2", "tab::1", "Website", announcement(false), "8:orgid:me", "OST Test 1", "1", "2026-11-16T07:55:18.994Z");
-        assert_eq!(v["content"], "I added a tab at the top of this chat. Check it out!");
+        let v = tabs::tab_link_post(
+            "19:x@thread.v2",
+            "tab::1",
+            "Website",
+            announcement(false),
+            "8:orgid:me",
+            "OST Test 1",
+            "1",
+            "2026-11-16T07:55:18.994Z",
+        );
+        assert_eq!(
+            v["content"],
+            "I added a tab at the top of this chat. Check it out!"
+        );
         assert_eq!(v["messagetype"], "Text");
-        assert!(v["properties"]["files"].as_str().unwrap().contains(r#""itemid":"tab::1","fileName":"Website","fileType":"deeplink""#));
-        assert_eq!(announcement(true), "I added a tab at the top of this channel. Check it out!");
+        assert!(
+            v["properties"]["files"]
+                .as_str()
+                .unwrap()
+                .contains(r#""itemid":"tab::1","fileName":"Website","fileType":"deeplink""#)
+        );
+        assert_eq!(
+            announcement(true),
+            "I added a tab at the top of this channel. Check it out!"
+        );
     }
 
     #[test]
@@ -1302,31 +1719,84 @@ mod tests {
         assert_eq!(list.len(), 2);
         let ctx = tabs::TabContext::default();
         let web = tab_from_property(&list[0], &ctx);
-        assert_eq!((web.name.as_str(), web.kind, web.opens_in_browser), ("Website", Kind::Website, true));
+        assert_eq!(
+            (web.name.as_str(), web.kind, web.opens_in_browser),
+            ("Website", Kind::Website, true)
+        );
         assert_eq!(web.website_url, "https://example.com");
         assert_eq!(web.conversation, "1794815719181");
         // A chat tab's link is a chat's (module 407834).
-        let (link, _) = tabs::copy_link_in(&web, "19:ef213c7c46cf4036b11608300e96fee4@thread.v2", true, "t1");
+        let (link, _) = tabs::copy_link_in(
+            &web,
+            "19:ef213c7c46cf4036b11608300e96fee4@thread.v2",
+            true,
+            "t1",
+        );
         assert_eq!(
             link,
             "https://teams.microsoft.com/l/chat/19%3Aef213c7c46cf4036b11608300e96fee4%40thread.v2/tab%3A%3A506f2aac-c7a2-4eb2-b232-7a948ea7c597?context=%7B%22chatId%22%3A%2219%3Aef213c7c46cf4036b11608300e96fee4%40thread.v2%22%2C%22contextType%22%3A%22chat%22%7D&tenantId=t1"
         );
         let notes = tab_from_property(&list[1], &ctx);
-        assert_eq!((notes.kind, notes.content_url.as_str()), (Kind::Extension, "https://x/n1"));
+        assert_eq!(
+            (notes.kind, notes.content_url.as_str()),
+            (Kind::Extension, "https://x/n1")
+        );
         // A chat website tab's menu (right-click, or ">" under "+N"):
         // Copy link, Rename, About, Remove. It never becomes the open tab,
         // so it has no chevron menu.
-        let (_, context) = tabs::menus(Kind::Website, true, tabs::AppFlags::default(), false, false);
-        let keys: Vec<&str> = context.iter().map(|m| m.key).filter(|k| *k != "moveLeft" && *k != "moveRight").collect();
-        assert_eq!(keys, ["copyLink", "divider", "renameTab", "aboutTab", "divider", "removeTab"]);
+        let (_, context) =
+            tabs::menus(Kind::Website, true, tabs::AppFlags::default(), false, false);
+        let keys: Vec<&str> = context
+            .iter()
+            .map(|m| m.key)
+            .filter(|k| *k != "moveLeft" && *k != "moveRight")
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                "copyLink",
+                "divider",
+                "renameTab",
+                "aboutTab",
+                "divider",
+                "removeTab"
+            ]
+        );
     }
 
     #[test]
     fn the_picker_keeps_teams_order() {
-        let mut ids: Vec<String> = ["0d820ecd", "95de633a", "com.microsoft.teamspace.tab.planner", "com.microsoft.teamspace.tab.web"].iter().map(|s| s.to_string()).collect();
-        sort_by_mru(&mut ids, &["com.microsoft.teamspace.tab.web".to_string(), "95DE633A".to_string()]);
-        assert_eq!(ids, ["com.microsoft.teamspace.tab.web", "95de633a", "0d820ecd", "com.microsoft.teamspace.tab.planner"]);
-        assert!(!offered_state("NotInstalled") && !offered_state("InstalledAndHidden") && offered_state("PreConsented") && offered_state("InstalledAndPermanent"));
+        let mut ids: Vec<String> = [
+            "0d820ecd",
+            "95de633a",
+            "com.microsoft.teamspace.tab.planner",
+            "com.microsoft.teamspace.tab.web",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        sort_by_mru(
+            &mut ids,
+            &[
+                "com.microsoft.teamspace.tab.web".to_string(),
+                "95DE633A".to_string(),
+            ],
+        );
+        assert_eq!(
+            ids,
+            [
+                "com.microsoft.teamspace.tab.web",
+                "95de633a",
+                "0d820ecd",
+                "com.microsoft.teamspace.tab.planner"
+            ]
+        );
+        assert!(
+            !offered_state("NotInstalled")
+                && !offered_state("InstalledAndHidden")
+                && offered_state("PreConsented")
+                && offered_state("InstalledAndPermanent")
+        );
         let usage = serde_json::json!({"appIds": ["a"], "appsMru": [{"appId": "b", "lastUsedTimeStamp": "x"}, {"appId": "c"}]});
         assert_eq!(mru_from(&usage), ["b", "c"]);
         assert_eq!(mru_from(&serde_json::json!({"appIds": ["a"]})), ["a"]);
@@ -1339,12 +1809,22 @@ mod tests {
         let forms = serde_json::json!({"galleryTabs": [{"scopes": ["GroupChat", "Team"], "context": ["ChannelTab", "MeetingChatTab"]}]});
         let loop_ = serde_json::json!({"galleryTabs": [{"scopes": ["Team"], "context": ["ChannelTab"]}], "staticTabs": [{"scopes": ["GroupChat"], "context": ["MeetingStage"]}]});
         let web = serde_json::json!({"configurableTabs": [{"scopes": ["team", "groupchat"]}]});
-        for (def, chat, meeting, channel) in [(&onenote, true, true, true), (&planner, false, false, true), (&forms, false, true, true), (&loop_, false, false, true), (&web, true, true, true)] {
+        for (def, chat, meeting, channel) in [
+            (&onenote, true, true, true),
+            (&planner, false, false, true),
+            (&forms, false, true, true),
+            (&loop_, false, false, true),
+            (&web, true, true, true),
+        ] {
             assert_eq!(IcKind::TabChat.supports(def), chat);
             assert_eq!(IcKind::TabMeeting.supports(def), meeting);
             assert_eq!(IcKind::TabChannel.supports(def), channel);
         }
         let bot = serde_json::json!({"bots": [{"scopes": ["GroupChat"]}]});
-        assert!(IcKind::BotGroupChat.supports(&bot) && !IcKind::BotTeam.supports(&bot) && !IcKind::TabChat.supports(&bot));
+        assert!(
+            IcKind::BotGroupChat.supports(&bot)
+                && !IcKind::BotTeam.supports(&bot)
+                && !IcKind::TabChat.supports(&bot)
+        );
     }
 }

@@ -8,7 +8,13 @@ async fn main() -> anyhow::Result<()> {
     let body: serde_json::Value = serde_json::from_str(&std::env::args().nth(2).expect("body"))?;
     let client = TeamsClient::new().await?;
     let (base, token) = teams_cli::api::tabs::middle_tier(&client).await?;
-    let r = client.http().post(format!("{base}{path}")).bearer_auth(&token).json(&body).send().await?;
+    let r = client
+        .http()
+        .post(format!("{base}{path}"))
+        .bearer_auth(&token)
+        .json(&body)
+        .send()
+        .await?;
     println!("{} {}", r.status(), r.text().await?);
     Ok(())
 }

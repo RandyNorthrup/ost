@@ -10,12 +10,21 @@ async fn main() -> anyhow::Result<()> {
     if all {
         args.remove(0);
     }
-    let days = args.first().and_then(|a| a.strip_prefix("--days=")).and_then(|d| d.parse().ok());
+    let days = args
+        .first()
+        .and_then(|a| a.strip_prefix("--days="))
+        .and_then(|d| d.parse().ok());
     if days.is_some() {
         args.remove(0);
     }
     for h in drive::search_folders(&client, &args.join(" "), all, days, &[]).await? {
-        println!("{} | {} | {} | {}", h.item.name, h.modified_text, h.created_by, h.location.join(" › "));
+        println!(
+            "{} | {} | {} | {}",
+            h.item.name,
+            h.modified_text,
+            h.created_by,
+            h.location.join(" › ")
+        );
     }
     Ok(())
 }

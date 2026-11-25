@@ -16,10 +16,24 @@ async fn main() -> anyhow::Result<()> {
     let v: serde_json::Value = client.graph_beta(&path, None).await?.json().await?;
     for m in v["value"].as_array().into_iter().flatten() {
         let subject = m["subject"].as_str().unwrap_or_default();
-        let from = m.pointer("/from/emailAddress/name").and_then(|x| x.as_str()).unwrap_or_default().to_lowercase();
-        let voicemail = subject.to_lowercase().starts_with("voicemail") || subject.to_lowercase().contains("voice mail");
-        println!("{} | {} | from {} | voicemail {}", m["receivedDateTime"].as_str().unwrap_or_default(), subject, from, voicemail);
-        if delete && voicemail && (from.contains(&caller) || subject.to_lowercase().contains(&caller)) {
+        let from = m
+            .pointer("/from/emailAddress/name")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_lowercase();
+        let voicemail = subject.to_lowercase().starts_with("voicemail")
+            || subject.to_lowercase().contains("voice mail");
+        println!(
+            "{} | {} | from {} | voicemail {}",
+            m["receivedDateTime"].as_str().unwrap_or_default(),
+            subject,
+            from,
+            voicemail
+        );
+        if delete
+            && voicemail
+            && (from.contains(&caller) || subject.to_lowercase().contains(&caller))
+        {
             let id = m["id"].as_str().unwrap_or_default();
             match client.graph_delete(&format!("/me/messages/{id}")).await {
                 Ok(r) => println!("  deleted ({})", r.status()),

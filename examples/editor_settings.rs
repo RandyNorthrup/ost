@@ -4,7 +4,10 @@ use teams_cli::api::editor::{Editor, Event};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let set: Option<Vec<String>> = std::env::args().nth(1).map(|a| serde_json::from_str(&a)).transpose()?;
+    let set: Option<Vec<String>> = std::env::args()
+        .nth(1)
+        .map(|a| serde_json::from_str(&a))
+        .transpose()?;
     let ed = Editor::start(&tokio::runtime::Handle::current(), "en-us", |e| {
         if let Event::Settings(s) = e {
             println!("settings: {s:?}");

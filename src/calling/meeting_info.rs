@@ -55,7 +55,12 @@ pub fn from_join_response(json: &Value) -> Option<MeetingInfo> {
         Some(o @ Value::Object(_)) => o.clone(),
         _ => Value::Null,
     };
-    let s = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+    let s = |v: &Value, k: &str| {
+        v.get(k)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
     let time = |k: &str| {
         [d.get(k), props.get(k)]
             .into_iter()
@@ -74,13 +79,21 @@ pub fn from_join_response(json: &Value) -> Option<MeetingInfo> {
             .find(|u| !u.is_empty())
             .unwrap_or_default(),
         // Teams copies the short /meet/ link when the meeting has one.
-        join_url: [s(d, "shortJoinUrl"), s(&props, "meetingJoinUrl"), s(d, "joinUrl")]
-            .into_iter()
-            .find(|u| !u.is_empty())
-            .unwrap_or_default(),
+        join_url: [
+            s(d, "shortJoinUrl"),
+            s(&props, "meetingJoinUrl"),
+            s(d, "joinUrl"),
+        ]
+        .into_iter()
+        .find(|u| !u.is_empty())
+        .unwrap_or_default(),
         instance_subject: ["/instanceDetails/subject", "/eventDetails/subject"]
             .iter()
-            .find_map(|p| d.pointer(p).and_then(Value::as_str).filter(|t| !t.is_empty()))
+            .find_map(|p| {
+                d.pointer(p)
+                    .and_then(Value::as_str)
+                    .filter(|t| !t.is_empty())
+            })
             .unwrap_or_default()
             .to_string(),
     })
@@ -92,7 +105,11 @@ pub fn from_join_response(json: &Value) -> Option<MeetingInfo> {
 /// meeting's own subject when the join answer has no instance (a call
 /// joined by its link can lack it).
 pub fn notes_title(info: &MeetingInfo) -> &str {
-    if !info.instance_subject.is_empty() { &info.instance_subject } else { &info.title }
+    if !info.instance_subject.is_empty() {
+        &info.instance_subject
+    } else {
+        &info.title
+    }
 }
 
 fn time_of_day<Tz: TimeZone>(t: &DateTime<Tz>) -> String
@@ -109,7 +126,11 @@ where
 /// (duration_full_mf's several plurals have no Qt form).
 fn duration_text(seconds: i64) -> String {
     use crate::i18n::tr_id_n;
-    let (days, hours, mins) = (seconds / 86_400, seconds % 86_400 / 3600, seconds % 3600 / 60);
+    let (days, hours, mins) = (
+        seconds / 86_400,
+        seconds % 86_400 / 3600,
+        seconds % 3600 / 60,
+    );
     if hours == 0 && mins == 0 {
         return String::new();
     }
@@ -139,12 +160,38 @@ where
     })
 }
 
-const WEEKDAYS: [&str; 7] = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+const WEEKDAYS: [&str; 7] = [
+    "sunday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+];
 const SHORT_DAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const LONG_DAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const LONG_DAYS: [&str; 7] = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+];
 const MONTHS: [&str; 12] = [
-    "January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
-    "November", "December",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
 ];
 
 /// Teams' week-day range ("Mon - Fri") for three or more days that run
@@ -191,7 +238,10 @@ fn day_list(days: &[usize]) -> String {
             for d in &names[1..n - 1] {
                 list = fill(&tr_id("%1, %2", "recurrence:kxaa4ql9"), &[&list, d]);
             }
-            fill(&tr_id("%1 and %2", "recurrence:kdonowwbn"), &[&list, names[n - 1]])
+            fill(
+                &tr_id("%1 and %2", "recurrence:kdonowwbn"),
+                &[&list, names[n - 1]],
+            )
         }
     }
 }
@@ -212,13 +262,21 @@ fn week_index(i: &str) -> String {
 /// every Mon - Fri @ 9:00 AM until December 31". None for no pattern.
 /// Teams' recurrence strings in the app language (its weekday and month
 /// names come from Intl, here as the code writes them).
-pub fn recurrence_text<Tz: TimeZone>(recurrence: &Value, start: DateTime<Utc>, tz: &Tz) -> Option<String>
+pub fn recurrence_text<Tz: TimeZone>(
+    recurrence: &Value,
+    start: DateTime<Utc>,
+    tz: &Tz,
+) -> Option<String>
 where
     Tz::Offset: std::fmt::Display,
 {
     use crate::i18n::{fill, tr_id, tr_id_n};
     let p = recurrence.get("pattern")?;
-    let interval = p.get("interval").and_then(Value::as_i64).filter(|&i| i > 0).unwrap_or(1);
+    let interval = p
+        .get("interval")
+        .and_then(Value::as_i64)
+        .filter(|&i| i > 0)
+        .unwrap_or(1);
     let day_of = |name: &str| WEEKDAYS.iter().position(|d| d.eq_ignore_ascii_case(name));
     let mut days: Vec<usize> = p
         .get("daysOfWeek")
@@ -229,7 +287,10 @@ where
         .collect();
     days.sort_unstable();
     days.dedup();
-    let month = p.get("month").and_then(Value::as_u64).filter(|m| (1..=12).contains(m));
+    let month = p
+        .get("month")
+        .and_then(Value::as_u64)
+        .filter(|m| (1..=12).contains(m));
     let day_of_month = p.get("dayOfMonth").and_then(Value::as_i64).unwrap_or(1);
     let index = week_index(p.get("index").and_then(Value::as_str).unwrap_or("first"));
     let first_day = days.first().map(|&d| LONG_DAYS[d]).unwrap_or("Sunday");
@@ -237,14 +298,29 @@ where
         "daily" => tr_id_n("Occurs every %n days", "recurrence:kax6eqmkn_mf", interval),
         "weekly" => {
             let d = day_range(&days).unwrap_or_else(|| day_list(&days));
-            fill(&tr_id_n("Occurs every %n weeks on %1", "recurrence:k9cj429mj_mf", interval), &[&d])
+            fill(
+                &tr_id_n(
+                    "Occurs every %n weeks on %1",
+                    "recurrence:k9cj429mj_mf",
+                    interval,
+                ),
+                &[&d],
+            )
         }
         "absoluteMonthly" => fill(
-            &tr_id_n("Occurs every %n months on day %1", "recurrence:k17bm8z5f_mf", interval),
+            &tr_id_n(
+                "Occurs every %n months on day %1",
+                "recurrence:k17bm8z5f_mf",
+                interval,
+            ),
             &[&day_of_month.to_string()],
         ),
         "relativeMonthly" => fill(
-            &tr_id_n("Occurs every %n months on %1 %2", "recurrence:k2inp9epr_mf", interval),
+            &tr_id_n(
+                "Occurs every %n months on %1 %2",
+                "recurrence:k2inp9epr_mf",
+                interval,
+            ),
             &[&index, first_day],
         ),
         "absoluteYearly" => fill(
@@ -267,15 +343,26 @@ where
     Some(match until {
         Some(u) => fill(
             &tr_id("%1 @ %2 until %3", "recurrence:k25q6lwga"),
-            &[&text, &starttime, &format!("{} {}", MONTHS[u.month0() as usize], u.day())],
+            &[
+                &text,
+                &starttime,
+                &format!("{} {}", MONTHS[u.month0() as usize], u.day()),
+            ],
         ),
-        None => fill(&tr_id("%1 @ %2", "recurrence:k8avt3h4l"), &[&text, &starttime]),
+        None => fill(
+            &tr_id("%1 @ %2", "recurrence:k8avt3h4l"),
+            &[&text, &starttime],
+        ),
     })
 }
 
 /// The schedule line of a meeting that doesn't recur: "November 6, 2026
 /// at 3:00 PM - 3:30 PM".
-pub fn single_schedule_text<Tz: TimeZone>(start: DateTime<Utc>, end: DateTime<Utc>, tz: &Tz) -> String
+pub fn single_schedule_text<Tz: TimeZone>(
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+    tz: &Tz,
+) -> String
 where
     Tz::Offset: std::fmt::Display,
 {
@@ -333,7 +420,10 @@ fn find_div_with_class(html: &str, class: &str) -> Option<usize> {
             // Quoted, or (as Word writes it) bare up to a space.
             let classes = match rest.chars().next() {
                 Some(q @ ('"' | '\'')) => rest[1..].split(q).next().unwrap_or(""),
-                _ => rest.split(|ch: char| ch.is_whitespace() || ch == '>').next().unwrap_or(""),
+                _ => rest
+                    .split(|ch: char| ch.is_whitespace() || ch == '>')
+                    .next()
+                    .unwrap_or(""),
             };
             if classes.split_whitespace().any(|x| x == want) {
                 return Some(p);
@@ -389,7 +479,9 @@ pub fn copy_join_info(body: &str, join_url: &str) -> (String, String) {
                 i = p + 1;
                 continue;
             }
-            let Some((inner, end)) = element_inner(section, p, &name) else { break };
+            let Some((inner, end)) = element_inner(section, p, &name) else {
+                break;
+            };
             if inner.contains(join_url) {
                 return (inner.to_string(), text_content(inner));
             }
@@ -410,9 +502,14 @@ fn strip_elements(html: &str, name: &str) -> String {
     let mut s = html.to_string();
     loop {
         let lower = s.to_ascii_lowercase();
-        let Some(p) = lower.find(&format!("<{name}")) else { break };
+        let Some(p) = lower.find(&format!("<{name}")) else {
+            break;
+        };
         let close = format!("</{name}>");
-        let end = lower[p..].find(&close).map(|e| p + e + close.len()).unwrap_or(s.len());
+        let end = lower[p..]
+            .find(&close)
+            .map(|e| p + e + close.len())
+            .unwrap_or(s.len());
         s.replace_range(p..end, "");
     }
     s
@@ -424,7 +521,9 @@ fn strip_elements(html: &str, name: &str) -> String {
 pub fn body_for_display(body: &str) -> String {
     let lower = body.to_ascii_lowercase();
     let inner = match lower.find("<body") {
-        Some(p) => element_inner(body, p, "body").map(|(i, _)| i).unwrap_or(body),
+        Some(p) => element_inner(body, p, "body")
+            .map(|(i, _)| i)
+            .unwrap_or(body),
         None => body,
     };
     let mut s = strip_elements(inner, "style");
@@ -506,7 +605,9 @@ fn drop_font_sizes(html: &str) -> String {
                 let v = &tag[a + 6..];
                 let len = match v.chars().next() {
                     Some(q @ ('"' | '\'')) => v[1..].find(q).map(|e| e + 2).unwrap_or(v.len()),
-                    _ => v.find(|c: char| c.is_whitespace() || c == '>').unwrap_or(v.len()),
+                    _ => v
+                        .find(|c: char| c.is_whitespace() || c == '>')
+                        .unwrap_or(v.len()),
                 };
                 out.push_str(&tag[..a]);
                 out.push_str(&tag[a + 6 + len..]);
@@ -529,7 +630,10 @@ fn pt_to_px(html: &str) -> String {
         out.push_str(&rest[..after]);
         let tail = &rest[after..];
         let ws = tail.len() - tail.trim_start().len();
-        let num: String = tail[ws..].chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+        let num: String = tail[ws..]
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || *c == '.')
+            .collect();
         let unit_at = ws + num.len();
         match num.parse::<f64>() {
             Ok(n) if tail[unit_at..].to_ascii_lowercase().starts_with("pt") => {
@@ -564,27 +668,52 @@ mod tests {
         assert_eq!(m.start, Some(utc("2026-11-06T23:00:00Z")));
         assert_eq!(m.join_url, "https://teams.microsoft.com/l/meetup-join/x");
         v["meetingDetails"]["shortJoinUrl"] = "https://teams.microsoft.com/meet/29?p=a".into();
-        assert_eq!(from_join_response(&v).unwrap().join_url, "https://teams.microsoft.com/meet/29?p=a");
+        assert_eq!(
+            from_join_response(&v).unwrap().join_url,
+            "https://teams.microsoft.com/meet/29?p=a"
+        );
         // Joined through the meeting's conversation the properties come as
         // an object (Teams on the web, 2026-11-16).
         v["meetingDetails"]["meetingChatProperties"] = props;
-        assert_eq!(from_join_response(&v).unwrap().title, "OST calendar test: created from OST");
+        assert_eq!(
+            from_join_response(&v).unwrap().title,
+            "OST calendar test: created from OST"
+        );
         // The notes are named after the calendar instance's subject.
-        assert_eq!(notes_title(&from_join_response(&v).unwrap()), "OST calendar test: created from OST");
+        assert_eq!(
+            notes_title(&from_join_response(&v).unwrap()),
+            "OST calendar test: created from OST"
+        );
         v["meetingDetails"]["meetingChatProperties"] = serde_json::json!({});
-        v["meetingDetails"]["instanceDetails"] = serde_json::json!({"subject": "OST TEST 248 agenda", "iCalUid": "040000"});
+        v["meetingDetails"]["instanceDetails"] =
+            serde_json::json!({"subject": "OST TEST 248 agenda", "iCalUid": "040000"});
         let m = from_join_response(&v).unwrap();
-        assert_eq!((m.title.as_str(), notes_title(&m)), ("", "OST TEST 248 agenda"));
+        assert_eq!(
+            (m.title.as_str(), notes_title(&m)),
+            ("", "OST TEST 248 agenda")
+        );
     }
 
     #[test]
     fn lines_as_teams_writes_them() {
         let pst = chrono::FixedOffset::west_opt(8 * 3600).unwrap();
         let (s, e) = (utc("2026-11-06T23:00:00Z"), utc("2026-11-06T23:30:00Z"));
-        assert_eq!(hours_text(s, e, &pst).as_deref(), Some("3:00 PM - 3:30 PM (30 minutes)"));
-        assert_eq!(single_schedule_text(s, e, &pst), "November 6, 2026 at 3:00 PM - 3:30 PM");
-        assert_eq!(hours_text(s, utc("2026-11-07T00:30:00Z"), &pst).as_deref(), Some("3:00 PM - 4:30 PM (1 hour 30 minutes)"));
-        assert_eq!(hours_text(s, utc("2026-11-08T00:00:00Z"), &pst).as_deref(), Some("3:00 PM - 4:00 PM (1 day 1 hour)"));
+        assert_eq!(
+            hours_text(s, e, &pst).as_deref(),
+            Some("3:00 PM - 3:30 PM (30 minutes)")
+        );
+        assert_eq!(
+            single_schedule_text(s, e, &pst),
+            "November 6, 2026 at 3:00 PM - 3:30 PM"
+        );
+        assert_eq!(
+            hours_text(s, utc("2026-11-07T00:30:00Z"), &pst).as_deref(),
+            Some("3:00 PM - 4:30 PM (1 hour 30 minutes)")
+        );
+        assert_eq!(
+            hours_text(s, utc("2026-11-08T00:00:00Z"), &pst).as_deref(),
+            Some("3:00 PM - 4:00 PM (1 day 1 hour)")
+        );
         // A whole day has no hours line.
         assert_eq!(hours_text(s, utc("2026-11-07T23:00:00Z"), &pst), None);
     }
@@ -593,16 +722,32 @@ mod tests {
     fn recurrence_as_teams_writes_it() {
         let pst = chrono::FixedOffset::west_opt(8 * 3600).unwrap();
         let s = utc("2026-11-09T17:00:00Z");
-        let r = |p: Value, range: Value| recurrence_text(&serde_json::json!({"pattern": p, "range": range}), s, &pst);
+        let r = |p: Value, range: Value| {
+            recurrence_text(&serde_json::json!({"pattern": p, "range": range}), s, &pst)
+        };
         let none = serde_json::json!({"type":"noEnd"});
         let weekdays = serde_json::json!({"type":"weekly","interval":1,"daysOfWeek":["monday","tuesday","wednesday","thursday","friday"]});
-        assert_eq!(r(weekdays.clone(), none.clone()).as_deref(), Some("Occurs every Mon - Fri @ 9:00 AM"));
         assert_eq!(
-            r(weekdays, serde_json::json!({"type":"endDate","endDate":"2026-12-31"})).as_deref(),
+            r(weekdays.clone(), none.clone()).as_deref(),
+            Some("Occurs every Mon - Fri @ 9:00 AM")
+        );
+        assert_eq!(
+            r(
+                weekdays,
+                serde_json::json!({"type":"endDate","endDate":"2026-12-31"})
+            )
+            .as_deref(),
             Some("Occurs every Mon - Fri @ 9:00 AM until December 31")
         );
         assert_eq!(r(serde_json::json!({"type":"weekly","interval":2,"daysOfWeek":["wednesday","monday"]}), none.clone()).as_deref(), Some("Occurs every other Mon and Wed @ 9:00 AM"));
-        assert_eq!(r(serde_json::json!({"type":"weekly","interval":3,"daysOfWeek":["monday","tuesday"]}), none.clone()).as_deref(), Some("Occurs every 3 weeks on Mon and Tue @ 9:00 AM"));
+        assert_eq!(
+            r(
+                serde_json::json!({"type":"weekly","interval":3,"daysOfWeek":["monday","tuesday"]}),
+                none.clone()
+            )
+            .as_deref(),
+            Some("Occurs every 3 weeks on Mon and Tue @ 9:00 AM")
+        );
         assert_eq!(r(serde_json::json!({"type":"weekly","interval":1,"daysOfWeek":["monday","tuesday","thursday","friday"]}), none.clone()).as_deref(), Some("Occurs every Mon, Tue, Thu and Fri @ 9:00 AM"));
         // Teams' range check (197544 `O`) only lists days when it finds a
         // second run of consecutive days; three days with no two in a row
@@ -610,11 +755,39 @@ mod tests {
         assert_eq!(r(serde_json::json!({"type":"weekly","interval":1,"daysOfWeek":["monday","wednesday","friday"]}), none.clone()).as_deref(), Some("Occurs every Mon - Mon @ 9:00 AM"));
         // Days across the weekend need two runs to read as a range.
         assert_eq!(r(serde_json::json!({"type":"weekly","interval":1,"daysOfWeek":["saturday","sunday","monday"]}), none.clone()).as_deref(), Some("Occurs every Sun, Mon and Sat @ 9:00 AM"));
-        assert_eq!(r(serde_json::json!({"type":"daily","interval":1}), none.clone()).as_deref(), Some("Occurs daily @ 9:00 AM"));
-        assert_eq!(r(serde_json::json!({"type":"daily","interval":4}), none.clone()).as_deref(), Some("Occurs every 4 days @ 9:00 AM"));
-        assert_eq!(r(serde_json::json!({"type":"absoluteMonthly","interval":1,"dayOfMonth":15}), none.clone()).as_deref(), Some("Occurs every month on day 15 @ 9:00 AM"));
+        assert_eq!(
+            r(
+                serde_json::json!({"type":"daily","interval":1}),
+                none.clone()
+            )
+            .as_deref(),
+            Some("Occurs daily @ 9:00 AM")
+        );
+        assert_eq!(
+            r(
+                serde_json::json!({"type":"daily","interval":4}),
+                none.clone()
+            )
+            .as_deref(),
+            Some("Occurs every 4 days @ 9:00 AM")
+        );
+        assert_eq!(
+            r(
+                serde_json::json!({"type":"absoluteMonthly","interval":1,"dayOfMonth":15}),
+                none.clone()
+            )
+            .as_deref(),
+            Some("Occurs every month on day 15 @ 9:00 AM")
+        );
         assert_eq!(r(serde_json::json!({"type":"relativeMonthly","interval":2,"daysOfWeek":["tuesday"],"index":"last"}), none.clone()).as_deref(), Some("Occurs every other month on Last Tuesday @ 9:00 AM"));
-        assert_eq!(r(serde_json::json!({"type":"absoluteYearly","interval":1,"month":11,"dayOfMonth":9}), none.clone()).as_deref(), Some("Occurs every November 9 @ 9:00 AM"));
+        assert_eq!(
+            r(
+                serde_json::json!({"type":"absoluteYearly","interval":1,"month":11,"dayOfMonth":9}),
+                none.clone()
+            )
+            .as_deref(),
+            Some("Occurs every November 9 @ 9:00 AM")
+        );
         assert_eq!(r(serde_json::json!({"type":"relativeYearly","interval":1,"month":11,"daysOfWeek":["monday"],"index":"second"}), none).as_deref(), Some("Occurs every Second Monday of November @ 9:00 AM"));
         assert_eq!(recurrence_text(&Value::Null, s, &pst), None);
     }
@@ -623,7 +796,10 @@ mod tests {
     fn copies_the_invitation_block() {
         let body = r#"<html><head><style>p{}</style></head><body><div class="x"><div style="max-width: 1024px" class="me-email-text" lang="en-US"><div>Microsoft Teams meeting</div><div>Join: <a href="https://teams.microsoft.com/meet/1">link</a></div></div></div></body></html>"#;
         let (html, text) = copy_join_info(body, "https://teams.microsoft.com/meet/1");
-        assert_eq!(html, r#"<div>Microsoft Teams meeting</div><div>Join: <a href="https://teams.microsoft.com/meet/1">link</a></div>"#);
+        assert_eq!(
+            html,
+            r#"<div>Microsoft Teams meeting</div><div>Join: <a href="https://teams.microsoft.com/meet/1">link</a></div>"#
+        );
         assert_eq!(text, "Microsoft Teams meetingJoin: link");
         let word = r#"<div class=WordSection1><p>Agenda</p><p>Join: <a href="https://j/1">https://j/1</a></p></div>"#;
         assert_eq!(copy_join_info(word, "https://j/1").1, "Join: https://j/1");
@@ -636,12 +812,21 @@ mod tests {
     #[test]
     fn body_shown_without_styles_or_pictures() {
         let body = "<html><head><style>.a{}</style></head><body><!-- c --><font size=\"2\"><span style=\"font-size:11pt;\">Hi<br>\r\nthere<img src=\"cid:1\"></span></font></body></html>";
-        assert_eq!(body_for_display(body), "<font><span style=\"font-size:15px;\">Hi<br>  there</span></font>");
+        assert_eq!(
+            body_for_display(body),
+            "<font><span style=\"font-size:15px;\">Hi<br>  there</span></font>"
+        );
         assert_eq!(
             glue_link_text("Join: <a href=\"https://x/1\">h/1-a?b&amp;c</a> c/d"),
             "Join: <a href=\"https://x/1\">h\u{2060}/\u{2060}1\u{2060}-a\u{2060}?b&amp;\u{2060}c</a> c/d"
         );
-        assert_eq!(drop_font_sizes("<font size=2 color=\"red\">a</font>"), "<font color=\"red\">a</font>");
-        assert_eq!(pt_to_px("<p style=\"font-size: 10.5pt\">a</p><p style=\"font-size:12px\">"), "<p style=\"font-size:14px\">a</p><p style=\"font-size:12px\">");
+        assert_eq!(
+            drop_font_sizes("<font size=2 color=\"red\">a</font>"),
+            "<font color=\"red\">a</font>"
+        );
+        assert_eq!(
+            pt_to_px("<p style=\"font-size: 10.5pt\">a</p><p style=\"font-size:12px\">"),
+            "<p style=\"font-size:14px\">a</p><p style=\"font-size:12px\">"
+        );
     }
 }

@@ -25,11 +25,24 @@ fn str_of<'a>(v: &'a Value, ptr: &str) -> Option<&'a str> {
 
 /// The settings with every object Teams sends present.
 pub fn normalized(current: &Value) -> Value {
-    let mut o = if current.is_object() { current.clone() } else { json!({}) };
+    let mut o = if current.is_object() {
+        current.clone()
+    } else {
+        json!({})
+    };
     for (k, dflt) in [
-        ("callForwardingSettings", json!({ "isEnabled": false, "forwardingType": "Simultaneous", "targetType": "DoNothing", "target": null, "delaySeconds": 0 })),
-        ("unansweredCallSettings", json!({ "isEnabled": true, "targetType": "Voicemail", "target": null, "delaySeconds": 20, "safeForward": false })),
-        ("callGroupDetails", json!({ "callOrder": "simultaneous", "delaySeconds": 0, "targets": [] })),
+        (
+            "callForwardingSettings",
+            json!({ "isEnabled": false, "forwardingType": "Simultaneous", "targetType": "DoNothing", "target": null, "delaySeconds": 0 }),
+        ),
+        (
+            "unansweredCallSettings",
+            json!({ "isEnabled": true, "targetType": "Voicemail", "target": null, "delaySeconds": 20, "safeForward": false }),
+        ),
+        (
+            "callGroupDetails",
+            json!({ "callOrder": "simultaneous", "delaySeconds": 0, "targets": [] }),
+        ),
         ("favoriteTargets", json!({ "targets": [] })),
     ] {
         if !o[k].is_object() {
@@ -44,7 +57,9 @@ fn add_favorite(o: &mut Value, target: &str) {
     if !o["favoriteTargets"]["targets"].is_array() {
         o["favoriteTargets"] = json!({ "targets": [] });
     }
-    let list = o["favoriteTargets"]["targets"].as_array_mut().expect("array");
+    let list = o["favoriteTargets"]["targets"]
+        .as_array_mut()
+        .expect("array");
     if !list.iter().any(|t| t.as_str() == Some(target)) {
         list.insert(0, Value::String(target.to_string()));
     }
@@ -53,20 +68,42 @@ fn add_favorite(o: &mut Value, target: &str) {
 
 /// Teams' `f`: the also-ring delay stays under the unanswered delay.
 fn clamp_forward_delay(o: &mut Value) {
-    let Some(un) = o["unansweredCallSettings"]["delaySeconds"].as_u64().filter(|d| *d > 0) else { return };
-    let fwd = o["callForwardingSettings"]["delaySeconds"].as_u64().unwrap_or(0);
+    let Some(un) = o["unansweredCallSettings"]["delaySeconds"]
+        .as_u64()
+        .filter(|d| *d > 0)
+    else {
+        return;
+    };
+    let fwd = o["callForwardingSettings"]["delaySeconds"]
+        .as_u64()
+        .unwrap_or(0);
     if fwd >= un {
-        let i = DELAYS.iter().position(|d| *d == un).map(|i| i.saturating_sub(1)).unwrap_or(0);
+        let i = DELAYS
+            .iter()
+            .position(|d| *d == un)
+            .map(|i| i.saturating_sub(1))
+            .unwrap_or(0);
         o["callForwardingSettings"]["delaySeconds"] = json!(DELAYS[i]);
     }
 }
 
 /// Teams' `HD`: what happens to unanswered calls.
-pub fn unanswered(current: &Value, target_type: Option<&str>, voicemail_allowed: bool, target: Option<&str>) -> Value {
+pub fn unanswered(
+    current: &Value,
+    target_type: Option<&str>,
+    voicemail_allowed: bool,
+    target: Option<&str>,
+) -> Value {
     let mut o = normalized(current);
     let x = match target_type {
         Some(t) if !t.is_empty() => t.to_string(),
-        _ => if o["unansweredCallSettings"]["isEnabled"].as_bool() == Some(true) { "Voicemail".into() } else { "DoNothing".into() },
+        _ => {
+            if o["unansweredCallSettings"]["isEnabled"].as_bool() == Some(true) {
+                "Voicemail".into()
+            } else {
+                "DoNothing".into()
+            }
+        }
     };
     let u = &mut o["unansweredCallSettings"];
     u["isEnabled"] = json!(true);
@@ -95,11 +132,17 @@ pub fn unanswered(current: &Value, target_type: Option<&str>, voicemail_allowed:
                 u["isEnabled"] = json!(false);
                 u["targetType"] = json!("DoNothing");
             }
-        } else if o["unansweredCallSettings"]["isEnabled"].as_bool() == Some(true) && !is(un_type.as_deref(), "DoNothing") {
+        } else if o["unansweredCallSettings"]["isEnabled"].as_bool() == Some(true)
+            && !is(un_type.as_deref(), "DoNothing")
+        {
             o["unansweredCallSettings"]["safeForward"] = json!(true);
         }
     }
-    let simultaneous = !fwd_on || is(str_of(&o, "/callForwardingSettings/forwardingType"), "Simultaneous");
+    let simultaneous = !fwd_on
+        || is(
+            str_of(&o, "/callForwardingSettings/forwardingType"),
+            "Simultaneous",
+        );
     let un_type = str_of(&o, "/unansweredCallSettings/targetType").map(str::to_string);
     if simultaneous && is(fwd_type.as_deref(), "Group") && is(un_type.as_deref(), "Group") {
         let u = &mut o["unansweredCallSettings"];
@@ -114,32 +157,56 @@ pub fn unanswered(current: &Value, target_type: Option<&str>, voicemail_allowed:
     if let Some(t) = target {
         add_favorite(&mut o, t);
     }
-    if is(str_of(&o, "/unansweredCallSettings/targetType"), "SingleTarget") && target.is_none() {
+    if is(
+        str_of(&o, "/unansweredCallSettings/targetType"),
+        "SingleTarget",
+    ) && target.is_none()
+    {
         o["unansweredCallSettings"]["targetType"] = json!("DoNothing");
         o["unansweredCallSettings"]["isEnabled"] = json!(false);
     }
-    let immediate = fwd_on && is(str_of(&o, "/callForwardingSettings/forwardingType"), "Immediate");
-    if immediate && !is(fwd_type.as_deref(), "MyDelegates") && o["unansweredCallSettings"]["isEnabled"].as_bool() == Some(true) {
+    let immediate = fwd_on
+        && is(
+            str_of(&o, "/callForwardingSettings/forwardingType"),
+            "Immediate",
+        );
+    if immediate
+        && !is(fwd_type.as_deref(), "MyDelegates")
+        && o["unansweredCallSettings"]["isEnabled"].as_bool() == Some(true)
+    {
         o["unansweredCallSettings"]["isEnabled"] = json!(false);
     }
     if o["unansweredCallSettings"]["isEnabled"].as_bool() == Some(true) {
         clamp_forward_delay(&mut o);
     }
-    if o["unansweredCallSettings"]["delaySeconds"].as_u64().unwrap_or(0) == 0 {
+    if o["unansweredCallSettings"]["delaySeconds"]
+        .as_u64()
+        .unwrap_or(0)
+        == 0
+    {
         o["unansweredCallSettings"]["delaySeconds"] = json!(20);
     }
     o
 }
 
 /// Teams' `Sh`: Forward all my calls to `target_type`.
-pub fn forward_all(current: &Value, target_type: &str, voicemail_allowed: bool, target: Option<&str>) -> Value {
+pub fn forward_all(
+    current: &Value,
+    target_type: &str,
+    voicemail_allowed: bool,
+    target: Option<&str>,
+) -> Value {
     let mut o = normalized(current);
     let f = &mut o["callForwardingSettings"];
     f["forwardingType"] = json!("Immediate");
     f["targetType"] = json!(target_type);
     f["delaySeconds"] = json!(0);
     f["isEnabled"] = json!(true);
-    f["target"] = if !is(Some(target_type), "Group") { target.map(|t| json!(t)).unwrap_or(Value::Null) } else { Value::Null };
+    f["target"] = if !is(Some(target_type), "Group") {
+        target.map(|t| json!(t)).unwrap_or(Value::Null)
+    } else {
+        Value::Null
+    };
     o["unansweredCallSettings"]["isEnabled"] = json!(false);
     o["unansweredCallSettings"]["safeForward"] = json!(false);
     if let Some(t) = target {
@@ -150,19 +217,36 @@ pub fn forward_all(current: &Value, target_type: &str, voicemail_allowed: bool, 
     }
     let un_type = str_of(&o, "/unansweredCallSettings/targetType").map(str::to_string);
     let un_target = str_of(&o, "/unansweredCallSettings/target").map(str::to_string);
-    unanswered(&o, un_type.as_deref(), voicemail_allowed, un_target.as_deref())
+    unanswered(
+        &o,
+        un_type.as_deref(),
+        voicemail_allowed,
+        un_target.as_deref(),
+    )
 }
 
 /// Teams' `gG`: When you receive a call, also ring `target_type`
 /// ("DoNothing": nobody else).
-pub fn also_ring(current: &Value, target_type: Option<&str>, voicemail_allowed: bool, target: Option<&str>) -> Value {
+pub fn also_ring(
+    current: &Value,
+    target_type: Option<&str>,
+    voicemail_allowed: bool,
+    target: Option<&str>,
+) -> Value {
     let mut o = normalized(current);
-    let x = target_type.filter(|t| !t.is_empty()).unwrap_or("DoNothing").to_string();
+    let x = target_type
+        .filter(|t| !t.is_empty())
+        .unwrap_or("DoNothing")
+        .to_string();
     let f = &mut o["callForwardingSettings"];
     f["forwardingType"] = json!("Simultaneous");
     f["targetType"] = json!(x);
     f["isEnabled"] = json!(!is(Some(&x), "DoNothing"));
-    f["target"] = if !is(Some(&x), "Group") { target.map(|t| json!(t)).unwrap_or(Value::Null) } else { Value::Null };
+    f["target"] = if !is(Some(&x), "Group") {
+        target.map(|t| json!(t)).unwrap_or(Value::Null)
+    } else {
+        Value::Null
+    };
     if let Some(t) = target {
         add_favorite(&mut o, t);
     }
@@ -172,7 +256,12 @@ pub fn also_ring(current: &Value, target_type: Option<&str>, voicemail_allowed: 
     }
     let un_type = str_of(&o, "/unansweredCallSettings/targetType").map(str::to_string);
     let un_target = str_of(&o, "/unansweredCallSettings/target").map(str::to_string);
-    unanswered(&o, un_type.as_deref(), voicemail_allowed, un_target.as_deref())
+    unanswered(
+        &o,
+        un_type.as_deref(),
+        voicemail_allowed,
+        un_target.as_deref(),
+    )
 }
 
 /// Teams' `Ow`: ring for this many seconds before redirecting.
@@ -208,13 +297,25 @@ pub fn call_group_order_locked(members: usize) -> bool {
 }
 
 fn call_group_targets(o: &Value) -> Vec<String> {
-    o["callGroupDetails"]["targets"].as_array().into_iter().flatten().filter_map(|t| t.as_str().map(str::to_string)).collect()
+    o["callGroupDetails"]["targets"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|t| t.as_str().map(str::to_string))
+        .collect()
 }
 
 fn set_call_group(o: &mut Value, targets: Vec<String>) {
     // Teams' `bg`: outside 2–5 members the group rings everyone at once.
-    let order = o["callGroupDetails"]["callOrder"].as_str().unwrap_or("simultaneous").to_string();
-    let order = if call_group_order_locked(targets.len()) { "simultaneous".to_string() } else { order };
+    let order = o["callGroupDetails"]["callOrder"]
+        .as_str()
+        .unwrap_or("simultaneous")
+        .to_string();
+    let order = if call_group_order_locked(targets.len()) {
+        "simultaneous".to_string()
+    } else {
+        order
+    };
     o["callGroupDetails"]["targets"] = json!(targets);
     o["callGroupDetails"]["callOrder"] = json!(order);
 }
@@ -235,7 +336,10 @@ pub fn call_group_add(current: &Value, member: &str) -> Option<Value> {
 /// A member's Delete (settings-app `_m`'s remove).
 pub fn call_group_remove(current: &Value, member: &str) -> Value {
     let mut o = normalized(current);
-    let t = call_group_targets(&o).into_iter().filter(|x| x != member).collect();
+    let t = call_group_targets(&o)
+        .into_iter()
+        .filter(|x| x != member)
+        .collect();
     set_call_group(&mut o, t);
     o
 }
@@ -270,10 +374,19 @@ mod tests {
             "unansweredCallSettings": { "isEnabled": true, "targetType": "Voicemail", "target": null, "delaySeconds": 20, "safeForward": null },
             "callGroupDetails": { "callOrder": "simultaneous", "delaySeconds": 0, "targets": [] }, "favoriteTargets": { "targets": [] } });
         let added = call_group_add(&base, "8:orgid:b").expect("added");
-        assert_eq!(added["callGroupDetails"], json!({ "callOrder": "simultaneous", "delaySeconds": 0, "targets": ["8:orgid:b"] }));
-        assert_eq!(added["unansweredCallSettings"], base["unansweredCallSettings"]);
+        assert_eq!(
+            added["callGroupDetails"],
+            json!({ "callOrder": "simultaneous", "delaySeconds": 0, "targets": ["8:orgid:b"] })
+        );
+        assert_eq!(
+            added["unansweredCallSettings"],
+            base["unansweredCallSettings"]
+        );
         assert!(call_group_add(&added, "8:orgid:b").is_none());
-        assert_eq!(call_group_remove(&added, "8:orgid:b")["callGroupDetails"]["targets"], json!([]));
+        assert_eq!(
+            call_group_remove(&added, "8:orgid:b")["callGroupDetails"]["targets"],
+            json!([])
+        );
     }
 
     #[test]
@@ -285,22 +398,38 @@ mod tests {
         o = call_group_order(&o, "inOrder");
         o = call_group_move(&o, "b", 0);
         assert_eq!(o["callGroupDetails"]["targets"], json!(["b", "a"]));
-        assert_eq!(call_group_remove(&o, "a")["callGroupDetails"]["callOrder"], "simultaneous");
-        assert!(call_group_order_locked(1) && call_group_order_locked(6) && !call_group_order_locked(5));
+        assert_eq!(
+            call_group_remove(&o, "a")["callGroupDetails"]["callOrder"],
+            "simultaneous"
+        );
+        assert!(
+            call_group_order_locked(1) && call_group_order_locked(6) && !call_group_order_locked(5)
+        );
     }
 
     #[test]
     fn forward_all_to_voicemail_matches_the_capture() {
         let o = forward_all(&json!({}), "Voicemail", true, None);
-        assert_eq!(o["callForwardingSettings"], json!({ "isEnabled": true, "forwardingType": "Immediate", "targetType": "Voicemail", "target": null, "delaySeconds": 0 }));
+        assert_eq!(
+            o["callForwardingSettings"],
+            json!({ "isEnabled": true, "forwardingType": "Immediate", "targetType": "Voicemail", "target": null, "delaySeconds": 0 })
+        );
         assert_eq!(o["unansweredCallSettings"]["isEnabled"], false);
     }
 
     #[test]
     fn also_ring_a_number_keeps_it_as_a_favourite() {
-        let o = also_ring(&json!({}), Some("SingleTarget"), true, Some("4:+15555550100"));
+        let o = also_ring(
+            &json!({}),
+            Some("SingleTarget"),
+            true,
+            Some("4:+15555550100"),
+        );
         assert_eq!(o["callForwardingSettings"]["isEnabled"], true);
-        assert_eq!(o["callForwardingSettings"]["forwardingType"], "Simultaneous");
+        assert_eq!(
+            o["callForwardingSettings"]["forwardingType"],
+            "Simultaneous"
+        );
         assert_eq!(o["callForwardingSettings"]["target"], "4:+15555550100");
         assert_eq!(o["favoriteTargets"]["targets"][0], "4:+15555550100");
         // A number with no target falls back to ringing nobody.
@@ -315,7 +444,10 @@ mod tests {
         assert_eq!(o["unansweredCallSettings"]["isEnabled"], true);
         let off = unanswered(&o, Some("DoNothing"), true, None);
         assert_eq!(off["unansweredCallSettings"]["isEnabled"], false);
-        let d = also_ring_delay(&also_ring(&json!({}), Some("SingleTarget"), true, Some("4:1")), 30);
+        let d = also_ring_delay(
+            &also_ring(&json!({}), Some("SingleTarget"), true, Some("4:1")),
+            30,
+        );
         let clamped = unanswered_delay(&d, 20);
         assert_eq!(clamped["callForwardingSettings"]["delaySeconds"], 15);
     }
@@ -326,6 +458,9 @@ mod tests {
         for t in ["4:1", "4:2", "4:3", "4:4"] {
             o = also_ring(&o, Some("SingleTarget"), true, Some(t));
         }
-        assert_eq!(o["favoriteTargets"]["targets"], json!(["4:4", "4:3", "4:2"]));
+        assert_eq!(
+            o["favoriteTargets"]["targets"],
+            json!(["4:4", "4:3", "4:2"])
+        );
     }
 }

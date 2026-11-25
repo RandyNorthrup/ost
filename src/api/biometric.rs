@@ -104,12 +104,19 @@ impl Biometric {
             .region_endpoint("biometricService")
             .context("no biometric service for this account")?;
         let token = crate::auth::oauth::access_token_for(&format!("{RESOURCE}/.default")).await?;
-        Ok(Self { base: format!("{base}/"), token, http: client.http().clone() })
+        Ok(Self {
+            base: format!("{base}/"),
+            token,
+            http: client.http().clone(),
+        })
     }
 
     fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
         self.http
-            .request(method, format!("{}{}", self.base, path.trim_start_matches('/')))
+            .request(
+                method,
+                format!("{}{}", self.base, path.trim_start_matches('/')),
+            )
             .bearer_auth(&self.token)
             .header("x-ms-correlation-id", uuid::Uuid::new_v4().to_string())
             .header("x-ringoverride", ring())
@@ -117,25 +124,39 @@ impl Biometric {
     }
 
     async fn get_json(&self, path: &str) -> Result<serde_json::Value> {
-        let r = self.request(reqwest::Method::GET, path).header("Accept", "application/json").send().await?;
+        let r = self
+            .request(reqwest::Method::GET, path)
+            .header("Accept", "application/json")
+            .send()
+            .await?;
         let status = r.status();
         let text = r.text().await.unwrap_or_default();
         if !status.is_success() {
-            bail!("HTTP {status} for {path}: {}", text.chars().take(300).collect::<String>());
+            bail!(
+                "HTTP {status} for {path}: {}",
+                text.chars().take(300).collect::<String>()
+            );
         }
         Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null))
     }
 
     /// Whether you have a voice and a face profile.
     pub async fn status(&self) -> Result<Status> {
-        let voice = self.get_json("v2/voice/enroll/status?enrollmentFilter=Enrolled&checkVoiceRecording=true").await?;
-        let face = self.get_json("v2/face/enroll/status?checkFaceCapture=true").await?;
+        let voice = self
+            .get_json("v2/voice/enroll/status?enrollmentFilter=Enrolled&checkVoiceRecording=true")
+            .await?;
+        let face = self
+            .get_json("v2/face/enroll/status?checkFaceCapture=true")
+            .await?;
         Ok(status_from(&voice, &face))
     }
 
     /// Remove your voice profile.
     pub async fn remove_voice(&self) -> Result<()> {
-        let r = self.request(reqwest::Method::DELETE, "unenroll").send().await?;
+        let r = self
+            .request(reqwest::Method::DELETE, "unenroll")
+            .send()
+            .await?;
         if !r.status().is_success() {
             bail!("removing the voice profile: HTTP {}", r.status());
         }
@@ -144,7 +165,10 @@ impl Biometric {
 
     /// Remove your face profile.
     pub async fn remove_face(&self) -> Result<()> {
-        let r = self.request(reqwest::Method::DELETE, "me/face/unenroll").send().await?;
+        let r = self
+            .request(reqwest::Method::DELETE, "me/face/unenroll")
+            .send()
+            .await?;
         if !r.status().is_success() {
             bail!("removing the face profile: HTTP {}", r.status());
         }
@@ -156,7 +180,8 @@ impl Biometric {
         let v = self
             .get_json(&format!("beta/cognition/token?type={kind}"))
             .await?;
-        let t: CognitionToken = serde_json::from_value(v["Data"].clone()).context("cognition token")?;
+        let t: CognitionToken =
+            serde_json::from_value(v["Data"].clone()).context("cognition token")?;
         if t.endpoint.is_empty() || t.azure_token.is_empty() || t.identifier.is_empty() {
             bail!("malformed cognition token");
         }
@@ -167,21 +192,37 @@ impl Biometric {
     pub async fn store_face(&self, photos: &[(Vec<u8>, serde_json::Value)]) -> Result<()> {
         let body = face_store_body(photos, &app_enrolled_from())?;
         let r = self
-            .request(reqwest::Method::POST, "beta/me/face/enroll/mandatory/signatures")
+            .request(
+                reqwest::Method::POST,
+                "beta/me/face/enroll/mandatory/signatures",
+            )
             .header("Content-Type", "application/bson")
             .body(body)
             .send()
             .await?;
         let status = r.status();
         if !(status == reqwest::StatusCode::OK || status == reqwest::StatusCode::CREATED) {
-            bail!("storing the face profile: HTTP {status}: {}", r.text().await.unwrap_or_default().chars().take(300).collect::<String>());
+            bail!(
+                "storing the face profile: HTTP {status}: {}",
+                r.text()
+                    .await
+                    .unwrap_or_default()
+                    .chars()
+                    .take(300)
+                    .collect::<String>()
+            );
         }
         Ok(())
     }
 
     /// Store your voice profile: the recording, its speaker signature and
     /// its voice-isolation signature.
-    pub async fn store_voice(&self, locale: &str, wav: &[u8], signature: &serde_json::Value) -> Result<()> {
+    pub async fn store_voice(
+        &self,
+        locale: &str,
+        wav: &[u8],
+        signature: &serde_json::Value,
+    ) -> Result<()> {
         let body = voice_store_body(locale, wav, signature, &app_enrolled_from());
         let r = self
             .request(reqwest::Method::POST, "v2/voice/enroll")
@@ -226,8 +267,12 @@ pub async fn passive(client: &TeamsClient) -> Result<Passive> {
     }
     let v: serde_json::Value = r.error_for_status()?.json().await.unwrap_or_default();
     Ok(Passive {
-        voice: v["isPassiveVoiceEnrollmentConsented"].as_bool().unwrap_or(false),
-        face: v["isPassiveFaceEnrollmentConsented"].as_bool().unwrap_or(false),
+        voice: v["isPassiveVoiceEnrollmentConsented"]
+            .as_bool()
+            .unwrap_or(false),
+        face: v["isPassiveFaceEnrollmentConsented"]
+            .as_bool()
+            .unwrap_or(false),
     })
 }
 
@@ -238,7 +283,14 @@ async fn upsert_passive(client: &TeamsClient, body: serde_json::Value) -> Result
         client.tenant_id().unwrap_or_default(),
         client.object_id().unwrap_or_default()
     );
-    client.http().put(&url).bearer_auth(&token).json(&body).send().await?.error_for_status()?;
+    client
+        .http()
+        .put(&url)
+        .bearer_auth(&token)
+        .json(&body)
+        .send()
+        .await?
+        .error_for_status()?;
     Ok(())
 }
 
@@ -251,7 +303,9 @@ impl Biometric {
         if on {
             let r = self
                 .request(reqwest::Method::PUT, "v3/passive/consent/enroll")
-                .json(&serde_json::json!({ "ConsentTextVersion": "1", "AppEnrolledFrom": "Desktop" }))
+                .json(
+                    &serde_json::json!({ "ConsentTextVersion": "1", "AppEnrolledFrom": "Desktop" }),
+                )
                 .send()
                 .await?;
             if !r.status().is_success() {
@@ -309,10 +363,17 @@ impl Bson {
         match v {
             serde_json::Value::Null => Bson::Null,
             serde_json::Value::Bool(b) => Bson::Bool(*b),
-            serde_json::Value::Number(n) => n.as_i64().map(Bson::Int).unwrap_or_else(|| Bson::Double(n.as_f64().unwrap_or(0.0))),
+            serde_json::Value::Number(n) => n
+                .as_i64()
+                .map(Bson::Int)
+                .unwrap_or_else(|| Bson::Double(n.as_f64().unwrap_or(0.0))),
             serde_json::Value::String(s) => Bson::Str(s.clone()),
             serde_json::Value::Array(a) => Bson::Array(a.iter().map(Bson::from_json).collect()),
-            serde_json::Value::Object(o) => Bson::Doc(o.iter().map(|(k, v)| (k.clone(), Bson::from_json(v))).collect()),
+            serde_json::Value::Object(o) => Bson::Doc(
+                o.iter()
+                    .map(|(k, v)| (k.clone(), Bson::from_json(v)))
+                    .collect(),
+            ),
         }
     }
 
@@ -320,7 +381,12 @@ impl Bson {
     /// wrapped as nothing).
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
-            Bson::Doc(fields) => doc_bytes(&fields.iter().map(|(k, v)| (k.as_str(), v)).collect::<Vec<_>>()),
+            Bson::Doc(fields) => doc_bytes(
+                &fields
+                    .iter()
+                    .map(|(k, v)| (k.as_str(), v))
+                    .collect::<Vec<_>>(),
+            ),
             _ => doc_bytes(&[]),
         }
     }
@@ -330,10 +396,22 @@ fn doc_bytes(fields: &[(&str, &Bson)]) -> Vec<u8> {
     let mut body = Vec::new();
     for &(name, value) in fields {
         let (kind, bytes) = match value {
-            Bson::Doc(f) => (0x03u8, doc_bytes(&f.iter().map(|(k, v)| (k.as_str(), v)).collect::<Vec<_>>())),
+            Bson::Doc(f) => (
+                0x03u8,
+                doc_bytes(&f.iter().map(|(k, v)| (k.as_str(), v)).collect::<Vec<_>>()),
+            ),
             Bson::Array(items) => {
                 let keys: Vec<String> = (0..items.len()).map(|i| i.to_string()).collect();
-                (0x04, doc_bytes(&keys.iter().map(String::as_str).zip(items.iter()).collect::<Vec<_>>()))
+                (
+                    0x04,
+                    doc_bytes(
+                        &keys
+                            .iter()
+                            .map(String::as_str)
+                            .zip(items.iter())
+                            .collect::<Vec<_>>(),
+                    ),
+                )
             }
             Bson::Str(s) => {
                 let mut b = ((s.len() + 1) as i32).to_le_bytes().to_vec();
@@ -365,7 +443,13 @@ fn doc_bytes(fields: &[(&str, &Bson)]) -> Vec<u8> {
 }
 
 /// The BSON Teams sends the signature service for one photo.
-pub fn face_signature_body(jpeg: &[u8], pose: HeadPose, user_oid: &str, tenant: &str, version: Option<&str>) -> Result<Vec<u8>> {
+pub fn face_signature_body(
+    jpeg: &[u8],
+    pose: HeadPose,
+    user_oid: &str,
+    tenant: &str,
+    version: Option<&str>,
+) -> Result<Vec<u8>> {
     let image = Bson::Doc(vec![
         ("Payload".into(), Bson::Binary(jpeg.to_vec())),
         ("ExpectedHeadPose".into(), Bson::Str(pose.wire().into())),
@@ -379,7 +463,10 @@ pub fn face_signature_body(jpeg: &[u8], pose: HeadPose, user_oid: &str, tenant: 
     if let Some(v) = version {
         doc.push(("Version".to_string(), Bson::Str(v.into())));
     }
-    doc.push(("PerUserFaceSignatureBatchRequest".to_string(), Bson::Array(vec![request])));
+    doc.push((
+        "PerUserFaceSignatureBatchRequest".to_string(),
+        Bson::Array(vec![request]),
+    ));
     Ok(Bson::Doc(doc).to_bytes())
 }
 
@@ -392,8 +479,8 @@ pub fn face_outcome(reply: &serde_json::Value) -> FaceOutcome {
             "UnexpectedHeadPose".to_string()
         } else {
             match r["ErrorDetails"].as_str().unwrap_or_default() {
-                d @ ("MultipleFaces" | "NoFaces" | "FaceTooSmall" | "UnexpectedHeadPose" | "BadLighting"
-                | "DetectorFailed" | "HeadPoseFailed") => d.to_string(),
+                d @ ("MultipleFaces" | "NoFaces" | "FaceTooSmall" | "UnexpectedHeadPose"
+                | "BadLighting" | "DetectorFailed" | "HeadPoseFailed") => d.to_string(),
                 _ => "UnspecifiedFailure".to_string(),
             }
         };
@@ -422,7 +509,10 @@ pub async fn face_signature(
     let status = r.status();
     let text = r.text().await.unwrap_or_default();
     if !(status.is_success() || status == reqwest::StatusCode::BAD_REQUEST) {
-        bail!("face signature: HTTP {status}: {}", text.chars().take(300).collect::<String>());
+        bail!(
+            "face signature: HTTP {status}: {}",
+            text.chars().take(300).collect::<String>()
+        );
     }
     let reply: serde_json::Value = serde_json::from_str(&text).context("face signature reply")?;
     Ok(face_outcome(&reply))
@@ -462,7 +552,12 @@ pub fn face_store_body(photos: &[(Vec<u8>, serde_json::Value)], app: &str) -> Re
 }
 
 /// The JSON storing a voice profile.
-pub fn voice_store_body(locale: &str, wav: &[u8], signature: &serde_json::Value, app: &str) -> serde_json::Value {
+pub fn voice_store_body(
+    locale: &str,
+    wav: &[u8],
+    signature: &serde_json::Value,
+    app: &str,
+) -> serde_json::Value {
     serde_json::json!({
         "Locale": locale,
         "RawData": base64::engine::general_purpose::STANDARD.encode(wav),
@@ -512,7 +607,10 @@ pub fn voice_outcome(event: &serde_json::Value, threshold: f64) -> VoiceOutcome 
     if event["Result"].as_str() == Some("Success") && !event["Signature"].is_null() {
         return VoiceOutcome::Signed(event["Signature"].clone());
     }
-    let error = event["Error"].as_str().unwrap_or("UnspecifiedFailure").to_string();
+    let error = event["Error"]
+        .as_str()
+        .unwrap_or("UnspecifiedFailure")
+        .to_string();
     if error == "NotEnoughWords" {
         let details = event["ErrorDetails"].as_str().unwrap_or_default();
         let rate = details
@@ -539,7 +637,12 @@ fn speech_headers(path: &str, request_id: &str, content_type: Option<&str>) -> S
     h
 }
 
-fn speech_binary(path: &str, request_id: &str, content_type: Option<&str>, payload: &[u8]) -> Vec<u8> {
+fn speech_binary(
+    path: &str,
+    request_id: &str,
+    content_type: Option<&str>,
+    payload: &[u8],
+) -> Vec<u8> {
     let headers = speech_headers(path, request_id, content_type);
     let mut out = Vec::with_capacity(2 + headers.len() + payload.len());
     out.extend_from_slice(&(headers.len() as u16).to_be_bytes());
@@ -551,7 +654,13 @@ fn speech_binary(path: &str, request_id: &str, content_type: Option<&str>, paylo
 /// The voice signature for a recording (16 kHz mono WAV), as Teams gets it:
 /// Azure Speech's WebSocket at the token's endpoint, with Teams' text as a
 /// phrase hint; the signature comes back in a `speech.event` message.
-pub async fn voice_signature(token: &CognitionToken, locale: &str, wav: &[u8], text: &str, threshold: f64) -> Result<VoiceOutcome> {
+pub async fn voice_signature(
+    token: &CognitionToken,
+    locale: &str,
+    wav: &[u8],
+    text: &str,
+    threshold: f64,
+) -> Result<VoiceOutcome> {
     use futures::{SinkExt, StreamExt};
     use tokio_tungstenite::tungstenite::Message;
     let connection = uuid::Uuid::new_v4().simple().to_string().to_uppercase();
@@ -562,7 +671,9 @@ pub async fn voice_signature(token: &CognitionToken, locale: &str, wav: &[u8], t
         urlencode(&token.identifier),
         urlencode(&format!("Bearer {}", token.azure_token)),
     );
-    let (mut ws, _) = tokio_tungstenite::connect_async(url.as_str()).await.context("CTSConnectionError")?;
+    let (mut ws, _) = tokio_tungstenite::connect_async(url.as_str())
+        .await
+        .context("CTSConnectionError")?;
     let request = uuid::Uuid::new_v4().simple().to_string().to_uppercase();
     let config = serde_json::json!({
         "context": {
@@ -575,21 +686,46 @@ pub async fn voice_signature(token: &CognitionToken, locale: &str, wav: &[u8], t
     let text_msg = |path: &str, rid: &str, ct: &str, body: String| {
         Message::Text(format!("{}\r\n{body}", speech_headers(path, rid, Some(ct))).into())
     };
-    ws.send(text_msg("speech.config", &request, "application/json", config.to_string())).await?;
+    ws.send(text_msg(
+        "speech.config",
+        &request,
+        "application/json",
+        config.to_string(),
+    ))
+    .await?;
     let phrases = serde_json::json!({ "dgi": { "Groups": [{ "Type": "Generic", "Items": [{ "Text": text }] }] } });
-    ws.send(text_msg("speech.context", &request, "application/json", phrases.to_string())).await?;
+    ws.send(text_msg(
+        "speech.context",
+        &request,
+        "application/json",
+        phrases.to_string(),
+    ))
+    .await?;
     // The WAV header first (Content-Type audio/x-wav), then the samples in
     // 100 ms pieces, then an empty audio message: the end.
     let (header, samples) = wav.split_at(44.min(wav.len()));
-    ws.send(Message::Binary(speech_binary("audio", &request, Some("audio/x-wav"), header).into())).await?;
+    ws.send(Message::Binary(
+        speech_binary("audio", &request, Some("audio/x-wav"), header).into(),
+    ))
+    .await?;
     for piece in samples.chunks(3200) {
-        ws.send(Message::Binary(speech_binary("audio", &request, None, piece).into())).await?;
+        ws.send(Message::Binary(
+            speech_binary("audio", &request, None, piece).into(),
+        ))
+        .await?;
     }
-    ws.send(Message::Binary(speech_binary("audio", &request, None, &[]).into())).await?;
+    ws.send(Message::Binary(
+        speech_binary("audio", &request, None, &[]).into(),
+    ))
+    .await?;
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(60);
     loop {
-        let next = tokio::time::timeout_at(deadline, ws.next()).await.context("signature service timed out")?;
-        let Some(msg) = next else { bail!("CTSConnectionError") };
+        let next = tokio::time::timeout_at(deadline, ws.next())
+            .await
+            .context("signature service timed out")?;
+        let Some(msg) = next else {
+            bail!("CTSConnectionError")
+        };
         let msg = msg?;
         let raw = match msg {
             Message::Text(t) => t.to_string(),
@@ -615,7 +751,9 @@ pub async fn voice_signature(token: &CognitionToken, locale: &str, wav: &[u8], t
 fn urlencode(s: &str) -> String {
     s.bytes()
         .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
             _ => format!("%{b:02X}"),
         })
         .collect()
@@ -628,10 +766,16 @@ mod tests {
     #[test]
     fn status_from_teams_replies() {
         let none = serde_json::json!({ "provisionalEnrollments": [], "enrollments": [], "hasVoiceRecording": false });
-        let face = serde_json::json!({ "enrollments": [{ "version": "4" }], "hasFaceCapture": true });
+        let face =
+            serde_json::json!({ "enrollments": [{ "version": "4" }], "hasFaceCapture": true });
         assert_eq!(
             status_from(&none, &face),
-            Status { voice: false, voice_recording: false, face: true, face_capture: true }
+            Status {
+                voice: false,
+                voice_recording: false,
+                face: true,
+                face_capture: true
+            }
         );
     }
 
@@ -640,19 +784,37 @@ mod tests {
         let ok = serde_json::json!({ "PerUserFaceSignatureBatchResponse": [{ "Responses": [{ "Result": "Success", "Signature": { "Version": "4", "Data": "x" } }] }] });
         assert!(matches!(face_outcome(&ok), FaceOutcome::Signed(_)));
         let pose = serde_json::json!({ "PerUserFaceSignatureBatchResponse": [{ "Responses": [{ "Result": "Fail", "Error": "WrongHeadPose" }] }] });
-        assert_eq!(face_outcome(&pose), FaceOutcome::Refused("UnexpectedHeadPose".into()));
+        assert_eq!(
+            face_outcome(&pose),
+            FaceOutcome::Refused("UnexpectedHeadPose".into())
+        );
         let many = serde_json::json!({ "PerUserFaceSignatureBatchResponse": [{ "Responses": [{ "Result": "Fail", "Error": "Invalid", "ErrorDetails": "MultipleFaces" }] }] });
-        assert_eq!(face_outcome(&many), FaceOutcome::Refused("MultipleFaces".into()));
+        assert_eq!(
+            face_outcome(&many),
+            FaceOutcome::Refused("MultipleFaces".into())
+        );
         let odd = serde_json::json!({ "PerUserFaceSignatureBatchResponse": [{ "Responses": [{ "Result": "Fail", "ErrorDetails": "Huh" }] }] });
-        assert_eq!(face_outcome(&odd), FaceOutcome::Refused("UnspecifiedFailure".into()));
+        assert_eq!(
+            face_outcome(&odd),
+            FaceOutcome::Refused("UnspecifiedFailure".into())
+        );
     }
 
     #[test]
     fn voice_outcomes_as_teams_reads_them() {
         let few = |d: &str| serde_json::json!({ "Result": "Fail", "Error": "NotEnoughWords", "ErrorDetails": d });
-        assert_eq!(voice_outcome(&few("error rate 40.5"), 25.0), VoiceOutcome::Refused("HighErrorRate".into()));
-        assert_eq!(voice_outcome(&few("error rate -1"), 25.0), VoiceOutcome::Refused("NoWords".into()));
-        assert_eq!(voice_outcome(&few("error rate 10"), 25.0), VoiceOutcome::Refused("NotEnoughWords".into()));
+        assert_eq!(
+            voice_outcome(&few("error rate 40.5"), 25.0),
+            VoiceOutcome::Refused("HighErrorRate".into())
+        );
+        assert_eq!(
+            voice_outcome(&few("error rate -1"), 25.0),
+            VoiceOutcome::Refused("NoWords".into())
+        );
+        assert_eq!(
+            voice_outcome(&few("error rate 10"), 25.0),
+            VoiceOutcome::Refused("NotEnoughWords".into())
+        );
         let ok = serde_json::json!({ "Result": "Success", "Signature": { "Version": "v4_5", "Data": "d" } });
         assert!(matches!(voice_outcome(&ok, 25.0), VoiceOutcome::Signed(_)));
     }
@@ -661,9 +823,15 @@ mod tests {
     fn bodies_round_trip() {
         // BSON's own example: {"hello": "world"}.
         let hello = Bson::Doc(vec![("hello".into(), Bson::Str("world".into()))]).to_bytes();
-        assert_eq!(hello, b"\x16\x00\x00\x00\x02hello\x00\x06\x00\x00\x00world\x00\x00");
+        assert_eq!(
+            hello,
+            b"\x16\x00\x00\x00\x02hello\x00\x06\x00\x00\x00world\x00\x00"
+        );
         let body = face_signature_body(&[1, 2, 3], HeadPose::Center, "oid", "ident", None).unwrap();
-        assert_eq!(i32::from_le_bytes(body[..4].try_into().unwrap()) as usize, body.len());
+        assert_eq!(
+            i32::from_le_bytes(body[..4].try_into().unwrap()) as usize,
+            body.len()
+        );
         assert!(body.windows(5).any(|w| w == b"ident"));
         assert!(!body.windows(7).any(|w| w == b"Version"));
         // Binary: length 3, generic subtype, the bytes.
@@ -671,7 +839,12 @@ mod tests {
         let wav = wav_16k(&[0, 1, -1]);
         assert_eq!(&wav[..4], b"RIFF");
         assert_eq!(wav.len(), 44 + 6);
-        let b = voice_store_body("en-us", &wav, &serde_json::json!({ "Version": "v4_5", "Data": "d" }), "ost-desktop,1");
+        let b = voice_store_body(
+            "en-us",
+            &wav,
+            &serde_json::json!({ "Version": "v4_5", "Data": "d" }),
+            "ost-desktop,1",
+        );
         assert_eq!(b["RockfallSignature"]["Version"], "v4_5");
         let m = speech_binary("audio", "R", None, &[9]);
         assert_eq!(u16::from_be_bytes([m[0], m[1]]) as usize, m.len() - 3);

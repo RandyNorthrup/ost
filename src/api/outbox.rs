@@ -124,7 +124,9 @@ pub struct LoopEmbed {
 /// The message's FluidEmbedCard span (as Teams writes it after the text,
 /// captured 2026-11-20, "OST TEST 85 loop component from Teams").
 pub fn loop_embed_span(card_client_id: &str) -> String {
-    format!(" \n        <span itemtype=\"http://schema.skype.com/FluidEmbedCard\" itemid=\"{card_client_id}\"></span>")
+    format!(
+        " \n        <span itemtype=\"http://schema.skype.com/FluidEmbedCard\" itemid=\"{card_client_id}\"></span>"
+    )
 }
 
 /// `properties.cards` for a compose Loop component.
@@ -345,20 +347,27 @@ pub fn classify(
 pub fn failure_text(pipeline: Option<&str>) -> String {
     use crate::i18n::tr_id;
     match pipeline {
-        Some("MessageTooLong") => tr_id("Failed to send. Message too large.", "messaging:kcem7052n"),
-        Some("CONVERSATION_DELETED") => tr_id("Message didn't send. Check your connection or try again later.", "messaging:k15klm2m"),
+        Some("MessageTooLong") => {
+            tr_id("Failed to send. Message too large.", "messaging:kcem7052n")
+        }
+        Some("CONVERSATION_DELETED") => tr_id(
+            "Message didn't send. Check your connection or try again later.",
+            "messaging:k15klm2m",
+        ),
         Some("TENANT_MESSAGE_SEND_LIMIT_EXCEEDED" | "MOERA_TENANT_MESSAGE_SEND_LIMIT_EXCEEDED") => {
             tr_id("Message limit reached", "messaging:kbk4x8bad")
         }
         Some("SPAM_MESSAGE_DETECTED") => {
             "This message might not meet Teams standards. Edit it, and try again.".into()
         }
-        Some("QUARANTINE_URLS_BLOCKED") => {
-            tr_id("You can't send links in this message until the invite is accepted.", "messaging:ksqxfhn0")
-        }
-        Some("THREADED_CHAT_NOT_ELIGIBLE_FOR_CONVERSION") => {
-            tr_id("This chat doesn't support threading yet.", "messaging:kqnrat5b")
-        }
+        Some("QUARANTINE_URLS_BLOCKED") => tr_id(
+            "You can't send links in this message until the invite is accepted.",
+            "messaging:ksqxfhn0",
+        ),
+        Some("THREADED_CHAT_NOT_ELIGIBLE_FOR_CONVERSION") => tr_id(
+            "This chat doesn't support threading yet.",
+            "messaging:kqnrat5b",
+        ),
         _ => tr_id("Failed to send.", "messaging:kmkig6iv"),
     }
 }
@@ -370,18 +379,22 @@ pub fn pending_tooltip(state: SendState, pipeline: Option<&str>) -> String {
         return tr_id("Sending...", "messaging:kcoyozfhd");
     }
     match pipeline {
-        Some("REJECT_HTTP_ERROR") => {
-            tr_id("Retrying... Message delayed due to connection issues. Please check your network.", "messaging:k39ouat4l")
-        }
-        Some("DEPENDENT_OAM_ACTION") => {
-            tr_id("Waiting for another message action to complete. We'll send this soon.", "messaging:k892tawaq")
-        }
-        Some("SERVICE_THROTTLED") => {
-            tr_id("Retrying... You've reached the current limit. Please wait a moment.", "messaging:k3nvk42ug")
-        }
-        Some("SERVICE_ISSUE_GENERIC") => {
-            tr_id("The service is temporarily unavailable. We'll retry when it's back.", "messaging:k9evf3jg0")
-        }
+        Some("REJECT_HTTP_ERROR") => tr_id(
+            "Retrying... Message delayed due to connection issues. Please check your network.",
+            "messaging:k39ouat4l",
+        ),
+        Some("DEPENDENT_OAM_ACTION") => tr_id(
+            "Waiting for another message action to complete. We'll send this soon.",
+            "messaging:k892tawaq",
+        ),
+        Some("SERVICE_THROTTLED") => tr_id(
+            "Retrying... You've reached the current limit. Please wait a moment.",
+            "messaging:k3nvk42ug",
+        ),
+        Some("SERVICE_ISSUE_GENERIC") => tr_id(
+            "The service is temporarily unavailable. We'll retry when it's back.",
+            "messaging:k9evf3jg0",
+        ),
         _ => tr_id("Retrying...", "messaging:k87q18ol3"),
     }
 }
@@ -454,11 +467,20 @@ pub fn post_body(o: &Outgoing) -> serde_json::Value {
         },
     });
     if !o.blur_hash.is_empty() {
-        let list: Vec<serde_json::Value> = o.blur_hash.iter().map(|(h, id)| serde_json::json!({ "blurhash": h, "imageId": id })).collect();
+        let list: Vec<serde_json::Value> = o
+            .blur_hash
+            .iter()
+            .map(|(h, id)| serde_json::json!({ "blurhash": h, "imageId": id }))
+            .collect();
         body["properties"]["blurHash"] = serde_json::Value::Array(list).to_string().into();
     }
     if let Some(l) = &o.loop_component {
-        body["content"] = format!("{}{}", body["content"].as_str().unwrap_or_default(), loop_embed_span(&l.card_client_id)).into();
+        body["content"] = format!(
+            "{}{}",
+            body["content"].as_str().unwrap_or_default(),
+            loop_embed_span(&l.card_client_id)
+        )
+        .into();
         body["properties"]["cards"] = loop_embed_cards(l).into();
     }
     if o.bot_message_back {
@@ -469,7 +491,10 @@ pub fn post_body(o: &Outgoing) -> serde_json::Value {
     // preview turned off, or, collapsed, only its preview.
     if let Some((c, id)) = &o.app_card {
         let p = &mut body["properties"];
-        let preview = c.preview.clone().map(|pv| super::url_preview::UrlPreview { enabled: c.collapsed, ..pv });
+        let preview = c.preview.clone().map(|pv| super::url_preview::UrlPreview {
+            enabled: c.collapsed,
+            ..pv
+        });
         p["links"] = super::url_preview::links_property(preview.as_ref()).into();
         if !c.collapsed {
             p["cards"] = super::link_unfurl::cards_property(c, id).into();
@@ -485,7 +510,12 @@ pub fn post_body(o: &Outgoing) -> serde_json::Value {
     if is_channel_post(&o.conversation_id) {
         let p = &mut body["properties"];
         p["subject"] = o.subject.clone().into();
-        p["title"] = if o.banner_theme.is_some() { o.title.clone() } else { String::new() }.into();
+        p["title"] = if o.banner_theme.is_some() {
+            o.title.clone()
+        } else {
+            String::new()
+        }
+        .into();
         p["policyViolation"] = serde_json::Value::Null;
         if !o.reply_permission.is_empty() && o.reply_permission != "Everyone" {
             p["replyPermission"] = o.reply_permission.clone().into();
@@ -497,13 +527,20 @@ pub fn post_body(o: &Outgoing) -> serde_json::Value {
             body["amsreferences"] = serde_json::json!([i.id]);
         }
         if !o.threads_layout {
-            body["postType"] = if o.banner_theme.is_some() { "Announcement" } else { "Standard" }.into();
+            body["postType"] = if o.banner_theme.is_some() {
+                "Announcement"
+            } else {
+                "Standard"
+            }
+            .into();
         }
         body["crossPostChannels"] = serde_json::json!([]);
     }
     // A Threads-layout reply also sent to the channel (measured on winpc
     // 2026-11-10): the post fields, isSharedInMain, and the thread it's in.
-    if o.shared_in_main && let Some((_, root)) = o.conversation_id.split_once(";messageid=") {
+    if o.shared_in_main
+        && let Some((_, root)) = o.conversation_id.split_once(";messageid=")
+    {
         let p = &mut body["properties"];
         p["subject"] = "".into();
         p["title"] = "".into();
@@ -545,14 +582,20 @@ pub async fn post(o: &Outgoing) -> PostResult {
     let filled;
     let o = if o.url_preview.is_none() && o.url_preview_on_send {
         let found = match super::url_preview::first_link(&o.content) {
-            Some(link) => tokio::time::timeout(std::time::Duration::from_secs(3), super::url_preview::fetch(&client, &link))
-                .await
-                .ok()
-                .and_then(|r| r.ok())
-                .flatten(),
+            Some(link) => tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                super::url_preview::fetch(&client, &link),
+            )
+            .await
+            .ok()
+            .and_then(|r| r.ok())
+            .flatten(),
             None => None,
         };
-        filled = Outgoing { url_preview: found, ..o.clone() };
+        filled = Outgoing {
+            url_preview: found,
+            ..o.clone()
+        };
         &filled
     } else {
         o
@@ -566,10 +609,26 @@ pub async fn post(o: &Outgoing) -> PostResult {
         if let Some(obj) = m.as_object_mut() {
             obj.remove("crossPostChannels");
         }
-        return match super::messages::new_cross_post(&client, &m, &o.conversation_id, &o.cross_post_channels).await {
-            Ok(id) if !id.is_empty() => PostResult::Delivered { id, arrival_ms: o.arrival_ms },
-            Ok(_) => PostResult::Failed { status: Some(500), body: "InvalidResponse".into() },
-            Err(e) => PostResult::Failed { status: None, body: format!("{e:#}") },
+        return match super::messages::new_cross_post(
+            &client,
+            &m,
+            &o.conversation_id,
+            &o.cross_post_channels,
+        )
+        .await
+        {
+            Ok(id) if !id.is_empty() => PostResult::Delivered {
+                id,
+                arrival_ms: o.arrival_ms,
+            },
+            Ok(_) => PostResult::Failed {
+                status: Some(500),
+                body: "InvalidResponse".into(),
+            },
+            Err(e) => PostResult::Failed {
+                status: None,
+                body: format!("{e:#}"),
+            },
         };
     }
     let mut counts = Counts::default();
@@ -723,15 +782,26 @@ pub fn lie_view(o: &Outgoing) -> MessageView {
         send_note,
         can_retry: o.state == SendState::Error && can_retry(o.pipeline_status.as_deref()),
         subject: o.subject.clone(),
-        announcement: o.banner_theme.as_ref().map(|t| super::messages::Announcement {
-            title: o.title.clone(),
-            color_theme: t.clone(),
-            image_url: o.banner_image.as_ref().map(|i| i.src.clone()).unwrap_or_default(),
-            image_width: o.banner_image.as_ref().map_or(0, |i| i.width),
-            image_height: o.banner_image.as_ref().map_or(0, |i| i.height),
-            image_local: o.banner_image.as_ref().map(|i| format!("file://{}", i.path)).unwrap_or_default(),
-            ..Default::default()
-        }),
+        announcement: o
+            .banner_theme
+            .as_ref()
+            .map(|t| super::messages::Announcement {
+                title: o.title.clone(),
+                color_theme: t.clone(),
+                image_url: o
+                    .banner_image
+                    .as_ref()
+                    .map(|i| i.src.clone())
+                    .unwrap_or_default(),
+                image_width: o.banner_image.as_ref().map_or(0, |i| i.width),
+                image_height: o.banner_image.as_ref().map_or(0, |i| i.height),
+                image_local: o
+                    .banner_image
+                    .as_ref()
+                    .map(|i| format!("file://{}", i.path))
+                    .unwrap_or_default(),
+                ..Default::default()
+            }),
         // A channel reply goes under its post.
         root_id: o
             .conversation_id
@@ -1030,11 +1100,23 @@ mod tests {
         let t2 = "9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5";
         let t3 = "01c4860d-5776-4b16-8736-6a739fcc8b34";
         let chat = format!("19:{t3}_{t2}@unq.gbl.spaces");
-        assert_eq!(one_on_one_other(&chat, &format!("8:orgid:{t2}")), Some(format!("8:orgid:{t3}")));
-        assert_eq!(one_on_one_other(&chat, &format!("8:orgid:{t3}")), Some(format!("8:orgid:{t2}")));
+        assert_eq!(
+            one_on_one_other(&chat, &format!("8:orgid:{t2}")),
+            Some(format!("8:orgid:{t3}"))
+        );
+        assert_eq!(
+            one_on_one_other(&chat, &format!("8:orgid:{t3}")),
+            Some(format!("8:orgid:{t2}"))
+        );
         // Not a 1:1, or not the sender's.
-        assert_eq!(one_on_one_other("19:abc@thread.v2", &format!("8:orgid:{t2}")), None);
-        assert_eq!(one_on_one_other(&chat, "8:orgid:4287e791-1b98-4963-8b94-281c50472683"), None);
+        assert_eq!(
+            one_on_one_other("19:abc@thread.v2", &format!("8:orgid:{t2}")),
+            None
+        );
+        assert_eq!(
+            one_on_one_other(&chat, "8:orgid:4287e791-1b98-4963-8b94-281c50472683"),
+            None
+        );
     }
 
     #[test]
@@ -1166,25 +1248,46 @@ mod tests {
                 url: "https://en.wikipedia.org/wiki/Lighthouse".into(),
                 title: "Lighthouse".into(),
                 description: "A lighthouse is a tower".into(),
-                thumbnail: "https://us-prod.asyncgw.teams.microsoft.com/urlp/v1/url/content?url=x".into(),
+                thumbnail: "https://us-prod.asyncgw.teams.microsoft.com/urlp/v1/url/content?url=x"
+                    .into(),
                 ..Default::default()
             }),
             ..Default::default()
         };
         let id = "app-preview-card-ps45fbccde1d5f4f9ab44e0e070576b49f".to_string();
-        let with = Outgoing { app_card: Some((card.clone(), id.clone())), ..o.clone() };
+        let with = Outgoing {
+            app_card: Some((card.clone(), id.clone())),
+            ..o.clone()
+        };
         let b = post_body(&with);
-        assert!(b["content"].as_str().unwrap().ends_with(&super::super::link_unfurl::inline_span(&id)));
-        let cards: serde_json::Value = serde_json::from_str(b["properties"]["cards"].as_str().unwrap()).unwrap();
+        assert!(
+            b["content"]
+                .as_str()
+                .unwrap()
+                .ends_with(&super::super::link_unfurl::inline_span(&id))
+        );
+        let cards: serde_json::Value =
+            serde_json::from_str(b["properties"]["cards"].as_str().unwrap()).unwrap();
         assert_eq!(cards[0]["cardClientId"], id.as_str());
-        let links: serde_json::Value = serde_json::from_str(b["properties"]["links"].as_str().unwrap()).unwrap();
+        let links: serde_json::Value =
+            serde_json::from_str(b["properties"]["links"].as_str().unwrap()).unwrap();
         assert_eq!(links[0]["previewenabled"], false);
         assert_eq!(links[0]["preview"]["title"], "Lighthouse");
-        let folded = Outgoing { app_card: Some((super::super::link_unfurl::AppCard { collapsed: true, ..card }, id)), ..o.clone() };
+        let folded = Outgoing {
+            app_card: Some((
+                super::super::link_unfurl::AppCard {
+                    collapsed: true,
+                    ..card
+                },
+                id,
+            )),
+            ..o.clone()
+        };
         let b = post_body(&folded);
         assert_eq!(b["content"], "<p>hi</p>");
         assert_eq!(b["properties"]["cards"], "[]");
-        let links: serde_json::Value = serde_json::from_str(b["properties"]["links"].as_str().unwrap()).unwrap();
+        let links: serde_json::Value =
+            serde_json::from_str(b["properties"]["links"].as_str().unwrap()).unwrap();
         assert_eq!(links[0]["previewenabled"], true);
         let b = post_body(&o);
         assert!(b.get("postType").is_none(), "chats have no post type");
@@ -1225,7 +1328,10 @@ mod tests {
             ..o.clone()
         };
         let b = post_body(&root);
-        assert!(b.get("postType").is_none(), "Threads-layout messages have no post type");
+        assert!(
+            b.get("postType").is_none(),
+            "Threads-layout messages have no post type"
+        );
         assert_eq!(b["properties"]["subject"], "");
         assert_eq!(b["properties"]["title"], "");
         assert_eq!(b["properties"]["policyViolation"], serde_json::Value::Null);
@@ -1296,11 +1402,17 @@ mod tests {
         assert!(b["properties"]["policyViolation"].is_null());
         assert_eq!(b["postType"], "Standard");
         assert_eq!(b["crossPostChannels"], serde_json::json!([]));
-        assert!(b["properties"].get("replyPermission").is_none(), "Everyone sends none");
+        assert!(
+            b["properties"].get("replyPermission").is_none(),
+            "Everyone sends none"
+        );
         // Change permissions ▸ You and moderators (OST TEST 265, captured
         // 2026-11-24).
         o.reply_permission = "AuthorAndOwners".into();
-        assert_eq!(post_body(&o)["properties"]["replyPermission"], "AuthorAndOwners");
+        assert_eq!(
+            post_body(&o)["properties"]["replyPermission"],
+            "AuthorAndOwners"
+        );
         o.reply_permission = String::new();
 
         o.subject = "OST test subheading".into();
@@ -1309,10 +1421,17 @@ mod tests {
         let b = post_body(&o);
         assert_eq!(b["postType"], "Announcement");
         assert_eq!(b["properties"]["title"], "OST TEST 74 announcement");
-        let cards: serde_json::Value = serde_json::from_str(b["properties"]["cards"].as_str().unwrap()).unwrap();
+        let cards: serde_json::Value =
+            serde_json::from_str(b["properties"]["cards"].as_str().unwrap()).unwrap();
         assert_eq!(cards[0]["appId"], "announcement-card");
-        assert_eq!(cards[0]["contentType"], "application/vnd.microsoft.teams.messaging-announcementBanner");
-        assert_eq!(cards[0]["content"], serde_json::json!({ "colorTheme": "0" }));
+        assert_eq!(
+            cards[0]["contentType"],
+            "application/vnd.microsoft.teams.messaging-announcementBanner"
+        );
+        assert_eq!(
+            cards[0]["content"],
+            serde_json::json!({ "colorTheme": "0" })
+        );
         let id = cards[0]["cardClientId"].as_str().unwrap();
         assert!(id.starts_with("announcement-card-") && id.len() == 18 + 32);
         // The lie shows the banner and the subheading.
@@ -1323,24 +1442,35 @@ mod tests {
         let props = serde_json::json!({ "subject": "OST test subheading", "title": "OST TEST 74 announcement",
             "cards": "[{\"appId\":\"announcement-card\",\"cardClientId\":\"announcement-card-4562c853dc2742fbb3759fa5ad7186d5\",\"contentType\":\"application/vnd.microsoft.teams.messaging-announcementBanner\",\"content\":{\"colorTheme\":\"0\"}}]" });
         let a = super::super::messages::announcement_from(Some(&props)).unwrap();
-        assert_eq!((a.title.as_str(), a.color_theme.as_str()), ("OST TEST 74 announcement", "0"));
+        assert_eq!(
+            (a.title.as_str(), a.color_theme.as_str()),
+            ("OST TEST 74 announcement", "0")
+        );
         assert!(super::super::messages::property_cards(Some(&props)).is_empty());
 
         // A picture banner (Teams' OST TEST 78): the crop as both images,
         // appName, and the object in amsreferences.
         o.banner_image = Some(BannerImage {
-            path: "/tmp/a.png".into(), width: 1317, height: 366,
-            id: "0-wus-d12-9b36".into(), src: "https://us-api.asm.skype.com/v1/objects/0-wus-d12-9b36/views/imgpsh_fullsize".into(),
+            path: "/tmp/a.png".into(),
+            width: 1317,
+            height: 366,
+            id: "0-wus-d12-9b36".into(),
+            src: "https://us-api.asm.skype.com/v1/objects/0-wus-d12-9b36/views/imgpsh_fullsize"
+                .into(),
         });
         let b = post_body(&o);
         assert_eq!(b["amsreferences"], serde_json::json!(["0-wus-d12-9b36"]));
-        let cards: serde_json::Value = serde_json::from_str(b["properties"]["cards"].as_str().unwrap()).unwrap();
+        let cards: serde_json::Value =
+            serde_json::from_str(b["properties"]["cards"].as_str().unwrap()).unwrap();
         assert_eq!(cards[0]["appName"], "AnnouncementBanner");
         let img = &cards[0]["content"]["imageData"]["croppedImage"];
         assert_eq!(img["imageWidth"], 1317);
         assert_eq!(img["id"], "0-wus-d12-9b36");
         assert_eq!(cards[0]["content"]["imageData"]["origImage"], *img);
-        let a = super::super::messages::announcement_from(Some(&serde_json::json!({ "title": "t", "cards": b["properties"]["cards"] }))).unwrap();
+        let a = super::super::messages::announcement_from(Some(
+            &serde_json::json!({ "title": "t", "cards": b["properties"]["cards"] }),
+        ))
+        .unwrap();
         assert_eq!((a.image_width, a.image_height), (1317, 366));
         assert!(a.image_url.ends_with("/imgpsh_fullsize"));
     }

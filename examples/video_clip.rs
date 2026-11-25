@@ -5,7 +5,11 @@ use teams_cli::api::{client::TeamsClient, video_clips};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut a = std::env::args().skip(1);
-    let (url, out, rep) = (a.next().expect("clip url"), a.next().expect("out"), a.next());
+    let (url, out, rep) = (
+        a.next().expect("clip url"),
+        a.next().expect("out"),
+        a.next(),
+    );
     let client = TeamsClient::new().await?;
     let mpd = video_clips::manifest(&client, &url).await?;
     println!("renditions: {:?}", video_clips::renditions(&mpd));

@@ -96,17 +96,25 @@ pub fn parse_files(files: &serde_json::Value) -> Vec<FileAttachment> {
             let file_type = Some(s("fileType"))
                 .filter(|t| !t.is_empty())
                 .unwrap_or_else(|| ext_of(&name));
-            let item_id = if file_type == "deeplink" { s("itemid") } else { String::new() };
+            let item_id = if file_type == "deeplink" {
+                s("itemid")
+            } else {
+                String::new()
+            };
             let crumbs = f.get("chicletBreadcrumbs").cloned().unwrap_or_default();
             let location = location(&crumbs, &file_type);
-            let site_url = [f.pointer("/fileInfo/siteUrl"), f.get("baseUrl"), f.pointer("/sharepointIds/siteUrl")]
-                .into_iter()
-                .flatten()
-                .filter_map(|v| v.as_str())
-                .find(|u| u.starts_with("https://"))
-                .unwrap_or_default()
-                .trim_end_matches('/')
-                .to_string();
+            let site_url = [
+                f.pointer("/fileInfo/siteUrl"),
+                f.get("baseUrl"),
+                f.pointer("/sharepointIds/siteUrl"),
+            ]
+            .into_iter()
+            .flatten()
+            .filter_map(|v| v.as_str())
+            .find(|u| u.starts_with("https://"))
+            .unwrap_or_default()
+            .trim_end_matches('/')
+            .to_string();
             Some(FileAttachment {
                 name,
                 file_type,
@@ -261,8 +269,17 @@ pub async fn upload_for_chat(
 /// The `properties.files` entry Teams' "Share this file" posts for a file
 /// already in OneDrive or SharePoint: its item, addresses and the link the
 /// chat may open (`share_id` empty for the item's own address).
-pub fn shared_record(name: &str, unique: &str, object_url: &str, site_url: &str, share_url: &str, share_id: &str) -> serde_json::Value {
-    let unique = unique.trim_matches(|c| c == '{' || c == '}').to_ascii_lowercase();
+pub fn shared_record(
+    name: &str,
+    unique: &str,
+    object_url: &str,
+    site_url: &str,
+    share_url: &str,
+    share_id: &str,
+) -> serde_json::Value {
+    let unique = unique
+        .trim_matches(|c| c == '{' || c == '}')
+        .to_ascii_lowercase();
     let file_type = ext_of(name);
     serde_json::json!({
         "itemid": unique,
@@ -425,8 +442,18 @@ pub async fn send_with_files(
 }
 
 /// As [`send_with_files`], with a delivery option ("high", "urgent").
-pub async fn send_with_files_marked(client: &TeamsClient, chat_id: &str, text: &str, files: Vec<serde_json::Value>, importance: &str) -> Result<()> {
-    let content = if text.trim().is_empty() { String::new() } else { format!("<p>{}</p>", super::chat::html_escape(text)) };
+pub async fn send_with_files_marked(
+    client: &TeamsClient,
+    chat_id: &str,
+    text: &str,
+    files: Vec<serde_json::Value>,
+    importance: &str,
+) -> Result<()> {
+    let content = if text.trim().is_empty() {
+        String::new()
+    } else {
+        format!("<p>{}</p>", super::chat::html_escape(text))
+    };
     send_html_with_files_as(client, chat_id, &content, files, importance, "").await
 }
 
@@ -575,8 +602,17 @@ mod tests {
         assert!(got[0].share_url.ends_with("/abc"));
         assert!(parse_files(&serde_json::json!("not json")).is_empty());
         // A tab conversation's post links its tab (captured from Teams).
-        let tab = parse_files(&serde_json::json!(r#"[{"itemid":"tab::de38","fileName":"Notes","fileType":"deeplink","fileInfo":{"serverRelativeUrl":""},"type":"deeplink","title":"Notes"}]"#));
-        assert_eq!((tab[0].name.as_str(), tab[0].file_type.as_str(), tab[0].item_id.as_str()), ("Notes", "deeplink", "tab::de38"));
+        let tab = parse_files(&serde_json::json!(
+            r#"[{"itemid":"tab::de38","fileName":"Notes","fileType":"deeplink","fileInfo":{"serverRelativeUrl":""},"type":"deeplink","title":"Notes"}]"#
+        ));
+        assert_eq!(
+            (
+                tab[0].name.as_str(),
+                tab[0].file_type.as_str(),
+                tab[0].item_id.as_str()
+            ),
+            ("Notes", "deeplink", "tab::de38")
+        );
         assert!(parse_files(&serde_json::json!([{ "fileType": "txt" }])).is_empty());
     }
 
@@ -590,10 +626,20 @@ mod tests {
             "chicletBreadcrumbs": { "sourceChannelName": "ost-test1_x_com", "sourceTeamName": "personal" }
         }]));
         assert_eq!(got[0].location, "personal > ost-test1_x_com");
-        assert_eq!(got[0].site_url, "https://x-my.sharepoint.com/personal/ost-test1_x_com");
-        let crumbs = |t: &str, c: &str| serde_json::json!({ "sourceTeamName": t, "sourceChannelName": c });
-        assert_eq!(location(&crumbs("OST Test Team", "OST layout test"), "docx"), "OST Test Team > OST layout test");
-        assert_eq!(location(&crumbs("OST Test Team", "Lists"), "splist"), "OST Test Team");
+        assert_eq!(
+            got[0].site_url,
+            "https://x-my.sharepoint.com/personal/ost-test1_x_com"
+        );
+        let crumbs =
+            |t: &str, c: &str| serde_json::json!({ "sourceTeamName": t, "sourceChannelName": c });
+        assert_eq!(
+            location(&crumbs("OST Test Team", "OST layout test"), "docx"),
+            "OST Test Team > OST layout test"
+        );
+        assert_eq!(
+            location(&crumbs("OST Test Team", "Lists"), "splist"),
+            "OST Test Team"
+        );
         assert_eq!(location(&crumbs("personal", "a"), "splist"), "personal > a");
         assert_eq!(location(&crumbs("OST Test Team", ""), "txt"), "");
         assert_eq!(location(&serde_json::Value::Null, "txt"), "");

@@ -55,7 +55,11 @@ pub fn prefers_e2ee() -> bool {
 /// The session-level lines our 1:1 SDP adds for E2EE: for an offer when
 /// we prefer it; for an answer when the offer asked too.
 fn e2ee_line(offer: Option<&WebRtcOffer>) -> &'static str {
-    if prefers_e2ee() && offer.is_none_or(|o| o.e2ee) { "a=x-e2ee\r\n" } else { "" }
+    if prefers_e2ee() && offer.is_none_or(|o| o.e2ee) {
+        "a=x-e2ee\r\n"
+    } else {
+        ""
+    }
 }
 /// Our H.264 payload type when we offer video.
 const PT_H264_OFFER: u8 = 107;
@@ -239,8 +243,15 @@ impl MidMap {
         let (mut has_data, mut has_video) = (false, false);
         for (mid, body) in sections(offer) {
             let Some(theirs) = mid else { continue };
-            let kind = body.split_whitespace().next().unwrap_or_default().trim_start_matches("m=");
-            let label = body.lines().find_map(|l| l.trim_end().strip_prefix("a=label:")).unwrap_or_default();
+            let kind = body
+                .split_whitespace()
+                .next()
+                .unwrap_or_default()
+                .trim_start_matches("m=");
+            let label = body
+                .lines()
+                .find_map(|l| l.trim_end().strip_prefix("a=label:"))
+                .unwrap_or_default();
             let ours = match kind {
                 "audio" => Some("0".to_string()),
                 "video" if label == "applicationsharing-video" => Some(mm::SHARE_MID.to_string()),
@@ -300,7 +311,10 @@ impl MidMap {
 
     /// The processor's mid for one of ours.
     pub fn wire_mid(&self, ours: &str) -> String {
-        self.pairs.iter().find(|(_, o)| o == ours).map_or_else(|| ours.to_string(), |(t, _)| t.clone())
+        self.pairs
+            .iter()
+            .find(|(_, o)| o == ours)
+            .map_or_else(|| ours.to_string(), |(t, _)| t.clone())
     }
 }
 
@@ -747,7 +761,11 @@ pub fn with_unmixed(sdp: &str, on: bool) -> String {
             if in_audio {
                 // m=audio <port> <proto> <formats…>
                 let mut f: Vec<&str> = line.split(' ').collect();
-                let formats: Vec<&str> = f.split_off(3.min(f.len())).into_iter().filter(|x| *x != pt).collect();
+                let formats: Vec<&str> = f
+                    .split_off(3.min(f.len()))
+                    .into_iter()
+                    .filter(|x| *x != pt)
+                    .collect();
                 let mut all: Vec<&str> = f;
                 if on {
                     all.push(&pt);
@@ -848,9 +866,12 @@ impl WebRtcOffer {
     pub fn codec(&self) -> super::audio_codec::Codec {
         // OST_AUDIO_CODEC=pcmu: send G.711 even when Opus is offered
         // (diagnostics).
-        let pcmu_only = std::env::var("OST_AUDIO_CODEC").is_ok_and(|v| v.eq_ignore_ascii_case("pcmu"));
+        let pcmu_only =
+            std::env::var("OST_AUDIO_CODEC").is_ok_and(|v| v.eq_ignore_ascii_case("pcmu"));
         match self.opus_pt {
-            Some(pt) if cfg!(feature = "audio") && !pcmu_only => super::audio_codec::Codec::Opus(pt),
+            Some(pt) if cfg!(feature = "audio") && !pcmu_only => {
+                super::audio_codec::Codec::Opus(pt)
+            }
             _ => super::audio_codec::Codec::Pcmu,
         }
     }
@@ -1036,30 +1057,53 @@ impl LocalAudio {
             let h264 = || video_line(canonical, mid, None);
             let section = if kind == "audio" && *mid == offer.audio_mid {
                 Some(self.audio_section(port, &addr, mid, "active", offer.dtmf_pt, Some(offer)))
-            } else if kind == "video" && (mid == mm::CAMERA_MID || slots.contains(mid) || mid == mm::SHARE_MID) {
+            } else if kind == "video"
+                && (mid == mm::CAMERA_MID || slots.contains(mid) || mid == mm::SHARE_MID)
+            {
                 h264().map(|v| {
                     // Our camera and sharing lines answer what the
                     // processor offers: a meeting we're invited into while
                     // someone presents offers its sharing line send-only
                     // (it only sends the screen), answered receive-only.
-                    let offered = section_with_mid(canonical, mid).map(section_direction).unwrap_or("sendrecv");
+                    let offered = section_with_mid(canonical, mid)
+                        .map(section_direction)
+                        .unwrap_or("sendrecv");
                     let (direction, label, ssrc) = if mid == mm::CAMERA_MID {
                         (answer_to(offered), "main-video", self.video_ssrc)
                     } else if mid == mm::SHARE_MID {
-                        (answer_to(offered), "applicationsharing-video", self.share_ssrc)
+                        (
+                            answer_to(offered),
+                            "applicationsharing-video",
+                            self.share_ssrc,
+                        )
                     } else {
                         ("recvonly", "main-video", 1)
                     };
                     self.video_section(
                         port,
                         &addr,
-                        VideoLine { mid, setup: "active", pt: v.payload_type, profile: &v.profile, direction, label, ssrc },
+                        VideoLine {
+                            mid,
+                            setup: "active",
+                            pt: v.payload_type,
+                            profile: &v.profile,
+                            direction,
+                            label,
+                            ssrc,
+                        },
                     )
                 })
             } else if kind == "x-data" && mid == mm::DATA_MID {
                 Some(
-                    mm::data_section(port, &addr, &self.ufrag, &self.pwd, &self.identity.fingerprint, self.ssrc.wrapping_add(1))
-                        .replace("a=setup:actpass", "a=setup:active"),
+                    mm::data_section(
+                        port,
+                        &addr,
+                        &self.ufrag,
+                        &self.pwd,
+                        &self.identity.fingerprint,
+                        self.ssrc.wrapping_add(1),
+                    )
+                    .replace("a=setup:actpass", "a=setup:active"),
                 )
             } else {
                 None
@@ -1237,26 +1281,40 @@ impl LocalAudio {
                 // Spatial audio: each speaker's own audio (Teams' MUCHv2,
                 // offered first while spatial audio is on and the speaker
                 // can play it). OST_OFFER_MUCH=1 offers it regardless.
-                if self.meeting && (super::spatial::wants_unmixed() || std::env::var("OST_OFFER_MUCH").is_ok()) {
+                if self.meeting
+                    && (super::spatial::wants_unmixed() || std::env::var("OST_OFFER_MUCH").is_ok())
+                {
                     formats.push((super::much::PAYLOAD_TYPE, super::much::RTPMAP.into(), None));
                 }
                 if opus {
-                    formats.push((PT_OPUS, "opus/48000/2".into(), Some("minptime=10;useinbandfec=1".into())));
+                    formats.push((
+                        PT_OPUS,
+                        "opus/48000/2".into(),
+                        Some("minptime=10;useinbandfec=1".into()),
+                    ));
                 }
                 formats.push((PT_PCMU, "PCMU/8000".into(), None));
                 if let Some(d) = dtmf {
                     if opus {
-                        formats.push((PT_DTMF_48K, "telephone-event/48000".into(), Some("0-15".into())));
+                        formats.push((
+                            PT_DTMF_48K,
+                            "telephone-event/48000".into(),
+                            Some("0-15".into()),
+                        ));
                     }
                     formats.push((d, "telephone-event/8000".into(), Some("0-15".into())));
                 }
             }
             Some(offer) => {
                 match offer.codec() {
-                    super::audio_codec::Codec::Opus(pt) => {
-                        formats.push((pt, "opus/48000/2".into(), Some("minptime=10;useinbandfec=1".into())))
+                    super::audio_codec::Codec::Opus(pt) => formats.push((
+                        pt,
+                        "opus/48000/2".into(),
+                        Some("minptime=10;useinbandfec=1".into()),
+                    )),
+                    super::audio_codec::Codec::Pcmu => {
+                        formats.push((PT_PCMU, "PCMU/8000".into(), None))
                     }
-                    super::audio_codec::Codec::Pcmu => formats.push((PT_PCMU, "PCMU/8000".into(), None)),
                 }
                 if let Some(d) = offer.dtmf_for_codec() {
                     let clock = offer.codec().dtmf_clock();
@@ -1338,7 +1396,14 @@ impl LocalAudio {
         for (mid, kind, proto_fmts) in &offer.sections {
             if *mid == offer.audio_mid {
                 // DTMF only with the payload type the peer offered.
-                s.push_str(&self.audio_section(port, &addr, mid, "active", offer.dtmf_pt, Some(offer)));
+                s.push_str(&self.audio_section(
+                    port,
+                    &addr,
+                    mid,
+                    "active",
+                    offer.dtmf_pt,
+                    Some(offer),
+                ));
             } else if let Some(v) = video.filter(|v| v.mid == *mid) {
                 s.push_str(&self.video_section(
                     port,
@@ -1564,7 +1629,11 @@ impl WebRtcAudioSession {
     /// Teams' verification numbers for this session when it is end-to-end
     /// encrypted (empty otherwise): what both sides' encryption cards show.
     pub fn e2ee_numbers(&self) -> Vec<String> {
-        if self.is_e2ee() { self.security_numbers.clone() } else { Vec::new() }
+        if self.is_e2ee() {
+            self.security_numbers.clone()
+        } else {
+            Vec::new()
+        }
     }
 
     /// Remember the SDP we sent (offer or answer), to answer re-offers.
@@ -1616,7 +1685,12 @@ impl WebRtcAudioSession {
         g.1 += 1;
         let sdp = reanswer(&g.0, offer, g.1, self.dtls_role);
         // Our mids for what the processor's re-offer says of our lines.
-        let mapped = self.mid_map.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|m| m.to_ours(offer));
+        let mapped = self
+            .mid_map
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .map(|m| m.to_ours(offer));
         let offer = mapped.as_deref().unwrap_or(offer);
         *self.current_sdp.lock().unwrap_or_else(|e| e.into_inner()) = sdp.clone();
         self.held_by_peer
@@ -1694,7 +1768,10 @@ impl WebRtcAudioSession {
 
     /// In a meeting: give / take control of a shared screen.
     pub fn screen_control(&self, c: super::meeting_media::ControlCommand) -> bool {
-        self.meeting_video.as_ref().map(|v| v.screen_control(c)).is_some()
+        self.meeting_video
+            .as_ref()
+            .map(|v| v.screen_control(c))
+            .is_some()
     }
 
     /// The other side has the call on hold.
@@ -1817,7 +1894,9 @@ impl WebRtcAudioSession {
                     bail!("This call has no screen-sharing line")
                 }
                 Reoffer::Camera(_) if self.video_mid.is_none() => bail!("This call has no video"),
-                Reoffer::Unmixed(_) if !self.meeting => bail!("Only meetings send each speaker's own audio"),
+                Reoffer::Unmixed(_) if !self.meeting => {
+                    bail!("Only meetings send each speaker's own audio")
+                }
                 _ => {}
             }
             let (camera, share) =
@@ -1878,9 +1957,15 @@ impl WebRtcAudioSession {
             Reoffer::Unmixed(on) => {
                 // The media processor sends per speaker from now on when
                 // its answer keeps x-much2, and the mix when it doesn't.
-                let pt = audio_section(answer).as_deref().and_then(super::much::payload_type);
+                let pt = audio_section(answer)
+                    .as_deref()
+                    .and_then(super::much::payload_type);
                 self.much_pt.store(pt.unwrap_or(0), Ordering::Relaxed);
-                tracing::info!(asked = on, per_speaker = pt.is_some(), "meeting audio renegotiated");
+                tracing::info!(
+                    asked = on,
+                    per_speaker = pt.is_some(),
+                    "meeting audio renegotiated"
+                );
                 pt.is_some() == on
             }
             _ => true,
@@ -2078,10 +2163,11 @@ impl WebRtcAudioSession {
         let mic_rx: Option<std::sync::mpsc::Receiver<Vec<i16>>> = None;
         #[cfg(feature = "audio")]
         // Stereo, so spatial audio can place voices (super::spatial).
-        let (playback, spk_tx) = match audio::AudioPlayback::start_stereo_at(super::audio_codec::CALL_RATE) {
-            Some((p, tx)) => (Some(p), Some(tx)),
-            None => (None, None),
-        };
+        let (playback, spk_tx) =
+            match audio::AudioPlayback::start_stereo_at(super::audio_codec::CALL_RATE) {
+                Some((p, tx)) => (Some(p), Some(tx)),
+                None => (None, None),
+            };
         #[cfg(not(feature = "audio"))]
         let spk_tx: Option<std::sync::mpsc::SyncSender<Vec<[i16; 2]>>> = None;
 
@@ -2154,9 +2240,9 @@ impl WebRtcAudioSession {
             // (The processor sends with the payload types of our offer, or
             // of our answer to its own offer.)
             v.map(|v| VideoStream {
-                pt: share
-                    .as_ref()
-                    .map_or(v.payload_type, |_| local.answered_pts.map_or(PT_H264_SHARE_OFFER, |p| p.1)),
+                pt: share.as_ref().map_or(v.payload_type, |_| {
+                    local.answered_pts.map_or(PT_H264_SHARE_OFFER, |p| p.1)
+                }),
                 rx: Arc::new(super::webrtc_video::VideoReceiver::start(key)),
                 ssrc: Arc::new(std::sync::atomic::AtomicU32::new(v.ssrc.unwrap_or(0))),
                 range: share
@@ -2310,13 +2396,22 @@ impl WebRtcAudioSession {
                 .candidates
                 .iter()
                 .filter(|c| c.transport == ice::Transport::Udp && c.component == 1)
-                .find(|c| format!("{}:{}", c.address, c.port).parse::<SocketAddr>().ok() == Some(*a))
+                .find(|c| {
+                    format!("{}:{}", c.address, c.port)
+                        .parse::<SocketAddr>()
+                        .ok()
+                        == Some(*a)
+                })
                 .map(|c| u64::from(c.priority))
                 // An address the peer checked us from (peer reflexive).
                 .unwrap_or(u64::from(u32::MAX) / 2)
         };
         let mut peer = first;
-        if offer.candidates.iter().any(|c| c.candidate_type == ice::CandidateType::Relay) {
+        if offer
+            .candidates
+            .iter()
+            .any(|c| c.candidate_type == ice::CandidateType::Relay)
+        {
             let until = tokio::time::Instant::now() + Duration::from_millis(600);
             while let Ok(Some(other)) = tokio::time::timeout_at(until, peer_rx.recv()).await {
                 if rank(&other) > rank(&peer) {
@@ -2713,14 +2808,21 @@ async fn recv_loop(ctx: RecvCtx) {
                 // RTCP (200-206 after the marker bit) is decrypted once and
                 // read by everything that needs it.
                 let rtcp_plain = if (72..=78).contains(&pt) {
-                    ctx.srtp.lock().await.as_mut().and_then(|c| c.unprotect_rtcp(data).ok())
+                    ctx.srtp
+                        .lock()
+                        .await
+                        .as_mut()
+                        .and_then(|c| c.unprotect_rtcp(data).ok())
                 } else {
                     None
                 };
                 // Transport-wide feedback on what we send: the send-side
                 // estimate (Teams' send limit).
                 if let (Some(p), Some(b)) = (&rtcp_plain, &ctx.bwe)
-                    && let Some(bps) = b.lock().unwrap_or_else(|e| e.into_inner()).on_rtcp(p, std::time::Instant::now())
+                    && let Some(bps) = b
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .on_rtcp(p, std::time::Instant::now())
                     && bwe_logged.elapsed() > Duration::from_secs(5)
                 {
                     bwe_logged = std::time::Instant::now();
@@ -2748,7 +2850,13 @@ async fn recv_loop(ctx: RecvCtx) {
                         }
                         if rr_logged.elapsed() > Duration::from_secs(5) {
                             rr_logged = std::time::Instant::now();
-                            tracing::debug!(fraction = rb.0, lost = rb.1, highest_seq = rb.2, jitter = rb.3, "receiver report on our audio");
+                            tracing::debug!(
+                                fraction = rb.0,
+                                lost = rb.1,
+                                highest_seq = rb.2,
+                                jitter = rb.3,
+                                "receiver report on our audio"
+                            );
                         }
                     }
                 }
@@ -2765,14 +2873,15 @@ async fn recv_loop(ctx: RecvCtx) {
                             })
                             .collect();
                         if !flags.is_empty()
-                            && let Some(p) = &rtcp_plain {
-                                for (ssrc, flag) in flags {
-                                    if super::webrtc_video::wants_keyframe(p, ssrc) {
-                                        tracing::debug!(ssrc, "keyframe requested");
-                                        flag.store(true, Ordering::Relaxed);
-                                    }
+                            && let Some(p) = &rtcp_plain
+                        {
+                            for (ssrc, flag) in flags {
+                                if super::webrtc_video::wants_keyframe(p, ssrc) {
+                                    tracing::debug!(ssrc, "keyframe requested");
+                                    flag.store(true, Ordering::Relaxed);
                                 }
                             }
+                        }
                     }
                     continue;
                 }
@@ -2829,7 +2938,9 @@ async fn recv_loop(ctx: RecvCtx) {
                         } else {
                             super::call_health::Kind::VideoRecv
                         };
-                        health.stream(kind, pkt.ssrc).received(pkt.payload.len(), pkt.sequence_number);
+                        health
+                            .stream(kind, pkt.ssrc)
+                            .received(pkt.payload.len(), pkt.sequence_number);
                         stream.ssrc.store(pkt.ssrc, Ordering::Relaxed);
                         stream.rx.push(super::webrtc_video::VideoPacket {
                             payload: pkt.payload.to_vec(),
@@ -2844,10 +2955,17 @@ async fn recv_loop(ctx: RecvCtx) {
                 // type OST_DUMP_RTP_PT (default 113, x-much2), length-prefixed
                 // (protocol research).
                 if let Ok(path) = std::env::var("OST_DUMP_RTP") {
-                    let want: u8 = std::env::var("OST_DUMP_RTP_PT").ok().and_then(|v| v.parse().ok()).unwrap_or(113);
+                    let want: u8 = std::env::var("OST_DUMP_RTP_PT")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(113);
                     if pt == want {
                         use std::io::Write;
-                        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+                        if let Ok(mut f) = std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(&path)
+                        {
                             let _ = f.write_all(&(plain.len() as u32).to_le_bytes());
                             let _ = f.write_all(&plain);
                         }
@@ -2863,9 +2981,7 @@ async fn recv_loop(ctx: RecvCtx) {
                     tracing::debug!(ssrc = pkt.ssrc, pt, len, "RTP stream nothing receives");
                 }
                 // A meeting's mix names who is in it: the speakers.
-                if is_audio
-                    && let Some(speakers) = &ctx.speakers
-                {
+                if is_audio && let Some(speakers) = &ctx.speakers {
                     let csrcs = super::active_speakers::csrcs(&plain);
                     speakers
                         .lock()
@@ -2874,9 +2990,7 @@ async fn recv_loop(ctx: RecvCtx) {
                 }
                 // Call health counts every audio packet that arrives,
                 // whether or not it's played.
-                if is_audio
-                    && let Ok(pkt) = rtp::decode(&plain)
-                {
+                if is_audio && let Ok(pkt) = rtp::decode(&plain) {
                     let s = health.stream(super::call_health::Kind::AudioRecv, pkt.ssrc);
                     s.received(pkt.payload.len(), pkt.sequence_number);
                     let clock = if pkt.payload_type == 0 { 8_000 } else { 48_000 };
@@ -2884,7 +2998,13 @@ async fn recv_loop(ctx: RecvCtx) {
                     if s.packets.load(Ordering::Relaxed) == 1 {
                         health.set_codec(
                             super::call_health::Kind::AudioRecv,
-                            if much_packet { "MUCHv2" } else if pkt.payload_type == 0 { "PCMU" } else { "OPUS" },
+                            if much_packet {
+                                "MUCHv2"
+                            } else if pkt.payload_type == 0 {
+                                "PCMU"
+                            } else {
+                                "OPUS"
+                            },
                         );
                     }
                 }
@@ -2904,7 +3024,8 @@ async fn recv_loop(ctx: RecvCtx) {
                         } else {
                             // Spatial audio over a mix: where its speakers'
                             // tiles are (else centred).
-                            let azimuth = super::spatial::azimuth_for(&super::active_speakers::csrcs(&plain));
+                            let azimuth =
+                                super::spatial::azimuth_for(&super::active_speakers::csrcs(&plain));
                             spatializer.process(&pcm, azimuth)
                         }
                     };
@@ -2914,7 +3035,13 @@ async fn recv_loop(ctx: RecvCtx) {
                         st.audio_samples_received += stereo.len() as u64;
                     }
                     if noted.insert((pkt.ssrc, pkt.payload_type)) {
-                        tracing::debug!(ssrc = pkt.ssrc, pt = pkt.payload_type, len = pkt.payload.len(), samples = stereo.len(), "audio stream played");
+                        tracing::debug!(
+                            ssrc = pkt.ssrc,
+                            pt = pkt.payload_type,
+                            len = pkt.payload.len(),
+                            samples = stereo.len(),
+                            "audio stream played"
+                        );
                     }
                     if !stereo.is_empty() {
                         let _ = tx.try_send(stereo);
@@ -2960,7 +3087,9 @@ fn report_timings(rtcp: &[u8]) -> Vec<(u32, u32, u32)> {
             }
         };
         for i in 0..rc {
-            let Some(b) = rtcp.get(blocks + i * 24..blocks + i * 24 + 24) else { break };
+            let Some(b) = rtcp.get(blocks + i * 24..blocks + i * 24 + 24) else {
+                break;
+            };
             let word = |o: usize| u32::from_be_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]);
             out.push((word(0), word(16), word(20)));
         }
@@ -2989,7 +3118,12 @@ fn report_block(rtcp: &[u8], ssrc: u32) -> Option<(u8, u32, u32, u32)> {
             let b = rtcp.get(blocks + i * 24..blocks + i * 24 + 24)?;
             if u32::from_be_bytes([b[0], b[1], b[2], b[3]]) == ssrc {
                 let lost = u32::from_be_bytes([0, b[5], b[6], b[7]]);
-                return Some((b[4], lost, u32::from_be_bytes([b[8], b[9], b[10], b[11]]), u32::from_be_bytes([b[12], b[13], b[14], b[15]])));
+                return Some((
+                    b[4],
+                    lost,
+                    u32::from_be_bytes([b[8], b[9], b[10], b[11]]),
+                    u32::from_be_bytes([b[12], b[13], b[14], b[15]]),
+                ));
             }
         }
         at += len.max(4);
@@ -3039,7 +3173,9 @@ async fn forward_video(
     while let Some(mut p) = rx.recv().await {
         let plain_len = p.len();
         if let Some(b) = &bwe {
-            b.lock().unwrap_or_else(|e| e.into_inner()).stamp(&mut p, std::time::Instant::now());
+            b.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .stamp(&mut p, std::time::Instant::now());
         }
         let sealed = srtp.lock().await.as_mut().and_then(|c| c.protect(&p).ok());
         if let Some(sealed) = sealed
@@ -3066,7 +3202,11 @@ async fn forward_video(
                 0,
                 "ost",
             );
-            let sealed = srtp.lock().await.as_mut().and_then(|c| c.protect_rtcp(&sr).ok());
+            let sealed = srtp
+                .lock()
+                .await
+                .as_mut()
+                .and_then(|c| c.protect_rtcp(&sr).ok());
             if let Some(sealed) = sealed {
                 let _ = socket.send_to(&sealed, peer).await;
             }
@@ -3103,7 +3243,10 @@ async fn send_loop(mut ctx: SendCtx) {
             });
         }
         let step = ctx.encoder.codec().timestamp_step();
-        let packet = match (tone.as_ref().and_then(|t| tone_packet(t, step)), ctx.dtmf.as_ref()) {
+        let packet = match (
+            tone.as_ref().and_then(|t| tone_packet(t, step)),
+            ctx.dtmf.as_ref(),
+        ) {
             (Some((first, payload)), Some((pt, _))) => {
                 let t = tone.as_mut().map(|t| {
                     t.sent += 1;
@@ -3123,15 +3266,27 @@ async fn send_loop(mut ctx: SendCtx) {
                 // Shared computer sound (Include sound) goes in with the
                 // mic, and alone while it's muted; nothing while held.
                 #[cfg(feature = "audio")]
-                let mic = if held { mic } else { super::system_sound::mix(mic, (super::audio_codec::CALL_RATE / 50) as usize) };
+                let mic = if held {
+                    mic
+                } else {
+                    super::system_sound::mix(mic, (super::audio_codec::CALL_RATE / 50) as usize)
+                };
                 let payload = ctx.encoder.encode(mic.as_deref());
-                rtp::encode(ctx.encoder.codec().payload_type(), seq, ts, ctx.ssrc, &payload)
+                rtp::encode(
+                    ctx.encoder.codec().payload_type(),
+                    seq,
+                    ts,
+                    ctx.ssrc,
+                    &payload,
+                )
             }
         };
         let audio_len = packet.len();
         let mut packet = packet;
         if let Some(b) = &ctx.bwe {
-            b.lock().unwrap_or_else(|e| e.into_inner()).stamp(&mut packet, std::time::Instant::now());
+            b.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .stamp(&mut packet, std::time::Instant::now());
         }
         let protected = {
             let mut guard = ctx.srtp.lock().await;
@@ -3165,7 +3320,12 @@ async fn send_loop(mut ctx: SendCtx) {
                 0,
                 "ost",
             );
-            let protected = ctx.srtp.lock().await.as_mut().and_then(|c| c.protect_rtcp(&sr).ok());
+            let protected = ctx
+                .srtp
+                .lock()
+                .await
+                .as_mut()
+                .and_then(|c| c.protect_rtcp(&sr).ok());
             if let Some(p) = protected {
                 let _ = ctx.socket.send_to(&p, to).await;
             }
@@ -3299,14 +3459,19 @@ fn dtls_handshake(
     // out how a peer derives its end-to-end encryption numbers.
     if std::env::var_os("OST_TROUTER_DUMP_DIR").is_some() {
         let der = |c: Option<X509>| {
-            c.and_then(|c| c.to_der().ok()).map(|d| d.iter().map(|b| format!("{b:02x}")).collect::<String>()).unwrap_or_default()
+            c.and_then(|c| c.to_der().ok())
+                .map(|d| d.iter().map(|b| format!("{b:02x}")).collect::<String>())
+                .unwrap_or_default()
         };
         let local = ssl.certificate().map(|c| c.to_owned());
         let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
         let (mut cr, mut sr) = ([0u8; 32], [0u8; 32]);
         let (crn, srn) = (ssl.client_random(&mut cr), ssl.server_random(&mut sr));
         let mut master = [0u8; 48];
-        let mn = ssl.session().map(|s| s.master_key(&mut master)).unwrap_or(0);
+        let mn = ssl
+            .session()
+            .map(|s| s.master_key(&mut master))
+            .unwrap_or(0);
         // A test call's keys, kept only in the developer dump directory:
         // the numbers may come from the DTLS-SRTP keying material.
         super::incoming::debug_dump(
@@ -3330,7 +3495,11 @@ fn dtls_handshake(
 /// SHA-256 fingerprints); empty if either certificate is missing.
 fn security_numbers(ssl: &openssl::ssl::SslRef) -> Vec<String> {
     let digest = |c: &openssl::x509::X509Ref| -> Option<[u8; 32]> {
-        c.digest(MessageDigest::sha256()).ok()?.as_ref().try_into().ok()
+        c.digest(MessageDigest::sha256())
+            .ok()?
+            .as_ref()
+            .try_into()
+            .ok()
     };
     let local = ssl.certificate().and_then(digest);
     let peer = ssl.peer_certificate().and_then(|c| digest(&c));
@@ -3859,7 +4028,12 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
         assert!(a.contains("a=mid:2\r\na=sendrecv"), "{a}");
         assert!(a.contains("a=mid:5\r\na=recvonly"), "{a}");
         // An inactive offer still turns a slot off.
-        let off = reanswer(ours, &reoffer.replace("a=mid:5\r\n", "a=mid:5\r\na=inactive\r\n"), 4, "active");
+        let off = reanswer(
+            ours,
+            &reoffer.replace("a=mid:5\r\n", "a=mid:5\r\na=inactive\r\n"),
+            4,
+            "active",
+        );
         assert!(off.contains("a=mid:5\r\na=inactive"), "{off}");
     }
 
@@ -3967,7 +4141,10 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
              a=fingerprint:sha-256 E9:12:AB\r\na=x-ssrc-range:23001-23001\r\n",
         );
         s.push_str(&video("2", "main-video", 415, (23002, 23101)));
-        for (i, mid) in ["5", "6", "7", "8", "9", "10", "11", "12", "13"].iter().enumerate() {
+        for (i, mid) in ["5", "6", "7", "8", "9", "10", "11", "12", "13"]
+            .iter()
+            .enumerate()
+        {
             let lo = 23102 + 100 * i as u32;
             s.push_str(&video(mid, "main-video", 416 + i as u32, (lo, lo + 99)));
         }
@@ -3985,10 +4162,14 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
     fn an_invitation_sharing_line_offered_send_only_is_answered_receive_only() {
         // A meeting someone presents in, inviting us (a cast to a room):
         // its processor only sends the screen.
-        let offer = processor_move_offer().replace("a=label:applicationsharing-video\r\n", "a=label:applicationsharing-video\r\na=sendonly\r\n");
+        let offer = processor_move_offer().replace(
+            "a=label:applicationsharing-video\r\n",
+            "a=label:applicationsharing-video\r\na=sendonly\r\n",
+        );
         let map = MidMap::for_meeting_offer(&offer).expect("a meeting offer");
         let canonical = map.to_ours(&offer);
-        let share = section_with_mid(&canonical, super::super::meeting_media::SHARE_MID).expect("the sharing line");
+        let share = section_with_mid(&canonical, super::super::meeting_media::SHARE_MID)
+            .expect("the sharing line");
         assert_eq!(answer_to(section_direction(share)), "recvonly");
         assert_eq!(answer_to("sendrecv"), "sendrecv");
         assert_eq!(answer_to("recvonly"), "sendonly");
@@ -4007,14 +4188,26 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
         assert_eq!(map.wire_mid("11"), "3");
         assert_eq!(map.wire_mid("12"), "4");
         let ours = map.to_ours(&offer);
-        assert!(ours.contains("a=group:BUNDLE 0 1 2 3 4 5 6 7 8 9 10 11 12\r\n"), "{ours}");
+        assert!(
+            ours.contains("a=group:BUNDLE 0 1 2 3 4 5 6 7 8 9 10 11 12\r\n"),
+            "{ours}"
+        );
         assert_eq!(map.to_wire(&ours), offer, "the mapping goes both ways");
         // What the session reads from it with our mids.
         let parsed = WebRtcOffer::parse(&ours).unwrap();
         assert_eq!(parsed.data_stream, Some(426));
         assert_eq!(parsed.slots.len(), 9);
-        assert_eq!((parsed.slots[0].mid.as_str(), parsed.slots[0].stream_msid), ("2", 416));
-        assert_eq!(parsed.share_slot.as_ref().map(|s| (s.mid.as_str(), s.stream_msid)), Some(("11", 425)));
+        assert_eq!(
+            (parsed.slots[0].mid.as_str(), parsed.slots[0].stream_msid),
+            ("2", 416)
+        );
+        assert_eq!(
+            parsed
+                .share_slot
+                .as_ref()
+                .map(|s| (s.mid.as_str(), s.stream_msid)),
+            Some(("11", 425))
+        );
         assert_eq!(parsed.camera_stream, Some(415));
         assert_eq!(super::super::twcc::offered_extension_id(&offer), Some(5));
         // An audio-only processor offer is no meeting move.
@@ -4037,13 +4230,23 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
         let parsed = WebRtcOffer::parse(&canonical).unwrap();
         let answer = map.to_wire(&local.answer_sdp_meeting(&canonical, &parsed));
         // Every offered line answered, in the offer's order and mids.
-        assert!(answer.contains("a=group:BUNDLE 1 2 5 6 7 8 9 10 11 12 13 3 4\r\n"), "{answer}");
+        assert!(
+            answer.contains("a=group:BUNDLE 1 2 5 6 7 8 9 10 11 12 13 3 4\r\n"),
+            "{answer}"
+        );
         let sections: Vec<&str> = answer.split("\r\nm=").skip(1).collect();
         assert_eq!(sections.len(), 13);
-        let mid_of = |s: &str| s.lines().find_map(|l| l.strip_prefix("a=mid:")).unwrap_or_default().to_string();
+        let mid_of = |s: &str| {
+            s.lines()
+                .find_map(|l| l.strip_prefix("a=mid:"))
+                .unwrap_or_default()
+                .to_string()
+        };
         assert_eq!(
             sections.iter().map(|s| mid_of(s)).collect::<Vec<_>>(),
-            ["1", "2", "5", "6", "7", "8", "9", "10", "11", "12", "13", "3", "4"]
+            [
+                "1", "2", "5", "6", "7", "8", "9", "10", "11", "12", "13", "3", "4"
+            ]
         );
         assert!(sections[0].starts_with("audio ") && sections[0].contains("a=label:main-audio"));
         // Our camera sendrecv, the slots receive only (range 1-1), sharing
@@ -4051,15 +4254,27 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
         assert!(sections[1].starts_with("video ") && sections[1].contains(" RTP/SAVP 107\r\n"));
         assert!(sections[1].contains("a=sendrecv") && sections[1].contains("a=label:main-video"));
         assert!(sections[2].contains("a=recvonly") && sections[2].contains("a=x-ssrc-range:1-1"));
-        assert!(sections[11].contains("a=label:applicationsharing-video") && sections[11].contains("a=sendrecv"));
+        assert!(
+            sections[11].contains("a=label:applicationsharing-video")
+                && sections[11].contains("a=sendrecv")
+        );
         assert!(sections[12].starts_with("x-data ") && sections[12].contains("a=sctp-port:5000"));
-        assert!(sections.iter().all(|s| s.contains("a=setup:active") && !s.contains("actpass")));
+        assert!(
+            sections
+                .iter()
+                .all(|s| s.contains("a=setup:active") && !s.contains("actpass"))
+        );
         // Transport-wide sequence numbers under the processor's id.
         assert!(sections[1].contains(&format!("a=extmap:5 {}", super::super::twcc::EXTENSION_URI)));
         assert_eq!(answered_pt(&answer, "5"), Some(107));
         assert_eq!(answered_pt(&answer, "4"), Some(127));
         // A later plain re-offer from the processor is answered from it.
-        let again = reanswer(&answer, &offer.replace("o=- 149792 0", "o=- 149792 1"), 3, "active");
+        let again = reanswer(
+            &answer,
+            &offer.replace("o=- 149792 0", "o=- 149792 1"),
+            3,
+            "active",
+        );
         assert_eq!(again.matches("\r\nm=").count(), 13);
         assert!(again.contains("a=group:BUNDLE 1 2 5 6 7 8 9 10 11 12 13 3 4\r\n"));
     }

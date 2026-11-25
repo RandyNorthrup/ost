@@ -79,7 +79,8 @@ fn opts() -> Opts {
 /// The phone's beacon, advertised by bluetoothctl until the phone stops.
 fn advertise(o: &Opts, oid: &str) -> Result<std::process::Child> {
     use std::io::Write;
-    let data = bt::companion_beacon(oid, o.salt, o.signature).context("the user's object id isn't a GUID")?;
+    let data = bt::companion_beacon(oid, o.salt, o.signature)
+        .context("the user's object id isn't a GUID")?;
     let bytes: Vec<String> = data.iter().map(|b| format!("0x{b:02x}")).collect();
     let mut child = std::process::Command::new("bluetoothctl")
         .stdin(std::process::Stdio::piped())
@@ -90,9 +91,22 @@ fn advertise(o: &Opts, oid: &str) -> Result<std::process::Child> {
     if let Some(c) = &o.controller {
         script.push_str(&format!("select {c}\npower on\n"));
     }
-    script.push_str(&format!("menu advertise\nmanufacturer 0x0006 {}\nback\nadvertise broadcast\n", bytes.join(" ")));
-    child.stdin.as_mut().context("bluetoothctl stdin")?.write_all(script.as_bytes())?;
-    println!("beacon: {}", data.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" "));
+    script.push_str(&format!(
+        "menu advertise\nmanufacturer 0x0006 {}\nback\nadvertise broadcast\n",
+        bytes.join(" ")
+    ));
+    child
+        .stdin
+        .as_mut()
+        .context("bluetoothctl stdin")?
+        .write_all(script.as_bytes())?;
+    println!(
+        "beacon: {}",
+        data.iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
     Ok(child)
 }
 
@@ -135,7 +149,11 @@ impl Phone {
             bail!("the {} command named no URL to answer", to.command);
         }
         self.seq += 1;
-        let msg = self.me.message(command::RESPONSE, &bt::response_details(to, ok, result), self.seq);
+        let msg = self.me.message(
+            command::RESPONSE,
+            &bt::response_details(to, ok, result),
+            self.seq,
+        );
         let (status, body) = bt::send(&self.http, &self.token, &url, &msg).await?;
         println!("-> response to {}: {status} {body}", to.command);
         Ok(())
@@ -143,16 +161,25 @@ impl Phone {
 }
 
 /// The next Better Together command, or None after `wait`.
-async fn next(events: &mut tokio::sync::broadcast::Receiver<event_hub::Event>, wait: Duration) -> Option<Message> {
+async fn next(
+    events: &mut tokio::sync::broadcast::Receiver<event_hub::Event>,
+    wait: Duration,
+) -> Option<Message> {
     let deadline = tokio::time::Instant::now() + wait;
     loop {
-        let ev = tokio::time::timeout_at(deadline, events.recv()).await.ok()?.ok()?;
+        let ev = tokio::time::timeout_at(deadline, events.recv())
+            .await
+            .ok()?
+            .ok()?;
         if ev.kind != EventKind::BetterTogether {
             continue;
         }
         match serde_json::from_str::<Message>(&ev.json) {
             Ok(m) => {
-                println!("<- {} from {}: {}", m.command, m.registration_id, m.command_details);
+                println!(
+                    "<- {} from {}: {}",
+                    m.command, m.registration_id, m.command_details
+                );
                 return Some(m);
             }
             Err(e) => println!("<- unreadable command: {e}"),
@@ -162,14 +189,23 @@ async fn next(events: &mut tokio::sync::broadcast::Receiver<event_hub::Event>, w
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt().with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into())).init();
+    tracing_subscriber::fmt()
+        .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()))
+        .init();
     let o = opts();
     let client = TeamsClient::new().await?;
-    let oid = client.object_id().context("no object id for the signed-in user")?;
+    let oid = client
+        .object_id()
+        .context("no object id for the signed-in user")?;
     let token = client.skype_token_value()?;
     let mut events = event_hub::subscribe();
     tokio::spawn(async {
-        if let Err(e) = teams_cli::trouter::listen(teams_cli::trouter::ListenOptions::EMBEDDED, std::future::pending).await {
+        if let Err(e) = teams_cli::trouter::listen(
+            teams_cli::trouter::ListenOptions::EMBEDDED,
+            std::future::pending,
+        )
+        .await
+        {
             eprintln!("trouter: {e:#}");
         }
     });
@@ -195,7 +231,13 @@ async fn main() -> Result<()> {
         "capabilities": caps,
         "salt": [o.salt],
     });
-    let mut phone = Phone { http: client.http().clone(), token, me, seq: 0, details };
+    let mut phone = Phone {
+        http: client.http().clone(),
+        token,
+        me,
+        seq: 0,
+        details,
+    };
     let beacon = advertise(&o, &oid).ok();
 
     let mut desktop: Option<(String, String)> = None;
@@ -207,23 +249,46 @@ async fn main() -> Result<()> {
     if o.pair {
         let peers = bt::discover(&phone.http, &phone.token, &registrar).await?;
         let peers: Vec<_> = peers.into_iter().filter(|p| p.id != phone.me.id).collect();
-        println!("desktops: {:?}", peers.iter().map(|p| (&p.id, &p.app_id, &p.platform)).collect::<Vec<_>>());
+        println!(
+            "desktops: {:?}",
+            peers
+                .iter()
+                .map(|p| (&p.id, &p.app_id, &p.platform))
+                .collect::<Vec<_>>()
+        );
         let mut broadcasts = Vec::new();
-        let wanted = |p: &&bt::Peer| o.desktop.as_ref().is_none_or(|d| *d == p.id) && o.platform.as_ref().is_none_or(|w| p.platform.starts_with(w.as_str()));
+        let wanted = |p: &&bt::Peer| {
+            o.desktop.as_ref().is_none_or(|d| *d == p.id)
+                && o.platform
+                    .as_ref()
+                    .is_none_or(|w| p.platform.starts_with(w.as_str()))
+        };
         for p in peers.iter().filter(wanted) {
-            match phone.send(&p.url, command::BROADCAST, serde_json::json!({"targetEndpointId": p.id})).await {
+            match phone
+                .send(
+                    &p.url,
+                    command::BROADCAST,
+                    serde_json::json!({"targetEndpointId": p.id}),
+                )
+                .await
+            {
                 Ok(m) => broadcasts.push((m.debug_content.cause_id.clone(), p.clone())),
                 Err(e) => println!("broadcast to {}: {e:#}", p.id),
             }
         }
         // The desktops near enough answer with their name.
         while desktop.is_none() {
-            let Some(m) = next(&mut events, Duration::from_secs(30)).await else { break };
+            let Some(m) = next(&mut events, Duration::from_secs(30)).await else {
+                break;
+            };
             if m.name() != command::RESPONSE {
                 continue;
             }
             let d = m.details();
-            let cause = d.get("requestCauseId").and_then(|v| v.as_str()).unwrap_or_default();
+            let cause = d
+                .get("requestCauseId")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
             if let Some((_, p)) = broadcasts.iter().find(|(c, _)| c == cause) {
                 println!("desktop {} answered: {}", p.id, d);
                 if d.get("statusCode").and_then(|v| v.as_u64()) == Some(200) {
@@ -244,10 +309,22 @@ async fn main() -> Result<()> {
             }
             return Ok(());
         }
-        let pair = phone.send(&url, command::PAIR, serde_json::json!({"targetEndpointId": id})).await?;
+        let pair = phone
+            .send(
+                &url,
+                command::PAIR,
+                serde_json::json!({"targetEndpointId": id}),
+            )
+            .await?;
         let answer = loop {
-            let Some(m) = next(&mut events, Duration::from_secs(bt::PAIR_PROMPT_SECS + 15)).await else { break None };
-            if m.name() == command::RESPONSE && m.details().get("requestCauseId").and_then(|v| v.as_str()) == Some(pair.cause_id()) {
+            let Some(m) = next(&mut events, Duration::from_secs(bt::PAIR_PROMPT_SECS + 15)).await
+            else {
+                break None;
+            };
+            if m.name() == command::RESPONSE
+                && m.details().get("requestCauseId").and_then(|v| v.as_str())
+                    == Some(pair.cause_id())
+            {
                 break Some(m.details());
             }
         };
@@ -265,10 +342,17 @@ async fn main() -> Result<()> {
 
     // Serve the desktop until it unpairs or time runs out.
     let until = tokio::time::Instant::now() + Duration::from_secs(o.minutes * 60);
-    while let Some(m) = next(&mut events, until.saturating_duration_since(tokio::time::Instant::now())).await {
+    while let Some(m) = next(
+        &mut events,
+        until.saturating_duration_since(tokio::time::Instant::now()),
+    )
+    .await
+    {
         let salt = serde_json::json!({"salt": [o.salt]});
         match m.name().as_str() {
-            command::KEEP_ALIVE | command::LOCK | command::UNLOCK => phone.respond(&m, true, salt).await?,
+            command::KEEP_ALIVE | command::LOCK | command::UNLOCK => {
+                phone.respond(&m, true, salt).await?
+            }
             command::UNPAIR => {
                 phone.respond(&m, true, salt).await?;
                 println!("UNPAIRED by desktop {}", m.registration_id);
@@ -279,7 +363,13 @@ async fn main() -> Result<()> {
             command::RESPONSE => {}
             other => {
                 // Teams answers commands it doesn't know with INVALID_COMMAND.
-                phone.respond(&m, false, serde_json::json!({"errorCode": "INVALID_COMMAND", "salt": [o.salt]})).await?;
+                phone
+                    .respond(
+                        &m,
+                        false,
+                        serde_json::json!({"errorCode": "INVALID_COMMAND", "salt": [o.salt]}),
+                    )
+                    .await?;
                 println!("(not a phone command: {other})");
             }
         }

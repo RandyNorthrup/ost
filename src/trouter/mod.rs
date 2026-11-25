@@ -199,9 +199,10 @@ where
         tracing::warn!("Initial registrar registration failed: {:#}", e);
     }
     if opts.better_together {
-        *BETTER_TOGETHER
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = Some((session.surl.clone(), session.registrar_url.clone().unwrap_or_default()));
+        *BETTER_TOGETHER.lock().unwrap_or_else(|e| e.into_inner()) = Some((
+            session.surl.clone(),
+            session.registrar_url.clone().unwrap_or_default(),
+        ));
     }
     // Publish the endpoint to the presence service: users with no active
     // endpoint show as Offline and are never rung.
@@ -405,9 +406,19 @@ static BETTER_TOGETHER: std::sync::Mutex<Option<(String, String)>> = std::sync::
 /// and `<url>bettertogether/send`) and the registrar that lists the
 /// user's others, once the socket is up.
 pub fn better_together_endpoint() -> Option<(crate::api::better_together::Endpoint, String)> {
-    let (surl, registrar) = BETTER_TOGETHER.lock().unwrap_or_else(|e| e.into_inner()).clone()?;
-    let ep = crate::api::better_together::Endpoint::from_surl(registrar::calling_registration_id(), &surl);
-    let registrar = if registrar.is_empty() { crate::api::better_together::REGISTRAR_URL.to_string() } else { registrar };
+    let (surl, registrar) = BETTER_TOGETHER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()?;
+    let ep = crate::api::better_together::Endpoint::from_surl(
+        registrar::calling_registration_id(),
+        &surl,
+    );
+    let registrar = if registrar.is_empty() {
+        crate::api::better_together::REGISTRAR_URL.to_string()
+    } else {
+        registrar
+    };
     Some((ep, registrar))
 }
 
@@ -509,7 +520,10 @@ async fn handle_frame(frame: &str, http: &reqwest::Client, skype_token: &str, op
     // or started with), acknowledged at once.
     if let Some((url, body)) = room_remote_frame(frame) {
         tracing::info!("room remote message received");
-        publish(EventKind::RoomRemote, serde_json::json!({ "url": url, "body": body }).to_string());
+        publish(
+            EventKind::RoomRemote,
+            serde_json::json!({ "url": url, "body": body }).to_string(),
+        );
         return;
     }
 
@@ -635,7 +649,8 @@ fn room_remote_frame(frame: &str) -> Option<(String, serde_json::Value)> {
     let payload = frame.strip_prefix("3:::")?;
     let (url, body) = data_frame_body(payload)?;
     let ours = crate::api::room_remote::is_session_path(&url)
-        || (crate::api::better_together::is_trouter_url(&url) && crate::api::room_remote::is_session_message(&body));
+        || (crate::api::better_together::is_trouter_url(&url)
+            && crate::api::room_remote::is_session_message(&body));
     if !ours {
         return None;
     }
@@ -649,7 +664,8 @@ fn better_together_ack(frame: &str) -> Option<(u16, String)> {
     let payload = frame.strip_prefix("3:::")?;
     let (url, body) = data_frame_body(payload)?;
     if crate::api::room_remote::is_session_path(&url)
-        || (crate::api::better_together::is_trouter_url(&url) && crate::api::room_remote::is_session_message(&body))
+        || (crate::api::better_together::is_trouter_url(&url)
+            && crate::api::room_remote::is_session_message(&body))
     {
         return Some(crate::api::room_remote::acknowledgement(&url, &body));
     }
@@ -657,7 +673,10 @@ fn better_together_ack(frame: &str) -> Option<(u16, String)> {
         return None;
     }
     let own = Some(registrar::calling_registration_id().to_string());
-    Some(crate::api::better_together::acknowledgement(&body, own.as_deref()))
+    Some(crate::api::better_together::acknowledgement(
+        &body,
+        own.as_deref(),
+    ))
 }
 
 pub(crate) fn sync_reply_body(frame: &str) -> Option<String> {
@@ -679,10 +698,9 @@ pub(crate) fn sync_reply_body(frame: &str) -> Option<String> {
 /// callbacks' base).
 fn tagged_base(surl: &str, url: &str) -> String {
     let before = url.split("/callAgent/").next().unwrap_or_default();
-    let tag = before
-        .rsplit('/')
-        .next()
-        .filter(|s| s.len() > 1 && s.starts_with('x') && s[1..].bytes().all(|b| b.is_ascii_hexdigit()));
+    let tag = before.rsplit('/').next().filter(|s| {
+        s.len() > 1 && s.starts_with('x') && s[1..].bytes().all(|b| b.is_ascii_hexdigit())
+    });
     match tag {
         Some(t) => format!("{}/{t}/", surl.trim_end_matches('/')),
         None => surl.to_string(),
@@ -935,10 +953,19 @@ mod data_frame_tests {
         assert!(link.ends_with("/call/mediaRenegotiation/"));
         // A tagged call's acknowledgement links keep its tag.
         assert_eq!(
-            super::tagged_base("https://t.example/v4/f/abc/", "/v4/f/abc/x996a465debe3/callAgent/ep-1/h/call/acceptance/"),
+            super::tagged_base(
+                "https://t.example/v4/f/abc/",
+                "/v4/f/abc/x996a465debe3/callAgent/ep-1/h/call/acceptance/"
+            ),
             "https://t.example/v4/f/abc/x996a465debe3/"
         );
-        assert_eq!(super::tagged_base("https://t.example/v4/f/abc/", "/v4/f/abc/callAgent/ep-1/h/call/acceptance/"), "https://t.example/v4/f/abc/");
+        assert_eq!(
+            super::tagged_base(
+                "https://t.example/v4/f/abc/",
+                "/v4/f/abc/callAgent/ep-1/h/call/acceptance/"
+            ),
+            "https://t.example/v4/f/abc/"
+        );
         // Only call acceptances get a reply body.
         let other = r#"3:::{"id":3,"url":"/v4/f/abc/callAgent/ep-1/h/call/progress/","body":"{}"}"#;
         assert!(sync_reply_body(other).is_none());

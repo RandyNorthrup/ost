@@ -43,7 +43,8 @@ pub struct Control {
 /// The remote control portal's session while someone controls our screen:
 /// the controller's events, in order.
 fn injector() -> &'static std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<Vec<u8>>>> {
-    static I: std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<Vec<u8>>>> = std::sync::Mutex::new(None);
+    static I: std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<Vec<u8>>>> =
+        std::sync::Mutex::new(None);
     &I
 }
 
@@ -80,7 +81,11 @@ fn stop_injector() {
 
 /// The controller's event for the injector (dropped until it's ready).
 pub fn control_input(bytes: Vec<u8>) {
-    if let Some(tx) = injector().lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+    if let Some(tx) = injector()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+    {
         let _ = tx.send(bytes);
     }
 }
@@ -96,7 +101,12 @@ pub struct ShareScreen {
     pub dpr: f64,
 }
 
-static SHARE_SCREEN: std::sync::Mutex<ShareScreen> = std::sync::Mutex::new(ShareScreen { width: 0.0, full_height: 0.0, work_height: 0.0, dpr: 1.0 });
+static SHARE_SCREEN: std::sync::Mutex<ShareScreen> = std::sync::Mutex::new(ShareScreen {
+    width: 0.0,
+    full_height: 0.0,
+    work_height: 0.0,
+    dpr: 1.0,
+});
 
 pub fn share_screen() -> ShareScreen {
     *SHARE_SCREEN.lock().unwrap_or_else(|e| e.into_inner())
@@ -105,7 +115,8 @@ pub fn share_screen() -> ShareScreen {
 /// Tell the meeting's media control plane, in order (keys and clicks
 /// must reach the presenter as they were made).
 fn command(c: ControlCommand) {
-    static QUEUE: std::sync::OnceLock<tokio::sync::mpsc::UnboundedSender<ControlCommand>> = std::sync::OnceLock::new();
+    static QUEUE: std::sync::OnceLock<tokio::sync::mpsc::UnboundedSender<ControlCommand>> =
+        std::sync::OnceLock::new();
     let tx = QUEUE.get_or_init(|| {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ControlCommand>();
         runtime().spawn(async move {
@@ -124,10 +135,13 @@ fn command(c: ControlCommand) {
 fn publish(mode: Mode, background: Option<Background>) {
     ost_vfx::set_presenter_mask(mode.cuts_background());
     runtime().spawn(async move {
-        let layout = (mode != Mode::ContentOnly)
-            .then(|| serde_json::to_value(Published::initial(mode, background)).unwrap_or_default());
+        let layout = (mode != Mode::ContentOnly).then(|| {
+            serde_json::to_value(Published::initial(mode, background)).unwrap_or_default()
+        });
         let mut slot = call_slot().lock().await;
-        let Some(call) = slot.outgoing.as_mut() else { return };
+        let Some(call) = slot.outgoing.as_mut() else {
+            return;
+        };
         if let Err(e) = call.weather_person(layout).await {
             tracing::warn!("presenter mode: {}", short_error(&e));
         } else {
@@ -140,7 +154,12 @@ fn publish(mode: Mode, background: Option<Background>) {
 fn mris(roster: &[teams_cli::calling::roster::Participant], sources: &[u32]) -> Vec<String> {
     roster
         .iter()
-        .filter(|p| p.data_sources.iter().chain(p.share_data_source.iter()).any(|d| sources.contains(&(*d as u32))))
+        .filter(|p| {
+            p.data_sources
+                .iter()
+                .chain(p.share_data_source.iter())
+                .any(|d| sources.contains(&(*d as u32)))
+        })
         .map(|p| p.id.clone())
         .collect()
 }
@@ -148,7 +167,9 @@ fn mris(roster: &[teams_cli::calling::roster::Participant], sources: &[u32]) -> 
 /// A participant's data source for give / take control.
 fn source_of(roster: &[teams_cli::calling::roster::Participant], mri: &str) -> Option<u32> {
     let p = roster.iter().find(|p| p.id.eq_ignore_ascii_case(mri))?;
-    p.share_data_source.or_else(|| p.data_sources.first().copied()).map(|s| s as u32)
+    p.share_data_source
+        .or_else(|| p.data_sources.first().copied())
+        .map(|s| s as u32)
 }
 
 impl qobject::Backend {
@@ -168,13 +189,25 @@ impl qobject::Backend {
         })
         .to_string();
         if self.rust().call_presenting_json.to_string() != json {
-            self.as_mut().set_call_presenting_json(QString::from(json.as_str()));
+            self.as_mut()
+                .set_call_presenting_json(QString::from(json.as_str()));
         }
     }
 
     /// The call window's screen (logical size, work-area height, DPR).
-    pub fn set_share_screen(self: Pin<&mut Self>, width: f64, height: f64, work_height: f64, dpr: f64) {
-        *SHARE_SCREEN.lock().unwrap_or_else(|e| e.into_inner()) = ShareScreen { width, full_height: height, work_height, dpr: if dpr > 0.0 { dpr } else { 1.0 } };
+    pub fn set_share_screen(
+        self: Pin<&mut Self>,
+        width: f64,
+        height: f64,
+        work_height: f64,
+        dpr: f64,
+    ) {
+        *SHARE_SCREEN.lock().unwrap_or_else(|e| e.into_inner()) = ShareScreen {
+            width,
+            full_height: height,
+            work_height,
+            dpr: if dpr > 0.0 { dpr } else { 1.0 },
+        };
     }
 
     /// Tray Presenter mode, or the bar's Layout: Teams' setSharingLayoutMode.
@@ -193,7 +226,9 @@ impl qobject::Backend {
 
     /// Add background: `{id, url, name}` (or empty for none).
     pub fn set_presenter_background(mut self: Pin<&mut Self>, json: &QString) {
-        let bg: Option<Background> = serde_json::from_str(&json.to_string()).ok().filter(|b: &Background| !b.id.is_empty());
+        let bg: Option<Background> = serde_json::from_str(&json.to_string())
+            .ok()
+            .filter(|b: &Background| !b.id.is_empty());
         self.as_mut().rust_mut().presenting.background = bg.clone();
         let mode = self.rust().presenting.published;
         if self.rust().call_sharing && mode.takes_background() {
@@ -216,7 +251,11 @@ impl qobject::Backend {
         let on = self.rust().call_sharing;
         if on {
             let mode = self.rust().presenting.mode;
-            let mode = if self.rust().call_camera_on { mode } else { Mode::ContentOnly };
+            let mode = if self.rust().call_camera_on {
+                mode
+            } else {
+                Mode::ContentOnly
+            };
             self.as_mut().rust_mut().presenting.published = mode;
             if mode != Mode::ContentOnly {
                 publish(mode, self.rust().presenting.background.clone());
@@ -225,17 +264,24 @@ impl qobject::Backend {
             // desktop's remote control portal moves the pointer over the
             // whole screen, and nothing tells an app where the shared
             // window is, so the controller's clicks would land elsewhere.
-            let whole_screen = self.rust().presenting.kind == Some(teams_cli::calling::screencast::Source::Screen);
+            let whole_screen =
+                self.rust().presenting.kind == Some(teams_cli::calling::screencast::Source::Screen);
             // What we share, with the screen's size (viewers size Annotate to it).
             runtime().spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                 // Teams: the screen's logical size, its work area's height and
                 // its full height (taskbar adjustment).
                 let s = share_screen();
-                let size = (whole_screen && s.width > 0.0).then_some((s.width.round() as u32, s.work_height.round() as u32, s.full_height.round() as u32));
+                let size = (whole_screen && s.width > 0.0).then_some((
+                    s.width.round() as u32,
+                    s.work_height.round() as u32,
+                    s.full_height.round() as u32,
+                ));
                 let mut slot = call_slot().lock().await;
                 if let Some(call) = slot.outgoing.as_mut()
-                    && let Err(e) = call.screen_sharer_attributes(if whole_screen { 1 } else { 2 }, size).await
+                    && let Err(e) = call
+                        .screen_sharer_attributes(if whole_screen { 1 } else { 2 }, size)
+                        .await
                 {
                     tracing::warn!("screen sharer attributes: {}", short_error(&e));
                 }
@@ -252,7 +298,10 @@ impl qobject::Backend {
             ost_vfx::set_presenter_mask(false);
             self.as_mut().rust_mut().presenting.published = Mode::ContentOnly;
             self.as_mut().rust_mut().presenting.mode = Mode::ContentOnly;
-            command(ControlCommand::Sharing { on: false, enabled: false });
+            command(ControlCommand::Sharing {
+                on: false,
+                enabled: false,
+            });
             stop_injector();
             teams_cli::calling::webrtc_video::set_screen_motion(false);
             self.as_mut().rust_mut().presenting.optimize = false;
@@ -323,7 +372,15 @@ impl qobject::Backend {
 
     /// The viewer's mouse over the shared screen while in control: `kind`
     /// 0 move, 1 wheel, 2 button; `x`, `y` from 0 to 1 over the picture.
-    pub fn control_mouse(self: Pin<&mut Self>, kind: i32, button: i32, down: bool, x: f64, y: f64, wheel: i32) {
+    pub fn control_mouse(
+        self: Pin<&mut Self>,
+        kind: i32,
+        button: i32,
+        down: bool,
+        x: f64,
+        y: f64,
+        wheel: i32,
+    ) {
         if self.rust().presenting.control.state != "controlling" {
             return;
         }
@@ -343,7 +400,8 @@ impl qobject::Backend {
         if self.rust().presenting.control.state != "controlling" {
             return;
         }
-        let Some(code) = teams_cli::calling::screen_control::keys::vk_from_qt(key, scan_code) else {
+        let Some(code) = teams_cli::calling::screen_control::keys::vk_from_qt(key, scan_code)
+        else {
             return;
         };
         let e = teams_cli::calling::screen_control::KeyEvent { code, up, repeat };
@@ -352,7 +410,14 @@ impl qobject::Backend {
 
     /// Where a receiver draws a presenter's mode: Teams' compositor
     /// arithmetic for the published `layout` on a `w` x `h` stage.
-    pub fn presenter_layout(&self, layout: &QString, w: f64, h: f64, content_aspect: f64, presenter_aspect: f64) -> QString {
+    pub fn presenter_layout(
+        &self,
+        layout: &QString,
+        w: f64,
+        h: f64,
+        content_aspect: f64,
+        presenter_aspect: f64,
+    ) -> QString {
         let Ok(p) = serde_json::from_str::<Published>(&layout.to_string()) else {
             return QString::default();
         };
@@ -370,8 +435,15 @@ impl qobject::Backend {
     pub(super) fn screen_control_event(mut self: Pin<&mut Self>, body: serde_json::Value) {
         let roster = self.rust().roster.clone();
         let src = |v: &serde_json::Value| v.as_u64().map(|s| s as u32);
-        let who = |s: Option<u32>| s.map(|s| mris(&roster, &[s]).into_iter().next().unwrap_or_default()).unwrap_or_default();
-        let kind = body.get("type").and_then(|t| t.as_str()).unwrap_or_default().to_string();
+        let who = |s: Option<u32>| {
+            s.map(|s| mris(&roster, &[s]).into_iter().next().unwrap_or_default())
+                .unwrap_or_default()
+        };
+        let kind = body
+            .get("type")
+            .and_then(|t| t.as_str())
+            .unwrap_or_default()
+            .to_string();
         let mut notice: Option<(String, String)> = None;
         {
             let mut rust = self.as_mut().rust_mut();
@@ -382,7 +454,12 @@ impl qobject::Backend {
                     c.denied_by_sharer = body["deniedBySharer"].as_bool().unwrap_or(false);
                 }
                 "controllable" => {
-                    let list: Vec<u32> = body["sources"].as_array().into_iter().flatten().filter_map(src).collect();
+                    let list: Vec<u32> = body["sources"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(src)
+                        .collect();
                     c.controllable = mris(&roster, &list);
                 }
                 "request" => {
@@ -406,7 +483,9 @@ impl qobject::Backend {
                         c.state = if in_control { "controlling" } else { "none" }.into();
                         let n = if in_control {
                             "given"
-                        } else if reason == teams_cli::calling::screen_control::reason::SHARER_TERMINATED {
+                        } else if reason
+                            == teams_cli::calling::screen_control::reason::SHARER_TERMINATED
+                        {
                             "takenBack"
                         } else {
                             "stopped"
@@ -414,8 +493,20 @@ impl qobject::Backend {
                         notice = Some((n.into(), String::new()));
                     } else {
                         c.state = if in_control { "controlled" } else { "none" }.into();
-                        c.controller = if in_control { controller.clone() } else { String::new() };
-                        notice = Some((if in_control { "hasControl" } else { "controlEnded" }.into(), controller));
+                        c.controller = if in_control {
+                            controller.clone()
+                        } else {
+                            String::new()
+                        };
+                        notice = Some((
+                            if in_control {
+                                "hasControl"
+                            } else {
+                                "controlEnded"
+                            }
+                            .into(),
+                            controller,
+                        ));
                     }
                     tracing::info!(was, now = %c.state, reason, "screen control changed");
                 }
@@ -431,8 +522,16 @@ impl qobject::Backend {
         }
         self.as_mut().show_presenting();
         if let Some((kind, mri)) = notice {
-            let name = roster.iter().find(|p| p.id == mri).map(|p| p.name.clone()).unwrap_or_default();
-            self.as_mut().screen_control_notice(QString::from(kind.as_str()), QString::from(mri.as_str()), QString::from(name.as_str()));
+            let name = roster
+                .iter()
+                .find(|p| p.id == mri)
+                .map(|p| p.name.clone())
+                .unwrap_or_default();
+            self.as_mut().screen_control_notice(
+                QString::from(kind.as_str()),
+                QString::from(mri.as_str()),
+                QString::from(name.as_str()),
+            );
         }
     }
 
@@ -443,11 +542,19 @@ impl qobject::Backend {
         left: &[teams_cli::calling::roster::Participant],
         presenter: Option<&teams_cli::calling::roster::Participant>,
     ) {
-        let gone: Vec<u32> = left.iter().flat_map(|p| p.data_sources.iter().map(|d| *d as u32)).collect();
+        let gone: Vec<u32> = left
+            .iter()
+            .flat_map(|p| p.data_sources.iter().map(|d| *d as u32))
+            .collect();
         if !gone.is_empty() {
             command(ControlCommand::Left(gone));
         }
-        let viewing = presenter.and_then(|p| p.share_data_source.or_else(|| p.data_sources.first().copied())).map(|s| s as u32);
+        let viewing = presenter
+            .and_then(|p| {
+                p.share_data_source
+                    .or_else(|| p.data_sources.first().copied())
+            })
+            .map(|s| s as u32);
         if self.rust().presenting_viewing != viewing {
             self.rust_mut().presenting_viewing = viewing;
             tracing::info!(?viewing, "screen control: watching");

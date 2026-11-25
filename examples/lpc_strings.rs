@@ -9,11 +9,14 @@ use teams_cli::api::client::TeamsClient;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let client = TeamsClient::new().await?;
-    let token = teams_cli::auth::oauth::access_token_for("https://loki.delve.office.com//.default").await?;
+    let token =
+        teams_cli::auth::oauth::access_token_for("https://loki.delve.office.com//.default").await?;
     let region = std::env::var("OST_LOKI_REGION").unwrap_or_else(|_| "nam".to_string());
     let mut out = serde_json::Map::new();
     for culture in std::env::args().skip(1) {
-        let url = format!("https://{region}.loki.delve.office.com/api/v1/livepersonacard/configuration?cultureName={culture}");
+        let url = format!(
+            "https://{region}.loki.delve.office.com/api/v1/livepersonacard/configuration?cultureName={culture}"
+        );
         let r = client
             .http()
             .get(&url)
@@ -22,7 +25,10 @@ async fn main() -> anyhow::Result<()> {
             .header("x-clientfeature", "LivePersonaCard")
             // Teams' card configuration names itself "MicrosoftTeams" (its
             // people config); "Teams" gets an older card build's files.
-            .header("x-clienttype", std::env::var("OST_LPC_CLIENTTYPE").unwrap_or_else(|_| "MicrosoftTeams".into()))
+            .header(
+                "x-clienttype",
+                std::env::var("OST_LPC_CLIENTTYPE").unwrap_or_else(|_| "MicrosoftTeams".into()),
+            )
             .header("x-clientarchitectureversion", "v2")
             .header("x-clientscenario", "GetConfiguration");
         // Test aid: extra or replacing headers, "Name: value; Name: value".
@@ -34,9 +40,7 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
-        let r = r
-            .send()
-            .await?;
+        let r = r.send().await?;
         let status = r.status();
         let text = r.text().await.context("configuration")?;
         // The reply names the strings bundle somewhere in its JSON.
@@ -46,7 +50,10 @@ async fn main() -> anyhow::Result<()> {
             .map(|s| s.replace("\\/", "/"))
             .unwrap_or_default();
         if file.is_empty() {
-            eprintln!("{culture}: {status}, no strings file ({} bytes)", text.len());
+            eprintln!(
+                "{culture}: {status}, no strings file ({} bytes)",
+                text.len()
+            );
         }
         out.insert(culture, serde_json::json!(file));
     }

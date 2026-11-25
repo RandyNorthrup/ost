@@ -62,7 +62,10 @@ mod tests {
     fn reads_completed_actions() {
         // OST Test 1's state (2026-11-11), shortened.
         let v = json!({"displayed": [], "userState": {"completedActions": [{"action": "ThreadedChannelInteraction"}, {"action": "ShareFile"}]}});
-        assert_eq!(completed_actions(&v), vec!["ThreadedChannelInteraction", "ShareFile"]);
+        assert_eq!(
+            completed_actions(&v),
+            vec!["ThreadedChannelInteraction", "ShareFile"]
+        );
         assert!(completed_actions(&json!({})).is_empty());
     }
 }

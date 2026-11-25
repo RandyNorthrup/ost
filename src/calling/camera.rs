@@ -34,7 +34,9 @@ pub fn list_devices() -> Vec<(String, String)> {
                 // and reports "Teams needs permission to use this device", OST its own name):
                 // its name from sysfs, capture nodes only (a UVC camera's
                 // metadata node is its second, index 1).
-                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => return sysfs_camera(&path),
+                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                    return sysfs_camera(&path);
+                }
                 Err(_) => return None,
             };
             let caps = dev.query_caps().ok()?;
@@ -61,7 +63,10 @@ fn sysfs_camera(path: &str) -> Option<(String, String)> {
     if index.trim() != "0" {
         return None;
     }
-    let card = std::fs::read_to_string(dir.join("name")).ok()?.trim().to_string();
+    let card = std::fs::read_to_string(dir.join("name"))
+        .ok()?
+        .trim()
+        .to_string();
     let name = card.split(':').next().unwrap_or(&card).trim().to_string();
     Some((path.to_string(), if name.is_empty() { card } else { name }))
 }
@@ -103,12 +108,16 @@ impl CameraCapture {
             Ok(d) => d,
             Err(e) => {
                 // Teams' VideoCapturePermissionDenied / start failure.
-                super::device_health::note_camera(if e.kind() == std::io::ErrorKind::PermissionDenied {
-                    super::device_health::Open::Permission
-                } else {
-                    super::device_health::Open::Failed
-                });
-                return Err(anyhow::Error::new(e).context(format!("Failed to open camera at {}", path)));
+                super::device_health::note_camera(
+                    if e.kind() == std::io::ErrorKind::PermissionDenied {
+                        super::device_health::Open::Permission
+                    } else {
+                        super::device_health::Open::Failed
+                    },
+                );
+                return Err(
+                    anyhow::Error::new(e).context(format!("Failed to open camera at {}", path))
+                );
             }
         };
         // Teams' "Automatically adjust camera controls", where chosen.
@@ -130,7 +139,9 @@ impl CameraCapture {
                 // Try MJPG as fallback — we won't use it but log what we get
                 fmt.fourcc = FourCC::new(b"MJPG");
                 dev.set_format(&fmt)
-                    .inspect_err(|_| super::device_health::note_camera(super::device_health::Open::Failed))
+                    .inspect_err(|_| {
+                        super::device_health::note_camera(super::device_health::Open::Failed)
+                    })
                     .context("Failed to set camera format (tried YUYV and MJPG)")?
             }
         };
@@ -166,7 +177,14 @@ impl CameraCapture {
             }
         });
 
-        Ok((CameraCapture { _handle: handle, stop: None, run }, rx))
+        Ok((
+            CameraCapture {
+                _handle: handle,
+                stop: None,
+                run,
+            },
+            rx,
+        ))
     }
 }
 
@@ -187,8 +205,17 @@ impl CameraCapture {
             loop {
                 if let Some(f) = ost_vfx::avatar::tick(width, height) {
                     let mut data = vec![0u8; (width * height * 3 / 2) as usize];
-                    ost_vfx::filter::nv12_to_i420(&f.data, width as usize, height as usize, &mut data);
-                    match tx.try_send(YuvFrame { width, height, data }) {
+                    ost_vfx::filter::nv12_to_i420(
+                        &f.data,
+                        width as usize,
+                        height as usize,
+                        &mut data,
+                    );
+                    match tx.try_send(YuvFrame {
+                        width,
+                        height,
+                        data,
+                    }) {
                         Ok(()) | Err(mpsc::TrySendError::Full(_)) => {}
                         Err(mpsc::TrySendError::Disconnected(_)) => break,
                     }
@@ -206,7 +233,14 @@ impl CameraCapture {
             }
             tracing::info!("Avatar camera stopped");
         });
-        (CameraCapture { _handle: handle, stop: Some(stop), run: 0 }, rx)
+        (
+            CameraCapture {
+                _handle: handle,
+                stop: Some(stop),
+                run: 0,
+            },
+            rx,
+        )
     }
 }
 
@@ -242,7 +276,12 @@ fn capture_loop(
         };
         // Sign language mode's detection sees the real camera (Teams never
         // runs it on the avatar camera); a no-op unless it's on.
-        super::sign_detection::push_frame(&yuv_data, width, height, super::sign_detection::now_ms());
+        super::sign_detection::push_frame(
+            &yuv_data,
+            width,
+            height,
+            super::sign_detection::now_ms(),
+        );
 
         let frame = YuvFrame {
             width,

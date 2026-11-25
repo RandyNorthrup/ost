@@ -9,7 +9,10 @@ async fn main() -> anyhow::Result<()> {
     let action = args.next().expect("action");
     let body: serde_json::Value = serde_json::from_str(&args.next().expect("request json"))?;
     match teams_cli::api::calendar::owa_action(&action, &body).await {
-        Ok(v) => println!("ok {}", v.to_string().chars().take(2000).collect::<String>()),
+        Ok(v) => println!(
+            "ok {}",
+            v.to_string().chars().take(2000).collect::<String>()
+        ),
         Err(e) => println!("error: {e:#}"),
     }
     Ok(())

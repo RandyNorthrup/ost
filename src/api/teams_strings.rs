@@ -41,7 +41,13 @@ use serde_json::{Map, Value};
 /// One of OST's strings: its source text, disambiguation, Teams id, the
 /// id's placeholders in en-us order, and OST's English plural forms.
 #[derive(Debug, Clone, Deserialize)]
-pub struct IdRow(pub String, pub String, pub String, pub Vec<String>, #[serde(default)] pub Option<Value>);
+pub struct IdRow(
+    pub String,
+    pub String,
+    pub String,
+    pub Vec<String>,
+    #[serde(default)] pub Option<Value>,
+);
 
 /// Where Teams' string resources are, per locale.
 #[derive(Debug, Clone, Deserialize)]
@@ -104,10 +110,14 @@ pub fn parse_chunk(js: &str, out: &mut Strings) {
     while let Some(p) = js[from..].find(HEAD) {
         let start = from + p + HEAD.len();
         from = start;
-        let Some(ns_end) = js[start..].find('"') else { break };
+        let Some(ns_end) = js[start..].find('"') else {
+            break;
+        };
         let ns = js[start..start + ns_end].to_string();
         let rest = &js[start + ns_end..];
-        let Some(t) = rest.find("translations:{") else { break };
+        let Some(t) = rest.find("translations:{") else {
+            break;
+        };
         // the locale field sits between the two
         if !rest[..t].contains("locale:\"") {
             continue;
@@ -122,7 +132,9 @@ pub fn parse_chunk(js: &str, out: &mut Strings) {
                 break;
             }
             let key = if b[i] == b'"' || b[i] == b'\'' {
-                let Some((k, n)) = js_string(js, i) else { return };
+                let Some((k, n)) = js_string(js, i) else {
+                    return;
+                };
                 i = n;
                 k
             } else {
@@ -138,7 +150,9 @@ pub fn parse_chunk(js: &str, out: &mut Strings) {
             if !matches!(b.get(i), Some(b'"' | b'\'' | b'`')) {
                 return;
             }
-            let Some((v, n)) = js_string(js, i) else { return };
+            let Some((v, n)) = js_string(js, i) else {
+                return;
+            };
             i = n;
             table.insert(key, v);
         }
@@ -156,11 +170,16 @@ pub fn parse_json_modules(js: &str, with_ids: bool) -> HashMap<String, String> {
     while let Some(p) = js[from..].find(MARK) {
         let at = from + p;
         from = at + MARK.len();
-        let Some((text, end)) = matches!(js.as_bytes().get(from), Some(b'\'' | b'"' | b'`')).then(|| js_string(js, from)).flatten() else {
+        let Some((text, end)) = matches!(js.as_bytes().get(from), Some(b'\'' | b'"' | b'`'))
+            .then(|| js_string(js, from))
+            .flatten()
+        else {
             continue;
         };
         from = end;
-        let Ok(v) = serde_json::from_str::<Value>(&text) else { continue };
+        let Ok(v) = serde_json::from_str::<Value>(&text) else {
+            continue;
+        };
         let prefix = if with_ids {
             match module_id(&js[..at]) {
                 Some(id) => id.to_string(),
@@ -179,8 +198,12 @@ pub fn parse_json_modules(js: &str, with_ids: bool) -> HashMap<String, String> {
 /// are.
 pub fn parse_lpc(js: &str) -> HashMap<String, String> {
     let mut out = HashMap::new();
-    let Some(i) = js.find("LivePersonaCardStrings.strings") else { return out };
-    let Some(j) = js[i..].find('{').map(|j| i + j) else { return out };
+    let Some(i) = js.find("LivePersonaCardStrings.strings") else {
+        return out;
+    };
+    let Some(j) = js[i..].find('{').map(|j| i + j) else {
+        return out;
+    };
     let mut de = serde_json::Deserializer::from_str(&js[j..]).into_iter::<Value>();
     if let Some(Ok(Value::Object(m))) = de.next() {
         for (k, v) in m {
@@ -196,8 +219,12 @@ pub fn parse_lpc(js: &str) -> HashMap<String, String> {
 /// `loc:new a({"effects.boards.graph":"Graph",…})`, keys as they are.
 pub fn parse_loc_table(js: &str) -> HashMap<String, String> {
     let mut out = HashMap::new();
-    let Some(p) = js.find("loc:new ") else { return out };
-    let Some(open) = js[p..].find("({").map(|o| p + o + 1) else { return out };
+    let Some(p) = js.find("loc:new ") else {
+        return out;
+    };
+    let Some(open) = js[p..].find("({").map(|o| p + o + 1) else {
+        return out;
+    };
     if let Some((v, _)) = object_literal(js, open) {
         flatten(&v, String::new(), &mut out);
     }
@@ -238,7 +265,9 @@ pub fn parse_esm_tables(js: &str) -> HashMap<String, String> {
         while v < b.len() && ident(b[v]) {
             v += 1;
         }
-        let Some(obj) = objects.get(&js[eq + 1..v]) else { continue };
+        let Some(obj) = objects.get(&js[eq + 1..v]) else {
+            continue;
+        };
         if !matches!(b.get(v), Some(b',' | b'}' | b';')) {
             continue;
         }
@@ -342,7 +371,10 @@ fn module_id(before: &str) -> Option<&str> {
             while j > 0 && b[j - 1].is_ascii_digit() {
                 j -= 1;
             }
-            if j < i && (j == 0 || !(b[j - 1].is_ascii_alphanumeric() || b[j - 1] == b'_' || b[j - 1] == b'$')) {
+            if j < i
+                && (j == 0
+                    || !(b[j - 1].is_ascii_alphanumeric() || b[j - 1] == b'_' || b[j - 1] == b'$'))
+            {
                 return Some(&tail[j..i]);
             }
         }
@@ -354,7 +386,15 @@ fn flatten(v: &Value, prefix: String, out: &mut HashMap<String, String>) {
     match v {
         Value::Object(m) => {
             for (k, x) in m {
-                flatten(x, if prefix.is_empty() { k.clone() } else { format!("{prefix}.{k}") }, out);
+                flatten(
+                    x,
+                    if prefix.is_empty() {
+                        k.clone()
+                    } else {
+                        format!("{prefix}.{k}")
+                    },
+                    out,
+                );
             }
         }
         Value::String(s) => {
@@ -465,15 +505,25 @@ fn components(s: &str) -> std::borrow::Cow<'_, str> {
     let empty = EMPTY.get_or_init(|| regex::Regex::new(r"<(\d+)>\s*</(\d+)>|<(\d+)\s*/>").unwrap());
     let wrap = WRAP.get_or_init(|| regex::Regex::new(r"<(\d+)>(\{\{<\d+>\}\})</(\d+)>").unwrap());
     let mut t = empty
-        .replace_all(s, |c: &regex::Captures| match (c.get(1), c.get(2), c.get(3)) {
-            (Some(a), Some(b), _) if a.as_str() == b.as_str() => format!("{{{{<{}>}}}}", a.as_str()),
-            (_, _, Some(a)) => format!("{{{{<{}>}}}}", a.as_str()),
-            _ => c[0].to_string(),
+        .replace_all(s, |c: &regex::Captures| {
+            match (c.get(1), c.get(2), c.get(3)) {
+                (Some(a), Some(b), _) if a.as_str() == b.as_str() => {
+                    format!("{{{{<{}>}}}}", a.as_str())
+                }
+                (_, _, Some(a)) => format!("{{{{<{}>}}}}", a.as_str()),
+                _ => c[0].to_string(),
+            }
         })
         .into_owned();
     loop {
         let next = wrap
-            .replace_all(&t, |c: &regex::Captures| if c[1] == c[3] { c[2].to_string() } else { c[0].to_string() })
+            .replace_all(&t, |c: &regex::Captures| {
+                if c[1] == c[3] {
+                    c[2].to_string()
+                } else {
+                    c[0].to_string()
+                }
+            })
             .into_owned();
         if next == t {
             break;
@@ -494,9 +544,16 @@ fn parse_parts(c: &[char], mut i: usize, in_plural: bool) -> Option<(Vec<Part>, 
     while i < c.len() {
         let ch = c[i];
         if ch == '{' && c.get(i + 1) == Some(&'{') {
-            let close = (i + 2..c.len().saturating_sub(1)).find(|&k| c[k] == '}' && c[k + 1] == '}')?;
+            let close =
+                (i + 2..c.len().saturating_sub(1)).find(|&k| c[k] == '}' && c[k + 1] == '}')?;
             flush(&mut buf, &mut out);
-            out.push(Part::Arg(c[i + 2..close].iter().collect::<String>().trim().to_string()));
+            out.push(Part::Arg(
+                c[i + 2..close]
+                    .iter()
+                    .collect::<String>()
+                    .trim()
+                    .to_string(),
+            ));
             i = close + 2;
             continue;
         }
@@ -583,7 +640,11 @@ fn parse_parts(c: &[char], mut i: usize, in_plural: bool) -> Option<(Vec<Part>, 
                 forms.push((sel, body));
                 j = next;
             }
-            out.push(if plural { Part::Plural(name, forms) } else { Part::Select });
+            out.push(if plural {
+                Part::Plural(name, forms)
+            } else {
+                Part::Select
+            });
             i = j;
             continue;
         }
@@ -598,7 +659,10 @@ fn parse_parts(c: &[char], mut i: usize, in_plural: bool) -> Option<(Vec<Part>, 
             continue;
         }
         // ICU quoting: '{' is a literal brace, '' a quote ({{x}} excepted).
-        if ch == '\'' && matches!(c.get(i + 1), Some('{' | '}' | '#' | '\'')) && !(c.get(i + 1) == Some(&'{') && c.get(i + 2) == Some(&'{')) {
+        if ch == '\''
+            && matches!(c.get(i + 1), Some('{' | '}' | '#' | '\''))
+            && !(c.get(i + 1) == Some(&'{') && c.get(i + 2) == Some(&'{'))
+        {
             if c[i + 1] == '\'' {
                 buf.push('\'');
                 i += 2;
@@ -650,14 +714,24 @@ fn render(parts: &[Part], args: &[String], plural_var: Option<&str>) -> Option<S
     Some(out)
 }
 
-fn plural_forms(var: &str, forms: &[(String, Vec<Part>)], before: &[Part], after: &[Part], args: &[String], trim: bool) -> Option<Map<String, Value>> {
+fn plural_forms(
+    var: &str,
+    forms: &[(String, Vec<Part>)],
+    before: &[Part],
+    after: &[Part],
+    args: &[String],
+    trim: bool,
+) -> Option<Map<String, Value>> {
     let mut m = Map::new();
     for (sel, body) in forms {
         let mut whole = before.to_vec();
         whole.extend(body.iter().cloned());
         whole.extend(after.iter().cloned());
         let r = render(&whole, args, Some(var))?;
-        m.insert(sel.clone(), Value::String(if trim { r.trim().to_string() } else { r }));
+        m.insert(
+            sel.clone(),
+            Value::String(if trim { r.trim().to_string() } else { r }),
+        );
     }
     m.contains_key("other").then_some(m)
 }
@@ -669,7 +743,10 @@ fn plural_forms(var: &str, forms: &[(String, Vec<Part>)], before: &[Part], after
 /// for what that can't hold (selects, a placeholder en-us lacks).
 pub fn to_qt(text: &str, args: &[String]) -> Option<Value> {
     let parts = parse_message(text)?;
-    let plurals: Vec<&Part> = parts.iter().filter(|p| matches!(p, Part::Plural(..))).collect();
+    let plurals: Vec<&Part> = parts
+        .iter()
+        .filter(|p| matches!(p, Part::Plural(..)))
+        .collect();
     if parts.iter().any(|p| matches!(p, Part::Select)) {
         return None;
     }
@@ -693,8 +770,19 @@ pub fn to_qt(text: &str, args: &[String]) -> Option<Value> {
 }
 /// The en-us placeholder order of a message (its plural count excluded).
 pub fn message_args(text: &str) -> Vec<String> {
-    let Some(parts) = parse_message(text) else { return Vec::new() };
-    let vars: Vec<String> = parts.iter().filter_map(|p| if let Part::Plural(v, _) = p { Some(v.clone()) } else { None }).collect();
+    let Some(parts) = parse_message(text) else {
+        return Vec::new();
+    };
+    let vars: Vec<String> = parts
+        .iter()
+        .filter_map(|p| {
+            if let Part::Plural(v, _) = p {
+                Some(v.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
     let mut names = Vec::new();
     arg_names(&parts, &mut names);
     names.retain(|n| !vars.contains(n));
@@ -741,7 +829,20 @@ fn ostify_value(v: Value, locale: &str) -> Value {
     match v {
         Value::String(s) => Value::String(ostify(&s, locale)),
         // a segment's "var" is Teams' name for a count ("hour"): no product name in it
-        Value::Object(m) => Value::Object(m.into_iter().map(|(k, v)| (k.clone(), if k == "var" { v } else { ostify_value(v, locale) })).collect()),
+        Value::Object(m) => Value::Object(
+            m.into_iter()
+                .map(|(k, v)| {
+                    (
+                        k.clone(),
+                        if k == "var" {
+                            v
+                        } else {
+                            ostify_value(v, locale)
+                        },
+                    )
+                })
+                .collect(),
+        ),
         Value::Array(a) => Value::Array(a.into_iter().map(|v| ostify_value(v, locale)).collect()),
         v => v,
     }
@@ -756,14 +857,25 @@ pub fn build(ids: &[IdRow], strings: &Strings, locale: &str) -> Map<String, Valu
         if out.contains_key(id) {
             continue;
         }
-        let Some((ns, key)) = id.split_once(':') else { continue };
-        let Some(text) = strings.get(ns).and_then(|t| t.get(key)) else { continue };
+        let Some((ns, key)) = id.split_once(':') else {
+            continue;
+        };
+        let Some(text) = strings.get(ns).and_then(|t| t.get(key)) else {
+            continue;
+        };
         // a translation may only use en-us's placeholders
         if message_args(text).iter().any(|a| !args.contains(a)) {
             continue;
         }
         let Some(q) = to_qt(text, args) else { continue };
-        out.insert(id.clone(), if source.contains("OST") { ostify_value(q, locale) } else { q });
+        out.insert(
+            id.clone(),
+            if source.contains("OST") {
+                ostify_value(q, locale)
+            } else {
+                q
+            },
+        );
     }
     out
 }
@@ -781,8 +893,17 @@ pub fn fingerprint(data: &str) -> String {
 
 /// Download `locale`'s string resources from Teams' CDN and build its
 /// catalogue: `{"teamsVersion", "ids", "locale", "strings": {id: …}}`.
-pub async fn fetch(client: &reqwest::Client, res: &Resources, ids: &[IdRow], ids_fingerprint: &str, locale: &str) -> anyhow::Result<Value> {
-    let files = res.files.get(locale).ok_or_else(|| anyhow::anyhow!("no Teams strings for {locale}"))?;
+pub async fn fetch(
+    client: &reqwest::Client,
+    res: &Resources,
+    ids: &[IdRow],
+    ids_fingerprint: &str,
+    locale: &str,
+) -> anyhow::Result<Value> {
+    let files = res
+        .files
+        .get(locale)
+        .ok_or_else(|| anyhow::anyhow!("no Teams strings for {locale}"))?;
     let gets = files.iter().map(|f| {
         let url = format!("{}{}", res.base, f);
         async move {
@@ -837,7 +958,11 @@ pub async fn fetch(client: &reqwest::Client, res: &Resources, ids: &[IdRow], ids
             // Their texts aren't ICU: an apostrophe is just one ("Filter
             // by '{0}'"), so it is quoted as ICU's '' (Teams' own chunks
             // already are ICU).
-            Ok(table) => strings.entry(ns.clone()).or_default().extend(table.into_iter().map(|(k, v)| (k, if icu { v } else { v.replace('\'', "''") }))),
+            Ok(table) => strings.entry(ns.clone()).or_default().extend(
+                table
+                    .into_iter()
+                    .map(|(k, v)| (k, if icu { v } else { v.replace('\'', "''") })),
+            ),
             Err(e) => tracing::warn!("app language {locale}: {url}: {e:#}"),
         }
     }
@@ -856,19 +981,38 @@ pub async fn fetch(client: &reqwest::Client, res: &Resources, ids: &[IdRow], ids
 /// A language's strings from the WebView2 runtime cabinet: its byte ranges
 /// fetched by HTTP range and inflated (`mszip_known`); a resource counts
 /// only when every byte of it came out exact.
-async fn cab_strings(client: &reqwest::Client, src: &ExtraSource, locale: &str) -> anyhow::Result<HashMap<String, String>> {
-    let part = src.parts.get(locale).ok_or_else(|| anyhow::anyhow!("no ranges"))?;
+async fn cab_strings(
+    client: &reqwest::Client,
+    src: &ExtraSource,
+    locale: &str,
+) -> anyhow::Result<HashMap<String, String>> {
+    let part = src
+        .parts
+        .get(locale)
+        .ok_or_else(|| anyhow::anyhow!("no ranges"))?;
     let mut out = HashMap::new();
     for &(start, end, uoff) in &part.segments {
         anyhow::ensure!(end > start && end - start <= 8 << 20, "bad range");
-        let r = client.get(&src.base).header(reqwest::header::RANGE, format!("bytes={start}-{}", end - 1)).send().await?.error_for_status()?;
-        anyhow::ensure!(r.status() == reqwest::StatusCode::PARTIAL_CONTENT, "no range reply");
+        let r = client
+            .get(&src.base)
+            .header(reqwest::header::RANGE, format!("bytes={start}-{}", end - 1))
+            .send()
+            .await?
+            .error_for_status()?;
+        anyhow::ensure!(
+            r.status() == reqwest::StatusCode::PARTIAL_CONTENT,
+            "no range reply"
+        );
         let body = r.bytes().await?;
         anyhow::ensure!(body.len() as u64 == end - start, "short range");
         let (data, known) = mszip_known(&body)?;
         for (id, &(o, n)) in &part.res {
-            let Some(i) = o.checked_sub(uoff).map(|i| i as usize) else { continue };
-            let Some(bytes) = data.get(i..i + n) else { continue };
+            let Some(i) = o.checked_sub(uoff).map(|i| i as usize) else {
+                continue;
+            };
+            let Some(bytes) = data.get(i..i + n) else {
+                continue;
+            };
             if known[i..i + n].iter().all(|&k| k)
                 && let Ok(t) = std::str::from_utf8(bytes)
             {
@@ -900,7 +1044,9 @@ fn mszip_inflate(data: &[u8], fill: u8) -> anyhow::Result<Vec<u8>> {
     while p + 8 <= data.len() {
         let cb = u16::from_le_bytes([data[p + 4], data[p + 5]]) as usize;
         let ucb = u16::from_le_bytes([data[p + 6], data[p + 7]]) as usize;
-        let body = data.get(p + 8..p + 8 + cb).ok_or_else(|| anyhow::anyhow!("cut block"))?;
+        let body = data
+            .get(p + 8..p + 8 + cb)
+            .ok_or_else(|| anyhow::anyhow!("cut block"))?;
         anyhow::ensure!(body.starts_with(b"CK"), "not an MSZIP block");
         // the history as a stored deflate block, then the block's own data
         let mut stream = Vec::with_capacity(5 + HIST + cb);
@@ -971,7 +1117,10 @@ mod tests {
     fn mszip_with_unknown_history() {
         // two MSZIP blocks, the second referring back into the first
         let hex = "0000000031007000434bcb48cdc9c95728cf2fca49d151c840e69464a42aa4e497e7e5e427a6142b649426291427561643d4e8a12a25411f00000000000f002900434bc3270b314121313d31334f1100";
-        let raw: Vec<u8> = (0..hex.len()).step_by(2).map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap()).collect();
+        let raw: Vec<u8> = (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+            .collect();
         let first = b"hello world, hello world, the downloads hub says hello. ".repeat(2);
         let (all, known) = mszip_known(&raw).unwrap();
         assert_eq!(&all[..112], &first[..]);
@@ -981,10 +1130,21 @@ mod tests {
         let (part, known) = mszip_known(&raw[8 + 0x31..]).unwrap();
         assert_eq!(part.len(), 41);
         assert!(!known.iter().all(|&k| k));
-        assert!(part.iter().zip(&known).zip(b"the downloads hub says hello world again!").all(|((a, k), b)| !k || a == b));
+        assert!(
+            part.iter()
+                .zip(&known)
+                .zip(b"the downloads hub says hello world again!")
+                .all(|((a, k), b)| !k || a == b)
+        );
         assert_eq!(pak_text("Search $1 for $$2 $2"), "Search {0} for $2 {1}");
-        assert_eq!(to_qt("characters: ~#%&*{}+/", &[]), Some(Value::String("characters: ~#%&*{}+/".into())));
-        assert_eq!(to_qt("{count, number} groups giving access", &["count".into()]), Some(Value::String("%1 groups giving access".into())));
+        assert_eq!(
+            to_qt("characters: ~#%&*{}+/", &[]),
+            Some(Value::String("characters: ~#%&*{}+/".into()))
+        );
+        assert_eq!(
+            to_qt("{count, number} groups giving access", &["count".into()]),
+            Some(Value::String("%1 groups giving access".into()))
+        );
     }
 
     /// The Downloads panel's German strings out of Microsoft's WebView2
@@ -993,9 +1153,12 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn webview2_cabinet_live() {
-        let res: Resources = serde_json::from_str(include_str!("../../desktop/i18n/teams_resources.json")).unwrap();
+        let res: Resources =
+            serde_json::from_str(include_str!("../../desktop/i18n/teams_resources.json")).unwrap();
         let src = &res.extra["x.edge"];
-        let got = cab_strings(&reqwest::Client::new(), src, "de-de").await.unwrap();
+        let got = cab_strings(&reqwest::Client::new(), src, "de-de")
+            .await
+            .unwrap();
         assert_eq!(got.len(), src.parts["de-de"].res.len());
         assert_eq!(got["20707"], "Downloads durchsuchen");
         assert_eq!(got["20812"], "Übergeordneten Ordner öffnen");
@@ -1008,19 +1171,40 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn events_and_profile_card_live() {
-        let res: Resources = serde_json::from_str(include_str!("../../desktop/i18n/teams_resources.json")).unwrap();
+        let res: Resources =
+            serde_json::from_str(include_str!("../../desktop/i18n/teams_resources.json")).unwrap();
         let ids: Vec<IdRow> = serde_json::from_str(crate::i18n::IDS).unwrap();
-        let cat = fetch(&reqwest::Client::new(), &res, &ids, &fingerprint(crate::i18n::IDS), "de-de").await.unwrap();
+        let cat = fetch(
+            &reqwest::Client::new(),
+            &res,
+            &ids,
+            &fingerprint(crate::i18n::IDS),
+            "de-de",
+        )
+        .await
+        .unwrap();
         let de = |en: &str| {
-            let row = ids.iter().find(|r| r.0 == en).unwrap_or_else(|| panic!("{en} keyed"));
+            let row = ids
+                .iter()
+                .find(|r| r.0 == en)
+                .unwrap_or_else(|| panic!("{en} keyed"));
             cat["strings"][&row.2].clone()
         };
         // The templates are Teams' text in its German chunk too (still
         // English there: Teams hasn't translated them yet).
-        for en in ["All hands", "Ask me anything", "Community event", "Share organization updates and engage employees at scale"] {
+        for en in [
+            "All hands",
+            "Ask me anything",
+            "Community event",
+            "Share organization updates and engage employees at scale",
+        ] {
             assert_eq!(de(en), en, "{en}");
         }
-        for en in ["Next profile", "Back to previous profile", "People reporting to %1"] {
+        for en in [
+            "Next profile",
+            "Back to previous profile",
+            "People reporting to %1",
+        ] {
             let t = de(en);
             eprintln!("{en} -> {t}");
             assert!(t.is_string() && t.as_str() != Some(en), "{en}: {t}");
@@ -1036,19 +1220,44 @@ mod tests {
         assert_eq!(m.get("7680.b").map(String::as_str), Some("Don't {0}"));
         assert_eq!(m.get("10655.x.y").map(String::as_str), Some("Deep"));
         // multibyte text just before a module (German quotes)
-        let de = format!(r#"push([["x"],{{1(f){{f.exports=JSON.parse('{{"a":"{}"}}')}},22(f){{f.exports=JSON.parse('{{"b":"c"}}')}}}}]);"#, "„Zitat“".repeat(20));
-        assert_eq!(parse_json_modules(&de, true).get("22.b").map(String::as_str), Some("c"));
-        let teams =r#"(self.webpackChunk=self.webpackChunk||[]).push([[752149],{204247:function(e){"use strict";e.exports=JSON.parse('{"common":{"addMusic":"Musik hinzufügen"}}')}}]);"#;
+        let de = format!(
+            r#"push([["x"],{{1(f){{f.exports=JSON.parse('{{"a":"{}"}}')}},22(f){{f.exports=JSON.parse('{{"b":"c"}}')}}}}]);"#,
+            "„Zitat“".repeat(20)
+        );
+        assert_eq!(
+            parse_json_modules(&de, true)
+                .get("22.b")
+                .map(String::as_str),
+            Some("c")
+        );
+        let teams = r#"(self.webpackChunk=self.webpackChunk||[]).push([[752149],{204247:function(e){"use strict";e.exports=JSON.parse('{"common":{"addMusic":"Musik hinzufügen"}}')}}]);"#;
         let m = parse_json_modules(teams, false);
-        assert_eq!(m.get("common.addMusic").map(String::as_str), Some("Musik hinzufügen"));
-        assert_eq!(parse_json_modules(teams, true).get("204247.common.addMusic").map(String::as_str), Some("Musik hinzufügen"));
+        assert_eq!(
+            m.get("common.addMusic").map(String::as_str),
+            Some("Musik hinzufügen")
+        );
+        assert_eq!(
+            parse_json_modules(teams, true)
+                .get("204247.common.addMusic")
+                .map(String::as_str),
+            Some("Musik hinzufügen")
+        );
         let loc = r#"const c={lng:"de",loc:new a({direction:"ltr","effects.boards.graph":"Diagramm","iframe.loading":"Wird geladen..."}),fgloc:{}};"#;
         let t = parse_loc_table(loc);
-        assert_eq!(t.get("effects.boards.graph").map(String::as_str), Some("Diagramm"));
-        assert_eq!(t.get("iframe.loading").map(String::as_str), Some("Wird geladen..."));
+        assert_eq!(
+            t.get("effects.boards.graph").map(String::as_str),
+            Some("Diagramm")
+        );
+        assert_eq!(
+            t.get("iframe.loading").map(String::as_str),
+            Some("Wird geladen...")
+        );
         let esm = r#"push([[752149],{204247:(Xe,e)=>{Object.defineProperty(e,Symbol.toStringTag,{value:"Module"});const n={direction:"ltr","_direction.comment":"x",addMusic:"Musik hinzufügen",n:1,deep:{a:'Tief'}},t={title:"Kopf"};e.common=n,e.header=t}}]);"#;
         let m = parse_esm_tables(esm);
-        assert_eq!(m.get("common.addMusic").map(String::as_str), Some("Musik hinzufügen"));
+        assert_eq!(
+            m.get("common.addMusic").map(String::as_str),
+            Some("Musik hinzufügen")
+        );
         assert_eq!(m.get("common.deep.a").map(String::as_str), Some("Tief"));
         assert_eq!(m.get("header.title").map(String::as_str), Some("Kopf"));
         assert!(!m.contains_key("common.n"));
@@ -1059,7 +1268,10 @@ mod tests {
         let js = r#""use strict";(this.w=this.w||[]).push([[1],{2:(t,e,n)=>{n.r(e),n.d(e,{default:()=>i});const i={namespace:"desktop",locale:"de-de",translations:{k548bytkb:"Kennwort f\xFCr Microsoft Teams eingeben",kx:"Zeile\neins ä 😀",'q y':"x"}}}}]);const j={namespace:"activity",locale:"de-de",translations:{ka:"Aktivität"}}"#;
         let mut s = Strings::new();
         parse_chunk(js, &mut s);
-        assert_eq!(s["desktop"]["k548bytkb"], "Kennwort für Microsoft Teams eingeben");
+        assert_eq!(
+            s["desktop"]["k548bytkb"],
+            "Kennwort für Microsoft Teams eingeben"
+        );
         assert_eq!(s["desktop"]["kx"], "Zeile\neins ä 😀");
         assert_eq!(s["desktop"]["q y"], "x");
         assert_eq!(s["activity"]["ka"], "Aktivität");
@@ -1068,41 +1280,95 @@ mod tests {
     #[test]
     fn messages_in_qt_form() {
         let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert_eq!(to_qt("{{name}} schreibt", &a(&["name"])), Some(Value::String("%1 schreibt".into())));
+        assert_eq!(
+            to_qt("{{name}} schreibt", &a(&["name"])),
+            Some(Value::String("%1 schreibt".into()))
+        );
         // a translation may reorder placeholders; numbering follows en-us
-        assert_eq!(to_qt("{{b}} vor {{a}}", &a(&["a", "b"])), Some(Value::String("%2 vor %1".into())));
-        assert_eq!(to_qt("{0} von {1} Sternen", &a(&["0", "1"])), Some(Value::String("%1 von %2 Sternen".into())));
+        assert_eq!(
+            to_qt("{{b}} vor {{a}}", &a(&["a", "b"])),
+            Some(Value::String("%2 vor %1".into()))
+        );
+        assert_eq!(
+            to_qt("{0} von {1} Sternen", &a(&["0", "1"])),
+            Some(Value::String("%1 von %2 Sternen".into()))
+        );
         let p = to_qt("{n, plural, =1{eine Nachricht} one{# Nachricht} few {# Nachrichten} other{# Nachrichten}}", &[]).unwrap();
         assert_eq!(p["=1"], "eine Nachricht");
         assert_eq!(p["few"], "%n Nachrichten");
         assert_eq!(p["other"], "%n Nachrichten");
-        let p = to_qt("{{who}} hat {c, plural, one{# Datei} other{# Dateien}} geteilt", &a(&["who"])).unwrap();
+        let p = to_qt(
+            "{{who}} hat {c, plural, one{# Datei} other{# Dateien}} geteilt",
+            &a(&["who"]),
+        )
+        .unwrap();
         assert_eq!(p["one"], "%1 hat %n Datei geteilt");
-        assert_eq!(to_qt("'{{x}}' ist ungültig", &a(&["x"])), Some(Value::String("'%1' ist ungültig".into())));
+        assert_eq!(
+            to_qt("'{{x}}' ist ungültig", &a(&["x"])),
+            Some(Value::String("'%1' ist ungültig".into()))
+        );
         assert_eq!(to_qt("{g, select, m{er} other{sie}}", &[]), None);
-        assert_eq!(message_args("{c, plural, one{{{a}} #} other{{{a}} und {{b}}}}"), a(&["a", "b"]));
+        assert_eq!(
+            message_args("{c, plural, one{{{a}} #} other{{{a}} und {{b}}}}"),
+            a(&["a", "b"])
+        );
         assert_eq!(to_qt("{{unbekannt}}", &a(&["name"])), None);
         // a count named as an argument is written as it is (%N), # in the
         // language's digits (%n)
-        let p = to_qt("{d, plural, =1{ und läuft in {d} Tag ab.} other{ und läuft in {d} Tagen ab.}}", &[]).unwrap();
+        let p = to_qt(
+            "{d, plural, =1{ und läuft in {d} Tag ab.} other{ und läuft in {d} Tagen ab.}}",
+            &[],
+        )
+        .unwrap();
         assert_eq!(p["other"], "und läuft in %N Tagen ab.");
         // several plurals: segments
-        let p = to_qt("{hour, plural, =0{} other{#Std.}} {min, plural, =0{} other{#Min.}}", &[]).unwrap();
-        assert_eq!(p, serde_json::json!([{"var": "hour", "forms": {"=0": "", "other": "%nStd."}}, " ", {"var": "min", "forms": {"=0": "", "other": "%nMin."}}]));
+        let p = to_qt(
+            "{hour, plural, =0{} other{#Std.}} {min, plural, =0{} other{#Min.}}",
+            &[],
+        )
+        .unwrap();
+        assert_eq!(
+            p,
+            serde_json::json!([{"var": "hour", "forms": {"=0": "", "other": "%nStd."}}, " ", {"var": "min", "forms": {"=0": "", "other": "%nMin."}}])
+        );
         // Teams' empty components are placeholders too
-        assert_eq!(message_args("<0></0> added <1></1> and {otherTargets} to the chat."), a(&["<0>", "<1>", "otherTargets"]));
-        assert_eq!(to_qt("<0></0> hat <1></1> zum Chat hinzugefügt.", &a(&["<0>", "<1>"])), Some(Value::String("%1 hat %2 zum Chat hinzugefügt.".into())));
-        assert_eq!(to_qt("قام <1/> بإضافة <0></0>", &a(&["<0>", "<1>"])), Some(Value::String("قام %2 بإضافة %1".into())));
-        assert_eq!(to_qt("<0><0></0></0> wurden erstellt", &a(&["<0>"])), Some(Value::String("%1 wurden erstellt".into())));
-        assert_eq!(to_qt("<0>Link</0> und <b>", &[]), Some(Value::String("<0>Link</0> und <b>".into())));
+        assert_eq!(
+            message_args("<0></0> added <1></1> and {otherTargets} to the chat."),
+            a(&["<0>", "<1>", "otherTargets"])
+        );
+        assert_eq!(
+            to_qt(
+                "<0></0> hat <1></1> zum Chat hinzugefügt.",
+                &a(&["<0>", "<1>"])
+            ),
+            Some(Value::String("%1 hat %2 zum Chat hinzugefügt.".into()))
+        );
+        assert_eq!(
+            to_qt("قام <1/> بإضافة <0></0>", &a(&["<0>", "<1>"])),
+            Some(Value::String("قام %2 بإضافة %1".into()))
+        );
+        assert_eq!(
+            to_qt("<0><0></0></0> wurden erstellt", &a(&["<0>"])),
+            Some(Value::String("%1 wurden erstellt".into()))
+        );
+        assert_eq!(
+            to_qt("<0>Link</0> und <b>", &[]),
+            Some(Value::String("<0>Link</0> und <b>".into()))
+        );
     }
 
     #[test]
     fn teams_name_reads_ost() {
-        assert_eq!(ostify("Informationen zu Microsoft Teams", "de-de"), "Informationen zu OST");
+        assert_eq!(
+            ostify("Informationen zu Microsoft Teams", "de-de"),
+            "Informationen zu OST"
+        );
         assert_eq!(ostify("diese Teams-App", "de-de"), "diese OST-App");
         assert_eq!(ostify("Tietoja Teamsista", "fi-fi"), "Tietoja OST:ista");
-        assert_eq!(ostify("Indítsa újra a Teamst", "hu-hu"), "Indítsa újra a OST-t");
+        assert_eq!(
+            ostify("Indítsa újra a Teamst", "hu-hu"),
+            "Indítsa újra a OST-t"
+        );
         assert_eq!(ostify("Teams를 다시 시작", "ko-kr"), "OST를 다시 시작");
         assert_eq!(ostify("tat-Teams", "mt-mt"), "tat-OST");
         assert_eq!(ostify("Steams", "en-us"), "Steams");
@@ -1112,9 +1378,15 @@ mod tests {
     fn catalogue_from_ids() {
         let ids: Vec<IdRow> = serde_json::from_str(r#"[["About OST","","framework:ka",[]],["%1 is typing","","m:kb",["name"]],["%n days","","c:kc",[],{"one":"%n day","other":"%n days"}],["Gone","","x:kd",[]]]"#).unwrap();
         let mut s = Strings::new();
-        s.entry("framework".into()).or_default().insert("ka".into(), "Informationen zu Teams".into());
-        s.entry("m".into()).or_default().insert("kb".into(), "{{name}} schreibt".into());
-        s.entry("c".into()).or_default().insert("kc".into(), "{n, plural, one{# Tag} other{# Tage}}".into());
+        s.entry("framework".into())
+            .or_default()
+            .insert("ka".into(), "Informationen zu Teams".into());
+        s.entry("m".into())
+            .or_default()
+            .insert("kb".into(), "{{name}} schreibt".into());
+        s.entry("c".into())
+            .or_default()
+            .insert("kc".into(), "{n, plural, one{# Tag} other{# Tage}}".into());
         let cat = build(&ids, &s, "de-de");
         assert_eq!(cat["framework:ka"], "Informationen zu OST");
         assert_eq!(cat["m:kb"], "%1 schreibt");
@@ -1123,7 +1395,10 @@ mod tests {
         use std::io::Write;
         let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
         gz.write_all("namespace:\"x\" ü".as_bytes()).unwrap();
-        assert_eq!(decode_body(&gz.finish().unwrap()).unwrap(), "namespace:\"x\" ü");
+        assert_eq!(
+            decode_body(&gz.finish().unwrap()).unwrap(),
+            "namespace:\"x\" ü"
+        );
         assert_eq!(decode_body("plain".as_bytes()).unwrap(), "plain");
         assert_eq!(fingerprint("abc"), fingerprint("abc"));
         assert_ne!(fingerprint("abc"), fingerprint("abd"));

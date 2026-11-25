@@ -186,7 +186,11 @@ pub struct ThreadHorizon {
 impl ThreadHorizon {
     /// Replies after this are unread: the bookmark while set, else `ch`.
     pub fn unread_after(&self) -> i64 {
-        if self.bookmark > 0 { self.bookmark } else { self.read_to }
+        if self.bookmark > 0 {
+            self.bookmark
+        } else {
+            self.read_to
+        }
     }
 }
 
@@ -203,8 +207,15 @@ pub fn horizons_from(v: &serde_json::Value) -> std::collections::HashMap<String,
             .get("rootMessageId")
             .map(|r| r.to_string().trim_matches('"').to_string())
             .unwrap_or_default();
-        let n = |k: &str| item.pointer(&format!("/rcMetadata/{k}")).and_then(|x| x.as_i64()).unwrap_or(0);
-        let h = ThreadHorizon { read_to: n("ch"), bookmark: n("chb") };
+        let n = |k: &str| {
+            item.pointer(&format!("/rcMetadata/{k}"))
+                .and_then(|x| x.as_i64())
+                .unwrap_or(0)
+        };
+        let h = ThreadHorizon {
+            read_to: n("ch"),
+            bookmark: n("chb"),
+        };
         if h.unread_after() > 0 {
             out.insert(root, h);
         }
@@ -266,7 +277,10 @@ pub async fn set_thread_horizon(
     root_id: &str,
     change: HorizonChange,
 ) -> Result<()> {
-    anyhow::ensure!(root_id.bytes().all(|b| b.is_ascii_digit()) && !root_id.is_empty(), "Not a thread: {root_id}");
+    anyhow::ensure!(
+        root_id.bytes().all(|b| b.is_ascii_digit()) && !root_id.is_empty(),
+        "Not a thread: {root_id}"
+    );
     let body = change.body();
     client
         .chat_request(
@@ -626,7 +640,14 @@ pub async fn report_meeting(
         .http()
         .post(format!("{mt}/beta/reports"))
         .bearer_auth(token)
-        .json(&meeting_report_body(thread_id, call_id, ical_uid, reported_users, comment, &now))
+        .json(&meeting_report_body(
+            thread_id,
+            call_id,
+            ical_uid,
+            reported_users,
+            comment,
+            &now,
+        ))
         .send()
         .await
         .context("report request")?;
@@ -666,9 +687,19 @@ pub struct Translation {
 /// The languages Teams translates into, named in `locale` (Teams'
 /// GetSupportedTranslationLanguages): `[(code, name)]` from
 /// `GET {csa}/api/v1/translator/languages?locale=…`.
-pub async fn translation_languages(client: &TeamsClient, locale: &str) -> Result<Vec<(String, String)>> {
-    let locale: String = locale.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect();
-    let url = format!("{}/api/v1/translator/languages?locale={}", client.chatsvcagg_url(), locale);
+pub async fn translation_languages(
+    client: &TeamsClient,
+    locale: &str,
+) -> Result<Vec<(String, String)>> {
+    let locale: String = locale
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
+    let url = format!(
+        "{}/api/v1/translator/languages?locale={}",
+        client.chatsvcagg_url(),
+        locale
+    );
     let token = csa_token().await?;
     let resp = client
         .http()
@@ -681,18 +712,32 @@ pub async fn translation_languages(client: &TeamsClient, locale: &str) -> Result
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
     if !status.is_success() {
-        anyhow::bail!("HTTP {} for translation languages: {}", status.as_u16(), text.chars().take(200).collect::<String>());
+        anyhow::bail!(
+            "HTTP {} for translation languages: {}",
+            status.as_u16(),
+            text.chars().take(200).collect::<String>()
+        );
     }
-    Ok(parse_translation_languages(&serde_json::from_str(&text).context("translation languages")?))
+    Ok(parse_translation_languages(
+        &serde_json::from_str(&text).context("translation languages")?,
+    ))
 }
 
 /// CSA's language list: `[{languageTag, languageName}]` (possibly under
 /// `languages` or `value`).
 fn parse_translation_languages(v: &serde_json::Value) -> Vec<(String, String)> {
-    let list = v.as_array().or_else(|| v.get("languages").and_then(|l| l.as_array())).or_else(|| v.get("value").and_then(|l| l.as_array()));
+    let list = v
+        .as_array()
+        .or_else(|| v.get("languages").and_then(|l| l.as_array()))
+        .or_else(|| v.get("value").and_then(|l| l.as_array()));
     list.into_iter()
         .flatten()
-        .filter_map(|l| Some((l.get("languageTag")?.as_str()?.to_string(), l.get("languageName")?.as_str()?.to_string())))
+        .filter_map(|l| {
+            Some((
+                l.get("languageTag")?.as_str()?.to_string(),
+                l.get("languageName")?.as_str()?.to_string(),
+            ))
+        })
         .collect()
 }
 
@@ -737,10 +782,10 @@ pub async fn translate_with(
         None => resp.header("x-ms-on-demand-translation", "true"),
         Some(k) => resp.header("x-ms-knownLanguages", k.join(",")),
     }
-        .json(&serde_json::json!([{ "id": message_id }]))
-        .send()
-        .await
-        .context("translation request")?;
+    .json(&serde_json::json!([{ "id": message_id }]))
+    .send()
+    .await
+    .context("translation request")?;
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
     if !status.is_success() {
@@ -796,13 +841,36 @@ mod tests {
 
     #[test]
     fn meeting_report_as_teams_sends_it() {
-        let b = meeting_report_body("19:meeting_x@thread.v2", "call-1", "0400", &["8:teamsvisitor:abc".to_string()], "why", "2026-11-09T00:00:00.000Z");
+        let b = meeting_report_body(
+            "19:meeting_x@thread.v2",
+            "call-1",
+            "0400",
+            &["8:teamsvisitor:abc".to_string()],
+            "why",
+            "2026-11-09T00:00:00.000Z",
+        );
         let mut keys: Vec<_> = b.as_object().unwrap().keys().cloned().collect();
         keys.sort();
-        assert_eq!(keys, ["actions", "callId", "category", "comment", "iCalUId", "reportTimestamp", "reportType", "reportedUsers", "threadId"]);
+        assert_eq!(
+            keys,
+            [
+                "actions",
+                "callId",
+                "category",
+                "comment",
+                "iCalUId",
+                "reportTimestamp",
+                "reportType",
+                "reportedUsers",
+                "threadId"
+            ]
+        );
         assert_eq!(b["reportType"], "Meeting");
         assert_eq!(b["category"], "Security");
-        assert_eq!(b["reportedUsers"], serde_json::json!(["8:teamsvisitor:abc"]));
+        assert_eq!(
+            b["reportedUsers"],
+            serde_json::json!(["8:teamsvisitor:abc"])
+        );
         let c = meeting_report_body("19:x", "", "", &[], "", "t");
         assert!(c.get("callId").is_none() && c.get("iCalUId").is_none());
     }
@@ -993,7 +1061,11 @@ pub async fn clear_chat_history(client: &TeamsClient, chat_id: &str) -> Result<i
         chat_id
     );
     client
-        .chat_request(reqwest::Method::PUT, &url, &serde_json::json!({ "clearHistoryTime": now }))
+        .chat_request(
+            reqwest::Method::PUT,
+            &url,
+            &serde_json::json!({ "clearHistoryTime": now }),
+        )
         .await?;
     Ok(now)
 }

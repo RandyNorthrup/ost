@@ -105,16 +105,22 @@ pub fn domain_usable(d: &str) -> bool {
 /// Teams' match of a URL against an app's domains (`F6` for host domains,
 /// `A` for path patterns).
 pub fn domains_match(url: &str, domains: &[String]) -> bool {
-    let Ok(parsed) = url::Url::parse(url) else { return false };
+    let Ok(parsed) = url::Url::parse(url) else {
+        return false;
+    };
     let href = parsed.as_str();
     let usable: Vec<&String> = domains.iter().filter(|d| domain_usable(d)).collect();
-    let (paths, hosts): (Vec<&String>, Vec<&String>) = usable.into_iter().partition(|d| d.contains('/'));
+    let (paths, hosts): (Vec<&String>, Vec<&String>) =
+        usable.into_iter().partition(|d| d.contains('/'));
     let mut seen = std::collections::HashSet::new();
     for d in hosts {
         if !seen.insert(d.to_lowercase()) {
             continue;
         }
-        let pat: Vec<String> = d.split('.').map(|l| regex::escape(l).replace("\\*", "[^/^.]+")).collect();
+        let pat: Vec<String> = d
+            .split('.')
+            .map(|l| regex::escape(l).replace("\\*", "[^/^.]+"))
+            .collect();
         if let Ok(re) = regex::Regex::new(&format!("(?i)^https://{}((/|\\?).*)?$", pat.join("[.]")))
             && re.is_match(href)
         {
@@ -122,7 +128,9 @@ pub fn domains_match(url: &str, domains: &[String]) -> bool {
         }
     }
     // Teams turns `*` into `(.*)` and leaves the rest as a pattern.
-    paths.iter().any(|d| regex::Regex::new(&d.replace('*', "(.*)")).is_ok_and(|re| re.is_match(url)))
+    paths
+        .iter()
+        .any(|d| regex::Regex::new(&d.replace('*', "(.*)")).is_ok_and(|re| re.is_match(url)))
 }
 
 /// An app definition's link handler: (bot, domains, anonymous access).
@@ -135,17 +143,31 @@ pub fn link_handler(def: &Value) -> Option<(String, Vec<String>, bool)> {
         .as_array()?
         .first()?;
     let h = me.get("messageHandlers")?.as_array()?.first()?;
-    if h.get("type").and_then(|t| t.as_str()).is_some_and(|t| !t.eq_ignore_ascii_case("link")) {
+    if h.get("type")
+        .and_then(|t| t.as_str())
+        .is_some_and(|t| !t.eq_ignore_ascii_case("link"))
+    {
         return None;
     }
     let v = h.get("value")?;
     let domains = v
         .get("domains")
         .and_then(|d| d.as_array())
-        .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default();
-    let anon = v.get("supportsAnonymousAccess").and_then(|b| b.as_bool()).unwrap_or(false);
-    let bot = me.get("botId").and_then(|b| b.as_str()).unwrap_or_default().to_string();
+    let anon = v
+        .get("supportsAnonymousAccess")
+        .and_then(|b| b.as_bool())
+        .unwrap_or(false);
+    let bot = me
+        .get("botId")
+        .and_then(|b| b.as_str())
+        .unwrap_or_default()
+        .to_string();
     Some((bot, domains, anon))
 }
 
@@ -155,7 +177,17 @@ fn str_at<'a>(v: &'a Value, k: &str) -> &'a str {
 
 /// Entitlement states Teams counts as installed (`bt`).
 pub fn installed_state(state: &str) -> bool {
-    matches!(state, "Installed" | "InstalledAndFavorited" | "InstalledAndPermanent" | "AdminPreInstalled" | "installed" | "installedAndFavorited" | "installedAndPermanent" | "adminPreInstalled")
+    matches!(
+        state,
+        "Installed"
+            | "InstalledAndFavorited"
+            | "InstalledAndPermanent"
+            | "AdminPreInstalled"
+            | "installed"
+            | "installedAndFavorited"
+            | "installedAndPermanent"
+            | "adminPreInstalled"
+    )
 }
 
 /// The app Teams uses for a link: an installed app whose domains match,
@@ -174,7 +206,9 @@ pub fn find_app(
             return None;
         }
         let id = str_at(def, "id").to_string();
-        let installed = entitlements.get(&id.to_lowercase()).is_some_and(|s| installed_state(s));
+        let installed = entitlements
+            .get(&id.to_lowercase())
+            .is_some_and(|s| installed_state(s));
         let anonymous = anon || anonymous_ids.iter().any(|a| a.eq_ignore_ascii_case(&id));
         Some((
             LinkApp {
@@ -186,7 +220,15 @@ pub fn find_app(
                 privacy_url: str_at(def, "privacyUrl").to_string(),
                 terms_url: str_at(def, "termsOfUseUrl").to_string(),
                 needs_install: false,
-                valid_domains: def.get("validDomains").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default(),
+                valid_domains: def
+                    .get("validDomains")
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
             },
             anonymous,
         ))
@@ -206,11 +248,21 @@ pub fn find_app(
 /// The invoke's name: installed apps get `queryLink`, others the anonymous
 /// one.
 pub fn invoke_name(app: &LinkApp) -> &'static str {
-    if app.installed { "composeExtension/queryLink" } else { "composeExtension/anonymousQueryLink" }
+    if app.installed {
+        "composeExtension/queryLink"
+    } else {
+        "composeExtension/anonymousQueryLink"
+    }
 }
 
 /// Teams' queryLink body (as sent on winpc, OST TEST 168a).
-pub fn query_body(app: &LinkApp, url: &str, thread: &str, display_name: &str, aad_token: &str) -> Value {
+pub fn query_body(
+    app: &LinkApp,
+    url: &str,
+    thread: &str,
+    display_name: &str,
+    aad_token: &str,
+) -> Value {
     json!({
         "name": invoke_name(app),
         "appId": app.app_id,
@@ -259,7 +311,8 @@ pub fn card_from_reply(reply: &Value, app: &LinkApp, url: &str) -> Option<AppCar
         .cloned()
         .or_else(|| {
             let t = content_type.to_lowercase();
-            (t == "application/vnd.microsoft.card.hero" || t == "application/vnd.microsoft.card.thumbnail")
+            (t == "application/vnd.microsoft.card.hero"
+                || t == "application/vnd.microsoft.card.thumbnail")
                 .then(|| json!({ "contentType": content_type, "content": content }))
         })?;
     let pc = match preview_card.get("content") {
@@ -271,7 +324,11 @@ pub fn card_from_reply(reply: &Value, app: &LinkApp, url: &str) -> Option<AppCar
         url: url.to_string(),
         title: strip_tags(str_at(&pc, "title")).trim().to_string(),
         description: strip_tags(str_at(&pc, "text")).trim().to_string(),
-        thumbnail: pc.pointer("/images/0/url").and_then(|u| u.as_str()).unwrap_or_default().to_string(),
+        thumbnail: pc
+            .pointer("/images/0/url")
+            .and_then(|u| u.as_str())
+            .unwrap_or_default()
+            .to_string(),
         thumbnail_meta: None,
         enabled: false,
     };
@@ -299,7 +356,11 @@ pub fn card_from_reply(reply: &Value, app: &LinkApp, url: &str) -> Option<AppCar
 /// app's valid domains when Teams knows them) and the pre-auth card
 /// (`items[0].card` / the first attachment) shown above the link.
 pub fn permission_from_reply(ce: &Value, kind: &str, app: &LinkApp, url: &str) -> Option<AppCard> {
-    let auth_url = ce.pointer("/suggestedActions/actions/0/value").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let auth_url = ce
+        .pointer("/suggestedActions/actions/0/value")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
     if !auth_url.starts_with("https://") && !app.installed {
         // An anonymous app's sign-in has no address (Teams installs first).
     } else if !auth_url.starts_with("https://") {
@@ -310,8 +371,17 @@ pub fn permission_from_reply(ce: &Value, kind: &str, app: &LinkApp, url: &str) -
         .or_else(|| ce.pointer("/attachments/0"))
         .cloned()
         .unwrap_or(Value::Null);
-    let (content_type, content) = match (pre.get("contentType").and_then(|c| c.as_str()), pre.get("content")) {
-        (Some(t), Some(c)) => (t.to_string(), match c { Value::String(s) => serde_json::from_str(s).unwrap_or_default(), v => v.clone() }),
+    let (content_type, content) = match (
+        pre.get("contentType").and_then(|c| c.as_str()),
+        pre.get("content"),
+    ) {
+        (Some(t), Some(c)) => (
+            t.to_string(),
+            match c {
+                Value::String(s) => serde_json::from_str(s).unwrap_or_default(),
+                v => v.clone(),
+            },
+        ),
         _ => (String::new(), Value::Null),
     };
     Some(AppCard {
@@ -383,18 +453,32 @@ pub fn is_link_card(card_client_id: &str) -> bool {
 /// Whether this account may unfurl anonymously with an app that isn't
 /// installed (ECS `enableAnonymousAppBasedLink`, on unless turned off).
 fn anonymous_allowed() -> bool {
-    super::ecs::setting("extensibility", "enableAnonymousAppBasedLink").and_then(|v| v.as_bool()).unwrap_or(true)
+    super::ecs::setting("extensibility", "enableAnonymousAppBasedLink")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true)
 }
 
 /// Teams' commercial default for ECS `anonymousAppBasedLinkApps`
 /// (config-prod): Wikipedia Search and YouTube.
-pub const DEFAULT_ANONYMOUS_APPS: [&str; 2] = ["25492237-70ef-4c56-a36e-dd3405edd40e", "com.microsoft.teamspace.tab.youtube"];
+pub const DEFAULT_ANONYMOUS_APPS: [&str; 2] = [
+    "25492237-70ef-4c56-a36e-dd3405edd40e",
+    "com.microsoft.teamspace.tab.youtube",
+];
 
 fn anonymous_ids() -> Vec<String> {
     super::ecs::setting("extensibility", "anonymousAppBasedLinkApps")
         .and_then(|v| v.as_array().cloned())
-        .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
-        .unwrap_or_else(|| DEFAULT_ANONYMOUS_APPS.iter().map(|s| s.to_string()).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_else(|| {
+            DEFAULT_ANONYMOUS_APPS
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        })
 }
 
 /// The app for a link, from the catalog and your apps (None when no app
@@ -427,7 +511,8 @@ pub fn forget_entitlements() {
 /// minutes to page through, so the index is kept on disk).
 static INDEX: std::sync::RwLock<Option<std::sync::Arc<Vec<Value>>>> = std::sync::RwLock::new(None);
 static INDEX_FILE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
-static ENTITLEMENTS: std::sync::Mutex<Option<std::collections::HashMap<String, String>>> = std::sync::Mutex::new(None);
+static ENTITLEMENTS: std::sync::Mutex<Option<std::collections::HashMap<String, String>>> =
+    std::sync::Mutex::new(None);
 
 fn index() -> Option<std::sync::Arc<Vec<Value>>> {
     INDEX.read().ok()?.clone()
@@ -435,10 +520,16 @@ fn index() -> Option<std::sync::Arc<Vec<Value>>> {
 
 /// Your apps, read once a session.
 async fn entitlements(client: &TeamsClient) -> std::collections::HashMap<String, String> {
-    if let Some(e) = ENTITLEMENTS.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+    if let Some(e) = ENTITLEMENTS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+    {
         return e;
     }
-    let e = super::app_details::entitlements(client).await.unwrap_or_default();
+    let e = super::app_details::entitlements(client)
+        .await
+        .unwrap_or_default();
     *ENTITLEMENTS.lock().unwrap_or_else(|e| e.into_inner()) = Some(e.clone());
     e
 }
@@ -480,7 +571,9 @@ async fn build_index(client: &TeamsClient, file: Option<&std::path::Path>) -> Re
 pub async fn load_index(client: &TeamsClient, cache_dir: &std::path::Path) -> Result<()> {
     let file = cache_dir.join("link-apps-2.json");
     let _ = INDEX_FILE.set(file.clone());
-    let saved: Option<Vec<Value>> = std::fs::read(&file).ok().and_then(|b| serde_json::from_slice(&b).ok());
+    let saved: Option<Vec<Value>> = std::fs::read(&file)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok());
     let fresh = std::fs::metadata(&file)
         .and_then(|m| m.modified())
         .ok()
@@ -514,7 +607,8 @@ pub fn auth_state_value(result: &str) -> Value {
         _ => return Value::String(result.to_string()),
     };
     if r["type"] == "JsonAuthResult" {
-        return serde_json::from_str(r["value"].as_str().unwrap_or_default()).unwrap_or(Value::Null);
+        return serde_json::from_str(r["value"].as_str().unwrap_or_default())
+            .unwrap_or(Value::Null);
     }
     match &r["value"] {
         Value::String(s) if !s.is_empty() => Value::String(s.clone()),
@@ -536,21 +630,46 @@ pub fn auth_state_shape(result: &str) -> String {
 
 /// Ask again after signing in: `state` is the sign-in window's result
 /// (Teams' BotAuthResult, see auth_state_value).
-pub async fn unfurl_with(client: &TeamsClient, url: &str, thread: &str, state: Option<&str>) -> Result<Option<AppCard>> {
-    let Some(app) = app_for(client, url).await? else { return Ok(None) };
+pub async fn unfurl_with(
+    client: &TeamsClient,
+    url: &str,
+    thread: &str,
+    state: Option<&str>,
+) -> Result<Option<AppCard>> {
+    let Some(app) = app_for(client, url).await? else {
+        return Ok(None);
+    };
     if app.needs_install {
         tracing::info!("app link {}: not installed (Show Preview)", app.name);
         return Ok(Some(install_card(&app, url)));
     }
-    let token = crate::auth::oauth::access_token_for("https://api.spaces.skype.com/.default").await.unwrap_or_default();
+    let token = crate::auth::oauth::access_token_for("https://api.spaces.skype.com/.default")
+        .await
+        .unwrap_or_default();
     let display = client.display_name().unwrap_or_default();
-    let endpoint = format!("{}/v1/agents/28:{}/invoke", client.chat_service_url(), app.bot_id);
+    let endpoint = format!(
+        "{}/v1/agents/28:{}/invoke",
+        client.chat_service_url(),
+        app.bot_id
+    );
     let mut body = query_body(&app, url, thread, &display, &token);
     if let Some(st) = state.filter(|s| !s.is_empty()) {
-        tracing::info!("app link {}: asking again with the sign-in result ({})", app.name, auth_state_shape(st));
+        tracing::info!(
+            "app link {}: asking again with the sign-in result ({})",
+            app.name,
+            auth_state_shape(st)
+        );
         body["value"]["state"] = auth_state_value(st);
     }
-    let resp = match client.chat_request_with(reqwest::Method::POST, &endpoint, &body, &[("content-type", "application/json")]).await {
+    let resp = match client
+        .chat_request_with(
+            reqwest::Method::POST,
+            &endpoint,
+            &body,
+            &[("content-type", "application/json")],
+        )
+        .await
+    {
         Ok(r) => r,
         Err(e) => {
             // The chat service's own words (BotError and the like); no
@@ -563,7 +682,12 @@ pub async fn unfurl_with(client: &TeamsClient, url: &str, thread: &str, state: O
     let text = resp.text().await.unwrap_or_default();
     let reply: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
     let card = card_from_reply(&reply, &app, url);
-    tracing::info!("app link {}: {} card={}", app.name, invoke_name(&app), card.is_some());
+    tracing::info!(
+        "app link {}: {} card={}",
+        app.name,
+        invoke_name(&app),
+        card.is_some()
+    );
     Ok(card)
 }
 
@@ -584,12 +708,30 @@ mod tests {
     #[test]
     fn matches_domains_as_teams() {
         let d = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert!(domains_match("https://en.wikipedia.org/wiki/Rust_(programming_language", &d(&["*.wikipedia.org"])));
-        assert!(!domains_match("https://wikipedia.org/wiki/x", &d(&["*.wikipedia.org"])));
-        assert!(!domains_match("http://en.wikipedia.org/wiki/x", &d(&["*.wikipedia.org"])));
-        assert!(domains_match("https://github.com/rust-lang/cargo", &d(&["github.com"])));
-        assert!(!domains_match("https://www.github.com/rust-lang/rust", &d(&["github.com"])));
-        assert!(domains_match("https://contoso.com/items/42?x=1", &d(&["contoso.com/items/*"])));
+        assert!(domains_match(
+            "https://en.wikipedia.org/wiki/Rust_(programming_language",
+            &d(&["*.wikipedia.org"])
+        ));
+        assert!(!domains_match(
+            "https://wikipedia.org/wiki/x",
+            &d(&["*.wikipedia.org"])
+        ));
+        assert!(!domains_match(
+            "http://en.wikipedia.org/wiki/x",
+            &d(&["*.wikipedia.org"])
+        ));
+        assert!(domains_match(
+            "https://github.com/rust-lang/cargo",
+            &d(&["github.com"])
+        ));
+        assert!(!domains_match(
+            "https://www.github.com/rust-lang/rust",
+            &d(&["github.com"])
+        ));
+        assert!(domains_match(
+            "https://contoso.com/items/42?x=1",
+            &d(&["contoso.com/items/*"])
+        ));
         // Wildcards in the last two labels don't count.
         assert!(!domains_match("https://a.b.com/", &d(&["*.com", "a.*"])));
     }
@@ -598,30 +740,70 @@ mod tests {
     fn the_index_keeps_what_matching_needs() {
         let mut catalog_wiki = wiki();
         catalog_wiki["inputExtensions"] = catalog_wiki["messageExtensions"].take();
-        catalog_wiki.as_object_mut().unwrap().remove("messageExtensions");
+        catalog_wiki
+            .as_object_mut()
+            .unwrap()
+            .remove("messageExtensions");
         catalog_wiki["longDescription"] = "lots".into();
         let other = json!({ "id": "x", "name": "No links", "inputExtensions": [{ "botId": "b", "commands": [] }] });
         let idx = index_from(&[catalog_wiki, other]);
         assert_eq!(idx.len(), 1);
         assert!(idx[0].get("longDescription").is_none());
-        let a = find_app("https://en.wikipedia.org/wiki/Lighthouse", &idx, &Default::default(), &[]).unwrap();
-        assert_eq!((a.name.as_str(), a.bot_id.as_str()), ("Wikipedia Search", "25492237-70ef-4c56-a36e-dd3405edd40e"));
+        let a = find_app(
+            "https://en.wikipedia.org/wiki/Lighthouse",
+            &idx,
+            &Default::default(),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(
+            (a.name.as_str(), a.bot_id.as_str()),
+            ("Wikipedia Search", "25492237-70ef-4c56-a36e-dd3405edd40e")
+        );
     }
 
     #[test]
     fn picks_installed_then_anonymous_apps() {
         let cat = vec![wiki()];
         let none = std::collections::HashMap::new();
-        let a = find_app("https://en.wikipedia.org/wiki/Ferris_wheel", &cat, &none, &[]).unwrap();
+        let a = find_app(
+            "https://en.wikipedia.org/wiki/Ferris_wheel",
+            &cat,
+            &none,
+            &[],
+        )
+        .unwrap();
         assert_eq!((a.name.as_str(), a.installed), ("Wikipedia Search", false));
         assert_eq!(invoke_name(&a), "composeExtension/anonymousQueryLink");
         // Not anonymous and not installed: Teams' Install permission card.
         let mut closed = wiki();
-        closed["messageExtensions"][0]["messageHandlers"][0]["value"]["supportsAnonymousAccess"] = false.into();
-        assert!(find_app("https://en.wikipedia.org/wiki/x", &[closed.clone()], &none, &[]).unwrap().needs_install);
+        closed["messageExtensions"][0]["messageHandlers"][0]["value"]["supportsAnonymousAccess"] =
+            false.into();
+        assert!(
+            find_app(
+                "https://en.wikipedia.org/wiki/x",
+                &[closed.clone()],
+                &none,
+                &[]
+            )
+            .unwrap()
+            .needs_install
+        );
         // ...unless ECS lists it, or it is installed.
-        assert!(!find_app("https://en.wikipedia.org/wiki/x", &[closed.clone()], &none, &["25492237-70EF-4c56-a36e-dd3405edd40e".into()]).unwrap().needs_install);
-        let ents = std::collections::HashMap::from([("25492237-70ef-4c56-a36e-dd3405edd40e".to_string(), "Installed".to_string())]);
+        assert!(
+            !find_app(
+                "https://en.wikipedia.org/wiki/x",
+                &[closed.clone()],
+                &none,
+                &["25492237-70EF-4c56-a36e-dd3405edd40e".into()]
+            )
+            .unwrap()
+            .needs_install
+        );
+        let ents = std::collections::HashMap::from([(
+            "25492237-70ef-4c56-a36e-dd3405edd40e".to_string(),
+            "Installed".to_string(),
+        )]);
         let i = find_app("https://en.wikipedia.org/wiki/x", &[closed], &ents, &[]).unwrap();
         assert_eq!(invoke_name(&i), "composeExtension/queryLink");
         assert!(find_app("https://www.rust-lang.org/", &cat, &none, &[]).is_none());
@@ -631,34 +813,81 @@ mod tests {
     fn reads_the_reply_and_sends_as_teams() {
         // Wikipedia Search's reply and Teams' message for it (OST TEST 168a).
         let reply = json!({"composeExtension":{"attachments":[{"content":{"title":"<a href=\"https://en.wikipedia.org/wiki/Rust%20%28programming%20language%29\" target=\"_blank\">Rust (programming language)</a>","text":"<span>Rust</span> is a general-purpose <span>programming</span> language","images":[{"alt":"Rust (programming language)","url":"https://us-prod.asyncgw.teams.microsoft.com/urlp/v1/url/content?url=x"}]},"contentType":"application/vnd.microsoft.card.thumbnail","preview":{"content":{"title":"Rust (programming language)","text":"<span>Rust</span> is a general-purpose <span>programming</span> language","images":[{"alt":"Rust (programming language)","url":"https://us-prod.asyncgw.teams.microsoft.com/urlp/v1/url/content?url=x"}]},"contentType":"application/vnd.microsoft.card.thumbnail"}}]}});
-        let app = find_app("https://en.wikipedia.org/wiki/Rust_(programming_language", &[wiki()], &Default::default(), &[]).unwrap();
+        let app = find_app(
+            "https://en.wikipedia.org/wiki/Rust_(programming_language",
+            &[wiki()],
+            &Default::default(),
+            &[],
+        )
+        .unwrap();
         let url = "https://en.wikipedia.org/wiki/Rust_(programming_language";
         let c = card_from_reply(&reply, &app, url).unwrap();
         assert_eq!(c.content_type, "application/vnd.microsoft.card.thumbnail");
         assert!(c.anonymous);
         let p = c.preview.clone().unwrap();
-        assert_eq!((p.title.as_str(), p.description.as_str()), ("Rust (programming language)", "Rust is a general-purpose programming language"));
-        assert_eq!(p.thumbnail, "https://us-prod.asyncgw.teams.microsoft.com/urlp/v1/url/content?url=x");
+        assert_eq!(
+            (p.title.as_str(), p.description.as_str()),
+            (
+                "Rust (programming language)",
+                "Rust is a general-purpose programming language"
+            )
+        );
+        assert_eq!(
+            p.thumbnail,
+            "https://us-prod.asyncgw.teams.microsoft.com/urlp/v1/url/content?url=x"
+        );
         let id = new_card_client_id();
-        assert!(id.starts_with("app-preview-card-ps") && id.len() == "app-preview-card-ps".len() + 32);
+        assert!(
+            id.starts_with("app-preview-card-ps") && id.len() == "app-preview-card-ps".len() + 32
+        );
         assert!(is_link_card(&id));
         let cards: Value = serde_json::from_str(&cards_property(&c, &id)).unwrap();
         assert_eq!(cards[0]["appName"], "Wikipedia Search");
         assert_eq!(cards[0]["cardClientId"], id.as_str());
-        assert_eq!(cards[0]["content"]["images"][0]["alt"], "Rust (programming language)");
-        assert!(inline_span(&id).starts_with("<span class=\"inline-compose-card\" itemid=\"app-preview-card-ps"));
+        assert_eq!(
+            cards[0]["content"]["images"][0]["alt"],
+            "Rust (programming language)"
+        );
+        assert!(
+            inline_span(&id)
+                .starts_with("<span class=\"inline-compose-card\" itemid=\"app-preview-card-ps")
+        );
         let b = query_body(&app, url, "19:t@thread.v2", "OST Test 1", "tok");
-        assert_eq!(b, json!({"name":"composeExtension/anonymousQueryLink","appId":"25492237-70ef-4c56-a36e-dd3405edd40e","value":{"url":url},"imdisplayname":"OST Test 1","userAadToken":"tok","conversation":{"id":"19:t@thread.v2"}}));
+        assert_eq!(
+            b,
+            json!({"name":"composeExtension/anonymousQueryLink","appId":"25492237-70ef-4c56-a36e-dd3405edd40e","value":{"url":url},"imdisplayname":"OST Test 1","userAadToken":"tok","conversation":{"id":"19:t@thread.v2"}})
+        );
         // Auth or config replies give Teams' permission card: an anonymous
         // app's sign-in has no address (Show Preview installs first); an
         // installed app's needs one; its pre-auth card goes above the link.
-        let anon = card_from_reply(&json!({"composeExtension":{"type":"auth","suggestedActions":{"actions":[]}}}), &app, url).unwrap();
-        assert_eq!((anon.permission.as_str(), anon.auth_url.as_str()), ("auth", ""));
-        let installed = LinkApp { installed: true, ..app.clone() };
-        assert!(card_from_reply(&json!({"composeExtension":{"type":"auth","suggestedActions":{"actions":[]}}}), &installed, url).is_none());
+        let anon = card_from_reply(
+            &json!({"composeExtension":{"type":"auth","suggestedActions":{"actions":[]}}}),
+            &app,
+            url,
+        )
+        .unwrap();
+        assert_eq!(
+            (anon.permission.as_str(), anon.auth_url.as_str()),
+            ("auth", "")
+        );
+        let installed = LinkApp {
+            installed: true,
+            ..app.clone()
+        };
+        assert!(
+            card_from_reply(
+                &json!({"composeExtension":{"type":"auth","suggestedActions":{"actions":[]}}}),
+                &installed,
+                url
+            )
+            .is_none()
+        );
         let signin = card_from_reply(&json!({"composeExtension":{"type":"auth","suggestedActions":{"actions":[{"type":"openUrl","value":"https://token.botframework.com/x"}]},
             "items":[{"card":{"contentType":"application/vnd.microsoft.card.thumbnail","content":{"title":"Repo"}}}]}}), &installed, url).unwrap();
-        assert_eq!((signin.auth_url.as_str(), signin.content["title"].as_str()), ("https://token.botframework.com/x", Some("Repo")));
+        assert_eq!(
+            (signin.auth_url.as_str(), signin.content["title"].as_str()),
+            ("https://token.botframework.com/x", Some("Repo"))
+        );
         assert_eq!(install_card(&app, url).permission, "install");
     }
 
@@ -666,11 +895,26 @@ mod tests {
     fn sends_the_sign_in_result_as_teams() {
         // Teams' transport: JsonAuthResult parsed, StringAuthResult as its
         // text even when the text looks like JSON, an empty one whole.
-        assert_eq!(auth_state_value(r#"{"type":"JsonAuthResult","value":"{\"code\":\"1\"}"}"#), json!({"code":"1"}));
-        assert_eq!(auth_state_value(r#"{"type":"StringAuthResult","value":"{\"code\":\"1\"}"}"#), json!("{\"code\":\"1\"}"));
-        assert_eq!(auth_state_value(r#"{"type":"StringAuthResult","value":"123456"}"#), json!("123456"));
-        assert_eq!(auth_state_value(r#"{"type":"StringAuthResult","value":""}"#), json!({"type":"StringAuthResult","value":""}));
+        assert_eq!(
+            auth_state_value(r#"{"type":"JsonAuthResult","value":"{\"code\":\"1\"}"}"#),
+            json!({"code":"1"})
+        );
+        assert_eq!(
+            auth_state_value(r#"{"type":"StringAuthResult","value":"{\"code\":\"1\"}"}"#),
+            json!("{\"code\":\"1\"}")
+        );
+        assert_eq!(
+            auth_state_value(r#"{"type":"StringAuthResult","value":"123456"}"#),
+            json!("123456")
+        );
+        assert_eq!(
+            auth_state_value(r#"{"type":"StringAuthResult","value":""}"#),
+            json!({"type":"StringAuthResult","value":""})
+        );
         assert_eq!(auth_state_value("123456"), json!("123456"));
-        assert_eq!(auth_state_shape(r#"{"type":"StringAuthResult","value":"123456"}"#), "string of 6 chars");
+        assert_eq!(
+            auth_state_shape(r#"{"type":"StringAuthResult","value":"123456"}"#),
+            "string of 6 chars"
+        );
     }
 }

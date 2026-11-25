@@ -12,7 +12,10 @@ async fn main() -> anyhow::Result<()> {
     let mri = format!("8:orgid:{oid}");
     let client = TeamsClient::new().await?;
     match op.as_str() {
-        "add" => msgactions::add_chat_members(&client, &chat, &[mri], msgactions::SharedHistory::All).await?,
+        "add" => {
+            msgactions::add_chat_members(&client, &chat, &[mri], msgactions::SharedHistory::All)
+                .await?
+        }
         "remove" => msgactions::remove_chat_member(&client, &chat, &mri).await?,
         _ => anyhow::bail!("add or remove"),
     }

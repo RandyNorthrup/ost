@@ -30,7 +30,8 @@ pub fn assigned_rooms(json: &str) -> Option<Vec<AssignedRoom>> {
 /// opened has their room from the start, and Teams starts from it
 /// (offered on the bar, not moved). `None` when it names none.
 pub fn assigned_rooms_at_join(details: &serde_json::Value) -> Option<Vec<AssignedRoom>> {
-    let rooms = rooms_of(details.pointer("/meetingDetails/breakoutDetails/mainMeetingProperties")?)?;
+    let rooms =
+        rooms_of(details.pointer("/meetingDetails/breakoutDetails/mainMeetingProperties")?)?;
     (!rooms.is_empty()).then_some(rooms)
 }
 
@@ -48,7 +49,9 @@ fn rooms_of(props: &serde_json::Value) -> Option<Vec<AssignedRoom>> {
                     name: r["name"].as_str().unwrap_or_default().to_string(),
                     open: r["isOpen"].as_bool().unwrap_or(false),
                     join_url: r["meetingJoinUrl"].as_str()?.to_string(),
-                    auto_move: r["allowMoveParticipantsAutomatically"].as_bool().unwrap_or(false),
+                    auto_move: r["allowMoveParticipantsAutomatically"]
+                        .as_bool()
+                        .unwrap_or(false),
                     move_jitter_ms: r["moveJitter"].as_u64().unwrap_or(0),
                 })
             })
@@ -75,7 +78,10 @@ pub struct MeetingRoom {
 /// %40thread.v2/0?…`).
 pub fn thread_of_join_url(url: &str) -> Option<String> {
     let path = url.split("/meetup-join/").nth(1)?.split('/').next()?;
-    let thread = path.replace("%3a", ":").replace("%3A", ":").replace("%40", "@");
+    let thread = path
+        .replace("%3a", ":")
+        .replace("%3A", ":")
+        .replace("%40", "@");
     (thread.starts_with("19:") && thread.contains('@')).then_some(thread)
 }
 
@@ -100,7 +106,9 @@ pub fn all_rooms(json: &str) -> Option<Vec<MeetingRoom>> {
                         .flatten()
                         .filter_map(|i| i["id"].as_str().map(str::to_string))
                         .collect(),
-                    auto_move: r["allowMoveParticipantsAutomatically"].as_bool().unwrap_or(false),
+                    auto_move: r["allowMoveParticipantsAutomatically"]
+                        .as_bool()
+                        .unwrap_or(false),
                     allow_return: r
                         .pointer("/additionalData/allowJoinBackToMainMeeting")
                         .and_then(|a| a.as_str())
@@ -176,7 +184,12 @@ mod tests {
         assert!(state.closed && !state.allow_return);
         assert!(state.main_join_url.contains("meeting_YTQy"));
         // The main meeting's own updates aren't a room's.
-        assert!(room_state(r#"{"body":{"meetingDetails":{"breakoutDetails":{"mainMeetingProperties":{}}}}}"#).is_none());
+        assert!(
+            room_state(
+                r#"{"body":{"meetingDetails":{"breakoutDetails":{"mainMeetingProperties":{}}}}}"#
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -186,7 +199,10 @@ mod tests {
         let rooms = all_rooms(ev).unwrap();
         assert_eq!(rooms[0].thread, "19:meeting_Zjcx@thread.v2");
         assert!(rooms[0].open && !rooms[0].allow_return);
-        assert_eq!(rooms[0].invitees, vec!["8:orgid:4287e791-1b98-4963-8b94-281c50472683"]);
+        assert_eq!(
+            rooms[0].invitees,
+            vec!["8:orgid:4287e791-1b98-4963-8b94-281c50472683"]
+        );
         // A participant's update has no list.
         assert!(all_rooms(r#"{"body":{"breakoutDetails":{"mainMeetingProperties":{"assignedBreakoutRooms":[]}}}}"#).is_none());
     }

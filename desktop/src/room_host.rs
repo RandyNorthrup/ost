@@ -16,13 +16,17 @@ static SALTS: Mutex<Option<Salts>> = Mutex::new(None);
 
 /// Whether this OST should run as a Teams Rooms device.
 pub fn wanted(license: Option<&serde_json::Value>) -> bool {
-    if std::env::args().any(|a| a == "--room") || std::env::var("OST_ROOM").is_ok_and(|v| v == "1") {
+    if std::env::args().any(|a| a == "--room") || std::env::var("OST_ROOM").is_ok_and(|v| v == "1")
+    {
         return true;
     }
     license
         .and_then(|l| l.get("meetingRoomLicenseCategories"))
         .and_then(|c| c.as_array())
-        .is_some_and(|c| c.iter().any(|x| x.as_str().is_some_and(|s| !s.is_empty() && s != "None")))
+        .is_some_and(|c| {
+            c.iter()
+                .any(|x| x.as_str().is_some_and(|s| !s.is_empty() && s != "None"))
+        })
 }
 
 /// The room's settings: Teams Rooms' defaults, with
@@ -137,7 +141,11 @@ pub fn start(object_id: String, on_salt: impl Fn(u16) + Send + 'static) {
 /// Rooms' devicesBLEService.isSaltValid, as a room remote's pairing checks
 /// it).
 pub fn salt_valid(token: u32) -> bool {
-    SALTS.lock().unwrap_or_else(|e| e.into_inner()).as_ref().is_some_and(|s| s.is_valid(token))
+    SALTS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .is_some_and(|s| s.is_valid(token))
 }
 
 /// Teams Rooms' answer to `call`: accept it by itself, or ring. `tenant`
@@ -150,7 +158,8 @@ pub fn decide(call: &IncomingCall, tenant: Option<&str>) -> Decision {
         // No tenant on the caller: an organization's user (8:orgid:)
         // inviting the room into a meeting of the room's tenant.
         (None, Some(t)) => {
-            call.caller_id().is_some_and(|id| id.starts_with("8:orgid:"))
+            call.caller_id()
+                .is_some_and(|id| id.starts_with("8:orgid:"))
                 && call
                     .invitation_data()
                     .and_then(|d| d.pointer("/meetingInfo/tenantId"))
@@ -159,7 +168,11 @@ pub fn decide(call: &IncomingCall, tenant: Option<&str>) -> Decision {
         }
         _ => false,
     };
-    tracing::info!(caller_tenant = caller_tenant.is_some(), in_tenant, "room mode: caller");
+    tracing::info!(
+        caller_tenant = caller_tenant.is_some(),
+        in_tenant,
+        "room mode: caller"
+    );
     let g = SALTS.lock().unwrap_or_else(|e| e.into_inner());
     let Some(salts) = g.as_ref() else {
         return Decision::Ring("Not_a_room");
@@ -182,7 +195,10 @@ mod tests {
     fn audio_recap_code_at_level_l() {
         // A Listen on mobile link of 101 bytes is version 5 at L: 37
         // modules and 4 of quiet zone each side.
-        let rows = qr_rows_at("https://teams.microsoft.com/l/meetingpodcast?id=0123456789abcdef0123456789abcdef&origin=desktopQRCode", qrcode::EcLevel::L);
+        let rows = qr_rows_at(
+            "https://teams.microsoft.com/l/meetingpodcast?id=0123456789abcdef0123456789abcdef&origin=desktopQRCode",
+            qrcode::EcLevel::L,
+        );
         let lines: Vec<&str> = rows.lines().collect();
         assert_eq!(lines.len(), 45);
         assert!(lines.iter().all(|l| l.len() == 45));

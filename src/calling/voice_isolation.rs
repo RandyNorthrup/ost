@@ -57,7 +57,10 @@ pub fn set_profile_recording(wav: Option<Vec<u8>>) {
     {
         let mut p = profile();
         if p.as_ref().map(|p| &p.wav) != wav.as_ref() {
-            *p = wav.map(|wav| Profile { wav, embedding: None });
+            *p = wav.map(|wav| Profile {
+                wav,
+                embedding: None,
+            });
         }
     }
     rebuild();
@@ -79,7 +82,8 @@ pub fn set_enabled(on: bool) {
 /// downloading) they get standard noise suppression.
 #[cfg(feature = "video")]
 pub fn ready() -> bool {
-    ost_vfx::voice_isolation::model_loaded() && profile().as_ref().is_some_and(|p| p.embedding.is_some())
+    ost_vfx::voice_isolation::model_loaded()
+        && profile().as_ref().is_some_and(|p| p.embedding.is_some())
 }
 
 #[cfg(not(feature = "video"))]
@@ -108,7 +112,9 @@ fn rebuild() {
                     *g = Some(i);
                     tracing::info!(on = true, "voice isolation");
                 }
-                Err(e) => tracing::warn!("voice isolation unavailable, standard noise suppression: {e:#}"),
+                Err(e) => {
+                    tracing::warn!("voice isolation unavailable, standard noise suppression: {e:#}")
+                }
             },
         }
     }
@@ -121,7 +127,10 @@ pub fn model_path(cache_dir: &Path) -> PathBuf {
 
 fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
-    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// The cached model, when it's there and its hash checks out (a file that
@@ -145,7 +154,10 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     use std::io::Write;
     let dir = path.parent().unwrap_or(Path::new("."));
     std::fs::create_dir_all(dir)?;
-    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("download");
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("download");
     let tmp = dir.join(format!(".{name}.{}.part", std::process::id()));
     let result = (|| {
         let mut f = std::fs::File::create(&tmp)?;
@@ -175,10 +187,21 @@ async fn download(path: &Path) -> anyhow::Result<Vec<u8>> {
         .context("voice isolation model request")?
         .error_for_status()
         .context("voice isolation model")?;
-    let mut bytes = Vec::with_capacity(resp.content_length().unwrap_or(0).min(MODEL_MAX_BYTES as u64) as usize);
-    while let Some(chunk) = resp.chunk().await.context("voice isolation model download")? {
+    let mut bytes = Vec::with_capacity(
+        resp.content_length()
+            .unwrap_or(0)
+            .min(MODEL_MAX_BYTES as u64) as usize,
+    );
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .context("voice isolation model download")?
+    {
         bytes.extend_from_slice(&chunk);
-        anyhow::ensure!(bytes.len() <= MODEL_MAX_BYTES, "the voice isolation model download is too large");
+        anyhow::ensure!(
+            bytes.len() <= MODEL_MAX_BYTES,
+            "the voice isolation model download is too large"
+        );
     }
     let (bytes, got) = tokio::task::spawn_blocking(move || {
         let got = sha256_hex(&bytes);
@@ -227,7 +250,10 @@ pub async fn prepare(cache_dir: &Path) -> anyhow::Result<()> {
         tokio::task::spawn_blocking(move || ost_vfx::voice_isolation::load_model(&onnx)).await??;
         tracing::info!("voice isolation model: loaded");
     }
-    let wav = profile().as_ref().filter(|p| p.embedding.is_none()).map(|p| p.wav.clone());
+    let wav = profile()
+        .as_ref()
+        .filter(|p| p.embedding.is_none())
+        .map(|p| p.wav.clone());
     if let Some(wav) = wav {
         let (wav, embedding) = tokio::task::spawn_blocking(move || {
             let e = ost_vfx::voice_isolation::profile_embedding(&wav);
@@ -288,7 +314,11 @@ pub fn process(frame: &mut [i16]) {
 /// present, suppressing, frames suppressed.
 #[cfg(feature = "video")]
 pub fn stats() -> Option<IsolatorStats> {
-    ISOLATOR.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|i| i.stats())
+    ISOLATOR
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .map(|i| i.stats())
 }
 
 /// Your voice profile's recording from the Recognition service's voice
@@ -304,10 +334,19 @@ pub fn profile_recording_from_export(zip: &[u8]) -> anyhow::Result<Vec<u8>> {
 /// The files of a zip (stored or deflated), by its central directory.
 pub fn zip_entries(zip: &[u8]) -> anyhow::Result<Vec<(String, Vec<u8>)>> {
     use std::io::Read;
-    let u16_at = |o: usize| zip.get(o..o + 2).map(|b| u16::from_le_bytes([b[0], b[1]]) as usize);
-    let u32_at = |o: usize| zip.get(o..o + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize);
+    let u16_at = |o: usize| {
+        zip.get(o..o + 2)
+            .map(|b| u16::from_le_bytes([b[0], b[1]]) as usize)
+    };
+    let u32_at = |o: usize| {
+        zip.get(o..o + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize)
+    };
     // The end of central directory record, searched from the end.
-    let eocd = (0..zip.len().saturating_sub(21)).rev().find(|&o| zip[o..].starts_with(b"PK\x05\x06")).ok_or_else(|| anyhow::anyhow!("Not a zip"))?;
+    let eocd = (0..zip.len().saturating_sub(21))
+        .rev()
+        .find(|&o| zip[o..].starts_with(b"PK\x05\x06"))
+        .ok_or_else(|| anyhow::anyhow!("Not a zip"))?;
     let count = u16_at(eocd + 10).unwrap_or(0);
     let mut at = u32_at(eocd + 16).unwrap_or(0);
     let mut out = Vec::new();
@@ -317,12 +356,20 @@ pub fn zip_entries(zip: &[u8]) -> anyhow::Result<Vec<(String, Vec<u8>)>> {
         }
         let method = u16_at(at + 10).unwrap_or(0);
         let packed = u32_at(at + 20).unwrap_or(0);
-        let (name_len, extra_len, comment_len) = (u16_at(at + 28).unwrap_or(0), u16_at(at + 30).unwrap_or(0), u16_at(at + 32).unwrap_or(0));
+        let (name_len, extra_len, comment_len) = (
+            u16_at(at + 28).unwrap_or(0),
+            u16_at(at + 30).unwrap_or(0),
+            u16_at(at + 32).unwrap_or(0),
+        );
         let local = u32_at(at + 42).unwrap_or(0);
-        let name = String::from_utf8_lossy(zip.get(at + 46..at + 46 + name_len).unwrap_or_default()).to_string();
+        let name =
+            String::from_utf8_lossy(zip.get(at + 46..at + 46 + name_len).unwrap_or_default())
+                .to_string();
         at += 46 + name_len + extra_len + comment_len;
         let start = local + 30 + u16_at(local + 26).unwrap_or(0) + u16_at(local + 28).unwrap_or(0);
-        let body = zip.get(start..start + packed).ok_or_else(|| anyhow::anyhow!("A zip entry runs past the end"))?;
+        let body = zip
+            .get(start..start + packed)
+            .ok_or_else(|| anyhow::anyhow!("A zip entry runs past the end"))?;
         let data = match method {
             0 => body.to_vec(),
             8 => {
@@ -347,7 +394,10 @@ mod tests {
         #[cfg(feature = "video")]
         assert_eq!(MODEL_FILE, ost_vfx::voice_isolation::MODEL_FILE);
         assert_eq!(MODEL_SHA256.len(), 64);
-        assert_eq!(sha256_hex(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 
     #[test]
@@ -357,7 +407,11 @@ mod tests {
         write_atomic(&path, b"not the model").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"not the model");
         // No temporary file is left behind.
-        let left: Vec<_> = std::fs::read_dir(path.parent().unwrap()).unwrap().flatten().map(|e| e.file_name()).collect();
+        let left: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
         assert_eq!(left, vec![std::ffi::OsString::from(MODEL_FILE)]);
         // A file that doesn't match the hash isn't used, and is removed.
         assert!(read_cached(&path).is_none());

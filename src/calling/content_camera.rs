@@ -83,7 +83,9 @@ impl ContentCamera {
             .name("ost-content-camera".into())
             .spawn(move || run_camera(&run))?;
         tracing::info!(device, "content camera started");
-        Ok(Self { inner: Arc::new(Guard(inner)) })
+        Ok(Self {
+            inner: Arc::new(Guard(inner)),
+        })
     }
 
     pub fn device(&self) -> &str {
@@ -147,7 +149,10 @@ fn run_camera(inner: &Inner) {
     let (camera, frames) = loop {
         match CameraCapture::start(Some(&inner.device), WIDTH, HEIGHT, FPS) {
             Ok(c) => break c,
-            Err(e) if started.elapsed() < Duration::from_secs(4) && !inner.stop.load(Ordering::Relaxed) => {
+            Err(e)
+                if started.elapsed() < Duration::from_secs(4)
+                    && !inner.stop.load(Ordering::Relaxed) =>
+            {
                 tracing::debug!("content camera: {e:#}; trying again");
                 std::thread::sleep(Duration::from_millis(300));
             }
@@ -195,7 +200,11 @@ fn run_camera(inner: &Inner) {
         let sharing = {
             let mut slot = inner.out.lock().unwrap();
             match slot.as_ref() {
-                Some(tx) => match tx.try_send(YuvFrame { width: w, height: h, data: out.clone() }) {
+                Some(tx) => match tx.try_send(YuvFrame {
+                    width: w,
+                    height: h,
+                    data: out.clone(),
+                }) {
                     Ok(()) | Err(mpsc::TrySendError::Full(_)) => true,
                     Err(mpsc::TrySendError::Disconnected(_)) => {
                         *slot = None;
@@ -206,11 +215,21 @@ fn run_camera(inner: &Inner) {
             }
         };
         if preview {
-            super::frames::publish(PREVIEW_KEY, w, h, ost_vfx::i420_to_rgba(&out, w as usize, h as usize));
+            super::frames::publish(
+                PREVIEW_KEY,
+                w,
+                h,
+                ost_vfx::i420_to_rgba(&out, w as usize, h as usize),
+            );
         }
         if sharing && last_shared.elapsed() >= Duration::from_secs(1) {
             last_shared = Instant::now();
-            super::frames::publish(SHARED_KEY, w, h, ost_vfx::i420_to_rgba(&out, w as usize, h as usize));
+            super::frames::publish(
+                SHARED_KEY,
+                w,
+                h,
+                ost_vfx::i420_to_rgba(&out, w as usize, h as usize),
+            );
         }
     }
     inner.ended.store(true, Ordering::Relaxed);

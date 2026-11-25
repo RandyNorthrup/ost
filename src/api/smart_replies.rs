@@ -64,7 +64,12 @@ pub struct Features {
 impl Default for Features {
     /// Teams' commercial defaults.
     fn default() -> Self {
-        Features { files: true, meetings: false, workflows: false, feedback: true }
+        Features {
+            files: true,
+            meetings: false,
+            workflows: false,
+            feedback: true,
+        }
     }
 }
 
@@ -72,11 +77,19 @@ impl Features {
     /// The account's features: ECS, else Teams' defaults.
     pub fn current() -> Self {
         let d = Features::default();
-        let flag = |ns: &str, k: &str, def: bool| super::ecs::setting(ns, k).and_then(|v| v.as_bool()).unwrap_or(def);
+        let flag = |ns: &str, k: &str, def: bool| {
+            super::ecs::setting(ns, k)
+                .and_then(|v| v.as_bool())
+                .unwrap_or(def)
+        };
         Features {
             files: flag("messaging", "enableSmartFilesSuggestions", d.files),
             meetings: flag("messaging", "enableSmartSchedulingSuggestions", d.meetings),
-            workflows: flag("extensibility", "enableProactiveSuggestionPrompt", d.workflows),
+            workflows: flag(
+                "extensibility",
+                "enableProactiveSuggestionPrompt",
+                d.workflows,
+            ),
             feedback: flag("messaging", "enableSmartRepliesFeedback", d.feedback),
         }
     }
@@ -94,7 +107,10 @@ impl Features {
 }
 
 fn s(v: &Value, k: &str) -> String {
-    v.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string()
+    v.get(k)
+        .and_then(|x| x.as_str())
+        .unwrap_or_default()
+        .to_string()
 }
 
 /// The newest set with a suggestion Teams shows, from the property's text,
@@ -108,16 +124,33 @@ pub fn parse_with(prop: &str, f: Features) -> Option<SuggestionSet> {
             let reply_to = s(a, "replyToId");
             let replies: Vec<Suggestion> = actions
                 .iter()
-                .filter(|x| x.pointer("/channelData/utcTime").and_then(|t| t.as_str()).is_some())
+                .filter(|x| {
+                    x.pointer("/channelData/utcTime")
+                        .and_then(|t| t.as_str())
+                        .is_some()
+                })
                 .map(|x| {
-                    let cd = |k: &str| x.pointer(&format!("/channelData/{k}")).and_then(|t| t.as_str()).unwrap_or_default().to_string();
-                    let kind = Some(cd("type")).filter(|k| !k.is_empty()).unwrap_or_else(|| "reply".into());
+                    let cd = |k: &str| {
+                        x.pointer(&format!("/channelData/{k}"))
+                            .and_then(|t| t.as_str())
+                            .unwrap_or_default()
+                            .to_string()
+                    };
+                    let kind = Some(cd("type"))
+                        .filter(|k| !k.is_empty())
+                        .unwrap_or_else(|| "reply".into());
                     Suggestion {
-                        title: Some(s(x, "title")).filter(|t| !t.is_empty()).unwrap_or_else(|| s(x, "value")),
-                        value: Some(s(x, "value")).filter(|t| !t.is_empty()).unwrap_or_else(|| s(x, "title")),
+                        title: Some(s(x, "title"))
+                            .filter(|t| !t.is_empty())
+                            .unwrap_or_else(|| s(x, "value")),
+                        value: Some(s(x, "value"))
+                            .filter(|t| !t.is_empty())
+                            .unwrap_or_else(|| s(x, "title")),
                         kind,
                         time: cd("utcTime"),
-                        target: Some(cd("targetMessageId")).filter(|t| !t.is_empty()).unwrap_or_else(|| reply_to.clone()),
+                        target: Some(cd("targetMessageId"))
+                            .filter(|t| !t.is_empty())
+                            .unwrap_or_else(|| reply_to.clone()),
                         start_time: cd("startTime"),
                         end_time: cd("endTime"),
                     }
@@ -127,8 +160,16 @@ pub fn parse_with(prop: &str, f: Features) -> Option<SuggestionSet> {
             if replies.is_empty() {
                 return None;
             }
-            let target = replies.first().map(|r| r.target.clone()).unwrap_or(reply_to);
-            Some(SuggestionSet { target, timestamp: s(a, "timestamp"), replies, feedback: f.feedback })
+            let target = replies
+                .first()
+                .map(|r| r.target.clone())
+                .unwrap_or(reply_to);
+            Some(SuggestionSet {
+                target,
+                timestamp: s(a, "timestamp"),
+                replies,
+                feedback: f.feedback,
+            })
         })
         .max_by(|a, b| a.timestamp.cmp(&b.timestamp))
 }
@@ -140,9 +181,15 @@ pub fn parse(prop: &str) -> Option<SuggestionSet> {
 
 /// The open chat's suggestions (None when the service has none).
 pub async fn for_chat(client: &TeamsClient, chat_id: &str) -> Result<Option<SuggestionSet>> {
-    let url = format!("{}/v1/users/ME/conversations/{}", client.chat_service_url(), chat_id);
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}",
+        client.chat_service_url(),
+        chat_id
+    );
     let v: Value = client.chat_get(&url).await?.json().await?;
-    Ok(v.pointer("/properties/quickReplyAugmentation").and_then(|p| p.as_str()).and_then(parse))
+    Ok(v.pointer("/properties/quickReplyAugmentation")
+        .and_then(|p| p.as_str())
+        .and_then(parse))
 }
 
 /// The issue OST opens for Teams' suggested-reply feedback (Teams sends it
@@ -157,22 +204,37 @@ pub fn feedback_report(
     attach: Option<(&[String], &str)>,
 ) -> crate::feedback::Report {
     let liked = !categories.is_empty()
-        && categories.iter().all(|c| c.starts_with("They're great") || c.starts_with("The suggestion is great"));
+        && categories
+            .iter()
+            .all(|c| c.starts_with("They're great") || c.starts_with("The suggestion is great"));
     let mut context = String::from("How would you describe the suggestions we provided?\n");
     for c in categories {
         context.push_str(&format!("- {c}\n"));
     }
-    let kinds: Vec<&str> = kinds.iter().map(|k| if k == "reply" { "text" } else { k.as_str() }).collect();
+    let kinds: Vec<&str> = kinds
+        .iter()
+        .map(|k| if k == "reply" { "text" } else { k.as_str() })
+        .collect();
     context.push_str(&format!("\nSuggestion types: {}\n", kinds.join(", ")));
     if let Some((suggestions, last)) = attach {
         context.push_str(&format!("\nSuggestions: {}\n", suggestions.join(" | ")));
         // Teams strips the message's HTML tags.
-        let plain = regex::Regex::new(r"</?[^>]+(>|$)").map(|re| re.replace_all(last, "").to_string()).unwrap_or_default();
+        let plain = regex::Regex::new(r"</?[^>]+(>|$)")
+            .map(|re| re.replace_all(last, "").to_string())
+            .unwrap_or_default();
         context.push_str(&format!("Last message: {}\n", plain.trim()));
     }
-    let text = if comment.trim().is_empty() { categories.join("; ") } else { comment.trim().to_string() };
+    let text = if comment.trim().is_empty() {
+        categories.join("; ")
+    } else {
+        comment.trim().to_string()
+    };
     crate::feedback::Report {
-        kind: if liked { "compliment".into() } else { "problem".into() },
+        kind: if liked {
+            "compliment".into()
+        } else {
+            "problem".into()
+        },
         text,
         area: "Suggested replies".into(),
         context,
@@ -188,15 +250,51 @@ pub fn feedback_categories(kinds: &[String]) -> Vec<&'static str> {
     let has = |k: &str| kinds.iter().any(|x| x == k);
     let text = has("reply");
     if has("file_sharing") && text {
-        vec!["They're great. Keep em' coming!", "They don't sound like me", "They're inappropriate or offensive", "They're not relevant to my chat", "I don't need to share a file", "Someone else should share the file", "I can't find the file I need"]
+        vec![
+            "They're great. Keep em' coming!",
+            "They don't sound like me",
+            "They're inappropriate or offensive",
+            "They're not relevant to my chat",
+            "I don't need to share a file",
+            "Someone else should share the file",
+            "I can't find the file I need",
+        ]
     } else if has("meeting") && text {
-        vec!["They're great. Keep em' coming!", "They don't sound like me", "They're inappropriate or offensive", "They're not relevant to my chat", "I don't need to schedule a meeting", "Someone else should schedule the meeting", "These suggestions aren't helpful"]
+        vec![
+            "They're great. Keep em' coming!",
+            "They don't sound like me",
+            "They're inappropriate or offensive",
+            "They're not relevant to my chat",
+            "I don't need to schedule a meeting",
+            "Someone else should schedule the meeting",
+            "These suggestions aren't helpful",
+        ]
     } else if text {
-        vec!["They're great. Keep em' coming!", "They don't sound like me", "They're not relevant to my chat", "The choices are repetitive", "They're inappropriate or offensive", "I don’t like these suggestions"]
+        vec![
+            "They're great. Keep em' coming!",
+            "They don't sound like me",
+            "They're not relevant to my chat",
+            "The choices are repetitive",
+            "They're inappropriate or offensive",
+            "I don’t like these suggestions",
+        ]
     } else if has("file_sharing") {
-        vec!["The suggestion is great!", "I don't need to share a file", "Someone else should share the file", "I can't find the file I need", "I didn't get any file suggestions", "I'm not ready to share a file"]
+        vec![
+            "The suggestion is great!",
+            "I don't need to share a file",
+            "Someone else should share the file",
+            "I can't find the file I need",
+            "I didn't get any file suggestions",
+            "I'm not ready to share a file",
+        ]
     } else if has("meeting") {
-        vec!["The suggestion is great!", "I don't need to schedule a meeting", "Someone else should schedule the meeting", "These suggestions aren't helpful", "I'm not ready to schedule a meeting"]
+        vec![
+            "The suggestion is great!",
+            "I don't need to schedule a meeting",
+            "Someone else should schedule the meeting",
+            "These suggestions aren't helpful",
+            "I'm not ready to schedule a meeting",
+        ]
     } else {
         Vec::new()
     }
@@ -213,13 +311,29 @@ mod tests {
     fn reads_cortanas_suggestions() {
         let set = parse_with(PROP, Features::default()).unwrap();
         assert_eq!(set.target, "1794624690608");
-        assert_eq!(set.replies.iter().map(|r| (r.title.as_str(), r.kind.as_str())).collect::<Vec<_>>(),
-            vec![("Yes, I can do that", "reply"), ("Yes", "reply"), ("Share file", "file_sharing")]);
+        assert_eq!(
+            set.replies
+                .iter()
+                .map(|r| (r.title.as_str(), r.kind.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("Yes, I can do that", "reply"),
+                ("Yes", "reply"),
+                ("Share file", "file_sharing")
+            ]
+        );
         assert!(set.feedback);
         assert!(parse("{}").is_none());
         assert!(parse("nope").is_none());
         // With file suggestions off, only the replies.
-        let off = parse_with(PROP, Features { files: false, ..Features::default() }).unwrap();
+        let off = parse_with(
+            PROP,
+            Features {
+                files: false,
+                ..Features::default()
+            },
+        )
+        .unwrap();
         assert_eq!(off.replies.len(), 2);
     }
 
@@ -230,9 +344,23 @@ mod tests {
             {"type":"custom","value":"{\"recommendedToolName\":\"remind_me\",\"toolExecutorName\":\"OST Test 1\"}","channelData":{"type":"workflow","utcTime":"2026-11-16T02:00:00Z","targetMessageId":"9"}}]}}]}"#;
         // Teams' defaults: neither shows, so there is no set.
         assert!(parse_with(prop, Features::default()).is_none());
-        let on = parse_with(prop, Features { meetings: true, workflows: true, ..Features::default() }).unwrap();
+        let on = parse_with(
+            prop,
+            Features {
+                meetings: true,
+                workflows: true,
+                ..Features::default()
+            },
+        )
+        .unwrap();
         assert_eq!(on.replies[0].kind, "meeting");
-        assert_eq!((on.replies[0].start_time.as_str(), on.replies[0].end_time.as_str()), ("2026-11-17T22:00:00Z", "2026-11-17T22:30:00Z"));
+        assert_eq!(
+            (
+                on.replies[0].start_time.as_str(),
+                on.replies[0].end_time.as_str()
+            ),
+            ("2026-11-17T22:00:00Z", "2026-11-17T22:30:00Z")
+        );
         assert_eq!(on.replies[1].kind, "workflow");
         assert!(on.replies[1].value.contains("remind_me"));
     }
@@ -240,14 +368,25 @@ mod tests {
     #[test]
     fn feedback_goes_to_an_issue_without_chat_text_unless_attached() {
         let kinds = vec!["reply".to_string(), "file_sharing".to_string()];
-        assert_eq!(feedback_categories(&kinds)[4], "I don't need to share a file");
+        assert_eq!(
+            feedback_categories(&kinds)[4],
+            "I don't need to share a file"
+        );
         assert_eq!(feedback_categories(&["meeting".to_string()]).len(), 5);
         let r = feedback_report(&["They don't sound like me".into()], "", &kinds, None);
-        assert_eq!((r.kind.as_str(), r.area.as_str(), r.text.as_str()), ("problem", "Suggested replies", "They don't sound like me"));
+        assert_eq!(
+            (r.kind.as_str(), r.area.as_str(), r.text.as_str()),
+            ("problem", "Suggested replies", "They don't sound like me")
+        );
         assert!(r.context.contains("Suggestion types: text, file_sharing"));
         assert!(!r.context.contains("Last message"));
         let sugg = vec!["Yes".to_string()];
-        let r = feedback_report(&["They're great. Keep em' coming!".into()], "Nice", &kinds, Some((&sugg, "<p>Can you do it?</p>")));
+        let r = feedback_report(
+            &["They're great. Keep em' coming!".into()],
+            "Nice",
+            &kinds,
+            Some((&sugg, "<p>Can you do it?</p>")),
+        );
         assert_eq!(r.kind, "compliment");
         assert!(r.context.contains("Last message: Can you do it?"));
         assert!(r.context.contains("Suggestions: Yes"));

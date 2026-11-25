@@ -92,12 +92,14 @@ impl SystemSound {
         let stop2 = stop.clone();
         queue().lock().unwrap_or_else(|e| e.into_inner()).clear();
         RUNNING.store(true, Ordering::Relaxed);
-        std::thread::Builder::new().name("ost-system-sound".into()).spawn(move || {
-            if let Err(e) = run(&stop2) {
-                tracing::warn!("system sound ended: {e:#}");
-            }
-            RUNNING.store(false, Ordering::Relaxed);
-        })?;
+        std::thread::Builder::new()
+            .name("ost-system-sound".into())
+            .spawn(move || {
+                if let Err(e) = run(&stop2) {
+                    tracing::warn!("system sound ended: {e:#}");
+                }
+                RUNNING.store(false, Ordering::Relaxed);
+            })?;
         tracing::info!("system sound shared");
         Ok(Self { stop })
     }
@@ -151,7 +153,10 @@ fn run(stop: &Arc<AtomicBool>) -> Result<()> {
         .state_changed({
             let our_node = our_node.clone();
             move |stream, _, _, new| {
-                if matches!(new, pw::stream::StreamState::Paused | pw::stream::StreamState::Streaming) {
+                if matches!(
+                    new,
+                    pw::stream::StreamState::Paused | pw::stream::StreamState::Streaming
+                ) {
                     our_node.set(stream.node_id());
                 }
             }
@@ -167,13 +172,18 @@ fn run(stop: &Arc<AtomicBool>) -> Result<()> {
             }
         })
         .process(|stream, ch| {
-            let Some(mut buffer) = stream.dequeue_buffer() else { return };
+            let Some(mut buffer) = stream.dequeue_buffer() else {
+                return;
+            };
             let datas = buffer.datas_mut();
             let Some(d) = datas.first_mut() else { return };
             let size = d.chunk().size() as usize;
             let Some(bytes) = d.data() else { return };
             let bytes = &bytes[..size.min(bytes.len())];
-            let floats: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+            let floats: Vec<f32> = bytes
+                .chunks_exact(4)
+                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .collect();
             let mono = to_mono(&floats, *ch.borrow());
             let mut q = queue().lock().unwrap_or_else(|e| e.into_inner());
             q.extend(mono);
@@ -221,7 +231,12 @@ fn run(stop: &Arc<AtomicBool>) -> Result<()> {
                 return;
             }
             let mut g = graph.borrow_mut();
-            let inputs: Vec<(u32, String)> = g.ports.iter().filter(|(_, p)| p.0 == our && !p.1).map(|(id, p)| (*id, p.2.clone())).collect();
+            let inputs: Vec<(u32, String)> = g
+                .ports
+                .iter()
+                .filter(|(_, p)| p.0 == our && !p.1)
+                .map(|(id, p)| (*id, p.2.clone()))
+                .collect();
             if inputs.is_empty() {
                 return;
             }
@@ -234,7 +249,9 @@ fn run(stop: &Arc<AtomicBool>) -> Result<()> {
             for (out, node, channel) in outputs {
                 for (inp, in_channel) in &inputs {
                     // Same channel, or a mono stream into both.
-                    if !(channel == *in_channel || channel == "MONO") || g.linked.contains(&(out, *inp)) {
+                    if !(channel == *in_channel || channel == "MONO")
+                        || g.linked.contains(&(out, *inp))
+                    {
                         continue;
                     }
                     match core.create_object::<pw::link::Link>(
@@ -282,7 +299,10 @@ fn run(stop: &Arc<AtomicBool>) -> Result<()> {
                         if let Some(node) = node
                             && props.get("port.monitor") != Some("true")
                         {
-                            graph.borrow_mut().ports.insert(global.id, (node, output, channel));
+                            graph
+                                .borrow_mut()
+                                .ports
+                                .insert(global.id, (node, output, channel));
                         }
                     }
                     _ => return,
@@ -317,14 +337,22 @@ fn run(stop: &Arc<AtomicBool>) -> Result<()> {
                 ticks.set(ticks.get() + 1);
                 if ticks.get() % 10 == 1 {
                     let g = graph.borrow();
-                    tracing::info!(node = our_node.get(), streams = g.sources.len(), links = g.links.len(),
-                        queued = queue().lock().map(|q| q.len()).unwrap_or(0), "system sound");
+                    tracing::info!(
+                        node = our_node.get(),
+                        streams = g.sources.len(),
+                        links = g.links.len(),
+                        queued = queue().lock().map(|q| q.len()).unwrap_or(0),
+                        "system sound"
+                    );
                 }
             }
         }
     });
     timer
-        .update_timer(Some(std::time::Duration::from_millis(200)), Some(std::time::Duration::from_millis(500)))
+        .update_timer(
+            Some(std::time::Duration::from_millis(200)),
+            Some(std::time::Duration::from_millis(500)),
+        )
         .into_result()?;
     mainloop.run();
     let _ = stream.disconnect();
@@ -337,13 +365,19 @@ mod tests {
 
     #[test]
     fn mixing_adds_and_keeps_sound_while_muted() {
-        assert_eq!(mix_into(Some(vec![100, -100, 32000]), &[50, -50, 1000]), vec![150, -150, 32767]);
+        assert_eq!(
+            mix_into(Some(vec![100, -100, 32000]), &[50, -50, 1000]),
+            vec![150, -150, 32767]
+        );
         assert_eq!(mix_into(None, &[7, 8]), vec![7, 8]);
     }
 
     #[test]
     fn stereo_to_mono() {
-        assert_eq!(to_mono(&[0.5, 0.5, -1.0, 1.0, 2.0, 2.0], 2), vec![16383, 0, 32767]);
+        assert_eq!(
+            to_mono(&[0.5, 0.5, -1.0, 1.0, 2.0, 2.0], 2),
+            vec![16383, 0, 32767]
+        );
     }
 
     #[test]

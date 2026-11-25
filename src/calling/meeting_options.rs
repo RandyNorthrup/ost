@@ -154,8 +154,7 @@ pub fn shows_ai_indicator(json: &Value) -> bool {
         "/conversation/meetingDetails",
     ]
     .iter()
-    .find_map(|p| json.pointer(p))
-    else {
+    .find_map(|p| json.pointer(p)) else {
         return false;
     };
     let flag = |k: &str| d.get(k).and_then(Value::as_bool).unwrap_or(false);
@@ -289,15 +288,30 @@ impl AttendanceLog {
         if !self.started {
             self.started = true;
             for (id, name) in here {
-                self.note(Attendance { id: id.clone(), name: name.clone(), action: AttendanceAction::JoinedBefore, at });
+                self.note(Attendance {
+                    id: id.clone(),
+                    name: name.clone(),
+                    action: AttendanceAction::JoinedBefore,
+                    at,
+                });
             }
-            self.note(Attendance { id: me.0.into(), name: me.1.into(), action: AttendanceAction::Joined, at });
+            self.note(Attendance {
+                id: me.0.into(),
+                name: me.1.into(),
+                action: AttendanceAction::Joined,
+                at,
+            });
             self.present = ids;
             return;
         }
         for (id, name) in here {
             if !self.present.contains(id) {
-                self.note(Attendance { id: id.clone(), name: name.clone(), action: AttendanceAction::Joined, at });
+                self.note(Attendance {
+                    id: id.clone(),
+                    name: name.clone(),
+                    action: AttendanceAction::Joined,
+                    at,
+                });
             }
         }
         let gone: Vec<String> = self.present.difference(&ids).cloned().collect();
@@ -309,7 +323,12 @@ impl AttendanceLog {
                 .and_then(|(_, l)| l.last())
                 .map(|a| a.name.clone())
                 .unwrap_or_default();
-            self.note(Attendance { id, name, action: AttendanceAction::Left, at });
+            self.note(Attendance {
+                id,
+                name,
+                action: AttendanceAction::Left,
+                at,
+            });
         }
         self.present = ids;
     }
@@ -317,7 +336,12 @@ impl AttendanceLog {
     /// You left the meeting.
     pub fn leave(&mut self, me: (&str, &str), at: chrono::DateTime<chrono::Local>) {
         if self.started {
-            self.note(Attendance { id: me.0.into(), name: me.1.into(), action: AttendanceAction::Left, at });
+            self.note(Attendance {
+                id: me.0.into(),
+                name: me.1.into(),
+                action: AttendanceAction::Left,
+                at,
+            });
         }
     }
 
@@ -382,7 +406,11 @@ mod tests {
         .unwrap();
         assert_eq!(
             meeting_capability(&v),
-            Some(MeetingCapability { locked: true, attendee_restrictions: 3, ..Default::default() })
+            Some(MeetingCapability {
+                locked: true,
+                attendee_restrictions: 3,
+                ..Default::default()
+            })
         );
         let v: Value = serde_json::from_str(
             r#"{"meetingDetails":{"meetingCapability":{"attendeeRestrictions":"DisableVideo"}}}"#,
@@ -390,42 +418,71 @@ mod tests {
         .unwrap();
         assert_eq!(
             meeting_capability(&v),
-            Some(MeetingCapability { locked: false, attendee_restrictions: RESTRICT_VIDEO, ..Default::default() })
+            Some(MeetingCapability {
+                locked: false,
+                attendee_restrictions: RESTRICT_VIDEO,
+                ..Default::default()
+            })
         );
-        assert_eq!(meeting_capability(&serde_json::json!({"meetingDetails":{}})), None);
+        assert_eq!(
+            meeting_capability(&serde_json::json!({"meetingDetails":{}})),
+            None
+        );
         let v = serde_json::json!({"meetingDetails":{"meetingCapability":{"copilotMode":"EnabledWithTranscript","groupCopilotDetails":{"enabled":true}}}});
         let c = meeting_capability(&v).unwrap();
         assert!(c.copilot && c.facilitator);
-        let v = serde_json::json!({"meetingDetails":{"meetingCapability":{"copilotMode":"Disabled"}}});
+        let v =
+            serde_json::json!({"meetingDetails":{"meetingCapability":{"copilotMode":"Disabled"}}});
         assert!(!meeting_capability(&v).unwrap().copilot);
     }
 
     #[test]
     fn facilitator_for_the_timer() {
-        let on = MeetingCapability { facilitator: true, ..Default::default() };
+        let on = MeetingCapability {
+            facilitator: true,
+            ..Default::default()
+        };
         assert!(facilitator_on(&on, false, true));
         assert!(!facilitator_on(&on, true, true));
         assert!(facilitator_on(&on, true, false));
         assert!(!facilitator_on(&MeetingCapability::default(), false, false));
         let cap = meeting_capability(&serde_json::json!({"conversationUpdate": {"meetingDetails": {"meetingCapability": {"groupCopilotDetails": {"enabled": false}}}}})).unwrap();
         assert!(!facilitator_on(&cap, false, false));
-        assert!(is_meet_now(&serde_json::json!({"meetingDetails": {"meetingType": "MeetNow"}})));
-        assert!(!is_meet_now(&serde_json::json!({"meetingDetails": {"meetingType": "Scheduled"}})));
+        assert!(is_meet_now(
+            &serde_json::json!({"meetingDetails": {"meetingType": "MeetNow"}})
+        ));
+        assert!(!is_meet_now(
+            &serde_json::json!({"meetingDetails": {"meetingType": "Scheduled"}})
+        ));
     }
 
     #[test]
     fn ai_indicator_meetings() {
         let m = |d: Value| shows_ai_indicator(&serde_json::json!({ "meetingDetails": d }));
-        assert!(m(serde_json::json!({"meetingType":"Scheduled","isPrivateMeeting":true,"iCalUid":"040000008200E0"})));
+        assert!(m(
+            serde_json::json!({"meetingType":"Scheduled","isPrivateMeeting":true,"iCalUid":"040000008200E0"})
+        ));
         // As the conversation service sends it (no isPrivateMeeting).
-        assert!(m(serde_json::json!({"meetingType":"Scheduled","isChannelMeeting":false,"iCalUid":"040000008200E0"})));
-        assert!(!m(serde_json::json!({"meetingType":"Scheduled","isPrivateMeeting":false,"iCalUid":"x"})));
+        assert!(m(
+            serde_json::json!({"meetingType":"Scheduled","isChannelMeeting":false,"iCalUid":"040000008200E0"})
+        ));
+        assert!(!m(
+            serde_json::json!({"meetingType":"Scheduled","isPrivateMeeting":false,"iCalUid":"x"})
+        ));
         assert!(m(serde_json::json!({"meetingType":"MeetNow"})));
-        assert!(!m(serde_json::json!({"meetingType":"MeetNow","isChannelMeeting":true})));
-        assert!(!m(serde_json::json!({"meetingType":"Scheduled","isChannelMeeting":true,"isPrivateMeeting":false,"iCalUid":"x"})));
+        assert!(!m(
+            serde_json::json!({"meetingType":"MeetNow","isChannelMeeting":true})
+        ));
+        assert!(!m(
+            serde_json::json!({"meetingType":"Scheduled","isChannelMeeting":true,"isPrivateMeeting":false,"iCalUid":"x"})
+        ));
         assert!(!m(serde_json::json!({"meetingType":"Adhoc"})));
-        assert!(!m(serde_json::json!({"meetingType":"Scheduled","isPrivateMeeting":true,"iCalUid":""})));
-        assert!(!m(serde_json::json!({"meetingType":"Scheduled","isPrivateMeeting":true,"iCalUid":"x","meetingCapability":{"meetingEndToEndEncryptionEnabled":true}})));
+        assert!(!m(
+            serde_json::json!({"meetingType":"Scheduled","isPrivateMeeting":true,"iCalUid":""})
+        ));
+        assert!(!m(
+            serde_json::json!({"meetingType":"Scheduled","isPrivateMeeting":true,"iCalUid":"x","meetingCapability":{"meetingEndToEndEncryptionEnabled":true}})
+        ));
         assert!(!shows_ai_indicator(&serde_json::json!({})));
     }
 
@@ -445,14 +502,34 @@ mod tests {
 
     #[test]
     fn attendance_list_as_teams_writes_it() {
-        let t = |s| chrono::Local.with_ymd_and_hms(2026, 11, 8, 10, 21, s).unwrap();
+        let t = |s| {
+            chrono::Local
+                .with_ymd_and_hms(2026, 11, 8, 10, 21, s)
+                .unwrap()
+        };
         let mut log = AttendanceLog::default();
         let g1 = ("8:guest:1".to_string(), "OST Guest 1".to_string());
         let g2 = ("8:guest:2".to_string(), "=Guest 2".to_string());
-        log.update(("8:orgid:me", "OST Test 1"), std::slice::from_ref(&g1), t(1));
-        log.update(("8:orgid:me", "OST Test 1"), std::slice::from_ref(&g1), t(2));
-        log.update(("8:orgid:me", "OST Test 1"), &[g1.clone(), g2.clone()], t(3));
-        log.update(("8:orgid:me", "OST Test 1"), std::slice::from_ref(&g2), t(4));
+        log.update(
+            ("8:orgid:me", "OST Test 1"),
+            std::slice::from_ref(&g1),
+            t(1),
+        );
+        log.update(
+            ("8:orgid:me", "OST Test 1"),
+            std::slice::from_ref(&g1),
+            t(2),
+        );
+        log.update(
+            ("8:orgid:me", "OST Test 1"),
+            &[g1.clone(), g2.clone()],
+            t(3),
+        );
+        log.update(
+            ("8:orgid:me", "OST Test 1"),
+            std::slice::from_ref(&g2),
+            t(4),
+        );
         log.leave(("8:orgid:me", "OST Test 1"), t(5));
         assert_eq!(
             log.tsv(),

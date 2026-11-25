@@ -11,7 +11,13 @@ async fn main() -> anyhow::Result<()> {
         Some(path) => std::fs::read(path)?,
         None => a[1].clone().into_bytes(),
     };
-    let resp = client.graph_put_bytes(&format!("/me/drive/root:/{}:/content", a[0]), bytes, "application/octet-stream").await?;
+    let resp = client
+        .graph_put_bytes(
+            &format!("/me/drive/root:/{}:/content", a[0]),
+            bytes,
+            "application/octet-stream",
+        )
+        .await?;
     let v: serde_json::Value = resp.json().await?;
     println!("{} {} {}", v["id"], v["webUrl"], v["sharepointIds"]);
     Ok(())

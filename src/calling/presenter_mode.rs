@@ -113,8 +113,18 @@ impl Published {
                 let s = config::WP_PRESENTER_SIZE;
                 (1.0 - s, 1.0 - s, s, s)
             }
-            Mode::SideBySide => (0.0, 0.0, config::SBS_MAX_CONTENT_WIDTH, config::SBS_MAX_HEIGHT),
-            Mode::NewsAnchor => (0.0, 0.0, config::NA_CONTENT_MAX_WIDTH, config::NA_CONTENT_MAX_HEIGHT),
+            Mode::SideBySide => (
+                0.0,
+                0.0,
+                config::SBS_MAX_CONTENT_WIDTH,
+                config::SBS_MAX_HEIGHT,
+            ),
+            Mode::NewsAnchor => (
+                0.0,
+                0.0,
+                config::NA_CONTENT_MAX_WIDTH,
+                config::NA_CONTENT_MAX_HEIGHT,
+            ),
             Mode::ContentOnly => (0.0, 0.0, 1.0, 1.0),
         };
         let mode_name = match mode {
@@ -170,8 +180,14 @@ fn scaled(mode: Mode, p: &Published, stage: (f64, f64), content_aspect: f64) -> 
     let gap = sw * config::SBS_GAP;
     let or = |v: f64, d: f64| if v > 0.0 { v } else { d };
     let (r, n) = match mode {
-        Mode::SideBySide => (sw * or(p.width, config::SBS_MAX_CONTENT_WIDTH) - margins - gap, sh * or(p.height, config::SBS_MAX_HEIGHT)),
-        Mode::NewsAnchor => (sw * or(p.width, config::NA_CONTENT_MAX_WIDTH), sh * or(p.height, config::NA_CONTENT_MAX_HEIGHT)),
+        Mode::SideBySide => (
+            sw * or(p.width, config::SBS_MAX_CONTENT_WIDTH) - margins - gap,
+            sh * or(p.height, config::SBS_MAX_HEIGHT),
+        ),
+        Mode::NewsAnchor => (
+            sw * or(p.width, config::NA_CONTENT_MAX_WIDTH),
+            sh * or(p.height, config::NA_CONTENT_MAX_HEIGHT),
+        ),
         _ => (sw, sh),
     };
     let (mut w, mut h) = (r, n);
@@ -188,19 +204,36 @@ fn scaled(mode: Mode, p: &Published, stage: (f64, f64), content_aspect: f64) -> 
             x_margin += (rest - h * config::SBS_MAX_PRESENTER_ASPECT) / 2.0;
         }
     }
-    Scaled { w, h, x_margin, y_margin }
+    Scaled {
+        w,
+        h,
+        x_margin,
+        y_margin,
+    }
 }
 
 /// Lay out a presenter's mode on a `stage` (pixels) for a shared screen of
 /// `content_aspect` (width / height; None before its first frame) and a
 /// camera of `presenter_aspect`.
-pub fn composite(p: &Published, stage: (f64, f64), content_aspect: Option<f64>, presenter_aspect: Option<f64>) -> Composite {
+pub fn composite(
+    p: &Published,
+    stage: (f64, f64),
+    content_aspect: Option<f64>,
+    presenter_aspect: Option<f64>,
+) -> Composite {
     let mode = p.mode();
     let (sw, sh) = stage;
-    let aspect = content_aspect.filter(|a| *a > 0.0).unwrap_or(config::DEFAULT_CONTENT_ASPECT);
+    let aspect = content_aspect
+        .filter(|a| *a > 0.0)
+        .unwrap_or(config::DEFAULT_CONTENT_ASPECT);
     let s = scaled(mode, p, stage, aspect);
     // The content's box (getSharingLayoutAreaData).
-    let mut content = Area { x: 0.0, y: 0.0, width: 1.0, height: 1.0 };
+    let mut content = Area {
+        x: 0.0,
+        y: 0.0,
+        width: 1.0,
+        height: 1.0,
+    };
     match mode {
         Mode::SideBySide => {
             content.width = s.w / sw;
@@ -228,9 +261,15 @@ pub fn composite(p: &Published, stage: (f64, f64), content_aspect: Option<f64>, 
     let presenter = match mode {
         Mode::Weatherperson => {
             // Their box in the fitted content, sized by the camera's aspect.
-            let r = presenter_aspect.filter(|a| *a > 0.0).unwrap_or(config::DEFAULT_PRESENTER_ASPECT);
+            let r = presenter_aspect
+                .filter(|a| *a > 0.0)
+                .unwrap_or(config::DEFAULT_PRESENTER_ASPECT);
             let size = config::WP_PRESENTER_SIZE;
-            let layout = if p.width > 0.0 { (p.x, p.width, p.height) } else { (1.0 - size, size, size) };
+            let layout = if p.width > 0.0 {
+                (p.x, p.width, p.height)
+            } else {
+                (1.0 - size, size, size)
+            };
             let (w, h) = if s.w < s.h {
                 let w = layout.1;
                 (w, w * s.w / (r * s.h))
@@ -238,7 +277,11 @@ pub fn composite(p: &Published, stage: (f64, f64), content_aspect: Option<f64>, 
                 let h = layout.2;
                 (h * s.h * r / s.w, h)
             };
-            let x = if p.width > 0.0 && layout.0 == 0.0 { 0.0 } else { 1.0 - w };
+            let x = if p.width > 0.0 && layout.0 == 0.0 {
+                0.0
+            } else {
+                1.0 - w
+            };
             let y = 1.0 - h;
             Area {
                 x: (s.x_margin + s.w * x) / sw,
@@ -253,7 +296,8 @@ pub fn composite(p: &Published, stage: (f64, f64), content_aspect: Option<f64>, 
             } else {
                 (s.x_margin + s.w) / sw + config::SBS_MARGIN + config::SBS_GAP
             };
-            let width = 1.0 - (s.x_margin * 2.0 + s.w) / sw - config::SBS_MARGIN * 2.0 - config::SBS_GAP;
+            let width =
+                1.0 - (s.x_margin * 2.0 + s.w) / sw - config::SBS_MARGIN * 2.0 - config::SBS_GAP;
             // getSideBySidePresenterHeight.
             let height = if p.height <= 0.0 || p.height <= config::SBS_MAX_HEIGHT {
                 s.h / sh
@@ -265,15 +309,32 @@ pub fn composite(p: &Published, stage: (f64, f64), content_aspect: Option<f64>, 
                     px / config::SBS_MAX_PRESENTER_ASPECT / sh
                 }
             };
-            Area { x, y: (1.0 - height) / 2.0, width, height }
+            Area {
+                x,
+                y: (1.0 - height) / 2.0,
+                width,
+                height,
+            }
         }
         Mode::NewsAnchor => {
             // getNewsAnchorPresenterPosition: Y −2, Z 2.2, _ 1.45, ee 0.3.
-            let t = if p.width > 0.0 { p.width } else { config::NA_CONTENT_MAX_WIDTH };
-            let i = if p.height > 0.0 { p.height } else { config::NA_CONTENT_MAX_HEIGHT };
+            let t = if p.width > 0.0 {
+                p.width
+            } else {
+                config::NA_CONTENT_MAX_WIDTH
+            };
+            let i = if p.height > 0.0 {
+                p.height
+            } else {
+                config::NA_CONTENT_MAX_HEIGHT
+            };
             let (max_w, max_h, cropped) = (t * -2.0 + 2.2, -i + 1.45, t - 0.3);
             Area {
-                x: if p.flipped() { 1.0 - max_w - cropped } else { cropped },
+                x: if p.flipped() {
+                    1.0 - max_w - cropped
+                } else {
+                    cropped
+                },
                 y: 1.0 - max_h,
                 width: max_w,
                 height: max_h,
@@ -300,7 +361,10 @@ mod tests {
     #[test]
     fn standout_puts_you_at_the_contents_bottom_right() {
         let p = Published::initial(Mode::Weatherperson, None);
-        assert_eq!((p.x, p.y, p.width, p.height, p.z_order), (0.5, 0.5, 0.5, 0.5, 2));
+        assert_eq!(
+            (p.x, p.y, p.width, p.height, p.z_order),
+            (0.5, 0.5, 0.5, 0.5, 2)
+        );
         // A 16:9 screen on a 16:9 stage: the whole stage; you're half its
         // height, 4:3.
         let c = composite(&p, (1600.0, 900.0), Some(16.0 / 9.0), Some(4.0 / 3.0));
@@ -320,15 +384,29 @@ mod tests {
         let na = Published::initial(Mode::NewsAnchor, None);
         let c = composite(&na, (1600.0, 900.0), Some(16.0 / 9.0), None);
         // Teams' presenter box (0.3, 0.2, 1.0, 0.8), cropped, cut out.
-        assert_eq!(c.presenter.round(), Area { x: 0.3, y: 0.2, width: 1.0, height: 0.8 });
+        assert_eq!(
+            c.presenter.round(),
+            Area {
+                x: 0.3,
+                y: 0.2,
+                width: 1.0,
+                height: 0.8
+            }
+        );
         assert!(close(c.content.x, 0.025) && close(c.content.width, 0.6) && c.crop && c.alpha);
         assert!(close(c.content.y, (1.0 - c.content.height) / 2.0));
         let sbs = Published::initial(Mode::SideBySide, None);
         let c = composite(&sbs, (1600.0, 900.0), Some(16.0 / 9.0), None);
         assert!(c.crop && !c.alpha);
         assert!(c.content.x >= 0.025 && c.presenter.x > c.content.x + c.content.width);
-        assert!(close(c.presenter.height, c.content.height), "as tall as the content");
-        assert!(c.presenter.width * 1600.0 / (c.presenter.height * 900.0) <= 0.75 + 1e-6, "no wider than 3:4");
+        assert!(
+            close(c.presenter.height, c.content.height),
+            "as tall as the content"
+        );
+        assert!(
+            c.presenter.width * 1600.0 / (c.presenter.height * 900.0) <= 0.75 + 1e-6,
+            "no wider than 3:4"
+        );
         assert!(c.presenter.x + c.presenter.width <= 1.0 + 1e-9);
     }
 
@@ -337,18 +415,37 @@ mod tests {
         let p: Published = serde_json::from_str(r#"{"mode":"NewsAnchor","x":0,"y":0,"width":0.6,"height":0.65,"zOrder":2,"background":{"id":"aplBackground_003","url":"/evergreen-assets/backgroundimages/aplBackground_003.jpg?v=0.1","name":""}}"#).unwrap();
         assert_eq!(p.mode(), Mode::NewsAnchor);
         assert_eq!(p.background.unwrap().id, "aplBackground_003");
-        let s = serde_json::to_value(Published::initial(Mode::SideBySide, Some(Background { id: "b".into(), ..Default::default() }))).unwrap();
+        let s = serde_json::to_value(Published::initial(
+            Mode::SideBySide,
+            Some(Background {
+                id: "b".into(),
+                ..Default::default()
+            }),
+        ))
+        .unwrap();
         assert_eq!(s["mode"], "SideBySide");
         assert_eq!(s["zOrder"], 2);
         assert_eq!(s["background"]["id"], "b");
-        let w = serde_json::to_value(Published::initial(Mode::Weatherperson, Some(Background::default()))).unwrap();
-        assert!(w.get("background").is_none(), "Standout takes no background");
+        let w = serde_json::to_value(Published::initial(
+            Mode::Weatherperson,
+            Some(Background::default()),
+        ))
+        .unwrap();
+        assert!(
+            w.get("background").is_none(),
+            "Standout takes no background"
+        );
     }
 
     impl Area {
         fn round(self) -> Self {
             let r = |v: f64| (v * 1e6).round() / 1e6;
-            Self { x: r(self.x), y: r(self.y), width: r(self.width), height: r(self.height) }
+            Self {
+                x: r(self.x),
+                y: r(self.y),
+                width: r(self.width),
+                height: r(self.height),
+            }
         }
     }
 }

@@ -65,9 +65,17 @@ fn leaders_of(details: &Value) -> Option<Vec<Leader>> {
     let l = details.get("collabLeaders")?.as_array()?;
     Some(
         l.iter()
-            .filter(|x| x.get("type").and_then(Value::as_str).is_some_and(|t| t.eq_ignore_ascii_case("notes")))
+            .filter(|x| {
+                x.get("type")
+                    .and_then(Value::as_str)
+                    .is_some_and(|t| t.eq_ignore_ascii_case("notes"))
+            })
             .map(|x| Leader {
-                id: x.pointer("/participant/id").and_then(Value::as_str).unwrap_or_default().to_string(),
+                id: x
+                    .pointer("/participant/id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
                 status: x.get("status").and_then(Value::as_u64).unwrap_or(0),
             })
             .collect(),
@@ -75,9 +83,13 @@ fn leaders_of(details: &Value) -> Option<Vec<Leader>> {
 }
 
 fn states(event: &Value) -> Option<&Value> {
-    ["/body/meetingStates", "/meetingStates", "/conversationResponse/meetingStates"]
-        .iter()
-        .find_map(|p| event.pointer(p))
+    [
+        "/body/meetingStates",
+        "/meetingStates",
+        "/conversationResponse/meetingStates",
+    ]
+    .iter()
+    .find_map(|p| event.pointer(p))
 }
 
 fn collab_details(event: &Value) -> Option<Value> {
@@ -110,7 +122,9 @@ pub fn debug_summary(event: &Value) -> String {
 pub fn collab_notes_location(event: &Value) -> Option<String> {
     let d = collab_details(event)?;
     let r = d.get("resources")?.as_array()?.iter().find(|r| {
-        r.get("type").and_then(Value::as_str).is_some_and(|t| t.eq_ignore_ascii_case("notes"))
+        r.get("type")
+            .and_then(Value::as_str)
+            .is_some_and(|t| t.eq_ignore_ascii_case("notes"))
     })?;
     let loc = r.get("location").and_then(Value::as_str)?;
     loc.starts_with("https://").then(|| loc.to_string())
@@ -148,13 +162,21 @@ impl Notes {
             self.resource_uri = loc;
             changed = true;
         }
-        let Some(st) = states(event) else { return changed };
+        let Some(st) = states(event) else {
+            return changed;
+        };
         if let Some(r) = st.get(RESOURCE) {
             let seq = r.get("sequenceNumber").and_then(Value::as_u64).unwrap_or(0);
             let uri = value_of(r)
-                .and_then(|v| v.get("resourceUri").and_then(Value::as_str).map(str::to_string))
+                .and_then(|v| {
+                    v.get("resourceUri")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
                 .unwrap_or_default();
-            if (uri.starts_with("https://") || uri.is_empty()) && (uri != self.resource_uri || seq != self.resource_sequence) {
+            if (uri.starts_with("https://") || uri.is_empty())
+                && (uri != self.resource_uri || seq != self.resource_sequence)
+            {
                 self.resource_uri = uri;
                 self.resource_sequence = seq;
                 changed = true;
@@ -178,13 +200,21 @@ impl Notes {
     /// states means someone else is at it.
     pub fn meet_now_step(&self, me: &str) -> MeetNowStep {
         let Some(l) = &self.leaders else {
-            return if self.leader { MeetNowStep::Wait } else { MeetNowStep::Acknowledge };
+            return if self.leader {
+                MeetNowStep::Wait
+            } else {
+                MeetNowStep::Acknowledge
+            };
         };
         if l.is_empty() {
             return MeetNowStep::Acknowledge;
         }
         if let Some(mine) = l.iter().find(|x| x.id.eq_ignore_ascii_case(me)) {
-            return if mine.status == 0 { MeetNowStep::Acknowledge } else { MeetNowStep::Make };
+            return if mine.status == 0 {
+                MeetNowStep::Acknowledge
+            } else {
+                MeetNowStep::Make
+            };
         }
         MeetNowStep::Wait
     }
@@ -217,7 +247,10 @@ mod tests {
         let mut n = Notes::default();
         let ev = json!({"body": {"meetingStates": {"collabResources.notes": {"value": "{\"type\":\"notes\",\"resourceUri\":\"https://t-my.sharepoint.com/:fl:/p/u/x?nav=abc\"}", "sequenceNumber": 1}}}});
         assert!(n.apply(&ev));
-        assert_eq!(n.resource_uri, "https://t-my.sharepoint.com/:fl:/p/u/x?nav=abc");
+        assert_eq!(
+            n.resource_uri,
+            "https://t-my.sharepoint.com/:fl:/p/u/x?nav=abc"
+        );
         assert!(!n.apply(&ev));
         // Other links are not taken.
         let bad = json!({"meetingStates": {"collabResources.notes": {"value": {"type": "notes", "resourceUri": "javascript:x"}, "sequenceNumber": 2}}});
@@ -237,16 +270,28 @@ mod tests {
         // As a JSON string in a join response, and without notes.
         let s = json!({"conversationResponse": {"meetingDetails": {"collabDetails": "{\"resources\":[{\"type\":\"Notes\",\"location\":\"https://y/n\"}]}"}}});
         assert_eq!(collab_notes_location(&s).as_deref(), Some("https://y/n"));
-        assert!(collab_notes_location(&json!({"meetingDetails": {"collabDetails": {"resources": []}}})).is_none());
+        assert!(
+            collab_notes_location(&json!({"meetingDetails": {"collabDetails": {"resources": []}}}))
+                .is_none()
+        );
         assert_eq!(refresh_collab_details(), json!({"refreshSettings": 1}));
     }
 
     #[test]
     fn publishes_as_teams() {
         let n = Notes::default();
-        assert_eq!(n.claim(), json!({"collabLeaders.notes": {"value": {"type": "notes"}, "sequenceNumber": 1}}));
-        assert_eq!(n.share("https://x", Some("c1")), json!({"collabResources.notes": {"value": {"type": "notes", "resourceUri": "https://x", "secret": "c1"}, "sequenceNumber": 1}}));
-        assert_eq!(n.share("https://x", None), json!({"collabResources.notes": {"value": {"type": "notes", "resourceUri": "https://x"}, "sequenceNumber": 1}}));
+        assert_eq!(
+            n.claim(),
+            json!({"collabLeaders.notes": {"value": {"type": "notes"}, "sequenceNumber": 1}})
+        );
+        assert_eq!(
+            n.share("https://x", Some("c1")),
+            json!({"collabResources.notes": {"value": {"type": "notes", "resourceUri": "https://x", "secret": "c1"}, "sequenceNumber": 1}})
+        );
+        assert_eq!(
+            n.share("https://x", None),
+            json!({"collabResources.notes": {"value": {"type": "notes", "resourceUri": "https://x"}, "sequenceNumber": 1}})
+        );
         let mut m = Notes::default();
         m.apply(&json!({"meetingStates": {"collabLeaders.notes": {"value": {"type": "notes"}, "sequenceNumber": 1}}}));
         assert!(m.leader);
@@ -262,14 +307,22 @@ mod tests {
         let with = |l: Value| json!({"body": {"meetingDetails": {"collabDetails": {"id": "c", "resources": [], "collabLeaders": l}}}});
         assert!(n.apply(&with(json!([]))));
         assert_eq!(n.meet_now_step(me), MeetNowStep::Acknowledge);
-        n.apply(&with(json!([{"type": "notes", "participant": {"id": "8:orgid:A"}, "status": 0}])));
+        n.apply(&with(
+            json!([{"type": "notes", "participant": {"id": "8:orgid:A"}, "status": 0}]),
+        ));
         assert_eq!(n.meet_now_step(me), MeetNowStep::Acknowledge);
-        n.apply(&with(json!([{"type": "notes", "participant": {"id": "8:orgid:a"}, "status": 1}])));
+        n.apply(&with(
+            json!([{"type": "notes", "participant": {"id": "8:orgid:a"}, "status": 1}]),
+        ));
         assert_eq!(n.meet_now_step(me), MeetNowStep::Make);
-        n.apply(&with(json!([{"type": "notes", "participant": {"id": "8:orgid:b"}, "status": 1}])));
+        n.apply(&with(
+            json!([{"type": "notes", "participant": {"id": "8:orgid:b"}, "status": 1}]),
+        ));
         assert_eq!(n.meet_now_step(me), MeetNowStep::Wait);
         // Other kinds of leaders don't count.
-        n.apply(&with(json!([{"type": "whiteboard", "participant": {"id": "8:orgid:b"}, "status": 1}])));
+        n.apply(&with(
+            json!([{"type": "whiteboard", "participant": {"id": "8:orgid:b"}, "status": 1}]),
+        ));
         assert_eq!(n.meet_now_step(me), MeetNowStep::Acknowledge);
     }
 }

@@ -33,9 +33,17 @@ pub struct IncomingCall {
 
 /// A ringing call's group chat, when it is a group call.
 fn group_thread_of(v: &serde_json::Value) -> Option<String> {
-    let multi = v.pointer("/conversationInvitation/isMultiParty").and_then(|b| b.as_bool()) == Some(true)
-        || v.pointer("/callNotification/conversationType").and_then(|t| t.as_str()).is_some_and(|t| t.eq_ignore_ascii_case("groupCall"));
-    let thread = v.pointer("/groupChat/threadId").and_then(|t| t.as_str()).filter(|t| t.starts_with("19:") && t.ends_with("@thread.v2"))?;
+    let multi = v
+        .pointer("/conversationInvitation/isMultiParty")
+        .and_then(|b| b.as_bool())
+        == Some(true)
+        || v.pointer("/callNotification/conversationType")
+            .and_then(|t| t.as_str())
+            .is_some_and(|t| t.eq_ignore_ascii_case("groupCall"));
+    let thread = v
+        .pointer("/groupChat/threadId")
+        .and_then(|t| t.as_str())
+        .filter(|t| t.starts_with("19:") && t.ends_with("@thread.v2"))?;
     multi.then(|| thread.to_string())
 }
 
@@ -114,12 +122,19 @@ impl IncomingCall {
     /// The conversation's roster when the call was attached, as a roster
     /// update (`conversation/rosterUpdate/`) carries it.
     pub fn initial_roster_event(&self) -> Option<serde_json::Value> {
-        let participants = self.attached.as_ref().and_then(|n| n.initial_roster.clone())?;
-        Some(serde_json::json!({ "callAgentPath": "conversation/rosterUpdate/", "body": { "type": "Delta", "participants": participants } }))
+        let participants = self
+            .attached
+            .as_ref()
+            .and_then(|n| n.initial_roster.clone())?;
+        Some(
+            serde_json::json!({ "callAgentPath": "conversation/rosterUpdate/", "body": { "type": "Delta", "participants": participants } }),
+        )
     }
 
     pub fn meeting_details(&self) -> Option<&serde_json::Value> {
-        self.attached.as_ref().and_then(|n| n.meeting_details.as_ref())
+        self.attached
+            .as_ref()
+            .and_then(|n| n.meeting_details.as_ref())
     }
 
     /// The caller's tenant (`callNotification.from.tenantId`, else the
@@ -150,7 +165,9 @@ impl IncomingCall {
     pub fn is_conference(&self) -> bool {
         self.group_thread.is_some()
             || self.forked.as_ref().is_some_and(|v| {
-                v.pointer("/conversationInvitation/isMultiParty").and_then(|b| b.as_bool()) == Some(true)
+                v.pointer("/conversationInvitation/isMultiParty")
+                    .and_then(|b| b.as_bool())
+                    == Some(true)
                     || v.pointer("/callNotification/conversationType")
                         .and_then(|t| t.as_str())
                         .is_some_and(|t| !t.eq_ignore_ascii_case("p2p") && !t.is_empty())
@@ -326,7 +343,9 @@ pub(crate) async fn answer_renegotiation(
     let meeting = current.is_meeting();
     let mut moved = None;
     let sdp = if new_offer {
-        let map = meeting.then(|| webrtc_audio::MidMap::for_meeting_offer(&offer)).flatten();
+        let map = meeting
+            .then(|| webrtc_audio::MidMap::for_meeting_offer(&offer))
+            .flatten();
         let mut local = webrtc_audio::LocalAudio::prepare().await?;
         match map {
             Some(map) => {
@@ -335,12 +354,19 @@ pub(crate) async fn answer_renegotiation(
                     .context("New offer without DTLS-SRTP")?;
                 local.meeting = true;
                 local.receive_video = true;
-                local.twcc_id = super::twcc::offered_extension_id(&offer).unwrap_or(super::twcc::EXTENSION_ID);
+                local.twcc_id =
+                    super::twcc::offered_extension_id(&offer).unwrap_or(super::twcc::EXTENSION_ID);
                 let ours = local.answer_sdp_meeting(&canonical, &parsed);
                 // What the processor sends on the slots and the sharing
                 // line: the types we answered there.
-                let slot_pt = parsed.slots.first().and_then(|s| webrtc_audio::answered_pt(&ours, &s.mid));
-                let share_pt = parsed.share_slot.as_ref().and_then(|s| webrtc_audio::answered_pt(&ours, &s.mid));
+                let slot_pt = parsed
+                    .slots
+                    .first()
+                    .and_then(|s| webrtc_audio::answered_pt(&ours, &s.mid));
+                let share_pt = parsed
+                    .share_slot
+                    .as_ref()
+                    .and_then(|s| webrtc_audio::answered_pt(&ours, &s.mid));
                 if let (Some(a), Some(b)) = (slot_pt.or(share_pt), share_pt.or(slot_pt)) {
                     local.answered_pts = Some((a, b));
                 }
@@ -361,8 +387,8 @@ pub(crate) async fn answer_renegotiation(
                 wire
             }
             None => {
-                let parsed =
-                    webrtc_audio::WebRtcOffer::parse(&offer).context("New offer without DTLS-SRTP")?;
+                let parsed = webrtc_audio::WebRtcOffer::parse(&offer)
+                    .context("New offer without DTLS-SRTP")?;
                 let sdp = local.answer_sdp_with(&parsed, false);
                 moved = Some((local, parsed, None));
                 sdp
@@ -589,7 +615,9 @@ pub fn transfer_body(
     cb: impl Fn(&str) -> String,
     replaces: Option<&str>,
 ) -> Result<serde_json::Value> {
-    let oid = target.strip_prefix("8:orgid:").context("Not a person to transfer to")?;
+    let oid = target
+        .strip_prefix("8:orgid:")
+        .context("Not a person to transfer to")?;
     if uuid::Uuid::parse_str(oid).is_err() {
         anyhow::bail!("Not a person to transfer to");
     }
@@ -613,7 +641,11 @@ pub fn transfer_body(
 /// "teamPark": a transfer to ourselves naming the park type): the service
 /// moves the other side to the park server and answers on
 /// `call/transferCompletion` with `unparkContent.pickupCode`.
-pub fn park_body(me: &str, transferor: serde_json::Value, cb: impl Fn(&str) -> String) -> serde_json::Value {
+pub fn park_body(
+    me: &str,
+    transferor: serde_json::Value,
+    cb: impl Fn(&str) -> String,
+) -> serde_json::Value {
     serde_json::json!({
         "callTransfer": {
             "target": { "id": me },
@@ -633,7 +665,9 @@ pub fn park_pickup_code(json: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(json).ok()?;
     let body = v.get("body").unwrap_or(&v);
     let code = body.pointer("/unparkContent/pickupCode")?;
-    code.as_str().map(str::to_string).or_else(|| code.as_i64().map(|c| c.to_string()))
+    code.as_str()
+        .map(str::to_string)
+        .or_else(|| code.as_i64().map(|c| c.to_string()))
 }
 
 /// Send a park request on a call's transfer link.
@@ -646,7 +680,15 @@ pub(crate) async fn request_park(
     cb: impl Fn(&str) -> String,
 ) -> Result<()> {
     let body = park_body(me, transferor, cb);
-    cc_request(http, skype_token, reqwest::Method::POST, transfer_link, &body, "Park").await?;
+    cc_request(
+        http,
+        skype_token,
+        reqwest::Method::POST,
+        transfer_link,
+        &body,
+        "Park",
+    )
+    .await?;
     Ok(())
 }
 
@@ -664,7 +706,15 @@ pub(crate) async fn request_transfer(
     replaces: Option<&str>,
 ) -> Result<()> {
     let body = transfer_body(target, transferor, cb, replaces)?;
-    cc_request(http, skype_token, reqwest::Method::POST, transfer_link, &body, "Transfer").await?;
+    cc_request(
+        http,
+        skype_token,
+        reqwest::Method::POST,
+        transfer_link,
+        &body,
+        "Transfer",
+    )
+    .await?;
     Ok(())
 }
 
@@ -675,10 +725,14 @@ pub(crate) async fn request_transfer(
 pub fn end_sender(json: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(json).ok()?;
     let body = v.get("body").unwrap_or(&v);
-    ["/callEnd/sender/id", "/callControllerTransactionEnd/sender/id", "/sender/id"]
-        .iter()
-        .find_map(|p| body.pointer(p).and_then(|s| s.as_str()))
-        .map(str::to_string)
+    [
+        "/callEnd/sender/id",
+        "/callControllerTransactionEnd/sender/id",
+        "/sender/id",
+    ]
+    .iter()
+    .find_map(|p| body.pointer(p).and_then(|s| s.as_str()))
+    .map(str::to_string)
 }
 
 /// A call that replaces the one we're in (`call/replacement/`: someone we
@@ -719,18 +773,39 @@ pub struct TransferRequest {
 /// Read a transfer request from a call event.
 pub fn transfer_request(json: &str) -> Option<TransferRequest> {
     let v: serde_json::Value = serde_json::from_str(json).ok()?;
-    let path = v.get("callAgentPath").and_then(|p| p.as_str()).unwrap_or_default();
+    let path = v
+        .get("callAgentPath")
+        .and_then(|p| p.as_str())
+        .unwrap_or_default();
     if !path.is_empty() && !path.starts_with("call/transfer/") {
         return None;
     }
-    let t = v.pointer("/body/callTransfer").or_else(|| v.get("callTransfer"))?;
+    let t = v
+        .pointer("/body/callTransfer")
+        .or_else(|| v.get("callTransfer"))?;
     let target_mri = t.pointer("/target/id")?.as_str()?.to_string();
-    let link = |k: &str| t.pointer(&format!("/links/{k}")).and_then(|l| l.as_str()).filter(|l| is_service_link(l)).map(str::to_string);
+    let link = |k: &str| {
+        t.pointer(&format!("/links/{k}"))
+            .and_then(|l| l.as_str())
+            .filter(|l| is_service_link(l))
+            .map(str::to_string)
+    };
     Some(TransferRequest {
-        target_name: t.pointer("/target/displayName").and_then(|n| n.as_str()).unwrap_or_default().to_string(),
-        transferor: t.get("transferor").cloned().unwrap_or(serde_json::Value::Null),
+        target_name: t
+            .pointer("/target/displayName")
+            .and_then(|n| n.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        transferor: t
+            .get("transferor")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
         transfer_context: t.get("transferContext").filter(|c| !c.is_null()).cloned(),
-        park_type: t.get("parkType").and_then(|p| p.as_str()).filter(|p| !p.is_empty() && *p != "none").map(str::to_string),
+        park_type: t
+            .get("parkType")
+            .and_then(|p| p.as_str())
+            .filter(|p| !p.is_empty() && *p != "none")
+            .map(str::to_string),
         acceptance_link: link("transferAcceptance"),
         completion_link: link("transferCompletion"),
         target_mri,
@@ -741,12 +816,24 @@ pub fn transfer_request(json: &str) -> Option<TransferRequest> {
 /// or how it ended (`{transferCompletion: {code}}`, 0 when the new call
 /// connected), as Teams' `signalTransferAcceptedAsync` /
 /// `signalTransferCompletedAsync`.
-pub async fn answer_transfer_request(auth: &CallAuth, link: &str, completion_code: Option<u64>) -> Result<()> {
+pub async fn answer_transfer_request(
+    auth: &CallAuth,
+    link: &str,
+    completion_code: Option<u64>,
+) -> Result<()> {
     let body = match completion_code {
         None => serde_json::json!({ "transferAcceptance": {} }),
         Some(code) => serde_json::json!({ "transferCompletion": { "code": code } }),
     };
-    cc_request(&auth.http, &auth.skype_token, reqwest::Method::POST, link, &body, "Transfer answer").await?;
+    cc_request(
+        &auth.http,
+        &auth.skype_token,
+        reqwest::Method::POST,
+        link,
+        &body,
+        "Transfer answer",
+    )
+    .await?;
     Ok(())
 }
 
@@ -899,16 +986,24 @@ async fn attach(
     }
     // The conversation join's answer describes the meeting (its type and
     // schedule), as a join's does.
-    notification.meeting_details = find_key(&reply, "meetingDetails").filter(|d| d.is_object()).cloned();
+    notification.meeting_details = find_key(&reply, "meetingDetails")
+        .filter(|d| d.is_object())
+        .cloned();
     // And who is in it already (a Teams Rooms device invited into a
     // meeting learns this way what is being presented there).
-    notification.initial_roster = find_key(&reply, "roster").and_then(|r| r.get("participants")).filter(|p| p.is_object()).cloned();
+    notification.initial_roster = find_key(&reply, "roster")
+        .and_then(|r| r.get("participants"))
+        .filter(|p| p.is_object())
+        .cloned();
     // The join's answer itself: the conversation's links (captions need
     // updateEndpointMetadata and addParticipant) and the recorder's state.
     notification.conversation = reply
         .get("additionalActionResponses")
         .and_then(|a| a.as_array())
-        .and_then(|a| a.iter().find_map(|r| r.get("output").filter(|o| o.get("links").is_some())))
+        .and_then(|a| {
+            a.iter()
+                .find_map(|r| r.get("output").filter(|o| o.get("links").is_some()))
+        })
         .cloned();
     Ok(notification)
 }
@@ -916,7 +1011,9 @@ async fn attach(
 /// The first value under `key` anywhere in `v` (depth first).
 fn find_key<'a>(v: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
     match v {
-        serde_json::Value::Object(o) => o.get(key).or_else(|| o.values().find_map(|x| find_key(x, key))),
+        serde_json::Value::Object(o) => o
+            .get(key)
+            .or_else(|| o.values().find_map(|x| find_key(x, key))),
         serde_json::Value::Array(a) => a.iter().find_map(|x| find_key(x, key)),
         _ => None,
     }
@@ -1016,7 +1113,11 @@ impl ActiveCall {
 
     /// Who we are in the meeting, as its requests name us.
     fn me_json(&self) -> Result<serde_json::Value> {
-        Ok(self.me.as_ref().context("Not in a meeting's conversation")?.json())
+        Ok(self
+            .me
+            .as_ref()
+            .context("Not in a meeting's conversation")?
+            .json())
     }
 
     /// The meeting's chat thread (the invitation's `meetingDetails` or
@@ -1046,8 +1147,17 @@ impl ActiveCall {
     /// The meeting's title and calendar id for a recorder command.
     pub fn recorder_meeting(&self) -> super::recorder::Meeting {
         let d = self.notification.meeting_details.as_ref();
-        let s = |k: &str| d.and_then(|d| d.get(k)).and_then(|v| v.as_str()).unwrap_or_default().to_string();
-        super::recorder::Meeting { title: s("title"), ical_uid: s("iCalUid"), ..Default::default() }
+        let s = |k: &str| {
+            d.and_then(|d| d.get(k))
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
+        super::recorder::Meeting {
+            title: s("title"),
+            ical_uid: s("iCalUid"),
+            ..Default::default()
+        }
     }
 
     /// Ask the meeting's call recorder for something (live captions), as
@@ -1060,41 +1170,79 @@ impl ActiveCall {
     ) -> Result<()> {
         let call_id = self.call_id().unwrap_or_default();
         self.recorder
-            .command(&auth.http, &auth.skype_token, &self.me_json()?, &call_id, command, meeting)
+            .command(
+                &auth.http,
+                &auth.skype_token,
+                &self.me_json()?,
+                &call_id,
+                command,
+                meeting,
+            )
             .await
     }
 
     /// Bring the meeting's recorder into the call (Teams does when it
     /// starts captions and the recorder isn't there yet).
-    pub async fn add_recorder(&self, auth: &CallAuth, meeting: &super::recorder::Meeting) -> Result<()> {
-        let link = self.conversation_link("addParticipant").context("No addParticipant link")?;
-        let me = self.me.as_ref().context("Not in a meeting's conversation")?;
+    pub async fn add_recorder(
+        &self,
+        auth: &CallAuth,
+        meeting: &super::recorder::Meeting,
+    ) -> Result<()> {
+        let link = self
+            .conversation_link("addParticipant")
+            .context("No addParticipant link")?;
+        let me = self
+            .me
+            .as_ref()
+            .context("Not in a meeting's conversation")?;
         let links = serde_json::json!({
             "addParticipantSuccess": me.callback("conversation/addParticipantSuccess/"),
             "addParticipantFailure": me.callback("conversation/addParticipantFailure/"),
         });
         let call_id = self.call_id().unwrap_or_default();
         let thread = self.meeting_thread().unwrap_or_default();
-        super::recorder::invite(&auth.http, &link, &me.json(), meeting, &call_id, &thread, links).await
+        super::recorder::invite(
+            &auth.http,
+            &link,
+            &me.json(),
+            meeting,
+            &call_id,
+            &thread,
+            links,
+        )
+        .await
     }
 
     /// Tell the meeting whether we want live captions (`PUT
     /// updateEndpointMetadata` with our `transcriptionPrefs`), as a joined
     /// meeting does.
     pub async fn publish_captions_pref(&self, auth: &CallAuth, on: bool) -> Result<()> {
-        let link = self.conversation_link("updateEndpointMetadata").context("No endpoint metadata link")?;
+        let link = self
+            .conversation_link("updateEndpointMetadata")
+            .context("No endpoint metadata link")?;
         let body = serde_json::json!({
             "participants": { "from": self.me_json()? },
             "endpointMetadata": { "transcriptionPrefs": { "closedCaptions": on } },
         });
-        cc_request(&auth.http, &auth.skype_token, reqwest::Method::PUT, &link, &body, "Endpoint metadata").await?;
+        cc_request(
+            &auth.http,
+            &auth.skype_token,
+            reqwest::Method::PUT,
+            &link,
+            &body,
+            "Endpoint metadata",
+        )
+        .await?;
         Ok(())
     }
     /// Invited into a meeting: show these cameras (roster `main-video`
     /// sourceIds, most wanted first); sourceId -> frame key for each that
     /// got a receive slot. Empty for a 1:1 call.
     pub fn show_videos(&self, sources: &[(i64, u32)]) -> std::collections::HashMap<i64, String> {
-        self.webrtc.as_ref().map(|w| w.show_videos(sources)).unwrap_or_default()
+        self.webrtc
+            .as_ref()
+            .map(|w| w.show_videos(sources))
+            .unwrap_or_default()
     }
 
     /// Invited into a meeting: receive this presenter's screen, or stop.
@@ -1120,25 +1268,40 @@ impl ActiveCall {
     /// the roster), to get its state updates, as a meeting join does:
     /// `POST sessionInformation.contentSharingController`. A Teams Rooms
     /// device invited into a meeting shows a cast PowerPoint this way.
-    pub async fn join_content(&mut self, mut session: super::content_sharing::Session) -> Result<super::content_sharing::Session> {
+    pub async fn join_content(
+        &mut self,
+        mut session: super::content_sharing::Session,
+    ) -> Result<super::content_sharing::Session> {
         use super::content_sharing as cs;
         if let Some(s) = self.joined_content.get(&session.correlation_id) {
             return Ok(s.clone());
         }
         let me = self.me.clone().context("Not in a conversation")?;
-        let link = session.join_link.clone().context("The session has no join link")?;
+        let link = session
+            .join_link
+            .clone()
+            .context("The session has no join link")?;
         if !is_service_link(&link) {
             anyhow::bail!("content sharing: not a Teams service link");
         }
         let body = cs::join_body(&me.json(), &|p| me.callback(p));
         let config = crate::config::Config::load()?;
-        let ic3 = config.get_ic3_token().context("No calling (IC3) token")?.token;
+        let ic3 = config
+            .get_ic3_token()
+            .context("No calling (IC3) token")?
+            .token;
         let resp = reqwest::Client::new()
             .post(&link)
             .bearer_auth(ic3)
             .header(cs::CHAIN_ID_HEADER, &session.correlation_id)
-            .header("x-microsoft-skype-chain-id", self.call_id().unwrap_or_default())
-            .header("x-microsoft-skype-message-id", uuid::Uuid::new_v4().to_string())
+            .header(
+                "x-microsoft-skype-chain-id",
+                self.call_id().unwrap_or_default(),
+            )
+            .header(
+                "x-microsoft-skype-message-id",
+                uuid::Uuid::new_v4().to_string(),
+            )
             .header("x-microsoft-skype-client", signaling::SKYPE_CLIENT_HEADER)
             .header("ms-teams-partition", signaling::TEAMS_PARTITION)
             .header("ms-teams-region", signaling::TEAMS_REGION)
@@ -1155,8 +1318,13 @@ impl ActiveCall {
         }
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
             let c = v.get("contentSharing").unwrap_or(&v);
-            session.links = cs::SessionLinks::from(c.get("links").unwrap_or(&serde_json::Value::Null));
-            if let Some(st) = c.get("sessionState").and_then(|s| s.as_str()).filter(|s| !s.is_empty()) {
+            session.links =
+                cs::SessionLinks::from(c.get("links").unwrap_or(&serde_json::Value::Null));
+            if let Some(st) = c
+                .get("sessionState")
+                .and_then(|s| s.as_str())
+                .filter(|s| !s.is_empty())
+            {
                 session.state = st.to_string();
             }
             if let Some(n) = c.get("sequenceNumber").and_then(|n| n.as_u64()) {
@@ -1164,7 +1332,8 @@ impl ActiveCall {
             }
         }
         tracing::info!(correlation = %session.correlation_id, kind = session.kind(), "content sharing: joined");
-        self.joined_content.insert(session.correlation_id.clone(), session.clone());
+        self.joined_content
+            .insert(session.correlation_id.clone(), session.clone());
         Ok(session)
     }
 
@@ -1209,12 +1378,21 @@ impl ActiveCall {
 
     /// The other party's MRI (who called us).
     pub fn peer_id(&self) -> Option<String> {
-        self.notification.participants.as_ref()?.from.as_ref()?.id.clone()
+        self.notification
+            .participants
+            .as_ref()?
+            .from
+            .as_ref()?
+            .id
+            .clone()
     }
 
     /// The service's call id.
     pub fn call_id(&self) -> Option<String> {
-        self.notification.debug_content.as_ref().and_then(|d| d.call_id.clone())
+        self.notification
+            .debug_content
+            .as_ref()
+            .and_then(|d| d.call_id.clone())
     }
 
     /// When the call was answered.
@@ -1276,18 +1454,29 @@ impl ActiveCall {
     /// `call/transferCompletion` ([`park_pickup_code`]).
     pub async fn park(&self, auth: &CallAuth) -> Result<()> {
         let me = self.me.as_ref().context("Park needs a Teams call")?;
-        let link = self.transfer_link.as_deref().context("This call can't be parked")?;
+        let link = self
+            .transfer_link
+            .as_deref()
+            .context("This call can't be parked")?;
         let details = serde_json::json!({
             "id": me.id, "endpointId": me.endpoint_id,
             "participantId": me.participant_id, "languageId": "en-US",
         });
-        request_park(&auth.http, &auth.skype_token, link, &me.id, details, |p| me.callback(p)).await
+        request_park(&auth.http, &auth.skype_token, link, &me.id, details, |p| {
+            me.callback(p)
+        })
+        .await
     }
 
     /// Transfer the call to `target` (an `8:orgid:` MRI); `replaces`: our
     /// consult call with them (its `links.replace`), for consult then
     /// transfer.
-    pub async fn transfer(&self, auth: &CallAuth, target: &str, replaces: Option<&str>) -> Result<()> {
+    pub async fn transfer(
+        &self,
+        auth: &CallAuth,
+        target: &str,
+        replaces: Option<&str>,
+    ) -> Result<()> {
         let me = self.me.as_ref().context("Transfer needs a Teams call")?;
         let link = self
             .transfer_link
@@ -1297,7 +1486,16 @@ impl ActiveCall {
             "id": me.id, "endpointId": me.endpoint_id,
             "participantId": me.participant_id, "languageId": "en-US",
         });
-        request_transfer(&auth.http, &auth.skype_token, link, target, details, |p| me.callback(p), replaces).await
+        request_transfer(
+            &auth.http,
+            &auth.skype_token,
+            link,
+            target,
+            details,
+            |p| me.callback(p),
+            replaces,
+        )
+        .await
     }
 
     /// Put the call on hold, or resume it (our media only).
@@ -1317,7 +1515,10 @@ impl ActiveCall {
 
     /// Teams' verification numbers when the call is end-to-end encrypted.
     pub fn e2ee_numbers(&self) -> Vec<String> {
-        self.webrtc.as_ref().map(|w| w.e2ee_numbers()).unwrap_or_default()
+        self.webrtc
+            .as_ref()
+            .map(|w| w.e2ee_numbers())
+            .unwrap_or_default()
     }
 
     /// The other side has the call on hold.
@@ -1337,7 +1538,15 @@ impl ActiveCall {
             .me
             .as_ref()
             .map(|m| (m.json(), m.callback("call/mediaAcknowledgement/")));
-        answer_renegotiation(&auth.http, &auth.skype_token, &mut self.webrtc, me, None, event).await
+        answer_renegotiation(
+            &auth.http,
+            &auth.skype_token,
+            &mut self.webrtc,
+            me,
+            None,
+            event,
+        )
+        .await
     }
 
     /// The call takes dial-pad tones.
@@ -1378,13 +1587,27 @@ impl ActiveCall {
         let request_id = seq.fetch_add(1, Relaxed) + 1;
         let was_sharing = self.described_sharing.swap(sharing, Relaxed);
         let tag = sharing.then(|| {
-            let n = if was_sharing { self.shares.load(Relaxed) } else { self.shares.fetch_add(1, Relaxed) + 1 };
+            let n = if was_sharing {
+                self.shares.load(Relaxed)
+            } else {
+                self.shares.fetch_add(1, Relaxed) + 1
+            };
             format!("{};ss_{n}", self.call_id().unwrap_or_default())
         });
         use super::meeting_media::{CAMERA_MID, SHARE_MID};
         let mids = (w.wire_mid(CAMERA_MID), w.wire_mid(SHARE_MID));
-        tracing::info!(camera, sharing, request_id, "describing our media to the meeting");
-        let body = super::outgoing::media_descriptions_body(camera, tag.as_deref(), request_id, (&mids.0, &mids.1));
+        tracing::info!(
+            camera,
+            sharing,
+            request_id,
+            "describing our media to the meeting"
+        );
+        let body = super::outgoing::media_descriptions_body(
+            camera,
+            tag.as_deref(),
+            request_id,
+            (&mids.0, &mids.1),
+        );
         Some((link.clone(), body))
     }
 
@@ -1508,7 +1731,9 @@ impl ActiveCall {
     pub fn network_strength(&self) -> super::network_quality::Strength {
         self.webrtc
             .as_ref()
-            .map_or(super::network_quality::Strength::Good, |m| m.network_strength())
+            .map_or(super::network_quality::Strength::Good, |m| {
+                m.network_strength()
+            })
     }
 
     /// Turn the camera on or off.
@@ -1632,7 +1857,17 @@ pub async fn answer(
         // added to a meeting): the meeting's media processor offers its
         // meeting lines, which are answered as a meeting join's are.
         if let Some(map) = webrtc_audio::MidMap::for_meeting_offer(raw) {
-            return answer_meeting_offer(http, skype_token, notification, me, raw, map, with_video, microphone_on).await;
+            return answer_meeting_offer(
+                http,
+                skype_token,
+                notification,
+                me,
+                raw,
+                map,
+                with_video,
+                microphone_on,
+            )
+            .await;
         }
         return answer_webrtc(
             http,
@@ -1859,7 +2094,10 @@ async fn answer_webrtc(
             session.set_local_sdp(&sdp);
             // Teams asked for E2EE and our answer said yes (Teams then shows
             // the call end-to-end encrypted).
-            session.set_e2ee(sdp.lines().any(|l| l.trim_end() == webrtc_audio::E2EE_ATTRIBUTE));
+            session.set_e2ee(
+                sdp.lines()
+                    .any(|l| l.trim_end() == webrtc_audio::E2EE_ATTRIBUTE),
+            );
             Some(session)
         }
         Ok(Err(e)) => {
@@ -1913,15 +2151,22 @@ async fn answer_meeting_offer(
     microphone_on: bool,
 ) -> Result<ActiveCall> {
     let canonical = map.to_ours(raw);
-    let mut parsed = webrtc_audio::WebRtcOffer::parse(&canonical).context("Meeting offer without DTLS-SRTP")?;
+    let mut parsed =
+        webrtc_audio::WebRtcOffer::parse(&canonical).context("Meeting offer without DTLS-SRTP")?;
     let mut local = webrtc_audio::LocalAudio::prepare().await?;
     local.meeting = true;
     local.receive_video = true;
     local.camera_on = cfg!(feature = "video") && with_video;
     local.twcc_id = super::twcc::offered_extension_id(raw).unwrap_or(super::twcc::EXTENSION_ID);
     let ours = local.answer_sdp_meeting(&canonical, &parsed);
-    let slot_pt = parsed.slots.first().and_then(|s| webrtc_audio::answered_pt(&ours, &s.mid));
-    let share_pt = parsed.share_slot.as_ref().and_then(|s| webrtc_audio::answered_pt(&ours, &s.mid));
+    let slot_pt = parsed
+        .slots
+        .first()
+        .and_then(|s| webrtc_audio::answered_pt(&ours, &s.mid));
+    let share_pt = parsed
+        .share_slot
+        .as_ref()
+        .and_then(|s| webrtc_audio::answered_pt(&ours, &s.mid));
     if let (Some(a), Some(b)) = (slot_pt.or(share_pt), share_pt.or(slot_pt)) {
         local.answered_pts = Some((a, b));
     }
@@ -1939,14 +2184,24 @@ async fn answer_meeting_offer(
     let sdp = map.to_wire(&ours);
     debug_dump("sdp-answer", &sdp);
     match &me {
-        Some(me) => send_meeting_media_answer(http, skype_token, &notification, me, &sdp, local.camera_on).await,
+        Some(me) => {
+            send_meeting_media_answer(http, skype_token, &notification, me, &sdp, local.camera_on)
+                .await
+        }
         None => signaling::send_media_answer(http, skype_token, &notification, &sdp).await,
     }
     .context("Media answer failed")?;
     let camera_on = local.camera_on;
     let media = tokio::spawn(webrtc_audio::WebRtcAudioSession::start(local, parsed));
-    let (leg, keep_alive) =
-        accept_with_keep_alive(http, skype_token, &notification, me.as_ref(), camera_on, microphone_on).await?;
+    let (leg, keep_alive) = accept_with_keep_alive(
+        http,
+        skype_token,
+        &notification,
+        me.as_ref(),
+        camera_on,
+        microphone_on,
+    )
+    .await?;
     let webrtc = match media.await {
         Ok(Ok(session)) => {
             session.set_muted(!microphone_on);
@@ -1989,8 +2244,20 @@ async fn answer_meeting_offer(
 
 /// Post a meeting's media descriptions
 /// ([`ActiveCall::media_descriptions_request`]).
-pub async fn post_media_descriptions(auth: &CallAuth, link: &str, body: &serde_json::Value) -> Result<()> {
-    cc_request(&auth.http, &auth.skype_token, reqwest::Method::POST, link, body, "Media descriptions").await?;
+pub async fn post_media_descriptions(
+    auth: &CallAuth,
+    link: &str,
+    body: &serde_json::Value,
+) -> Result<()> {
+    cc_request(
+        &auth.http,
+        &auth.skype_token,
+        reqwest::Method::POST,
+        link,
+        body,
+        "Media descriptions",
+    )
+    .await?;
     Ok(())
 }
 
@@ -2132,7 +2399,15 @@ async fn send_meeting_media_answer(
         },
         "debugContent": { "endpointId": me.endpoint_id },
     });
-    cc_request(http, skype_token, reqwest::Method::POST, &url, &body, "Media answer").await?;
+    cc_request(
+        http,
+        skype_token,
+        reqwest::Method::POST,
+        &url,
+        &body,
+        "Media answer",
+    )
+    .await?;
     Ok(())
 }
 
@@ -2186,7 +2461,8 @@ async fn accept_v2(
         hold: str_at(ack, "/links/hold"),
         transfer: str_at(ack, "/links/transfer"),
         renegotiation: str_at(ack, "/links/mediaRenegotiation").filter(|l| is_service_link(l)),
-        media_descriptions: str_at(ack, "/links/updateMediaDescriptions").filter(|l| is_service_link(l)),
+        media_descriptions: str_at(ack, "/links/updateMediaDescriptions")
+            .filter(|l| is_service_link(l)),
         keep_alive_secs: ack.get("callKeepAliveInterval").and_then(|v| v.as_u64()),
     })
 }
@@ -2403,8 +2679,15 @@ mod tests {
     #[test]
     fn replacement_events_carry_the_new_invitation() {
         // Only the call/replacement path is a replacement.
-        assert!(replacement_invitation(r#"{"callAgentPath":"call/transfer/","body":{}}"#).is_none());
-        assert!(replacement_invitation(r#"{"callAgentPath":"call/replacement/","body":{"callEnded":{}}}"#).is_none());
+        assert!(
+            replacement_invitation(r#"{"callAgentPath":"call/transfer/","body":{}}"#).is_none()
+        );
+        assert!(
+            replacement_invitation(
+                r#"{"callAgentPath":"call/replacement/","body":{"callEnded":{}}}"#
+            )
+            .is_none()
+        );
         // The replaced call's ends (measured) name the transferor.
         let end = r#"{"callAgentPath":"call/end/","body":{"callEnd":{"reason":"noError","sender":{"id":"8:orgid:b"},"code":0},"debugContent":null}}"#;
         assert_eq!(end_sender(end).as_deref(), Some("8:orgid:b"));
@@ -2419,10 +2702,19 @@ mod tests {
         assert_eq!(b["callTransfer"]["target"]["id"], "8:orgid:a");
         assert_eq!(b["callTransfer"]["parkType"], "teamPark");
         assert_eq!(b["callTransfer"]["transferor"]["details"], me);
-        assert_eq!(b["callTransfer"]["links"]["transferCompletion"], "cb/call/transferCompletion/");
+        assert_eq!(
+            b["callTransfer"]["links"]["transferCompletion"],
+            "cb/call/transferCompletion/"
+        );
         assert_eq!(park_pickup_code(r#"{"callAgentPath":"call/transferCompletion/","body":{"transferCompletion":{"code":0},"unparkContent":{"pickupCode":"42"}}}"#).as_deref(), Some("42"));
-        assert_eq!(park_pickup_code(r#"{"body":{"unparkContent":{"pickupCode":17}}}"#).as_deref(), Some("17"));
-        assert_eq!(park_pickup_code(r#"{"body":{"transferCompletion":{"code":0}}}"#), None);
+        assert_eq!(
+            park_pickup_code(r#"{"body":{"unparkContent":{"pickupCode":17}}}"#).as_deref(),
+            Some("17")
+        );
+        assert_eq!(
+            park_pickup_code(r#"{"body":{"transferCompletion":{"code":0}}}"#),
+            None
+        );
     }
 
     #[test]
@@ -2448,11 +2740,31 @@ mod tests {
         assert_eq!(blind["callTransfer"]["target"]["id"], t);
         assert_eq!(blind["callTransfer"]["transferor"]["details"], me);
         assert!(blind["callTransfer"]["transferor"]["authorizationToken"].is_null());
-        assert_eq!(blind["callTransfer"]["links"]["transferCompletion"], "cb/call/transferCompletion/");
+        assert_eq!(
+            blind["callTransfer"]["links"]["transferCompletion"],
+            "cb/call/transferCompletion/"
+        );
         assert!(blind["callTransfer"].get("replacementDetails").is_none());
-        let consult = transfer_body(t, me, |p| format!("cb/{p}"), Some("https://cc/consult/replace")).unwrap();
-        assert_eq!(consult["callTransfer"]["replacementDetails"], serde_json::json!({ "replaces": "https://cc/consult/replace" }));
-        assert!(transfer_body("4:+14255550100", serde_json::json!({}), |p| p.to_string(), None).is_err());
+        let consult = transfer_body(
+            t,
+            me,
+            |p| format!("cb/{p}"),
+            Some("https://cc/consult/replace"),
+        )
+        .unwrap();
+        assert_eq!(
+            consult["callTransfer"]["replacementDetails"],
+            serde_json::json!({ "replaces": "https://cc/consult/replace" })
+        );
+        assert!(
+            transfer_body(
+                "4:+14255550100",
+                serde_json::json!({}),
+                |p| p.to_string(),
+                None
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -2470,9 +2782,10 @@ mod tests {
                 ..Default::default()
             })
         );
-        let sched = n
-            .replace("HuddleMeetingStart", "MeetingStart")
-            .replace(r#""status""#, r#""subject":"Sync","rsvp":"Accepted","status""#);
+        let sched = n.replace("HuddleMeetingStart", "MeetingStart").replace(
+            r#""status""#,
+            r#""subject":"Sync","rsvp":"Accepted","status""#,
+        );
         let sched = meeting_start(&sched).unwrap();
         assert!(sched.scheduled);
         assert_eq!(sched.subject, "Sync");
@@ -2573,16 +2886,26 @@ mod tests {
         ));
         assert!(is_call_end_event(r#"{"callEnd":{"code":487}}"#));
         assert_eq!(
-            end_reason(r#"{"callAgentPath":"call/end/","body":{"callEnd":{"code":0,"subCode":5854,"phrase":"DeniedInLobby"}}}"#),
+            end_reason(
+                r#"{"callAgentPath":"call/end/","body":{"callEnd":{"code":0,"subCode":5854,"phrase":"DeniedInLobby"}}}"#
+            ),
             Some(EndReason::DeniedInLobby)
         );
-        assert_eq!(end_reason(r#"{"callEnd":{"code":0,"subCode":5855}}"#), Some(EndReason::TimedOutInLobby));
         assert_eq!(
-            end_reason(r#"{"callAgentPath":"conversation/conversationEnd/","body":{"code":0,"subCode":5300}}"#),
+            end_reason(r#"{"callEnd":{"code":0,"subCode":5855}}"#),
+            Some(EndReason::TimedOutInLobby)
+        );
+        assert_eq!(
+            end_reason(
+                r#"{"callAgentPath":"conversation/conversationEnd/","body":{"code":0,"subCode":5300}}"#
+            ),
             Some(EndReason::Removed)
         );
         assert_eq!(end_reason(r#"{"callEnd":{"code":0,"subCode":0}}"#), None);
-        assert_eq!(end_reason(r#"{"callEnd":{"code":480,"subCode":5854}}"#), None);
+        assert_eq!(
+            end_reason(r#"{"callEnd":{"code":480,"subCode":5854}}"#),
+            None
+        );
         assert!(is_renegotiation_event(
             r#"{"callAgentPath":"call/mediaRenegotiation/","body":{}}"#
         ));

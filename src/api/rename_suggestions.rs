@@ -33,13 +33,15 @@ pub const PROMPT: &str = "Suggest 3 clear, descriptive filenames (without extens
 
 /// The extensions OneDrive offers suggestions for (its module 5164).
 const EXTENSIONS: &[&str] = &[
-    "doc", "docx", "docm", "dot", "dotx", "dotm", "xls", "xlsx", "xlsm", "xlt", "xltx", "xltm", "ppt", "pptx", "pptm", "pot", "potx", "potm", "pdf", "txt",
-    "rtf", "csv", "tsv", "json", "md", "odt", "ods", "odp", "jpg", "jpeg", "png", "bmp", "tiff", "tif",
+    "doc", "docx", "docm", "dot", "dotx", "dotm", "xls", "xlsx", "xlsm", "xlt", "xltx", "xltm",
+    "ppt", "pptx", "pptm", "pot", "potx", "potm", "pdf", "txt", "rtf", "csv", "tsv", "json", "md",
+    "odt", "ods", "odp", "jpg", "jpeg", "png", "bmp", "tiff", "tif",
 ];
 
 /// Whether OneDrive offers Suggested names for a file with this name.
 pub fn offered_for(name: &str) -> bool {
-    name.rsplit_once('.').is_some_and(|(_, ext)| EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str()))
+    name.rsplit_once('.')
+        .is_some_and(|(_, ext)| EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str()))
 }
 
 /// The file as OneDrive names it to Copilot.
@@ -121,14 +123,26 @@ pub fn absorb(v: &Value, query_id: &str, so_far: &mut String) -> Option<bool> {
             let status = cr["status"].as_i64();
             if status == Some(0) {
                 // The whole answer: the last bot Chat message.
-                let msgs = cr["messagesToAddOrReplace"].as_array().or_else(|| cr["messages"].as_array());
-                if let Some(t) = msgs.into_iter().flatten().rev().find(|m| m["author"] == "bot" && m["messageType"] == "Chat").and_then(|m| m["text"].as_str()) {
+                let msgs = cr["messagesToAddOrReplace"]
+                    .as_array()
+                    .or_else(|| cr["messages"].as_array());
+                if let Some(t) = msgs
+                    .into_iter()
+                    .flatten()
+                    .rev()
+                    .find(|m| m["author"] == "bot" && m["messageType"] == "Chat")
+                    .and_then(|m| m["text"].as_str())
+                {
                     *so_far = t.to_string();
                 }
                 end = Some(true);
                 continue;
             }
-            for m in cr["messagesToAddOrReplace"].as_array().into_iter().flatten() {
+            for m in cr["messagesToAddOrReplace"]
+                .as_array()
+                .into_iter()
+                .flatten()
+            {
                 if m["author"] == "bot" && m["messageType"] == "Chat" {
                     so_far.push_str(m["text"].as_str().unwrap_or_default());
                 }
@@ -151,21 +165,33 @@ pub fn absorb(v: &Value, query_id: &str, so_far: &mut String) -> Option<bool> {
 /// OneDrive's reading of the NDJSON answer (`partial`: the last line may be
 /// cut, so it is left out).
 pub fn parse(text: &str, partial: bool) -> Outcome {
-    let body = if partial { text.rfind('\n').map(|i| &text[..i]).unwrap_or("") } else { text };
+    let body = if partial {
+        text.rfind('\n').map(|i| &text[..i]).unwrap_or("")
+    } else {
+        text
+    };
     let mut names = Vec::new();
     for line in body.split('\n') {
         let l = line.trim();
         if !l.starts_with('{') {
             continue;
         }
-        let Ok(v) = serde_json::from_str::<Value>(l) else { continue };
+        let Ok(v) = serde_json::from_str::<Value>(l) else {
+            continue;
+        };
         match v["type"].as_str() {
             Some("suggestion") => {
                 if let Some(n) = v["name"].as_str().filter(|n| !n.is_empty()) {
                     names.push(n.to_string());
                 }
             }
-            Some("error") => return Err(v["code"].as_str().filter(|c| !c.is_empty()).unwrap_or("Generic").to_string()),
+            Some("error") => {
+                return Err(v["code"]
+                    .as_str()
+                    .filter(|c| !c.is_empty())
+                    .unwrap_or("Generic")
+                    .to_string());
+            }
             _ => {}
         }
     }
@@ -178,15 +204,39 @@ pub fn parse(text: &str, partial: bool) -> Outcome {
 pub fn is_confidential(item: &Value) -> bool {
     let l = &item["sensitivityLabel"];
     l["protectionEnabled"].as_bool() == Some(true)
-        && matches!(l["displayName"].as_str().unwrap_or_default().split(" \\ ").next().unwrap_or_default(), "Highly Confidential" | "Restricted")
+        && matches!(
+            l["displayName"]
+                .as_str()
+                .unwrap_or_default()
+                .split(" \\ ")
+                .next()
+                .unwrap_or_default(),
+            "Highly Confidential" | "Restricted"
+        )
 }
 
 /// The file's ids and whether it is confidential (Graph's `sharepointIds`
 /// and, as OneDrive reads it on its own, `sensitivityLabel`); with the
 /// SharePoint origin its page would run on.
-pub async fn file_info(client: &crate::api::client::TeamsClient, drive: &str, item: &str) -> anyhow::Result<(FileInfo, String, bool)> {
-    let v: Value = client.graph_get(&format!("/drives/{drive}/items/{item}?$select=name,sharepointIds")).await?.error_for_status()?.json().await?;
-    let s = |p: &str| v.pointer(p).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+pub async fn file_info(
+    client: &crate::api::client::TeamsClient,
+    drive: &str,
+    item: &str,
+) -> anyhow::Result<(FileInfo, String, bool)> {
+    let v: Value = client
+        .graph_get(&format!(
+            "/drives/{drive}/items/{item}?$select=name,sharepointIds"
+        ))
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let s = |p: &str| {
+        v.pointer(p)
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     let info = FileInfo {
         file_name: s("/name"),
         site_id: s("/sharepointIds/siteId"),
@@ -194,12 +244,31 @@ pub async fn file_info(client: &crate::api::client::TeamsClient, drive: &str, it
         list_id: s("/sharepointIds/listId"),
         unique_id: s("/sharepointIds/listItemUniqueId"),
     };
-    anyhow::ensure!(!info.unique_id.is_empty() && !info.site_id.is_empty(), "The file has no SharePoint ids");
+    anyhow::ensure!(
+        !info.unique_id.is_empty() && !info.site_id.is_empty(),
+        "The file has no SharePoint ids"
+    );
     let site = s("/sharepointIds/siteUrl");
-    let origin = site.find("://").and_then(|i| site[i + 3..].find('/').map(|j| site[..i + 3 + j].to_string())).unwrap_or(site);
+    let origin = site
+        .find("://")
+        .and_then(|i| {
+            site[i + 3..]
+                .find('/')
+                .map(|j| site[..i + 3 + j].to_string())
+        })
+        .unwrap_or(site);
     // OneDrive treats a failed label read as "not confidential".
-    let confidential = match client.graph_get(&format!("/drives/{drive}/items/{item}?$select=sensitivityLabel")).await {
-        Ok(r) if r.status().is_success() => r.json::<Value>().await.map(|l| is_confidential(&l)).unwrap_or(false),
+    let confidential = match client
+        .graph_get(&format!(
+            "/drives/{drive}/items/{item}?$select=sensitivityLabel"
+        ))
+        .await
+    {
+        Ok(r) if r.status().is_success() => r
+            .json::<Value>()
+            .await
+            .map(|l| is_confidential(&l))
+            .unwrap_or(false),
         _ => false,
     };
     Ok((info, origin, confidential))
@@ -212,8 +281,15 @@ async fn token() -> anyhow::Result<String> {
 /// Ask Copilot for names for `file` as OneDrive does; `partial` gets the
 /// names as they stream in. `origin` is the SharePoint host OneDrive's page
 /// runs on.
-pub async fn suggest(file: &FileInfo, origin: &str, ui_language: &str, partial: impl Fn(Vec<String>)) -> anyhow::Result<Outcome> {
-    let mut req = tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request("wss://augloop.svc.cloud.microsoft/")?;
+pub async fn suggest(
+    file: &FileInfo,
+    origin: &str,
+    ui_language: &str,
+    partial: impl Fn(Vec<String>),
+) -> anyhow::Result<Outcome> {
+    let mut req = tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(
+        "wss://augloop.svc.cloud.microsoft/",
+    )?;
     req.headers_mut().insert("Origin", origin.parse()?);
     let (mut ws, _) = tokio_tungstenite::connect_async(req).await?;
     let id = uuid::Uuid::new_v4().simple().to_string();
@@ -227,7 +303,9 @@ pub async fn suggest(file: &FileInfo, origin: &str, ui_language: &str, partial: 
     ws.send(send(session_init(ui_language, &cv, &mid))).await?;
     let wait = std::time::Duration::from_secs(20);
     loop {
-        let Some(m) = tokio::time::timeout(wait, ws.next()).await? else { anyhow::bail!("AugLoop closed") };
+        let Some(m) = tokio::time::timeout(wait, ws.next()).await? else {
+            anyhow::bail!("AugLoop closed")
+        };
         if let Message::Text(t) = m?
             && t.as_str() != "~"
         {
@@ -235,7 +313,10 @@ pub async fn suggest(file: &FileInfo, origin: &str, ui_language: &str, partial: 
             if v.get("sessionKey").is_some() {
                 break;
             }
-            if v.pointer("/H_/T_").and_then(|x| x.as_str()).is_some_and(|t| t.contains("Error")) {
+            if v.pointer("/H_/T_")
+                .and_then(|x| x.as_str())
+                .is_some_and(|t| t.contains("Error"))
+            {
                 anyhow::bail!("AugLoop refused the session");
             }
         }
@@ -274,7 +355,10 @@ pub async fn suggest(file: &FileInfo, origin: &str, ui_language: &str, partial: 
         }
         let v: Value = serde_json::from_str(t.as_str()).unwrap_or_default();
         if let Some(mid) = v["messageId"].as_str().filter(|m| m.starts_with('s')) {
-            ws.send(send(json!({"H_": h("AugLoop_Session_Protocol_Response", &[]), "messageId": mid}))).await?;
+            ws.send(send(
+                json!({"H_": h("AugLoop_Session_Protocol_Response", &[]), "messageId": mid}),
+            ))
+            .await?;
         }
         match absorb(&v, &query_id, &mut text) {
             Some(true) => break parse(&text, false),
@@ -313,29 +397,90 @@ mod tests {
     #[test]
     fn signal_is_onedrives() {
         let op = signal_op("q1", &file());
-        assert_eq!(op["parentPath"], json!(["Signal", "AugLoop_OdspCopilot_ODSPCopilotInputSignal"]));
+        assert_eq!(
+            op["parentPath"],
+            json!(["Signal", "AugLoop_OdspCopilot_ODSPCopilotInputSignal"])
+        );
         let b = &op["items"][0]["body"];
-        assert_eq!(b["dataSources"]["dataSources"]["files"][0]["uniqueId"], "{1DD3508E-41D2-4FB6-8358-D55E775D08EB}");
-        assert_eq!(b["dataSources"]["dataSources"]["files"][0]["siteId"], "{fa160c33-a34a-4705-87b6-1f62802d97df}");
+        assert_eq!(
+            b["dataSources"]["dataSources"]["files"][0]["uniqueId"],
+            "{1DD3508E-41D2-4FB6-8358-D55E775D08EB}"
+        );
+        assert_eq!(
+            b["dataSources"]["dataSources"]["files"][0]["siteId"],
+            "{fa160c33-a34a-4705-87b6-1f62802d97df}"
+        );
         assert_eq!(b["llmScenarioGuid"], LLM_SCENARIO);
         let c = context_op(&file());
-        assert_eq!(c["items"][0]["body"]["searchContext"]["entityConstraints"][0]["@domainType"], "File");
-        assert_eq!(c["items"][0]["body"]["selectionContext"]["File"][0]["name"], "ost-share-test.txt");
+        assert_eq!(
+            c["items"][0]["body"]["searchContext"]["entityConstraints"][0]["@domainType"],
+            "File"
+        );
+        assert_eq!(
+            c["items"][0]["body"]["selectionContext"]["File"][0]["name"],
+            "ost-share-test.txt"
+        );
     }
 
     #[test]
     fn answer_streams_through_basin_writes() {
         let ann = |cr: Value| json!({"annotationType": ANNOTATION, "ops": [{"items": [{"body": {"queryId": "q", "chatResponse": cr}}]}]});
         let mut t = String::new();
-        assert_eq!(absorb(&ann(json!({"status": 13, "messagesToAddOrReplace": [{"author": "bot", "messageType": "Progress", "text": "Thinking..."}]})), "q", &mut t), Some(false));
-        assert_eq!(absorb(&ann(json!({"status": 13, "messagesToAddOrReplace": [{"author": "bot", "messageType": "Chat", "text": "{\""}]})), "q", &mut t), Some(false));
+        assert_eq!(
+            absorb(
+                &ann(
+                    json!({"status": 13, "messagesToAddOrReplace": [{"author": "bot", "messageType": "Progress", "text": "Thinking..."}]})
+                ),
+                "q",
+                &mut t
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            absorb(
+                &ann(
+                    json!({"status": 13, "messagesToAddOrReplace": [{"author": "bot", "messageType": "Chat", "text": "{\""}]})
+                ),
+                "q",
+                &mut t
+            ),
+            Some(false)
+        );
         let piece = serde_json::to_string("type\":\"suggestion\",\"name\":\"OST Share Dialog – Safe To Delete\"}\n{\"type\":\"sugg").unwrap();
-        assert_eq!(absorb(&ann(json!({"status": 13, "basinWrite": piece})), "q", &mut t), Some(false));
-        assert_eq!(parse(&t, true), Ok(vec!["OST Share Dialog – Safe To Delete".to_string()]));
+        assert_eq!(
+            absorb(
+                &ann(json!({"status": 13, "basinWrite": piece})),
+                "q",
+                &mut t
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            parse(&t, true),
+            Ok(vec!["OST Share Dialog – Safe To Delete".to_string()])
+        );
         let done = "{\"type\":\"suggestion\",\"name\":\"A\"}\n{\"type\":\"suggestion\",\"name\":\"B\"}\n{\"type\":\"suggestion\",\"name\":\"C\"}\n{\"type\":\"done\"}";
-        assert_eq!(absorb(&ann(json!({"status": 0, "messagesToAddOrReplace": [{"author": "bot", "messageType": "Chat", "text": done}]})), "q", &mut t), Some(true));
-        assert_eq!(parse(&t, false), Ok(vec!["A".into(), "B".into(), "C".into()]));
-        assert_eq!(parse("{\"type\":\"error\",\"code\":\"InsufficientContent\"}", false), Err("InsufficientContent".into()));
+        assert_eq!(
+            absorb(
+                &ann(
+                    json!({"status": 0, "messagesToAddOrReplace": [{"author": "bot", "messageType": "Chat", "text": done}]})
+                ),
+                "q",
+                &mut t
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            parse(&t, false),
+            Ok(vec!["A".into(), "B".into(), "C".into()])
+        );
+        assert_eq!(
+            parse(
+                "{\"type\":\"error\",\"code\":\"InsufficientContent\"}",
+                false
+            ),
+            Err("InsufficientContent".into())
+        );
     }
 
     #[test]
@@ -344,7 +489,11 @@ mod tests {
         assert!(offered_for("Deck.PPTX"));
         assert!(!offered_for("clip.mp4"));
         assert!(!offered_for("folder"));
-        assert!(is_confidential(&json!({"sensitivityLabel": {"protectionEnabled": true, "displayName": "Highly Confidential \\ All Employees"}})));
-        assert!(!is_confidential(&json!({"sensitivityLabel": {"protectionEnabled": false, "displayName": "Restricted"}})));
+        assert!(is_confidential(
+            &json!({"sensitivityLabel": {"protectionEnabled": true, "displayName": "Highly Confidential \\ All Employees"}})
+        ));
+        assert!(!is_confidential(
+            &json!({"sensitivityLabel": {"protectionEnabled": false, "displayName": "Restricted"}})
+        ));
     }
 }

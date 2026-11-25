@@ -145,11 +145,15 @@ pub async fn calendars(client: &TeamsClient) -> Result<Vec<CalendarInfo>> {
             can_share: c["canShare"].as_bool().unwrap_or(false),
         })
         .collect();
-    if let Ok(r) = client.graph_get("/me/memberOf/microsoft.graph.group?$select=id,displayName,groupTypes&$top=100").await
+    if let Ok(r) = client
+        .graph_get("/me/memberOf/microsoft.graph.group?$select=id,displayName,groupTypes&$top=100")
+        .await
         && let Ok(g) = r.json::<serde_json::Value>().await
     {
         for x in g["value"].as_array().into_iter().flatten() {
-            let unified = x["groupTypes"].as_array().is_some_and(|t| t.iter().any(|t| t.as_str() == Some("Unified")));
+            let unified = x["groupTypes"]
+                .as_array()
+                .is_some_and(|t| t.iter().any(|t| t.as_str() == Some("Unified")));
             if unified {
                 out.push(CalendarInfo {
                     id: format!("group:{}", x["id"].as_str().unwrap_or_default()),
@@ -166,9 +170,16 @@ pub async fn calendars(client: &TeamsClient) -> Result<Vec<CalendarInfo>> {
 }
 
 /// Events overlapping `[start, end)` in one of your calendars, or a group's.
-pub async fn calendar_view_of(client: &TeamsClient, calendar: &str, start: &str, end: &str) -> Result<Vec<CalendarEvent>> {
+pub async fn calendar_view_of(
+    client: &TeamsClient,
+    calendar: &str,
+    start: &str,
+    end: &str,
+) -> Result<Vec<CalendarEvent>> {
     let base = match calendar.strip_prefix("group:") {
-        Some(g) if !g.is_empty() && g.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') => format!("/groups/{g}/calendarView"),
+        Some(g) if !g.is_empty() && g.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') => {
+            format!("/groups/{g}/calendarView")
+        }
         Some(_) => bail!("Not a group id"),
         None => format!("/me/calendars/{}/calendarView", event_path_id(calendar)?),
     };
@@ -177,7 +188,11 @@ pub async fn calendar_view_of(client: &TeamsClient, calendar: &str, start: &str,
          &$select=id,subject,start,end,isAllDay,location,organizer,isOnlineMeeting,onlineMeeting,showAs,bodyPreview,isOrganizer,\
          iCalUId,type,seriesMasterId,responseStatus,responseRequested,attendees,isCancelled,categories,sensitivity,allowNewTimeProposals,isDraft"
     );
-    let v: serde_json::Value = client.graph_get_with(&path, &[("Prefer", "IdType=\"ImmutableId\"")]).await?.json().await?;
+    let v: serde_json::Value = client
+        .graph_get_with(&path, &[("Prefer", "IdType=\"ImmutableId\"")])
+        .await?
+        .json()
+        .await?;
     let mut events = parse_events(&v);
     for e in &mut events {
         e.calendar_id = calendar.to_string();
@@ -187,19 +202,33 @@ pub async fn calendar_view_of(client: &TeamsClient, calendar: &str, start: &str,
 
 /// Make a calendar of your own (`POST /me/calendars`), and delete one.
 pub async fn create_calendar(client: &TeamsClient, name: &str) -> Result<String> {
-    let v: serde_json::Value = client.graph_post("/me/calendars", &serde_json::json!({ "name": name })).await?.json().await?;
+    let v: serde_json::Value = client
+        .graph_post("/me/calendars", &serde_json::json!({ "name": name }))
+        .await?
+        .json()
+        .await?;
     Ok(v["id"].as_str().unwrap_or_default().to_string())
 }
 
 pub async fn delete_calendar(client: &TeamsClient, id: &str) -> Result<()> {
-    client.graph_delete(&format!("/me/calendars/{}", event_path_id(id)?)).await?;
+    client
+        .graph_delete(&format!("/me/calendars/{}", event_path_id(id)?))
+        .await?;
     Ok(())
 }
 
 /// The same range from Outlook's own calendar view (GetCalendarView, as
 /// Teams' calendar reads it), by item id.
-async fn outlook_items(start: &str, end: &str) -> Result<std::collections::HashMap<String, serde_json::Value>> {
-    let local = |t: &str| format!("{}.000", t.trim_end_matches('Z').split('.').next().unwrap_or(t));
+async fn outlook_items(
+    start: &str,
+    end: &str,
+) -> Result<std::collections::HashMap<String, serde_json::Value>> {
+    let local = |t: &str| {
+        format!(
+            "{}.000",
+            t.trim_end_matches('Z').split('.').next().unwrap_or(t)
+        )
+    };
     let body = serde_json::json!({
         "__type": "GetCalendarViewJsonRequest:#Exchange",
         "Header": {
@@ -225,9 +254,14 @@ async fn outlook_items(start: &str, end: &str) -> Result<std::collections::HashM
 
 /// Outlook's view of each event, matched by its immutable id (Graph's is
 /// the same id, URL-safe).
-fn merge_outlook_items(events: &mut [CalendarEvent], items: &std::collections::HashMap<String, serde_json::Value>) {
+fn merge_outlook_items(
+    events: &mut [CalendarEvent],
+    items: &std::collections::HashMap<String, serde_json::Value>,
+) {
     for e in events.iter_mut() {
-        let Some(i) = items.get(&ews_id(&e.id)) else { continue };
+        let Some(i) = items.get(&ews_id(&e.id)) else {
+            continue;
+        };
         e.is_meeting = i.get("IsMeeting").and_then(|b| b.as_bool());
         let poll: std::collections::HashMap<&str, &str> = i
             .get("EventPollMetadata")
@@ -236,25 +270,41 @@ fn merge_outlook_items(events: &mut [CalendarEvent], items: &std::collections::H
             .split('|')
             .filter_map(|kv| kv.split_once(':'))
             .collect();
-        if i.get("EventPollFinalizedChoice").is_none_or(|c| c.is_null()) {
+        if i.get("EventPollFinalizedChoice")
+            .is_none_or(|c| c.is_null())
+        {
             e.poll_hold = poll.get("Type").copied().unwrap_or_default().to_string();
         }
-        e.poll_vote = poll.get("VoteType").copied().unwrap_or_default().to_string();
+        e.poll_vote = poll
+            .get("VoteType")
+            .copied()
+            .unwrap_or_default()
+            .to_string();
         e.is_desk_booking = i
             .get("CalendarEventClassifications")
             .and_then(|c| c.as_array())
             .is_some_and(|c| c.iter().any(|x| x.as_str() == Some("DeskBooking")));
-        e.attendance_mode = i.get("RequestedAttendanceMode").and_then(|m| m.as_str()).unwrap_or_default().to_string();
+        e.attendance_mode = i
+            .get("RequestedAttendanceMode")
+            .and_then(|m| m.as_str())
+            .unwrap_or_default()
+            .to_string();
         // The charm is `CharmId` in Outlook's view (a number: an event made
         // in Outlook's form, as Teams' New event form, gets the one its
         // title suggests, e.g. 57 Exam for "test", and its `Charm` stays
         // "None"); the tile menu's charm is `Charm`.
         let charm = |v: Option<&serde_json::Value>| match v {
-            Some(serde_json::Value::String(c)) if c != "None" && !c.is_empty() && c != "0" => Some(c.clone()),
-            Some(serde_json::Value::Number(n)) if n.as_i64().is_some_and(|n| n > 0) => Some(n.to_string()),
+            Some(serde_json::Value::String(c)) if c != "None" && !c.is_empty() && c != "0" => {
+                Some(c.clone())
+            }
+            Some(serde_json::Value::Number(n)) if n.as_i64().is_some_and(|n| n > 0) => {
+                Some(n.to_string())
+            }
             _ => None,
         };
-        e.charm = charm(i.get("CharmId")).or_else(|| charm(i.get("Charm"))).unwrap_or_default();
+        e.charm = charm(i.get("CharmId"))
+            .or_else(|| charm(i.get("Charm")))
+            .unwrap_or_default();
     }
 }
 
@@ -281,7 +331,10 @@ pub async fn set_charm(id: &str, charm: i64) -> Result<()> {
         }
     });
     let v = owa_action("UpdateItem", &body).await?;
-    let code = v.pointer("/Body/ResponseMessages/Items/0/ResponseCode").and_then(|c| c.as_str()).unwrap_or_default();
+    let code = v
+        .pointer("/Body/ResponseMessages/Items/0/ResponseCode")
+        .and_then(|c| c.as_str())
+        .unwrap_or_default();
     if code != "NoError" {
         bail!("Outlook didn't set the charm: {code}");
     }
@@ -294,7 +347,15 @@ pub async fn patch_event(client: &TeamsClient, id: &str, patch: &serde_json::Val
     let mut body = serde_json::Map::new();
     // (Outlook's event form also saves the reminder and its Response
     // options' switches as they change.)
-    for k in ["showAs", "categories", "sensitivity", "isReminderOn", "reminderMinutesBeforeStart", "responseRequested", "hideAttendees"] {
+    for k in [
+        "showAs",
+        "categories",
+        "sensitivity",
+        "isReminderOn",
+        "reminderMinutesBeforeStart",
+        "responseRequested",
+        "hideAttendees",
+    ] {
         if let Some(v) = patch.get(k) {
             body.insert(k.into(), v.clone());
         }
@@ -302,7 +363,12 @@ pub async fn patch_event(client: &TeamsClient, id: &str, patch: &serde_json::Val
     if body.is_empty() {
         bail!("Nothing to change");
     }
-    client.graph_patch(&format!("/me/events/{}", event_path_id(id)?), &serde_json::Value::Object(body)).await?;
+    client
+        .graph_patch(
+            &format!("/me/events/{}", event_path_id(id)?),
+            &serde_json::Value::Object(body),
+        )
+        .await?;
     Ok(())
 }
 
@@ -371,11 +437,16 @@ pub struct MeetingEvent {
 
 /// Your calendar's event for a meeting, by its iCalUId (Teams' calendar
 /// service `userEventUsingICalUId`). For a series this is the series.
-pub async fn event_by_ical_uid(client: &TeamsClient, ical_uid: &str) -> Result<Option<MeetingEvent>> {
+pub async fn event_by_ical_uid(
+    client: &TeamsClient,
+    ical_uid: &str,
+) -> Result<Option<MeetingEvent>> {
     if ical_uid.is_empty() || !ical_uid.bytes().all(|b| b.is_ascii_alphanumeric()) {
         anyhow::bail!("Not an iCalUId");
     }
-    let path = format!("/me/events?$filter=iCalUId%20eq%20'{ical_uid}'&$select=subject,body,recurrence,type&$top=1");
+    let path = format!(
+        "/me/events?$filter=iCalUId%20eq%20'{ical_uid}'&$select=subject,body,recurrence,type&$top=1"
+    );
     let v: serde_json::Value = client
         .graph_get(&path)
         .await?
@@ -383,7 +454,11 @@ pub async fn event_by_ical_uid(client: &TeamsClient, ical_uid: &str) -> Result<O
         .await
         .context("Failed to read the meeting's calendar event")?;
     Ok(v.pointer("/value/0").map(|e| MeetingEvent {
-        subject: e.get("subject").and_then(|s| s.as_str()).unwrap_or_default().to_string(),
+        subject: e
+            .get("subject")
+            .and_then(|s| s.as_str())
+            .unwrap_or_default()
+            .to_string(),
         body_html: e
             .pointer("/body/content")
             .and_then(|c| c.as_str())
@@ -400,12 +475,17 @@ pub async fn event_id_by_ical_uid(client: &TeamsClient, ical_uid: &str) -> Resul
         anyhow::bail!("Not an iCalUId");
     }
     let v: serde_json::Value = client
-        .graph_get(&format!("/me/events?$filter=iCalUId%20eq%20'{ical_uid}'&$select=id&$top=1"))
+        .graph_get(&format!(
+            "/me/events?$filter=iCalUId%20eq%20'{ical_uid}'&$select=id&$top=1"
+        ))
         .await?
         .json()
         .await
         .context("Failed to read the meeting's calendar event")?;
-    Ok(v.pointer("/value/0/id").and_then(|i| i.as_str()).unwrap_or_default().to_string())
+    Ok(v.pointer("/value/0/id")
+        .and_then(|i| i.as_str())
+        .unwrap_or_default()
+        .to_string())
 }
 
 /// A calendar event's body (HTML), by its id: a Teams meeting's
@@ -417,7 +497,10 @@ pub async fn event_body(client: &TeamsClient, id: &str) -> Result<String> {
         .json()
         .await
         .context("Failed to read the calendar event")?;
-    Ok(v.pointer("/body/content").and_then(|c| c.as_str()).unwrap_or_default().to_string())
+    Ok(v.pointer("/body/content")
+        .and_then(|c| c.as_str())
+        .unwrap_or_default()
+        .to_string())
 }
 
 /// Graph event ids are base64url-ish; refuse anything else in a path.
@@ -494,14 +577,28 @@ fn parse_events(v: &serde_json::Value) -> Vec<CalendarEvent> {
                 .map(|l| (l.thread_id, l.message_id))
                 .unwrap_or_default();
             let all_day = e.get("isAllDay").and_then(|b| b.as_bool()).unwrap_or(false);
-            let floating = |t: String| t.split('.').next().unwrap_or_default().trim_end_matches('Z').to_string();
+            let floating = |t: String| {
+                t.split('.')
+                    .next()
+                    .unwrap_or_default()
+                    .trim_end_matches('Z')
+                    .to_string()
+            };
             CalendarEvent {
                 id: s(e, "/id"),
                 subject: s(e, "/subject"),
                 // An all-day event's dates are its own days, not UTC instants:
                 // local midnights (no Z), as Teams draws them.
-                start_utc: if all_day { floating(s(e, "/start/dateTime")) } else { utc(s(e, "/start/dateTime")) },
-                end_utc: if all_day { floating(s(e, "/end/dateTime")) } else { utc(s(e, "/end/dateTime")) },
+                start_utc: if all_day {
+                    floating(s(e, "/start/dateTime"))
+                } else {
+                    utc(s(e, "/start/dateTime"))
+                },
+                end_utc: if all_day {
+                    floating(s(e, "/end/dateTime"))
+                } else {
+                    utc(s(e, "/end/dateTime"))
+                },
                 is_all_day: all_day,
                 location: s(e, "/location/displayName"),
                 organizer: s(e, "/organizer/emailAddress/name"),
@@ -523,21 +620,38 @@ fn parse_events(v: &serde_json::Value) -> Vec<CalendarEvent> {
                 // Follow is Outlook's Tentative with attendance Follow: free, and
                 // the subject marked "Following: ".
                 response: match s(e, "/responseStatus/response") {
-                    r if r == "tentativelyAccepted" && s(e, "/subject").starts_with("Following: ") => "following".to_string(),
+                    r if r == "tentativelyAccepted"
+                        && s(e, "/subject").starts_with("Following: ") =>
+                    {
+                        "following".to_string()
+                    }
                     r => r,
                 },
-                response_requested: e.get("responseRequested").and_then(|b| b.as_bool()).unwrap_or(true),
+                response_requested: e
+                    .get("responseRequested")
+                    .and_then(|b| b.as_bool())
+                    .unwrap_or(true),
                 attendees: attendees_of(e),
-                is_cancelled: e.get("isCancelled").and_then(|b| b.as_bool()).unwrap_or(false),
+                is_cancelled: e
+                    .get("isCancelled")
+                    .and_then(|b| b.as_bool())
+                    .unwrap_or(false),
                 categories: e
                     .get("categories")
                     .and_then(|c| c.as_array())
-                    .map(|a| a.iter().filter_map(|c| c.as_str().map(str::to_string)).collect())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|c| c.as_str().map(str::to_string))
+                            .collect()
+                    })
                     .unwrap_or_default(),
                 sensitivity: s(e, "/sensitivity"),
                 channel_id,
                 channel_message_id,
-                allow_new_time_proposals: e.get("allowNewTimeProposals").and_then(|b| b.as_bool()).unwrap_or(false),
+                allow_new_time_proposals: e
+                    .get("allowNewTimeProposals")
+                    .and_then(|b| b.as_bool())
+                    .unwrap_or(false),
                 is_draft: e.get("isDraft").and_then(|b| b.as_bool()).unwrap_or(false),
                 ..Default::default()
             }
@@ -550,11 +664,19 @@ fn graph_utc(t: &str, zone: &str) -> String {
     if t.is_empty() || !(zone.is_empty() || zone.eq_ignore_ascii_case("UTC")) {
         return String::new();
     }
-    format!("{}Z", t.split('.').next().unwrap_or(t).trim_end_matches('Z'))
+    format!(
+        "{}Z",
+        t.split('.').next().unwrap_or(t).trim_end_matches('Z')
+    )
 }
 
 fn attendees_of(e: &serde_json::Value) -> Vec<Attendee> {
-    let s = |a: &serde_json::Value, p: &str| a.pointer(p).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    let s = |a: &serde_json::Value, p: &str| {
+        a.pointer(p)
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     e.get("attendees")
         .and_then(|a| a.as_array())
         .into_iter()
@@ -564,8 +686,14 @@ fn attendees_of(e: &serde_json::Value) -> Vec<Attendee> {
             address: s(a, "/emailAddress/address"),
             kind: s(a, "/type"),
             response: s(a, "/status/response"),
-            proposed_start: graph_utc(&s(a, "/proposedNewTime/start/dateTime"), &s(a, "/proposedNewTime/start/timeZone")),
-            proposed_end: graph_utc(&s(a, "/proposedNewTime/end/dateTime"), &s(a, "/proposedNewTime/end/timeZone")),
+            proposed_start: graph_utc(
+                &s(a, "/proposedNewTime/start/dateTime"),
+                &s(a, "/proposedNewTime/start/timeZone"),
+            ),
+            proposed_end: graph_utc(
+                &s(a, "/proposedNewTime/end/dateTime"),
+                &s(a, "/proposedNewTime/end/timeZone"),
+            ),
         })
         .collect()
 }
@@ -587,13 +715,28 @@ pub async fn event_detail(client: &TeamsClient, id: &str) -> Result<serde_json::
         .context("Failed to read the event")?;
     // An occurrence has no recurrence of its own: its series' (what
     // Outlook's form shows on Edit series).
-    let mut recurrence = v.get("recurrence").cloned().unwrap_or(serde_json::Value::Null);
+    let mut recurrence = v
+        .get("recurrence")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
     if recurrence.is_null()
-        && let Some(master) = v.get("seriesMasterId").and_then(|m| m.as_str()).filter(|m| !m.is_empty())
-            && let Ok(r) = client.graph_get_with(&format!("/me/events/{}?$select=recurrence", event_path_id(master)?), &[("Prefer", "IdType=\"ImmutableId\"")]).await {
-                let m: serde_json::Value = r.json().await.unwrap_or_default();
-                recurrence = m.get("recurrence").cloned().unwrap_or(serde_json::Value::Null);
-            }
+        && let Some(master) = v
+            .get("seriesMasterId")
+            .and_then(|m| m.as_str())
+            .filter(|m| !m.is_empty())
+        && let Ok(r) = client
+            .graph_get_with(
+                &format!("/me/events/{}?$select=recurrence", event_path_id(master)?),
+                &[("Prefer", "IdType=\"ImmutableId\"")],
+            )
+            .await
+    {
+        let m: serde_json::Value = r.json().await.unwrap_or_default();
+        recurrence = m
+            .get("recurrence")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+    }
     Ok(serde_json::json!({
         "id": id,
         "body_html": v.pointer("/body/content").and_then(|c| c.as_str()).unwrap_or_default(),
@@ -620,7 +763,13 @@ pub async fn event_detail(client: &TeamsClient, id: &str) -> Result<serde_json::
 /// (client ceb96695…, through Teams' broker), so it needs the browser
 /// sign-in; on a device-code sign-in OST answers through Graph
 /// (`/me/events/{id}/accept|tentativelyAccept|decline`), which has no Follow.
-pub async fn respond(client: &TeamsClient, ev: &RsvpTarget, response: &str, send_response: bool, note: &str) -> Result<()> {
+pub async fn respond(
+    client: &TeamsClient,
+    ev: &RsvpTarget,
+    response: &str,
+    send_response: bool,
+    note: &str,
+) -> Result<()> {
     respond_with_time(client, ev, response, send_response, note, None).await
 }
 
@@ -630,7 +779,15 @@ pub async fn respond(client: &TeamsClient, ev: &RsvpTarget, response: &str, send
 /// `ProposedEndTime` (local times in the mailbox's zone) beside the answer.
 /// The organizer's event then carries the proposal (Graph's attendee
 /// `proposedNewTime`) and they get a "New time proposed" response.
-pub async fn propose_new_time(client: &TeamsClient, ev: &RsvpTarget, response: &str, start: &str, end: &str, send_response: bool, note: &str) -> Result<()> {
+pub async fn propose_new_time(
+    client: &TeamsClient,
+    ev: &RsvpTarget,
+    response: &str,
+    start: &str,
+    end: &str,
+    send_response: bool,
+    note: &str,
+) -> Result<()> {
     if !matches!(response, "Tentative" | "Decline") {
         bail!("A proposal goes with Tentative or Decline");
     }
@@ -648,8 +805,16 @@ pub async fn propose_new_time(client: &TeamsClient, ev: &RsvpTarget, response: &
         // `proposedNewTime` sends the same proposal.
         Err(err) => {
             tracing::warn!("proposal through Outlook failed ({err:#}); sending it through Graph");
-            let verb = if response == "Decline" { "decline" } else { "tentativelyAccept" };
-            let utc = |d: chrono::DateTime<chrono::FixedOffset>| d.with_timezone(&chrono::Utc).format("%Y-%m-%dT%H:%M:%S").to_string();
+            let verb = if response == "Decline" {
+                "decline"
+            } else {
+                "tentativelyAccept"
+            };
+            let utc = |d: chrono::DateTime<chrono::FixedOffset>| {
+                d.with_timezone(&chrono::Utc)
+                    .format("%Y-%m-%dT%H:%M:%S")
+                    .to_string()
+            };
             let body = serde_json::json!({
                 "comment": note.trim(),
                 "sendResponse": send_response,
@@ -658,7 +823,12 @@ pub async fn propose_new_time(client: &TeamsClient, ev: &RsvpTarget, response: &
                     "end": { "dateTime": utc(e), "timeZone": "UTC" }
                 }
             });
-            client.graph_post(&format!("/me/events/{}/{verb}", event_path_id(&ev.id)?), &body).await?;
+            client
+                .graph_post(
+                    &format!("/me/events/{}/{verb}", event_path_id(&ev.id)?),
+                    &body,
+                )
+                .await?;
             Ok(())
         }
     }
@@ -670,7 +840,10 @@ async fn respond_with_time(
     response: &str,
     send_response: bool,
     note: &str,
-    proposed: Option<(chrono::DateTime<chrono::FixedOffset>, chrono::DateTime<chrono::FixedOffset>)>,
+    proposed: Option<(
+        chrono::DateTime<chrono::FixedOffset>,
+        chrono::DateTime<chrono::FixedOffset>,
+    )>,
 ) -> Result<()> {
     let (owa_response, attendance) = match response {
         "Accept" | "Tentative" | "Decline" => (response, 0),
@@ -680,22 +853,39 @@ async fn respond_with_time(
     if crate::auth::oauth::browser_sign_in() {
         let id = event_path_id(&ev.id)?;
         let tz = mailbox_time_zone().await;
-        let mut body = respond_body(&ews_id(id), owa_response, attendance, send_response, note, &tz);
+        let mut body = respond_body(
+            &ews_id(id),
+            owa_response,
+            attendance,
+            send_response,
+            note,
+            &tz,
+        );
         if let Some((s, e)) = proposed {
             // As Outlook on the web writes them: local wall-clock times
             // (the request's TimeZoneContext names the zone), milliseconds.
-            let local = |d: chrono::DateTime<chrono::FixedOffset>| d.format("%Y-%m-%dT%H:%M:%S%.3f").to_string();
+            let local = |d: chrono::DateTime<chrono::FixedOffset>| {
+                d.format("%Y-%m-%dT%H:%M:%S%.3f").to_string()
+            };
             body["Body"]["ProposedStartTime"] = serde_json::json!(local(s));
             body["Body"]["ProposedEndTime"] = serde_json::json!(local(e));
         }
         owa_action("RespondToCalendarEvent", &body).await?;
-        tracing::info!(response, attendance, proposed = proposed.is_some(), "answered through Outlook (RespondToCalendarEvent)");
+        tracing::info!(
+            response,
+            attendance,
+            proposed = proposed.is_some(),
+            "answered through Outlook (RespondToCalendarEvent)"
+        );
         return Ok(());
     }
     if proposed.is_some() {
         bail!("Proposing a new time needs the browser sign-in");
     }
-    tracing::info!(response, "answer through Teams' calendar service (device-code sign-in)");
+    tracing::info!(
+        response,
+        "answer through Teams' calendar service (device-code sign-in)"
+    );
     respond_mt(client, ev, response, send_response, note).await
 }
 
@@ -715,7 +905,13 @@ pub struct RsvpTarget {
 /// {mt}/v2.0/me/calendars/events/{iCalUId}/respond?eventType=…&eventStartDateTime=…`,
 /// `{responseType: Accept|TentativelyAccept|Decline, sendResponse, comment,
 /// attendance: None|Follow}`, from Teams' calendar service bundle).
-async fn respond_mt(client: &TeamsClient, ev: &RsvpTarget, response: &str, send_response: bool, note: &str) -> Result<()> {
+async fn respond_mt(
+    client: &TeamsClient,
+    ev: &RsvpTarget,
+    response: &str,
+    send_response: bool,
+    note: &str,
+) -> Result<()> {
     let (kind, attendance) = match response {
         "Accept" => ("Accept", "None"),
         "Tentative" => ("TentativelyAccept", "None"),
@@ -734,7 +930,11 @@ async fn respond_mt(client: &TeamsClient, ev: &RsvpTarget, response: &str, send_
         _ => "Single",
     };
     let start = chrono::DateTime::parse_from_rfc3339(&ev.start_utc)
-        .map(|d| d.with_timezone(&chrono::Utc).format("%Y-%m-%dT%H:%M:%S.000Z").to_string())
+        .map(|d| {
+            d.with_timezone(&chrono::Utc)
+                .format("%Y-%m-%dT%H:%M:%S.000Z")
+                .to_string()
+        })
         .unwrap_or_default();
     let (base, token) = crate::api::tabs::middle_tier(client).await?;
     let q: String = url::form_urlencoded::Serializer::new(String::new())
@@ -750,12 +950,27 @@ async fn respond_mt(client: &TeamsClient, ev: &RsvpTarget, response: &str, send_
         .await?;
     let status = r.status();
     if !status.is_success() {
-        bail!("{status}: {}", r.text().await.unwrap_or_default().chars().take(300).collect::<String>());
+        bail!(
+            "{status}: {}",
+            r.text()
+                .await
+                .unwrap_or_default()
+                .chars()
+                .take(300)
+                .collect::<String>()
+        );
     }
     Ok(())
 }
 
-fn respond_body(ews_id: &str, response: &str, attendance: u8, send_response: bool, note: &str, tz: &str) -> serde_json::Value {
+fn respond_body(
+    ews_id: &str,
+    response: &str,
+    attendance: u8,
+    send_response: bool,
+    note: &str,
+    tz: &str,
+) -> serde_json::Value {
     let mut b = serde_json::json!({
         "__type": "RespondToCalendarEventJsonRequest:#Exchange",
         "Header": {
@@ -778,7 +993,12 @@ fn respond_body(ews_id: &str, response: &str, attendance: u8, send_response: boo
         }
     });
     if !note.trim().is_empty() {
-        let esc = note.trim().replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('\n', "<br>");
+        let esc = note
+            .trim()
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('\n', "<br>");
         b["Body"]["Notes"] = serde_json::json!({ "__type": "BodyContentType:#Exchange", "BodyType": "HTML", "Value": format!("<div>{esc}</div>") });
     }
     b
@@ -811,20 +1031,41 @@ pub async fn owa_action(action: &str, body: &serde_json::Value) -> Result<serde_
     if !action.bytes().all(|b| b.is_ascii_alphanumeric()) {
         bail!("Not an action: {action}");
     }
-    let (token, _) = crate::auth::oauth::brokered_token(HOSTED_CALENDAR_APP, "https://outlook.office.com", "https://outlook.office.com/.default", None).await?;
-    let tenant = crate::config::Config::load().ok().and_then(|c| c.tenant_id).unwrap_or_default();
+    let (token, _) = crate::auth::oauth::brokered_token(
+        HOSTED_CALENDAR_APP,
+        "https://outlook.office.com",
+        "https://outlook.office.com/.default",
+        None,
+    )
+    .await?;
+    let tenant = crate::config::Config::load()
+        .ok()
+        .and_then(|c| c.tenant_id)
+        .unwrap_or_default();
     static SESSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     let session = SESSION.get_or_init(|| uuid::Uuid::new_v4().to_string());
-    let anchor = crate::config::Config::load().ok().and_then(|c| c.object_id()).map(|o| format!("OID:{o}@{tenant}")).unwrap_or_default();
+    let anchor = crate::config::Config::load()
+        .ok()
+        .and_then(|c| c.object_id())
+        .map(|o| format!("OID:{o}@{tenant}"))
+        .unwrap_or_default();
     // encodeURIComponent, as the page encodes it: a space is %20 (a "+"
     // would reach the service as a plus: "Pacific+Standard+Time").
-    let data = url::form_urlencoded::byte_serialize(body.to_string().as_bytes()).collect::<String>().replace('+', "%20");
+    let data = url::form_urlencoded::byte_serialize(body.to_string().as_bytes())
+        .collect::<String>()
+        .replace('+', "%20");
     // A small request goes in the X-OWA-UrlPostData header, a large one
     // (GetCalendarEvent, an UpdateCalendarEvent with pictures in its body)
     // as the request's body, as the page sends them (captured 2026-11-24).
-    let (data, payload) = if data.len() > 4096 { (String::new(), body.to_string()) } else { (data, String::new()) };
+    let (data, payload) = if data.len() > 4096 {
+        (String::new(), body.to_string())
+    } else {
+        (data, String::new())
+    };
     let req = reqwest::Client::new()
-        .post(format!("https://outlook.office.com/owa/service.svc?action={action}&app=Calendar"))
+        .post(format!(
+            "https://outlook.office.com/owa/service.svc?action={action}&app=Calendar"
+        ))
         .bearer_auth(token)
         .header("x-anchormailbox", anchor)
         .header("user-agent", OWA_USER_AGENT)
@@ -837,15 +1078,34 @@ pub async fn owa_action(action: &str, body: &serde_json::Value) -> Result<serde_
         .header("x-owa-sessionid", session.as_str())
         .header("x-owa-correlationid", uuid::Uuid::new_v4().to_string())
         .header("x-tenantid", tenant)
-        .header("prefer", "IdType=\"ImmutableId\", exchange.behavior=\"IncludeThirdPartyOnlineMeetingProviders\"")
+        .header(
+            "prefer",
+            "IdType=\"ImmutableId\", exchange.behavior=\"IncludeThirdPartyOnlineMeetingProviders\"",
+        )
         .header("content-type", "application/json; charset=utf-8");
-    let req = if data.is_empty() { req } else { req.header("x-owa-urlpostdata", data) };
-    let resp = req.body(payload).send().await.with_context(|| format!("{action} failed"))?;
+    let req = if data.is_empty() {
+        req
+    } else {
+        req.header("x-owa-urlpostdata", data)
+    };
+    let resp = req
+        .body(payload)
+        .send()
+        .await
+        .with_context(|| format!("{action} failed"))?;
     let status = resp.status();
-    let err = resp.headers().get("x-owa-error").and_then(|v| v.to_str().ok()).unwrap_or_default().to_string();
+    let err = resp
+        .headers()
+        .get("x-owa-error")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
     let text = resp.text().await.unwrap_or_default();
     let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
-    let class = v.pointer("/Body/ResponseClass").and_then(|c| c.as_str()).unwrap_or_default();
+    let class = v
+        .pointer("/Body/ResponseClass")
+        .and_then(|c| c.as_str())
+        .unwrap_or_default();
     tracing::debug!(action, %status, class, code = v.pointer("/Body/ResponseCode").and_then(|c| c.as_str()).unwrap_or_default(), "Outlook action answered");
     // An empty 204 is no answer: Outlook didn't take the action (seen for
     // OST Test 3's RespondToCalendarEvent), not a success.
@@ -872,13 +1132,30 @@ pub async fn owa_action(action: &str, body: &serde_json::Value) -> Result<serde_
 /// there: `ows/v1.0/OutlookOptions` (Time scale, the day count),
 /// `ows/v1/OutlookCloudSettings/settings` (the Filter menu's
 /// `calendar_filters`) and `ows/v1/SaveCalendarView` (Saved views).
-pub async fn ows(method: reqwest::Method, path: &str, body: Option<&serde_json::Value>) -> Result<serde_json::Value> {
+pub async fn ows(
+    method: reqwest::Method,
+    path: &str,
+    body: Option<&serde_json::Value>,
+) -> Result<serde_json::Value> {
     if !ows_path_ok(path) {
         bail!("Not an Outlook service path: {path}");
     }
-    let (token, _) = crate::auth::oauth::brokered_token(HOSTED_CALENDAR_APP, "https://outlook.office.com", "https://outlook.office.com/.default", None).await?;
-    let tenant = crate::config::Config::load().ok().and_then(|c| c.tenant_id).unwrap_or_default();
-    let anchor = crate::config::Config::load().ok().and_then(|c| c.object_id()).map(|o| format!("OID:{o}@{tenant}")).unwrap_or_default();
+    let (token, _) = crate::auth::oauth::brokered_token(
+        HOSTED_CALENDAR_APP,
+        "https://outlook.office.com",
+        "https://outlook.office.com/.default",
+        None,
+    )
+    .await?;
+    let tenant = crate::config::Config::load()
+        .ok()
+        .and_then(|c| c.tenant_id)
+        .unwrap_or_default();
+    let anchor = crate::config::Config::load()
+        .ok()
+        .and_then(|c| c.object_id())
+        .map(|o| format!("OID:{o}@{tenant}"))
+        .unwrap_or_default();
     static SESSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     let session = SESSION.get_or_init(|| uuid::Uuid::new_v4().to_string());
     let mut req = reqwest::Client::new()
@@ -891,16 +1168,25 @@ pub async fn ows(method: reqwest::Method, path: &str, body: Option<&serde_json::
         .header("x-owa-hosted-ux", "true")
         .header("x-owa-host-app", "teams_desktop")
         .header("x-req-source", "Calendar")
-        .header("prefer", "IdType=\"ImmutableId\", exchange.behavior=\"IncludeThirdPartyOnlineMeetingProviders\"")
+        .header(
+            "prefer",
+            "IdType=\"ImmutableId\", exchange.behavior=\"IncludeThirdPartyOnlineMeetingProviders\"",
+        )
         .header("origin", "https://outlook.office.com");
     if let Some(b) = body {
         req = req.json(b);
     }
-    let resp = req.send().await.with_context(|| format!("{method} {path} failed"))?;
+    let resp = req
+        .send()
+        .await
+        .with_context(|| format!("{method} {path} failed"))?;
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
     if !status.is_success() {
-        bail!("{method} {path}: {status} {}", text.chars().take(300).collect::<String>());
+        bail!(
+            "{method} {path}: {status} {}",
+            text.chars().take(300).collect::<String>()
+        );
     }
     Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null))
 }
@@ -924,38 +1210,54 @@ pub async fn calendar_prefs(client: &TeamsClient) -> Result<serde_json::Value> {
     if let Err(e) = &options {
         tracing::warn!("calendar options: {e:#}");
     }
-    let filters = ows(reqwest::Method::GET, "ows/v1/OutlookCloudSettings/settings/?settingname=calendar_filters", None)
-        .await
-        .map_err(|e| tracing::warn!("calendar filters: {e:#}"))
-        .ok()
-        .and_then(|v| cloud_setting_value(&v, "calendar_filters"));
+    let filters = ows(
+        reqwest::Method::GET,
+        "ows/v1/OutlookCloudSettings/settings/?settingname=calendar_filters",
+        None,
+    )
+    .await
+    .map_err(|e| tracing::warn!("calendar filters: {e:#}"))
+    .ok()
+    .and_then(|v| cloud_setting_value(&v, "calendar_filters"));
     let views = ows(reqwest::Method::GET, "ows/v1/SaveCalendarView", None)
         .await
         .map_err(|e| tracing::warn!("saved views: {e:#}"))
         .ok()
         .and_then(|v| v.get("savedViews").cloned())
         .unwrap_or(serde_json::json!([]));
-    let categories: Vec<serde_json::Value> = match client.graph_get("/me/outlook/masterCategories").await {
+    let categories: Vec<serde_json::Value> =
+        match client.graph_get("/me/outlook/masterCategories").await {
+            Ok(r) => r
+                .json::<serde_json::Value>()
+                .await
+                .ok()
+                .and_then(|v| v.get("value").and_then(|c| c.as_array()).cloned())
+                .unwrap_or_default()
+                .into_iter()
+                .map(|c| serde_json::json!({ "name": c["displayName"], "color": c["color"] }))
+                .collect(),
+            Err(e) => {
+                tracing::warn!("categories: {e:#}");
+                Vec::new()
+            }
+        };
+    // Your calendar's folder id as Outlook names it (saved views keep it).
+    let calendar_id = match client.graph_get("/me/calendar?$select=id").await {
         Ok(r) => r
             .json::<serde_json::Value>()
             .await
             .ok()
-            .and_then(|v| v.get("value").and_then(|c| c.as_array()).cloned())
-            .unwrap_or_default()
-            .into_iter()
-            .map(|c| serde_json::json!({ "name": c["displayName"], "color": c["color"] }))
-            .collect(),
-        Err(e) => {
-            tracing::warn!("categories: {e:#}");
-            Vec::new()
-        }
-    };
-    // Your calendar's folder id as Outlook names it (saved views keep it).
-    let calendar_id = match client.graph_get("/me/calendar?$select=id").await {
-        Ok(r) => r.json::<serde_json::Value>().await.ok().and_then(|v| v["id"].as_str().map(ews_id)).unwrap_or_default(),
+            .and_then(|v| v["id"].as_str().map(ews_id))
+            .unwrap_or_default(),
         Err(_) => String::new(),
     };
-    let n = |k: &str, default: u64| surface.get(k).and_then(|x| x.as_u64()).filter(|x| *x > 0).unwrap_or(default);
+    let n = |k: &str, default: u64| {
+        surface
+            .get(k)
+            .and_then(|x| x.as_u64())
+            .filter(|x| *x > 0)
+            .unwrap_or(default)
+    };
     Ok(serde_json::json!({
         "timeScale": n("timeScaleSetting", 30),
         "numDays": n("numDaysInDayRange", 1),
@@ -972,14 +1274,21 @@ pub async fn calendar_prefs(client: &TeamsClient) -> Result<serde_json::Value> {
 }
 
 fn is_surface_options(o: &serde_json::Value) -> bool {
-    o.get("feature").is_some_and(|f| f.as_u64() == Some(15) || f.as_str() == Some("CalendarSurfaceOptions"))
+    o.get("feature")
+        .is_some_and(|f| f.as_u64() == Some(15) || f.as_str() == Some("CalendarSurfaceOptions"))
         || o.get("timeScaleSetting").is_some()
 }
 
 /// One OutlookCloudSettings value by name (a JSON setting parsed).
 fn cloud_setting_value(v: &serde_json::Value, name: &str) -> Option<serde_json::Value> {
-    let list = v.as_array().or_else(|| v.get("value").and_then(|x| x.as_array()))?;
-    let s = list.iter().find(|s| s["name"].as_str().is_some_and(|n| n.eq_ignore_ascii_case(name)))?;
+    let list = v
+        .as_array()
+        .or_else(|| v.get("value").and_then(|x| x.as_array()))?;
+    let s = list.iter().find(|s| {
+        s["name"]
+            .as_str()
+            .is_some_and(|n| n.eq_ignore_ascii_case(name))
+    })?;
     match &s["value"] {
         serde_json::Value::String(t) => serde_json::from_str(t).ok(),
         other if !other.is_null() => Some(other.clone()),
@@ -1000,7 +1309,12 @@ pub async fn set_calendar_filters(filters: &serde_json::Value) -> Result<()> {
         "type": "JSON",
         "value": filters.to_string(),
     }]);
-    ows(reqwest::Method::PATCH, "ows/v1/OutlookCloudSettings/settings/global", Some(&body)).await?;
+    ows(
+        reqwest::Method::PATCH,
+        "ows/v1/OutlookCloudSettings/settings/global",
+        Some(&body),
+    )
+    .await?;
     Ok(())
 }
 
@@ -1009,15 +1323,24 @@ pub async fn set_calendar_filters(filters: &serde_json::Value) -> Result<()> {
 /// options with the change, PATCHed (POSTed the first time) to
 /// `ows/v1.0/OutlookOptions/CalendarSurfaceOptions` with a correlation id.
 pub async fn set_surface_options(change: &serde_json::Value) -> Result<()> {
-    let all = ows(reqwest::Method::GET, "ows/v1.0/OutlookOptions", None).await.unwrap_or_default();
+    let all = ows(reqwest::Method::GET, "ows/v1.0/OutlookOptions", None)
+        .await
+        .unwrap_or_default();
     let current = all
         .get("options")
         .and_then(|o| o.as_array())
         .and_then(|l| l.iter().find(|o| is_surface_options(o)).cloned());
-    let existed = current.as_ref().is_some_and(|c| c.get("lastModifiedDateTime").is_some());
+    let existed = current
+        .as_ref()
+        .is_some_and(|c| c.get("lastModifiedDateTime").is_some());
     let mut options = current.unwrap_or_else(|| serde_json::json!({ "feature": 15 }));
     if let (Some(o), Some(c)) = (options.as_object_mut(), change.as_object()) {
-        for k in ["feature@is.Queryable", "feature@odata.type", "createdDateTime", "lastModifiedDateTime"] {
+        for k in [
+            "feature@is.Queryable",
+            "feature@odata.type",
+            "createdDateTime",
+            "lastModifiedDateTime",
+        ] {
             o.remove(k);
         }
         for (k, v) in c {
@@ -1025,8 +1348,17 @@ pub async fn set_surface_options(change: &serde_json::Value) -> Result<()> {
         }
     }
     let body = serde_json::json!({ "correlationId": uuid::Uuid::new_v4().to_string(), "options": options });
-    let method = if existed { reqwest::Method::PATCH } else { reqwest::Method::POST };
-    ows(method, "ows/v1.0/OutlookOptions/CalendarSurfaceOptions", Some(&body)).await?;
+    let method = if existed {
+        reqwest::Method::PATCH
+    } else {
+        reqwest::Method::POST
+    };
+    ows(
+        method,
+        "ows/v1.0/OutlookOptions/CalendarSurfaceOptions",
+        Some(&body),
+    )
+    .await?;
     Ok(())
 }
 
@@ -1037,10 +1369,17 @@ pub async fn set_surface_options(change: &serde_json::Value) -> Result<()> {
 /// the filters' entries in a string). A new view gets its id here.
 pub async fn save_calendar_view(view: &serde_json::Value) -> Result<serde_json::Value> {
     let mut v = view.clone();
-    if v.get("id").and_then(|i| i.as_str()).is_none_or(str::is_empty) {
+    if v.get("id")
+        .and_then(|i| i.as_str())
+        .is_none_or(str::is_empty)
+    {
         v["id"] = serde_json::json!(uuid::Uuid::new_v4().to_string());
     }
-    if let Some(f) = v.get("filterState").filter(|f| !f.is_string() && !f.is_null()).cloned() {
+    if let Some(f) = v
+        .get("filterState")
+        .filter(|f| !f.is_string() && !f.is_null())
+        .cloned()
+    {
         v["filterState"] = serde_json::json!(f.to_string());
     }
     ows(reqwest::Method::PUT, "ows/v1/SaveCalendarView", Some(&v)).await?;
@@ -1052,7 +1391,12 @@ pub async fn delete_calendar_view(id: &str) -> Result<()> {
     if id.is_empty() || !id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
         bail!("Not a saved view id");
     }
-    ows(reqwest::Method::DELETE, &format!("ows/v1/SaveCalendarView/{id}"), None).await?;
+    ows(
+        reqwest::Method::DELETE,
+        &format!("ows/v1/SaveCalendarView/{id}"),
+        None,
+    )
+    .await?;
     Ok(())
 }
 
@@ -1062,11 +1406,22 @@ pub async fn mailbox_time_zone() -> String {
     TZ.get_or_init(|| async {
         let r = async {
             let client = TeamsClient::new().await?;
-            let v: serde_json::Value = client.graph_get("/me/mailboxSettings/timeZone").await?.json().await?;
-            Ok::<_, anyhow::Error>(v.get("value").and_then(|t| t.as_str()).unwrap_or_default().to_string())
+            let v: serde_json::Value = client
+                .graph_get("/me/mailboxSettings/timeZone")
+                .await?
+                .json()
+                .await?;
+            Ok::<_, anyhow::Error>(
+                v.get("value")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+            )
         }
         .await;
-        r.ok().filter(|t| !t.is_empty()).unwrap_or_else(|| "UTC".into())
+        r.ok()
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| "UTC".into())
     })
     .await
     .clone()
@@ -1096,7 +1451,10 @@ pub async fn organizer(client: &TeamsClient, me: &Me) -> Me {
             out.name = v["displayName"].as_str().unwrap_or_default().to_string();
         }
         if out.mri.is_empty() {
-            out.mri = v["id"].as_str().map(|id| format!("8:orgid:{id}")).unwrap_or_default();
+            out.mri = v["id"]
+                .as_str()
+                .map(|id| format!("8:orgid:{id}"))
+                .unwrap_or_default();
         }
     }
     out
@@ -1116,15 +1474,27 @@ pub async fn availability(
 ) -> Result<(serde_json::Value, String)> {
     let me = &organizer(client, me).await;
     let (base, token) = crate::api::tabs::middle_tier(client).await?;
-    let mut attendees = vec![serde_json::json!({"type": "Organizer", "address": me.mail, "name": me.name, "mri": me.mri, "role": "Admin"})];
+    let mut attendees = vec![
+        serde_json::json!({"type": "Organizer", "address": me.mail, "name": me.name, "mri": me.mri, "role": "Admin"}),
+    ];
     for (mail, name) in people {
-        attendees.push(serde_json::json!({"type": "Required", "address": mail, "name": name, "role": "Admin"}));
+        attendees.push(
+            serde_json::json!({"type": "Required", "address": mail, "name": name, "role": "Admin"}),
+        );
     }
     let s = chrono::DateTime::parse_from_rfc3339(start)?;
     let e = chrono::DateTime::parse_from_rfc3339(end)?;
     // As Teams asks: UTC with milliseconds, the day's start, whole days.
-    let utc = |d: chrono::DateTime<chrono::FixedOffset>| d.with_timezone(&chrono::Utc).format("%Y-%m-%dT%H:%M:%S.000Z").to_string();
-    let day0 = s.date_naive().and_hms_opt(0, 0, 0).and_then(|d| d.and_local_timezone(*s.offset()).single()).unwrap_or(s);
+    let utc = |d: chrono::DateTime<chrono::FixedOffset>| {
+        d.with_timezone(&chrono::Utc)
+            .format("%Y-%m-%dT%H:%M:%S.000Z")
+            .to_string()
+    };
+    let day0 = s
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .and_then(|d| d.and_local_timezone(*s.offset()).single())
+        .unwrap_or(s);
     let days = ((e - day0).num_hours() + 23) / 24;
     let body = serde_json::json!({
         "attendees": attendees,
@@ -1149,9 +1519,17 @@ pub async fn availability(
     let mut out = serde_json::Map::new();
     let mut tz = String::new();
     for u in v.as_array().into_iter().flatten() {
-        let who = u.get("userPrincipalName").and_then(|x| x.as_str()).unwrap_or_default().to_lowercase();
+        let who = u
+            .get("userPrincipalName")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_lowercase();
         if who == me.mail.to_lowercase() {
-            tz = u.get("timeZone").and_then(|x| x.as_str()).unwrap_or_default().to_string();
+            tz = u
+                .get("timeZone")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string();
         }
         out.insert(who, serde_json::json!(busiest(u, s, e)));
     }
@@ -1160,7 +1538,11 @@ pub async fn availability(
 
 /// The strongest status overlapping `[s, e)`, as Teams' attendee chips
 /// show it.
-fn busiest(u: &serde_json::Value, s: chrono::DateTime<chrono::FixedOffset>, e: chrono::DateTime<chrono::FixedOffset>) -> &'static str {
+fn busiest(
+    u: &serde_json::Value,
+    s: chrono::DateTime<chrono::FixedOffset>,
+    e: chrono::DateTime<chrono::FixedOffset>,
+) -> &'static str {
     let named = |st: &str| match st {
         "Oof" => ("Oof", 4),
         "Busy" => ("Busy", 3),
@@ -1169,11 +1551,26 @@ fn busiest(u: &serde_json::Value, s: chrono::DateTime<chrono::FixedOffset>, e: c
         _ => ("Free", 0),
     };
     let mut best = ("Free", 0);
-    for ev in u.get("freeBusyEvents").and_then(|x| x.as_array()).into_iter().flatten() {
-        let t = |k: &str| ev.get(k).and_then(|x| x.as_str()).and_then(|x| chrono::DateTime::parse_from_rfc3339(x).ok());
-        let (Some(a), Some(b)) = (t("startTime"), t("endTime")) else { continue };
+    for ev in u
+        .get("freeBusyEvents")
+        .and_then(|x| x.as_array())
+        .into_iter()
+        .flatten()
+    {
+        let t = |k: &str| {
+            ev.get(k)
+                .and_then(|x| x.as_str())
+                .and_then(|x| chrono::DateTime::parse_from_rfc3339(x).ok())
+        };
+        let (Some(a), Some(b)) = (t("startTime"), t("endTime")) else {
+            continue;
+        };
         if a < e && b > s {
-            let n = named(ev.get("freeBusyStatus").and_then(|x| x.as_str()).unwrap_or_default());
+            let n = named(
+                ev.get("freeBusyStatus")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default(),
+            );
             if n.1 > best.1 {
                 best = n;
             }
@@ -1277,10 +1674,16 @@ pub struct FormChannel {
 /// The calendar event Teams' form sends to the middle tier (measured
 /// 2026-11-17: Send with attendees, Save without, a channel meeting).
 fn mt_event(form: &MeetingForm, me: &Me, group_mail: Option<&str>) -> Result<serde_json::Value> {
-    let start = chrono::DateTime::parse_from_rfc3339(&form.start).with_context(|| format!("Not a time: {}", form.start))?;
-    chrono::DateTime::parse_from_rfc3339(&form.end).with_context(|| format!("Not a time: {}", form.end))?;
+    let start = chrono::DateTime::parse_from_rfc3339(&form.start)
+        .with_context(|| format!("Not a time: {}", form.start))?;
+    chrono::DateTime::parse_from_rfc3339(&form.end)
+        .with_context(|| format!("Not a time: {}", form.end))?;
     let utc_offset = i64::from(start.offset().local_minus_utc()) / 60;
-    let people: Vec<&FormAttendee> = form.attendees.iter().filter(|a| a.address.contains('@')).collect();
+    let people: Vec<&FormAttendee> = form
+        .attendees
+        .iter()
+        .filter(|a| a.address.contains('@'))
+        .collect();
     let mut attendees = vec![serde_json::json!({
         "address": me.mail, "mri": me.mri, "name": me.name, "role": "Admin", "type": "Organizer"
     })];
@@ -1295,7 +1698,10 @@ fn mt_event(form: &MeetingForm, me: &Me, group_mail: Option<&str>) -> Result<ser
     if let Some(g) = group_mail {
         attendees.push(serde_json::json!({"address": g, "role": "User", "type": "Required"}));
     }
-    let id = (0..5).map(|_| rand_u32().to_string()).collect::<Vec<_>>().join("-");
+    let id = (0..5)
+        .map(|_| rand_u32().to_string())
+        .collect::<Vec<_>>()
+        .join("-");
     // Without the middle tier's name for your zone (a mailbox with no time
     // zone answers none) the event goes in UTC, and so must its times: the
     // middle tier reads them as wall-clock times in eventTimeZone.
@@ -1304,7 +1710,11 @@ fn mt_event(form: &MeetingForm, me: &Me, group_mail: Option<&str>) -> Result<ser
             return t.to_string();
         }
         chrono::DateTime::parse_from_rfc3339(t)
-            .map(|d| d.with_timezone(&chrono::Utc).format("%Y-%m-%dT%H:%M:%S+00:00").to_string())
+            .map(|d| {
+                d.with_timezone(&chrono::Utc)
+                    .format("%Y-%m-%dT%H:%M:%S+00:00")
+                    .to_string()
+            })
             .unwrap_or_else(|_| t.to_string())
     };
     let mut ev = serde_json::json!({
@@ -1341,12 +1751,16 @@ fn mt_event(form: &MeetingForm, me: &Me, group_mail: Option<&str>) -> Result<ser
     if let Some(c) = &form.channel {
         ev["categories"] = serde_json::json!([]);
         ev["mailboxAddress"] = serde_json::json!(group_mail.unwrap_or_default());
-        ev["skypeTeamsData"] = serde_json::json!(serde_json::json!({"cid": c.channel_id, "uid": me.mri, "type": 0}).to_string());
+        ev["skypeTeamsData"] = serde_json::json!(
+            serde_json::json!({"cid": c.channel_id, "uid": me.mri, "type": 0}).to_string()
+        );
     } else {
         // A virtual appointment is a meeting with its guests, never an
         // appointment (Teams sends isAppointment false with no attendees).
         ev["isAppointment"] = serde_json::json!(people.is_empty() && form.guests.is_empty());
-        ev["skypeTeamsData"] = serde_json::json!(serde_json::json!({"uid": me.mri, "type": 0, "private": true}).to_string());
+        ev["skypeTeamsData"] = serde_json::json!(
+            serde_json::json!({"uid": me.mri, "type": 0, "private": true}).to_string()
+        );
         ev["TransactionId"] = serde_json::json!(id);
     }
     if !form.guests.is_empty() {
@@ -1372,7 +1786,11 @@ fn rand_u32() -> u32 {
 /// - anything else is a plain event in your calendar.
 ///
 /// Answers the middle tier's event (objectId, join links).
-pub async fn schedule(client: &TeamsClient, form: &MeetingForm, me: &Me) -> Result<serde_json::Value> {
+pub async fn schedule(
+    client: &TeamsClient,
+    form: &MeetingForm,
+    me: &Me,
+) -> Result<serde_json::Value> {
     let me = &organizer(client, me).await;
     // The form's eventTimeZone is the middle tier's name for your zone, as
     // its free/busy answer gives it (the form asks when it opens).
@@ -1390,7 +1808,13 @@ pub async fn schedule(client: &TeamsClient, form: &MeetingForm, me: &Me) -> Resu
     let post = |url: String, body: serde_json::Value| {
         let token = token.clone();
         async move {
-            let r = client.http().post(&url).bearer_auth(&token).json(&body).send().await?;
+            let r = client
+                .http()
+                .post(&url)
+                .bearer_auth(&token)
+                .json(&body)
+                .send()
+                .await?;
             let status = r.status();
             let text = r.text().await.unwrap_or_default();
             if !status.is_success() {
@@ -1402,8 +1826,14 @@ pub async fn schedule(client: &TeamsClient, form: &MeetingForm, me: &Me) -> Resu
     if let Some(c) = &form.channel {
         let mail = group_mail(client, &c.team_id).await?;
         let ev = mt_event(form, me, Some(&mail))?;
-        let url = format!("{base}/v2.0/groups/smtp:{mail}/calendars/default/events?isOnlineMeeting=true&shouldDecryptData=false");
-        return Ok(post(url, ev).await?.get("value").cloned().unwrap_or_default());
+        let url = format!(
+            "{base}/v2.0/groups/smtp:{mail}/calendars/default/events?isOnlineMeeting=true&shouldDecryptData=false"
+        );
+        return Ok(post(url, ev)
+            .await?
+            .get("value")
+            .cloned()
+            .unwrap_or_default());
     }
     let ev = mt_event(form, me, None)?;
     let body = if form.online {
@@ -1416,17 +1846,34 @@ pub async fn schedule(client: &TeamsClient, form: &MeetingForm, me: &Me) -> Resu
     } else {
         serde_json::json!({"calendarEvent": ev})
     };
-    let url = format!("{base}/v2.0/me/calendars/default/events?isOnlineMeeting={}&shouldDecryptData=true", form.online);
-    Ok(post(url, body).await?.get("value").cloned().unwrap_or_default())
+    let url = format!(
+        "{base}/v2.0/me/calendars/default/events?isOnlineMeeting={}&shouldDecryptData=true",
+        form.online
+    );
+    Ok(post(url, body)
+        .await?
+        .get("value")
+        .cloned()
+        .unwrap_or_default())
 }
 
 /// Cast's meetings step (cast-app's CastWizard, read 2026-11-19): your
 /// Teams meetings from 60 minutes ago to 60 minutes ahead (Teams reads its
 /// calendar cache for that window), all-day ones first, then by start and
 /// subject; cancelled ones and ones without a Teams link left out.
-pub fn cast_meetings(events: &[CalendarEvent], now: chrono::DateTime<chrono::Utc>) -> Vec<&CalendarEvent> {
-    let at = |s: &str| chrono::DateTime::parse_from_rfc3339(s).ok().map(|d| d.with_timezone(&chrono::Utc));
-    let (from, to) = (now - chrono::Duration::minutes(60), now + chrono::Duration::minutes(60));
+pub fn cast_meetings(
+    events: &[CalendarEvent],
+    now: chrono::DateTime<chrono::Utc>,
+) -> Vec<&CalendarEvent> {
+    let at = |s: &str| {
+        chrono::DateTime::parse_from_rfc3339(s)
+            .ok()
+            .map(|d| d.with_timezone(&chrono::Utc))
+    };
+    let (from, to) = (
+        now - chrono::Duration::minutes(60),
+        now + chrono::Duration::minutes(60),
+    );
     let mut out: Vec<&CalendarEvent> = events
         .iter()
         .filter(|e| !e.is_cancelled && e.join_url.as_deref().is_some_and(|u| !u.is_empty()))
@@ -1435,7 +1882,12 @@ pub fn cast_meetings(events: &[CalendarEvent], now: chrono::DateTime<chrono::Utc
             _ => false,
         })
         .collect();
-    out.sort_by(|a, b| b.is_all_day.cmp(&a.is_all_day).then(a.start_utc.cmp(&b.start_utc)).then(a.subject.cmp(&b.subject)));
+    out.sort_by(|a, b| {
+        b.is_all_day
+            .cmp(&a.is_all_day)
+            .then(a.start_utc.cmp(&b.start_utc))
+            .then(a.subject.cmp(&b.subject))
+    });
     out
 }
 
@@ -1468,7 +1920,11 @@ pub async fn meet_now(client: &TeamsClient, subject: &str) -> Result<String> {
 /// share), its start and end both set to `started_at` (Teams'
 /// `startTime = endTime = new Date`). Teams Rooms reads that end: a room
 /// left alone in it leaves once its auto exit applies.
-pub fn instant_meeting_property(meeting: &serde_json::Value, title: &str, started_at: Option<&str>) -> serde_json::Value {
+pub fn instant_meeting_property(
+    meeting: &serde_json::Value,
+    title: &str,
+    started_at: Option<&str>,
+) -> serde_json::Value {
     let mut m = meeting.clone();
     if !m.is_object() {
         m = serde_json::json!({});
@@ -1487,21 +1943,48 @@ pub fn instant_meeting_property(meeting: &serde_json::Value, title: &str, starte
 /// property (`PUT {chatsvc}/v1/threads/{id}/properties?name=meeting`, the
 /// property as JSON text). `started` is a Meet now being joined now (Start
 /// meeting, Cast's Just cast), not "Get a link to share".
-pub async fn update_instant_meeting(client: &TeamsClient, join_url: &str, title: &str, started: bool) -> Result<()> {
-    let thread = crate::calling::breakout::thread_of_join_url(join_url).context("Not a meeting link")?;
-    let url = format!("{}/v1/threads/{}?view=msnp24Equivalent", client.chat_service_url(), thread);
-    let v: serde_json::Value = client.chat_get(&url).await?.json().await.context("Thread reply")?;
+pub async fn update_instant_meeting(
+    client: &TeamsClient,
+    join_url: &str,
+    title: &str,
+    started: bool,
+) -> Result<()> {
+    let thread =
+        crate::calling::breakout::thread_of_join_url(join_url).context("Not a meeting link")?;
+    let url = format!(
+        "{}/v1/threads/{}?view=msnp24Equivalent",
+        client.chat_service_url(),
+        thread
+    );
+    let v: serde_json::Value = client
+        .chat_get(&url)
+        .await?
+        .json()
+        .await
+        .context("Thread reply")?;
     let meeting: serde_json::Value = match v.pointer("/properties/meeting") {
-        Some(serde_json::Value::String(s)) => serde_json::from_str(s).context("The chat's meeting property")?,
+        Some(serde_json::Value::String(s)) => {
+            serde_json::from_str(s).context("The chat's meeting property")?
+        }
         Some(o @ serde_json::Value::Object(_)) => o.clone(),
         _ => bail!("The chat has no meeting property"),
     };
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+    let now = chrono::Utc::now()
+        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string();
     let updated = instant_meeting_property(&meeting, title, started.then_some(now.as_str()));
     super::msgactions::set_chat_topic(client, &thread, title.trim()).await?;
-    let prop_url = format!("{}/v1/threads/{}/properties?name=meeting", client.chat_service_url(), thread);
+    let prop_url = format!(
+        "{}/v1/threads/{}/properties?name=meeting",
+        client.chat_service_url(),
+        thread
+    );
     client
-        .chat_request(reqwest::Method::PUT, &prop_url, &serde_json::json!({ "meeting": updated.to_string() }))
+        .chat_request(
+            reqwest::Method::PUT,
+            &prop_url,
+            &serde_json::json!({ "meeting": updated.to_string() }),
+        )
         .await?;
     Ok(())
 }
@@ -1511,7 +1994,11 @@ async fn group_mail(client: &TeamsClient, team_id: &str) -> Result<String> {
     if team_id.is_empty() || !team_id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
         bail!("Not a team id");
     }
-    let v: serde_json::Value = client.graph_get(&format!("/groups/{team_id}?$select=mail")).await?.json().await?;
+    let v: serde_json::Value = client
+        .graph_get(&format!("/groups/{team_id}?$select=mail"))
+        .await?
+        .json()
+        .await?;
     v.get("mail")
         .and_then(|m| m.as_str())
         .filter(|m| m.contains('@'))
@@ -1530,7 +2017,10 @@ async fn rest_id(client: &TeamsClient, immutable: &str) -> Result<String> {
         .await?
         .json()
         .await?;
-    let id = v.pointer("/value/0/targetId").and_then(|t| t.as_str()).context("No id for the event")?;
+    let id = v
+        .pointer("/value/0/targetId")
+        .and_then(|t| t.as_str())
+        .context("No id for the event")?;
     Ok(id.replace('/', "-").replace('+', "_"))
 }
 
@@ -1538,7 +2028,14 @@ async fn rest_id(client: &TeamsClient, immutable: &str) -> Result<String> {
 /// Send update: `PUT {mt}/v2.0/me/calendars/events/{objectId}?isOnlineMeeting=…`
 /// with `{updatedCalendarEvent}`, from Teams' calendar service bundle);
 /// the service sends the attendees the update.
-pub async fn update_meeting(client: &TeamsClient, id: &str, form: &MeetingForm, me: &Me, join_url: &str, event_type: &str) -> Result<()> {
+pub async fn update_meeting(
+    client: &TeamsClient,
+    id: &str,
+    form: &MeetingForm,
+    me: &Me,
+    join_url: &str,
+    event_type: &str,
+) -> Result<()> {
     let object_id = rest_id(client, id).await?;
     let me = &organizer(client, me).await;
     let mut ev = mt_event(form, me, None)?;
@@ -1548,7 +2045,12 @@ pub async fn update_meeting(client: &TeamsClient, id: &str, form: &MeetingForm, 
     if let Some(link) = crate::calling::outgoing::MeetingLink::parse(join_url) {
         ev["skypeTeamsData"] = serde_json::json!(serde_json::json!({"cid": link.thread_id, "rid": 0, "mid": 0, "uid": me.mri, "private": !link.thread_id.ends_with("@thread.tacv2"), "type": 0}).to_string());
     }
-    if let Some(t) = match event_type { "occurrence" => Some("Occurrence"), "exception" => Some("Exception"), "seriesMaster" => Some("RecurringMaster"), _ => None } {
+    if let Some(t) = match event_type {
+        "occurrence" => Some("Occurrence"),
+        "exception" => Some("Exception"),
+        "seriesMaster" => Some("RecurringMaster"),
+        _ => None,
+    } {
         ev["eventType"] = serde_json::json!(t);
     }
     if let Some(o) = ev.as_object_mut() {
@@ -1557,14 +2059,25 @@ pub async fn update_meeting(client: &TeamsClient, id: &str, form: &MeetingForm, 
     let (base, token) = crate::api::tabs::middle_tier(client).await?;
     let r = client
         .http()
-        .put(format!("{base}/v2.0/me/calendars/events/{object_id}?isOnlineMeeting={}", form.online))
+        .put(format!(
+            "{base}/v2.0/me/calendars/events/{object_id}?isOnlineMeeting={}",
+            form.online
+        ))
         .bearer_auth(&token)
         .json(&serde_json::json!({ "updatedCalendarEvent": ev }))
         .send()
         .await?;
     let status = r.status();
     if !status.is_success() {
-        bail!("{status}: {}", r.text().await.unwrap_or_default().chars().take(300).collect::<String>());
+        bail!(
+            "{status}: {}",
+            r.text()
+                .await
+                .unwrap_or_default()
+                .chars()
+                .take(300)
+                .collect::<String>()
+        );
     }
     Ok(())
 }
@@ -1582,7 +2095,10 @@ pub async fn send_event_update(client: &TeamsClient, id: &str, form: &MeetingFor
     let select = "$select=subject,start,end,isAllDay,location,showAs,attendees,type,seriesMasterId,recurrence";
     let get = |path_id: String| async move {
         client
-            .graph_get_with(&format!("/me/events/{path_id}?{select}"), &[("Prefer", "IdType=\"ImmutableId\", outlook.timezone=\"UTC\"")])
+            .graph_get_with(
+                &format!("/me/events/{path_id}?{select}"),
+                &[("Prefer", "IdType=\"ImmutableId\", outlook.timezone=\"UTC\"")],
+            )
             .await?
             .json::<serde_json::Value>()
             .await
@@ -1592,15 +2108,23 @@ pub async fn send_event_update(client: &TeamsClient, id: &str, form: &MeetingFor
     let mut cur = get(path_id.clone()).await?;
     // All events in the series (or a new repeat for it) go to the series
     // master; this and all following events to the occurrence itself.
-    if (form.scope == "series" || (form.scope != "following" && form.recurrence_changed && form.recurrence.is_some()))
-        && let Some(master) = cur.get("seriesMasterId").and_then(|m| m.as_str()).filter(|m| !m.is_empty()) {
-            path_id = event_path_id(master)?.to_string();
-            cur = get(path_id.clone()).await?;
-        }
+    if (form.scope == "series"
+        || (form.scope != "following" && form.recurrence_changed && form.recurrence.is_some()))
+        && let Some(master) = cur
+            .get("seriesMasterId")
+            .and_then(|m| m.as_str())
+            .filter(|m| !m.is_empty())
+    {
+        path_id = event_path_id(master)?.to_string();
+        cur = get(path_id.clone()).await?;
+    }
     let tz = mailbox_time_zone().await;
     let body = update_event_request(&ews_id(&path_id), &cur, form, &tz)?;
     let v = owa_action("UpdateCalendarEvent", &body).await?;
-    let code = v.pointer("/Body/ResponseMessages/Items/0/ResponseCode").and_then(|c| c.as_str()).unwrap_or("NoError");
+    let code = v
+        .pointer("/Body/ResponseMessages/Items/0/ResponseCode")
+        .and_then(|c| c.as_str())
+        .unwrap_or("NoError");
     if code != "NoError" {
         bail!("Outlook didn't update the event: {code}");
     }
@@ -1609,7 +2133,12 @@ pub async fn send_event_update(client: &TeamsClient, id: &str, form: &MeetingFor
 
 /// The `UpdateCalendarEvent` request for [`send_event_update`]: the event as
 /// Graph has it (`cur`, times in UTC) against the form.
-fn update_event_request(ews: &str, cur: &serde_json::Value, form: &MeetingForm, tz: &str) -> Result<serde_json::Value> {
+fn update_event_request(
+    ews: &str,
+    cur: &serde_json::Value,
+    form: &MeetingForm,
+    tz: &str,
+) -> Result<serde_json::Value> {
     let item_id = serde_json::json!({ "__type": "ItemId:#Exchange", "Id": ews });
     let set = |field: &str, item: serde_json::Value| {
         let mut it = serde_json::json!({ "__type": "CalendarItem:#Exchange" });
@@ -1621,14 +2150,29 @@ fn update_event_request(ews: &str, cur: &serde_json::Value, form: &MeetingForm, 
     let mut updates = Vec::new();
     let cs = |p: &str| cur.pointer(p).and_then(|x| x.as_str()).unwrap_or_default();
     // Times: the form's, with their offset, in the mailbox's zone context.
-    let start = chrono::DateTime::parse_from_rfc3339(&form.start).with_context(|| format!("Not a time: {}", form.start))?;
-    let end = chrono::DateTime::parse_from_rfc3339(&form.end).with_context(|| format!("Not a time: {}", form.end))?;
-    let utc = |t: &str| chrono::NaiveDateTime::parse_from_str(t.split('.').next().unwrap_or(t), "%Y-%m-%dT%H:%M:%S").ok().map(|n| n.and_utc());
-    let same_time = utc(cs("/start/dateTime")) == Some(start.with_timezone(&chrono::Utc)) && utc(cs("/end/dateTime")) == Some(end.with_timezone(&chrono::Utc));
-    let all_day = cur.get("isAllDay").and_then(|b| b.as_bool()).unwrap_or(false);
-    let ews_time = |t: &chrono::DateTime<chrono::FixedOffset>| t.format("%Y-%m-%dT%H:%M:%S%.3f%:z").to_string();
+    let start = chrono::DateTime::parse_from_rfc3339(&form.start)
+        .with_context(|| format!("Not a time: {}", form.start))?;
+    let end = chrono::DateTime::parse_from_rfc3339(&form.end)
+        .with_context(|| format!("Not a time: {}", form.end))?;
+    let utc = |t: &str| {
+        chrono::NaiveDateTime::parse_from_str(t.split('.').next().unwrap_or(t), "%Y-%m-%dT%H:%M:%S")
+            .ok()
+            .map(|n| n.and_utc())
+    };
+    let same_time = utc(cs("/start/dateTime")) == Some(start.with_timezone(&chrono::Utc))
+        && utc(cs("/end/dateTime")) == Some(end.with_timezone(&chrono::Utc));
+    let all_day = cur
+        .get("isAllDay")
+        .and_then(|b| b.as_bool())
+        .unwrap_or(false);
+    let ews_time = |t: &chrono::DateTime<chrono::FixedOffset>| {
+        t.format("%Y-%m-%dT%H:%M:%S%.3f%:z").to_string()
+    };
     if form.subject.trim() != cs("/subject") {
-        updates.push(set("Subject", serde_json::json!({ "Subject": form.subject.trim() })));
+        updates.push(set(
+            "Subject",
+            serde_json::json!({ "Subject": form.subject.trim() }),
+        ));
     }
     // A series (its repeat changed): the times of day on the series' own
     // start date, as Outlook's series form shows them.
@@ -1638,28 +2182,43 @@ fn update_event_request(ews: &str, cur: &serde_json::Value, form: &MeetingForm, 
             let off = *start.offset();
             let (s0, e0) = (s0.with_timezone(&off), e0.with_timezone(&off));
             let same = s0.time() == start.time() && e0 - s0 == end - start;
-            let s = s0.date_naive().and_time(start.time()).and_local_timezone(off).single().unwrap_or(s0);
+            let s = s0
+                .date_naive()
+                .and_time(start.time())
+                .and_local_timezone(off)
+                .single()
+                .unwrap_or(s0);
             (s, s + (end - start), same)
         }
         _ => (start, end, same_time),
     };
     if !same_time || form.all_day != all_day {
-        updates.push(set("Start", serde_json::json!({ "Start": ews_time(&start) })));
+        updates.push(set(
+            "Start",
+            serde_json::json!({ "Start": ews_time(&start) }),
+        ));
         updates.push(set("End", serde_json::json!({ "End": ews_time(&end) })));
-        updates.push(set("IsAllDayEvent", serde_json::json!({ "IsAllDayEvent": form.all_day })));
+        updates.push(set(
+            "IsAllDayEvent",
+            serde_json::json!({ "IsAllDayEvent": form.all_day }),
+        ));
     }
     // This and all following events (EventScope 2, captured 2026-11-23): a
     // new repeat starts on the occurrence's date.
     let following = form.scope == "following";
     if form.recurrence_changed
-        && let Some(mut r) = form.recurrence.as_ref().and_then(ews_recurrence) {
-            if following {
-                r["RecurrenceRange"]["StartDate"] = start.date_naive().format("%Y-%m-%d").to_string().into();
-            }
-            updates.push(set("Recurrence", serde_json::json!({ "Recurrence": r })));
+        && let Some(mut r) = form.recurrence.as_ref().and_then(ews_recurrence)
+    {
+        if following {
+            r["RecurrenceRange"]["StartDate"] =
+                start.date_naive().format("%Y-%m-%d").to_string().into();
         }
+        updates.push(set("Recurrence", serde_json::json!({ "Recurrence": r })));
+    }
     // (A Teams meeting's "Microsoft Teams Meeting" isn't in the form.)
-    let cur_location = Some(cs("/location/displayName")).filter(|l| *l != "Microsoft Teams Meeting").unwrap_or_default();
+    let cur_location = Some(cs("/location/displayName"))
+        .filter(|l| *l != "Microsoft Teams Meeting")
+        .unwrap_or_default();
     if form.location.trim() != cur_location {
         updates.push(set("Location", serde_json::json!({ "Location": { "__type": "EnhancedLocation:#Exchange", "DisplayName": form.location.trim() } })));
     }
@@ -1674,7 +2233,10 @@ fn update_event_request(ews: &str, cur: &serde_json::Value, form: &MeetingForm, 
         _ => "Busy",
     };
     if !form.show_as.is_empty() && !cs("/showAs").eq_ignore_ascii_case(show_as) {
-        updates.push(set("LegacyFreeBusyStatus", serde_json::json!({ "FreeBusyType": show_as })));
+        updates.push(set(
+            "LegacyFreeBusyStatus",
+            serde_json::json!({ "FreeBusyType": show_as }),
+        ));
     }
     // Attendees: the whole lists when they changed, and what was added and
     // removed (Teams sends both).
@@ -1687,9 +2249,20 @@ fn update_event_request(ews: &str, cur: &serde_json::Value, form: &MeetingForm, 
         .filter(|a| a["type"].as_str() != Some("resource"))
         .map(|a| {
             (
-                a.pointer("/emailAddress/address").and_then(|x| x.as_str()).unwrap_or_default().to_ascii_lowercase(),
-                a.pointer("/emailAddress/name").and_then(|x| x.as_str()).unwrap_or_default().to_string(),
-                if a["type"].as_str() == Some("optional") { "Optional" } else { "Required" }.to_string(),
+                a.pointer("/emailAddress/address")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_ascii_lowercase(),
+                a.pointer("/emailAddress/name")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                if a["type"].as_str() == Some("optional") {
+                    "Optional"
+                } else {
+                    "Required"
+                }
+                .to_string(),
             )
         })
         .filter(|(m, _, _)| !m.is_empty())
@@ -1698,10 +2271,25 @@ fn update_event_request(ews: &str, cur: &serde_json::Value, form: &MeetingForm, 
         .attendees
         .iter()
         .filter(|a| a.address.contains('@'))
-        .map(|a| (a.address.to_ascii_lowercase(), a.name.clone(), if a.kind == "Optional" { "Optional" } else { "Required" }.to_string()))
+        .map(|a| {
+            (
+                a.address.to_ascii_lowercase(),
+                a.name.clone(),
+                if a.kind == "Optional" {
+                    "Optional"
+                } else {
+                    "Required"
+                }
+                .to_string(),
+            )
+        })
         .collect();
     let key = |l: &[(String, String, String)], kind: &str| {
-        let mut v: Vec<String> = l.iter().filter(|x| x.2 == kind).map(|x| x.0.clone()).collect();
+        let mut v: Vec<String> = l
+            .iter()
+            .filter(|x| x.2 == kind)
+            .map(|x| x.0.clone())
+            .collect();
         v.sort();
         v
     };
@@ -1715,29 +2303,58 @@ fn update_event_request(ews: &str, cur: &serde_json::Value, form: &MeetingForm, 
     });
     // (This and all following events can't change the attendees: "You can
     // only change attendees by editing the series.")
-    if !following && (key(&had, "Required") != key(&want, "Required") || key(&had, "Optional") != key(&want, "Optional")) {
-        let list = |kind: &str| want.iter().filter(|x| x.2 == kind).map(|x| mailbox(&x.1, &x.0)).collect::<Vec<_>>();
+    if !following
+        && (key(&had, "Required") != key(&want, "Required")
+            || key(&had, "Optional") != key(&want, "Optional"))
+    {
+        let list = |kind: &str| {
+            want.iter()
+                .filter(|x| x.2 == kind)
+                .map(|x| mailbox(&x.1, &x.0))
+                .collect::<Vec<_>>()
+        };
         let diff = |a: &[(String, String, String)], b: &[(String, String, String)], kind: &str| {
             a.iter()
                 .filter(|x| x.2 == kind && !b.iter().any(|y| y.2 == kind && y.0 == x.0))
                 .map(|x| mailbox(&x.1, &x.0))
                 .collect::<Vec<_>>()
         };
-        updates.push(set("OptionalAttendees", serde_json::json!({ "OptionalAttendees": list("Optional") })));
-        updates.push(set("RequiredAttendees", serde_json::json!({ "RequiredAttendees": list("Required") })));
+        updates.push(set(
+            "OptionalAttendees",
+            serde_json::json!({ "OptionalAttendees": list("Optional") }),
+        ));
+        updates.push(set(
+            "RequiredAttendees",
+            serde_json::json!({ "RequiredAttendees": list("Required") }),
+        ));
         let b = body.as_object_mut().context("request")?;
-        b.insert("AddedRequiredAttendees".into(), diff(&want, &had, "Required").into());
-        b.insert("AddedOptionalAttendees".into(), diff(&want, &had, "Optional").into());
+        b.insert(
+            "AddedRequiredAttendees".into(),
+            diff(&want, &had, "Required").into(),
+        );
+        b.insert(
+            "AddedOptionalAttendees".into(),
+            diff(&want, &had, "Optional").into(),
+        );
         b.insert("AddedResources".into(), serde_json::json!([]));
-        b.insert("RemovedRequiredAttendees".into(), diff(&had, &want, "Required").into());
-        b.insert("RemovedOptionalAttendees".into(), diff(&had, &want, "Optional").into());
+        b.insert(
+            "RemovedRequiredAttendees".into(),
+            diff(&had, &want, "Required").into(),
+        );
+        b.insert(
+            "RemovedOptionalAttendees".into(),
+            diff(&had, &want, "Optional").into(),
+        );
         b.insert("RemovedResources".into(), serde_json::json!([]));
     }
     updates.extend(super::event_form::form_updates(&form.outlook));
     if updates.is_empty() {
         // Nothing the form shows changed: send the title again, so the
         // attendees still get the update.
-        updates.push(set("Subject", serde_json::json!({ "Subject": form.subject.trim() })));
+        updates.push(set(
+            "Subject",
+            serde_json::json!({ "Subject": form.subject.trim() }),
+        ));
     }
     body["ItemChange"] = serde_json::json!({ "__type": "ItemChange:#Exchange", "Updates": updates, "ItemId": item_id });
     Ok(serde_json::json!({
@@ -1757,8 +2374,29 @@ fn update_event_request(ews: &str, cur: &serde_json::Value, form: &MeetingForm, 
 /// `FirstDayOfWeek` Sunday and `Interval`, then `EndDateRecurrence` with
 /// `EndDate` and `StartDate`, or `NoEndRecurrence`).
 fn ews_recurrence(r: &serde_json::Value) -> Option<serde_json::Value> {
-    const DAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    const MONTHS: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const DAYS: [&str; 7] = [
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+    ];
+    const MONTHS: [&str; 12] = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
     let p = r.get("pattern")?;
     let num = |v: &serde_json::Value, k: &str| v.get(k).and_then(|x| x.as_u64());
     let kind = |t: &str| (format!("{t}:#Exchange"), t.to_string());
@@ -1769,7 +2407,14 @@ fn ews_recurrence(r: &serde_json::Value) -> Option<serde_json::Value> {
         }
         2 => {
             let w = &p["weekly"];
-            let mut days: Vec<usize> = w.get("daysOfTheWeek")?.as_array()?.iter().filter_map(|d| d.as_u64()).map(|d| d as usize).filter(|d| *d < 7).collect();
+            let mut days: Vec<usize> = w
+                .get("daysOfTheWeek")?
+                .as_array()?
+                .iter()
+                .filter_map(|d| d.as_u64())
+                .map(|d| d as usize)
+                .filter(|d| *d < 7)
+                .collect();
             days.sort_unstable();
             days.dedup();
             if days.is_empty() {
@@ -1796,7 +2441,12 @@ fn ews_recurrence(r: &serde_json::Value) -> Option<serde_json::Value> {
         }
         _ => return None,
     };
-    let date = |k: &str| r.pointer(&format!("/range/{k}")).and_then(|d| d.as_str()).filter(|d| d.len() >= 10).map(|d| d[..10].to_string());
+    let date = |k: &str| {
+        r.pointer(&format!("/range/{k}"))
+            .and_then(|d| d.as_str())
+            .filter(|d| d.len() >= 10)
+            .map(|d| d[..10].to_string())
+    };
     let start = date("startDate")?;
     let range = match date("endDate") {
         Some(end) => {
@@ -1808,15 +2458,28 @@ fn ews_recurrence(r: &serde_json::Value) -> Option<serde_json::Value> {
             serde_json::json!({ "__type": ty, "__typename": name, "StartDate": start })
         }
     };
-    Some(serde_json::json!({ "__type": "RecurrenceType:#Exchange", "RecurrencePattern": pattern, "RecurrenceRange": range }))
+    Some(
+        serde_json::json!({ "__type": "RecurrenceType:#Exchange", "RecurrencePattern": pattern, "RecurrenceRange": range }),
+    )
 }
 
 /// Cancel a meeting you organise, with an optional note, for one event, this
 /// and the following events or the series (`scope`). A channel meeting is
 /// cancelled in its team's calendar and post (`PUT {mt}/v2.0/groups/smtp:<group>/calendars/events/<iCalUId>/cancel`,
 /// measured 2026-11-17).
-pub async fn cancel_meeting(client: &TeamsClient, ev: &serde_json::Value, team_id: &str, note: &str, scope: &str) -> Result<()> {
-    let s = |k: &str| ev.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+pub async fn cancel_meeting(
+    client: &TeamsClient,
+    ev: &serde_json::Value,
+    team_id: &str,
+    note: &str,
+    scope: &str,
+) -> Result<()> {
+    let s = |k: &str| {
+        ev.get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     if !s("channel_id").is_empty() {
         let (base, token) = crate::api::tabs::middle_tier(client).await?;
         let mail = group_mail(client, team_id).await?;
@@ -1843,7 +2506,9 @@ pub async fn cancel_meeting(client: &TeamsClient, ev: &serde_json::Value, team_i
         });
         client
             .http()
-            .put(format!("{base}/v2.0/groups/smtp:{mail}/calendars/events/{uid}/cancel"))
+            .put(format!(
+                "{base}/v2.0/groups/smtp:{mail}/calendars/events/{uid}/cancel"
+            ))
             .bearer_auth(&token)
             .json(&body)
             .send()
@@ -1877,8 +2542,17 @@ fn cancel_scope(scope: &str) -> u8 {
 /// message as HTML `Notes`. Exchange removes the events and sends the
 /// attendees "Canceled: <subject>" with the message.
 pub async fn cancel_event(ev: &serde_json::Value, scope: &str, note: &str) -> Result<()> {
-    let s = |k: &str| ev.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
-    let id = if scope == "series" && !s("series_master_id").is_empty() { s("series_master_id") } else { s("id") };
+    let s = |k: &str| {
+        ev.get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
+    let id = if scope == "series" && !s("series_master_id").is_empty() {
+        s("series_master_id")
+    } else {
+        s("id")
+    };
     let tz = mailbox_time_zone().await;
     let body = cancel_event_request(&ews_id(event_path_id(&id)?), scope, note, &tz);
     let v = owa_action("CancelCalendarEvent", &body).await?;
@@ -1906,7 +2580,13 @@ fn cancel_event_request(ews: &str, scope: &str, note: &str, tz: &str) -> serde_j
     if !note.is_empty() {
         let html: String = note
             .lines()
-            .map(|l| if l.trim().is_empty() { "<div><br></div>".to_string() } else { format!("<div>{}</div>", super::chat::html_escape(l)) })
+            .map(|l| {
+                if l.trim().is_empty() {
+                    "<div><br></div>".to_string()
+                } else {
+                    format!("<div>{}</div>", super::chat::html_escape(l))
+                }
+            })
             .collect();
         body["Notes"] = serde_json::json!({ "__type": "BodyContentType:#Exchange", "BodyType": "HTML", "Value": html });
     }
@@ -1926,21 +2606,38 @@ mod tests {
     #[test]
     fn cancel_event_request_as_outlook_sends_it() {
         // This event, with a message (captured on winpc 2026-11-23).
-        let r = super::cancel_event_request("AAkBOQ=", "occurrence", "Sorry & bye\n\nnext week", "Pacific Standard Time");
+        let r = super::cancel_event_request(
+            "AAkBOQ=",
+            "occurrence",
+            "Sorry & bye\n\nnext week",
+            "Pacific Standard Time",
+        );
         assert_eq!(r["__type"], "CancelCalendarEventJsonRequest:#Exchange");
-        assert_eq!(r["Header"]["TimeZoneContext"]["TimeZoneDefinition"]["Id"], "Pacific Standard Time");
+        assert_eq!(
+            r["Header"]["TimeZoneContext"]["TimeZoneDefinition"]["Id"],
+            "Pacific Standard Time"
+        );
         assert_eq!(r["Body"]["EventId"]["Id"], "AAkBOQ=");
         assert_eq!(r["Body"]["EventScope"], 1);
         assert_eq!(r["Body"]["ClientSupportsIrm"], true);
         assert_eq!(r["Body"]["Notes"]["BodyType"], "HTML");
-        assert_eq!(r["Body"]["Notes"]["Value"], "<div>Sorry &amp; bye</div><div><br></div><div>next week</div>");
+        assert_eq!(
+            r["Body"]["Notes"]["Value"],
+            "<div>Sorry &amp; bye</div><div><br></div><div>next week</div>"
+        );
         // This and all following events; all events without a message.
-        assert_eq!(super::cancel_event_request("x", "following", "", "UTC")["Body"]["EventScope"], 2);
+        assert_eq!(
+            super::cancel_event_request("x", "following", "", "UTC")["Body"]["EventScope"],
+            2
+        );
         let all = super::cancel_event_request("x", "series", "  ", "UTC");
         assert_eq!(all["Body"]["EventScope"], 3);
         assert!(all["Body"].get("Notes").is_none());
         // An event that doesn't repeat: this event.
-        assert_eq!(super::cancel_event_request("x", "", "", "UTC")["Body"]["EventScope"], 1);
+        assert_eq!(
+            super::cancel_event_request("x", "", "", "UTC")["Body"]["EventScope"],
+            1
+        );
     }
 
     #[test]
@@ -1957,11 +2654,18 @@ mod tests {
             start: "2026-11-26T14:00:00-08:00".into(),
             end: "2026-11-26T14:30:00-08:00".into(),
             show_as: "Busy".into(),
-            attendees: vec![super::FormAttendee { address: "b@x.com".into(), name: "B".into(), kind: "Required".into() }],
+            attendees: vec![super::FormAttendee {
+                address: "b@x.com".into(),
+                name: "B".into(),
+                kind: "Required".into(),
+            }],
             ..Default::default()
         };
         let r = super::update_event_request("ID/1=", &cur, &form, "Pacific Standard Time").unwrap();
-        assert_eq!(r["Header"]["TimeZoneContext"]["TimeZoneDefinition"]["Id"], "Pacific Standard Time");
+        assert_eq!(
+            r["Header"]["TimeZoneContext"]["TimeZoneDefinition"]["Id"],
+            "Pacific Standard Time"
+        );
         let ups = r["Body"]["ItemChange"]["Updates"].as_array().unwrap();
         assert_eq!(ups.len(), 1, "{ups:?}");
         assert_eq!(ups[0]["Path"]["FieldURI"], "Subject");
@@ -1969,17 +2673,51 @@ mod tests {
         assert_eq!(r["Body"]["EventId"]["Id"], "ID/1=");
         assert!(r["Body"].get("AddedRequiredAttendees").is_none());
         // A new attendee and a later time.
-        form.attendees.push(super::FormAttendee { address: "c@x.com".into(), name: "C".into(), kind: "Required".into() });
+        form.attendees.push(super::FormAttendee {
+            address: "c@x.com".into(),
+            name: "C".into(),
+            kind: "Required".into(),
+        });
         form.start = "2026-11-26T15:00:00-08:00".into();
         form.end = "2026-11-26T15:30:00-08:00".into();
         let r = super::update_event_request("ID/1=", &cur, &form, "Pacific Standard Time").unwrap();
-        let fields: Vec<&str> = r["Body"]["ItemChange"]["Updates"].as_array().unwrap().iter().map(|u| u["Path"]["FieldURI"].as_str().unwrap()).collect();
-        assert_eq!(fields, ["Subject", "Start", "End", "IsAllDayEvent", "OptionalAttendees", "RequiredAttendees"]);
+        let fields: Vec<&str> = r["Body"]["ItemChange"]["Updates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|u| u["Path"]["FieldURI"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            fields,
+            [
+                "Subject",
+                "Start",
+                "End",
+                "IsAllDayEvent",
+                "OptionalAttendees",
+                "RequiredAttendees"
+            ]
+        );
         let start = &r["Body"]["ItemChange"]["Updates"][1]["Item"]["Start"];
         assert_eq!(start, "2026-11-26T15:00:00.000-08:00");
-        assert_eq!(r["Body"]["AddedRequiredAttendees"][0]["Mailbox"]["EmailAddress"], "c@x.com");
-        assert_eq!(r["Body"]["RemovedRequiredAttendees"].as_array().unwrap().len(), 0);
-        assert_eq!(r["Body"]["ItemChange"]["Updates"][5]["Item"]["RequiredAttendees"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            r["Body"]["AddedRequiredAttendees"][0]["Mailbox"]["EmailAddress"],
+            "c@x.com"
+        );
+        assert_eq!(
+            r["Body"]["RemovedRequiredAttendees"]
+                .as_array()
+                .unwrap()
+                .len(),
+            0
+        );
+        assert_eq!(
+            r["Body"]["ItemChange"]["Updates"][5]["Item"]["RequiredAttendees"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]
@@ -1999,7 +2737,11 @@ mod tests {
             start: "2026-12-01T15:00:00-08:00".into(),
             end: "2026-12-01T15:30:00-08:00".into(),
             show_as: "Busy".into(),
-            attendees: vec![super::FormAttendee { address: "b@x.com".into(), name: "B".into(), kind: "Required".into() }],
+            attendees: vec![super::FormAttendee {
+                address: "b@x.com".into(),
+                name: "B".into(),
+                kind: "Required".into(),
+            }],
             recurrence: Some(serde_json::json!({
                 "pattern": { "patternType": 2, "weekly": { "interval": 1, "daysOfTheWeek": [4, 2] } },
                 "range": { "startDate": "2026-11-24T00:00:00-08:00", "endDate": "2026-12-15T00:00:00-08:00" }
@@ -2007,17 +2749,24 @@ mod tests {
             recurrence_changed: true,
             ..Default::default()
         };
-        let r = super::update_event_request("M/1=", &master, &form, "Pacific Standard Time").unwrap();
+        let r =
+            super::update_event_request("M/1=", &master, &form, "Pacific Standard Time").unwrap();
         let ups = r["Body"]["ItemChange"]["Updates"].as_array().unwrap();
         assert_eq!(ups.len(), 1, "{ups:?}");
         assert_eq!(ups[0]["Path"]["FieldURI"], "Recurrence");
         let rec = &ups[0]["Item"]["Recurrence"];
         assert_eq!(rec["__type"], "RecurrenceType:#Exchange");
-        assert_eq!(rec["RecurrencePattern"]["__type"], "WeeklyRecurrence:#Exchange");
+        assert_eq!(
+            rec["RecurrencePattern"]["__type"],
+            "WeeklyRecurrence:#Exchange"
+        );
         assert_eq!(rec["RecurrencePattern"]["DaysOfWeek"], "Tuesday Thursday");
         assert_eq!(rec["RecurrencePattern"]["FirstDayOfWeek"], "Sunday");
         assert_eq!(rec["RecurrencePattern"]["Interval"], 1);
-        assert_eq!(rec["RecurrenceRange"]["__type"], "EndDateRecurrence:#Exchange");
+        assert_eq!(
+            rec["RecurrenceRange"]["__type"],
+            "EndDateRecurrence:#Exchange"
+        );
         assert_eq!(rec["RecurrenceRange"]["StartDate"], "2026-11-24");
         assert_eq!(rec["RecurrenceRange"]["EndDate"], "2026-12-15");
         assert_eq!(r["Body"]["EventId"]["Id"], "M/1=");
@@ -2025,14 +2774,22 @@ mod tests {
         // A later time of day moves the series, on its own start date.
         form.start = "2026-12-01T16:00:00-08:00".into();
         form.end = "2026-12-01T17:00:00-08:00".into();
-        let r = super::update_event_request("M/1=", &master, &form, "Pacific Standard Time").unwrap();
+        let r =
+            super::update_event_request("M/1=", &master, &form, "Pacific Standard Time").unwrap();
         let ups = r["Body"]["ItemChange"]["Updates"].as_array().unwrap();
         assert_eq!(ups[0]["Item"]["Start"], "2026-11-24T16:00:00.000-08:00");
         assert_eq!(ups[1]["Item"]["End"], "2026-11-24T17:00:00.000-08:00");
         // Unchanged repeat: no Recurrence.
         form.recurrence_changed = false;
-        let r = super::update_event_request("M/1=", &master, &form, "Pacific Standard Time").unwrap();
-        assert!(r["Body"]["ItemChange"]["Updates"].as_array().unwrap().iter().all(|u| u["Path"]["FieldURI"] != "Recurrence"));
+        let r =
+            super::update_event_request("M/1=", &master, &form, "Pacific Standard Time").unwrap();
+        assert!(
+            r["Body"]["ItemChange"]["Updates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|u| u["Path"]["FieldURI"] != "Recurrence")
+        );
         // Other repeats.
         let rec = |p: serde_json::Value, end: Option<&str>| {
             let mut range = serde_json::json!({ "startDate": "2026-11-24T00:00:00-08:00" });
@@ -2041,14 +2798,29 @@ mod tests {
             }
             super::ews_recurrence(&serde_json::json!({ "pattern": p, "range": range })).unwrap()
         };
-        let d = rec(serde_json::json!({ "patternType": 1, "daily": { "interval": 2 } }), None);
-        assert_eq!(d["RecurrencePattern"]["__type"], "DailyRecurrence:#Exchange");
+        let d = rec(
+            serde_json::json!({ "patternType": 1, "daily": { "interval": 2 } }),
+            None,
+        );
+        assert_eq!(
+            d["RecurrencePattern"]["__type"],
+            "DailyRecurrence:#Exchange"
+        );
         assert_eq!(d["RecurrencePattern"]["Interval"], 2);
         assert_eq!(d["RecurrenceRange"]["__type"], "NoEndRecurrence:#Exchange");
-        let m = rec(serde_json::json!({ "patternType": 3, "monthly": { "interval": 1, "dayOfMonth": 24 } }), Some("2027-03-01T00:00:00-08:00"));
-        assert_eq!(m["RecurrencePattern"]["__type"], "AbsoluteMonthlyRecurrence:#Exchange");
+        let m = rec(
+            serde_json::json!({ "patternType": 3, "monthly": { "interval": 1, "dayOfMonth": 24 } }),
+            Some("2027-03-01T00:00:00-08:00"),
+        );
+        assert_eq!(
+            m["RecurrencePattern"]["__type"],
+            "AbsoluteMonthlyRecurrence:#Exchange"
+        );
         assert_eq!(m["RecurrencePattern"]["DayOfMonth"], 24);
-        let y = rec(serde_json::json!({ "patternType": 5, "yearly": { "interval": 1, "month": 11, "dayOfMonth": 24 } }), None);
+        let y = rec(
+            serde_json::json!({ "patternType": 5, "yearly": { "interval": 1, "month": 11, "dayOfMonth": 24 } }),
+            None,
+        );
         assert_eq!(y["RecurrencePattern"]["Month"], "November");
     }
 
@@ -2070,7 +2842,11 @@ mod tests {
             start: "2026-12-07T21:00:00-08:00".into(),
             end: "2026-12-07T21:30:00-08:00".into(),
             show_as: "Busy".into(),
-            attendees: vec![super::FormAttendee { address: "b@x.com".into(), name: "B".into(), kind: "Required".into() }],
+            attendees: vec![super::FormAttendee {
+                address: "b@x.com".into(),
+                name: "B".into(),
+                kind: "Required".into(),
+            }],
             scope: "following".into(),
             ..Default::default()
         };
@@ -2090,18 +2866,33 @@ mod tests {
         }));
         form.recurrence_changed = true;
         // Attendees can't change from here.
-        form.attendees.push(super::FormAttendee { address: "c@x.com".into(), name: "C".into(), kind: "Required".into() });
+        form.attendees.push(super::FormAttendee {
+            address: "c@x.com".into(),
+            name: "C".into(),
+            kind: "Required".into(),
+        });
         let r = super::update_event_request("O/1=", &occ, &form, "Pacific Standard Time").unwrap();
         let ups = r["Body"]["ItemChange"]["Updates"].as_array().unwrap();
-        let field = |f: &str| ups.iter().find(|u| u["Path"]["FieldURI"] == f).cloned().unwrap_or_default();
-        assert_eq!(field("Start")["Item"]["Start"], "2026-12-07T21:30:00.000-08:00");
+        let field = |f: &str| {
+            ups.iter()
+                .find(|u| u["Path"]["FieldURI"] == f)
+                .cloned()
+                .unwrap_or_default()
+        };
+        assert_eq!(
+            field("Start")["Item"]["Start"],
+            "2026-12-07T21:30:00.000-08:00"
+        );
         assert_eq!(field("End")["Item"]["End"], "2026-12-07T22:00:00.000-08:00");
         let rec = &field("Recurrence")["Item"]["Recurrence"];
         assert_eq!(rec["RecurrencePattern"]["DaysOfWeek"], "Monday Wednesday");
         assert_eq!(rec["RecurrenceRange"]["StartDate"], "2026-12-07");
         assert_eq!(rec["RecurrenceRange"]["EndDate"], "2027-05-17");
         assert!(r["Body"].get("AddedRequiredAttendees").is_none());
-        assert!(ups.iter().all(|u| u["Path"]["FieldURI"] != "RequiredAttendees"));
+        assert!(
+            ups.iter()
+                .all(|u| u["Path"]["FieldURI"] != "RequiredAttendees")
+        );
         // The series (Edit series): EventScope 0.
         form.scope = "series".into();
         let r = super::update_event_request("M/1=", &occ, &form, "Pacific Standard Time").unwrap();
@@ -2123,43 +2914,101 @@ mod tests {
             end: "2026-11-26T15:30:00-08:00".into(),
             show_as: "Busy".into(),
             attendees: vec![
-                super::FormAttendee { address: "c@x.com".into(), name: "C".into(), kind: "Required".into() },
-                super::FormAttendee { address: "b@x.com".into(), name: "B".into(), kind: "Required".into() },
+                super::FormAttendee {
+                    address: "c@x.com".into(),
+                    name: "C".into(),
+                    kind: "Required".into(),
+                },
+                super::FormAttendee {
+                    address: "b@x.com".into(),
+                    name: "B".into(),
+                    kind: "Required".into(),
+                },
             ],
             target_audience: 2,
             ..Default::default()
         };
         let r = super::update_event_request("ID/1=", &cur, &form, "Pacific Standard Time").unwrap();
         assert_eq!(r["Body"]["TargetAudience"], 2);
-        assert_eq!(r["Body"]["AddedRequiredAttendees"][0]["Mailbox"]["EmailAddress"], "b@x.com");
+        assert_eq!(
+            r["Body"]["AddedRequiredAttendees"][0]["Mailbox"]["EmailAddress"],
+            "b@x.com"
+        );
     }
 
     #[test]
     fn cast_lists_meetings_as_teams() {
-        let ev = |subject: &str, start: &str, end: &str, all_day: bool, link: bool| super::CalendarEvent {
-            subject: subject.into(),
-            start_utc: start.into(),
-            end_utc: end.into(),
-            is_all_day: all_day,
-            join_url: link.then(|| "https://teams.microsoft.com/l/meetup-join/x".to_string()),
-            ..Default::default()
+        let ev = |subject: &str, start: &str, end: &str, all_day: bool, link: bool| {
+            super::CalendarEvent {
+                subject: subject.into(),
+                start_utc: start.into(),
+                end_utc: end.into(),
+                is_all_day: all_day,
+                join_url: link.then(|| "https://teams.microsoft.com/l/meetup-join/x".to_string()),
+                ..Default::default()
+            }
         };
-        let now = chrono::DateTime::parse_from_rfc3339("2026-11-20T10:00:00Z").unwrap().with_timezone(&chrono::Utc);
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-20T10:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
         let list = vec![
-            ev("B later", "2026-11-20T10:30:00Z", "2026-11-20T11:00:00Z", false, true),
-            ev("A earlier", "2026-11-20T09:30:00Z", "2026-11-20T10:30:00Z", false, true),
-            ev("No link", "2026-11-20T10:00:00Z", "2026-11-20T10:30:00Z", false, false),
-            ev("Too late", "2026-11-20T11:00:00Z", "2026-11-20T11:30:00Z", false, true),
-            ev("Over", "2026-11-20T08:00:00Z", "2026-11-20T09:00:00Z", false, true),
-            ev("All day", "2026-11-20T00:00:00Z", "2026-11-21T00:00:00Z", true, true),
+            ev(
+                "B later",
+                "2026-11-20T10:30:00Z",
+                "2026-11-20T11:00:00Z",
+                false,
+                true,
+            ),
+            ev(
+                "A earlier",
+                "2026-11-20T09:30:00Z",
+                "2026-11-20T10:30:00Z",
+                false,
+                true,
+            ),
+            ev(
+                "No link",
+                "2026-11-20T10:00:00Z",
+                "2026-11-20T10:30:00Z",
+                false,
+                false,
+            ),
+            ev(
+                "Too late",
+                "2026-11-20T11:00:00Z",
+                "2026-11-20T11:30:00Z",
+                false,
+                true,
+            ),
+            ev(
+                "Over",
+                "2026-11-20T08:00:00Z",
+                "2026-11-20T09:00:00Z",
+                false,
+                true,
+            ),
+            ev(
+                "All day",
+                "2026-11-20T00:00:00Z",
+                "2026-11-21T00:00:00Z",
+                true,
+                true,
+            ),
         ];
-        let got: Vec<&str> = super::cast_meetings(&list, now).iter().map(|e| e.subject.as_str()).collect();
+        let got: Vec<&str> = super::cast_meetings(&list, now)
+            .iter()
+            .map(|e| e.subject.as_str())
+            .collect();
         assert_eq!(got, vec!["All day", "A earlier", "B later"]);
     }
 
     #[test]
     fn scheduling_bodies_match_teams_form() {
-        let me = super::Me { name: "OST Test 1".into(), mail: "t1@x.com".into(), mri: "8:orgid:1".into() };
+        let me = super::Me {
+            name: "OST Test 1".into(),
+            mail: "t1@x.com".into(),
+            mri: "8:orgid:1".into(),
+        };
         let form: super::MeetingForm = serde_json::from_value(serde_json::json!({
             "subject": " Sync ", "start": "2026-11-17T15:00:00-08:00", "end": "2026-11-17T15:30:00-08:00",
             "attendees": [{"address": "t2@x.com", "name": "OST Test 2", "type": "Required"}, {"address": "nope"}],
@@ -2175,20 +3024,37 @@ mod tests {
         assert_eq!(e["attendees"][0]["type"], "Organizer");
         assert_eq!(e["eventTimeZone"], "PacificSt");
         let mut ch = form.clone();
-        ch.channel = Some(super::FormChannel { channel_id: "19:c@thread.tacv2".into(), ..Default::default() });
-        ch.recurrence = Some(serde_json::json!({"pattern": {"patternType": 2, "weekly": {"interval": 1, "daysOfTheWeek": [2]}}, "range": {"startDate": "2026-11-17T00:00:00-08:00"}}));
+        ch.channel = Some(super::FormChannel {
+            channel_id: "19:c@thread.tacv2".into(),
+            ..Default::default()
+        });
+        ch.recurrence = Some(
+            serde_json::json!({"pattern": {"patternType": 2, "weekly": {"interval": 1, "daysOfTheWeek": [2]}}, "range": {"startDate": "2026-11-17T00:00:00-08:00"}}),
+        );
         let c = super::mt_event(&ch, &me, Some("Team@x.com")).unwrap();
         assert_eq!(c["eventType"], "RecurringMaster");
         assert_eq!(c["mailboxAddress"], "Team@x.com");
-        assert_eq!(c["attendees"].as_array().unwrap().last().unwrap()["address"], "Team@x.com");
-        assert!(c["skypeTeamsData"].as_str().unwrap().contains("19:c@thread.tacv2"));
+        assert_eq!(
+            c["attendees"].as_array().unwrap().last().unwrap()["address"],
+            "Team@x.com"
+        );
+        assert!(
+            c["skypeTeamsData"]
+                .as_str()
+                .unwrap()
+                .contains("19:c@thread.tacv2")
+        );
         assert_eq!(c["eventRecurrencePattern"]["patternType"], 2);
     }
 
     #[test]
     fn a_virtual_appointment_is_sent_as_teams_sends_it() {
         // Calendar ▸ New ▸ Virtual appointment, Send (captured 2026-11-19).
-        let me = super::Me { name: "OST Test 1".into(), mail: "t1@x.com".into(), mri: "8:orgid:1".into() };
+        let me = super::Me {
+            name: "OST Test 1".into(),
+            mail: "t1@x.com".into(),
+            mri: "8:orgid:1".into(),
+        };
         let form: super::MeetingForm = serde_json::from_value(serde_json::json!({
             "subject": "OST TEST 217 virtual appointment", "start": "2026-11-18T23:30:00-08:00", "end": "2026-11-19T00:00:00-08:00",
             "online": true, "timeZone": "PacificSt", "templateId": super::VIRTUAL_APPOINTMENT_TEMPLATE,
@@ -2196,12 +3062,18 @@ mod tests {
         }))
         .unwrap();
         let e = super::mt_event(&form, &me, None).unwrap();
-        assert_eq!(e["meetingTemplateId"], "firstparty_e514e598-fba6-4e1f-b8b3-138dd3bca748");
+        assert_eq!(
+            e["meetingTemplateId"],
+            "firstparty_e514e598-fba6-4e1f-b8b3-138dd3bca748"
+        );
         assert_eq!(e["isAppointment"], false);
         assert_eq!(e["attendees"].as_array().unwrap().len(), 1);
-        assert_eq!(e["virtualAppointmentInfo"], serde_json::json!({
+        assert_eq!(
+            e["virtualAppointmentInfo"],
+            serde_json::json!({
             "appointmentClients": [{"displayName": "OST Test 2", "emailAddress": "t2@x.com"}], "eTag": "", "isSmsEligible": false,
-            "settings": {"allowClientToJoinUsingBrowser": true, "notifications": [], "organizerLocale": "en-us"}}));
+            "settings": {"allowClientToJoinUsingBrowser": true, "notifications": [], "organizerLocale": "en-us"}})
+        );
         let plain: super::MeetingForm = serde_json::from_value(serde_json::json!({"start": "2026-11-18T23:30:00-08:00", "end": "2026-11-19T00:00:00-08:00"})).unwrap();
         let p = super::mt_event(&plain, &me, None).unwrap();
         assert_eq!(p["meetingTemplateId"], "default");
@@ -2219,19 +3091,33 @@ mod tests {
         let e = &super::parse_events(&v)[0];
         assert_eq!(e.start_utc, "2026-11-18T00:00:00");
         assert_eq!(e.end_utc, "2026-11-21T00:00:00");
-        assert_eq!(e.channel_id, "19:782662e702f14fa7b33f95096b357dd8@thread.tacv2");
+        assert_eq!(
+            e.channel_id,
+            "19:782662e702f14fa7b33f95096b357dd8@thread.tacv2"
+        );
         assert_eq!(e.channel_message_id, "1794905737503");
     }
 
     #[test]
     fn answers_are_built_as_teams_calendar_sends_them() {
-        let b = super::respond_body("AAk/x+y=", "Tentative", 3, true, "a < b", "Pacific Standard Time");
+        let b = super::respond_body(
+            "AAk/x+y=",
+            "Tentative",
+            3,
+            true,
+            "a < b",
+            "Pacific Standard Time",
+        );
         assert_eq!(b["Body"]["EventId"]["Id"], "AAk/x+y=");
         assert_eq!(b["Body"]["Response"], "Tentative");
         assert_eq!(b["Body"]["Attendance"], 3);
         assert_eq!(b["Body"]["SendResponse"], true);
         assert_eq!(b["Body"]["Notes"]["Value"], "<div>a &lt; b</div>");
-        assert!(super::respond_body("x", "Accept", 0, false, " ", "UTC")["Body"].get("Notes").is_none());
+        assert!(
+            super::respond_body("x", "Accept", 0, false, " ", "UTC")["Body"]
+                .get("Notes")
+                .is_none()
+        );
         assert_eq!(super::ews_id("AAkAL-Q_xyz"), "AAkAL/Q+xyz=");
     }
 
@@ -2240,7 +3126,11 @@ mod tests {
         // A Meet now chat as the scheduling service makes it, and as Teams'
         // Cast left it (startTime = endTime = when it was started).
         let made = serde_json::json!({"subject": "Meeting", "startTime": "0001-01-01T00:00:00", "endTime": "0001-01-01T00:00:00", "meetingType": "MeetNow", "isCancelled": false, "eventType": "Single"});
-        let started = super::instant_meeting_property(&made, "OST Test Room", Some("2026-11-24T04:11:50.707Z"));
+        let started = super::instant_meeting_property(
+            &made,
+            "OST Test Room",
+            Some("2026-11-24T04:11:50.707Z"),
+        );
         assert_eq!(started["subject"], "OST Test Room");
         assert_eq!(started["meetingType"], "MeetNow");
         assert_eq!(started["startTime"], "2026-11-24T04:11:50.707Z");
@@ -2259,9 +3149,18 @@ mod tests {
             {"freeBusyStatus": "Busy", "startTime": "2026-11-17T23:00:00+00:00", "endTime": "2026-11-17T23:30:00+00:00"}
         ]});
         let t = |s: &str| chrono::DateTime::parse_from_rfc3339(s).unwrap();
-        assert_eq!(super::busiest(&u, t("2026-11-17T22:00:00Z"), t("2026-11-17T22:30:00Z")), "Tentative");
-        assert_eq!(super::busiest(&u, t("2026-11-17T22:00:00Z"), t("2026-11-17T23:15:00Z")), "Busy");
-        assert_eq!(super::busiest(&u, t("2026-11-18T00:00:00Z"), t("2026-11-18T01:00:00Z")), "Free");
+        assert_eq!(
+            super::busiest(&u, t("2026-11-17T22:00:00Z"), t("2026-11-17T22:30:00Z")),
+            "Tentative"
+        );
+        assert_eq!(
+            super::busiest(&u, t("2026-11-17T22:00:00Z"), t("2026-11-17T23:15:00Z")),
+            "Busy"
+        );
+        assert_eq!(
+            super::busiest(&u, t("2026-11-18T00:00:00Z"), t("2026-11-18T01:00:00Z")),
+            "Free"
+        );
     }
 }
 
@@ -2315,10 +3214,15 @@ mod older_tests {
     fn calendar_settings_are_read_as_outlook_keeps_them() {
         // OutlookCloudSettings: a JSON setting's value is a string.
         let v = serde_json::json!([{"name": "calendar_filters", "type": "Json", "value": "[[\"Reservations\",[\"Desk\"]]]"}]);
-        assert_eq!(cloud_setting_value(&v, "calendar_filters").unwrap(), serde_json::json!([["Reservations", ["Desk"]]]));
+        assert_eq!(
+            cloud_setting_value(&v, "calendar_filters").unwrap(),
+            serde_json::json!([["Reservations", ["Desk"]]])
+        );
         assert!(cloud_setting_value(&v, "calendar_apptreminders").is_none());
         // Outlook options: CalendarSurfaceOptions is feature 15.
-        assert!(is_surface_options(&serde_json::json!({"feature": 15, "timeScaleSetting": 30})));
+        assert!(is_surface_options(
+            &serde_json::json!({"feature": 15, "timeScaleSetting": 30})
+        ));
         assert!(!is_surface_options(&serde_json::json!({"feature": 2})));
     }
 
@@ -2337,23 +3241,33 @@ mod older_tests {
 
     #[test]
     fn outlook_items_fill_what_graph_lacks() {
-        let mut events = parse_events(&serde_json::json!({"value": [{"id": "AAkALg_x-y", "subject": "Hold"}]}));
+        let mut events =
+            parse_events(&serde_json::json!({"value": [{"id": "AAkALg_x-y", "subject": "Hold"}]}));
         let mut items = std::collections::HashMap::new();
         items.insert(ews_id("AAkALg_x-y"), serde_json::json!({"IsMeeting": true, "EventPollMetadata": "Type:AttendeeHold|VoteType:Yes|HoldId:1",
             "CalendarEventClassifications": ["DeskBooking"], "RequestedAttendanceMode": "InPersonRequired", "Charm": "Plane"}));
         merge_outlook_items(&mut events, &items);
         let e = &events[0];
         assert_eq!(e.is_meeting, Some(true));
-        assert_eq!((e.poll_hold.as_str(), e.poll_vote.as_str()), ("AttendeeHold", "Yes"));
+        assert_eq!(
+            (e.poll_hold.as_str(), e.poll_vote.as_str()),
+            ("AttendeeHold", "Yes")
+        );
         assert!(e.is_desk_booking);
         assert_eq!(e.attendance_mode, "InPersonRequired");
         assert_eq!(e.charm, "Plane");
         // An event made in Outlook's form (Teams' New event): its view's
         // CharmId, Charm "None" (GetCalendarView, 2026-11-24).
-        items.insert(ews_id("AAkALg_x-y"), serde_json::json!({"Charm": "None", "CharmId": 57}));
+        items.insert(
+            ews_id("AAkALg_x-y"),
+            serde_json::json!({"Charm": "None", "CharmId": 57}),
+        );
         merge_outlook_items(&mut events, &items);
         assert_eq!(events[0].charm, "57");
-        items.insert(ews_id("AAkALg_x-y"), serde_json::json!({"Charm": "None", "CharmId": 0}));
+        items.insert(
+            ews_id("AAkALg_x-y"),
+            serde_json::json!({"Charm": "None", "CharmId": 0}),
+        );
         merge_outlook_items(&mut events, &items);
         assert_eq!(events[0].charm, "");
     }
@@ -2362,7 +3276,11 @@ mod older_tests {
     fn a_proposal_goes_in_the_answer_as_local_times() {
         let b = respond_body("AAMk=", "Tentative", 0, true, "", "Pacific Standard Time");
         assert_eq!(b["Body"]["ProposedStartTime"], "");
-        assert!(ows_path_ok("ows/v1/SaveCalendarView") && !ows_path_ok("/ows/x") && !ows_path_ok("ows/../owa"));
+        assert!(
+            ows_path_ok("ows/v1/SaveCalendarView")
+                && !ows_path_ok("/ows/x")
+                && !ows_path_ok("ows/../owa")
+        );
     }
 }
 

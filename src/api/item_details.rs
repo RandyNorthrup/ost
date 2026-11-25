@@ -80,7 +80,9 @@ pub struct Details {
 }
 
 fn esc(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 fn bold(s: &str) -> String {
     format!("<b>{}</b>", esc(s))
@@ -104,9 +106,15 @@ struct Person {
 }
 
 fn person(u: &Value, me: &str) -> Person {
-    let email = u["email"].as_str().or(u["userPrincipalName"].as_str()).unwrap_or_default();
+    let email = u["email"]
+        .as_str()
+        .or(u["userPrincipalName"].as_str())
+        .unwrap_or_default();
     Person {
-        name: esc(u["displayName"].as_str().filter(|s| !s.is_empty()).unwrap_or(if email.is_empty() { "Someone" } else { email })),
+        name: esc(u["displayName"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(if email.is_empty() { "Someone" } else { email })),
         me: u.get("self").is_some() || (!email.is_empty() && email.eq_ignore_ascii_case(me)),
     }
 }
@@ -114,7 +122,11 @@ fn person(u: &Value, me: &str) -> Person {
 /// The last name in a path ("personal/a/Documents/x.txt" → its folder
 /// "Documents" when `dir`).
 fn last(path: &str, dir: bool) -> String {
-    let p = if dir { path.rsplit_once('/').map(|(d, _)| d).unwrap_or_default() } else { path };
+    let p = if dir {
+        path.rsplit_once('/').map(|(d, _)| d).unwrap_or_default()
+    } else {
+        path
+    };
     p.rsplit('/').next().unwrap_or_default().to_string()
 }
 
@@ -132,48 +144,161 @@ pub fn describe(a: &Value, me: &str, name: &str) -> Option<(String, String)> {
     } else if comment.is_object() {
         "commentResponse"
     } else {
-        ["create", "archive", "reactivate", "delete", "edit", "move", "rename", "restore", "restoreVersion", "share", "version", "copy"]
-            .into_iter()
-            .find(|k| has(k))?
+        [
+            "create",
+            "archive",
+            "reactivate",
+            "delete",
+            "edit",
+            "move",
+            "rename",
+            "restore",
+            "restoreVersion",
+            "share",
+            "version",
+            "copy",
+        ]
+        .into_iter()
+        .find(|k| has(k))?
     };
     let actor = person(&a["actor"]["user"], me);
     let you = actor.me;
     let who = actor.name.as_str();
     let this = "this file";
     let text = match kind {
-        "edit" | "restoreVersion" => if you { fill(pick("You edited {0}||You and {2} edited {0}||You, {2}, and {3} edited {0}", 1), &[this]) } else { fill(pick("{1} edited {0}||{1} and {2} edited {0}||{1}, {2}, and {3} edited {0}", 1), &[this, who]) },
+        "edit" | "restoreVersion" => {
+            if you {
+                fill(
+                    pick(
+                        "You edited {0}||You and {2} edited {0}||You, {2}, and {3} edited {0}",
+                        1,
+                    ),
+                    &[this],
+                )
+            } else {
+                fill(
+                    pick(
+                        "{1} edited {0}||{1} and {2} edited {0}||{1}, {2}, and {3} edited {0}",
+                        1,
+                    ),
+                    &[this, who],
+                )
+            }
+        }
         "move" => {
             let m = &act["move"];
-            let from = m["From"].as_str().or(m["from"].as_str()).map(|p| bold(&last(p, true)));
+            let from = m["From"]
+                .as_str()
+                .or(m["from"].as_str())
+                .map(|p| bold(&last(p, true)));
             let to = m["to"].as_str().map(|p| bold(&last(p, true)));
             match (from, to) {
-                (Some(f), Some(t)) => fill(if you { "You moved {0} from {2} to {3}" } else { "{1} moved {0} from {2} to {3}" }, &[this, who, &f, &t]),
-                (Some(f), None) => fill(if you { "You moved {0} from {2}" } else { "{1} moved {0} from {2}" }, &[this, who, &f]),
-                (None, Some(t)) => fill(if you { "You moved {0} to {3}" } else { "{1} moved {0} to {3}" }, &[this, who, "", &t]),
-                _ => fill(if you { "You moved {0}" } else { "{1} moved {0}" }, &[this, who]),
+                (Some(f), Some(t)) => fill(
+                    if you {
+                        "You moved {0} from {2} to {3}"
+                    } else {
+                        "{1} moved {0} from {2} to {3}"
+                    },
+                    &[this, who, &f, &t],
+                ),
+                (Some(f), None) => fill(
+                    if you {
+                        "You moved {0} from {2}"
+                    } else {
+                        "{1} moved {0} from {2}"
+                    },
+                    &[this, who, &f],
+                ),
+                (None, Some(t)) => fill(
+                    if you {
+                        "You moved {0} to {3}"
+                    } else {
+                        "{1} moved {0} to {3}"
+                    },
+                    &[this, who, "", &t],
+                ),
+                _ => fill(
+                    if you {
+                        "You moved {0}"
+                    } else {
+                        "{1} moved {0}"
+                    },
+                    &[this, who],
+                ),
             }
         }
         "rename" => {
             let r = &act["rename"];
             match r["oldName"].as_str() {
                 Some(old) => {
-                    let new = [r["newName"].as_str(), a["driveItem"]["name"].as_str(), Some(name)].into_iter().flatten().find(|s| !s.is_empty()).unwrap_or_default();
-                    fill(if you { "You renamed {1} to {2}" } else { "{0} renamed {1} to {2}" }, &[who, &bold(old), &bold(new)])
+                    let new = [
+                        r["newName"].as_str(),
+                        a["driveItem"]["name"].as_str(),
+                        Some(name),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .find(|s| !s.is_empty())
+                    .unwrap_or_default();
+                    fill(
+                        if you {
+                            "You renamed {1} to {2}"
+                        } else {
+                            "{0} renamed {1} to {2}"
+                        },
+                        &[who, &bold(old), &bold(new)],
+                    )
                 }
-                None => fill(if you { "You renamed {0}" } else { "{1} renamed {0}" }, &[this, who]),
+                None => fill(
+                    if you {
+                        "You renamed {0}"
+                    } else {
+                        "{1} renamed {0}"
+                    },
+                    &[this, who],
+                ),
             }
         }
         "share" => {
-            let to: Vec<Person> = act["share"]["recipients"].as_array().into_iter().flatten().map(|r| person(&r["user"], me)).collect();
+            let to: Vec<Person> = act["share"]["recipients"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|r| person(&r["user"], me))
+                .collect();
             if to.is_empty() {
-                fill(if you { pick("You shared {0}||You and {2} shared {0}||You, {2}, and {3} shared {0}", 1).to_string() } else { pick("{1} shared {0}||{1} and {2} shared {0}||{1}, {2}, and {3} shared {0}", 1).to_string() }.as_str(), &[this, who])
+                fill(
+                    if you {
+                        pick(
+                            "You shared {0}||You and {2} shared {0}||You, {2}, and {3} shared {0}",
+                            1,
+                        )
+                        .to_string()
+                    } else {
+                        pick(
+                            "{1} shared {0}||{1} and {2} shared {0}||{1}, {2}, and {3} shared {0}",
+                            1,
+                        )
+                        .to_string()
+                    }
+                    .as_str(),
+                    &[this, who],
+                )
             } else {
                 // You first, then the others.
                 let to_you = to.iter().any(|p| p.me);
-                let names: Vec<String> = to.iter().filter(|p| !p.me).map(|p| p.name.clone()).collect();
+                let names: Vec<String> = to
+                    .iter()
+                    .filter(|p| !p.me)
+                    .map(|p| p.name.clone())
+                    .collect();
                 if to.len() > 3 {
                     let rest = to.len() - 3;
-                    let more = if rest == 1 { "1 other".to_string() } else { format!("{rest} others") };
+                    let more = if rest == 1 {
+                        "1 other".to_string()
+                    } else {
+                        format!("{rest} others")
+                    };
                     let t = match (to_you, you) {
                         (true, true) => "You shared {0} with yourself, {3}, {4}, and {5}",
                         (true, false) => "{1} shared {0} with you, {3}, {4}, and {5}",
@@ -181,35 +306,105 @@ pub fn describe(a: &Value, me: &str, name: &str) -> Option<(String, String)> {
                         (false, false) => "{1} shared {0} with {2}, {3}, {4}, and {5}",
                     };
                     let n = |i: usize| names.get(i).cloned().unwrap_or_default();
-                    if to_you { fill(t, &[this, who, "", &n(0), &n(1), &more]) } else { fill(t, &[this, who, &n(0), &n(1), &n(2), &more]) }
+                    if to_you {
+                        fill(t, &[this, who, "", &n(0), &n(1), &more])
+                    } else {
+                        fill(t, &[this, who, &n(0), &n(1), &n(2), &more])
+                    }
                 } else {
                     let forms = match (to_you, you) {
-                        (true, true) => "You shared {0} with yourself||You shared {0} with yourself and {3}||You shared {0} with yourself, {3}, and {4}",
-                        (true, false) => "{1} shared {0} with you||{1} shared {0} with you and {3}||{1} shared {0} with you, {3}, and {4}",
-                        (false, true) => "You shared {0} with {2}||You shared {0} with {2} and {3}||You shared {0} with {2}, {3}, and {4}",
-                        (false, false) => "{1} shared {0} with {2}||{1} shared {0} with {2} and {3}||{1} shared {0} with {2}, {3}, and {4}",
+                        (true, true) => {
+                            "You shared {0} with yourself||You shared {0} with yourself and {3}||You shared {0} with yourself, {3}, and {4}"
+                        }
+                        (true, false) => {
+                            "{1} shared {0} with you||{1} shared {0} with you and {3}||{1} shared {0} with you, {3}, and {4}"
+                        }
+                        (false, true) => {
+                            "You shared {0} with {2}||You shared {0} with {2} and {3}||You shared {0} with {2}, {3}, and {4}"
+                        }
+                        (false, false) => {
+                            "{1} shared {0} with {2}||{1} shared {0} with {2} and {3}||{1} shared {0} with {2}, {3}, and {4}"
+                        }
                     };
                     let mut args: Vec<&str> = vec![this, who];
-                    if to_you { args.push(""); }
+                    if to_you {
+                        args.push("");
+                    }
                     args.extend(names.iter().map(String::as_str));
                     fill(pick(forms, to.len()), &args)
                 }
             }
         }
-        "create" => fill(if you { "You created {0}" } else { "{1} created {0}" }, &[this, who]),
-        "delete" => fill(if you { "You deleted {0}" } else { "{1} deleted {0}" }, &[this, who]),
-        "archive" => fill(if you { "You archived {0}" } else { "{1} archived {0}" }, &[this, who]),
-        "reactivate" => fill(if you { "You reactivated {0}" } else { "{1} reactivated {0}" }, &[this, who]),
+        "create" => fill(
+            if you {
+                "You created {0}"
+            } else {
+                "{1} created {0}"
+            },
+            &[this, who],
+        ),
+        "delete" => fill(
+            if you {
+                "You deleted {0}"
+            } else {
+                "{1} deleted {0}"
+            },
+            &[this, who],
+        ),
+        "archive" => fill(
+            if you {
+                "You archived {0}"
+            } else {
+                "{1} archived {0}"
+            },
+            &[this, who],
+        ),
+        "reactivate" => fill(
+            if you {
+                "You reactivated {0}"
+            } else {
+                "{1} reactivated {0}"
+            },
+            &[this, who],
+        ),
         "version" => {
             let v = act["version"]["newVersion"].as_str()?;
-            fill(if you { "You created {2} of this file" } else { "{1} created {2} of this file" }, &[this, who, v])
+            fill(
+                if you {
+                    "You created {2} of this file"
+                } else {
+                    "{1} created {2} of this file"
+                },
+                &[this, who, v],
+            )
         }
         "restore" => "This file was restored".into(),
-        "comment" => if you { "You commented".into() } else { fill("{1} commented", &[this, who]) },
-        "commentResponse" => if you { "You replied to a comment".into() } else { fill("{1} replied to a comment", &[COMMENT, who]) },
+        "comment" => {
+            if you {
+                "You commented".into()
+            } else {
+                fill("{1} commented", &[this, who])
+            }
+        }
+        "commentResponse" => {
+            if you {
+                "You replied to a comment".into()
+            } else {
+                fill("{1} replied to a comment", &[COMMENT, who])
+            }
+        }
         "mention" => {
-            let to: Vec<Person> = act["mention"]["mentionees"].as_array().into_iter().flatten().map(|m| person(&m["user"], me)).collect();
-            let first = to.iter().find(|p| !p.me).map(|p| p.name.clone()).unwrap_or_default();
+            let to: Vec<Person> = act["mention"]["mentionees"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|m| person(&m["user"], me))
+                .collect();
+            let first = to
+                .iter()
+                .find(|p| !p.me)
+                .map(|p| p.name.clone())
+                .unwrap_or_default();
             match (to.iter().any(|p| p.me), you) {
                 (true, true) => "You mentioned yourself".into(),
                 (true, false) => fill("{1} mentioned you", &[this, who]),
@@ -219,7 +414,11 @@ pub fn describe(a: &Value, me: &str, name: &str) -> Option<(String, String)> {
         }
         _ => return None,
     };
-    let kind = if kind == "restoreVersion" { "edit" } else { kind };
+    let kind = if kind == "restoreVersion" {
+        "edit"
+    } else {
+        kind
+    };
     Some((kind.to_string(), text))
 }
 
@@ -231,7 +430,12 @@ pub fn group(t: DateTime<Local>, now: DateTime<Local>) -> String {
     use crate::i18n::tr_id;
     let day = |d: DateTime<Local>| d.date_naive();
     let today = now.date_naive();
-    let start = |d: chrono::NaiveDate| Local.from_local_datetime(&d.and_hms_opt(0, 0, 0).unwrap()).earliest().unwrap_or(now);
+    let start = |d: chrono::NaiveDate| {
+        Local
+            .from_local_datetime(&d.and_hms_opt(0, 0, 0).unwrap())
+            .earliest()
+            .unwrap_or(now)
+    };
     let sunday = start(today) - Duration::days(i64::from(today.weekday().num_days_from_sunday()));
     if day(t) == today {
         return tr_id("Today", "search:k5qg9bmr");
@@ -265,7 +469,11 @@ pub fn group(t: DateTime<Local>, now: DateTime<Local>) -> String {
 
 /// "Nov 12 at 8:48 AM" (and the year when it isn't this one).
 pub fn tip(t: DateTime<Local>, now: DateTime<Local>) -> String {
-    let date = if t.year() == now.year() { t.format("%b %-d").to_string() } else { t.format("%b %-d, %Y").to_string() };
+    let date = if t.year() == now.year() {
+        t.format("%b %-d").to_string()
+    } else {
+        t.format("%b %-d, %Y").to_string()
+    };
     format!("{date} at {}", t.format("%-I:%M %p"))
 }
 
@@ -282,7 +490,10 @@ pub fn feed(reply: &Value, me: &str, name: &str, now: DateTime<Local>) -> Vec<Fe
             let (kind, text) = describe(a, me, name)?;
             match kind.as_str() {
                 "edit" => {
-                    let who = a["actor"]["user"]["email"].as_str().unwrap_or_default().to_ascii_lowercase();
+                    let who = a["actor"]["user"]["email"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_ascii_lowercase();
                     if last_editor.as_deref() == Some(who.as_str()) {
                         return None;
                     }
@@ -291,13 +502,32 @@ pub fn feed(reply: &Value, me: &str, name: &str, now: DateTime<Local>) -> Vec<Fe
                 "comment" | "commentResponse" => {}
                 _ => last_editor = None,
             }
-            let when = a["times"]["recordedTime"].as_str().or(a["times"]["recordedDateTime"].as_str()).or(a["activityDateTime"].as_str())?;
-            let t = DateTime::parse_from_rfc3339(when).ok()?.with_timezone(&Local);
+            let when = a["times"]["recordedTime"]
+                .as_str()
+                .or(a["times"]["recordedDateTime"].as_str())
+                .or(a["activityDateTime"].as_str())?;
+            let t = DateTime::parse_from_rfc3339(when)
+                .ok()?
+                .with_timezone(&Local);
             let time = match a["@sharePoint.localizedRelativeTime"].as_str() {
                 Some(code) if !code.is_empty() => friendly_display(code),
                 _ => super::list_rows::friendly_at(t, now),
             };
-            Some(FeedItem { kind, text, time, tip: tip(t, now), group: group(t, now), comment_id: String::new(), author: String::new(), author_email: String::new(), mine: false, source: String::new(), edited: false, replies: Vec::new(), at: t.timestamp() })
+            Some(FeedItem {
+                kind,
+                text,
+                time,
+                tip: tip(t, now),
+                group: group(t, now),
+                comment_id: String::new(),
+                author: String::new(),
+                author_email: String::new(),
+                mine: false,
+                source: String::new(),
+                edited: false,
+                replies: Vec::new(),
+                at: t.timestamp(),
+            })
         })
         .collect()
 }
@@ -322,7 +552,10 @@ fn comment_source(c: &Value) -> String {
     while let Some(i) = rest.find("@mention{") {
         out.push_str(&rest[..i]);
         let after = &rest[i + 9..];
-        match after.find('}').and_then(|j| after[..j].parse::<usize>().ok().map(|n| (j, n))) {
+        match after
+            .find('}')
+            .and_then(|j| after[..j].parse::<usize>().ok().map(|n| (j, n)))
+        {
             Some((j, n)) if n < names.len() => {
                 out.push_str(&names[n]);
                 rest = &after[j + 1..];
@@ -338,7 +571,11 @@ fn comment_source(c: &Value) -> String {
 }
 
 fn id_of(v: &Value) -> String {
-    v["id"].as_str().map(str::to_string).or(v["id"].as_i64().map(|n| n.to_string())).unwrap_or_default()
+    v["id"]
+        .as_str()
+        .map(str::to_string)
+        .or(v["id"].as_i64().map(|n| n.to_string()))
+        .unwrap_or_default()
 }
 
 /// The item's comments as the pane's comment cards. A comment's time reads
@@ -347,13 +584,27 @@ fn id_of(v: &Value) -> String {
 /// "Edited" once `modifiedDate` is set.
 pub fn comment_cards(reply: &Value, me: &str, now: DateTime<Local>) -> Vec<FeedItem> {
     let author = |c: &Value| {
-        let email = c["author"]["email"].as_str().unwrap_or_default().to_string();
+        let email = c["author"]["email"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
         let mine = !email.is_empty() && email.eq_ignore_ascii_case(me);
-        let name = if mine { "You".to_string() } else { c["author"]["name"].as_str().unwrap_or("Someone").to_string() };
+        let name = if mine {
+            "You".to_string()
+        } else {
+            c["author"]["name"]
+                .as_str()
+                .unwrap_or("Someone")
+                .to_string()
+        };
         (name, email, mine)
     };
     let edited = |c: &Value| c["modifiedDate"].as_str().is_some_and(|m| !m.is_empty());
-    let when = |c: &Value| DateTime::parse_from_rfc3339(c["createdDate"].as_str()?).ok().map(|t| t.with_timezone(&Local));
+    let when = |c: &Value| {
+        DateTime::parse_from_rfc3339(c["createdDate"].as_str()?)
+            .ok()
+            .map(|t| t.with_timezone(&Local))
+    };
     reply["d"]["results"]
         .as_array()
         .into_iter()
@@ -368,7 +619,18 @@ pub fn comment_cards(reply: &Value, me: &str, now: DateTime<Local>) -> Vec<FeedI
                 .filter_map(|r| {
                     let rt = when(r)?;
                     let (name, email, mine) = author(r);
-                    Some((rt, Reply { id: id_of(r), author: name, author_email: email, mine, text: comment_text(r), time: super::list_rows::activity_time(rt, now), edited: edited(r) }))
+                    Some((
+                        rt,
+                        Reply {
+                            id: id_of(r),
+                            author: name,
+                            author_email: email,
+                            mine,
+                            text: comment_text(r),
+                            time: super::list_rows::activity_time(rt, now),
+                            edited: edited(r),
+                        },
+                    ))
                 })
                 .collect();
             replies.sort_by_key(|(rt, _)| *rt);
@@ -402,17 +664,31 @@ pub fn merge(mut acts: Vec<FeedItem>, comments: Vec<FeedItem>) -> Vec<FeedItem> 
 }
 
 fn comments_url(item: &DriveItem, tail: &str) -> String {
-    let q = |s: &str| url::form_urlencoded::byte_serialize(format!("'{}'", s.trim_matches(|c| c == '{' || c == '}')).as_bytes()).collect::<String>();
-    format!("{}/_api/web/lists(@a1)/GetItemByUniqueId(@a2)/{tail}?@a1={}&@a2={}", item.sp_site.trim_end_matches('/'), q(&item.sp_list), q(&item.sp_item))
+    let q = |s: &str| {
+        url::form_urlencoded::byte_serialize(
+            format!("'{}'", s.trim_matches(|c| c == '{' || c == '}')).as_bytes(),
+        )
+        .collect::<String>()
+    };
+    format!(
+        "{}/_api/web/lists(@a1)/GetItemByUniqueId(@a2)/{tail}?@a1={}&@a2={}",
+        item.sp_site.trim_end_matches('/'),
+        q(&item.sp_list),
+        q(&item.sp_item)
+    )
 }
 
 /// The item's comments alone, newest first, as the viewer's Show comments
 /// asks for them (`GetComments()` with the first ten replies of each).
 pub async fn comments(item: &DriveItem, me: &str) -> Result<Vec<FeedItem>> {
-    if !host(&item.sp_site).starts_with("https://") || item.sp_list.is_empty() || item.sp_item.is_empty() {
+    if !host(&item.sp_site).starts_with("https://")
+        || item.sp_list.is_empty()
+        || item.sp_item.is_empty()
+    {
         bail!("No comments for this item");
     }
-    let url = comments_url(item, "GetComments()") + "&$top=25&$expand=replies,likedBy,replies/likedBy&$filter=NumReplies%20eq%2010&$select=*,contentAnchor";
+    let url = comments_url(item, "GetComments()")
+        + "&$top=25&$expand=replies,likedBy,replies/likedBy&$filter=NumReplies%20eq%2010&$select=*,contentAnchor";
     let reply = get_with(&url, &[]).await?;
     Ok(comment_cards(&reply, me, Local::now()))
 }
@@ -433,45 +709,172 @@ pub fn describe_in_folder(a: &Value, me: &str, to: Option<&str>) -> Option<(Stri
     let item = a["driveItem"]["name"].as_str().unwrap_or_default();
     let it = bold(item);
     // The folder the item is in (by its parent's path), "" for the top.
-    let parent = a["driveItem"]["parentReference"]["path"].as_str().and_then(|p| p.split_once(':')).map(|(_, r)| r.rsplit('/').next().unwrap_or_default().to_string()).unwrap_or_default();
+    let parent = a["driveItem"]["parentReference"]["path"]
+        .as_str()
+        .and_then(|p| p.split_once(':'))
+        .map(|(_, r)| r.rsplit('/').next().unwrap_or_default().to_string())
+        .unwrap_or_default();
     let comment = &act["comment"];
     let (kind, text) = if has("mention") {
-        ("mention", if you { fill("You mentioned someone in {0}", &[&it]) } else { fill("{1} mentioned you in {0}", &[&it, who]) })
+        (
+            "mention",
+            if you {
+                fill("You mentioned someone in {0}", &[&it])
+            } else {
+                fill("{1} mentioned you in {0}", &[&it, who])
+            },
+        )
     } else if comment.is_object() && !comment["isReply"].as_bool().unwrap_or(false) {
-        ("comment", fill(if you { "You commented on {0}" } else { "{1} commented on {0}" }, &[&it, who]))
+        (
+            "comment",
+            fill(
+                if you {
+                    "You commented on {0}"
+                } else {
+                    "{1} commented on {0}"
+                },
+                &[&it, who],
+            ),
+        )
     } else if comment.is_object() {
-        ("commentResponse", fill(if you { "You replied to a comment on {0}" } else { "{1} replied to a comment on {0}" }, &[&it, who]))
+        (
+            "commentResponse",
+            fill(
+                if you {
+                    "You replied to a comment on {0}"
+                } else {
+                    "{1} replied to a comment on {0}"
+                },
+                &[&it, who],
+            ),
+        )
     } else if has("create") {
-        let t = if parent.is_empty() { if you { "You created {0}" } else { "{1} created {0}" } } else if you { "You created {0} in {2}" } else { "{1} created {0} in {2}" };
+        let t = if parent.is_empty() {
+            if you {
+                "You created {0}"
+            } else {
+                "{1} created {0}"
+            }
+        } else if you {
+            "You created {0} in {2}"
+        } else {
+            "{1} created {0} in {2}"
+        };
         ("create", fill(t, &[&it, who, &bold(&parent)]))
     } else if has("delete") {
         let gone = bold(act["delete"]["name"].as_str().unwrap_or(item));
         // Deleted from a folder: the activity's item is that folder.
-        let from = if a["driveItem"].is_object() { item.to_string() } else { String::new() };
-        let t = if from.is_empty() { if you { "You deleted {0}" } else { "{1} deleted {0}" } } else if you { "You deleted {0} from {2}" } else { "{1} deleted {0} from {2}" };
+        let from = if a["driveItem"].is_object() {
+            item.to_string()
+        } else {
+            String::new()
+        };
+        let t = if from.is_empty() {
+            if you {
+                "You deleted {0}"
+            } else {
+                "{1} deleted {0}"
+            }
+        } else if you {
+            "You deleted {0} from {2}"
+        } else {
+            "{1} deleted {0} from {2}"
+        };
         ("delete", fill(t, &[&gone, who, &bold(&from)]))
     } else if has("edit") {
-        ("edit", fill(if you { "You edited {0}" } else { "{1} edited {0}" }, &[&it, who]))
+        (
+            "edit",
+            fill(
+                if you {
+                    "You edited {0}"
+                } else {
+                    "{1} edited {0}"
+                },
+                &[&it, who],
+            ),
+        )
     } else if has("move") {
         let m = &act["move"];
-        let from = m["From"].as_str().or(m["from"].as_str()).map(|p| bold(&last(p, true)));
+        let from = m["From"]
+            .as_str()
+            .or(m["from"].as_str())
+            .map(|p| bold(&last(p, true)));
         let to = to.map(bold);
         let t = match (&from, &to) {
-            (Some(_), Some(_)) => if you { "You moved {0} from {2} to {3}" } else { "{1} moved {0} from {2} to {3}" },
-            (Some(_), None) => if you { "You moved {0} from {2}" } else { "{1} moved {0} from {2}" },
-            _ => if you { "You moved {0}" } else { "{1} moved {0}" },
+            (Some(_), Some(_)) => {
+                if you {
+                    "You moved {0} from {2} to {3}"
+                } else {
+                    "{1} moved {0} from {2} to {3}"
+                }
+            }
+            (Some(_), None) => {
+                if you {
+                    "You moved {0} from {2}"
+                } else {
+                    "{1} moved {0} from {2}"
+                }
+            }
+            _ => {
+                if you {
+                    "You moved {0}"
+                } else {
+                    "{1} moved {0}"
+                }
+            }
         };
-        ("move", fill(t, &[&it, who, from.as_deref().unwrap_or_default(), to.as_deref().unwrap_or_default()]))
+        (
+            "move",
+            fill(
+                t,
+                &[
+                    &it,
+                    who,
+                    from.as_deref().unwrap_or_default(),
+                    to.as_deref().unwrap_or_default(),
+                ],
+            ),
+        )
     } else if has("rename") {
         let old = act["rename"]["oldName"].as_str().unwrap_or_default();
-        ("rename", fill(if you { "You renamed {1} to {2}" } else { "{0} renamed {1} to {2}" }, &[who, &bold(old), &it]))
+        (
+            "rename",
+            fill(
+                if you {
+                    "You renamed {1} to {2}"
+                } else {
+                    "{0} renamed {1} to {2}"
+                },
+                &[who, &bold(old), &it],
+            ),
+        )
     } else if has("restore") {
         ("restore", fill("{0} was restored", &[&it]))
     } else if has("share") {
-        ("share", fill(if you { "You shared {0}" } else { "{1} shared {0}" }, &[&it, who]))
+        (
+            "share",
+            fill(
+                if you {
+                    "You shared {0}"
+                } else {
+                    "{1} shared {0}"
+                },
+                &[&it, who],
+            ),
+        )
     } else if has("version") {
         let v = act["version"]["newVersion"].as_str().unwrap_or_default();
-        ("version", fill(if you { "You created {2} of {0}" } else { "{1} created {2} of {0}" }, &[&it, who, v]))
+        (
+            "version",
+            fill(
+                if you {
+                    "You created {2} of {0}"
+                } else {
+                    "{1} created {2} of {0}"
+                },
+                &[&it, who, v],
+            ),
+        )
     } else {
         return None;
     };
@@ -493,21 +896,45 @@ pub fn folder_feed(reply: &Value, me: &str, now: DateTime<Local>) -> Vec<FeedIte
         let a = acts[i];
         let m = &a["action"]["move"];
         // A move's "to" half: folded into its "from" half.
-        if m.is_object() && m.get("to").is_some() && m.get("From").is_none() && m.get("from").is_none() {
+        if m.is_object()
+            && m.get("to").is_some()
+            && m.get("From").is_none()
+            && m.get("from").is_none()
+        {
             continue;
         }
         let mut to = None;
         if let Some(from) = m["From"].as_str() {
             let file = last(from, false);
             let time = a["@sharePoint.localizedRelativeTime"].as_str();
-            if let Some(j) = (0..acts.len()).find(|&j| !used[j] && j != i && acts[j]["action"]["move"]["to"].as_str().is_some_and(|t| last(t, false) == file) && acts[j]["@sharePoint.localizedRelativeTime"].as_str() == time) {
+            if let Some(j) = (0..acts.len()).find(|&j| {
+                !used[j]
+                    && j != i
+                    && acts[j]["action"]["move"]["to"]
+                        .as_str()
+                        .is_some_and(|t| last(t, false) == file)
+                    && acts[j]["@sharePoint.localizedRelativeTime"].as_str() == time
+            }) {
                 used[j] = true;
-                to = acts[j]["action"]["move"]["to"].as_str().map(|t| last(t, true));
+                to = acts[j]["action"]["move"]["to"]
+                    .as_str()
+                    .map(|t| last(t, true));
             }
         }
-        let Some((kind, text)) = describe_in_folder(a, me, to.as_deref()) else { continue };
+        let Some((kind, text)) = describe_in_folder(a, me, to.as_deref()) else {
+            continue;
+        };
         if kind == "edit" {
-            let key = (a["driveItem"]["id"].as_str().unwrap_or_default().to_string(), a["actor"]["user"]["email"].as_str().unwrap_or_default().to_string());
+            let key = (
+                a["driveItem"]["id"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+                a["actor"]["user"]["email"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+            );
             if last_edit.as_ref() == Some(&key) {
                 continue;
             }
@@ -515,28 +942,68 @@ pub fn folder_feed(reply: &Value, me: &str, now: DateTime<Local>) -> Vec<FeedIte
         } else {
             last_edit = None;
         }
-        let Some(when) = a["times"]["recordedTime"].as_str() else { continue };
-        let Ok(t) = DateTime::parse_from_rfc3339(when) else { continue };
+        let Some(when) = a["times"]["recordedTime"].as_str() else {
+            continue;
+        };
+        let Ok(t) = DateTime::parse_from_rfc3339(when) else {
+            continue;
+        };
         let t = t.with_timezone(&Local);
         let time = match a["@sharePoint.localizedRelativeTime"].as_str() {
             Some(code) if !code.is_empty() => friendly_display(code),
             _ => super::list_rows::friendly_at(t, now),
         };
-        out.push(FeedItem { kind, text, time, tip: tip(t, now), group: group(t, now), comment_id: String::new(), author: String::new(), author_email: String::new(), mine: false, source: String::new(), edited: false, replies: Vec::new(), at: t.timestamp() });
+        out.push(FeedItem {
+            kind,
+            text,
+            time,
+            tip: tip(t, now),
+            group: group(t, now),
+            comment_id: String::new(),
+            author: String::new(),
+            author_email: String::new(),
+            mine: false,
+            source: String::new(),
+            edited: false,
+            replies: Vec::new(),
+            at: t.timestamp(),
+        });
     }
     out
 }
 
 /// The current folder's activity (the Details pane with nothing selected).
 /// `item_id` empty is the drive's top.
-pub async fn folder_activity(host: &str, drive_id: &str, item_id: &str, me: &str) -> Result<Vec<FeedItem>> {
-    let ok = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"!-_.".contains(&b));
+pub async fn folder_activity(
+    host: &str,
+    drive_id: &str,
+    item_id: &str,
+    me: &str,
+) -> Result<Vec<FeedItem>> {
+    let ok = |s: &str| {
+        !s.is_empty()
+            && s.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"!-_.".contains(&b))
+    };
     if !host.starts_with("https://") || !ok(drive_id) || !(item_id.is_empty() || ok(item_id)) {
         bail!("No activity for this folder");
     }
-    let target = if item_id.is_empty() { "root".to_string() } else { format!("items/{item_id}") };
-    let url = format!("{host}/_api/v2.0/drives/{drive_id}/{target}/activities?%24expand=driveItem(%24select%3Did%2Cname%2CwebUrl%2CparentReference%2Cfile%2Cfolder)&%24top=25");
-    let reply = get_with(&url, &[("user-agent", super::client::TEAMS_WEB_UA), ("accept", "application/json")]).await?;
+    let target = if item_id.is_empty() {
+        "root".to_string()
+    } else {
+        format!("items/{item_id}")
+    };
+    let url = format!(
+        "{host}/_api/v2.0/drives/{drive_id}/{target}/activities?%24expand=driveItem(%24select%3Did%2Cname%2CwebUrl%2CparentReference%2Cfile%2Cfolder)&%24top=25"
+    );
+    let reply = get_with(
+        &url,
+        &[
+            ("user-agent", super::client::TEAMS_WEB_UA),
+            ("accept", "application/json"),
+        ],
+    )
+    .await?;
     Ok(folder_feed(&reply, me, Local::now()))
 }
 
@@ -554,11 +1021,17 @@ pub async fn load(item: &DriveItem, me: &str) -> Result<Details> {
     }
     let base2 = format!("{h}/_api/v2.0/drives/{}/items/{}", item.drive_id, item.id);
     let base21 = format!("{h}/_api/v2.1/drives/{}/items/{}", item.drive_id, item.id);
-    let acts_url = format!("{base2}/activities?%24expand=driveItem(%24select%3Did%2Cname%2CwebUrl%2CparentReference%2Cfile%2Cfolder)&%24top=25");
+    let acts_url = format!(
+        "{base2}/activities?%24expand=driveItem(%24select%3Did%2Cname%2CwebUrl%2CparentReference%2Cfile%2Cfolder)&%24top=25"
+    );
     let prefs_url = format!("{base21}/?%24expand=notificationPreferences");
-    let ua = [("user-agent", super::client::TEAMS_WEB_UA), ("accept", "application/json")];
+    let ua = [
+        ("user-agent", super::client::TEAMS_WEB_UA),
+        ("accept", "application/json"),
+    ];
     // As Teams asks: with each comment's replies and likes.
-    let comments = comments_url(item, "GetComments()") + "&$top=25&$expand=replies,likedBy,replies/likedBy";
+    let comments =
+        comments_url(item, "GetComments()") + "&$top=25&$expand=replies,likedBy,replies/likedBy";
     let disabled_url = comments_url(item, "CommentsDisabled");
     let (acts, prefs, comments, disabled) = tokio::join!(
         get_with(&acts_url, &ua),
@@ -568,28 +1041,64 @@ pub async fn load(item: &DriveItem, me: &str) -> Result<Details> {
     );
     let now = Local::now();
     let prefs = prefs.unwrap_or_default();
-    let p = prefs["notificationPreferences"].as_array().cloned().unwrap_or_default();
-    let local = |s: &str| DateTime::parse_from_rfc3339(s).ok().map(|t| t.with_timezone(&Local));
+    let p = prefs["notificationPreferences"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let local = |s: &str| {
+        DateTime::parse_from_rfc3339(s)
+            .ok()
+            .map(|t| t.with_timezone(&Local))
+    };
     let created = prefs["createdDateTime"].as_str().and_then(local);
     let modified = local(&item.modified);
     // The path from the library's top: "My files" for your OneDrive.
-    let parent = prefs["parentReference"]["path"].as_str().unwrap_or_default();
-    let mut path = vec![if h.contains("-my.sharepoint.com") { "My files".to_string() } else { "Documents".to_string() }];
-    path.extend(parent.split_once("root:").map(|(_, p)| p).unwrap_or_default().split('/').filter(|s| !s.is_empty()).map(|s| s.to_string()));
+    let parent = prefs["parentReference"]["path"]
+        .as_str()
+        .unwrap_or_default();
+    let mut path = vec![if h.contains("-my.sharepoint.com") {
+        "My files".to_string()
+    } else {
+        "Documents".to_string()
+    }];
+    path.extend(
+        parent
+            .split_once("root:")
+            .map(|(_, p)| p)
+            .unwrap_or_default()
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string()),
+    );
     path.push(item.name.clone());
     Ok(Details {
         activities: merge(
-            acts.map(|a| feed(&a, me, &item.name, now)).unwrap_or_default(),
-            comments.map(|c| comment_cards(&c, me, now)).unwrap_or_default(),
+            acts.map(|a| feed(&a, me, &item.name, now))
+                .unwrap_or_default(),
+            comments
+                .map(|c| comment_cards(&c, me, now))
+                .unwrap_or_default(),
         ),
         // SharePoint leaves the preferences out of some replies to OST's
         // token; then the bell keeps its default (on).
-        notify: prefs.get("notificationPreferences").is_none() || p.iter().all(|x| x["name"].as_str() != Some("None")),
-        created: created.map(|t| t.format("%m/%d/%Y %I:%M %p").to_string()).unwrap_or_default(),
-        modified: modified.map(|t| t.format("%-m/%-d/%Y %-I:%M %p").to_string()).unwrap_or_default(),
-        type_text: if item.is_folder { "Folder".into() } else { format!("{} File", item.kind) },
+        notify: prefs.get("notificationPreferences").is_none()
+            || p.iter().all(|x| x["name"].as_str() != Some("None")),
+        created: created
+            .map(|t| t.format("%m/%d/%Y %I:%M %p").to_string())
+            .unwrap_or_default(),
+        modified: modified
+            .map(|t| t.format("%-m/%-d/%Y %-I:%M %p").to_string())
+            .unwrap_or_default(),
+        type_text: if item.is_folder {
+            "Folder".into()
+        } else {
+            format!("{} File", item.kind)
+        },
         path,
-        comments_disabled: disabled.ok().and_then(|v| v["d"]["CommentsDisabled"].as_bool()).unwrap_or(false),
+        comments_disabled: disabled
+            .ok()
+            .and_then(|v| v["d"]["CommentsDisabled"].as_bool())
+            .unwrap_or(false),
     })
 }
 
@@ -597,12 +1106,21 @@ pub async fn load(item: &DriveItem, me: &str) -> Result<Details> {
 /// ("None"), as OneDrive's pane sets it.
 pub async fn set_notify(item: &DriveItem, file_url: &str, on: bool) -> Result<()> {
     let site = item.sp_site.trim_end_matches('/');
-    let rel = file_url.strip_prefix(&format!("{site}/")).unwrap_or_default();
+    let rel = file_url
+        .strip_prefix(&format!("{site}/"))
+        .unwrap_or_default();
     let (folder, name) = rel.rsplit_once('/').unwrap_or(("", rel));
     // SharePoint refuses the change without the site's and web's ids.
-    let (site_url, web_url) = (format!("{site}/_api/site/id"), format!("{site}/_api/web/id"));
+    let (site_url, web_url) = (
+        format!("{site}/_api/site/id"),
+        format!("{site}/_api/web/id"),
+    );
     let (site_id, web_id) = tokio::join!(get_with(&site_url, &[]), get_with(&web_url, &[]));
-    let id = |v: Result<Value>| v.ok().and_then(|v| v["d"]["Id"].as_str().map(str::to_string)).unwrap_or_default();
+    let id = |v: Result<Value>| {
+        v.ok()
+            .and_then(|v| v["d"]["Id"].as_str().map(str::to_string))
+            .unwrap_or_default()
+    };
     let ids = (id(site_id), id(web_id));
     let inner = json!({
         "Scenario": "NotificationPreference",
@@ -657,7 +1175,10 @@ pub async fn edit_comment(item: &DriveItem, id: &str, text: &str) -> Result<()> 
         reqwest::Method::PATCH,
         &comments_url(item, &format!("Comments({})", check_id(id)?)),
         &json!({ "mentions": [], "text": check_text(text)? }),
-        &[("content-type", "application/json;charset=UTF-8"), ("accept", "application/json")],
+        &[
+            ("content-type", "application/json;charset=UTF-8"),
+            ("accept", "application/json"),
+        ],
     )
     .await?;
     Ok(())
@@ -668,7 +1189,10 @@ pub async fn add_reply(item: &DriveItem, id: &str, text: &str) -> Result<()> {
     super::sharing::post_with(
         &comments_url(item, &format!("Comments({})/replies", check_id(id)?)),
         &json!({ "text": check_text(text)? }),
-        &[("content-type", "application/json;charset=UTF-8"), ("accept", "application/json")],
+        &[
+            ("content-type", "application/json;charset=UTF-8"),
+            ("accept", "application/json"),
+        ],
     )
     .await?;
     Ok(())
@@ -678,25 +1202,49 @@ pub async fn add_reply(item: &DriveItem, id: &str, text: &str) -> Result<()> {
 mod tests {
     use super::*;
 
-    fn me() -> &'static str { "ost-test1@x.com" }
-    fn you() -> Value { json!({"user": {"email": "ost-test1@x.com", "displayName": "OST Test 1", "self": {}}}) }
+    fn me() -> &'static str {
+        "ost-test1@x.com"
+    }
+    fn you() -> Value {
+        json!({"user": {"email": "ost-test1@x.com", "displayName": "OST Test 1", "self": {}}})
+    }
 
     #[test]
     fn activities_read_as_the_pane() {
         // From ost-share-test.txt's feed on 2026-11-12.
         let a = |action: Value| json!({"action": action, "actor": you(), "times": {"recordedTime": "2026-11-12T16:48:26Z"}});
         let d = |action: Value| describe(&a(action), me(), "ost-share-test.txt").unwrap();
-        assert_eq!(d(json!({"edit": {}, "restoreVersion": {"fromVersion": "2.0"}, "version": {"newVersion": "4.0"}})), ("edit".into(), "You edited this file".into()));
-        assert_eq!(d(json!({"move": {"From": "personal/a/Documents/Attachments/ost-share-test.txt"}})).1, "You moved this file from <b>Attachments</b>");
-        assert_eq!(d(json!({"move": {"From": "personal/a/Documents/ost-share-test.txt"}})).1, "You moved this file from <b>Documents</b>");
+        assert_eq!(
+            d(
+                json!({"edit": {}, "restoreVersion": {"fromVersion": "2.0"}, "version": {"newVersion": "4.0"}})
+            ),
+            ("edit".into(), "You edited this file".into())
+        );
+        assert_eq!(
+            d(json!({"move": {"From": "personal/a/Documents/Attachments/ost-share-test.txt"}})).1,
+            "You moved this file from <b>Attachments</b>"
+        );
+        assert_eq!(
+            d(json!({"move": {"From": "personal/a/Documents/ost-share-test.txt"}})).1,
+            "You moved this file from <b>Documents</b>"
+        );
         assert_eq!(d(json!({"share": {}})).1, "You shared this file");
         assert_eq!(d(json!({"share": {"recipients": [{"user": {"displayName": "OST Test 2", "email": "t2@x"}}]}})).1, "You shared this file with OST Test 2");
-        assert_eq!(d(json!({"rename": {"oldName": "ost-share-test-ost.txt"}})).1, "You renamed <b>ost-share-test-ost.txt</b> to <b>ost-share-test.txt</b>");
+        assert_eq!(
+            d(json!({"rename": {"oldName": "ost-share-test-ost.txt"}})).1,
+            "You renamed <b>ost-share-test-ost.txt</b> to <b>ost-share-test.txt</b>"
+        );
         assert_eq!(d(json!({"create": {}})).1, "You created this file");
         let other = json!({"action": {"edit": {}}, "actor": {"user": {"email": "r@x", "displayName": "Randy Northrup"}}});
-        assert_eq!(describe(&other, me(), "x").unwrap().1, "Randy Northrup edited this file");
+        assert_eq!(
+            describe(&other, me(), "x").unwrap().1,
+            "Randy Northrup edited this file"
+        );
         let to_me = json!({"action": {"share": {"recipients": [{"user": {"email": "OST-Test1@x.com", "displayName": "OST Test 1"}}]}}, "actor": {"user": {"email": "r@x", "displayName": "Randy Northrup"}}});
-        assert_eq!(describe(&to_me, me(), "x").unwrap().1, "Randy Northrup shared this file with you");
+        assert_eq!(
+            describe(&to_me, me(), "x").unwrap().1,
+            "Randy Northrup shared this file with you"
+        );
         assert!(describe(&json!({"action": {"unknown": {}}}), me(), "x").is_none());
     }
 
@@ -712,7 +1260,10 @@ mod tests {
         assert_eq!(group(at(10, 25, 15), now), "Three weeks ago");
         assert_eq!(group(at(10, 3, 15), now), "Last month");
         assert_eq!(group(at(3, 3, 15), now), "March");
-        assert_eq!(group(Local.with_ymd_and_hms(2025, 3, 3, 1, 0, 0).unwrap(), now), "March 2025");
+        assert_eq!(
+            group(Local.with_ymd_and_hms(2025, 3, 3, 1, 0, 0).unwrap(), now),
+            "March 2025"
+        );
         assert_eq!(tip(at(11, 12, 8), now), "Nov 12 at 8:00 AM");
     }
 
@@ -721,19 +1272,46 @@ mod tests {
         let now = Local::now();
         let reply = json!({"d": {"results": [{"author": {"email": "ost-test1@x.com", "name": "OST Test 1"}, "createdDate": (now - Duration::seconds(30)).to_rfc3339(), "id": "1", "text": "OST test 111 <b>"}]}});
         let cards = comment_cards(&reply, me(), now);
-        assert_eq!((cards[0].author.as_str(), cards[0].text.as_str(), cards[0].time.as_str(), cards[0].comment_id.as_str()), ("You", "OST test 111 &lt;b&gt;", "A few seconds ago", "1"));
-        let mut act = feed(&json!({"value": [{"action": {"comment": {}}, "actor": you(), "times": {"recordedTime": now.to_rfc3339()}},
+        assert_eq!(
+            (
+                cards[0].author.as_str(),
+                cards[0].text.as_str(),
+                cards[0].time.as_str(),
+                cards[0].comment_id.as_str()
+            ),
+            ("You", "OST test 111 &lt;b&gt;", "A few seconds ago", "1")
+        );
+        let mut act = feed(
+            &json!({"value": [{"action": {"comment": {}}, "actor": you(), "times": {"recordedTime": now.to_rfc3339()}},
             {"action": {"comment": {"isReply": true}}, "actor": you(), "times": {"recordedTime": now.to_rfc3339()}},
-            {"action": {"edit": {}}, "actor": you(), "times": {"recordedTime": (now - Duration::hours(1)).to_rfc3339()}}]}), me(), "x", now);
-        assert_eq!(act.iter().map(|a| a.kind.as_str()).collect::<Vec<_>>(), ["comment", "commentResponse", "edit"]);
+            {"action": {"edit": {}}, "actor": you(), "times": {"recordedTime": (now - Duration::hours(1)).to_rfc3339()}}]}),
+            me(),
+            "x",
+            now,
+        );
+        assert_eq!(
+            act.iter().map(|a| a.kind.as_str()).collect::<Vec<_>>(),
+            ["comment", "commentResponse", "edit"]
+        );
         // Two edits in a row by one person read as one; a move between them
         // keeps both.
         let e = |h: i64| json!({"action": {"edit": {}}, "actor": you(), "times": {"recordedTime": (now - Duration::hours(h)).to_rfc3339()}});
         let mv = json!({"action": {"move": {"From": "personal/a/Documents/x.txt"}}, "actor": you(), "times": {"recordedTime": (now - Duration::hours(4)).to_rfc3339()}});
-        let kinds = |v: Value| feed(&v, me(), "x", now).iter().map(|a| a.kind.clone()).collect::<Vec<_>>();
-        assert_eq!(kinds(json!({"value": [e(1), e(2), mv.clone(), e(5)]})), ["edit", "move", "edit"]);
+        let kinds = |v: Value| {
+            feed(&v, me(), "x", now)
+                .iter()
+                .map(|a| a.kind.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            kinds(json!({"value": [e(1), e(2), mv.clone(), e(5)]})),
+            ["edit", "move", "edit"]
+        );
         act = merge(act, cards);
-        assert_eq!(act.iter().map(|a| a.kind.as_str()).collect::<Vec<_>>(), ["comment", "edit"]);
+        assert_eq!(
+            act.iter().map(|a| a.kind.as_str()).collect::<Vec<_>>(),
+            ["comment", "edit"]
+        );
         assert_eq!(act[0].comment_id, "1");
     }
 
@@ -754,9 +1332,25 @@ mod tests {
         let c = &comment_cards(&reply, me(), now)[0];
         assert!(c.edited);
         assert_eq!(c.time, "About a minute ago");
-        assert_eq!(c.replies.iter().map(|r| (r.id.as_str(), r.author.as_str(), r.text.as_str(), r.time.as_str())).collect::<Vec<_>>(),
-            [("4", "You", "OST reply test 1", "Just now"), ("5", "OST Test 2", "thanks OST Test 1", "Just now")]);
-        assert_eq!(comment_text(&json!({"text": "@mention{3} hi", "mentions": []})), "@mention{3} hi");
+        assert_eq!(
+            c.replies
+                .iter()
+                .map(|r| (
+                    r.id.as_str(),
+                    r.author.as_str(),
+                    r.text.as_str(),
+                    r.time.as_str()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("4", "You", "OST reply test 1", "Just now"),
+                ("5", "OST Test 2", "thanks OST Test 1", "Just now")
+            ]
+        );
+        assert_eq!(
+            comment_text(&json!({"text": "@mention{3} hi", "mentions": []})),
+            "@mention{3} hi"
+        );
     }
 
     #[test]
@@ -776,21 +1370,30 @@ mod tests {
             a(json!({"delete": {"name": "ost-share-test.txt"}}), item("Attachments"), "1|0|5|10:28 PM"),
             a(json!({"create": {}}), item("ost-open-test.docx"), "1|0|5|10:46 PM"),
         ]});
-        let f: Vec<String> = folder_feed(&reply, me(), Local::now()).into_iter().map(|i| i.text).collect();
-        assert_eq!(f, [
-            "You commented on <b>ost-share-test.txt</b>",
-            "You edited <b>ost-share-test.txt</b>",
-            "You moved <b>ost-share-test.txt</b> from <b>Attachments</b> to <b>Documents</b>",
-            "You deleted <b>ost-share-test Copy.txt</b>",
-            "You deleted <b>ost-share-test.txt</b> from <b>Attachments</b>",
-            "You created <b>ost-open-test.docx</b>",
-        ]);
+        let f: Vec<String> = folder_feed(&reply, me(), Local::now())
+            .into_iter()
+            .map(|i| i.text)
+            .collect();
+        assert_eq!(
+            f,
+            [
+                "You commented on <b>ost-share-test.txt</b>",
+                "You edited <b>ost-share-test.txt</b>",
+                "You moved <b>ost-share-test.txt</b> from <b>Attachments</b> to <b>Documents</b>",
+                "You deleted <b>ost-share-test Copy.txt</b>",
+                "You deleted <b>ost-share-test.txt</b> from <b>Attachments</b>",
+                "You created <b>ost-open-test.docx</b>",
+            ]
+        );
     }
 
     #[test]
     fn feed_uses_sharepoints_wording_for_times() {
         let reply = json!({"value": [{"@sharePoint.localizedRelativeTime": "1|0|5|10:37 PM", "action": {"share": {}}, "actor": you(), "times": {"recordedTime": "2026-11-12T06:37:00Z"}}]});
         let f = feed(&reply, me(), "x", Local::now());
-        assert_eq!((f[0].kind.as_str(), f[0].time.as_str()), ("share", "Yesterday at 10:37 PM"));
+        assert_eq!(
+            (f[0].kind.as_str(), f[0].time.as_str()),
+            ("share", "Yesterday at 10:37 PM")
+        );
     }
 }

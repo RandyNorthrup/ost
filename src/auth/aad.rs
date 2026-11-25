@@ -113,7 +113,13 @@ impl AadClient {
     }
 
     /// Redeem an authorization code (with its PKCE verifier) for tokens.
-    pub async fn redeem_code(&self, code: &str, verifier: &str, redirect_uri: &str, scope: &str) -> Result<TokenSet> {
+    pub async fn redeem_code(
+        &self,
+        code: &str,
+        verifier: &str,
+        redirect_uri: &str,
+        scope: &str,
+    ) -> Result<TokenSet> {
         let response = self
             .token_post()
             .form(&[
@@ -210,7 +216,11 @@ impl AadClient {
         if let Some(o) = &self.origin {
             req = req.header(reqwest::header::ORIGIN, o.as_str());
         }
-        let response = req.form(&form).send().await.context("Broker token request failed to send")?;
+        let response = req
+            .form(&form)
+            .send()
+            .await
+            .context("Broker token request failed to send")?;
         parse_json(response, "broker token").await
     }
 

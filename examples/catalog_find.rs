@@ -12,9 +12,20 @@ async fn main() -> anyhow::Result<()> {
         let name = d.get("name").and_then(|v| v.as_str()).unwrap_or_default();
         if name.to_lowercase().contains(&part) {
             let keep = ["id", "name", "inputExtensions", "bots", "connectors"];
-            let slim: serde_json::Map<String, serde_json::Value> =
-                d.as_object().into_iter().flatten().filter(|(k, _)| keep.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect();
-            println!("{}", serde_json::to_string(&slim)?.chars().take(1500).collect::<String>());
+            let slim: serde_json::Map<String, serde_json::Value> = d
+                .as_object()
+                .into_iter()
+                .flatten()
+                .filter(|(k, _)| keep.contains(&k.as_str()))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            println!(
+                "{}",
+                serde_json::to_string(&slim)?
+                    .chars()
+                    .take(1500)
+                    .collect::<String>()
+            );
         }
     }
     Ok(())

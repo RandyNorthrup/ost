@@ -17,7 +17,12 @@ pub struct ItemRef {
 
 impl ItemRef {
     fn method(&self, name: &str) -> String {
-        let quote = |s: &str| url::form_urlencoded::byte_serialize(format!("'{}'", s.trim_matches(|c| c == '{' || c == '}')).as_bytes()).collect::<String>();
+        let quote = |s: &str| {
+            url::form_urlencoded::byte_serialize(
+                format!("'{}'", s.trim_matches(|c| c == '{' || c == '}')).as_bytes(),
+            )
+            .collect::<String>()
+        };
         format!(
             "{}/_api/web/lists/getbyid(@a1)/GetItemByUniqueId(@a2)/{name}?@a1={}&@a2={}",
             self.site.trim_end_matches('/'),
@@ -76,7 +81,11 @@ fn s(v: &Value) -> String {
 }
 
 fn results(v: &Value) -> &[Value] {
-    v.get("results").and_then(Value::as_array).or_else(|| v.as_array()).map(Vec::as_slice).unwrap_or_default()
+    v.get("results")
+        .and_then(Value::as_array)
+        .or_else(|| v.as_array())
+        .map(Vec::as_slice)
+        .unwrap_or_default()
 }
 
 fn person(p: &Value, role: i64, direct: bool) -> Person {
@@ -118,7 +127,10 @@ pub fn parse_info(reply: &Value) -> Info {
                 edit,
                 expiration: s(&ld["Expiration"]),
                 requires_password: ld["RequiresPassword"].as_bool().unwrap_or_default(),
-                members: results(&l["linkMembers"]).iter().map(|m| person(m, if edit { 2 } else { 1 }, false)).collect(),
+                members: results(&l["linkMembers"])
+                    .iter()
+                    .map(|m| person(m, if edit { 2 } else { 1 }, false))
+                    .collect(),
             }
         })
         .collect();
@@ -127,7 +139,10 @@ pub fn parse_info(reply: &Value) -> Info {
         if p.login.is_empty() {
             return;
         }
-        match people.iter_mut().find(|q| q.login.eq_ignore_ascii_case(&p.login)) {
+        match people
+            .iter_mut()
+            .find(|q| q.login.eq_ignore_ascii_case(&p.login))
+        {
             Some(q) => {
                 q.role = q.role.max(p.role);
                 q.direct |= p.direct;
@@ -144,7 +159,11 @@ pub fn parse_info(reply: &Value) -> Info {
         }
     }
     for p in results(&pi["principals"]) {
-        add(person(&p["principal"], p["role"].as_i64().unwrap_or(1), true));
+        add(person(
+            &p["principal"],
+            p["role"].as_i64().unwrap_or(1),
+            true,
+        ));
     }
     Info {
         name: s(&d["displayName"]),
@@ -152,7 +171,9 @@ pub fn parse_info(reply: &Value) -> Info {
         direct_url: s(&d["directUrl"]),
         default_scope: d["defaultShareLinkScope"].as_i64().unwrap_or(1),
         default_edit: d["defaultShareLinkPermission"].as_i64() == Some(2),
-        default_existing: d["defaultShareLinkToExistingAccess"].as_bool().unwrap_or_default(),
+        default_existing: d["defaultShareLinkToExistingAccess"]
+            .as_bool()
+            .unwrap_or_default(),
         people,
         links,
     }
@@ -170,13 +191,23 @@ pub(crate) async fn post_with(url: &str, body: &Value, headers: &[(&str, &str)])
 
 /// A SharePoint REST call with a body, by any method (OneDrive edits a
 /// comment with PATCH).
-pub(crate) async fn send_with(method: reqwest::Method, url: &str, body: &Value, headers: &[(&str, &str)]) -> Result<Value> {
+pub(crate) async fn send_with(
+    method: reqwest::Method,
+    url: &str,
+    body: &Value,
+    headers: &[(&str, &str)],
+) -> Result<Value> {
     let text = send_text(method, url, body, headers).await?;
     Ok(serde_json::from_str(&text).unwrap_or_default())
 }
 
 /// `send_with`'s reply as text (SharePoint answers some calls with HTML).
-pub(crate) async fn send_text(method: reqwest::Method, url: &str, body: &Value, headers: &[(&str, &str)]) -> Result<String> {
+pub(crate) async fn send_text(
+    method: reqwest::Method,
+    url: &str,
+    body: &Value,
+    headers: &[(&str, &str)],
+) -> Result<String> {
     let host = url.split('/').take(3).collect::<Vec<_>>().join("/");
     if !host.starts_with("https://") {
         bail!("Not a SharePoint address: {url}");
@@ -184,7 +215,13 @@ pub(crate) async fn send_text(method: reqwest::Method, url: &str, body: &Value, 
     let token = crate::auth::oauth::access_token_for(&format!("{host}/.default")).await?;
     // OData-verbose unless the caller gives its own Accept / Content-Type
     // (SharePoint's v2.x API takes plain JSON).
-    let pick = |name: &str| headers.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| *v).unwrap_or("application/json;odata=verbose");
+    let pick = |name: &str| {
+        headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| *v)
+            .unwrap_or("application/json;odata=verbose")
+    };
     let resp = reqwest::Client::new()
         .request(method, url)
         .bearer_auth(token)
@@ -192,7 +229,9 @@ pub(crate) async fn send_text(method: reqwest::Method, url: &str, body: &Value, 
         .header("content-type", pick("content-type"));
     let resp = headers
         .iter()
-        .filter(|(k, _)| !k.eq_ignore_ascii_case("accept") && !k.eq_ignore_ascii_case("content-type"))
+        .filter(|(k, _)| {
+            !k.eq_ignore_ascii_case("accept") && !k.eq_ignore_ascii_case("content-type")
+        })
         .fold(resp, |r, (k, v)| r.header(*k, *v))
         .body(body.to_string())
         .send()
@@ -212,32 +251,68 @@ pub(crate) async fn send_text(method: reqwest::Method, url: &str, body: &Value, 
 
 /// The file's sharing: who has access, its links and the default link.
 pub async fn info(item: &ItemRef) -> Result<Info> {
-    let url = item.method("GetSharingInformation") + "&$Expand=pickerSettings,permissionsInformation,sharingLinkTemplates";
-    let reply = post(&url, &json!({"request": {"maxPrincipalsToReturn": 100, "maxLinkMembersToReturn": 100}})).await?;
+    let url = item.method("GetSharingInformation")
+        + "&$Expand=pickerSettings,permissionsInformation,sharingLinkTemplates";
+    let reply = post(
+        &url,
+        &json!({"request": {"maxPrincipalsToReturn": 100, "maxLinkMembersToReturn": 100}}),
+    )
+    .await?;
     Ok(parse_info(&reply))
 }
 
 /// Fill in people's directory ids (Graph, by address) so their pictures
 /// show; those Graph can't find keep initials.
 pub async fn with_object_ids(client: &super::client::TeamsClient, info: &mut Info) {
-    let emails: Vec<String> = info.people.iter().chain(info.links.iter().flat_map(|l| l.members.iter())).map(|p| p.email.clone()).collect();
+    let emails: Vec<String> = info
+        .people
+        .iter()
+        .chain(info.links.iter().flat_map(|l| l.members.iter()))
+        .map(|p| p.email.clone())
+        .collect();
     let found = object_ids(client, &emails).await;
-    let fill = |p: &mut Person| p.oid = found.get(&p.email.to_ascii_lowercase()).cloned().unwrap_or_default();
+    let fill = |p: &mut Person| {
+        p.oid = found
+            .get(&p.email.to_ascii_lowercase())
+            .cloned()
+            .unwrap_or_default()
+    };
     info.people.iter_mut().for_each(fill);
-    info.links.iter_mut().flat_map(|l| l.members.iter_mut()).for_each(fill);
+    info.links
+        .iter_mut()
+        .flat_map(|l| l.members.iter_mut())
+        .for_each(fill);
 }
 
 /// Directory ids for addresses (lowercased), from Graph; those Graph can't
 /// find are left out.
-pub async fn object_ids(client: &super::client::TeamsClient, emails: &[String]) -> std::collections::HashMap<String, String> {
+pub async fn object_ids(
+    client: &super::client::TeamsClient,
+    emails: &[String],
+) -> std::collections::HashMap<String, String> {
     use futures::StreamExt;
-    let mut emails: Vec<String> = emails.iter().map(|e| e.to_ascii_lowercase()).filter(|e| !e.is_empty()).collect();
+    let mut emails: Vec<String> = emails
+        .iter()
+        .map(|e| e.to_ascii_lowercase())
+        .filter(|e| !e.is_empty())
+        .collect();
     emails.sort();
     emails.dedup();
     futures::stream::iter(emails)
         .map(|e| async move {
-            let id = match client.graph_get_opt(&format!("/users/{}?$select=id", url::form_urlencoded::byte_serialize(e.as_bytes()).collect::<String>())).await {
-                Ok(Some(r)) => r.json::<Value>().await.ok().map(|v| s(&v["id"])).unwrap_or_default(),
+            let id = match client
+                .graph_get_opt(&format!(
+                    "/users/{}?$select=id",
+                    url::form_urlencoded::byte_serialize(e.as_bytes()).collect::<String>()
+                ))
+                .await
+            {
+                Ok(Some(r)) => r
+                    .json::<Value>()
+                    .await
+                    .ok()
+                    .map(|v| s(&v["id"]))
+                    .unwrap_or_default(),
                 _ => String::new(),
             };
             (e, id)
@@ -253,7 +328,10 @@ pub async fn object_ids(client: &super::client::TeamsClient, emails: &[String]) 
 /// The people picker's suggestions for `query` (SharePoint's entities,
 /// kept whole: Send passes them back).
 pub async fn search_people(site: &str, query: &str) -> Result<Vec<Value>> {
-    let url = format!("{}/_api/SP.UI.ApplicationPages.ClientPeoplePickerWebServiceInterface.ClientPeoplePickerSearchUser", site.trim_end_matches('/'));
+    let url = format!(
+        "{}/_api/SP.UI.ApplicationPages.ClientPeoplePickerWebServiceInterface.ClientPeoplePickerSearchUser",
+        site.trim_end_matches('/')
+    );
     let reply = post(
         &url,
         &json!({"queryParams": {
@@ -268,14 +346,20 @@ pub async fn search_people(site: &str, query: &str) -> Result<Vec<Value>> {
 
 /// ClientPeoplePickerSearchUser's reply: a JSON string of entities.
 pub fn parse_picker(reply: &Value) -> Vec<Value> {
-    let text = reply["d"]["ClientPeoplePickerSearchUser"].as_str().unwrap_or("[]");
+    let text = reply["d"]["ClientPeoplePickerSearchUser"]
+        .as_str()
+        .unwrap_or("[]");
     serde_json::from_str::<Vec<Value>>(text).unwrap_or_default()
 }
 
 /// Send: give the picked people access (edit or view) and mail them the
 /// message.
 pub async fn send(item: &ItemRef, people: &[Value], edit: bool, message: &str) -> Result<()> {
-    let reply = post(&item.method("ShareObject"), &share_object_body(people, edit, message)).await?;
+    let reply = post(
+        &item.method("ShareObject"),
+        &share_object_body(people, edit, message),
+    )
+    .await?;
     let d = reply.get("d").unwrap_or(&reply);
     if let Some(err) = d["ErrorMessage"].as_str().filter(|e| !e.is_empty()) {
         bail!("{err}");
@@ -309,7 +393,13 @@ pub fn link_kind(scope: i64, edit: bool) -> i64 {
 /// Copy link: make (or reuse) the link for a scope and role; its address
 /// and share id. Scope 4 is Teams' "People currently in this chat" (a
 /// specific-people link the chat service opens to the chat's members).
-pub async fn create_link(item: &ItemRef, scope: i64, edit: bool, expiration: &str, password: &str) -> Result<(String, String)> {
+pub async fn create_link(
+    item: &ItemRef,
+    scope: i64,
+    edit: bool,
+    expiration: &str,
+    password: &str,
+) -> Result<(String, String)> {
     create_link_for(item, &share_link_body(scope, edit, expiration, password)).await
 }
 
@@ -326,7 +416,13 @@ pub fn picker_entry(email: &str, name: &str, oid: &str) -> Value {
 /// ShareLink's body for a link the compose card's Link settings makes: in
 /// a chat, "People currently in this chat" names its members (all of
 /// them, you too) in `peoplePickerInput`.
-pub fn compose_link_body(scope: i64, edit: bool, expiration: &str, password: &str, people: &[Value]) -> Value {
+pub fn compose_link_body(
+    scope: i64,
+    edit: bool,
+    expiration: &str,
+    password: &str,
+    people: &[Value],
+) -> Value {
     let mut b = share_link_body(scope, edit, expiration, password);
     if scope == 4 && !people.is_empty() {
         b["request"]["peoplePickerInput"] = json!(Value::Array(people.to_vec()).to_string());
@@ -349,8 +445,17 @@ pub async fn create_link_for(item: &ItemRef, body: &Value) -> Result<(String, St
 /// request's description (linkKind 6, role 8), as OneDrive's dialog makes
 /// it; with people, the same call also emails it to them. Returns the
 /// link and its share id.
-pub async fn file_request(item: &ItemRef, description: &str, people: &[Value], message: &str) -> Result<(String, String)> {
-    let reply = post(&item.method("ShareLink"), &file_request_body(description, people, message)).await?;
+pub async fn file_request(
+    item: &ItemRef,
+    description: &str,
+    people: &[Value],
+    message: &str,
+) -> Result<(String, String)> {
+    let reply = post(
+        &item.method("ShareLink"),
+        &file_request_body(description, people, message),
+    )
+    .await?;
     let info = &reply["d"]["ShareLink"]["sharingLinkInfo"];
     let url = s(&info["Url"]);
     if url.is_empty() {
@@ -396,11 +501,27 @@ pub fn share_link_body(scope: i64, edit: bool, expiration: &str, password: &str)
 /// Whether each person (by sign-in name) can open the file already
 /// (SharePoint's CheckPermissions, as Teams' share dialog asks).
 pub async fn check_access(item: &ItemRef, upns: &[String]) -> Result<Vec<(String, bool)>> {
-    let recipients: Vec<Value> = upns.iter().map(|u| json!({ "email": format!("i:0#.f|membership|{}", u.to_ascii_lowercase()) })).collect();
-    let reply = post(&item.method("CheckPermissions"), &json!({ "recipients": recipients })).await?;
+    let recipients: Vec<Value> = upns
+        .iter()
+        .map(|u| json!({ "email": format!("i:0#.f|membership|{}", u.to_ascii_lowercase()) }))
+        .collect();
+    let reply = post(
+        &item.method("CheckPermissions"),
+        &json!({ "recipients": recipients }),
+    )
+    .await?;
     Ok(results(&reply["d"]["CheckPermissions"])
         .iter()
-        .map(|r| (s(&r["inputEntity"]).rsplit('|').next().unwrap_or_default().to_string(), r["hasAccess"].as_bool().unwrap_or_default()))
+        .map(|r| {
+            (
+                s(&r["inputEntity"])
+                    .rsplit('|')
+                    .next()
+                    .unwrap_or_default()
+                    .to_string(),
+                r["hasAccess"].as_bool().unwrap_or_default(),
+            )
+        })
         .collect())
 }
 
@@ -421,7 +542,11 @@ pub async fn set_role(item: &ItemRef, login: &str, role: i64) -> Result<()> {
 
 /// Delete a link.
 pub async fn delete_link(item: &ItemRef, kind: i64, share_id: &str) -> Result<()> {
-    post(&item.method("UnshareLink"), &json!({"linkKind": kind, "shareId": share_id})).await?;
+    post(
+        &item.method("UnshareLink"),
+        &json!({"linkKind": kind, "shareId": share_id}),
+    )
+    .await?;
     Ok(())
 }
 
@@ -436,7 +561,11 @@ pub async fn stop_sharing(item: &ItemRef) -> Result<()> {
     .await?;
     let rel = s(&root["d"]["ServerRelativeUrl"]);
     let host = item.site.split('/').take(3).collect::<Vec<_>>().join("/");
-    post(&item.method("UnshareObject"), &json!({ "url": format!("{host}{rel}") })).await?;
+    post(
+        &item.method("UnshareObject"),
+        &json!({ "url": format!("{host}{rel}") }),
+    )
+    .await?;
     Ok(())
 }
 
@@ -453,7 +582,15 @@ pub(crate) async fn delete(url: &str) -> Result<()> {
         .with_context(|| format!("SharePoint {url}"))?;
     if !resp.status().is_success() {
         let status = resp.status();
-        bail!("SharePoint {status}: {}", resp.text().await.unwrap_or_default().chars().take(200).collect::<String>());
+        bail!(
+            "SharePoint {status}: {}",
+            resp.text()
+                .await
+                .unwrap_or_default()
+                .chars()
+                .take(200)
+                .collect::<String>()
+        );
     }
     Ok(())
 }
@@ -469,8 +606,15 @@ pub(crate) async fn get_with(url: &str, headers: &[(&str, &str)]) -> Result<Valu
     let token = crate::auth::oauth::access_token_for(&format!("{host}/.default")).await?;
     // OData-verbose unless the caller asks for another Accept (SharePoint's
     // v2.x API answers plain JSON, as OneDrive asks for it).
-    let accept = headers.iter().find(|(k, _)| k.eq_ignore_ascii_case("accept")).map(|(_, v)| *v).unwrap_or("application/json;odata=verbose");
-    let req = reqwest::Client::new().get(url).bearer_auth(token).header("accept", accept);
+    let accept = headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("accept"))
+        .map(|(_, v)| *v)
+        .unwrap_or("application/json;odata=verbose");
+    let req = reqwest::Client::new()
+        .get(url)
+        .bearer_auth(token)
+        .header("accept", accept);
     let resp = headers
         .iter()
         .filter(|(k, _)| !k.eq_ignore_ascii_case("accept"))
@@ -481,7 +625,10 @@ pub(crate) async fn get_with(url: &str, headers: &[(&str, &str)]) -> Result<Valu
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
     if !status.is_success() {
-        bail!("SharePoint {status}: {}", text.chars().take(200).collect::<String>());
+        bail!(
+            "SharePoint {status}: {}",
+            text.chars().take(200).collect::<String>()
+        );
     }
     Ok(serde_json::from_str(&text).unwrap_or_default())
 }
@@ -493,9 +640,18 @@ mod tests {
     #[test]
     fn file_requests_are_onedrives() {
         // Teams' request for "OST test 113" on Attachments (2026-11-12).
-        assert_eq!(file_request_body("OST test 113", &[], ""), json!({"request":{"createLink":true,"settings":{"allowAnonymousAccess":true,"linkKind":6,"expiration":null,"restrictShareMembership":false,"updatePassword":false,"password":"","description":"OST test 113","role":8,"applicationLink":false,"limitUseToApplication":false}}}));
+        assert_eq!(
+            file_request_body("OST test 113", &[], ""),
+            json!({"request":{"createLink":true,"settings":{"allowAnonymousAccess":true,"linkKind":6,"expiration":null,"restrictShareMembership":false,"updatePassword":false,"password":"","description":"OST test 113","role":8,"applicationLink":false,"limitUseToApplication":false}}})
+        );
         let b = file_request_body("x", &[json!({"Key": "k"})], "hi");
-        assert_eq!((b["request"]["emailData"]["body"].as_str(), b["request"]["peoplePickerInput"].as_str()), (Some("hi"), Some("[{\"Key\":\"k\"}]")));
+        assert_eq!(
+            (
+                b["request"]["emailData"]["body"].as_str(),
+                b["request"]["peoplePickerInput"].as_str()
+            ),
+            (Some("hi"), Some("[{\"Key\":\"k\"}]"))
+        );
     }
 
     #[test]
@@ -530,11 +686,32 @@ mod tests {
             }
         }});
         let i = parse_info(&reply);
-        assert_eq!((i.default_scope, i.default_edit, i.default_existing), (0, true, false));
+        assert_eq!(
+            (i.default_scope, i.default_edit, i.default_existing),
+            (0, true, false)
+        );
         assert_eq!(i.links.len(), 1);
-        assert_eq!((i.links[0].scope, i.links[0].edit, i.links[0].share_id.as_str()), (0, true, "1998683b"));
-        let roles: Vec<(&str, i64, bool)> = i.people.iter().map(|p| (p.name.as_str(), p.role, p.direct)).collect();
-        assert_eq!(roles, [("OST Test 1", 3, true), ("Randy Northrup", 2, false), ("OST Test 2", 1, true)]);
+        assert_eq!(
+            (
+                i.links[0].scope,
+                i.links[0].edit,
+                i.links[0].share_id.as_str()
+            ),
+            (0, true, "1998683b")
+        );
+        let roles: Vec<(&str, i64, bool)> = i
+            .people
+            .iter()
+            .map(|p| (p.name.as_str(), p.role, p.direct))
+            .collect();
+        assert_eq!(
+            roles,
+            [
+                ("OST Test 1", 3, true),
+                ("Randy Northrup", 2, false),
+                ("OST Test 2", 1, true)
+            ]
+        );
     }
 
     #[test]
@@ -554,7 +731,8 @@ mod tests {
             share_link_body(4, true, "", ""),
             json!({"request": {"createLink": true, "settings": {"linkKind": 6, "expiration": null, "role": 2, "restrictShareMembership": true, "updatePassword": false, "password": "", "scope": 2, "nav": ""}}})
         );
-        let picked = parse_picker(&json!({"d": {"ClientPeoplePickerSearchUser": format!("[{who}]")}}));
+        let picked =
+            parse_picker(&json!({"d": {"ClientPeoplePickerSearchUser": format!("[{who}]")}}));
         assert_eq!(picked, [who]);
     }
 }

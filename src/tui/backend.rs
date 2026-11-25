@@ -14,14 +14,24 @@ use crate::api::client::TeamsClient;
 /// Commands sent from the TUI event loop to the async backend.
 pub enum BackendCommand {
     LoadTeams,
-    LoadChats { limit: usize },
-    LoadMessages { chat_id: String, limit: usize },
-    SendMessage { chat_id: String, message: String },
+    LoadChats {
+        limit: usize,
+    },
+    LoadMessages {
+        chat_id: String,
+        limit: usize,
+    },
+    SendMessage {
+        chat_id: String,
+        message: String,
+    },
     LoadUserInfo,
     LoadPresence,
     /// Mark a chat or channel read up to its newest message (Teams'
     /// consumption horizon), as opening it in Teams does.
-    MarkRead { chat_id: String },
+    MarkRead {
+        chat_id: String,
+    },
 }
 
 /// Responses from the async backend to the TUI.
@@ -136,7 +146,8 @@ async fn backend_loop(
                     let _ = resp_tx.send(BackendResponse::Presence(result));
                 }
                 BackendCommand::MarkRead { chat_id } => {
-                    if let Err(e) = api::messages::mark_chat_read_to_latest(&client, &chat_id).await {
+                    if let Err(e) = api::messages::mark_chat_read_to_latest(&client, &chat_id).await
+                    {
                         tracing::warn!("mark read failed: {:#}", e);
                     }
                 }
@@ -153,7 +164,10 @@ fn start_push(client: &TeamsClient, resp_tx: mpsc::UnboundedSender<BackendRespon
 
     let mut events = event_hub::subscribe();
     tokio::spawn(async {
-        let opts = crate::trouter::ListenOptions { better_together: false, ..crate::trouter::ListenOptions::EMBEDDED };
+        let opts = crate::trouter::ListenOptions {
+            better_together: false,
+            ..crate::trouter::ListenOptions::EMBEDDED
+        };
         if let Err(e) = crate::trouter::listen(opts, std::future::pending).await {
             tracing::warn!("push channel stopped: {:#}", e);
         }
@@ -185,7 +199,10 @@ fn start_push(client: &TeamsClient, resp_tx: mpsc::UnboundedSender<BackendRespon
                     }
                     let new_from_others = new_from_others(&ev.json, &me);
                     tracing::debug!(chats = changed.len(), "chat push");
-                    BackendResponse::Push { changed, new_from_others }
+                    BackendResponse::Push {
+                        changed,
+                        new_from_others,
+                    }
                 }
             };
             if resp_tx.send(response).is_err() {
@@ -227,7 +244,10 @@ mod tests {
         );
         assert_eq!(
             new_from_others(&batch, "8:orgid:me"),
-            vec!["19:b@thread.v2".to_string(), "19:c@thread.tacv2".to_string()]
+            vec![
+                "19:b@thread.v2".to_string(),
+                "19:c@thread.tacv2".to_string()
+            ]
         );
     }
 }

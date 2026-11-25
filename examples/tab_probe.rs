@@ -16,7 +16,11 @@ async fn main() -> anyhow::Result<()> {
     ids.extend(args.iter().filter(|a| !a.starts_with("19:")).cloned());
     let defs = tab_add::definitions(&client, &ids).await?;
     for id in &ids {
-        let state = apps.iter().find(|(i, _)| i == id).map(|(_, s)| s.as_str()).unwrap_or("-");
+        let state = apps
+            .iter()
+            .find(|(i, _)| i == id)
+            .map(|(_, s)| s.as_str())
+            .unwrap_or("-");
         let Some(d) = defs.get(&id.to_lowercase()) else {
             println!("{id} {state}: no definition");
             continue;
@@ -30,7 +34,10 @@ async fn main() -> anyhow::Result<()> {
             has(IcKind::TabMeeting),
             has(IcKind::TabChannel),
             tabs("galleryTabs").chars().take(200).collect::<String>(),
-            tabs("configurableTabs").chars().take(200).collect::<String>(),
+            tabs("configurableTabs")
+                .chars()
+                .take(200)
+                .collect::<String>(),
             tabs("staticTabs").chars().take(120).collect::<String>(),
         );
     }
@@ -44,15 +51,29 @@ async fn main() -> anyhow::Result<()> {
         for d in tab_add::conversation_apps(&client, t).await?.iter() {
             let state = d.get("state").and_then(|s| s.as_str()).unwrap_or("");
             if !state.is_empty() && state != "None" {
-                println!("conv {} {state} {:?} core={:?}", d["id"], d.get("name"), d.get("isCoreApp"));
+                println!(
+                    "conv {} {state} {:?} core={:?}",
+                    d["id"],
+                    d.get("name"),
+                    d.get("isCoreApp")
+                );
             }
         }
     }
     if let Some(t) = args.iter().find(|a| a.starts_with("19:")) {
         let props = tab_add::thread_properties(&client, t).await?;
-        let keys: Vec<&String> = props.as_object().map(|o| o.keys().collect()).unwrap_or_default();
+        let keys: Vec<&String> = props
+            .as_object()
+            .map(|o| o.keys().collect())
+            .unwrap_or_default();
         println!("thread keys {keys:?}");
-        println!("meeting {}", props.get("meeting").map(|m| m.to_string()).unwrap_or_default());
+        println!(
+            "meeting {}",
+            props
+                .get("meeting")
+                .map(|m| m.to_string())
+                .unwrap_or_default()
+        );
         for k in keys.iter().filter(|k| k.starts_with("tab::")) {
             println!("{k} {}", props[k.as_str()]);
         }

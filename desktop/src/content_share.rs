@@ -44,7 +44,8 @@ impl qobject::Backend {
         })
         .to_string();
         if self.rust().call_content_json.to_string() != json {
-            self.as_mut().set_call_content_json(QString::from(json.as_str()));
+            self.as_mut()
+                .set_call_content_json(QString::from(json.as_str()));
         }
     }
 
@@ -63,7 +64,12 @@ impl qobject::Backend {
         self.as_mut().rust_mut().content.error.clear();
         self.as_mut().show_content();
         let title = self.rust().call_peer.to_string();
-        let me_oid = self.rust().user_mri.to_string().trim_start_matches("8:orgid:").to_string();
+        let me_oid = self
+            .rust()
+            .user_mri
+            .to_string()
+            .trim_start_matches("8:orgid:")
+            .to_string();
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let r = start_content(&kind, &args, &title, &me_oid).await;
@@ -95,8 +101,16 @@ impl qobject::Backend {
             // follow the page's first report: wait for them (Teams' 65 s).
             let mut slot = call_slot().lock().await;
             for _ in 0..130 {
-                let ready = slot.outgoing.as_ref().and_then(|c| c.my_content()).is_some_and(|m| m.links.update_state.is_some());
-                let gone = slot.outgoing.as_ref().and_then(|c| c.my_content()).is_none();
+                let ready = slot
+                    .outgoing
+                    .as_ref()
+                    .and_then(|c| c.my_content())
+                    .is_some_and(|m| m.links.update_state.is_some());
+                let gone = slot
+                    .outgoing
+                    .as_ref()
+                    .and_then(|c| c.my_content())
+                    .is_none();
                 if ready || gone {
                     break;
                 }
@@ -104,7 +118,9 @@ impl qobject::Backend {
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                 slot = call_slot().lock().await;
             }
-            let Some(call) = slot.outgoing.as_mut() else { return };
+            let Some(call) = slot.outgoing.as_mut() else {
+                return;
+            };
             if let Err(e) = call.update_content_state(&state).await {
                 tracing::warn!("content state: {}", short_error(&e));
                 return;
@@ -189,7 +205,12 @@ impl qobject::Backend {
     pub fn content_send_inking(self: Pin<&mut Self>, event_data: &QString) {
         let data = event_data.to_string();
         runtime().spawn(async move {
-            let sender = call_slot().lock().await.outgoing.as_ref().and_then(|c| c.live_inking_sender());
+            let sender = call_slot()
+                .lock()
+                .await
+                .outgoing
+                .as_ref()
+                .and_then(|c| c.live_inking_sender());
             if let Some(s) = sender
                 && let Err(e) = s.send(&data).await
             {
@@ -200,21 +221,42 @@ impl qobject::Backend {
 
     /// A shared board's frame address (Teams' whiteboard renderer): the
     /// session's address with Teams' parameters.
-    pub fn content_board_frame_url(&self, session_url: &QString, initiator: bool, extra: &QString) -> QString {
+    pub fn content_board_frame_url(
+        &self,
+        session_url: &QString,
+        initiator: bool,
+        extra: &QString,
+    ) -> QString {
         let (call_id, thread) = runtime().block_on(async {
             let slot = call_slot().lock().await;
-            slot.outgoing.as_ref().map(|c| (c.call_id().to_string(), c.thread().to_string())).unwrap_or_default()
+            slot.outgoing
+                .as_ref()
+                .map(|c| (c.call_id().to_string(), c.thread().to_string()))
+                .unwrap_or_default()
         });
         let extra: serde_json::Value = serde_json::from_str(&extra.to_string()).unwrap_or_default();
         let pairs: Vec<(String, String)> = extra
             .as_object()
             .into_iter()
             .flatten()
-            .map(|(k, v)| (k.clone(), v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string())))
+            .map(|(k, v)| {
+                (
+                    k.clone(),
+                    v.as_str()
+                        .map(str::to_string)
+                        .unwrap_or_else(|| v.to_string()),
+                )
+            })
             .collect();
-        let pairs: Vec<(&str, String)> = pairs.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
+        let pairs: Vec<(&str, String)> =
+            pairs.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
         let meeting_id = cs::meeting_id(&thread);
-        let user = self.rust().user_mri.to_string().trim_start_matches("8:orgid:").to_string();
+        let user = self
+            .rust()
+            .user_mri
+            .to_string()
+            .trim_start_matches("8:orgid:")
+            .to_string();
         let url = api::app_host::shared_board_frame_url(
             &session_url.to_string(),
             &uuid::Uuid::new_v4().to_string(),
@@ -233,17 +275,28 @@ impl qobject::Backend {
     /// Annotate.
     pub fn content_save_board(self: Pin<&mut Self>, kind: &QString, url: &QString) {
         let (kind, url) = (kind.to_string(), url.to_string());
-        let me_oid = self.rust().user_mri.to_string().trim_start_matches("8:orgid:").to_string();
+        let me_oid = self
+            .rust()
+            .user_mri
+            .to_string()
+            .trim_start_matches("8:orgid:")
+            .to_string();
         runtime().spawn(async move {
             let (thread, organizer) = {
                 let slot = call_slot().lock().await;
-                let Some(c) = slot.outgoing.as_ref() else { return };
-                (c.thread().to_string(), c.organizer_oid().unwrap_or(&me_oid).to_string())
+                let Some(c) = slot.outgoing.as_ref() else {
+                    return;
+                };
+                (
+                    c.thread().to_string(),
+                    c.organizer_oid().unwrap_or(&me_oid).to_string(),
+                )
             };
             let r = async {
                 let client = TeamsClient::new().await?;
                 if kind == "annotation" {
-                    api::app_host::save_meeting_annotation_board(&client, &thread, &organizer, &url).await
+                    api::app_host::save_meeting_annotation_board(&client, &thread, &organizer, &url)
+                        .await
                 } else {
                     api::app_host::save_meeting_board(&client, &thread, &organizer, &url).await
                 }
@@ -260,28 +313,62 @@ impl qobject::Backend {
     /// show form (Teams' populateFormData fields, in its order) and the
     /// Initialize message's file, for the session's deck (`session`), as
     /// the presenter or an attendee.
-    pub fn content_ppt_config(&self, session: &QString, presenter_name: &QString, attendees: i32, dark: bool) -> QString {
+    pub fn content_ppt_config(
+        &self,
+        session: &QString,
+        presenter_name: &QString,
+        attendees: i32,
+        dark: bool,
+    ) -> QString {
         let s: serde_json::Value = serde_json::from_str(&session.to_string()).unwrap_or_default();
         let c = s.get("content").cloned().unwrap_or_default();
-        let st = |v: &serde_json::Value, k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+        let st = |v: &serde_json::Value, k: &str| {
+            v.get(k)
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
         let mine = s.get("mine").and_then(|m| m.as_bool()).unwrap_or(false);
         let state: serde_json::Value = serde_json::from_str(&st(&s, "state")).unwrap_or_default();
-        let start = state.get("slideIndex").and_then(|i| i.as_i64()).map_or(1, |i| i + 1);
-        let mappings = state.get("timeLineMappings").cloned().unwrap_or_else(|| serde_json::json!([]));
+        let start = state
+            .get("slideIndex")
+            .and_then(|i| i.as_i64())
+            .map_or(1, |i| i + 1);
+        let mappings = state
+            .get("timeLineMappings")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!([]));
         let (call_id, participant, endpoint, thread) = runtime().block_on(async {
             let slot = call_slot().lock().await;
             slot.outgoing
                 .as_ref()
-                .map(|c| (c.call_id().to_string(), c.participant_id().to_string(), c.endpoint_id().unwrap_or_default().to_string(), c.thread().to_string()))
+                .map(|c| {
+                    (
+                        c.call_id().to_string(),
+                        c.participant_id().to_string(),
+                        c.endpoint_id().unwrap_or_default().to_string(),
+                        c.thread().to_string(),
+                    )
+                })
                 .unwrap_or_default()
         });
         let wac = st(&c, "wacUrl");
-        let (pods_region, wac_region) = api::live_share::wac_region(&wac).unwrap_or_else(|| ("usc".into(), "usc".into()));
+        let (pods_region, wac_region) =
+            api::live_share::wac_region(&wac).unwrap_or_else(|| ("usc".into(), "usc".into()));
         let pods = format!("https://{pods_region}.pods.officeapps.live.com/");
         // The presenter's viewer is the deck's correlation id; an
         // attendee's a new one.
-        let host_session = if mine { st(&c, "correlationId") } else { uuid::Uuid::new_v4().to_string() };
-        let user = self.rust().user_mri.to_string().trim_start_matches("8:orgid:").to_string();
+        let host_session = if mine {
+            st(&c, "correlationId")
+        } else {
+            uuid::Uuid::new_v4().to_string()
+        };
+        let user = self
+            .rust()
+            .user_mri
+            .to_string()
+            .trim_start_matches("8:orgid:")
+            .to_string();
         let e = |v: &str| teams_cli::api::tabs::encode_uri_component(v);
         let now = chrono::Utc::now().timestamp_millis().to_string();
         let name = st(&c, "name");
@@ -408,15 +495,26 @@ impl qobject::Backend {
     pub fn content_recent_load(self: Pin<&mut Self>) {
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let Ok(client) = TeamsClient::new().await else { return };
-            let ppt = api::live_share::recent_docs(&client, false).await.unwrap_or_else(|e| {
-                tracing::warn!("recent decks: {}", short_error(&e));
-                Vec::new()
-            });
-            let excel = api::live_share::recent_docs(&client, true).await.unwrap_or_default();
-            tracing::info!(decks = ppt.len(), workbooks = excel.len(), "share tray recent files");
+            let Ok(client) = TeamsClient::new().await else {
+                return;
+            };
+            let ppt = api::live_share::recent_docs(&client, false)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!("recent decks: {}", short_error(&e));
+                    Vec::new()
+                });
+            let excel = api::live_share::recent_docs(&client, true)
+                .await
+                .unwrap_or_default();
+            tracing::info!(
+                decks = ppt.len(),
+                workbooks = excel.len(),
+                "share tray recent files"
+            );
             let _ = qt.queue(move |mut this| {
-                this.as_mut().rust_mut().content.recent = serde_json::json!({ "ppt": ppt, "excel": excel });
+                this.as_mut().rust_mut().content.recent =
+                    serde_json::json!({ "ppt": ppt, "excel": excel });
                 this.as_mut().show_content();
             });
         });
@@ -425,7 +523,10 @@ impl qobject::Backend {
     /// The call ended: nothing is presented any more.
     pub(crate) fn content_reset(mut self: Pin<&mut Self>) {
         let recent = std::mem::take(&mut self.as_mut().rust_mut().content.recent);
-        self.as_mut().rust_mut().content = ContentShare { recent, ..Default::default() };
+        self.as_mut().rust_mut().content = ContentShare {
+            recent,
+            ..Default::default()
+        };
         self.as_mut().show_content();
     }
 
@@ -435,7 +536,13 @@ impl qobject::Backend {
     pub(crate) fn content_from_roster(mut self: Pin<&mut Self>) {
         // Your other devices' sessions too (Teams presenting on another
         // device): only the one this device presents is left out.
-        let mine = self.rust().content.mine.as_ref().map(|m| m.correlation_id.clone()).unwrap_or_default();
+        let mine = self
+            .rust()
+            .content
+            .mine
+            .as_ref()
+            .map(|m| m.correlation_id.clone())
+            .unwrap_or_default();
         let me = self.rust().user_mri.to_string().to_ascii_lowercase();
         let starting = !self.rust().content.starting.is_empty();
         let now: Vec<cs::Session> = self
@@ -443,7 +550,11 @@ impl qobject::Backend {
             .roster
             .iter()
             .filter(|p| p.active)
-            .flat_map(|p| p.content_sessions.iter().filter_map(|i| cs::session_from_roster(i, &p.id, &p.name)))
+            .flat_map(|p| {
+                p.content_sessions
+                    .iter()
+                    .filter_map(|i| cs::session_from_roster(i, &p.id, &p.name))
+            })
             .filter(|s| !s.correlation_id.is_empty() && s.correlation_id != mine)
             // Ours while it starts (before the conversation names it).
             .filter(|s| !(starting && s.presenter == me))
@@ -490,7 +601,13 @@ impl qobject::Backend {
                     // come before the answer): seen again as new next time,
                     // so it's joined then.
                     let ids: Vec<String> = fresh.iter().map(|s| s.correlation_id.clone()).collect();
-                    let _ = qt.queue(move |mut this| this.as_mut().rust_mut().content.others.retain(|o| !ids.contains(&o.correlation_id)));
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut()
+                            .rust_mut()
+                            .content
+                            .others
+                            .retain(|o| !ids.contains(&o.correlation_id))
+                    });
                     return;
                 };
                 for g in &gone {
@@ -500,7 +617,14 @@ impl qobject::Backend {
                     match call.join_content(s).await {
                         Ok(joined) => {
                             let _ = qt.queue(move |mut this| {
-                                if let Some(o) = this.as_mut().rust_mut().content.others.iter_mut().find(|o| o.correlation_id == joined.correlation_id) {
+                                if let Some(o) = this
+                                    .as_mut()
+                                    .rust_mut()
+                                    .content
+                                    .others
+                                    .iter_mut()
+                                    .find(|o| o.correlation_id == joined.correlation_id)
+                                {
                                     if !joined.state.is_empty() {
                                         o.state = joined.state.clone();
                                     }
@@ -514,7 +638,9 @@ impl qobject::Backend {
                 }
                 return;
             }
-            let Some(call) = slot.outgoing.as_mut() else { return };
+            let Some(call) = slot.outgoing.as_mut() else {
+                return;
+            };
             for g in &gone {
                 call.forget_content(g);
             }
@@ -522,7 +648,14 @@ impl qobject::Backend {
                 match call.join_content(s).await {
                     Ok(joined) => {
                         let _ = qt.queue(move |mut this| {
-                            if let Some(o) = this.as_mut().rust_mut().content.others.iter_mut().find(|o| o.correlation_id == joined.correlation_id) {
+                            if let Some(o) = this
+                                .as_mut()
+                                .rust_mut()
+                                .content
+                                .others
+                                .iter_mut()
+                                .find(|o| o.correlation_id == joined.correlation_id)
+                            {
                                 if !joined.state.is_empty() {
                                     o.state = joined.state.clone();
                                 }
@@ -543,29 +676,37 @@ impl qobject::Backend {
 pub(crate) async fn content_event(json: &str, qt: &cxx_qt::CxxQtThread<qobject::Backend>) -> bool {
     // Someone's PowerPoint Live pointer (proxied LiveInking messages).
     if json.contains("\"LiveInking\"") && json.contains("conversation/receiveMessage") {
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else { return false };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
+            return false;
+        };
         let inks = cs::live_inking(&v);
         if inks.is_empty() {
             return false;
         }
         let _ = qt.queue(move |mut this| {
             for (from, _, data) in inks {
-                this.as_mut().content_inking(QString::from(from.as_str()), QString::from(data.as_str()));
+                this.as_mut()
+                    .content_inking(QString::from(from.as_str()), QString::from(data.as_str()));
             }
         });
         return true;
     }
-    if !(json.contains("conversation/addModality") || json.contains("conversation/contentSharing")) {
+    if !(json.contains("conversation/addModality") || json.contains("conversation/contentSharing"))
+    {
         return false;
     }
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else { return false };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
+        return false;
+    };
     let mut slot = call_slot().lock().await;
     // An answered call (a room invited into a meeting): the updates and
     // ends of the sessions it joined.
     if slot.outgoing.is_none()
         && let Some(call) = slot.active.as_mut()
     {
-        let Some((corr, state)) = call.content_event(&v) else { return false };
+        let Some((corr, state)) = call.content_event(&v) else {
+            return false;
+        };
         drop(slot);
         let _ = qt.queue(move |mut this| {
             let c = &mut this.as_mut().rust_mut().content;
@@ -582,11 +723,19 @@ pub(crate) async fn content_event(json: &str, qt: &cxx_qt::CxxQtThread<qobject::
         });
         return true;
     }
-    let Some(call) = slot.outgoing.as_mut() else { return false };
+    let Some(call) = slot.outgoing.as_mut() else {
+        return false;
+    };
     // Someone took control of a presentation (ours, or one we view).
     if let Some((corr, presenter, taken)) = call.content_presenter(&v) {
         let _ = qt.queue(move |mut this| {
-            let name = this.rust().roster.iter().find(|p| p.id.eq_ignore_ascii_case(&presenter)).map(|p| p.name.clone()).unwrap_or_default();
+            let name = this
+                .rust()
+                .roster
+                .iter()
+                .find(|p| p.id.eq_ignore_ascii_case(&presenter))
+                .map(|p| p.name.clone())
+                .unwrap_or_default();
             let c = &mut this.as_mut().rust_mut().content;
             if taken && let Some(mut s) = c.mine.take().filter(|m| m.correlation_id == corr) {
                 tracing::info!("someone took control of our presentation");
@@ -645,12 +794,22 @@ pub(crate) async fn content_event(json: &str, qt: &cxx_qt::CxxQtThread<qobject::
 /// The screen we share, for Annotate (its size in device pixels).
 fn shared_screen() -> cs::SharedScreen {
     let s = presenting::share_screen();
-    let (w, h) = teams_cli::calling::screencast::last_size().unwrap_or(((s.width * s.dpr) as u32, (s.full_height * s.dpr) as u32));
-    cs::SharedScreen { width: w, height: h, window: false }
+    let (w, h) = teams_cli::calling::screencast::last_size()
+        .unwrap_or(((s.width * s.dpr) as u32, (s.full_height * s.dpr) as u32));
+    cs::SharedScreen {
+        width: w,
+        height: h,
+        window: false,
+    }
 }
 
 /// Find the content and add the session (in the background).
-async fn start_content(kind: &str, args: &serde_json::Value, title: &str, me_oid: &str) -> anyhow::Result<(cs::Session, String)> {
+async fn start_content(
+    kind: &str,
+    args: &serde_json::Value,
+    title: &str,
+    me_oid: &str,
+) -> anyhow::Result<(cs::Session, String)> {
     let client = TeamsClient::new().await?;
     let (thread, message, organizer, participant) = {
         let slot = call_slot().lock().await;
@@ -666,12 +825,30 @@ async fn start_content(kind: &str, args: &serde_json::Value, title: &str, me_oid
     let now = chrono::Utc::now().timestamp_millis();
     // A file named in your OneDrive's root (the harness): its ids.
     let mut args = args.clone();
-    if let Some(name) = args.get("name").and_then(|n| n.as_str()).filter(|n| !n.is_empty()).map(str::to_string)
-        && args.get("itemId").and_then(|i| i.as_str()).is_none_or(str::is_empty)
+    if let Some(name) = args
+        .get("name")
+        .and_then(|n| n.as_str())
+        .filter(|n| !n.is_empty())
+        .map(str::to_string)
+        && args
+            .get("itemId")
+            .and_then(|i| i.as_str())
+            .is_none_or(str::is_empty)
     {
         let path = teams_cli::api::tabs::encode_uri_component(&name);
-        let v: serde_json::Value = client.graph_get(&format!("/me/drive/root:/{path}?$select=id,webUrl,webDavUrl,parentReference")).await?.json().await?;
-        let s = |p: &str| v.pointer(p).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+        let v: serde_json::Value = client
+            .graph_get(&format!(
+                "/me/drive/root:/{path}?$select=id,webUrl,webDavUrl,parentReference"
+            ))
+            .await?
+            .json()
+            .await?;
+        let s = |p: &str| {
+            v.pointer(p)
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
         args["driveId"] = s("/parentReference/driveId").into();
         args["itemId"] = s("/id").into();
         args["url"] = s("/webDavUrl").into();
@@ -683,38 +860,84 @@ async fn start_content(kind: &str, args: &serde_json::Value, title: &str, me_oid
         // with who started it and when.
         "whiteboard" => {
             let meeting = api::app_host::meeting_board(&client, &thread, &organizer, title).await?;
-            let url = format!("{meeting}{}initiatorId={me_oid}&initiatorTimestamp={now}", if meeting.contains('?') { "&" } else { "?" });
+            let url = format!(
+                "{meeting}{}initiatorId={me_oid}&initiatorTimestamp={now}",
+                if meeting.contains('?') { "&" } else { "?" }
+            );
             board = url.clone();
-            (cs::whiteboard_content(&thread, &message, &url, &participant), String::new(), None)
+            (
+                cs::whiteboard_content(&thread, &message, &url, &participant),
+                String::new(),
+                None,
+            )
         }
         // Annotate: the meeting's annotation board (beta/meetings/annotation),
         // its address sent once Whiteboard reports it.
         "annotation" => {
-            let url = api::app_host::meeting_annotation_board(&client, &thread, &organizer, title).await?;
+            let url = api::app_host::meeting_annotation_board(&client, &thread, &organizer, title)
+                .await?;
             let sep = if url.contains('?') { "&" } else { "?" };
-            let with_flag = if url.contains("annotation=true") { url.clone() } else { format!("{url}{sep}annotation=true") };
+            let with_flag = if url.contains("annotation=true") {
+                url.clone()
+            } else {
+                format!("{url}{sep}annotation=true")
+            };
             let initiated = format!("{with_flag}&initiatorId={me_oid}&initiatorTimestamp={now}");
             let screen = shared_screen();
-            let (share_url, content_url) = cs::annotation_urls(&initiated, screen, "linux", &uuid::Uuid::new_v4().to_string());
+            let (share_url, content_url) = cs::annotation_urls(
+                &initiated,
+                screen,
+                "linux",
+                &uuid::Uuid::new_v4().to_string(),
+            );
             board = share_url.clone();
-            (cs::annotation_content(&thread, &message, &share_url, &content_url), String::new(), None)
+            (
+                cs::annotation_content(&thread, &message, &share_url, &content_url),
+                String::new(),
+                None,
+            )
         }
         // PowerPoint Live (Teams' startFileSharing1): redeem the deck, ask
         // PowerPoint's snap service for the presentation, then the session
         // with the deck as its content and its name as the subject.
         "ppt" => {
-            let url = args.get("url").and_then(|u| u.as_str()).unwrap_or_default().to_string();
+            let url = args
+                .get("url")
+                .and_then(|u| u.as_str())
+                .unwrap_or_default()
+                .to_string();
             let url = if url.is_empty() {
-                let (d, i) = (args.get("driveId").and_then(|x| x.as_str()).unwrap_or_default(), args.get("itemId").and_then(|x| x.as_str()).unwrap_or_default());
-                let v: serde_json::Value = client.graph_get(&format!("/drives/{d}/items/{i}?$select=webUrl,webDavUrl")).await?.json().await?;
-                v.get("webDavUrl").or_else(|| v.get("webUrl")).and_then(|u| u.as_str()).unwrap_or_default().to_string()
+                let (d, i) = (
+                    args.get("driveId")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or_default(),
+                    args.get("itemId")
+                        .and_then(|x| x.as_str())
+                        .unwrap_or_default(),
+                );
+                let v: serde_json::Value = client
+                    .graph_get(&format!("/drives/{d}/items/{i}?$select=webUrl,webDavUrl"))
+                    .await?
+                    .json()
+                    .await?;
+                v.get("webDavUrl")
+                    .or_else(|| v.get("webUrl"))
+                    .and_then(|u| u.as_str())
+                    .unwrap_or_default()
+                    .to_string()
             } else {
                 url
             };
             let item = api::live_share::redeem(&url).await?;
             let correlation = uuid::Uuid::new_v4().to_string();
             let mut file = api::live_share::ppt_file(&item, &correlation, now as u64)?;
-            let call_id = call_slot().lock().await.outgoing.as_ref().map(|c| c.call_id().to_string()).unwrap_or_default();
+            let call_id = call_slot()
+                .lock()
+                .await
+                .outgoing
+                .as_ref()
+                .map(|c| c.call_id().to_string())
+                .unwrap_or_default();
             file.snap_url = api::live_share::snap_url(&file, &call_id).await?;
             let name = file.name.clone();
             (cs::ppt_content(&file), name, None)
@@ -722,12 +945,43 @@ async fn start_content(kind: &str, args: &serde_json::Value, title: &str, me_oid
         // Excel Live (calling-app NP): the meeting's people get edit
         // access, Excel's meeting stage page hosts the workbook.
         "excel" => {
-            let (d, i) = (args.get("driveId").and_then(|x| x.as_str()).unwrap_or_default(), args.get("itemId").and_then(|x| x.as_str()).unwrap_or_default());
-            let people: Vec<String> = args.get("people").and_then(|p| p.as_array()).into_iter().flatten().filter_map(|p| p.as_str().map(str::to_string)).collect();
-            let call_id = call_slot().lock().await.outgoing.as_ref().map(|c| c.call_id().to_string()).unwrap_or_default();
+            let (d, i) = (
+                args.get("driveId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default(),
+                args.get("itemId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default(),
+            );
+            let people: Vec<String> = args
+                .get("people")
+                .and_then(|p| p.as_array())
+                .into_iter()
+                .flatten()
+                .filter_map(|p| p.as_str().map(str::to_string))
+                .collect();
+            let call_id = call_slot()
+                .lock()
+                .await
+                .outgoing
+                .as_ref()
+                .map(|c| c.call_id().to_string())
+                .unwrap_or_default();
             let x = api::live_share::excel_share(&client, d, i, &people, &call_id).await?;
-            let s = |k: &str| x.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
-            let content = cs::excel_content(&thread, &message, &s("url"), "Excel", &s("fileId"), &s("substrateId"));
+            let s = |k: &str| {
+                x.get(k)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string()
+            };
+            let content = cs::excel_content(
+                &thread,
+                &message,
+                &s("url"),
+                "Excel",
+                &s("fileId"),
+                &s("substrateId"),
+            );
             // Teams names the presenter first among who may open it.
             let mut permitted = vec![me_oid.to_string()];
             permitted.extend(people.iter().filter(|p| p.as_str() != me_oid).cloned());
@@ -738,15 +992,26 @@ async fn start_content(kind: &str, args: &serde_json::Value, title: &str, me_oid
             // A prepared content DTO (PowerPoint Live, Excel Live: the call
             // window builds them from the file).
             let c = args.get("content").cloned().context("No content")?;
-            let subject = args.get("subject").and_then(|s| s.as_str()).unwrap_or_default().to_string();
-            let state = args.get("state").and_then(|s| s.as_str()).map(str::to_string);
+            let subject = args
+                .get("subject")
+                .and_then(|s| s.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let state = args
+                .get("state")
+                .and_then(|s| s.as_str())
+                .map(str::to_string);
             (c, subject, state)
         }
         other => anyhow::bail!("Can't present {other}"),
     };
     let mut slot = call_slot().lock().await;
     let call = slot.outgoing.as_mut().context("Not in a meeting")?;
-    call.start_content_sharing(content, &subject, state.as_deref()).await?;
-    let s = call.my_content().cloned().context("The session didn't start")?;
+    call.start_content_sharing(content, &subject, state.as_deref())
+        .await?;
+    let s = call
+        .my_content()
+        .cloned()
+        .context("The session didn't start")?;
     Ok((s, board))
 }

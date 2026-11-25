@@ -15,7 +15,8 @@ use teams_cli::calling::webrtc_video::{SEND_H, SEND_W};
 
 /// Teams' background catalog (the animated ones first, then the pictures),
 /// as the calling app loads it.
-pub const CATALOG_URL: &str = "https://statics.teams.cdn.office.net/evergreen-assets/backgroundimages/animated.json?v=7";
+pub const CATALOG_URL: &str =
+    "https://statics.teams.cdn.office.net/evergreen-assets/backgroundimages/animated.json?v=7";
 const CDN: &str = "https://statics.teams.cdn.office.net";
 
 /// One of Teams' backgrounds.
@@ -38,13 +39,24 @@ impl Entry {
 /// The catalog's entries from its JSON ({"videoBackgroundImages": [...]}).
 pub fn parse_catalog(text: &str) -> Vec<Entry> {
     let v: serde_json::Value = serde_json::from_str(text).unwrap_or_default();
-    let abs = |p: &str| if p.starts_with("http") { p.to_string() } else { format!("{CDN}{p}") };
+    let abs = |p: &str| {
+        if p.starts_with("http") {
+            p.to_string()
+        } else {
+            format!("{CDN}{p}")
+        }
+    };
     v.get("videoBackgroundImages")
         .and_then(|a| a.as_array())
         .map(|a| {
             a.iter()
                 .filter_map(|e| {
-                    let s = |k: &str| e.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+                    let s = |k: &str| {
+                        e.get(k)
+                            .and_then(|x| x.as_str())
+                            .unwrap_or_default()
+                            .to_string()
+                    };
                     let (id, src) = (s("id"), s("src"));
                     if id.is_empty() || src.is_empty() {
                         return None;
@@ -137,8 +149,17 @@ fn uploads_in(dir: &Path) -> Vec<Upload> {
             if id.ends_with("_thumb") || !is_upload_id(id) {
                 return None;
             }
-            let when = e.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
-            Some((when, Upload { id: id.to_string(), thumb: dir.join(format!("{id}_thumb.jpeg")) }))
+            let when = e
+                .metadata()
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::UNIX_EPOCH);
+            Some((
+                when,
+                Upload {
+                    id: id.to_string(),
+                    thumb: dir.join(format!("{id}_thumb.jpeg")),
+                },
+            ))
         })
         .collect();
     list.sort_by_key(|(when, _)| *when);
@@ -161,29 +182,46 @@ pub enum AddError {
 impl AddError {
     pub fn message(&self) -> String {
         match self {
-            AddError::InvalidType => crate::backend::tr("Couldn't add background: Invalid image type."),
-            AddError::InvalidSize => crate::backend::tr("Couldn't add background: Invalid image size."),
+            AddError::InvalidType => {
+                crate::backend::tr("Couldn't add background: Invalid image type.")
+            }
+            AddError::InvalidSize => {
+                crate::backend::tr("Couldn't add background: Invalid image size.")
+            }
             AddError::Failed => crate::backend::tr("Couldn't add background."),
         }
     }
 }
 
 unsafe extern "C" {
-    fn ost_vfx_import_picture(src: *const core::ffi::c_char, dst: *const core::ffi::c_char, thumb: *const core::ffi::c_char) -> i32;
+    fn ost_vfx_import_picture(
+        src: *const core::ffi::c_char,
+        dst: *const core::ffi::c_char,
+        thumb: *const core::ffi::c_char,
+    ) -> i32;
 }
 
 /// Add the picture at `src` as one of your backgrounds; its id.
 pub fn add_upload(src: &Path) -> Result<String, AddError> {
     // Teams' file picker offers these; anything else isn't an image to it.
-    let ext = src.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let ext = src
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
     if !["png", "jpeg", "jpg", "bmp"].contains(&ext.as_str()) {
         return Err(AddError::InvalidType);
     }
     let dir = uploads_dir();
     std::fs::create_dir_all(&dir).map_err(|_| AddError::Failed)?;
     let id = uuid::Uuid::new_v4().to_string();
-    let c = |p: &Path| std::ffi::CString::new(p.to_string_lossy().as_bytes()).map_err(|_| AddError::Failed);
-    let (s, d, t) = (c(src)?, c(&dir.join(format!("{id}.jpeg")))?, c(&dir.join(format!("{id}_thumb.jpeg")))?);
+    let c = |p: &Path| {
+        std::ffi::CString::new(p.to_string_lossy().as_bytes()).map_err(|_| AddError::Failed)
+    };
+    let (s, d, t) = (
+        c(src)?,
+        c(&dir.join(format!("{id}.jpeg")))?,
+        c(&dir.join(format!("{id}_thumb.jpeg")))?,
+    );
     // SAFETY: NUL-terminated paths.
     match unsafe { ost_vfx_import_picture(s.as_ptr(), d.as_ptr(), t.as_ptr()) } {
         0 => Ok(id),
@@ -209,7 +247,15 @@ pub fn remove_upload(id: &str) -> bool {
 
 /// Where a background is kept once downloaded.
 fn local_path(e: &Entry) -> PathBuf {
-    let name = e.src.split('?').next().unwrap_or_default().rsplit('/').next().unwrap_or("background").to_string();
+    let name = e
+        .src
+        .split('?')
+        .next()
+        .unwrap_or_default()
+        .rsplit('/')
+        .next()
+        .unwrap_or("background")
+        .to_string();
     dir().join(name)
 }
 
@@ -218,7 +264,11 @@ async fn download(e: &Entry) -> anyhow::Result<PathBuf> {
     if path.exists() {
         return Ok(path);
     }
-    let bytes = reqwest::get(&e.src).await?.error_for_status()?.bytes().await?;
+    let bytes = reqwest::get(&e.src)
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
     std::fs::create_dir_all(dir())?;
     let tmp = path.with_extension("part");
     std::fs::write(&tmp, &bytes)?;
@@ -227,7 +277,11 @@ async fn download(e: &Entry) -> anyhow::Result<PathBuf> {
 }
 
 unsafe extern "C" {
-    fn ost_vfx_player_open(path: *const core::ffi::c_char, width: i32, height: i32) -> *mut core::ffi::c_void;
+    fn ost_vfx_player_open(
+        path: *const core::ffi::c_char,
+        width: i32,
+        height: i32,
+    ) -> *mut core::ffi::c_void;
     fn ost_vfx_player_fps(player: *mut core::ffi::c_void) -> f64;
     fn ost_vfx_player_next(player: *mut core::ffi::c_void, out: *mut u8) -> bool;
     fn ost_vfx_player_close(player: *mut core::ffi::c_void);
@@ -255,7 +309,8 @@ impl Player {
     fn next(&mut self) -> Option<Picture> {
         let mut data = vec![0u8; (SEND_W * SEND_H * 3 / 2) as usize];
         // SAFETY: an open player; `data` holds one I420 frame of its size.
-        unsafe { ost_vfx_player_next(self.0, data.as_mut_ptr()) }.then(|| Picture::from_i420(SEND_W, SEND_H, data))
+        unsafe { ost_vfx_player_next(self.0, data.as_mut_ptr()) }
+            .then(|| Picture::from_i420(SEND_W, SEND_H, data))
     }
 }
 
@@ -283,7 +338,10 @@ pub struct Filter {
 /// (meetingExtensionDefinition: videoAppContentUrl, filters).
 pub fn parse_filters(def: &serde_json::Value) -> (String, Vec<Filter>) {
     let m = &def["meetingExtensionDefinition"];
-    let url = m["videoAppContentUrl"].as_str().unwrap_or_default().to_string();
+    let url = m["videoAppContentUrl"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
     let list = m["filters"]
         .as_array()
         .map(|a| {
@@ -327,7 +385,9 @@ pub fn filter_socket() -> String {
         let _ = std_listener.set_nonblocking(true);
         let path = format!("/{secret}");
         crate::backend::runtime().spawn(async move {
-            let Ok(listener) = tokio::net::TcpListener::from_std(std_listener) else { return };
+            let Ok(listener) = tokio::net::TcpListener::from_std(std_listener) else {
+                return;
+            };
             while let Ok((stream, _)) = listener.accept().await {
                 let path = path.clone();
                 tokio::spawn(async move {
@@ -361,14 +421,25 @@ pub fn decode_frame(b: &[u8]) -> Option<ost_vfx::filter::Frame> {
     let height = u32::from_le_bytes(b[4..8].try_into().ok()?);
     let seq = u64::from_le_bytes(b[8..16].try_into().ok()?);
     let data = b[16..].to_vec();
-    (data.len() >= width as usize * height as usize * 3 / 2).then_some(ost_vfx::filter::Frame { width, height, seq, data })
+    (data.len() >= width as usize * height as usize * 3 / 2).then_some(ost_vfx::filter::Frame {
+        width,
+        height,
+        seq,
+        data,
+    })
 }
 
 async fn serve_filter_page(stream: tokio::net::TcpStream, path: &str) -> anyhow::Result<()> {
     use futures::{SinkExt, StreamExt};
-    use tokio_tungstenite::tungstenite::{Message, handshake::server::{ErrorResponse, Request, Response}};
+    use tokio_tungstenite::tungstenite::{
+        Message,
+        handshake::server::{ErrorResponse, Request, Response},
+    };
     // Only the page that was given the secret path.
-    #[allow(clippy::result_large_err, reason = "tungstenite's handshake callback returns its own ErrorResponse")]
+    #[allow(
+        clippy::result_large_err,
+        reason = "tungstenite's handshake callback returns its own ErrorResponse"
+    )]
     let check = |req: &Request, resp: Response| -> Result<Response, ErrorResponse> {
         if req.uri().path() == path {
             Ok(resp)
@@ -379,10 +450,14 @@ async fn serve_filter_page(stream: tokio::net::TcpStream, path: &str) -> anyhow:
     let mut ws = tokio_tungstenite::accept_hdr_async(stream, check).await?;
     let mut after = 0u64;
     loop {
-        let frame = tokio::task::spawn_blocking(move || ost_vfx::filter::next_frame(after, Duration::from_millis(500))).await?;
+        let frame = tokio::task::spawn_blocking(move || {
+            ost_vfx::filter::next_frame(after, Duration::from_millis(500))
+        })
+        .await?;
         let Some(frame) = frame else { continue };
         after = frame.seq;
-        ws.send(Message::Binary(encode_frame(&frame).into())).await?;
+        ws.send(Message::Binary(encode_frame(&frame).into()))
+            .await?;
         // The app's result (or give up on this frame after a second).
         match tokio::time::timeout(Duration::from_secs(1), ws.next()).await {
             Ok(Some(Ok(Message::Binary(b)))) => {
@@ -445,7 +520,11 @@ pub fn choice(map: &serde_json::Map<String, serde_json::Value>) -> Choice {
     let get = |k: &str| map.get(k).and_then(|v| v.as_str()).unwrap_or_default();
     match get("videoBackground") {
         "" | "none" => Choice::None,
-        "blur" => Choice::Blur(if get("videoBlur") == "portrait" { Blur::Portrait } else { Blur::Standard }),
+        "blur" => Choice::Blur(if get("videoBlur") == "portrait" {
+            Blur::Portrait
+        } else {
+            Blur::Standard
+        }),
         id => Choice::Catalog(id.to_string()),
     }
 }
@@ -456,7 +535,12 @@ pub fn apply(map: &serde_json::Map<String, serde_json::Value>) {
     let mut s = Settings {
         brightness: flag(map, "adjustBrightness"),
         soft_focus: flag(map, "softFocus"),
-        green_screen: flag(map, "greenScreen").then(|| ost_vfx::GreenScreen { color: map.get("greenScreenColor").and_then(|v| v.as_str()).and_then(parse_hex) }),
+        green_screen: flag(map, "greenScreen").then(|| ost_vfx::GreenScreen {
+            color: map
+                .get("greenScreenColor")
+                .and_then(|v| v.as_str())
+                .and_then(parse_hex),
+        }),
         background: ost_vfx::current().background,
     };
     match choice(map) {
@@ -486,7 +570,10 @@ async fn load_background(id: &str, generation: u64) -> anyhow::Result<()> {
     if list.is_empty() {
         list = load_catalog().await;
     }
-    let entry = list.into_iter().find(|e| e.id == id).ok_or_else(|| anyhow::anyhow!("not in Teams' catalog"))?;
+    let entry = list
+        .into_iter()
+        .find(|e| e.id == id)
+        .ok_or_else(|| anyhow::anyhow!("not in Teams' catalog"))?;
     let path = download(&entry).await?;
     tokio::task::spawn_blocking(move || play(&path, generation)).await?
 }
@@ -506,7 +593,9 @@ fn set_background(b: Background, generation: u64) -> bool {
 fn play(path: &Path, generation: u64) -> anyhow::Result<()> {
     let mut player = Player::open(path).ok_or_else(|| anyhow::anyhow!("can't be played"))?;
     let fps = player.fps();
-    let first = player.next().ok_or_else(|| anyhow::anyhow!("has no picture"))?;
+    let first = player
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("has no picture"))?;
     if fps <= 0.0 {
         set_background(Background::Picture(Arc::new(first)), generation);
         return Ok(());
@@ -553,26 +642,46 @@ mod tests {
         );
         assert_eq!(list.len(), 2);
         assert!(list[0].animated && !list[1].animated);
-        assert_eq!(list[1].src, "https://statics.teams.cdn.office.net/evergreen-assets/backgroundimages/goldShimmerHoliday.jpg?v=0.1");
-        assert_eq!(local_path(&list[1]).file_name().unwrap(), "goldShimmerHoliday.jpg");
+        assert_eq!(
+            list[1].src,
+            "https://statics.teams.cdn.office.net/evergreen-assets/backgroundimages/goldShimmerHoliday.jpg?v=0.1"
+        );
+        assert_eq!(
+            local_path(&list[1]).file_name().unwrap(),
+            "goldShimmerHoliday.jpg"
+        );
     }
 
     #[test]
     fn uploads_are_listed_by_their_uuid_oldest_first() {
         let dir = std::env::temp_dir().join(format!("ost-uploads-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let (a, b) = ("7dfbac61-4292-4c1a-b3ba-abf4ce314c8b", "0a1b2c3d-4292-4c1a-b3ba-abf4ce314c8b");
-        for name in [format!("{a}.jpeg"), format!("{a}_thumb.jpeg"), "notes.jpeg".into(), "x.png".into()] {
+        let (a, b) = (
+            "7dfbac61-4292-4c1a-b3ba-abf4ce314c8b",
+            "0a1b2c3d-4292-4c1a-b3ba-abf4ce314c8b",
+        );
+        for name in [
+            format!("{a}.jpeg"),
+            format!("{a}_thumb.jpeg"),
+            "notes.jpeg".into(),
+            "x.png".into(),
+        ] {
             std::fs::write(dir.join(name), b"x").unwrap();
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(dir.join(format!("{b}.jpeg")), b"x").unwrap();
         let list = uploads_in(&dir);
-        assert_eq!(list.iter().map(|u| u.id.as_str()).collect::<Vec<_>>(), [a, b]);
+        assert_eq!(
+            list.iter().map(|u| u.id.as_str()).collect::<Vec<_>>(),
+            [a, b]
+        );
         assert_eq!(list[0].thumb, dir.join(format!("{a}_thumb.jpeg")));
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(!is_upload_id("../x"));
-        assert_eq!(add_upload(Path::new("/tmp/a.gif")), Err(AddError::InvalidType));
+        assert_eq!(
+            add_upload(Path::new("/tmp/a.gif")),
+            Err(AddError::InvalidType)
+        );
     }
 
     #[test]
@@ -587,15 +696,29 @@ mod tests {
         let (url, list) = parse_filters(&def);
         assert!(url.ends_with("/custom-filters/index.html"));
         assert_eq!(list.len(), 2);
-        assert_eq!((list[0].category.as_str(), list[0].name.as_str()), ("Styles", "Sweet"));
-        assert_eq!((list[1].category.as_str(), list[1].name.as_str()), ("Frames", "Crystal"));
+        assert_eq!(
+            (list[0].category.as_str(), list[0].name.as_str()),
+            ("Styles", "Sweet")
+        );
+        assert_eq!(
+            (list[1].category.as_str(), list[1].name.as_str()),
+            ("Frames", "Crystal")
+        );
     }
 
     #[test]
     fn filter_frames_round_trip_through_the_wire_format() {
-        let f = ost_vfx::filter::Frame { width: 4, height: 2, seq: 7, data: vec![1; 12] };
+        let f = ost_vfx::filter::Frame {
+            width: 4,
+            height: 2,
+            seq: 7,
+            data: vec![1; 12],
+        };
         let back = decode_frame(&encode_frame(&f)).unwrap();
-        assert_eq!((back.width, back.height, back.seq, back.data), (4, 2, 7, vec![1; 12]));
+        assert_eq!(
+            (back.width, back.height, back.seq, back.data),
+            (4, 2, 7, vec![1; 12])
+        );
         assert!(decode_frame(&[0; 16]).is_none());
     }
 
@@ -608,10 +731,27 @@ mod tests {
 
     #[test]
     fn settings_name_the_background() {
-        let m = |pairs: &[(&str, &str)]| pairs.iter().map(|(k, v)| (k.to_string(), serde_json::Value::String(v.to_string()))).collect::<serde_json::Map<_, _>>();
+        let m = |pairs: &[(&str, &str)]| {
+            pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), serde_json::Value::String(v.to_string())))
+                .collect::<serde_json::Map<_, _>>()
+        };
         assert_eq!(choice(&m(&[])), Choice::None);
-        assert_eq!(choice(&m(&[("videoBackground", "blur")])), Choice::Blur(Blur::Standard));
-        assert_eq!(choice(&m(&[("videoBackground", "blur"), ("videoBlur", "portrait")])), Choice::Blur(Blur::Portrait));
-        assert_eq!(choice(&m(&[("videoBackground", "Microsoft_x")])), Choice::Catalog("Microsoft_x".into()));
+        assert_eq!(
+            choice(&m(&[("videoBackground", "blur")])),
+            Choice::Blur(Blur::Standard)
+        );
+        assert_eq!(
+            choice(&m(&[
+                ("videoBackground", "blur"),
+                ("videoBlur", "portrait")
+            ])),
+            Choice::Blur(Blur::Portrait)
+        );
+        assert_eq!(
+            choice(&m(&[("videoBackground", "Microsoft_x")])),
+            Choice::Catalog("Microsoft_x".into())
+        );
     }
 }

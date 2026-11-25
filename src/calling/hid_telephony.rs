@@ -154,7 +154,9 @@ impl Descriptor {
                     }
                     if !constant && variable {
                         for n in 0..g.count {
-                            let Some(&(page, usage)) = list.get(n as usize).or(list.last()) else { break };
+                            let Some(&(page, usage)) = list.get(n as usize).or(list.last()) else {
+                                break;
+                            };
                             out.fields.push(Field {
                                 kind,
                                 report_id: g.id,
@@ -216,7 +218,9 @@ impl Descriptor {
     }
 
     pub fn field(&self, kind: Kind, page: u16, usage: u16) -> Option<&Field> {
-        self.fields.iter().find(|f| f.kind == kind && f.page == page && f.usage == usage)
+        self.fields
+            .iter()
+            .find(|f| f.kind == kind && f.page == page && f.usage == usage)
     }
 
     /// A report's data length in bytes (without its id).
@@ -230,14 +234,19 @@ impl Descriptor {
     /// A telephony device: one with Telephony page inputs (Teams opens
     /// devices on that page).
     pub fn is_telephony(&self) -> bool {
-        self.fields.iter().any(|f| f.kind == Kind::Input && f.page == PAGE_TELEPHONY)
+        self.fields
+            .iter()
+            .any(|f| f.kind == Kind::Input && f.page == PAGE_TELEPHONY)
     }
 
     /// Teams' ASP: the device has its feature report 0x9A (vendor page
     /// usage 3).
     pub fn has_asp(&self) -> bool {
         self.fields.iter().any(|f| {
-            f.kind == Kind::Feature && f.report_id == ASP_REPORT_ID && f.page == PAGE_TEAMS && f.usage == ASP_FEATURE
+            f.kind == Kind::Feature
+                && f.report_id == ASP_REPORT_ID
+                && f.page == PAGE_TEAMS
+                && f.usage == ASP_FEATURE
         })
     }
 }
@@ -281,7 +290,11 @@ pub struct Element {
 /// The elements of an input report (as read from hidraw: the report id
 /// first when the device numbers its reports) that changed since the last
 /// one; relative fields count whenever they're set.
-pub fn decode_input(desc: &Descriptor, report: &[u8], last: &mut HashMap<(u16, u16), i32>) -> Vec<Element> {
+pub fn decode_input(
+    desc: &Descriptor,
+    report: &[u8],
+    last: &mut HashMap<(u16, u16), i32>,
+) -> Vec<Element> {
     let (id, data) = if desc.uses_ids {
         match report.split_first() {
             Some((id, rest)) => (*id, rest),
@@ -291,18 +304,28 @@ pub fn decode_input(desc: &Descriptor, report: &[u8], last: &mut HashMap<(u16, u
         (0, report)
     };
     let mut out = Vec::new();
-    for f in desc.fields.iter().filter(|f| f.kind == Kind::Input && f.report_id == id) {
+    for f in desc
+        .fields
+        .iter()
+        .filter(|f| f.kind == Kind::Input && f.report_id == id)
+    {
         let raw = get_bits(data, f.bit, f.size);
         // Signed when the logical minimum is negative.
-        let value = if f.logical_min < 0 && f.size > 0 && f.size < 32 && raw >> (f.size - 1) & 1 != 0 {
-            raw as i32 - (1 << f.size)
-        } else {
-            raw as i32
-        };
+        let value =
+            if f.logical_min < 0 && f.size > 0 && f.size < 32 && raw >> (f.size - 1) & 1 != 0 {
+                raw as i32 - (1 << f.size)
+            } else {
+                raw as i32
+            };
         let key = (f.page, f.usage);
         if f.relative {
             if value != 0 {
-                out.push(Element { page: f.page, usage: f.usage, value, relative: true });
+                out.push(Element {
+                    page: f.page,
+                    usage: f.usage,
+                    value,
+                    relative: true,
+                });
             }
             last.insert(key, value);
         } else if last.get(&key) != Some(&value) {
@@ -311,7 +334,12 @@ pub fn decode_input(desc: &Descriptor, report: &[u8], last: &mut HashMap<(u16, u
             // The first report only sets the baseline, unless something is
             // pressed in it.
             if !first || value != 0 {
-                out.push(Element { page: f.page, usage: f.usage, value, relative: false });
+                out.push(Element {
+                    page: f.page,
+                    usage: f.usage,
+                    value,
+                    relative: false,
+                });
             }
         }
     }
@@ -319,7 +347,11 @@ pub fn decode_input(desc: &Descriptor, report: &[u8], last: &mut HashMap<(u16, u
 }
 
 /// The output reports (id first when numbered) that set these LEDs.
-pub fn encode_leds(desc: &Descriptor, leds: &[(u16, bool)], current: &HashMap<u16, bool>) -> Vec<Vec<u8>> {
+pub fn encode_leds(
+    desc: &Descriptor,
+    leds: &[(u16, bool)],
+    current: &HashMap<u16, bool>,
+) -> Vec<Vec<u8>> {
     let mut ids: Vec<u8> = Vec::new();
     for (usage, _) in leds {
         if let Some(f) = desc.field(Kind::Output, PAGE_LEDS, *usage)
@@ -331,7 +363,11 @@ pub fn encode_leds(desc: &Descriptor, leds: &[(u16, bool)], current: &HashMap<u1
     ids.into_iter()
         .map(|id| {
             let mut data = vec![0u8; desc.report_len(Kind::Output, id)];
-            for f in desc.fields.iter().filter(|f| f.kind == Kind::Output && f.report_id == id && f.page == PAGE_LEDS) {
+            for f in desc
+                .fields
+                .iter()
+                .filter(|f| f.kind == Kind::Output && f.report_id == id && f.page == PAGE_LEDS)
+            {
                 let on = leds
                     .iter()
                     .find(|(u, _)| *u == f.usage)
@@ -400,7 +436,11 @@ pub struct AspMessage {
 
 impl AspMessage {
     pub fn new(id: u8, payload: Vec<u8>) -> AspMessage {
-        AspMessage { id, payload, metadata: None }
+        AspMessage {
+            id,
+            payload,
+            metadata: None,
+        }
     }
 
     pub fn serialize(&self) -> Vec<u8> {
@@ -433,7 +473,11 @@ impl AspMessage {
         } else {
             None
         };
-        Some(AspMessage { id, payload, metadata })
+        Some(AspMessage {
+            id,
+            payload,
+            metadata,
+        })
     }
 }
 
@@ -464,7 +508,8 @@ pub enum Driver {
 /// gives it outright (Sony, Cisco, Bang & Olufsen, AudioCodes, Anker,
 /// Sennheiser, Onward, Shure, Legrand).
 pub const HOOK_VENDORS: [u16; 16] = [
-    5013, 1118, 1151, 2830, 2397, 27027, 1447, 1356, 1446, 3284, 3430, 10522, 4983, 14145, 5357, 9665,
+    5013, 1118, 1151, 2830, 2397, 27027, 1447, 1356, 1446, 3284, 3430, 10522, 4983, 14145, 5357,
+    9665,
 ];
 
 /// Teams' vendors whose other devices need a UCQ string for call controls
@@ -474,7 +519,12 @@ pub const UCQ_VENDOR_PRODUCTS: [(u16, &[u16]); 4] = [
     // Logitech: H650e, H570e, H820e, Zone Wired, Meetup, ConferenceCam
     // Connect, Group speaker, Rally, speakerphone dock, Zone Wireless (2),
     // Zone True Wireless.
-    (1133, &[2630, 2646, 2633, 2733, 2151, 2124, 2135, 2181, 2764, 2704, 2800, 2728]),
+    (
+        1133,
+        &[
+            2630, 2646, 2633, 2733, 2151, 2124, 2135, 2181, 2764, 2704, 2800, 2728,
+        ],
+    ),
     // HP Slice.
     (1008, &[3430]),
     // Lenovo HUB500, HUB700.
@@ -503,14 +553,23 @@ pub const UCQ_STRING_INDEX: u8 = 0x21;
 /// without one, the hook-protect vendors' devices and the named products
 /// still do, and everything else gets mute only.
 pub fn driver_for(vendor: u16, product: u16, ucq: Option<&str>) -> Driver {
-    if BLACKLIST.iter().any(|(v, p)| *v == vendor && p.contains(&product)) {
+    if BLACKLIST
+        .iter()
+        .any(|(v, p)| *v == vendor && p.contains(&product))
+    {
         return Driver::Unsupported;
     }
     if ucq.is_some_and(|u| !u.is_empty()) {
         return Driver::HookProtect;
     }
-    let named = UCQ_VENDOR_PRODUCTS.iter().any(|(v, p)| *v == vendor && p.contains(&product));
-    if HOOK_VENDORS.contains(&vendor) || named { Driver::HookProtect } else { Driver::MuteOnly }
+    let named = UCQ_VENDOR_PRODUCTS
+        .iter()
+        .any(|(v, p)| *v == vendor && p.contains(&product));
+    if HOOK_VENDORS.contains(&vendor) || named {
+        Driver::HookProtect
+    } else {
+        Driver::MuteOnly
+    }
 }
 
 /// What a UCQ string says the device is (Teams' `Pa` positions; Teams logs
@@ -552,7 +611,10 @@ pub enum Action {
     SetMuted(bool),
     ToggleHold,
     /// The Teams button, with the context the device gave.
-    TeamsButton { event: AspEvent, long: bool },
+    TeamsButton {
+        event: AspEvent,
+        long: bool,
+    },
     /// Another OST holds the headset's buttons and a device is connected:
     /// Teams asks whether to take them ("Transfer audio device buttons to
     /// this app?").
@@ -576,7 +638,11 @@ pub struct Buttons {
 
 impl Buttons {
     pub fn new(driver: Driver) -> Buttons {
-        Buttons { driver, hook_disabled_until: None, leds: HashMap::new() }
+        Buttons {
+            driver,
+            hook_disabled_until: None,
+            leds: HashMap::new(),
+        }
     }
 
     fn hook_disabled(&self, now: Instant) -> bool {
@@ -598,7 +664,12 @@ impl Buttons {
 
     /// One input element: the actions it asks for, and LEDs set at once
     /// (Teams lights the mute LED before muting).
-    pub fn on_input(&mut self, e: Element, app: &AppState, now: Instant) -> (Vec<Action>, Vec<(u16, bool)>) {
+    pub fn on_input(
+        &mut self,
+        e: Element,
+        app: &AppState,
+        now: Instant,
+    ) -> (Vec<Action>, Vec<(u16, bool)>) {
         let mut actions = Vec::new();
         let mut leds = Vec::new();
         match (e.page, e.usage) {
@@ -662,7 +733,14 @@ impl Buttons {
         let want = [
             (LED_OFF_HOOK, !app.hooked),
             (LED_RING, app.ringing),
-            (LED_MUTE, if app.hooked { app.in_prejoin && app.prejoin_muted } else { app.muted }),
+            (
+                LED_MUTE,
+                if app.hooked {
+                    app.in_prejoin && app.prejoin_muted
+                } else {
+                    app.muted
+                },
+            ),
             (LED_HOLD, !app.hooked && app.held),
         ];
         let mut changed = Vec::new();
@@ -700,11 +778,17 @@ pub struct HidDevice {
 #[cfg(target_os = "linux")]
 pub fn telephony_devices() -> Vec<HidDevice> {
     let mut out = Vec::new();
-    let Ok(dir) = std::fs::read_dir("/sys/class/hidraw") else { return out };
+    let Ok(dir) = std::fs::read_dir("/sys/class/hidraw") else {
+        return out;
+    };
     for entry in dir.flatten() {
         let base = entry.path().join("device");
-        let Ok(uevent) = std::fs::read_to_string(base.join("uevent")) else { continue };
-        let Ok(rd) = std::fs::read(base.join("report_descriptor")) else { continue };
+        let Ok(uevent) = std::fs::read_to_string(base.join("uevent")) else {
+            continue;
+        };
+        let Ok(rd) = std::fs::read(base.join("report_descriptor")) else {
+            continue;
+        };
         let desc = Descriptor::parse(&rd);
         if !desc.is_telephony() {
             continue;
@@ -793,8 +877,14 @@ fn read_ucq(dev: &HidDevice) -> Result<Option<(String, UcqSource)>, String> {
 #[cfg(target_os = "linux")]
 fn hiddev_node(intf: &std::path::Path) -> Option<String> {
     let dir = std::fs::read_dir(intf.join("usbmisc")).ok()?;
-    let name = dir.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).find(|n| n.starts_with("hiddev"))?;
-    ["/dev/usb/", "/dev/"].iter().map(|d| format!("{d}{name}")).find(|p| std::path::Path::new(p).exists())
+    let name = dir
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .find(|n| n.starts_with("hiddev"))?;
+    ["/dev/usb/", "/dev/"]
+        .iter()
+        .map(|d| format!("{d}{name}"))
+        .find(|p| std::path::Path::new(p).exists())
 }
 
 /// HIDIOCGSTRING: a string descriptor of a hiddev's USB device, in UTF-8.
@@ -807,9 +897,15 @@ fn hiddev_string(node: &str, index: u8) -> Result<Option<String>, String> {
         value: [u8; 256],
     }
     let file = std::fs::File::open(node).map_err(|e| e.to_string())?;
-    let mut d = StringDescriptor { index: index as i32, value: [0; 256] };
+    let mut d = StringDescriptor {
+        index: index as i32,
+        value: [0; 256],
+    };
     // _IOR('H', 0x04, struct hiddev_string_descriptor)
-    let req = (2u64 << 30) | ((std::mem::size_of::<StringDescriptor>() as u64) << 16) | ((b'H' as u64) << 8) | 0x04;
+    let req = (2u64 << 30)
+        | ((std::mem::size_of::<StringDescriptor>() as u64) << 16)
+        | ((b'H' as u64) << 8)
+        | 0x04;
     // SAFETY: an open hiddev fd and a buffer of the ioctl's size.
     let n = unsafe { libc::ioctl(file.as_raw_fd(), req as _, &mut d) };
     if n < 0 {
@@ -820,7 +916,11 @@ fn hiddev_string(node: &str, index: u8) -> Result<Option<String>, String> {
             _ => Err(e.to_string()),
         };
     }
-    let len = d.value.iter().position(|b| *b == 0).unwrap_or(d.value.len());
+    let len = d
+        .value
+        .iter()
+        .position(|b| *b == 0)
+        .unwrap_or(d.value.len());
     Ok((len > 0).then(|| String::from_utf8_lossy(&d.value[..len]).into_owned()))
 }
 
@@ -828,8 +928,16 @@ fn hiddev_string(node: &str, index: u8) -> Result<Option<String>, String> {
 #[cfg(target_os = "linux")]
 fn usbfs_string(usb: &std::path::Path, index: u8) -> Result<Option<String>, String> {
     use std::os::fd::AsRawFd;
-    let num = |f: &str| std::fs::read_to_string(usb.join(f)).ok()?.trim().parse::<u32>().ok();
-    let (Some(bus), Some(devnum)) = (num("busnum"), num("devnum")) else { return Err("no usbfs node".into()) };
+    let num = |f: &str| {
+        std::fs::read_to_string(usb.join(f))
+            .ok()?
+            .trim()
+            .parse::<u32>()
+            .ok()
+    };
+    let (Some(bus), Some(devnum)) = (num("busnum"), num("devnum")) else {
+        return Err("no usbfs node".into());
+    };
     let path = format!("/dev/bus/usb/{bus:03}/{devnum:03}");
     let file = std::fs::OpenOptions::new()
         .read(true)
@@ -863,10 +971,24 @@ fn usbfs_string(usb: &std::path::Path, index: u8) -> Result<Option<String>, Stri
         let n = unsafe { libc::ioctl(file.as_raw_fd(), req as _, &mut c) };
         (n > 0).then(|| buf[..n as usize].to_vec())
     };
-    let Some(langs) = get(0, 0) else { return Ok(None) };
-    let lang = if langs.len() >= 4 { u16::from_le_bytes([langs[2], langs[3]]) } else { 0x0409 };
-    let Some(d) = get(index, lang) else { return Ok(None) };
-    let units: Vec<u16> = d.get(2..).unwrap_or(&[]).chunks(2).filter(|c| c.len() == 2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+    let Some(langs) = get(0, 0) else {
+        return Ok(None);
+    };
+    let lang = if langs.len() >= 4 {
+        u16::from_le_bytes([langs[2], langs[3]])
+    } else {
+        0x0409
+    };
+    let Some(d) = get(index, lang) else {
+        return Ok(None);
+    };
+    let units: Vec<u16> = d
+        .get(2..)
+        .unwrap_or(&[])
+        .chunks(2)
+        .filter(|c| c.len() == 2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
     let s = String::from_utf16_lossy(&units);
     Ok((!s.is_empty()).then_some(s))
 }
@@ -881,18 +1003,28 @@ mod io {
 
     pub fn open(node: &str) -> std::io::Result<OwnedFd> {
         use std::os::unix::fs::OpenOptionsExt;
-        let f = std::fs::OpenOptions::new().read(true).write(true).custom_flags(libc::O_NONBLOCK).open(node)?;
+        let f = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(node)?;
         Ok(f.into())
     }
 
     pub fn write(fd: &OwnedFd, data: &[u8]) -> bool {
         // SAFETY: writing a buffer to an open hidraw fd.
-        unsafe { libc::write(fd.as_raw_fd(), data.as_ptr().cast(), data.len()) == data.len() as isize }
+        unsafe {
+            libc::write(fd.as_raw_fd(), data.as_ptr().cast(), data.len()) == data.len() as isize
+        }
     }
 
     /// Wait up to `ms` for a report, then read it.
     pub fn read(fd: &OwnedFd, ms: i32) -> Result<Option<Vec<u8>>, ()> {
-        let mut p = libc::pollfd { fd: fd.as_raw_fd(), events: libc::POLLIN, revents: 0 };
+        let mut p = libc::pollfd {
+            fd: fd.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
         // SAFETY: one pollfd for an open fd.
         let n = unsafe { libc::poll(&mut p, 1, ms) };
         if n <= 0 {
@@ -907,7 +1039,9 @@ mod io {
         match r {
             n if n > 0 => Ok(Some(buf[..n as usize].to_vec())),
             0 => Err(()),
-            _ if std::io::Error::last_os_error().kind() == std::io::ErrorKind::WouldBlock => Ok(None),
+            _ if std::io::Error::last_os_error().kind() == std::io::ErrorKind::WouldBlock => {
+                Ok(None)
+            }
             _ => Err(()),
         }
     }
@@ -916,7 +1050,13 @@ mod io {
     pub fn set_feature(fd: &OwnedFd, data: &[u8]) -> bool {
         let mut buf = data.to_vec();
         // SAFETY: the ioctl reads `buf.len()` bytes.
-        unsafe { libc::ioctl(fd.as_raw_fd(), ioc(3, 0x06, buf.len()) as _, buf.as_mut_ptr()) >= 0 }
+        unsafe {
+            libc::ioctl(
+                fd.as_raw_fd(),
+                ioc(3, 0x06, buf.len()) as _,
+                buf.as_mut_ptr(),
+            ) >= 0
+        }
     }
 
     /// HIDIOCGFEATURE: read a feature report back (id first).
@@ -924,7 +1064,13 @@ mod io {
         let mut buf = vec![0u8; len];
         buf[0] = id;
         // SAFETY: the ioctl writes at most `buf.len()` bytes.
-        let n = unsafe { libc::ioctl(fd.as_raw_fd(), ioc(3, 0x07, buf.len()) as _, buf.as_mut_ptr()) };
+        let n = unsafe {
+            libc::ioctl(
+                fd.as_raw_fd(),
+                ioc(3, 0x07, buf.len()) as _,
+                buf.as_mut_ptr(),
+            )
+        };
         (n > 0).then(|| buf[..n as usize].to_vec())
     }
 }
@@ -933,14 +1079,22 @@ mod io {
 
 /// The file naming the OST process that has the headset's buttons.
 fn control_file() -> std::path::PathBuf {
-    let dir = std::env::var_os("XDG_RUNTIME_DIR").map(std::path::PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    let dir = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
     dir.join("ost-hid-control")
 }
 
 fn control_holder() -> Option<u32> {
-    let pid: u32 = std::fs::read_to_string(control_file()).ok()?.trim().parse().ok()?;
+    let pid: u32 = std::fs::read_to_string(control_file())
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
     // A holder that has gone frees it.
-    std::path::Path::new(&format!("/proc/{pid}")).exists().then_some(pid)
+    std::path::Path::new(&format!("/proc/{pid}"))
+        .exists()
+        .then_some(pid)
 }
 
 fn claim_control() {
@@ -990,7 +1144,10 @@ pub fn start(on_action: impl Fn(Action) + Send + 'static) {
     }
     let _ = SERVICE.set(Service {
         tx: Mutex::new(tx),
-        status: Mutex::new(Status { sync_enabled: true, ..Status::default() }),
+        status: Mutex::new(Status {
+            sync_enabled: true,
+            ..Status::default()
+        }),
     });
     std::thread::Builder::new()
         .name("ost-hid".into())
@@ -1034,7 +1191,10 @@ pub fn status() -> Status {
     SERVICE
         .get()
         .map(|s| s.status.lock().unwrap_or_else(|e| e.into_inner()).clone())
-        .unwrap_or(Status { sync_enabled: true, ..Status::default() })
+        .unwrap_or(Status {
+            sync_enabled: true,
+            ..Status::default()
+        })
 }
 
 fn set_status(f: impl FnOnce(&mut Status)) {
@@ -1069,8 +1229,11 @@ struct Open {
 #[cfg(target_os = "linux")]
 impl Open {
     fn write_leds(&mut self, changes: &[(u16, bool)]) {
-        let changes: Vec<(u16, bool)> =
-            changes.iter().copied().filter(|(u, _)| self.dev.desc.field(Kind::Output, PAGE_LEDS, *u).is_some()).collect();
+        let changes: Vec<(u16, bool)> = changes
+            .iter()
+            .copied()
+            .filter(|(u, _)| self.dev.desc.field(Kind::Output, PAGE_LEDS, *u).is_some())
+            .collect();
         if changes.is_empty() {
             return;
         }
@@ -1114,12 +1277,18 @@ impl Open {
             if v.payload.first() != Some(&1) {
                 return None;
             }
-            let mask = *self.asp(&AspMessage::new(msg::FEATURE, vec![]))?.payload.first()?;
+            let mask = *self
+                .asp(&AspMessage::new(msg::FEATURE, vec![]))?
+                .payload
+                .first()?;
             if mask == 0 {
                 return None;
             }
             if mask & AspEvent::Dialer as u8 != 0 {
-                self.asp(&AspMessage::new(msg::LOCALE, locale_payload("en-US", chrono::Local::now().naive_local())))?;
+                self.asp(&AspMessage::new(
+                    msg::LOCALE,
+                    locale_payload("en-US", chrono::Local::now().naive_local()),
+                ))?;
             }
             Some(mask)
         })();
@@ -1143,7 +1312,10 @@ fn run(rx: mpsc::Receiver<Cmd>, on_action: Box<dyn Fn(Action) + Send>) {
 
 #[cfg(target_os = "linux")]
 fn run_linux(rx: mpsc::Receiver<Cmd>, on_action: Box<dyn Fn(Action) + Send>) {
-    let mut app = AppState { hooked: true, ..AppState::default() };
+    let mut app = AppState {
+        hooked: true,
+        ..AppState::default()
+    };
     let mut mic: Option<String> = None;
     let mut sync = true;
     let mut open: Option<Open> = None;
@@ -1172,7 +1344,10 @@ fn run_linux(rx: mpsc::Receiver<Cmd>, on_action: Box<dyn Fn(Action) + Send>) {
                         want = None;
                         last_pw = None;
                         last_scan = None;
-                        if open.as_ref().is_some_and(|o| Some((o.dev.vendor, o.dev.product)) != want) {
+                        if open
+                            .as_ref()
+                            .is_some_and(|o| Some((o.dev.vendor, o.dev.product)) != want)
+                        {
                             tracing::info!("headset: the microphone changed");
                             open = None;
                         }
@@ -1182,7 +1357,9 @@ fn run_linux(rx: mpsc::Receiver<Cmd>, on_action: Box<dyn Fn(Action) + Send>) {
                 }
                 Ok(Cmd::TakeControl) => {
                     claim_control();
-                    tracing::info!("headset: took the device's buttons (Transfer controls to this app)");
+                    tracing::info!(
+                        "headset: took the device's buttons (Transfer controls to this app)"
+                    );
                 }
                 Ok(Cmd::Push(ev)) => {
                     if let Some(o) = open.as_mut()
@@ -1227,7 +1404,10 @@ fn run_linux(rx: mpsc::Receiver<Cmd>, on_action: Box<dyn Fn(Action) + Send>) {
             // Ask PipeWire which device the microphone is on only while a
             // telephony device is here that isn't it (every 10 s at most).
             let matched = devices.iter().any(|d| Some((d.vendor, d.product)) == want);
-            if !devices.is_empty() && !matched && last_pw.is_none_or(|t| t.elapsed() > Duration::from_secs(10)) {
+            if !devices.is_empty()
+                && !matched
+                && last_pw.is_none_or(|t| t.elapsed() > Duration::from_secs(10))
+            {
                 last_pw = Some(Instant::now());
                 want = mic_ids(mic.as_deref());
             }
@@ -1236,16 +1416,26 @@ fn run_linux(rx: mpsc::Receiver<Cmd>, on_action: Box<dyn Fn(Action) + Send>) {
                     prompted = true;
                     on_action(Action::TransferPrompt);
                 }
-            } else if let Some(dev) = devices.into_iter().find(|d| Some((d.vendor, d.product)) == want) {
+            } else if let Some(dev) = devices
+                .into_iter()
+                .find(|d| Some((d.vendor, d.product)) == want)
+            {
                 // Teams reads the UCQ string with the device's properties,
                 // before it picks a driver.
                 let ucq = read_ucq(&dev);
-                let ucq_text = ucq.as_ref().ok().and_then(|u| u.as_ref().map(|(s, _)| s.clone()));
+                let ucq_text = ucq
+                    .as_ref()
+                    .ok()
+                    .and_then(|u| u.as_ref().map(|(s, _)| s.clone()));
                 let driver = driver_for(dev.vendor, dev.product, ucq_text.as_deref());
                 match &ucq {
-                    Ok(Some((s, from))) => tracing::info!(device = %dev.name, ucq = %s, kind = ucq_kind(s), ?from, "headset: UCQ string"),
+                    Ok(Some((s, from))) => {
+                        tracing::info!(device = %dev.name, ucq = %s, kind = ucq_kind(s), ?from, "headset: UCQ string")
+                    }
                     Ok(None) => tracing::info!(device = %dev.name, "headset: no UCQ string"),
-                    Err(e) => tracing::info!(device = %dev.name, "headset: can't read the UCQ string ({e}); needs read access to its hiddev node"),
+                    Err(e) => {
+                        tracing::info!(device = %dev.name, "headset: can't read the UCQ string ({e}); needs read access to its hiddev node")
+                    }
                 }
                 if driver == Driver::Unsupported {
                     tracing::info!(device = %dev.name, vendor = format!("{:04x}", dev.vendor), product = format!("{:04x}", dev.product), "headset: not supported (Teams' HID blacklist)");
@@ -1254,7 +1444,14 @@ fn run_linux(rx: mpsc::Receiver<Cmd>, on_action: Box<dyn Fn(Action) + Send>) {
                 match io::open(&dev.node) {
                     Ok(fd) => {
                         tracing::info!(device = %dev.name, node = %dev.node, ?driver, asp = dev.desc.has_asp(), "headset: opened");
-                        let mut o = Open { dev, fd, buttons: Buttons::new(driver), last: HashMap::new(), asp: false, asp_attempts: 0 };
+                        let mut o = Open {
+                            dev,
+                            fd,
+                            buttons: Buttons::new(driver),
+                            last: HashMap::new(),
+                            asp: false,
+                            asp_attempts: 0,
+                        };
                         o.init_asp();
                         // Teams syncs a newly selected device with the app.
                         if sync {
@@ -1291,7 +1488,13 @@ fn run_linux(rx: mpsc::Receiver<Cmd>, on_action: Box<dyn Fn(Action) + Send>) {
             Ok(Some(report)) => {
                 let elements = decode_input(&o.dev.desc, &report, &mut o.last);
                 for e in elements {
-                    tracing::info!(page = format!("{:#06x}", e.page), usage = format!("{:#04x}", e.usage), value = e.value, relative = e.relative, "headset: input");
+                    tracing::info!(
+                        page = format!("{:#06x}", e.page),
+                        usage = format!("{:#04x}", e.usage),
+                        value = e.value,
+                        relative = e.relative,
+                        "headset: input"
+                    );
                     let call_control = matches!(e.page, PAGE_TELEPHONY | PAGE_LEDS)
                         || (e.page == PAGE_BUTTON && e.usage == BUTTON_REJECT);
                     if call_control {
@@ -1310,17 +1513,30 @@ fn run_linux(rx: mpsc::Receiver<Cmd>, on_action: Box<dyn Fn(Action) + Send>) {
                         if !o.asp {
                             o.init_asp();
                         }
-                        let ctx = if o.asp { o.asp(&AspMessage::new(msg::CONTEXT, vec![])) } else { None };
+                        let ctx = if o.asp {
+                            o.asp(&AspMessage::new(msg::CONTEXT, vec![]))
+                        } else {
+                            None
+                        };
                         match ctx {
                             Some(c) => {
                                 let event = AspEvent::from_u8(c.payload[0]);
-                                let press = c.metadata.as_ref().and_then(|m| m.first().copied()).unwrap_or(0);
+                                let press = c
+                                    .metadata
+                                    .as_ref()
+                                    .and_then(|m| m.first().copied())
+                                    .unwrap_or(0);
                                 tracing::info!(?event, press, "headset: Teams button");
                                 if press == SHORT_PRESS || press == LONG_PRESS {
-                                    on_action(Action::TeamsButton { event, long: press == LONG_PRESS });
+                                    on_action(Action::TeamsButton {
+                                        event,
+                                        long: press == LONG_PRESS,
+                                    });
                                 }
                             }
-                            None => tracing::info!("headset: Teams button with no context from the device; nothing to do"),
+                            None => tracing::info!(
+                                "headset: Teams button with no context from the device; nothing to do"
+                            ),
                         }
                     }
                 }
@@ -1341,11 +1557,12 @@ mod tests {
 
     /// The emulated Jabra headset's descriptor (the test rig's).
     pub const HEADSET: &[u8] = &[
-        0x05, 0x0B, 0x09, 0x05, 0xA1, 0x01, 0x85, 0x02, 0x15, 0x00, 0x25, 0x01, 0x09, 0x20, 0x75, 0x01, 0x95, 0x01,
-        0x81, 0x22, 0x09, 0x2F, 0x81, 0x06, 0x09, 0x21, 0x81, 0x06, 0x05, 0x09, 0x09, 0x07, 0x81, 0x02, 0x95, 0x04,
-        0x81, 0x03, 0x05, 0x08, 0x85, 0x03, 0x09, 0x17, 0x09, 0x18, 0x09, 0x09, 0x09, 0x20, 0x95, 0x04, 0x91, 0x22,
-        0x95, 0x04, 0x91, 0x03, 0xC0, 0x06, 0x99, 0xFF, 0x09, 0x01, 0xA1, 0x01, 0x85, 0x04, 0x09, 0x04, 0x15, 0x00,
-        0x25, 0x01, 0x75, 0x01, 0x95, 0x01, 0x81, 0x22, 0x95, 0x07, 0x81, 0x03, 0x85, 0x9A, 0x09, 0x03, 0x15, 0x00,
+        0x05, 0x0B, 0x09, 0x05, 0xA1, 0x01, 0x85, 0x02, 0x15, 0x00, 0x25, 0x01, 0x09, 0x20, 0x75,
+        0x01, 0x95, 0x01, 0x81, 0x22, 0x09, 0x2F, 0x81, 0x06, 0x09, 0x21, 0x81, 0x06, 0x05, 0x09,
+        0x09, 0x07, 0x81, 0x02, 0x95, 0x04, 0x81, 0x03, 0x05, 0x08, 0x85, 0x03, 0x09, 0x17, 0x09,
+        0x18, 0x09, 0x09, 0x09, 0x20, 0x95, 0x04, 0x91, 0x22, 0x95, 0x04, 0x91, 0x03, 0xC0, 0x06,
+        0x99, 0xFF, 0x09, 0x01, 0xA1, 0x01, 0x85, 0x04, 0x09, 0x04, 0x15, 0x00, 0x25, 0x01, 0x75,
+        0x01, 0x95, 0x01, 0x81, 0x22, 0x95, 0x07, 0x81, 0x03, 0x85, 0x9A, 0x09, 0x03, 0x15, 0x00,
         0x26, 0xFF, 0x00, 0x75, 0x08, 0x95, 0x3F, 0xB1, 0x02, 0xC0,
     ];
 
@@ -1357,11 +1574,21 @@ mod tests {
         assert_eq!((hook.report_id, hook.bit, hook.relative), (2, 0, false));
         let mute = d.field(Kind::Input, PAGE_TELEPHONY, PHONE_MUTE).unwrap();
         assert_eq!((mute.bit, mute.relative), (1, true));
-        assert_eq!(d.field(Kind::Input, PAGE_BUTTON, BUTTON_REJECT).unwrap().bit, 3);
+        assert_eq!(
+            d.field(Kind::Input, PAGE_BUTTON, BUTTON_REJECT)
+                .unwrap()
+                .bit,
+            3
+        );
         assert_eq!(d.field(Kind::Output, PAGE_LEDS, LED_RING).unwrap().bit, 1);
         assert_eq!(d.report_len(Kind::Input, 2), 1);
         assert_eq!(d.report_len(Kind::Feature, ASP_REPORT_ID), 63);
-        assert_eq!(d.field(Kind::Input, PAGE_TEAMS, TEAMS_BUTTON).unwrap().report_id, 4);
+        assert_eq!(
+            d.field(Kind::Input, PAGE_TEAMS, TEAMS_BUTTON)
+                .unwrap()
+                .report_id,
+            4
+        );
     }
 
     #[test]
@@ -1370,10 +1597,26 @@ mod tests {
         let mut last = HashMap::new();
         // Off hook.
         let e = decode_input(&d, &[2, 0b0001], &mut last);
-        assert_eq!(e, vec![Element { page: PAGE_TELEPHONY, usage: HOOK_SWITCH, value: 1, relative: false }]);
+        assert_eq!(
+            e,
+            vec![Element {
+                page: PAGE_TELEPHONY,
+                usage: HOOK_SWITCH,
+                value: 1,
+                relative: false
+            }]
+        );
         // Mute pressed while off hook: only the toggle reports.
         let e = decode_input(&d, &[2, 0b0011], &mut last);
-        assert_eq!(e, vec![Element { page: PAGE_TELEPHONY, usage: PHONE_MUTE, value: 1, relative: true }]);
+        assert_eq!(
+            e,
+            vec![Element {
+                page: PAGE_TELEPHONY,
+                usage: PHONE_MUTE,
+                value: 1,
+                relative: true
+            }]
+        );
         let e = decode_input(&d, &[2, 0b0001], &mut last);
         assert!(e.is_empty());
         // On hook.
@@ -1394,38 +1637,106 @@ mod tests {
     fn hook_switch_answers_and_hangs_up_as_teams() {
         let now = Instant::now();
         let mut b = Buttons::new(Driver::HookProtect);
-        let ringing = AppState { hooked: true, ringing: true, ..AppState::default() };
-        let hook = |v| Element { page: PAGE_TELEPHONY, usage: HOOK_SWITCH, value: v, relative: false };
+        let ringing = AppState {
+            hooked: true,
+            ringing: true,
+            ..AppState::default()
+        };
+        let hook = |v| Element {
+            page: PAGE_TELEPHONY,
+            usage: HOOK_SWITCH,
+            value: v,
+            relative: false,
+        };
         assert_eq!(b.on_input(hook(1), &ringing, now).0, vec![Action::Answer]);
         // On hook while ringing: ignored (Teams' hook-protect drivers).
-        assert!(b.on_input(hook(0), &ringing, now + Duration::from_secs(2)).0.is_empty());
-        let in_call = AppState { hooked: false, ..AppState::default() };
+        assert!(
+            b.on_input(hook(0), &ringing, now + Duration::from_secs(2))
+                .0
+                .is_empty()
+        );
+        let in_call = AppState {
+            hooked: false,
+            ..AppState::default()
+        };
         // Within the hook protection: ignored; after it, hangs up.
         b.hook_protect(now);
-        assert!(b.on_input(hook(0), &in_call, now + Duration::from_millis(500)).0.is_empty());
-        assert_eq!(b.on_input(hook(0), &in_call, now + Duration::from_secs(2)).0, vec![Action::HangUp]);
+        assert!(
+            b.on_input(hook(0), &in_call, now + Duration::from_millis(500))
+                .0
+                .is_empty()
+        );
+        assert_eq!(
+            b.on_input(hook(0), &in_call, now + Duration::from_secs(2))
+                .0,
+            vec![Action::HangUp]
+        );
         // Off hook in a call: nothing.
-        assert!(b.on_input(hook(1), &in_call, now + Duration::from_secs(3)).0.is_empty());
+        assert!(
+            b.on_input(hook(1), &in_call, now + Duration::from_secs(3))
+                .0
+                .is_empty()
+        );
         // Reject button while ringing.
-        let rej = Element { page: PAGE_BUTTON, usage: BUTTON_REJECT, value: 1, relative: false };
-        assert_eq!(b.on_input(rej, &ringing, now + Duration::from_secs(5)).0, vec![Action::Reject]);
+        let rej = Element {
+            page: PAGE_BUTTON,
+            usage: BUTTON_REJECT,
+            value: 1,
+            relative: false,
+        };
+        assert_eq!(
+            b.on_input(rej, &ringing, now + Duration::from_secs(5)).0,
+            vec![Action::Reject]
+        );
     }
 
     #[test]
     fn mute_toggles_in_calls_and_prejoin_only() {
         let now = Instant::now();
         let mut b = Buttons::new(Driver::MuteOnly);
-        let mute = Element { page: PAGE_TELEPHONY, usage: PHONE_MUTE, value: 1, relative: true };
-        let idle = AppState { hooked: true, ..AppState::default() };
+        let mute = Element {
+            page: PAGE_TELEPHONY,
+            usage: PHONE_MUTE,
+            value: 1,
+            relative: true,
+        };
+        let idle = AppState {
+            hooked: true,
+            ..AppState::default()
+        };
         assert!(b.on_input(mute, &idle, now).0.is_empty());
-        let in_call = AppState { hooked: false, muted: false, ..AppState::default() };
+        let in_call = AppState {
+            hooked: false,
+            muted: false,
+            ..AppState::default()
+        };
         let (a, leds) = b.on_input(mute, &in_call, now);
-        assert_eq!((a, leds), (vec![Action::SetMuted(true)], vec![(LED_MUTE, true)]));
-        let prejoin = AppState { hooked: true, in_prejoin: true, prejoin_muted: true, ..AppState::default() };
-        assert_eq!(b.on_input(mute, &prejoin, now).0, vec![Action::SetMuted(false)]);
+        assert_eq!(
+            (a, leds),
+            (vec![Action::SetMuted(true)], vec![(LED_MUTE, true)])
+        );
+        let prejoin = AppState {
+            hooked: true,
+            in_prejoin: true,
+            prejoin_muted: true,
+            ..AppState::default()
+        };
+        assert_eq!(
+            b.on_input(mute, &prejoin, now).0,
+            vec![Action::SetMuted(false)]
+        );
         // The mute-only driver ignores the hook switch.
-        let ringing = AppState { hooked: true, ringing: true, ..AppState::default() };
-        let hook = Element { page: PAGE_TELEPHONY, usage: HOOK_SWITCH, value: 1, relative: false };
+        let ringing = AppState {
+            hooked: true,
+            ringing: true,
+            ..AppState::default()
+        };
+        let hook = Element {
+            page: PAGE_TELEPHONY,
+            usage: HOOK_SWITCH,
+            value: 1,
+            relative: false,
+        };
         assert!(b.on_input(hook, &ringing, now).0.is_empty());
     }
 
@@ -1433,41 +1744,78 @@ mod tests {
     fn leds_follow_the_call() {
         let now = Instant::now();
         let mut b = Buttons::new(Driver::HookProtect);
-        let ch = b.leds_for(&AppState { hooked: true, ringing: true, ..AppState::default() }, now);
+        let ch = b.leds_for(
+            &AppState {
+                hooked: true,
+                ringing: true,
+                ..AppState::default()
+            },
+            now,
+        );
         assert!(ch.contains(&(LED_RING, true)) && ch.contains(&(LED_OFF_HOOK, false)));
         for (u, v) in ch {
             b.leds.insert(u, v);
         }
-        let ch = b.leds_for(&AppState { hooked: false, muted: true, ..AppState::default() }, now);
-        assert!(ch.contains(&(LED_OFF_HOOK, true)) && ch.contains(&(LED_RING, false)) && ch.contains(&(LED_MUTE, true)));
+        let ch = b.leds_for(
+            &AppState {
+                hooked: false,
+                muted: true,
+                ..AppState::default()
+            },
+            now,
+        );
+        assert!(
+            ch.contains(&(LED_OFF_HOOK, true))
+                && ch.contains(&(LED_RING, false))
+                && ch.contains(&(LED_MUTE, true))
+        );
     }
 
     #[test]
     fn asp_messages_round_trip() {
-        let m = AspMessage { id: msg::CONTEXT, payload: vec![1], metadata: Some(vec![SHORT_PRESS]) };
+        let m = AspMessage {
+            id: msg::CONTEXT,
+            payload: vec![1],
+            metadata: Some(vec![SHORT_PRESS]),
+        };
         let s = m.serialize();
         assert_eq!(s, vec![0x9A, 0x41, 0, 1, 1, 0, 1, 1]);
         assert_eq!(AspMessage::parse(&s).unwrap(), m);
-        assert_eq!(AspMessage::new(msg::VERSION, vec![]).serialize(), vec![0x9A, 0x00, 0, 0]);
+        assert_eq!(
+            AspMessage::new(msg::VERSION, vec![]).serialize(),
+            vec![0x9A, 0x00, 0, 0]
+        );
     }
 
     #[test]
     fn drivers_as_teams_picks_them() {
         // Jabra with or without a UCQ string.
         assert_eq!(driver_for(0x0B0E, 0x2400, None), Driver::HookProtect);
-        assert_eq!(driver_for(0x0B0E, 0x2400, Some("UCQ00010000000100000")), Driver::HookProtect);
+        assert_eq!(
+            driver_for(0x0B0E, 0x2400, Some("UCQ00010000000100000")),
+            Driver::HookProtect
+        );
         // An unknown vendor: mute only, unless it has a UCQ string
         // (Teams' prod consolidateDrivers: any UCQ string).
         assert_eq!(driver_for(0x16C0, 0x0AB1, None), Driver::MuteOnly);
         assert_eq!(driver_for(0x16C0, 0x0AB1, Some("")), Driver::MuteOnly);
-        assert_eq!(driver_for(0x16C0, 0x0AB1, Some("UCQ00010000000100000")), Driver::HookProtect);
+        assert_eq!(
+            driver_for(0x16C0, 0x0AB1, Some("UCQ00010000000100000")),
+            Driver::HookProtect
+        );
         assert_eq!(ucq_kind("UCQ00010000000100000"), "headset");
         assert_eq!(ucq_kind("UCQ01000000000100000"), "speakerphone");
         // Logitech: its named headsets, others only with a UCQ string.
         assert_eq!(driver_for(0x046D, 2630, None), Driver::HookProtect);
         assert_eq!(driver_for(0x046D, 0x0ABC, None), Driver::MuteOnly);
-        assert_eq!(driver_for(0x046D, 0x0ABC, Some("UCQ00010000000100000")), Driver::HookProtect);
+        assert_eq!(
+            driver_for(0x046D, 0x0ABC, Some("UCQ00010000000100000")),
+            Driver::HookProtect
+        );
         // Teams' blacklist.
-        assert_eq!(driver_for(0x0B0E, 0x24ED, Some("UCQ00010000000100000")), Driver::Unsupported);
+        assert_eq!(
+            driver_for(0x0B0E, 0x24ED, Some("UCQ00010000000100000")),
+            Driver::Unsupported
+        );
     }
 }

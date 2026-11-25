@@ -37,12 +37,16 @@ pub struct Transcript {
 /// .NET ticks (100 ns since 0001-01-01) as Teams' ISO time with
 /// milliseconds; "" when there are none.
 pub fn ticks_iso(ticks: &str) -> String {
-    let Ok(t) = ticks.parse::<i64>() else { return String::new() };
+    let Ok(t) = ticks.parse::<i64>() else {
+        return String::new();
+    };
     if t <= 621_355_968_000_000_000 {
         return String::new();
     }
     let ms = (t - 621_355_968_000_000_000) / 10_000;
-    chrono::DateTime::from_timestamp_millis(ms).map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)).unwrap_or_default()
+    chrono::DateTime::from_timestamp_millis(ms)
+        .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+        .unwrap_or_default()
 }
 
 /// A TranscriptV2 resource as an audio recap's transcript (Teams reads
@@ -51,9 +55,22 @@ pub fn transcript_from(res: &Value) -> Option<Transcript> {
     if res.get("type").and_then(Value::as_str) != Some("TranscriptV2") {
         return None;
     }
-    let m = |k: &str| res.pointer(&format!("/metadata/{k}")).and_then(Value::as_str).unwrap_or_default().to_string();
-    let location = res.get("location").and_then(Value::as_str).unwrap_or_default();
-    let id = location.split("/transcripts/").nth(1).and_then(|s| s.split('/').next()).unwrap_or_default().to_string();
+    let m = |k: &str| {
+        res.pointer(&format!("/metadata/{k}"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    let location = res
+        .get("location")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let id = location
+        .split("/transcripts/")
+        .nth(1)
+        .and_then(|s| s.split('/').next())
+        .unwrap_or_default()
+        .to_string();
     if id.is_empty() {
         return None;
     }
@@ -61,7 +78,15 @@ pub fn transcript_from(res: &Value) -> Option<Transcript> {
         Some(base) => format!("{base}/streamContent"),
         None => location.to_string(),
     };
-    Some(Transcript { id, location, start: ticks_iso(&m("startTime")), end: ticks_iso(&m("endTime")), drive_id: m("driveId"), item_id: m("driveItemId"), call_id: m("callId") })
+    Some(Transcript {
+        id,
+        location,
+        start: ticks_iso(&m("startTime")),
+        end: ticks_iso(&m("endTime")),
+        drive_id: m("driveId"),
+        item_id: m("driveItemId"),
+        call_id: m("callId"),
+    })
 }
 
 /// What the generation is asked for (Teams' generateAndPopoutPodcast from
@@ -82,7 +107,9 @@ pub struct Meeting {
 }
 
 fn iso_ms(ms: i64) -> String {
-    chrono::DateTime::from_timestamp_millis(ms).map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)).unwrap_or_default()
+    chrono::DateTime::from_timestamp_millis(ms)
+        .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+        .unwrap_or_default()
 }
 
 /// Teams' consume check (does an audio recap of these transcripts exist?).
@@ -126,19 +153,40 @@ pub fn style(choice: &str) -> (&'static str, &'static str) {
 /// The generation signal's body (Teams' TeamsRecapPodcastGenerationSignal)
 /// for one meeting's audio recap (the recap window's Audio recap).
 pub fn generation_signal(m: &Meeting, generation_id: &str) -> Value {
-    signal_for(std::slice::from_ref(m), ("Dual", "formal"), "en-US", generation_id, Some("SharedSingleMeetingAudioRecap"))
+    signal_for(
+        std::slice::from_ref(m),
+        ("Dual", "formal"),
+        "en-US",
+        generation_id,
+        Some("SharedSingleMeetingAudioRecap"),
+    )
 }
 
 /// The signal for Generate audio recap (Meeting Recaps, origin RecapHome):
 /// up to eight meetings, the range from the first start to the last end,
 /// the chosen style and language, and no podcastType (Teams sets it only
 /// for the single-meeting origins).
-pub fn generation_signal_multi(meetings: &[Meeting], style: (&str, &str), language: &str, generation_id: &str) -> Value {
+pub fn generation_signal_multi(
+    meetings: &[Meeting],
+    style: (&str, &str),
+    language: &str,
+    generation_id: &str,
+) -> Value {
     signal_for(meetings, style, language, generation_id, None)
 }
 
-fn signal_for(meetings: &[Meeting], style: (&str, &str), language: &str, generation_id: &str, podcast_type: Option<&str>) -> Value {
-    let start = meetings.iter().map(|m| m.start_ms).min().unwrap_or_default();
+fn signal_for(
+    meetings: &[Meeting],
+    style: (&str, &str),
+    language: &str,
+    generation_id: &str,
+    podcast_type: Option<&str>,
+) -> Value {
+    let start = meetings
+        .iter()
+        .map(|m| m.start_ms)
+        .min()
+        .unwrap_or_default();
     let end = meetings.iter().map(|m| m.end_ms).max().unwrap_or_default();
     let mut v = json!({
         "range": { "startDateTime": iso_ms(start), "endDateTime": iso_ms(end) },
@@ -171,11 +219,16 @@ pub struct Generation {
 }
 
 pub fn generation_from(body: &Value) -> Option<Generation> {
-    if body.pointer("/H_/T_").and_then(Value::as_str) != Some("AugLoop_TeamsRecapPodcast_TeamsRecapPodcastGenerationAnnotation") {
+    if body.pointer("/H_/T_").and_then(Value::as_str)
+        != Some("AugLoop_TeamsRecapPodcast_TeamsRecapPodcastGenerationAnnotation")
+    {
         return None;
     }
     let podcast = body.get("podcast").cloned().unwrap_or(Value::Null);
-    let workflow = body.get("workflowStatus").and_then(Value::as_i64).unwrap_or(0);
+    let workflow = body
+        .get("workflowStatus")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
     let status = match podcast.get("status").and_then(Value::as_str) {
         Some("Completed") => "COMPLETED",
         Some("Failed") => "FAILED",
@@ -189,7 +242,11 @@ pub fn generation_from(body: &Value) -> Option<Generation> {
         .or_else(|| body.get("workflowStatusMessage").and_then(Value::as_str))
         .unwrap_or_default()
         .to_string();
-    Some(Generation { status: status.into(), message, podcast })
+    Some(Generation {
+        status: status.into(),
+        message,
+        podcast,
+    })
 }
 
 /// Listen on mobile's address for an audio recap (Teams'
@@ -202,7 +259,10 @@ pub fn mobile_link(podcast_id: &str) -> String {
 /// Teams' mini player wording for a failed generation: too little in the
 /// meetings, or anything else.
 pub fn no_insight(message: &str) -> bool {
-    matches!(message, "NoValidMeetingInsightError" | "NoValidMeetingFoundError")
+    matches!(
+        message,
+        "NoValidMeetingInsightError" | "NoValidMeetingFoundError"
+    )
 }
 
 fn h(t: &str, b: &[&str]) -> Value {
@@ -214,17 +274,37 @@ fn h(t: &str, b: &[&str]) -> Value {
 /// signal added at `path`, then every annotation result handed to `seen`
 /// until it says it's done (true), the socket closes or `wait` runs out.
 /// Server messages with an "s…" id are acked and "~" keepalives answered.
-async fn run_op(annotation: &str, path: Value, signal: Value, ui_language: &str, wait: std::time::Duration, seen: impl FnMut(&Value) -> bool) -> Result<()> {
+async fn run_op(
+    annotation: &str,
+    path: Value,
+    signal: Value,
+    ui_language: &str,
+    wait: std::time::Duration,
+    seen: impl FnMut(&Value) -> bool,
+) -> Result<()> {
     run_op_with(&[annotation], path, signal, ui_language, wait, seen).await
 }
 
 /// [`run_op`] with several annotations activated first (Teams' streaming
 /// operations: a progress annotation and the result's).
-pub(crate) async fn run_op_with(annotations: &[&str], path: Value, signal: Value, ui_language: &str, wait: std::time::Duration, mut seen: impl FnMut(&Value) -> bool) -> Result<()> {
-    let token = crate::auth::oauth::access_token_for("https://augloop.office.com/v2/.default").await?;
-    let mut req = tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request("wss://augloop.office.com/")?;
-    req.headers_mut().insert("Origin", "https://teams.microsoft.com".parse()?);
-    let (mut ws, _) = tokio_tungstenite::connect_async(req).await.context("AugLoop")?;
+pub(crate) async fn run_op_with(
+    annotations: &[&str],
+    path: Value,
+    signal: Value,
+    ui_language: &str,
+    wait: std::time::Duration,
+    mut seen: impl FnMut(&Value) -> bool,
+) -> Result<()> {
+    let token =
+        crate::auth::oauth::access_token_for("https://augloop.office.com/v2/.default").await?;
+    let mut req = tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(
+        "wss://augloop.office.com/",
+    )?;
+    req.headers_mut()
+        .insert("Origin", "https://teams.microsoft.com".parse()?);
+    let (mut ws, _) = tokio_tungstenite::connect_async(req)
+        .await
+        .context("AugLoop")?;
     let group = uuid::Uuid::new_v4().simple().to_string();
     let mut n = 0u64;
     let next = |n: &mut u64| {
@@ -240,7 +320,12 @@ pub(crate) async fn run_op_with(annotations: &[&str], path: Value, signal: Value
         "H_": h("AugLoop_Session_Protocol_SessionInitMessage", &["AugLoop_Session_Protocol_Message"]), "cv": cv, "messageId": mid})))
     .await?;
     loop {
-        let Some(msg) = tokio::time::timeout(std::time::Duration::from_secs(20), ws.next()).await.context("AugLoop didn't answer")? else { anyhow::bail!("AugLoop closed") };
+        let Some(msg) = tokio::time::timeout(std::time::Duration::from_secs(20), ws.next())
+            .await
+            .context("AugLoop didn't answer")?
+        else {
+            anyhow::bail!("AugLoop closed")
+        };
         if let Message::Text(t) = msg?
             && t.as_str() != "~"
         {
@@ -248,7 +333,12 @@ pub(crate) async fn run_op_with(annotations: &[&str], path: Value, signal: Value
             if v.get("sessionKey").is_some() {
                 break;
             }
-            anyhow::ensure!(!v.pointer("/H_/T_").and_then(Value::as_str).is_some_and(|t| t.contains("Error")), "AugLoop refused the session");
+            anyhow::ensure!(
+                !v.pointer("/H_/T_")
+                    .and_then(Value::as_str)
+                    .is_some_and(|t| t.contains("Error")),
+                "AugLoop refused the session"
+            );
         }
     }
     for annotation in annotations {
@@ -273,7 +363,9 @@ pub(crate) async fn run_op_with(annotations: &[&str], path: Value, signal: Value
     let deadline = tokio::time::Instant::now() + wait;
     let mut any = false;
     loop {
-        let Ok(next_msg) = tokio::time::timeout_at(deadline, ws.next()).await else { break };
+        let Ok(next_msg) = tokio::time::timeout_at(deadline, ws.next()).await else {
+            break;
+        };
         let Some(msg) = next_msg else { break };
         let t = match msg? {
             Message::Text(t) => t.to_string(),
@@ -285,13 +377,41 @@ pub(crate) async fn run_op_with(annotations: &[&str], path: Value, signal: Value
             continue;
         }
         let v: Value = serde_json::from_str(&t).unwrap_or_default();
-        if let Some(id) = v.get("messageId").and_then(Value::as_str).filter(|id| id.starts_with('s')) {
-            ws.send(send(json!({"H_": h("AugLoop_Session_Protocol_Response", &[]), "messageId": id}))).await?;
+        if let Some(id) = v
+            .get("messageId")
+            .and_then(Value::as_str)
+            .filter(|id| id.starts_with('s'))
+        {
+            ws.send(send(
+                json!({"H_": h("AugLoop_Session_Protocol_Response", &[]), "messageId": id}),
+            ))
+            .await?;
         }
-        if v.pointer("/H_/T_").and_then(Value::as_str).is_some_and(|t| t.contains("Error")) && !any {
-            anyhow::bail!("AugLoop: {}", v.pointer("/H_/T_").and_then(Value::as_str).unwrap_or_default());
+        if v.pointer("/H_/T_")
+            .and_then(Value::as_str)
+            .is_some_and(|t| t.contains("Error"))
+            && !any
+        {
+            anyhow::bail!(
+                "AugLoop: {}",
+                v.pointer("/H_/T_")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+            );
         }
-        let bodies: Vec<Value> = v.get("ops").and_then(Value::as_array).into_iter().flatten().flat_map(|op| op.get("items").and_then(Value::as_array).cloned().unwrap_or_default()).filter_map(|i| i.get("body").cloned()).collect();
+        let bodies: Vec<Value> = v
+            .get("ops")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .flat_map(|op| {
+                op.get("items")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default()
+            })
+            .filter_map(|i| i.get("body").cloned())
+            .collect();
         let mut done = false;
         for b in &bodies {
             any = true;
@@ -317,9 +437,23 @@ pub async fn generate(m: &Meeting, ui_language: &str) -> Result<Generation> {
 /// language, made over AugLoop like the single-meeting one. `progress` gets
 /// every update of the recap while it's being made (its chapters come one
 /// by one, each with its own audio as it's made).
-pub async fn generate_multi(meetings: &[Meeting], style_choice: &str, language: &str, ui_language: &str, progress: &(dyn Fn(&Generation) + Sync)) -> Result<Generation> {
-    anyhow::ensure!(!meetings.is_empty() && meetings.len() <= 8, "Select up to 8 meetings");
-    generate_signal(&|id: &str| generation_signal_multi(meetings, style(style_choice), language, id), ui_language, progress).await
+pub async fn generate_multi(
+    meetings: &[Meeting],
+    style_choice: &str,
+    language: &str,
+    ui_language: &str,
+    progress: &(dyn Fn(&Generation) + Sync),
+) -> Result<Generation> {
+    anyhow::ensure!(
+        !meetings.is_empty() && meetings.len() <= 8,
+        "Select up to 8 meetings"
+    );
+    generate_signal(
+        &|id: &str| generation_signal_multi(meetings, style(style_choice), language, id),
+        ui_language,
+        progress,
+    )
+    .await
 }
 
 /// A recap's chapters as (status, has audio), for the logs.
@@ -330,8 +464,15 @@ pub fn chapter_states(podcast: &Value) -> Vec<(String, bool)> {
         .into_iter()
         .flatten()
         .map(|c| {
-            let st = c.get("status").and_then(Value::as_str).unwrap_or_default().to_string();
-            let audio = c.pointer("/audioFile/fileUrl").and_then(Value::as_str).is_some_and(|u| !u.is_empty());
+            let st = c
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let audio = c
+                .pointer("/audioFile/fileUrl")
+                .and_then(Value::as_str)
+                .is_some_and(|u| !u.is_empty());
             (st, audio)
         })
         .collect()
@@ -340,14 +481,25 @@ pub fn chapter_states(podcast: &Value) -> Vec<(String, bool)> {
 /// Whether a recap has chapters to play (Teams' `hasChapters`: a chapter
 /// in progress or made), the moment Teams starts a just-made recap.
 pub fn has_chapters(podcast: &Value) -> bool {
-    chapter_states(podcast).iter().any(|(st, _)| st == "InProgress" || st == "Completed")
+    chapter_states(podcast)
+        .iter()
+        .any(|(st, _)| st == "InProgress" || st == "Completed")
 }
 
-async fn generate_signal(make: &(dyn Fn(&str) -> Value + Sync), ui_language: &str, progress: &(dyn Fn(&Generation) + Sync)) -> Result<Generation> {
+async fn generate_signal(
+    make: &(dyn Fn(&str) -> Value + Sync),
+    ui_language: &str,
+    progress: &(dyn Fn(&Generation) + Sync),
+) -> Result<Generation> {
     let generation_id = uuid::Uuid::new_v4().to_string();
     // Teams' publishing path: identifier "teams_recap_podcast_generation",
     // subscription "podcast-session", a new request id.
-    let path = json!(["session", "doc", "teams_recap_podcast_generation_podcast-session", uuid::Uuid::new_v4().to_string()]);
+    let path = json!([
+        "session",
+        "doc",
+        "teams_recap_podcast_generation_podcast-session",
+        uuid::Uuid::new_v4().to_string()
+    ]);
     let mut last: Option<Generation> = None;
     run_op("AugLoop_TeamsRecapPodcast_TeamsRecapPodcastGenerationAnnotation", path, make(&generation_id), ui_language, std::time::Duration::from_secs(600), |b| {
         let Some(g) = generation_from(b) else { return false };
@@ -374,16 +526,29 @@ pub async fn delete(ids: &[String], ui_language: &str) -> Result<Vec<String>> {
     let signal = json!({ "podcastIds": ids, "H_": h("AugLoop_TeamsRecapPodcast_TeamsRecapPodcastDeleteSignal", &["AugLoop_Signals_Signal"]) });
     let mut deleted = Vec::new();
     let mut answered = false;
-    run_op("AugLoop_TeamsRecapPodcast_TeamsRecapPodcastDeleteAnnotation", json!(["session", "doc"]), signal, ui_language, std::time::Duration::from_secs(60), |b| {
-        let Some(results) = b.get("operationResults").and_then(Value::as_array) else { return false };
-        answered = true;
-        deleted = results
-            .iter()
-            .filter(|r| r.get("success").and_then(Value::as_bool) == Some(true))
-            .filter_map(|r| r.get("podcastId").and_then(Value::as_str).map(str::to_string))
-            .collect();
-        true
-    })
+    run_op(
+        "AugLoop_TeamsRecapPodcast_TeamsRecapPodcastDeleteAnnotation",
+        json!(["session", "doc"]),
+        signal,
+        ui_language,
+        std::time::Duration::from_secs(60),
+        |b| {
+            let Some(results) = b.get("operationResults").and_then(Value::as_array) else {
+                return false;
+            };
+            answered = true;
+            deleted = results
+                .iter()
+                .filter(|r| r.get("success").and_then(Value::as_bool) == Some(true))
+                .filter_map(|r| {
+                    r.get("podcastId")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
+                .collect();
+            true
+        },
+    )
     .await?;
     anyhow::ensure!(answered, "AugLoop didn't answer the delete");
     Ok(deleted)
@@ -407,19 +572,43 @@ mod tests {
 
     #[test]
     fn listen_on_mobile_link() {
-        assert_eq!(mobile_link("abc-1"), "https://teams.microsoft.com/l/meetingpodcast?id=abc-1&origin=desktopQRCode");
+        assert_eq!(
+            mobile_link("abc-1"),
+            "https://teams.microsoft.com/l/meetingpodcast?id=abc-1&origin=desktopQRCode"
+        );
     }
 
     #[test]
     fn signal_and_consume_query() {
-        let m = Meeting { subject: "S".into(), thread_id: "19:meeting_x@thread.v2".into(), ical_uid: "04abc".into(), start_ms: 1_795_235_380_000, end_ms: 1_795_237_720_000,
-            transcripts: vec![Transcript { id: "t1".into(), ..Default::default() }], ..Default::default() };
+        let m = Meeting {
+            subject: "S".into(),
+            thread_id: "19:meeting_x@thread.v2".into(),
+            ical_uid: "04abc".into(),
+            start_ms: 1_795_235_380_000,
+            end_ms: 1_795_237_720_000,
+            transcripts: vec![Transcript {
+                id: "t1".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
         let s = generation_signal(&m, "g1");
         assert_eq!(s["range"]["startDateTime"], "2026-11-21T04:29:40.000Z");
         assert_eq!(s["eventsWithTranscripts"][0]["event"]["iCalUid"], "04ABC");
-        assert_eq!(s["eventsWithTranscripts"][0]["transcripts"][0]["transcriptId"], "t1");
+        assert_eq!(
+            s["eventsWithTranscripts"][0]["transcripts"][0]["transcriptId"],
+            "t1"
+        );
         assert_eq!(s["podcastType"], "SharedSingleMeetingAudioRecap");
-        let two = [m.clone(), Meeting { thread_id: "19:meeting_y@thread.v2".into(), start_ms: 1_795_000_000_000, end_ms: 1_795_000_600_000, ..m.clone() }];
+        let two = [
+            m.clone(),
+            Meeting {
+                thread_id: "19:meeting_y@thread.v2".into(),
+                start_ms: 1_795_000_000_000,
+                end_ms: 1_795_000_600_000,
+                ..m.clone()
+            },
+        ];
         let s = generation_signal_multi(&two, style("Newscast"), "en-US", "g2");
         assert_eq!(s["eventsWithTranscripts"].as_array().map(Vec::len), Some(2));
         assert_eq!(s["range"]["startDateTime"], "2026-11-18T11:06:40.000Z");
@@ -428,7 +617,10 @@ mod tests {
         assert!(s.get("podcastType").is_none());
         assert_eq!(style("Executive"), ("Dual", "formal"));
         assert_eq!(style("Casual"), ("Dual", "casual"));
-        assert_eq!(consume_query(&m, "en-US", "formal"), "podcasts/consume?threadId=19:meeting_x@thread.v2&transcriptIds=t1&language=en-US&style=formal&iCalUid=04ABC");
+        assert_eq!(
+            consume_query(&m, "en-US", "formal"),
+            "podcasts/consume?threadId=19:meeting_x@thread.v2&transcriptIds=t1&language=en-US&style=formal&iCalUid=04ABC"
+        );
     }
 
     #[test]
@@ -436,7 +628,10 @@ mod tests {
         let failed = json!({"podcast": {"status": "Failed", "statusMessage": "NoValidMeetingInsightError", "id": "p"}, "workflowStatus": 46, "workflowStatusMessage": "NoValidMeetingInsightError",
             "H_": {"T_": "AugLoop_TeamsRecapPodcast_TeamsRecapPodcastGenerationAnnotation"}});
         let g = generation_from(&failed).unwrap();
-        assert_eq!((g.status.as_str(), g.message.as_str()), ("FAILED", "NoValidMeetingInsightError"));
+        assert_eq!(
+            (g.status.as_str(), g.message.as_str()),
+            ("FAILED", "NoValidMeetingInsightError")
+        );
         assert!(no_insight(&g.message));
         let going = json!({"podcast": {"status": "InProgress", "id": "p"}, "workflowStatus": 0, "H_": {"T_": "AugLoop_TeamsRecapPodcast_TeamsRecapPodcastGenerationAnnotation"}});
         assert_eq!(generation_from(&going).unwrap().status, "IN_PROGRESS");
@@ -451,7 +646,13 @@ mod tests {
         assert!(!has_chapters(&p));
         let p = json!({"status": "InProgress", "chapters": [{"status": "InProgress", "audioFile": {"fileType": "m3u8", "fileUrl": "https://x/a.m3u8"}}, {"status": "NotStarted"}]});
         assert!(has_chapters(&p));
-        assert_eq!(chapter_states(&p), vec![("InProgress".to_string(), true), ("NotStarted".to_string(), false)]);
+        assert_eq!(
+            chapter_states(&p),
+            vec![
+                ("InProgress".to_string(), true),
+                ("NotStarted".to_string(), false)
+            ]
+        );
         assert!(!has_chapters(&json!({"chapters": [{"status": "Failed"}]})));
     }
 }

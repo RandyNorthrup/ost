@@ -36,7 +36,10 @@ fn history_path() -> Option<PathBuf> {
 }
 
 fn load_from(file: &Path) -> Vec<Download> {
-    std::fs::read(file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    std::fs::read(file)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
 }
 
 fn save_to(file: &Path, all: &[Download]) -> Result<()> {
@@ -50,7 +53,11 @@ pub fn record_in(file: &Path, path: &Path, at: i64) -> Result<()> {
     let mut all = load_from(file);
     let p = path.display().to_string();
     all.retain(|d| d.path != p);
-    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_string();
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default()
+        .to_string();
     all.insert(0, Download { path: p, name, at });
     all.truncate(KEEP);
     save_to(file, &all)
@@ -72,20 +79,28 @@ pub fn list() -> Vec<Listed> {
         .into_iter()
         .map(|d| {
             let exists = Path::new(&d.path).is_file();
-            Listed { download: d, exists }
+            Listed {
+                download: d,
+                exists,
+            }
         })
         .collect()
 }
 
 /// Delete file: remove the file itself (the entry stays, shown as removed).
 pub fn delete_file(path: &str) -> Result<()> {
-    anyhow::ensure!(list().iter().any(|d| d.download.path == path), "Not a download");
+    anyhow::ensure!(
+        list().iter().any(|d| d.download.path == path),
+        "Not a download"
+    );
     std::fs::remove_file(path).with_context(|| format!("Deleting {path}"))
 }
 
 /// Clear all download history (the files stay).
 pub fn clear() -> Result<()> {
-    let Some(file) = history_path() else { return Ok(()) };
+    let Some(file) = history_path() else {
+        return Ok(());
+    };
     save_to(&file, &[])
 }
 
@@ -101,7 +116,10 @@ mod tests {
         record_in(&file, Path::new("/tmp/b.txt"), 2).unwrap();
         record_in(&file, Path::new("/tmp/a.txt"), 3).unwrap();
         let all = load_from(&file);
-        assert_eq!(all.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(), ["a.txt", "b.txt"]);
+        assert_eq!(
+            all.iter().map(|d| d.name.as_str()).collect::<Vec<_>>(),
+            ["a.txt", "b.txt"]
+        );
         assert_eq!(all[0].at, 3);
         let _ = std::fs::remove_dir_all(dir);
     }

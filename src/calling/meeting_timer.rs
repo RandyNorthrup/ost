@@ -456,7 +456,10 @@ pub fn spoken(ms: i64) -> String {
     match (m, s) {
         (0, s) => secs(s),
         (m, 0) => fill(&tr_id("%1 min", "calling:k3kcwva6c"), &[&m.to_string()]),
-        (m, s) => fill(&tr_id("%1 min, %2 sec", "calling:k19ns95p7"), &[&m.to_string(), &s.to_string()]),
+        (m, s) => fill(
+            &tr_id("%1 min, %2 sec", "calling:k19ns95p7"),
+            &[&m.to_string(), &s.to_string()],
+        ),
     }
 }
 

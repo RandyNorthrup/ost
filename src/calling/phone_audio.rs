@@ -69,7 +69,9 @@ pub fn dial_in(json: &Value) -> Option<DialIn> {
     };
     let d = DialIn {
         toll: text(s, "tollNumber").trim_start_matches('+').to_string(),
-        toll_free: text(s, "tollFreeNumber").trim_start_matches('+').to_string(),
+        toll_free: text(s, "tollFreeNumber")
+            .trim_start_matches('+')
+            .to_string(),
         conference_id: text(s, "participantPasscode"),
         local_numbers_url: text(p, "dialinUrl"),
     };
@@ -83,7 +85,11 @@ impl DialIn {
     }
 
     pub fn toll_free_text(&self) -> String {
-        if self.toll_free.is_empty() { String::new() } else { format!("+{}", self.toll_free) }
+        if self.toll_free.is_empty() {
+            String::new()
+        } else {
+            format!("+{}", self.toll_free)
+        }
     }
 
     /// "Conference ID: 975 755 048 #" (Teams adds a space after every three
@@ -96,7 +102,11 @@ impl DialIn {
     /// 2…, conference ID 9 7 5…").
     pub fn toll_aria(&self, toll_free: bool) -> String {
         let spaced = |s: &str| s.chars().map(String::from).collect::<Vec<_>>().join(" ");
-        let number = if toll_free { self.toll_free_text() } else { self.toll_text() };
+        let number = if toll_free {
+            self.toll_free_text()
+        } else {
+            self.toll_text()
+        };
         format!(
             "Dial in using {} number {}, conference ID {}",
             if toll_free { "toll free" } else { "toll" },
@@ -154,8 +164,16 @@ pub fn dial_in_from_invite(body_html: &str) -> Option<DialIn> {
             r[..r.find(['"', '\'', '<', ' ']).unwrap_or(r.len())].replace("&amp;", "&")
         })
         .unwrap_or_default();
-    let d = DialIn { toll: toll.to_string(), toll_free: String::new(), conference_id, local_numbers_url };
-    (!d.toll.is_empty() && !d.conference_id.is_empty() && d.conference_id.bytes().all(|b| b.is_ascii_digit())).then_some(d)
+    let d = DialIn {
+        toll: toll.to_string(),
+        toll_free: String::new(),
+        conference_id,
+        local_numbers_url,
+    };
+    (!d.toll.is_empty()
+        && !d.conference_id.is_empty()
+        && d.conference_id.bytes().all(|b| b.is_ascii_digit()))
+    .then_some(d)
 }
 
 /// Whether the meeting offers phone audio, and which kinds.
@@ -180,7 +198,8 @@ pub fn phone_audio(json: &Value, anonymous: bool) -> Option<PhoneAudio> {
         .get("pstnConferencingDialOutType")
         .and_then(Value::as_str)
         .unwrap_or("");
-    let dial_out_allowed = !dial_out_type.is_empty() && !dial_out_type.eq_ignore_ascii_case("Disabled");
+    let dial_out_allowed =
+        !dial_out_type.is_empty() && !dial_out_type.eq_ignore_ascii_case("Disabled");
     let allow = flag("allowPstnConferencing");
     let e2ee = flag("meetingEndToEndEncryptionEnabled");
     let anonymous_blocked = anonymous && !flag("allowAnonymousUsersToDialOut");
@@ -188,7 +207,8 @@ pub fn phone_audio(json: &Value, anonymous: bool) -> Option<PhoneAudio> {
     Some(PhoneAudio {
         available: allow && dial_out_allowed && has_details && !anonymous_blocked && !e2ee,
         dial_in: allow,
-        dial_out: (dial_out_allowed && !anonymous) || (anonymous && flag("allowAnonymousUsersToDialOut")),
+        dial_out: (dial_out_allowed && !anonymous)
+            || (anonymous && flag("allowAnonymousUsersToDialOut")),
     })
 }
 
@@ -209,7 +229,10 @@ pub const PSTN_CAPABILITIES_TIMEOUT: std::time::Duration = std::time::Duration::
 pub fn prejoin_pstn(json: &Value, anonymous: bool) -> Option<bool> {
     let d = meeting_details(json)?;
     let cap = d.get("meetingCapability").filter(|c| c.is_object())?;
-    let dial_out = cap.get("pstnConferencingDialOutType").and_then(Value::as_str).unwrap_or("");
+    let dial_out = cap
+        .get("pstnConferencingDialOutType")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     let dial_out_allowed = !dial_out.is_empty() && !dial_out.eq_ignore_ascii_case("Disabled");
     let refused = cap.get("allowPstnConferencing") == Some(&Value::Bool(false));
     let invitation = d.get("invitation").is_some_and(|i| !i.is_null());
@@ -272,15 +295,28 @@ impl DialPlan {
                 let pattern = regex::Regex::new(r.get("pattern")?.as_str()?).ok()?;
                 // JavaScript's "$1" is Rust's "${1}".
                 let t = r.get("translation")?.as_str()?;
-                let translation = regex::Regex::new(r"\$(\d+)").ok()?.replace_all(t, "$${$1}").into_owned();
-                Some(Rule { pattern, translation })
+                let translation = regex::Regex::new(r"\$(\d+)")
+                    .ok()?
+                    .replace_all(t, "$${$1}")
+                    .into_owned();
+                Some(Rule {
+                    pattern,
+                    translation,
+                })
             })
             .collect();
         let country_prefix = policy
             .get("ituCountryPrefix")
-            .and_then(|v| v.as_str().map(str::to_string).or_else(|| v.as_i64().map(|n| n.to_string())))
+            .and_then(|v| {
+                v.as_str()
+                    .map(str::to_string)
+                    .or_else(|| v.as_i64().map(|n| n.to_string()))
+            })
             .unwrap_or_default();
-        Self { rules, country_prefix }
+        Self {
+            rules,
+            country_prefix,
+        }
     }
 
     pub fn has_rules(&self) -> bool {
@@ -294,14 +330,30 @@ impl DialPlan {
         let t = remove_format_characters(input);
         for r in &self.rules {
             if r.pattern.is_match(&t) {
-                return Normalized { number: r.pattern.replacen(&t, 1, r.translation.as_str()).into_owned(), normalized: true };
+                return Normalized {
+                    number: r
+                        .pattern
+                        .replacen(&t, 1, r.translation.as_str())
+                        .into_owned(),
+                    normalized: true,
+                };
             }
         }
         if !t.starts_with('+') && !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit()) {
-            let prefix = if self.country_prefix.is_empty() { String::new() } else { format!("+{}", self.country_prefix) };
-            return Normalized { normalized: !prefix.is_empty(), number: format!("{prefix}{t}") };
+            let prefix = if self.country_prefix.is_empty() {
+                String::new()
+            } else {
+                format!("+{}", self.country_prefix)
+            };
+            return Normalized {
+                normalized: !prefix.is_empty(),
+                number: format!("{prefix}{t}"),
+            };
         }
-        Normalized { number: t, normalized: false }
+        Normalized {
+            number: t,
+            normalized: false,
+        }
     }
 
     /// Whether Teams enables Call me for this text (`isNormalized`: a
@@ -335,7 +387,12 @@ impl DialPlan {
         };
         match nanp_display(&number) {
             Some(s) => s,
-            None if number.len() > 3 && number.starts_with("+1") && number[2..].bytes().all(|b| b.is_ascii_digit()) => number,
+            None if number.len() > 3
+                && number.starts_with("+1")
+                && number[2..].bytes().all(|b| b.is_ascii_digit()) =>
+            {
+                number
+            }
             None => input.to_string(),
         }
     }
@@ -343,7 +400,11 @@ impl DialPlan {
     /// The participant id Teams calls: "4:" and the normalized number.
     pub fn phone_mri(&self, input: &str) -> String {
         let n = self.normalize(input);
-        let number = if n.normalized { n.number } else { remove_format_characters(input) };
+        let number = if n.normalized {
+            n.number
+        } else {
+            remove_format_characters(input)
+        };
         format!("4:{number}")
     }
 }
@@ -351,7 +412,9 @@ impl DialPlan {
 /// Teams' `removeFormatCharacters`: spaces, brackets, dashes, underscores
 /// and slashes out.
 pub fn remove_format_characters(s: &str) -> String {
-    s.chars().filter(|c| !(c.is_whitespace() || "()-_/".contains(*c))).collect()
+    s.chars()
+        .filter(|c| !(c.is_whitespace() || "()-_/".contains(*c)))
+        .collect()
 }
 
 /// libphonenumber's display of a "+1" number: "+1 425-555-0100" when it has
@@ -371,8 +434,8 @@ fn nanp_display(number: &str) -> Option<String> {
 /// ITU country calling codes in use (one, two and three digits), for
 /// libphonenumber's "possible number" check.
 const COUNTRY_CODES_1_2: &[u32] = &[
-    1, 7, 20, 27, 30, 31, 32, 33, 34, 36, 39, 40, 41, 43, 44, 45, 46, 47, 48, 49, 51, 52, 53, 54, 55, 56, 57,
-    58, 60, 61, 62, 63, 64, 65, 66, 81, 82, 84, 86, 90, 91, 92, 93, 94, 95, 98,
+    1, 7, 20, 27, 30, 31, 32, 33, 34, 36, 39, 40, 41, 43, 44, 45, 46, 47, 48, 49, 51, 52, 53, 54,
+    55, 56, 57, 58, 60, 61, 62, 63, 64, 65, 66, 81, 82, 84, 86, 90, 91, 92, 93, 94, 95, 98,
 ];
 
 /// Whether the text is a possible phone number (libphonenumber's
@@ -380,24 +443,38 @@ const COUNTRY_CODES_1_2: &[u32] = &[
 /// 4 to 14 national digits). Plain local digits are left to the dial plan.
 pub fn is_possible_number(input: &str) -> bool {
     let t = remove_format_characters(input);
-    let Some(digits) = t.strip_prefix('+') else { return false };
+    let Some(digits) = t.strip_prefix('+') else {
+        return false;
+    };
     if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
         return false;
     }
     let code_len = (1..=3).find(|&n| {
         digits.len() > n
             && digits[..n].parse::<u32>().is_ok_and(|c| {
-                if n <= 2 { COUNTRY_CODES_1_2.contains(&c) } else { (200..=999).contains(&c) && !matches!(c, 999 | 888 | 878 | 800..=809) }
+                if n <= 2 {
+                    COUNTRY_CODES_1_2.contains(&c)
+                } else {
+                    (200..=999).contains(&c) && !matches!(c, 999 | 888 | 878 | 800..=809)
+                }
             })
     });
-    let Some(code_len) = code_len else { return false };
+    let Some(code_len) = code_len else {
+        return false;
+    };
     let national = digits.len() - code_len;
     (4..=14).contains(&national)
 }
 
 /// The "Call me" request: our participant (`from`, also the asserted
 /// identity) adding the phone `phone_mri` to the meeting.
-pub fn call_me_back_body(from: &Value, phone_mri: &str, thread_id: &str, message_id: Option<&str>, links: Value) -> Value {
+pub fn call_me_back_body(
+    from: &Value,
+    phone_mri: &str,
+    thread_id: &str,
+    message_id: Option<&str>,
+    links: Value,
+) -> Value {
     let asserted = from.get("id").cloned().unwrap_or(Value::Null);
     json!({
         "participants": {
@@ -414,27 +491,42 @@ pub fn call_me_back_body(from: &Value, phone_mri: &str, thread_id: &str, message
 /// What an add-participant callback says about `phone_mri`: Some(Ok) when
 /// it joined, Some(Err(text)) with Teams' message when it failed.
 pub fn call_me_back_result(event: &Value, phone_mri: &str) -> Option<Result<(), String>> {
-    let path = event.get("callAgentPath").and_then(Value::as_str).unwrap_or("");
+    let path = event
+        .get("callAgentPath")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     let body = event.get("body").unwrap_or(event);
     let same = |id: &str| id.eq_ignore_ascii_case(phone_mri);
     if path.contains("addParticipantSuccess") {
-        let ids: Vec<String> = if let Some(infos) = body.get("participantInfos").and_then(Value::as_array) {
-            infos.iter().filter_map(|i| i.get("id").and_then(Value::as_str).map(str::to_string)).collect()
-        } else {
-            body.get("participants")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(|p| p.as_str().map(str::to_string).or_else(|| p.get("id").and_then(Value::as_str).map(str::to_string)))
-                .collect()
-        };
+        let ids: Vec<String> =
+            if let Some(infos) = body.get("participantInfos").and_then(Value::as_array) {
+                infos
+                    .iter()
+                    .filter_map(|i| i.get("id").and_then(Value::as_str).map(str::to_string))
+                    .collect()
+            } else {
+                body.get("participants")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|p| {
+                        p.as_str()
+                            .map(str::to_string)
+                            .or_else(|| p.get("id").and_then(Value::as_str).map(str::to_string))
+                    })
+                    .collect()
+            };
         return ids.iter().any(|i| same(i)).then_some(Ok(()));
     }
     if path.contains("addParticipantFailure") {
         let end = if let Some(infos) = body.get("participantInfos").and_then(Value::as_array) {
             infos
                 .iter()
-                .find(|i| i.pointer("/participant/id").and_then(Value::as_str).is_some_and(same))
+                .find(|i| {
+                    i.pointer("/participant/id")
+                        .and_then(Value::as_str)
+                        .is_some_and(same)
+                })
                 .and_then(|i| i.get("transactionEnd"))
         } else {
             body.get("participants")
@@ -462,10 +554,18 @@ pub fn failure_text(end: &Value) -> String {
     if sub.is_some_and(|s| (10500..=10549).contains(&s)) {
         return tr_id("Call not allowed in this location.", "calling:k23wqw4bs");
     }
-    if categories.contains(&"EntitlementFailure") || (code == Some(403) && sub.is_some_and(|s| (510566..=510569).contains(&s))) {
-        return tr_id("You are not allowed to dial-out to this destination. Please contact your administrator.", "calling:kbs0fkxwh");
+    if categories.contains(&"EntitlementFailure")
+        || (code == Some(403) && sub.is_some_and(|s| (510566..=510569).contains(&s)))
+    {
+        return tr_id(
+            "You are not allowed to dial-out to this destination. Please contact your administrator.",
+            "calling:kbs0fkxwh",
+        );
     }
-    tr_id("We could not complete the call. The user is unavailable at the moment.", "calling:k1vxu82o3")
+    tr_id(
+        "We could not complete the call. The user is unavailable at the moment.",
+        "calling:k1vxu82o3",
+    )
 }
 
 #[cfg(test)]
@@ -485,13 +585,19 @@ mod tests {
         assert_eq!(d.toll_text(), "+18723339415");
         assert_eq!(d.toll_free_text(), "");
         assert_eq!(d.conference_text(), "Conference ID: 975 755 048 #");
-        assert_eq!(d.local_numbers_url, "https://dialin.teams.cloud.microsoft/u?id=975755048");
+        assert_eq!(
+            d.local_numbers_url,
+            "https://dialin.teams.cloud.microsoft/u?id=975755048"
+        );
         assert_eq!(
             d.toll_aria(false),
             "Dial in using toll number + 1 8 7 2 3 3 3 9 4 1 5, conference ID 9 7 5 7 5 5 0 4 8"
         );
         // The conversation-only join (before the call) has no details.
-        assert_eq!(dial_in(&json!({"meetingDetails": {"pstnDetails": null}})), None);
+        assert_eq!(
+            dial_in(&json!({"meetingDetails": {"pstnDetails": null}})),
+            None
+        );
     }
 
     /// What Teams' pre-join saw (Teams on the web, 2026-11-16): the
@@ -519,7 +625,8 @@ mod tests {
         // An organizer without Audio Conferencing: refused, dial-out off.
         let mut refused = call.clone();
         refused["meetingDetails"]["meetingCapability"]["allowPstnConferencing"] = false.into();
-        refused["meetingDetails"]["meetingCapability"]["pstnConferencingDialOutType"] = "Disabled".into();
+        refused["meetingDetails"]["meetingCapability"]["pstnConferencingDialOutType"] =
+            "Disabled".into();
         assert_eq!(prejoin_pstn(&refused, false), None);
         assert!(!prejoin_fallback(Some(&refused)));
         assert!(has_meeting_details(&lobby) && !has_meeting_details(&json!({"body": {}})));
@@ -531,14 +638,24 @@ mod tests {
         let d = dial_in_from_invite(body).expect("dial-in");
         assert_eq!(d.toll_text(), "+18723339415");
         assert_eq!(d.conference_id, "975755048");
-        assert_eq!(d.local_numbers_url, "https://dialin.teams.cloud.microsoft/474a?id=975755048");
+        assert_eq!(
+            d.local_numbers_url,
+            "https://dialin.teams.cloud.microsoft/474a?id=975755048"
+        );
         assert_eq!(dial_in_from_invite("<p>Microsoft Teams meeting</p>"), None);
     }
 
     #[test]
     fn offers_phone_audio_by_teams_rules() {
         let p = phone_audio(&join_response(), false).unwrap();
-        assert_eq!(p, PhoneAudio { available: true, dial_in: true, dial_out: true });
+        assert_eq!(
+            p,
+            PhoneAudio {
+                available: true,
+                dial_in: true,
+                dial_out: true
+            }
+        );
         // Anonymous guests can't be called back unless the meeting allows it.
         assert!(!phone_audio(&join_response(), true).unwrap().available);
         let mut v = join_response();
@@ -549,7 +666,14 @@ mod tests {
         assert!(!phone_audio(&v, false).unwrap().available);
         let mut v = join_response();
         v["meetingDetails"]["meetingCapability"]["allowPstnConferencing"] = false.into();
-        assert_eq!(phone_audio(&v, false).unwrap(), PhoneAudio { available: false, dial_in: false, dial_out: true });
+        assert_eq!(
+            phone_audio(&v, false).unwrap(),
+            PhoneAudio {
+                available: false,
+                dial_in: false,
+                dial_out: true
+            }
+        );
     }
 
     fn us_plan() -> DialPlan {
@@ -593,9 +717,21 @@ mod tests {
     #[test]
     fn builds_the_call_me_request_as_teams() {
         let from = json!({"id": "8:orgid:o", "displayName": "OST Test 1", "endpointId": "e", "participantId": "p", "languageId": "en-us"});
-        let b = call_me_back_body(&from, "4:+14255550100", "19:meeting_x@thread.v2", Some("0"), json!({"addParticipantSuccess": "s", "addParticipantFailure": "f"}));
-        assert_eq!(b["participants"]["to"][0], json!({"id": "4:+14255550100", "assertedId": "8:orgid:o"}));
-        assert_eq!(b["groupChat"], json!({"threadId": "19:meeting_x@thread.v2", "messageId": "0"}));
+        let b = call_me_back_body(
+            &from,
+            "4:+14255550100",
+            "19:meeting_x@thread.v2",
+            Some("0"),
+            json!({"addParticipantSuccess": "s", "addParticipantFailure": "f"}),
+        );
+        assert_eq!(
+            b["participants"]["to"][0],
+            json!({"id": "4:+14255550100", "assertedId": "8:orgid:o"})
+        );
+        assert_eq!(
+            b["groupChat"],
+            json!({"threadId": "19:meeting_x@thread.v2", "messageId": "0"})
+        );
         assert_eq!(b["links"]["addParticipantFailure"], "f");
     }
 
@@ -608,12 +744,20 @@ mod tests {
         ]}});
         assert_eq!(
             call_me_back_result(&fail, "4:+10000000000"),
-            Some(Err("We could not complete the call. The user is unavailable at the moment.".into()))
+            Some(Err(
+                "We could not complete the call. The user is unavailable at the moment.".into()
+            ))
         );
         let lbr = json!({"callAgentPath": "conversation/addParticipantFailure/", "body": {"participants": {"4:+1": {"code": 403, "subCode": 10510}}}});
-        assert_eq!(call_me_back_result(&lbr, "4:+1"), Some(Err("Call not allowed in this location.".into())));
+        assert_eq!(
+            call_me_back_result(&lbr, "4:+1"),
+            Some(Err("Call not allowed in this location.".into()))
+        );
         let dom = json!({"code": 403, "subCode": 510567});
-        assert_eq!(failure_text(&dom), "You are not allowed to dial-out to this destination. Please contact your administrator.");
+        assert_eq!(
+            failure_text(&dom),
+            "You are not allowed to dial-out to this destination. Please contact your administrator."
+        );
         assert_eq!(call_me_back_result(&ok, "4:+19999999999"), None);
     }
 }

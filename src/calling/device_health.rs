@@ -50,7 +50,10 @@ impl Open {
     /// system's error text on).
     pub fn from_error(message: &str) -> Self {
         let m = message.to_ascii_lowercase();
-        if m.contains("permission denied") || m.contains("eacces") || m.contains("operation not permitted") {
+        if m.contains("permission denied")
+            || m.contains("eacces")
+            || m.contains("operation not permitted")
+        {
             Open::Permission
         } else {
             Open::Failed
@@ -69,7 +72,10 @@ static CAMERA_FRAME_MS: AtomicI64 = AtomicI64::new(0);
 
 fn now_ms() -> i64 {
     static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-    START.get_or_init(std::time::Instant::now).elapsed().as_millis() as i64
+    START
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_millis() as i64
 }
 
 pub fn note_mic(o: Open) {
@@ -115,7 +121,11 @@ pub fn audio_access_denied() -> bool {
 /// A microphone that failed to open: refused (no permission) or not working.
 pub fn mic_failed(message: &str) {
     let o = Open::from_error(message);
-    note_mic(if o == Open::Permission || audio_access_denied() { Open::Permission } else { o });
+    note_mic(if o == Open::Permission || audio_access_denied() {
+        Open::Permission
+    } else {
+        o
+    });
 }
 
 /// A test call starts: forget how the devices opened before it.
@@ -192,7 +202,9 @@ fn default_route_v4(table: &str) -> bool {
             && f[0] != "lo"
             && f[1] == "00000000"
             && f[7] == "00000000"
-            && u32::from_str_radix(f[3], 16).map(|fl| fl & 1 == 1).unwrap_or(false)
+            && u32::from_str_radix(f[3], 16)
+                .map(|fl| fl & 1 == 1)
+                .unwrap_or(false)
     })
 }
 
@@ -206,7 +218,9 @@ fn default_route_v6(table: &str) -> bool {
             && f[0].chars().all(|c| c == '0')
             && f[1] == "00"
             && f[9] != "lo"
-            && u32::from_str_radix(f[8], 16).map(|fl| fl & 0x200 == 0 && fl & 1 == 1).unwrap_or(false)
+            && u32::from_str_radix(f[8], 16)
+                .map(|fl| fl & 0x200 == 0 && fl & 1 == 1)
+                .unwrap_or(false)
     })
 }
 
@@ -217,11 +231,21 @@ mod tests {
     #[test]
     fn errors_name_a_permission_problem() {
         assert_eq!(
-            Open::from_error("ALSA function 'snd_pcm_open' failed with error 'EACCES: Permission denied'"),
+            Open::from_error(
+                "ALSA function 'snd_pcm_open' failed with error 'EACCES: Permission denied'"
+            ),
             Open::Permission
         );
-        assert_eq!(Open::from_error("Failed to open camera at /dev/video0: Permission denied (os error 13)"), Open::Permission);
-        assert_eq!(Open::from_error("Device or resource busy (os error 16)"), Open::Failed);
+        assert_eq!(
+            Open::from_error(
+                "Failed to open camera at /dev/video0: Permission denied (os error 13)"
+            ),
+            Open::Permission
+        );
+        assert_eq!(
+            Open::from_error("Device or resource busy (os error 16)"),
+            Open::Failed
+        );
     }
 
     #[test]
@@ -252,7 +276,9 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o000)).unwrap();
         // Root may connect anyway; then there is nothing to check.
-        let root = std::fs::metadata("/root").map(|m| std::os::unix::fs::MetadataExt::uid(&m) == 0).unwrap_or(false)
+        let root = std::fs::metadata("/root")
+            .map(|m| std::os::unix::fs::MetadataExt::uid(&m) == 0)
+            .unwrap_or(false)
             && std::fs::read_dir("/root").is_ok();
         if !root {
             assert!(audio_access_denied());

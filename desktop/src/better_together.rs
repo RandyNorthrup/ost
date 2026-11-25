@@ -45,15 +45,17 @@ struct State {
     misses: HashMap<String, u8>,
 }
 
-static STATE: std::sync::LazyLock<Mutex<State>> = std::sync::LazyLock::new(|| Mutex::new(State {
-    devices: Vec::new(),
-    salt: 0,
-    urls: HashMap::new(),
-    seq: 0,
-    prompt: None,
-    waiting: HashMap::new(),
-    misses: HashMap::new(),
-}));
+static STATE: std::sync::LazyLock<Mutex<State>> = std::sync::LazyLock::new(|| {
+    Mutex::new(State {
+        devices: Vec::new(),
+        salt: 0,
+        urls: HashMap::new(),
+        seq: 0,
+        prompt: None,
+        waiting: HashMap::new(),
+        misses: HashMap::new(),
+    })
+});
 static QT: std::sync::OnceLock<Qt> = std::sync::OnceLock::new();
 
 fn state() -> std::sync::MutexGuard<'static, State> {
@@ -93,7 +95,9 @@ fn changed() {
 
 fn set_status(id: &str, status: u8) -> bool {
     let mut s = state();
-    let Some(d) = s.devices.iter_mut().find(|d| d.end_point_id == id) else { return false };
+    let Some(d) = s.devices.iter_mut().find(|d| d.end_point_id == id) else {
+        return false;
+    };
     let was = d.connection_status;
     d.connection_status = status;
     drop(s);
@@ -115,7 +119,13 @@ pub fn start(qt: Qt) {
         .and_then(|v| v.as_str().map(str::to_string))
         .unwrap_or_default();
     state().devices = bt::load_devices(&stored);
-    bt::set_paired_ids(state().devices.iter().map(|d| d.end_point_id.clone()).collect());
+    bt::set_paired_ids(
+        state()
+            .devices
+            .iter()
+            .map(|d| d.end_point_id.clone())
+            .collect(),
+    );
     let mut events = teams_cli::event_hub::subscribe();
     runtime().spawn(async move {
         use tokio::sync::broadcast::error::RecvError;
@@ -174,14 +184,20 @@ async fn url_of(id: &str) -> Option<String> {
 }
 
 /// Send a command to a phone; with `wait`, the phone's response.
-async fn send(id: &str, name: &str, details: serde_json::Value, wait: Option<Duration>) -> Result<serde_json::Value, String> {
+async fn send(
+    id: &str,
+    name: &str,
+    details: serde_json::Value,
+    wait: Option<Duration>,
+) -> Result<serde_json::Value, String> {
     let me = me().ok_or("not connected")?;
     let url = url_of(id).await.ok_or("the phone isn't reachable")?;
     let (http, token) = client().await.ok_or("not signed in")?;
     let mut details = details;
     details["targetEndpointId"] = id.into();
     // Teams' outgoing command classes mark the ones the phone answers.
-    details["companionResponseRequired"] = matches!(name, command::KEEP_ALIVE | command::UNLOCK).into();
+    details["companionResponseRequired"] =
+        matches!(name, command::KEEP_ALIVE | command::UNLOCK).into();
     let seq = {
         let mut s = state();
         s.seq += 1;
@@ -193,7 +209,9 @@ async fn send(id: &str, name: &str, details: serde_json::Value, wait: Option<Dur
         state().waiting.insert(msg.cause_id().to_string(), tx);
         rx
     });
-    let (status, body) = bt::send(&http, &token, &url, &msg).await.map_err(|e| format!("{e:#}"))?;
+    let (status, body) = bt::send(&http, &token, &url, &msg)
+        .await
+        .map_err(|e| format!("{e:#}"))?;
     tracing::info!(command = name, status, "Better Together: command sent");
     if !(200..300).contains(&status) {
         state().waiting.remove(msg.cause_id());
@@ -204,7 +222,12 @@ async fn send(id: &str, name: &str, details: serde_json::Value, wait: Option<Dur
             let r = tokio::time::timeout(w, rx).await;
             state().waiting.remove(msg.cause_id());
             match r {
-                Ok(Ok(v)) if v.get("statusCode").and_then(|c| c.as_u64()) == Some(u64::from(bt::STATUS_OK)) => Ok(v),
+                Ok(Ok(v))
+                    if v.get("statusCode").and_then(|c| c.as_u64())
+                        == Some(u64::from(bt::STATUS_OK)) =>
+                {
+                    Ok(v)
+                }
                 Ok(Ok(v)) => Err(v.to_string()),
                 _ => Err("no response".into()),
             }
@@ -220,15 +243,23 @@ async fn respond(to: &Message, ok: bool, result: serde_json::Value) {
     } else {
         to.transport_details.url.clone()
     };
-    let Some((http, token)) = client().await else { return };
+    let Some((http, token)) = client().await else {
+        return;
+    };
     let seq = {
         let mut s = state();
         s.seq += 1;
         s.seq
     };
-    let msg = me.message(command::RESPONSE, &bt::response_details(to, ok, result), seq);
+    let msg = me.message(
+        command::RESPONSE,
+        &bt::response_details(to, ok, result),
+        seq,
+    );
     match bt::send(&http, &token, &url, &msg).await {
-        Ok((status, _)) => tracing::info!(to = %to.command, ok, status, "Better Together: response sent"),
+        Ok((status, _)) => {
+            tracing::info!(to = %to.command, ok, status, "Better Together: response sent")
+        }
         Err(e) => tracing::info!("Better Together: response to {}: {e:#}", to.command),
     }
 }
@@ -283,14 +314,20 @@ async fn on_command(m: Message) {
     let details = m.details();
     let id = m.registration_id.clone();
     if !m.transport_details.url.is_empty() {
-        state().urls.insert(id.clone(), m.transport_details.url.clone());
+        state()
+            .urls
+            .insert(id.clone(), m.transport_details.url.clone());
     }
     let wired = bt::connection_type(&details) == bt::CONNECTION_WIRED;
     let signature = details.get("endpointSignature").and_then(|v| v.as_i64());
     tracing::info!(command = %m.command, "Better Together: command");
     match m.name().as_str() {
         command::RESPONSE => {
-            let cause = details.get("requestCauseId").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let cause = details
+                .get("requestCauseId")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
             if let Some(tx) = state().waiting.remove(&cause) {
                 let _ = tx.send(details);
             }
@@ -316,7 +353,8 @@ async fn on_command(m: Message) {
             respond(&m, known, r).await;
         }
         command::AUTOPAIR => {
-            if check_proximity(&id, signature, wired).await && set_status(&id, bt::STATUS_CONNECTED) {
+            if check_proximity(&id, signature, wired).await && set_status(&id, bt::STATUS_CONNECTED)
+            {
                 state().misses.remove(&id);
                 respond(&m, true, response_salt()).await;
             } else {
@@ -326,7 +364,11 @@ async fn on_command(m: Message) {
             }
         }
         command::LOCKED | command::UNLOCKED => {
-            let status = if m.name() == command::LOCKED { bt::STATUS_LOCKED } else { bt::STATUS_CONNECTED };
+            let status = if m.name() == command::LOCKED {
+                bt::STATUS_LOCKED
+            } else {
+                bt::STATUS_CONNECTED
+            };
             let ok = set_status(&id, status);
             let mut r = response_salt();
             if !ok {
@@ -335,8 +377,16 @@ async fn on_command(m: Message) {
             respond(&m, ok, r).await;
         }
         command::UPDATE_ENDPOINT => {
-            let prev = details.get("previousEndpointId").and_then(|v| v.as_str()).unwrap_or(&id).to_string();
-            let new_id = details.get("newEndpointId").and_then(|v| v.as_str()).unwrap_or(&id).to_string();
+            let prev = details
+                .get("previousEndpointId")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&id)
+                .to_string();
+            let new_id = details
+                .get("newEndpointId")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&id)
+                .to_string();
             let ok = {
                 let mut s = state();
                 match s.devices.iter_mut().find(|d| d.end_point_id == prev) {
@@ -371,14 +421,20 @@ async fn on_command(m: Message) {
 async fn on_pair(m: Message, details: serde_json::Value, wired: bool, signature: Option<i64>) {
     let id = m.registration_id.clone();
     let current = state().salt;
-    let near = wired || bt::salt_matches(&details, current) || check_proximity(&id, signature, wired).await;
+    let near = wired
+        || bt::salt_matches(&details, current)
+        || check_proximity(&id, signature, wired).await;
     if !near {
         let mut r = response_salt();
         r["errorCode"] = bt::ERROR_NOT_IN_PROXIMITY.into();
         respond(&m, false, r).await;
         return;
     }
-    let name = details.get("deviceName").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let name = details
+        .get("deviceName")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
     let (tx, rx) = tokio::sync::oneshot::channel();
     let busy = {
         let mut s = state();
@@ -396,7 +452,10 @@ async fn on_pair(m: Message, details: serde_json::Value, wired: bool, signature:
     }
     if let Some(qt) = QT.get() {
         let n = name.clone();
-        let _ = qt.queue(move |mut this| this.as_mut().better_together_pair_request(cxx_qt_lib::QString::from(n.as_str())));
+        let _ = qt.queue(move |mut this| {
+            this.as_mut()
+                .better_together_pair_request(cxx_qt_lib::QString::from(n.as_str()))
+        });
     }
     let answer = tokio::time::timeout(Duration::from_secs(bt::PAIR_PROMPT_SECS), rx).await;
     state().prompt = None;
@@ -406,7 +465,10 @@ async fn on_pair(m: Message, details: serde_json::Value, wired: bool, signature:
         Err(_) => Some(bt::REJECTED_BY_TIMEOUT),
     };
     if let Some(qt) = QT.get() {
-        let _ = qt.queue(|mut this| this.as_mut().better_together_pair_request(cxx_qt_lib::QString::default()));
+        let _ = qt.queue(|mut this| {
+            this.as_mut()
+                .better_together_pair_request(cxx_qt_lib::QString::default())
+        });
     }
     let mut r = response_salt();
     match outcome {
@@ -479,7 +541,13 @@ async fn keep_alive_round() {
         let wired = d.connection_type == bt::CONNECTION_WIRED;
         let near = check_proximity(&d.end_point_id, d.endpoint_signature, wired).await;
         let reply = if near {
-            send(&d.end_point_id, command::KEEP_ALIVE, response_salt(), Some(Duration::from_secs(60))).await
+            send(
+                &d.end_point_id,
+                command::KEEP_ALIVE,
+                response_salt(),
+                Some(Duration::from_secs(60)),
+            )
+            .await
         } else {
             Err("not near".into())
         };
@@ -508,10 +576,28 @@ async fn keep_alive_round() {
                 state().misses.remove(&d.end_point_id);
                 // Teams' disconnect: a lock command, Locked once the phone
                 // has it.
-                let locked = send(&d.end_point_id, command::LOCK, response_salt(), None).await.is_ok();
-                set_status(&d.end_point_id, if locked { bt::STATUS_LOCKED } else { bt::STATUS_PAIRED_NOT_CONNECTED });
+                let locked = send(&d.end_point_id, command::LOCK, response_salt(), None)
+                    .await
+                    .is_ok();
+                set_status(
+                    &d.end_point_id,
+                    if locked {
+                        bt::STATUS_LOCKED
+                    } else {
+                        bt::STATUS_PAIRED_NOT_CONNECTED
+                    },
+                );
             }
-        } else if alive && send(&d.end_point_id, command::UNLOCK, response_salt(), Some(Duration::from_secs(60))).await.is_ok() {
+        } else if alive
+            && send(
+                &d.end_point_id,
+                command::UNLOCK,
+                response_salt(),
+                Some(Duration::from_secs(60)),
+            )
+            .await
+            .is_ok()
+        {
             tracing::info!("Better Together: reconnected");
             set_status(&d.end_point_id, bt::STATUS_CONNECTED);
         }

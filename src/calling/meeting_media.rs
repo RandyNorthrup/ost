@@ -199,7 +199,10 @@ enum Command {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ControlCommand {
     /// We share (or stopped); `enabled`: our screen can be controlled.
-    Sharing { on: bool, enabled: bool },
+    Sharing {
+        on: bool,
+        enabled: bool,
+    },
     /// We watch this sharer (their data source), or nobody.
     Viewing(Option<u32>),
     Request,
@@ -352,7 +355,10 @@ impl MeetingVideo {
 
     /// Sign language mode: tell the meeting whether we are signing.
     pub fn send_sign_language(&self, detected: bool, duration_ms: u64) {
-        let _ = self.commands.send(Command::SignLanguage { detected, duration_ms });
+        let _ = self.commands.send(Command::SignLanguage {
+            detected,
+            duration_ms,
+        });
     }
 
     /// Give / take control: what the call window did.
@@ -478,23 +484,39 @@ fn control_out(session: &mut Session, sender: &DataSender, outs: Vec<super::scre
             Out::Send { to, message } => {
                 match session.screen_control(to, &message) {
                     Some(packet) => {
-                        tracing::info!(to, action = message.action, reason = message.terminated_reason, "screen control sent");
+                        tracing::info!(
+                            to,
+                            action = message.action,
+                            reason = message.terminated_reason,
+                            "screen control sent"
+                        );
                         sender.send(packet);
                     }
                     None => tracing::warn!("screen control before the data channel is up: dropped"),
                 }
                 continue;
             }
-            Out::Capable { capable, denied_by_sharer } => {
+            Out::Capable {
+                capable,
+                denied_by_sharer,
+            } => {
                 serde_json::json!({"type": "capable", "capable": capable, "deniedBySharer": denied_by_sharer})
             }
             Out::Controllable(list) => serde_json::json!({"type": "controllable", "sources": list}),
             Out::IncomingRequest { from } => serde_json::json!({"type": "request", "source": from}),
-            Out::RequestWithdrawn { from } => serde_json::json!({"type": "withdrawn", "source": from}),
-            Out::ControlChanged { in_control, controller, reason } => {
+            Out::RequestWithdrawn { from } => {
+                serde_json::json!({"type": "withdrawn", "source": from})
+            }
+            Out::ControlChanged {
+                in_control,
+                controller,
+                reason,
+            } => {
                 serde_json::json!({"type": "changed", "inControl": in_control, "controller": controller, "reason": reason})
             }
-            Out::RequestFailed { reason } => serde_json::json!({"type": "failed", "reason": reason}),
+            Out::RequestFailed { reason } => {
+                serde_json::json!({"type": "failed", "reason": reason})
+            }
         };
         tracing::info!(%body, "screen control");
         crate::event_hub::publish(

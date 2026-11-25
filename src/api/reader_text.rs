@@ -32,7 +32,11 @@ const O365_ALIAS: &str = "application/vnd.microsoft.card.o365connector";
 /// Teams' value ending: trimmed, then ". " (or " " after a final ".").
 fn ending(v: &str) -> String {
     let v = v.trim();
-    if v.ends_with('.') { format!("{v} ") } else { format!("{v}. ") }
+    if v.ends_with('.') {
+        format!("{v} ")
+    } else {
+        format!("{v}. ")
+    }
 }
 
 /// One field: "{label}:\n", the value (stripped of HTML when it is rich
@@ -40,7 +44,11 @@ fn ending(v: &str) -> String {
 fn field(label: &str, value: Option<&str>, rich: bool) -> String {
     let mut s = format!("{label}:\n");
     if let Some(v) = value.filter(|v| !v.is_empty()) {
-        let v = if rich { super::strip_html(v) } else { v.to_string() };
+        let v = if rich {
+            super::strip_html(v)
+        } else {
+            v.to_string()
+        };
         s.push_str(&ending(&v));
         s.push('\n');
     }
@@ -53,7 +61,10 @@ fn text<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
 }
 
 fn items(v: &Value, key: &str) -> Vec<Value> {
-    v.get(key).and_then(Value::as_array).cloned().unwrap_or_default()
+    v.get(key)
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
 }
 
 /// A hero, thumbnail or sign-in card (Teams' `_` with images and buttons;
@@ -62,22 +73,56 @@ fn rich_card(c: &Value) -> String {
     use crate::i18n::{fill, tr_id};
     let mut s = String::new();
     if let Some(t) = text(c, "title") {
-        s += &field(&tr_id("Card title", "extensibility:k2ijjo685"), Some(t), true);
+        s += &field(
+            &tr_id("Card title", "extensibility:k2ijjo685"),
+            Some(t),
+            true,
+        );
     }
     if let Some(t) = text(c, "subtitle") {
-        s += &field(&tr_id("Card subtitle", "extensibility:k8l4foksj"), Some(t), true);
+        s += &field(
+            &tr_id("Card subtitle", "extensibility:k8l4foksj"),
+            Some(t),
+            true,
+        );
     }
     if let Some(t) = text(c, "text") {
-        s += &field(&tr_id("Card text content", "extensibility:k7ilh3scw"), Some(t), true);
+        s += &field(
+            &tr_id("Card text content", "extensibility:k7ilh3scw"),
+            Some(t),
+            true,
+        );
     }
     for (i, _) in items(c, "images").iter().enumerate() {
-        s += &field(&fill(&tr_id("Image %1", "extensibility:k2h24475o"), &[&i.to_string()]), None, false);
+        s += &field(
+            &fill(
+                &tr_id("Image %1", "extensibility:k2h24475o"),
+                &[&i.to_string()],
+            ),
+            None,
+            false,
+        );
     }
     for (i, b) in items(c, "buttons").iter().enumerate() {
-        s += &field(&fill(&tr_id("Button %1", "extensibility:kbzcck3o9"), &[&(i + 1).to_string()]), None, false);
-        s += &field(&tr_id("Button title", "extensibility:k9q77qg7z"), text(b, "title"), false);
+        s += &field(
+            &fill(
+                &tr_id("Button %1", "extensibility:kbzcck3o9"),
+                &[&(i + 1).to_string()],
+            ),
+            None,
+            false,
+        );
+        s += &field(
+            &tr_id("Button title", "extensibility:k9q77qg7z"),
+            text(b, "title"),
+            false,
+        );
         if b.get("type").and_then(Value::as_str) == Some("openUrl") {
-            s += &field(&tr_id("Button value", "extensibility:k9qgnmda4"), text(b, "value"), false);
+            s += &field(
+                &tr_id("Button value", "extensibility:k9qgnmda4"),
+                text(b, "value"),
+                false,
+            );
         }
     }
     s
@@ -89,27 +134,62 @@ fn connector_card(c: &Value) -> String {
     use crate::i18n::{fill, tr_id};
     let mut s = String::new();
     if let Some(t) = text(c, "title") {
-        s += &field(&tr_id("Card title", "extensibility:k2ijjo685"), Some(t), false);
+        s += &field(
+            &tr_id("Card title", "extensibility:k2ijjo685"),
+            Some(t),
+            false,
+        );
     }
     if let Some(t) = text(c, "text") {
-        s += &field(&tr_id("Card text content", "extensibility:k7ilh3scw"), Some(t), false);
+        s += &field(
+            &tr_id("Card text content", "extensibility:k7ilh3scw"),
+            Some(t),
+            false,
+        );
     }
     for (i, sec) in items(c, "sections").iter().enumerate() {
-        s += &field(&fill(&tr_id("Section %1", "extensibility:k4xy4e1nr"), &[&(i + 1).to_string()]), None, false);
+        s += &field(
+            &fill(
+                &tr_id("Section %1", "extensibility:k4xy4e1nr"),
+                &[&(i + 1).to_string()],
+            ),
+            None,
+            false,
+        );
         if let Some(t) = text(sec, "title") {
-            s += &field(&tr_id("Section title", "extensibility:k69fise5l"), Some(t), false);
+            s += &field(
+                &tr_id("Section title", "extensibility:k69fise5l"),
+                Some(t),
+                false,
+            );
         }
         if let Some(t) = text(sec, "text") {
-            s += &field(&tr_id("Section text", "extensibility:kh56lnq4"), Some(t), false);
+            s += &field(
+                &tr_id("Section text", "extensibility:kh56lnq4"),
+                Some(t),
+                false,
+            );
         }
         if let Some(t) = text(sec, "activityTitle") {
-            s += &field(&tr_id("Activity title", "extensibility:k6ydkp59e"), Some(t), false);
+            s += &field(
+                &tr_id("Activity title", "extensibility:k6ydkp59e"),
+                Some(t),
+                false,
+            );
         }
         if let Some(t) = text(sec, "activitySubtitle") {
-            s += &field(&tr_id("Activity subtitle", "extensibility:k81ml4x3m"), Some(t), false);
+            s += &field(
+                &tr_id("Activity subtitle", "extensibility:k81ml4x3m"),
+                Some(t),
+                false,
+            );
         }
         if let Some(t) = text(sec, "activityText") {
-            s += &field(&tr_id("Activity text", "extensibility:k14gw10xb"), Some(t), false);
+            s += &field(
+                &tr_id("Activity text", "extensibility:k14gw10xb"),
+                Some(t),
+                false,
+            );
         }
     }
     s
@@ -140,9 +220,14 @@ pub fn reader_html(raw: &str, kind: &str, cards: &[(String, Value)]) -> String {
     static SPAN: OnceLock<regex::Regex> = OnceLock::new();
     static SWIFT: OnceLock<regex::Regex> = OnceLock::new();
     let re = if kind == "RichText/Media_Card" {
-        SWIFT.get_or_init(|| regex::Regex::new(r#"(?i)<URIObject type="SWIFT.1" url_thumbnail="(.*?)</URIObject>"#).expect("regex"))
+        SWIFT.get_or_init(|| {
+            regex::Regex::new(r#"(?i)<URIObject type="SWIFT.1" url_thumbnail="(.*?)</URIObject>"#)
+                .expect("regex")
+        })
     } else {
-        SPAN.get_or_init(|| regex::Regex::new(r#"(?i)<span itemid="(.*?)</span></span>"#).expect("regex"))
+        SPAN.get_or_init(|| {
+            regex::Regex::new(r#"(?i)<span itemid="(.*?)</span></span>"#).expect("regex")
+        })
     };
     let mut out = raw.to_string();
     for (t, c) in cards {
@@ -169,35 +254,59 @@ mod tests {
             "images": [{"url": "https://x/rust.png"}]});
         let raw = "<p>OST TEST 168a app card</p>\r\n<span itemid=\"c1\" itemtype=\"http://schema.skype.com/Card\"><span>card</span></span> tail";
         let got = reader_html(raw, "RichText/Html", &[(THUMBNAIL.into(), card)]);
-        assert_eq!(got, "<p>OST TEST 168a app card</p>\r\n<br> Card title:\nRust (programming language). \n\nCard text content:\nRust is a general-purpose programming language that emphasizes performance, type safety, concurrency, and memory safety. Rust supports multiple programming. \n\nImage 0:\n\n <br> tail");
+        assert_eq!(
+            got,
+            "<p>OST TEST 168a app card</p>\r\n<br> Card title:\nRust (programming language). \n\nCard text content:\nRust is a general-purpose programming language that emphasizes performance, type safety, concurrency, and memory safety. Rust supports multiple programming. \n\nImage 0:\n\n <br> tail"
+        );
     }
 
     #[test]
     fn values_end_once_and_html_is_stripped() {
         let c = json!({"title": "<b>Done.</b>", "subtitle": "Sub", "buttons": [{"type": "openUrl", "title": "Open", "value": "https://x"}, {"type": "imBack", "title": "Hi"}]});
-        assert_eq!(card_text(HERO, &c),
-            "Card title:\nDone. \n\nCard subtitle:\nSub. \n\nButton 1:\n\nButton title:\nOpen. \n\nButton value:\nhttps://x. \n\nButton 2:\n\nButton title:\nHi. \n\n");
+        assert_eq!(
+            card_text(HERO, &c),
+            "Card title:\nDone. \n\nCard subtitle:\nSub. \n\nButton 1:\n\nButton title:\nOpen. \n\nButton value:\nhttps://x. \n\nButton 2:\n\nButton title:\nHi. \n\n"
+        );
     }
 
     #[test]
     fn adaptive_cards_read_their_speak_only() {
-        assert_eq!(card_text(ADAPTIVE, &json!({"body": [{"type": "TextBlock", "text": "x"}]})), "");
-        assert_eq!(card_text(ADAPTIVE, &json!({"speak": "Hello there"})), "Hello there");
+        assert_eq!(
+            card_text(
+                ADAPTIVE,
+                &json!({"body": [{"type": "TextBlock", "text": "x"}]})
+            ),
+            ""
+        );
+        assert_eq!(
+            card_text(ADAPTIVE, &json!({"speak": "Hello there"})),
+            "Hello there"
+        );
         // No text leaves the placeholder.
         let raw = "a<span itemid=\"1\"><span>x</span></span>";
-        assert_eq!(reader_html(raw, "RichText/Html", &[(ADAPTIVE.into(), json!({}))]), raw);
+        assert_eq!(
+            reader_html(raw, "RichText/Html", &[(ADAPTIVE.into(), json!({}))]),
+            raw
+        );
     }
 
     #[test]
     fn connector_sections() {
         let c = json!({"title": "T", "sections": [{"activityTitle": "A", "text": "S", "facts": [{"name": "n", "value": "v"}]}]});
-        assert_eq!(card_text(O365_ALIAS, &c), "Card title:\nT. \n\nSection 1:\n\nSection text:\nS. \n\nActivity title:\nA. \n\n");
+        assert_eq!(
+            card_text(O365_ALIAS, &c),
+            "Card title:\nT. \n\nSection 1:\n\nSection text:\nS. \n\nActivity title:\nA. \n\n"
+        );
     }
 
     #[test]
     fn media_cards_replace_the_swift_object() {
         let raw = "<URIObject type=\"SWIFT.1\" url_thumbnail=\"x\"><Swift b64=\"..\"/></URIObject>";
-        let got = reader_html(raw, "RichText/Media_Card", &[(HERO.into(), json!({"title": "Hi"}))]);
+        let got = reader_html(
+            raw,
+            "RichText/Media_Card",
+            &[(HERO.into(), json!({"title": "Hi"}))],
+        );
         assert_eq!(got, "<br> Card title:\nHi. \n\n <br>");
     }
 }

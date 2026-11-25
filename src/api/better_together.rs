@@ -159,7 +159,10 @@ pub struct Endpoint {
 
 impl Endpoint {
     pub fn from_surl(id: &str, surl: &str) -> Self {
-        Self { id: id.to_string(), url: trouter_url(surl) }
+        Self {
+            id: id.to_string(),
+            url: trouter_url(surl),
+        }
     }
 
     /// A message from this endpoint.
@@ -187,14 +190,19 @@ impl Endpoint {
 /// the `-f` service front at 3443 turns a Skype token away with 401) and
 /// the path `bettertogether/send`.
 pub fn trouter_url(surl: &str) -> String {
-    let base = surl.trim_end_matches('/').replacen("-f.trouter.", "-t.trouter.", 1).replacen(":3443/", ":443/", 1);
+    let base = surl
+        .trim_end_matches('/')
+        .replacen("-f.trouter.", "-t.trouter.", 1)
+        .replacen(":3443/", ":443/", 1);
     format!("{base}/{TROUTER_PATH}/send")
 }
 
 /// Whether a pushed request's URL is a Better Together command.
 pub fn is_trouter_url(url: &str) -> bool {
     let path = url.split(['?', '#']).next().unwrap_or_default();
-    path.trim_end_matches('/').split('/').any(|seg| seg == TROUTER_PATH)
+    path.trim_end_matches('/')
+        .split('/')
+        .any(|seg| seg == TROUTER_PATH)
 }
 
 // ---- Paired devices ----
@@ -237,7 +245,13 @@ impl PairedDevice {
     /// The device a `pair` command describes, Connected (Teams'
     /// onUserResponse on Pair).
     pub fn from_pair(endpoint_id: &str, details: &serde_json::Value) -> Self {
-        let s = |k: &str| details.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let s = |k: &str| {
+            details
+                .get(k)
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
         Self {
             end_point_id: endpoint_id.to_string(),
             device_name: s("deviceName"),
@@ -260,7 +274,11 @@ pub fn connection_type(details: &serde_json::Value) -> u8 {
         .get("capabilities")
         .and_then(|c| c.as_array())
         .is_some_and(|c| c.iter().any(|x| x.as_str() == Some("WIRED_CONNECTION")));
-    if wired { CONNECTION_WIRED } else { CONNECTION_BLUETOOTH }
+    if wired {
+        CONNECTION_WIRED
+    } else {
+        CONNECTION_BLUETOOTH
+    }
 }
 
 /// The stored list (Teams' `BTPairedDevices`), every device disconnected.
@@ -283,7 +301,11 @@ pub fn salt_matches(details: &serde_json::Value, current: u16) -> bool {
     details
         .get("salt")
         .and_then(|s| s.as_array())
-        .is_some_and(|s| s.iter().take(2).any(|x| x.as_u64() == Some(u64::from(current))))
+        .is_some_and(|s| {
+            s.iter()
+                .take(2)
+                .any(|x| x.as_u64() == Some(u64::from(current)))
+        })
 }
 
 // ---- The phone's beacon ----
@@ -331,7 +353,9 @@ fn guid_bytes(id: &str) -> Vec<u8> {
     if hex.len() != 32 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Vec::new();
     }
-    (0..16).map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap_or(0)).collect()
+    (0..16)
+        .map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap_or(0))
+        .collect()
 }
 
 /// A GUID packed as Windows does (first three fields little-endian).
@@ -423,23 +447,44 @@ pub fn peers_in(listing: &serde_json::Value) -> Vec<Peer> {
         .unwrap_or_default();
     let mut out = Vec::new();
     for r in regs {
-        let id = r.get("registrationId").and_then(|v| v.as_str()).unwrap_or_default();
+        let id = r
+            .get("registrationId")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
         let cd = r.get("clientDescription").cloned().unwrap_or_default();
         let transports = r
             .get("transports")
             .and_then(|t| t.as_object())
-            .and_then(|t| t.iter().find(|(k, _)| k.eq_ignore_ascii_case("trouter")).map(|(_, v)| v.clone()))
+            .and_then(|t| {
+                t.iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case("trouter"))
+                    .map(|(_, v)| v.clone())
+            })
             .and_then(|v| v.as_array().cloned())
             .unwrap_or_default();
         for t in transports {
             let path = t.get("path").and_then(|v| v.as_str()).unwrap_or_default();
-            let context = t.get("context").and_then(|v| v.as_str()).unwrap_or_default();
-            if (context == TRANSPORT_CONTEXT || is_trouter_url(path)) && !id.is_empty() && !path.is_empty() {
+            let context = t
+                .get("context")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            if (context == TRANSPORT_CONTEXT || is_trouter_url(path))
+                && !id.is_empty()
+                && !path.is_empty()
+            {
                 out.push(Peer {
                     id: id.to_string(),
                     url: path.to_string(),
-                    app_id: cd.get("appId").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-                    platform: cd.get("platform").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+                    app_id: cd
+                        .get("appId")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    platform: cd
+                        .get("platform")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
                 });
             }
         }
@@ -448,7 +493,11 @@ pub fn peers_in(listing: &serde_json::Value) -> Vec<Peer> {
 }
 
 /// The user's Better Together endpoints (the transport's discover).
-pub async fn discover(http: &reqwest::Client, skype_token: &str, registrar_url: &str) -> Result<Vec<Peer>> {
+pub async fn discover(
+    http: &reqwest::Client,
+    skype_token: &str,
+    registrar_url: &str,
+) -> Result<Vec<Peer>> {
     let r = http
         .get(registrar_url.trim_end_matches('/'))
         .header("X-Skypetoken", skype_token)
@@ -466,13 +515,21 @@ pub async fn discover(http: &reqwest::Client, skype_token: &str, registrar_url: 
 
 /// Send one command to a peer's URL; the answer is the peer's
 /// acknowledgement (its status and body).
-pub async fn send(http: &reqwest::Client, skype_token: &str, url: &str, msg: &Message) -> Result<(u16, String)> {
+pub async fn send(
+    http: &reqwest::Client,
+    skype_token: &str,
+    url: &str,
+    msg: &Message,
+) -> Result<(u16, String)> {
     let r = http
         .post(url)
         .header("X-Skypetoken", skype_token)
         .header("MS-CV", format!("{}.1", uuid::Uuid::new_v4().simple()))
         .header("X-Microsoft-Skype-Chain-ID", &msg.debug_content.chain_id)
-        .header("X-Microsoft-Skype-Message-ID", uuid::Uuid::new_v4().to_string())
+        .header(
+            "X-Microsoft-Skype-Message-ID",
+            uuid::Uuid::new_v4().to_string(),
+        )
         .header("Content-Type", "application/json")
         .body(serde_json::to_string(msg)?)
         .send()
@@ -485,7 +542,11 @@ pub async fn send(http: &reqwest::Client, skype_token: &str, url: &str, msg: &Me
 
 /// The `response` a command's receiver sends back: its result fields plus
 /// Teams' `requestCauseId` and `statusCode`.
-pub fn response_details(request: &Message, ok: bool, mut result: serde_json::Value) -> serde_json::Value {
+pub fn response_details(
+    request: &Message,
+    ok: bool,
+    mut result: serde_json::Value,
+) -> serde_json::Value {
     if !result.is_object() {
         result = serde_json::json!({});
     }
@@ -509,20 +570,40 @@ pub fn set_paired_ids(ids: Vec<String>) {
 /// (only broadcast, pair, autopair and log uploads come from strangers).
 pub fn acknowledgement(body: &str, own_endpoint: Option<&str>) -> (u16, String) {
     let Ok(msg) = serde_json::from_str::<Message>(body) else {
-        return (STATUS_FAILED, serde_json::json!({"errorCode": ERROR_INVALID_REQUEST}).to_string());
+        return (
+            STATUS_FAILED,
+            serde_json::json!({"errorCode": ERROR_INVALID_REQUEST}).to_string(),
+        );
     };
     let details = msg.details();
-    if let (Some(target), Some(own)) = (details.get("targetEndpointId").and_then(|v| v.as_str()), own_endpoint)
-        && !target.is_empty()
+    if let (Some(target), Some(own)) = (
+        details.get("targetEndpointId").and_then(|v| v.as_str()),
+        own_endpoint,
+    ) && !target.is_empty()
         && target != own
     {
-        return (STATUS_FAILED, serde_json::json!({"errorCode": ERROR_WRONG_ENDPOINT}).to_string());
+        return (
+            STATUS_FAILED,
+            serde_json::json!({"errorCode": ERROR_WRONG_ENDPOINT}).to_string(),
+        );
     }
-    let open = [command::RESPONSE, command::BROADCAST, command::PAIR, command::AUTOPAIR, "uploadbettertogetherlogs"];
+    let open = [
+        command::RESPONSE,
+        command::BROADCAST,
+        command::PAIR,
+        command::AUTOPAIR,
+        "uploadbettertogetherlogs",
+    ];
     let name = msg.name();
-    let paired = PAIRED.lock().unwrap_or_else(|e| e.into_inner()).contains(&msg.registration_id);
+    let paired = PAIRED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .contains(&msg.registration_id);
     if !open.contains(&name.as_str()) && !paired {
-        return (STATUS_FAILED, serde_json::json!({"errorCode": ERROR_NOT_PAIRED}).to_string());
+        return (
+            STATUS_FAILED,
+            serde_json::json!({"errorCode": ERROR_NOT_PAIRED}).to_string(),
+        );
     }
     (STATUS_OK, "{}".into())
 }
@@ -563,7 +644,11 @@ mod tests {
     fn messages_carry_details_as_text() {
         let ep = Endpoint::from_surl("ep-1", "https://t.example/v4/f/abc/");
         assert_eq!(ep.url, "https://t.example/v4/f/abc/bettertogether/send");
-        let m = ep.message(command::PAIR, &serde_json::json!({"deviceName": "Phone"}), 3);
+        let m = ep.message(
+            command::PAIR,
+            &serde_json::json!({"deviceName": "Phone"}),
+            3,
+        );
         let v = serde_json::to_value(&m).unwrap();
         assert_eq!(v["commandDetails"], "{\"deviceName\":\"Phone\"}");
         assert_eq!(v["transportDetails"]["endpointType"], "BetterTogether");
@@ -576,8 +661,12 @@ mod tests {
         assert_eq!(back.name(), "pair");
         assert_eq!(back.details()["deviceName"], "X");
         assert_eq!(back.cause_id(), "c");
-        assert!(is_trouter_url("https://t.example/v4/f/abc/bettertogether/send"));
-        assert!(!is_trouter_url("https://t.example/v4/f/abc/NGCallManagerWin"));
+        assert!(is_trouter_url(
+            "https://t.example/v4/f/abc/bettertogether/send"
+        ));
+        assert!(!is_trouter_url(
+            "https://t.example/v4/f/abc/NGCallManagerWin"
+        ));
     }
 
     #[test]
@@ -609,7 +698,10 @@ mod tests {
             .unwrap()
         };
         assert_eq!(acknowledgement(&m("stranger", "pair"), None).0, STATUS_OK);
-        assert_eq!(acknowledgement(&m("stranger", "keepalive"), None).0, STATUS_FAILED);
+        assert_eq!(
+            acknowledgement(&m("stranger", "keepalive"), None).0,
+            STATUS_FAILED
+        );
         assert_eq!(acknowledgement(&m("known", "unpair"), None).0, STATUS_OK);
         set_paired_ids(Vec::new());
     }
@@ -627,7 +719,10 @@ mod tests {
         ]});
         let p = peers_in(&v);
         assert_eq!(p.len(), 1);
-        assert_eq!((p[0].id.as_str(), p[0].app_id.as_str()), ("pc", "NextGenCalling"));
+        assert_eq!(
+            (p[0].id.as_str(), p[0].app_id.as_str()),
+            ("pc", "NextGenCalling")
+        );
         assert!(p[0].url.ends_with("/bettertogether/send"));
     }
 }

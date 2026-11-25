@@ -213,7 +213,13 @@ async fn main() -> Result<()> {
             // Redial then, as a person would.
             for attempt in 1..=3 {
                 let result = calling::call_test::run_call_test(
-                    duration, record, echo, thread.clone(), camera, display, tone,
+                    duration,
+                    record,
+                    echo,
+                    thread.clone(),
+                    camera,
+                    display,
+                    tone,
                 )
                 .await?;
                 if !result.callee_never_joined || attempt == 3 {

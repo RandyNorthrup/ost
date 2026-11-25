@@ -31,7 +31,12 @@ pub async fn profile_card(client: &TeamsClient, oid: &str) -> Result<serde_json:
         .ok()
         .map(|r| async move { r.json::<serde_json::Value>().await.ok() });
     let my_mail = match my_mail {
-        Some(f) => f.await.and_then(|v| v["mail"].as_str().or(v["userPrincipalName"].as_str()).map(str::to_string)),
+        Some(f) => f.await.and_then(|v| {
+            v["mail"]
+                .as_str()
+                .or(v["userPrincipalName"].as_str())
+                .map(str::to_string)
+        }),
         None => None,
     };
     anyhow::ensure!(
@@ -44,21 +49,37 @@ pub async fn profile_card(client: &TeamsClient, oid: &str) -> Result<serde_json:
         .json()
         .await
         .context("Profile reply")?;
-    if let Ok(Some(r)) = client.graph_get_opt(&format!("/users/{oid}/manager?$select=id,displayName,jobTitle")).await
+    if let Ok(Some(r)) = client
+        .graph_get_opt(&format!(
+            "/users/{oid}/manager?$select=id,displayName,jobTitle"
+        ))
+        .await
         && let Ok(m) = r.json::<serde_json::Value>().await
     {
         card["manager"] = person(&m);
     }
     if let Ok(r) = client
-        .graph_get(&format!("/users/{oid}/directReports?$select=id,displayName,jobTitle"))
+        .graph_get(&format!(
+            "/users/{oid}/directReports?$select=id,displayName,jobTitle"
+        ))
         .await
         && let Ok(v) = r.json::<serde_json::Value>().await
     {
-        card["reports"] = serde_json::Value::Array(v["value"].as_array().into_iter().flatten().map(person).collect());
+        card["reports"] = serde_json::Value::Array(
+            v["value"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(person)
+                .collect(),
+        );
     }
     if let Some(mail) = card["mail"].as_str().or(card["userPrincipalName"].as_str()) {
         let now = chrono::Utc::now();
-        let schedules: Vec<String> = [Some(mail.to_string()), my_mail.clone()].into_iter().flatten().collect();
+        let schedules: Vec<String> = [Some(mail.to_string()), my_mail.clone()]
+            .into_iter()
+            .flatten()
+            .collect();
         let body = serde_json::json!({
             "schedules": schedules,
             "startTime": { "dateTime": now.format("%Y-%m-%dT%H:%M:%S").to_string(), "timeZone": "UTC" },
@@ -121,15 +142,29 @@ fn org_person(v: &serde_json::Value) -> serde_json::Value {
 pub fn org_from(body: &str) -> Option<serde_json::Value> {
     let mut root: Option<serde_json::Value> = None;
     // A plain JSON answer, or `multipart/mixed` parts each with a JSON body.
-    let parts: Vec<&str> = if body.trim_start().starts_with('{') { vec![body] } else { body.split("\r\n---").chain(std::iter::empty()).collect() };
+    let parts: Vec<&str> = if body.trim_start().starts_with('{') {
+        vec![body]
+    } else {
+        body.split("\r\n---").chain(std::iter::empty()).collect()
+    };
     for part in parts {
         let Some(at) = part.find('{') else { continue };
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(part[at..].trim_end().trim_end_matches("-----").trim_end_matches("---").trim()) else { continue };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(
+            part[at..]
+                .trim_end()
+                .trim_end_matches("-----")
+                .trim_end_matches("---")
+                .trim(),
+        ) else {
+            continue;
+        };
         if let Some(d) = v.get("data") {
             root = Some(d.clone());
         }
         for inc in v["incremental"].as_array().into_iter().flatten() {
-            let (Some(r), Some(path)) = (root.as_mut(), inc["path"].as_array()) else { continue };
+            let (Some(r), Some(path)) = (root.as_mut(), inc["path"].as_array()) else {
+                continue;
+            };
             let mut at = r;
             for p in path {
                 at = match p {
@@ -160,7 +195,8 @@ pub fn org_from(body: &str) -> Option<serde_json::Value> {
 /// lokiTokenResourceUrl https://loki.delve.office.com/).
 pub async fn org_chart(client: &TeamsClient, oid: &str, smtp: &str) -> Result<serde_json::Value> {
     anyhow::ensure!(uuid::Uuid::parse_str(oid).is_ok(), "Not a user id: {oid}");
-    let token = crate::auth::oauth::access_token_for("https://loki.delve.office.com//.default").await?;
+    let token =
+        crate::auth::oauth::access_token_for("https://loki.delve.office.com//.default").await?;
     let body = serde_json::json!({
         "operationName": "useOrgExplorerQueryRef_OrganizationQuery",
         "variables": { "personIds": { "aadObjectId": oid, "smtp": smtp }, "directsToLoad": 20, "worksWithToLoad": 25, "isMto": false },
@@ -170,13 +206,18 @@ pub async fn org_chart(client: &TeamsClient, oid: &str, smtp: &str) -> Result<se
     for host in [loki_host(), "https://loki.delve.office.com".to_string()] {
         let r = client
             .http()
-            .post(format!("{host}/api/v2/graphql?operationName=useOrgExplorerQueryRef_OrganizationQuery"))
+            .post(format!(
+                "{host}/api/v2/graphql?operationName=useOrgExplorerQueryRef_OrganizationQuery"
+            ))
             .bearer_auth(&token)
             .header("accept", "application/json")
             .header("x-clientfeature", "LivePersonaCard")
             .header("x-clienttype", "Teams")
             .header("x-clientscenario", "GetOrgExplorerV2")
-            .header("scenariotag", "Teams_useOrgExplorerQueryRef_OrganizationQuery")
+            .header(
+                "scenariotag",
+                "Teams_useOrgExplorerQueryRef_OrganizationQuery",
+            )
             .json(&body)
             .send()
             .await;
@@ -203,11 +244,15 @@ fn loki_host() -> String {
 /// digit per 30 minutes from `start`: 0 free, 1 tentative, 2 busy, 3 out of
 /// office, 4 working elsewhere): the start of the first free slot after a
 /// busy one, or None when free now or never in the window.
-pub fn next_free(view: &str, start: chrono::DateTime<chrono::Utc>) -> Option<chrono::DateTime<chrono::Utc>> {
+pub fn next_free(
+    view: &str,
+    start: chrono::DateTime<chrono::Utc>,
+) -> Option<chrono::DateTime<chrono::Utc>> {
     if view.starts_with('0') {
         return None;
     }
-    view.find('0').map(|i| start + chrono::Duration::minutes(30 * i as i64))
+    view.find('0')
+        .map(|i| start + chrono::Duration::minutes(30 * i as i64))
 }
 
 #[cfg(test)]
@@ -231,9 +276,14 @@ mod tests {
 
     #[test]
     fn next_free_is_the_first_free_slot_after_busy() {
-        let start = chrono::DateTime::parse_from_rfc3339("2026-11-10T11:00:00Z").unwrap().with_timezone(&chrono::Utc);
+        let start = chrono::DateTime::parse_from_rfc3339("2026-11-10T11:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
         assert_eq!(next_free("000", start), None);
-        assert_eq!(next_free("2200", start).unwrap().to_rfc3339(), "2026-11-10T12:00:00+00:00");
+        assert_eq!(
+            next_free("2200", start).unwrap().to_rfc3339(),
+            "2026-11-10T12:00:00+00:00"
+        );
         assert_eq!(next_free("3333", start), None);
     }
 }

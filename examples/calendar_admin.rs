@@ -8,7 +8,10 @@ async fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
     let client = TeamsClient::new().await?;
     match (args.next().as_deref(), args.next()) {
-        (Some("create"), Some(name)) => println!("{}", teams_cli::api::calendar::create_calendar(&client, &name).await?),
+        (Some("create"), Some(name)) => println!(
+            "{}",
+            teams_cli::api::calendar::create_calendar(&client, &name).await?
+        ),
         (Some("delete"), Some(id)) => {
             teams_cli::api::calendar::delete_calendar(&client, &id).await?;
             println!("deleted");

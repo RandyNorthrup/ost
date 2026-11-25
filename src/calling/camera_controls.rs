@@ -17,8 +17,8 @@
 
 use anyhow::{Context, Result};
 use serde::Serialize;
-use v4l::control::{Description, Flags, MenuItem, Type};
 use v4l::Device;
+use v4l::control::{Description, Flags, MenuItem, Type};
 
 pub const BRIGHTNESS: u32 = 0x0098_0900;
 pub const CONTRAST: u32 = 0x0098_0901;
@@ -145,12 +145,21 @@ struct Ctrl {
 fn ioctl<T>(d: &Device, request: v4l::v4l2::vidioc::_IOC_TYPE, arg: &mut T) -> std::io::Result<()> {
     // SAFETY: `arg` is the request's own structure (same layout as the
     // kernel's), live for the call.
-    unsafe { v4l::v4l2::ioctl(d.handle().fd(), request, arg as *mut T as *mut std::os::raw::c_void) }
+    unsafe {
+        v4l::v4l2::ioctl(
+            d.handle().fd(),
+            request,
+            arg as *mut T as *mut std::os::raw::c_void,
+        )
+    }
 }
 
 impl Cam {
     fn query(&self, id: u32) -> Option<Description> {
-        let mut q = QueryCtrl { id, ..Default::default() };
+        let mut q = QueryCtrl {
+            id,
+            ..Default::default()
+        };
         ioctl(&self.dev, v4l::v4l2::vidioc::VIDIOC_QUERYCTRL, &mut q).ok()?;
         if q.id != id {
             return None;
@@ -162,11 +171,18 @@ impl Cam {
             9 => Type::IntegerMenu,
             _ => return None,
         };
-        let name = String::from_utf8_lossy(&q.name).trim_end_matches('\0').to_string();
+        let name = String::from_utf8_lossy(&q.name)
+            .trim_end_matches('\0')
+            .to_string();
         let items = matches!(typ, Type::Menu | Type::IntegerMenu).then(|| {
             (q.minimum..=q.maximum)
                 .filter_map(|i| {
-                    let mut m = QueryMenu { id, index: i as u32, name: [0; 32], reserved: 0 };
+                    let mut m = QueryMenu {
+                        id,
+                        index: i as u32,
+                        name: [0; 32],
+                        reserved: 0,
+                    };
                     ioctl(&self.dev, v4l::v4l2::vidioc::VIDIOC_QUERYMENU, &mut m).ok()?;
                     let raw = m.name;
                     let item = if typ == Type::IntegerMenu {
@@ -174,7 +190,11 @@ impl Cam {
                         v.copy_from_slice(&raw[..8]);
                         MenuItem::Value(i64::from_ne_bytes(v))
                     } else {
-                        MenuItem::Name(String::from_utf8_lossy(&raw).trim_end_matches('\0').to_string())
+                        MenuItem::Name(
+                            String::from_utf8_lossy(&raw)
+                                .trim_end_matches('\0')
+                                .to_string(),
+                        )
                     };
                     Some((i as u32, item))
                 })
@@ -209,13 +229,18 @@ impl Cam {
     }
 
     fn put(&self, id: u32, value: i64) -> std::io::Result<()> {
-        let mut c = Ctrl { id, value: i32::try_from(value).unwrap_or(0) };
+        let mut c = Ctrl {
+            id,
+            value: i32::try_from(value).unwrap_or(0),
+        };
         ioctl(&self.dev, v4l::v4l2::vidioc::VIDIOC_S_CTRL, &mut c)
     }
 }
 
 fn open(path: &str) -> Result<Cam> {
-    Ok(Cam { dev: Device::with_path(path).with_context(|| format!("Can't open {path}"))? })
+    Ok(Cam {
+        dev: Device::with_path(path).with_context(|| format!("Can't open {path}"))?,
+    })
 }
 
 fn value_of(d: &Cam, id: u32) -> Option<i64> {
@@ -232,8 +257,13 @@ fn kind_of(t: Type) -> Option<&'static str> {
 }
 
 fn set_value(d: &Cam, desc: &Description, v: i64) -> Result<()> {
-    let v = if desc.typ == Type::Boolean { i64::from(v != 0) } else { v };
-    d.put(desc.id, v).with_context(|| format!("Setting {} to {v}", desc.name))
+    let v = if desc.typ == Type::Boolean {
+        i64::from(v != 0)
+    } else {
+        v
+    };
+    d.put(desc.id, v)
+        .with_context(|| format!("Setting {} to {v}", desc.name))
 }
 
 /// The automatic mode an automatic control takes when on.
@@ -242,16 +272,31 @@ fn auto_value(desc: &Description) -> i64 {
         return 1;
     }
     // UVC cameras offer manual and aperture priority; others full auto.
-    let offered = |v: i64| desc.items.as_ref().is_some_and(|i| i.iter().any(|(k, _)| i64::from(*k) == v));
-    if offered(EXPOSURE_APERTURE_PRIORITY) { EXPOSURE_APERTURE_PRIORITY } else { EXPOSURE_AUTO_MODE }
+    let offered = |v: i64| {
+        desc.items
+            .as_ref()
+            .is_some_and(|i| i.iter().any(|(k, _)| i64::from(*k) == v))
+    };
+    if offered(EXPOSURE_APERTURE_PRIORITY) {
+        EXPOSURE_APERTURE_PRIORITY
+    } else {
+        EXPOSURE_AUTO_MODE
+    }
 }
 
 fn is_auto(desc: &Description, v: i64) -> bool {
-    if desc.id == EXPOSURE_AUTO { v != EXPOSURE_MANUAL } else { v != 0 }
+    if desc.id == EXPOSURE_AUTO {
+        v != EXPOSURE_MANUAL
+    } else {
+        v != 0
+    }
 }
 
 fn usable(desc: &Description) -> bool {
-    !desc.flags.intersects(Flags::DISABLED | Flags::READ_ONLY | Flags::WRITE_ONLY) && kind_of(desc.typ).is_some()
+    !desc
+        .flags
+        .intersects(Flags::DISABLED | Flags::READ_ONLY | Flags::WRITE_ONLY)
+        && kind_of(desc.typ).is_some()
 }
 
 /// Whether the camera's automatic controls are on (all of those it has);
@@ -275,10 +320,18 @@ pub fn set_auto(path: &str, on: bool) -> Result<usize> {
     let descs = d.query_controls()?;
     let mut set = 0;
     for (id, manual) in AUTO_CONTROLS {
-        let Some(desc) = descs.iter().find(|x| x.id == id && usable(x)) else { continue };
+        let Some(desc) = descs.iter().find(|x| x.id == id && usable(x)) else {
+            continue;
+        };
         // What the camera chose, so turning auto off doesn't jump.
         let reached = manual.and_then(|m| value_of(&d, m).map(|v| (m, v)));
-        let v = if on { auto_value(desc) } else if id == EXPOSURE_AUTO { EXPOSURE_MANUAL } else { 0 };
+        let v = if on {
+            auto_value(desc)
+        } else if id == EXPOSURE_AUTO {
+            EXPOSURE_MANUAL
+        } else {
+            0
+        };
         set_value(&d, desc, v)?;
         set += 1;
         if !on
@@ -303,7 +356,9 @@ pub fn set_preferred_auto(on: Option<bool>) {
 /// Put the camera's automatic controls as chosen (Teams' loadAutoCameraSettings
 /// as the camera starts).
 pub fn apply_preferred(path: &str) {
-    let Some(on) = *PREFERRED.lock().unwrap_or_else(|e| e.into_inner()) else { return };
+    let Some(on) = *PREFERRED.lock().unwrap_or_else(|e| e.into_inner()) else {
+        return;
+    };
     if let Err(e) = set_auto(path, on) {
         tracing::info!("camera automatic controls: {e:#}");
     }
@@ -313,19 +368,37 @@ pub fn apply_preferred(path: &str) {
 pub fn controls(path: &str) -> Result<Vec<CameraControl>> {
     let d = open(path)?;
     let descs = d.query_controls()?;
-    let auto_of = |id: u32| AUTO_CONTROLS.iter().find(|(_, m)| *m == Some(id)).map(|(a, _)| *a);
+    let auto_of = |id: u32| {
+        AUTO_CONTROLS
+            .iter()
+            .find(|(_, m)| *m == Some(id))
+            .map(|(a, _)| *a)
+    };
     let mut out = Vec::new();
     for (id, name) in ORDER {
-        let Some(desc) = descs.iter().find(|x| x.id == id && usable(x)) else { continue };
+        let Some(desc) = descs.iter().find(|x| x.id == id && usable(x)) else {
+            continue;
+        };
         // Automatic white balance shows with White balance, unless the
         // camera has no temperature to set.
-        if id == AUTO_WHITE_BALANCE && descs.iter().any(|x| x.id == WHITE_BALANCE_TEMPERATURE && usable(x)) {
+        if id == AUTO_WHITE_BALANCE
+            && descs
+                .iter()
+                .any(|x| x.id == WHITE_BALANCE_TEMPERATURE && usable(x))
+        {
             continue;
         }
-        let Some(value) = value_of(&d, id) else { continue };
+        let Some(value) = value_of(&d, id) else {
+            continue;
+        };
         let auto_id = auto_of(id).filter(|a| descs.iter().any(|x| x.id == *a && usable(x)));
         let auto = auto_id
-            .and_then(|a| descs.iter().find(|x| x.id == a).and_then(|ad| value_of(&d, a).map(|v| is_auto(ad, v))))
+            .and_then(|a| {
+                descs
+                    .iter()
+                    .find(|x| x.id == a)
+                    .and_then(|ad| value_of(&d, a).map(|v| is_auto(ad, v)))
+            })
             .unwrap_or(false);
         out.push(CameraControl {
             id,
@@ -360,9 +433,18 @@ pub fn controls(path: &str) -> Result<Vec<CameraControl>> {
 pub fn set(path: &str, id: u32, value: i64) -> Result<()> {
     let d = open(path)?;
     let descs = d.query_controls()?;
-    let desc = descs.iter().find(|x| x.id == id && usable(x)).context("The camera has no such control")?;
+    let desc = descs
+        .iter()
+        .find(|x| x.id == id && usable(x))
+        .context("The camera has no such control")?;
     let v = if AUTO_CONTROLS.iter().any(|(a, _)| *a == id) {
-        if value != 0 { auto_value(desc) } else if id == EXPOSURE_AUTO { EXPOSURE_MANUAL } else { 0 }
+        if value != 0 {
+            auto_value(desc)
+        } else if id == EXPOSURE_AUTO {
+            EXPOSURE_MANUAL
+        } else {
+            0
+        }
     } else {
         value.clamp(desc.minimum, desc.maximum)
     };
@@ -373,10 +455,12 @@ pub fn set(path: &str, id: u32, value: i64) -> Result<()> {
 pub fn reset(path: &str) -> Result<()> {
     let d = open(path)?;
     for desc in d.query_controls()? {
-        if (ORDER.iter().any(|(id, _)| *id == desc.id) || AUTO_CONTROLS.iter().any(|(a, _)| *a == desc.id))
-            && usable(&desc) {
-                let _ = set_value(&d, &desc, desc.default);
-            }
+        if (ORDER.iter().any(|(id, _)| *id == desc.id)
+            || AUTO_CONTROLS.iter().any(|(a, _)| *a == desc.id))
+            && usable(&desc)
+        {
+            let _ = set_value(&d, &desc, desc.default);
+        }
     }
     Ok(())
 }
@@ -388,14 +472,23 @@ mod tests {
     fn desc(id: u32, items: &[u32]) -> Description {
         Description {
             id,
-            typ: if items.is_empty() { Type::Boolean } else { Type::Menu },
+            typ: if items.is_empty() {
+                Type::Boolean
+            } else {
+                Type::Menu
+            },
             name: String::new(),
             minimum: 0,
             maximum: 3,
             step: 1,
             default: 0,
             flags: Flags::empty(),
-            items: (!items.is_empty()).then(|| items.iter().map(|&k| (k, MenuItem::Name(k.to_string()))).collect()),
+            items: (!items.is_empty()).then(|| {
+                items
+                    .iter()
+                    .map(|&k| (k, MenuItem::Name(k.to_string())))
+                    .collect()
+            }),
         }
     }
 

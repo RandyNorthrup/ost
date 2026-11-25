@@ -29,7 +29,12 @@ fn enc(s: &str) -> String {
 /// (winpc, 2026-11-16): the name, description, privacy and the first
 /// channel's name (required in the form), with empty naming-policy
 /// prefix and suffix.
-pub fn scratch_body(name: &str, description: &str, public: bool, first_channel: &str) -> serde_json::Value {
+pub fn scratch_body(
+    name: &str,
+    description: &str,
+    public: bool,
+    first_channel: &str,
+) -> serde_json::Value {
     serde_json::json!({
         "displayName": name.trim(),
         "description": description,
@@ -50,7 +55,12 @@ pub struct Created {
 }
 
 fn created_from(v: &serde_json::Value) -> Created {
-    let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    let s = |k: &str| {
+        v.get(k)
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     let thread = [s("threadId"), s("skypeThreadId"), s("id")]
         .into_iter()
         .find(|t| t.starts_with("19:"))
@@ -59,7 +69,10 @@ fn created_from(v: &serde_json::Value) -> Created {
         .into_iter()
         .find(|g| g.len() == 36 && !g.starts_with("19:"))
         .unwrap_or_default();
-    Created { group_id: group, thread_id: thread }
+    Created {
+        group_id: group,
+        thread_id: thread,
+    }
 }
 
 async fn send(req: reqwest::RequestBuilder, what: &str) -> Result<serde_json::Value> {
@@ -67,7 +80,10 @@ async fn send(req: reqwest::RequestBuilder, what: &str) -> Result<serde_json::Va
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
     if !status.is_success() {
-        anyhow::bail!("{what}: {status} {}", text.chars().take(200).collect::<String>());
+        anyhow::bail!(
+            "{what}: {status} {}",
+            text.chars().take(200).collect::<String>()
+        );
     }
     Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null))
 }
@@ -75,9 +91,20 @@ async fn send(req: reqwest::RequestBuilder, what: &str) -> Result<serde_json::Va
 /// Create a team from scratch.
 /// `POST {teamsAndChannelsProvisioningService}/team/v2?async=false` (the
 /// templates service, as Teams desktop creates a team from scratch).
-pub async fn create_from_scratch(client: &TeamsClient, body: &serde_json::Value) -> Result<Created> {
+pub async fn create_from_scratch(
+    client: &TeamsClient,
+    body: &serde_json::Value,
+) -> Result<Created> {
     let (base, token) = provisioning(client).await?;
-    let v = send(client.http().post(format!("{base}/team/v2?async=false")).bearer_auth(&token).json(body), "Create team").await?;
+    let v = send(
+        client
+            .http()
+            .post(format!("{base}/team/v2?async=false"))
+            .bearer_auth(&token)
+            .json(body),
+        "Create team",
+    )
+    .await?;
     Ok(created_from(&v))
 }
 
@@ -98,7 +125,12 @@ pub struct Template {
 }
 
 pub fn templates_from(v: &serde_json::Value) -> Vec<Template> {
-    let s = |x: &serde_json::Value, k: &str| x.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let s = |x: &serde_json::Value, k: &str| {
+        x.get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     v["value"]
         .as_array()
         .into_iter()
@@ -109,7 +141,12 @@ pub fn templates_from(v: &serde_json::Value) -> Vec<Template> {
             short_description: s(t, "shortDescription"),
             description: s(t, "description"),
             icon: s(t, "iconUri"),
-            category: t["categories"].as_array().and_then(|c| c.first()).and_then(|c| c.as_str()).unwrap_or_default().to_string(),
+            category: t["categories"]
+                .as_array()
+                .and_then(|c| c.first())
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string(),
             channels: t["channelCount"].as_u64().unwrap_or(0),
             apps: t["appCount"].as_u64().unwrap_or(0),
             path: s(t, "@odata.id"),
@@ -122,7 +159,13 @@ pub fn templates_from(v: &serde_json::Value) -> Vec<Template> {
 pub async fn templates(client: &TeamsClient, locale: &str) -> Result<Vec<Template>> {
     let (base, token) = provisioning(client).await?;
     let v = send(
-        client.http().get(format!("{base}/teamtemplates/v1.0/{}", locale.to_lowercase())).bearer_auth(&token),
+        client
+            .http()
+            .get(format!(
+                "{base}/teamtemplates/v1.0/{}",
+                locale.to_lowercase()
+            ))
+            .bearer_auth(&token),
         "Templates",
     )
     .await?;
@@ -163,7 +206,8 @@ pub fn template_details_from(v: &serde_json::Value, locale: &str) -> TemplateDet
     let mut listed = channels.clone();
     listed.sort_by(|a, b| {
         let g = |c: &serde_json::Value| c["id"].as_str() != Some("General");
-        let n = |c: &serde_json::Value| c["displayName"].as_str().unwrap_or_default().to_lowercase();
+        let n =
+            |c: &serde_json::Value| c["displayName"].as_str().unwrap_or_default().to_lowercase();
         g(a).cmp(&g(b)).then_with(|| n(a).cmp(&n(b)))
     });
     // Apps: the template's apps, each with the SharePoint lists or pages
@@ -197,7 +241,12 @@ pub fn template_details_from(v: &serde_json::Value, locale: &str) -> TemplateDet
         locale: locale.to_string(),
         channels,
         listed_channels: listed,
-        app_ids: def["apps"].as_array().into_iter().flatten().filter_map(|a| a["id"].as_str().map(str::to_string)).collect(),
+        app_ids: def["apps"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|a| a["id"].as_str().map(str::to_string))
+            .collect(),
         apps,
         visibility: def["visibility"].as_str().unwrap_or("Private").to_string(),
     }
@@ -206,12 +255,27 @@ pub fn template_details_from(v: &serde_json::Value, locale: &str) -> TemplateDet
 /// A template's details: Teams drops "/api/" from its `@odata.id`. Its
 /// apps get their names and icons from the middle tier's definitions, and
 /// are listed by name.
-pub async fn template_details(client: &TeamsClient, path: &str, locale: &str) -> Result<TemplateDetails> {
+pub async fn template_details(
+    client: &TeamsClient,
+    path: &str,
+    locale: &str,
+) -> Result<TemplateDetails> {
     let (base, token) = provisioning(client).await?;
     let rel = path.trim_start_matches('/').trim_start_matches("api/");
-    let v = send(client.http().get(format!("{base}/{rel}")).bearer_auth(&token), "Template").await?;
+    let v = send(
+        client
+            .http()
+            .get(format!("{base}/{rel}"))
+            .bearer_auth(&token),
+        "Template",
+    )
+    .await?;
     let mut d = template_details_from(&v, locale);
-    let ids: Vec<String> = d.apps.iter().filter_map(|a| a["id"].as_str().map(str::to_string)).collect();
+    let ids: Vec<String> = d
+        .apps
+        .iter()
+        .filter_map(|a| a["id"].as_str().map(str::to_string))
+        .collect();
     if let Ok(defs) = definitions(client, &ids).await {
         name_apps(&mut d.apps, &defs);
     }
@@ -224,10 +288,17 @@ pub async fn template_details(client: &TeamsClient, path: &str, locale: &str) ->
 pub fn name_apps(apps: &mut Vec<serde_json::Value>, defs: &[serde_json::Value]) {
     for a in apps.iter_mut() {
         let id = a["id"].as_str().unwrap_or_default().to_lowercase();
-        if let Some(d) = defs.iter().find(|d| d["id"].as_str().map(str::to_lowercase).as_deref() == Some(id.as_str())) {
+        if let Some(d) = defs
+            .iter()
+            .find(|d| d["id"].as_str().map(str::to_lowercase).as_deref() == Some(id.as_str()))
+        {
             a["name"] = d["name"].clone();
             a["icon"] = serde_json::json!(
-                [d["largeImageUrl"].as_str(), d["smallImageUrl"].as_str()].into_iter().flatten().find(|u| !u.is_empty()).unwrap_or_default()
+                [d["largeImageUrl"].as_str(), d["smallImageUrl"].as_str()]
+                    .into_iter()
+                    .flatten()
+                    .find(|u| !u.is_empty())
+                    .unwrap_or_default()
             );
         }
     }
@@ -241,8 +312,21 @@ pub async fn definitions(client: &TeamsClient, ids: &[String]) -> Result<Vec<ser
         return Ok(Vec::new());
     }
     let (base, token) = middle_tier(client).await?;
-    let v = send(client.http().post(format!("{base}/beta/users/apps/batchedDefinitions")).bearer_auth(&token).json(&ids), "Apps").await?;
-    Ok(v.get("value").cloned().unwrap_or(v).as_array().cloned().unwrap_or_default())
+    let v = send(
+        client
+            .http()
+            .post(format!("{base}/beta/users/apps/batchedDefinitions"))
+            .bearer_auth(&token)
+            .json(&ids),
+        "Apps",
+    )
+    .await?;
+    Ok(v.get("value")
+        .cloned()
+        .unwrap_or(v)
+        .as_array()
+        .cloned()
+        .unwrap_or_default())
 }
 
 /// Teams' create-from-template body.
@@ -268,9 +352,20 @@ pub fn template_body(
     })
 }
 
-pub async fn create_from_template(client: &TeamsClient, body: &serde_json::Value) -> Result<Created> {
+pub async fn create_from_template(
+    client: &TeamsClient,
+    body: &serde_json::Value,
+) -> Result<Created> {
     let (base, token) = provisioning(client).await?;
-    let v = send(client.http().post(format!("{base}/team")).bearer_auth(&token).json(body), "Create team").await?;
+    let v = send(
+        client
+            .http()
+            .post(format!("{base}/team"))
+            .bearer_auth(&token)
+            .json(body),
+        "Create team",
+    )
+    .await?;
     Ok(created_from(&v))
 }
 
@@ -284,7 +379,14 @@ pub struct ClonePick {
 }
 
 /// Teams' clone body for the template service.
-pub fn clone_body(group_id: &str, owner: &str, name: &str, description: &str, public: bool, pick: ClonePick) -> serde_json::Value {
+pub fn clone_body(
+    group_id: &str,
+    owner: &str,
+    name: &str,
+    description: &str,
+    public: bool,
+    pick: ClonePick,
+) -> serde_json::Value {
     serde_json::json!({
         "displayName": name.trim(),
         "description": description,
@@ -300,10 +402,18 @@ pub fn clone_body(group_id: &str, owner: &str, name: &str, description: &str, pu
     })
 }
 
-pub async fn clone_team(client: &TeamsClient, group_id: &str, body: &serde_json::Value) -> Result<Created> {
+pub async fn clone_team(
+    client: &TeamsClient,
+    group_id: &str,
+    body: &serde_json::Value,
+) -> Result<Created> {
     let (base, token) = provisioning(client).await?;
     let v = send(
-        client.http().post(format!("{base}/groups/{}/clone/v2", enc(group_id))).bearer_auth(&token).json(body),
+        client
+            .http()
+            .post(format!("{base}/groups/{}/clone/v2", enc(group_id)))
+            .bearer_auth(&token)
+            .json(body),
         "Create team",
     )
     .await?;
@@ -321,15 +431,30 @@ pub struct Group {
 }
 
 pub fn groups_from(v: &serde_json::Value) -> Vec<Group> {
-    let list = v.as_array().or_else(|| v["value"].as_array()).cloned().unwrap_or_default();
+    let list = v
+        .as_array()
+        .or_else(|| v["value"].as_array())
+        .cloned()
+        .unwrap_or_default();
     list.iter()
         .map(|g| {
-            let s = |k: &str| g.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+            let s = |k: &str| {
+                g.get(k)
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_string()
+            };
             Group {
-                id: [s("groupId"), s("id")].into_iter().find(|x| !x.is_empty()).unwrap_or_default(),
+                id: [s("groupId"), s("id")]
+                    .into_iter()
+                    .find(|x| !x.is_empty())
+                    .unwrap_or_default(),
                 name: s("displayName"),
                 description: s("description"),
-                mail: [s("smtpAddress"), s("mail")].into_iter().find(|x| !x.is_empty()).unwrap_or_default(),
+                mail: [s("smtpAddress"), s("mail")]
+                    .into_iter()
+                    .find(|x| !x.is_empty())
+                    .unwrap_or_default(),
                 members: g.get("memberCount").and_then(|x| x.as_u64()).unwrap_or(0),
             }
         })
@@ -338,7 +463,14 @@ pub fn groups_from(v: &serde_json::Value) -> Vec<Group> {
 
 pub async fn my_groups(client: &TeamsClient) -> Result<Vec<Group>> {
     let (base, token) = middle_tier(client).await?;
-    let v = send(client.http().get(format!("{base}/beta/teams/usergroups?teamType=undefined")).bearer_auth(&token), "Groups").await?;
+    let v = send(
+        client
+            .http()
+            .get(format!("{base}/beta/teams/usergroups?teamType=undefined"))
+            .bearer_auth(&token),
+        "Groups",
+    )
+    .await?;
     Ok(groups_from(&v))
 }
 
@@ -356,7 +488,11 @@ pub fn group_body(group: &Group) -> serde_json::Value {
 pub async fn create_from_group(client: &TeamsClient, group: &Group) -> Result<Created> {
     let (base, token) = middle_tier(client).await?;
     let v = send(
-        client.http().put(format!("{base}/beta/teams/migrateGroup/{}", enc(&group.id))).bearer_auth(&token).json(&group_body(group)),
+        client
+            .http()
+            .put(format!("{base}/beta/teams/migrateGroup/{}", enc(&group.id)))
+            .bearer_auth(&token)
+            .json(&group_body(group)),
         "Create team",
     )
     .await?;
@@ -405,16 +541,32 @@ pub fn joinable_from(v: &serde_json::Value) -> (Vec<JoinableTeam>, String) {
             }
         })
         .collect();
-    (teams, v["skipToken"].as_str().unwrap_or_default().to_string())
+    (
+        teams,
+        v["skipToken"].as_str().unwrap_or_default().to_string(),
+    )
 }
 
 pub async fn suggested(client: &TeamsClient) -> Result<Vec<JoinableTeam>> {
     let (base, token) = middle_tier(client).await?;
-    let v = send(client.http().get(format!("{base}/beta/teams/suggested?accessType=All&enableFallback=true")).bearer_auth(&token), "Teams for you").await?;
+    let v = send(
+        client
+            .http()
+            .get(format!(
+                "{base}/beta/teams/suggested?accessType=All&enableFallback=true"
+            ))
+            .bearer_auth(&token),
+        "Teams for you",
+    )
+    .await?;
     Ok(joinable_from(&v).0)
 }
 
-pub async fn find(client: &TeamsClient, keywords: &str, skip: &str) -> Result<(Vec<JoinableTeam>, String)> {
+pub async fn find(
+    client: &TeamsClient,
+    keywords: &str,
+    skip: &str,
+) -> Result<(Vec<JoinableTeam>, String)> {
     let (base, token) = middle_tier(client).await?;
     let v = send(
         client
@@ -452,7 +604,9 @@ pub async fn join_by_code(client: &TeamsClient, code: &str) -> Result<serde_json
     send(
         client
             .http()
-            .post(format!("{base}/beta/teams/joinByCode?restrictJoinToPublicTeam=false"))
+            .post(format!(
+                "{base}/beta/teams/joinByCode?restrictJoinToPublicTeam=false"
+            ))
             .bearer_auth(&token)
             .json(&serde_json::Value::String(code.trim().to_string())),
         "Join team",
@@ -472,7 +626,10 @@ mod tests {
             b,
             serde_json::json!({"displayName":"OST TEST 0195 teams team","description":"","displayNamePrefix":"","displayNameSuffix":"","visibility":"Private","firstChannelName":"OST TEST channel","isTenantWide":false})
         );
-        assert_eq!(scratch_body("T", "d", true, "General")["visibility"], "Public");
+        assert_eq!(
+            scratch_body("T", "d", true, "General")["visibility"],
+            "Public"
+        );
     }
 
     #[test]
@@ -483,7 +640,10 @@ mod tests {
             "channelCount": 4, "appCount": 7, "visibility": "Private", "categories": ["General"],
             "@odata.id": "/api/teamtemplates/v1.0/com.microsoft.teams.template.ManageAProject/Public/en-US"}]});
         let t = &templates_from(&v)[0];
-        assert_eq!((t.name.as_str(), t.category.as_str(), t.channels, t.apps), ("Manage a Project", "General", 4, 7));
+        assert_eq!(
+            (t.name.as_str(), t.category.as_str(), t.channels, t.apps),
+            ("Manage a Project", "General", 4, 7)
+        );
         let d = serde_json::json!({"value": {"templateId": "x", "displayName": "Manage a Project", "description": "d",
             "teamDefinition": {"visibility": "Private", "channels": [
                 {"id": "General", "displayName": "General", "tabs": [{"teamsAppId": "app1", "name": "Power Automate"}]},
@@ -494,33 +654,77 @@ mod tests {
                 {"sharePointAssetAppId": "lists", "sharePointAssetName": "Project Tracker"}]}]}}}});
         let mut d = template_details_from(&d, "en-US");
         assert_eq!(d.channels.len(), 2);
-        name_apps(&mut d.apps, &[serde_json::json!({"id": "APP2", "name": "OneNote", "largeImageUrl": "https://x/o.png"}), serde_json::json!({"id": "lists", "name": "Lists"})]);
-        assert_eq!(d.apps.iter().map(|a| a["name"].as_str().unwrap()).collect::<Vec<_>>(), vec!["Lists", "OneNote"]);
-        assert_eq!(d.apps[0]["items"], serde_json::json!(["Issue Tracker", "Project Tracker"]));
+        name_apps(
+            &mut d.apps,
+            &[
+                serde_json::json!({"id": "APP2", "name": "OneNote", "largeImageUrl": "https://x/o.png"}),
+                serde_json::json!({"id": "lists", "name": "Lists"}),
+            ],
+        );
+        assert_eq!(
+            d.apps
+                .iter()
+                .map(|a| a["name"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["Lists", "OneNote"]
+        );
+        assert_eq!(
+            d.apps[0]["items"],
+            serde_json::json!(["Issue Tracker", "Project Tracker"])
+        );
         let b = template_body("x", "en-US", "T", "", false, &d.channels, &d.app_ids);
-        assert_eq!(b["channels"][1], serde_json::json!({"id": "c1", "displayName": "Planning"}));
-        assert_eq!(b["apps"], serde_json::json!([{"id": "app2"}, {"id": "lists"}, {"id": "unknown"}]));
+        assert_eq!(
+            b["channels"][1],
+            serde_json::json!({"id": "c1", "displayName": "Planning"})
+        );
+        assert_eq!(
+            b["apps"],
+            serde_json::json!([{"id": "app2"}, {"id": "lists"}, {"id": "unknown"}])
+        );
         assert_eq!(b["visibility"], "Private");
     }
 
     #[test]
     fn clone_and_group_bodies_are_teams() {
-        let b = clone_body("g", "me", "OST Test Team [copy]", "", false, ClonePick { tabs: true, settings: true, members: false });
+        let b = clone_body(
+            "g",
+            "me",
+            "OST Test Team [copy]",
+            "",
+            false,
+            ClonePick {
+                tabs: true,
+                settings: true,
+                members: false,
+            },
+        );
         assert_eq!(b["includeRoster"], false);
         assert_eq!(b["includeChannels"], true);
         assert_eq!(b["visibility"], "Private");
-        let g = Group { id: "g".into(), name: "G".into(), description: "".into(), mail: "g@x".into(), members: 3 };
+        let g = Group {
+            id: "g".into(),
+            name: "G".into(),
+            description: "".into(),
+            mail: "g@x".into(),
+            members: 3,
+        };
         assert_eq!(group_body(&g)["teamType"], 0);
         assert!(groups_from(&serde_json::json!([])).is_empty());
     }
 
     #[test]
     fn joinable_and_created_read() {
-        let (t, skip) = joinable_from(&serde_json::json!({"type": "Microsoft.Teams.MiddleTier.TeamsAndChannels.Contracts.Models.SearchTeam", "value": []}));
+        let (t, skip) = joinable_from(
+            &serde_json::json!({"type": "Microsoft.Teams.MiddleTier.TeamsAndChannels.Contracts.Models.SearchTeam", "value": []}),
+        );
         assert!(t.is_empty() && skip.is_empty());
-        let (t, _) = joinable_from(&serde_json::json!({"value": [{"groupId": "g", "displayName": "D", "accessType": "Private", "memberCount": 4}]}));
+        let (t, _) = joinable_from(
+            &serde_json::json!({"value": [{"groupId": "g", "displayName": "D", "accessType": "Private", "memberCount": 4}]}),
+        );
         assert!(t[0].private && t[0].status == "NotJoined");
-        let c = created_from(&serde_json::json!({"groupId": "1fac3ae3-c9c0-4ddb-90bb-58f52209c181", "threadId": "19:x@thread.tacv2"}));
+        let c = created_from(
+            &serde_json::json!({"groupId": "1fac3ae3-c9c0-4ddb-90bb-58f52209c181", "threadId": "19:x@thread.tacv2"}),
+        );
         assert_eq!(c.thread_id, "19:x@thread.tacv2");
         assert_eq!(c.group_id.len(), 36);
     }

@@ -38,8 +38,12 @@ pub struct Category {
 
 /// The front matter's fields and the rest.
 fn front_matter(text: &str) -> (Vec<(String, String)>, String) {
-    let Some(rest) = text.strip_prefix("---\n") else { return (Vec::new(), text.to_string()) };
-    let Some(end) = rest.find("\n---") else { return (Vec::new(), text.to_string()) };
+    let Some(rest) = text.strip_prefix("---\n") else {
+        return (Vec::new(), text.to_string());
+    };
+    let Some(end) = rest.find("\n---") else {
+        return (Vec::new(), text.to_string());
+    };
     let fields = rest[..end]
         .lines()
         .filter_map(|l| l.split_once(':'))
@@ -50,23 +54,39 @@ fn front_matter(text: &str) -> (Vec<(String, String)>, String) {
 }
 
 fn field(fields: &[(String, String)], key: &str) -> String {
-    fields.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone()).unwrap_or_default()
+    fields
+        .iter()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
 }
 
 /// The categories with their articles from `files` ([(path under
 /// docs/help, text)]), in Teams' order; articles by title.
 pub fn library(files: &[(&str, &str)]) -> Vec<Category> {
-    let mut cats: Vec<Category> = CATEGORIES.iter().map(|c| Category { id: c.to_string(), ..Default::default() }).collect();
+    let mut cats: Vec<Category> = CATEGORIES
+        .iter()
+        .map(|c| Category {
+            id: c.to_string(),
+            ..Default::default()
+        })
+        .collect();
     for (path, text) in files {
-        let Some((cat, file)) = path.split_once('/') else { continue };
-        let Some(c) = cats.iter_mut().find(|c| c.id == cat) else { continue };
+        let Some((cat, file)) = path.split_once('/') else {
+            continue;
+        };
+        let Some(c) = cats.iter_mut().find(|c| c.id == cat) else {
+            continue;
+        };
         let (fields, body) = front_matter(text);
         if file == "index.md" {
             c.title = field(&fields, "title");
             c.description = field(&fields, "description");
             continue;
         }
-        let Some(slug) = file.strip_suffix(".md") else { continue };
+        let Some(slug) = file.strip_suffix(".md") else {
+            continue;
+        };
         c.articles.push(Article {
             id: format!("{cat}/{slug}"),
             category: cat.to_string(),
@@ -91,11 +111,17 @@ pub fn search(cats: &[Category], query: &str) -> Vec<Article> {
     }
     let mut hits: Vec<(u32, Article)> = Vec::new();
     for a in cats.iter().flat_map(|c| &c.articles) {
-        let (t, d, b) = (a.title.to_lowercase(), a.description.to_lowercase(), a.body.to_lowercase());
+        let (t, d, b) = (
+            a.title.to_lowercase(),
+            a.description.to_lowercase(),
+            a.body.to_lowercase(),
+        );
         let mut score = 0;
         let mut all = true;
         for w in &words {
-            let s = 8 * u32::from(t.contains(w.as_str())) + 3 * u32::from(d.contains(w.as_str())) + u32::from(b.contains(w.as_str()));
+            let s = 8 * u32::from(t.contains(w.as_str()))
+                + 3 * u32::from(d.contains(w.as_str()))
+                + u32::from(b.contains(w.as_str()));
             if s == 0 {
                 all = false;
                 break;
@@ -115,9 +141,18 @@ mod tests {
     use super::*;
 
     const FILES: [(&str, &str); 4] = [
-        ("chat/index.md", "---\ntitle: Chat\ndescription: One-on-one, in a group, or with yourself.\n---\n"),
-        ("chat/find-in-a-chat.md", "---\ntitle: Find something in a chat\ndescription: Search one chat.\nfeatured: true\n---\n\n# Find something in a chat\n\nPress Ctrl+F.\n"),
-        ("chat/start-a-chat.md", "---\ntitle: Start a chat\ndescription: Chat with people.\n---\n\nSelect New message, then search for people.\n"),
+        (
+            "chat/index.md",
+            "---\ntitle: Chat\ndescription: One-on-one, in a group, or with yourself.\n---\n",
+        ),
+        (
+            "chat/find-in-a-chat.md",
+            "---\ntitle: Find something in a chat\ndescription: Search one chat.\nfeatured: true\n---\n\n# Find something in a chat\n\nPress Ctrl+F.\n",
+        ),
+        (
+            "chat/start-a-chat.md",
+            "---\ntitle: Start a chat\ndescription: Chat with people.\n---\n\nSelect New message, then search for people.\n",
+        ),
         ("nowhere/x.md", "---\ntitle: X\n---\n"),
     ];
 
@@ -127,10 +162,16 @@ mod tests {
         assert_eq!(lib.len(), 9);
         assert_eq!(lib[1].id, "chat");
         assert_eq!(lib[1].title, "Chat");
-        assert_eq!(lib[1].description, "One-on-one, in a group, or with yourself.");
+        assert_eq!(
+            lib[1].description,
+            "One-on-one, in a group, or with yourself."
+        );
         assert_eq!(lib[1].articles.len(), 2);
         let f = &lib[1].articles[0];
-        assert_eq!((f.id.as_str(), f.title.as_str(), f.featured), ("chat/find-in-a-chat", "Find something in a chat", true));
+        assert_eq!(
+            (f.id.as_str(), f.title.as_str(), f.featured),
+            ("chat/find-in-a-chat", "Find something in a chat", true)
+        );
         assert!(f.body.starts_with("# Find something in a chat"));
     }
 
@@ -138,9 +179,16 @@ mod tests {
     fn search_ranks_titles_first_and_needs_every_word() {
         let lib = library(&FILES);
         let r = search(&lib, "people search");
-        assert_eq!(r.iter().map(|a| a.title.as_str()).collect::<Vec<_>>(), ["Start a chat"], "only articles with both words");
+        assert_eq!(
+            r.iter().map(|a| a.title.as_str()).collect::<Vec<_>>(),
+            ["Start a chat"],
+            "only articles with both words"
+        );
         let r = search(&lib, "chat search");
-        assert_eq!(r[0].title, "Find something in a chat", "title and description outrank the text");
+        assert_eq!(
+            r[0].title, "Find something in a chat",
+            "title and description outrank the text"
+        );
         let r = search(&lib, "chat");
         assert_eq!(r[0].title, "Find something in a chat");
         assert!(search(&lib, "  ").is_empty());

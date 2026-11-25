@@ -373,7 +373,9 @@ pub async fn run_call_test(
     if let Some(ref ack_url) = acceptance.acknowledgement_url {
         match signaling::acknowledge_call_acceptance(&http, ack_url, &conv_params).await {
             Ok(ack) if signaling::became_hostless_meeting(&ack) => {
-                tracing::warn!("The callee never answered: the service made the call a hostless meeting with only us in it");
+                tracing::warn!(
+                    "The callee never answered: the service made the call a hostless meeting with only us in it"
+                );
                 println!("callee_never_joined=true");
                 let end = acceptance.end_url.clone().or_else(|| {
                     acceptance.call_leg_url.as_ref().map(|u| match u.find('?') {
@@ -384,7 +386,10 @@ pub async fn run_call_test(
                 if let Some(url) = end {
                     end_call_by_url(&http, skype_token_str, &url).await.ok();
                 }
-                return Ok(CallTestResult { callee_never_joined: true, ..CallTestResult::failed(None) });
+                return Ok(CallTestResult {
+                    callee_never_joined: true,
+                    ..CallTestResult::failed(None)
+                });
             }
             Ok(_) => {}
             Err(e) => tracing::warn!("Failed to acknowledge call acceptance: {:#}", e),

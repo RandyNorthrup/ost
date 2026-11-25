@@ -21,7 +21,11 @@ pub async fn search_people(client: &TeamsClient, query: &str) -> Result<Vec<Pers
 
 /// Search the directory, with you among the results when `include_me`
 /// (Teams' status message picker suggests you too).
-pub async fn search_directory(client: &TeamsClient, query: &str, include_me: bool) -> Result<Vec<Person>> {
+pub async fn search_directory(
+    client: &TeamsClient,
+    query: &str,
+    include_me: bool,
+) -> Result<Vec<Person>> {
     let q = query.trim();
     if q.is_empty() {
         return Ok(Vec::new());
@@ -116,10 +120,19 @@ mod tests {
     fn short_names_as_teams() {
         use super::short_name;
         assert_eq!(short_name("en-us", "Test 2", "OST", "OST Test 2"), "OST");
-        assert_eq!(short_name("en-us", "Northrup", "Randy", "Randy Northrup"), "Randy");
-        assert_eq!(short_name("en-us", "Northrup", "Randy", "Northrup, Randy (IT)"), "Northrup, Randy");
+        assert_eq!(
+            short_name("en-us", "Northrup", "Randy", "Randy Northrup"),
+            "Randy"
+        );
+        assert_eq!(
+            short_name("en-us", "Northrup", "Randy", "Northrup, Randy (IT)"),
+            "Northrup, Randy"
+        );
         assert_eq!(short_name("en-us", "", "", "Someone"), "Someone");
-        assert_eq!(short_name("ja-jp", "山田（営業）", "太郎", "山田 太郎"), "山田");
+        assert_eq!(
+            short_name("ja-jp", "山田（営業）", "太郎", "山田 太郎"),
+            "山田"
+        );
     }
 
     use super::*;
@@ -172,8 +185,14 @@ pub enum PhotoOwner {
 /// winpc 2026-11-15): the other people (not you, not bots), by display
 /// name, the first three.
 pub fn group_picture_members(mut people: Vec<(String, String)>, me: &str) -> Vec<(String, String)> {
-    people.retain(|(mri, name)| mri.starts_with("8:") && !mri.eq_ignore_ascii_case(me) && !name.is_empty());
-    people.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()).then_with(|| a.0.cmp(&b.0)));
+    people.retain(|(mri, name)| {
+        mri.starts_with("8:") && !mri.eq_ignore_ascii_case(me) && !name.is_empty()
+    });
+    people.sort_by(|a, b| {
+        a.1.to_lowercase()
+            .cmp(&b.1.to_lowercase())
+            .then_with(|| a.0.cmp(&b.0))
+    });
     people.truncate(3);
     people
 }
@@ -223,13 +242,21 @@ pub async fn photo(
         // A group chat: its members (the chat service) and their names
         // (one short-profile request), then the merged picture (64 px, as
         // Teams asks for it).
-        anyhow::ensure!(id.starts_with("19:") && !id.contains(['/', '?', '#']), "Not a chat id");
-        let me = format!("8:orgid:{}", client.object_id().context("No signed-in user")?);
+        anyhow::ensure!(
+            id.starts_with("19:") && !id.contains(['/', '?', '#']),
+            "Not a chat id"
+        );
+        let me = format!(
+            "8:orgid:{}",
+            client.object_id().context("No signed-in user")?
+        );
         let ids = super::chat::thread_member_ids(client, id).await?;
         let names: Vec<(String, String)> = short_profiles(client, &ids).await.unwrap_or_default();
         let members = group_picture_members(names, &me);
         anyhow::ensure!(!members.is_empty(), "No members to draw");
-        let users: String = url::form_urlencoded::byte_serialize(merged_picture_users(&members).as_bytes()).collect();
+        let users: String =
+            url::form_urlencoded::byte_serialize(merged_picture_users(&members).as_bytes())
+                .collect();
         format!(
             "{base}/beta/users/{}/mergedProfilePicturev2?usersInfo={users}&size=HR64x64",
             me.trim_start_matches("8:orgid:")
@@ -289,7 +316,10 @@ mod group_picture_tests {
             ("8:orgid:aaaa".to_string(), "Zed".to_string()),
         ];
         let got = group_picture_members(people, me);
-        assert_eq!(got.iter().map(|p| p.1.as_str()).collect::<Vec<_>>(), ["OST Guest 01", "OST Guest 02", "OST Test 2"]);
+        assert_eq!(
+            got.iter().map(|p| p.1.as_str()).collect::<Vec<_>>(),
+            ["OST Guest 01", "OST Guest 02", "OST Test 2"]
+        );
         assert!(merged_picture_users(&got[..1]).contains(r#""displayName":"OST Guest 01""#));
     }
 }
@@ -298,7 +328,10 @@ mod group_picture_tests {
 /// by MRI (`POST {mt}/beta/users/fetchShortProfile` with the MRIs; the
 /// reply's `value` lists `{mri, displayName, userPrincipalName, ...}`).
 /// Unknown MRIs are left out.
-pub async fn short_profile_records(client: &TeamsClient, mris: &[String]) -> Result<Vec<serde_json::Value>> {
+pub async fn short_profile_records(
+    client: &TeamsClient,
+    mris: &[String],
+) -> Result<Vec<serde_json::Value>> {
     let mris: Vec<&String> = mris.iter().filter(|m| m.starts_with("8:")).collect();
     if mris.is_empty() {
         return Ok(Vec::new());
@@ -324,7 +357,13 @@ pub async fn short_profile_records(client: &TeamsClient, mris: &[String]) -> Res
 /// name up to any "(" when it starts with the surname instead; in Japanese
 /// the surname; otherwise the display name.
 pub fn short_name(locale: &str, surname: &str, given: &str, display: &str) -> String {
-    let before_paren = |s: &str| s.split(['(', '\u{FF08}']).next().unwrap_or_default().trim().to_string();
+    let before_paren = |s: &str| {
+        s.split(['(', '\u{FF08}'])
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_string()
+    };
     let starts_given = !given.is_empty() && display.starts_with(given);
     let starts_surname = !surname.is_empty() && display.starts_with(surname);
     let name = if !surname.is_empty() && locale.eq_ignore_ascii_case("ja-jp") {
@@ -336,17 +375,27 @@ pub fn short_name(locale: &str, surname: &str, given: &str, display: &str) -> St
     } else {
         String::new()
     };
-    if name.is_empty() { display.to_string() } else { name }
+    if name.is_empty() {
+        display.to_string()
+    } else {
+        name
+    }
 }
 
 /// People's display names by MRI (short_profile_records' `displayName`).
-pub async fn short_profiles(client: &TeamsClient, mris: &[String]) -> Result<Vec<(String, String)>> {
+pub async fn short_profiles(
+    client: &TeamsClient,
+    mris: &[String],
+) -> Result<Vec<(String, String)>> {
     Ok(short_profile_records(client, mris)
         .await?
         .iter()
         .filter_map(|p| {
             let mri = p["mri"].as_str()?.to_string();
-            let name = p["displayName"].as_str().filter(|n| !n.is_empty())?.to_string();
+            let name = p["displayName"]
+                .as_str()
+                .filter(|n| !n.is_empty())?
+                .to_string();
             Some((mri, name))
         })
         .collect())

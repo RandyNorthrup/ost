@@ -114,7 +114,12 @@ impl Watch {
 
     /// One second of the call: whether you're muted, whether the mic gave
     /// any sound since the last second, and the network's strength.
-    pub fn second(&mut self, muted: bool, mic_signal: bool, strength: super::network_quality::Strength) {
+    pub fn second(
+        &mut self,
+        muted: bool,
+        mic_signal: bool,
+        strength: super::network_quality::Strength,
+    ) {
         if !muted {
             self.unmuted_seconds += 1;
             self.heard |= mic_signal;
@@ -178,7 +183,11 @@ impl Watch {
 /// (measured 2026-11-16: about 25 s after the bot joins).
 pub fn echo_bot_active(json: &str) -> Option<bool> {
     let v: serde_json::Value = serde_json::from_str(json).ok()?;
-    if !v.get("callAgentPath")?.as_str()?.starts_with("conversation/rosterUpdate") {
+    if !v
+        .get("callAgentPath")?
+        .as_str()?
+        .starts_with("conversation/rosterUpdate")
+    {
         return None;
     }
     let bot = v
@@ -197,7 +206,10 @@ fn shown(line: &str) -> String {
         NOT_FOUND => tr_id("None found", "calling:k1rtppmbu"),
         MUTED => tr_id("Muted", "calling:k1o7odb5c"),
         DIDNT_WORK => tr_id("Didn’t work", "calling:k1q73vjhd"),
-        NEED_PERMISSION => tr_id("OST needs permission to use this device", "calling:kbjwrznk4"),
+        NEED_PERMISSION => tr_id(
+            "OST needs permission to use this device",
+            "calling:kbjwrznk4",
+        ),
         CALL_DROP => tr_id("Call drop detected", "calling:kd1cxyrd8"),
         POOR_CONNECTION => tr_id("Poor connection", "calling:k4akbphhr"),
         other => other.to_string(),
@@ -207,7 +219,12 @@ fn shown(line: &str) -> String {
 /// The screen's rows: (name, the device's label, its problems), as
 /// Teams' `X` builds them: "Microphone - <device>", "Speaker - <device>",
 /// "Camera - <device>", "Network" (in the app language).
-pub fn rows(report: &Report, mic: Option<&str>, speaker: Option<&str>, camera: Option<&str>) -> serde_json::Value {
+pub fn rows(
+    report: &Report,
+    mic: Option<&str>,
+    speaker: Option<&str>,
+    camera: Option<&str>,
+) -> serde_json::Value {
     use crate::i18n::tr_id;
     let label = |name: String, device: Option<&str>| match device.filter(|d| !d.is_empty()) {
         Some(d) => format!("{name} - {d}"),
@@ -290,17 +307,37 @@ mod tests {
     fn device_and_network_problems() {
         use crate::calling::device_health::{Devices, Open};
         let mut w = Watch::new();
-        let ok = Devices { mic: Open::Ok, speaker: Open::Ok, camera: Open::Ok, camera_silent_ms: Some(40), online: true };
+        let ok = Devices {
+            mic: Open::Ok,
+            speaker: Open::Ok,
+            camera: Open::Ok,
+            camera_silent_ms: Some(40),
+            online: true,
+        };
         w.devices(&ok);
         assert_eq!(w.report, Report::default());
         // A camera that stops giving frames for 5 s froze.
-        w.devices(&Devices { camera_silent_ms: Some(CAMERA_FREEZE_MS - 1), ..ok });
+        w.devices(&Devices {
+            camera_silent_ms: Some(CAMERA_FREEZE_MS - 1),
+            ..ok
+        });
         assert!(w.report.camera.is_empty());
-        w.devices(&Devices { camera_silent_ms: Some(CAMERA_FREEZE_MS), ..ok });
+        w.devices(&Devices {
+            camera_silent_ms: Some(CAMERA_FREEZE_MS),
+            ..ok
+        });
         assert_eq!(w.report.camera, vec![DIDNT_WORK]);
         // Permission refused, and the network gone.
-        w.devices(&Devices { mic: Open::Permission, camera: Open::Permission, online: false, ..ok });
-        w.devices(&Devices { online: false, ..ok });
+        w.devices(&Devices {
+            mic: Open::Permission,
+            camera: Open::Permission,
+            online: false,
+            ..ok
+        });
+        w.devices(&Devices {
+            online: false,
+            ..ok
+        });
         assert_eq!(w.report.microphone, vec![NEED_PERMISSION]);
         // A refused mic's silence isn't reported as well.
         for _ in 0..10 {
@@ -310,7 +347,10 @@ mod tests {
         assert_eq!(w.report.camera, vec![DIDNT_WORK, NEED_PERMISSION]);
         assert_eq!(w.report.network, vec![CALL_DROP]);
         // A speaker that failed to start didn't work.
-        w.devices(&Devices { speaker: Open::Failed, ..ok });
+        w.devices(&Devices {
+            speaker: Open::Failed,
+            ..ok
+        });
         assert_eq!(w.report.speaker, vec![DIDNT_WORK]);
     }
 

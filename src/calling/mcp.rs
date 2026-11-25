@@ -25,7 +25,9 @@ pub const RTT_DATA_ID: u8 = 24;
 pub const SIGN_LANGUAGE_DATA_ID: u8 = 25;
 /// Give / take control's protocol and the controller's input
 /// ([`super::screen_control`]).
-pub use super::screen_control::{INPUT_DATA_ID as CONTROL_INPUT_DATA_ID, PROTOCOL_DATA_ID as CONTROL_DATA_ID};
+pub use super::screen_control::{
+    INPUT_DATA_ID as CONTROL_INPUT_DATA_ID, PROTOCOL_DATA_ID as CONTROL_DATA_ID,
+};
 /// An MCP payload's first byte: its format's version.
 const PAYLOAD_VERSION: u8 = 1;
 /// What we take part in, as Teams declares it in `syn`.
@@ -101,13 +103,25 @@ pub enum Incoming {
     /// Someone's real-time text: what they typed since their last (`s`:
     /// characters, a backspace removing one, a newline ending the line),
     /// from their data source.
-    RealTimeText { source: u32, text: String },
+    RealTimeText {
+        source: u32,
+        text: String,
+    },
     /// Sign language mode: whether that data source's signer is signing.
-    SignLanguage { source: u32, detected: bool },
+    SignLanguage {
+        source: u32,
+        detected: bool,
+    },
     /// Give / take control: a protocol message from a data source.
-    ScreenControl { source: u32, message: super::screen_control::Message },
+    ScreenControl {
+        source: u32,
+        message: super::screen_control::Message,
+    },
     /// Give / take control: the controller's mouse or keyboard event.
-    ControlInput { source: u32, bytes: Vec<u8> },
+    ControlInput {
+        source: u32,
+        bytes: Vec<u8>,
+    },
     Other(Value),
 }
 
@@ -190,14 +204,21 @@ impl Session {
     /// Whether we are signing (Teams' sign language detection event:
     /// `duration` ms since the signing started, 0 on the start and the
     /// stop), to everyone; None until the session is up.
-    pub fn sign_language(&mut self, detected: bool, duration_ms: u64, timestamp_ms: i64) -> Option<Vec<u8>> {
+    pub fn sign_language(
+        &mut self,
+        detected: bool,
+        duration_ms: u64,
+        timestamp_ms: i64,
+    ) -> Option<Vec<u8>> {
         let source = self.source_id()?;
         let packet = datapacket::packetize(
             SIGN_LANGUAGE_DATA_ID,
             self.sign_seq,
             source,
             &[],
-            json!({ "timestamp": timestamp_ms, "duration": duration_ms, "signDetected": detected }).to_string().as_bytes(),
+            json!({ "timestamp": timestamp_ms, "duration": duration_ms, "signDetected": detected })
+                .to_string()
+                .as_bytes(),
         );
         self.sign_seq = self.sign_seq.wrapping_add(1);
         Some(packet)
@@ -205,9 +226,19 @@ impl Session {
 
     /// A give / take control protocol message to one data source; None
     /// until the session is up.
-    pub fn screen_control(&mut self, to: u32, m: &super::screen_control::Message) -> Option<Vec<u8>> {
+    pub fn screen_control(
+        &mut self,
+        to: u32,
+        m: &super::screen_control::Message,
+    ) -> Option<Vec<u8>> {
         let source = self.source_id()?;
-        let packet = datapacket::packetize(CONTROL_DATA_ID, self.control_seq.0, source, &[to], &m.encode());
+        let packet = datapacket::packetize(
+            CONTROL_DATA_ID,
+            self.control_seq.0,
+            source,
+            &[to],
+            &m.encode(),
+        );
         self.control_seq.0 = self.control_seq.0.wrapping_add(1);
         Some(packet)
     }
@@ -215,7 +246,13 @@ impl Session {
     /// Our mouse or keyboard event for the sharer we control.
     pub fn control_input(&mut self, to: u32, bytes: &[u8]) -> Option<Vec<u8>> {
         let source = self.source_id()?;
-        let packet = datapacket::packetize(CONTROL_INPUT_DATA_ID, self.control_seq.1, source, &[to], bytes);
+        let packet = datapacket::packetize(
+            CONTROL_INPUT_DATA_ID,
+            self.control_seq.1,
+            source,
+            &[to],
+            bytes,
+        );
         self.control_seq.1 = self.control_seq.1.wrapping_add(1);
         Some(packet)
     }
@@ -279,7 +316,11 @@ impl Session {
     /// Read a packet from the channel (a whole message once its last
     /// piece is in).
     pub fn receive(&mut self, packet: &[u8]) -> Vec<Incoming> {
-        let seq = if packet.len() > 4 { u16::from_be_bytes([packet[3], packet[4]]) } else { 0 };
+        let seq = if packet.len() > 4 {
+            u16::from_be_bytes([packet[3], packet[4]])
+        } else {
+            0
+        };
         let Some(m) = self.packets.push(packet) else {
             if datapacket::data_id(packet).is_none() {
                 let hex: String = packet.iter().take(32).map(|b| format!("{b:02x}")).collect();
@@ -293,7 +334,10 @@ impl Session {
                 // `aiInterpretation` key: AudioMetadata, TranslatedText,
                 // VoiceAssignment).
                 if m.payload.windows(16).any(|w| w == b"aiInterpretation") {
-                    let text: String = String::from_utf8_lossy(&m.payload).chars().take(600).collect();
+                    let text: String = String::from_utf8_lossy(&m.payload)
+                        .chars()
+                        .take(600)
+                        .collect();
                     tracing::info!(source = m.source_id, %text, "interpreter: bot signal");
                 }
                 return serde_json::from_slice(&m.payload)
@@ -309,7 +353,12 @@ impl Session {
                 return serde_json::from_slice::<Value>(&m.payload)
                     .ok()
                     .and_then(|v| v.get("s")?.as_str().map(str::to_string))
-                    .map(|text| vec![Incoming::RealTimeText { source: m.source_id, text }])
+                    .map(|text| {
+                        vec![Incoming::RealTimeText {
+                            source: m.source_id,
+                            text,
+                        }]
+                    })
                     .unwrap_or_default();
             }
             SIGN_LANGUAGE_DATA_ID => {
@@ -320,22 +369,39 @@ impl Session {
                 return serde_json::from_slice::<Value>(&m.payload)
                     .ok()
                     .and_then(|v| v.get("signDetected")?.as_bool())
-                    .map(|detected| vec![Incoming::SignLanguage { source: m.source_id, detected }])
+                    .map(|detected| {
+                        vec![Incoming::SignLanguage {
+                            source: m.source_id,
+                            detected,
+                        }]
+                    })
                     .unwrap_or_default();
             }
             CONTROL_DATA_ID => {
                 return super::screen_control::Message::decode(&m.payload)
-                    .map(|message| vec![Incoming::ScreenControl { source: m.source_id, message }])
+                    .map(|message| {
+                        vec![Incoming::ScreenControl {
+                            source: m.source_id,
+                            message,
+                        }]
+                    })
                     .unwrap_or_default();
             }
             CONTROL_INPUT_DATA_ID => {
-                return vec![Incoming::ControlInput { source: m.source_id, bytes: m.payload }];
+                return vec![Incoming::ControlInput {
+                    source: m.source_id,
+                    bytes: m.payload,
+                }];
             }
             _ => {}
         }
         let header = header(seq, &m);
         let Some(messages) = mcp_messages(&m) else {
-            tracing::debug!(data_id = m.data_id, len = m.payload.len(), "data channel message not read");
+            tracing::debug!(
+                data_id = m.data_id,
+                len = m.payload.len(),
+                "data channel message not read"
+            );
             return Vec::new();
         };
         messages
@@ -412,8 +478,12 @@ mod tests {
     fn reads_speech_recognition_frames() {
         // Captured: 10 0b 83 (data id 3), the sequence, no more pieces,
         // the sender's source, no recipients, then the JSON.
-        let mut f = vec![0x10, 0x0b, 0x83, 0x00, 0x2c, 0x00, 0x00, 0x00, 0x9e, 0x7a, 0x00];
-        f.extend_from_slice(br#"{"version":"1.1","recognitionResults":[{"text":"Front.","isFinal":false}]}"#);
+        let mut f = vec![
+            0x10, 0x0b, 0x83, 0x00, 0x2c, 0x00, 0x00, 0x00, 0x9e, 0x7a, 0x00,
+        ];
+        f.extend_from_slice(
+            br#"{"version":"1.1","recognitionResults":[{"text":"Front.","isFinal":false}]}"#,
+        );
         let mut s = Session::new();
         match s.receive(&f).as_slice() {
             [Incoming::Transcript(v)] => assert_eq!(v["recognitionResults"][0]["text"], "Front."),
@@ -437,7 +507,10 @@ mod tests {
         let theirs = datapacket::packetize(RTT_DATA_ID, 4, 1030, &[], br#"{"s":"Hello"}"#);
         assert_eq!(
             s.receive(&theirs),
-            vec![Incoming::RealTimeText { source: 1030, text: "Hello".into() }]
+            vec![Incoming::RealTimeText {
+                source: 1030,
+                text: "Hello".into()
+            }]
         );
         assert!(s.receive(&p).is_empty());
     }
@@ -454,10 +527,29 @@ mod tests {
         // Data id 25 from our source (3195), no recipients.
         assert_eq!(&p[..11], &hex("10 0b 99 00 00 00 00 00 0c 7b 00")[..]);
         let v: Value = serde_json::from_slice(&p[11..]).unwrap();
-        assert_eq!(v, json!({"timestamp": 1_763_560_000_000_i64, "duration": 2000, "signDetected": true}));
-        assert_eq!(s.sign_language(false, 0, 2).unwrap()[4], 1, "its own sequence");
-        let theirs = datapacket::packetize(SIGN_LANGUAGE_DATA_ID, 7, 1030, &[], br#"{"duration":0,"signDetected":false,"timestamp":5}"#);
-        assert_eq!(s.receive(&theirs), vec![Incoming::SignLanguage { source: 1030, detected: false }]);
+        assert_eq!(
+            v,
+            json!({"timestamp": 1_763_560_000_000_i64, "duration": 2000, "signDetected": true})
+        );
+        assert_eq!(
+            s.sign_language(false, 0, 2).unwrap()[4],
+            1,
+            "its own sequence"
+        );
+        let theirs = datapacket::packetize(
+            SIGN_LANGUAGE_DATA_ID,
+            7,
+            1030,
+            &[],
+            br#"{"duration":0,"signDetected":false,"timestamp":5}"#,
+        );
+        assert_eq!(
+            s.receive(&theirs),
+            vec![Incoming::SignLanguage {
+                source: 1030,
+                detected: false
+            }]
+        );
         assert!(s.receive(&p).is_empty(), "ours isn't shown twice");
     }
 

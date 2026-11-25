@@ -253,7 +253,8 @@ struct OverrideEntry {
 /// end-to-end encrypted call (recording, transcription, transfer, park,
 /// merge, Copilot, apps…).
 pub fn e2ee_hidden(name: &str) -> bool {
-    static NAMES: std::sync::OnceLock<std::collections::HashSet<String>> = std::sync::OnceLock::new();
+    static NAMES: std::sync::OnceLock<std::collections::HashSet<String>> =
+        std::sync::OnceLock::new();
     NAMES
         .get_or_init(|| {
             fn walk(v: &Value, out: &mut std::collections::HashSet<String>) {
@@ -325,8 +326,13 @@ impl Layout {
             .flatten()
             .filter_map(|o| o.get("name").and_then(Value::as_str).map(str::to_string))
             .collect();
-        let grouping = Grouping::parse(entry.settings.get("groupingStrategy").and_then(Value::as_str))
-            .unwrap_or(Grouping::MergeWithNext);
+        let grouping = Grouping::parse(
+            entry
+                .settings
+                .get("groupingStrategy")
+                .and_then(Value::as_str),
+        )
+        .unwrap_or(Grouping::MergeWithNext);
 
         let mut middle = Vec::new();
         let mut end = Vec::new();
@@ -394,7 +400,12 @@ impl Layout {
                 middle.push(g);
             }
         }
-        Layout { middle, end, more, grouping }
+        Layout {
+            middle,
+            end,
+            more,
+            grouping,
+        }
     }
 
     /// The user's arrangement: unpinned controls leave the bar for the
@@ -429,17 +440,19 @@ impl Layout {
             });
             if Some(gi) == first_custom {
                 for n in &pinned {
-                    g.controls.push(BarControl { name: n.clone(), overflow: Overflow::AsFirst, on_hold: false });
+                    g.controls.push(BarControl {
+                        name: n.clone(),
+                        overflow: Overflow::AsFirst,
+                        on_hold: false,
+                    });
                 }
             }
             if !custom.order.is_empty() {
                 let default: Vec<String> = g.controls.iter().map(|c| c.name.clone()).collect();
                 let key = |n: &str| {
-                    custom
-                        .order
-                        .iter()
-                        .position(|o| o == n)
-                        .unwrap_or(custom.order.len() + default.iter().position(|d| d == n).unwrap_or(0))
+                    custom.order.iter().position(|o| o == n).unwrap_or(
+                        custom.order.len() + default.iter().position(|d| d == n).unwrap_or(0),
+                    )
                 };
                 g.controls.sort_by_key(|c| key(&c.name));
             }
@@ -451,7 +464,13 @@ impl Layout {
             grid.items.retain(|i| !pinned.contains(&i.name));
             for (i, n) in unpinned.iter().enumerate() {
                 if shown(n) {
-                    grid.items.insert(i, MenuItem { name: n.clone(), sections: Vec::new() });
+                    grid.items.insert(
+                        i,
+                        MenuItem {
+                            name: n.clone(),
+                            sections: Vec::new(),
+                        },
+                    );
                 }
             }
         }
@@ -462,7 +481,15 @@ impl Layout {
         let groups: Vec<(Grouping, Vec<&BarControl>)> = self
             .middle
             .iter()
-            .map(|g| (g.grouping.unwrap_or(self.grouping), g.controls.iter().filter(|c| kept(&c.name)).collect::<Vec<_>>()))
+            .map(|g| {
+                (
+                    g.grouping.unwrap_or(self.grouping),
+                    g.controls
+                        .iter()
+                        .filter(|c| kept(&c.name))
+                        .collect::<Vec<_>>(),
+                )
+            })
             .filter(|g| !g.1.is_empty())
             .collect();
         let mut out = Vec::new();
@@ -531,7 +558,11 @@ fn menu_sections(
         }
         if !items.is_empty() {
             let grid = g.renderer.as_deref() == Some("MenuGridControls");
-            out.push(MenuSection { name: g.name.clone(), items, grid });
+            out.push(MenuSection {
+                name: g.name.clone(),
+                items,
+                grid,
+            });
         }
     }
     out
@@ -557,7 +588,10 @@ fn menu_items(
         // View keeps its own menu (the call window builds it).
         if item.groups.is_empty() || item.name == "ViewModeButton" {
             if shown(&item.name) {
-                out.push(MenuItem { name: item.name.clone(), sections: Vec::new() });
+                out.push(MenuItem {
+                    name: item.name.clone(),
+                    sections: Vec::new(),
+                });
             }
         } else {
             // A menu control needs something in it; a button with a menu
@@ -565,7 +599,10 @@ fn menu_items(
             // without one.
             let sections = menu_sections(&item.groups, available, shown, moved);
             if (!sections.is_empty() || !item.name.ends_with("MenuControl")) && shown(&item.name) {
-                out.push(MenuItem { name: item.name.clone(), sections });
+                out.push(MenuItem {
+                    name: item.name.clone(),
+                    sections,
+                });
             }
         }
         return;
@@ -583,8 +620,17 @@ fn menu_items(
 /// i-th control in bar order (dividers excluded); `divider` is a divider's
 /// width, added wherever [`Layout::with_dividers`] puts one. Returns the
 /// names that overflow, in bar order.
-pub fn overflow(layout: &Layout, widths: &dyn Fn(&str) -> f64, divider: f64, available: f64) -> Vec<String> {
-    let order: Vec<&BarControl> = layout.middle.iter().flat_map(|g| g.controls.iter()).collect();
+pub fn overflow(
+    layout: &Layout,
+    widths: &dyn Fn(&str) -> f64,
+    divider: f64,
+    available: f64,
+) -> Vec<String> {
+    let order: Vec<&BarControl> = layout
+        .middle
+        .iter()
+        .flat_map(|g| g.controls.iter())
+        .collect();
     let mut gone: Vec<String> = Vec::new();
     loop {
         let kept = |n: &str| !gone.iter().any(|g| g == n);
@@ -723,7 +769,13 @@ impl Facts {
     /// A chat's group call (its Meet now or Audio call): neither a meeting
     /// nor a 1:1 call, and not the test call.
     pub fn group_call(&self) -> bool {
-        !self.is_meeting() && !self.p2p && !self.pstn && !self.consult && !self.echo && !self.voicemail && !self.attendant_test
+        !self.is_meeting()
+            && !self.p2p
+            && !self.pstn
+            && !self.consult
+            && !self.echo
+            && !self.voicemail
+            && !self.attendant_test
     }
 
     /// Whether Teams shows `control` (bar controls and More's items OST
@@ -733,10 +785,16 @@ impl Facts {
             return false;
         }
         if self.voicemail {
-            return matches!(control, "MicrophoneButton" | "DialpadButton" | "CallButton" | "AudioSettingsButton");
+            return matches!(
+                control,
+                "MicrophoneButton" | "DialpadButton" | "CallButton" | "AudioSettingsButton"
+            );
         }
         if self.attendant_test {
-            return matches!(control, "MicrophoneButton" | "CallButton" | "AudioSettingsButton");
+            return matches!(
+                control,
+                "MicrophoneButton" | "CallButton" | "AudioSettingsButton"
+            );
         }
         // A town hall's stream (measured in Teams desktop as an attendee,
         // 2026-11-18): Q&A where the meeting has it, Captions once the
@@ -757,7 +815,9 @@ impl Facts {
             "WhiteboardControlsSection" => self.whiteboard_sharing,
             "PptControlsSection" => self.ppt_sharing || self.ppt_viewing,
             "ResumeButton" => self.p2p && self.on_hold && !self.voicemail,
-            "CallTransferButtonV2" | "CallConsultativeTransferButtonV2" => self.p2p && !self.voicemail,
+            "CallTransferButtonV2" | "CallConsultativeTransferButtonV2" => {
+                self.p2p && !self.voicemail
+            }
             "ChatButton" => !self.pstn && !self.echo && !self.voicemail,
             "RosterButton" => !self.echo && !self.voicemail,
             "ViewModeButton" | "VideoButton" | "MicrophoneButton" | "ShareButton"
@@ -795,9 +855,10 @@ impl Facts {
             // Teams' rules don't look at the kind of call (measured
             // 2026-11-18: a group chat's Meet now and Audio call show
             // them), so meetings and group calls; not a 1:1 call.
-            "RecordingMenuControl" | "RecordingButton" | "TranscriptButton" | "TranscriptPanelButton" => {
-                self.is_meeting() || self.group_call()
-            }
+            "RecordingMenuControl"
+            | "RecordingButton"
+            | "TranscriptButton"
+            | "TranscriptPanelButton" => self.is_meeting() || self.group_call(),
             // More ▸ Timer (the meeting's shared timer; the call window
             // hides it where Teams' timer can't be seen).
             // Group calls too (supportStructuredMeetingsTimerInGroupCalls:
@@ -805,7 +866,9 @@ impl Facts {
             "MeetingFacilitatorTimerButton" => self.is_meeting() || self.group_call(),
             // Language and speech ▸ Show live captions (the meeting's
             // recorder provides them).
-            "LanguageSpeechMenuControl" | "ClosedCaptionsButton" => self.is_meeting() || self.group_call(),
+            "LanguageSpeechMenuControl" | "ClosedCaptionsButton" => {
+                self.is_meeting() || self.group_call()
+            }
             // Language and speech ▸ Turn on RTT for this call (real-time
             // text on the meeting's data channel).
             "RealTimeTextButton" => self.is_meeting() || self.group_call(),
@@ -817,7 +880,9 @@ impl Facts {
             // its streams in any call).
             "CallHealth" => true,
             // Settings ▸ Accessibility settings (the in-meeting pane).
-            "AccessibilitySettingsButton" | "MuteNotificationsButton" | "ChatBubblesButton" => self.is_meeting() || self.group_call(),
+            "AccessibilitySettingsButton" | "MuteNotificationsButton" | "ChatBubblesButton" => {
+                self.is_meeting() || self.group_call()
+            }
             // The new controls keep Video effects and Audio settings in
             // Settings ▸, so it shows in every call.
             "SettingsMenuControl" => self.is_meeting() || self.group_call() || self.centered,
@@ -829,10 +894,18 @@ impl Facts {
             // Join info ▸ Call me with the new ones).
             "PstnButton" => self.call_me && !self.p2p,
             // More ▸ Facilitator ▸ Turn on / off Facilitator, Enable voice.
-            "FacilitatorButton" => self.facilitator && self.scheduled && !self.breakout_room && !self.town_hall && !self.webinar,
+            "FacilitatorButton" => {
+                self.facilitator
+                    && self.scheduled
+                    && !self.breakout_room
+                    && !self.town_hall
+                    && !self.webinar
+            }
             // The green room's Start meeting (presenters, before the event
             // is live) and End event / End meeting (once it is).
-            "StagingRoomStartMeetingButton" => self.event_phase == "prelive" && !self.attendee && self.green_room,
+            "StagingRoomStartMeetingButton" => {
+                self.event_phase == "prelive" && !self.attendee && self.green_room
+            }
             "StagingRoomEndMeetingButton" => self.event_phase == "active" && !self.attendee,
             // Q&A (Viva Engage's meeting Q&A) where the meeting has it on.
             "YammerQnaButton" => self.qna,
@@ -862,7 +935,12 @@ pub struct Arranged {
 }
 
 /// Lay the bar out for `facts` in `available` px of middle slot.
-pub fn arrange(facts: &Facts, widths: &dyn Fn(&str) -> f64, divider: f64, available: f64) -> Arranged {
+pub fn arrange(
+    facts: &Facts,
+    widths: &dyn Fn(&str) -> f64,
+    divider: f64,
+    available: f64,
+) -> Arranged {
     let layout = Layout::build_with(
         layout_for(facts.p2p, facts.pstn, facts.consult, facts.streaming),
         facts.centered,
@@ -915,11 +993,25 @@ mod tests {
     fn meeting_rule(n: &str) -> bool {
         matches!(
             n,
-            "ChatButton" | "RosterButton" | "RaiseHandsButton" | "ReactionButton" | "ViewModeButton"
-                | "OrganizerControlButton" | "MeetingDetailsButton" | "StartBreakoutRoomButton"
-                | "MeetingAppsAddButton" | "VideoButton" | "MicrophoneButton" | "ShareButton"
-                | "CallButton" | "GridButton" | "SpeakerViewButton" | "DeviceSettingsButton"
-                | "MeetingHelpButton" | "MeetingInfoButton" | "SettingsMenuControl"
+            "ChatButton"
+                | "RosterButton"
+                | "RaiseHandsButton"
+                | "ReactionButton"
+                | "ViewModeButton"
+                | "OrganizerControlButton"
+                | "MeetingDetailsButton"
+                | "StartBreakoutRoomButton"
+                | "MeetingAppsAddButton"
+                | "VideoButton"
+                | "MicrophoneButton"
+                | "ShareButton"
+                | "CallButton"
+                | "GridButton"
+                | "SpeakerViewButton"
+                | "DeviceSettingsButton"
+                | "MeetingHelpButton"
+                | "MeetingInfoButton"
+                | "SettingsMenuControl"
         )
     }
 
@@ -929,21 +1021,43 @@ mod tests {
         assert_eq!(
             names(&l),
             [
-                "ChatButton", "RosterButton", "RaiseHandsButton", "ReactionButton", "ViewModeButton",
-                "OrganizerControlButton", "MeetingDetailsButton", "StartBreakoutRoomButton",
-                "MeetingAppsAddButton", "MoreButton", "|", "VideoButton", "MicrophoneButton", "ShareButton"
+                "ChatButton",
+                "RosterButton",
+                "RaiseHandsButton",
+                "ReactionButton",
+                "ViewModeButton",
+                "OrganizerControlButton",
+                "MeetingDetailsButton",
+                "StartBreakoutRoomButton",
+                "MeetingAppsAddButton",
+                "MoreButton",
+                "|",
+                "VideoButton",
+                "MicrophoneButton",
+                "ShareButton"
             ]
         );
-        assert_eq!(l.end.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["CallButton"]);
+        assert_eq!(
+            l.end.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+            ["CallButton"]
+        );
         // View's own choices stay in View's menu, not in More.
-        assert!(!l.more.iter().flat_map(|s| &s.items).any(|i| i.name == "GridButton"));
+        assert!(
+            !l.more
+                .iter()
+                .flat_map(|s| &s.items)
+                .any(|i| i.name == "GridButton")
+        );
         // More: Info in settings, then Settings ▸ Devices, then Report a problem.
         let more: Vec<&str> = l.more.iter().map(|s| s.name.as_str()).collect();
         assert_eq!(more, ["settings", "help"]);
         let settings = &l.more[0].items;
         assert_eq!(settings[0].name, "MeetingInfoButton");
         assert_eq!(settings[1].name, "SettingsMenuControl");
-        assert_eq!(settings[1].sections[0].items[0].name, "DeviceSettingsButton");
+        assert_eq!(
+            settings[1].sections[0].items[0].name,
+            "DeviceSettingsButton"
+        );
     }
 
     #[test]
@@ -951,10 +1065,22 @@ mod tests {
         let rule = |n: &str| {
             matches!(
                 n,
-                "CallTransferButtonV2" | "CallConsultativeTransferButtonV2" | "ChatButton" | "RosterButton"
-                    | "RaiseHandsButton" | "ViewModeButton" | "MeetingAppsAddButton" | "VideoButton"
-                    | "MicrophoneButton" | "ShareButton" | "CallButton" | "DialpadButton" | "HoldButton"
-                    | "CallTransferMenuControl" | "MergeCallsButton" | "CallParkButton"
+                "CallTransferButtonV2"
+                    | "CallConsultativeTransferButtonV2"
+                    | "ChatButton"
+                    | "RosterButton"
+                    | "RaiseHandsButton"
+                    | "ViewModeButton"
+                    | "MeetingAppsAddButton"
+                    | "VideoButton"
+                    | "MicrophoneButton"
+                    | "ShareButton"
+                    | "CallButton"
+                    | "DialpadButton"
+                    | "HoldButton"
+                    | "CallTransferMenuControl"
+                    | "MergeCallsButton"
+                    | "CallParkButton"
             )
         };
         let l = Layout::build(LayoutName::OneToOneOrGroupCall, &rule);
@@ -963,15 +1089,32 @@ mod tests {
         assert_eq!(
             names(&l),
             [
-                "CallTransferButtonV2", "CallConsultativeTransferButtonV2", "|", "DialpadButton", "HoldButton",
-                "|", "ChatButton", "RosterButton", "RaiseHandsButton", "ViewModeButton", "MeetingAppsAddButton",
-                "MoreButton", "|", "VideoButton", "MicrophoneButton", "ShareButton"
+                "CallTransferButtonV2",
+                "CallConsultativeTransferButtonV2",
+                "|",
+                "DialpadButton",
+                "HoldButton",
+                "|",
+                "ChatButton",
+                "RosterButton",
+                "RaiseHandsButton",
+                "ViewModeButton",
+                "MeetingAppsAddButton",
+                "MoreButton",
+                "|",
+                "VideoButton",
+                "MicrophoneButton",
+                "ShareButton"
             ]
         );
         // The transfer menu has nothing left (V1 buttons hidden), so it
         // isn't on the bar; Call ▸ isn't available, so Merge and Park are
         // promoted into More's callingOverflow section.
-        let calling = l.more.iter().find(|s| s.name == "callingOverflow").expect("callingOverflow");
+        let calling = l
+            .more
+            .iter()
+            .find(|s| s.name == "callingOverflow")
+            .expect("callingOverflow");
         let items: Vec<&str> = calling.items.iter().map(|i| i.name.as_str()).collect();
         assert_eq!(items, ["MergeCallsButton", "CallParkButton"]);
     }
@@ -980,50 +1123,128 @@ mod tests {
     /// is driven by keys), Chat, People, hold, transfer and park don't.
     #[test]
     fn the_attendant_test_call_keeps_mic_more_and_leave() {
-        let facts = Facts { p2p: true, attendant_test: true, can_park: true, ..Default::default() };
+        let facts = Facts {
+            p2p: true,
+            attendant_test: true,
+            can_park: true,
+            ..Default::default()
+        };
         for c in ["MicrophoneButton", "CallButton", "AudioSettingsButton"] {
             assert!(facts.shows(c), "{c}");
         }
-        for c in ["VideoButton", "ShareButton", "ChatButton", "RosterButton", "DialpadButton", "HoldButton", "CallParkButton", "CallTransferButtonV2"] {
+        for c in [
+            "VideoButton",
+            "ShareButton",
+            "ChatButton",
+            "RosterButton",
+            "DialpadButton",
+            "HoldButton",
+            "CallParkButton",
+            "CallTransferButtonV2",
+        ] {
             assert!(!facts.shows(c), "{c}");
         }
     }
 
     #[test]
     fn a_voicemail_greeting_call_keeps_only_the_dial_pad() {
-        let facts = Facts { p2p: true, voicemail: true, can_park: true, ..Default::default() };
+        let facts = Facts {
+            p2p: true,
+            voicemail: true,
+            can_park: true,
+            ..Default::default()
+        };
         let a = arrange(&facts, &|_| 48.0, 17.0, 5000.0);
         let all: Vec<&str> = a
             .bar
             .iter()
             .map(String::as_str)
-            .chain(a.more.iter().flat_map(|s| s.items.iter().map(|i| i.name.as_str())))
+            .chain(
+                a.more
+                    .iter()
+                    .flat_map(|s| s.items.iter().map(|i| i.name.as_str())),
+            )
             .collect();
-        assert!(all.contains(&"DialpadButton") && all.contains(&"MicrophoneButton") && all.contains(&"AudioSettingsButton"));
+        assert!(
+            all.contains(&"DialpadButton")
+                && all.contains(&"MicrophoneButton")
+                && all.contains(&"AudioSettingsButton")
+        );
         assert_eq!(a.end, ["CallButton"]);
-        for gone in ["ChatButton", "RosterButton", "HoldButton", "CallTransferButtonV2", "CallParkButton", "VideoButton", "ShareButton", "ViewModeButton", "MeetingAppsAddButton", "CameraEffectsButton"] {
+        for gone in [
+            "ChatButton",
+            "RosterButton",
+            "HoldButton",
+            "CallTransferButtonV2",
+            "CallParkButton",
+            "VideoButton",
+            "ShareButton",
+            "ViewModeButton",
+            "MeetingAppsAddButton",
+            "CameraEffectsButton",
+        ] {
             assert!(!all.contains(&gone), "{gone} shown");
         }
-        let plain = arrange(&Facts { p2p: true, ..Default::default() }, &|_| 48.0, 17.0, 5000.0);
+        let plain = arrange(
+            &Facts {
+                p2p: true,
+                ..Default::default()
+            },
+            &|_| 48.0,
+            17.0,
+            5000.0,
+        );
         assert!(plain.bar.iter().any(|n| n == "ChatButton"));
     }
 
     #[test]
     fn grouping_strategies_place_dividers_as_teams() {
-        let rule = |n: &str| matches!(n, "PopoutContentButton" | "ChatButton" | "VideoButton" | "CallButton");
+        let rule = |n: &str| {
+            matches!(
+                n,
+                "PopoutContentButton" | "ChatButton" | "VideoButton" | "CallButton"
+            )
+        };
         let l = Layout::build(LayoutName::Default, &rule);
         // MergeWithNext: Pop out alone merges into Chat's group; Chat and
         // More are two, so a divider before Camera.
-        assert_eq!(names(&l), ["PopoutContentButton", "ChatButton", "MoreButton", "|", "VideoButton"]);
-        let l = Layout::build(LayoutName::OneToOnePstn, &|n| matches!(n, "HoldButton" | "ChatButton" | "MicrophoneButton"));
+        assert_eq!(
+            names(&l),
+            [
+                "PopoutContentButton",
+                "ChatButton",
+                "MoreButton",
+                "|",
+                "VideoButton"
+            ]
+        );
+        let l = Layout::build(LayoutName::OneToOnePstn, &|n| {
+            matches!(n, "HoldButton" | "ChatButton" | "MicrophoneButton")
+        });
         // AlwaysKeep.
-        assert_eq!(names(&l), ["HoldButton", "|", "ChatButton", "MoreButton", "|", "MicrophoneButton"]);
+        assert_eq!(
+            names(&l),
+            [
+                "HoldButton",
+                "|",
+                "ChatButton",
+                "MoreButton",
+                "|",
+                "MicrophoneButton"
+            ]
+        );
     }
 
     #[test]
     fn overflow_leaves_in_teams_order() {
         let l = Layout::build(LayoutName::Default, &meeting_rule);
-        let w = |n: &str| if n == "MicrophoneButton" || n == "VideoButton" { 74.0 } else { 56.0 };
+        let w = |n: &str| {
+            if n == "MicrophoneButton" || n == "VideoButton" {
+                74.0
+            } else {
+                56.0
+            }
+        };
         // Everything fits.
         assert!(overflow(&l, &w, 17.0, 2000.0).is_empty());
         let full: f64 = 10.0 * 56.0 + 17.0 + 74.0 * 2.0 + 56.0;
@@ -1034,33 +1255,78 @@ mod tests {
         let gone = overflow(&l, &w, 17.0, full - 7.0 * 56.0);
         assert_eq!(
             gone,
-            ["ChatButton", "RosterButton", "ViewModeButton", "OrganizerControlButton", "MeetingDetailsButton",
-             "StartBreakoutRoomButton", "MeetingAppsAddButton"]
+            [
+                "ChatButton",
+                "RosterButton",
+                "ViewModeButton",
+                "OrganizerControlButton",
+                "MeetingDetailsButton",
+                "StartBreakoutRoomButton",
+                "MeetingAppsAddButton"
+            ]
         );
         let gone = overflow(&l, &w, 17.0, 0.0);
-        assert!(gone.contains(&"RaiseHandsButton".to_string()) && gone.contains(&"ReactionButton".to_string()));
-        assert!(!gone.contains(&"MoreButton".to_string()) && !gone.contains(&"ShareButton".to_string()));
+        assert!(
+            gone.contains(&"RaiseHandsButton".to_string())
+                && gone.contains(&"ReactionButton".to_string())
+        );
+        assert!(
+            !gone.contains(&"MoreButton".to_string()) && !gone.contains(&"ShareButton".to_string())
+        );
     }
 
     #[test]
     fn join_room_leads_the_bar() {
         // Teams desktop, a participant whose room opened (2026-11-11):
         // "Join room" before Chat.
-        let facts = Facts { scheduled: true, room_to_join: true, reactions: true, ..Default::default() };
+        let facts = Facts {
+            scheduled: true,
+            room_to_join: true,
+            reactions: true,
+            ..Default::default()
+        };
         let a = arrange(&facts, &|_| 48.0, 17.0, 2000.0);
-        assert_eq!(a.bar.first().map(String::as_str), Some("ReturnToBreakoutRoomButton"));
-        assert!(!arrange(&Facts { scheduled: true, ..Default::default() }, &|_| 48.0, 17.0, 2000.0)
+        assert_eq!(
+            a.bar.first().map(String::as_str),
+            Some("ReturnToBreakoutRoomButton")
+        );
+        assert!(
+            !arrange(
+                &Facts {
+                    scheduled: true,
+                    ..Default::default()
+                },
+                &|_| 48.0,
+                17.0,
+                2000.0
+            )
             .bar
             .iter()
-            .any(|n| n == "ReturnToBreakoutRoomButton" || n == "BreakoutRoomReturnToMainButton"));
+            .any(|n| n == "ReturnToBreakoutRoomButton" || n == "BreakoutRoomReturnToMainButton")
+        );
         // In a room (Teams desktop, 2026-11-11): no Notes.
-        let room = Facts { scheduled: true, breakout_room: true, reactions: true, ..Default::default() };
-        assert!(!arrange(&room, &|_| 48.0, 17.0, 2000.0).bar.iter().any(|n| n == "MeetingDetailsButton"));
+        let room = Facts {
+            scheduled: true,
+            breakout_room: true,
+            reactions: true,
+            ..Default::default()
+        };
+        assert!(
+            !arrange(&room, &|_| 48.0, 17.0, 2000.0)
+                .bar
+                .iter()
+                .any(|n| n == "MeetingDetailsButton")
+        );
     }
 
     #[test]
     fn arranges_a_narrow_meeting_bar() {
-        let facts = Facts { scheduled: true, organizer: true, reactions: true, ..Default::default() };
+        let facts = Facts {
+            scheduled: true,
+            organizer: true,
+            reactions: true,
+            ..Default::default()
+        };
         let w = |_: &str| 56.0;
         let wide = arrange(&facts, &w, 17.0, 5000.0);
         assert!(wide.overflowed.is_empty());
@@ -1070,16 +1336,53 @@ mod tests {
         assert!(!wide.on_hold.contains(&"VideoButton".to_string()));
         let narrow = arrange(&facts, &w, 17.0, 6.0 * 56.0 + 17.0);
         // Raise, React, More | Camera, Mic, Share.
-        assert_eq!(narrow.bar, ["RaiseHandsButton", "ReactionButton", "MoreButton", "|", "VideoButton", "MicrophoneButton", "ShareButton"]);
+        assert_eq!(
+            narrow.bar,
+            [
+                "RaiseHandsButton",
+                "ReactionButton",
+                "MoreButton",
+                "|",
+                "VideoButton",
+                "MicrophoneButton",
+                "ShareButton"
+            ]
+        );
         assert_eq!(narrow.overflowed[0], "ChatButton");
-        let audio = narrow.more.iter().flat_map(|s| &s.items).any(|i| i.name == "AudioSettingsButton");
+        let audio = narrow
+            .more
+            .iter()
+            .flat_map(|s| &s.items)
+            .any(|i| i.name == "AudioSettingsButton");
         assert!(audio, "More keeps Audio settings");
         // A group call: no Notes, Rooms or Controls.
-        let group = arrange(&Facts { reactions: true, ..Default::default() }, &w, 17.0, 5000.0);
-        assert!(!group.bar.iter().any(|n| n == "MeetingDetailsButton" || n == "StartBreakoutRoomButton" || n == "OrganizerControlButton"));
+        let group = arrange(
+            &Facts {
+                reactions: true,
+                ..Default::default()
+            },
+            &w,
+            17.0,
+            5000.0,
+        );
+        assert!(!group.bar.iter().any(|n| n == "MeetingDetailsButton"
+            || n == "StartBreakoutRoomButton"
+            || n == "OrganizerControlButton"));
         // 1:1 on hold: Resume, no Hold.
-        let held = arrange(&Facts { p2p: true, on_hold: true, ..Default::default() }, &w, 17.0, 5000.0);
-        assert!(held.bar.contains(&"ResumeButton".to_string()) && !held.bar.contains(&"HoldButton".to_string()));
+        let held = arrange(
+            &Facts {
+                p2p: true,
+                on_hold: true,
+                ..Default::default()
+            },
+            &w,
+            17.0,
+            5000.0,
+        );
+        assert!(
+            held.bar.contains(&"ResumeButton".to_string())
+                && !held.bar.contains(&"HoldButton".to_string())
+        );
         assert!(!held.bar.contains(&"RaiseHandsButton".to_string()));
     }
 
@@ -1090,20 +1393,73 @@ mod tests {
     #[test]
     fn meet_now_is_a_meeting_and_group_calls_are_not() {
         let w = |_: &str| 56.0;
-        let grid = |a: &Arranged| a.more.iter().filter(|s| s.grid).flat_map(|s| s.items.iter().map(|i| i.name.clone())).collect::<Vec<_>>();
+        let grid = |a: &Arranged| {
+            a.more
+                .iter()
+                .filter(|s| s.grid)
+                .flat_map(|s| s.items.iter().map(|i| i.name.clone()))
+                .collect::<Vec<_>>()
+        };
         for centered in [true, false] {
-            let meet_now = Facts { adhoc: true, organizer: true, reactions: true, centered, ..Default::default() };
+            let meet_now = Facts {
+                adhoc: true,
+                organizer: true,
+                reactions: true,
+                centered,
+                ..Default::default()
+            };
             let a = arrange(&meet_now, &w, 17.0, 5000.0);
-            let all: Vec<String> = a.bar.iter().cloned().chain(grid(&a)).chain(a.more.iter().flat_map(|s| s.items.iter().map(|i| i.name.clone()))).collect();
-            for want in ["StartBreakoutRoomButton", "OrganizerControlButton", "MeetingHelpButton"] {
-                assert!(all.iter().any(|n| n == want), "Meet now ({centered}) shows {want}: {all:?}");
+            let all: Vec<String> = a
+                .bar
+                .iter()
+                .cloned()
+                .chain(grid(&a))
+                .chain(
+                    a.more
+                        .iter()
+                        .flat_map(|s| s.items.iter().map(|i| i.name.clone())),
+                )
+                .collect();
+            for want in [
+                "StartBreakoutRoomButton",
+                "OrganizerControlButton",
+                "MeetingHelpButton",
+            ] {
+                assert!(
+                    all.iter().any(|n| n == want),
+                    "Meet now ({centered}) shows {want}: {all:?}"
+                );
             }
-            assert!(!all.iter().any(|n| n == "MeetingDetailsButton"), "an ad hoc channel meeting has no Notes");
-            let group = Facts { reactions: true, centered, ..Default::default() };
+            assert!(
+                !all.iter().any(|n| n == "MeetingDetailsButton"),
+                "an ad hoc channel meeting has no Notes"
+            );
+            let group = Facts {
+                reactions: true,
+                centered,
+                ..Default::default()
+            };
             let g = arrange(&group, &w, 17.0, 5000.0);
-            let gall: Vec<String> = g.bar.iter().cloned().chain(g.more.iter().flat_map(|s| s.items.iter().map(|i| i.name.clone()))).collect();
-            for gone in ["MeetingDetailsButton", "StartBreakoutRoomButton", "OrganizerControlButton", "ReportMeetingButton"] {
-                assert!(!gall.iter().any(|n| n == gone), "a group call ({centered}) has no {gone}");
+            let gall: Vec<String> = g
+                .bar
+                .iter()
+                .cloned()
+                .chain(
+                    g.more
+                        .iter()
+                        .flat_map(|s| s.items.iter().map(|i| i.name.clone())),
+                )
+                .collect();
+            for gone in [
+                "MeetingDetailsButton",
+                "StartBreakoutRoomButton",
+                "OrganizerControlButton",
+                "ReportMeetingButton",
+            ] {
+                assert!(
+                    !gall.iter().any(|n| n == gone),
+                    "a group call ({centered}) has no {gone}"
+                );
             }
         }
     }
@@ -1112,15 +1468,40 @@ mod tests {
     fn a_town_hall_stream_has_the_attendee_bar() {
         // Teams desktop as a town hall attendee (2026-11-18): Waiting with
         // Q&A, More, Leave; live with Q&A, Captions, More, Leave.
-        let waiting = Facts { scheduled: true, attendee: true, streaming: true, town_hall: true, qna: true, event_phase: "prelive".into(), ..Default::default() };
+        let waiting = Facts {
+            scheduled: true,
+            attendee: true,
+            streaming: true,
+            town_hall: true,
+            qna: true,
+            event_phase: "prelive".into(),
+            ..Default::default()
+        };
         let l = Layout::build(layout_for(false, false, false, true), &|c| waiting.shows(c));
-        let bar: Vec<String> = l.middle.iter().flat_map(|g| g.controls.iter().map(|c| c.name.clone())).collect();
+        let bar: Vec<String> = l
+            .middle
+            .iter()
+            .flat_map(|g| g.controls.iter().map(|c| c.name.clone()))
+            .collect();
         assert_eq!(bar, vec!["YammerQnaButton", "MoreButton"]);
-        assert_eq!(l.end.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), vec!["CallButton"]);
-        let live = Facts { event_phase: "active".into(), ..waiting };
+        assert_eq!(
+            l.end.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+            vec!["CallButton"]
+        );
+        let live = Facts {
+            event_phase: "active".into(),
+            ..waiting
+        };
         let l = Layout::build(layout_for(false, false, false, true), &|c| live.shows(c));
-        let bar: Vec<String> = l.middle.iter().flat_map(|g| g.controls.iter().map(|c| c.name.clone())).collect();
-        assert_eq!(bar, vec!["YammerQnaButton", "ClosedCaptionsButton", "MoreButton"]);
+        let bar: Vec<String> = l
+            .middle
+            .iter()
+            .flat_map(|g| g.controls.iter().map(|c| c.name.clone()))
+            .collect();
+        assert_eq!(
+            bar,
+            vec!["YammerQnaButton", "ClosedCaptionsButton", "MoreButton"]
+        );
     }
 
     #[test]
@@ -1129,33 +1510,78 @@ mod tests {
         // VisibilityOverrides): Start meeting before Leave, Q&A; no
         // Controls, Rooms, Report or Facilitator.
         let w = |_: &str| 56.0;
-        let green = Facts { scheduled: true, organizer: true, town_hall: true, green_room: true, event_phase: "prelive".into(),
-                            qna: true, facilitator: true, ..Default::default() };
+        let green = Facts {
+            scheduled: true,
+            organizer: true,
+            town_hall: true,
+            green_room: true,
+            event_phase: "prelive".into(),
+            qna: true,
+            facilitator: true,
+            ..Default::default()
+        };
         let a = arrange(&green, &w, 17.0, 5000.0);
         assert_eq!(a.end, ["StagingRoomStartMeetingButton", "CallButton"]);
         assert!(a.bar.contains(&"YammerQnaButton".to_string()));
         for gone in ["OrganizerControlButton", "StartBreakoutRoomButton"] {
             assert!(!a.bar.iter().any(|n| n == gone), "{gone}");
         }
-        let more: Vec<String> = a.more.iter().flat_map(|s| s.items.iter().map(|i| i.name.clone())).collect();
-        assert!(!more.iter().any(|n| n == "ReportMeetingButton" || n == "FacilitatorButton"));
+        let more: Vec<String> = a
+            .more
+            .iter()
+            .flat_map(|s| s.items.iter().map(|i| i.name.clone()))
+            .collect();
+        assert!(
+            !more
+                .iter()
+                .any(|n| n == "ReportMeetingButton" || n == "FacilitatorButton")
+        );
         // Live: End event instead.
-        let live = Facts { green_room: false, event_phase: "active".into(), ..green.clone() };
-        assert_eq!(arrange(&live, &w, 17.0, 5000.0).end, ["StagingRoomEndMeetingButton", "CallButton"]);
+        let live = Facts {
+            green_room: false,
+            event_phase: "active".into(),
+            ..green.clone()
+        };
+        assert_eq!(
+            arrange(&live, &w, 17.0, 5000.0).end,
+            ["StagingRoomEndMeetingButton", "CallButton"]
+        );
         // Attendees never get either.
-        let att = Facts { attendee: true, organizer: false, ..green };
+        let att = Facts {
+            attendee: true,
+            organizer: false,
+            ..green
+        };
         assert_eq!(arrange(&att, &w, 17.0, 5000.0).end, ["CallButton"]);
         // A webinar keeps breakout rooms.
-        let web = Facts { scheduled: true, organizer: true, webinar: true, ..Default::default() };
-        assert!(arrange(&web, &w, 17.0, 5000.0).bar.contains(&"StartBreakoutRoomButton".to_string()));
+        let web = Facts {
+            scheduled: true,
+            organizer: true,
+            webinar: true,
+            ..Default::default()
+        };
+        assert!(
+            arrange(&web, &w, 17.0, 5000.0)
+                .bar
+                .contains(&"StartBreakoutRoomButton".to_string())
+        );
     }
 
     fn new_controls_meeting() -> Facts {
-        Facts { scheduled: true, organizer: true, reactions: true, centered: true, ..Default::default() }
+        Facts {
+            scheduled: true,
+            organizer: true,
+            reactions: true,
+            centered: true,
+            ..Default::default()
+        }
     }
 
     fn more_names(a: &Arranged) -> Vec<Vec<String>> {
-        a.more.iter().map(|s| s.items.iter().map(|i| i.name.clone()).collect()).collect()
+        a.more
+            .iter()
+            .map(|s| s.items.iter().map(|i| i.name.clone()).collect())
+            .collect()
     }
 
     #[test]
@@ -1166,32 +1592,81 @@ mod tests {
         let a = arrange(&new_controls_meeting(), &|_| 56.0, 17.0, 5000.0);
         assert_eq!(
             a.bar,
-            ["MicrophoneButton", "VideoButton", "ShareButton", "|", "ReactionButton", "ChatButton", "RosterButton",
-             "OrganizerControlButton", "MoreButton"]
+            [
+                "MicrophoneButton",
+                "VideoButton",
+                "ShareButton",
+                "|",
+                "ReactionButton",
+                "ChatButton",
+                "RosterButton",
+                "OrganizerControlButton",
+                "MoreButton"
+            ]
         );
         assert_eq!(a.end, ["CallButton"]);
         // More: the grid, then the list.
         assert!(a.more[0].grid && !a.more[1].grid);
         assert_eq!(
             more_names(&a)[0],
-            ["RecordingButton", "TranscriptButton", "MeetingFacilitatorTimerButton", "MeetingDetailsButton",
-             "ClosedCaptionsButton", "StartBreakoutRoomButton", "RealTimeTextButton", "MeetingAppsAddButton"]
+            [
+                "RecordingButton",
+                "TranscriptButton",
+                "MeetingFacilitatorTimerButton",
+                "MeetingDetailsButton",
+                "ClosedCaptionsButton",
+                "StartBreakoutRoomButton",
+                "RealTimeTextButton",
+                "MeetingAppsAddButton"
+            ]
         );
         assert_eq!(
             more_names(&a)[1],
-            ["ViewModeButton", "JoinInfoMenuControl", "SettingsMenuControl", "ReportMeetingButton", "MeetingHelpButton"]
+            [
+                "ViewModeButton",
+                "JoinInfoMenuControl",
+                "SettingsMenuControl",
+                "ReportMeetingButton",
+                "MeetingHelpButton"
+            ]
         );
         let settings = &a.more[1].items[2];
-        let sec: Vec<Vec<&str>> = settings.sections.iter().map(|s| s.items.iter().map(|i| i.name.as_str()).collect()).collect();
+        let sec: Vec<Vec<&str>> = settings
+            .sections
+            .iter()
+            .map(|s| s.items.iter().map(|i| i.name.as_str()).collect())
+            .collect();
         assert_eq!(
             sec,
-            [vec!["AccessibilitySettingsButton"], vec!["ChatBubblesButton", "ToggleHideMyselfButton"],
-             vec!["CameraEffectsButton", "AudioSettingsButton", "ByodMeetingRoomModeButton"]]
+            [
+                vec!["AccessibilitySettingsButton"],
+                vec!["ChatBubblesButton", "ToggleHideMyselfButton"],
+                vec![
+                    "CameraEffectsButton",
+                    "AudioSettingsButton",
+                    "ByodMeetingRoomModeButton"
+                ]
+            ]
         );
         let info = &a.more[1].items[1];
-        assert_eq!(info.sections[0].items.iter().map(|i| i.name.as_str()).collect::<Vec<_>>(), ["MeetingInfoButton", "CallHealth"]);
+        assert_eq!(
+            info.sections[0]
+                .items
+                .iter()
+                .map(|i| i.name.as_str())
+                .collect::<Vec<_>>(),
+            ["MeetingInfoButton", "CallHealth"]
+        );
         // The current controls are unchanged.
-        let old = arrange(&Facts { centered: false, ..new_controls_meeting() }, &|_| 56.0, 17.0, 5000.0);
+        let old = arrange(
+            &Facts {
+                centered: false,
+                ..new_controls_meeting()
+            },
+            &|_| 56.0,
+            17.0,
+            5000.0,
+        );
         assert_eq!(old.bar.first().map(String::as_str), Some("ChatButton"));
         assert!(old.bar.contains(&"RaiseHandsButton".to_string()));
     }
@@ -1200,14 +1675,34 @@ mod tests {
     fn new_controls_overflow_as_teams() {
         // Teams (winpc, widths swept 2026-11-16): Controls leaves first,
         // then (Copilot), People, Chat; React last.
-        let w = |n: &str| if n == "MicrophoneButton" || n == "VideoButton" { 74.0 } else { 56.0 };
+        let w = |n: &str| {
+            if n == "MicrophoneButton" || n == "VideoButton" {
+                74.0
+            } else {
+                56.0
+            }
+        };
         let f = new_controls_meeting();
         let full = 74.0 * 2.0 + 56.0 + 17.0 + 5.0 * 56.0;
         assert!(arrange(&f, &w, 17.0, full).overflowed.is_empty());
-        assert_eq!(arrange(&f, &w, 17.0, full - 1.0).overflowed, ["OrganizerControlButton"]);
-        assert_eq!(arrange(&f, &w, 17.0, full - 3.0 * 56.0).overflowed, ["ChatButton", "RosterButton", "OrganizerControlButton"]);
+        assert_eq!(
+            arrange(&f, &w, 17.0, full - 1.0).overflowed,
+            ["OrganizerControlButton"]
+        );
+        assert_eq!(
+            arrange(&f, &w, 17.0, full - 3.0 * 56.0).overflowed,
+            ["ChatButton", "RosterButton", "OrganizerControlButton"]
+        );
         let gone = arrange(&f, &w, 17.0, 0.0);
-        assert_eq!(gone.bar, ["MicrophoneButton", "VideoButton", "ShareButton", "MoreButton"]);
+        assert_eq!(
+            gone.bar,
+            [
+                "MicrophoneButton",
+                "VideoButton",
+                "ShareButton",
+                "MoreButton"
+            ]
+        );
         assert!(gone.overflowed.contains(&"ReactionButton".to_string()));
     }
 
@@ -1222,56 +1717,172 @@ mod tests {
         let a = arrange(&f, &|_| 56.0, 17.0, 5000.0);
         assert_eq!(
             a.bar,
-            ["MicrophoneButton", "VideoButton", "ShareButton", "|", "ChatButton", "ReactionButton",
-             "OrganizerControlButton", "MeetingFacilitatorTimerButton", "MoreButton"]
+            [
+                "MicrophoneButton",
+                "VideoButton",
+                "ShareButton",
+                "|",
+                "ChatButton",
+                "ReactionButton",
+                "OrganizerControlButton",
+                "MeetingFacilitatorTimerButton",
+                "MoreButton"
+            ]
         );
         let grid = &more_names(&a)[0];
         assert_eq!(grid[0], "RosterButton");
         assert!(!grid.contains(&"MeetingFacilitatorTimerButton".to_string()));
-        assert_eq!(a.movable[0], ["ChatButton", "ReactionButton", "OrganizerControlButton", "MeetingFacilitatorTimerButton"]);
+        assert_eq!(
+            a.movable[0],
+            [
+                "ChatButton",
+                "ReactionButton",
+                "OrganizerControlButton",
+                "MeetingFacilitatorTimerButton"
+            ]
+        );
         // Apps stays docked in the grid.
         f.customization.pinned = vec!["MeetingAppsAddButton".into()];
-        assert!(!arrange(&f, &|_| 56.0, 17.0, 5000.0).bar.contains(&"MeetingAppsAddButton".to_string()));
+        assert!(
+            !arrange(&f, &|_| 56.0, 17.0, 5000.0)
+                .bar
+                .contains(&"MeetingAppsAddButton".to_string())
+        );
     }
 
     #[test]
     fn new_controls_one_to_one() {
-        let a = arrange(&Facts { p2p: true, centered: true, ..Default::default() }, &|_| 56.0, 17.0, 5000.0);
-        assert_eq!(a.bar[..4], ["MicrophoneButton", "VideoButton", "ShareButton", "|"]);
-        assert!(a.bar.contains(&"HoldButton".to_string()) && a.bar.contains(&"DialpadButton".to_string()));
-        assert!(!a.bar.contains(&"RaiseHandsButton".to_string()) && !a.bar.contains(&"ReactionButton".to_string()));
+        let a = arrange(
+            &Facts {
+                p2p: true,
+                centered: true,
+                ..Default::default()
+            },
+            &|_| 56.0,
+            17.0,
+            5000.0,
+        );
+        assert_eq!(
+            a.bar[..4],
+            ["MicrophoneButton", "VideoButton", "ShareButton", "|"]
+        );
+        assert!(
+            a.bar.contains(&"HoldButton".to_string())
+                && a.bar.contains(&"DialpadButton".to_string())
+        );
+        assert!(
+            !a.bar.contains(&"RaiseHandsButton".to_string())
+                && !a.bar.contains(&"ReactionButton".to_string())
+        );
         // On hold: Resume is with Leave.
-        let held = arrange(&Facts { p2p: true, on_hold: true, centered: true, ..Default::default() }, &|_| 56.0, 17.0, 5000.0);
+        let held = arrange(
+            &Facts {
+                p2p: true,
+                on_hold: true,
+                centered: true,
+                ..Default::default()
+            },
+            &|_| 56.0,
+            17.0,
+            5000.0,
+        );
         assert_eq!(held.end, ["ResumeButton", "CallButton"]);
     }
 
     #[test]
     fn end_to_end_encrypted_calls_drop_what_teams_hides() {
         for centered in [false, true] {
-            let plain = arrange(&Facts { p2p: true, centered, ..Default::default() }, &|_| 56.0, 17.0, 5000.0);
+            let plain = arrange(
+                &Facts {
+                    p2p: true,
+                    centered,
+                    ..Default::default()
+                },
+                &|_| 56.0,
+                17.0,
+                5000.0,
+            );
             assert!(plain.bar.contains(&"CallTransferButtonV2".to_string()));
-            let e2ee = arrange(&Facts { p2p: true, centered, e2ee: true, ..Default::default() }, &|_| 56.0, 17.0, 5000.0);
-            for gone in ["CallTransferButtonV2", "CallConsultativeTransferButtonV2", "MeetingAppsAddButton"] {
-                assert!(!e2ee.bar.contains(&gone.to_string()), "{gone} in an E2EE call");
+            let e2ee = arrange(
+                &Facts {
+                    p2p: true,
+                    centered,
+                    e2ee: true,
+                    ..Default::default()
+                },
+                &|_| 56.0,
+                17.0,
+                5000.0,
+            );
+            for gone in [
+                "CallTransferButtonV2",
+                "CallConsultativeTransferButtonV2",
+                "MeetingAppsAddButton",
+            ] {
+                assert!(
+                    !e2ee.bar.contains(&gone.to_string()),
+                    "{gone} in an E2EE call"
+                );
             }
-            assert!(e2ee.bar.contains(&"HoldButton".to_string()) && e2ee.bar.contains(&"DialpadButton".to_string()));
+            assert!(
+                e2ee.bar.contains(&"HoldButton".to_string())
+                    && e2ee.bar.contains(&"DialpadButton".to_string())
+            );
         }
-        for n in ["RecordingButton", "TranscriptButton", "CallParkButton", "MergeCallsButton", "RecordingIndicator"] {
+        for n in [
+            "RecordingButton",
+            "TranscriptButton",
+            "CallParkButton",
+            "MergeCallsButton",
+            "RecordingIndicator",
+        ] {
             assert!(e2ee_hidden(n), "{n}");
         }
         assert!(!e2ee_hidden("HoldButton") && !e2ee_hidden("E2EEncryptionIndicator"));
         // Park: Teams' isCallParkAvailable (policy and Enterprise Voice),
         // not on hold, not end-to-end encrypted.
-        assert!(!Facts { p2p: true, ..Default::default() }.shows("CallParkButton"));
-        assert!(Facts { p2p: true, can_park: true, ..Default::default() }.shows("CallParkButton"));
-        assert!(!Facts { p2p: true, can_park: true, on_hold: true, ..Default::default() }.shows("CallParkButton"));
-        assert!(!Facts { p2p: true, can_park: true, e2ee: true, ..Default::default() }.shows("CallParkButton"));
+        assert!(
+            !Facts {
+                p2p: true,
+                ..Default::default()
+            }
+            .shows("CallParkButton")
+        );
+        assert!(
+            Facts {
+                p2p: true,
+                can_park: true,
+                ..Default::default()
+            }
+            .shows("CallParkButton")
+        );
+        assert!(
+            !Facts {
+                p2p: true,
+                can_park: true,
+                on_hold: true,
+                ..Default::default()
+            }
+            .shows("CallParkButton")
+        );
+        assert!(
+            !Facts {
+                p2p: true,
+                can_park: true,
+                e2ee: true,
+                ..Default::default()
+            }
+            .shows("CallParkButton")
+        );
     }
 
     #[test]
     fn picks_teams_layouts() {
         assert_eq!(layout_name(false, false, false), LayoutName::Default);
-        assert_eq!(layout_name(true, false, false), LayoutName::OneToOneOrGroupCall);
+        assert_eq!(
+            layout_name(true, false, false),
+            LayoutName::OneToOneOrGroupCall
+        );
         assert_eq!(layout_name(true, true, false), LayoutName::OneToOnePstn);
         assert_eq!(layout_name(true, false, true), LayoutName::ConsultAndAdd);
     }
@@ -1282,25 +1893,76 @@ mod tests {
         // ost-test1 licensed for Copilot): More reads … Meeting info,
         // Facilitator ▸, Timer … Settings ▸ | Call me, Report a concern,
         // Help.
-        let facts = Facts { scheduled: true, organizer: true, reactions: true, call_me: true, facilitator: true, ..Default::default() };
+        let facts = Facts {
+            scheduled: true,
+            organizer: true,
+            reactions: true,
+            call_me: true,
+            facilitator: true,
+            ..Default::default()
+        };
         let a = arrange(&facts, &|_| 56.0, 17.0, 5000.0);
         let flat: Vec<String> = more_names(&a).concat();
-        let at = |n: &str| flat.iter().position(|x| x == n).unwrap_or_else(|| panic!("{n} missing: {flat:?}"));
-        assert!(at("MeetingInfoButton") < at("FacilitatorButton") && at("FacilitatorButton") < at("MeetingFacilitatorTimerButton"));
-        assert!(at("SettingsMenuControl") < at("PstnButton") && at("PstnButton") < at("ReportMeetingButton"));
+        let at = |n: &str| {
+            flat.iter()
+                .position(|x| x == n)
+                .unwrap_or_else(|| panic!("{n} missing: {flat:?}"))
+        };
+        assert!(
+            at("MeetingInfoButton") < at("FacilitatorButton")
+                && at("FacilitatorButton") < at("MeetingFacilitatorTimerButton")
+        );
+        assert!(
+            at("SettingsMenuControl") < at("PstnButton")
+                && at("PstnButton") < at("ReportMeetingButton")
+        );
         // Call me is a section of one (callingOverflow) right before Report
         // a concern and Help: the menu merges it into theirs (no divider).
         let secs = more_names(&a);
-        assert!(secs.iter().any(|s| s == &["PstnButton".to_string()]), "Call me alone: {secs:?}");
-        assert_eq!(flat[at("PstnButton")..], ["PstnButton", "ReportMeetingButton", "MeetingHelpButton"]);
+        assert!(
+            secs.iter().any(|s| s == &["PstnButton".to_string()]),
+            "Call me alone: {secs:?}"
+        );
+        assert_eq!(
+            flat[at("PstnButton")..],
+            ["PstnButton", "ReportMeetingButton", "MeetingHelpButton"]
+        );
         // Without dial-in (or a licence) neither shows.
-        let plain = arrange(&Facts { scheduled: true, ..Default::default() }, &|_| 56.0, 17.0, 5000.0);
+        let plain = arrange(
+            &Facts {
+                scheduled: true,
+                ..Default::default()
+            },
+            &|_| 56.0,
+            17.0,
+            5000.0,
+        );
         let flat: Vec<String> = more_names(&plain).concat();
-        assert!(!flat.contains(&"PstnButton".to_string()) && !flat.contains(&"FacilitatorButton".to_string()));
+        assert!(
+            !flat.contains(&"PstnButton".to_string())
+                && !flat.contains(&"FacilitatorButton".to_string())
+        );
         // The new controls: Join info ▸ Meeting info, Call me, Call health.
-        let n = arrange(&Facts { call_me: true, ..new_controls_meeting() }, &|_| 56.0, 17.0, 5000.0);
-        let info = n.more.iter().flat_map(|s| s.items.iter()).find(|i| i.name == "JoinInfoMenuControl").unwrap();
-        let items: Vec<&str> = info.sections.iter().flat_map(|s| s.items.iter().map(|i| i.name.as_str())).collect();
+        let n = arrange(
+            &Facts {
+                call_me: true,
+                ..new_controls_meeting()
+            },
+            &|_| 56.0,
+            17.0,
+            5000.0,
+        );
+        let info = n
+            .more
+            .iter()
+            .flat_map(|s| s.items.iter())
+            .find(|i| i.name == "JoinInfoMenuControl")
+            .unwrap();
+        let items: Vec<&str> = info
+            .sections
+            .iter()
+            .flat_map(|s| s.items.iter().map(|i| i.name.as_str()))
+            .collect();
         assert_eq!(items, ["MeetingInfoButton", "PstnButton", "CallHealth"]);
     }
 }

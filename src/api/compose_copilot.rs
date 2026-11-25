@@ -47,9 +47,18 @@ pub struct Rewrite {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     /// The answer so far (HTML, maybe cut inside a tag).
-    Partial { request: String, html: String },
-    Done { request: String, html: String },
-    Failed { request: String, error: String },
+    Partial {
+        request: String,
+        html: String,
+    },
+    Done {
+        request: String,
+        html: String,
+    },
+    Failed {
+        request: String,
+        error: String,
+    },
 }
 
 enum Cmd {
@@ -63,14 +72,27 @@ pub struct Copilot {
 impl Copilot {
     /// Start on `rt` (the session opens with the first request); `flights`
     /// is Teams' AugLoop flights line, `events` is called from its task.
-    pub fn start(rt: &tokio::runtime::Handle, ui_language: &str, flights: String, events: impl Fn(Event) + Send + Sync + 'static) -> Copilot {
+    pub fn start(
+        rt: &tokio::runtime::Handle,
+        ui_language: &str,
+        flights: String,
+        events: impl Fn(Event) + Send + Sync + 'static,
+    ) -> Copilot {
         let (tx, rx) = mpsc::unbounded_channel();
-        rt.spawn(run(rx, ui_language.to_lowercase(), flights, Box::new(events)));
+        rt.spawn(run(
+            rx,
+            ui_language.to_lowercase(),
+            flights,
+            Box::new(events),
+        ));
         Copilot { tx }
     }
     /// Ask for a rewrite; its events carry `request`.
     pub fn rewrite(&self, request: &str, rewrite: Rewrite) {
-        let _ = self.tx.send(Cmd::Rewrite { request: request.into(), rewrite });
+        let _ = self.tx.send(Cmd::Rewrite {
+            request: request.into(),
+            rewrite,
+        });
     }
 }
 
@@ -85,7 +107,16 @@ pub fn flights(settings: &Value) -> String {
     let mut parts: Vec<String> = ["runtimeFlights", "experimentationRuntimeFlights"]
         .iter()
         .flat_map(|k| settings[*k].as_array().cloned().unwrap_or_default())
-        .filter_map(|f| Some(format!("{}:{}", f["name"].as_str()?, f["value"].as_str().map(str::to_string).unwrap_or_else(|| f["value"].to_string()))))
+        .filter_map(|f| {
+            Some(format!(
+                "{}:{}",
+                f["name"].as_str()?,
+                f["value"]
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| f["value"].to_string())
+            ))
+        })
         .collect();
     parts.push("automate-audience:Production".into());
     parts.push("_acceptsClaimsChallengeMessages".into());
@@ -123,19 +154,34 @@ pub fn parse_result(v: &Value) -> Vec<(String, String, Option<String>, i64)> {
     }
     let mut out = Vec::new();
     for op in v["ops"].as_array().into_iter().flatten() {
-        let signal = op["parentPath"].as_array().and_then(|p| p.last()).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+        let signal = op["parentPath"]
+            .as_array()
+            .and_then(|p| p.last())
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string();
         for it in op["items"].as_array().into_iter().flatten() {
             let b = &it["body"];
             let part = b["answerPart"].as_str().unwrap_or_default().to_string();
             let done = b["isCompleted"].as_bool().unwrap_or(false);
-            let answer = if done { Some(b["answer"].as_str().unwrap_or_default().to_string()) } else { None };
-            out.push((signal.clone(), part, answer, b["status"].as_i64().unwrap_or(0)));
+            let answer = if done {
+                Some(b["answer"].as_str().unwrap_or_default().to_string())
+            } else {
+                None
+            };
+            out.push((
+                signal.clone(),
+                part,
+                answer,
+                b["status"].as_i64().unwrap_or(0),
+            ));
         }
     }
     out
 }
 
-type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+type Ws =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 struct Session {
     ws: Ws,
@@ -167,8 +213,18 @@ impl Session {
         let item = uuid::Uuid::new_v4().to_string();
         // Teams' first request is C1; its later ones step by three (C31,
         // C34, …).
-        self.context = if self.context == 0 { 1 } else { self.context + 3 };
-        let op = signal_op(&uuid::Uuid::new_v4().to_string(), &uuid::Uuid::new_v4().to_string(), &item, &format!("C{}", self.context), r);
+        self.context = if self.context == 0 {
+            1
+        } else {
+            self.context + 3
+        };
+        let op = signal_op(
+            &uuid::Uuid::new_v4().to_string(),
+            &uuid::Uuid::new_v4().to_string(),
+            &item,
+            &format!("C{}", self.context),
+            r,
+        );
         let mid = self.mid();
         let m = json!({"cv": self.cv(), "seq": self.seq, "ops": [op], "H_": h("AugLoop_Session_Protocol_SyncMessage", &["AugLoop_Session_Protocol_Message"]), "messageId": mid});
         self.seq += 1;
@@ -184,7 +240,11 @@ async fn token() -> anyhow::Result<String> {
 pub fn iana_timezone() -> String {
     std::fs::read_link("/etc/localtime")
         .ok()
-        .and_then(|p| p.to_str().and_then(|s| s.split("zoneinfo/").nth(1)).map(str::to_string))
+        .and_then(|p| {
+            p.to_str()
+                .and_then(|s| s.split("zoneinfo/").nth(1))
+                .map(str::to_string)
+        })
         .unwrap_or_else(|| "UTC".into())
 }
 
@@ -198,16 +258,31 @@ pub fn session_init(ui_language: &str, flights: &str, cv: &str, mid: &str) -> Va
         "H_": h("AugLoop_Session_Protocol_SessionInitMessage", &["AugLoop_Session_Protocol_Message"]), "cv": cv, "messageId": mid})
 }
 
-async fn connect(ui_language: &str, flights: &str) -> anyhow::Result<(Session, tokio::time::Instant)> {
-    let mut req = tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request("wss://augloop.office.com/")?;
-    req.headers_mut().insert("Origin", "https://teams.microsoft.com".parse()?);
+async fn connect(
+    ui_language: &str,
+    flights: &str,
+) -> anyhow::Result<(Session, tokio::time::Instant)> {
+    let mut req = tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(
+        "wss://augloop.office.com/",
+    )?;
+    req.headers_mut()
+        .insert("Origin", "https://teams.microsoft.com".parse()?);
     let (ws, _) = tokio_tungstenite::connect_async(req).await?;
-    let mut s = Session { ws, n: 0, seq: 0, context: 0, id: uuid::Uuid::new_v4().to_string() };
+    let mut s = Session {
+        ws,
+        n: 0,
+        seq: 0,
+        context: 0,
+        id: uuid::Uuid::new_v4().to_string(),
+    };
     let mid = s.mid();
     let init = session_init(ui_language, flights, &s.cv(), &mid);
     s.send(init).await?;
     loop {
-        let Some(m) = tokio::time::timeout(std::time::Duration::from_secs(20), s.ws.next()).await? else { anyhow::bail!("AugLoop closed") };
+        let Some(m) = tokio::time::timeout(std::time::Duration::from_secs(20), s.ws.next()).await?
+        else {
+            anyhow::bail!("AugLoop closed")
+        };
         if let Message::Text(t) = m?
             && t.as_str() != "~"
         {
@@ -215,7 +290,10 @@ async fn connect(ui_language: &str, flights: &str) -> anyhow::Result<(Session, t
             if v.get("sessionKey").is_some() {
                 break;
             }
-            if v.pointer("/H_/T_").and_then(|x| x.as_str()).is_some_and(|t| t.contains("Error")) {
+            if v.pointer("/H_/T_")
+                .and_then(|x| x.as_str())
+                .is_some_and(|t| t.contains("Error"))
+            {
                 anyhow::bail!("AugLoop refused the session");
             }
         }
@@ -231,13 +309,21 @@ async fn connect(ui_language: &str, flights: &str) -> anyhow::Result<(Session, t
         "H_": h("AugLoop_Session_Protocol_AnnotationActivationMessage", &["AugLoop_Session_Protocol_Message"]), "cv": s.cv(), "messageId": mid});
     s.send(activate).await?;
     s.provide_token(&token().await?).await?;
-    Ok((s, tokio::time::Instant::now() + std::time::Duration::from_secs(25 * 60)))
+    Ok((
+        s,
+        tokio::time::Instant::now() + std::time::Duration::from_secs(25 * 60),
+    ))
 }
 
 /// How long a request may go without an answer.
 const ANSWER_WITHIN: std::time::Duration = std::time::Duration::from_secs(60);
 
-async fn run(mut rx: mpsc::UnboundedReceiver<Cmd>, ui_language: String, flights: String, events: Box<dyn Fn(Event) + Send + Sync>) {
+async fn run(
+    mut rx: mpsc::UnboundedReceiver<Cmd>,
+    ui_language: String,
+    flights: String,
+    events: Box<dyn Fn(Event) + Send + Sync>,
+) {
     let mut queued: Vec<(String, Rewrite)> = Vec::new();
     loop {
         if queued.is_empty() {
@@ -251,7 +337,10 @@ async fn run(mut rx: mpsc::UnboundedReceiver<Cmd>, ui_language: String, flights:
             Err(e) => {
                 tracing::warn!("Compose Copilot: {e:#}");
                 for (request, _) in queued.drain(..) {
-                    events(Event::Failed { request, error: format!("{e:#}") });
+                    events(Event::Failed {
+                        request,
+                        error: format!("{e:#}"),
+                    });
                 }
                 continue;
             }
@@ -265,7 +354,10 @@ async fn run(mut rx: mpsc::UnboundedReceiver<Cmd>, ui_language: String, flights:
                     pending.insert(item, (request, String::new(), tokio::time::Instant::now()));
                 }
                 Err(e) => {
-                    events(Event::Failed { request, error: format!("{e:#}") });
+                    events(Event::Failed {
+                        request,
+                        error: format!("{e:#}"),
+                    });
                     ok = false;
                 }
             }
@@ -331,7 +423,10 @@ async fn run(mut rx: mpsc::UnboundedReceiver<Cmd>, ui_language: String, flights:
         }
         let _ = s.ws.close(None).await;
         for (_, (request, _, _)) in pending.drain() {
-            events(Event::Failed { request, error: "The Copilot session closed".into() });
+            events(Event::Failed {
+                request,
+                error: "The Copilot session closed".into(),
+            });
         }
     }
 }
@@ -354,7 +449,10 @@ pub fn streaming_text(html: &str) -> String {
             _ => {}
         }
     }
-    out.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    out.replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
 }
 
 #[cfg(test)]
@@ -380,10 +478,21 @@ mod tests {
             "streamResponse": true, "H_": {"T_": "AugLoop_TeamsCopilot_TeamsCopilotComposeRewriteSignal", "B_": ["AugLoop_TeamsCopilot_TeamsCopilotBaseSignal", "AugLoop_Signals_Signal"]}});
         assert_eq!(signal_body(&rewrite()), teams);
         let op = signal_op("0fe8", "9117", "3ecc", "C1", &rewrite());
-        assert_eq!(op["parentPath"], json!(["session", "doc", "teams_compose_copilot_streaming_0fe8", "9117"]));
+        assert_eq!(
+            op["parentPath"],
+            json!([
+                "session",
+                "doc",
+                "teams_compose_copilot_streaming_0fe8",
+                "9117"
+            ])
+        );
         assert_eq!(op["items"][0]["id"], "3ecc");
         // Proofread and Adjust only change the tone and length.
-        let p = Rewrite { tone: "proofread_scenario".into(), ..rewrite() };
+        let p = Rewrite {
+            tone: "proofread_scenario".into(),
+            ..rewrite()
+        };
         assert_eq!(signal_body(&p)["tone"], "proofread_scenario");
     }
 
@@ -391,17 +500,31 @@ mod tests {
     fn answers_stream_then_complete() {
         let part = json!({"annotationType": ANNOTATION, "ops": [{"parentPath": ["session", "doc", "teams_compose_copilot_streaming_x", "y", "3ecc"],
             "items": [{"id": "#A12", "body": {"answerPart": "Hey", "isCompleted": false}}]}]});
-        assert_eq!(parse_result(&part), vec![("3ecc".to_string(), "Hey".to_string(), None, 0)]);
+        assert_eq!(
+            parse_result(&part),
+            vec![("3ecc".to_string(), "Hey".to_string(), None, 0)]
+        );
         let done = json!({"annotationType": ANNOTATION, "ops": [{"parentPath": ["session", "doc", "teams_compose_copilot_streaming_x", "y", "3ecc"],
             "items": [{"id": "#A18", "body": {"status": 0, "answerPart": "", "answer": "<p>Hey team.</p>", "isCompleted": true}}]}]});
-        assert_eq!(parse_result(&done), vec![("3ecc".to_string(), String::new(), Some("<p>Hey team.</p>".to_string()), 0)]);
+        assert_eq!(
+            parse_result(&done),
+            vec![(
+                "3ecc".to_string(),
+                String::new(),
+                Some("<p>Hey team.</p>".to_string()),
+                0
+            )]
+        );
         assert!(parse_result(&json!({"annotationType": "AugLoop_Text_Critique"})).is_empty());
     }
 
     #[test]
     fn streaming_text_drops_cut_tags() {
         assert_eq!(streaming_text("<p"), "");
-        assert_eq!(streaming_text("<p>Hey team, could we"), "Hey team, could we");
+        assert_eq!(
+            streaming_text("<p>Hey team, could we"),
+            "Hey team, could we"
+        );
         assert_eq!(streaming_text("<p>Hey</p><p"), "Hey");
     }
 
@@ -409,6 +532,9 @@ mod tests {
     fn flights_follow_teams_settings() {
         let s = json!({"runtimeFlights": [{"name": "Microsoft.Teams.Augloop.AllowPartialResults", "value": "true"}],
             "experimentationRuntimeFlights": [{"name": "Microsoft.Teams.Augloop.RequireToolChainAnalysis", "value": "true"}]});
-        assert_eq!(flights(&s), "Microsoft.Teams.Augloop.AllowPartialResults:true;Microsoft.Teams.Augloop.RequireToolChainAnalysis:true;automate-audience:Production;_acceptsClaimsChallengeMessages;_acceptsSeedingStatusChangeMessages");
+        assert_eq!(
+            flights(&s),
+            "Microsoft.Teams.Augloop.AllowPartialResults:true;Microsoft.Teams.Augloop.RequireToolChainAnalysis:true;automate-audience:Production;_acceptsClaimsChallengeMessages;_acceptsSeedingStatusChangeMessages"
+        );
     }
 }

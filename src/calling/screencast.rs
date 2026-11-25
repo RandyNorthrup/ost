@@ -66,7 +66,11 @@ impl ScreenCapture {
                     .set_cursor_mode(CursorMode::EMBEDDED)
                     .set_sources(sources)
                     .set_multiple(false)
-                    .set_persist_mode(if restore.is_some() { PersistMode::ExplicitlyRevoked } else { PersistMode::DoNot })
+                    .set_persist_mode(if restore.is_some() {
+                        PersistMode::ExplicitlyRevoked
+                    } else {
+                        PersistMode::DoNot
+                    })
                     .set_restore_token(token.as_deref()),
             )
             .await?
@@ -129,7 +133,9 @@ impl ScreenCapture {
     /// Teams' Content from camera after its setup dialog: the processed
     /// camera ([`super::content_camera`]) goes out as the screen does;
     /// the share keeps the camera running until it stops.
-    pub fn from_content_camera(camera: &super::content_camera::ContentCamera) -> (Self, mpsc::Receiver<YuvFrame>) {
+    pub fn from_content_camera(
+        camera: &super::content_camera::ContentCamera,
+    ) -> (Self, mpsc::Receiver<YuvFrame>) {
         let (frames, ended) = camera.share();
         tracing::info!(device = camera.device(), "content from camera shared");
         (
@@ -173,7 +179,9 @@ struct RestoreFile(std::path::PathBuf);
 
 impl RestoreFile {
     fn from_env() -> Option<Self> {
-        std::env::var_os("OST_SCREENCAST_RESTORE").filter(|p| !p.is_empty()).map(|p| Self(p.into()))
+        std::env::var_os("OST_SCREENCAST_RESTORE")
+            .filter(|p| !p.is_empty())
+            .map(|p| Self(p.into()))
     }
 
     fn token(&self) -> Option<String> {
@@ -184,7 +192,10 @@ impl RestoreFile {
     }
 
     fn keep(&self, token: Option<&str>) {
-        tracing::info!(restorable = token.is_some(), "screen capture source kept for the next share");
+        tracing::info!(
+            restorable = token.is_some(),
+            "screen capture source kept for the next share"
+        );
         if let Some(t) = token
             && let Err(e) = std::fs::write(&self.0, t)
         {
@@ -260,7 +271,10 @@ fn capture(
             };
             (n.width, n.height) = (info.size().width, info.size().height);
             tracing::info!(format = ?info.format(), n.width, n.height, "screen capture format");
-            LAST_SIZE.store(((n.width as u64) << 32) | n.height as u64, std::sync::atomic::Ordering::Relaxed);
+            LAST_SIZE.store(
+                ((n.width as u64) << 32) | n.height as u64,
+                std::sync::atomic::Ordering::Relaxed,
+            );
         })
         .process(move |stream, n| {
             let Some(mut buffer) = stream.dequeue_buffer() else {

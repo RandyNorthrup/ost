@@ -7,7 +7,12 @@ async fn main() -> anyhow::Result<()> {
     let path = std::env::args().nth(1).expect("path");
     let client = TeamsClient::new().await?;
     let (base, token) = teams_cli::api::tabs::middle_tier(&client).await?;
-    let r = client.http().get(format!("{base}{path}")).bearer_auth(&token).send().await?;
+    let r = client
+        .http()
+        .get(format!("{base}{path}"))
+        .bearer_auth(&token)
+        .send()
+        .await?;
     println!("{} {}", r.status(), r.text().await?);
     Ok(())
 }

@@ -564,23 +564,42 @@ fn render_message_card(lines: &mut Vec<Line<'static>>, msg: &Message, layout: &C
         // The message's formatting (headings, quotes, code, styles).
         for rl in &msg.rich {
             let (mark, mark_style) = match &rl.kind {
-                super::rich::Kind::Quote => ("│ ".to_string(), Style::default().fg(Color::DarkGray).bg(bg)),
-                super::rich::Kind::Code => ("▏ ".to_string(), Style::default().fg(Color::DarkGray).bg(bg)),
+                super::rich::Kind::Quote => (
+                    "│ ".to_string(),
+                    Style::default().fg(Color::DarkGray).bg(bg),
+                ),
+                super::rich::Kind::Code => (
+                    "▏ ".to_string(),
+                    Style::default().fg(Color::DarkGray).bg(bg),
+                ),
                 super::rich::Kind::Item(b) => (b.clone(), text_style),
                 _ => (String::new(), text_style),
             };
             let mark_w = unicode_width::UnicodeWidthStr::width(mark.as_str());
             let base = match rl.kind {
-                super::rich::Kind::Heading(1) => text_style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                super::rich::Kind::Heading(1) => {
+                    text_style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                }
                 super::rich::Kind::Heading(_) => text_style.add_modifier(Modifier::BOLD),
                 super::rich::Kind::Quote => Style::default().fg(Color::Gray).bg(bg),
                 super::rich::Kind::Code => Style::default().fg(Color::LightCyan).bg(bg),
                 _ => text_style,
             };
-            for (n, row) in wrap_spans(&rl.spans, wrap_width.saturating_sub(mark_w), rl.kind == super::rich::Kind::Code).into_iter().enumerate() {
+            for (n, row) in wrap_spans(
+                &rl.spans,
+                wrap_width.saturating_sub(mark_w),
+                rl.kind == super::rich::Kind::Code,
+            )
+            .into_iter()
+            .enumerate()
+            {
                 let mut spans = vec![Span::styled(content_prefix.clone(), bg_style)];
                 // List bullets on the first row only; bars on every row.
-                let lead = if matches!(rl.kind, super::rich::Kind::Item(_)) && n > 0 { " ".repeat(mark_w) } else { mark.clone() };
+                let lead = if matches!(rl.kind, super::rich::Kind::Item(_)) && n > 0 {
+                    " ".repeat(mark_w)
+                } else {
+                    mark.clone()
+                };
                 spans.push(Span::styled(lead, mark_style));
                 let mut used = content_prefix.len() + mark_w;
                 for (t, f) in row {
@@ -742,7 +761,11 @@ fn span_style(base: Style, f: super::rich::Fmt) -> Style {
 
 /// Wrap styled spans to `width` columns, keeping each piece's style:
 /// at spaces (long words are cut), or anywhere for `hard` (code).
-fn wrap_spans(spans: &[(String, super::rich::Fmt)], width: usize, hard: bool) -> Vec<Vec<(String, super::rich::Fmt)>> {
+fn wrap_spans(
+    spans: &[(String, super::rich::Fmt)],
+    width: usize,
+    hard: bool,
+) -> Vec<Vec<(String, super::rich::Fmt)>> {
     use unicode_width::UnicodeWidthChar;
     let width = width.max(1);
     let mut rows: Vec<Vec<(String, super::rich::Fmt)>> = vec![Vec::new()];
@@ -769,7 +792,11 @@ fn wrap_spans(spans: &[(String, super::rich::Fmt)], width: usize, hard: bool) ->
         words.push(word);
     }
     for w in words {
-        let w_width: usize = w.iter().filter(|(c, _)| *c != ' ').map(|(c, _)| c.width().unwrap_or(0)).sum();
+        let w_width: usize = w
+            .iter()
+            .filter(|(c, _)| *c != ' ')
+            .map(|(c, _)| c.width().unwrap_or(0))
+            .sum();
         if !hard && col > 0 && col + w_width > width {
             rows.push(Vec::new());
             col = 0;
@@ -907,7 +934,12 @@ mod tests {
 
     #[test]
     fn scrolling_past_the_top_asks_for_older_messages() {
-        let msg = |i: usize| api::MessageInfo { sender: "A".into(), timestamp: String::new(), content: format!("m{i}"), ..Default::default() };
+        let msg = |i: usize| api::MessageInfo {
+            sender: "A".into(),
+            timestamp: String::new(),
+            content: format!("m{i}"),
+            ..Default::default()
+        };
         let mut st = MessagesState::default();
         st.update_messages("h", (0..50).map(msg).collect());
         assert_eq!(st.selected, 49);
@@ -929,7 +961,12 @@ mod tests {
 
     #[test]
     fn scroll_arrows_never_cover_timestamps() {
-        let msg = |i: usize| api::MessageInfo { sender: "Someone".into(), timestamp: "2026-11-10T12:24:00Z".into(), content: format!("message {i}"), ..Default::default() };
+        let msg = |i: usize| api::MessageInfo {
+            sender: "Someone".into(),
+            timestamp: "2026-11-10T12:24:00Z".into(),
+            content: format!("message {i}"),
+            ..Default::default()
+        };
         let mut st = MessagesState::default();
         st.update_messages("h", (0..30).map(msg).collect());
         st.selected = 15; // arrows at both ends
@@ -938,20 +975,51 @@ mod tests {
         render(area, &mut buf, &st, true, "Me");
         // Inner area is 1..59; its last column (58) is the gutter.
         let gutter: String = (2..19).map(|y| buf[(58, y)].symbol().to_string()).collect();
-        assert!(gutter.chars().all(|c| c == ' ' || c == '^' || c == 'v'), "text in the gutter: {gutter:?}");
+        assert!(
+            gutter.chars().all(|c| c == ' ' || c == '^' || c == 'v'),
+            "text in the gutter: {gutter:?}"
+        );
         assert!(gutter.contains('^') && gutter.contains('v'));
     }
 
     #[test]
     fn subjects_show_bold_above_the_text() {
         let mut st = MessagesState::default();
-        st.update_messages("h", vec![api::MessageInfo { sender: "A".into(), content: "OST TEST 88 body".into(), subject: "OST TEST 88 subject".into(), ..Default::default() }]);
+        st.update_messages(
+            "h",
+            vec![api::MessageInfo {
+                sender: "A".into(),
+                content: "OST TEST 88 body".into(),
+                subject: "OST TEST 88 subject".into(),
+                ..Default::default()
+            }],
+        );
         let (lines, _) = build_message_lines(&st, 60, "Me");
-        let text: Vec<String> = lines.iter().map(|l| l.spans.iter().map(|s| s.content.to_string()).collect::<String>()).collect();
-        let s = text.iter().position(|l| l.contains("OST TEST 88 subject")).expect("subject shown");
-        let b = text.iter().position(|l| l.contains("OST TEST 88 body")).unwrap();
+        let text: Vec<String> = lines
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.to_string())
+                    .collect::<String>()
+            })
+            .collect();
+        let s = text
+            .iter()
+            .position(|l| l.contains("OST TEST 88 subject"))
+            .expect("subject shown");
+        let b = text
+            .iter()
+            .position(|l| l.contains("OST TEST 88 body"))
+            .unwrap();
         assert!(s < b);
-        assert!(lines[s].spans.iter().any(|sp| sp.content.contains("subject") && sp.style.add_modifier.contains(Modifier::BOLD)));
+        assert!(
+            lines[s]
+                .spans
+                .iter()
+                .any(|sp| sp.content.contains("subject")
+                    && sp.style.add_modifier.contains(Modifier::BOLD))
+        );
     }
 
     #[test]
@@ -964,9 +1032,25 @@ mod tests {
             ..Default::default()
         }]);
         let (lines, _) = build_message_lines(&st, 60, "Me");
-        let find = |t: &str| lines.iter().find(|l| l.spans.iter().any(|s| s.content.contains(t))).expect(t);
-        let span = |t: &str| find(t).spans.iter().find(|s| s.content.contains(t)).unwrap().style;
-        assert!(span("Title").add_modifier.contains(Modifier::BOLD | Modifier::UNDERLINED));
+        let find = |t: &str| {
+            lines
+                .iter()
+                .find(|l| l.spans.iter().any(|s| s.content.contains(t)))
+                .expect(t)
+        };
+        let span = |t: &str| {
+            find(t)
+                .spans
+                .iter()
+                .find(|s| s.content.contains(t))
+                .unwrap()
+                .style
+        };
+        assert!(
+            span("Title")
+                .add_modifier
+                .contains(Modifier::BOLD | Modifier::UNDERLINED)
+        );
         assert!(span("bold").add_modifier.contains(Modifier::BOLD));
         assert_eq!(span("x").fg, Some(Color::LightYellow));
         assert!(find("quoted").spans.iter().any(|s| s.content.contains('│')));
@@ -976,8 +1060,19 @@ mod tests {
     fn styled_text_wraps_at_spaces() {
         let f = super::super::rich::Fmt::default();
         let b = super::super::rich::Fmt { bold: true, ..f };
-        let rows = wrap_spans(&[("one two ".into(), f), ("three".into(), b), (" four".into(), f)], 9, false);
-        let text: Vec<String> = rows.iter().map(|r| r.iter().map(|(t, _)| t.as_str()).collect()).collect();
+        let rows = wrap_spans(
+            &[
+                ("one two ".into(), f),
+                ("three".into(), b),
+                (" four".into(), f),
+            ],
+            9,
+            false,
+        );
+        let text: Vec<String> = rows
+            .iter()
+            .map(|r| r.iter().map(|(t, _)| t.as_str()).collect())
+            .collect();
         assert_eq!(text, ["one two ", "three ", "four"]);
         assert!(rows[1].iter().any(|(t, f)| t == "three" && f.bold));
     }

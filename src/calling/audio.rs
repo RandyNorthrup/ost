@@ -96,7 +96,8 @@ pub fn mic_level() -> u32 {
 
 /// The processed microphone's peaks over its last five frames (100 ms),
 /// each 0..=32768, and where the next one goes.
-static MIC_RECENT: [std::sync::atomic::AtomicU32; 5] = [const { std::sync::atomic::AtomicU32::new(0) }; 5];
+static MIC_RECENT: [std::sync::atomic::AtomicU32; 5] =
+    [const { std::sync::atomic::AtomicU32::new(0) }; 5];
 static MIC_RECENT_AT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// The microphone's level now, 0.0–1.0: the processed signal's peak over
@@ -215,12 +216,16 @@ fn pick_device(host: &cpal::Host, input: bool) -> Option<Device> {
         // such as PulseAudio's remap-source (an Audio/Source node with no
         // factory), named by its node name (its description is shared with
         // the loopback stream feeding it): use it when it exists.
-        let named = if input { host.input_devices() } else { host.output_devices() }
-            .ok()
-            .and_then(|mut it| {
-                use cpal::traits::DeviceTrait;
-                it.find(|d| d.id().is_ok_and(|id| id.id() == name.as_str()))
-            });
+        let named = if input {
+            host.input_devices()
+        } else {
+            host.output_devices()
+        }
+        .ok()
+        .and_then(|mut it| {
+            use cpal::traits::DeviceTrait;
+            it.find(|d| d.id().is_ok_and(|id| id.id() == name.as_str()))
+        });
         if named.is_some() {
             tracing::info!("Using an unlisted audio device chosen by name");
             return named;
@@ -381,13 +386,19 @@ impl AudioPlayback {
         Self::start_frames(call_rate, None)
     }
 
-    fn start_with(call_rate: u32, device: Option<String>) -> Option<(Self, mpsc::SyncSender<Vec<i16>>)> {
+    fn start_with(
+        call_rate: u32,
+        device: Option<String>,
+    ) -> Option<(Self, mpsc::SyncSender<Vec<i16>>)> {
         let (playback, stereo_tx) = Self::start_frames(call_rate, device)?;
         let (frame_tx, frame_rx) = mpsc::sync_channel::<Vec<i16>>(50);
         // Mono frames play the same on every channel.
         thread::spawn(move || {
             while let Ok(frame) = frame_rx.recv() {
-                if stereo_tx.send(frame.iter().map(|&s| [s, s]).collect()).is_err() {
+                if stereo_tx
+                    .send(frame.iter().map(|&s| [s, s]).collect())
+                    .is_err()
+                {
                     return;
                 }
             }
@@ -395,7 +406,10 @@ impl AudioPlayback {
         Some((playback, frame_tx))
     }
 
-    fn start_frames(call_rate: u32, device: Option<String>) -> Option<(Self, mpsc::SyncSender<Vec<[i16; 2]>>)> {
+    fn start_frames(
+        call_rate: u32,
+        device: Option<String>,
+    ) -> Option<(Self, mpsc::SyncSender<Vec<[i16; 2]>>)> {
         let (frame_tx, frame_rx) = mpsc::sync_channel::<Vec<[i16; 2]>>(50);
         let (keep_tx, keep_rx) = mpsc::channel::<()>();
 
@@ -413,19 +427,37 @@ impl AudioPlayback {
             let device_rate = device_rate.clone();
             thread::spawn(move || {
                 while let Ok(frame) = frame_rx.recv() {
-                    let mid: Vec<i16> = frame.iter().map(|f| ((i32::from(f[0]) + i32::from(f[1])) / 2) as i16).collect();
+                    let mid: Vec<i16> = frame
+                        .iter()
+                        .map(|f| ((i32::from(f[0]) + i32::from(f[1])) / 2) as i16)
+                        .collect();
                     // What we play is the echo canceller's reference.
                     if call_rate == 48_000
                         && let Some(p) = super::apm::current()
                     {
                         let mut reference = mid.clone();
-                        p.lock().unwrap_or_else(|e| e.into_inner()).render(&mut reference);
+                        p.lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .render(&mut reference);
                     }
-                    let peak = frame.iter().flatten().map(|s| s.unsigned_abs() as u32).max().unwrap_or(0) * 100 / 32768;
+                    let peak = frame
+                        .iter()
+                        .flatten()
+                        .map(|s| s.unsigned_abs() as u32)
+                        .max()
+                        .unwrap_or(0)
+                        * 100
+                        / 32768;
                     SPEAKER_PEAK.fetch_max(peak, std::sync::atomic::Ordering::Relaxed);
                     let rate = device_rate.load(std::sync::atomic::Ordering::Relaxed);
                     let samples: Vec<[i16; 2]> = if rate != call_rate {
-                        let ch = |c: usize| resample(&frame.iter().map(|f| f[c]).collect::<Vec<_>>(), call_rate, rate);
+                        let ch = |c: usize| {
+                            resample(
+                                &frame.iter().map(|f| f[c]).collect::<Vec<_>>(),
+                                call_rate,
+                                rate,
+                            )
+                        };
                         let (l, r) = (ch(0), ch(1));
                         l.into_iter().zip(r).map(|(l, r)| [l, r]).collect()
                     } else {
@@ -445,7 +477,12 @@ impl AudioPlayback {
         thread::spawn(move || {
             loop {
                 let generation = GENERATION.load(std::sync::atomic::Ordering::SeqCst);
-                let Some(stream) = open_playback(ring.clone(), device_rate.clone(), call_rate, device.as_deref()) else {
+                let Some(stream) = open_playback(
+                    ring.clone(),
+                    device_rate.clone(),
+                    call_rate,
+                    device.as_deref(),
+                ) else {
                     if !park_until_switch(&keep_rx, generation) {
                         return;
                     }
@@ -527,7 +564,9 @@ fn open_capture(frame_tx: mpsc::SyncSender<Vec<i16>>, target: u32) -> Option<cpa
                 }
                 if logged < 3 {
                     logged += 1;
-                    let rms = (chunk.iter().map(|&s| (s as f64).powi(2)).sum::<f64>() / chunk.len() as f64).sqrt();
+                    let rms = (chunk.iter().map(|&s| (s as f64).powi(2)).sum::<f64>()
+                        / chunk.len() as f64)
+                        .sqrt();
                     tracing::debug!(peak, rms, first = ?&chunk[..8.min(chunk.len())], "mic frame");
                 }
                 let mut frame = if need_resample {
@@ -539,7 +578,9 @@ fn open_capture(frame_tx: mpsc::SyncSender<Vec<i16>>, target: u32) -> Option<cpa
                 if target == 48_000
                     && let Some(p) = super::apm::current()
                 {
-                    p.lock().unwrap_or_else(|e| e.into_inner()).capture(&mut frame, APM_DELAY_MS);
+                    p.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .capture(&mut frame, APM_DELAY_MS);
                     // Voice isolation: only your voice goes on.
                     super::voice_isolation::process(&mut frame);
                 }
@@ -547,7 +588,11 @@ fn open_capture(frame_tx: mpsc::SyncSender<Vec<i16>>, target: u32) -> Option<cpa
                 // (raw 16-bit mono at the call's rate; for tests).
                 if let Some(path) = std::env::var_os("OST_DUMP_MIC") {
                     use std::io::Write;
-                    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+                    if let Ok(mut f) = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(path)
+                    {
                         let bytes: Vec<u8> = frame.iter().flat_map(|s| s.to_le_bytes()).collect();
                         let _ = f.write_all(&bytes);
                     }
@@ -556,9 +601,14 @@ fn open_capture(frame_tx: mpsc::SyncSender<Vec<i16>>, target: u32) -> Option<cpa
                 // the processed microphone, as Teams runs it.
                 #[cfg(feature = "video")]
                 ost_vfx::avatar::feed(&frame, target);
-                let out_peak = frame.iter().map(|s| s.unsigned_abs() as u32).max().unwrap_or(0);
+                let out_peak = frame
+                    .iter()
+                    .map(|s| s.unsigned_abs() as u32)
+                    .max()
+                    .unwrap_or(0);
                 note_mic_frame(out_peak);
-                MIC_OUT_PEAK.fetch_max(out_peak * 100 / 32768, std::sync::atomic::Ordering::Relaxed);
+                MIC_OUT_PEAK
+                    .fetch_max(out_peak * 100 / 32768, std::sync::atomic::Ordering::Relaxed);
                 let _ = frame_tx.try_send(frame);
             }
         },
@@ -599,7 +649,9 @@ fn open_playback(
 ) -> Option<cpal::Stream> {
     let host = cpal::default_host();
     let device = match only {
-        Some(name) => endpoints(&host, false).into_iter().find(|d| device_name(d).as_deref() == Some(name)),
+        Some(name) => endpoints(&host, false)
+            .into_iter()
+            .find(|d| device_name(d).as_deref() == Some(name)),
         None => pick_device(&host, false),
     };
     let Some(device) = device else {
@@ -646,7 +698,9 @@ fn open_playback(
         Ok(s) => s,
         Err(e) => {
             tracing::warn!("Failed to build audio output stream: {}", e);
-            super::device_health::note_speaker(super::device_health::Open::from_error(&e.to_string()));
+            super::device_health::note_speaker(super::device_health::Open::from_error(
+                &e.to_string(),
+            ));
             return None;
         }
     };

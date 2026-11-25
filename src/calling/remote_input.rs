@@ -8,7 +8,9 @@
 
 use anyhow::{Context, Result};
 use ashpd::desktop::PersistMode;
-use ashpd::desktop::remote_desktop::{Axis, DeviceType, KeyState, RemoteDesktop, SelectDevicesOptions};
+use ashpd::desktop::remote_desktop::{
+    Axis, DeviceType, KeyState, RemoteDesktop, SelectDevicesOptions,
+};
 use ashpd::desktop::screencast::{Screencast, SelectSourcesOptions, SourceType};
 
 use super::screen_control::keys::evdev_from_vk;
@@ -48,7 +50,9 @@ impl Injector {
     /// Ask the desktop (its portal dialog) to allow control of what we
     /// share: `kind` offers the same choice as the share did.
     pub async fn start(kind: Source) -> Result<Self> {
-        let proxy = RemoteDesktop::new().await.context("The desktop's remote control portal isn't available")?;
+        let proxy = RemoteDesktop::new()
+            .await
+            .context("The desktop's remote control portal isn't available")?;
         let screencast = Screencast::new().await?;
         let session = proxy.create_session(Default::default()).await?;
         proxy
@@ -69,7 +73,9 @@ impl Injector {
         screencast
             .select_sources(
                 &session,
-                SelectSourcesOptions::default().set_sources(sources).set_multiple(false),
+                SelectSourcesOptions::default()
+                    .set_sources(sources)
+                    .set_multiple(false),
             )
             .await?
             .response()
@@ -79,10 +85,23 @@ impl Injector {
             .await?
             .response()
             .context("Control wasn't allowed")?;
-        let stream = started.streams().first().context("Nothing was picked to control")?;
-        let size = stream.size().map_or((1920.0, 1080.0), |(w, h)| (w as f64, h as f64));
+        let stream = started
+            .streams()
+            .first()
+            .context("Nothing was picked to control")?;
+        let size = stream
+            .size()
+            .map_or((1920.0, 1080.0), |(w, h)| (w as f64, h as f64));
         tracing::info!(node = stream.pipe_wire_node_id(), ?size, devices = ?started.devices(), "remote control allowed");
-        Ok(Self { proxy, stream: stream.pipe_wire_node_id(), size, session, held: Vec::new(), keys: Vec::new(), keys_injected: 0 })
+        Ok(Self {
+            proxy,
+            stream: stream.pipe_wire_node_id(),
+            size,
+            session,
+            held: Vec::new(),
+            keys: Vec::new(),
+            keys_injected: 0,
+        })
     }
 
     /// Play one of the controller's events.
@@ -103,20 +122,33 @@ impl Injector {
                 // Teams: +120 a notch up; the portal's steps go down.
                 let steps = -(m.wheel as i32) / 120;
                 if steps != 0 {
-                    self.proxy.notify_pointer_axis_discrete(s, Axis::Vertical, steps, Default::default()).await?;
+                    self.proxy
+                        .notify_pointer_axis_discrete(s, Axis::Vertical, steps, Default::default())
+                        .await?;
                 }
             }
             kind => {
-                let (x, y) = (m.x as f64 / 65535.0 * self.size.0, m.y as f64 / 65535.0 * self.size.1);
-                self.proxy.notify_pointer_motion_absolute(s, self.stream, x, y, Default::default()).await?;
+                let (x, y) = (
+                    m.x as f64 / 65535.0 * self.size.0,
+                    m.y as f64 / 65535.0 * self.size.1,
+                );
+                self.proxy
+                    .notify_pointer_motion_absolute(s, self.stream, x, y, Default::default())
+                    .await?;
                 if kind == mouse::BUTTON {
                     let button = match m.button {
                         mouse::RIGHT => BTN_RIGHT,
                         mouse::MIDDLE => BTN_MIDDLE,
                         _ => BTN_LEFT,
                     };
-                    let state = if m.down { KeyState::Pressed } else { KeyState::Released };
-                    self.proxy.notify_pointer_button(s, button, state, Default::default()).await?;
+                    let state = if m.down {
+                        KeyState::Pressed
+                    } else {
+                        KeyState::Released
+                    };
+                    self.proxy
+                        .notify_pointer_button(s, button, state, Default::default())
+                        .await?;
                     if m.down {
                         self.held.push(button);
                     } else {
@@ -133,8 +165,14 @@ impl Injector {
             tracing::debug!(vk = k.code, "remote control: no key for this code");
             return Ok(());
         };
-        let state = if k.up { KeyState::Released } else { KeyState::Pressed };
-        self.proxy.notify_keyboard_keycode(&self.session, code, state, Default::default()).await?;
+        let state = if k.up {
+            KeyState::Released
+        } else {
+            KeyState::Pressed
+        };
+        self.proxy
+            .notify_keyboard_keycode(&self.session, code, state, Default::default())
+            .await?;
         // How many went in (not which: a controller may type a password).
         self.keys_injected += 1;
         if self.keys_injected <= 40 || self.keys_injected.is_multiple_of(50) {
@@ -151,10 +189,16 @@ impl Injector {
     /// Control ended: let go of anything held, and end the session.
     pub async fn stop(mut self) {
         for b in std::mem::take(&mut self.held) {
-            let _ = self.proxy.notify_pointer_button(&self.session, b, KeyState::Released, Default::default()).await;
+            let _ = self
+                .proxy
+                .notify_pointer_button(&self.session, b, KeyState::Released, Default::default())
+                .await;
         }
         for c in std::mem::take(&mut self.keys) {
-            let _ = self.proxy.notify_keyboard_keycode(&self.session, c, KeyState::Released, Default::default()).await;
+            let _ = self
+                .proxy
+                .notify_keyboard_keycode(&self.session, c, KeyState::Released, Default::default())
+                .await;
         }
         let _ = self.session.close().await;
     }

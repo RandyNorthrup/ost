@@ -62,7 +62,13 @@ impl Coords {
 
     /// The path form: `tenant/organizer/19_meeting_…/message`.
     pub fn path(&self) -> String {
-        format!("{}/{}/{}/{}", self.tenant, self.organizer, self.thread.replace(':', "_"), self.message)
+        format!(
+            "{}/{}/{}/{}",
+            self.tenant,
+            self.organizer,
+            self.thread.replace(':', "_"),
+            self.message
+        )
     }
 
     /// The body form Teams sends (the thread underscored, as in the path).
@@ -96,16 +102,34 @@ pub fn rooms_from(v: &Value) -> Vec<Room> {
     let list = ["breakoutMeetings", "breakoutRoomMeetings", "breakoutRooms"]
         .iter()
         .find_map(|k| v.get(*k).and_then(|l| l.as_array()));
-    let s = |o: &Value, k: &str| o.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    let s = |o: &Value, k: &str| {
+        o.get(k)
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
     list.into_iter()
         .flatten()
         .filter_map(|r| {
-            let tenant = Some(s(r, "tenantId")).filter(|t| !t.is_empty()).unwrap_or_else(|| s(v, "tenantId"));
-            let organizer = Some(s(r, "organizerId")).filter(|t| !t.is_empty()).unwrap_or_else(|| s(v, "organizerId"));
-            let message = Some(s(r, "messageId")).filter(|t| !t.is_empty()).unwrap_or_else(|| "0".into());
+            let tenant = Some(s(r, "tenantId"))
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| s(v, "tenantId"));
+            let organizer = Some(s(r, "organizerId"))
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| s(v, "organizerId"));
+            let message = Some(s(r, "messageId"))
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| "0".into());
             let coords = Coords::new(&tenant, &organizer, &s(r, "threadId"), &message).ok()?;
-            let participants = r.get("participants").and_then(|p| p.as_array()).cloned().unwrap_or_default();
-            let restrict_chat = r.get("restrictChatAccess").and_then(|x| x.as_bool()).unwrap_or(false);
+            let participants = r
+                .get("participants")
+                .and_then(|p| p.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let restrict_chat = r
+                .get("restrictChatAccess")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false);
             Some(Room {
                 name: s(r, "roomName"),
                 open: !participants.is_empty() && !restrict_chat,
@@ -140,7 +164,9 @@ impl Settings {
                 .map(|s| s.eq_ignore_ascii_case("true"))
         };
         Self {
-            allow_select: v["allowUsersToSelectBreakoutRoom"].as_bool().unwrap_or(false),
+            allow_select: v["allowUsersToSelectBreakoutRoom"]
+                .as_bool()
+                .unwrap_or(false),
             room_duration: duration_minutes(&v["roomDuration"]),
             allow_return: flag("allowJoinBackToMainMeeting"),
             auto_move: flag("allowMoveParticipantsAutomatically"),
@@ -166,9 +192,13 @@ impl Settings {
             ext.insert("allowJoinBackToMainMeeting".into(), json!(b.to_string()));
         }
         if let Some(b) = self.auto_move {
-            ext.insert("allowMoveParticipantsAutomatically".into(), json!(b.to_string()));
+            ext.insert(
+                "allowMoveParticipantsAutomatically".into(),
+                json!(b.to_string()),
+            );
         }
-        let mut body = json!({ "allowUsersToSelectBreakoutRoom": self.allow_select, "extensionData": ext });
+        let mut body =
+            json!({ "allowUsersToSelectBreakoutRoom": self.allow_select, "extensionData": ext });
         if let Some(d) = self.room_duration {
             // Teams sends the limit as "HH:MM:00".
             body["roomDuration"] = json!(format!("{:02}:{:02}:00", d / 60, d % 60));
@@ -193,17 +223,34 @@ fn duration_minutes(v: &Value) -> Option<i64> {
 
 /// A change's version: our participant id in the call, then a new id.
 pub fn new_version(participant_id: &str) -> String {
-    let me = if participant_id.is_empty() { uuid::Uuid::new_v4().to_string() } else { participant_id.to_string() };
+    let me = if participant_id.is_empty() {
+        uuid::Uuid::new_v4().to_string()
+    } else {
+        participant_id.to_string()
+    };
     format!("{me}_{}", uuid::Uuid::new_v4())
 }
 
 fn versioned(path: String, version: &str) -> String {
-    if version.is_empty() { path } else { format!("{path}?newVersion={version}") }
+    if version.is_empty() {
+        path
+    } else {
+        format!("{path}?newVersion={version}")
+    }
 }
 
-async fn send(client: &TeamsClient, method: reqwest::Method, path: &str, body: Option<Value>, what: &str) -> Result<Value> {
+async fn send(
+    client: &TeamsClient,
+    method: reqwest::Method,
+    path: &str,
+    body: Option<Value>,
+    what: &str,
+) -> Result<Value> {
     let (base, token) = super::tabs::middle_tier(client).await?;
-    let mut req = client.http().request(method, format!("{base}/beta/breakoutRoom/{path}")).bearer_auth(&token);
+    let mut req = client
+        .http()
+        .request(method, format!("{base}/beta/breakoutRoom/{path}"))
+        .bearer_auth(&token);
     if let Some(b) = body {
         req = req.json(&b);
     }
@@ -211,7 +258,10 @@ async fn send(client: &TeamsClient, method: reqwest::Method, path: &str, body: O
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
     if !status.is_success() {
-        bail!("{what}: HTTP {status} {}", text.chars().take(200).collect::<String>());
+        bail!(
+            "{what}: HTTP {status} {}",
+            text.chars().take(200).collect::<String>()
+        );
     }
     Ok(serde_json::from_str(&text).unwrap_or(Value::Null))
 }
@@ -225,7 +275,13 @@ pub struct NewRoom {
 /// Create rooms (Teams' Create rooms): `rooms` names them (Teams' "Room
 /// 1", "Room 2", …) and holds who's assigned (manual assignment leaves
 /// them empty).
-pub async fn create(client: &TeamsClient, main: &Coords, rooms: &[NewRoom], settings: Option<&Settings>, version: &str) -> Result<Vec<Room>> {
+pub async fn create(
+    client: &TeamsClient,
+    main: &Coords,
+    rooms: &[NewRoom],
+    settings: Option<&Settings>,
+    version: &str,
+) -> Result<Vec<Room>> {
     let mut body = json!({
         "breakoutRoomConfigurations": { "roomCount": rooms.len() },
         "preconfiguration": rooms.iter().map(|r| json!({ "participants": r.participants, "name": r.name })).collect::<Vec<_>>(),
@@ -233,19 +289,39 @@ pub async fn create(client: &TeamsClient, main: &Coords, rooms: &[NewRoom], sett
     if let Some(s) = settings {
         body["settings"] = s.body();
     }
-    let v = send(client, reqwest::Method::POST, &versioned(main.path(), version), Some(body), "Create breakout rooms").await?;
+    let v = send(
+        client,
+        reqwest::Method::POST,
+        &versioned(main.path(), version),
+        Some(body),
+        "Create breakout rooms",
+    )
+    .await?;
     Ok(rooms_from(&v))
 }
 
 /// The meeting's rooms.
 pub async fn list(client: &TeamsClient, main: &Coords) -> Result<Vec<Room>> {
-    let v = send(client, reqwest::Method::GET, &format!("bulk/{}", main.path()), None, "Breakout rooms").await?;
+    let v = send(
+        client,
+        reqwest::Method::GET,
+        &format!("bulk/{}", main.path()),
+        None,
+        "Breakout rooms",
+    )
+    .await?;
     Ok(rooms_from(&v))
 }
 
 /// Assign people to rooms (Teams' Assign participants): the rooms whose
 /// people changed, each with everyone in it now (`{upn, mri}`).
-pub async fn assign(client: &TeamsClient, main: &Coords, rooms: &[Room], total_participants: usize, version: &str) -> Result<Vec<Room>> {
+pub async fn assign(
+    client: &TeamsClient,
+    main: &Coords,
+    rooms: &[Room],
+    total_participants: usize,
+    version: &str,
+) -> Result<Vec<Room>> {
     let body = json!({
         "totalParticipantCount": total_participants,
         // As Teams' Assign dialog saves: only the rooms whose people
@@ -256,82 +332,188 @@ pub async fn assign(client: &TeamsClient, main: &Coords, rooms: &[Room], total_p
             "settings": {},
         })).collect::<Vec<_>>(),
     });
-    let v = send(client, reqwest::Method::PUT, &versioned(format!("bulk/v2/{}", main.path()), version), Some(body), "Assign participants").await?;
+    let v = send(
+        client,
+        reqwest::Method::PUT,
+        &versioned(format!("bulk/v2/{}", main.path()), version),
+        Some(body),
+        "Assign participants",
+    )
+    .await?;
     Ok(rooms_from(&v))
 }
 
 /// Open rooms (Teams' Open rooms, or Open on one room).
-pub async fn open(client: &TeamsClient, main: &Coords, rooms: &[Coords], total_participants: usize, version: &str) -> Result<()> {
+pub async fn open(
+    client: &TeamsClient,
+    main: &Coords,
+    rooms: &[Coords],
+    total_participants: usize,
+    version: &str,
+) -> Result<()> {
     let body = json!({
         "rooms": rooms.iter().map(|c| json!({ "coordinates": c.json() })).collect::<Vec<_>>(),
         "useNewTimerFlow": true,
         "totalParticipantCount": total_participants,
     });
-    send(client, reqwest::Method::POST, &versioned(format!("open/{}", main.path()), version), Some(body), "Open rooms").await?;
+    send(
+        client,
+        reqwest::Method::POST,
+        &versioned(format!("open/{}", main.path()), version),
+        Some(body),
+        "Open rooms",
+    )
+    .await?;
     Ok(())
 }
 
 /// Close rooms (Teams' Close rooms, or Close on one room): the people in
 /// them go back to the main meeting.
-pub async fn close(client: &TeamsClient, main: &Coords, rooms: &[Coords], total_participants: usize, version: &str) -> Result<()> {
+pub async fn close(
+    client: &TeamsClient,
+    main: &Coords,
+    rooms: &[Coords],
+    total_participants: usize,
+    version: &str,
+) -> Result<()> {
     let body = json!({
         "rooms": rooms.iter().map(|c| json!({ "coordinates": c.json() })).collect::<Vec<_>>(),
         "totalParticipantCount": total_participants,
     });
-    send(client, reqwest::Method::POST, &versioned(format!("close/{}", main.path()), version), Some(body), "Close rooms").await?;
+    send(
+        client,
+        reqwest::Method::POST,
+        &versioned(format!("close/{}", main.path()), version),
+        Some(body),
+        "Close rooms",
+    )
+    .await?;
     Ok(())
 }
 
 /// The rooms' settings.
 pub async fn settings(client: &TeamsClient, main: &Coords) -> Result<Settings> {
-    let v = send(client, reqwest::Method::GET, &format!("settings/{}", main.path()), None, "Room settings").await?;
+    let v = send(
+        client,
+        reqwest::Method::GET,
+        &format!("settings/{}", main.path()),
+        None,
+        "Room settings",
+    )
+    .await?;
     Ok(Settings::from_reply(&v))
 }
 
 /// Change the rooms' settings.
-pub async fn set_settings(client: &TeamsClient, main: &Coords, settings: &Settings, version: &str) -> Result<Settings> {
-    let v = send(client, reqwest::Method::PUT, &versioned(format!("settings/{}", main.path()), version), Some(settings.body()), "Room settings").await?;
-    Ok(if v.is_null() { settings.clone() } else { Settings::from_reply(&v) })
+pub async fn set_settings(
+    client: &TeamsClient,
+    main: &Coords,
+    settings: &Settings,
+    version: &str,
+) -> Result<Settings> {
+    let v = send(
+        client,
+        reqwest::Method::PUT,
+        &versioned(format!("settings/{}", main.path()), version),
+        Some(settings.body()),
+        "Room settings",
+    )
+    .await?;
+    Ok(if v.is_null() {
+        settings.clone()
+    } else {
+        Settings::from_reply(&v)
+    })
 }
 
 /// Add a room (Teams' Add room).
-pub async fn add_room(client: &TeamsClient, main: &Coords, name: &str, participants: &[Value], version: &str) -> Result<()> {
-    send(client, reqwest::Method::POST, &versioned(format!("add/{}", main.path()), version), Some(json!({ "name": name, "participants": participants })), "Add room").await?;
+pub async fn add_room(
+    client: &TeamsClient,
+    main: &Coords,
+    name: &str,
+    participants: &[Value],
+    version: &str,
+) -> Result<()> {
+    send(
+        client,
+        reqwest::Method::POST,
+        &versioned(format!("add/{}", main.path()), version),
+        Some(json!({ "name": name, "participants": participants })),
+        "Add room",
+    )
+    .await?;
     Ok(())
 }
 
 /// Rename a room, or change who's in it.
 pub async fn update_room(client: &TeamsClient, room: &Room, version: &str) -> Result<()> {
     let body = json!({ "name": room.name, "participants": room.participants, "restrictChatAccess": room.restrict_chat });
-    send(client, reqwest::Method::PUT, &versioned(room.coords.path(), version), Some(body), "Update room").await?;
+    send(
+        client,
+        reqwest::Method::PUT,
+        &versioned(room.coords.path(), version),
+        Some(body),
+        "Update room",
+    )
+    .await?;
     Ok(())
 }
 
 /// Delete a room (Teams' Delete room).
 pub async fn delete_room(client: &TeamsClient, room: &Coords, version: &str) -> Result<()> {
-    send(client, reqwest::Method::DELETE, &versioned(room.path(), version), None, "Delete room").await?;
+    send(
+        client,
+        reqwest::Method::DELETE,
+        &versioned(room.path(), version),
+        None,
+        "Delete room",
+    )
+    .await?;
     Ok(())
 }
 
 /// Delete every room (Teams' Delete rooms).
-pub async fn delete_all(client: &TeamsClient, main: &Coords, rooms: &[Room], version: &str) -> Result<()> {
+pub async fn delete_all(
+    client: &TeamsClient,
+    main: &Coords,
+    rooms: &[Room],
+    version: &str,
+) -> Result<()> {
     let refs: Vec<Value> = rooms
         .iter()
         .filter(|r| !r.join_url.is_empty() && !r.update_url.is_empty())
         .map(|r| json!({ "meetingJoinUrl": r.join_url, "meetingUpdateUrl": r.update_url }))
         .collect();
-    send(client, reqwest::Method::DELETE, &versioned(format!("rooms/all/{}", main.path()), version), Some(json!(refs)), "Delete rooms").await?;
+    send(
+        client,
+        reqwest::Method::DELETE,
+        &versioned(format!("rooms/all/{}", main.path()), version),
+        Some(json!(refs)),
+        "Delete rooms",
+    )
+    .await?;
     Ok(())
 }
 
 /// Post an announcement to the rooms' chats (Teams' Make an announcement).
-pub async fn announce(client: &TeamsClient, main: &Coords, room_threads: &[String], message: &str) -> Result<()> {
+pub async fn announce(
+    client: &TeamsClient,
+    main: &Coords,
+    room_threads: &[String],
+    message: &str,
+) -> Result<()> {
     if message.trim().is_empty() {
         bail!("Nothing to announce");
     }
-    send(client, reqwest::Method::POST, &format!("announce/{}", main.path()), Some(json!({ "roomThreadIds": room_threads, "message": message })), "Announcement")
-        .await
-        .context("Announcement")?;
+    send(
+        client,
+        reqwest::Method::POST,
+        &format!("announce/{}", main.path()),
+        Some(json!({ "roomThreadIds": room_threads, "message": message })),
+        "Announcement",
+    )
+    .await
+    .context("Announcement")?;
     Ok(())
 }
 
@@ -377,7 +559,9 @@ fn csv_fields(line: &str) -> Vec<String> {
 /// skipped, a person listed twice keeps their last room.
 pub fn parse_csv(text: &str) -> Result<CsvImport> {
     if text.len() > CSV_MAX_BYTES {
-        bail!("We couldn't import this file. The file type, size, or content isn't supported. Please update the file and try again.");
+        bail!(
+            "We couldn't import this file. The file type, size, or content isn't supported. Please update the file and try again."
+        );
     }
     let mut import = CsvImport::default();
     let mut room_of: Vec<(String, String)> = Vec::new();
@@ -391,7 +575,10 @@ pub fn parse_csv(text: &str) -> Result<CsvImport> {
             continue;
         }
         let f = csv_fields(line);
-        if i == 0 && f.first().is_some_and(|h| h.eq_ignore_ascii_case("Breakout Room Name")) {
+        if i == 0
+            && f.first()
+                .is_some_and(|h| h.eq_ignore_ascii_case("Breakout Room Name"))
+        {
             continue;
         }
         let (room, email) = match f.as_slice() {
@@ -401,7 +588,11 @@ pub fn parse_csv(text: &str) -> Result<CsvImport> {
                 continue;
             }
         };
-        if room.is_empty() || room.chars().count() > CSV_MAX_FIELD || email.len() > CSV_MAX_FIELD || !email.contains('@') {
+        if room.is_empty()
+            || room.chars().count() > CSV_MAX_FIELD
+            || email.len() > CSV_MAX_FIELD
+            || !email.contains('@')
+        {
             warn("MALFORMED_ENTRIES", &mut import);
             continue;
         }
@@ -430,7 +621,9 @@ pub fn parse_csv(text: &str) -> Result<CsvImport> {
         warn("LIMIT_EXCEEDED", &mut import);
     }
     if import.rooms.is_empty() {
-        bail!("We couldn't import this file. The file type, size, or content isn't supported. Please update the file and try again.");
+        bail!(
+            "We couldn't import this file. The file type, size, or content isn't supported. Please update the file and try again."
+        );
     }
     Ok(import)
 }
@@ -448,7 +641,10 @@ mod tests {
         assert_eq!(main.path(), format!("{T}/{O}/19_meeting_YTQy@thread.v2/0"));
         assert_eq!(main.json()["threadId"], "19_meeting_YTQy@thread.v2");
         // The service's underscored ids read back as threads.
-        assert_eq!(Coords::new(T, O, "19_meeting_YTQy@thread.v2", "0").unwrap(), main);
+        assert_eq!(
+            Coords::new(T, O, "19_meeting_YTQy@thread.v2", "0").unwrap(),
+            main
+        );
         assert!(Coords::new(T, O, "19:meeting_x@thread.v2/../x", "0").is_err());
         assert!(new_version("p1").starts_with("p1_"));
     }
@@ -471,21 +667,47 @@ mod tests {
         let csv = "Breakout Room Name,Participant Email\nRoom A,ost-test2@scnetsolutions.com\n\"Room, B\",a@x.com\nRoom A,A@X.com\nbad line\n";
         let import = parse_csv(csv).unwrap();
         // a@x.com was listed twice: the last room wins.
-        assert_eq!(import.rooms, vec![("Room A".to_string(), vec!["ost-test2@scnetsolutions.com".to_string(), "a@x.com".to_string()])]);
-        assert_eq!(import.warnings, vec!["USER_ASSIGNED_MULTIPLE_ROOMS", "MALFORMED_ENTRIES"]);
+        assert_eq!(
+            import.rooms,
+            vec![(
+                "Room A".to_string(),
+                vec![
+                    "ost-test2@scnetsolutions.com".to_string(),
+                    "a@x.com".to_string()
+                ]
+            )]
+        );
+        assert_eq!(
+            import.warnings,
+            vec!["USER_ASSIGNED_MULTIPLE_ROOMS", "MALFORMED_ENTRIES"]
+        );
         assert!(parse_csv(CSV_TEMPLATE).is_err());
     }
 
     #[test]
     fn settings_round_trip() {
-        let s = Settings::from_reply(&json!({"extensionData":{"allowJoinBackToMainMeeting":"false"},"allowUsersToSelectBreakoutRoom":false}));
+        let s = Settings::from_reply(
+            &json!({"extensionData":{"allowJoinBackToMainMeeting":"false"},"allowUsersToSelectBreakoutRoom":false}),
+        );
         assert_eq!(s.allow_return, Some(false));
         assert_eq!(s.auto_move, None);
-        assert_eq!(s.body(), json!({"allowUsersToSelectBreakoutRoom":false,"extensionData":{"allowJoinBackToMainMeeting":"false"}}));
+        assert_eq!(
+            s.body(),
+            json!({"allowUsersToSelectBreakoutRoom":false,"extensionData":{"allowJoinBackToMainMeeting":"false"}})
+        );
         // A time limit goes as Teams writes it.
-        let limited = Settings { room_duration: Some(90), ..Settings::default() };
+        let limited = Settings {
+            room_duration: Some(90),
+            ..Settings::default()
+        };
         assert_eq!(limited.body()["roomDuration"], "01:30:00");
-        assert_eq!(Settings::from_reply(&limited.body()).room_duration, Some(90));
-        assert_eq!(Settings::from_reply(&json!({"roomDuration":"00:00:00"})).room_duration, None);
+        assert_eq!(
+            Settings::from_reply(&limited.body()).room_duration,
+            Some(90)
+        );
+        assert_eq!(
+            Settings::from_reply(&json!({"roomDuration":"00:00:00"})).room_duration,
+            None
+        );
     }
 }

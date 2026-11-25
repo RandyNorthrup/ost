@@ -39,15 +39,29 @@ pub struct QuickItem {
 
 fn items_from(v: &serde_json::Value, saved: bool) -> Vec<QuickItem> {
     let mut seen = std::collections::HashSet::new();
-    let mut msgs: Vec<&serde_json::Value> = v["messages"].as_array().into_iter().flatten().collect();
-    msgs.sort_by(|a, b| b["originalarrivaltime"].as_str().cmp(&a["originalarrivaltime"].as_str()));
+    let mut msgs: Vec<&serde_json::Value> =
+        v["messages"].as_array().into_iter().flatten().collect();
+    msgs.sort_by(|a, b| {
+        b["originalarrivaltime"]
+            .as_str()
+            .cmp(&a["originalarrivaltime"].as_str())
+    });
     let mut out = Vec::new();
     for m in msgs {
         let a = &m["properties"]["activity"];
         let s = |k: &str| a[k].as_str().unwrap_or_default().to_string();
-        let n = |k: &str| a[k].as_i64().map(|x| x.to_string()).or_else(|| a[k].as_str().map(str::to_string)).unwrap_or_default();
+        let n = |k: &str| {
+            a[k].as_i64()
+                .map(|x| x.to_string())
+                .or_else(|| a[k].as_str().map(str::to_string))
+                .unwrap_or_default()
+        };
         let thread = s("sourceThreadId");
-        let key = if saved { format!("{thread}|{}", n("sourceMessageId")) } else { format!("{thread}|{}", n("sourceReplyChainId")) };
+        let key = if saved {
+            format!("{thread}|{}", n("sourceMessageId"))
+        } else {
+            format!("{thread}|{}", n("sourceReplyChainId"))
+        };
         if thread.is_empty() || !seen.insert(key) {
             continue;
         }
@@ -82,12 +96,28 @@ fn items_from(v: &serde_json::Value, saved: bool) -> Vec<QuickItem> {
             sender: s("sourceUserImDisplayName"),
             sender_mri: s("sourceUserId"),
             preview: s("messagePreview"),
-            parent_preview: if root { s("messagePreview") } else { c("parentMessagePreview") },
-            parent_subject: if root { String::new() } else { c("parentMessageSubject") },
+            parent_preview: if root {
+                s("messagePreview")
+            } else {
+                c("parentMessagePreview")
+            },
+            parent_subject: if root {
+                String::new()
+            } else {
+                c("parentMessageSubject")
+            },
             parent_icon,
-            replies: ctx["repliesCount"].as_str().and_then(|r| r.parse().ok()).or_else(|| ctx["repliesCount"].as_u64()).unwrap_or(0),
-            time: m["originalarrivaltime"].as_str().unwrap_or_default().to_string(),
-            unread: m["properties"]["isread"].as_bool() == Some(false) || m["properties"]["isread"].as_str() == Some("false"),
+            replies: ctx["repliesCount"]
+                .as_str()
+                .and_then(|r| r.parse().ok())
+                .or_else(|| ctx["repliesCount"].as_u64())
+                .unwrap_or(0),
+            time: m["originalarrivaltime"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            unread: m["properties"]["isread"].as_bool() == Some(false)
+                || m["properties"]["isread"].as_str() == Some("false"),
         });
     }
     out
@@ -102,7 +132,10 @@ pub fn followed_from(v: &serde_json::Value) -> Vec<QuickItem> {
 }
 
 async fn read(client: &TeamsClient, conv: &str) -> Result<serde_json::Value> {
-    let url = format!("{}/v1/users/ME/conversations/{conv}/messages?view=msnp24Equivalent&pageSize=100", client.chat_service_url());
+    let url = format!(
+        "{}/v1/users/ME/conversations/{conv}/messages?view=msnp24Equivalent&pageSize=100",
+        client.chat_service_url()
+    );
     Ok(client.chat_get(&url).await?.json().await?)
 }
 
@@ -120,7 +153,14 @@ pub async fn followed(client: &TeamsClient) -> Result<Vec<QuickItem>> {
 mod tests {
     use super::*;
 
-    fn rec(time: &str, sub: &str, thread: &str, msg: i64, chain: i64, preview: &str) -> serde_json::Value {
+    fn rec(
+        time: &str,
+        sub: &str,
+        thread: &str,
+        msg: i64,
+        chain: i64,
+        preview: &str,
+    ) -> serde_json::Value {
         serde_json::json!({"originalarrivaltime": time, "properties": {"isread": true, "activity": {
             "activitySubtype": sub, "sourceThreadId": thread, "sourceMessageId": msg, "sourceReplyChainId": chain,
             "sourceUserImDisplayName": "Randy Northrup", "sourceUserId": "8:orgid:x", "messagePreview": preview,
@@ -138,7 +178,14 @@ mod tests {
         ]});
         let s = saved_from(&v);
         assert_eq!(s.len(), 1);
-        assert_eq!((s[0].preview.as_str(), s[0].message_id.as_str(), s[0].channel), ("OST test 43: typing clears on send", "1794032815852", false));
+        assert_eq!(
+            (
+                s[0].preview.as_str(),
+                s[0].message_id.as_str(),
+                s[0].channel
+            ),
+            ("OST test 43: typing clears on send", "1794032815852", false)
+        );
     }
 
     #[test]
@@ -149,36 +196,94 @@ mod tests {
             rec("2026-11-04T10:00:00Z", "reply", "19:c@thread.tacv2", 1, 1793889784763, "older"),
         ]});
         let f = followed_from(&v);
-        assert_eq!(f.iter().map(|i| i.preview.as_str()).collect::<Vec<_>>(), vec!["72", "71"]);
+        assert_eq!(
+            f.iter().map(|i| i.preview.as_str()).collect::<Vec<_>>(),
+            vec!["72", "71"]
+        );
         assert!(f[0].channel);
         assert_eq!((f[0].replies, f[0].parent_preview.as_str()), (3, "root"));
     }
 
     #[test]
     fn followed_marks_meeting_and_deleted_roots() {
-        let mut meeting = rec("2026-11-24T18:00:00Z", "reply", "19:c@thread.tacv2", 2, 1, "reply");
+        let mut meeting = rec(
+            "2026-11-24T18:00:00Z",
+            "reply",
+            "19:c@thread.tacv2",
+            2,
+            1,
+            "reply",
+        );
         let ctx = &mut meeting["properties"]["activity"]["activityContext"];
         ctx["parentMessageType"] = "Meeting".into();
         ctx["parentMessageSubject"] = "OST TEST 272 channel meeting".into();
-        let mut deleted = rec("2026-11-24T17:00:00Z", "reply", "19:c@thread.tacv2", 4, 3, "reply");
-        deleted["properties"]["activity"]["activityContext"]["parentMessagePreviewTemplateOption"] = "deleted".into();
-        let root = rec("2026-11-24T16:00:00Z", "reply", "19:c@thread.tacv2", 5, 5, "the post");
+        let mut deleted = rec(
+            "2026-11-24T17:00:00Z",
+            "reply",
+            "19:c@thread.tacv2",
+            4,
+            3,
+            "reply",
+        );
+        deleted["properties"]["activity"]["activityContext"]["parentMessagePreviewTemplateOption"] =
+            "deleted".into();
+        let root = rec(
+            "2026-11-24T16:00:00Z",
+            "reply",
+            "19:c@thread.tacv2",
+            5,
+            5,
+            "the post",
+        );
         let f = followed_from(&serde_json::json!({"messages": [meeting, deleted, root]}));
-        let got: Vec<_> = f.iter().map(|i| (i.parent_icon.as_str(), i.parent_subject.as_str(), i.parent_preview.as_str())).collect();
-        assert_eq!(got, vec![("meeting", "OST TEST 272 channel meeting", "root"), ("deleted", "", "root"), ("", "", "the post")]);
+        let got: Vec<_> = f
+            .iter()
+            .map(|i| {
+                (
+                    i.parent_icon.as_str(),
+                    i.parent_subject.as_str(),
+                    i.parent_preview.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("meeting", "OST TEST 272 channel meeting", "root"),
+                ("deleted", "", "root"),
+                ("", "", "the post")
+            ]
+        );
     }
 
     #[test]
     fn followed_drops_deleted_threads() {
         // As 48:threads had "OST TEST 272 channel meeting" once its post was
         // deleted: a "deleted" record newer than the thread's reply.
-        let reply = rec("2026-11-24T10:04:00Z", "reply", "19:c@thread.tacv2", 2, 1, "reply");
+        let reply = rec(
+            "2026-11-24T10:04:00Z",
+            "reply",
+            "19:c@thread.tacv2",
+            2,
+            1,
+            "reply",
+        );
         let deleted = serde_json::json!({"originalarrivaltime": "2026-11-24T10:04:47.573Z", "properties": {"isread": true, "activity": {
             "activityReason": "deleted", "activityType": "threads", "deleteActivityTimestamp": 1795518032624_i64,
             "sourceMessageId": 1, "sourceReplyChainId": 1, "sourceThreadId": "19:c@thread.tacv2", "sourceThreadType": "topic",
             "activityContext": {"parentMessagePreviewTemplateOption": "deleted", "repliesCount": "0"}}}});
-        let other = rec("2026-11-17T12:41:16Z", "reply", "19:c@thread.tacv2", 4, 3, "kept");
+        let other = rec(
+            "2026-11-17T12:41:16Z",
+            "reply",
+            "19:c@thread.tacv2",
+            4,
+            3,
+            "kept",
+        );
         let f = followed_from(&serde_json::json!({"messages": [reply, deleted, other]}));
-        assert_eq!(f.iter().map(|i| i.preview.as_str()).collect::<Vec<_>>(), vec!["kept"]);
+        assert_eq!(
+            f.iter().map(|i| i.preview.as_str()).collect::<Vec<_>>(),
+            vec!["kept"]
+        );
     }
 }

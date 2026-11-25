@@ -37,16 +37,30 @@ pub fn query(
     let categories = license
         .and_then(|l| l.get("experimentationTeamsLicenseCategories"))
         .and_then(|c| c.as_array())
-        .map(|c| c.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(","))
+        .map(|c| {
+            c.iter()
+                .filter_map(|x| x.as_str())
+                .collect::<Vec<_>>()
+                .join(",")
+        })
         .unwrap_or_default();
     let room = license
         .and_then(|l| l.get("meetingRoomLicenseCategories"))
         .and_then(|c| c.as_array())
-        .map(|c| c.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(","))
+        .map(|c| {
+            c.iter()
+                .filter_map(|x| x.as_str())
+                .collect::<Vec<_>>()
+                .join(",")
+        })
         .filter(|c| !c.is_empty())
         .unwrap_or_else(|| "None".into());
     // Teams' user-override filters name an SMB licence "TeamsSmb".
-    let override_category = if categories == "SmbLicense" { "TeamsSmb".to_string() } else { categories.clone() };
+    let override_category = if categories == "SmbLicense" {
+        "TeamsSmb".to_string()
+    } else {
+        categories.clone()
+    };
     let mut q = vec![
         ("environment", "prod".to_string()),
         ("experience", "react-web-client".to_string()),
@@ -132,8 +146,12 @@ pub async fn license(client: &TeamsClient) -> Option<serde_json::Value> {
     if let Some(l) = FETCHED.lock().ok()?.clone() {
         return Some(l);
     }
-    let token = crate::auth::oauth::access_token_for("https://api.spaces.skype.com/.default").await.ok()?;
-    let x = crate::auth::skype::exchange_skype_token(&token, false).await.ok()?;
+    let token = crate::auth::oauth::access_token_for("https://api.spaces.skype.com/.default")
+        .await
+        .ok()?;
+    let x = crate::auth::skype::exchange_skype_token(&token, false)
+        .await
+        .ok()?;
     let l = x.license_details?;
     if let Ok(mut c) = crate::config::Config::load() {
         c.set_license_details(l.clone());
@@ -146,8 +164,12 @@ pub async fn license(client: &TeamsClient) -> Option<serde_json::Value> {
 /// Fetch the licence details again (a fresh authz exchange, kept in the
 /// config), as Teams does after a licence changes (Teams Premium's trial).
 pub async fn refresh_license() -> Option<serde_json::Value> {
-    let token = crate::auth::oauth::access_token_for("https://api.spaces.skype.com/.default").await.ok()?;
-    let x = crate::auth::skype::exchange_skype_token(&token, false).await.ok()?;
+    let token = crate::auth::oauth::access_token_for("https://api.spaces.skype.com/.default")
+        .await
+        .ok()?;
+    let x = crate::auth::skype::exchange_skype_token(&token, false)
+        .await
+        .ok()?;
     let l = x.license_details?;
     if let Ok(mut c) = crate::config::Config::load() {
         c.set_license_details(l.clone());
@@ -205,18 +227,38 @@ pub async fn load(client: &TeamsClient, cache_dir: &Path) -> Result<()> {
 /// Returns (link text, url) or None.
 pub fn about_ring_in(v: &serde_json::Value) -> Option<(String, String)> {
     let ring = v.get("Segmentation")?.get("TeamsRing")?.as_str()?;
-    let off = setting_in(v, "core", "disableAboutRingInfo").and_then(|x| x.as_bool()).unwrap_or(false);
+    let off = setting_in(v, "core", "disableAboutRingInfo")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
     if off || ring != "ring3_6" {
         return None;
     }
     let links = setting_in(v, "core", "aboutRingInfoLinks").unwrap_or_default();
-    let link = |k: &str, d: &str| links.get(k).and_then(|x| x.as_str()).unwrap_or(d).to_string();
-    if setting_in(v, "core", "enableReleaseDashboardButton").and_then(|x| x.as_bool()).unwrap_or(false) {
-        return Some(("Ring 3.6".into(), link("internalPreviewLink", "https://aka.ms/Ring3.6")));
+    let link = |k: &str, d: &str| {
+        links
+            .get(k)
+            .and_then(|x| x.as_str())
+            .unwrap_or(d)
+            .to_string()
+    };
+    if setting_in(v, "core", "enableReleaseDashboardButton")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false)
+    {
+        return Some((
+            "Ring 3.6".into(),
+            link("internalPreviewLink", "https://aka.ms/Ring3.6"),
+        ));
     }
     // The ring the host was given is the user's own (isAssignedRing), so
     // an Early Access user is in Targeted release.
-    Some(("Targeted release".into(), link("targetedReleaseLink", "https://go.microsoft.com/fwlink/?linkid=2254754")))
+    Some((
+        "Targeted release".into(),
+        link(
+            "targetedReleaseLink",
+            "https://go.microsoft.com/fwlink/?linkid=2254754",
+        ),
+    ))
 }
 
 pub fn about_ring() -> Option<(String, String)> {
@@ -234,7 +276,10 @@ pub fn ring_in(v: &serde_json::Value) -> String {
         .and_then(|r| r.as_str())
         .filter(|r| !r.is_empty())
         .map(str::to_string)
-        .or_else(|| setting_in(v, "metadata", "ring").and_then(|r| r.get("id")?.as_str().map(str::to_string)))
+        .or_else(|| {
+            setting_in(v, "metadata", "ring")
+                .and_then(|r| r.get("id")?.as_str().map(str::to_string))
+        })
         .unwrap_or_else(|| "general".into())
 }
 
@@ -273,9 +318,14 @@ mod tests {
         });
         assert_eq!(
             setting_in(&v, "extensibility", "storeAppsCollectionsDoc"),
-            Some(serde_json::json!("Enterprise/NewStoreCustomization/storev3"))
+            Some(serde_json::json!(
+                "Enterprise/NewStoreCustomization/storev3"
+            ))
         );
-        assert_eq!(setting_in(&v, "extensibility", "enableChannelApps"), Some(serde_json::json!(true)));
+        assert_eq!(
+            setting_in(&v, "extensibility", "enableChannelApps"),
+            Some(serde_json::json!(true))
+        );
         assert_eq!(setting_in(&v, "extensibility", "b"), None);
     }
 
@@ -283,13 +333,20 @@ mod tests {
     fn ring_line_for_targeted_release_only() {
         let v = serde_json::json!({ "Segmentation": { "TeamsRing": "ring3_6" } });
         assert_eq!(about_ring_in(&v).unwrap().0, "Targeted release");
-        assert!(about_ring_in(&serde_json::json!({ "Segmentation": { "TeamsRing": "general" } })).is_none());
+        assert!(
+            about_ring_in(&serde_json::json!({ "Segmentation": { "TeamsRing": "general" } }))
+                .is_none()
+        );
     }
 
     #[test]
     fn ring_from_segmentation_as_teams_host() {
-        assert_eq!(ring_in(&serde_json::json!({ "Segmentation": { "TeamsRing": "ring3_6" } })), "ring3_6");
-        let meta = serde_json::json!({ "TeamsNorthstar": { "metadata": { "ring": { "id": "ring1" } } } });
+        assert_eq!(
+            ring_in(&serde_json::json!({ "Segmentation": { "TeamsRing": "ring3_6" } })),
+            "ring3_6"
+        );
+        let meta =
+            serde_json::json!({ "TeamsNorthstar": { "metadata": { "ring": { "id": "ring1" } } } });
         assert_eq!(ring_in(&meta), "ring1");
         assert_eq!(ring_in(&serde_json::json!({})), "general");
     }

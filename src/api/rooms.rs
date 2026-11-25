@@ -50,15 +50,24 @@ pub fn locations_from(v: &serde_json::Value) -> Vec<(String, String)> {
         .flatten()
         .filter_map(|l| {
             let m = &l["MeetingLocation"];
-            let email = m["LocationEmailAddress"].as_str().filter(|e| !e.is_empty())?;
-            Some((email.to_string(), m["DisplayName"].as_str().unwrap_or_default().to_string()))
+            let email = m["LocationEmailAddress"]
+                .as_str()
+                .filter(|e| !e.is_empty())?;
+            Some((
+                email.to_string(),
+                m["DisplayName"].as_str().unwrap_or_default().to_string(),
+            ))
         })
         .collect()
 }
 
 /// Teams' findmeetinglocations: suggested rooms, or the rooms matching
 /// `query`.
-pub async fn meeting_locations(client: &TeamsClient, max: u32, query: Option<&str>) -> Result<Vec<(String, String)>> {
+pub async fn meeting_locations(
+    client: &TeamsClient,
+    max: u32,
+    query: Option<&str>,
+) -> Result<Vec<(String, String)>> {
     let token = crate::auth::oauth::access_token_for("https://outlook.office.com/.default").await?;
     let resp = client
         .http()
@@ -99,9 +108,16 @@ pub fn locations_at_from(v: &serde_json::Value) -> Vec<(String, String, String, 
         .flatten()
         .filter_map(|l| {
             let m = &l["MeetingLocation"];
-            let email = m["LocationEmailAddress"].as_str().filter(|e| !e.is_empty())?;
+            let email = m["LocationEmailAddress"]
+                .as_str()
+                .filter(|e| !e.is_empty())?;
             let s = |k: &str| m[k].as_str().unwrap_or_default().to_string();
-            Some((email.to_string(), s("DisplayName"), s("Availability"), s("UniqueId")))
+            Some((
+                email.to_string(),
+                s("DisplayName"),
+                s("Availability"),
+                s("UniqueId"),
+            ))
         })
         .collect()
 }
@@ -109,7 +125,13 @@ pub fn locations_at_from(v: &serde_json::Value) -> Vec<(String, String, String, 
 /// The Events form's Add a room: the rooms matching `query` for the
 /// event's slot (`start`/`end` "yyyy-MM-dd HH:mm:ss" in the Windows zone
 /// `zone`, as Teams sends them).
-pub async fn meeting_locations_at(client: &TeamsClient, query: &str, start: &str, end: &str, zone: &str) -> Result<Vec<(String, String, String, String)>> {
+pub async fn meeting_locations_at(
+    client: &TeamsClient,
+    query: &str,
+    start: &str,
+    end: &str,
+    zone: &str,
+) -> Result<Vec<(String, String, String, String)>> {
     let token = crate::auth::oauth::access_token_for("https://outlook.office.com/.default").await?;
     let resp = client
         .http()
@@ -134,7 +156,9 @@ pub fn rooms_from_profiles(profiles: &[serde_json::Value]) -> Vec<Room> {
     profiles
         .iter()
         .filter_map(|p| {
-            let email = p["email"].as_str().filter(|e| !e.is_empty() && *e != UNKNOWN_EMAIL)?;
+            let email = p["email"]
+                .as_str()
+                .filter(|e| !e.is_empty() && *e != UNKNOWN_EMAIL)?;
             let mri = p["mri"].as_str().filter(|m| !m.is_empty())?;
             Some(Room {
                 mri: mri.to_string(),
@@ -165,15 +189,25 @@ pub async fn resolve(client: &TeamsClient, emails: &[String]) -> Result<Vec<Room
         .context("Room profiles")?
         .json()
         .await?;
-    let mut rooms = rooms_from_profiles(v["value"].as_array().map(Vec::as_slice).unwrap_or_default());
+    let mut rooms =
+        rooms_from_profiles(v["value"].as_array().map(Vec::as_slice).unwrap_or_default());
     // In the order the scheduling service gave them.
-    rooms.sort_by_key(|r| emails.iter().position(|e| e.eq_ignore_ascii_case(&r.email)).unwrap_or(usize::MAX));
+    rooms.sort_by_key(|r| {
+        emails
+            .iter()
+            .position(|e| e.eq_ignore_ascii_case(&r.email))
+            .unwrap_or(usize::MAX)
+    });
     Ok(rooms)
 }
 
 /// Teams' suggested rooms (Other Suggestions), or a search's (10 at most).
 pub async fn rooms(client: &TeamsClient, query: Option<&str>) -> Result<Vec<Room>> {
-    let emails: Vec<String> = meeting_locations(client, 10, query).await?.into_iter().map(|(e, _)| e).collect();
+    let emails: Vec<String> = meeting_locations(client, 10, query)
+        .await?
+        .into_iter()
+        .map(|(e, _)| e)
+        .collect();
     resolve(client, &emails).await
 }
 
@@ -228,7 +262,12 @@ pub fn parse_beacon(company: u16, data: &[u8], rssi: i16) -> Option<Beacon> {
         u16::from_be_bytes([g[14], g[15]]),
     );
     let code = (g.len() >= 18).then(|| u16::from_be_bytes([g[16], g[17]]));
-    Some(Beacon { mri: mri_for(&guid), rssi, code, adjacent: rssi >= ADJACENT_RSSI })
+    Some(Beacon {
+        mri: mri_for(&guid),
+        rssi,
+        code,
+        adjacent: rssi >= ADJACENT_RSSI,
+    })
 }
 
 /// What a Teams Rooms device advertises (the inverse of
@@ -242,10 +281,14 @@ pub fn beacon_data(object_id: &str, code: u16) -> Option<Vec<u8>> {
     if hex.len() != 32 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
-    let raw: Vec<u8> = (0..16).map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap_or(0)).collect();
+    let raw: Vec<u8> = (0..16)
+        .map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap_or(0))
+        .collect();
     // A packed GUID: the first three fields little-endian (Windows' order).
     let mut out = vec![0x34, 0xF0, 0x00];
-    out.extend([raw[3], raw[2], raw[1], raw[0], raw[5], raw[4], raw[7], raw[6]]);
+    out.extend([
+        raw[3], raw[2], raw[1], raw[0], raw[5], raw[4], raw[7], raw[6],
+    ]);
     out.extend(&raw[8..16]);
     out.extend(code.to_be_bytes());
     Some(out)
@@ -261,18 +304,24 @@ mod tests {
         assert_eq!(
             d,
             [
-                0x34, 0xF0, 0x00, 0x65, 0x1e, 0x40, 0x42, 0x53, 0x40, 0xec, 0x40, 0xa6, 0xbf, 0x61, 0xbe, 0x49, 0x52,
-                0x4f, 0xf6, 0x12, 0x34
+                0x34, 0xF0, 0x00, 0x65, 0x1e, 0x40, 0x42, 0x53, 0x40, 0xec, 0x40, 0xa6, 0xbf, 0x61,
+                0xbe, 0x49, 0x52, 0x4f, 0xf6, 0x12, 0x34
             ]
         );
         let b = parse_beacon(BEACON_COMPANY, &d, -40).unwrap();
-        assert_eq!((b.mri.as_str(), b.code), ("8:orgid:42401e65-4053-40ec-a6bf-61be49524ff6", Some(0x1234)));
+        assert_eq!(
+            (b.mri.as_str(), b.code),
+            ("8:orgid:42401e65-4053-40ec-a6bf-61be49524ff6", Some(0x1234))
+        );
         assert!(beacon_data("not-a-guid", 1).is_none());
     }
 
     #[test]
     fn bodies_as_teams_sends_them() {
-        assert_eq!(locations_body(10, None).to_string(), r#"{"ConferenceRoomsOnly":true,"MaxCandidates":10}"#);
+        assert_eq!(
+            locations_body(10, None).to_string(),
+            r#"{"ConferenceRoomsOnly":true,"MaxCandidates":10}"#
+        );
         let b = locations_body(10, Some("OST"));
         assert_eq!(b["QueryConstraint"]["Query"], "OST");
         assert_eq!(b["LocationProvider"], "80");
@@ -282,8 +331,8 @@ mod tests {
     fn parses_a_teams_rooms_beacon() {
         // OST Test Room (42401e65-4053-40ec-a6bf-61be49524ff6), code 0x1234.
         let d = [
-            0x34, 0xF0, 0x00, 0x65, 0x1e, 0x40, 0x42, 0x53, 0x40, 0xec, 0x40, 0xa6, 0xbf, 0x61, 0xbe, 0x49, 0x52, 0x4f,
-            0xf6, 0x12, 0x34, 0x10,
+            0x34, 0xF0, 0x00, 0x65, 0x1e, 0x40, 0x42, 0x53, 0x40, 0xec, 0x40, 0xa6, 0xbf, 0x61,
+            0xbe, 0x49, 0x52, 0x4f, 0xf6, 0x12, 0x34, 0x10,
         ];
         let b = parse_beacon(6, &d, -60).unwrap();
         assert_eq!(b.mri, "8:orgid:42401e65-4053-40ec-a6bf-61be49524ff6");
@@ -302,7 +351,13 @@ mod tests {
             {"MeetingLocation": {"DisplayName": "OST Test Room", "LocationEmailAddress": "ost-test-room@scnetsolutions.com"}},
             {"MeetingLocation": {"DisplayName": "No mail"}}
         ]});
-        assert_eq!(locations_from(&v), vec![("ost-test-room@scnetsolutions.com".into(), "OST Test Room".into())]);
+        assert_eq!(
+            locations_from(&v),
+            vec![(
+                "ost-test-room@scnetsolutions.com".into(),
+                "OST Test Room".into()
+            )]
+        );
         let p = vec![
             serde_json::json!({"email": "ost-test-room@scnetsolutions.com", "displayName": "OST Test Room", "mri": "8:orgid:42401e65-4053-40ec-a6bf-61be49524ff6"}),
             serde_json::json!({"email": UNKNOWN_EMAIL, "displayName": "?", "mri": "8:orgid:x"}),

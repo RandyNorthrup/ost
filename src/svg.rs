@@ -13,7 +13,9 @@
 pub fn for_qt(bytes: &[u8]) -> Option<Vec<u8>> {
     let text = std::str::from_utf8(bytes).ok()?;
     let head = text.trim_start();
-    if !(head.starts_with("<?xml") || head.starts_with("<svg") || head.starts_with("<!--")) || !text.contains("<svg") {
+    if !(head.starts_with("<?xml") || head.starts_with("<svg") || head.starts_with("<!--"))
+        || !text.contains("<svg")
+    {
         return None;
     }
     if !text.contains("<clipPath") {
@@ -24,14 +26,20 @@ pub fn for_qt(bytes: &[u8]) -> Option<Vec<u8>> {
     // Each <use> inside a clip path.
     let mut from = 0;
     while let Some(start) = out[from..].find("<clipPath").map(|i| i + from) {
-        let Some(end) = out[start..].find("</clipPath>").map(|i| i + start) else { break };
+        let Some(end) = out[start..].find("</clipPath>").map(|i| i + start) else {
+            break;
+        };
         let block = out[start..end].to_string();
         let mut new_block = block.clone();
         let mut pos = 0;
         while let Some(u) = new_block[pos..].find("<use").map(|i| i + pos) {
-            let Some(close) = new_block[u..].find('>').map(|i| i + u + 1) else { break };
+            let Some(close) = new_block[u..].find('>').map(|i| i + u + 1) else {
+                break;
+            };
             let tag = new_block[u..close].to_string();
-            let id = attr(&tag, "xlink:href").or_else(|| attr(&tag, "href")).and_then(|h| h.strip_prefix('#').map(str::to_string));
+            let id = attr(&tag, "xlink:href")
+                .or_else(|| attr(&tag, "href"))
+                .and_then(|h| h.strip_prefix('#').map(str::to_string));
             match id.and_then(|id| element_with_id(&out, &id).map(|e| (id, e))) {
                 Some((id, element)) => {
                     let copy = element.replacen(&format!("id=\"{id}\""), "", 1);
@@ -48,9 +56,24 @@ pub fn for_qt(bytes: &[u8]) -> Option<Vec<u8>> {
     // Drop <defs> that now hold only shapes.
     let mut from = 0;
     while let Some(start) = out[from..].find("<defs").map(|i| i + from) {
-        let Some(end) = out[start..].find("</defs>").map(|i| i + start + "</defs>".len()) else { break };
+        let Some(end) = out[start..]
+            .find("</defs>")
+            .map(|i| i + start + "</defs>".len())
+        else {
+            break;
+        };
         let block = &out[start..end];
-        let keeps = ["<clipPath", "<linearGradient", "<radialGradient", "<pattern", "<mask", "<symbol", "<filter", "<style", "<marker"];
+        let keeps = [
+            "<clipPath",
+            "<linearGradient",
+            "<radialGradient",
+            "<pattern",
+            "<mask",
+            "<symbol",
+            "<filter",
+            "<style",
+            "<marker",
+        ];
         if !changed || keeps.iter().any(|k| block.contains(k)) {
             from = end;
         } else {
@@ -61,7 +84,12 @@ pub fn for_qt(bytes: &[u8]) -> Option<Vec<u8>> {
     // Qt draws a clip path's shape unless the clip path sits in <defs>.
     let mut from = 0;
     while let Some(start) = out[from..].find("<clipPath").map(|i| i + from) {
-        let Some(end) = out[start..].find("</clipPath>").map(|i| i + start + "</clipPath>".len()) else { break };
+        let Some(end) = out[start..]
+            .find("</clipPath>")
+            .map(|i| i + start + "</clipPath>".len())
+        else {
+            break;
+        };
         let opened = out[..start].matches("<defs").count();
         let closed = out[..start].matches("</defs>").count();
         if opened > closed {
@@ -119,14 +147,21 @@ mod tests {
         let fixed = String::from_utf8(for_qt(svg.as_bytes()).unwrap()).unwrap();
         assert!(!fixed.contains("<use"));
         assert!(!fixed.contains("id=\"SVGID_1_\""));
-        assert!(fixed.contains("<defs><clipPath id=\"SVGID_2_\">\n\t\t\t<polygon  points=\"31.2319"));
+        assert!(
+            fixed.contains("<defs><clipPath id=\"SVGID_2_\">\n\t\t\t<polygon  points=\"31.2319")
+        );
         assert!(fixed.contains("</clipPath></defs>"));
         assert_eq!(fixed.matches("<defs").count(), 1);
         assert!(fixed.contains("clip-path=\"url(#SVGID_2_)\""));
         // A picture fixed before (its clip path outside <defs>) is fixed
         // again; one already right is left alone.
-        let older = fixed.replace("<defs><clipPath", "<clipPath").replace("</clipPath></defs>", "</clipPath>");
-        assert_eq!(String::from_utf8(for_qt(older.as_bytes()).unwrap()).unwrap(), fixed);
+        let older = fixed
+            .replace("<defs><clipPath", "<clipPath")
+            .replace("</clipPath></defs>", "</clipPath>");
+        assert_eq!(
+            String::from_utf8(for_qt(older.as_bytes()).unwrap()).unwrap(),
+            fixed
+        );
         assert!(for_qt(fixed.as_bytes()).is_none());
         // Pictures without that need nothing.
         assert!(for_qt(b"<svg viewBox=\"0 0 1 1\"><rect/></svg>").is_none());
