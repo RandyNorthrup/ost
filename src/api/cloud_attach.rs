@@ -402,51 +402,6 @@ pub async fn create_folder(parent_url: &str, name: &str, color: usize) -> Result
     Ok(())
 }
 
-/// OneDrive's collaborators, in its order (`sp.PeopleCollection.
-/// GetCollaboratorsAsStream`, substrate's people suggestions): the
-/// picker's People view is sorted by them.
-pub async fn collaborators(client: &TeamsClient) -> Result<Vec<String>> {
-    let personal = super::quick_access::personal_site(client).await?;
-    let reply = sharing::get_with(
-        &format!("{personal}/_api/sp.PeopleCollection.GetCollaboratorsAsStream?top=100"),
-        &[("accept", "application/json")],
-    )
-    .await?;
-    Ok(parse_collaborators(&reply))
-}
-
-pub fn parse_collaborators(reply: &Value) -> Vec<String> {
-    reply["Groups"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .flat_map(|g| g["Suggestions"].as_array().cloned().unwrap_or_default())
-        .map(|p| s(&p["DisplayName"]))
-        .filter(|n| !n.is_empty())
-        .collect()
-}
-
-/// People's rows: who shared files with you, in OneDrive's collaborator
-/// order (people it doesn't know last), without you.
-pub fn order_people(
-    mut people: Vec<(String, Vec<DriveItem>)>,
-    order: &[String],
-    me: &str,
-) -> Vec<(String, Vec<DriveItem>)> {
-    // Teams lists who shared files with you: files without a sharer
-    // (OneDrive's "Someone") aren't listed.
-    people.retain(|(n, items)| {
-        !n.eq_ignore_ascii_case(me) && !n.eq_ignore_ascii_case("Someone") && !items.is_empty()
-    });
-    people.sort_by_key(|(n, _)| {
-        order
-            .iter()
-            .position(|o| o.eq_ignore_ascii_case(n))
-            .unwrap_or(usize::MAX)
-    });
-    people
-}
-
 /// A file on the picker's Home (OneDrive's recent files) or in the Attach
 /// popover's suggestions.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -819,31 +774,6 @@ mod tests {
                 "https://x.sharepoint.com/sites/OSTTestTeam".to_string(),
                 "/sites/OSTTestTeam/Shared Documents/General".to_string()
             )
-        );
-    }
-
-    #[test]
-    fn people_follow_onedrives_collaborators() {
-        let order = parse_collaborators(
-            &json!({"Groups":[{"Suggestions":[{"DisplayName":"OST Test 2"},{"DisplayName":"Randy Northrup"}],"Type":"People"}]}),
-        );
-        let f = |n: &str| DriveItem {
-            name: n.into(),
-            ..Default::default()
-        };
-        let p = order_people(
-            vec![
-                ("Randy Northrup".into(), vec![f("a")]),
-                ("OST Test 1".into(), vec![f("b")]),
-                ("OST Test 2".into(), vec![f("c")]),
-                ("Someone".into(), vec![]),
-            ],
-            &order,
-            "OST Test 1",
-        );
-        assert_eq!(
-            p.iter().map(|x| x.0.as_str()).collect::<Vec<_>>(),
-            vec!["OST Test 2", "Randy Northrup"]
         );
     }
 

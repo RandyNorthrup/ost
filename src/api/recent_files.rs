@@ -151,18 +151,32 @@ pub fn left_out(entry: &Value) -> Option<&'static str> {
     if kind == "Image" {
         return Some("Image");
     }
-    let sp = &x["SharePointItem"];
-    let scd = s(&x["SubstrateContentDomainId"]);
-    let ids =
-        guid(&sp["SiteId"]) && guid(&sp["WebId"]) && guid(&sp["ListId"]) && guid(&sp["UniqueId"]);
-    if scd.is_empty() && kind != "GenericList" && kind != "Playlist" && !ids {
+    if s(&x["SubstrateContentDomainId"]).is_empty()
+        && kind != "GenericList"
+        && kind != "Playlist"
+        && !sp_ids(x)
+    {
         return Some("ClassicAttachment");
     }
     let source = x["Source"].as_str().unwrap_or_default();
     if !source.is_empty() && source != "SharePoint" && source != "OneDriveForBusiness" {
         return Some("Source");
     }
-    // isInvalidODBItem.
+    invalid_odb(x)
+}
+
+/// A real GUID for each of SharePoint's ids (OneDrive's check).
+pub(crate) fn sp_ids(x: &Value) -> bool {
+    let sp = &x["SharePointItem"];
+    guid(&sp["SiteId"]) && guid(&sp["WebId"]) && guid(&sp["ListId"]) && guid(&sp["UniqueId"])
+}
+
+/// OneDrive's `isInvalidODBItem` over an entry's `file`: why a OneDrive
+/// for work list leaves it out, None when it may be listed.
+pub(crate) fn invalid_odb(x: &Value) -> Option<&'static str> {
+    let kind = x["Visualization"]["Type"].as_str().unwrap_or_default();
+    let scd = s(&x["SubstrateContentDomainId"]);
+    let ids = sp_ids(x);
     if s(&x["Visualization"]["Title"]).is_empty() {
         return Some("Missing Title property");
     }

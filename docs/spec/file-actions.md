@@ -102,9 +102,10 @@ Measured on winpc on 2026-11-12, as OST Test 1.
   you favorite will show up here".
 - **Browse by People** lists the people who shared folders with you, and
   **Meetings** the folders from your meetings. In Teams both show Teams' own
-  "Please sign in" prompt instead, a bug in Teams 26288. OST lists them with
-  Graph (`/me/drive/sharedWithMe` grouped by who shared, and the meetings'
-  recording folders).
+  "Please sign in" prompt instead, a bug in Teams 26288. OST lists the
+  folders from OneDrive's shared views (the recent files service and shared
+  folders, grouped by who shared them, `src/api/shared_files.rs`) and the
+  meetings' recording folders.
 - **More places…** opens "Shared libraries": "Recent" and "Your Teams"
   sections of site cards (a 40 px initials tile, the name, and a second line
   such as "Site Assets"). A card opens that library.
@@ -178,7 +179,8 @@ Measured on winpc on 2026-11-12, as OST Test 1.
     or the picture of the person whose OneDrive it is (that drive's owner).
     Harness `--picker-person-test`.
   - On 2026-11-12 search failed tenant-wide: Teams stayed on its loading
-    placeholders, and SharePoint search, Graph search and `sharedWithMe` all
+    placeholders, and SharePoint search, Graph search and Graph's
+    `sharedWithMe` (since retired) all
     answered 500 to 504. OST shows "Sorry, something went wrong." in the list
     and logs the service's answer; Teams' own failure wording is still to be
     captured.

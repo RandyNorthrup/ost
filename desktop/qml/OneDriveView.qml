@@ -50,6 +50,8 @@ Item {
         setFilter(field, f.values.filter((v, j) => j !== i), (f.labels || []).filter((v, j) => j !== i))
     }
     readonly property var people: driveData.people || []
+    /// Shared and a person's page list Date shared and Shared by.
+    readonly property bool sharedView: view === "shared" || view === "people"
     readonly property var libraries: driveData.libraries || []
     readonly property bool canWrite: view === "folder"
     /// In a subfolder Teams puts the folder's own command bar on the top
@@ -590,7 +592,7 @@ Item {
                     Column {
                         x: 56; anchors.verticalCenter: parent.verticalCenter
                         Text { text: modelData.name; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
-                        Text { text: qsTr("%n files", "", modelData.items.length); font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(hcFill2, theme.textSecondary) }
+                        Text { text: qsTr("%n files", "", (modelData.files || modelData.items).length); font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(hcFill2, theme.textSecondary) }
                     }
                     HoverHandler { id: pph; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.person = modelData.name }
@@ -821,8 +823,8 @@ Item {
                         Item { width: 56; height: 49 }
                         Item { width: 40; height: 49; FluentIcon { x: 13.5; y: 16.17; name: "document-16"; size: 16; color: theme.onFill(card, root.ink) } }
                         ListHead { label: qsTr("Name"); field: root.view === "folder" ? "name" : ""; col: "name"; width: table.wName }
-                        ListHead { label: root.view === "recent" ? qsTr("Opened") : qsTr("Modified"); field: root.view === "folder" ? "modified" : ""; col: "modified"; width: table.w("modified") }
-                        ListHead { visible: table.shows("modified_by"); label: root.view === "shared" ? qsTr("Shared by") : root.view === "recent" ? qsTr("Owner") : qsTr("Modified By"); field: root.view === "folder" ? "modified_by" : ""; col: "modified_by"; width: table.w("modified_by") }
+                        ListHead { label: root.view === "recent" ? qsTr("Opened") : root.sharedView ? qsTr("Date shared") : qsTr("Modified"); field: root.view === "folder" ? "modified" : ""; col: "modified"; width: table.w("modified") }
+                        ListHead { visible: table.shows("modified_by"); label: root.sharedView ? qsTr("Shared by") : root.view === "recent" ? qsTr("Owner") : qsTr("Modified By"); field: root.view === "folder" ? "modified_by" : ""; col: "modified_by"; width: table.w("modified_by") }
                         ListHead { visible: table.shows("size"); label: qsTr("File size"); field: root.view === "folder" ? "size" : ""; col: "size"; width: table.w("size") }
                         ListHead { visible: table.shows("sharing"); label: qsTr("Sharing"); col: "sharing"; width: table.w("sharing") }
                         ListHead { visible: table.shows("activity"); label: qsTr("Activity"); width: table.w("activity") }
@@ -960,7 +962,7 @@ Item {
                                 width: table.w("modified"); text: frow.modelData.modified_text || ""
                                 tip: frow.modelData.modified_title || ""
                             }
-                            RowCell { ty: frow.ty; visible: table.shows("modified_by"); width: table.w("modified_by"); text: root.view === "recent" ? (frow.modelData.owner || "") : frow.modelData.modified_by || root.userName }
+                            RowCell { ty: frow.ty; visible: table.shows("modified_by"); width: table.w("modified_by"); text: root.view === "recent" ? (frow.modelData.owner || "") : root.sharedView ? (frow.modelData.modified_by || "") : frow.modelData.modified_by || root.userName }
                             RowCell { ty: frow.ty; visible: table.shows("size"); width: table.w("size"); text: frow.modelData.is_folder ? root.itemCount(frow.modelData.child_count) : root.size(frow.modelData.size) }
                             Item {
                                 visible: table.shows("sharing")
