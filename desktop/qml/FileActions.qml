@@ -1487,7 +1487,7 @@ Item {
             id: pkBody
             x: pk.navCollapsed ? 82 : 224; width: parent.width - x; height: parent.height
             readonly property var listItems: !pk.shown ? [] : pk.shown.people
-                ? (pk.person ? (pk.shown.people.find(p => p.name === pk.person) || { items: [] }).items : [])
+                ? (pk.person ? (pk.shown.people.find(p => (p.id || p.name) === pk.person) || { items: [] }).items : [])
                 : pk.shown.items || []
             // Search results: ← "Search results".
             Row {
@@ -1812,7 +1812,7 @@ Item {
                             Text { text: parent.parent.modelData.items.length + (parent.parent.modelData.items.length === 1 ? " folder" : " folders"); font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill16, root.ink) }
                         }
                         HoverHandler { id: pph2; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: { pk.person = parent.modelData.name; pk.trail = pk.trail.slice(0, 1).concat([{ name: parent.modelData.name, place: true }]) } }
+                        TapHandler { onTapped: { pk.person = parent.modelData.id || parent.modelData.name; pk.trail = pk.trail.slice(0, 1).concat([{ name: parent.modelData.name, place: true }]) } }
                         Accessible.role: Accessible.Button
                         Accessible.name: qsTr("Folders from %1").arg(modelData.name)
                     }

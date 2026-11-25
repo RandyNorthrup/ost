@@ -10034,7 +10034,7 @@ Window {
                 }
                 cap("people")
             }
-            else if (step === 4) { if ((d.people || []).length) oneDrive.person = d.people[0].name }
+            else if (step === 4) { if ((d.people || []).length) { oneDrive.personId = d.people[0].id; oneDrive.person = d.people[0].name } }
             else if (step === 5) cap("person")
             else if (step === 6) { p.entry = "home"; p.open() }
             else if (step === 8) p.openForTest("shared")
