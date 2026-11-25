@@ -8,29 +8,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/RandyNorthrup/ost/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/RandyNorthrup/ost?style=for-the-badge&color=5B5FC7&label=release"></a>
-  <a href="https://github.com/RandyNorthrup/ost/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/RandyNorthrup/ost/total?style=for-the-badge&color=2EA043&label=downloads"></a>
-  <a href="https://github.com/RandyNorthrup/ost/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/RandyNorthrup/ost?style=for-the-badge&color=E3B341&logo=github"></a>
-  <a href="https://github.com/RandyNorthrup/ost/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/RandyNorthrup/ost/ci.yml?branch=main&style=for-the-badge&label=CI&logo=githubactions&logoColor=white"></a>
-  <a href="https://github.com/RandyNorthrup/ost/security/code-scanning"><img alt="CodeQL" src="https://img.shields.io/badge/CodeQL-enabled-1F6FEB?style=for-the-badge&logo=github&logoColor=white"></a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/RandyNorthrup/ost/releases/latest"><img alt="Linux" src="https://img.shields.io/badge/Linux-x86__64-FCC624?style=for-the-badge&logo=linux&logoColor=black"></a>
-  <a href="https://www.rust-lang.org"><img alt="Rust" src="https://img.shields.io/badge/Rust-2024-CE422B?style=for-the-badge&logo=rust&logoColor=white"></a>
-  <a href="https://www.qt.io"><img alt="Qt" src="https://img.shields.io/badge/Qt-6-41CD52?style=for-the-badge&logo=qt&logoColor=white"></a>
-  <a href="https://github.com/RandyNorthrup/ost/wiki/Installation"><img alt="Wayland" src="https://img.shields.io/badge/Wayland-%26%20X11-FFBC00?style=for-the-badge&logo=wayland&logoColor=black"></a>
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/RandyNorthrup/ost?style=for-the-badge&color=8957E5"></a>
-</p>
-
-<p align="center">
-  <a href="https://github.com/RandyNorthrup/ost/wiki/Installation#ubuntu-2604-and-debian-testing-deb"><img alt="Ubuntu" src="https://img.shields.io/badge/Ubuntu-26.04-E95420?style=for-the-badge&logo=ubuntu&logoColor=white"></a>
-  <a href="https://github.com/RandyNorthrup/ost/wiki/Installation#ubuntu-2604-and-debian-testing-deb"><img alt="Debian" src="https://img.shields.io/badge/Debian-testing-A81D33?style=for-the-badge&logo=debian&logoColor=white"></a>
-  <a href="https://github.com/RandyNorthrup/ost/wiki/Installation#fedora-45-and-opensuse-tumbleweed-rpm"><img alt="Fedora" src="https://img.shields.io/badge/Fedora-45-51A2DA?style=for-the-badge&logo=fedora&logoColor=white"></a>
-  <a href="https://github.com/RandyNorthrup/ost/wiki/Installation#fedora-45-and-opensuse-tumbleweed-rpm"><img alt="openSUSE" src="https://img.shields.io/badge/openSUSE-Tumbleweed-73BA25?style=for-the-badge&logo=opensuse&logoColor=white"></a>
-  <a href="https://github.com/RandyNorthrup/ost/wiki/Installation#flatpak"><img alt="Flatpak" src="https://img.shields.io/badge/Flatpak-bundle-4A90D9?style=for-the-badge&logo=flatpak&logoColor=white"></a>
-  <a href="https://github.com/RandyNorthrup/ost/wiki/Installation#appimage"><img alt="AppImage" src="https://img.shields.io/badge/AppImage-any%20distro-2B6CB0?style=for-the-badge&logo=linux&logoColor=white"></a>
-  <a href="https://github.com/RandyNorthrup/ost/wiki/Installation#arch-linux-aur-coming-soon"><img alt="AUR" src="https://img.shields.io/badge/AUR-coming%20soon-1793D1?style=for-the-badge&logo=archlinux&logoColor=white"></a>
+  <a href="https://github.com/RandyNorthrup/ost/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/RandyNorthrup/ost?style=flat-square&color=5B5FC7&label=release"></a>
+  <a href="https://github.com/RandyNorthrup/ost/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/RandyNorthrup/ost/total?style=flat-square&color=2EA043&label=downloads"></a>
+  <a href="https://github.com/RandyNorthrup/ost/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/RandyNorthrup/ost?style=flat-square&color=E3B341&label=stars"></a>
+  <a href="https://github.com/RandyNorthrup/ost/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/RandyNorthrup/ost/ci.yml?branch=main&style=flat-square&label=CI"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/RandyNorthrup/ost?style=flat-square&color=8957E5"></a>
 </p>
 
 <p align="center">
