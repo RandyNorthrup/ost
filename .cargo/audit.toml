@@ -1,16 +1,21 @@
-# cargo audit settings.
+# cargo audit settings (CI's "Dependency audit" job runs `cargo audit` on
+# every push and pull request; it fails on any vulnerability). Keep the
+# ignore list the same as deny.toml's [advisories] ignore, which has the
+# full reasons; each entry is reviewed again by its date.
 #
 # The three advisories ignored here are "unmaintained" notices, not
-# vulnerabilities. zbus 6 merged zbus_names, zvariant and zvariant_derive
-# into zbus itself, so their standalone crates won't get releases.
-# OST reaches them only through keyring's Linux Secret Service store
-# (keyring 4 → zbus-secret-service-keyring-store 1.0 → secret-service 5 →
-# zbus 5), which stores and reads the sign-in tokens over D-Bus.
-# Remove these lines once keyring's store moves to secret-service 6 / zbus 6
-# (secret-service 6.0.0-rc.1 is out as of 2026-11-10).
+# vulnerabilities: zbus 6 merged zbus_names, zvariant and zvariant_derive
+# into zbus itself, so their standalone crates won't get releases. They come
+# in with zbus 5, which ksni (tray icon) and keyring's Secret Service store
+# (sign-in tokens) still require, and which OST's own D-Bus calls share with
+# them. Review by 2027-02-25.
+#
+# chrono is unmaintained too (not a vulnerability); jiff replaces it in
+# TASK-0319. Review by 2027-01-31.
 [advisories]
 ignore = [
     "RUSTSEC-2026-0370", # zvariant: merged into zbus 6 (its wire module)
     "RUSTSEC-2026-0371", # zbus_names: merged into zbus 6 (its names module)
     "RUSTSEC-2026-0372", # zvariant_derive: its derives ship with zbus 6
+    "RUSTSEC-2026-0543", # chrono: unmaintained; jiff replaces it (TASK-0319)
 ]
