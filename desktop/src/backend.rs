@@ -22872,30 +22872,43 @@ impl qobject::Backend {
         let origin_ok = match api::app_host::cached_facts(&app) {
             Some(f) => decide(&f),
             None => {
-                static ASKED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
-                let first = {
-                    let mut a = ASKED.lock().unwrap_or_else(|e| e.into_inner());
-                    let first = !a.contains(&app);
-                    if first {
-                        a.push(app.clone());
+                // Each app's definition is read once: while that runs its
+                // requests wait ("pending"); once it failed, they're refused.
+                static LOOKUPS: std::sync::Mutex<Vec<(String, bool)>> =
+                    std::sync::Mutex::new(Vec::new());
+                let state = {
+                    let mut l = LOOKUPS.lock().unwrap_or_else(|e| e.into_inner());
+                    let state = l.iter().find(|(a, _)| *a == app).map(|(_, failed)| *failed);
+                    if state.is_none() {
+                        l.push((app.clone(), false));
                     }
-                    first
+                    state
                 };
-                if !first {
-                    // Asked before and still unknown: the definition
-                    // couldn't be read, so nothing is trusted.
-                    tracing::info!(app = %app, "device permission refused: the app's definition is unknown");
-                    return QString::from("deny");
+                match state {
+                    Some(true) => {
+                        tracing::info!(app = %app, "device permission refused: the app's definition is unknown");
+                        return QString::from("deny");
+                    }
+                    Some(false) => return QString::from("pending"),
+                    None => {}
                 }
                 let qt = self.qt_thread();
                 runtime().spawn(async move {
                     let r = async { api::app_host::facts(&TeamsClient::new().await?, &app).await }
                         .await;
+                    let failed = r.is_err();
                     if let Err(e) = r {
                         tracing::warn!(
                             "app definition for device permissions: {}",
                             short_error(&e)
                         );
+                    }
+                    {
+                        let mut l = LOOKUPS.lock().unwrap_or_else(|e| e.into_inner());
+                        l.retain(|(a, _)| *a != app);
+                        if failed {
+                            l.push((app, true));
+                        }
                     }
                     let _ = qt.queue(|mut this| {
                         let v = this.rust().app_facts_version + 1;

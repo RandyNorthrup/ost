@@ -250,9 +250,11 @@
             // address can come from the app (settings.setSettings).
             let domains = [];
             try { domains = JSON.parse(await native("validDomains", {})) } catch (e) { domains = [] }
-            const contentUrl = appAddress(fill(template || cfg.url), firstOrigin, domains);
-            if (!contentUrl) { ost.log("relaunch refused: not one of the app's addresses"); return; }
+            // Filled in with the new entity, then kept only if it's valid.
+            const before = ctx.entityId;
             ctx.entityId = entityId || ctx.entityId;
+            const contentUrl = appAddress(fill(template || cfg.url), firstOrigin, domains);
+            if (!contentUrl) { ctx.entityId = before; ost.log("relaunch refused: not one of the app's addresses"); return; }
             cfg.url = template || cfg.url;
             const go = () => {
                 if (handlers.has("load")) send("load", [{ entityId: ctx.entityId, contentUrl }]);

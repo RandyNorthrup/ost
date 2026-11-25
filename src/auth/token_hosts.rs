@@ -31,6 +31,7 @@ const TEAMS_DOMAINS: &[&str] = &[
     "teams.microsoft.com",
     "teams.cloud.microsoft",
     "teams.office.com",
+    "teams.internal.office.com",
     "teams.core.microsoft",
     "teams.live.com",
     "skype.com",

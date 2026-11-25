@@ -387,10 +387,10 @@ mod tests {
             t.contains("Where in OST: Find in chat") && t.contains("OST version: OST desktop 1")
         );
         assert!(t.contains("- Screenshot 1.png") && !t.contains("/tmp/x"));
-        assert!(!t.contains("opened chat"), "logs only when shared: {t}");
+        assert!(!t.contains("opened chat"), "logs only when shared");
         r.share_logs = true;
         let t = details_text(&r, "1", "x", &logs);
-        assert!(t.contains("INFO opened chat with <email>"), "{t}");
+        assert!(t.contains("INFO opened chat with <email>"));
         assert!(!t.contains("ost-test1"));
     }
 
@@ -407,15 +407,12 @@ mod tests {
             "555",
             "abc.def",
         ] {
-            assert!(!m.contains(gone), "{gone} in {m}");
+            assert!(!m.contains(gone), "{gone} left in the masked line");
         }
-        assert!(m.contains("INFO chat opened name=\"…\""), "{m}");
+        assert!(m.contains("INFO chat opened name=\"…\""));
         let t = mask_line("2026-11-10T10:00:00.123Z  INFO call 555-010-2030 took 1234567 ms");
-        assert!(
-            t.starts_with("2026-11-10T10:00:00.123Z"),
-            "timestamps stay: {t}"
-        );
-        assert!(t.contains("<number>") && t.contains("1234567"), "{t}");
+        assert!(t.starts_with("2026-11-10T10:00:00.123Z"), "timestamps stay");
+        assert!(t.contains("<number>") && t.contains("1234567"));
     }
 
     #[test]
@@ -438,10 +435,11 @@ mod tests {
             "form grant_type=authorization_code&code=secretCODE2&client_secret=secretCLIENT".to_string(),
             format!("blob {}", "Q".repeat(300)),
         ];
-        for l in &lines {
-            let s = scrub_secrets(l);
-            for secret in ["secret", "SECRET", "eyJ", "AAAAAAAAAA", "QQQQQQQQQQ"] {
-                assert!(!s.contains(secret), "{secret} left in {s:?} (from {l:?})");
+        for (i, l) in lines.iter().enumerate() {
+            // (The parameter name "client_secret" itself stays.)
+            let s = scrub_secrets(l).replace("client_secret=", "client_=");
+            for marker in ["secret", "SECRET", "eyJ", "AAAAAAAAAA", "QQQQQQQQQQ"] {
+                assert!(!s.contains(marker), "{marker} left in line {i}");
             }
         }
         // What isn't a secret stays readable.
@@ -484,7 +482,7 @@ mod tests {
         let out = String::from_utf8(sink.0.lock().unwrap().clone()).unwrap();
         assert!(
             out.starts_with("INFO X-Skypetoken") && !out.contains("eyJ"),
-            "{out}"
+            "the token was written"
         );
     }
 

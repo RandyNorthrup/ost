@@ -1072,7 +1072,7 @@ mod storage_tests {
             .save_to(&path, Some(&broken), false, &account)
             .unwrap();
         let text = on_disk(&path);
-        assert!(!text.contains("secret"), "{text}");
+        assert!(!text.contains("secret"), "a token in the file");
         assert!(!text.contains("tokens_in_keyring"));
         // This run still has them.
         let back = Config::load_from(&path, Some(&broken), false, &account).unwrap();
@@ -1154,7 +1154,7 @@ mod storage_tests {
         let text = on_disk(&path);
         assert!(
             !text.contains("secret") && text.contains("tokens_in_keyring = true"),
-            "{text}"
+            "the file still holds a token"
         );
         assert!(
             store
