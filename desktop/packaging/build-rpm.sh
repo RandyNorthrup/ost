@@ -15,6 +15,8 @@ case "${1:-}" in --deps) deps=1; shift ;; --deps-only) deps=2; shift ;; esac
 V=${1:-0}
 SRC=$(cd "$(dirname "$0")/../.." && pwd)
 W=${2:-$SRC/target/rpm}
+mkdir -p "$W"
+W=$(cd "$W" && pwd)
 JOBS=${JOBS:-$(nproc)}
 SPEC="$SRC/desktop/packaging/rpm/ost-desktop.spec"
 # RPM versions have no "-": a pre-release (0.2.1-rc1) becomes 0.2.1~rc1.
@@ -43,7 +45,12 @@ fi
 mkdir -p "$W/SOURCES"
 (cd "$SRC" && tar --exclude=./target --exclude=./.git --exclude=./.claude \
   --transform "s,^\.,ost-$RV," -czf "$W/SOURCES/ost-$RV.tar.gz" .)
-sed "s/^Version:.*/Version:        $RV/" "$SPEC" > "$W/ost-desktop.spec"
+when=${SOURCE_DATE_EPOCH:-$(git -C "$SRC" log -1 --format=%ct 2>/dev/null || date +%s)}
+{
+  sed "s/^Version:.*/Version:        $RV/" "$SPEC"
+  printf '\n%%changelog\n* %s Randy Northrup <randy.northrup@gmail.com> - %s-1\n- OST %s: https://github.com/RandyNorthrup/ost/releases/tag/v%s\n' \
+    "$(LC_ALL=C date -u -d "@$when" '+%a %b %d %Y')" "$RV" "$V" "$V"
+} > "$W/ost-desktop.spec"
 set -- --define "_topdir $W" --define "_smp_mflags -j$JOBS"
 [ -n "$dist" ] && set -- "$@" --define "dist $dist"
 rpmbuild -bb "$@" "$W/ost-desktop.spec"

@@ -17,6 +17,8 @@ case "${1:-}" in --deps) deps=1; shift ;; --deps-only) deps=2; shift ;; esac
 V=${1:-0}
 SRC=$(cd "$(dirname "$0")/../.." && pwd)
 W=${2:-$SRC/target/deb}
+mkdir -p "$W"
+W=$(cd "$W" && pwd)
 JOBS=${JOBS:-$(nproc)}
 . /etc/os-release
 DIST="$ID${VERSION_ID:-.${VERSION_CODENAME:-sid}}"

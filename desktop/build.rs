@@ -426,6 +426,30 @@ fn main() {
     for lib in ["avfilter", "avformat", "avcodec", "avutil", "swscale"] {
         println!("cargo::rustc-link-lib={lib}");
     }
+    // FFmpeg's headers where a distribution keeps them outside the default
+    // include path (openSUSE: /usr/include/ffmpeg), as its pkg-config says.
+    let ffmpeg_includes: Vec<String> = std::process::Command::new("pkg-config")
+        .arg("--cflags-only-I")
+        .args(["libavfilter", "libavformat", "libavcodec", "libavutil", "libswscale"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .split_whitespace()
+                .filter_map(|f| f.strip_prefix("-I"))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    // SAFETY: only adds include paths to the C++ build.
+    let builder = unsafe {
+        builder.cc_builder(|cc| {
+            for p in &ffmpeg_includes {
+                cc.include(p);
+            }
+        })
+    };
     builder.build();
 }
 
