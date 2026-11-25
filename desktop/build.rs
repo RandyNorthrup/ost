@@ -385,6 +385,9 @@ fn main() {
     // qt6-shadertools) into OUT_DIR and served beside the QML as
     // shaders/<name>.frag.qsb.
     let shader_qrc = bake_shaders();
+    // Qt WebEngine comes with Qt's installation, or from a prefix of its own
+    // (see webengine_apart).
+    let webengine = webengine_apart();
     let builder = CxxQtBuilder::new_qml_module(module)
         .file("src/backend.rs")
         .file("src/video_item.rs")
@@ -394,13 +397,17 @@ fn main() {
         .file("src/clip_mask.rs")
         .qt_module("Quick")
         .qt_module("QuickControls2")
-        .qt_module("WebEngineQuick")
         .qt_module("Multimedia")
         .qrc_resources(resources)
         .qrc(&shader_qrc);
-    // SAFETY: only adds a source file to the C++ build.
+    let builder = if webengine.is_none() { builder.qt_module("WebEngineQuick") } else { builder };
+    let webengine_includes: Vec<std::path::PathBuf> = webengine.map(|l| l.include_paths).unwrap_or_default();
+    // SAFETY: only adds source files and include paths to the C++ build.
     let builder = unsafe {
         builder.cc_builder(|cc| {
+            for p in &webengine_includes {
+                cc.include(p);
+            }
             cc.file("src/webengine.cpp");
             cc.file("src/native.cpp");
             cc.file("src/i18n.cpp");
@@ -484,19 +491,47 @@ fn bake_shaders() -> std::path::PathBuf {
     qrc
 }
 
+/// Qt's qmake -query values for `key`: from $QMAKE (as cxx-qt-build uses
+/// it), qmake6 and qmake.
+fn qmake_query(key: &str) -> Vec<String> {
+    println!("cargo::rerun-if-env-changed=QMAKE");
+    let mut qmakes: Vec<std::ffi::OsString> = Vec::new();
+    if let Some(q) = std::env::var_os("QMAKE").filter(|q| !q.is_empty()) {
+        qmakes.push(q);
+    }
+    qmakes.extend(["qmake6", "qmake"].map(std::ffi::OsString::from));
+    let mut out = Vec::new();
+    for qmake in qmakes {
+        if let Ok(o) = std::process::Command::new(&qmake).args(["-query", key]).output()
+            && o.status.success()
+        {
+            let d = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            if !d.is_empty() && !out.contains(&d) {
+                out.push(d);
+            }
+        }
+    }
+    out
+}
+
+/// Qt WebEngine installed in a prefix of its own, outside Qt's installation:
+/// Flathub's QtWebEngine BaseApp puts it in /app beside the KDE runtime's Qt
+/// in /usr. Qt's installation then has no .prl file for it (cxx-qt-build
+/// links Qt modules by those), so it is linked from its pkg-config file
+/// instead. None where Qt's installation has it, as on distributions.
+fn webengine_apart() -> Option<pkg_config::Library> {
+    let libs = qmake_query("QT_INSTALL_LIBS");
+    let first = libs.first()?;
+    if std::path::Path::new(first).join("libQt6WebEngineQuick.prl").exists() {
+        return None;
+    }
+    pkg_config::Config::new().probe("Qt6WebEngineQuick").ok()
+}
+
 fn find_qsb() -> Option<std::path::PathBuf> {
     let mut dirs: Vec<std::path::PathBuf> = Vec::new();
     for key in ["QT_HOST_BINS", "QT_HOST_LIBEXECS", "QT_INSTALL_BINS", "QT_INSTALL_LIBEXECS"] {
-        for qmake in ["qmake6", "qmake"] {
-            if let Ok(o) = std::process::Command::new(qmake).args(["-query", key]).output()
-                && o.status.success()
-            {
-                let d = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                if !d.is_empty() {
-                    dirs.push(d.into());
-                }
-            }
-        }
+        dirs.extend(qmake_query(key).into_iter().map(std::path::PathBuf::from));
     }
     dirs.extend(["/usr/lib/qt6/bin", "/usr/lib/qt6/libexec", "/usr/lib/x86_64-linux-gnu/qt6/bin", "/usr/lib/x86_64-linux-gnu/qt6/libexec"].map(std::path::PathBuf::from));
     if let Some(path) = std::env::var_os("PATH") {
