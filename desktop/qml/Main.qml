@@ -10020,10 +10020,12 @@ Window {
                 console.warn("SHARED error", d.error || "")
                 for (const i of d.items || []) console.warn("SHARED row", row(i))
                 cap("withyou")
-                oneDrive.open("people")
             }
-            else if (step === 2 && !loaded("people") && ++wait < 60) return
-            else if (step === 2) {
+            // (Each picture is taken a tick before the view changes:
+            // grabToImage is asynchronous.)
+            else if (step === 2) oneDrive.open("people")
+            else if (step === 3 && !loaded("people") && ++wait < 60) return
+            else if (step === 3) {
                 wait = 0
                 console.warn("SHARED people error", d.error || "")
                 for (const x of d.people || []) {
@@ -10031,23 +10033,24 @@ Window {
                     for (const i of x.items || []) console.warn("SHARED page", x.name, "|", row(i))
                 }
                 cap("people")
-                if ((d.people || []).length) oneDrive.person = d.people[0].name
             }
-            else if (step === 3) { cap("person"); p.entry = "home"; p.open() }
-            else if (step === 5) p.openForTest("shared")
-            else if (step === 6 && p.loading && ++wait < 60) return
-            else if (step === 6) {
+            else if (step === 4) { if ((d.people || []).length) oneDrive.person = d.people[0].name }
+            else if (step === 5) cap("person")
+            else if (step === 6) { p.entry = "home"; p.open() }
+            else if (step === 8) p.openForTest("shared")
+            else if (step === 9 && p.loading && ++wait < 60) return
+            else if (step === 9) {
                 wait = 0
                 for (const i of p.rows) console.warn("SHARED picker row", row(i))
                 cap("picker-shared")
-                p.openForTest("people")
             }
-            else if (step === 7 && p.loading && ++wait < 60) return
-            else if (step === 7) {
+            else if (step === 10) p.openForTest("people")
+            else if (step === 11 && p.loading && ++wait < 60) return
+            else if (step === 11) {
                 for (const x of p.people) console.warn("SHARED picker person", x.name, "|", (x.items || []).map(f => (f.title || f.name) + " · " + String(f.modified_text || "").replace(/ at .*$/, "")).join(" ; "))
                 cap("picker-people")
             }
-            else if (step === 8) { p.close(); Qt.quit() }
+            else if (step === 12) { p.close(); Qt.quit() }
             step++
         }
     }
