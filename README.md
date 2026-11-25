@@ -262,6 +262,8 @@ privately as [SECURITY.md](SECURITY.md) describes, not in a public issue.
 - Randy Northrup
 - Mark Ruvald Pedersen
 
+OST grew out of Mark Ruvald Pedersen's [eisbaw/ost](https://github.com/eisbaw/ost).
+
 ## License
 
 MIT License, see [LICENSE](LICENSE). Third-party assets and their licenses
