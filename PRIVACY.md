@@ -127,9 +127,11 @@ its manifest (`desktop/packaging/flatpak/io.github.RandyNorthrup.ost.yml`):
 
 - **Network**: Teams' services, calls and the embedded web apps.
 - **Wayland, or X11** where there's no Wayland session.
-- **All devices**: cameras (V4L2) and headsets' call buttons, lights and
-  ring (HID: Flatpak has no narrower permission for HID devices); the GPU
-  comes with it. Cameras will come through the camera portal instead.
+- **The GPU** only. Cameras come through the desktop's camera portal,
+  which asks you once and then shows OST only the cameras (PipeWire's);
+  no other devices are visible. Headsets' call buttons, lights and ring
+  (HID) would need access to all devices, so they aren't available in the
+  Flatpak: use the .deb, .rpm or AppImage for them.
 - **PipeWire and PulseAudio**: microphones, speakers, ringtones and the
   screen-share streams the desktop's portal hands over.
 - **Downloads folder** only: downloaded files go there, as in Teams.

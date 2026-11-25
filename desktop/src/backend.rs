@@ -6187,31 +6187,35 @@ fn echo_watch() -> &'static std::sync::Mutex<Option<teams_cli::calling::echo_rep
 /// The camera a call would use, (path, name): the one chosen in Settings
 /// > Devices, else the first camera, as the test call report names it.
 fn test_camera() -> Option<(String, String)> {
-    let cameras = teams_cli::calling::camera::list_devices();
-    match camera_device() {
-        Some(path) => cameras.into_iter().find(|c| c.0 == path),
-        None => cameras.into_iter().next(),
-    }
+    let cameras = teams_cli::calling::camera::cameras();
+    let c = match camera_device() {
+        Some(id) => teams_cli::calling::camera::find(&cameras, &id),
+        None => cameras.first(),
+    }?;
+    Some((c.id.clone(), c.name.clone()))
 }
 
-/// The camera chosen in Settings > Devices (a V4L2 path), else the default;
-/// your avatar while it is on (Teams selects the avatar as the camera).
+/// The camera chosen in Settings > Devices (a camera ID: a PipeWire node or
+/// a V4L2 path), else the default; your avatar while it is on (Teams
+/// selects the avatar as the camera).
 fn camera_device() -> Option<String> {
+    use teams_cli::calling::camera::is_camera_id;
     if ost_vfx::avatar::active() {
         return Some(teams_cli::calling::camera::AVATAR_DEVICE.to_string());
     }
-    // OST_CAMERA_DEVICE=/dev/videoN: this instance's camera (tests on a
-    // machine other instances share, whose settings file is common).
+    // OST_CAMERA_DEVICE=/dev/videoN or pipewire:<node>: this instance's
+    // camera (tests on a machine other instances share, whose settings file
+    // is common).
     if let Some(d) = std::env::var("OST_CAMERA_DEVICE")
         .ok()
-        .filter(|d| d.starts_with("/dev/video"))
+        .filter(|d| is_camera_id(d))
     {
         return Some(d);
     }
     load_settings()
         .get("cameraDevice")
         .and_then(|v| v.as_str())
-        .filter(|d| d.starts_with("/dev/video") && d[10..].bytes().all(|b| b.is_ascii_digit()))
+        .filter(|d| is_camera_id(d) && *d != teams_cli::calling::camera::AVATAR_DEVICE)
         .map(str::to_string)
 }
 
@@ -15579,14 +15583,16 @@ impl qobject::Backend {
     }
 
     pub fn video_devices(self: Pin<&mut Self>) -> QString {
-        let devices = teams_cli::calling::camera::list_devices();
+        let devices = teams_cli::calling::camera::cameras();
+        // A V4L2 path saved before PipeWire offered that camera is it.
         let current = camera_device()
-            .filter(|c| devices.iter().any(|(p, _)| p == c))
-            .or_else(|| devices.first().map(|(p, _)| p.clone()))
+            .and_then(|c| teams_cli::calling::camera::find(&devices, &c))
+            .or_else(|| devices.first())
+            .map(|c| c.id.clone())
             .unwrap_or_default();
         let list: Vec<serde_json::Value> = devices
             .iter()
-            .map(|(path, name)| serde_json::json!({ "path": path, "name": name }))
+            .map(|c| serde_json::json!({ "path": c.id, "name": c.name }))
             .collect();
         QString::from(
             serde_json::json!({ "devices": list, "current": current })
@@ -15819,7 +15825,9 @@ impl qobject::Backend {
             return false;
         }
         // Teams: "We'll stop sharing your video while you're doing this."
-        if self.rust().call_camera_on && camera_device().as_deref() == Some(device.as_str()) {
+        if self.rust().call_camera_on
+            && camera_device().is_some_and(|c| teams_cli::calling::camera::same_camera(&c, &device))
+        {
             tracing::info!("content camera: turning your video off (the same camera)");
             self.as_mut().toggle_camera();
         }
