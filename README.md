@@ -231,6 +231,14 @@ repository, which you review and submit yourself. OST has no telemetry and
 sends nothing to the project. See [SUPPORT.md](SUPPORT.md) and
 [PRIVACY.md](PRIVACY.md).
 
+## Authors
+
+OST desktop is created by **Randy Northrup**, built together with
+[Claude](https://www.anthropic.com/claude), Anthropic's AI, which wrote much of
+the code with him (its commits carry a `Co-Authored-By: Claude` line). It grew
+out of [eisbaw/ost](https://github.com/eisbaw/ost), the terminal client by
+Mark Ruvald Pedersen.
+
 ## License
 
 MIT License, see [LICENSE](LICENSE). Third-party assets and their licences
