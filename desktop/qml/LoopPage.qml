@@ -72,7 +72,7 @@ Item {
         backend.loopHostRequest("config", hostId + ":cfg", JSON.stringify({ kind: root.kind, mode: root.create ? "create" : "load", channel: root.channel, title: root.title }))
     }
     function stateForTest() { return JSON.stringify({ state: root.state_, error: root.error, events: root.events, url: root.componentUrl.split("?")[0] }) }
-    function evalForTest(js, cb) { web.runJavaScript(js, cb) }
+    function evalForTest(js, cb) { if (backend.testHarness()) web.runJavaScript(js, cb) }
     // The harness types into the page as a person would (real keys), at
     // the end of its canvas, and reads its text back (--loop-test).
     KeyTyper { id: typer }
@@ -217,8 +217,9 @@ Item {
             const u = req.requestedUrl.toString()
             if (u.indexOf("https://") === 0) Qt.openUrlExternally(u)
         }
+        // The clipboard for Loop's own pages (Microsoft's hosts) only.
         onPermissionRequested: p => {
-            if (p.permissionType === WebEnginePermission.PermissionType.ClipboardReadWrite) p.grant()
+            if (p.permissionType === WebEnginePermission.PermissionType.ClipboardReadWrite && backend.loopClipboardAllowed(p.origin.toString())) p.grant()
             else p.deny()
         }
     }

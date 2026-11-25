@@ -3,6 +3,11 @@
 //! Windows device's Diagnostic Data Viewer connection string entered, the app
 //! streams its diagnostic data to that viewer over HTTP for 24 hours.
 //!
+//! Unlike Teams (which sends plain HTTP to any private address), OST sends
+//! plain HTTP only to this device (a loopback address); a viewer elsewhere
+//! takes an `https://` address, or a port forwarded to it over SSH
+//! (`ssh -L 7070:<windows device>:<port> …`, then `127.0.0.1:7070`).
+//!
 //! OST has no telemetry of its own; what it sends that is diagnostic data
 //! (the update check, Report a problem and its call quality details,
 //! suggested-reply feedback) is recorded here, and while viewing is on each
@@ -61,9 +66,11 @@ pub fn state() -> DdvState {
         *g = Some(loaded);
     }
     let mut s = g.clone().unwrap_or_default();
-    // A day on, the connection is over.
+    // A day on, the connection is over; so is one to an address OST no
+    // longer sends to (a private address saved by an older OST).
     if s.state == "connected"
-        && now_secs().saturating_sub(s.connected_at) > CONNECTION_LIFETIME_SECS
+        && (now_secs().saturating_sub(s.connected_at) > CONNECTION_LIFETIME_SECS
+            || parse_connection_string(&s.connection_string).is_err())
     {
         s.state = "idle".into();
         *g = Some(s.clone());
@@ -93,19 +100,46 @@ pub fn set_enabled(on: bool) {
     save(&s);
 }
 
-/// A connection string Teams' viewer accepts: a private IPv4 address
-/// (RFC 5735's 10/8, 172.16/12, 192.168/16) and, optionally, a port.
-pub fn parse_connection_string(s: &str) -> Result<(std::net::Ipv4Addr, Option<u16>)> {
+/// The viewer's address from a connection string: `host[:port]` or
+/// `http://host[:port]` for a viewer on this device (a loopback address:
+/// 127.0.0.0/8, ::1, localhost), or `https://host[:port]` for any other.
+/// Plain HTTP to another device is refused: the events would cross the
+/// network unencrypted.
+pub fn parse_connection_string(s: &str) -> Result<String> {
     let s = s.trim();
-    let (host, port) = match s.rsplit_once(':') {
-        Some((h, p)) => (h, Some(p.parse::<u16>().context("Not a port")?)),
-        None => (s, None),
-    };
-    let ip: std::net::Ipv4Addr = host.parse().context("Not an IP address")?;
-    if !ip.is_private() {
-        bail!("Not a private network address");
+    if s.is_empty() {
+        bail!("No connection string");
     }
-    Ok((ip, port))
+    let with_scheme = if s.contains("://") {
+        s.to_string()
+    } else {
+        format!("http://{s}")
+    };
+    let u = url::Url::parse(&with_scheme).context("Not a connection string")?;
+    if !u.username().is_empty()
+        || u.password().is_some()
+        || u.query().is_some()
+        || u.fragment().is_some()
+        || !matches!(u.path(), "" | "/")
+    {
+        bail!("Not a connection string");
+    }
+    let host = u.host().context("Not a connection string")?;
+    let loopback = match &host {
+        url::Host::Ipv4(ip) => ip.is_loopback(),
+        url::Host::Ipv6(ip) => ip.is_loopback(),
+        url::Host::Domain(d) => d.eq_ignore_ascii_case("localhost"),
+    };
+    match u.scheme() {
+        "https" => {}
+        "http" if loopback => {}
+        "http" => bail!(
+            "Plain HTTP goes only to this device (a loopback address such as 127.0.0.1); use https:// or an SSH tunnel for a viewer on another device"
+        ),
+        _ => bail!("Not a connection string"),
+    }
+    let port = u.port().map(|p| format!(":{p}")).unwrap_or_default();
+    Ok(format!("{}://{}{port}/", u.scheme(), host))
 }
 
 /// Teams' Connect: Connecting, then Connected or Couldn't connect.
@@ -115,8 +149,11 @@ pub async fn connect(connection_string: &str) -> Result<DdvState> {
     s.state = "connecting".into();
     save(&s);
     let ok = match parse_connection_string(&s.connection_string) {
-        Ok(target) => wire::handshake(target).await.is_ok(),
-        Err(_) => false,
+        Ok(base) => wire::handshake(&base).await.is_ok(),
+        Err(e) => {
+            tracing::info!("diagnostic data viewer: {e:#}");
+            false
+        }
     };
     let mut s = state();
     s.state = if ok { "connected" } else { "failed" }.into();
@@ -182,14 +219,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn connection_strings_are_private_addresses() {
-        assert!(parse_connection_string("10.10.11.64").is_ok());
+    fn plain_http_goes_only_to_this_device() {
         assert_eq!(
-            parse_connection_string("192.168.1.5:7070").unwrap().1,
-            Some(7070)
+            parse_connection_string("127.0.0.1:7070").unwrap(),
+            "http://127.0.0.1:7070/"
         );
-        assert!(parse_connection_string("8.8.8.8").is_err());
-        assert!(parse_connection_string("example.com").is_err());
-        assert!(parse_connection_string("10.0.0.1:x").is_err());
+        assert_eq!(
+            parse_connection_string("localhost").unwrap(),
+            "http://localhost/"
+        );
+        assert_eq!(
+            parse_connection_string("[::1]:7070").unwrap(),
+            "http://[::1]:7070/"
+        );
+        assert_eq!(
+            parse_connection_string("http://127.0.0.2:80").unwrap(),
+            "http://127.0.0.2/"
+        );
+        // Another device: https only.
+        for refused in [
+            "10.10.11.64",
+            "192.168.1.5:7070",
+            "http://10.0.0.1:7070",
+            "8.8.8.8",
+            "example.com",
+            "http://localhost.evil.example",
+            "10.0.0.1:x",
+            "",
+            "https://user@10.0.0.1",
+            "https://10.0.0.1/path",
+            "ftp://127.0.0.1",
+        ] {
+            assert!(parse_connection_string(refused).is_err(), "{refused}");
+        }
+        assert_eq!(
+            parse_connection_string("https://10.10.11.64:7070").unwrap(),
+            "https://10.10.11.64:7070/"
+        );
+        assert_eq!(
+            parse_connection_string("https://ddv.example").unwrap(),
+            "https://ddv.example/"
+        );
     }
 }

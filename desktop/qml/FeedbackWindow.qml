@@ -20,8 +20,10 @@ import QtQuick.Dialogs
 //   with Yes, you may contact me / No, don't contact me; the 10 px footer
 //   at 492; Submit and Cancel (96 x 31.3) at 510 and 618, 536 down.
 // - Submit (once the text and both answers are given) opens the repo's
-//   issue form filled in, with the first picture on the clipboard, and
-//   says how to finish on GitHub.
+//   issue form with only the text typed and the contact answer, saves the
+//   rest (and the masked logs, when shared) to a file in the report's
+//   folder for the reporter to review and attach, puts the first picture
+//   on the clipboard, and says how to finish on GitHub.
 Window {
     id: win
     /// "problem" or "compliment".
@@ -54,12 +56,14 @@ Window {
         const path = folder() + "/Screenshot " + (files.filter(f => /Screenshot/.test(f)).length + 1) + ".png"
         captureTarget.grabToImage(r => { if (r.saveToFile(path)) win.addFile(path) })
     }
+    // Submit opens the issue form with only what you typed; the details,
+    // and the masked logs if you chose to share them, are saved in the
+    // report's folder (which opens) for you to review and drop in.
     function submit() {
-        const report = { kind: kind, text: text.text, area: area, context: context, share_logs: share === 0, contact: contact === 0, files: files }
+        const report = { kind: kind, text: text.text, area: area, context: context, share_logs: share === 0, contact: contact === 0, files: files, dir: folder() }
         const url = backend.feedbackIssueUrl(JSON.stringify(report))
         Qt.openUrlExternally(url)
-        // Files that aren't the clipboard's picture: their folder, to drop in.
-        if (files.length > 1 || files.some(f => !/\.(png|jpe?g|gif|bmp|webp)$/i.test(f))) Qt.openUrlExternally("file://" + folder())
+        Qt.openUrlExternally("file://" + folder())
         sent = true
     }
 
@@ -279,8 +283,8 @@ Window {
             y: thanks.height + 16; width: parent.width
             wrapMode: Text.Wrap
             text: win.files.length
-                ? qsTr("Finish on GitHub: paste your screenshot (Ctrl+V), drop in any other files from the folder that opened, and select Create.")
-                : qsTr("Finish on GitHub: check the issue, then select Create.")
+                ? qsTr("Finish on GitHub: paste your screenshot (Ctrl+V), review the report details and any other files in the folder that opened, drop in what you want to share, and select Create.")
+                : qsTr("Finish on GitHub: review the report details in the folder that opened, drop the file in if you want to share it, and select Create.")
             font.family: theme.font; font.pixelSize: 14; color: theme.text
         }
         Rectangle {

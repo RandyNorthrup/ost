@@ -14,8 +14,9 @@ you use for Teams.
    your e-mail address and password.
 3. Complete your organisation's second step, if it uses one.
 4. OST opens and keeps you signed in, storing its sign-in in your system's
-   keyring.
+   keyring. (Without a keyring, see **Fix sign-in problems**.)
 
 To add another account, select your picture in the top-right corner, then
 **Add another account**. To use a different account instead, sign out there
-and sign in again.
+and sign in again. Signing out restarts OST and clears its sign-in and the
+web data of the pages it shows, so the next sign-in starts fresh.

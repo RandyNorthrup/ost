@@ -28,6 +28,7 @@ unsafe extern "C" {
     /// QtWebEngineQuick::initialize() (src/webengine.cpp).
     fn ost_webengine_initialize();
     /// Development: load QML from a directory (src/native.cpp).
+    #[cfg_attr(not(feature = "test-harness"), allow(dead_code))]
     fn ost_dev_qml_dir(engine: *mut core::ffi::c_void, dir: *const core::ffi::c_char);
     /// FluentIcon's pictures, "image://fluent/…" (src/native.cpp).
     fn ost_add_icon_provider(engine: *mut core::ffi::c_void);
@@ -120,11 +121,49 @@ Options:
 
 Environment:
   OST_PROFILE=<name>   Use another signed-in account's profile, side by side
-  OST_NO_KEYRING=1     Keep tokens in the config file, not the system keyring
+  OST_NO_KEYRING=1     Keep tokens in a file only you can read (0600) instead
+                       of the system keyring (weaker; without a keyring and
+                       without this, the sign-in lasts until OST quits)
   OST_SYSTEM_FRAME=1   Use the desktop's own window frame
 
 More in docs/desktop.md.
 ";
+
+/// Qt's own options a desktop session may pass (`-session` from session
+/// managers restoring apps), with whether each takes a value.
+#[cfg_attr(feature = "test-harness", allow(dead_code))]
+const QT_OPTIONS: &[(&str, bool)] = &[
+    ("-platform", true),
+    ("-platformtheme", true),
+    ("-style", true),
+    ("-session", true),
+    ("-display", true),
+    ("-qwindowgeometry", true),
+    ("-qwindowtitle", true),
+    ("-reverse", false),
+];
+
+/// Why a build without the test harness won't start with these arguments
+/// (None: it will). Only OST's own options (--help, --version, --room) and
+/// Qt's are taken; the harness's flags and positional capture paths are
+/// refused, so nothing a launch passes can drive the app or run script.
+#[cfg_attr(feature = "test-harness", allow(dead_code))]
+fn release_argument_error(args: &[String]) -> Option<String> {
+    let mut i = 0;
+    while i < args.len() {
+        let a = args[i].as_str();
+        match a {
+            "-h" | "--help" | "-V" | "--version" | "--room" => {}
+            _ => match QT_OPTIONS.iter().find(|(o, _)| *o == a) {
+                Some((_, true)) if i + 1 < args.len() => i += 1,
+                Some((_, false)) => {}
+                _ => return Some(a.to_string()),
+            },
+        }
+        i += 1;
+    }
+    None
+}
 
 /// `--version` / `--help`: print and exit before anything starts.
 fn print_and_exit_for(arg: Option<&str>) -> bool {
@@ -139,6 +178,14 @@ fn print_and_exit_for(arg: Option<&str>) -> bool {
 fn main() {
     if print_and_exit_for(std::env::args().nth(1).as_deref()) {
         return;
+    }
+    // Release builds: the test harness's flags aren't there to take.
+    #[cfg(not(feature = "test-harness"))]
+    if let Some(arg) = release_argument_error(&std::env::args().skip(1).collect::<Vec<_>>()) {
+        eprintln!(
+            "ost-desktop: unrecognized option '{arg}' (test-harness flags need a build with the test-harness feature)\nTry 'ost-desktop --help' for more information."
+        );
+        std::process::exit(2);
     }
     // A plain launch (no test arguments) keeps one instance.
     if std::env::args().len() <= 1 && hand_over_to_running_instance() {
@@ -169,11 +216,16 @@ fn main() {
     {
         use tracing_subscriber::prelude::*;
         let filter = || EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into());
-        let stderr = tracing_subscriber::fmt::layer().with_filter(filter());
+        // Both logs take tokens out of every line before it's written
+        // (teams_cli::feedback::scrub_secrets): logs never hold a token.
+        use teams_cli::feedback::Scrubbed;
+        let stderr = tracing_subscriber::fmt::layer()
+            .with_writer(Scrubbed(std::io::stderr))
+            .with_filter(filter());
         let to_file = file.map(|f| {
             tracing_subscriber::fmt::layer()
                 .with_ansi(false)
-                .with_writer(std::sync::Mutex::new(f))
+                .with_writer(Scrubbed(std::sync::Mutex::new(f)))
                 .with_filter(EnvFilter::new("info"))
         });
         tracing_subscriber::registry()
@@ -208,6 +260,9 @@ fn main() {
         // the only thread.
         unsafe { std::env::set_var("QTWEBENGINE_CHROMIUM_FLAGS", flags) };
     }
+    // After a sign-out, this profile's web storage goes before Qt
+    // WebEngine opens it again.
+    backend::wipe_web_storage_if_signed_out();
     // Before the application: Teams' web apps (Whiteboard…) are embedded.
     // SAFETY: a plain Qt call with no arguments, made once, before Qt starts.
     unsafe { ost_webengine_initialize() };
@@ -224,8 +279,9 @@ fn main() {
     backend::install_app_language();
     let mut engine = QQmlApplicationEngine::new();
     if let Some(mut engine) = engine.as_mut() {
-        // OST_QML_DIR (development): QML from a checkout instead of the
-        // compiled-in copy.
+        // OST_QML_DIR (development, test-harness builds only): QML from a
+        // checkout instead of the compiled-in copy.
+        #[cfg(feature = "test-harness")]
         if let Some(dir) = std::env::var("OST_QML_DIR")
             .ok()
             .filter(|d| !d.is_empty())
@@ -297,4 +353,43 @@ fn exit_without_static_teardown() -> ! {
     // SAFETY: `_exit` only ends the process; it is called once, at the very
     // end of main, after every Rust value that needs dropping is dropped.
     unsafe { _exit(0) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn release_builds_take_only_ost_and_qt_options() {
+        for ok in [
+            &[][..],
+            &["--room"],
+            &["--help"],
+            &["-V"],
+            &["-platform", "xcb"],
+            &["-session", "1234_5678", "-reverse"],
+        ] {
+            assert_eq!(release_argument_error(&args(ok)), None, "{ok:?}");
+        }
+        for (bad, why) in [
+            (&["--nav-test"][..], "--nav-test"),
+            (&["--cal-test", "--cal-page-steps=cv.x()"], "--cal-test"),
+            (&["--loop-test"], "--loop-test"),
+            (&["/tmp/shot.png"], "/tmp/shot.png"),
+            (&["--room", "--shots=/tmp"], "--shots=/tmp"),
+            (&["--tray"], "--tray"),
+            (&["-platform"], "-platform"),
+            (&["--size=800x600"], "--size=800x600"),
+        ] {
+            assert_eq!(
+                release_argument_error(&args(bad)).as_deref(),
+                Some(why),
+                "{bad:?}"
+            );
+        }
+    }
 }

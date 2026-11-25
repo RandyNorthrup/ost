@@ -137,7 +137,10 @@ pub async fn download(
 ) -> Result<std::path::PathBuf> {
     let u = url::Url::parse(location).context("Not a file address")?;
     let host = u.host_str().unwrap_or_default().to_string();
-    anyhow::ensure!(host.ends_with(".sharepoint.com"), "Not a file address");
+    anyhow::ensure!(
+        u.scheme() == "https" && host.ends_with(".sharepoint.com"),
+        "Not a file address"
+    );
     let token = crate::auth::oauth::access_token_for(&format!("https://{host}/.default")).await?;
     let base = location.split('?').next().unwrap_or_default();
     let url = if docx {

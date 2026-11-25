@@ -34,6 +34,14 @@ png = "0.17"
 # The Teams Rooms home screen's QR code (room mode).
 qrcode = { version = "0.14", default-features = false }
 
+[features]
+# The desktop test harness (docs/desktop.md "Test harness"): the
+# `--*-test` launch flags, positional capture paths, OST_QML_DIR and the
+# hooks that run caller-supplied JavaScript. For development and CI only;
+# release packages never enable it, and a build without it refuses those
+# flags at launch.
+test-harness = []
+
 [build-dependencies]
 cxx-qt-build = "0.10"
 # Qt WebEngine from its own prefix (the Flatpak BaseApp), see build.rs.

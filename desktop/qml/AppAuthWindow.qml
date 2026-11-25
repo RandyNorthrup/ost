@@ -58,7 +58,9 @@ Window {
     // The opener: Teams' side of the window, as 961755 runs it.
     readonly property string hostPage: "<!DOCTYPE html><html><head><meta charset='utf-8'></head><body><script>(() => {"
         + domainCheck
-        + " const url = " + JSON.stringify(win.url) + ", domains = " + JSON.stringify(win.validDomains || []) + ";"
+        // The address and domains come from the link's app: serialized so
+        // nothing in them can end the script (backend.scriptJson).
+        + " const url = " + backend.scriptJson(JSON.stringify(win.url)) + ", domains = " + backend.scriptJson(JSON.stringify(win.validDomains || [])) + ";"
         + " const say = o => console.log('OSTAUTH ' + JSON.stringify(o));"
         + " if (!okDomain(url, domains)) { say({ ok: false, result: 'InvalidAuthUrl' }); return }"
         + " const m = u => { const q = (s) => { const r = new RegExp('[?&]' + s + '=(\\\\d+)').exec(u); return r ? r[1] : '' }; return [q('width'), q('height')] };"

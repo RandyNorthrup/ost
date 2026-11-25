@@ -50,14 +50,20 @@ pub struct StaticTab {
     pub scopes: Vec<String>,
 }
 
-/// The app's facts from its middle-tier definition (cached per app).
-pub async fn facts(client: &TeamsClient, app_id: &str) -> Result<AppFacts> {
-    static CACHE: Mutex<Option<HashMap<String, AppFacts>>> = Mutex::new(None);
-    if let Some(f) = CACHE
+/// The apps' facts read so far this run, by app id.
+static FACTS: Mutex<Option<HashMap<String, AppFacts>>> = Mutex::new(None);
+
+/// An app's facts if they have been read this run (without asking).
+pub fn cached_facts(app_id: &str) -> Option<AppFacts> {
+    FACTS
         .lock()
         .ok()
         .and_then(|c| c.as_ref()?.get(app_id).cloned())
-    {
+}
+
+/// The app's facts from its middle-tier definition (cached per app).
+pub async fn facts(client: &TeamsClient, app_id: &str) -> Result<AppFacts> {
+    if let Some(f) = cached_facts(app_id) {
         return Ok(f);
     }
     let (base, token) = super::tabs::middle_tier(client).await?;
@@ -72,7 +78,7 @@ pub async fn facts(client: &TeamsClient, app_id: &str) -> Result<AppFacts> {
         .json()
         .await?;
     let f = facts_from(&d);
-    if let Ok(mut c) = CACHE.lock() {
+    if let Ok(mut c) = FACTS.lock() {
         c.get_or_insert_with(HashMap::new)
             .insert(app_id.to_string(), f.clone());
     }
@@ -292,6 +298,44 @@ pub fn origin_valid_for_app(origin: &str, valid_domains: &[String]) -> bool {
         );
         regex::Regex::new(&pattern).is_ok_and(|r| r.is_match(&href))
     })
+}
+
+/// A value as JavaScript source that is safe inside an inline `<script>`
+/// of a page OST builds: JSON with `<`, `>` and `&` written as `\u003c`,
+/// `\u003e`, `\u0026` (so `</script>` or `<!--` in it can't end or
+/// change the script element) and U+2028/U+2029 escaped (line
+/// terminators to older JavaScript). Quotes, backslashes and newlines are
+/// escaped by JSON itself.
+pub fn script_json(v: &serde_json::Value) -> String {
+    let json = serde_json::to_string(v).unwrap_or_else(|_| "null".into());
+    let mut out = String::with_capacity(json.len());
+    for c in json.chars() {
+        match c {
+            '<' => out.push_str("\\u003c"),
+            '>' => out.push_str("\\u003e"),
+            '&' => out.push_str("\\u0026"),
+            '\u{2028}' => out.push_str("\\u2028"),
+            '\u{2029}' => out.push_str("\\u2029"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Whether a page served from `origin` may have the camera, microphone,
+/// location or notifications an app's App permissions allow: one of the
+/// app's valid domains (Teams' isValidOriginForApp), or, for Microsoft's
+/// own apps, Microsoft's own service hosts over https. Any other page in
+/// the app's view (a link it navigated to, a frame from another site, a
+/// redirect elsewhere) gets nothing.
+pub fn device_origin_allowed(origin: &str, facts: &AppFacts) -> bool {
+    // Chromium hands the requesting frame's origin ("https://host[:port]").
+    let origin = origin.trim();
+    if !url::Url::parse(origin).is_ok_and(|u| u.scheme() == "https" && u.host_str().is_some()) {
+        return false;
+    }
+    origin_valid_for_app(origin, &facts.valid_domains)
+        || (facts.microsoft_owned && crate::auth::token_hosts::redirect_allowed(origin))
 }
 
 /// The resource authentication.getAuthToken asks a token for, as Teams
@@ -1085,6 +1129,34 @@ mod tests {
     }
 
     #[test]
+    fn script_values_cannot_break_out_of_the_script() {
+        let evil =
+            "https://x.example/?a=</script><script>alert(1)</script><!--\"'\n\r\u{2028}\u{2029}&\\";
+        let v = serde_json::json!({ "url": evil, "domains": [evil] });
+        let js = script_json(&v);
+        for bad in ["<", ">", "\n", "\r", "\u{2028}", "\u{2029}", "&"] {
+            assert!(!js.contains(bad), "{bad:?} in {js}");
+        }
+        // Every quote is escaped: the string literal can't end early.
+        let lit = script_json(&serde_json::json!(evil));
+        assert!(lit.starts_with('"') && lit.ends_with('"'));
+        assert!(
+            !lit[1..lit.len() - 1]
+                .replace("\\\\", "")
+                .replace("\\\"", "")
+                .contains('"'),
+            "{lit}"
+        );
+        // It is still the same value to a JavaScript (and JSON) parser.
+        let back: serde_json::Value = serde_json::from_str(&js).unwrap();
+        assert_eq!(back, v);
+        // Inside the page it stays one script element.
+        let page = format!("<script>const v = {js};</script>");
+        assert_eq!(page.matches("</script>").count(), 1);
+        assert_eq!(page.matches("<script>").count(), 1);
+    }
+
+    #[test]
     fn valid_domains_match_as_teams() {
         let d = vec![
             "*.officeapps.live.com".to_string(),
@@ -1103,6 +1175,28 @@ mod tests {
         // One label per `*`, https only, no look-alikes.
         assert!(!origin_valid_for_app("https://a.b.officeapps.live.com", &d));
         assert!(!origin_valid_for_app("http://www.microsoft365.com", &d));
+        // Device permissions follow the same rule.
+        let f = AppFacts {
+            valid_domains: d.clone(),
+            ..Default::default()
+        };
+        assert!(device_origin_allowed("https://www.microsoft365.com", &f));
+        assert!(!device_origin_allowed("http://www.microsoft365.com", &f));
+        assert!(!device_origin_allowed("https://evil.example", &f));
+        assert!(!device_origin_allowed(
+            "https://www.microsoft365.com.evil.example",
+            &f
+        ));
+        assert!(!device_origin_allowed("", &f));
+        assert!(!device_origin_allowed("null", &f));
+        // A third-party app's page can't borrow Microsoft's hosts.
+        assert!(!device_origin_allowed("https://teams.microsoft.com", &f));
+        let ms = AppFacts {
+            microsoft_owned: true,
+            ..f.clone()
+        };
+        assert!(device_origin_allowed("https://tasks.office.com", &ms));
+        assert!(!device_origin_allowed("https://evil.example", &ms));
         assert!(!origin_valid_for_app(
             "https://www.microsoft365.com.evil.example",
             &d

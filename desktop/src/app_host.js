@@ -64,12 +64,33 @@
         "sharePointSite.mySiteDomain": "mySiteDomain", "sharePointSite.mySitePath": "mySitePath" };
     const now = () => performance.timeOrigin + performance.now();
     const origin = u => { try { return new URL(u).origin.toLowerCase() } catch (e) { return "" } };
+    // Teams' isValidOriginForApp: https on one of the app's valid domains,
+    // `*` standing for one label, without case.
+    const onValidDomain = (href, domains) => (Array.isArray(domains) ? domains : []).some(d => {
+        d = String(d || "").trim().toLowerCase().replace(/^https:\/\//, "").replace(/\/$/, "");
+        if (!d || d.indexOf("/") >= 0 || d.endsWith("*")) return false;
+        const esc = s => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+        return new RegExp("^https://" + d.split("*").map(esc).join("[^/^.]+") + "((/|\\?).*)?$", "i").test(href);
+    });
+    // An address the app's frame may load (or a form may post to): https,
+    // no user name or password, and on the origin OST framed first or one
+    // of the app's valid domains. Anything else (javascript:, data:,
+    // another site) is refused; null then.
+    const appAddress = (u, firstOrigin, domains) => {
+        let p;
+        try { p = new URL(String(u || "")) } catch (e) { return null }
+        if (p.protocol !== "https:" || p.username || p.password) return null;
+        if ((firstOrigin && p.origin.toLowerCase() === firstOrigin) || onValidDomain(p.href, domains)) return p.href;
+        return null;
+    };
 
     new QWebChannel(qt.webChannelTransport, channel => {
         const ost = channel.objects.ost;
         const cfg = JSON.parse(ost.config);
         const ctx = Object.assign({}, cfg.context);
         let frame = null;
+        // The origin of the address OST framed first (the app's own).
+        let firstOrigin = "";
         let handlers = new Set();
         let unloadWaiter = null;
         const trusted = new Set();
@@ -224,10 +245,15 @@
         // app frames: beforeUnload, then (after readyToUnload) load with
         // the new entity and address; an app that handles neither is
         // simply navigated.
-        const relaunch = (entityId, template) => {
+        const relaunch = async (entityId, template) => {
+            // Only one of the app's own addresses (TASK-0311/0312): the
+            // address can come from the app (settings.setSettings).
+            let domains = [];
+            try { domains = JSON.parse(await native("validDomains", {})) } catch (e) { domains = [] }
+            const contentUrl = appAddress(fill(template || cfg.url), firstOrigin, domains);
+            if (!contentUrl) { ost.log("relaunch refused: not one of the app's addresses"); return; }
             ctx.entityId = entityId || ctx.entityId;
             cfg.url = template || cfg.url;
-            const contentUrl = fill(cfg.url);
             const go = () => {
                 if (handlers.has("load")) send("load", [{ entityId: ctx.entityId, contentUrl }]);
                 else frame.src = contentUrl;
@@ -597,8 +623,12 @@
         frame.setAttribute("data-appid", cfg.appId);
         frame.setAttribute("data-sessionid", ctx.appSessionId || "");
         frame.style.cssText = "border: 0px; width: 100%; height: 100%; visibility: visible;";
+        // The address OST hands the host (the app's definition), https only.
+        const first = appAddress(fill(cfg.url), origin(fill(cfg.url)), []);
+        if (!first) { ost.event("failure", JSON.stringify({ reason: "address" })); return; }
+        firstOrigin = origin(first);
         if (!cfg.ssr) {
-            frame.src = fill(cfg.url);
+            frame.src = first;
             document.body.appendChild(frame);
             ost.event("framed", JSON.stringify({ origin: origin(frame.src) }));
             return;
@@ -609,7 +639,7 @@
         const uuid = () => "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16) });
         frame.name = "embedded-page-container_" + uuid();
         document.body.appendChild(frame);
-        const action = fill(cfg.url);
+        const action = first;
         native("ssrToken", { origin: origin(action) }).then(json => {
             let r = {};
             try { r = JSON.parse(json) } catch (e) {}

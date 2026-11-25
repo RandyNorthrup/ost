@@ -2023,6 +2023,39 @@ Rectangle {
                 model: root.page === "accounts" ? root.otherAccounts.filter(a => !a.before) : []
                 Item { required property var modelData; width: pageCol.width; height: 136.7; OtherAccountCard { y: 16; modelData: parent.modelData } }
             }
+            // Where your sign-in is kept (OST's own card: Teams always has
+            // the OS's credential store). Shown only when it isn't the
+            // system keyring: without one OST keeps the sign-in until it
+            // quits, or in a file readable only by you if you opt in.
+            Item {
+                id: tokenStore
+                visible: root.page === "accounts" && st.storage !== undefined && st.storage !== "keyring"
+                width: pageCol.width; height: visible ? tokenCard.height + 16 : 0
+                property var st: ({})
+                function refresh() { try { st = JSON.parse(backend.tokenStorageJson()) } catch (e) { st = ({}) } }
+                Connections { target: root; function onPageChanged() { if (root.page === "accounts") tokenStore.refresh() } }
+                Component.onCompleted: refresh()
+                Component {
+                    id: toggleComp
+                    SettingsParts.Toggle {
+                        on: tokenStore.st.optIn === true
+                        accessibleName: qsTr("Stay signed in without a keyring")
+                        onToggled: v => { backend.setAllowTokenFile(v); on = v; tokenStore.refresh() }
+                    }
+                }
+                SettingsParts.Card {
+                    id: tokenCard
+                    y: 16; width: parent.width
+                    icon: "lock-closed-20"
+                    title: tokenStore.st.storage === "memory" ? qsTr("Your sign-in isn't saved") : qsTr("Your sign-in is saved in a file")
+                    subtitle: tokenStore.st.forced
+                        ? qsTr("OST_NO_KEYRING is set, so OST keeps your sign-in in a file readable only by you instead of the system keyring. A keyring protects it better.")
+                        : tokenStore.st.storage === "memory"
+                          ? qsTr("OST couldn't use a system keyring (Secret Service), so you'll sign in again the next time OST starts. To stay signed in, start and unlock a keyring such as GNOME Keyring or KWallet, then restart OST. Or turn this on to keep your sign-in in a file readable only by you, which is less secure than a keyring.")
+                          : qsTr("You chose to keep your sign-in in a file readable only by you because there's no system keyring. A keyring such as GNOME Keyring or KWallet protects it better; OST moves your sign-in there once one is available.")
+                    trailing: tokenStore.st.forced ? null : toggleComp
+                }
+            }
 
             // ---- Privacy ----
             // Manage my work location (Teams' presence-location card). With
@@ -2429,7 +2462,7 @@ Rectangle {
                 Item { width: 1; height: 15 }
                 Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("To view diagnostic data associated with this app, connect to a Windows device running Diagnostic Data Viewer and enter the connection string below. The app will disconnect after 24 hours."); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
                 Item { width: 1; height: 8 }
-                Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("Note: When you enable data viewing the data sent to the device running Diagnostic Data Viewer (at the connection string you enter) will use HTTP instead of HTTPS so that it can properly display. However, diagnostic data sent to Microsoft will still use HTTPS to encrypt and protect your data."); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("Note: OST sends data to Diagnostic Data Viewer over HTTP only on this device (a connection string such as 127.0.0.1:7070). For a viewer on another device, enter an https:// address, or forward a port to it over SSH and connect to that port on 127.0.0.1."); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
                 Item { width: 1; height: 8 }
                 Text {
                     text: qsTr("Learn More")
@@ -2496,7 +2529,7 @@ Rectangle {
                     width: 325; wrapMode: Text.Wrap
                     text: ddvPage.st.state === "connecting" ? qsTr("Attempting to establish connection...")
                         : ddvPage.st.state === "connected" ? qsTr("Connection established")
-                        : qsTr("Couldn't connect. Double check the connection string is correct and that Diagnostic Data Viewer is running on the Windows device you're connecting to, then try again.")
+                        : qsTr("Couldn't connect. Double check the connection string is correct (this device's address, or an https:// address) and that Diagnostic Data Viewer is running on the device you're connecting to, then try again.")
                     font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
                     color: ddvPage.st.state === "failed" ? theme.pick("#BC2F32", "#E37D80", "#FFFF00") : theme.text
                     Accessible.role: ddvPage.st.state === "failed" ? Accessible.AlertMessage : Accessible.StaticText

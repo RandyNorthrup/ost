@@ -500,8 +500,11 @@ Item {
         try { d = JSON.parse(json) } catch (e) { return }
         if (!d.html) return
         console.info("APPHOST " + root.appName + " print " + d.html.length)
+        // The document is a frame's snapshot: it prints without running
+        // its scripts (javascriptEnabled false), under an https base only.
+        const base = String(d.base || "")
         printer.pending = true
-        printer.loadHtml(d.html, d.base || root.home)
+        printer.loadHtml(d.html, /^https:\/\//.test(base) ? base : String(root.home))
     }
     signal pagePrinted(string filePath, bool success)
     function printed(filePath, success) {
@@ -515,6 +518,10 @@ Item {
         id: printer
         property bool pending: false
         visible: false
+        settings.javascriptEnabled: false
+        settings.javascriptCanOpenWindows: false
+        settings.localContentCanAccessRemoteUrls: false
+        settings.localContentCanAccessFileUrls: false
         width: 816; height: 1056
         onLoadingChanged: req => {
             if (pending && req.status === WebEngineView.LoadSucceededStatus) { pending = false; printToPdf(web.printTo()) }
@@ -674,15 +681,31 @@ Item {
         }
         // Camera, microphone, location, notifications: as the app's App
         // permissions allow (Teams' device permissions, kept on this
-        // device); anything else, or an app OST doesn't know, refused.
-        onPermissionRequested: p => {
-            const kind = ({ [WebEnginePermission.PermissionType.MediaAudioCapture]: "media",
-                            [WebEnginePermission.PermissionType.MediaVideoCapture]: "media",
-                            [WebEnginePermission.PermissionType.MediaAudioVideoCapture]: "media",
-                            [WebEnginePermission.PermissionType.Geolocation]: "geolocation",
-                            [WebEnginePermission.PermissionType.Notifications]: "notifications" })[p.permissionType] || ""
-            if (root.appId && kind && backend.appPermission(root.appId, kind)) p.grant()
-            else p.deny()
+        // device), and only for the app's own pages (its valid domains);
+        // anything else, a page from another site, or an app OST doesn't
+        // know, refused.
+        onPermissionRequested: p => root.decidePermission(p)
+    }
+    property var pendingPermissions: []
+    function decidePermission(p) {
+        const kind = ({ [WebEnginePermission.PermissionType.MediaAudioCapture]: "media",
+                        [WebEnginePermission.PermissionType.MediaVideoCapture]: "media",
+                        [WebEnginePermission.PermissionType.MediaAudioVideoCapture]: "media",
+                        [WebEnginePermission.PermissionType.Geolocation]: "geolocation",
+                        [WebEnginePermission.PermissionType.Notifications]: "notifications" })[p.permissionType] || ""
+        const verdict = root.appId && kind ? backend.appPermissionFor(root.appId, kind, p.origin.toString()) : "deny"
+        console.info("WEBAPP permission", root.appName, kind || p.permissionType, p.origin.toString(), verdict)
+        if (verdict === "grant") p.grant()
+        else if (verdict === "pending") root.pendingPermissions = root.pendingPermissions.concat([p])
+        else p.deny()
+    }
+    Connections {
+        target: backend
+        enabled: root.pendingPermissions.length > 0
+        function onAppFactsVersionChanged() {
+            const list = root.pendingPermissions
+            root.pendingPermissions = []
+            for (const p of list) root.decidePermission(p)
         }
     }
 

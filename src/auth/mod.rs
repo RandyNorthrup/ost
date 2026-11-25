@@ -8,6 +8,7 @@ pub mod broker;
 pub mod oauth;
 pub mod skype;
 pub mod spa;
+pub mod token_hosts;
 pub mod tokens;
 
 pub use oauth::{

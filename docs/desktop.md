@@ -200,7 +200,18 @@ options; neither starts the app.
 
 The first start shows Microsoft's sign-in page in OST's window, as Teams on
 the web signs in (`teams-cli login` uses the device-code sign-in instead).
-Tokens are kept in the system keyring.
+Tokens are kept in the system keyring (Secret Service: GNOME Keyring,
+KWallet…). Without a working keyring OST keeps them in memory only and asks
+you to sign in again at the next start; Settings ▸ Accounts and orgs says so
+and offers "Stay signed in without a keyring", which keeps them in the
+config file, readable only by you (0600) and weaker than a keyring. Tokens
+an older OST left in the config file move to the keyring once it works.
+
+Signing out also clears the embedded pages' web storage (cookies, local
+storage, IndexedDB, cache and service workers of the sign-in page, apps,
+Loop and viewers): OST restarts and removes it before the web profile opens
+again, so the next sign-in starts clean. Each profile (`OST_PROFILE`) has
+its own web storage.
 
 Files OST keeps:
 
@@ -210,6 +221,8 @@ Files OST keeps:
 | `$XDG_STATE_HOME/ost/drafts.json` | Unsent drafts, with their formatting (another account's profile: `drafts-<profile>.json`) |
 | `$XDG_STATE_HOME/ost/outbox.json` | Messages being sent, failed or queued offline (another account's profile: `outbox-<profile>.json`) |
 | `$XDG_CACHE_HOME/ost/photos/` | Profile and team pictures (refreshed daily) |
+| `$XDG_DATA_HOME/OST/QtWebEngine/ost-apps[-<profile>]/` | The embedded pages' web storage (cookies, site data); removed on sign-out |
+| `$XDG_CACHE_HOME/ost/feedback/<time>/` | A report's screenshots and its details file (Report a problem), for you to review and attach |
 | `$XDG_DOWNLOAD_DIR` (else `~/Downloads`) | Downloaded attachments |
 | `$XDG_CONFIG_HOME/autostart/ost-desktop.desktop` | Only with "Start with the computer" on |
 
@@ -218,13 +231,13 @@ Files OST keeps:
 | Variable | Effect |
 | --- | --- |
 | `OST_SYSTEM_FRAME=1` | Use the desktop's own window frame instead of Teams' title bar buttons. |
-| `OST_NO_KEYRING=1` | Don't use the system keyring for tokens (headless machines, CI). |
+| `OST_NO_KEYRING=1` | Don't use the system keyring: keep tokens in the config file (0600) instead (headless machines, CI). This is an explicit opt-in and weaker than the keyring; without it and without a keyring, tokens stay in memory only. |
 | `OST_DUMP_RTP=<file>` | Append every decrypted RTP packet of payload type `OST_DUMP_RTP_PT` (default 113, x-much2) to the file, length-prefixed (protocol research). `OST_OFFER_MUCH=1` offers x-much2 in meetings even with spatial audio off. |
 | `OST_TROUTER_DUMP_DIR=<dir>` | Write every push frame (and call SDP) there, owner-only. Frames contain message text and call links: for protocol work only. |
-| `OST_VOICE_PROFILE_WAV=<file>` | Use that WAV as your voice profile's recording for Voice isolation instead of the Recognition service's (tests; e.g. `vfx/testdata/a_profile.wav`). Voice isolation's model is downloaded to `~/.cache/ost/models/` on first need and checked against its pinned SHA-256; until it's loaded, calls get standard noise suppression. |
+| `OST_VOICE_PROFILE_WAV=<file>` | Test-harness builds only: use that WAV as your voice profile's recording for Voice isolation instead of the Recognition service's (tests; e.g. `vfx/testdata/a_profile.wav`). Voice isolation's model is downloaded to `~/.cache/ost/models/` on first need and checked against its pinned SHA-256; until it's loaded, calls get standard noise suppression. |
 | `OST_MIC_DEVICE=<name>` / `OST_SPEAKER_DEVICE=<name>` | This instance's microphone / speaker, by the name Settings lists or a PipeWire node name (tests with several instances sharing one settings file: a remap-source fed with test speech, a null sink whose monitor records what the call plays). |
 | `OST_DUMP_MIC=<file>` | Write the processed microphone, as sent in calls (raw s16le mono), to that file (diagnostics). |
-| `RUST_LOG=info` | Engine and backend logging (to stderr). Logging is kept to shapes and states, not message text or tokens. |
+| `RUST_LOG=info` | Engine and backend logging (to stderr). Logging is kept to shapes and states, not message text or tokens, and both the log file and stderr take tokens, cookies and signed-address parameters out of every line before writing it. |
 | `QT_SCALE_FACTOR=1.5` | Qt's own scaling; used to line OST up with Teams captured at 150 %. |
 
 ## Keyboard shortcuts
@@ -241,10 +254,24 @@ Files OST keeps:
 
 ## Test harness
 
-The app doubles as its own end-to-end test driver. With a first argument
-that is a PNG path, it captures itself there (and to `<path>-<step>.png`
-for multi-step tests) and quits; the flags pick what it does first. Run
-it offscreen against a test account:
+The app doubles as its own end-to-end test driver. The harness is compiled
+in only with the `test-harness` cargo feature, which development and CI
+builds turn on and release packages never do:
+
+```bash
+cargo build -p ost-desktop --features test-harness
+```
+
+A build without it refuses every harness flag and positional argument at
+launch (`unrecognized option`, exit status 2), takes only `--help`,
+`--version`, `--room` and Qt's own options, ignores `OST_QML_DIR`,
+`OST_CQF_ALWAYS` and `OST_VOICE_PROFILE_WAV`, and its script-running hooks
+(`--cal-page-steps`, `--loop-steps`) do nothing; CI checks a release build
+refuses them.
+
+With a first argument that is a PNG path, it captures itself there (and to
+`<path>-<step>.png` for multi-step tests) and quits; the flags pick what it
+does first. Run it offscreen against a test account:
 
 ```bash
 QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=rhi QT_SCALE_FACTOR=1.5 \
@@ -415,6 +442,7 @@ account.
 | `--hold-test` | In a call: Hold (Teams' music on hold) and Resume, dial-pad tones, and capturing when the other side holds; stays until they hang up. |
 | `--app-host-test[=<tab>]` | With `--open-chat=<channel id> --shots=<dir>`: that channel's app tab (default Notes) in OST's TeamsJS host (docs/spec/app-host.md). APPHOST lines: the channel's tabs, the host's events (framed, initialize, appLoaded, success, tabSaved…) after 15, 35 and 55 s, the tab's menu; then Reload tab, Expand tab, Open tab in new window (its own APPHOST window line) and App permissions. Pictures `app-host-{15s,35s,55s,reloaded,expanded,window,permissions}.png`. Quits unless `--app-host-stay` (to inspect the views over `QTWEBENGINE_REMOTE_DEBUGGING`). Opening a channel's Notes for the first time makes its section, as Teams does. |
 | `--webapp-test` | Open Whiteboard (`--webapp-help`: Help) from View more apps and capture it once loaded. |
+| `--sign-out-test` | 15 s after signing in, signs out as the profile menu does (SIGNOUT line): OST restarts with the same arguments and removes this profile's web storage before it opens again. Stop that run before signing in again, or it signs out once more. Use a spare profile whose password you can type. |
 | `--embedded-apps-test[=<list>]` | Teams' embedded first-party apps as OST hosts them (docs/spec/app-host.md), one after another, about 40 s each; `<list>` from `whiteboard,planner,onenote,shifts,clipchamp,copilot,settings,office,sto,ir` (default all but planner and onenote). `whiteboard`, `planner`, `onenote`, `shifts`, `clipchamp`: the app bar's personal apps in OST's TeamsJS host; `copilot`: the chat list's Copilot row; `settings`: Settings ▸ Files and links; `office`: `ost-open-test.docx` from My files with the "Teams" choice (the device setting is put back); `sto`: Share to Outlook on your newest message in `--embed-chat=<chat id>` (default OST group test), closed without sending, which discards the draft; `ir`: Immersive Reader on that message (`--embed-message=<text>`: the newest message containing that text instead, such as a card's message; its EMBED line shows the reader's card text), then closed. EMBED lines: each app's host events (initialize, appLoaded, success, failure…), the dialog's events, the reader's state. Pictures `embed-<item>.png`. Quits unless `--embed-stay`. |
 | `--events-test[=create\|townhall]` | Teams' Events app as OST draws it (docs/spec/events.md), opened from View more apps: Discover, Manage, Create event and the New event form, each logged (EVENTS lines: the page, the lists' sizes, Manage's totals and draft names) and captured (`events-{discover,manage,create,form}.png`). `=create` also saves a draft named "OST TEST 209 draft <hh:mm>" with nobody invited (`events-save.png`, `events-draft.png`), cancels it (Teams deletes a draft) and reloads Manage (`events-manage-after.png`). Quits unless `--events-stay`. `=townhall` does the same with the Town hall template (the form with Set up experience and options open; the draft "OST TEST 184 town hall draft <hh:mm>"). |
 | `--events-test=full` | TASK-0212's end-to-end run (docs/spec/events.md "The rest"), as the signed-in account (meant for OST Test 3): Discover's My events and Custom range, Manage's See more and Connect apps, Create's saved templates, the New event form's time zone, co-organizer ("OST Test 2"), presenter ("OST Test 1") and room ("OST") pickers, description bold, stage preview and All options; saves "OST TEST 212 OST draft <hh:mm>", shows its tabs and Preview, saves it as the template "OST TEST 212 OST template", duplicates it ("OST TEST 212 OST copy <hh:mm>"), edits the copy's description, publishes the copy (invites only OST Test 1 / 2 and the test room), opens Share, copies the join details, pins and unpins Events (Teams' pinned apps); then cancels both events, deletes the test templates and the "Canceled:" calendar entries. EVENTS lines; `events-full-*.png`. |

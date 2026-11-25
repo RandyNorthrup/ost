@@ -181,13 +181,6 @@ pub fn record(at_ms: u64, name: &str, data: &serde_json::Value) -> Vec<u8> {
     o
 }
 
-fn url(target: (std::net::Ipv4Addr, Option<u16>)) -> String {
-    match target.1 {
-        Some(p) => format!("http://{}:{p}/", target.0),
-        None => format!("http://{}/", target.0),
-    }
-}
-
 fn post(http: &reqwest::Client, url: &str, body: Vec<u8>) -> reqwest::RequestBuilder {
     let host = std::fs::read_to_string("/etc/hostname")
         .map(|h| h.trim().to_string())
@@ -213,15 +206,17 @@ fn post(http: &reqwest::Client, url: &str, body: Vec<u8>) -> reqwest::RequestBui
 fn client() -> Result<reqwest::Client> {
     Ok(reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
+        // The address the user entered, nowhere else.
+        .redirect(reqwest::redirect::Policy::none())
         .http1_title_case_headers()
         .pool_max_idle_per_host(0)
         .build()?)
 }
 
 /// Teams' Connect: the viewer answers a GET and an empty POST.
-pub async fn handshake(target: (std::net::Ipv4Addr, Option<u16>)) -> Result<()> {
+pub async fn handshake(base: &str) -> Result<()> {
     let http = client()?;
-    let u = url(target);
+    let u = base.to_string();
     let r = http
         .get(&u)
         .header("Accept", "*/*")
@@ -248,11 +243,11 @@ pub async fn send(
     name: &str,
     data: &serde_json::Value,
 ) -> Result<()> {
-    let target = super::parse_connection_string(connection)?;
+    let base = super::parse_connection_string(connection)?;
     let mut z = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
     z.write_all(&record(at_ms, name, data))?;
     let body = z.finish()?;
-    let r = post(&client()?, &url(target), body)
+    let r = post(&client()?, &base, body)
         .send()
         .await
         .context("Diagnostic Data Viewer")?;

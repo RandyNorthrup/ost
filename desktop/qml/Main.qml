@@ -40,10 +40,11 @@ Window {
     // forces one for captures.
     // The one web profile every embedded page shares (apps, channel
     // Pages): signed in once, stored on disk. Qt allows one profile per
-    // storage name, so the views all take this one.
+    // storage name, so the views all take this one. Each OST profile
+    // (account) has its own storage, and signing out clears it.
     WebEngineProfilePrototype {
         id: webAppsProfile
-        storageName: "ost-apps"
+        storageName: backend.webStorageName()
         persistentCookiesPolicy: WebEngineProfile.ForcePersistentCookies
         httpCacheType: WebEngineProfile.DiskHttpCache
     }
@@ -1149,6 +1150,15 @@ Window {
         }
     }
 
+    // --sign-out-test: 15 s after signing in, Sign out as the profile
+    // menu's does (TASK-0313: OST restarts with the same arguments and
+    // clears this profile's web storage first; stop that run before
+    // signing in again, or it signs out once more).
+    Timer {
+        running: Qt.application.arguments.indexOf("--sign-out-test") >= 0 && backend.signedIn
+        interval: 15000
+        onTriggered: { console.warn("SIGNOUT test: storage", backend.webStorageName(), "signing out"); backend.signOut() }
+    }
     // --feedback-test: Settings and more with Feedback ▸, then Report a
     // problem filled in with a screenshot (captures each; logs the issue
     // address Submit would open), then Give a compliment.
@@ -1168,9 +1178,10 @@ Window {
             else if (step === 5) {
                 cap(fw.contentItem, "fb-filled")
                 console.warn("FEEDBACK files", JSON.stringify(fw.files), "ready", fw.ready)
-                const url = backend.feedbackIssueUrl(JSON.stringify({ kind: "problem", text: "Search shows nothing for OST test", area: "Settings and more", share_logs: true, contact: true, files: fw.files }))
-                console.warn("FEEDBACK url", url.length, url.slice(0, 400))
-                console.warn("FEEDBACK logs", decodeURIComponent((url.split("&logs=")[1] || "").replace(/\+/g, " ")).slice(-600))
+                const url = backend.feedbackIssueUrl(JSON.stringify({ kind: "problem", text: "Search shows nothing for OST test", area: "Settings and more", share_logs: true, contact: true, files: fw.files, dir: fw.folder() }))
+                console.warn("FEEDBACK url", url.length, url.slice(0, 400), "logs in url:", url.indexOf("logs=") >= 0)
+                const x = new XMLHttpRequest(); x.open("GET", "file://" + fw.folder() + "/OST report details.txt", false); x.send()
+                console.warn("FEEDBACK details", x.responseText.length, x.responseText.slice(-600))
             }
             else if (step === 6) { fw.close(); fw = window.openFeedback("compliment", "Settings and more", "") }
             else if (step === 7) { cap(fw.contentItem, "fb-compliment"); console.warn("FEEDBACK ideas", backend.feedbackLink("ideas")) }
@@ -2654,7 +2665,7 @@ Window {
         anchors.fill: parent
         sourceComponent: WebApp { pageOnly: true; showHeader: false; home: "https://loop.cloud.microsoft/" }
     }
-    function loopJs(code) { loopTest.item.view.runJavaScript(code, r => console.warn("LOOP", JSON.stringify(r))) }
+    function loopJs(code) { if (backend.testHarness()) loopTest.item.view.runJavaScript(code, r => console.warn("LOOP", JSON.stringify(r))) }
     // Steps from the file OST_LOOP_STEPS names: one JS snippet a line, or
     // "SHOT name", or "INSERT command"; one every 5 s.
     Timer {
@@ -4846,6 +4857,7 @@ Window {
             // calendar) (Outlook's form's parts, TASK-0274..0276).
             else if (arg("cal-page") && arg("cal-page-steps") && step >= 10 && step < 10 + arg("cal-page-steps").split(";;").length) {
                 const f = calendarView.formForTest, s = arg("cal-page-steps").split(";;")[step - 10]
+                if (!backend.testHarness()) return
                 try {
                     if (s.startsWith("cap:")) cap(s.slice(4))
                     else if (s.startsWith("log:")) console.warn("CALTEST page log", s.slice(4), JSON.stringify(Function("f", "cv", "return (" + s.slice(4) + ")")(f, calendarView)))

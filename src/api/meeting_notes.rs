@@ -380,11 +380,15 @@ pub async fn read_notes(
         "Not a meeting"
     );
     let token = crate::auth::oauth::access_token_for(&format!("{RESOURCE}/.default")).await?;
+    let who = format!("{organizer_oid}@{tenant}");
+    let url = crate::auth::token_hosts::service_url(
+        &collab_base(region),
+        crate::auth::token_hosts::Audience::Teams,
+        &["readcollabobject", "V2", &who, ical_uid, thread],
+        &[],
+    )?;
     let r = reqwest::Client::new()
-        .get(format!(
-            "{}/readcollabobject/V2/{organizer_oid}@{tenant}/{ical_uid}/{thread}",
-            collab_base(region)
-        ))
+        .get(url)
         .bearer_auth(&token)
         .header("x-ms-correlation-id", uuid::Uuid::new_v4().to_string())
         .send()

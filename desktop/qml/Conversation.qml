@@ -3802,10 +3802,14 @@ Rectangle {
         onSubmitted: (categories, comment, attach) => {
             const set = root.smartReplies || { replies: [] }
             const m = root.newestMessage
-            const url = backend.smartReplyFeedbackUrl(JSON.stringify({ categories: categories, comment: comment, kinds: kinds,
-                attach: attach, suggestions: set.replies.map(r => r.title || r.value), last_message: m ? (m.html || m.text || "") : "" }))
-            if (url) Qt.openUrlExternally(url)
-            root.toastRequested({ text: qsTr("Finish on GitHub: select Create to send your feedback.") })
+            let r = {}
+            try { r = JSON.parse(backend.smartReplyFeedbackUrl(JSON.stringify({ categories: categories, comment: comment, kinds: kinds,
+                attach: attach, suggestions: set.replies.map(r => r.title || r.value), last_message: m ? (m.html || m.text || "") : "" }))) } catch (e) {}
+            if (r.url) Qt.openUrlExternally(r.url)
+            // The details (and your message, when attached) stay on this
+            // device in a file you review and drop in yourself.
+            if (r.folder) Qt.openUrlExternally("file://" + r.folder)
+            root.toastRequested({ text: qsTr("Finish on GitHub: review the details in the folder that opened, drop them in if you want, and select Create.") })
         }
     }
     /// A file, meeting or workflow suggestion was chosen (Teams' To / Mo / Us).

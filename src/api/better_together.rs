@@ -521,6 +521,8 @@ pub async fn send(
     url: &str,
     msg: &Message,
 ) -> Result<(u16, String)> {
+    // A peer names this address: the Skype token goes only to Teams'.
+    crate::auth::token_hosts::ensure(url, crate::auth::token_hosts::Audience::Teams)?;
     let r = http
         .post(url)
         .header("X-Skypetoken", skype_token)

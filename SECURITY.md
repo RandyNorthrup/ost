@@ -23,8 +23,35 @@ fix there, and publish a security advisory with the release that fixes it.
 You're credited unless you'd rather not be.
 
 Please don't put sign-in tokens, passwords, or other people's messages and
-data in a report. If a log is needed, remove tokens and personal details
-first.
+data in a report. If a log is needed, remove personal details first (OST's
+logs don't hold tokens, but check anyway).
+
+## How OST protects your account
+
+- **Tokens go only where they belong.** A request carries a Teams, Skype,
+  IC3 or Graph token only when its address is HTTPS and its host is one of
+  the Microsoft services that token is for (an exact allowlist matched on
+  whole host labels); redirects off those services aren't followed. Card
+  and preview pictures from other sites load without any credentials, and
+  never over plain HTTP.
+- **Token storage.** Tokens live in the system keyring (Secret Service).
+  Without one OST keeps them in memory only; a file (0600, written
+  atomically) is used only if you opt in (Settings ▸ Accounts and orgs ▸
+  Stay signed in without a keyring, or `OST_NO_KEYRING=1`). Tokens an older
+  OST wrote to the file move to the keyring once it works.
+- **Embedded pages.** Camera, microphone, location and notifications go
+  only to a hosted app's own pages (its declared valid domains) and only as
+  its App permissions allow; any other origin is refused. Values OST puts
+  into the pages it builds are serialized so they can't break out of their
+  script. Each profile has its own web storage, and signing out clears it.
+- **Logs and feedback.** Tokens, cookies and signed-address parameters are
+  removed from every log line before it is written. Report a problem opens
+  the issue form with only your text; logs are saved to a file you review
+  and attach yourself.
+- **No test hooks in releases.** The desktop test harness (launch flags,
+  scripted steps, JavaScript injection) is compiled only with the
+  `test-harness` cargo feature, which release packages don't enable; a
+  release build refuses those flags, and CI checks it.
 
 ## Verifying a download
 

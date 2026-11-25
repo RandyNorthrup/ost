@@ -40,6 +40,11 @@ pub struct Config {
     /// this file; the file then holds no secrets.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub tokens_in_keyring: bool,
+    /// Keep the tokens in this file when there is no keyring (opt-in,
+    /// weaker than the keyring; Settings ▸ Accounts or `OST_NO_KEYRING=1`).
+    /// Not a secret; kept when signing out.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub allow_token_file: bool,
     /// The signed-in account, filled in when its tokens are stored (sign-in
     /// and refresh). Not a secret: it is what the app shows as "you".
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -47,7 +52,7 @@ pub struct Config {
 }
 
 /// Every secret in [`Config`], stored as one keyring entry.
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 struct Secrets {
     access_token: Option<StoredToken>,
     refresh_token: Option<String>,
@@ -55,6 +60,21 @@ struct Secrets {
     graph_token: Option<StoredToken>,
     ic3_token: Option<StoredToken>,
     recorder_token: Option<StoredToken>,
+}
+
+impl Secrets {
+    fn any(&self) -> bool {
+        self.access_token.is_some()
+            || self.refresh_token.is_some()
+            || self.skype_token.is_some()
+            || self.graph_token.is_some()
+            || self.ic3_token.is_some()
+            || self.recorder_token.is_some()
+    }
+
+    fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_default()
+    }
 }
 
 const KEYRING_SERVICE: &str = "ost";
@@ -93,12 +113,104 @@ fn keyring_account() -> String {
     }
 }
 
-/// The keyring is skipped when OST_NO_KEYRING is set (CI, headless use).
+/// `OST_NO_KEYRING=1`: don't use the keyring; keep the tokens in the
+/// config file (an explicit opt-in for headless machines and CI).
+fn keyring_disabled() -> bool {
+    std::env::var_os("OST_NO_KEYRING").is_some()
+}
+
 fn keyring_entry() -> Option<keyring::Entry> {
-    if std::env::var_os("OST_NO_KEYRING").is_some() {
+    if keyring_disabled() {
         return None;
     }
     keyring::Entry::new(KEYRING_SERVICE, &keyring_account()).ok()
+}
+
+/// Where the signed-in account's tokens are kept.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TokenStorage {
+    /// The desktop keyring (Secret Service): the default.
+    Keyring,
+    /// The config file (0600), as the user chose (`OST_NO_KEYRING=1` or
+    /// Settings): weaker than the keyring.
+    File,
+    /// Only this run's memory: there is no working keyring and no opt-in
+    /// to the file, so the next start asks to sign in again.
+    Memory,
+}
+
+/// A secret store for the tokens (the keyring; a fake in tests).
+trait SecretStore {
+    fn get(&self) -> std::result::Result<Option<String>, String>;
+    fn set(&self, json: &str) -> std::result::Result<(), String>;
+    fn delete(&self) -> std::result::Result<(), String>;
+}
+
+impl SecretStore for keyring::Entry {
+    fn get(&self) -> std::result::Result<Option<String>, String> {
+        match self.get_password() {
+            Ok(j) => Ok(Some(j)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+    fn set(&self, json: &str) -> std::result::Result<(), String> {
+        self.set_password(json).map_err(|e| e.to_string())
+    }
+    fn delete(&self) -> std::result::Result<(), String> {
+        match self.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+}
+
+/// Tokens kept in memory only (no keyring, no opt-in), by keyring account
+/// (one per profile), so every `Config::load` in this run finds them.
+static MEMORY: std::sync::Mutex<Vec<(String, Secrets)>> = std::sync::Mutex::new(Vec::new());
+/// Where the last load or save kept the tokens.
+static STORAGE: std::sync::Mutex<Option<TokenStorage>> = std::sync::Mutex::new(None);
+
+fn memory_get(account: &str) -> Option<Secrets> {
+    MEMORY
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .find(|(a, _)| a == account)
+        .map(|(_, s)| s.clone())
+}
+
+fn memory_set(account: &str, secrets: Option<Secrets>) {
+    let mut m = MEMORY.lock().unwrap_or_else(|e| e.into_inner());
+    m.retain(|(a, _)| a != account);
+    if let Some(s) = secrets {
+        m.push((account.to_string(), s));
+    }
+}
+
+fn note_storage(s: TokenStorage) {
+    *STORAGE.lock().unwrap_or_else(|e| e.into_inner()) = Some(s);
+}
+
+/// Where this run keeps the tokens (for Settings): the file when opted
+/// in, memory when the keyring didn't work, else the keyring.
+pub fn token_storage() -> TokenStorage {
+    if keyring_disabled() {
+        return TokenStorage::File;
+    }
+    STORAGE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or(TokenStorage::Keyring)
+}
+
+/// Settings ▸ Accounts' "Stay signed in without a keyring": the opt-in to
+/// keeping the tokens in the config file (0600) when there is no keyring.
+pub fn set_allow_token_file(on: bool) -> Result<()> {
+    let mut c = Config::load()?;
+    c.allow_token_file = on;
+    c.save()
 }
 
 impl Config {
@@ -179,60 +291,148 @@ impl Config {
         Ok(Self::config_dir()?.join("config.toml"))
     }
 
-    /// Load configuration from disk, and the tokens from the keyring.
+    /// Load configuration from disk, and the tokens from the keyring (or
+    /// this run's memory, or the file when opted in).
     pub fn load() -> Result<Self> {
         let path = Self::config_path()?;
+        let entry = keyring_entry();
+        let store = entry.as_ref().map(|e| e as &dyn SecretStore);
+        Self::load_from(&path, store, keyring_disabled(), &keyring_account())
+    }
 
+    fn load_from(
+        path: &std::path::Path,
+        store: Option<&dyn SecretStore>,
+        no_keyring: bool,
+        account: &str,
+    ) -> Result<Self> {
         if !path.exists() {
-            return Ok(Self::default());
+            let mut c = Self::default();
+            if let Some(s) = memory_get(account) {
+                c.apply_secrets(s);
+            }
+            return Ok(c);
         }
 
-        let content = fs::read_to_string(&path).context("Failed to read config file")?;
+        let content = fs::read_to_string(path).context("Failed to read config file")?;
         let mut config: Self = toml::from_str(&content).context("Failed to parse config file")?;
         if config.tokens_in_keyring {
-            match keyring_entry().map(|e| e.get_password()) {
-                Some(Ok(json)) => config.apply_secrets(
-                    serde_json::from_str(&json).context("Keyring entry is not valid")?,
-                ),
-                Some(Err(keyring::Error::NoEntry)) => {
+            match store.map(|s| s.get()) {
+                Some(Ok(Some(json))) => {
+                    config.apply_secrets(
+                        serde_json::from_str(&json).context("Keyring entry is not valid")?,
+                    );
+                    note_storage(TokenStorage::Keyring);
+                }
+                Some(Ok(None)) => {
                     tracing::warn!("Tokens were in the keyring but are gone; sign in again");
                 }
                 Some(Err(e)) => return Err(anyhow::anyhow!("Could not read the keyring: {e}")),
                 None => tracing::warn!("Tokens are in the keyring, but the keyring is disabled"),
             }
+        } else if config.secrets().any() {
+            if no_keyring {
+                note_storage(TokenStorage::File);
+            } else {
+                // Tokens in the file: move them to the keyring once it
+                // works (OST 0.2.1 and earlier fell back to the file
+                // without asking). Without a keyring they stay in the file
+                // only if the user opted in; otherwise they last this run
+                // and the plaintext copy goes.
+                let secrets = config.secrets();
+                let mut on_disk = config.clone_settings();
+                match store.map(|s| s.set(&secrets.to_json())) {
+                    Some(Ok(())) => {
+                        on_disk.tokens_in_keyring = true;
+                        note_storage(TokenStorage::Keyring);
+                        tracing::info!("Moved the sign-in from the config file to the keyring");
+                        write_private(path, toml::to_string_pretty(&on_disk)?.as_bytes())?;
+                    }
+                    _ if config.allow_token_file => note_storage(TokenStorage::File),
+                    other => {
+                        if let Some(Err(e)) = other {
+                            tracing::warn!("Keyring unavailable ({e})");
+                        }
+                        memory_set(account, Some(secrets));
+                        note_storage(TokenStorage::Memory);
+                        tracing::warn!(
+                            "No keyring: removed the sign-in from the config file; it lasts until OST quits"
+                        );
+                        write_private(path, toml::to_string_pretty(&on_disk)?.as_bytes())?;
+                    }
+                }
+            }
+        } else if let Some(s) = memory_get(account) {
+            config.apply_secrets(s);
+            note_storage(TokenStorage::Memory);
         }
         config.ensure_identity();
         Ok(config)
     }
 
-    /// Save configuration. Tokens go to the desktop keyring when one is
-    /// available, so the file on disk holds no secrets; without a keyring
-    /// they are written to the file, which is created owner-only (0600).
+    /// Save configuration. Tokens go to the desktop keyring; without a
+    /// working keyring they stay in this run's memory (the next start asks
+    /// to sign in again), unless the user opted in to keeping them in the
+    /// file (`OST_NO_KEYRING=1` or Settings), which is created owner-only
+    /// (0600) and replaced atomically.
     pub fn save(&self) -> Result<()> {
         let dir = Self::config_dir()?;
-        fs::create_dir_all(&dir).context("Failed to create config directory")?;
+        create_private_dir(&dir)?;
+        let entry = keyring_entry();
+        let store = entry.as_ref().map(|e| e as &dyn SecretStore);
+        self.save_to(
+            &Self::config_path()?,
+            store,
+            keyring_disabled(),
+            &keyring_account(),
+        )
+    }
 
+    fn save_to(
+        &self,
+        path: &std::path::Path,
+        store: Option<&dyn SecretStore>,
+        no_keyring: bool,
+        account: &str,
+    ) -> Result<()> {
         let secrets = self.secrets();
         let mut on_disk = self.clone_settings();
-        match keyring_entry() {
-            Some(entry) => {
-                let json = serde_json::to_string(&secrets).context("Failed to encode tokens")?;
-                match entry.set_password(&json) {
-                    Ok(()) => on_disk.tokens_in_keyring = true,
-                    Err(e) => {
+        let to_file = |on_disk: &mut Config, secrets: Secrets| {
+            on_disk.apply_secrets(secrets);
+            memory_set(account, None);
+            note_storage(TokenStorage::File);
+        };
+        if no_keyring {
+            to_file(&mut on_disk, secrets);
+        } else {
+            match store.map(|s| s.set(&secrets.to_json())) {
+                Some(Ok(())) => {
+                    on_disk.tokens_in_keyring = true;
+                    memory_set(account, None);
+                    note_storage(TokenStorage::Keyring);
+                }
+                other => {
+                    let why = match other {
+                        Some(Err(e)) => e,
+                        _ => "no keyring".into(),
+                    };
+                    if self.allow_token_file {
                         tracing::warn!(
-                            "Keyring unavailable ({e}); storing tokens in the config file"
+                            "Keyring unavailable ({why}); keeping the sign-in in the config file, as chosen"
                         );
-                        on_disk.apply_secrets(secrets);
+                        to_file(&mut on_disk, secrets);
+                    } else {
+                        tracing::warn!(
+                            "Keyring unavailable ({why}); keeping the sign-in in memory until OST quits"
+                        );
+                        memory_set(account, secrets.any().then_some(secrets));
+                        note_storage(TokenStorage::Memory);
                     }
                 }
             }
-            None => on_disk.apply_secrets(secrets),
         }
-
-        let path = Self::config_path()?;
         let content = toml::to_string_pretty(&on_disk).context("Failed to serialize config")?;
-        write_private(&path, content.as_bytes())
+        write_private(path, content.as_bytes())
     }
 
     fn secrets(&self) -> Secrets {
@@ -263,6 +463,7 @@ impl Config {
             license_details: self.license_details.clone(),
             auth_flow: self.auth_flow.clone(),
             identity: self.identity.clone(),
+            allow_token_file: self.allow_token_file,
             ..Self::default()
         }
     }
@@ -350,12 +551,12 @@ impl TokenStore for Config {
     }
 
     fn clear_tokens(&mut self) {
-        if let Some(entry) = keyring_entry() {
-            match entry.delete_credential() {
-                Ok(()) | Err(keyring::Error::NoEntry) => {}
-                Err(e) => tracing::warn!("Could not remove tokens from the keyring: {e}"),
-            }
+        if let Some(entry) = keyring_entry()
+            && let Err(e) = SecretStore::delete(&entry)
+        {
+            tracing::warn!("Could not remove tokens from the keyring: {e}");
         }
+        memory_set(&keyring_account(), None);
         self.forget_account();
     }
 }
@@ -380,29 +581,50 @@ impl Config {
     }
 }
 
-/// Write a file readable only by its owner, without a window in which it is
-/// briefly world-readable (create with 0600 rather than chmod afterwards).
+/// Write a file readable only by its owner, atomically and without a
+/// window in which it is readable by others: a fresh temporary file
+/// created 0600 (never an existing one, whose mode would stay), synced,
+/// then renamed over the old file.
 fn write_private(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
     use std::io::Write;
-    let tmp = path.with_extension("toml.tmp");
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("config.toml");
+    let tmp = path.with_file_name(format!(
+        ".{name}.{}.{}.tmp",
+        std::process::id(),
+        uuid::Uuid::new_v4().simple()
+    ));
     let mut opts = fs::OpenOptions::new();
-    opts.write(true).create(true).truncate(true);
+    opts.write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
         opts.mode(0o600);
     }
     let mut f = opts.open(&tmp).context("Failed to write config file")?;
-    f.write_all(bytes).context("Failed to write config file")?;
-    f.sync_all().ok();
-    fs::rename(&tmp, path).context("Failed to replace config file")?;
+    let written = f
+        .write_all(bytes)
+        .and_then(|_| f.sync_all())
+        .context("Failed to write config file")
+        .and_then(|_| fs::rename(&tmp, path).context("Failed to replace config file"));
+    if written.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    written
+}
+
+/// The config folder, owner-only (0700) when it is created.
+fn create_private_dir(dir: &std::path::Path) -> Result<()> {
+    let mut b = fs::DirBuilder::new();
+    b.recursive(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
-            .context("Failed to set config permissions")?;
+        use std::os::unix::fs::DirBuilderExt;
+        b.mode(0o700);
     }
-    Ok(())
+    b.create(dir).context("Failed to create config directory")
 }
 
 /// An account signed in on this device (Teams' "Accounts and orgs" list):
@@ -747,6 +969,7 @@ mod sign_out_tests {
             auth_flow: Some(crate::auth::TEAMS_WEB_FLOW.into()),
             license_details: Some("{}".into()),
             tokens_in_keyring: true,
+            allow_token_file: false,
             identity: AccountIdentity::from_work_token(
                 "x.eyJvaWQiOiI0Mjg3ZTc5MS0xYjk4LTQ5NjMtOGI5NC0yODFjNTA0NzI2ODMifQ.s",
             ),
@@ -774,5 +997,195 @@ mod sign_out_tests {
             crate::auth::AuthConfig::for_flow(back.auth_flow.as_deref()).client_id,
             crate::auth::spa::CLIENT_ID
         );
+    }
+}
+
+#[cfg(test)]
+mod storage_tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    /// A keyring that works, or one that refuses every call.
+    struct FakeStore {
+        working: bool,
+        value: RefCell<Option<String>>,
+    }
+
+    impl FakeStore {
+        fn new(working: bool) -> Self {
+            Self {
+                working,
+                value: RefCell::new(None),
+            }
+        }
+    }
+
+    impl SecretStore for FakeStore {
+        fn get(&self) -> std::result::Result<Option<String>, String> {
+            if !self.working {
+                return Err("no Secret Service".into());
+            }
+            Ok(self.value.borrow().clone())
+        }
+        fn set(&self, json: &str) -> std::result::Result<(), String> {
+            if !self.working {
+                return Err("no Secret Service".into());
+            }
+            *self.value.borrow_mut() = Some(json.to_string());
+            Ok(())
+        }
+        fn delete(&self) -> std::result::Result<(), String> {
+            *self.value.borrow_mut() = None;
+            Ok(())
+        }
+    }
+
+    fn signed_in() -> Config {
+        Config {
+            access_token: Some(StoredToken::new("aad-secret".into(), Some(3600))),
+            refresh_token: Some("refresh-secret".into()),
+            skype_token: Some(StoredToken::new("skype-secret".into(), Some(3600))),
+            region_gtms: Some("{}".into()),
+            ..Default::default()
+        }
+    }
+
+    fn dir(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "ost-config-test-{name}-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        fs::create_dir_all(&d).unwrap();
+        d.join("config.toml")
+    }
+
+    fn on_disk(path: &std::path::Path) -> String {
+        fs::read_to_string(path).unwrap()
+    }
+
+    #[test]
+    fn without_a_keyring_tokens_stay_in_memory_not_on_disk() {
+        let path = dir("memory");
+        let account = format!("test-memory-{}", uuid::Uuid::new_v4());
+        let broken = FakeStore::new(false);
+        signed_in()
+            .save_to(&path, Some(&broken), false, &account)
+            .unwrap();
+        let text = on_disk(&path);
+        assert!(!text.contains("secret"), "{text}");
+        assert!(!text.contains("tokens_in_keyring"));
+        // This run still has them.
+        let back = Config::load_from(&path, Some(&broken), false, &account).unwrap();
+        assert_eq!(back.refresh_token.as_deref(), Some("refresh-secret"));
+        // A new run (memory gone) asks to sign in again.
+        memory_set(&account, None);
+        let fresh = Config::load_from(&path, Some(&broken), false, &account).unwrap();
+        assert!(fresh.refresh_token.is_none() && fresh.access_token.is_none());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+    }
+
+    #[test]
+    fn with_a_keyring_the_file_holds_no_secrets() {
+        let path = dir("keyring");
+        let account = format!("test-keyring-{}", uuid::Uuid::new_v4());
+        let store = FakeStore::new(true);
+        signed_in()
+            .save_to(&path, Some(&store), false, &account)
+            .unwrap();
+        let text = on_disk(&path);
+        assert!(!text.contains("secret") && text.contains("tokens_in_keyring = true"));
+        assert!(
+            store
+                .value
+                .borrow()
+                .as_deref()
+                .unwrap()
+                .contains("refresh-secret")
+        );
+        let back = Config::load_from(&path, Some(&store), false, &account).unwrap();
+        assert_eq!(back.skype_token.unwrap().token, "skype-secret");
+    }
+
+    #[test]
+    fn the_file_holds_tokens_only_when_opted_in() {
+        let path = dir("optin");
+        let account = format!("test-optin-{}", uuid::Uuid::new_v4());
+        // OST_NO_KEYRING=1.
+        signed_in().save_to(&path, None, true, &account).unwrap();
+        assert!(on_disk(&path).contains("refresh-secret"));
+        let back = Config::load_from(&path, None, true, &account).unwrap();
+        assert_eq!(back.refresh_token.as_deref(), Some("refresh-secret"));
+        // The setting, with a keyring that doesn't work.
+        let path = dir("optin-setting");
+        let mut c = signed_in();
+        c.allow_token_file = true;
+        c.save_to(&path, Some(&FakeStore::new(false)), false, &account)
+            .unwrap();
+        let text = on_disk(&path);
+        assert!(text.contains("refresh-secret") && text.contains("allow_token_file = true"));
+        // The opt-in is a fallback: a working keyring still gets them.
+        let keyring_path = dir("optin-keyring");
+        c.save_to(&keyring_path, Some(&FakeStore::new(true)), false, &account)
+            .unwrap();
+        assert!(!on_disk(&keyring_path).contains("secret"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+    }
+
+    #[test]
+    fn plaintext_tokens_move_to_the_keyring_once_it_works() {
+        let path = dir("migrate");
+        let account = format!("test-migrate-{}", uuid::Uuid::new_v4());
+        // A file from OST 0.2.1, written when the keyring wasn't there.
+        signed_in().save_to(&path, None, true, &account).unwrap();
+        assert!(on_disk(&path).contains("refresh-secret"));
+        let store = FakeStore::new(true);
+        let c = Config::load_from(&path, Some(&store), false, &account).unwrap();
+        assert_eq!(c.refresh_token.as_deref(), Some("refresh-secret"));
+        let text = on_disk(&path);
+        assert!(
+            !text.contains("secret") && text.contains("tokens_in_keyring = true"),
+            "{text}"
+        );
+        assert!(
+            store
+                .value
+                .borrow()
+                .as_deref()
+                .unwrap()
+                .contains("refresh-secret")
+        );
+        // Still no keyring: the plaintext copy goes all the same.
+        let path = dir("migrate-nokeyring");
+        signed_in().save_to(&path, None, true, &account).unwrap();
+        let c = Config::load_from(&path, Some(&FakeStore::new(false)), false, &account).unwrap();
+        assert_eq!(c.refresh_token.as_deref(), Some("refresh-secret"));
+        assert!(!on_disk(&path).contains("secret"));
+        memory_set(&account, None);
+    }
+
+    #[test]
+    fn signing_out_forgets_the_memory_copy() {
+        let path = dir("signout");
+        let account = format!("test-signout-{}", uuid::Uuid::new_v4());
+        let broken = FakeStore::new(false);
+        signed_in()
+            .save_to(&path, Some(&broken), false, &account)
+            .unwrap();
+        let mut c = Config::load_from(&path, Some(&broken), false, &account).unwrap();
+        c.forget_account();
+        c.save_to(&path, Some(&broken), false, &account).unwrap();
+        assert!(memory_get(&account).is_none());
+        let back = Config::load_from(&path, Some(&broken), false, &account).unwrap();
+        assert!(back.refresh_token.is_none());
     }
 }
