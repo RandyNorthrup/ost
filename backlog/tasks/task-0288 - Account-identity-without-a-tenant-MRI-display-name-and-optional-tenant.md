@@ -4,10 +4,10 @@ title: 'Account identity without a tenant: MRI, display name and optional tenant
 status: To Do
 assignee: []
 created_date: '2026-11-25T15:26:00Z'
+updated_date: '2026-11-25T15:33:00Z'
 labels:
   - personal-accounts
-dependencies:
-  - TASK-0287
+dependencies: []
 references:
   - docs/research/personal-accounts-features.md
   - docs/research/personal-accounts-protocol.md
@@ -26,3 +26,9 @@ OST assumes every account is a work account: it builds 8:orgid: IDs in about 75 
 - [ ] #2 No code builds an 8:orgid: MRI from a bare object ID outside the identity module
 - [ ] #3 Work-account sign-in, chat, calls, calendar and files behave exactly as before (desktop and teams-cli tests pass; live check with ost-test1)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- 2026-11-25: dependency on TASK-0287 dropped: the identity abstraction is built and verified with work accounts now; the personal-account values (8:live: MRI, no tenant, name from the Skype token) are filled in by TASK-0292 after the live capture.
+<!-- SECTION:NOTES:END -->
