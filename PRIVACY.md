@@ -40,7 +40,9 @@ telemetry. OST neither adds to it nor blocks it.
   `ost/<version>`); nothing else is sent.
 - **Giphy** (`media*.giphy.com`): GIF search goes through Teams' service,
   but the GIF pictures load straight from Giphy while the GIF picker is
-  open or a message shows a GIF, as in Teams.
+  open or a message shows a GIF, as in Teams. With **Settings ▸ Privacy ▸
+  Optional connected experiences** off, the picker has no GIFs and link
+  previews are off too.
 - **Hugging Face** (`huggingface.co`) and **GitHub** (`github.com`): two
   models download the first time you use the feature that needs them, and
   are checked against a pinned SHA-256: sign language detection (when you
@@ -90,13 +92,18 @@ content is personal:
 | `~/.local/share/OST/QtWebEngine/ost-apps`, `~/.cache/OST/QtWebEngine/ost-apps` | The web profile: cookies, site storage and cache of the sign-in and the embedded Microsoft 365 apps. |
 | Your Downloads folder | Files you download (Settings can change the folder). |
 
-The log records what OST does at the `info` level (which chats and calls
-it handled, errors, the services it called) and can name people and chats.
-It is rewritten each time OST starts (with **Extended diagnostics** on, it
-keeps up to 64 MB across starts). Help ▸ **Collect Support Files** copies
-it to a folder on your Desktop as it is; feedback that shares log lines
-masks names, addresses, message text and tokens first (see below). Look
-through the log before you send it to anyone.
+The research variables `OST_TROUTER_DUMP_DIR` and `OST_DUMP_RTP` write
+message contents or call data to disk when you set them; they're for
+protocol research on test accounts only.
+
+The log records what OST does at the `info` level (sign-in and call
+states, the services it called, errors). It's written to keep to shapes
+and states, not message text or tokens, but it isn't masked on disk. It is
+rewritten each time OST starts (with **Extended diagnostics** on, it keeps
+up to 64 MB across starts). Help ▸ **Collect Support Files** copies it to a
+folder on your Desktop as it is; feedback that shares log lines masks
+names, addresses, message text and tokens first (see below). Look through
+the log before you send it to anyone.
 
 To remove everything: delete the folders above and the `ost` entry in your
 keyring (Seahorse, KWalletManager or your keyring's app). In the Flatpak,
