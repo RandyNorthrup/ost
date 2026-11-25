@@ -1135,7 +1135,7 @@ mod tests {
         let v = serde_json::json!({ "url": evil, "domains": [evil] });
         let js = script_json(&v);
         for bad in ["<", ">", "\n", "\r", "\u{2028}", "\u{2029}", "&"] {
-            assert!(!js.contains(bad), "{bad:?} in {js}");
+            assert!(!js.contains(bad), "{bad:?} left unescaped");
         }
         // Every quote is escaped: the string literal can't end early.
         let lit = script_json(&serde_json::json!(evil));
@@ -1145,7 +1145,7 @@ mod tests {
                 .replace("\\\\", "")
                 .replace("\\\"", "")
                 .contains('"'),
-            "{lit}"
+            "a quote ends the literal early"
         );
         // It is still the same value to a JavaScript (and JSON) parser.
         let back: serde_json::Value = serde_json::from_str(&js).unwrap();
