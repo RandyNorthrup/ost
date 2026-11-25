@@ -1,5 +1,7 @@
 // The audio feature builds a small C++ bridge to the system's WebRTC
-// AudioProcessing library (echo cancellation, noise suppression, gain).
+// AudioProcessing library (echo cancellation, noise suppression, gain):
+// webrtc-audio-processing-1, or -2 where only that is installed (the
+// Flatpak runtime ships -2).
 fn main() {
     println!("cargo::rerun-if-changed=src/calling/native/apm.cpp");
     if std::env::var_os("CARGO_FEATURE_AUDIO").is_none() {
@@ -8,7 +10,8 @@ fn main() {
     let lib = pkg_config::Config::new()
         .atleast_version("1.0")
         .probe("webrtc-audio-processing-1")
-        .expect("webrtc-audio-processing-1 (install its development package)");
+        .or_else(|_| pkg_config::Config::new().atleast_version("2.0").probe("webrtc-audio-processing-2"))
+        .expect("webrtc-audio-processing-1 or -2 (install its development package)");
     let mut build = cc::Build::new();
     build.cpp(true).std("c++17").file("src/calling/native/apm.cpp").warnings(false);
     for p in &lib.include_paths {

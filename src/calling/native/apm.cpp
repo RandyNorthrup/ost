@@ -1,6 +1,7 @@
 // A C interface to WebRTC's AudioProcessing module (the distribution's
-// webrtc-audio-processing-1): echo cancellation, noise suppression and
-// gain control on a call's 48 kHz mono audio, in 10 ms frames.
+// webrtc-audio-processing-1, or -2 where only that is available, as in the
+// Flatpak runtime): echo cancellation, noise suppression and gain control
+// on a call's 48 kHz mono audio, in 10 ms frames.
 #include <modules/audio_processing/include/audio_processing.h>
 
 #include <cstdint>
@@ -8,7 +9,9 @@
 extern "C" {
 
 struct ost_apm {
-  webrtc::AudioProcessing* apm;
+  // 1.x's builder returns a raw pointer to the reference-counted module,
+  // 2.x's a scoped_refptr; holding a scoped_refptr fits both.
+  rtc::scoped_refptr<webrtc::AudioProcessing> apm;
   webrtc::StreamConfig config;
 };
 
@@ -30,7 +33,7 @@ static void ost_apm_configure(ost_apm* a, bool echo, bool noise, int noise_level
 }
 
 ost_apm* ost_apm_new(int sample_rate) {
-  webrtc::AudioProcessing* apm = webrtc::AudioProcessingBuilder().Create();
+  rtc::scoped_refptr<webrtc::AudioProcessing> apm = webrtc::AudioProcessingBuilder().Create();
   if (!apm) return nullptr;
   ost_apm* a = new ost_apm{apm, webrtc::StreamConfig(sample_rate, 1)};
   ost_apm_configure(a, true, true, 2, true);
@@ -55,7 +58,6 @@ int ost_apm_capture(ost_apm* a, int16_t* frame, int delay_ms) {
 
 void ost_apm_free(ost_apm* a) {
   if (!a) return;
-  delete a->apm;
   delete a;
 }
 
