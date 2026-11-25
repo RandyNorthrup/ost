@@ -1,0 +1,94 @@
+# Maintainer: Randy Northrup <randy.northrup@gmail.com>
+#
+# Kept in https://github.com/RandyNorthrup/ost as
+# desktop/packaging/aur/ost-bin/PKGBUILD; the release workflow sets pkgver
+# and sha256sums for each release and pushes it here.
+#
+# The release AppImage, unpacked to /usr/lib/ost: OST with the Qt, QtWebEngine,
+# FFmpeg and WebRTC audio processing libraries it was built with. The system
+# provides glibc, the C++ runtime, the graphics stack, PipeWire, PulseAudio
+# and ALSA clients, D-Bus, systemd, Wayland, X11 and OpenSSL.
+
+pkgname=ost-bin
+_name=ost
+pkgver=0.2.1
+pkgrel=1
+pkgdesc='Native Linux desktop client for Microsoft Teams: chat, channels, calls and meetings, calendar and files (unofficial, prebuilt)'
+arch=('x86_64')
+url='https://github.com/RandyNorthrup/ost/wiki'
+license=('MIT')
+depends=(
+  'alsa-lib'
+  'dbus'
+  'e2fsprogs'
+  'expat'
+  'fontconfig'
+  'freetype2'
+  'fribidi'
+  'glibc'
+  'gmp'
+  'harfbuzz'
+  'hicolor-icon-theme'
+  'libdrm'
+  'libgcc'
+  'libglvnd'
+  'libice'
+  'libpipewire'
+  'libpulse'
+  'libsm'
+  'libstdc++'
+  'libx11'
+  'libxcb'
+  'mesa'
+  'openssl'
+  'vulkan-icd-loader'
+  'wayland'
+  'zlib'
+)
+optdepends=(
+  'org.freedesktop.secrets: keep the sign-in in the desktop keyring (GNOME Keyring or KWallet)'
+  'pipewire: call audio and screen sharing'
+  'xdg-desktop-portal: screen and window sharing through your desktop portal'
+)
+provides=("$_name=$pkgver" 'teams-cli')
+conflicts=("$_name" 'teams-cli')
+# Prebuilt binaries and their bundled libraries: kept as released.
+options=('!strip' '!debug')
+source=("LICENSE-$pkgver::https://raw.githubusercontent.com/RandyNorthrup/ost/v$pkgver/LICENSE")
+source_x86_64=("OST-$pkgver-$CARCH.AppImage::https://github.com/RandyNorthrup/ost/releases/download/v$pkgver/OST-$pkgver-$CARCH.AppImage")
+noextract=("OST-$pkgver-$CARCH.AppImage")
+sha256sums=('SKIP')
+sha256sums_x86_64=('SKIP')
+
+prepare() {
+  rm -rf squashfs-root
+  local appimage="OST-$pkgver-$CARCH.AppImage"
+  chmod +x "$appimage"
+  "./$appimage" --appimage-extract >/dev/null
+}
+
+package() {
+  cd squashfs-root
+  local dir="$pkgdir/usr/lib/$_name"
+  install -d "$dir"
+  cp -a usr/. "$dir/"
+  chmod -R u+rwX,go+rX,go-w "$dir"
+  # The AppImage's desktop entry, icon and AppStream metainfo, under their
+  # own names.
+  install -d "$pkgdir/usr/share/applications" "$pkgdir/usr/share/icons/hicolor/256x256/apps"
+  mv "$dir"/share/applications/*.desktop "$pkgdir/usr/share/applications/"
+  mv "$dir"/share/icons/hicolor/256x256/apps/*.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/"
+  if [ -d "$dir/share/metainfo" ]; then
+    install -d "$pkgdir/usr/share/metainfo"
+    mv "$dir"/share/metainfo/*.xml "$pkgdir/usr/share/metainfo/"
+  fi
+  rm -rf "$dir/share/applications" "$dir/share/icons" "$dir/share/pixmaps" "$dir/share/metainfo"
+  # Commands. The binaries find their libraries, Qt plugins and QML beside
+  # their real path (RUNPATH $ORIGIN/../lib and qt.conf).
+  install -d "$pkgdir/usr/bin"
+  ln -s "/usr/lib/$_name/bin/ost-desktop" "$pkgdir/usr/bin/ost-desktop"
+  ln -s "/usr/lib/$_name/bin/teams-cli" "$pkgdir/usr/bin/teams-cli"
+  install -Dm644 "$srcdir/LICENSE-$pkgver" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  # The bundled libraries' copyright files.
+  ln -s "/usr/lib/$_name/share/doc" "$pkgdir/usr/share/licenses/$pkgname/bundled"
+}

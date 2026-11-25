@@ -1,0 +1,95 @@
+# OST as a Flatpak, for the .flatpak bundle attached to each release.
+#
+#   flatpak run --command=flathub-build org.flatpak.Builder \
+#     desktop/packaging/flatpak/io.github.RandyNorthrup.ost.yml
+#   flatpak build-bundle repo OST-<version>-x86_64.flatpak io.github.RandyNorthrup.ost
+#
+# It builds the checkout it sits in. cargo-sources.json lists the crates in
+# Cargo.lock (flatpak-cargo-generator); regenerate it whenever Cargo.lock
+# changes:
+#   flatpak-cargo-generator.py Cargo.lock -o desktop/packaging/flatpak/cargo-sources.json
+id: io.github.RandyNorthrup.ost
+runtime: org.kde.Platform
+runtime-version: '6.11'
+sdk: org.kde.Sdk
+base: io.qt.qtwebengine.BaseApp
+base-version: '6.11'
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.llvm21
+command: ost-desktop
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  # Cameras (V4L2) and headsets' call buttons (hidraw).
+  - --device=all
+  - --socket=pulseaudio
+  # Microphones, speakers and cameras by PipeWire node, and the screen-share
+  # streams the ScreenCast portal hands over.
+  - --filesystem=xdg-run/pipewire-0
+  # Downloaded files go to Downloads, as in Teams.
+  - --filesystem=xdg-download
+  - --talk-name=org.freedesktop.Notifications
+  # The sign-in is kept in the desktop keyring (Secret Service).
+  - --talk-name=org.freedesktop.secrets
+  # The tray icon and the launcher's unread badge.
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=com.canonical.Unity
+  # Keeping OST's own windows out of screen shares on KDE Plasma.
+  - --talk-name=org.kde.KWin
+  # Away when the screen locks; work location from the Wi-Fi network;
+  # Bluetooth room proximity.
+  - --system-talk-name=org.freedesktop.login1
+  - --system-talk-name=org.freedesktop.NetworkManager
+  - --system-talk-name=org.bluez
+  - --env=QTWEBENGINE_DICTIONARIES_PATH=/app/qtwebengine_dictionaries
+cleanup-commands:
+  - /app/cleanup-BaseApp.sh
+modules:
+  # Teams-style notification banners on Wayland (wlr-layer-shell).
+  - name: layer-shell-qt
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_TESTING=OFF
+    cleanup:
+      - /include
+      - /lib/cmake
+    sources:
+      - type: archive
+        url: https://download.kde.org/stable/plasma/6.8.3/layer-shell-qt-6.8.3.tar.xz
+        sha256: af3e56be10eb95a5993600449d6c811a08d491f7905c40a1203040b5baf98f9e
+
+  - name: ost
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm21/bin
+      prepend-pkg-config-path: /app/lib/x86_64-linux-gnu/pkgconfig
+      env:
+        CARGO_HOME: /run/build/ost/cargo
+        CARGO_NET_OFFLINE: 'true'
+        LIBCLANG_PATH: /usr/lib/sdk/llvm21/lib
+        QMAKE: /usr/bin/qmake
+        QTWEBENGINE_DISABLE_SANDBOX: '1'
+    build-commands:
+      - cargo --offline fetch --manifest-path Cargo.toml --verbose
+      - cargo --offline build --release --locked -p ost-desktop
+      - cargo --offline build --release --locked --bin teams-cli --features audio
+      - install -Dm755 target/release/ost-desktop /app/bin/ost-desktop
+      - install -Dm755 target/release/teams-cli /app/bin/teams-cli
+      - install -Dm644 desktop/packaging/${FLATPAK_ID}.desktop /app/share/applications/${FLATPAK_ID}.desktop
+      - install -Dm644 desktop/packaging/${FLATPAK_ID}.png /app/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
+      - install -Dm644 desktop/packaging/${FLATPAK_ID}.metainfo.xml /app/share/metainfo/${FLATPAK_ID}.metainfo.xml
+      - install -Dm644 LICENSE /app/share/licenses/${FLATPAK_ID}/LICENSE
+      - install -Dm644 desktop/THIRD-PARTY-NOTICES.md /app/share/licenses/${FLATPAK_ID}/THIRD-PARTY-NOTICES.md
+    sources:
+      - type: dir
+        path: ../../..
+        skip:
+          - target
+          - .claude
+          - .git
+          - backlog
+      - cargo-sources.json
