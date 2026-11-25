@@ -3,7 +3,7 @@
 OST is a Microsoft Teams client. It talks to the same services Teams does:
 Microsoft Teams, Microsoft 365 and Microsoft Graph, Substrate search, and
 Giphy for GIFs. It does this only for your signed-in account, and only to
-do what you ask it to. Your organisation's Microsoft 365 policies apply as
+do what you ask it to. Your organization's Microsoft 365 policies apply as
 they do in Teams.
 
 OST sends nothing to the OST project or to anyone else. It has no telemetry

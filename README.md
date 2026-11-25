@@ -32,7 +32,7 @@ troubleshooting and the list of differences from Teams.
   editing posts in Teams' post composer, followed threads, channel tabs
   (Shared, Page, Notes, apps), shared and private channels, managing teams
   and channels.
-- **Copilot** (with a Microsoft 365 Copilot licence): in chats, meeting chats
+- **Copilot** (with a Microsoft 365 Copilot license): in chats, meeting chats
   and channel threads, and Write with Copilot in the message box.
 - **Activity:** Teams' activity feed, live and synced with Teams.
 - **Calendar:** day, work week, week and month views, event cards, RSVP,
@@ -238,7 +238,7 @@ sends nothing to the project. See [SUPPORT.md](SUPPORT.md) and
 
 ## License
 
-MIT License, see [LICENSE](LICENSE). Third-party assets and their licences
+MIT License, see [LICENSE](LICENSE). Third-party assets and their licenses
 are listed in [desktop/assets/NOTICE.md](desktop/assets/NOTICE.md) and
 [desktop/THIRD-PARTY-NOTICES.md](desktop/THIRD-PARTY-NOTICES.md).
 
