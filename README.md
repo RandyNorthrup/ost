@@ -1,80 +1,176 @@
 <p align="center"><img src="docs/banner.png" alt="OST banner: the OST logo and a mouse whose body is a computer mouse, with a USB cable for a tail, sniffing a wedge of cheese" width="100%"></p>
 
-# OST
+<h1 align="center">OST</h1>
+
+<p align="center">
+  <b>The Microsoft Teams desktop experience, native on Linux.</b><br>
+  Chat, channels, calls and meetings, calendar and files, built in Rust and Qt Quick.
+</p>
+
+<p align="center">
+  <a href="https://github.com/RandyNorthrup/ost/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/RandyNorthrup/ost?style=for-the-badge&color=5B5FC7&label=release"></a>
+  <a href="https://github.com/RandyNorthrup/ost/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/RandyNorthrup/ost/total?style=for-the-badge&color=2EA043&label=downloads"></a>
+  <a href="https://github.com/RandyNorthrup/ost/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/RandyNorthrup/ost?style=for-the-badge&color=E3B341&logo=github"></a>
+  <a href="https://github.com/RandyNorthrup/ost/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/RandyNorthrup/ost/ci.yml?branch=main&style=for-the-badge&label=CI&logo=githubactions&logoColor=white"></a>
+  <a href="https://github.com/RandyNorthrup/ost/security/code-scanning"><img alt="CodeQL" src="https://img.shields.io/badge/CodeQL-enabled-1F6FEB?style=for-the-badge&logo=github&logoColor=white"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/RandyNorthrup/ost?style=for-the-badge&color=8957E5"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/RandyNorthrup/ost/releases/latest"><img alt="Linux" src="https://img.shields.io/badge/Linux-x86__64-FCC624?style=for-the-badge&logo=linux&logoColor=black"></a>
+  <a href="https://www.rust-lang.org"><img alt="Rust" src="https://img.shields.io/badge/Rust-2024-CE422B?style=for-the-badge&logo=rust&logoColor=white"></a>
+  <a href="https://www.qt.io"><img alt="Qt" src="https://img.shields.io/badge/Qt-6-41CD52?style=for-the-badge&logo=qt&logoColor=white"></a>
+  <a href="https://github.com/RandyNorthrup/ost/wiki/Installation"><img alt="Wayland" src="https://img.shields.io/badge/Wayland-%26%20X11-FFBC00?style=for-the-badge&logo=wayland&logoColor=black"></a>
+  <a href="https://github.com/RandyNorthrup/ost/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/RandyNorthrup/ost?style=for-the-badge&color=6E7681"></a>
+  <a href="https://github.com/RandyNorthrup/ost/issues"><img alt="Open issues" src="https://img.shields.io/github/issues/RandyNorthrup/ost?style=for-the-badge&color=6E7681"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/RandyNorthrup/ost/wiki/Installation#ubuntu-2604-and-debian-testing-deb"><img alt="Ubuntu" src="https://img.shields.io/badge/Ubuntu-26.04-E95420?style=for-the-badge&logo=ubuntu&logoColor=white"></a>
+  <a href="https://github.com/RandyNorthrup/ost/wiki/Installation#ubuntu-2604-and-debian-testing-deb"><img alt="Debian" src="https://img.shields.io/badge/Debian-testing-A81D33?style=for-the-badge&logo=debian&logoColor=white"></a>
+  <a href="https://github.com/RandyNorthrup/ost/wiki/Installation#fedora-45-and-opensuse-tumbleweed-rpm"><img alt="Fedora" src="https://img.shields.io/badge/Fedora-45-51A2DA?style=for-the-badge&logo=fedora&logoColor=white"></a>
+  <a href="https://github.com/RandyNorthrup/ost/wiki/Installation#fedora-45-and-opensuse-tumbleweed-rpm"><img alt="openSUSE" src="https://img.shields.io/badge/openSUSE-Tumbleweed-73BA25?style=for-the-badge&logo=opensuse&logoColor=white"></a>
+  <a href="https://github.com/RandyNorthrup/ost/wiki/Installation#flatpak"><img alt="Flatpak" src="https://img.shields.io/badge/Flatpak-bundle-4A90D9?style=for-the-badge&logo=flatpak&logoColor=white"></a>
+  <a href="https://github.com/RandyNorthrup/ost/wiki/Installation#appimage"><img alt="AppImage" src="https://img.shields.io/badge/AppImage-any%20distro-2B6CB0?style=for-the-badge&logo=linux&logoColor=white"></a>
+  <a href="https://github.com/RandyNorthrup/ost/wiki/Installation#arch-linux-aur-coming-soon"><img alt="AUR" src="https://img.shields.io/badge/AUR-coming%20soon-1793D1?style=for-the-badge&logo=archlinux&logoColor=white"></a>
+</p>
+
+<p align="center">
+  <a href="#install"><b>Install</b></a> ·
+  <a href="#features"><b>Features</b></a> ·
+  <a href="#screenshots"><b>Screenshots</b></a> ·
+  <a href="https://github.com/RandyNorthrup/ost/wiki"><b>Wiki</b></a> ·
+  <a href="#build-from-source"><b>Build</b></a> ·
+  <a href="#contributing"><b>Contributing</b></a>
+</p>
+
+---
 
 **OST is a native Linux clone of the Microsoft Teams desktop app for
 Windows.** It looks and works like Teams, one to one: the same app bar,
 chat list, conversations, channels, calendar, call and meeting windows,
 settings and dialogs, measured from Teams itself. Only the name and the
-logo differ. It is written in Rust with a Qt Quick interface, has its own
-calling and media engine, and also includes the original terminal client,
-`teams-cli`.
+logo differ. It has its own calling and media engine, and also includes the
+original terminal client, `teams-cli`. *Ost* means cheese in Danish.
 
-OST is an independent open-source project. It is **not affiliated with,
-endorsed by or supported by Microsoft.** You sign in with your own Microsoft
-work or school account.
+> [!IMPORTANT]
+> OST is an independent open-source project. It is **not affiliated with,
+> endorsed by or supported by Microsoft.** You sign in with your own
+> Microsoft work or school account, on Microsoft's own sign-in page.
 
-*Ost* means cheese in Danish.
-
-![OST: a group chat with formatting, a file, reactions and a code block](docs/screenshots/chat.png)
-
-**Documentation:** the [OST wiki](https://github.com/RandyNorthrup/ost/wiki)
-has installation, a feature tour with screenshots, configuration,
-troubleshooting and the list of differences from Teams.
+<p align="center"><img src="docs/screenshots/chat.png" alt="OST: a group chat with formatting, a file, reactions and a code block" width="100%"></p>
 
 ## Features
 
-- **Chat:** 1:1, group and meeting chats with Teams' formatting, code
-  blocks, emoji, GIFs, reactions, files from your computer or OneDrive,
-  Loop components, video clips, scheduled messages, @mentions, read
-  receipts, drafts, find in chat and search.
-- **Teams and channels:** posts and threads layouts, replies, announcements,
-  editing posts in Teams' post composer, followed threads, channel tabs
-  (Shared, Page, Notes, apps), shared and private channels, managing teams
-  and channels.
-- **Copilot** (with a Microsoft 365 Copilot license): in chats, meeting chats
-  and channel threads, and Write with Copilot in the message box.
-- **Activity:** Teams' activity feed, live and synced with Teams.
-- **Calendar:** day, work week, week and month views, event cards, RSVP,
-  Teams' scheduling form, Outlook's event form for your events and
-  invitations (series edits and cancels, time suggestions, the body
-  editor's tools), Meet now and Join with an ID.
-- **Calls and meetings:** 1:1 and group calls, meetings with video and
-  background effects, screen and window sharing, raise hand, reactions,
-  live captions, recording and transcripts, breakout rooms, town halls and
-  webinars, hold, transfer and park, voicemail, Meeting Recaps and audio
-  recaps.
-- **Files:** OneDrive (Home, My files, Shared, Libraries, Recycle bin),
-  channel files, previews, sharing, and Teams' cloud file picker.
-- **Apps:** Teams' app bar and Store; People, Events and Meeting Recaps drawn
-  natively; Planner, OneNote, Whiteboard, Copilot and other apps hosted as
-  Teams hosts them.
-- **Settings, notifications, presence:** Teams' Settings pages synced with
-  your account, Teams' notification banners with quick reply, status and
-  status messages, light, dark and high-contrast themes, Teams' keyboard
-  shortcuts (Ctrl+. lists them), built-in Help (F1).
-- **Teams Rooms:** run OST as a Teams Rooms device, cast to a room, join
-  with a room's audio, and control a room from your laptop (Control Room
-  System).
-- **Translations:** every Teams app language, with Teams' own strings
-  downloaded on first use (none of Microsoft's translations are in this
-  repository).
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 💬 Chat
+1:1, group and meeting chats with Teams' formatting, code blocks, emoji,
+GIFs, reactions, files from your computer or OneDrive, Loop components,
+video clips, scheduled messages, @mentions, read receipts, drafts, find in
+chat and search.
+
+</td>
+<td width="50%" valign="top">
+
+### 👥 Teams and channels
+Posts and threads layouts, replies, announcements, Teams' post composer,
+followed threads, channel tabs (Shared, Page, Notes, apps), shared and
+private channels, and managing teams and channels.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### 📞 Calls and meetings
+1:1 and group calls, meetings with video and background effects, screen and
+window sharing, raise hand, reactions, live captions, recording and
+transcripts, breakout rooms, town halls and webinars, hold, transfer and
+park, voicemail, Meeting Recaps and audio recaps.
+
+</td>
+<td valign="top">
+
+### 📅 Calendar
+Day, work week, week and month views, event cards, RSVP, Teams' scheduling
+form, Outlook's event form for your events and invitations (series edits,
+time suggestions, the body editor's tools), Meet now and Join with an ID.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### 📁 Files
+OneDrive (Home, My files, Shared, Libraries, Recycle bin), channel files,
+previews, version history, sharing, and Teams' cloud file picker.
+
+</td>
+<td valign="top">
+
+### ✨ Copilot
+With a Microsoft 365 Copilot license: Copilot in chats, meeting chats and
+channel threads, and Write with Copilot in the message box.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### 🧩 Apps
+Teams' app bar and Store; People, Events and Meeting Recaps drawn natively;
+Planner, OneNote, Whiteboard and other apps hosted the way Teams hosts them.
+
+</td>
+<td valign="top">
+
+### 🔔 Activity and notifications
+Teams' activity feed, live and synced with Teams, and Teams' notification
+banners with quick reply, presence and status messages.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### ⚙️ Settings and accessibility
+Every Teams Settings page, synced with your account; light, dark and
+high-contrast themes; Teams' keyboard shortcuts (Ctrl+. lists them);
+built-in Help (F1); every Teams app language.
+
+</td>
+<td valign="top">
+
+### 🖥️ Teams Rooms and devices
+Run OST as a Teams Rooms device, cast to a room, join with a room's audio,
+control a room from your laptop, and use headset call controls over USB
+and Bluetooth.
+
+</td>
+</tr>
+</table>
+
+What OST knowingly does differently from Teams (Linux sign-in, the
+desktop's screen-share picker, feedback going to GitHub, no telemetry and
+so on) is listed in
+[Differences from Teams](https://github.com/RandyNorthrup/ost/wiki/Differences-from-Teams). The
+[wiki](https://github.com/RandyNorthrup/ost/wiki) documents every feature with screenshots.
+
+## Screenshots
 
 <table>
   <tr>
-    <td><img src="docs/screenshots/meeting.png" alt="A meeting with video, a raised hand and the People pane"></td>
-    <td><img src="docs/screenshots/calendar.png" alt="The calendar's work week view"></td>
+    <td width="50%"><img src="docs/screenshots/meeting.png" alt="A meeting with video, a raised hand and the People pane"><p align="center"><sub>Meetings with video, raised hands and the People pane</sub></p></td>
+    <td width="50%"><img src="docs/screenshots/calendar.png" alt="The calendar's work week view"><p align="center"><sub>The calendar's work week view</sub></p></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/channel.png" alt="A channel post with replies"></td>
-    <td><img src="docs/screenshots/activity-dark.png" alt="Activity and a chat in the dark theme"></td>
+    <td><img src="docs/screenshots/channel.png" alt="A channel post with replies"><p align="center"><sub>Channel posts and replies</sub></p></td>
+    <td><img src="docs/screenshots/activity-dark.png" alt="Activity and a chat in the dark theme"><p align="center"><sub>Activity in the dark theme</sub></p></td>
   </tr>
 </table>
-
-What OST knowingly does differently from Teams (Linux-specific sign-in, the
-desktop's screen-share picker, feedback going to GitHub, no telemetry and
-so on) is listed in
-[Differences from Teams](https://github.com/RandyNorthrup/ost/wiki/Differences-from-Teams).
 
 ## Install
 
@@ -134,6 +230,9 @@ in the Flatpak). See
 
 ## Build from source
 
+<details>
+<summary><b>Requirements, commands and packaging</b></summary>
+
 Requirements: Rust stable (edition 2024), Qt 6.9 or newer with Qt Quick,
 Quick Controls, Multimedia, WebEngine and the shader tools, a C++ compiler,
 CMake, FFmpeg's development libraries, the ALSA and PipeWire development
@@ -166,7 +265,12 @@ for a release. More in
 [Building from source](https://github.com/RandyNorthrup/ost/wiki/Building-from-source)
 and [docs/desktop.md](docs/desktop.md).
 
+</details>
+
 ## Terminal client
+
+<details>
+<summary><b>teams-cli: the terminal interface and commands</b></summary>
 
 `teams-cli` is OST's terminal client: a full-screen terminal interface for
 teams, channels and chats, plus commands for scripts. It shares the engine,
@@ -209,7 +313,12 @@ tui        Launch the terminal user interface
 
 See [Terminal client](https://github.com/RandyNorthrup/ost/wiki/Terminal-client).
 
+</details>
+
 ## Configuration
+
+<details>
+<summary><b>Files, keyring and profiles</b></summary>
 
 Settings live in OST's Settings (Ctrl+,). On disk: `~/.config/ost/desktop.json`
 (this computer's settings), `~/.config/teams-cli/config.toml` (account
@@ -220,7 +329,12 @@ caches under `~/.cache/ost/`. Sign-in tokens are kept in the system keyring
 account. All files and environment variables:
 [Configuration](https://github.com/RandyNorthrup/ost/wiki/Configuration).
 
+</details>
+
 ## Testing
+
+<details>
+<summary><b>Unit and end-to-end tests</b></summary>
 
 ```bash
 cargo test --workspace     # unit tests: engine, desktop backend, video effects
@@ -233,6 +347,8 @@ a test flag it drives itself against the signed-in account, captures
 pictures and quits. Use a test account; these tests send real messages and
 schedule real meetings. The flags are listed in
 [docs/desktop.md](docs/desktop.md#test-harness).
+
+</details>
 
 ## Documentation
 
@@ -259,8 +375,12 @@ privately as [SECURITY.md](SECURITY.md) describes, not in a public issue.
 
 ## Authors
 
-- Randy Northrup
-- Mark Ruvald Pedersen
+<table>
+  <tr>
+    <td align="center"><a href="https://github.com/RandyNorthrup"><img src="https://github.com/RandyNorthrup.png?size=120" width="80" alt=""><br><b>Randy Northrup</b></a></td>
+    <td align="center"><a href="https://github.com/eisbaw"><img src="https://github.com/eisbaw.png?size=120" width="80" alt=""><br><b>Mark Ruvald Pedersen</b></a></td>
+  </tr>
+</table>
 
 OST grew out of Mark Ruvald Pedersen's [eisbaw/ost](https://github.com/eisbaw/ost).
 
@@ -272,12 +392,19 @@ are listed in [desktop/assets/NOTICE.md](desktop/assets/NOTICE.md) and
 
 ## Disclaimer
 
-OST is an unofficial client, provided as is; use it at your own risk and
-within your organization's policies. It is not affiliated with, endorsed by
-or supported by Microsoft. Microsoft, Microsoft Teams, Microsoft 365,
-OneDrive, Outlook, Loop and Copilot are trademarks of the Microsoft group of
-companies.
+> [!NOTE]
+> OST is an unofficial client, provided as is; use it at your own risk and
+> within your organization's policies. It is not affiliated with, endorsed by
+> or supported by Microsoft. Microsoft, Microsoft Teams, Microsoft 365,
+> OneDrive, Outlook, Loop and Copilot are trademarks of the Microsoft group of
+> companies.
 
 ## Related projects
 
 - [purple-teams](https://github.com/EionRobb/purple-teams/): Teams plugin for libpurple (Pidgin, Finch, etc.)
+
+---
+
+<p align="center">
+  If OST is useful to you, <a href="https://github.com/RandyNorthrup/ost/stargazers">star it on GitHub</a> ⭐ and tell other Linux users about it.
+</p>
