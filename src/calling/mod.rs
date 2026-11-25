@@ -18,6 +18,10 @@ pub mod camera;
 #[cfg(feature = "video")]
 pub mod camera_controls;
 #[cfg(feature = "video")]
+pub mod camera_node;
+#[cfg(feature = "video")]
+pub mod camera_pw;
+#[cfg(feature = "video")]
 pub mod codec;
 pub mod consult;
 #[cfg(feature = "video")]
@@ -52,6 +56,8 @@ pub mod muted_speech;
 pub mod network_quality;
 pub mod outgoing;
 pub mod phone_audio;
+#[cfg(feature = "video")]
+pub mod pixfmt;
 pub mod presenter_mode;
 #[cfg(all(feature = "audio", target_os = "linux"))]
 pub mod pw_defaults;

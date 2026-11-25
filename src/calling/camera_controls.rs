@@ -237,9 +237,13 @@ impl Cam {
     }
 }
 
-fn open(path: &str) -> Result<Cam> {
+/// The camera `id`'s V4L2 node (a PipeWire camera's, when it has one;
+/// libcamera and virtual cameras have no controls here).
+fn open(id: &str) -> Result<Cam> {
+    let path =
+        super::camera::v4l2_path(id).with_context(|| format!("{id} has no V4L2 controls"))?;
     Ok(Cam {
-        dev: Device::with_path(path).with_context(|| format!("Can't open {path}"))?,
+        dev: Device::with_path(&path).with_context(|| format!("Can't open {path}"))?,
     })
 }
 

@@ -21,7 +21,7 @@ pub struct RoomDevice {
     /// The speaker's and microphone's names in OST's device lists.
     pub speaker: String,
     pub microphone: String,
-    /// The device's camera (`/dev/videoN`) when it has one.
+    /// The device's camera (its camera ID) when it has one.
     pub camera: Option<String>,
     pub vendor_id: u16,
     pub product_id: u16,
@@ -245,7 +245,7 @@ pub fn connected() -> Vec<RoomDevice> {
     devices
 }
 
-/// The camera node whose USB device has these ids.
+/// The camera whose USB device has these ids (its camera ID).
 #[cfg(all(target_os = "linux", feature = "video"))]
 fn camera_of(vendor: u16, product: u16) -> Option<String> {
     let read = |p: std::path::PathBuf| std::fs::read_to_string(p).ok().and_then(|s| usb_id(&s));
@@ -256,11 +256,9 @@ fn camera_of(vendor: u16, product: u16) -> Option<String> {
             && read(usb.join("idProduct")) == Some(product)
         {
             let path = format!("/dev/{}", entry.file_name().to_string_lossy());
-            if crate::calling::camera::list_devices()
-                .iter()
-                .any(|(p, _)| *p == path)
-            {
-                return Some(path);
+            let cameras = crate::calling::camera::cameras();
+            if let Some(c) = crate::calling::camera::find(&cameras, &path) {
+                return Some(c.id.clone());
             }
         }
     }

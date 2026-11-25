@@ -31,17 +31,17 @@ finish-args:
   - --socket=wayland
   - --socket=fallback-x11
   - --share=ipc
-  # Devices. Cameras are V4L2 nodes (/dev/video*) today, and headsets' call
-  # buttons, lights and ring (Settings > Devices) are HID: hidraw, hiddev
-  # and usbfs nodes (src/calling/hid_telephony.rs). Flatpak has no narrower
-  # permission for hidraw or hiddev (--device=input is /dev/input only,
-  # --device=usb /dev/bus/usb only), so it takes --device=all; the GPU
-  # (--device=dri) comes with it.
-  # TODO(TASK-0307): once cameras come from PipeWire through the camera
-  # portal, they no longer need this; it then stays for the headsets' HID
-  # only (or becomes --device=dri, if headset buttons are left out of the
-  # Flatpak).
-  - --device=all
+  # The GPU only. Cameras come through the Camera portal
+  # (org.freedesktop.portal.Camera, which needs no permission here): it asks
+  # once, then hands over a PipeWire connection with only the cameras on it
+  # (UVC webcams, libcamera cameras such as Intel IPU6, virtual cameras
+  # that PipeWire offers). No /dev access otherwise: a V4L2 device PipeWire
+  # doesn't offer (a v4l2loopback device fed after login) isn't seen, and
+  # headsets' call buttons, lights and ring (HID: hidraw, hiddev and usbfs
+  # nodes, src/calling/hid_telephony.rs) aren't available in the Flatpak,
+  # as Flatpak has no permission narrower than --device=all for HID. They
+  # work in the .deb, .rpm and AppImage.
+  - --device=dri
   # Audio: microphones and speakers by PipeWire node, and the screen-share
   # streams the ScreenCast portal hands over (xdg-run/pipewire-0); ringtones,
   # notification sounds and video clips through Qt Multimedia's PulseAudio

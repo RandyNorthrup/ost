@@ -1,9 +1,20 @@
-//! V4L2 camera capture — reads YUV420 (or YUYV) frames from /dev/video0.
+//! Cameras: the list Settings > Devices, the pre-join screen and a call's
+//! camera menu offer, and capture from the chosen one as I420 frames.
 //!
-//! Uses the `v4l` crate with mmap streaming. Converts YUYV to I420 if needed.
-//! Runs a capture thread that sends raw YUV frames over a channel.
+//! Cameras come from PipeWire first ([`super::camera_pw`]), as Chromium
+//! and other current Linux apps get them: that covers UVC webcams and
+//! cameras only libcamera drives (Intel IPU6 and other MIPI laptop
+//! cameras), and in the Flatpak it goes through the Camera portal. V4L2
+//! nodes PipeWire doesn't offer follow (systems without PipeWire,
+//! v4l2loopback devices), keeping only nodes that deliver a picture by
+//! themselves ([`super::camera_node`]); a camera both offer is listed once.
+//!
+//! A camera's ID is `pipewire:<node.name>` or its V4L2 path
+//! (`/dev/videoN`); a saved V4L2 path that PipeWire now offers is that
+//! PipeWire camera.
 
 use anyhow::{Context, Result};
+use std::os::unix::fs::MetadataExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
@@ -13,9 +24,121 @@ use v4l::io::traits::CaptureStream;
 use v4l::video::Capture;
 use v4l::{Device, FourCC};
 
-/// The cameras V4L2 offers (capture nodes only, as Teams lists cameras):
-/// `(path, name)`, e.g. `("/dev/video0", "Integrated Camera")`.
+use super::camera_node::{self, Verdict};
+use super::camera_pw::{self, PwCamera};
+use super::pixfmt::{self, PixelFormat};
+
+/// The ID prefix of a PipeWire camera.
+pub const PIPEWIRE_PREFIX: &str = "pipewire:";
+
+/// How long a list waits for PipeWire's first answer.
+const PIPEWIRE_WAIT: Duration = Duration::from_millis(1500);
+
+/// A camera OST can use.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CameraInfo {
+    /// What Settings keeps: `pipewire:<node.name>` or `/dev/videoN`.
+    pub id: String,
+    pub name: String,
+    /// The V4L2 node behind it, when there is one (its controls).
+    pub v4l2_path: Option<String>,
+}
+
+/// The cameras, as Teams lists them: PipeWire's, then V4L2 nodes PipeWire
+/// doesn't offer.
+pub fn cameras() -> Vec<CameraInfo> {
+    let pw = camera_pw::cameras(PIPEWIRE_WAIT).unwrap_or_default();
+    merge(&pw, v4l2_cameras(), rdev)
+}
+
+/// PipeWire's cameras and the V4L2 cameras `(path, name)`, without the
+/// V4L2 nodes a PipeWire camera already uses (`dev` gives a path's
+/// device number).
+fn merge(
+    pw: &[PwCamera],
+    v4l2: Vec<(String, String)>,
+    dev: impl Fn(&str) -> Option<u64>,
+) -> Vec<CameraInfo> {
+    let mut list: Vec<CameraInfo> = pw
+        .iter()
+        .map(|c| CameraInfo {
+            id: format!("{PIPEWIRE_PREFIX}{}", c.node_name),
+            name: c.name.clone(),
+            v4l2_path: c.v4l2_path.clone(),
+        })
+        .collect();
+    for (path, name) in v4l2 {
+        let taken = pw.iter().any(|c| {
+            c.v4l2_path.as_deref() == Some(path.as_str())
+                || dev(&path).is_some_and(|d| c.devids.contains(&d))
+        });
+        if !taken {
+            list.push(CameraInfo {
+                v4l2_path: Some(path.clone()),
+                id: path,
+                name,
+            });
+        }
+    }
+    list
+}
+
+fn rdev(path: &str) -> Option<u64> {
+    std::fs::metadata(path).ok().map(|m| m.rdev())
+}
+
+/// The cameras as `(id, name)`, e.g. `("pipewire:libcamera_input…",
+/// "Built-in Front Camera")` or `("/dev/video20", "OST test camera A")`.
 pub fn list_devices() -> Vec<(String, String)> {
+    cameras().into_iter().map(|c| (c.id, c.name)).collect()
+}
+
+/// The listed camera `wanted` names: its ID, or a V4L2 path saved before
+/// PipeWire offered that camera.
+pub fn find<'a>(list: &'a [CameraInfo], wanted: &str) -> Option<&'a CameraInfo> {
+    list.iter()
+        .find(|c| c.id == wanted)
+        .or_else(|| list.iter().find(|c| c.v4l2_path.as_deref() == Some(wanted)))
+}
+
+/// Whether two camera IDs name the same camera (a saved V4L2 path and the
+/// PipeWire camera wrapping it do).
+pub fn same_camera(a: &str, b: &str) -> bool {
+    if a == b {
+        return true;
+    }
+    let list = cameras();
+    match (find(&list, a), find(&list, b)) {
+        (Some(x), Some(y)) => x.id == y.id,
+        _ => false,
+    }
+}
+
+/// Whether `id` looks like a camera ID (for settings read from disk).
+pub fn is_camera_id(id: &str) -> bool {
+    id == AVATAR_DEVICE
+        || id
+            .strip_prefix("/dev/video")
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        || id
+            .strip_prefix(PIPEWIRE_PREFIX)
+            .is_some_and(|n| !n.is_empty() && !n.contains('\n'))
+}
+
+/// The V4L2 node behind a camera (for its controls), if it has one.
+pub fn v4l2_path(id: &str) -> Option<String> {
+    if id.starts_with("/dev/video") {
+        return Some(id.to_string());
+    }
+    let name = id.strip_prefix(PIPEWIRE_PREFIX)?;
+    camera_pw::cameras(PIPEWIRE_WAIT)?
+        .into_iter()
+        .find(|c| c.node_name == name)?
+        .v4l2_path
+}
+
+/// The V4L2 nodes that are cameras: `(path, name)`, in node order.
+fn v4l2_cameras() -> Vec<(String, String)> {
     let mut nodes: Vec<(u32, String)> = std::fs::read_dir("/dev")
         .into_iter()
         .flatten()
@@ -23,54 +146,33 @@ pub fn list_devices() -> Vec<(String, String)> {
         .filter_map(|e| {
             let name = e.file_name().into_string().ok()?;
             let n: u32 = name.strip_prefix("video")?.parse().ok()?;
-            Some((n, format!("/dev/{name}")))
+            Some((n, name))
         })
         .collect();
     nodes.sort();
     nodes
         .into_iter()
-        .filter_map(|(_, path)| {
+        .filter_map(|(_, node)| {
+            let path = format!("/dev/{node}");
             let dev = match Device::with_path(&path) {
                 Ok(d) => d,
                 // A camera you may not open is still there (Teams lists it
-                // and reports "Teams needs permission to use this device", OST its own name):
-                // its name from sysfs, capture nodes only (a UVC camera's
-                // metadata node is its second, index 1).
+                // and reports "Teams needs permission to use this device").
                 Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                    return sysfs_camera(&path);
+                    return camera_node::unopenable_camera(&node).map(|n| (path, n));
                 }
                 Err(_) => return None,
             };
-            let caps = dev.query_caps().ok()?;
-            // Metadata and output nodes aren't cameras.
-            caps.capabilities
-                .contains(v4l::capability::Flags::VIDEO_CAPTURE)
-                .then(|| {
-                    let card = caps.card.trim().to_string();
-                    // UVC names repeat the model ("Integrated Camera: Integrated C").
-                    let name = card.split(':').next().unwrap_or(&card).trim().to_string();
-                    (path, if name.is_empty() { card } else { name })
-                })
+            let info = camera_node::query(&dev).ok()?;
+            match info.verdict() {
+                Verdict::Camera => Some((path, info.display_name())),
+                verdict => {
+                    tracing::trace!(path, driver = info.driver, ?verdict, "not a camera");
+                    None
+                }
+            }
         })
         .collect()
-}
-
-/// A camera node we can't open: `(path, name)` from
-/// /sys/class/video4linux/<node>/{name,index}, when it is a device's first
-/// node.
-fn sysfs_camera(path: &str) -> Option<(String, String)> {
-    let node = path.strip_prefix("/dev/")?;
-    let dir = std::path::Path::new("/sys/class/video4linux").join(node);
-    let index = std::fs::read_to_string(dir.join("index")).ok()?;
-    if index.trim() != "0" {
-        return None;
-    }
-    let card = std::fs::read_to_string(dir.join("name"))
-        .ok()?
-        .trim()
-        .to_string();
-    let name = card.split(':').next().unwrap_or(&card).trim().to_string();
-    Some((path.to_string(), if name.is_empty() { card } else { name }))
 }
 
 /// A captured YUV420 (I420) frame.
@@ -82,9 +184,10 @@ pub struct YuvFrame {
 }
 
 /// Camera capture handle. Keeps the capture thread alive; dropping it
-/// stops the thread and returns once the device is closed, so the camera
-/// can be opened again at once (the pre-join preview handing it to the
-/// call, or the camera turned off and on).
+/// stops the thread and returns once the device is closed (or the
+/// PipeWire stream disconnected), so the camera can be opened again at
+/// once (the pre-join preview handing it to the call, or the camera turned
+/// off and on).
 pub struct CameraCapture {
     handle: Option<std::thread::JoinHandle<()>>,
     /// Asks the capture thread to stop.
@@ -94,21 +197,88 @@ pub struct CameraCapture {
 }
 
 impl CameraCapture {
-    /// Open the camera and start capturing frames.
+    /// Open the camera `device` (an ID from [`cameras`]; the first camera
+    /// if `None`) and start capturing frames of about `width`x`height` at
+    /// `fps`.
     ///
     /// Returns the capture handle and a receiver for YUV frames.
-    /// `device_path` defaults to "/dev/video0" if None.
-    /// Target resolution is 320x240 at 15fps (low bandwidth for Teams).
     pub fn start(
-        device_path: Option<&str>,
+        device: Option<&str>,
         width: u32,
         height: u32,
         fps: u32,
     ) -> Result<(Self, mpsc::Receiver<YuvFrame>)> {
-        if device_path == Some(AVATAR_DEVICE) {
+        if device == Some(AVATAR_DEVICE) {
             return Ok(Self::avatar(width, height, fps));
         }
-        let path = device_path.unwrap_or("/dev/video0");
+        let pw = camera_pw::cameras(PIPEWIRE_WAIT).unwrap_or_default();
+        let id = match device {
+            Some(d) => d.to_string(),
+            None => match merge(&pw, v4l2_cameras(), rdev).into_iter().next() {
+                Some(c) => c.id,
+                None => {
+                    super::device_health::note_camera(super::device_health::Open::Failed);
+                    anyhow::bail!("No camera found");
+                }
+            },
+        };
+        let through_pw = match id.strip_prefix(PIPEWIRE_PREFIX) {
+            Some(name) => match pw.iter().find(|c| c.node_name == name) {
+                Some(c) => Some(c.clone()),
+                None => {
+                    super::device_health::note_camera(super::device_health::Open::Failed);
+                    anyhow::bail!("The camera {name} isn't there");
+                }
+            },
+            // A V4L2 camera PipeWire offers is captured through PipeWire,
+            // which shares it with other apps.
+            None => pw
+                .iter()
+                .find(|c| c.v4l2_path.as_deref() == Some(id.as_str()))
+                .cloned(),
+        };
+        match through_pw {
+            Some(cam) => Self::start_pipewire(&cam, width, height, fps),
+            None => Self::start_v4l2(&id, width, height, fps),
+        }
+    }
+
+    fn start_pipewire(
+        cam: &PwCamera,
+        width: u32,
+        height: u32,
+        fps: u32,
+    ) -> Result<(Self, mpsc::Receiver<YuvFrame>)> {
+        if let Some(path) = &cam.v4l2_path {
+            // Teams' "Automatically adjust camera controls", where chosen.
+            super::camera_controls::apply_preferred(path);
+        }
+        let (tx, rx) = mpsc::sync_channel::<YuvFrame>(2);
+        let stop = Arc::new(AtomicBool::new(false));
+        let run = super::device_health::camera_started();
+        match camera_pw::capture(cam, width, height, fps, tx, stop.clone()) {
+            Ok(handle) => Ok((
+                CameraCapture {
+                    handle: Some(handle),
+                    stop,
+                    run,
+                },
+                rx,
+            )),
+            Err(e) => {
+                super::device_health::camera_stopped(run);
+                Err(e.context(format!("Failed to open camera {}", cam.name)))
+            }
+        }
+    }
+
+    fn start_v4l2(
+        path: &str,
+        width: u32,
+        height: u32,
+        fps: u32,
+    ) -> Result<(Self, mpsc::Receiver<YuvFrame>)> {
+        let failed = || super::device_health::note_camera(super::device_health::Open::Failed);
         let dev = match Device::with_path(path) {
             Ok(d) => d,
             Err(e) => {
@@ -128,37 +298,39 @@ impl CameraCapture {
         // Teams' "Automatically adjust camera controls", where chosen.
         super::camera_controls::apply_preferred(path);
 
-        // Try to set format — prefer YUYV (widely supported), fall back to whatever works
+        // The best format it offers (a loopback device fed already offers
+        // just its producer's).
         let mut fmt = dev
             .format()
-            .inspect_err(|_| super::device_health::note_camera(super::device_health::Open::Failed))
+            .inspect_err(|_| failed())
             .context("Failed to get camera format")?;
+        let offered: Vec<FourCC> = dev
+            .enum_formats()
+            .map(|f| f.into_iter().map(|d| d.fourcc).collect())
+            .unwrap_or_default();
+        if let Some(best) = offered
+            .iter()
+            .filter(|c| PixelFormat::from_fourcc(&c.repr).is_some())
+            .min_by_key(|c| PixelFormat::from_fourcc(&c.repr).map_or(u8::MAX, PixelFormat::rank))
+        {
+            fmt.fourcc = *best;
+        }
         fmt.width = width;
         fmt.height = height;
-
-        // Try YUYV first (most USB cameras support it)
-        fmt.fourcc = FourCC::new(b"YUYV");
-        let actual_fmt = match dev.set_format(&fmt) {
-            Ok(f) => f,
-            Err(_) => {
-                // Try MJPG as fallback — we won't use it but log what we get
-                fmt.fourcc = FourCC::new(b"MJPG");
-                dev.set_format(&fmt)
-                    .inspect_err(|_| {
-                        super::device_health::note_camera(super::device_health::Open::Failed)
-                    })
-                    .context("Failed to set camera format (tried YUYV and MJPG)")?
-            }
+        let actual = dev
+            .set_format(&fmt)
+            .inspect_err(|_| failed())
+            .context("Failed to set camera format")?;
+        let Some(pixel) = PixelFormat::from_fourcc(&actual.fourcc.repr) else {
+            failed();
+            anyhow::bail!("The camera's format {} isn't supported", actual.fourcc);
         };
-
-        let actual_fourcc = actual_fmt.fourcc;
-        let actual_w = actual_fmt.width;
-        let actual_h = actual_fmt.height;
         tracing::info!(
-            "Camera opened: {}x{} fourcc={} (requested {}x{} @ {}fps)",
-            actual_w,
-            actual_h,
-            actual_fourcc,
+            "Camera opened: {}x{} fourcc={} stride={} (requested {}x{} @ {}fps)",
+            actual.width,
+            actual.height,
+            actual.fourcc,
+            actual.stride,
             width,
             height,
             fps,
@@ -175,10 +347,17 @@ impl CameraCapture {
         // Its frames are watched from here: none for 5 s is Teams'
         // VideoCaptureDeviceFreeze.
         let run = super::device_health::camera_started();
+        let shape = Shape {
+            pixel,
+            width: actual.width,
+            height: actual.height,
+            stride: actual.stride as usize,
+            want: (width, height),
+        };
         let stop = Arc::new(AtomicBool::new(false));
         let stop2 = stop.clone();
         let handle = std::thread::spawn(move || {
-            if let Err(e) = capture_loop(dev, actual_w, actual_h, actual_fourcc, tx, &stop2) {
+            if let Err(e) = capture_loop(dev, shape, tx, &stop2) {
                 tracing::error!("Camera capture loop exited: {:#}", e);
                 super::device_health::note_camera(super::device_health::Open::Failed);
             }
@@ -193,6 +372,43 @@ impl CameraCapture {
             rx,
         ))
     }
+}
+
+/// A V4L2 capture's negotiated picture.
+struct Shape {
+    pixel: PixelFormat,
+    width: u32,
+    height: u32,
+    stride: usize,
+    want: (u32, u32),
+}
+
+/// A frame no bigger than `want` (scaled down, keeping its shape).
+pub(crate) fn fit(f: YuvFrame, want: (u32, u32)) -> YuvFrame {
+    let (w, h) = pixfmt::fit_within(f.width, f.height, want.0.max(2), want.1.max(2));
+    if (w, h) == (f.width, f.height) {
+        return f;
+    }
+    YuvFrame {
+        data: super::webrtc_video::scale_i420(&f.data, f.width, f.height, w, h),
+        width: w,
+        height: h,
+    }
+}
+
+/// Hand a captured frame on: `false` once nobody takes frames.
+pub(crate) fn deliver(frame: YuvFrame, tx: &mpsc::SyncSender<YuvFrame>) -> bool {
+    super::device_health::camera_frame();
+    // Sign language mode's detection sees the real camera (Teams never
+    // runs it on the avatar camera); a no-op unless it's on.
+    super::sign_detection::push_frame(
+        &frame.data,
+        frame.width,
+        frame.height,
+        super::sign_detection::now_ms(),
+    );
+    // Non-blocking: a receiver that's behind loses this frame.
+    !matches!(tx.try_send(frame), Err(mpsc::TrySendError::Disconnected(_)))
 }
 
 /// Your avatar as the camera (Teams' avatar mode selects the avatar as
@@ -301,9 +517,7 @@ fn no_frame_yet(e: &std::io::Error) -> bool {
 /// Main capture loop — runs on a dedicated thread.
 fn capture_loop(
     dev: Device,
-    width: u32,
-    height: u32,
-    fourcc: FourCC,
+    shape: Shape,
     tx: mpsc::SyncSender<YuvFrame>,
     stop: &AtomicBool,
 ) -> Result<()> {
@@ -311,9 +525,21 @@ fn capture_loop(
         .context("Failed to start V4L2 mmap stream")?;
     // Reads give up now and then, so a stop is seen even without frames.
     stream.set_timeout(FRAME_WAIT);
-
+    let Shape {
+        pixel,
+        width,
+        height,
+        stride,
+        want,
+    } = shape;
+    let stride = if stride > 0 {
+        stride
+    } else {
+        pixfmt::min_stride(pixel, width)
+    };
+    let mut warned = false;
     while !stop.load(Ordering::Relaxed) {
-        let (buf, _meta) = match stream.next() {
+        let (buf, meta) = match stream.next() {
             Ok(f) => f,
             Err(e) if no_frame_yet(&e) => {
                 // The buffer that read queued is still queued: wait for a
@@ -332,43 +558,171 @@ fn capture_loop(
             }
             Err(e) => return Err(e).context("Failed to read camera frame"),
         };
-        super::device_health::camera_frame();
-
-        let yuv_data = if fourcc == FourCC::new(b"YUYV") {
-            yuyv_to_i420(buf, width, height)
-        } else {
-            // If format is already I420/YU12, use as-is
-            buf.to_vec()
+        let used = match meta.bytesused as usize {
+            0 => buf.len(),
+            n => n.min(buf.len()),
         };
-        // Sign language mode's detection sees the real camera (Teams never
-        // runs it on the avatar camera); a no-op unless it's on.
-        super::sign_detection::push_frame(
-            &yuv_data,
-            width,
-            height,
-            super::sign_detection::now_ms(),
-        );
-
-        let frame = YuvFrame {
-            width,
-            height,
-            data: yuv_data,
+        let planes = pixfmt::split(pixel, height, &buf[..used], stride);
+        let Some(frame) = pixfmt::to_i420(pixel, width, height, &planes) else {
+            if !warned {
+                tracing::warn!(used, ?pixel, "camera frame doesn't convert");
+                warned = true;
+            }
+            continue;
         };
+        if !deliver(fit(frame, want), &tx) {
+            break;
+        }
+    }
+    Ok(())
+}
 
-        // Non-blocking send — drop frame if receiver is behind
-        match tx.try_send(frame) {
-            Ok(()) => {}
-            Err(std::sync::mpsc::TrySendError::Full(_)) => {
-                // Receiver is behind — drop frame, keep going
-            }
-            Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
-                // Channel closed, exit
-                break;
-            }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pw(node: &str, path: Option<&str>, devids: &[u64]) -> PwCamera {
+        PwCamera {
+            id: 1,
+            serial: "1".into(),
+            node_name: node.into(),
+            name: node.into(),
+            api: if path.is_some() { "v4l2" } else { "libcamera" }.into(),
+            v4l2_path: path.map(str::to_string),
+            devids: devids.to_vec(),
+            virtual_camera: false,
         }
     }
 
-    Ok(())
+    /// PipeWire's cameras come first; a V4L2 node PipeWire already uses
+    /// (by path, or by device number for libcamera) isn't listed again;
+    /// loopback devices PipeWire doesn't offer are.
+    #[test]
+    fn pipewire_and_v4l2_cameras_merge_without_duplicates() {
+        let pw = [
+            pw("v4l2_input.usb", Some("/dev/video0"), &[20736]),
+            pw("libcamera_input.ipu6", None, &[20739]),
+        ];
+        let v4l2 = vec![
+            ("/dev/video0".to_string(), "Integrated Camera".to_string()),
+            ("/dev/video3".to_string(), "ipu6".to_string()),
+            ("/dev/video20".to_string(), "OST test camera A".to_string()),
+        ];
+        let dev = |p: &str| match p {
+            "/dev/video3" => Some(20739),
+            "/dev/video20" => Some(20738 + 18),
+            _ => None,
+        };
+        let list = merge(&pw, v4l2, dev);
+        let ids: Vec<&str> = list.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            [
+                "pipewire:v4l2_input.usb",
+                "pipewire:libcamera_input.ipu6",
+                "/dev/video20"
+            ]
+        );
+        // A V4L2 path saved before resolves to the PipeWire camera.
+        assert_eq!(
+            find(&list, "/dev/video0").unwrap().id,
+            "pipewire:v4l2_input.usb"
+        );
+        assert_eq!(
+            find(&list, "/dev/video20").unwrap().name,
+            "OST test camera A"
+        );
+        assert!(find(&list, "/dev/video9").is_none());
+    }
+
+    /// A live check on a machine with cameras: lists them, and captures a
+    /// few frames from each ID in OST_CAMERA_LIVE (comma-separated):
+    /// `OST_CAMERA_LIVE=pipewire:<node>,/dev/video40 cargo test --features
+    /// audio,video --lib live_cameras -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn live_cameras() {
+        for c in cameras() {
+            println!("CAMERA {} | {} | {:?}", c.id, c.name, c.v4l2_path);
+        }
+        let ids = std::env::var("OST_CAMERA_LIVE").unwrap_or_default();
+        for id in ids.split(',').filter(|i| !i.is_empty()) {
+            let (cam, rx) = CameraCapture::start(Some(id), 640, 360, 15).expect("camera starts");
+            let mut got = 0;
+            let deadline = std::time::Instant::now() + Duration::from_secs(8);
+            while got < 10 && std::time::Instant::now() < deadline {
+                if let Ok(f) = rx.recv_timeout(Duration::from_millis(500)) {
+                    let n = (f.width * f.height) as usize;
+                    let mean =
+                        |p: &[u8]| p.iter().map(|&v| v as u64).sum::<u64>() / p.len().max(1) as u64;
+                    if got == 0 {
+                        println!(
+                            "FRAME {id}: {}x{} Y {} U {} V {}",
+                            f.width,
+                            f.height,
+                            mean(&f.data[..n]),
+                            mean(&f.data[n..n + n / 4]),
+                            mean(&f.data[n + n / 4..])
+                        );
+                    }
+                    got += 1;
+                }
+            }
+            drop(cam);
+            println!("FRAMES {id}: {got}");
+            assert!(got >= 10, "{id} delivered {got} frames");
+        }
+    }
+
+    #[test]
+    fn stopping_waits_for_the_thread_to_let_go() {
+        let stop = Arc::new(AtomicBool::new(false));
+        let released = Arc::new(AtomicBool::new(false));
+        let (s, r) = (stop.clone(), released.clone());
+        let t = std::thread::spawn(move || {
+            while !s.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            // Letting the device go takes a while.
+            std::thread::sleep(Duration::from_millis(100));
+            r.store(true, Ordering::Relaxed);
+        });
+        stop.store(true, Ordering::Relaxed);
+        finish_thread(t, STOP_WAIT);
+        assert!(released.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn a_thread_that_never_stops_is_not_waited_for_long() {
+        let started = Instant::now();
+        let t = std::thread::spawn(|| std::thread::sleep(Duration::from_secs(3)));
+        finish_thread(t, Duration::from_millis(100));
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn a_read_without_a_frame_is_waited_out_and_other_errors_end_it() {
+        assert!(no_frame_yet(&std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "VIDIOC_DQBUF"
+        )));
+        assert!(no_frame_yet(&std::io::Error::from(
+            std::io::ErrorKind::Interrupted
+        )));
+        // EBUSY.
+        assert!(!no_frame_yet(&std::io::Error::from_raw_os_error(16)));
+    }
+
+    #[test]
+    fn camera_ids() {
+        assert!(is_camera_id("/dev/video12"));
+        assert!(is_camera_id("pipewire:libcamera_input._SB_.PCI0"));
+        assert!(is_camera_id(AVATAR_DEVICE));
+        assert!(!is_camera_id("/dev/video"));
+        assert!(!is_camera_id("/dev/videoX"));
+        assert!(!is_camera_id("pipewire:"));
+        assert!(!is_camera_id("/etc/passwd"));
+    }
 }
 
 /// Capture ~3s of video from V4L2 camera, then play it back in an SDL2 window.
@@ -472,86 +826,4 @@ pub fn cam_test() -> anyhow::Result<()> {
         println!("Playback matched recording duration");
     }
     Ok(())
-}
-
-/// Convert YUYV (YUV 4:2:2 packed) to I420 (YUV 4:2:0 planar).
-fn yuyv_to_i420(yuyv: &[u8], width: u32, height: u32) -> Vec<u8> {
-    let w = width as usize;
-    let h = height as usize;
-    let y_size = w * h;
-    let uv_size = (w / 2) * (h / 2);
-    let mut out = vec![0u8; y_size + uv_size * 2];
-
-    let (y_plane, uv_planes) = out.split_at_mut(y_size);
-    let (u_plane, v_plane) = uv_planes.split_at_mut(uv_size);
-
-    for row in 0..h {
-        for col in (0..w).step_by(2) {
-            let yuyv_offset = (row * w + col) * 2;
-            if yuyv_offset + 3 >= yuyv.len() {
-                break;
-            }
-            let y0 = yuyv[yuyv_offset];
-            let u = yuyv[yuyv_offset + 1];
-            let y1 = yuyv[yuyv_offset + 2];
-            let v = yuyv[yuyv_offset + 3];
-
-            y_plane[row * w + col] = y0;
-            y_plane[row * w + col + 1] = y1;
-
-            // Subsample U/V by 2x2
-            if row % 2 == 0 {
-                let uv_row = row / 2;
-                let uv_col = col / 2;
-                u_plane[uv_row * (w / 2) + uv_col] = u;
-                v_plane[uv_row * (w / 2) + uv_col] = v;
-            }
-        }
-    }
-
-    out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn stopping_waits_for_the_thread_to_let_go() {
-        let stop = Arc::new(AtomicBool::new(false));
-        let released = Arc::new(AtomicBool::new(false));
-        let (s, r) = (stop.clone(), released.clone());
-        let t = std::thread::spawn(move || {
-            while !s.load(Ordering::Relaxed) {
-                std::thread::sleep(Duration::from_millis(5));
-            }
-            // Letting the device go takes a while.
-            std::thread::sleep(Duration::from_millis(100));
-            r.store(true, Ordering::Relaxed);
-        });
-        stop.store(true, Ordering::Relaxed);
-        finish_thread(t, STOP_WAIT);
-        assert!(released.load(Ordering::Relaxed));
-    }
-
-    #[test]
-    fn a_thread_that_never_stops_is_not_waited_for_long() {
-        let started = Instant::now();
-        let t = std::thread::spawn(|| std::thread::sleep(Duration::from_secs(3)));
-        finish_thread(t, Duration::from_millis(100));
-        assert!(started.elapsed() < Duration::from_secs(2));
-    }
-
-    #[test]
-    fn a_read_without_a_frame_is_waited_out_and_other_errors_end_it() {
-        assert!(no_frame_yet(&std::io::Error::new(
-            std::io::ErrorKind::TimedOut,
-            "VIDIOC_DQBUF"
-        )));
-        assert!(no_frame_yet(&std::io::Error::from(
-            std::io::ErrorKind::Interrupted
-        )));
-        // EBUSY.
-        assert!(!no_frame_yet(&std::io::Error::from_raw_os_error(16)));
-    }
 }

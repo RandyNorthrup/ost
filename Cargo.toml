@@ -85,21 +85,24 @@ opus = { version = "0.4", optional = true }
 # Video capture/display (optional — requires V4L2, SDL2, nasm on Linux)
 v4l = { version = "0.14", optional = true }
 openh264 = { version = "0.9", optional = true }
+# Cameras that only send MJPG (and PipeWire nodes offering it).
+zune-jpeg = { version = "0.5", optional = true, default-features = false, features = ["std", "x86"] }
 # Video background effects (person segmentation, blur, pictures).
 ost-vfx = { path = "vfx", optional = true }
 # Its C API types (live bitrate changes).
 openh264-sys2 = { version = "0.9", optional = true }
 sdl2 = { version = "0.38", optional = true }
-# Screen sharing: the xdg-desktop-portal ScreenCast portal and PipeWire.
-ashpd = { version = "0.14", optional = true, default-features = false, features = ["tokio", "screencast", "remote_desktop"] }
+# Screen sharing (ScreenCast portal) and cameras in the Flatpak (Camera portal).
+ashpd = { version = "0.14", optional = true, default-features = false, features = ["tokio", "screencast", "remote_desktop", "camera"] }
 pipewire = { version = "0.10", optional = true }
 
 [features]
 default = []
 # PipeWire: real sinks and sources by name (the ALSA host lists plugins).
 audio = ["cpal", "cpal/pipewire", "pipewire", "opus"]
-# Camera and H.264 (the desktop app); video-capture adds the SDL viewer.
-video = ["v4l", "openh264", "openh264-sys2", "ost-vfx"]
+# Camera (PipeWire, the Camera portal in the Flatpak, V4L2 as the fallback)
+# and H.264 (the desktop app); video-capture adds the SDL viewer.
+video = ["v4l", "openh264", "openh264-sys2", "ost-vfx", "zune-jpeg", "pipewire", "ashpd"]
 video-capture = ["video", "sdl2"]
 # Sharing your screen in calls (Wayland/X11 through the desktop portal).
 screencast = ["video", "ashpd", "pipewire"]
