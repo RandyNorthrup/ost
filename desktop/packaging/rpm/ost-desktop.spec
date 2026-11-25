@@ -65,7 +65,7 @@ Requires:       qt6-webengine-imports
 Requires:       qt6-webchannel-imports
 Requires:       qt6-pdf-imports
 Requires:       qt6-wayland
-Requires:       qt6-svg
+Requires:       libQt6Svg6
 Requires:       qt6-imageformats
 Recommends:     layer-shell-qt6
 %else

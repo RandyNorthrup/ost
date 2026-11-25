@@ -61,6 +61,10 @@ jobs:
           key: cargo-registry-${{ hashFiles('Cargo.lock') }}
       - name: .deb
         run: SOURCE_DATE_EPOCH=$(git log -1 --format=%ct 2>/dev/null || date +%s) sh desktop/packaging/build-deb.sh "$V" out
+      - name: Install the .debs (their dependencies are the AppImage's Qt modules and plugins)
+        run: |
+          apt-get install -y -q ./out/ost-desktop_*.deb ./out/teams-cli_*.deb
+          ost-desktop --version && teams-cli --help | head -n 1
       - name: AppImage
         run: |
           sh desktop/packaging/build-appimage.sh "$V" "$PWD/appimage"
