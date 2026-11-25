@@ -46,7 +46,7 @@ original terminal client, `teams-cli`. *Ost* means cheese in Danish.
 <tr>
 <td width="50%" valign="top">
 
-### 💬 Chat
+### Chat
 1:1, group and meeting chats with Teams' formatting, code blocks, emoji,
 GIFs, reactions, files from your computer or OneDrive, Loop components,
 video clips, scheduled messages, @mentions, read receipts, drafts, find in
@@ -55,7 +55,7 @@ chat and search.
 </td>
 <td width="50%" valign="top">
 
-### 👥 Teams and channels
+### Teams and channels
 Posts and threads layouts, replies, announcements, Teams' post composer,
 followed threads, channel tabs (Shared, Page, Notes, apps), shared and
 private channels, and managing teams and channels.
@@ -65,7 +65,7 @@ private channels, and managing teams and channels.
 <tr>
 <td valign="top">
 
-### 📞 Calls and meetings
+### Calls and meetings
 1:1 and group calls, meetings with video and background effects, screen and
 window sharing, raise hand, reactions, live captions, recording and
 transcripts, breakout rooms, town halls and webinars, hold, transfer and
@@ -74,7 +74,7 @@ park, voicemail, Meeting Recaps and audio recaps.
 </td>
 <td valign="top">
 
-### 📅 Calendar
+### Calendar
 Day, work week, week and month views, event cards, RSVP, Teams' scheduling
 form, Outlook's event form for your events and invitations (series edits,
 time suggestions, the body editor's tools), Meet now and Join with an ID.
@@ -84,14 +84,14 @@ time suggestions, the body editor's tools), Meet now and Join with an ID.
 <tr>
 <td valign="top">
 
-### 📁 Files
+### Files
 OneDrive (Home, My files, Shared, Libraries, Recycle bin), channel files,
 previews, version history, sharing, and Teams' cloud file picker.
 
 </td>
 <td valign="top">
 
-### ✨ Copilot
+### Copilot
 With a Microsoft 365 Copilot license: Copilot in chats, meeting chats and
 channel threads, and Write with Copilot in the message box.
 
@@ -100,14 +100,14 @@ channel threads, and Write with Copilot in the message box.
 <tr>
 <td valign="top">
 
-### 🧩 Apps
+### Apps
 Teams' app bar and Store; People, Events and Meeting Recaps drawn natively;
 Planner, OneNote, Whiteboard and other apps hosted the way Teams hosts them.
 
 </td>
 <td valign="top">
 
-### 🔔 Activity and notifications
+### Activity and notifications
 Teams' activity feed, live and synced with Teams, and Teams' notification
 banners with quick reply, presence and status messages.
 
@@ -116,7 +116,7 @@ banners with quick reply, presence and status messages.
 <tr>
 <td valign="top">
 
-### ⚙️ Settings and accessibility
+### Settings and accessibility
 Every Teams Settings page, synced with your account; light, dark and
 high-contrast themes; Teams' keyboard shortcuts (Ctrl+. lists them);
 built-in Help (F1); every Teams app language.
@@ -124,7 +124,7 @@ built-in Help (F1); every Teams app language.
 </td>
 <td valign="top">
 
-### 🖥️ Teams Rooms and devices
+### Teams Rooms and devices
 Run OST as a Teams Rooms device, cast to a room, join with a room's audio,
 control a room from your laptop, and use headset call controls over USB
 and Bluetooth.
@@ -382,9 +382,3 @@ are listed in [desktop/assets/NOTICE.md](desktop/assets/NOTICE.md) and
 ## Related projects
 
 - [purple-teams](https://github.com/EionRobb/purple-teams/): Teams plugin for libpurple (Pidgin, Finch, etc.)
-
----
-
-<p align="center">
-  If OST is useful to you, <a href="https://github.com/RandyNorthrup/ost/stargazers">star it on GitHub</a> ⭐ and tell other Linux users about it.
-</p>
