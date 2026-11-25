@@ -1,10 +1,10 @@
 ---
 id: TASK-0280
 title: Debian/Ubuntu .deb package
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-25T01:16:00Z'
-updated_date: '2026-11-25T05:15:00Z'
+updated_date: '2026-11-25T06:02:00Z'
 labels:
   - packaging
 dependencies: []
@@ -37,3 +37,24 @@ OST ships only an AppImage and tarball. Offer a native .deb for Ubuntu/Debian th
   - A dry run of /usr/share/ost-desktop/install-hfp-calls.sh finds its files.
   - apt remove left nothing behind.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Native .deb packages for Ubuntu 26.04 and Debian testing: ost-desktop and teams-cli, built against each distribution's own Rust, Qt 6, FFmpeg, PipeWire, OpenSSL and webrtc-audio-processing.
+
+Changes:
+- desktop/packaging/debian/ (control, rules, copyright, source/format) and desktop/packaging/build-deb.sh. `--deps` installs Build-Depends with apt-get satisfy. Packages are versioned <v>-1~<distro> and published as …-1.<distro>_amd64.deb.
+- Depends: dpkg-shlibdeps output, plus the QML modules and Qt plugins OST loads at run time. Recommends: PipeWire, WirePlumber, xdg-desktop-portal, a Secret Service keyring and layer-shell-qt.
+- Installed files: /usr/bin/ost-desktop and /usr/bin/teams-cli; the menu entry, 256 px and SVG icons, and AppStream metainfo, all under io.github.RandyNorthrup.ost; the Bluetooth headset setup in /usr/share/ost-desktop; docs and THIRD-PARTY-NOTICES.
+- Shared app identity io.github.RandyNorthrup.ost: desktop file, icon, Wayland app id, launcher badge and notification icon, plus the metainfo.
+- Build fixes: lld is a build dependency (cxx-qt's link fails with ld.bfd), and GCC LTO is off (lld can't read GCC's LTO objects).
+- Version 0.2.1. README Install, docs/desktop.md and the wiki (Installation, FAQ, Building from source, Bluetooth headsets) are updated.
+
+Tests:
+- Clean ubuntu:26.04 and debian:testing containers: apt install pulled 463 and 514 dependencies, OST showed Microsoft's sign-in page under Xvfb, and apt remove left no files.
+- linuxlt (Ubuntu 26.04, KDE Wayland): installed with apt and launched from the menu entry. Signed in as ost-test1 and chats loaded. KWin maps the window to io.github.RandyNorthrup.ost (icon in the taskbar). The headset script dry run finds its files, and removal is clean.
+
+Risks:
+- The Debian testing package depends on qt6-*-private-abi, so it has to be rebuilt when testing moves to a new Qt.
+<!-- SECTION:FINAL_SUMMARY:END -->
