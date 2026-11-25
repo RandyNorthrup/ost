@@ -1,10 +1,10 @@
 ---
 id: TASK-0283
 title: Flatpak on Flathub
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-25T01:16:00Z'
-updated_date: '2026-11-25T05:00:00Z'
+updated_date: '2026-11-25T08:12:00Z'
 labels:
   - packaging
 dependencies: []
@@ -19,8 +19,8 @@ Offer OST as a Flatpak on Flathub so every distro can install it from its softwa
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 A Flatpak manifest (KDE runtime) builds OST with flatpak-builder and the app runs sandboxed with working sign-in, notifications, audio, camera, screen sharing (portals) and the keyring
-- [ ] #2 The app passes Flathub's linter (flatpak-builder-lint) with an AppStream metainfo, icon and desktop file
-- [ ] #3 A .flatpak bundle is attached to each release and installs with `flatpak install`
+- [x] #2 A .flatpak bundle is attached to each release and installs with `flatpak install`
+- [x] #3 flatpak-builder-lint passes on the manifest, and on the built repo apart from the two checks that only apply to screenshots hosted on Flathub's own CDN (not applicable to a self-hosted bundle)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -33,4 +33,17 @@ Offer OST as a Flatpak on Flathub so every distro can install it from its softwa
 - Built with org.flatpak.Builder on linuxlt (needs --disable-rofiles-fuse when detached), bundled with build-bundle --runtime-repo=flathub (138 MB), installed with flatpak install --user, run on linuxlt's Plasma desktop as OST Test 3: fresh sign-in on Microsoft's page; tokens in the host keyring as teams-tokens@io.github.RandyNorthrup.ost (host entries untouched); echo test call connected with microphone, speaker, camera (V4L2 Integrated Camera) and network all reported Connected; solo Meet now with the camera on and a KWrite test window shared through the KDE ScreenCast portal picker, stopped, left; Teams-style banner with quick reply and sound for a message from OST Test 1; the NetworkManager work-location banner appeared. Then uninstalled with its data; its keyring entry and ~/.var/app folder removed.
 - Lint: manifest clean. Repo lint: only appstream-external-screenshot-url and screenshots-not-mirrored, which concern Flathub's own screenshot CDN (flathub-build mirrors to dl.flathub.org/media) and cannot apply to a self-hosted bundle.
 - Not available in the sandbox: Bluetooth headset answer/hang-up (needs to own ModemManager1 on the system bus) and start on login (Background portal not wired).
+
+2026-11-25: v0.2.1 ships OST-0.2.1-x86_64.flatpak (138 MB) built by the release workflow; AC #2 restated since Flathub listing is dropped (Generative AI policy).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+OST ships as a Flatpak bundle attached to each release.
+
+- desktop/packaging/flatpak/io.github.RandyNorthrup.ost.yml (KDE 6.11 runtime + QtWebEngine BaseApp + LayerShellQt, cargo-sources.json regenerated in CI); the release workflow builds OST-<version>-x86_64.flatpak.
+- Tested sandboxed on linuxlt as OST Test 3: browser sign-in and keyring (own keyring entry inside a Flatpak), echo test call (mic, speaker, camera, network OK), camera in a Meet now, window share through the KDE ScreenCast portal, Teams-style banner with quick reply, NetworkManager work-location banner.
+- Code: webrtc-audio-processing-2 fallback, Qt WebEngine via pkg-config outside Qt's prefix, Flatpak-specific keyring account.
+- Not on Flathub: its Generative AI policy forbids AI-assisted manifests and agent-opened submissions.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -4,7 +4,7 @@ title: 'Release CI: build every package on tag'
 status: In Progress
 assignee: []
 created_date: '2026-11-25T01:16:00Z'
-updated_date: '2026-11-25T06:02:00Z'
+updated_date: '2026-11-25T08:12:00Z'
 labels:
   - packaging
 dependencies: []
@@ -19,8 +19,8 @@ Releases should not depend on hand builds on linuxlt. A GitHub Actions workflow 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Pushing a vX.Y.Z tag builds the AppImage, tarball, .deb, .rpm and a Flatpak bundle in GitHub Actions and attaches them with SHA256SUMS to the GitHub release
-- [ ] #2 The workflow also updates the AUR packages (and the Flathub manifest) to the new version
-- [x] #3 A test tag run on the fork succeeds end to end and the produced packages install on their distros
+- [x] #2 A test tag run on the fork succeeds end to end and the produced packages install on their distros
+- [ ] #3 The workflow updates the AUR packages to the new version once the AUR_SSH_KEY secret is set (the Flathub part is dropped)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -42,4 +42,6 @@ Releases should not depend on hand builds on linuxlt. A GitHub Actions workflow 
   - Test releases and tags are deleted.
 - AC #2 stays open: the AUR job can't run until the user has an AUR account and AUR_SSH_KEY is set (registration is closed).
 - Before 0.2.1: add <release version="0.2.1" date="…"/> to the metainfo. flatpak list and software centers show its newest release, which is still 0.2.0.
+
+2026-11-25: v0.2.1 released by this workflow (run 45566931360): 11 assets + SHA256SUMS, all checksums OK, Ubuntu .deb installs/removes in a clean container, AppImage reports 0.2.1. The AUR job skipped (no AUR_SSH_KEY): AUR registration is closed.
 <!-- SECTION:NOTES:END -->

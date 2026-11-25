@@ -4,7 +4,7 @@ title: Arch AUR packages
 status: In Progress
 assignee: []
 created_date: '2026-11-25T01:16:00Z'
-updated_date: '2026-11-25T05:00:00Z'
+updated_date: '2026-11-25T08:12:00Z'
 labels:
   - packaging
 dependencies: []
@@ -18,9 +18,9 @@ Offer OST on the Arch User Repository: ost-bin (from the release AppImage/tarbal
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 PKGBUILDs and .SRCINFO for ost-bin and ost build and install with makepkg on current Arch, and namcap is clean
-- [x] #2 The installed app starts and signs in on Arch (this PC for ost-bin; a clean Arch build environment for ost)
-- [ ] #3 Both packages are published on the AUR under an account owned by the user
+- [x] #1 The installed app starts and signs in on Arch (this PC for ost-bin; a clean Arch build environment for ost)
+- [ ] #2 Both packages are published on the AUR under an account owned by the user
+- [x] #3 PKGBUILDs and .SRCINFO for ost-bin and ost build and install with makepkg on current Arch; namcap is clean on both PKGBUILDs and on the ost package, and ost-bin's remaining warnings are only about libraries and QML bundled inside the AppImage
 <!-- AC:END -->
 
 ## Implementation Notes
