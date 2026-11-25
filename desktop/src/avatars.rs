@@ -117,6 +117,7 @@ async fn serve(stream: tokio::net::TcpStream, path: &str) -> anyhow::Result<()> 
         Message,
         handshake::server::{ErrorResponse, Request, Response},
     };
+    #[allow(clippy::result_large_err, reason = "tungstenite's handshake callback returns its own ErrorResponse")]
     let check = |req: &Request, resp: Response| -> Result<Response, ErrorResponse> {
         if req.uri().path() == path {
             Ok(resp)
