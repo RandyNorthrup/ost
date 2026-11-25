@@ -49,7 +49,8 @@ telemetry. OST neither adds to it nor blocks it.
   turn it on in a meeting) and Voice isolation (when it has a voice
   profile). The background effects model is part of OST.
 - **The Diagnostic Data Viewer**, only when you turn it on, streams to the
-  address you enter.
+  address you enter: over plain HTTP only to this device (a loopback
+  address), otherwise only to an `https://` address.
 
 Links to other sites (LinkedIn, Clipchamp, app publishers' pages) open in
 your browser.
@@ -63,18 +64,27 @@ tokens) as one entry in your desktop keyring through the Secret Service
 added in the Flatpak). Any app of yours that can unlock the keyring can read
 it, as with any Secret Service secret.
 
-Without a working keyring (or with `OST_NO_KEYRING` set), the tokens are
-written to `~/.config/teams-cli/config.toml`, readable only by you (mode
-0600) but not encrypted. Set up a keyring to avoid that.
+Without a working keyring, OST keeps the tokens in memory only, and you
+sign in again the next time it starts; Settings ▸ Accounts and orgs says so.
+Only if you choose **Stay signed in without a keyring** there (or set
+`OST_NO_KEYRING=1`) are they written to `~/.config/teams-cli/config.toml`,
+readable only by you (mode 0600) but not encrypted. Tokens an older OST
+left in that file move to the keyring once it works.
+
+OST sends a token only over HTTPS and only to the Microsoft service it is
+for; pictures from other sites (in cards and link previews) load without
+any sign-in.
 
 Signing in also leaves Microsoft's sign-in cookies in OST's web profile
-(`~/.local/share/OST/QtWebEngine/ost-apps`), which the embedded Microsoft
-365 apps use too; it is shared by all of OST's accounts.
+(`~/.local/share/OST/QtWebEngine/ost-apps`, `ost-apps-<profile>` for
+another account), which the embedded Microsoft 365 apps use too. Each
+account has its own.
 
-Signing out deletes the tokens from the keyring and removes the account
-from OST's account list. Today it leaves the web profile, the caches, the
-drafts and the log on your computer; delete the folders below to remove
-them.
+Signing out deletes the tokens, removes the account from OST's account
+list, and restarts OST, which then deletes that account's web profile
+(cookies, site storage, cache, service workers) before it opens again. It
+leaves the caches, the drafts and the log on your computer; delete the
+folders below to remove them.
 
 ## What OST stores on your computer
 
@@ -89,7 +99,7 @@ content is personal:
 | `~/.local/state/ost/` | The log (`ost-desktop.log`), unsent drafts and messages (`drafts.json`, `outbox.json`), and the list of files you downloaded with OST (`downloads.json`). |
 | `~/.cache/ost/` | Message images, profile pictures, video clips, recordings, file thumbnails and previews, emoji, Teams' translated strings and feature settings, call backgrounds, downloaded models, and feedback screenshots. Safe to delete; OST fetches what it needs again. |
 | `~/.local/share/ost/backgrounds/uploads/` | Call backgrounds you added. |
-| `~/.local/share/OST/QtWebEngine/ost-apps`, `~/.cache/OST/QtWebEngine/ost-apps` | The web profile: cookies, site storage and cache of the sign-in and the embedded Microsoft 365 apps. |
+| `~/.local/share/OST/QtWebEngine/ost-apps[-<profile>]`, `~/.cache/OST/QtWebEngine/ost-apps[-<profile>]` | The web profile: cookies, site storage and cache of the sign-in and the embedded Microsoft 365 apps. Removed when you sign out. |
 | Your Downloads folder | Files you download (Settings can change the folder). |
 
 The research variables `OST_TROUTER_DUMP_DIR` and `OST_DUMP_RTP` write
@@ -98,12 +108,13 @@ protocol research on test accounts only.
 
 The log records what OST does at the `info` level (sign-in and call
 states, the services it called, errors). It's written to keep to shapes
-and states, not message text or tokens, but it isn't masked on disk. It is
-rewritten each time OST starts (with **Extended diagnostics** on, it keeps
-up to 64 MB across starts). Help ▸ **Collect Support Files** copies it to a
-folder on your Desktop as it is; feedback that shares log lines masks
-names, addresses, message text and tokens first (see below). Look through
-the log before you send it to anyone.
+and states, not message text, and it never holds tokens: tokens, cookies
+and signed-address parameters are taken out of every line before it is
+written. It is rewritten each time OST starts (with **Extended
+diagnostics** on, it keeps up to 64 MB across starts). Help ▸ **Collect
+Support Files** copies it to a folder on your Desktop as it is; feedback
+that shares log lines also masks names, addresses, ids and message text
+(see below). Look through the log before you send it to anyone.
 
 To remove everything: delete the folders above and the `ost` entry in your
 keyring (Seahorse, KWalletManager or your keyring's app). In the Flatpak,
@@ -163,23 +174,42 @@ again if it was. The headset's mute button works without any of this.
 Feedback ▸ Report a problem and Give a compliment (the same forms Teams uses
 to send feedback to Microsoft) open a **public** issue on
 [the OST GitHub repo](https://github.com/RandyNorthrup/ost/issues).
-OST fills the form in and opens it in your browser; it doesn't post
-anything itself. You can review and edit it, and you decide whether to
-submit it, under your own GitHub account.
+OST opens the issue form in your browser with only what you typed and your
+answer to **May we contact you about your feedback?**; it doesn't post
+anything itself, and nothing else leaves your device when the form opens.
+You can review and edit it, and you decide whether to submit it, under
+your own GitHub account.
 
-What the issue holds:
+Everything else stays in a folder on your device that OST opens for you
+(`~/.cache/ost/feedback/<time>/`), for you to review and attach yourself
+if you want to:
 
-- What you wrote, and the files or screenshots you add to it on GitHub.
-- OST's version, your operating system, and where in OST you sent the
-  feedback from.
-- If you answer **Yes, share**: the most recent lines of OST's log. Names,
-  e-mail addresses, phone numbers, chat and message text, and tokens are
-  masked first.
-- Your answer to **May we contact you about your feedback?** Replies come
-  on the issue. Your e-mail address is never added.
+- **OST report details.txt**: OST's version, your operating system, where
+  in OST you sent the feedback from, and the names of the screenshots and
+  files you added.
+- If you answer **Yes, share**: the most recent lines of OST's log, in the
+  same file. Names, e-mail addresses, phone numbers, ids, chat and message
+  text, addresses' query parameters and tokens are masked first.
+- Your screenshots and files.
+
+Replies come on the issue. Your e-mail address is never added.
+
+Feedback on suggested replies works the same way: the issue form holds
+your comment (or the reasons you picked), and the details, including the
+message the suggestions were for when you choose to attach it, are saved
+in a file for you to review and attach.
 
 Feedback ▸ Suggest a feature opens the repo's
 [Ideas](https://github.com/RandyNorthrup/ost/discussions/categories/ideas)
 discussions. Like Microsoft's feedback portal, these are public.
 
 Help (F1) is bundled with OST and works offline.
+
+## View Diagnostic Data
+
+Settings ▸ Privacy ▸ View Diagnostic Data lists what OST has sent (update
+checks, feedback). With **Enable data viewing** on and a connection string
+entered, it also streams those events to Microsoft's Diagnostic Data
+Viewer for 24 hours. Unlike Teams, OST streams over plain HTTP only to this
+device (a loopback address such as `127.0.0.1:7070`); a viewer on another
+device needs an `https://` address, or a port forwarded to it over SSH.

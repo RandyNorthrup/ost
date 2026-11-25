@@ -333,6 +333,7 @@ pub async fn history(
     chain_id: &str,
 ) -> anyhow::Result<Vec<Entry>> {
     use anyhow::Context;
+    crate::auth::token_hosts::ensure(link, crate::auth::token_hosts::Audience::Teams)?;
     let mut config = crate::config::Config::load()?;
     if config.get_ic3_token().is_none_or(|t| t.is_expired()) {
         crate::auth::oauth::refresh()

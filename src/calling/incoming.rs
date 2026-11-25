@@ -279,19 +279,7 @@ const ENDPOINT_CAPABILITIES: u64 = 73463;
 /// token goes only there): https on teams.microsoft.com, skype.com or
 /// trouter.io.
 pub(crate) fn is_service_link(url: &str) -> bool {
-    let Ok(u) = reqwest::Url::parse(url) else {
-        return false;
-    };
-    let host = u.host_str().unwrap_or_default().to_ascii_lowercase();
-    u.scheme() == "https"
-        && [
-            ".teams.microsoft.com",
-            ".skype.com",
-            ".trouter.io",
-            ".teams.cloud.microsoft",
-        ]
-        .iter()
-        .any(|d| host.ends_with(d))
+    crate::auth::token_hosts::allowed(url, crate::auth::token_hosts::Audience::Teams)
 }
 
 /// The content type of our answer to a re-offer: the offer's own. A group

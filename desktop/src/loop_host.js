@@ -44,8 +44,13 @@
         const d = e.data;
         if (e.source !== window || !d || d.ostLoop !== true) return;
         if (d.dir === "reply") {
+            // Only a reply to a request this script made (its own ids).
+            if (typeof d.id !== "string" || !pending.has(d.id)) return;
             const f = pending.get(d.id);
-            if (f) { pending.delete(d.id); let v = {}; try { v = JSON.parse(d.json) } catch (x) {} f(v) }
+            pending.delete(d.id);
+            if (typeof f !== "function") return;
+            let v = {}; try { v = JSON.parse(d.json) } catch (x) {}
+            f(v);
         } else if (d.dir === "config" && !cfg) {
             try { cfg = JSON.parse(d.json) } catch (x) { return }
             start().catch(err => fail("start", err));

@@ -89,6 +89,8 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      # The desktop test harness (a dev/CI-only feature) is linted too.
+      - run: cargo clippy --locked -p ost-desktop --all-targets --features test-harness -- -D warnings
 
   build-test:
     name: Build and test
@@ -104,11 +106,44 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Build ost-desktop
-        run: cargo build --locked -p ost-desktop
+      - name: Build ost-desktop (with the test harness, as development builds)
+        run: cargo build --locked -p ost-desktop --features test-harness
       - name: Build teams-cli
         run: cargo build --locked --bin teams-cli --features audio
       - name: Engine tests
         run: cargo test --locked --features audio,video --lib
       - name: Desktop tests
         run: cargo test --locked -p ost-desktop
+
+  # Release packages build without the test-harness feature: such a build
+  # must refuse the harness's launch flags (and the positional capture
+  # paths) before anything starts, so no launch can drive the app or run
+  # caller-supplied script.
+  release-harness-off:
+    name: Release build refuses test-harness flags
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install build dependencies
+        run: sh desktop/packaging/build-deb.sh --deps-only
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build ost-desktop as the release packages do
+        run: cargo build --locked --release -p ost-desktop
+      - name: Harness flags are refused
+        run: |
+          bin=target/release/ost-desktop
+          "$bin" --version
+          for args in "--nav-test" "--cal-test --cal-page-steps=cv.x()" "--loop-test --loop-steps=/tmp/x" "/tmp/shot.png" "--room --shots=/tmp"; do
+            set +e
+            # shellcheck disable=SC2086
+            out=$(QT_QPA_PLATFORM=offscreen timeout 20 "$bin" $args 2>&1)
+            status=$?
+            set -e
+            echo "ost-desktop $args -> $status: $out"
+            [ "$status" = 2 ] || { echo "::error::a release build accepted: $args"; exit 1; }
+            echo "$out" | grep -q "unrecognized option" || { echo "::error::no refusal message for: $args"; exit 1; }
+          done

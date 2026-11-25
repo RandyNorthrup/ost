@@ -526,6 +526,9 @@ pub mod qobject {
         /// "Randy Northrup is typing" for the open chat, or "".
         /// Bumped when emoticon images or the catalogue arrive.
         #[qproperty(i32, emoticons_version)]
+        /// Bumped when an app's definition (its valid domains) has been
+        /// read for a page's device permission request.
+        #[qproperty(i32, app_facts_version)]
         /// The user's Recent emoticons (Teams' roamed recentReactions, else
         /// its defaults), as a JSON array of ids.
         #[qproperty(QString, recent_reactions_json)]
@@ -690,6 +693,24 @@ pub mod qobject {
         /// Forget the stored credentials and return to the sign-in screen.
         #[qinvokable]
         fn sign_out(self: Pin<&mut Backend>);
+        /// The embedded pages' web profile storage name (one per OST
+        /// profile).
+        #[qinvokable]
+        fn web_storage_name(self: &Backend) -> QString;
+
+        /// Whether this build has the test harness (the `test-harness`
+        /// feature): the QML hooks that run caller-supplied script check
+        /// it as well as their flags.
+        #[qinvokable]
+        fn test_harness(self: &Backend) -> bool;
+        /// Where the sign-in is kept: {storage: keyring|file|memory,
+        /// optIn: the file opt-in is on, forced: OST_NO_KEYRING=1}.
+        #[qinvokable]
+        fn token_storage_json(self: &Backend) -> QString;
+        /// Settings ▸ Accounts' "Stay signed in without a keyring" (keep
+        /// the sign-in in a file readable only by you).
+        #[qinvokable]
+        fn set_allow_token_file(self: Pin<&mut Backend>, on: bool);
 
         /// The other accounts signed in on this device (Teams' Accounts and
         /// orgs), as JSON: [{profile, upn, name, objectId, availability}].
@@ -818,8 +839,10 @@ pub mod qobject {
         fn find_people(self: Pin<&mut Backend>, channel: &QString, keyword: &QString);
         /// Feedback (Report a problem / Give a compliment): the repo's new
         /// issue form filled in from `report_json` ({kind, text, area,
-        /// context, share_logs, contact, files}); the first picture goes on
-        /// the clipboard to paste into it.
+        /// context, share_logs, contact, files, dir}) with only the text
+        /// typed; the rest (and the masked logs, when shared) is saved to
+        /// `dir`'s report details file for the reporter to review and
+        /// attach. The first picture goes on the clipboard to paste.
         #[qinvokable]
         fn feedback_issue_url(self: Pin<&mut Backend>, report_json: &QString) -> QString;
         /// The feedback repo's pages: "ideas" (Suggest a feature), "privacy",
@@ -842,7 +865,9 @@ pub mod qobject {
         #[qinvokable]
         fn smart_reply_feedback_categories(self: &Backend, kinds_json: &QString) -> QString;
         /// The GitHub issue for suggested-reply feedback ({categories,
-        /// comment, kinds, attach, suggestions, last_message}).
+        /// comment, kinds, attach, suggestions, last_message}): {url,
+        /// folder}, the details (and the attached message) saved in
+        /// `folder` for the reporter to review and attach.
         #[qinvokable]
         fn smart_reply_feedback_url(self: &Backend, json: &QString) -> QString;
         /// A folder for a feedback report's screenshots and files (created).
@@ -2539,6 +2564,11 @@ pub mod qobject {
         #[qinvokable]
         fn load_permission_apps(self: Pin<&mut Backend>, team_threads_json: &QString);
 
+        /// `json` (JSON text) re-serialized for an inline script of a page
+        /// OST builds (api::app_host::script_json: `<`, `>`, `&`, U+2028/9
+        /// escaped), "null" for invalid JSON.
+        #[qinvokable]
+        fn script_json(self: &Backend, json: &QString) -> QString;
         /// Load an app's App permissions into app_permissions_json.
         #[qinvokable]
         fn app_permissions_load(self: Pin<&mut Backend>, app_id: &QString);
@@ -2546,6 +2576,23 @@ pub mod qobject {
         /// as App permissions has it.
         #[qinvokable]
         fn app_permission(self: Pin<&mut Backend>, app_id: &QString, kind: &QString) -> bool;
+        /// A page's request for one of an app's device permissions
+        /// (`kind`: media, geolocation, notifications) from `origin`:
+        /// "grant" when the app's App permissions allow it and the page is
+        /// one of the app's own (its valid domains), "deny", or "pending"
+        /// while the app's definition is read (app_facts_version is bumped
+        /// then; ask again).
+        #[qinvokable]
+        fn app_permission_for(
+            self: Pin<&mut Backend>,
+            app_id: &QString,
+            kind: &QString,
+            origin: &QString,
+        ) -> QString;
+        /// Whether a Loop page's frame from `origin` may use the clipboard
+        /// (Loop's and Microsoft's own pages only).
+        #[qinvokable]
+        fn loop_clipboard_allowed(self: &Backend, origin: &QString) -> bool;
         /// Turn one of an app's device permissions on or off (kept on this
         /// device, as Teams keeps it).
         #[qinvokable]
@@ -3732,6 +3779,7 @@ pub struct BackendRust {
     room_remote_json: QString,
     typing_text: QString,
     emoticons_version: i32,
+    app_facts_version: i32,
     recent_reactions_json: QString,
     skin_tone: i32,
     header_call_video: bool,
@@ -7138,8 +7186,103 @@ pub fn machine_lock_changed(locked: bool) {
     });
 }
 
+/// Where feedback reports are put together: ~/.cache/ost/feedback.
+fn feedback_base() -> std::path::PathBuf {
+    std::env::var_os("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+        .unwrap_or_else(std::env::temp_dir)
+        .join("ost")
+        .join("feedback")
+}
+
+/// A new report's folder (its screenshots and details), owner-only.
+fn new_feedback_dir() -> std::path::PathBuf {
+    let dir = feedback_base().join(chrono::Local::now().format("%Y-%m-%d %H-%M-%S").to_string());
+    let mut b = std::fs::DirBuilder::new();
+    b.recursive(true);
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        b.mode(0o700);
+    }
+    let _ = b.create(&dir);
+    dir
+}
+
+/// The report's details for the reporter to review and attach.
+fn save_feedback_details(dir: &std::path::Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(dir.join(teams_cli::feedback::DETAILS_FILE))?;
+    f.write_all(text.as_bytes())
+}
+
 pub fn restart_requested() -> bool {
     RESTART.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// The embedded pages' web profile storage name (Main.qml's
+/// webAppsProfile): one per OST profile, so two accounts never share
+/// cookies or site data ("ost-apps", "ost-apps-{OST_PROFILE}").
+pub fn web_storage_name() -> String {
+    match teams_cli::config::profile() {
+        Some(p) => format!("ost-apps-{p}"),
+        None => "ost-apps".into(),
+    }
+}
+
+/// Where Qt WebEngine keeps that profile: its data (cookies, local
+/// storage, IndexedDB, service workers…) under the app's data folder and
+/// its HTTP cache under the app's cache folder (Qt's AppDataLocation and
+/// CacheLocation for the application "OST").
+fn web_storage_dirs() -> Vec<std::path::PathBuf> {
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    let base = |var: &str, fallback: &str| {
+        std::env::var_os(var)
+            .map(std::path::PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .or_else(|| home.as_ref().map(|h| h.join(fallback)))
+    };
+    let name = web_storage_name();
+    [
+        base("XDG_DATA_HOME", ".local/share"),
+        base("XDG_CACHE_HOME", ".cache"),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|b| b.join("OST").join("QtWebEngine").join(&name))
+    .collect()
+}
+
+/// The note sign-out leaves for the next start: wipe this profile's web
+/// storage before Qt WebEngine opens it.
+fn web_wipe_marker() -> Option<std::path::PathBuf> {
+    teams_cli::config::Config::config_dir()
+        .ok()
+        .map(|d| d.join("wipe-web-storage"))
+}
+
+/// At start, before Qt WebEngine starts: after a sign-out, delete this
+/// profile's web storage (cookies, local storage, IndexedDB, cache and
+/// service workers of every embedded page: sign-in, apps, Loop, viewers),
+/// so the next sign-in starts clean.
+pub fn wipe_web_storage_if_signed_out() {
+    let Some(marker) = web_wipe_marker().filter(|m| m.exists()) else {
+        return;
+    };
+    for dir in web_storage_dirs() {
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) => tracing::info!("signed out: removed web storage {}", dir.display()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => tracing::warn!("couldn't remove web storage {}: {e}", dir.display()),
+        }
+    }
+    let _ = std::fs::remove_file(marker);
 }
 
 fn quit_application() {
@@ -10618,6 +10761,38 @@ impl qobject::Backend {
         }
     }
 
+    pub fn test_harness(&self) -> bool {
+        cfg!(feature = "test-harness")
+    }
+
+    pub fn web_storage_name(&self) -> QString {
+        QString::from(web_storage_name().as_str())
+    }
+
+    pub fn token_storage_json(&self) -> QString {
+        let opt_in = teams_cli::config::Config::load()
+            .map(|c| c.allow_token_file)
+            .unwrap_or(false);
+        QString::from(
+            json!({
+                "storage": teams_cli::config::token_storage(),
+                "optIn": opt_in,
+                "forced": std::env::var_os("OST_NO_KEYRING").is_some(),
+            })
+            .to_string()
+            .as_str(),
+        )
+    }
+
+    pub fn set_allow_token_file(self: Pin<&mut Self>, on: bool) {
+        if let Err(e) = teams_cli::config::set_allow_token_file(on) {
+            tracing::warn!(
+                "couldn't change where the sign-in is kept: {}",
+                short_error(&e)
+            );
+        }
+    }
+
     pub fn sign_out(mut self: Pin<&mut Self>) {
         let _ = teams_cli::config::record_account(None);
         // As Teams: remove this presence endpoint before the tokens go
@@ -10633,6 +10808,23 @@ impl qobject::Backend {
             self.as_mut()
                 .set_status_text(QString::from(short_error(&e).as_str()));
             return;
+        }
+        // The embedded pages' cookies and site data go too: Qt WebEngine
+        // can't delete a profile's storage while it is open, so OST
+        // restarts (as Teams does after signing out) and removes it before
+        // the web profile opens again; the next sign-in starts clean.
+        if let Some(marker) = web_wipe_marker() {
+            if let Some(dir) = marker.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            match std::fs::write(&marker, b"") {
+                Ok(()) => {
+                    RESTART.store(true, std::sync::atomic::Ordering::SeqCst);
+                    tracing::info!("signed out; restarting to clear web storage");
+                    quit_application();
+                }
+                Err(e) => tracing::warn!("couldn't note the web storage to clear: {e}"),
+            }
         }
         self.as_mut().set_has_credentials(false);
         self.as_mut().set_signed_in(false);
@@ -18524,8 +18716,13 @@ impl qobject::Backend {
     }
 
     pub fn feedback_issue_url(self: Pin<&mut Self>, report_json: &QString) -> QString {
+        let text = report_json.to_string();
         let mut report: teams_cli::feedback::Report =
-            serde_json::from_str(&report_json.to_string()).unwrap_or_default();
+            serde_json::from_str(&text).unwrap_or_default();
+        let dir = serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|v| v["dir"].as_str().map(std::path::PathBuf::from))
+            .filter(|d| d.starts_with(feedback_base()));
         // The report goes to GitHub in English, whatever the app language:
         // where it was sent from, as OST's English.
         report.area = teams_cli::i18n::english(&report.area);
@@ -18538,18 +18735,24 @@ impl qobject::Backend {
             String::new()
         };
         let version = format!("OST desktop {}", env!("CARGO_PKG_VERSION"));
-        let url = teams_cli::feedback::issue_url(
+        let details = teams_cli::feedback::details_text(
             &report,
             &version,
             &teams_cli::feedback::os_name(),
             &logs,
         );
+        let saved = dir.as_ref().is_some_and(|d| {
+            save_feedback_details(d, &details)
+                .inspect_err(|e| tracing::warn!("saving the report details failed: {e}"))
+                .is_ok()
+        });
+        let url = teams_cli::feedback::issue_url(&report);
         // The diagnostic data a report carries (View Diagnostic Data).
         api::ddv::record(
             "Ost.Feedback.Report",
             json!({
                 "kind": report.kind, "area": report.area, "version": version, "os": teams_cli::feedback::os_name(),
-                "logsIncluded": !logs.is_empty(), "contact": report.contact, "files": report.files.len(),
+                "logsSavedForReview": saved && !logs.is_empty(), "contact": report.contact, "files": report.files.len(),
                 "destination": teams_cli::feedback::repo(), "url": url,
             }),
         );
@@ -18607,16 +18810,26 @@ impl qobject::Backend {
             attach.then_some((suggestions.as_slice(), last.as_str())),
         );
         let version = format!("OST desktop {}", env!("CARGO_PKG_VERSION"));
-        let url =
-            teams_cli::feedback::issue_url(&report, &version, &teams_cli::feedback::os_name(), "");
+        let url = teams_cli::feedback::issue_url(&report);
+        let details = teams_cli::feedback::details_text(
+            &report,
+            &version,
+            &teams_cli::feedback::os_name(),
+            "",
+        );
+        let dir = new_feedback_dir();
+        let folder = save_feedback_details(&dir, &details)
+            .inspect_err(|e| tracing::warn!("saving the feedback details failed: {e}"))
+            .map(|_| dir.display().to_string())
+            .unwrap_or_default();
         api::ddv::record(
             "Ost.Feedback.SuggestedReplies",
             json!({
-                "categories": list("categories"), "kinds": list("kinds"), "messageAttached": attach,
+                "categories": list("categories"), "kinds": list("kinds"), "messageSavedForReview": attach,
                 "version": version, "os": teams_cli::feedback::os_name(), "destination": teams_cli::feedback::repo(), "url": url,
             }),
         );
-        QString::from(url.as_str())
+        QString::from(json!({ "url": url, "folder": folder }).to_string().as_str())
     }
 
     pub fn feedback_link(&self, which: &QString) -> QString {
@@ -18647,8 +18860,9 @@ impl qobject::Backend {
         // --cqf-always (harness) or OST_CQF_ALWAYS=1: opted in and asked
         // after every call instead of Teams' sample (tests on a machine
         // whose settings file other instances share).
-        let always = std::env::args().any(|a| a == "--cqf-always")
-            || std::env::var("OST_CQF_ALWAYS").as_deref() == Ok("1");
+        let always = cfg!(feature = "test-harness")
+            && (std::env::args().any(|a| a == "--cqf-always")
+                || std::env::var("OST_CQF_ALWAYS").as_deref() == Ok("1"));
         let opted_in = surveys_on
             && (always
                 || load_settings()
@@ -18736,18 +18950,7 @@ impl qobject::Backend {
     }
 
     pub fn feedback_dir(&self) -> QString {
-        let base = std::env::var_os("XDG_CACHE_HOME")
-            .map(std::path::PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache"))
-            })
-            .unwrap_or_else(std::env::temp_dir);
-        let dir = base
-            .join("ost")
-            .join("feedback")
-            .join(chrono::Local::now().format("%Y-%m-%d %H-%M-%S").to_string());
-        let _ = std::fs::create_dir_all(&dir);
-        QString::from(dir.display().to_string().as_str())
+        QString::from(new_feedback_dir().display().to_string().as_str())
     }
 
     pub fn paste_compose_picture(&self) -> QString {
@@ -21267,7 +21470,9 @@ impl qobject::Backend {
         if url.starts_with("data:") {
             return QString::from(url.as_str());
         }
-        if !url.starts_with("https://") && !url.starts_with("http://") {
+        // https only: Teams doesn't load a card's plain-http pictures
+        // (mixed content), and nothing goes over plain http.
+        if !url.starts_with("https://") {
             return QString::default();
         }
         if let Some(f) = emoticon_files().lock().unwrap().get(&url) {
@@ -22650,6 +22855,74 @@ impl qobject::Backend {
             .unwrap_or_else(|| api::app_details::device_permissions_preapproved(&app))
     }
 
+    pub fn app_permission_for(
+        mut self: Pin<&mut Self>,
+        app_id: &QString,
+        kind: &QString,
+        origin: &QString,
+    ) -> QString {
+        let app = app_id.to_string();
+        let k = kind.to_string();
+        if app.is_empty() || !["media", "geolocation", "notifications"].contains(&k.as_str()) {
+            return QString::from("deny");
+        }
+        let decide = |facts: &api::app_host::AppFacts| {
+            api::app_host::device_origin_allowed(&origin.to_string(), facts)
+        };
+        let origin_ok = match api::app_host::cached_facts(&app) {
+            Some(f) => decide(&f),
+            None => {
+                static ASKED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+                let first = {
+                    let mut a = ASKED.lock().unwrap_or_else(|e| e.into_inner());
+                    let first = !a.contains(&app);
+                    if first {
+                        a.push(app.clone());
+                    }
+                    first
+                };
+                if !first {
+                    // Asked before and still unknown: the definition
+                    // couldn't be read, so nothing is trusted.
+                    tracing::info!(app = %app, "device permission refused: the app's definition is unknown");
+                    return QString::from("deny");
+                }
+                let qt = self.qt_thread();
+                runtime().spawn(async move {
+                    let r = async { api::app_host::facts(&TeamsClient::new().await?, &app).await }
+                        .await;
+                    if let Err(e) = r {
+                        tracing::warn!(
+                            "app definition for device permissions: {}",
+                            short_error(&e)
+                        );
+                    }
+                    let _ = qt.queue(|mut this| {
+                        let v = this.rust().app_facts_version + 1;
+                        this.as_mut().set_app_facts_version(v);
+                    });
+                });
+                return QString::from("pending");
+            }
+        };
+        if !origin_ok {
+            tracing::info!(app = %app_id, kind = %k, "device permission refused: the page isn't one of the app's");
+            return QString::from("deny");
+        }
+        let ok = self.as_mut().app_permission(app_id, kind);
+        QString::from(if ok { "grant" } else { "deny" })
+    }
+
+    pub fn script_json(&self, json: &QString) -> QString {
+        let v: serde_json::Value = serde_json::from_str(&json.to_string()).unwrap_or_default();
+        QString::from(api::app_host::script_json(&v).as_str())
+    }
+
+    pub fn loop_clipboard_allowed(&self, origin: &QString) -> bool {
+        let o = origin.to_string();
+        teams_cli::auth::token_hosts::redirect_allowed(&o)
+    }
+
     pub fn set_app_permission(
         mut self: Pin<&mut Self>,
         app_id: &QString,
@@ -23022,6 +23295,14 @@ impl qobject::Backend {
                     }
                 }
                 // teams.fullTrust.joinedTeams.getUserJoinedTeams (Shifts).
+                // The app's valid domains (its frame may load only those).
+                "validDomains" => {
+                    let facts = match TeamsClient::new().await {
+                        Ok(c) => api::app_host::facts(&c, &app).await.unwrap_or_default(),
+                        Err(_) => Default::default(),
+                    };
+                    json!(facts.valid_domains).to_string()
+                }
                 "joinedTeams" => {
                     let r = async { api::teams::list_teams_csa(&TeamsClient::new().await?).await }.await;
                     api::app_host::joined_teams_from(&r.unwrap_or_default()).to_string()
@@ -28751,8 +29032,8 @@ impl qobject::Backend {
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
-                if let Some(path) =
-                    std::env::var_os("OST_VOICE_PROFILE_WAV").filter(|p| !p.is_empty())
+                if let Some(path) = std::env::var_os("OST_VOICE_PROFILE_WAV")
+                    .filter(|p| cfg!(feature = "test-harness") && !p.is_empty())
                 {
                     return anyhow::Ok(Some(std::fs::read(path)?));
                 }
@@ -29063,7 +29344,10 @@ impl qobject::Backend {
         runtime().spawn(async move {
             // --stationary-test's --stationary-fixture=<file>: Places
             // records (a JSON array) in place of the tenant's.
-            if let Some(path) = std::env::args().find_map(|a| a.strip_prefix("--stationary-fixture=").map(String::from)) {
+            if let Some(path) = std::env::args()
+                .filter(|_| cfg!(feature = "test-harness"))
+                .find_map(|a| a.strip_prefix("--stationary-fixture=").map(String::from))
+            {
                 let places: Vec<serde_json::Value> = std::fs::read_to_string(&path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
                 let list = api::places::sorted(places.iter().filter_map(api::places::building_from).collect());
                 let suggested = list.iter().find(|b| b.id == suggested_id).cloned();

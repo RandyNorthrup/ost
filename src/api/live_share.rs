@@ -11,9 +11,13 @@ use crate::calling::content_sharing::PptFile;
 
 /// The SharePoint host of a file address.
 fn sp_host(url: &str) -> Option<String> {
-    let rest = url.strip_prefix("https://")?;
-    let host = &rest[..rest.find('/').unwrap_or(rest.len())];
-    host.ends_with(".sharepoint.com").then(|| host.to_string())
+    let u = url::Url::parse(url).ok()?;
+    if u.scheme() != "https" || !u.username().is_empty() || u.password().is_some() {
+        return None;
+    }
+    let host = u.host_str()?;
+    (host.len() > ".sharepoint.com".len() && host.ends_with(".sharepoint.com"))
+        .then(|| host.to_string())
 }
 
 /// A share id for SharePoint's `shares/u!…` (base64url of the address,

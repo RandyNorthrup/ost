@@ -437,6 +437,7 @@ async fn send(
     body: Option<&Value>,
     api_v2: bool,
 ) -> Result<reqwest::Response> {
+    crate::auth::token_hosts::ensure(url, crate::auth::token_hosts::Audience::Teams)?;
     let t = token().await?;
     let mut req = reqwest::Client::new()
         .request(method, url)
@@ -1986,6 +1987,7 @@ async fn send_if_match(
     etag: &str,
     skype: bool,
 ) -> Result<Value> {
+    crate::auth::token_hosts::ensure(url, crate::auth::token_hosts::Audience::Teams)?;
     let t = token().await?;
     let mut req = reqwest::Client::new()
         .request(method, url)

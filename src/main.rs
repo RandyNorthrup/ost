@@ -151,7 +151,7 @@ async fn main() -> Result<()> {
                 tracing_subscriber::fmt::layer()
                     .with_target(false)
                     .with_ansi(false)
-                    .with_writer(log_buffer.clone()),
+                    .with_writer(teams_cli::feedback::Scrubbed(log_buffer.clone())),
             )
             .init();
 
@@ -164,7 +164,11 @@ async fn main() -> Result<()> {
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| filter_str.into()),
         )
-        .with(tracing_subscriber::fmt::layer().with_target(false))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(false)
+                .with_writer(teams_cli::feedback::Scrubbed(std::io::stderr)),
+        )
         .init();
 
     match cli.command {

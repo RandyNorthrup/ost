@@ -5,6 +5,7 @@
 use anyhow::{Context, Result, bail};
 
 use crate::auth::TokenStore;
+use crate::auth::token_hosts::{self, Audience};
 use crate::config::Config;
 
 const GRAPH_BASE: &str = "https://graph.microsoft.com/v1.0";
@@ -86,7 +87,7 @@ impl TeamsClient {
         }
 
         Ok(Self {
-            http: reqwest::Client::new(),
+            http: token_hosts::http_client(),
             config,
         })
     }
@@ -122,6 +123,7 @@ impl TeamsClient {
     pub async fn graph_get(&self, path: &str) -> Result<reqwest::Response> {
         let token = self.graph_token()?;
         let url = format!("{}{}", GRAPH_BASE, path);
+        token_hosts::ensure(&url, Audience::Graph)?;
         tracing::debug!("Graph GET {}", url);
 
         let resp = self
@@ -144,6 +146,7 @@ impl TeamsClient {
     ) -> Result<reqwest::Response> {
         let token = self.graph_token()?;
         let url = format!("{}{}", GRAPH_BASE, path);
+        token_hosts::ensure(&url, Audience::Graph)?;
         tracing::debug!("Graph GET {}", url);
         let mut req = self.http.get(&url).bearer_auth(token);
         for (k, v) in headers {
@@ -160,6 +163,7 @@ impl TeamsClient {
     pub async fn graph_get_opt(&self, path: &str) -> Result<Option<reqwest::Response>> {
         let token = self.graph_token()?;
         let url = format!("{}{}", GRAPH_BASE, path);
+        token_hosts::ensure(&url, Audience::Graph)?;
         let resp = self
             .http
             .get(&url)
@@ -180,6 +184,7 @@ impl TeamsClient {
     ) -> Result<reqwest::Response> {
         let token = self.graph_token()?;
         let url = format!("{}{}", GRAPH_BASE, path);
+        token_hosts::ensure(&url, Audience::Graph)?;
         tracing::debug!("Graph POST {}", url);
 
         let resp = self
@@ -203,6 +208,7 @@ impl TeamsClient {
     ) -> Result<reqwest::Response> {
         let token = self.graph_token()?;
         let url = format!("https://graph.microsoft.com/beta{}", path);
+        token_hosts::ensure(&url, Audience::Graph)?;
         let req = match body {
             Some(b) => self.http.post(&url).json(b),
             None => self.http.get(&url),
@@ -224,6 +230,7 @@ impl TeamsClient {
     ) -> Result<reqwest::Response> {
         let token = self.graph_token()?;
         let url = format!("{}{}", GRAPH_BASE, path);
+        token_hosts::ensure(&url, Audience::Graph)?;
         let resp = self
             .http
             .post(&url)
@@ -244,6 +251,7 @@ impl TeamsClient {
     ) -> Result<reqwest::Response> {
         let token = self.graph_token()?;
         let url = format!("https://graph.microsoft.com/beta{}", path);
+        token_hosts::ensure(&url, Audience::Graph)?;
         let resp = self
             .http
             .patch(&url)
@@ -263,6 +271,7 @@ impl TeamsClient {
     ) -> Result<reqwest::Response> {
         let token = self.graph_token()?;
         let url = format!("{}{}", GRAPH_BASE, path);
+        token_hosts::ensure(&url, Audience::Graph)?;
         let resp = self
             .http
             .patch(&url)
@@ -284,6 +293,7 @@ impl TeamsClient {
     ) -> Result<reqwest::Response> {
         let token = self.graph_token()?;
         let url = format!("{}{}", GRAPH_BASE, path);
+        token_hosts::ensure(&url, Audience::Graph)?;
         let mut req = match body {
             Some(b) => self.http.patch(&url).json(b),
             None => self.http.delete(&url),
@@ -303,6 +313,7 @@ impl TeamsClient {
     pub async fn graph_delete(&self, path: &str) -> Result<reqwest::Response> {
         let token = self.graph_token()?;
         let url = format!("{}{}", GRAPH_BASE, path);
+        token_hosts::ensure(&url, Audience::Graph)?;
         let resp = self
             .http
             .delete(&url)
@@ -322,6 +333,7 @@ impl TeamsClient {
     ) -> Result<reqwest::Response> {
         let token = self.graph_token()?;
         let url = format!("{}{}", GRAPH_BASE, path);
+        token_hosts::ensure(&url, Audience::Graph)?;
         let resp = self
             .http
             .put(&url)
@@ -337,6 +349,7 @@ impl TeamsClient {
     /// GET request to Teams/Skype API (X-SkypeToken header).
     pub async fn teams_get(&self, url: &str) -> Result<reqwest::Response> {
         let token = self.skype_token()?;
+        token_hosts::ensure(url, Audience::Teams)?;
         tracing::debug!("Teams GET {}", url);
 
         let resp = self
@@ -357,6 +370,7 @@ impl TeamsClient {
         body: &serde_json::Value,
     ) -> Result<reqwest::Response> {
         let token = self.skype_token()?;
+        token_hosts::ensure(url, Audience::Teams)?;
         tracing::debug!("Teams POST {}", url);
 
         let resp = self
@@ -446,6 +460,7 @@ impl TeamsClient {
     /// GET using `Authorization: Bearer {skype_token}` with client version header (CSA/AFD endpoint).
     pub async fn csa_get(&self, url: &str) -> Result<reqwest::Response> {
         let token = self.skype_token()?;
+        token_hosts::ensure(url, Audience::Teams)?;
         tracing::debug!("CSA GET {}", url);
 
         let resp = self
@@ -469,6 +484,7 @@ impl TeamsClient {
         headers: &[(&str, &str)],
     ) -> Result<reqwest::Response> {
         let token = self.skype_token()?;
+        token_hosts::ensure(url, Audience::Teams)?;
         tracing::debug!("CSA POST {}", url);
         let mut req = self
             .http
@@ -487,6 +503,7 @@ impl TeamsClient {
     /// GET using `Authentication: skypetoken=...` header (native chat API).
     pub async fn chat_get(&self, url: &str) -> Result<reqwest::Response> {
         let token = self.skype_token()?;
+        token_hosts::ensure(url, Audience::Teams)?;
         tracing::debug!("Chat GET {}", url);
 
         let resp = self
@@ -507,6 +524,7 @@ impl TeamsClient {
         body: &serde_json::Value,
     ) -> Result<reqwest::Response> {
         let token = self.skype_token()?;
+        token_hosts::ensure(url, Audience::Teams)?;
         tracing::debug!("Chat POST {}", url);
 
         let resp = self
@@ -525,6 +543,7 @@ impl TeamsClient {
     /// sends them) to the chat service.
     pub async fn chat_post_text(&self, url: &str, body: &str) -> Result<reqwest::Response> {
         let token = self.skype_token()?;
+        token_hosts::ensure(url, Audience::Teams)?;
         tracing::debug!("Chat POST {}", url);
         let resp = self
             .http
@@ -548,6 +567,7 @@ impl TeamsClient {
         headers: &[(&str, &str)],
     ) -> Result<reqwest::Response> {
         let token = self.skype_token()?;
+        token_hosts::ensure(url, Audience::Teams)?;
         tracing::debug!("Chat POST {}", url);
         let mut req = self
             .http
@@ -565,6 +585,7 @@ impl TeamsClient {
     /// GET from Teams' media store (AMS), which wants `skype_token`.
     pub async fn ams_get(&self, url: &str) -> Result<Vec<u8>> {
         let token = self.skype_token()?;
+        token_hosts::ensure(url, Audience::Teams)?;
         let resp = self
             .http
             .get(url)
@@ -601,6 +622,7 @@ impl TeamsClient {
         let base = self
             .ams_url()
             .context("No media store address for this account")?;
+        token_hosts::ensure(&base, Audience::Teams)?;
         let auth = format!("skype_token {}", token);
         // AMS reads the caller's platform from the User-Agent's
         // `Teams/{version}/{platform}` part (Teams desktop sends …/49) and
@@ -660,6 +682,7 @@ impl TeamsClient {
         let base = self
             .ams_url()
             .context("No media store address for this account")?;
+        token_hosts::ensure(&base, Audience::Teams)?;
         let auth = format!("skype_token {}", token);
         const UA: &str = TEAMS_WEB_UA;
         let created = self
@@ -715,6 +738,7 @@ impl TeamsClient {
         headers: &[(&str, &str)],
     ) -> Result<reqwest::Response> {
         let token = self.skype_token()?;
+        token_hosts::ensure(url, Audience::Teams)?;
         tracing::debug!("Chat {} {}", method, url);
         let req = self
             .http
@@ -738,6 +762,7 @@ impl TeamsClient {
         body: &serde_json::Value,
     ) -> Result<reqwest::Response> {
         let token = self.skype_token()?;
+        token_hosts::ensure(url, Audience::Teams)?;
         tracing::debug!("Chat {} {}", method, url);
         let resp = self
             .http

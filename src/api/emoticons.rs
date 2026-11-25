@@ -415,28 +415,52 @@ pub async fn remote_image_file(
     }
     // The service rewrites card images to Teams' URL proxy
     // (`…asyncgw.teams.microsoft.com/urlp/v1/url/content?url=…`), which, like
-    // the media store, wants the skype token.
-    let teams_host = url
-        .split('/')
-        .nth(2)
-        .is_some_and(|h| h.ends_with(".teams.microsoft.com") || h.ends_with(".asm.skype.com"));
-    let bytes: Vec<u8> = match client {
-        Some(c) if teams_host => c.ams_get(url).await?,
-        _ => reqwest::Client::new()
-            .get(url)
-            .header(reqwest::header::USER_AGENT, "Mozilla/5.0")
-            .send()
-            .await?
-            .error_for_status()?
-            .bytes()
-            .await?
-            .to_vec(),
-    };
+    // the media store, wants the skype token. Only those exact services get
+    // it (and only over https); any other picture is fetched without
+    // credentials, and never over plain http.
+    anyhow::ensure!(
+        url::Url::parse(url).is_ok_and(|u| u.scheme() == "https"),
+        "Card pictures load over https only"
+    );
+    let bytes: Vec<u8> =
+        if crate::auth::token_hosts::allowed(url, crate::auth::token_hosts::Audience::Teams) {
+            match client {
+                Some(c) => c.ams_get(url).await?,
+                None => anyhow::bail!("Not signed in"),
+            }
+        } else {
+            anonymous_client()
+                .get(url)
+                .header(reqwest::header::USER_AGENT, "Mozilla/5.0")
+                .send()
+                .await?
+                .error_for_status()?
+                .bytes()
+                .await?
+                .to_vec()
+        };
     std::fs::create_dir_all(path.parent().unwrap_or(cache_dir))?;
     let tmp = path.with_extension("part");
     std::fs::write(&tmp, &bytes)?;
     std::fs::rename(&tmp, &path)?;
     Ok(path)
+}
+
+/// A client for third-party pictures: no cookies or credentials, and no
+/// redirect to plain http.
+fn anonymous_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::custom(|a| {
+            if a.previous().len() >= 10 {
+                a.error("too many redirects")
+            } else if a.url().scheme() == "https" {
+                a.follow()
+            } else {
+                a.stop()
+            }
+        }))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new())
 }
 
 /// An emoticon image on disk, downloading it the first time.

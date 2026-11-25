@@ -259,6 +259,7 @@ pub async fn invite(
     links: Value,
 ) -> Result<()> {
     use super::signaling;
+    crate::auth::token_hosts::ensure(link, crate::auth::token_hosts::Audience::Teams)?;
     let token = crate::auth::oauth::access_token_for(RECORDER_SCOPE).await?;
     let config = crate::config::Config::load()?;
     let ic3 = config

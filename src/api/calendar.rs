@@ -937,13 +937,15 @@ async fn respond_mt(
         })
         .unwrap_or_default();
     let (base, token) = crate::api::tabs::middle_tier(client).await?;
-    let q: String = url::form_urlencoded::Serializer::new(String::new())
-        .append_pair("eventType", event_type)
-        .append_pair("eventStartDateTime", &start)
-        .finish();
+    let url = crate::auth::token_hosts::service_url(
+        &base,
+        crate::auth::token_hosts::Audience::Teams,
+        &["v2.0", "me", "calendars", "events", uid, "respond"],
+        &[("eventType", event_type), ("eventStartDateTime", &start)],
+    )?;
     let r = client
         .http()
-        .put(format!("{base}/v2.0/me/calendars/events/{uid}/respond?{q}"))
+        .put(url)
         .bearer_auth(&token)
         .json(&serde_json::json!({ "responseType": kind, "sendResponse": send_response, "comment": note.trim(), "attendance": attendance }))
         .send()
@@ -2504,11 +2506,24 @@ pub async fn cancel_meeting(
                 "startTime": s("start_utc").replace('Z', ".000Z"),
             }
         });
+        let group = format!("smtp:{mail}");
+        let url = crate::auth::token_hosts::service_url(
+            &base,
+            crate::auth::token_hosts::Audience::Teams,
+            &[
+                "v2.0",
+                "groups",
+                &group,
+                "calendars",
+                "events",
+                &uid,
+                "cancel",
+            ],
+            &[],
+        )?;
         client
             .http()
-            .put(format!(
-                "{base}/v2.0/groups/smtp:{mail}/calendars/events/{uid}/cancel"
-            ))
+            .put(url)
             .bearer_auth(&token)
             .json(&body)
             .send()
