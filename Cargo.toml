@@ -4,6 +4,7 @@ version = "0.2.1"
 edition = "2024"
 description = "Lightweight CLI client for Microsoft Teams"
 license = "MIT"
+publish = false
 
 [dependencies]
 # hidraw ioctls (headset call controls) and usbfs (their UCQ string)

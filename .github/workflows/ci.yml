@@ -1,4 +1,5 @@
-# Builds and tests every push to main and every pull request on Ubuntu 26.04
+# Audits the dependencies, and builds and tests, every push to main and every
+# pull request; the builds run on Ubuntu 26.04
 # with its own Qt, Rust and libraries: the same container and build
 # dependencies as the release packages (desktop/packaging/build-deb.sh).
 name: CI
@@ -25,12 +26,46 @@ env:
   QMAKE: /usr/lib/qt6/bin/qmake6
 
 jobs:
+  audit:
+    # Every crate in Cargo.lock against the RustSec advisory database
+    # (vulnerabilities, unmaintained, unsound and yanked crates), its license
+    # and its source. The exceptions, each with its reason and review date,
+    # are in deny.toml and .cargo/audit.toml.
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    env:
+      # Both pinned to an exact release and checked against its SHA-256.
+      CARGO_DENY_URL: https://github.com/EmbarkStudios/cargo-deny/releases/download/0.22.1/cargo-deny-0.22.1-x86_64-unknown-linux-musl.tar.gz
+      CARGO_DENY_SHA256: 13f7e825e9cb811c2f8de63f29b0f45851dfb53004029f0f2501af524728364d
+      CARGO_AUDIT_URL: https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.23.0/cargo-audit-x86_64-unknown-linux-musl-v0.23.0.tgz
+      CARGO_AUDIT_SHA256: 4f01c74ed84b2dffd0b1d37012a62cdf2a92c96e25bdf8eec7fcc0d4d3eb7811
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install cargo-deny and cargo-audit
+        run: |
+          d=$RUNNER_TEMP/audit-tools
+          mkdir -p "$d/bin"
+          curl -fsSL --retry 3 -o "$d/deny.tar.gz" "$CARGO_DENY_URL"
+          curl -fsSL --retry 3 -o "$d/audit.tar.gz" "$CARGO_AUDIT_URL"
+          printf '%s  %s\n' "$CARGO_DENY_SHA256" "$d/deny.tar.gz" "$CARGO_AUDIT_SHA256" "$d/audit.tar.gz" | sha256sum -c -
+          tar -xzf "$d/deny.tar.gz" -C "$d/bin" --strip-components=1 --wildcards '*/cargo-deny'
+          tar -xzf "$d/audit.tar.gz" -C "$d/bin" --strip-components=1 --wildcards '*/cargo-audit'
+          echo "$d/bin" >> "$GITHUB_PATH"
+      - name: cargo deny (advisories, licenses, sources, bans)
+        run: cargo deny --locked check advisories licenses sources bans
+      - name: cargo audit (fails on any vulnerability)
+        run: cargo audit
+
   fmt:
     name: Format
     runs-on: ubuntu-latest
     container: ubuntu:26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install cargo and rustfmt
         run: |
           apt-get update -q
@@ -44,6 +79,8 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install build dependencies
         run: |
           sh desktop/packaging/build-deb.sh --deps-only
@@ -60,6 +97,8 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install build dependencies
         run: sh desktop/packaging/build-deb.sh --deps-only
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3

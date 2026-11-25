@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "OST's video background effects: person segmentation, blur, background pictures and brightness on I420 camera frames; voice isolation for the microphone"
 license = "MIT"
+publish = false
 
 [dependencies]
 anyhow = "1"

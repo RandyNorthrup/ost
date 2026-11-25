@@ -1,0 +1,78 @@
+# cargo deny settings: advisories, licenses and sources for every crate in
+# Cargo.lock. CI runs `cargo deny --locked check advisories licenses sources`
+# on every push and pull request (.github/workflows/ci.yml, "Dependency
+# audit"); `cargo audit` runs there too and reads .cargo/audit.toml, which
+# must ignore the same advisories as this file.
+#
+# Every exception carries its reason and a review date. On or after that
+# date, check whether it can go (or set a new date with a new reason).
+
+[graph]
+# Linux is the only platform OST builds for.
+targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+all-features = true
+
+[advisories]
+# Vulnerabilities always fail. "unmaintained" covers every crate in the
+# graph, direct or not; "unsound" and "notice" advisories fail as well.
+unmaintained = "all"
+yanked = "deny"
+ignore = [
+    # zvariant, zbus_names and zvariant_derive were merged into zbus 6, so
+    # their standalone crates won't get releases. They come in with zbus 5,
+    # which ksni 0.3 (the tray icon) and keyring 4's Secret Service store
+    # (zbus-secret-service-keyring-store 1.0 → secret-service 5; the sign-in
+    # tokens) require in their latest releases (as of 2026-11-25), and which
+    # OST's own D-Bus calls share with them (desktop/Cargo.toml). Moving OST
+    # alone to zbus 6 would add zbus 6 next to zbus 5, not remove these;
+    # OST moves when ksni and the keyring store do (secret-service 6.0.0,
+    # on zbus 6, came out on 2026-11-22). Not vulnerabilities.
+    # Review by 2027-02-25.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant merged into zbus 6; reached through zbus 5 (ksni, keyring's Secret Service store). Review by 2027-02-25" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names merged into zbus 6; reached through zbus 5 (ksni, keyring's Secret Service store). Review by 2027-02-25" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive merged into zbus 6; reached through zbus 5 (ksni, keyring's Secret Service store). Review by 2027-02-25" },
+    # chrono is unmaintained (since 2026-09-14); jiff replaces it. OST uses
+    # it directly in about 50 files, where the port changes wire formats
+    # and local-time math, so it is its own change: TASK-0319. Not a
+    # vulnerability. Review by 2027-01-31.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained; replaced by jiff in TASK-0319. Review by 2027-01-31" },
+]
+
+[licenses]
+# OST is MIT. Permissive licenses only, plus the per-crate exceptions below.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+]
+confidence-threshold = 0.9
+exceptions = [
+    # MPL-2.0 is file-level copyleft: the crate's own files stay under it
+    # (their source is on crates.io), nothing else of OST's does. dirs-sys's
+    # dependency. Review by 2027-11-25.
+    { crate = "option-ext", allow = ["MPL-2.0"] },
+]
+
+[licenses.private]
+# OST's own crates (teams-cli, ost-desktop, ost-vfx) aren't published.
+ignore = true
+
+[bans]
+# Two versions of a crate in the graph are allowed (zbus 5 crates, windows
+# shims and the like come in at more than one version); only these checks
+# fail the build.
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+# crates.io only: no git dependencies, no other registries.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
