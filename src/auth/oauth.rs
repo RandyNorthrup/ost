@@ -167,8 +167,20 @@ pub async fn refresh() -> Result<bool> {
     Ok(true)
 }
 
-/// Perform OAuth2 login flow
-pub async fn login(force: bool) -> Result<()> {
+/// Why `teams-cli login` won't start a device-code sign-in for this
+/// profile: it signs in with OST desktop's browser sign-in (the only one
+/// whose tokens broker embedded apps' tokens), and a device-code sign-in
+/// would replace it. `--device-code` (`device_code`) asks for the switch.
+fn device_code_refusal(auth_flow: Option<&str>, device_code: bool) -> Option<&'static str> {
+    (auth_flow == Some(super::TEAMS_WEB_FLOW) && !device_code).then_some(
+        "This profile signs in through OST desktop's browser sign-in, which the desktop's embedded apps need. \
+         Run ost-desktop to sign in again, or run `teams-cli login --device-code` to switch this profile to a device-code sign-in.",
+    )
+}
+
+/// Perform OAuth2 login flow. A profile that uses the browser sign-in is
+/// only switched to the device code with `device_code`.
+pub async fn login(force: bool, device_code: bool) -> Result<()> {
     {
         let config = Config::load()?;
 
@@ -204,6 +216,9 @@ pub async fn login(force: bool) -> Result<()> {
                     }
                 }
             }
+        }
+        if let Some(why) = device_code_refusal(config.auth_flow.as_deref(), device_code) {
+            anyhow::bail!(why);
         }
     }
 
@@ -500,4 +515,18 @@ pub async fn status() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod login_tests {
+    use super::*;
+
+    #[test]
+    fn device_code_login_needs_the_flag_on_a_browser_profile() {
+        let web = Some(crate::auth::TEAMS_WEB_FLOW);
+        let why = device_code_refusal(web, false).expect("refused");
+        assert!(why.contains("ost-desktop") && why.contains("--device-code"));
+        assert_eq!(device_code_refusal(web, true), None);
+        assert_eq!(device_code_refusal(None, false), None);
+    }
 }

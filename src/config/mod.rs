@@ -29,7 +29,7 @@ pub struct Config {
     pub region_gtms: Option<String>,
     /// How the stored tokens were signed in: None for the device code (Teams
     /// desktop's client), "teams-web" for the browser sign-in (Teams on the
-    /// web's client). Not a secret.
+    /// web's client). Not a secret; kept when signing out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth_flow: Option<String>,
     /// Teams' authz `licenseDetails` (JSON as a string, like region_gtms).
@@ -305,6 +305,16 @@ impl TokenStore for Config {
                 Err(e) => tracing::warn!("Could not remove tokens from the keyring: {e}"),
             }
         }
+        self.forget_account();
+    }
+}
+
+impl Config {
+    /// Forget the signed-in account: its tokens and what came with them
+    /// (tenant, regional endpoints, license details). Settings stay, such
+    /// as `auth_flow`, so signing out doesn't change how this profile
+    /// signs in.
+    fn forget_account(&mut self) {
         self.tokens_in_keyring = false;
         self.access_token = None;
         self.refresh_token = None;
@@ -312,9 +322,9 @@ impl TokenStore for Config {
         self.graph_token = None;
         self.ic3_token = None;
         self.recorder_token = None;
+        self.tenant_id = None;
         self.region_gtms = None;
         self.license_details = None;
-        self.auth_flow = None;
     }
 }
 
@@ -607,5 +617,40 @@ mod tenant_id_tests {
             c.tenant_id.as_deref(),
             Some("09a28c80-30f0-4c4d-98ba-0f7f8d19b780")
         );
+    }
+}
+
+#[cfg(test)]
+mod sign_out_tests {
+    use super::*;
+
+    #[test]
+    fn signing_out_keeps_settings_and_forgets_the_account() {
+        let mut c = Config {
+            access_token: Some(StoredToken::new("aad".into(), Some(3600))),
+            refresh_token: Some("refresh".into()),
+            tenant_id: Some("09a28c80-30f0-4c4d-98ba-0f7f8d19b780".into()),
+            skype_token: Some(StoredToken::new("skype".into(), Some(3600))),
+            graph_token: Some(StoredToken::new("graph".into(), Some(3600))),
+            ic3_token: Some(StoredToken::new("ic3".into(), Some(3600))),
+            recorder_token: Some(StoredToken::new("recorder".into(), Some(3600))),
+            region_gtms: Some("{}".into()),
+            auth_flow: Some(crate::auth::TEAMS_WEB_FLOW.into()),
+            license_details: Some("{}".into()),
+            tokens_in_keyring: true,
+        };
+        c.forget_account();
+        assert!(c.secrets().refresh_token.is_none() && c.get_access_token().is_none());
+        assert!(c.skype_token.is_none() && c.graph_token.is_none() && c.ic3_token.is_none() && c.recorder_token.is_none());
+        assert!(c.tenant_id.is_none() && c.region_gtms.is_none() && c.license_details.is_none());
+        assert!(!c.tokens_in_keyring);
+
+        // config.toml as save() writes it: the sign-in method stays, so the
+        // next sign-in refreshes with the same client.
+        let on_disk = toml::to_string_pretty(&c.clone_settings()).unwrap();
+        assert_eq!(on_disk.trim(), "auth_flow = \"teams-web\"");
+        let back: Config = toml::from_str(&on_disk).unwrap();
+        assert_eq!(back.auth_flow.as_deref(), Some(crate::auth::TEAMS_WEB_FLOW));
+        assert_eq!(crate::auth::AuthConfig::for_flow(back.auth_flow.as_deref()).client_id, crate::auth::spa::CLIENT_ID);
     }
 }

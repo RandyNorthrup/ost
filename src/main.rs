@@ -23,10 +23,19 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Authenticate with Microsoft Teams
+    ///
+    /// Signs in with a device code. A profile that signs in through OST
+    /// desktop's browser sign-in (which the desktop's embedded apps need)
+    /// isn't switched: run ost-desktop to sign it in again, or pass
+    /// --device-code.
     Login {
         /// Force interactive login even if cached token exists
         #[arg(short, long)]
         force: bool,
+        /// Sign in with a device code even if this profile uses OST
+        /// desktop's browser sign-in (switches the profile to the device code)
+        #[arg(long)]
+        device_code: bool,
     },
 
     /// Log out and clear cached credentials
@@ -159,9 +168,9 @@ async fn main() -> Result<()> {
         .init();
 
     match cli.command {
-        Commands::Login { force } => {
+        Commands::Login { force, device_code } => {
             tracing::info!("Starting authentication flow...");
-            auth::login(force).await?;
+            auth::login(force, device_code).await?;
         }
         Commands::Logout => {
             tracing::info!("Logging out...");
