@@ -317,3 +317,15 @@ odsp-web-prod_2026-11-06.005).
   table, with Teams' items, order and Opened, Owner and Activity columns from
   the recent files service (`sp.RecentFileCollection.DeltaSync`, see
   `src/api/recent_files.rs`).
+- Teams' Shared view has "With you" and "By you" tabs, filter pills and a
+  location line under each name. OST lists "With you" in the files table,
+  with Teams' items, order and Date shared, Shared by and Activity columns.
+  Like Home, they come from the recent files service, plus the folders
+  shared with you (`sp.SharedWithMeItemCollection.GetSharedWithMeItems?
+  fileType='folder'`), filtered by OneDrive's `isInvalidSWMItem` (see
+  `src/api/shared_files.rs`). "By you" (`_api/web/onedriveshareditems`) is
+  not built yet.
+- Browse files by People: Teams shows each person with file chips ("+N"
+  for the rest). OST lists the same people in the same order (OneDrive's
+  collaborator order), with a file count. A person's page lists what they
+  shared with you and the files they own, as Teams does.

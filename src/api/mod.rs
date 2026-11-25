@@ -78,6 +78,7 @@ pub mod room_remote;
 pub mod rooms;
 pub mod scheduled;
 pub mod search;
+pub mod shared_files;
 pub mod sharing;
 pub mod smart_replies;
 pub mod store;

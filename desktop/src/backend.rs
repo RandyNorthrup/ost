@@ -26698,21 +26698,26 @@ impl qobject::Backend {
                                 .collect::<Vec<_>>()
                         );
                     }
-                    "shared" => out["items"] = json!(api::drive::shared_with_me(&client).await?),
+                    // Shared: Date shared, Shared by and Activity from the
+                    // recent files service.
+                    "shared" => {
+                        let now = chrono::Local::now();
+                        out["rows"] = json!(
+                            api::drive::shared_with_me(&client)
+                                .await?
+                                .iter()
+                                .map(|(f, it)| api::shared_files::row(f, it, now))
+                                .collect::<Vec<_>>()
+                        );
+                    }
                     "libraries" => out["libraries"] = json!(api::drive::libraries(&client).await?),
                     "favorites" => out["items"] = json!(api::drive::favorites(&client).await?),
                     "media" => out["items"] = json!(api::drive::media(&client).await?),
                     "meetings" => out["items"] = json!(api::drive::meetings(&client).await?),
                     "recycle" => out["deleted"] = json!(api::drive::recycle_bin(&client).await?),
-                    "people" => {
-                        out["people"] = json!(
-                            api::drive::by_people(&client)
-                                .await?
-                                .into_iter()
-                                .map(|(name, items)| json!({ "name": name, "items": items }))
-                                .collect::<Vec<_>>()
-                        )
-                    }
+                    // Browse files by People: each person's row files and
+                    // page, worded as Shared's rows.
+                    "people" => out["people"] = json!(api::drive::by_people(&client).await?),
                     _ => {
                         // In a subfolder, the folder itself too: Teams' bar
                         // offers its Share, Copy link, Download and Open in
@@ -27437,11 +27442,11 @@ impl qobject::Backend {
                     "picker_place" => {
                         let folders = |v: Vec<api::drive::DriveItem>| v.into_iter().filter(|i| i.is_folder).collect::<Vec<_>>();
                         match s("place").as_str() {
-                            "shared" => json!({ "items": folders(api::drive::shared_with_me(&client).await?) }),
+                            "shared" => json!({ "items": folders(api::drive::shared_with_me(&client).await?.into_iter().map(|(_, it)| it).collect()) }),
                             "favorites" => json!({ "items": folders(api::drive::favorites(&client).await?) }),
                             "meetings" => json!({ "items": folders(api::drive::meetings(&client).await?) }),
                             "people" => json!({ "people": api::drive::by_people(&client).await?.into_iter()
-                                .map(|(name, items)| json!({ "name": name, "items": folders(items) }))
+                                .map(|p| json!({ "name": p.name, "items": p.items.into_iter().filter(|i| i["is_folder"].as_bool() == Some(true)).collect::<Vec<_>>() }))
                                 .collect::<Vec<_>>() }),
                             other => anyhow::bail!("unknown place {other}"),
                         }
@@ -27468,7 +27473,9 @@ impl qobject::Backend {
                         let now = chrono::Local::now();
                         let deco = |v: Vec<api::drive::DriveItem>| v.iter().map(|it| api::list_rows::decorate(it, None, now)).collect::<Vec<_>>();
                         match s("place").as_str() {
-                            "shared" => json!({ "items": deco(api::drive::shared_with_me(&client).await?) }),
+                            // Shared with you: Date shared, Shared by, Activity.
+                            "shared" => json!({ "items": api::drive::shared_with_me(&client).await?.iter()
+                                .map(|(f, it)| api::shared_files::row(f, it, now)).collect::<Vec<_>>() }),
                             "favorites" => json!({ "items": deco(api::drive::favorites(&client).await?) }),
                             "meetings" => json!({ "items": api::cloud_attach::meeting_files(&client).await? }),
                             // Pictures and videos (not SharePoint's own
@@ -27480,23 +27487,16 @@ impl qobject::Backend {
                                 for k in ["w", "h", "taken", "duration", "video"] { v[k] = x[k].clone(); }
                                 v
                             }).collect::<Vec<_>>() }),
-                            "people" => {
-                                let order = api::cloud_attach::collaborators(&client).await.unwrap_or_default();
-                                let me = client.display_name().unwrap_or_default();
-                                let people = api::cloud_attach::order_people(api::drive::by_people(&client).await?, &order, &me);
-                                // The chips name each file by its title where
-                                // it has one (a recording's meeting name).
-                                let mut out = Vec::new();
-                                for (name, items) in people {
-                                    let titles = futures::future::join_all(items.iter().map(|it| api::drive::item_title(&client, &it.drive_id, &it.id))).await;
-                                    let mut rows = deco(items);
-                                    for (row, title) in rows.iter_mut().zip(titles) {
-                                        if let Some(t) = title { row["title"] = t.into(); }
-                                    }
-                                    out.push(json!({ "name": name, "items": rows }));
-                                }
-                                json!({ "people": out })
-                            }
+                            // People: OneDrive's people with their row's
+                            // chips, which name each file by its title (a
+                            // recording's meeting name).
+                            "people" => json!({ "people": api::drive::by_people(&client).await?.into_iter().map(|p| {
+                                let chips: Vec<serde_json::Value> = p.files.into_iter().map(|mut r| {
+                                    if let Some(t) = r["visual_title"].as_str().filter(|t| !t.is_empty()).map(str::to_string) { r["title"] = t.into(); }
+                                    r
+                                }).collect();
+                                json!({ "name": p.name, "id": p.id, "items": chips, "page": p.items })
+                            }).collect::<Vec<_>>() }),
                             // A channel's folder ("Browse Teams and Channels").
                             "channel" => {
                                 json!({ "folder": api::drive::channel_folder(&client, &s("team_id"), &s("channel_id")).await? })

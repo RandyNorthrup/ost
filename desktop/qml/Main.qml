@@ -9996,6 +9996,62 @@ Window {
         }
     }
 
+    // --shared-files-test [--shots=<dir>]: read only. OneDrive's Shared
+    // rows (name, place, Date shared, Shared by, Activity, Graph ids),
+    // Browse files by People (each person's row files and page), then the
+    // cloud file picker's Shared with you and People; compare with Teams.
+    // Logs SHARED lines.
+    Timer {
+        running: Qt.application.arguments.indexOf("--shared-files-test") >= 0 && backend.signedIn
+        interval: 2000; repeat: true
+        property int step: 0
+        property int wait: 0
+        onTriggered: {
+            const shots = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=/tmp").slice(8)
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(shots + "/shared-" + tag + ".png"))
+            const d = oneDrive.driveData
+            const row = i => [i.title || i.name, i.location, i.modified_text, i.modified_by, i.activity ? (i.activity.kind + ":" + i.activity.text + " · " + i.activity.time) : "", i.drive_id ? "graph" : "no-graph"].join(" | ")
+            const loaded = v => d.view === v && (d.items || d.people || d.error)
+            const p = conversation.cloudPickerForTest()
+            if (step === 0) { rail.current = "onedrive"; oneDrive.open("shared") }
+            else if (step === 1 && !loaded("shared") && ++wait < 60) return
+            else if (step === 1) {
+                wait = 0
+                console.warn("SHARED error", d.error || "")
+                for (const i of d.items || []) console.warn("SHARED row", row(i))
+                cap("withyou")
+                oneDrive.open("people")
+            }
+            else if (step === 2 && !loaded("people") && ++wait < 60) return
+            else if (step === 2) {
+                wait = 0
+                console.warn("SHARED people error", d.error || "")
+                for (const x of d.people || []) {
+                    console.warn("SHARED person", x.name, "|", (x.files || []).map(f => (f.title || f.name) + " · " + String(f.modified_text || "").replace(/ at .*$/, "")).join(" ; "))
+                    for (const i of x.items || []) console.warn("SHARED page", x.name, "|", row(i))
+                }
+                cap("people")
+                if ((d.people || []).length) oneDrive.person = d.people[0].name
+            }
+            else if (step === 3) { cap("person"); p.entry = "home"; p.open() }
+            else if (step === 5) p.openForTest("shared")
+            else if (step === 6 && p.loading && ++wait < 60) return
+            else if (step === 6) {
+                wait = 0
+                for (const i of p.rows) console.warn("SHARED picker row", row(i))
+                cap("picker-shared")
+                p.openForTest("people")
+            }
+            else if (step === 7 && p.loading && ++wait < 60) return
+            else if (step === 7) {
+                for (const x of p.people) console.warn("SHARED picker person", x.name, "|", (x.items || []).map(f => (f.title || f.name) + " · " + String(f.modified_text || "").replace(/ at .*$/, "")).join(" ; "))
+                cap("picker-people")
+            }
+            else if (step === 8) { p.close(); Qt.quit() }
+            step++
+        }
+    }
+
     // --onedrive-test: Home, My files (into Microsoft Teams Chat Files),
     // Shared and Libraries, capturing each; make and delete a test folder.
     Timer {

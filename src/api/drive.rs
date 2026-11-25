@@ -208,9 +208,14 @@ pub async fn recent(client: &TeamsClient) -> Result<Vec<(super::recent_files::Re
         .collect())
 }
 
-/// Files and folders others shared with you.
-pub async fn shared_with_me(client: &TeamsClient) -> Result<Vec<DriveItem>> {
-    get_items(client, "/me/drive/sharedWithMe?$top=100").await
+/// Files and folders others shared with you (Shared ▸ With you), as Teams
+/// lists them: from your OneDrive's recent files service and shared
+/// folders (Graph's `/me/drive/sharedWithMe` is retired), with Graph's
+/// items for the rows' actions.
+pub async fn shared_with_me(
+    client: &TeamsClient,
+) -> Result<Vec<(super::shared_files::SharedFile, DriveItem)>> {
+    super::shared_files::with_you_rows(client).await
 }
 
 /// A folder's contents: your OneDrive's root when `item_id` is empty,
@@ -413,65 +418,37 @@ pub fn photos_from(v: &serde_json::Value) -> Vec<(DriveItem, serde_json::Value)>
         .collect()
 }
 
-/// Files shared with you, by who shared them: [(person, files)].
-pub async fn by_people(client: &TeamsClient) -> Result<Vec<(String, Vec<DriveItem>)>> {
-    let v: serde_json::Value = client
-        .graph_get("/me/drive/sharedWithMe?$top=200")
+/// Browse files by People: who shared files with you, in Teams' order,
+/// each with their People row's files and their page, as rows (Date
+/// shared, Shared by, Activity) carrying Graph's ids for their actions.
+pub async fn by_people(client: &TeamsClient) -> Result<Vec<PersonRows>> {
+    let now = chrono::Local::now();
+    let rows = |v: Vec<(super::shared_files::SharedFile, DriveItem)>| {
+        v.iter()
+            .map(|(f, it)| super::shared_files::row(f, it, now))
+            .collect::<Vec<_>>()
+    };
+    Ok(super::shared_files::people_rows(client)
         .await?
-        .json()
-        .await?;
-    let mut out: Vec<(String, Vec<DriveItem>)> = Vec::new();
-    for raw in v
-        .get("value")
-        .and_then(|x| x.as_array())
         .into_iter()
-        .flatten()
-    {
-        let Some(item) = parse_item(raw) else {
-            continue;
-        };
-        let who = [
-            "/remoteItem/shared/sharedBy/user/displayName",
-            "/remoteItem/shared/owner/user/displayName",
-            "/remoteItem/createdBy/user/displayName",
-        ]
-        .iter()
-        .find_map(|p| {
-            raw.pointer(p)
-                .and_then(|x| x.as_str())
-                .filter(|s| !s.is_empty())
+        .map(|(p, files, items)| PersonRows {
+            name: p.name,
+            id: p.id,
+            files: rows(files),
+            items: rows(items),
         })
-        .unwrap_or("Someone")
-        .to_string();
-        match out.iter_mut().find(|(p, _)| *p == who) {
-            Some((_, files)) => files.push(item),
-            None => out.push((who, vec![item])),
-        }
-    }
-    Ok(out)
+        .collect())
 }
 
-/// An item's title as the cloud picker's People chips show it (Substrate's
-/// Visualization.Title: the SharePoint Title, which Teams sets to a
-/// recording's meeting name), or None when it has none.
-pub async fn item_title(client: &TeamsClient, drive_id: &str, item_id: &str) -> Option<String> {
-    if drive_id.is_empty() || item_id.is_empty() {
-        return None;
-    }
-    let v: serde_json::Value = client
-        .graph_get(&format!(
-            "/drives/{drive_id}/items/{item_id}/listItem/fields?$select=Title"
-        ))
-        .await
-        .ok()?
-        .json()
-        .await
-        .ok()?;
-    v["Title"]
-        .as_str()
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
-        .map(str::to_string)
+/// A person in Browse files by People.
+#[derive(Debug, Clone, Serialize)]
+pub struct PersonRows {
+    pub name: String,
+    pub id: String,
+    /// Their People row's files.
+    pub files: Vec<serde_json::Value>,
+    /// Their page's files.
+    pub items: Vec<serde_json::Value>,
 }
 
 /// Meeting files: the recordings Teams keeps in your OneDrive's
