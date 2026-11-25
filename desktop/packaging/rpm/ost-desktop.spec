@@ -5,6 +5,9 @@
 %global appid io.github.RandyNorthrup.ost
 # Release builds carry no debug info.
 %global debug_package %{nil}
+# No GCC LTO: cxx-qt's C++ is linked by rustc (with lld), which can't read
+# GCC's LTO objects.
+%global _lto_cflags %{nil}
 
 Name:           ost-desktop
 Version:        0

@@ -32,9 +32,10 @@ if [ "$deps" != 0 ]; then
     dnf install -y -q rpm-build 'dnf-command(builddep)'
     dnf builddep -y -q "$SPEC"
   else
-    zypper -n -q install rpm-build
+    # --force-resolution: busybox stand-ins (busybox-gawk…) make way for the real tools.
+    zypper -n -q install --force-resolution rpm-build
     # zypper has no builddep: the spec's BuildRequires, as listed by rpmspec.
-    rpmspec -q --buildrequires "$SPEC" | sed 's/ //g' | xargs zypper -n -q install
+    rpmspec -q --buildrequires "$SPEC" | sed "s/ //g" | xargs zypper -n -q install --force-resolution
   fi
   [ "$deps" = 2 ] && exit 0
 fi

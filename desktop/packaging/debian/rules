@@ -4,6 +4,9 @@
 # Rust, Qt, FFmpeg, PipeWire, OpenSSL and webrtc-audio-processing are the
 # distribution's.
 
+# No GCC LTO: cxx-qt's C++ is linked by rustc (with lld), which can't read
+# GCC's LTO objects.
+export DEB_BUILD_MAINT_OPTIONS = optimize=-lto
 include /usr/share/dpkg/buildopts.mk
 
 export QMAKE = /usr/lib/qt6/bin/qmake6

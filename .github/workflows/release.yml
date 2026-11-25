@@ -126,7 +126,7 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: tar and gzip for the checkout and the cache
-        run: command -v dnf >/dev/null && dnf install -y -q tar gzip git || zypper -n -q install tar gzip git
+        run: command -v dnf >/dev/null && dnf install -y -q tar gzip git || zypper -n -q install --force-resolution tar gzip git gawk
       - uses: actions/checkout@v4
       - run: sh desktop/packaging/build-rpm.sh --deps-only
       - uses: actions/cache@v4
