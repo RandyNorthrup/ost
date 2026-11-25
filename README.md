@@ -13,7 +13,6 @@
   <a href="https://github.com/RandyNorthrup/ost/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/RandyNorthrup/ost?style=for-the-badge&color=E3B341&logo=github"></a>
   <a href="https://github.com/RandyNorthrup/ost/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/RandyNorthrup/ost/ci.yml?branch=main&style=for-the-badge&label=CI&logo=githubactions&logoColor=white"></a>
   <a href="https://github.com/RandyNorthrup/ost/security/code-scanning"><img alt="CodeQL" src="https://img.shields.io/badge/CodeQL-enabled-1F6FEB?style=for-the-badge&logo=github&logoColor=white"></a>
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/RandyNorthrup/ost?style=for-the-badge&color=8957E5"></a>
 </p>
 
 <p align="center">
@@ -21,8 +20,7 @@
   <a href="https://www.rust-lang.org"><img alt="Rust" src="https://img.shields.io/badge/Rust-2024-CE422B?style=for-the-badge&logo=rust&logoColor=white"></a>
   <a href="https://www.qt.io"><img alt="Qt" src="https://img.shields.io/badge/Qt-6-41CD52?style=for-the-badge&logo=qt&logoColor=white"></a>
   <a href="https://github.com/RandyNorthrup/ost/wiki/Installation"><img alt="Wayland" src="https://img.shields.io/badge/Wayland-%26%20X11-FFBC00?style=for-the-badge&logo=wayland&logoColor=black"></a>
-  <a href="https://github.com/RandyNorthrup/ost/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/RandyNorthrup/ost?style=for-the-badge&color=6E7681"></a>
-  <a href="https://github.com/RandyNorthrup/ost/issues"><img alt="Open issues" src="https://img.shields.io/github/issues/RandyNorthrup/ost?style=for-the-badge&color=6E7681"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/RandyNorthrup/ost?style=for-the-badge&color=8957E5"></a>
 </p>
 
 <p align="center">
