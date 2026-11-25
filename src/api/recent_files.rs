@@ -351,13 +351,12 @@ pub fn graph_path(r: &Recent) -> Option<String> {
     let ok = |id: &str| {
         !id.is_empty() && id.len() <= 64 && id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
     };
-    if !(ok(&r.site_id) && ok(&r.web_id) && ok(&r.list_id))
-        || r.list_item_id.is_empty()
-        || !r.list_item_id.bytes().all(|b| b.is_ascii_digit())
-        || !host
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b".-".contains(&b))
-    {
+    let item_ok =
+        !r.list_item_id.is_empty() && r.list_item_id.bytes().all(|b| b.is_ascii_digit());
+    let host_ok = host
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b".-".contains(&b));
+    if !(ok(&r.site_id) && ok(&r.web_id) && ok(&r.list_id) && item_ok && host_ok) {
         return None;
     }
     Some(format!(
