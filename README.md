@@ -250,6 +250,13 @@ repository, which you review and submit yourself. OST has no telemetry and
 sends nothing to the project. See [SUPPORT.md](SUPPORT.md) and
 [PRIVACY.md](PRIVACY.md).
 
+## Contributing
+
+Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) for how to
+build, test and match a feature to Teams, and
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Report security problems
+privately as [SECURITY.md](SECURITY.md) describes, not in a public issue.
+
 ## Authors
 
 - Randy Northrup

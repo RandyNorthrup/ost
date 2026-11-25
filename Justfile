@@ -32,17 +32,17 @@ build-full:
 notices:
     python3 desktop/third_party_notices.py
 
-# Run clippy lints
+# Run clippy lints (as CI does)
 lint:
-    cargo clippy --all-targets --all-features
+    cargo clippy --workspace --all-targets -- -D warnings
 
 # Format code
 fmt:
-    cargo fmt
+    cargo fmt --all
 
 # Check formatting without changes
 fmt-check:
-    cargo fmt -- --check
+    cargo fmt --all -- --check
 
 # Run all quality checks
 check: fmt-check lint
