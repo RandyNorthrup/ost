@@ -20,6 +20,7 @@
 //!   goes with name `messageback`, the action's `text`, and the value (the
 //!   data and inputs, merged over `msteams.value`; a string value is sent
 //!   as `{}`, as Teams' JSON.parse leaves it). The bot answers in the chat.
+//!
 //! `userAadToken` is the middle tier's AAD token (Teams' MT_AAD_KEY).
 
 use anyhow::{Context, Result};

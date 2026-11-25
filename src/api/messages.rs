@@ -1150,6 +1150,7 @@ pub struct ChatEvent {
 /// - RecordingStopped: "{terminator} stopped recording." (RecordStop);
 /// - RecordingSaved: "Recording has been saved to {owner}'s OneDrive and
 ///   will expire in {N} days." with "Remove expiration" (CloudArrowUp).
+///
 /// Transcript-only messages, and a recording's paired transcript start and
 /// stop, show nothing (Teams keeps them in the meeting's recap).
 pub fn recording_event(content: &str, now: chrono::DateTime<chrono::Utc>) -> Option<ChatEvent> {
@@ -1915,20 +1916,6 @@ pub fn odsl_statements(value: &str) -> Vec<serde_json::Value> {
         .collect()
 }
 
-/// A "reasoning" ODSL statement as Teams' ReasoningCommandRenderer reads it
-/// (Teams 26304, 541316 `Ru` / `Eu` / `xu`), from its arguments: the time
-/// it took (`duration`, ms), whether it's still going (`active`), the
-/// service's own strings (`localizedStrings`: [[{KEY: {value}}]], keys in
-/// capitals), and `iterations`, a JSON list of steps grouped by
-/// iterationNumber. Out:
-/// - `duration` (ms or null), `active`, `strings` {KEY: text};
-/// - `steps`: each iteration's chain of thought (Teams' natural-language
-///   view): {title, active, substeps: [{title, link}]} (`link`, a
-///   workflow trigger step's messageLink);
-/// - `iterations`: the other view (enableChainOfThoughtNaturalLanguage
-///   off): {number, seconds (the longest step, whole), intents
-///   "intent (type), …"}.
-/// Null when there are no iterations and no goals (Teams draws nothing).
 /// A statement's argument as Teams' ODSL processor reads it (r_data-
 /// resolvers-chat `nt` / `Ms`): a list of `{name, value}`, or an object
 /// keyed by the argument's name whose entries are typed (`{type: "string",
@@ -2137,6 +2124,21 @@ pub fn odsl_command(name: &str, arg: impl Fn(&str) -> serde_json::Value) -> serd
     }
 }
 
+/// A "reasoning" ODSL statement as Teams' ReasoningCommandRenderer reads it
+/// (Teams 26304, 541316 `Ru` / `Eu` / `xu`), from its arguments: the time
+/// it took (`duration`, ms), whether it's still going (`active`), the
+/// service's own strings (`localizedStrings`: [[{KEY: {value}}]], keys in
+/// capitals), and `iterations`, a JSON list of steps grouped by
+/// iterationNumber. Out:
+/// - `duration` (ms or null), `active`, `strings` {KEY: text};
+/// - `steps`: each iteration's chain of thought (Teams' natural-language
+///   view): {title, active, substeps: [{title, link}]} (`link`, a
+///   workflow trigger step's messageLink);
+/// - `iterations`: the other view (enableChainOfThoughtNaturalLanguage
+///   off): {number, seconds (the longest step, whole), intents
+///   "intent (type), …"}.
+///
+/// Null when there are no iterations and no goals (Teams draws nothing).
 pub fn reasoning_view(arg: impl Fn(&str) -> serde_json::Value) -> serde_json::Value {
     use serde_json::{Value, json};
     let parse = |v: Value| -> Value {

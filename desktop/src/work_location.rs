@@ -19,6 +19,7 @@
 //!   first-run banner not seen), a listed network is only looked up
 //!   (`GET …/location/wifiNetwork`), never checked in or out, and raises
 //!   Teams' first-run banner.
+//!
 //! Reports and check-outs wait for an unlocked machine, as Teams'
 //! useUserStateForWiFiUpdate. Teams reads Windows' WLAN API and needs the
 //! OS location permission; OST reads the network from NetworkManager over

@@ -335,6 +335,7 @@ fn between<'a>(s: &'a str, a: &str, b: &str) -> Option<&'a str> {
 ///   started", "Recording stopped. Saving recording…");
 /// - the result card as "Recording · {title} · {duration} · organizer
 ///   {name}".
+///
 /// None for messages Teams doesn't show (no content type).
 pub fn recording_summary(content: &str, organizer: Option<&str>) -> Option<String> {
     let attr = |tag: &str, name: &str| -> Option<String> {
