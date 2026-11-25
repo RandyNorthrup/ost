@@ -88,8 +88,8 @@ Check your download against the release's `SHA256SUMS`
 
 | System | Download | Install |
 | --- | --- | --- |
-| Ubuntu 26.04 | `ost-desktop_<version>-1~ubuntu26.04_amd64.deb` | `sudo apt install ./ost-desktop_*~ubuntu26.04_amd64.deb` |
-| Debian testing (forky) | `ost-desktop_<version>-1~debian.forky_amd64.deb` | `sudo apt install ./ost-desktop_*~debian.forky_amd64.deb` |
+| Ubuntu 26.04 | `ost-desktop_<version>-1.ubuntu26.04_amd64.deb` | `sudo apt install ./ost-desktop_*.ubuntu26.04_amd64.deb` |
+| Debian testing (forky) | `ost-desktop_<version>-1.debian.forky_amd64.deb` | `sudo apt install ./ost-desktop_*.debian.forky_amd64.deb` |
 | Fedora 45 | `ost-desktop-<version>-1.fc45.x86_64.rpm` | `sudo dnf install ./ost-desktop-*.fc45.x86_64.rpm` |
 | openSUSE Tumbleweed | `ost-desktop-<version>-1.suse.tw.x86_64.rpm` | `sudo zypper install --allow-unsigned-rpm ./ost-desktop-*.suse.tw.x86_64.rpm` |
 | Arch Linux | AUR `ost` / `ost-bin` (coming soon) | |

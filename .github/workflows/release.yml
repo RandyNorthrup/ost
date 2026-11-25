@@ -203,7 +203,11 @@ jobs:
           merge-multiple: true
       - name: SHA256SUMS
         run: |
-          cd dist && ls -la
+          cd dist
+          # GitHub publishes "~" in a file name as "." (0.2.1-1~ubuntu26.04):
+          # name the files as they will be published, so SHA256SUMS matches.
+          for f in *~*; do if [ -e "$f" ]; then mv -- "$f" "$(printf %s "$f" | tr '~' '.')"; fi; done
+          ls -la
           sha256sum -- * > SHA256SUMS && cat SHA256SUMS
       - name: Attach to the release (created when the tag has none yet)
         run: |
