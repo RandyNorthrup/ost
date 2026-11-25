@@ -23,7 +23,7 @@ The wordmark is Selawik Bold (OFL, desktop/assets/fonts), outlined so the
 SVG renders anywhere.
 
 Writes desktop/assets/logo.svg, desktop/assets/logo.png (512),
-desktop/packaging/ost-desktop.png (256) and docs/logo_ost.png (512).
+desktop/packaging/io.github.RandyNorthrup.ost.png (256) and docs/logo_ost.png (512).
 Run from the repo root with the helper venv (fontTools; resvg on PATH):
   ~/.local/share/ost-vnc-venv/bin/python -I desktop/assets/make_logo.py [--layout a]
 then python3 -I desktop/assets/tray/make.py for the tray icons. To try a
@@ -198,6 +198,6 @@ if __name__ == "__main__":
     else:
         open(OUT, "w").write(svg(args.layout))
         render(OUT, "desktop/assets/logo.png", 512)
-        render(OUT, "desktop/packaging/ost-desktop.png", 256)
+        render(OUT, "desktop/packaging/io.github.RandyNorthrup.ost.png", 256)
         render(OUT, "docs/logo_ost.png", 512)
     print("ok")

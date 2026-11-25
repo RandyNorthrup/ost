@@ -54,8 +54,8 @@ for e in $EXCLUDES; do set -- "$@" --exclude-library "$e"; done
 linuxdeploy-x86_64.AppImage --appdir AppDir "$@" \
   -e "$SRC/target/release/ost-desktop" \
   -e "$SRC/target/release/teams-cli" \
-  -d "$SRC/desktop/packaging/ost-desktop.desktop" \
-  -i "$SRC/desktop/packaging/ost-desktop.png" \
+  -d "$SRC/desktop/packaging/io.github.RandyNorthrup.ost.desktop" \
+  -i "$SRC/desktop/packaging/io.github.RandyNorthrup.ost.png" \
   -l "$LIB/libLayerShellQtInterface.so.6" \
   --plugin qt
 
@@ -69,6 +69,9 @@ linuxdeploy-x86_64.AppImage --appdir AppDir "$@" \
 
 # Whatever a plugin's own deployment brought in from the excluded set goes.
 for e in $EXCLUDES; do rm -f AppDir/usr/lib/$e; done
+
+install -Dm644 "$SRC/desktop/packaging/io.github.RandyNorthrup.ost.metainfo.xml" \
+  AppDir/usr/share/metainfo/io.github.RandyNorthrup.ost.metainfo.xml
 
 # AppRun: OST, or teams-cli ("<AppImage> teams-cli …", or the AppImage
 # linked as teams-cli).

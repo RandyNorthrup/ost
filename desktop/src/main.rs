@@ -200,9 +200,9 @@ fn main() {
     // SAFETY: a plain Qt call with no arguments, made once, before Qt starts.
     unsafe { ost_webengine_initialize() };
     let mut app = QGuiApplication::new();
-    // Wayland compositors match windows to ost-desktop.desktop by app id,
-    // which is how the window gets the OST icon.
-    QGuiApplication::set_desktop_file_name(&QString::from("ost-desktop"));
+    // Wayland compositors match windows to io.github.RandyNorthrup.ost.desktop
+    // by app id, which is how the window gets the OST icon.
+    QGuiApplication::set_desktop_file_name(&QString::from("io.github.RandyNorthrup.ost"));
     if let Some(mut app) = app.as_mut() {
         app.as_mut().set_application_name(&QString::from("OST"));
         app.as_mut()

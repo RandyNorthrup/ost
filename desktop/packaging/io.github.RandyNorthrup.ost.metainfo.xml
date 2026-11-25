@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- OST's AppStream metainfo: the .deb, .rpm, AUR packages, Flatpak and
+     AppImage all install it as /usr/share/metainfo/<id>.metainfo.xml. -->
+<component type="desktop-application">
+  <id>io.github.RandyNorthrup.ost</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>OST</name>
+  <summary>Desktop client for Microsoft Teams</summary>
+  <developer id="io.github.randynorthrup">
+    <name>Randy Northrup</name>
+  </developer>
+  <description>
+    <p>
+      Native Linux desktop client for Microsoft Teams: chat, channels, calls
+      and meetings, calendar and files, built in Rust and Qt Quick. It looks
+      and works like the Teams desktop app; only the name and the logo differ.
+      It also includes the terminal client, teams-cli.
+    </p>
+    <p>
+      OST is unofficial and not affiliated with Microsoft. You sign in with
+      your own Microsoft work or school account.
+    </p>
+    <ul>
+      <li>Chats with Teams' formatting, code blocks, emoji, GIFs, reactions, files, Loop components, video clips and scheduled messages</li>
+      <li>Teams and channels: posts, threads, announcements, channel tabs, shared and private channels</li>
+      <li>Calls and meetings with video, background effects, screen sharing, live captions, recording, breakout rooms and webinars</li>
+      <li>Calendar with day, work week, week and month views and Teams' scheduling form</li>
+      <li>OneDrive and channel files, previews and sharing</li>
+      <li>Activity, notifications with quick reply, presence, Teams' Settings, light, dark and high-contrast themes</li>
+      <li>Teams Rooms: run as a room device, cast to a room or control one</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.RandyNorthrup.ost.desktop</launchable>
+  <icon type="stock">io.github.RandyNorthrup.ost</icon>
+  <url type="homepage">https://github.com/RandyNorthrup/ost/wiki</url>
+  <url type="bugtracker">https://github.com/RandyNorthrup/ost/issues</url>
+  <url type="help">https://github.com/RandyNorthrup/ost/wiki</url>
+  <url type="vcs-browser">https://github.com/RandyNorthrup/ost</url>
+  <url type="contribute">https://github.com/RandyNorthrup/ost</url>
+  <categories>
+    <category>Network</category>
+    <category>InstantMessaging</category>
+    <category>Chat</category>
+    <category>VideoConference</category>
+  </categories>
+  <keywords>
+    <keyword>Teams</keyword>
+    <keyword>Microsoft 365</keyword>
+    <keyword>chat</keyword>
+    <keyword>meeting</keyword>
+    <keyword>video call</keyword>
+  </keywords>
+  <provides>
+    <binary>ost-desktop</binary>
+  </provides>
+  <branding>
+    <color type="primary" scheme_preference="light">#c5cbfa</color>
+    <color type="primary" scheme_preference="dark">#33357a</color>
+  </branding>
+  <screenshots>
+    <screenshot type="default">
+      <caption>A group chat with formatting, a file, reactions and a code block</caption>
+      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/RandyNorthrup/ost/main/docs/screenshots/chat.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>A meeting with video, a raised hand and the People pane</caption>
+      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/RandyNorthrup/ost/main/docs/screenshots/meeting.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The calendar's work week view</caption>
+      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/RandyNorthrup/ost/main/docs/screenshots/calendar.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>A channel post with replies</caption>
+      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/RandyNorthrup/ost/main/docs/screenshots/channel.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Activity and a chat in the dark theme</caption>
+      <image type="source" width="1280" height="800">https://raw.githubusercontent.com/RandyNorthrup/ost/main/docs/screenshots/activity-dark.png</image>
+    </screenshot>
+  </screenshots>
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">intense</content_attribute>
+    <content_attribute id="social-audio">intense</content_attribute>
+    <content_attribute id="social-contacts">intense</content_attribute>
+    <content_attribute id="social-info">mild</content_attribute>
+  </content_rating>
+  <releases>
+    <release version="0.2.0" date="2026-11-24">
+      <url type="details">https://github.com/RandyNorthrup/ost/releases/tag/v0.2.0</url>
+    </release>
+    <release version="0.1.0" date="2026-11-15">
+      <url type="details">https://github.com/RandyNorthrup/ost/releases/tag/v0.1.0</url>
+    </release>
+  </releases>
+</component>

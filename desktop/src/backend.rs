@@ -8846,10 +8846,15 @@ fn set_autostart(on: bool) -> anyhow::Result<()> {
             _ => return Ok(()),
         }
     }
-    let exe = std::env::current_exe()?;
+    // From an AppImage, the AppImage itself (current_exe is inside its
+    // mount, which is gone after it exits).
+    let exe = match std::env::var_os("APPIMAGE") {
+        Some(a) => std::path::PathBuf::from(a),
+        None => std::env::current_exe()?,
+    };
     std::fs::create_dir_all(&dir)?;
     let entry = format!(
-        "[Desktop Entry]\nType=Application\nName=OST\nComment=Teams client\nExec=\"{}\"\nIcon=ost\nTerminal=false\nX-GNOME-Autostart-enabled=true\n",
+        "[Desktop Entry]\nType=Application\nName=OST\nComment=Teams client\nExec=\"{}\"\nIcon=io.github.RandyNorthrup.ost\nTerminal=false\nX-GNOME-Autostart-enabled=true\n",
         exe.display()
     );
     std::fs::write(&file, entry)?;
@@ -14723,7 +14728,7 @@ impl qobject::Backend {
                 .appname("OST")
                 .summary(&title)
                 .body(&body)
-                .icon("ost-desktop")
+                .icon("io.github.RandyNorthrup.ost")
                 .action("default", &tr("Open"))
                 .hint(notify_rust::Hint::Category("im.received".into()))
                 .hint(notify_rust::Hint::SuppressSound(silent))
@@ -14984,7 +14989,7 @@ impl qobject::Backend {
                 .appname("OST")
                 .summary(&title)
                 .body(&body)
-                .icon("ost-desktop")
+                .icon("io.github.RandyNorthrup.ost")
                 .action("join", &tr("Join"))
                 .action(second.0, &second.1)
                 .action("default", &tr("Open"))
@@ -25143,7 +25148,7 @@ impl qobject::Backend {
                 .appname("OST")
                 .summary(&tr("This is a test notification"))
                 .body(&body)
-                .icon("ost-desktop")
+                .icon("io.github.RandyNorthrup.ost")
                 .hint(notify_rust::Hint::Category("im.received".into()))
                 .hint(notify_rust::Hint::SuppressSound(silent))
                 .timeout(notify_rust::Timeout::Milliseconds(timeout))

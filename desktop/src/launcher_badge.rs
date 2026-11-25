@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use zbus::zvariant::Value;
 
-const APP_URI: &str = "application://ost-desktop.desktop";
+const APP_URI: &str = "application://io.github.RandyNorthrup.ost.desktop";
 
 async fn connection() -> Option<&'static zbus::Connection> {
     static CONN: tokio::sync::OnceCell<Option<zbus::Connection>> = tokio::sync::OnceCell::const_new();
