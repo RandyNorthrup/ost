@@ -262,28 +262,26 @@ pub async fn recent_docs(client: &TeamsClient, excel: bool) -> Result<Vec<serde_
         Ok(items) => return Ok(items),
         Err(e) => tracing::info!("Office recent files: {e:#}; using OneDrive's"),
     }
-    let v: serde_json::Value = client
-        .graph_get("/me/drive/recent?$top=50")
+    // OneDrive's recent files (Graph's drive/recent is retired), with
+    // Graph's ids for Excel Live.
+    let files: Vec<super::recent_files::Recent> = super::recent_files::fetch(client)
         .await?
-        .json()
-        .await?;
-    let ext_ok = |n: &str| {
-        n.rsplit_once('.')
-            .is_some_and(|(_, e)| exts.split(',').any(|x| x.eq_ignore_ascii_case(e)))
-    };
-    Ok(v.get("value")
-        .and_then(|i| i.as_array())
         .into_iter()
-        .flatten()
-        .filter(|i| i.get("name").and_then(|n| n.as_str()).is_some_and(ext_ok))
+        .filter(|r| exts.split(',').any(|x| x.eq_ignore_ascii_case(&r.kind)))
         .take(12)
-        .map(|i| {
-            let s = |p: &str| i.pointer(p).and_then(|x| x.as_str()).unwrap_or_default().to_string();
-            let drive = Some(s("/remoteItem/parentReference/driveId")).filter(|x| !x.is_empty()).unwrap_or_else(|| s("/parentReference/driveId"));
-            serde_json::json!({ "name": s("/name"), "url": s("/webUrl"), "driveId": drive,
-                                "itemId": Some(s("/remoteItem/id")).filter(|x| !x.is_empty()).unwrap_or_else(|| s("/id")) })
-        })
+        .collect();
+    let items = super::recent_files::graph_items(client, &files).await;
+    Ok(files
+        .iter()
+        .zip(items)
+        .map(|(r, g)| tray_file(&super::recent_files::drive_item(r, g)))
         .collect())
+}
+
+/// A recent file as the tray lists it.
+fn tray_file(it: &super::drive::DriveItem) -> serde_json::Value {
+    serde_json::json!({ "name": it.name, "url": it.web_url, "driveId": it.drive_id,
+                        "itemId": if it.drive_id.is_empty() { "" } else { it.id.as_str() } })
 }
 
 /// Excel Live's page for the workbook (calling-app `NP`): Excel's Teams app

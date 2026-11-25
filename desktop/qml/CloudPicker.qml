@@ -418,7 +418,7 @@ Popup {
                     FluentIcon { x: 53; y: 11.6; size: 32; name: dlg.typeIcon(hr.modelData.kind) }
                     Text {
                         x: 101; y: 9.8; width: 280; elide: Text.ElideRight
-                        text: hr.modelData.name.replace(/\.(loop|fluid)$/i, "")
+                        text: hr.modelData.title || hr.modelData.name
                         font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hr, theme.text)
                     }
                     Text {
@@ -428,7 +428,7 @@ Popup {
                     }
                     Text { x: 378.1; anchors.verticalCenter: parent.verticalCenter; width: 140; elide: Text.ElideRight; text: hr.modelData.opened || ""; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hr, dlg.ink) }
                     Text { x: 532; anchors.verticalCenter: parent.verticalCenter; width: 160; elide: Text.ElideRight; text: hr.modelData.owner || ""; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hr, dlg.ink) }
-                    FluentIcon { visible: !!hr.modelData.activity; x: 710.5; y: 8; size: 16; name: "edit-16"; color: theme.onFill(hr, theme.pick("#0F6CBD", "#479EF5", "#FFFFFF")) }
+                    FluentIcon { visible: !!hr.modelData.activity && !!hr.modelData.activity_kind; x: 710.5; y: 8; size: 16; name: dlg.activityIcon(hr.modelData.activity_kind); color: theme.onFill(hr, theme.pick("#0F6CBD", "#479EF5", "#FFFFFF")) }
                     Text {
                         visible: !!hr.modelData.activity
                         x: 736.5; y: 8; width: 95.5

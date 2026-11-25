@@ -822,7 +822,7 @@ Item {
                         Item { width: 40; height: 49; FluentIcon { x: 13.5; y: 16.17; name: "document-16"; size: 16; color: theme.onFill(card, root.ink) } }
                         ListHead { label: qsTr("Name"); field: root.view === "folder" ? "name" : ""; col: "name"; width: table.wName }
                         ListHead { label: root.view === "recent" ? qsTr("Opened") : qsTr("Modified"); field: root.view === "folder" ? "modified" : ""; col: "modified"; width: table.w("modified") }
-                        ListHead { visible: table.shows("modified_by"); label: root.view === "shared" ? qsTr("Shared by") : qsTr("Modified By"); field: root.view === "folder" ? "modified_by" : ""; col: "modified_by"; width: table.w("modified_by") }
+                        ListHead { visible: table.shows("modified_by"); label: root.view === "shared" ? qsTr("Shared by") : root.view === "recent" ? qsTr("Owner") : qsTr("Modified By"); field: root.view === "folder" ? "modified_by" : ""; col: "modified_by"; width: table.w("modified_by") }
                         ListHead { visible: table.shows("size"); label: qsTr("File size"); field: root.view === "folder" ? "size" : ""; col: "size"; width: table.w("size") }
                         ListHead { visible: table.shows("sharing"); label: qsTr("Sharing"); col: "sharing"; width: table.w("sharing") }
                         ListHead { visible: table.shows("activity"); label: qsTr("Activity"); width: table.w("activity") }
@@ -920,13 +920,13 @@ Item {
                                 x: newMark.visible ? 19.92 : 12; y: frow.ty
                                 width: Math.min(implicitWidth, nameCell.width - x - 8 - (nameCell.tools ? 101 : 0))
                                 elide: Text.ElideRight
-                                text: frow.modelData.name
+                                text: frow.modelData.title || frow.modelData.name
                                 font.family: theme.font; font.pixelSize: 14; font.weight: frow.sel ? Font.DemiBold : Font.Normal
                                 color: theme.onFill([hcFill6, card], root.ink)
                                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                                 TapHandler { onTapped: frow.activate() }
                                 Accessible.role: Accessible.Link
-                                Accessible.name: frow.modelData.name
+                                Accessible.name: frow.modelData.title || frow.modelData.name
                             }
                             // Narrow: "Modified by OST Test 1 · 0 items" (12 px #5E5E5D).
                             Text {
@@ -960,7 +960,7 @@ Item {
                                 width: table.w("modified"); text: frow.modelData.modified_text || ""
                                 tip: frow.modelData.modified_title || ""
                             }
-                            RowCell { ty: frow.ty; visible: table.shows("modified_by"); width: table.w("modified_by"); text: frow.modelData.modified_by || root.userName }
+                            RowCell { ty: frow.ty; visible: table.shows("modified_by"); width: table.w("modified_by"); text: root.view === "recent" ? (frow.modelData.owner || "") : frow.modelData.modified_by || root.userName }
                             RowCell { ty: frow.ty; visible: table.shows("size"); width: table.w("size"); text: frow.modelData.is_folder ? root.itemCount(frow.modelData.child_count) : root.size(frow.modelData.size) }
                             Item {
                                 visible: table.shows("sharing")
@@ -977,7 +977,7 @@ Item {
                                 visible: !!frow.modelData.activity && table.shows("activity")
                                 FluentIcon {
                                     x: 12; y: frow.ty + 1.83; size: 16; color: theme.onFill([hcFill6, card], root.strong)
-                                    name: frow.modelData.activity ? root.activityIcon(frow.modelData.activity.kind) : ""
+                                    name: frow.modelData.activity && frow.modelData.activity.kind ? root.activityIcon(frow.modelData.activity.kind) : ""
                                 }
                                 Text {
                                     x: 32; y: 15.83; width: parent.width - 32 - 4; height: 16

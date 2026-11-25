@@ -452,6 +452,8 @@ pub fn order_people(
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct RecentFile {
     pub name: String,
+    /// The name Home shows (without the extension); empty elsewhere.
+    pub title: String,
     pub kind: String,
     pub web_url: String,
     /// Where it is: its site's title ("OST Test Team").
@@ -465,6 +467,8 @@ pub struct RecentFile {
     pub activity: String,
     pub activity_user: String,
     pub activity_time: String,
+    /// The Activity column's icon ("edit", "share", …; `recent_files`).
+    pub activity_kind: String,
     /// The Attach popover's line: "Opened 4 days ago" (Teams'
     /// files_lastAccessedTimeLabel with date-fns' strict distance).
     pub opened_ago: String,
@@ -502,72 +506,44 @@ fn local(t: &str) -> Option<chrono::DateTime<chrono::Local>> {
 }
 
 /// Home's rows from `sp.RecentFileCollection.DeltaSync` (the picker's own
-/// call): the files you opened, newest first.
-pub fn parse_recent(reply: &Value, now: chrono::DateTime<chrono::Local>) -> Vec<RecentFile> {
-    // The reply's `value` is JSON text.
-    let v: Value = match &reply["value"] {
-        Value::String(t) => serde_json::from_str(t).unwrap_or_default(),
-        other => other.clone(),
-    };
-    let mut rows: Vec<(String, RecentFile)> = v["files"]
-        .as_array()
+/// call): the files you opened, newest first, as OneDrive lists them
+/// (`recent_files`).
+pub fn parse_recent(
+    reply: &Value,
+    personal: &str,
+    now: chrono::DateTime<chrono::Local>,
+) -> Vec<RecentFile> {
+    use super::recent_files;
+    recent_files::listed(reply, personal)
         .into_iter()
-        .flatten()
-        .filter_map(|f| {
-            let x = &f["file"];
-            let opened = [
-                &x["UserRelationship"]["LastAccessDateTime"],
-                &x["ItemProperties"]["AccessedByMailboxOwner"]["LastAccessDateTime"],
-            ]
-            .into_iter()
-            .map(s)
-            .find(|t| !t.is_empty())?;
-            let t = local(&opened)?;
-            let name = s(&x["FileName"]);
-            let a = &f["activity"];
-            Some((
-                opened,
-                RecentFile {
-                    kind: s(&x["FileExtension"]).to_ascii_lowercase(),
-                    web_url: [
-                        &x["SharePointItem"]["FileUrl"],
-                        &x["ItemProperties"]["Default"]["DocumentLink"],
-                    ]
-                    .into_iter()
-                    .map(s)
-                    .find(|u| !u.is_empty())
+        .filter_map(|r| {
+            let t = local(&r.opened)?;
+            let a = r.activity.clone().unwrap_or_default();
+            Some(RecentFile {
+                opened: super::list_rows::activity_time(t, now),
+                opened_title: t.format("%-m/%-d/%Y %-I:%M %p").to_string(),
+                activity: a.format,
+                activity_user: a.user,
+                activity_time: local(&a.time)
+                    .map(|t| recent_files::activity_day(t, now))
                     .unwrap_or_default(),
-                    location: s(&x["Visualization"]["ContainerTitle"]),
-                    opened: super::list_rows::activity_time(t, now),
-                    opened_title: t.format("%-m/%-d/%Y %-I:%M %p").to_string(),
-                    owner: s(&x["Document"]["Author"]),
-                    activity: s(&a["message_format"]),
-                    activity_user: a["users"]
-                        .get(0)
-                        .map(|u| s(&u["display_name"]))
-                        .unwrap_or_default(),
-                    activity_time: local(&s(&a["timestamp"]))
-                        .map(|t| super::list_rows::activity_time(t, now))
-                        .unwrap_or_default(),
-                    opened_ago: String::new(),
-                    name,
-                },
-            ))
+                activity_kind: a.kind,
+                opened_ago: String::new(),
+                name: r.name,
+                title: r.title,
+                kind: r.kind,
+                web_url: r.web_url,
+                location: r.location,
+                owner: r.owner,
+            })
         })
-        .collect();
-    rows.sort_by(|a, b| b.0.cmp(&a.0));
-    rows.into_iter().map(|(_, r)| r).collect()
+        .collect()
 }
 
 /// Home's files, as the picker reads them from your OneDrive.
 pub async fn recent(client: &TeamsClient) -> Result<Vec<RecentFile>> {
-    let personal = super::quick_access::personal_site(client).await?;
-    let reply = sharing::get_with(
-        &format!("{personal}/_api/sp.RecentFileCollection.DeltaSync?top=500"),
-        &[("accept", "application/json")],
-    )
-    .await?;
-    Ok(parse_recent(&reply, chrono::Local::now()))
+    let (reply, personal) = super::recent_files::fetch_reply(client).await?;
+    Ok(parse_recent(&reply, &personal, chrono::Local::now()))
 }
 
 /// Meetings: the files shared in your meetings, as the picker asks
@@ -743,16 +719,24 @@ mod tests {
         // Loop paragraph Randy edited, opened Nov 6, and a shared file
         // never opened (Teams' Home leaves it out).
         let files = json!({ "files": [
-            { "file": { "FileName": "ost-share-test.txt", "FileExtension": "txt", "SharePointItem": { "FileUrl": "https://x/ost-share-test.txt" },
-                        "Visualization": { "ContainerTitle": "OST Test 1" }, "Document": { "Author": "OST Test 1" } },
+            { "file": { "FileName": "ost-share-test.txt", "FileExtension": "txt", "SharePointItem": { "FileUrl": "https://x/ost-share-test.txt",
+                          "SiteId": "86beb970-8c88-4ae2-acce-d51c851ec061", "WebId": "a3305c60-5edd-4721-8f56-1352f4b64bcf",
+                          "ListId": "c300f6d2-5ee5-4f38-a11c-6a78cbe2bf1d", "UniqueId": "d9840407-cd62-416f-b275-829111b2ccd7" },
+                        "Visualization": { "Title": "ost-share-test", "Type": "Text", "ContainerTitle": "OST Test 1" }, "Document": { "Author": "OST Test 1" } },
               "activity": { "message_format": "You shared this", "users": [], "timestamp": "2026-11-13T20:00:35Z" } },
-            { "file": { "FileName": "Loop paragraph.loop", "FileExtension": "loop", "SharePointItem": { "FileUrl": "https://x/Loop paragraph.loop" },
+            { "file": { "FileName": "Loop paragraph.loop", "FileExtension": "loop", "SharePointItem": { "FileUrl": "https://x/Loop paragraph.loop",
+                          "SiteId": "86beb970-8c88-4ae2-acce-d51c851ec061", "WebId": "a3305c60-5edd-4721-8f56-1352f4b64bcf",
+                          "ListId": "c300f6d2-5ee5-4f38-a11c-6a78cbe2bf1d", "UniqueId": "e9840407-cd62-416f-b275-829111b2ccd7" },
                         "UserRelationship": { "LastAccessDateTime": "2026-11-06T18:06:35Z" },
-                        "Visualization": { "ContainerTitle": "Secure Coast Network Solutions" }, "Document": { "Author": "Randy Northrup" } },
-              "activity": { "message_format": "{0} edited this", "users": [{ "display_name": "Randy Northrup" }], "timestamp": "2026-11-06T06:42:01Z" } }
+                        "Visualization": { "Title": "Loop paragraph", "Type": "Fluid", "ContainerTitle": "Secure Coast Network Solutions" }, "Document": { "Author": "Randy Northrup" } },
+              "activity": { "message_format": "{0} edited this", "type": 16, "users": [{ "display_name": "Randy Northrup" }], "timestamp": "2026-11-06T06:42:01Z" } }
         ] });
         let now = local("2026-11-13T20:30:00Z").unwrap();
-        let rows = parse_recent(&json!({ "value": files.to_string() }), now);
+        let rows = parse_recent(
+            &json!({ "value": files.to_string() }),
+            "https://x/personal/me",
+            now,
+        );
         assert_eq!(rows.len(), 1);
         let r = &rows[0];
         assert_eq!(
@@ -774,6 +758,11 @@ mod tests {
         assert_eq!(
             r.opened,
             super::super::list_rows::activity_time(local("2026-11-06T18:06:35Z").unwrap(), now)
+        );
+        // As Teams' picker words the row: no extension, the edit glyph.
+        assert_eq!(
+            (r.title.as_str(), r.activity_kind.as_str()),
+            ("Loop paragraph", "edit")
         );
     }
 

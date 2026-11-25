@@ -312,5 +312,8 @@ odsp-web-prod_2026-11-06.005).
   media service (`{mediaBaseUrl}/transform/zip`); OST saves each file on its
   own. Both are in TASK-0116.
 - The Modified By name's profile card on click.
-- Teams' Home view (For you cards; Opened, Owner and Activity from the recent
-  files service) is a different layout. OST's Home still uses the files table.
+- Teams' Home view (For you cards, the Recent filter pills, a location line
+  under each name) is a different layout. OST's Home still uses the files
+  table, with Teams' items, order and Opened, Owner and Activity columns from
+  the recent files service (`sp.RecentFileCollection.DeltaSync`, see
+  `src/api/recent_files.rs`).

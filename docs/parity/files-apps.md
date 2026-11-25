@@ -52,7 +52,8 @@ Research notes:
 - [ ] Open the OneDrive app in a separate window. Teams personal apps support "Open in new window", which can be checked per app.
   Source: https://support.microsoft.com/en-us/planner/teams/getting-started-with-planner-in-teams (generic "Open in new window" pattern)
 - API: Microsoft Graph driveItem/drive API (v1.0) covers this app:
-  - Listing: `/me/drive/root/children`, `/me/drive/recent` (Home), `/me/drive/sharedWithMe` (Shared), `/me/drive/following` (most likely what backs Favorites; not confirmed).
+  - Listing: `/me/drive/root/children`, `/me/drive/sharedWithMe` (Shared), `/me/drive/following` (most likely what backs Favorites; not confirmed).
+  - Home: Graph's `/me/drive/recent` and `/me/drive/sharedWithMe` are deprecated and stop returning data after November 2026; Graph names no replacement. Teams' OneDrive app never used them: its Home reads SharePoint's recent files service on your OneDrive's site, `_api/sp.RecentFileCollection.DeltaSync?top=500` (captured on winpc 2026-11-25), filtered by OneDrive's `isInvalidOdbRecentItem`. OST does the same (`src/api/recent_files.rs`, TASK-0301).
   - File operations: upload, rename/move (PATCH parentReference), copy, delete.
   - Recycle bin gap: no Graph v1.0 endpoint was found to list or restore the OneDrive for Business recycle bin. `driveItem: restore` is "currently only available for OneDrive Personal", and `recycleBin` list items targets SharePoint Embedded containers only.
   - The "Browse by People/Meetings/Media" groupings have no dedicated endpoint. They would need to be derived client-side from sharedWithMe/recent metadata.

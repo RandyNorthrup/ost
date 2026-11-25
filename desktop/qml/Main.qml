@@ -9972,6 +9972,30 @@ Window {
         }
     }
 
+    // --onedrive-home-test [--shots=<dir>]: OneDrive Home's rows (read
+    // only): name, Opened, Owner, Activity, and whether each has Graph ids
+    // for its actions; compare with Teams' Home.
+    Timer {
+        running: Qt.application.arguments.indexOf("--onedrive-home-test") >= 0 && backend.signedIn
+        interval: 2000; repeat: true
+        property int step: 0
+        property int wait: 0
+        onTriggered: {
+            const shots = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=/tmp").slice(8)
+            const d = oneDrive.driveData
+            if (step === 0) { rail.current = "onedrive"; oneDrive.open("recent") }
+            else if (step === 1 && (d.view !== "recent" || !d.items && !d.error) && ++wait < 60) return
+            else if (step === 1) {
+                console.warn("HOME error", d.error || "")
+                for (const i of d.items || [])
+                    console.warn("HOME row", [i.title || i.name, i.location, i.modified_text, i.owner, i.activity ? (i.activity.kind + ":" + i.activity.text + " · " + i.activity.time) : "", i.kind, i.drive_id ? "graph" : "no-graph", i.sp_item ? "sp" : "no-sp"].join(" | "))
+                window.contentItem.grabToImage(r => r.saveToFile(shots + "/onedrive-home.png"))
+            }
+            else if (step === 3) Qt.quit()
+            step++
+        }
+    }
+
     // --onedrive-test: Home, My files (into Microsoft Teams Chat Files),
     // Shared and Libraries, capturing each; make and delete a test folder.
     Timer {

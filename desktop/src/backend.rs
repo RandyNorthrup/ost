@@ -26666,7 +26666,18 @@ impl qobject::Backend {
                 let client = TeamsClient::new().await?;
                 let mut out = json!({ "view": view, "drive_id": drive_id, "item_id": item_id });
                 match view.as_str() {
-                    "recent" => out["items"] = json!(api::drive::recent(&client).await?),
+                    // Home: Opened, Owner and Activity from the recent
+                    // files service.
+                    "recent" => {
+                        let now = chrono::Local::now();
+                        out["rows"] = json!(
+                            api::drive::recent(&client)
+                                .await?
+                                .iter()
+                                .map(|(r, it)| api::recent_files::home_row(r, it, now))
+                                .collect::<Vec<_>>()
+                        );
+                    }
                     "shared" => out["items"] = json!(api::drive::shared_with_me(&client).await?),
                     "libraries" => out["libraries"] = json!(api::drive::libraries(&client).await?),
                     "favorites" => out["items"] = json!(api::drive::favorites(&client).await?),
@@ -26745,6 +26756,10 @@ impl qobject::Backend {
                             ))
                             .collect::<Vec<_>>()
                     );
+                }
+                // Home's rows come worded already.
+                if let Some(rows) = out.as_object_mut().and_then(|o| o.remove("rows")) {
+                    out["items"] = rows;
                 }
                 // Which items are favorites (the menu's Add to / Remove
                 // from favorites).

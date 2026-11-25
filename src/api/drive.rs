@@ -53,7 +53,7 @@ pub struct Library {
     pub web_url: String,
 }
 
-const SELECT: &str = "$select=id,name,size,folder,file,lastModifiedDateTime,lastModifiedBy,shared,webUrl,parentReference,remoteItem,sharepointIds,specialFolder";
+pub(crate) const SELECT: &str = "$select=id,name,size,folder,file,lastModifiedDateTime,lastModifiedBy,shared,webUrl,parentReference,remoteItem,sharepointIds,specialFolder";
 
 /// Graph ids for drives and items: letters, digits and `!-_.` only.
 fn check_id(id: &str) -> Result<&str> {
@@ -80,7 +80,7 @@ fn item_path(drive_id: &str, item_id: &str) -> Result<String> {
     })
 }
 
-fn parse_item(v: &serde_json::Value) -> Option<DriveItem> {
+pub(crate) fn parse_item(v: &serde_json::Value) -> Option<DriveItem> {
     // Shared and recent lists point at the real item through remoteItem.
     let r = v.get("remoteItem").unwrap_or(v);
     let s = |x: &serde_json::Value, p: &str| {
@@ -191,9 +191,21 @@ async fn get_items(client: &TeamsClient, path: &str) -> Result<Vec<DriveItem>> {
     Ok(parse_items(&v))
 }
 
-/// Files you opened or changed lately (OneDrive Home).
-pub async fn recent(client: &TeamsClient) -> Result<Vec<DriveItem>> {
-    get_items(client, "/me/drive/recent?$top=50").await
+/// Files you opened lately (OneDrive Home), as Teams lists them: from
+/// your OneDrive's recent files service (Graph's `/me/drive/recent` is
+/// retired), with Graph's items for the rows' actions.
+pub async fn recent(client: &TeamsClient) -> Result<Vec<(super::recent_files::Recent, DriveItem)>> {
+    use super::recent_files;
+    let files = recent_files::fetch(client).await?;
+    let items = recent_files::graph_items(client, &files).await;
+    Ok(files
+        .into_iter()
+        .zip(items)
+        .map(|(r, g)| {
+            let it = recent_files::drive_item(&r, g);
+            (r, it)
+        })
+        .collect())
 }
 
 /// Files and folders others shared with you.

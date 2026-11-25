@@ -264,7 +264,7 @@ not found in public sources. **Guessed**: capture it on winpc if needed.
 | Work today (OST) | Consumer | Source | Confidence | Verdict |
 |---|---|---|---|---|
 | Graph `/me/drive/root/children`, `/items/{id}`, `/shares/…` (`src/api/drive.rs:73-319`) | Supported for personal accounts (Files.Read*). Personal drive items have IDs like `1312abc!1231`; OST's `check_id` (`src/api/drive.rs:59-68`) already accepts `!`. | [MS list children](https://learn.microsoft.com/en-us/graph/api/driveitem-list-children?view=graph-rest-1.0) | Documented | Reuse |
-| `/me/drive/recent` (`src/api/drive.rs:196`) | Supported for MSA, but **deprecated, stops returning data after November 2026** for every account type | [MS drive recent](https://learn.microsoft.com/en-us/graph/api/drive-recent?view=graph-rest-1.0) | Documented | Replace for both |
+| `/me/drive/recent` (`src/api/drive.rs:196`) | Supported for MSA, but **deprecated, stops returning data after November 2026** for every account type | [MS drive recent](https://learn.microsoft.com/en-us/graph/api/drive-recent?view=graph-rest-1.0) | Documented | Replaced for work accounts by SharePoint `sp.RecentFileCollection.DeltaSync`, as Teams does (TASK-0301); personal accounts: TASK-0300 |
 | `/groups/{id}/drive`, SharePoint `_api/v2.1/favorites`, `tenant-my.sharepoint.com` (`src/api/drive.rs:236, 279-298`) | No SharePoint for MSA | — | Documented | None |
 | `/search/query` (`src/api/drive.rs:333`) | Not supported for MSA | [MS search query](https://learn.microsoft.com/en-us/graph/api/search-query?view=graph-rest-1.0) | Documented | None (use `/me/drive/root/search(q=…)`, guessed) |
 | Chat file upload to `/me/drive/root:/Microsoft Teams Chat Files/…` and `/invite` (`src/api/files.rs:167-219`) | Teams free has a OneDrive consumer path: TFL-cfg `files.oneDriveConsumerAppId 242df6f5-…`, `ODCConvergedEndpoint https://my.microsoftpersonalcontent.com`, the legacy "vroom" API `https://api.onedrive.com` with `WLID1.1` and `service::lw.onedrive.com::MBI_SSL` (`preferGraphOverVroom:false`). NS uses Graph. | TFL-cfg; NS doc:466 | Confirmed (bundle) | Adapt |
@@ -363,7 +363,7 @@ can already receive chats from personal users, and OST would mishandle
 | `/groups/{id}/drive` | `src/api/drive.rs:236` | **Fails** (no groups) |
 | `/me/calendarView`, `/me/calendars`, `/me/events` | `src/api/calendar.rs` | Supported |
 | `/me/contacts`, `/me/outlook/masterCategories` | `src/api/contacts.rs:121-211` | Supported (contacts; categories guessed) |
-| `/me/drive/…`, `/shares/…` | `src/api/drive.rs`, `src/api/files.rs` | Supported (`recent` deprecated for everyone) |
+| `/me/drive/…`, `/shares/…` | `src/api/drive.rs`, `src/api/files.rs` | Supported (`recent` deprecated for everyone; work accounts now use SharePoint's recent files service) |
 | `/me/people` (not used yet) | — | Supported (People.Read) |
 
 Sources: the Microsoft Graph v1.0 permission tables linked in §3. They
