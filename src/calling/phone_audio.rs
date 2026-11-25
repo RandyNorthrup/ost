@@ -213,7 +213,7 @@ pub fn prejoin_pstn(json: &Value, anonymous: bool) -> Option<bool> {
     let dial_out_allowed = !dial_out.is_empty() && !dial_out.eq_ignore_ascii_case("Disabled");
     let refused = cap.get("allowPstnConferencing") == Some(&Value::Bool(false));
     let invitation = d.get("invitation").is_some_and(|i| !i.is_null());
-    if !(dial_out_allowed || !refused) || !invitation {
+    if !invitation || (!dial_out_allowed && refused) {
         return None;
     }
     Some(phone_audio(json, anonymous).is_some_and(|p| p.available))

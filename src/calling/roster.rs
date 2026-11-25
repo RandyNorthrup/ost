@@ -224,8 +224,8 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                     && !mri.eq_ignore_ascii_case(super::signaling::ECHO_BOT_MRI)
                     && p.pointer("/details/displayName")
                         .and_then(|n| n.as_str())
-                        .is_none_or(str::is_empty))
-                    && !is_hidden(mri, p)
+                        .is_none_or(str::is_empty)
+                    || is_hidden(mri, p))
             })
             .map(|(mri, p)| {
                 let s = |ptr: &str| p.pointer(ptr).and_then(|x| x.as_str()).unwrap_or_default();

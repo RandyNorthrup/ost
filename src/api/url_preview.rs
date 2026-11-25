@@ -50,7 +50,7 @@ impl UrlPreview {
     /// Teams' rule: two of picture, title and description.
     pub fn is_valid(&self) -> bool {
         let (t, ti, d) = (!self.thumbnail.is_empty(), !self.title.is_empty(), !self.description.is_empty());
-        (t && ti) || (t && d) || (ti && d)
+        [t, ti, d].into_iter().filter(|&x| x).count() >= 2
     }
 
     /// The card's last line: the link's host name.

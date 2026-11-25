@@ -27,12 +27,15 @@ pub struct BleState {
     pub radio_on: bool,
 }
 
+/// A companion's user id and endpoint bytes.
+type CompanionKey = (String, Option<[u8; 2]>);
+
 struct Shared {
     state: BleState,
     seen: std::collections::BTreeMap<String, (Beacon, Instant)>,
     /// Teams phones heard (Better Together's companion discovery), by
     /// user and endpoint bytes.
-    companions: std::collections::BTreeMap<(String, Option<[u8; 2]>), (Companion, Instant)>,
+    companions: std::collections::BTreeMap<CompanionKey, (Companion, Instant)>,
     scanning: bool,
     /// Better Together proximity checks running (Teams subscribes to its
     /// companion discovery for each).

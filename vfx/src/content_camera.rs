@@ -372,8 +372,8 @@ impl Processor {
             }
             return;
         }
-        for i in 0..8 {
-            self.quad[i] += 0.3 * (raw[i] - self.quad[i]);
+        for (q, r) in self.quad.iter_mut().zip(raw) {
+            *q += 0.3 * (r - *q);
         }
         if m < STILL {
             self.still += 1;
@@ -697,8 +697,7 @@ impl Cleaner {
             any.sort_by(|a, b| a.partial_cmp(b).unwrap());
             any[any.len() * 3 / 4]
         };
-        for c in 0..gw * gh {
-            let m = med[c];
+        for (c, &m) in med.iter().enumerate() {
             if !m.is_nan() {
                 if self.seen[c] {
                     self.white[c] += 0.25 * (m - self.white[c]);

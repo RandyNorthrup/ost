@@ -5570,8 +5570,10 @@ struct VoiceCapture {
 
 /// The face capture's accepted photos and their signatures, until the
 /// right-pose photo stores them.
-fn face_session() -> &'static std::sync::Mutex<Vec<(Vec<u8>, serde_json::Value)>> {
-    static SLOT: OnceLock<std::sync::Mutex<Vec<(Vec<u8>, serde_json::Value)>>> = OnceLock::new();
+type FaceSession = std::sync::Mutex<Vec<(Vec<u8>, serde_json::Value)>>;
+
+fn face_session() -> &'static FaceSession {
+    static SLOT: OnceLock<FaceSession> = OnceLock::new();
     SLOT.get_or_init(Default::default)
 }
 
@@ -6571,8 +6573,10 @@ fn translation_tuner() -> serde_json::Value {
 }
 
 /// Teams' translation languages ([(code, name)]), loaded once.
-fn translation_languages() -> &'static std::sync::Mutex<(Vec<(String, String)>, bool)> {
-    static L: OnceLock<std::sync::Mutex<(Vec<(String, String)>, bool)>> = OnceLock::new();
+type TranslationLanguages = std::sync::Mutex<(Vec<(String, String)>, bool)>;
+
+fn translation_languages() -> &'static TranslationLanguages {
+    static L: OnceLock<TranslationLanguages> = OnceLock::new();
     L.get_or_init(Default::default)
 }
 
@@ -8616,6 +8620,7 @@ fn same_draft_html(a: &str, b: &str) -> bool {
 /// A drafts.json entry: older versions kept [text, time].
 #[derive(serde::Deserialize)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant, reason = "only lives while drafts.json is read")]
 enum StoredDraft {
     Rich(Draft),
     Plain(String, u64),
@@ -26370,6 +26375,7 @@ impl qobject::Backend {
         });
         // Each line is a local path (file:// tolerated) or, for a file
         // picked from OneDrive or SharePoint, "cloud:" and its CloudFile.
+        #[allow(clippy::large_enum_variant, reason = "a short list of picked files, read once")]
         enum Part {
             Local(std::path::PathBuf),
             Cloud(api::cloud_attach::CloudFile),

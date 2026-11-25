@@ -765,7 +765,7 @@ impl Facts {
             // Not in 1:1 calls (the component renders nothing for P2P).
             // The new controls raise hands from React's menu
             // (showRaiseHandInReactionMenu).
-            "RaiseHandsButton" => !self.p2p && !(self.centered && self.shows("ReactionButton")),
+            "RaiseHandsButton" => !(self.p2p || self.centered && self.shows("ReactionButton")),
             "ReactionButton" => !self.p2p && self.reactions,
             // Not for town halls (Teams' isTownhall hides Controls).
             "OrganizerControlButton" => self.organizer && !self.town_hall,

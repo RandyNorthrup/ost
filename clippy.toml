@@ -1,0 +1,5 @@
+# One argument per field: QML invokables pass what the QML call has, and
+# Teams' request builders take each field the service request carries.
+# Eight is the most of those; bundling them into structs would only hide
+# the request's shape.
+too-many-arguments-threshold = 8

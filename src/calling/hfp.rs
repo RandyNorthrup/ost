@@ -367,7 +367,8 @@ mod watch {
         let nodes: Rc<RefCell<HashMap<u32, (pw::node::Node, pw::node::NodeListener)>>> = Rc::default();
         // Bound Bluetooth devices, their listeners and input routes.
         type Routes = Rc<RefCell<Vec<(i32, i32)>>>;
-        let devices: Rc<RefCell<HashMap<u32, (pw::device::Device, pw::device::DeviceListener, Routes)>>> = Rc::default();
+        type Devices = HashMap<u32, (pw::device::Device, pw::device::DeviceListener, Routes)>;
+        let devices: Rc<RefCell<Devices>> = Rc::default();
 
         let _registry_listener = registry
             .add_listener_local()

@@ -887,7 +887,7 @@ fn location(item_url: &str, web: &str, site_title: &str, template: i64, personal
     let mut out = vec![first];
     let folders = &parts[..parts.len().saturating_sub(1)];
     let lib = |p: &str| p == "Documents" || p == "Shared Documents";
-    if !(folders.len() == 1 && lib(folders[0])) && !folders.is_empty() {
+    if !(folders.is_empty() || folders.len() == 1 && lib(folders[0])) {
         let from = usize::from(lib(folders[0]));
         out.extend(folders[from..].iter().map(|p| p.to_string()));
     }

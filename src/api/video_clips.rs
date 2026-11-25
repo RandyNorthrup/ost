@@ -224,7 +224,7 @@ mod tests {
     fn edits_render_as_one_clip() {
         let a = Segment { path: "/c/ost/recordings/r1.mp4".into(), start_ms: 1500, end_ms: 4000 };
         let b = Segment { path: "/c/ost/recordings/r2.mp4".into(), start_ms: 0, end_ms: 2250 };
-        let g = edit_graph(&[a.clone()], None, 1280, 720);
+        let g = edit_graph(std::slice::from_ref(&a), None, 1280, 720);
         assert!(g.starts_with("movie=/c/ost/recordings/r1.mp4:streams=dv+da[mv0][ma0];"));
         assert!(g.contains("[mv0]trim=start=1.500:end=4.000,setpts=PTS-STARTPTS,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:"));
         assert!(g.contains("[ma0]atrim=start=1.500:end=4.000,asetpts=PTS-STARTPTS"));

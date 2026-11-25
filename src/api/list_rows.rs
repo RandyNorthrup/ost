@@ -69,7 +69,7 @@ pub fn size_text(n: f64) -> String {
         if v >= 100.0 || v == v.floor() { format!("{v:.0}") } else if v >= 10.0 { format!("{v:.1}") } else { format!("{v:.2}") }
     };
     match n {
-        n if n == 1.0 => "1 byte".into(),
+        1.0 => "1 byte".into(),
         n if n < 1024.0 => format!("{n:.0} bytes"),
         n if n < 1024e3 => format!("{} KB", f(n / 1024.0)),
         n if n < 1048576e3 => format!("{} MB", f(n / 1048576.0)),

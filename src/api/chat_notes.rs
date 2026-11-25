@@ -46,6 +46,7 @@ pub enum NotesState {
 /// The notes file Teams opens among a thread's `fileReferences`: the Loop
 /// thread references that aren't deleted, the first by id (Teams' `FF`).
 /// `Err(())` when there are only deleted ones.
+#[allow(clippy::result_unit_err, reason = "Err(()) only means every reference is deleted; there is nothing more to say")]
 pub fn notes_file(thread: &Value) -> Result<Option<NotesFile>, ()> {
     let Some(refs) = thread.get("fileReferences").and_then(Value::as_object) else {
         return Ok(None);

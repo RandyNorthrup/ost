@@ -425,7 +425,8 @@ fn str_at(t: &serde_json::Value, p: &str) -> String {
 /// What a tab needs from its app's definition: its menu flags and its
 /// icon (largeImageUrl, https only). Cached.
 pub(crate) async fn app_facts(client: &TeamsClient, app_id: &str) -> (AppFlags, String, String) {
-    static CACHE: Mutex<Option<HashMap<String, (AppFlags, String, String)>>> = Mutex::new(None);
+    type Facts = (AppFlags, String, String);
+    static CACHE: Mutex<Option<HashMap<String, Facts>>> = Mutex::new(None);
     if let Some(v) = CACHE
         .lock()
         .ok()

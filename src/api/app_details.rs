@@ -807,7 +807,8 @@ fn place(key: &str) -> (i64, String, i64, String) {
 /// are left out, as Teams leaves them out).
 pub fn permissions(keys: &[String]) -> Vec<PermissionCategory> {
     let strings = permission_strings();
-    let mut cats: Vec<(i64, String, Vec<(i64, String, Vec<String>)>)> = Vec::new();
+    type Permission = (i64, String, Vec<String>);
+    let mut cats: Vec<(i64, String, Vec<Permission>)> = Vec::new();
     for k in keys {
         let Some(text) = strings.get(k) else { continue };
         let (co, ck, so, sk) = place(k);
