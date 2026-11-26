@@ -1,11 +1,11 @@
 ---
 id: TASK-0341
 title: 'Real HDMI capture card: camera checks, and cameras start in a mode they offer'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-26T20:47:00Z'
-updated_date: '2026-11-26T23:16:00Z'
+updated_date: '2026-11-26T23:55:00Z'
 labels:
   - bug
   - calls
@@ -59,6 +59,8 @@ linuxlt now has a real non-loopback camera device, a MacroSilicon MS2109 USB HDM
   - USB authorized 0/1: list drops the card within 2 s, preview stops and waits ("isn't there"), list and preview back 2-3 s after authorize; only the card's nodes opened (before and after renumbering).
 
 - PR #25.
+
+- Codex review: 2 findings fixed in ca32734d (stepped PipeWire frame rates taken on the step; Settings preview recovery stays off while a call rings or connects). Re-review: no issues. All CI checks pass.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
