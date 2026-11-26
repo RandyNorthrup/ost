@@ -1121,13 +1121,19 @@ Window {
     readonly property int attendeeCount: roster.filter(p => p.active !== false && (p.role || "").toLowerCase() === "attendee").length
     property bool greenRoomAlertClosed: false
     /// Teams' Q&A page for this meeting: its id ("0#{thread}#0", base64)
-    /// in a TeamsMeeting reference, with the tenant, call and template.
+    /// in a TeamsMeeting reference, with the tenant, the call, the
+    /// template and where it opened (Teams' side pane, measured in Teams
+    /// on the web 2026-11-26: `…&meetingTenantId=…&callId=…&entryPoint=
+    /// sidePanel&appSessionId=…`).
     function qnaUrl() {
         const mid = Qt.btoa("0#" + backend.callThreadId + "#0")
         const ref = Qt.btoa(JSON.stringify({ _type: "TeamsMeeting", id: mid })).replace(/=+$/, "")
         const g = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16) })
+        const call = backend.currentCallId()
         return "https://web.yammer.com/teamsmeeting/teams-meeting/" + ref + "?client=teams&qnaAppType=native&meetingTenantId=" + encodeURIComponent(backend.tenantId() || "")
-            + (liveEvent.townHall ? "&meetingTemplate=Townhall" : liveEvent.webinar ? "&meetingTemplate=Webinar" : "") + "&appSessionId=" + g
+            + (call ? "&callId=" + encodeURIComponent(call) : "")
+            + (liveEvent.townHall ? "&meetingTemplate=Townhall" : liveEvent.webinar ? "&meetingTemplate=Webinar" : "")
+            + "&entryPoint=sidePanel&appSessionId=" + g
     }
     /// Teams' phone audio for the meeting (Backend call_phone_json).
     readonly property var phone: backend.callPhoneJson ? JSON.parse(backend.callPhoneJson) : ({})

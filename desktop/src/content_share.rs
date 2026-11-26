@@ -214,6 +214,17 @@ impl qobject::Backend {
         });
     }
 
+    pub fn current_call_id(&self) -> QString {
+        let id = runtime().block_on(async {
+            let slot = call_slot().lock().await;
+            slot.outgoing
+                .as_ref()
+                .map(|c| c.call_id().to_string())
+                .unwrap_or_default()
+        });
+        QString::from(id.as_str())
+    }
+
     /// A shared board's frame address (Teams' whiteboard renderer): the
     /// session's address with Teams' parameters.
     pub fn content_board_frame_url(
