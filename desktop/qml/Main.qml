@@ -47,6 +47,18 @@ Window {
         storageName: backend.webStorageName()
         persistentCookiesPolicy: WebEngineProfile.ForcePersistentCookies
         httpCacheType: WebEngineProfile.DiskHttpCache
+        // Every page and frame: no camera device is touched until the page
+        // holds the camera or microphone (src/media_gate.js). Added while
+        // the views are made, before any of them has a document.
+        Component.onCompleted: {
+            const gate = WebEngine.script()
+            gate.name = "ost-media-gate"
+            gate.sourceCode = (Qt.application.arguments.indexOf("--media-gate-log") >= 0 ? "const __OST_MEDIA_LOG = true;\n" : "") + backend.mediaGateScript()
+            gate.injectionPoint = WebEngineScript.DocumentCreation
+            gate.worldId = WebEngineScript.MainWorld
+            gate.runsOnSubFrames = true
+            instance().userScripts.insert(gate)
+        }
     }
     Theme {
         id: theme
@@ -2720,7 +2732,8 @@ Window {
             }
             else if (step === 2) conversation.tabMenuShowForTest(which)
             else if (step === 3) { shot("menu"); conversation.tabMenuCloseForTest() }
-            else if (step === 4) conversation.tabAction("updateTab", t)
+            // Only where Teams offers it (the tab's menu has Settings).
+            else if (step === 4) { if (!t.menu.some(m => m.key === "updateTab")) { console.warn("TABSETTINGS not offered on", which); Qt.quit(); return } conversation.tabAction("updateTab", t) }
             else if (step === 12) { console.warn("TABSETTINGS dialog", tabConfig.stateForTest(), "update", tabConfig.update, "app", tabConfig.app ? tabConfig.app.name : ""); shot("dialog") }
             else if (step === 13) {
                 if (!tabConfig.appValid && wait++ < 72) return

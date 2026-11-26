@@ -36,6 +36,15 @@ Item {
             script.worldId = WebEngineScript.MainWorld
             script.runsOnSubFrames = false
             web.userScripts.insert(script)
+            // Its frames come from OST: it never needs a camera device
+            // (src/media_gate.js; this view isn't in OST's web profile).
+            const gate = WebEngine.script()
+            gate.name = "ost-media-gate"
+            gate.sourceCode = backend.mediaGateScript()
+            gate.injectionPoint = WebEngineScript.DocumentCreation
+            gate.worldId = WebEngineScript.MainWorld
+            gate.runsOnSubFrames = true
+            web.userScripts.insert(gate)
         }
         web.url = running ? appUrl : "about:blank"
     }

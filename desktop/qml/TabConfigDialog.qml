@@ -97,6 +97,10 @@ Popup {
     /// Settings on tab `t` (Tab: app_id, icon, config_url, entity_id, id)
     /// of conversation `id`.
     function startUpdate(t, id, team, isChannel) {
+        // Teams offers Settings only on tabs whose app can be set up again
+        // (api::tabs::menus: the app's configuration page is then known);
+        // without that page the dialog would stay empty.
+        if (!t || !t.config_url) { console.warn("Tab settings: the tab has no configuration page"); return }
         updating = t
         app = { id: t.app_id, name: "", icon: t.icon || "", config_url: t.config_url || "" }
         conversationId = id; teamId = team || ""; channel = isChannel
