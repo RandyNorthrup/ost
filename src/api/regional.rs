@@ -638,6 +638,18 @@ mod tests {
         let t = chrono::Utc.with_ymd_and_hms(2026, 1, 31, 16, 9, 5).unwrap();
         assert_eq!(fmt(&t, "M/d/yyyy h:mm tt"), "1/31/2026 4:09 PM");
         assert_eq!(fmt(&t, "dd/MM/yyyy HH:mm"), "31/01/2026 16:09");
+        assert_eq!(fmt(&t, "dddd, MMMM d, yyyy"), "Saturday, January 31, 2026");
+        assert_eq!(fmt(&t, "ddd d MMM yy"), "Sat 31 Jan 26");
+        assert_eq!(fmt(&t, "H:mm:ss"), "16:09:05");
+        assert_eq!(fmt(&t, "hh:mm:ss tt"), "04:09:05 PM");
+        assert_eq!(fmt(&t, "yyyy'年'M'月'd'日'"), "2026年1月31日");
+        assert_eq!(fmt(&t, "'100%' d.M."), "100% 31.1.");
+        let midnight = chrono::Utc.with_ymd_and_hms(2026, 7, 4, 0, 5, 0).unwrap();
+        assert_eq!(fmt(&midnight, "h:mm tt"), "12:05 AM");
+        assert_eq!(fmt(&midnight, "HH:mm"), "00:05");
+        let noon = chrono::Utc.with_ymd_and_hms(2026, 7, 4, 12, 0, 9).unwrap();
+        assert_eq!(fmt(&noon, "h:mm:ss tt"), "12:00:09 PM");
+        assert_eq!(fmt(&noon, "M/d/yy"), "7/4/26");
         assert_eq!(available_app_languages().len(), 109);
         assert!(available_app_languages().iter().any(|l| l.code == "en-us"));
     }

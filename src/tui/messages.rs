@@ -1077,3 +1077,28 @@ mod tests {
         assert!(rows[1].iter().any(|(t, f)| t == "three" && f.bold));
     }
 }
+
+#[cfg(test)]
+mod time_tests {
+    use super::*;
+
+    #[test]
+    fn timestamps_read_by_age() {
+        // A Friday.
+        let today = NaiveDate::from_ymd_opt(2026, 11, 20).unwrap();
+        let f = |s: &str| format_timestamp(s, today);
+        assert_eq!(f("2026-11-20T09:05:00"), "09:05");
+        assert_eq!(f("2026-11-20T09:05:00.1234567"), "09:05");
+        assert_eq!(f(" 2026-11-20T23:59:59.999 "), "23:59");
+        assert_eq!(f("2026-11-19T00:00:00"), "Thu 00:00");
+        assert_eq!(f("2026-11-14T13:30:00"), "Sat 13:30");
+        assert_eq!(f("2026-11-13T10:00:00"), "Nov 13");
+        assert_eq!(f("2026-11-21T10:00:00"), "Nov 21");
+        assert_eq!(f("2025-01-05T10:00:00"), "Jan 5");
+        assert_eq!(f("yesterday"), "yesterday");
+        assert_eq!(f("2026-11-20 09:05:00"), "2026-11-20 09:05:00");
+        // A UTC time is read in local time.
+        assert_ne!(f("2026-11-20T12:00:00Z"), "2026-11-20T12:00:00Z");
+        assert_ne!(f("2026-11-20T12:00:00.123Z"), "2026-11-20T12:00:00.123Z");
+    }
+}

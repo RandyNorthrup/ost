@@ -8258,3 +8258,46 @@ mod channel_meeting_tests {
         assert!(plain.scheduled_meeting.is_none() && plain.meeting_title.is_empty());
     }
 }
+
+#[cfg(test)]
+mod time_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn service_times_read_as_utc_rfc3339() {
+        let t = |v: serde_json::Value| utc_time(Some(&v));
+        assert_eq!(t(json!(1795190400000i64)), "2026-11-20T16:00:00+00:00");
+        assert_eq!(t(json!(1795190400123i64)), "2026-11-20T16:00:00.123+00:00");
+        assert_eq!(t(json!(-1i64)), "1969-12-31T23:59:59.999+00:00");
+        assert_eq!(
+            t(json!("2026-11-20T17:00:00+01:00")),
+            "2026-11-20T16:00:00+00:00"
+        );
+        assert_eq!(
+            t(json!("2026-11-20T11:00:00.5-05:00")),
+            "2026-11-20T16:00:00.500+00:00"
+        );
+        assert_eq!(
+            t(json!("2026-11-20T16:00:00.1234567Z")),
+            "2026-11-20T16:00:00.123456700+00:00"
+        );
+        assert_eq!(
+            t(json!("2026-11-20T16:00:00.123456Z")),
+            "2026-11-20T16:00:00.123456+00:00"
+        );
+        // Bare UTC date-times, as some services write them.
+        assert_eq!(
+            t(json!("2026-11-20T16:00:00.1234567")),
+            "2026-11-20T16:00:00.123456700+00:00"
+        );
+        assert_eq!(t(json!("2026-11-20T16:00:00")), "2026-11-20T16:00:00+00:00");
+        assert_eq!(
+            t(json!("2026-11-20T16:00:00.0Z")),
+            "2026-11-20T16:00:00+00:00"
+        );
+        assert_eq!(t(json!("Nov 20")), "");
+        assert_eq!(t(json!(true)), "");
+        assert_eq!(utc_time(None), "");
+    }
+}

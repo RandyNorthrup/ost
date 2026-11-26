@@ -1818,4 +1818,22 @@ mod tests {
             Driver::Unsupported
         );
     }
+
+    #[test]
+    fn locale_and_time_are_twelve_hour() {
+        let at = |h, m, s| {
+            chrono::NaiveDate::from_ymd_opt(2026, 11, 20)
+                .unwrap()
+                .and_hms_opt(h, m, s)
+                .unwrap()
+        };
+        assert_eq!(
+            locale_payload("en-US", at(16, 5, 9)),
+            b"Len-USD2026-11-20T04:05:09"
+        );
+        assert_eq!(
+            locale_payload("de-DE", at(0, 30, 0)),
+            b"Lde-DED2026-11-20T12:30:00"
+        );
+    }
 }
