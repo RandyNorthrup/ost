@@ -1,9 +1,11 @@
 ---
 id: TASK-0308
 title: 'Video clips and face capture: cameras from OST''s own camera list (PipeWire)'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-25T19:30:00Z'
+updated_date: '2026-11-26T03:38:00Z'
 labels:
   - bug
   - calls
@@ -25,3 +27,12 @@ The video clip recorder (VideoClipRecorder.qml) and Recognition's face capture (
 - [ ] #2 Face capture uses the camera chosen in Settings > Devices from the same list
 - [ ] #3 No raw media-controller nodes (IPU6 ISYS and the like) appear in either
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. New desktop/src/camera_feed.rs (QML CameraFeed) + camerafeed.cpp: opens a camera from calling::camera through webrtc_video::CameraPreview::start_plain (no call effects) as a frame key; show_in(videoSink) feeds a VideoOutput, save_frame(path) writes a JPEG.
+2. VideoClipRecorder.qml: drop the Qt Camera/CaptureSession/MediaRecorder (recording already goes through ClipFrames); camPreview fed from CameraFeed so the effects shaders and ClipMask keep working; Camera menu from backend.videoDevices().
+3. FaceCaptureDialog.qml: VideoFrame preview from CameraFeed, picker from backend.videoDevices() (Settings' camera first), photo via save_frame instead of ImageCapture.
+4. Harness --camera-privacy-test; live checks on linuxlt with virtual cameras.
+<!-- SECTION:PLAN:END -->

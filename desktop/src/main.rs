@@ -4,6 +4,7 @@ mod avatars;
 mod backend;
 mod better_together;
 mod cameo_feed;
+mod camera_feed;
 mod clip_edit;
 mod clip_frames;
 mod clip_mask;

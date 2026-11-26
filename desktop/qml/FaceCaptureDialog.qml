@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Shapes
-import QtMultimedia
+import com.ost.desktop
 
 // Teams' face capture (Settings ▸ Recognition ▸ Start face capture / Update;
 // biometric-enrollment `On`, measured on winpc 2026-11-15). A 600-wide
@@ -46,6 +46,7 @@ Popup {
     function show() {
         pose = "Center"; started = false; count = 0; learning = false; error = ""; capturedSource = ""; finished = false
         flick.contentY = 0
+        loadCameras()
         open()
     }
     onClosed: {
@@ -63,29 +64,43 @@ Popup {
         BadLighting: qsTr("Make sure you’re in a well-lit room and try again.")
     })
 
-    MediaDevices { id: devices }
+    // The cameras of Settings > Devices (OST's camera list), the one chosen
+    // there first; the picked one is open only while the dialog shows its
+    // picture.
+    property var cameras: []
     property int cameraIndex: 0
-    readonly property var cameras: devices.videoInputs
-    CaptureSession {
-        camera: Camera {
-            id: camera
-            active: root.opened && !root.finished
-            cameraDevice: root.cameras.length ? root.cameras[Math.min(root.cameraIndex, root.cameras.length - 1)] : devices.defaultVideoInput
-        }
-        imageCapture: ImageCapture {
-            id: shooter
-            onImageSaved: (id, path) => {
-                root.capturedSource = "file://" + path
-                root.learning = true
-                backend.faceCaptureSubmit(path, root.pose)
-            }
-            onErrorOccurred: (id, err, msg) => { console.warn("FACE capture", msg); root.error = "UnspecifiedFailure"; root.learning = false; countdown.restartPose() }
-        }
-        videoOutput: preview
+    function loadCameras() {
+        const d = JSON.parse(backend.videoDevices())
+        cameras = d.devices || []
+        cameraIndex = Math.max(0, cameras.findIndex(c => c.path === d.current))
+    }
+    readonly property string cameraId: cameras.length ? cameras[Math.min(cameraIndex, cameras.length - 1)].path : ""
+    readonly property bool cameraWanted: root.opened && !root.finished && cameraId !== ""
+    function syncCamera() {
+        if (!cameraWanted) { feed.close(); return }
+        if (feed.running && feed.wanted === cameraId) return
+        feed.wanted = cameraId
+        if (!feed.open(cameraId, 1280, 720, 30)) console.warn("FACE camera didn't open", cameraId)
+    }
+    onCameraWantedChanged: syncCamera()
+    onCameraIdChanged: if (cameraWanted) syncCamera()
+    CameraFeed {
+        id: feed
+        /// The camera asked for when it opened.
+        property string wanted: ""
+    }
+    /// Take the photo from the camera's newest picture.
+    function shoot() {
+        const path = backend.capturePath("face-" + root.pose.toLowerCase() + ".jpg")
+        if (!feed.saveFrame(path)) { console.warn("FACE capture: no picture"); root.error = "UnspecifiedFailure"; root.learning = false; countdown.restartPose(); return }
+        root.capturedSource = "file://" + path
+        root.learning = true
+        backend.faceCaptureSubmit(path, root.pose)
     }
     /// For the harness: submit this photo instead of the camera's.
     property string testPhoto: ""
     function countdownForTest() { countdown.restartPose() }
+    function cameraForTest(photo) { return { cameras: cameras.map(c => c.name), chosen: cameraId, open: feed.camera, running: feed.running, photo: !!photo && feed.saveFrame(photo) } }
 
     Connections {
         target: backend
@@ -122,7 +137,7 @@ Popup {
                 root.learning = true
                 backend.faceCaptureSubmit(root.testPhoto, root.pose)
             } else {
-                shooter.captureToFile(backend.capturePath("face-" + root.pose.toLowerCase() + ".jpg"))
+                root.shoot()
             }
         }
     }
@@ -151,7 +166,7 @@ Popup {
             accessibleName: qsTr("Choose camera")
             placeholder: qsTr("Choose camera")
             // Teams drops what follows " (" in a camera's name.
-            options: root.cameras.map(c => ({ label: String(c.description).split(" (")[0] }))
+            options: root.cameras.map(c => ({ label: String(c.name).split(" (")[0] }))
             current: root.cameraIndex
             onPicked: i => root.cameraIndex = i
         }
@@ -159,15 +174,20 @@ Popup {
         // The preview: the camera, then Teams' panel with its round window.
         Item {
             x: 32; y: 102.7; width: 522; height: 435
-            VideoOutput {
+            VideoFrame {
                 id: preview
                 x: 61; y: 22; width: 400; height: 300
-                fillMode: VideoOutput.PreserveAspectFit
+                source: feed.source
+                fit: true; letterbox: false
+                Timer { interval: 33; repeat: true; running: feed.running; onTriggered: preview.refresh() }
+                Connections { target: feed; function onRunningChanged() { preview.refresh() } }
             }
             Image {
-                // The frozen photo while it is being checked.
+                // The frozen photo while it is being checked (the same file
+                // name for each try: not cached).
                 visible: root.capturedSource !== ""
                 x: 61; y: 22; width: 400; height: 300
+                cache: false
                 source: root.capturedSource
                 fillMode: Image.PreserveAspectFit
             }
@@ -277,7 +297,7 @@ Popup {
         }
         // Teams' error row: why the photo was refused, or no camera.
         Row {
-            readonly property string message: root.cameras.length === 0 && !camera.active
+            readonly property string message: root.cameras.length === 0 && !feed.running
                 ? qsTr("We couldn't detect a camera. Close any other apps that might be using it and try again.")
                 : root.error ? (root.errors[root.error] || qsTr("Something went wrong. Please try again.")) : ""
             visible: message !== ""
@@ -299,7 +319,7 @@ Popup {
             }
             SettingsParts.Button {
                 visible: !root.started
-                enabled: camera.active || root.testPhoto !== ""
+                enabled: feed.running || root.testPhoto !== ""
                 label: qsTr("Start")
                 onClicked: { root.started = true; root.error = ""; countdown.restartPose() }
             }

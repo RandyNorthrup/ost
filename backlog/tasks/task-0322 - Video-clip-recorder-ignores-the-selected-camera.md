@@ -1,9 +1,11 @@
 ---
 id: TASK-0322
 title: Video clip recorder ignores the selected camera
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-25T22:56:00Z'
+updated_date: '2026-11-26T03:38:00Z'
 labels:
   - bug
   - privacy
@@ -23,3 +25,11 @@ Found while capturing wiki screenshots (2026-11-25). The video clip recorder (de
 - [ ] #1 The clip recorder uses the camera selected in Settings ▸ Devices (and OST_CAMERA_DEVICE when set), like calls and the pre-join preview
 - [ ] #2 It never opens a camera other than the selected one, checked live with two cameras
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Cause: the recorder's Qt Camera picks from QMediaDevices.videoInputs and falls back to Qt's defaultVideoInput: the setting cameraDevice (pipewire:/dev path) and OST_CAMERA_DEVICE never reach it.
+2. With TASK-0308's CameraFeed, "" opens backend::selected_camera() (OST_CAMERA_DEVICE, else Settings > Devices), resolved in OST's camera list; the Camera menu lists Settings > Devices' cameras.
+3. Live: two v4l2loopback cameras, the chosen one only is opened (OST_CAMERA_DEVICE run and Settings run).
+<!-- SECTION:PLAN:END -->
