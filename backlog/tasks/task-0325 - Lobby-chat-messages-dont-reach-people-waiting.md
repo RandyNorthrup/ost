@@ -1,11 +1,11 @@
 ---
 id: TASK-0325
 title: Lobby chat messages don't reach people waiting
-status: In Progress
+status: Done
 assignee:
   - '@meet'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T14:50:00Z'
+updated_date: '2026-11-26T16:10:00Z'
 labels:
   - bug
   - calls
@@ -20,7 +20,7 @@ Found while capturing wiki screenshots (2026-11-25). A lobby chat message sent f
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Lobby chat works both ways between organizer and people waiting, as in Teams, verified live with test accounts
+- [x] #1 Lobby chat works both ways between organizer and people waiting, as in Teams, verified live with test accounts
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -40,3 +40,24 @@ Found while capturing wiki screenshots (2026-11-25). A lobby chat message sent f
 - Fix: roster::apply keeps a participant's role when an update carries none (unit test an_update_that_only_names_someone_keeps_their_role).
 - Verified: OST organizer (role organizer, toast chat shown, Lobby tab shown) sent "OST test 97: lobby chat from OST": OST Test 3 waiting in OST got it; Teams on the web (OST Test 2) waiting showed it under "Meeting Organizer" with its Lobby chat pane. Teams organizer to OST Test 3 waiting: both messages shown in OST's Lobby pane (new thread and existing thread). People waiting can't reply in Teams ("They can view messages but not reply").
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Lobby chat now works both ways between organizers and people waiting.
+
+Cause: Teams' organizer to OST waiting already worked, for a new lobby thread and for an existing one. OST as the organizer lost its own meeting role a moment after joining. Teams sends the organizer's roster entry with advancedMeetingRole, then an update with only {details: {displayName}, state}. roster::apply replaced the whole entry, so lobbyChatAvailable went false, hiding the lobby toast's chat button and the Lobby tab.
+
+Changes:
+- roster::apply keeps a participant's meeting role until an update carries one, as Teams' participant model merges updates.
+- Spec (call-and-meeting-window.md, lobby chat) records how each side learns the lobby thread.
+
+Tests:
+- Unit: an_update_that_only_names_someone_keeps_their_role.
+- Live 2026-11-26 in "OST TEST 324 meet", lobby "Only organizers and co-organizers":
+  - Teams on the web (ost-test1) as organizer to OST Test 3 waiting: both messages arrived, for a new thread and for an existing one.
+  - OST (ost-test1) as organizer: role organizer, toast chat and Lobby tab shown. Its message reached OST Test 3 waiting in OST, and Teams on the web (OST Test 2) waiting.
+  - People waiting can't reply, as in Teams.
+
+PR #16.
+<!-- SECTION:FINAL_SUMMARY:END -->
