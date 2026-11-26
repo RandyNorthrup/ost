@@ -203,9 +203,11 @@ impl qobject::CameraFeed {
         }
     }
 
-    /// The camera of `generation` stopped by itself.
+    /// The camera of `generation` stopped by itself. (Also before its open
+    /// came back: closing moves the generation on, so that result is let
+    /// go instead of reviving a dead camera.)
     fn ended(self: Pin<&mut Self>, generation: u64) {
-        if generation == self.rust().generation && self.rust().capture.is_some() {
+        if generation == self.rust().generation {
             tracing::info!(key = %self.rust().source, "camera feed: the camera stopped");
             self.close();
         }
