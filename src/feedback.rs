@@ -33,7 +33,7 @@ pub fn ideas_url() -> String {
 pub fn docs_url() -> String {
     let branch = match option_env!("OST_DOCS_BRANCH") {
         Some(b) if !b.is_empty() => b,
-        _ => "desktop/foundation",
+        _ => "main",
     };
     format!("{}/blob/{branch}/docs/help", repo_url())
 }
