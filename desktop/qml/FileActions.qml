@@ -2227,7 +2227,8 @@ Item {
         const k = t === "doc" || t === "docx" ? "docx" : t === "xls" || t === "xlsx" ? "xlsx" : t === "ppt" || t === "pptx" ? "pptx"
                 : t === "pdf" ? "pdf" : t === "one" || t === "onetoc2" ? "one" : t === "loop" || t === "fluid" ? "loop"
                 : t === "txt" ? "txt" : ["png", "jpg", "jpeg", "gif", "bmp", "webp", "heic"].indexOf(t) >= 0 ? "photo"
-                : isVideo(t) ? "video" : "genericfile"
+                : t === "md" || t === "markdown" ? "md" : t === "html" || t === "htm" ? "html" : t === "whiteboard" ? "whiteboard"
+                : t === "pbix" ? "powerbi" : isVideo(t) ? "video" : "genericfile"
         return "ft-" + k + "-32"
     }
     // The Activity column's glyph (OneDrive: Edit, Comment, Reply, Share,

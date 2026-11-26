@@ -2964,9 +2964,10 @@ pub mod qobject {
         #[qinvokable]
         fn contacts_add(self: Pin<&mut Backend>, contact_json: &QString);
 
-        /// People: mark a contact as a favorite, or not.
+        /// People: mark a contact as a favorite, or not (the contact as
+        /// JSON: its id, mri and email).
         #[qinvokable]
-        fn contacts_favorite(self: Pin<&mut Backend>, id: &QString, on: bool);
+        fn contacts_favorite(self: Pin<&mut Backend>, contact_json: &QString, on: bool);
 
         /// People: delete a contact.
         #[qinvokable]
@@ -27300,27 +27301,75 @@ impl qobject::Backend {
                         api::drive::new_folder(&c, &drive, &item, &arg).await?;
                     }
                     "delete" => api::drive::delete(&c, &drive, &arg).await?,
-                    "shortcut" => api::drive::add_shortcut(&c, &drive, &item, &arg).await?,
+                    // Add shortcut to OneDrive ▸ Shortcuts / My files: the
+                    // folder shown, posted as OneDrive's Stasher posts it
+                    // (`arg`: {place, site, list, item, name}).
+                    "shortcut" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let f = |k: &str| a[k].as_str().unwrap_or_default().to_string();
+                        let folder = api::sharing::ItemRef {
+                            site: f("site"),
+                            list: f("list"),
+                            item: f("item"),
+                        };
+                        if folder.site.is_empty()
+                            || folder.list.is_empty()
+                            || folder.item.is_empty()
+                        {
+                            anyhow::bail!("This folder has no SharePoint address");
+                        }
+                        let me_root = api::drive::root(&c, "").await?;
+                        let personal = me_root
+                            .web_url
+                            .split('/')
+                            .take(3)
+                            .collect::<Vec<_>>()
+                            .join("/");
+                        let place = if f("place") == "shortcuts" {
+                            api::copy_jobs::ShortcutPlace::Shortcuts
+                        } else {
+                            api::copy_jobs::ShortcutPlace::MyFiles
+                        };
+                        api::copy_jobs::add_shortcut(&folder, &f("name"), true, &personal, &place)
+                            .await?;
+                    }
                     _ => anyhow::bail!("Unknown change"),
                 }
                 let items = api::drive::children(&c, &drive, &item).await?;
-                anyhow::Ok((
-                    op,
-                    json!({ "drive_id": drive, "item_id": item, "items": items }),
-                ))
+                anyhow::Ok(json!({ "drive_id": drive, "item_id": item, "items": items }))
             }
             .await;
             let _ = qt.queue(move |mut this| {
                 this.as_mut().set_channel_files_busy(false);
+                // OneDrive's notices: "Added 1 shortcut to My files in
+                // OneDrive" or "1 shortcut wasn't added" with SharePoint's
+                // reason.
+                let place = || {
+                    let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                    if a["place"] == "shortcuts" {
+                        tr("Shortcuts")
+                    } else {
+                        tr("My files")
+                    }
+                };
                 match result {
-                    Ok((op, v)) => {
+                    Ok(v) => {
                         if op == "shortcut" {
-                            this.as_mut().set_status_text(QString::from(tr(
-                                "Added a shortcut in your OneDrive",
-                            )));
+                            this.as_mut().set_status_text(QString::from(
+                                tr("Added 1 shortcut to %1 in OneDrive")
+                                    .replace("%1", &place())
+                                    .as_str(),
+                            ));
                         }
                         this.as_mut()
                             .set_channel_files_json(QString::from(v.to_string().as_str()));
+                    }
+                    Err(e) if op == "shortcut" => {
+                        tracing::warn!("Add shortcut to OneDrive: {}", short_error(&e));
+                        this.as_mut().set_status_text(QString::from(
+                            format!("{}. {}", tr("1 shortcut wasn't added"), short_error(&e))
+                                .as_str(),
+                        ))
                     }
                     Err(e) => this
                         .as_mut()
@@ -27336,9 +27385,8 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                let contacts = api::contacts::list(&client).await?;
-                // Categories are a nicety; a mailbox without them still lists contacts.
-                let categories = api::contacts::categories(&client).await.unwrap_or_default();
+                // Teams' contacts service: the contacts and their categories.
+                let (contacts, categories) = api::contacts::list(&client).await?;
                 anyhow::Ok(json!({ "contacts": contacts, "categories": categories }))
             }
             .await;
@@ -27367,6 +27415,7 @@ impl qobject::Backend {
             let _ = qt.queue(move |mut this| match result {
                 Ok(()) => this.as_mut().contacts_load(),
                 Err(e) => {
+                    tracing::warn!("Contacts change: {}", short_error(&e));
                     this.as_mut().set_contacts_busy(false);
                     this.as_mut()
                         .set_status_text(QString::from(short_error(&e).as_str()));
@@ -27383,11 +27432,14 @@ impl qobject::Backend {
         });
     }
 
-    pub fn contacts_favorite(self: Pin<&mut Self>, id: &QString, on: bool) {
-        let id = id.to_string();
-        self.contacts_change(
-            move |c| async move { api::contacts::set_favorite(&c, &id, on).await },
-        );
+    pub fn contacts_favorite(self: Pin<&mut Self>, contact_json: &QString, on: bool) {
+        let v: serde_json::Value =
+            serde_json::from_str(&contact_json.to_string()).unwrap_or_default();
+        let f = move |k: &str| v[k].as_str().unwrap_or_default().to_string();
+        let (id, mri, email) = (f("id"), f("mri"), f("email"));
+        self.contacts_change(move |c| async move {
+            api::contacts::set_favorite(&c, &id, &mri, &email, on).await
+        });
     }
 
     pub fn contacts_delete(self: Pin<&mut Self>, id: &QString) {
@@ -27420,25 +27472,91 @@ impl qobject::Backend {
                 match view.as_str() {
                     // Home: Opened, Owner and Activity from the recent
                     // files service.
+                    // Home's For you cards (OneDrive's recommendations;
+                    // without them Home still lists Recent), each person
+                    // with their Teams id for the picture.
                     "recent" => {
                         let now = chrono::Local::now();
+                        let (recent, cards) = tokio::join!(
+                            api::drive::recent(&client),
+                            api::recommended::load(&client)
+                        );
                         out["rows"] = json!(
-                            api::drive::recent(&client)
-                                .await?
+                            recent?
                                 .iter()
                                 .map(|(r, it)| api::recent_files::home_row(r, it, now))
                                 .collect::<Vec<_>>()
                         );
+                        let cards = cards.unwrap_or_else(|e| {
+                            tracing::warn!("For you: {}", short_error(&e));
+                            Vec::new()
+                        });
+                        let upns: Vec<String> = cards
+                            .iter()
+                            .map(|c| c.actor_upn.clone())
+                            .filter(|u| !u.is_empty())
+                            .collect();
+                        let ids = api::sharing::object_ids(&client, &upns).await;
+                        out["for_you"] = json!(
+                            cards
+                                .iter()
+                                .map(|c| {
+                                    let mut v = json!(c);
+                                    v["actor_id"] = json!(
+                                        ids.get(&c.actor_upn.to_ascii_lowercase())
+                                            .cloned()
+                                            .unwrap_or_default()
+                                    );
+                                    v["time_text"] = json!(
+                                        chrono::DateTime::parse_from_rfc3339(&c.time)
+                                            .map(|t| api::recent_files::activity_day(
+                                                t.with_timezone(&chrono::Local),
+                                                now
+                                            ))
+                                            .unwrap_or_default()
+                                    );
+                                    v["item"] = json!(api::drive::DriveItem {
+                                        id: c.item_id.clone(),
+                                        drive_id: c.drive_id.clone(),
+                                        name: c.file_name.clone(),
+                                        kind: c.kind.clone(),
+                                        web_url: c.url.clone(),
+                                        sp_site: c.site_url.clone(),
+                                        sp_list: c.list_id.clone(),
+                                        sp_item: c.unique_id.clone(),
+                                        ..Default::default()
+                                    });
+                                    v
+                                })
+                                .collect::<Vec<_>>()
+                        );
                     }
-                    // Shared: Date shared, Shared by and Activity from the
-                    // recent files service.
+                    // Shared ▸ With you: Date shared, Shared by and
+                    // Activity from the recent files service; the files you
+                    // hid come along for its Hidden filter.
                     "shared" => {
                         let now = chrono::Local::now();
+                        let (rows, hidden) =
+                            api::shared_files::with_you_and_hidden(&client).await?;
                         out["rows"] = json!(
-                            api::drive::shared_with_me(&client)
+                            rows.iter()
+                                .map(|(f, it)| api::shared_files::row(f, it, now))
+                                .chain(hidden.iter().map(|(f, it)| {
+                                    let mut v = api::shared_files::row(f, it, now);
+                                    v["hidden"] = json!(true);
+                                    v
+                                }))
+                                .collect::<Vec<_>>()
+                        );
+                    }
+                    // Shared ▸ By you: Name and Modified by.
+                    "shared_by_you" => {
+                        let now = chrono::Local::now();
+                        out["rows"] = json!(
+                            api::shared_files::by_you_rows(&client)
                                 .await?
                                 .iter()
-                                .map(|(f, it)| api::shared_files::row(f, it, now))
+                                .map(|(r, it)| api::shared_files::by_you_row(r, it, now))
                                 .collect::<Vec<_>>()
                         );
                     }
@@ -27464,7 +27582,34 @@ impl qobject::Backend {
                                 }
                             }
                         );
-                        out["items"] = json!(items?);
+                        let mut items = items?;
+                        // The shortcuts Add shortcut made (Graph's children
+                        // leave them out; Teams' list shows them).
+                        if view == "folder" {
+                            match api::list_rows::folder_place(&client, &drive_id, &item_id).await {
+                                Ok((site, list, path)) => {
+                                    match api::list_rows::shortcuts(&site, &list, &path).await {
+                                        Ok(found) => {
+                                            for it in found {
+                                                if !items.iter().any(|x| x.name == it.name) {
+                                                    items.push(it);
+                                                }
+                                            }
+                                            items.sort_by(|a, b| {
+                                                b.is_folder.cmp(&a.is_folder).then_with(|| {
+                                                    a.name
+                                                        .to_lowercase()
+                                                        .cmp(&b.name.to_lowercase())
+                                                })
+                                            });
+                                        }
+                                        Err(e) => tracing::warn!("OneDrive shortcuts: {e:#}"),
+                                    }
+                                }
+                                Err(e) => tracing::warn!("OneDrive shortcuts: {e:#}"),
+                            }
+                        }
+                        out["items"] = json!(items);
                         match here {
                             Some(Ok(it)) => out["here"] = json!(it),
                             Some(Err(e)) => tracing::warn!("OneDrive folder: {e:#}"),
@@ -28028,7 +28173,7 @@ impl qobject::Backend {
                         };
                         // A file's shortcut is named without its extension, as OneDrive names it.
                         let name = if item.is_folder { item.name.clone() } else { std::path::Path::new(&item.name).file_stem().and_then(|n| n.to_str()).unwrap_or(&item.name).to_string() };
-                        api::copy_jobs::add_shortcut(&sp, &name, &personal, &place).await?;
+                        api::copy_jobs::add_shortcut(&sp, &name, item.is_folder, &personal, &place).await?;
                         json!(null)
                     }
                     "folder_color" => {

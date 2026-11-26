@@ -30,6 +30,17 @@ Item {
     property string personId: ""
 
     property string view: "recent"
+    /// Shared's tab: "with" (With you) or "by" (By you).
+    property string sharedTab: "with"
+    /// Home's and Shared's filter pills picked (OneDrive's filter ids:
+    /// "Word", "Pdf", "Folder", "Fluid", "Hidden", …; none is All), and the
+    /// "Filter by name or person" text.
+    property var pills: []
+    property string nameFilter: ""
+    /// OneDrive's own list (Home, Shared, a person's files): Name with the
+    /// place line under it, OneDrive's responsive columns, 56 tall rows.
+    readonly property bool spartan: view === "recent" || view === "shared" || (view === "people" && !!person)
+    readonly property bool byYou: view === "shared" && sharedTab === "by"
     /// Folders opened from My files or a library: [{name, drive_id, item_id}].
     property var trail: []
     readonly property var here: trail.length ? trail[trail.length - 1] : { name: "", drive_id: "", item_id: "" }
@@ -63,6 +74,7 @@ Item {
 
     function open(v) {
         view = v; trail = []; person = ""; personId = ""; selectedIds = []
+        pills = []; nameFilter = ""; sharedTab = "with"
         load(v === "myfiles" ? "folder" : v, "", "")
         if (v === "myfiles") { view = "folder"; trail = [{ name: qsTr("My files"), drive_id: "", item_id: "" }] }
     }
@@ -94,7 +106,41 @@ Item {
     property string sortField: ""
     property bool sortAsc: true
     property string listView: "list"
+    // OneDrive's filter pills (its filterPivots): which rows each keeps, by
+    // OneDrive's type for the file (Visualization.Type) or its extension.
+    function pillMatches(id, it) {
+        const t = it.vis_type || "", k = String(it.kind || "").toLowerCase()
+        switch (id) {
+        case "Folder": return t === "Folder" || !!it.is_folder
+        case "FluidNote": return t === "OneNote" || t === "OneNoteFluid" || t === "FluidNote" || k === "one"
+        case "GenericList": return t === "Lists" || t === "SharePointList" || t === "GenericList"
+        case "Fluid": return t === "Fluid" || k === "loop"
+        case "Image": return t === "Image"
+        case "Markdown": return k === "md"
+        case "Html": return k === "html" || k === "htm"
+        case "Agent": return k === "agent"
+        case "Hidden": return !!it.hidden
+        default: return t === id
+        }
+    }
+    function filterRows(list) {
+        let out = list
+        const hiddenOnly = pills.indexOf("Hidden") >= 0
+        out = out.filter(it => !!it.hidden === hiddenOnly)
+        const types = pills.filter(p => p !== "Hidden")
+        if (types.length) out = out.filter(it => types.some(p => pillMatches(p, it)))
+        const q = nameFilter.trim().toLowerCase()
+        if (q) out = out.filter(it => [it.title || it.name, it.owner, it.modified_by, it.activity ? it.activity.text : ""]
+                                        .some(x => String(x || "").toLowerCase().indexOf(q) >= 0))
+        return out
+    }
+    function togglePill(id) {
+        if (!id) { pills = []; return }
+        const i = pills.indexOf(id)
+        pills = i >= 0 ? pills.filter(p => p !== id) : pills.concat([id])
+    }
     readonly property var shown: {
+        if (spartan && view !== "people") return filterRows(items)
         if (!sortField) return items
         const key = it => sortField === "size" ? (it.is_folder ? it.child_count || 0 : it.size || 0)
                         : sortField === "kind" ? String(it.kind || "") : String(it[sortField] || "").toLowerCase()
@@ -116,9 +162,20 @@ Item {
     /// [DocIcon, Name, Modified, Modified By, File size, Sharing, Activity];
     /// 0 for a dropped column.
     function responsiveWidths(t) {
-        const cols = [[40, 40, 1, false, false], [210, 800, 1, false, true], [130, 200, 2, true, true], [130, 260, 3, true, true],
-                      [85, 110, 5, true, true], [75, 110, 6, true, true], [113, 550, 4, true, true]]
-            .map(c => ({ min: c[0], max: c[1], priority: c[2], hide: c[3], unlimited: c[4], grow: 1 }))
+        return layoutWidths(t, [[40, 40, 1, false, false], [210, 800, 1, false, true], [130, 200, 2, true, true], [130, 260, 3, true, true],
+                                [85, 110, 5, true, true], [75, 110, 6, true, true], [113, 550, 4, true, true]])
+    }
+    /// OneDrive's responsive columns for Home and Shared (its
+    /// recentResponsiveBehavior / swmResponsiveBehavior in Teams): Name
+    /// 300-500 and growing, Opened or Date shared 130-200, Owner or Shared
+    /// by 130-260, Activity 113-550.
+    function spartanWidths(t) {
+        return layoutWidths(t, [[300, 500, 1, false, true], [130, 200, 2, true, false], [130, 260, 3, true, false], [113, 550, 4, true, false]])
+    }
+    /// OneDrive's layout (module 4524): `defs` are [min, max, priority,
+    /// can hide, grows past max].
+    function layoutWidths(t, defs) {
+        const cols = defs.map(c => ({ min: c[0], max: c[1], priority: c[2], hide: c[3], unlimited: c[4], grow: 1 }))
         if (t <= 0) return cols.map(() => 0)
         const a = cols.map(c => c.min), n = cols.map(c => c.grow), shown = cols.map(() => true)
         let o = a.reduce((x, y) => x + y, 0), i = cols.length, s = cols.filter(c => c.min !== c.max).length, l = cols.filter(c => c.unlimited).length
@@ -396,8 +453,8 @@ Item {
         anchors { left: pane.right; right: parent.right; top: parent.top; bottom: parent.bottom }
         // Title, or the folder trail.
         Row {
-            visible: root.selection.length === 0 || root.sub
-            x: 4; y: root.sub ? 98 : 30; spacing: 4
+            visible: (root.selection.length === 0 || root.sub) && root.view !== "recent" && root.view !== "shared"
+            x: root.view === "people" && !root.person ? 16 : 4; y: root.sub ? 98 : 30; spacing: 4
             Repeater {
                 model: root.view === "folder" ? root.trail : [{ name: root.title }]
                 Row {
@@ -573,33 +630,57 @@ Item {
                 ViewControls { inBar: true }
             }
         }
+        // Home's For you, Recent's pills and filter box; Shared's tabs and
+        // pills (OneDrive's Spartan header).
+        SpartanHeader { id: spartanHead; visible: (root.view === "recent" || root.view === "shared") && root.selection.length === 0; width: card.width }
+        // People's "Filter by person" (200 x 32 at the right).
+        FilterBox {
+            visible: root.view === "people" && !root.person
+            x: card.width - 202; y: 26; width: 200
+            placeholder: qsTr("Filter by person")
+        }
         Rectangle {
             id: card
-            x: 0; y: root.sub ? 144.67 : 76
+            x: 0; y: root.sub ? 144.67 : root.view === "recent" ? 360 : root.view === "people" && !root.person ? 88.67 : 76
             width: parent.width - 16 - (details.visible ? 304 + 2 : 0); height: parent.height - y - 16
             radius: 4
-            color: root.listView === "tiles" && root.view === "folder" ? "transparent" : theme.surface
+            border.width: root.spartan ? 0.67 : 0; border.color: root.hairline
+            color: root.listView === "tiles" && root.view === "folder" || root.view === "people" && !root.person ? "transparent" : theme.surface
             clip: true
-            // People: who shared files with you; pick one to see them.
+            // People: who shared files with you, each with their files as
+            // chips (OneDrive's People view, measured 2026-11-26): rows 65
+            // tall, a 40 px picture at 23 and the name at 79 in a 320 cell,
+            // then the chips from 336; a 0.67 rule (5% black) between rows.
             ListView {
                 visible: root.view === "people" && !root.person
-                anchors.fill: parent; anchors.margins: 8
-                model: root.people
-                delegate: Rectangle {
-                    id: hcFill2
+                anchors.fill: parent
+                clip: true
+                model: root.people.filter(p => !root.nameFilter.trim() || p.name.toLowerCase().indexOf(root.nameFilter.trim().toLowerCase()) >= 0)
+                boundsBehavior: Flickable.StopAtBounds
+                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                delegate: Item {
+                    id: prow
                     required property var modelData
-                    width: ListView.view.width; height: 52; radius: theme.radius
-                    color: pph.hovered ? theme.rowHover : "transparent"
-                    Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32; name: modelData.name }
-                    Column {
-                        x: 56; anchors.verticalCenter: parent.verticalCenter
-                        Text { text: modelData.name; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
-                        Text { text: qsTr("%n files", "", (modelData.files || modelData.items).length); font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(hcFill2, theme.textSecondary) }
+                    required property int index
+                    width: ListView.view.width; height: 65
+                    Rectangle { visible: prow.index > 0; width: parent.width; height: 0.67; color: theme.pick("#0D000000", "#0DFFFFFF", "#FFFFFF") }
+                    Rectangle { anchors.fill: parent; color: pph.hovered ? theme.rowHover : "transparent"; radius: 4 }
+                    Avatar { x: 23; y: 12.33; size: 40; name: prow.modelData.name; photoId: prow.modelData.id || "" }
+                    Text {
+                        x: 79; anchors.verticalCenter: parent.verticalCenter; width: 320 - 79 - 8; elide: Text.ElideRight
+                        text: prow.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(card, root.ink)
+                    }
+                    FileChips {
+                        x: 336; y: 12
+                        files: prow.modelData.files || prow.modelData.items || []
+                        parentWidth: card.width - 64 - 320 - 8
+                        onOpenFile: f => root.openSharedFile(f)
+                        onMore: { root.personId = prow.modelData.id || ""; root.person = prow.modelData.name }
                     }
                     HoverHandler { id: pph; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: { root.personId = modelData.id || ""; root.person = modelData.name } }
+                    TapHandler { onTapped: { root.personId = prow.modelData.id || ""; root.person = prow.modelData.name } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: qsTr("Files from %1").arg(modelData.name)
+                    Accessible.name: qsTr("Files from %1").arg(prow.modelData.name)
                 }
             }
             // Recycle bin: Name, Date deleted, Deleted by, Original location.
@@ -684,9 +765,10 @@ Item {
             // 136, File size 91, Sharing 81, Activity 119; header and rows
             // 49 tall. A hovered row is #EBEBEB, a selected one #E9EAF6,
             // both inset 8 with radius 8.
+            SpartanList { id: spartanList; visible: root.spartan; anchors.fill: parent }
             Item {
                 id: table
-                visible: root.view !== "libraries" && root.view !== "recycle" && (root.view !== "people" || !!root.person)
+                visible: !root.spartan && root.view !== "libraries" && root.view !== "recycle" && (root.view !== "people" || !!root.person)
                 anchors.fill: parent
                 // With the Details pane open the list is narrow (Teams: 555
                 // wide): Name and Modified only, rows 63 tall with "Modified
@@ -997,7 +1079,8 @@ Item {
                             onTapped: (ev) => actions.popup(frow.modelData, frow, ev.position.x, ev.position.y)
                         }
                         function activate() {
-                            if (modelData.is_folder) root.openFolder(modelData.name, modelData.drive_id, modelData.id)
+                            if (modelData.remote_id) root.openFolder(modelData.name, modelData.remote_drive_id, modelData.remote_id)
+                            else if (modelData.is_folder) root.openFolder(modelData.name, modelData.drive_id, modelData.id)
                             else if (modelData.web_url) backend.openFile(modelData.web_url, modelData.name, JSON.stringify(modelData))
                         }
                         HoverHandler { id: fh }
@@ -1047,9 +1130,9 @@ Item {
             // Empty states, as Teams words them.
             Text {
                 visible: !root.busy && !root.driveData.error && root.view !== "libraries"
-                    && (root.view === "recycle" ? root.deleted.length === 0 : root.view === "people" && !root.person ? root.people.length === 0 : root.items.length === 0)
+                    && (root.view === "recycle" ? root.deleted.length === 0 : root.view === "people" && !root.person ? root.people.length === 0 : root.spartan ? root.shown.length === 0 : root.items.length === 0)
                 anchors.centerIn: parent
-                text: ({ recent: qsTr("Your recent files will show up here"), shared: qsTr("Files shared with you will show up here"),
+                text: root.spartan && root.items.length > 0 ? qsTr("No results found") : root.byYou ? qsTr("Files you share will show up here") : ({ recent: qsTr("Your recent files will show up here"), shared: qsTr("Files shared with you will show up here"),
                          favorites: qsTr("Your favorite files will show up here"), recycle: qsTr("Your recycle bin is empty"),
                          meetings: qsTr("Files from your meetings will show up here"), media: qsTr("Your photos and videos will show up here"),
                          people: qsTr("Files people share with you will show up here") })[root.view] || qsTr("This folder is empty")
@@ -1064,6 +1147,556 @@ Item {
                 color: theme.onFill(card, theme.danger)
             }
             BusyIndicator { anchors.centerIn: parent; running: root.busy; visible: root.busy }
+        }
+    }
+
+    // ---- OneDrive's Spartan views (Home, Shared, People), measured on
+    // winpc 2026-11-26 (TASK-0304, TASK-0320). Coordinates are OneDrive's,
+    // from the list card's left edge.
+
+    /// Opens a row or chip's file (a folder opens in the app).
+    function openSharedFile(f) {
+        if (!f) return
+        if (f.remote_id) root.openFolder(f.name, f.remote_drive_id, f.remote_id)
+        else if (f.is_folder) root.openFolder(f.name, f.drive_id, f.id)
+        else if (f.web_url) backend.openFile(f.web_url, f.name, JSON.stringify(f))
+    }
+    /// A row's place line opens the folder the file is in.
+    function openPlace(f) {
+        if (f && f.parent_id && f.drive_id) root.openFolder(f.parent_name || f.location || "", f.drive_id, f.parent_id)
+    }
+    function showSharedTab(tab) {
+        if (sharedTab === tab) return
+        sharedTab = tab; pills = []; nameFilter = ""; selectedIds = []
+        load(tab === "by" ? "shared_by_you" : "shared", "", "")
+    }
+    /// The pills: Home's (Word, Excel, PowerPoint, PDF), Shared's with
+    /// Folders first; More ▾ holds the rest (OneDrive's filterPivots and
+    /// additionalFilterPivots).
+    readonly property var pillDefs: {
+        const base = [{ id: "Word", label: "Word", icon: "brand-word-20" }, { id: "Excel", label: "Excel", icon: "brand-excel-20" },
+                      { id: "PowerPoint", label: "PowerPoint", icon: "brand-powerpoint-20" }, { id: "Pdf", label: "PDF", icon: "ft-pdf-20" }]
+        return view === "shared" ? [{ id: "Folder", label: qsTr("Folders"), icon: "ft-folder-20" }].concat(base) : base
+    }
+    readonly property var morePillDefs: {
+        const L = [{ id: "FluidNote", label: "OneNote", icon: "brand-onenote-20" }, { id: "GenericList", label: qsTr("Lists"), icon: "brand-lists-20", aria: qsTr("Microsoft Lists") },
+                   { id: "Video", label: qsTr("Videos"), icon: "ft-video-20" }, { id: "Fluid", label: "Loop", icon: "brand-loop-20" }]
+        if (view === "shared") L.push({ id: "Image", label: qsTr("Photos"), icon: "ft-photo-20" })
+        L.push({ id: "Whiteboard", label: "Whiteboard", icon: "brand-whiteboard-20" }, { id: "PowerBI", label: "PowerBI", icon: "brand-powerbi-20" },
+               { id: "Markdown", label: qsTr("Markdown"), icon: "ft-md-20" }, { id: "Html", label: "HTML", icon: "ft-html-20" })
+        if (view === "shared") L.push({ id: "Agent", label: qsTr("Agent"), icon: "copilot-16" }, { id: "Hidden", label: qsTr("Hidden"), icon: "eye-off-20", mono: true })
+        return L
+    }
+
+    component SpartanHeader: Item {
+        id: sh
+        height: root.view === "recent" ? 342 : 58
+        // Home: "For you" (18/600 at 8,29) and its cards from 70.
+        Text {
+            visible: root.view === "recent" && forYou.count > 0
+            x: 8; y: 29; text: qsTr("For you")
+            font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold; color: root.ink
+        }
+        ForYouStrip { id: forYou; visible: root.view === "recent"; x: 0; y: 70; width: sh.width }
+        // Shared: With you | By you (18/600, the picked one underlined 2 px).
+        Row {
+            visible: root.view === "shared"
+            x: 0; y: 25; spacing: 12
+            Repeater {
+                model: [{ key: "with", label: qsTr("With you") }, { key: "by", label: qsTr("By you") }]
+                Item {
+                    id: tabItem
+                    required property var modelData
+                    width: tabText.implicitWidth + 8; height: 34
+                    Text {
+                        id: tabText
+                        x: 4; y: 4; text: tabItem.modelData.label
+                        font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold; color: root.ink
+                    }
+                    Rectangle {
+                        visible: root.sharedTab === tabItem.modelData.key
+                        anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: root.accent
+                    }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.showSharedTab(tabItem.modelData.key) }
+                    Accessible.role: Accessible.PageTab
+                    Accessible.name: tabItem.modelData.label
+                    Accessible.selected: root.sharedTab === tabItem.modelData.key
+                }
+            }
+        }
+        // Home's "Recent" (16/600).
+        Text {
+            visible: root.view === "recent"
+            x: 8; y: 310; height: 32; verticalAlignment: Text.AlignVCenter
+            text: qsTr("Recent"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: root.ink
+        }
+        // The pills: All (its text), the types (a 20 px icon, 45 wide),
+        // More (the filter glyph); round (radius 18), a 0.67 #D1D1D1 rim,
+        // picked ones #E9EAF6 with a #5B5FC7 rim; 8.33 apart.
+        Row {
+            id: pillRow
+            visible: !root.byYou
+            x: root.view === "recent" ? 67 : 180; y: root.view === "recent" ? 310 : 26
+            spacing: 8.33
+            Pill { label: qsTr("All"); picked: root.pills.length === 0; aria: qsTr("Filter by All files"); onClicked: root.togglePill("") }
+            Repeater {
+                model: root.pillDefs
+                Pill {
+                    required property var modelData
+                    icon: modelData.icon; picked: root.pills.indexOf(modelData.id) >= 0
+                    aria: modelData.id === "Folder" ? qsTr("Filter by Folders") : qsTr("Filter by %1 files").arg(modelData.label)
+                    onClicked: root.togglePill(modelData.id)
+                }
+            }
+            Pill {
+                id: morePill
+                icon: "filter-20"; mono: true; width: 49
+                picked: root.morePillDefs.some(d => root.pills.indexOf(d.id) >= 0)
+                aria: qsTr("More")
+                onClicked: moreFilters.open()
+                Popup {
+                    id: moreFilters
+                    x: 5; y: morePill.height + 5
+                    width: 180; padding: 4
+                    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                    background: FluentSurface { depth: 8; radius: 4; color: theme.surface }
+                    contentItem: Column {
+                        spacing: 2
+                        Repeater {
+                            model: root.morePillDefs
+                            Rectangle {
+                                id: mf
+                                required property var modelData
+                                readonly property bool on: root.pills.indexOf(modelData.id) >= 0
+                                width: 171.33; height: 32; radius: 4
+                                color: mfh.hovered ? theme.rowHover : theme.surface
+                                FluentIcon { visible: mf.on; x: 6; y: 8; name: "checkmark-16"; size: 16; color: theme.onFill(mf, theme.textStrong) }
+                                FluentIcon { x: 30; y: 6; name: mf.modelData.icon; size: 20; color: mf.modelData.mono ? theme.onFill(mf, theme.textStrong) : theme.icon }
+                                Text { x: 58; anchors.verticalCenter: parent.verticalCenter; text: mf.modelData.label; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(mf, theme.pick("#424242", "#D6D6D6", "#FFFFFF")) }
+                                HoverHandler { id: mfh; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: root.togglePill(mf.modelData.id) }
+                                Accessible.role: Accessible.CheckBox
+                                Accessible.name: mf.modelData.aria || (mf.modelData.id === "Hidden" ? mf.modelData.label : qsTr("Filter by %1 files").arg(mf.modelData.label))
+                                Accessible.checked: mf.on
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // "Filter by name or person": 240 x 32 at the card's right edge.
+        FilterBox {
+            visible: !root.byYou
+            x: sh.width - width; y: root.view === "recent" ? 310 : 26
+            width: 240
+            placeholder: qsTr("Filter by name or person")
+        }
+    }
+
+    component FilterBox: Rectangle {
+        id: fb
+        property string placeholder
+        height: 32; radius: 4
+        color: "transparent"
+        border.width: 0.67; border.color: fbi.activeFocus ? root.accent : theme.pick("#D1D1D1", "#666666", "#FFFFFF")
+        TextInput {
+            id: fbi
+            x: 16; width: parent.width - 32 - (clearFb.visible ? 20 : 0); anchors.verticalCenter: parent.verticalCenter
+            text: root.nameFilter
+            onTextEdited: root.nameFilter = text
+            font.family: theme.font; font.pixelSize: 16; color: root.ink; clip: true
+            selectByMouse: true
+            Text { visible: !fbi.text; text: fb.placeholder; font: fbi.font; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
+            Accessible.role: Accessible.EditableText
+            Accessible.name: fb.placeholder
+        }
+        FluentIcon {
+            id: clearFb
+            visible: root.nameFilter.length > 0
+            anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter
+            name: "dismiss-16"; size: 16; color: root.strong
+            TapHandler { onTapped: root.nameFilter = "" }
+        }
+    }
+
+    component Pill: Rectangle {
+        id: pill
+        property string label: ""
+        property string icon: ""
+        property bool mono: false
+        property bool picked: false
+        property string aria: label
+        signal clicked()
+        width: label ? pillText.implicitWidth + 40.67 : 45.33; height: 32; radius: 18
+        color: picked ? root.selectedFill : pillh.hovered ? theme.rowHover : "transparent"
+        border.width: 0.67; border.color: picked ? root.accent : theme.pick("#D1D1D1", "#666666", "#FFFFFF")
+        Text { id: pillText; visible: !!pill.label; anchors.centerIn: parent; text: pill.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(pill, root.ink) }
+        FluentIcon { visible: !!pill.icon; anchors.centerIn: parent; name: pill.icon; size: 20; color: pill.mono ? theme.onFill(pill, root.ink) : theme.icon }
+        HoverHandler { id: pillh; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: pill.clicked() }
+        Accessible.role: Accessible.Button
+        Accessible.name: aria
+        Accessible.checked: picked
+    }
+
+    // For you (OneDrive's RecommendedStrip): 312 x 202 cards 16 apart (354
+    // wide from a 1464 px strip), at least 3 and at most 8, scrolling
+    // sideways. A card: the app icon (20) and the title (14/600) over a
+    // #EBEBEB rule, the badge's glyph in a 24 px #E9EAF6 circle (or the
+    // person's picture), the reason (14/20, the person's name 600) and the
+    // day (12, #5E5E5D), the button (Open, Summarize, …), and a 113 px
+    // picture box (#FAFAFA) with the file's picture or its 40 px icon.
+    component ForYouStrip: Flickable {
+        id: fy
+        readonly property var cards: root.view === "recent" ? (root.driveData.for_you || []) : []
+        readonly property real tileWidth: width < 1464 ? 312 : 354
+        readonly property int count: cards.length ? Math.min(cards.length, Math.max(3, Math.min(8, Math.floor((width + 16) / (tileWidth + 16))))) : 0
+        height: count ? 218 : 0
+        contentWidth: tileRow.width; contentHeight: height
+        flickableDirection: Flickable.HorizontalFlick
+        boundsBehavior: Flickable.StopAtBounds
+        clip: true
+        ScrollBar.horizontal: ScrollBar { policy: fy.contentWidth > fy.width ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded }
+        Row {
+            id: tileRow
+            spacing: 16
+            Repeater {
+                model: fy.cards.slice(0, fy.count)
+                ForYouCard { width: fy.tileWidth }
+            }
+        }
+    }
+
+    component ForYouCard: Rectangle {
+        id: fc
+        required property var modelData
+        readonly property var it: modelData.item || ({})
+        readonly property string thumb: modelData.thumbnail && it.id ? (root.thumbs[it.id] || "") : ""
+        Component.onCompleted: if (modelData.thumbnail && it.id) root.wantThumb(it)
+        height: 202.33; radius: 4
+        color: theme.surface
+        border.width: 0.67; border.color: root.hairline
+        // The header: icon, title, the rule under them.
+        FluentIcon { x: 16.67; y: 16.67; size: 20; name: root.fileIcon(fc.modelData.kind).replace("-32", "-20") }
+        Text {
+            x: 46.17; y: 16.67; width: parent.width - 46.17 - 16.67; height: 20; verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight; text: fc.modelData.title
+            font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.openSharedFile(fc.it) }
+        }
+        Rectangle { x: 16.67; y: 52.67; width: parent.width - 33.33; height: 0.67; color: theme.pick("#EBEBEB", "#3D3D3D", "#FFFFFF") }
+        // The badge: a person's picture, else the reason's glyph.
+        Avatar {
+            visible: !!fc.modelData.actor_upn
+            x: 16.67; y: 72.33; size: 24; name: fc.modelData.actor; photoId: fc.modelData.actor_id || ""
+        }
+        Rectangle {
+            visible: !fc.modelData.actor_upn
+            x: 16.67; y: 72.33; width: 24; height: 24; radius: 12
+            color: root.selectedFill
+            FluentIcon {
+                anchors.centerIn: parent; size: 12; color: root.accent
+                name: ({ view: "eye-16", edit: "edit-16", comment: "comment-16", reply: "arrow-reply-16", share: "share-16", attach: "attach-20",
+                         accounts: "mention-16", trending12: "arrow-trending-20", calendar: "calendar-20", groupedlist: "task-list-ltr-20" })[fc.modelData.icon] || "document-text-16"
+            }
+        }
+        Column {
+            x: 48.67; y: 72.33; width: parent.width - 48.67 - 16.67 - 113.33 - 12.67
+            Text {
+                width: parent.width; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight
+                lineHeight: 20; lineHeightMode: Text.FixedHeight
+                textFormat: Text.StyledText
+                text: (fc.modelData.actor ? "<b>" + root.esc(fc.modelData.actor) + "</b> " + root.esc(fc.modelData.rest) : root.esc(fc.modelData.reason))
+                font.family: theme.font; font.pixelSize: 14; color: root.ink
+            }
+            Text {
+                width: parent.width; height: 20; verticalAlignment: Text.AlignVCenter
+                text: fc.modelData.time_text || ""
+                font.family: theme.font; font.pixelSize: 12; color: theme.pick("#5E5E5D", "#ADADAD", "#FFFFFF")
+            }
+        }
+        // The button (OneDrive's PrimaryButtonProps): an activity link, else
+        // Summarize / Recap this meeting when Copilot is on, else Open.
+        Rectangle {
+            id: fcButton
+            readonly property string kind: fc.modelData.nav_url ? fc.modelData.button
+                : fc.modelData.summarize && root.copilotOn ? "summarize" : fc.modelData.recap && root.copilotOn ? "recap" : "open"
+            readonly property string label: ({ comment: qsTr("Go to comment"), task: qsTr("Go to task"), recording: qsTr("Watch recording"),
+                                               summarize: qsTr("Summarize"), recap: qsTr("Recap this meeting") })[kind] || qsTr("Open")
+            readonly property bool sparkle: kind === "summarize" || kind === "recap"
+            x: 16.67; y: sparkle ? 154 : 155.67
+            width: fcRow.implicitWidth + 24; height: sparkle ? 31.33 : 30
+            radius: sparkle ? 6 : 4
+            color: fcbh.hovered ? theme.rowHover : theme.surface
+            border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
+            Row {
+                id: fcRow
+                anchors.centerIn: parent; spacing: 4
+                FluentIcon { visible: fcButton.sparkle; anchors.verticalCenter: parent.verticalCenter; name: fcButton.kind === "recap" ? "sparkle-20" : "sparkle-20"; size: 20; color: theme.onFill(fcButton, root.ink) }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: fcButton.label; font.family: theme.font; font.pixelSize: fcButton.sparkle ? 13.33 : 14; font.weight: Font.DemiBold; color: theme.onFill(fcButton, root.ink) }
+            }
+            HoverHandler { id: fcbh; cursorShape: Qt.PointingHandCursor }
+            TapHandler {
+                onTapped: {
+                    if (fc.modelData.nav_url) Qt.openUrlExternally(fc.modelData.nav_url)
+                    else if (fcButton.sparkle) root.askCopilot(fcButton.kind === "recap" ? qsTr("Recap this meeting") : qsTr("Summarize \"%1\"").arg(fc.modelData.file_name))
+                    else root.openSharedFile(fc.it)
+                }
+            }
+            Accessible.role: Accessible.Button
+            Accessible.name: fcButton.label
+        }
+        // The picture box.
+        Rectangle {
+            x: parent.width - 16.67 - 113.33; y: 72.33; width: 113.33; height: 113.33; radius: 4
+            color: theme.pick("#FAFAFA", "#1F1F1F", "#000000")
+            border.width: 0.67; border.color: theme.pick("#EBEBEB", "#3D3D3D", "#FFFFFF")
+            clip: true
+            Image { visible: !!fc.thumb; anchors.fill: parent; anchors.margins: 1; source: fc.thumb; fillMode: Image.PreserveAspectCrop; asynchronous: true }
+            FluentIcon { visible: !fc.thumb; anchors.centerIn: parent; size: 40; name: root.fileIcon(fc.modelData.kind) }
+        }
+        TapHandler { acceptedButtons: Qt.RightButton; onTapped: (ev) => actions.popup(fc.it, fc, ev.position.x, ev.position.y) }
+        Accessible.role: Accessible.ListItem
+        Accessible.name: fc.modelData.title + ", " + fc.modelData.reason
+    }
+
+    /// Plain text for StyledText.
+    function esc(t) { return String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
+    /// Teams shows Summarize / Recap when Copilot is on for you.
+    property bool copilotOn: false
+    signal askCopilot(string prompt)
+
+    // The list: a 45 px selection column, then Name (its icon at 8, the
+    // name at 56 over the place line), Opened / Date shared, Owner /
+    // Shared by, Activity; By you has Name and Modified by (42 : 58, at
+    // least 1024 wide). Header 48, rows 56.
+    component SpartanList: Item {
+        id: sl
+        clip: true
+        readonly property real grid: width - 8.33 - 45
+        readonly property var w: root.byYou ? [Math.max(grid, 979) * 0.42, Math.max(grid, 979) * 0.58, 0, 0] : root.spartanWidths(grid)
+        readonly property real gridWidth: 45 + w.reduce((a, b) => a + b, 0)
+        readonly property var heads: root.byYou ? [qsTr("Name"), qsTr("Modified by")]
+            : root.view === "recent" ? [qsTr("Name"), qsTr("Opened"), qsTr("Owner"), qsTr("Activity")]
+            : [qsTr("Name"), qsTr("Date shared"), qsTr("Shared by"), qsTr("Activity")]
+        function colX(i) { let x = 45; for (let k = 0; k < i; k++) x += w[k]; return x }
+        Item {
+            id: slHead
+            x: -slList.contentX; width: Math.max(sl.width, sl.gridWidth); height: 48
+            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: root.hairline }
+            Repeater {
+                model: sl.heads
+                Text {
+                    required property string modelData
+                    required property int index
+                    visible: sl.w[index] > 0
+                    x: sl.colX(index) + 8; anchors.verticalCenter: parent.verticalCenter
+                    width: sl.w[index] - 16; elide: Text.ElideRight
+                    text: modelData; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink
+                }
+            }
+        }
+        ListView {
+            id: slList
+            anchors { top: slHead.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+            clip: true
+            model: root.shown
+            boundsBehavior: Flickable.StopAtBounds
+            contentWidth: Math.max(width, sl.gridWidth)
+            flickableDirection: contentWidth > width ? Flickable.HorizontalAndVerticalFlick : Flickable.VerticalFlick
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
+            delegate: Item {
+                id: sr
+                required property var modelData
+                required property int index
+                readonly property bool sel: root.selectedIds.indexOf(modelData.id) >= 0
+                readonly property bool hot: srh.hovered || actions.item === modelData && actions.menuOpen
+                width: Math.max(slList.width, sl.gridWidth); height: 56
+                Rectangle { anchors.fill: parent; anchors.bottomMargin: 0.67; color: sr.sel ? root.selectedFill : sr.hot ? theme.rowHover : "transparent" }
+                Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: root.hairline }
+                Rectangle {
+                    id: srCircle
+                    visible: sr.hot || sr.sel
+                    x: 13.5; y: 19; width: 18; height: 18; radius: 9
+                    color: sr.sel ? root.accent : theme.surface
+                    border.width: sr.sel ? 0 : 1; border.color: root.strong
+                    FluentIcon { visible: sr.sel; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(srCircle, "white") }
+                    TapHandler { onTapped: root.toggle(sr.modelData) }
+                    Accessible.role: Accessible.CheckBox
+                    Accessible.name: sr.modelData.title || sr.modelData.name
+                    Accessible.checked: sr.sel
+                }
+                // Name: the icon, the name and the place line.
+                FluentIcon {
+                    x: sl.colX(0) + 8; y: 11; size: 32
+                    name: sr.modelData.is_folder ? "ft-folder-32" : root.fileIcon(sr.modelData.kind)
+                    swaps: sr.modelData.is_folder ? root.folderSwaps(sr.modelData.folder_color) : ({})
+                }
+                Text {
+                    id: srName
+                    x: sl.colX(0) + 56; y: 10; height: 19
+                    width: Math.min(implicitWidth, sl.w[0] - 56 - 8 - (sr.hot ? 40 : 0))
+                    elide: Text.ElideRight
+                    text: sr.modelData.title || sr.modelData.name
+                    font.family: theme.font; font.pixelSize: 14; font.weight: sr.sel ? Font.DemiBold : Font.Normal; color: root.ink
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.openSharedFile(sr.modelData) }
+                    Accessible.role: Accessible.Link
+                    Accessible.name: text
+                }
+                Text {
+                    visible: !!sr.modelData.location
+                    x: sl.colX(0) + 56; y: 29; height: 16
+                    width: Math.min(implicitWidth, sl.w[0] - 56 - 8); elide: Text.ElideRight
+                    text: sr.modelData.location || ""
+                    font.family: theme.font; font.pixelSize: 12; color: theme.pick("#5E5E5D", "#ADADAD", "#FFFFFF")
+                    HoverHandler { cursorShape: sr.modelData.parent_id ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                    TapHandler { enabled: !!sr.modelData.parent_id; onTapped: root.openPlace(sr.modelData) }
+                    Accessible.role: Accessible.Link
+                    Accessible.name: qsTr("Location: %1").arg(text)
+                }
+                RowTool {
+                    id: srMore
+                    visible: sr.hot
+                    x: srName.x + srName.width + 8; y: 7
+                    icon: "more-horizontal-16"; tip: qsTr("More Actions")
+                    onClicked: actions.popup(sr.modelData, srMore, 0, srMore.height)
+                }
+                // Opened / Date shared (#5E5E5D), Owner / Shared by, or By
+                // you's Modified by.
+                Text {
+                    visible: !root.byYou && sl.w[1] > 0
+                    x: sl.colX(1) + 8; anchors.verticalCenter: parent.verticalCenter; width: sl.w[1] - 16; elide: Text.ElideRight
+                    text: sr.modelData.modified_text || ""
+                    font.family: theme.font; font.pixelSize: 14; color: theme.pick("#5E5E5D", "#ADADAD", "#FFFFFF")
+                    HoverHandler { id: srDate }
+                    ToolTip.visible: srDate.hovered && !!sr.modelData.modified_title
+                    ToolTip.text: sr.modelData.modified_title || ""
+                    ToolTip.delay: 500
+                }
+                Text {
+                    readonly property int col: root.byYou ? 1 : 2
+                    visible: sl.w[col] > 0
+                    x: sl.colX(col) + 8; anchors.verticalCenter: parent.verticalCenter; width: sl.w[col] - 16; elide: Text.ElideRight
+                    text: root.view === "recent" ? (sr.modelData.owner || "") : (sr.modelData.modified_by || "")
+                    font.family: theme.font; font.pixelSize: 14; color: theme.pick("#5E5E5D", "#ADADAD", "#FFFFFF")
+                }
+                // Activity: the glyph, the person's name (600) and the rest,
+                // two lines (the day falls under them, as OneDrive clips it).
+                Item {
+                    visible: !root.byYou && sl.w[3] > 0 && !!sr.modelData.activity
+                    x: sl.colX(3); width: sl.w[3]; height: 56
+                    clip: true
+                    FluentIcon {
+                        x: 18; y: 9.5; size: 16; color: root.strong
+                        name: sr.modelData.activity && sr.modelData.activity.kind ? root.activityIcon(sr.modelData.activity.kind) : ""
+                    }
+                    Text {
+                        x: 38; y: 8; width: parent.width - 38 - 10
+                        wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight
+                        lineHeight: 19.5; lineHeightMode: Text.FixedHeight
+                        textFormat: Text.StyledText
+                        readonly property var a: sr.modelData.activity || ({})
+                        text: (a.lead ? "<b>" + root.esc(a.lead) + "</b> " + root.esc(a.rest) : root.esc(a.rest || a.text)) + (a.time ? " " + root.esc(a.time) : "")
+                        font.family: theme.font; font.pixelSize: 14; color: theme.pick("#5E5E5D", "#ADADAD", "#FFFFFF")
+                    }
+                }
+                HoverHandler { id: srh }
+                TapHandler {
+                    onTapped: (ev, button) => (ev.modifiers & Qt.ControlModifier) ? root.toggle(sr.modelData) : root.selectOnly(sr.modelData)
+                    onDoubleTapped: root.openSharedFile(sr.modelData)
+                }
+                TapHandler {
+                    acceptedButtons: Qt.RightButton
+                    onTapped: (ev) => actions.popup(sr.modelData, sr, ev.position.x, ev.position.y)
+                }
+                Accessible.role: Accessible.Row
+                Accessible.name: (sr.modelData.is_folder ? qsTr("Folder %1") : qsTr("File %1")).arg(sr.modelData.title || sr.modelData.name)
+                Accessible.selected: sel
+            }
+        }
+    }
+
+    // A person's files as chips (OneDrive's filePill): 40 tall (a 1 px
+    // clear rim), radius 6, shadow 2, 12 apart; the 16 px icon, the name
+    // (12 px) and the activity pill (#F5F5F5: its glyph and day, 10 px).
+    // As many fit as OneDrive's own measure allows (characters ×
+    // 5.2 px + 64 + the pill), the next one shortened if 8 characters fit,
+    // then "+n" for the rest.
+    component FileChips: Row {
+        id: chips
+        property var files: []
+        property real parentWidth: 700
+        readonly property real cw: 5.2
+        signal openFile(var f)
+        signal more()
+        spacing: 12
+        function pillWidth(f) { const d = f.shared_day || ""; return d ? cw * d.length + 32 : 0 }
+        readonly property var plan: {
+            const t = parentWidth > 0 ? parentWidth : 700
+            const name = f => String(f.visual_title || f.title || f.name || "")
+            let used = 50, shown = [], i = 0
+            for (; i < files.length; i++) {
+                const o = Math.min(name(files[i]).length, 50) * cw + 64 + pillWidth(files[i])
+                if (used + o > t) break
+                used += o; shown.push({ f: files[i], max: 50 * cw })
+            }
+            if (i < files.length) {
+                const left = t - used - 64 - pillWidth(files[i])
+                if (left >= cw * Math.min(name(files[i]).length, 8)) { shown.push({ f: files[i], max: left }); i++ }
+            }
+            return { shown: shown, extra: files.length - i }
+        }
+        Repeater {
+            model: chips.plan.shown
+            FluentSurface {
+                id: chip
+                required property var modelData
+                readonly property var f: modelData.f
+                depth: chh.hovered ? 4 : 2; radius: 6; color: theme.surface
+                width: chipRow.implicitWidth + 16 + 1.33; height: 41.33
+                Row {
+                    id: chipRow
+                    x: 8.67; anchors.verticalCenter: parent.verticalCenter
+                    Item { width: 24; height: 16; anchors.verticalCenter: parent.verticalCenter; FluentIcon { size: 16; name: chip.f.is_folder ? "ft-folder-20" : root.fileIcon(chip.f.kind).replace("-32", "-20") } }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: Math.min(implicitWidth, chip.modelData.max) + 12; rightPadding: 12; elide: Text.ElideRight
+                        text: chip.f.visual_title || chip.f.title || chip.f.name
+                        font.family: theme.font; font.pixelSize: 12; color: root.ink
+                    }
+                    Rectangle {
+                        visible: !!chip.f.shared_day
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: chipPill.implicitWidth; height: 24; radius: 12
+                        color: theme.pick("#F5F5F5", "#292929", "#000000")
+                        Row {
+                            id: chipPill
+                            anchors.verticalCenter: parent.verticalCenter
+                            leftPadding: 4; spacing: 2
+                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "share-16"; size: 10; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF") }
+                            Text { rightPadding: 8; anchors.verticalCenter: parent.verticalCenter; text: chip.f.shared_day || ""; font.family: theme.font; font.pixelSize: 10; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF") }
+                        }
+                    }
+                }
+                HoverHandler { id: chh; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: chips.openFile(chip.f) }
+                Accessible.role: Accessible.Button
+                Accessible.name: (chip.f.visual_title || chip.f.title || chip.f.name) + " " + chip.f.kind + (chip.f.shared_day ? " " + qsTr("Shared %1").arg(chip.f.shared_day) : "")
+            }
+        }
+        FluentSurface {
+            visible: chips.plan.extra > 0
+            depth: mh2.hovered ? 4 : 2; radius: 6; color: theme.surface
+            width: 32; height: 41.33
+            Text { anchors.centerIn: parent; text: qsTr("+%1").arg(chips.plan.extra); font.family: theme.font; font.pixelSize: 12; color: root.ink }
+            HoverHandler { id: mh2; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: chips.more() }
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("See %1 more items").arg(chips.plan.extra)
         }
     }
 
@@ -1163,7 +1796,7 @@ Item {
         }
         HoverHandler { id: th; cursorShape: Qt.PointingHandCursor }
         TapHandler {
-            onTapped: (ev, button) => (ev.modifiers & Qt.ControlModifier) ? root.toggle(tile.modelData) : tile.modelData.is_folder ? root.openFolder(tile.modelData.name, tile.modelData.drive_id, tile.modelData.id) : root.selectOnly(tile.modelData)
+            onTapped: (ev, button) => (ev.modifiers & Qt.ControlModifier) ? root.toggle(tile.modelData) : tile.modelData.remote_id ? root.openFolder(tile.modelData.name, tile.modelData.remote_drive_id, tile.modelData.remote_id) : tile.modelData.is_folder ? root.openFolder(tile.modelData.name, tile.modelData.drive_id, tile.modelData.id) : root.selectOnly(tile.modelData)
             onDoubleTapped: if (!tile.modelData.is_folder && tile.modelData.web_url) backend.openFile(tile.modelData.web_url, tile.modelData.name, JSON.stringify(tile.modelData))
         }
         TapHandler { acceptedButtons: Qt.RightButton; onTapped: (ev) => actions.popup(tile.modelData, tile, ev.position.x, ev.position.y) }

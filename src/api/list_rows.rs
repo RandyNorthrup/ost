@@ -766,6 +766,115 @@ pub async fn folder_place(
     }
 }
 
+/// RenderOptions as Teams' OneDrive list asks (its My files request,
+/// captured 2026-11-26): with them SharePoint also returns the shortcuts
+/// Add shortcut made (ProgId `AddToOneDrive.MountPoint`), which Graph's
+/// children and the plain list rows leave out.
+const SHORTCUT_RENDER_OPTIONS: u64 = 5_691_143;
+const SHORTCUT_VIEW_XML: &str = r#"<View><ViewFields><FieldRef Name="FileLeafRef"/><FieldRef Name="ProgId"/><FieldRef Name="RemoteItem"/><FieldRef Name="UniqueId"/><FieldRef Name="Modified"/><FieldRef Name="Editor"/></ViewFields><RowLimit Paged="TRUE">500</RowLimit></View>"#;
+
+/// The shortcuts in a library folder (`folder`: its server-relative path,
+/// empty at the top), as drive items of what they point to: the target's
+/// drive and item, the shortcut's name, and "Owner: {site}" for Sharing as
+/// Teams shows it.
+pub async fn shortcuts(
+    site: &str,
+    list: &str,
+    folder: &str,
+) -> Result<Vec<super::drive::DriveItem>> {
+    let list = list.trim_matches(|c| c == '{' || c == '}');
+    if list.is_empty() || !list.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
+        anyhow::bail!("Not a list id");
+    }
+    let mut params = json!({
+        "__metadata": { "type": "SP.RenderListDataParameters" },
+        "RenderOptions": SHORTCUT_RENDER_OPTIONS,
+        "ViewXml": SHORTCUT_VIEW_XML,
+    });
+    if !folder.is_empty() {
+        params["FolderServerRelativeUrl"] = json!(folder);
+    }
+    let url = format!(
+        "{}/_api/web/lists(guid'{list}')/RenderListDataAsStream",
+        site.trim_end_matches('/')
+    );
+    let reply = super::sharing::post_with(
+        &url,
+        &json!({ "parameters": params }),
+        &[("user-agent", super::client::TEAMS_WEB_UA)],
+    )
+    .await?;
+    Ok(shortcut_items(&reply))
+}
+
+/// `shortcuts`' rows (the reply has them in `ListData.Row`, or `Row`).
+pub fn shortcut_items(reply: &Value) -> Vec<super::drive::DriveItem> {
+    let rows = reply["ListData"]["Row"]
+        .as_array()
+        .or_else(|| reply["Row"].as_array())
+        .cloned()
+        .unwrap_or_default();
+    rows.iter()
+        .filter(|r| r["ProgId"].as_str() == Some("AddToOneDrive.MountPoint"))
+        .filter_map(|r| {
+            let remote: Value = match &r["RemoteItem"] {
+                Value::String(t) => serde_json::from_str(t).ok()?,
+                v => v.clone(),
+            };
+            let g = |k: &str| remote[k].as_str().unwrap_or_default().to_string();
+            let trim = |v: String| {
+                v.trim_matches(|c| c == '{' || c == '}')
+                    .to_ascii_lowercase()
+            };
+            let (drive, id) = (g("DriveId"), g("ItemId"));
+            // The shortcut's own item: ".spItemUrl" is
+            // ".../drives/{drive}/items/{id}?…".
+            let own = r[".spItemUrl"].as_str().unwrap_or_default();
+            let own = own.split('?').next().unwrap_or_default();
+            let mut parts = own.rsplit('/');
+            let (own_id, _, own_drive) = (
+                parts.next().unwrap_or_default().to_string(),
+                parts.next().unwrap_or_default(),
+                parts.next().unwrap_or_default().to_string(),
+            );
+            if drive.is_empty() || id.is_empty() || own_id.is_empty() || own_drive.is_empty() {
+                return None;
+            }
+            let folder = remote["FSObjType"].as_i64() == Some(1);
+            let name = r["FileLeafRef"].as_str().unwrap_or_default().to_string();
+            Some(super::drive::DriveItem {
+                kind: if folder {
+                    String::new()
+                } else {
+                    g("FileType").to_ascii_lowercase()
+                },
+                id: own_id,
+                drive_id: own_drive,
+                remote_id: id,
+                remote_drive_id: drive,
+                is_folder: folder,
+                child_count: remote["FolderChildCount"].as_u64().unwrap_or(0),
+                size: remote["SMTotalSize"].as_u64().unwrap_or(0),
+                modified: r["Modified."].as_str().unwrap_or_default().to_string(),
+                modified_by: r["Editor"][0]["title"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+                sharing: match g("SiteTitle") {
+                    t if t.is_empty() => "Shared".into(),
+                    t => format!("Owner: {t}"),
+                },
+                sp_site: g("SiteUrl"),
+                sp_list: trim(g("ListId")),
+                sp_item: trim(g("UniqueId")),
+                special: "shortcut".into(),
+                name,
+                ..Default::default()
+            })
+        })
+        .collect()
+}
+
 /// A drive item as the OneDrive app's table shows it: Graph's fields plus
 /// the row's Modified wording, tooltip, Sharing, "new" mark and Activity
 /// (SharePoint's where it has them, else worded here from Graph's time).
@@ -874,6 +983,39 @@ mod filter_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A shortcut row of Teams' My files request (2026-11-26), cut down.
+    #[test]
+    fn shortcuts_read_from_onedrives_rows() {
+        let reply = json!({ "ListData": { "Row": [
+            { "FileLeafRef": "Attachments", "ProgId": "", "UniqueId": "{1}" },
+            { "FileLeafRef": "OST Test Team - General", "ProgId": "AddToOneDrive.MountPoint", "Modified.": "2026-11-25T22:06:08Z",
+              "Editor": [{ "title": "OST Test 1" }], ".spItemUrl": "https://x-my.sharepoint.com:443/_api/v2.0/drives/b!MwwW/items/01BV7C2BHV44?version=Published",
+              "RemoteItem": "{\"DriveId\":\"b!08rs\",\"ItemId\":\"01ZLBLND\",\"SiteUrl\":\"https://x.sharepoint.com/sites/OSTTestTeam\",\"ListId\":\"{1725E7C5-6C9A}\",\"FSObjType\":1,\"FolderChildCount\":1,\"SiteTitle\":\"OST Test Team\",\"UniqueId\":\"{9E8F3F36}\",\"SMTotalSize\":12253}" }
+        ] } });
+        let items = shortcut_items(&reply);
+        assert_eq!(items.len(), 1);
+        let it = &items[0];
+        assert_eq!(
+            (it.name.as_str(), it.drive_id.as_str(), it.id.as_str()),
+            ("OST Test Team - General", "b!MwwW", "01BV7C2BHV44")
+        );
+        assert_eq!(
+            (it.remote_drive_id.as_str(), it.remote_id.as_str()),
+            ("b!08rs", "01ZLBLND")
+        );
+        assert!(it.is_folder);
+        assert_eq!(
+            (
+                it.child_count,
+                it.sharing.as_str(),
+                it.sp_list.as_str(),
+                it.sp_item.as_str()
+            ),
+            (1, "Owner: OST Test Team", "1725e7c5-6c9a", "9e8f3f36")
+        );
+        assert_eq!(it.special, "shortcut");
+    }
 
     fn at(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> DateTime<Local> {
         Local.with_ymd_and_hms(y, mo, d, h, mi, 0).unwrap()

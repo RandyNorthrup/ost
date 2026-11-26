@@ -38,6 +38,16 @@ pub struct DriveItem {
     /// The folder it is in (search results' Location).
     #[serde(default)]
     pub parent_name: String,
+    /// That folder's id (Graph's parentReference), for a place line's link.
+    #[serde(default)]
+    pub parent_id: String,
+    /// A shortcut (Add shortcut's): what it points to. The item's own
+    /// `drive_id` / `id` are the shortcut's, so Delete or Rename act on the
+    /// shortcut, never on the folder it opens.
+    #[serde(default)]
+    pub remote_drive_id: String,
+    #[serde(default)]
+    pub remote_id: String,
     /// OneDrive's special folder it is ("shortcuts" for Add shortcut's
     /// Shortcuts folder), else empty.
     #[serde(default)]
@@ -166,7 +176,13 @@ pub(crate) fn parse_item(v: &serde_json::Value) -> Option<DriveItem> {
             .into_iter()
             .find(|n| !n.is_empty())
             .unwrap_or_default(),
+        parent_id: [s(v, "/parentReference/id"), s(r, "/parentReference/id")]
+            .into_iter()
+            .find(|n| !n.is_empty())
+            .unwrap_or_default(),
         special: s(v, "/specialFolder/name"),
+        remote_drive_id: String::new(),
+        remote_id: String::new(),
         name,
         kind,
     })
@@ -613,24 +629,6 @@ pub async fn channel_folder(
         folder.sp_item = g("listItemUniqueId");
     }
     Ok(folder)
-}
-
-/// Add a shortcut to a shared folder in your OneDrive (Teams' "Add
-/// shortcut to OneDrive").
-pub async fn add_shortcut(
-    client: &TeamsClient,
-    drive_id: &str,
-    item_id: &str,
-    name: &str,
-) -> Result<()> {
-    item_path(drive_id, item_id)?;
-    let body = serde_json::json!({
-        "name": name,
-        "remoteItem": { "id": item_id, "parentReference": { "driveId": drive_id } },
-        "@microsoft.graph.conflictBehavior": "rename"
-    });
-    client.graph_post("/me/drive/root/children", &body).await?;
-    Ok(())
 }
 
 /// Download a file into `dir` (a free name is chosen if it exists).

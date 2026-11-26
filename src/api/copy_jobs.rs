@@ -85,24 +85,36 @@ pub enum ShortcutPlace {
     },
 }
 
-/// The body OneDrive's Add shortcut posts (its "Stasher").
-pub fn shortcut_body(name: &str, item: &ItemRef, site_id: &str, web_id: &str) -> Value {
-    json!({
+/// The body OneDrive's Add shortcut posts (its "Stasher"): a file's has
+/// `"file": {}`; a folder's (a channel's "Add shortcut to OneDrive",
+/// captured on winpc 2026-11-26) has none.
+pub fn shortcut_body(
+    name: &str,
+    item: &ItemRef,
+    site_id: &str,
+    web_id: &str,
+    folder: bool,
+) -> Value {
+    let mut body = json!({
         "name": name,
         "remoteItem": { "sharepointIds": {
             "listId": item.list.trim_matches(|c| c == '{' || c == '}'),
             "listItemUniqueId": item.item.trim_matches(|c| c == '{' || c == '}'),
             "siteId": site_id, "siteUrl": item.site.trim_end_matches('/'), "webId": web_id,
         }},
-        "file": {},
         "@microsoft.graph.conflictBehavior": "rename",
-    })
+    });
+    if !folder {
+        body["file"] = json!({});
+    }
+    body
 }
 
 /// Add shortcut: `personal` is your OneDrive's host (`https://x-my…`).
 pub async fn add_shortcut(
     item: &ItemRef,
     name: &str,
+    folder: bool,
     personal: &str,
     place: &ShortcutPlace,
 ) -> Result<()> {
@@ -141,17 +153,42 @@ pub async fn add_shortcut(
         }
     };
     let (site_id, web_id) = site_ids(&item.site).await?;
+    if site_id.is_empty() || web_id.is_empty() {
+        bail!("Couldn't read the site of {name}");
+    }
     super::sharing::post_with(
         &url,
-        &shortcut_body(name, item, &site_id, &web_id),
+        &shortcut_body(name, item, &site_id, &web_id, folder),
         &[
             ("accept", "application/json"),
             ("content-type", "application/json"),
         ],
     )
     .await
-    .map_err(sp_message)?;
+    .map_err(|e| anyhow::anyhow!(shortcut_error(&sp_message(e).to_string())))?;
     Ok(())
+}
+
+/// Add shortcut's failure as OneDrive words it: "You already have a
+/// shortcut to this folder" for `shortcutAlreadyExists`, else the
+/// service's message.
+pub fn shortcut_error(text: &str) -> String {
+    // SharePoint's v2.1 error, possibly cut short (OST keeps its first 200
+    // characters).
+    if text.contains("\"shortcutAlreadyExists\"") {
+        return "You already have a shortcut to this folder".into();
+    }
+    let v: Value = text
+        .find('{')
+        .and_then(|i| serde_json::from_str(&text[i..]).ok())
+        .unwrap_or_default();
+    if let Some(m) = v["error"]["message"].as_str() {
+        return m.to_string();
+    }
+    match text.split_once("\"message\":\"") {
+        Some((_, rest)) => rest.split('"').next().unwrap_or_default().to_string(),
+        None => text.to_string(),
+    }
 }
 
 /// `https://host` of an address.
@@ -309,8 +346,47 @@ mod tests {
             item: "1dd3".into(),
         };
         assert_eq!(
-            shortcut_body("ost-share-test", &it, "S", "W"),
+            shortcut_body("ost-share-test", &it, "S", "W", false),
             json!({"name":"ost-share-test","remoteItem":{"sharepointIds":{"listId":"0E0A","listItemUniqueId":"1dd3","siteId":"S","siteUrl":"https://x-my.sharepoint.com/personal/a","webId":"W"}},"file":{},"@microsoft.graph.conflictBehavior":"rename"})
+        );
+        // Teams' channel "Add shortcut to OneDrive ▸ My files" (2026-11-26).
+        let channel = ItemRef {
+            site: "https://scnetsolutions.sharepoint.com/sites/OSTTestTeam".into(),
+            list: "1725e7c5-6c9a-43cd-82c7-41d0b1b13617".into(),
+            item: "{ef1a1936-31a9-43ba-89f3-a724d5736c93}".into(),
+        };
+        assert_eq!(
+            shortcut_body(
+                "OST test channel",
+                &channel,
+                "9deccad3-3124-41bd-8f24-a5c8a00eea0a",
+                "cc2e0e9e-7c9b-4315-a52b-ecaade026f24",
+                true
+            )
+            .to_string(),
+            r#"{"@microsoft.graph.conflictBehavior":"rename","name":"OST test channel","remoteItem":{"sharepointIds":{"listId":"1725e7c5-6c9a-43cd-82c7-41d0b1b13617","listItemUniqueId":"ef1a1936-31a9-43ba-89f3-a724d5736c93","siteId":"9deccad3-3124-41bd-8f24-a5c8a00eea0a","siteUrl":"https://scnetsolutions.sharepoint.com/sites/OSTTestTeam","webId":"cc2e0e9e-7c9b-4315-a52b-ecaade026f24"}}}"#
+        );
+    }
+
+    #[test]
+    fn shortcut_errors_are_onedrives() {
+        let body = r#"{"error":{"code":"notAllowed","innerError":{"code":"shortcutAlreadyExists"},"message":"That shortcut already exists."}}"#;
+        assert_eq!(
+            shortcut_error(body),
+            "You already have a shortcut to this folder"
+        );
+        assert_eq!(
+            shortcut_error(r#"{"error":{"code":"x","message":"Nope"}}"#),
+            "Nope"
+        );
+        assert_eq!(shortcut_error("plain"), "plain");
+        assert_eq!(
+            shortcut_error(r#"{"error":{"code":"x","message":"Cut sho"#),
+            "Cut sho"
+        );
+        assert_eq!(
+            shortcut_error(&format!("409: {body}")),
+            "You already have a shortcut to this folder"
         );
     }
 

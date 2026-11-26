@@ -13,7 +13,7 @@ Item {
     property bool busy: false
     signal load()
     signal add(string contactJson)
-    signal favorite(string id, bool on)
+    signal favorite(string contactJson, bool on)
     signal remove(string id)
 
     /// "all", "favorites" or "cat:<name>".
@@ -39,7 +39,7 @@ Item {
     // The pane
     Rectangle {
         id: pane
-        width: 320; height: parent.height
+        width: 380; height: parent.height
         color: theme.pane
         Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: theme.dividerSoft }
         Text { x: 20; y: 18; text: qsTr("People"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
@@ -100,19 +100,25 @@ Item {
         Text { x: 20; y: 18; text: root.title; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
         Rectangle { y: 59; width: parent.width; height: 1; color: theme.dividerSoft }
 
-        // The list: Name, Email, Phone, Company.
+        // The list, as Teams' (measured 2026-11-26): a 44.67 header with
+        // Name, Contact info, Company and Office location (12 px), columns
+        // 40 (favorite), 260, 156, 156, 156 at 12, 52, 314, 472, 630; rows
+        // 69 tall with a #E0E0E0 rule; the star, a 32 px picture and the
+        // name (14 semibold), the email and phone as links (12 px).
         Item {
             id: table
             visible: root.shown.length > 0
-            anchors { fill: parent; topMargin: 60 }
-            readonly property real wName: Math.max(220, width * 0.3)
-            Row {
+            anchors { fill: parent; topMargin: 108 }
+            readonly property color rule: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF")
+            readonly property color link: theme.pick("#4F52B2", "#7F85F5", "#FFFF00")
+            Item {
                 id: head
-                x: 20; height: 40
-                HeadCell { width: table.wName; label: qsTr("Name") }
-                HeadCell { width: Math.max(200, table.width * 0.28); label: qsTr("Email") }
-                HeadCell { width: 160; label: qsTr("Phone") }
-                HeadCell { width: 180; label: qsTr("Company") }
+                width: parent.width; height: 44.67
+                Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: table.rule }
+                HeadCell { x: 52; width: 260; label: qsTr("Name") }
+                HeadCell { x: 314; width: 156; label: qsTr("Contact info") }
+                HeadCell { x: 472; width: 156; label: qsTr("Company") }
+                HeadCell { x: 630; width: 156; label: qsTr("Office location") }
             }
             ListView {
                 anchors { top: head.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
@@ -123,33 +129,48 @@ Item {
                 delegate: Rectangle {
                     id: crow
                     required property var modelData
-                    width: ListView.view.width; height: 52
+                    width: ListView.view.width; height: 69
                     color: rh.hovered ? theme.rowHover : "transparent"
-                    Rectangle { x: 20; width: parent.width - 40; height: 1; color: theme.dividerSoft }
-                    Row {
-                        x: 20; height: parent.height
-                        Item {
-                            width: table.wName; height: parent.height
-                            Avatar { anchors.verticalCenter: parent.verticalCenter; size: 32; name: crow.modelData.name }
-                            Column {
-                                x: 44; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 56
-                                Row {
-                                    spacing: 6
-                                    Text { text: crow.modelData.name; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(crow, theme.text); elide: Text.ElideRight }
-                                    FluentIcon { visible: crow.modelData.favorite; anchors.verticalCenter: parent.verticalCenter; name: "star-20"; size: 14; color: theme.onFill(crow, theme.handRaised) }
-                                }
-                                Text { visible: !!crow.modelData.job_title; text: crow.modelData.job_title; font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(crow, theme.textSecondary); elide: Text.ElideRight; width: parent.width }
+                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: table.rule }
+                    // Favorite: the star at the left (filled for a favorite).
+                    Rectangle {
+                        id: starButton
+                        x: 16; y: 18.33; width: 32; height: 31.33; radius: 4
+                        color: sth.hovered ? theme.rowHover : "transparent"
+                        FluentIcon { anchors.centerIn: parent; name: crow.modelData.favorite ? "star-16-filled" : "star-16"; size: 16
+                                     color: crow.modelData.favorite ? theme.brand : theme.onFill(crow, theme.textStrong) }
+                        HoverHandler { id: sth; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.favorite(JSON.stringify(crow.modelData), !crow.modelData.favorite) }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("Favorite")
+                    }
+                    Avatar { x: 57; y: 18.33; size: 32; name: crow.modelData.name; photoId: crow.modelData.mri || "" }
+                    Text {
+                        x: 97; y: 24.33; width: 260 - 45 - (rh.hovered ? 100 : 0)
+                        text: crow.modelData.name; elide: Text.ElideRight
+                        font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(crow, theme.text)
+                    }
+                    Column {
+                        x: 318; y: 14.33; width: 152
+                        Repeater {
+                            model: [crow.modelData.email, crow.modelData.phone || crow.modelData.mobile].filter(t => !!t)
+                            Text {
+                                required property string modelData
+                                height: 20; verticalAlignment: Text.AlignVCenter
+                                width: parent.width; elide: Text.ElideRight
+                                text: modelData; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(crow, table.link)
+                                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: Qt.openUrlExternally((modelData.indexOf("@") > 0 ? "mailto:" : "tel:") + encodeURIComponent(modelData)) }
                             }
                         }
-                        Cell { width: Math.max(200, table.width * 0.28); text: crow.modelData.email }
-                        Cell { width: 160; text: crow.modelData.mobile || crow.modelData.phone }
-                        Cell { width: 180; text: crow.modelData.company }
                     }
+                    Cell { x: 476; y: 8.33; width: 152; text: crow.modelData.company }
+                    Cell { x: 634; y: 8.33; width: 152; text: crow.modelData.office_location }
                     Rectangle {
                         id: hcFill2
                         visible: rh.hovered || rowMenu.visible
-                        anchors.right: parent.right; anchors.rightMargin: 24; anchors.verticalCenter: parent.verticalCenter
-                        width: 32; height: 32; radius: theme.radius
+                        x: 280; y: 18.33
+                        width: 32; height: 31.33; radius: 4
                         color: mh.hovered ? theme.hc(theme.pane, theme.hcHighlight) : "transparent"
                         FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(hcFill2, theme.textStrong) }
                         HoverHandler { id: mh; cursorShape: Qt.PointingHandCursor }
@@ -158,7 +179,7 @@ Item {
                         Accessible.name: qsTr("More options for %1").arg(crow.modelData.name)
                         MenuPopup {
                             id: rowMenu
-                            x: -200; y: parent.height; width: 230
+                            x: 0; y: parent.height; width: 230
                             items: (crow.modelData.email ? [{ key: "send", label: qsTr("Email", "jana:kucshyc6"), icon: "mail-20" }, { key: "copy", label: qsTr("Copy email"), icon: "copy-20" }] : [])
                                 .concat([{ key: crow.modelData.favorite ? "unfavorite" : "favorite", label: crow.modelData.favorite ? qsTr("Remove from favorites") : qsTr("Add to favorites"), icon: "star-20" },
                                          { separator: true }, { key: "delete", label: qsTr("Delete"), icon: "delete-20" }])
@@ -166,8 +187,8 @@ Item {
                                 const l = items[i].key
                                 if (l === "send") Qt.openUrlExternally("mailto:" + encodeURIComponent(crow.modelData.email))
                                 else if (l === "copy") { copier.text = crow.modelData.email; copier.selectAll(); copier.copy() }
-                                else if (l === "favorite") root.favorite(crow.modelData.id, true)
-                                else if (l === "unfavorite") root.favorite(crow.modelData.id, false)
+                                else if (l === "favorite") root.favorite(JSON.stringify(crow.modelData), true)
+                                else if (l === "unfavorite") root.favorite(JSON.stringify(crow.modelData), false)
                                 else if (l === "delete") { deleteDialog.contact = crow.modelData; deleteDialog.open() }
                             }
                         }
@@ -344,13 +365,13 @@ Item {
     }
     component HeadCell: Item {
         property string label
-        height: 40
-        Text { anchors.verticalCenter: parent.verticalCenter; text: parent.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.textStrong }
+        y: 6; height: 32
+        Text { x: 4; anchors.verticalCenter: parent.verticalCenter; text: parent.label; font.family: theme.font; font.pixelSize: 12; color: theme.text }
     }
     component Cell: Item {
         property alias text: t.text
         height: 52
-        Text { id: t; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 12; elide: Text.ElideRight; font.family: theme.font; font.pixelSize: theme.base; color: theme.textStrong }
+        Text { id: t; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 4; elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 12; color: theme.text }
     }
     component Field: Rectangle {
         property alias text: fi.text

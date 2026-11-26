@@ -372,6 +372,37 @@ failure: "Something went wrong so we couldn't add {name} as a shortcut to
 OST uses its Move/Copy picker in "Pick a folder" mode for Other locations,
 with the same places as Teams' picker.
 
+## Add shortcut to OneDrive ▾ (a channel's folder, TASK-0331)
+
+A channel's Shared tab has **Add shortcut to OneDrive ▾** in its bar. It is
+a menu button with **Shortcuts** and **My files**. Teams' OneDrive frame
+posts the same Stasher body for the channel's folder (captured on winpc on
+2026-11-26):
+
+`POST {personal}/_api/v2.1/drives/me/items/root/children` (or
+`drives/me/special/shortcuts/children`)
+
+with this body:
+
+`{"name":"OST test channel","remoteItem":{"sharepointIds":{listId,listItemUniqueId,siteId,siteUrl,webId}},"@microsoft.graph.conflictBehavior":"rename"}`
+
+A folder's body has no `"file": {}`. SharePoint names the shortcut "{team}
+- {channel}". The notice reads "Added 1 shortcut to My files in OneDrive"
+(or to Shortcuts). A failure reads "1 shortcut wasn't added" with
+SharePoint's reason, such as "You already have a shortcut to this folder".
+
+OST used Graph's `POST /me/drive/root/children` with a `remoteItem` id.
+That made the shortcut, but OST's My files never showed it: Graph's
+children (and SharePoint's list rows with OST's own RenderOptions) leave
+shortcuts out. Teams' list asks `RenderListDataAsStream` with RenderOptions
+5691143, which returns them as rows with ProgId `AddToOneDrive.MountPoint`
+and a `RemoteItem` (the target's drive and item ids, site, list and title).
+OST now posts OneDrive's body from `api::copy_jobs::add_shortcut` and lists
+the shortcuts from those rows (`api::list_rows::shortcuts`): the row is the
+shortcut itself (Delete removes the shortcut), opening goes to the target,
+and Sharing reads "Owner: {team}". Harness: `--channel-files-test
+--channel-files-shortcut`, then `--channel-files-unshortcut`.
+
 ## Not yet in OST
 
 - Preview, Version history and Details are in `docs/spec/file-preview.md`, `docs/spec/version-history.md` and `docs/spec/details-pane.md`.

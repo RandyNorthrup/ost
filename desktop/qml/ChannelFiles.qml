@@ -80,7 +80,20 @@ Item {
         y: 14; height: 36; spacing: 4
         ToolButton2 { icon: "share-20"; label: qsTr("Share"); enabled: !!root.here && !!root.here.sp_item; onClicked: driveShare.openFor({ site: root.here.sp_site, list: root.here.sp_list, item: root.here.sp_item }, root.here.name, root.here.kind) }
         ToolButton2 { icon: "link-20"; label: qsTr("Copy link"); enabled: !!root.here && !!root.here.web_url; onClicked: { root.copy(root.here.web_url); backend.statusText = qsTr("Link copied") } }
-        ToolButton2 { icon: "cloud-add-20"; label: qsTr("Add shortcut to OneDrive"); enabled: !!root.here; onClicked: root.change("shortcut", root.here.drive_id, root.here.id, root.here.name) }
+        // Add shortcut to OneDrive ▾: Teams' menu button (Shortcuts, My
+        // files); each adds this folder there as OneDrive does.
+        ToolButton2 {
+            id: shortcutButton
+            icon: "cloud-add-20"; label: qsTr("Add shortcut to OneDrive"); chevron: true
+            enabled: !!root.here && !!root.here.sp_item
+            onClicked: shortcutMenu.open()
+            MenuPopup {
+                id: shortcutMenu
+                y: parent.height + 4; x: parent.width - width; width: 180
+                items: [{ label: qsTr("Shortcuts"), icon: "ft-companyfolder-20" }, { label: qsTr("My files"), icon: "folder-20" }]
+                onPicked: i => root.addShortcut(i === 0 ? "shortcuts" : "myfiles")
+            }
+        }
         Rectangle {
             id: hcFill1
             width: cuRow.implicitWidth + 24; height: 32; radius: theme.radius
@@ -233,6 +246,7 @@ Item {
         id: tb
         property string icon
         property string label
+        property bool chevron: false
         signal clicked()
         width: tbRow.implicitWidth + 16; height: 32; radius: theme.radius
         anchors.verticalCenter: parent ? parent.verticalCenter : undefined
@@ -241,6 +255,7 @@ Item {
         Row { id: tbRow; anchors.centerIn: parent; spacing: 6
             FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: tb.icon; size: 18; color: theme.onFill(tb, theme.textStrong) }
             Text { anchors.verticalCenter: parent.verticalCenter; text: tb.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(tb, theme.text) }
+            FluentIcon { visible: tb.chevron; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.onFill(tb, theme.textStrong) }
         }
         HoverHandler { id: tbh; cursorShape: tb.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
         TapHandler { enabled: tb.enabled; onTapped: tb.clicked() }
@@ -261,6 +276,14 @@ Item {
 
     // Test harness hooks
     function emptyShownForTest() { return emptyState.visible + " " + emptyState.width + "x" + emptyState.height }
+    /// Add this folder as a shortcut in your OneDrive's Shortcuts or My
+    /// files (the backend reports "Added 1 shortcut to … in OneDrive" or
+    /// why not).
+    function addShortcut(place) {
+        if (!root.here) return
+        root.change("shortcut", root.here.drive_id, root.here.id, JSON.stringify({
+            place: place, name: root.here.name, site: root.here.sp_site, list: root.here.sp_list, item: root.here.sp_item }))
+    }
     function newFolderForTest(name) { root.change("folder", root.here.drive_id, root.here.id, name) }
     function deleteForTest(name) { const it = root.items.find(i => i.name === name); if (it) root.change("delete", root.here.drive_id, root.here.id, it.id); return !!it }
     function shareForTest() { driveShare.openFor({ site: root.here.sp_site, list: root.here.sp_list, item: root.here.sp_item }, root.here.name, root.here.kind) }

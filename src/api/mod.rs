@@ -72,6 +72,7 @@ pub mod quick_views;
 pub mod reader_text;
 pub mod recaps;
 pub mod recent_files;
+pub mod recommended;
 pub mod regional;
 pub mod rename_suggestions;
 pub mod room_remote;
