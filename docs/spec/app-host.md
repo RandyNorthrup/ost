@@ -702,6 +702,34 @@ docs/spec/events.md.
   640 x 360 frames; its `uiOnly` side panel and its builder (personal tab
   "Customize Avatar") ran in the host as in Teams.
 
+## Media devices in embedded pages (TASK-0334, live 2026-11-26)
+- Qt WebEngine's Chromium lists cameras by opening every `/dev/video*` node
+  (V4L2) in a short-lived utility process; the distributions' Qt WebEngine
+  builds have no PipeWire camera (no `WebRtcPipeWireCamera`), so it can't
+  go through PipeWire or the camera portal as OST itself does. It lists
+  them whenever a frame calls `navigator.mediaDevices.enumerateDevices()`,
+  adds a `devicechange` listener (Chromium then starts watching and lists
+  everything at once), or asks for a camera (`getUserMedia`, listed before
+  the permission is asked).
+- The Avatars renderer (`AvatarRenderer.framework.js`, Unity) does, as it
+  starts: `enumerateMediaDeviceList` (enumerateDevices) and
+  `updateVideoInputDevices` with a `devicechange` listener on
+  `navigator.mediaDevices`, plus an AudioContext (no device listing) and
+  MediaStreamTrackGenerators for Teams' texture streams. Nothing asks for
+  a camera; the listener is what made Chromium open the cameras (~140 ms)
+  each time the app started (the Avatars tab, avatar mode).
+- OST's answer (`src/media_gate.js`, every frame of OST's web profile and
+  the Custom Filters view, from document creation): until the page holds
+  the camera or microphone (a stream it was given, or a permission it was
+  granted), `enumerateDevices()` gets Chromium's no-permission answer (one
+  entry per kind, no ids or labels) without asking Chromium, and
+  `devicechange` listeners are kept and handed to Chromium once it does;
+  `getUserMedia()` with video is refused (NotAllowedError) unless the app's
+  Media permission is on (WebApp.qml marks the view), and what gets
+  through is decided by OST's permission handler as before (TASK-0311).
+  Frames a page makes and reaches into are gated as it reaches them.
+  `--media-gate-log` logs it (OSTMEDIA lines).
+
 ## OST's host (why this design)
 Options weighed:
 - **Inject a native interface into a top-level page** (TeamsJS'

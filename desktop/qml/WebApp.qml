@@ -87,7 +87,22 @@ Item {
     /// visible and drawn, and its next frame showed again).
     function refreshFrame() { web.runJavaScript("document.body.style.opacity = '0.999'; setTimeout(() => document.body.style.opacity = '', 200)") }
     /// Reload the page (Teams' Reload tab): a hosted app is framed again.
-    function reload() { if (root.teamsHost) root.startHost(); else web.reload() }
+    function reload() { markMedia(); if (root.teamsHost) root.startHost(); else web.reload() }
+    // The app's Media permission is on: its pages may ask for a camera
+    // (src/media_gate.js refuses video requests otherwise, before Chromium
+    // opens any camera device). Read again whenever the page loads anew, so
+    // a permission turned on in App permissions holds from the next load.
+    function markMedia() {
+        for (const old of web.userScripts.find("ost-media-app")) web.userScripts.remove(old)
+        if (!root.appId || !backend.appPermission(root.appId, "media")) return
+        const media = WebEngine.script()
+        media.name = "ost-media-app"
+        media.sourceCode = "Object.defineProperty(window, '__ostMediaApp', { value: true })"
+        media.injectionPoint = WebEngineScript.DocumentCreation
+        media.worldId = WebEngineScript.MainWorld
+        media.runsOnSubFrames = true
+        web.userScripts.insert(media)
+    }
 
     // ---- Teams' app host (TeamsJS), docs/spec/app-host.md --------------
     // Teams frames an embedded app's page in its own page and answers its
@@ -191,6 +206,7 @@ Item {
     property string homeTemplate: ""
     readonly property string hostAddress: homeTemplate || home.toString()
     function startHost() {
+        markMedia()
         // A personal app: its personal tab from the app's definition first.
         if (root.personalApp && !root.personalTab) {
             backend.appHostRequest(root.appId, "", "", "", "personalTab", root.hostId + ":tab", JSON.stringify({ entity: root.personalEntity }))
@@ -403,8 +419,12 @@ Item {
                 anchors.right: parent.right; anchors.rightMargin: 7; y: 14.5
                 width: 32; height: 31.33; radius: 4
                 color: tmHover.hovered || appMenu.opened ? theme.menuHover : "transparent"
+                // Under the button, its right edge on the button's (Teams'
+                // placement), bound to the menu's width: the menu measures
+                // its rows again as it opens (MenuPopup), and a width that
+                // grew then left it hanging past the window's right edge.
                 function openMenu() {
-                    appMenu.x = teamsMore.width - appMenu.implicitWidth
+                    appMenu.x = Qt.binding(() => teamsMore.width - appMenu.width)
                     appMenu.y = teamsMore.height + 0.17
                     appMenu.open()
                 }
@@ -417,6 +437,8 @@ Item {
                 // Teams' order: Reload app, a divider, About, Share app.
                 MenuPopup {
                     id: appMenu
+                    // Never past the window's edges, however small it is.
+                    margins: 4
                     items: [{ label: qsTr("Reload app"), icon: "arrow-clockwise-20" }, { separator: true },
                             { label: qsTr("About"), icon: "info-20" }, { label: qsTr("Share app"), icon: "share-20" }]
                     onPicked: i => {
@@ -549,6 +571,7 @@ Item {
             hook.runsOnSubFrames = true
             web.userScripts.insert(hook)
         }
+        markMedia()
         if (root.frameScript) {
             const script = WebEngine.script()
             script.name = "ost-app-frame"

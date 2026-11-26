@@ -2631,6 +2631,11 @@ pub mod qobject {
         fn app_host_page(self: &Backend, title: &QString) -> QString;
         #[qinvokable]
         fn app_host_script(self: &Backend) -> QString;
+        /// The script every embedded page gets: no camera device is
+        /// touched before the page holds the camera or microphone
+        /// (src/media_gate.js).
+        #[qinvokable]
+        fn media_gate_script(self: &Backend) -> QString;
         /// A meeting board's address in the Whiteboard tab: the stored
         /// address with Teams' parameters (`params` JSON: tabStart,
         /// correlation, initiator, meetingId, user, tenant).
@@ -23575,6 +23580,10 @@ impl qobject::Backend {
 
     pub fn app_host_script(&self) -> QString {
         QString::from(include_str!("app_host.js"))
+    }
+
+    pub fn media_gate_script(&self) -> QString {
+        QString::from(include_str!("media_gate.js"))
     }
 
     pub fn meeting_board_frame_url(&self, stored: &QString, params: &QString) -> QString {
