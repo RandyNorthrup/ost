@@ -1582,8 +1582,9 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
     // holds the chats active lately, its backwardLink the older ones (in
     // ost-test1's case "OST empty chat test" and "OST large chat test",
     // which Teams' chat list shows from its full sync). Read them all.
-    // (Older slices change only when a chat in them comes back to life, and
-    // then it is on the first page too: they're kept for ten minutes.)
+    // (Older slices change only when a chat in them changes, and then it is
+    // on the first page too: they're kept for ten minutes, each kept chat
+    // brought up to date from the first page as it's read.)
     static OLDER: std::sync::Mutex<Option<(std::time::Instant, Vec<serde_json::Value>, usize)>> =
         std::sync::Mutex::new(None);
     let cached = OLDER
@@ -1592,7 +1593,7 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
         .as_ref()
         .filter(|(at, _, _)| at.elapsed() < std::time::Duration::from_secs(600))
         .map(|(_, v, n)| (v.clone(), *n));
-    let (older, pages) = match cached {
+    let (mut older, pages) = match cached {
         Some(c) => c,
         None => {
             let mut back = raw
@@ -1634,6 +1635,12 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
             (older, pages)
         }
     };
+    if let Some(first) = raw.get("conversations").and_then(|c| c.as_array())
+        && refresh_older(&mut older, first)
+        && let Some((_, kept, _)) = OLDER.lock().unwrap_or_else(|e| e.into_inner()).as_mut()
+    {
+        kept.clone_from(&older);
+    }
     if let Some(list) = raw.get_mut("conversations").and_then(|c| c.as_array_mut()) {
         let mut seen: std::collections::HashSet<String> = list
             .iter()
@@ -1995,6 +2002,65 @@ mod chat_name_tests {
         assert_eq!(other_member_oid(&id, ME), None);
         let id = format!("19:{ME}_../users@unq.gbl.spaces");
         assert_eq!(other_member_oid(&id, ME), None);
+    }
+}
+
+/// Bring the kept older slices of the chat list up to date with its first
+/// page: a chat that changes (hidden or shown by any client, a new message)
+/// is on the first page then, and once newer changes push it back into the
+/// older slices its kept copy must be the changed one, not the one read when
+/// the slices were kept (a burst of hides showed chats again), and a chat
+/// that was on the first page then must be kept too (it went missing from
+/// the list). Whether the kept slices changed.
+fn refresh_older(older: &mut Vec<serde_json::Value>, first: &[serde_json::Value]) -> bool {
+    let id = |c: &serde_json::Value| c.get("id").and_then(|i| i.as_str()).map(str::to_string);
+    let mut at: std::collections::HashMap<String, usize> = older
+        .iter()
+        .enumerate()
+        .filter_map(|(n, c)| Some((id(c)?, n)))
+        .collect();
+    let mut changed = false;
+    for new in first {
+        let Some(i) = id(new) else { continue };
+        match at.get(&i) {
+            Some(&n) if older[n] == *new => {}
+            Some(&n) => {
+                older[n] = new.clone();
+                changed = true;
+            }
+            None => {
+                at.insert(i, older.len());
+                older.push(new.clone());
+                changed = true;
+            }
+        }
+    }
+    changed
+}
+
+#[cfg(test)]
+mod older_slice_tests {
+    use super::refresh_older;
+    use serde_json::json;
+
+    #[test]
+    fn kept_slices_take_the_first_pages_copy() {
+        let mut older = vec![
+            json!({ "id": "19:a", "properties": {} }),
+            json!({ "id": "19:b", "properties": {} }),
+        ];
+        let first = vec![
+            json!({ "id": "19:new", "properties": {} }),
+            json!({ "id": "19:b", "properties": { "historyHiddenTime": "1" } }),
+        ];
+        assert!(refresh_older(&mut older, &first));
+        assert_eq!(older[0], json!({ "id": "19:a", "properties": {} }));
+        assert_eq!(older[1]["properties"]["historyHiddenTime"], "1");
+        // A chat only on the first page is kept too, for when it leaves it.
+        assert_eq!(older[2]["id"], "19:new");
+        // Nothing more to take: no change.
+        assert!(!refresh_older(&mut older, &first));
+        assert_eq!(older.len(), 3);
     }
 }
 
