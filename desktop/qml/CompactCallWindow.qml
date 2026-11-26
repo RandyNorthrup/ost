@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Window
+import com.ost.desktop
 
 // Teams' compact meeting view (call monitor, measured on winpc
 // 2026-11-08): while the meeting window is minimised, a 521.33 x 248
@@ -12,6 +13,12 @@ import QtQuick.Window
 //   106.67, 46 apart, then Leave at 382.67;
 // - the stage: tiles 170 square (inset 2) from 5.66 at y 72, name tags
 //   without the name, 4 px in.
+// On Wayland an app can neither place its windows nor keep them above
+// others, so there (KDE Plasma, Hyprland and other compositors with a
+// layer shell) the view is a layer-shell surface at the work area's
+// bottom right, over other windows; dragging its title bar moves it, and
+// Minimize puts it away until the meeting window is shown again. GNOME
+// has no layer shell: it is an ordinary window there.
 Window {
     id: cw
     /// The call window (state and actions).
@@ -23,8 +30,30 @@ Window {
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
     title: qsTr("Meeting compact view | %1").arg(call ? call.peer : "") + " | OST"
     color: theme.hc("#FFFFFF", "#000000")
-    x: screen ? screen.virtualX + screen.desktopAvailableWidth - width - 6.67 : 0
-    y: screen ? screen.virtualY + screen.desktopAvailableHeight - height - 35 : 0
+    // Where it was dragged: its distance from the work area's right and
+    // bottom edges (Teams keeps the last position).
+    property real rightGap: 6.67
+    property real bottomGap: 35
+    x: screen ? screen.virtualX + screen.desktopAvailableWidth - width - rightGap : 0
+    y: screen ? screen.virtualY + screen.desktopAvailableHeight - height - bottomGap : 0
+    /// A layer-shell surface (Wayland with a layer shell).
+    property bool layered: false
+    /// Minimize on a layer-shell surface (which can't be minimized): put
+    /// away until the meeting window shows again (CallWindow).
+    property bool putAway: false
+    WindowTool { id: windowTool }
+    Component.onCompleted: layered = windowTool.layerPrepare("ost-call-monitor", 2)
+    onVisibleChanged: if (visible) place()
+    function place() {
+        // Anchored bottom (2) and right (8).
+        if (layered) windowTool.layerPlace(2 | 8, 0, 0, Math.round(rightGap), Math.round(bottomGap))
+    }
+    function moveBy(dx, dy) {
+        const sw = screen ? screen.desktopAvailableWidth : 1920, sh = screen ? screen.desktopAvailableHeight : 1080
+        rightGap = Math.max(0, Math.min(sw - width, rightGap - dx))
+        bottomGap = Math.max(0, Math.min(sh - height, bottomGap - dy))
+        place()
+    }
 
     readonly property var people: {
         if (!call) return []
@@ -37,7 +66,25 @@ Window {
     // Title bar (call-monitor-titlebar): drag to move.
     Rectangle {
         width: parent.width; height: 32; color: theme.hc("#FFFFFF", "#000000")
-        DragHandler { target: null; onActiveChanged: if (active) cw.startSystemMove() }
+        // A layer surface moves by its margins: each move brings the point
+        // you took it by back under the pointer. The pointer's positions
+        // are relative to where the surface is, which changes only once the
+        // compositor has the new margins, so after each move the positions
+        // reported in the next 60 ms (still from the old place) are let go.
+        DragHandler {
+            target: null
+            property point grab
+            onActiveChanged: if (active) { if (cw.layered) grab = centroid.position; else cw.startSystemMove() }
+            onCentroidChanged: {
+                if (!active || !cw.layered || settle.running) return
+                const dx = centroid.position.x - grab.x, dy = centroid.position.y - grab.y
+                if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return
+                cw.moveBy(dx, dy)
+                cw.update()
+                settle.restart()
+            }
+        }
+        Timer { id: settle; interval: 60 }
         Repeater {
             model: [
                 { x: 434.33, icon: "subtract-20", tip: qsTr("Minimize"), act: "min" },
@@ -58,7 +105,7 @@ Window {
                 TapHandler {
                     onTapped: {
                         const a = parent.modelData.act
-                        if (a === "min") cw.showMinimized()
+                        if (a === "min") { if (cw.layered) cw.putAway = true; else cw.showMinimized() }
                         else if (a === "speaker") cw.activeSpeakerOnly = !cw.activeSpeakerOnly
                         else cw.restore()
                     }

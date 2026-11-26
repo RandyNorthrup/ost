@@ -1523,6 +1523,7 @@ The chosen layout is saved through `updateUserExperiencePreferences{stageSetting
 ## 11. Compact view ("Meeting compact view", call-monitor service 459205; views 657347)
 - Desktop modern monitor (`enableModernCallMonitor` true).
   - When the **call window is minimized** (becomes not visible), a separate always-on-top window opens, titled **"Meeting compact view | {title}"**. It closes when the call window becomes visible again.
+  - OST (TASK-0326): X11 reports the minimize; a Wayland client is never told (KWin, GNOME and Hyprland only stop drawing the window), so there the call window counts as minimized while it isn't exposed (Qt: xdg-shell `suspended`, or frame callbacks that stopped; `WindowTool.exposed()`, checked every 250 ms in a call). A window that is only covered stays exposed (KWin), as Teams keeps the compact view away then. On Wayland with a layer shell (Plasma, Hyprland, Sway) the compact view is a layer-shell surface at the work area's bottom right over other windows (dragged by its title bar through its margins; Minimize puts it away until the meeting window shows again); GNOME has no layer shell, so it is an ordinary window there; "Maximize meeting window" activates the meeting window, which brings it back.
   - Not shown if the user turned on "Hide Call Monitor when minimizing meeting window".
   - After 4 minimizes, a "Don't need the floating window?" prompt offers [Hide window] (211532).
   - When a local share stops, the call window is shown again.

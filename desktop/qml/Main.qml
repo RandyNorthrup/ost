@@ -3900,7 +3900,7 @@ Window {
                 const mode = arg("--join-present-mode")
                 const log = t => console.warn("JOIN present", t, "sharing", backend.callSharing, "camera", backend.callCameraOn, "state", backend.callPresentingJson,
                                               "bar", !!callWindow.sharingBarForTest(), "expanded", callWindow.sharingBarForTest() ? callWindow.sharingBarForTest().expanded : false,
-                                              "minimized", callWindow.visibility === Window.Minimized)
+                                              "minimized", callWindow.minimizedNow)
                 const st = callWindow.controlState
                 if (step === 8) { callWindow.side = ""; if (mode && !backend.callCameraOn) backend.toggleCamera() }
                 // Content from camera's drill-down, captured on the way.
@@ -4542,12 +4542,12 @@ Window {
                 // compact view (step 12), then restore (step 14).
                 callWindow.minimizeForTest()
             } else if (step === 12 && Qt.application.arguments.indexOf("--join-compact") >= 0) {
-                console.warn("JOIN compact visibility", callWindow.visibility, "shown", callWindow.compactViewForTest().visible)
+                console.warn("JOIN compact visibility", callWindow.visibility, "minimized", callWindow.minimizedNow, "shown", callWindow.compactViewForTest().visible)
                 callWindow.compactViewForTest().contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-compact.png")))
             } else if (step === 14 && Qt.application.arguments.indexOf("--join-compact") >= 0) {
                 callWindow.compactViewForTest().restore()
             } else if (step === 15 && Qt.application.arguments.indexOf("--join-compact") >= 0) {
-                console.warn("JOIN restored visibility", callWindow.visibility, "compact", callWindow.compactViewForTest().visible)
+                console.warn("JOIN restored visibility", callWindow.visibility, "minimized", callWindow.minimizedNow, "compact", callWindow.compactViewForTest().visible)
             } else if (step === 10 && Qt.application.arguments.indexOf("--join-leave-all") >= 0) {
                 // --join-leave-all: open Leave's menu, capture it, then
                 // (step 12) Leave on all my devices.

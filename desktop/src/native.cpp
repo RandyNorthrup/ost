@@ -393,6 +393,67 @@ extern "C" void ost_toolbar_place(const char *title, int x, int y)
     ls->setMargins(s, QMargins(x < 0 ? 0 : x, y, 0, 0));
 }
 
+#include <QtQuick/QQuickItem>
+#include <QtQuick/QQuickWindow>
+
+// WindowTool (src/window_tool.rs): the window a QML item is in.
+namespace {
+QWindow *item_window(void *item)
+{
+    auto *it = static_cast<QQuickItem *>(item);
+    return it ? it->window() : nullptr;
+}
+}
+
+// Whether the desktop shows the item's window. On Wayland this is the only
+// sign of a minimize (see window_tool.rs): Qt stops treating the window as
+// exposed when the compositor suspends it or stops its frame callbacks.
+extern "C" bool ost_item_window_exposed(void *item)
+{
+    QWindow *w = item_window(item);
+    return w && w->isVisible() && w->isExposed();
+}
+
+// Before the item's window first shows: a layer-shell surface on `layer`
+// (2 top, 3 overlay) that takes the keyboard only when clicked and doesn't
+// take focus when it appears. False without a layer shell (X11, GNOME):
+// the window is left as it is.
+extern "C" bool ost_item_layer_prepare(void *item, const char *scope, int layer)
+{
+    QWindow *w = item_window(item);
+    if (!w || w->isVisible())
+        return false;
+    if (!QGuiApplication::platformName().startsWith(QLatin1String("wayland")) || gnome_family())
+        return false;
+    const LayerShell *ls = layer_shell();
+    if (!ls)
+        return false;
+    void *s = ls->get(w);
+    if (!s)
+        return false;
+    ls->setLayer(s, layer == 3 ? 3 : 2);
+    ls->setKeyboardInteractivity(s, 2);     // KeyboardInteractivityOnDemand
+    ls->setActivateOnShow(s, false);
+    ls->setScope(s, QString::fromUtf8(scope ? scope : "ost"));
+    w->setProperty("_ost_layer", true);
+    return true;
+}
+
+// Anchor the item's layer-shell window: `anchors` top 1, bottom 2, left 4,
+// right 8; the margins from those edges of the work area.
+extern "C" void ost_item_layer_place(void *item, int anchors, int left, int top, int right, int bottom)
+{
+    QWindow *w = item_window(item);
+    const LayerShell *ls = layer_shell();
+    if (!w || !ls || !w->property("_ost_layer").toBool())
+        return;
+    void *s = ls->get(w);
+    if (!s)
+        return;
+    ls->setAnchors(s, anchors);
+    ls->setMargins(s, QMargins(left, top, right, bottom));
+}
+
 #include <QtGui/QRegion>
 
 // Annotate's window (Teams' annotation entity: transparent, frameless,

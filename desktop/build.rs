@@ -411,6 +411,7 @@ fn main() {
         .file("src/backend.rs")
         .file("src/video_item.rs")
         .file("src/key_typer.rs")
+        .file("src/window_tool.rs")
         .file("src/rich_text.rs")
         .file("src/clip_frames.rs")
         .file("src/clip_mask.rs")
