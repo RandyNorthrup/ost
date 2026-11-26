@@ -1,11 +1,11 @@
 ---
 id: TASK-0323
 title: Mute participant and Mute all fail with HTTP 400
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T02:23:00Z'
+updated_date: '2026-11-26T03:32:00Z'
 labels:
   - bug
   - calls
@@ -40,6 +40,8 @@ Found while capturing wiki screenshots (2026-11-25). In a meeting, muting a part
 - Teams desktop on Windows sends these from SlimCore (native code), so the WebView2 network log shows nothing. Captured instead from Teams on the web (OST Test 2 signed in on linuxlt with fake media): the same body plus links.clientCallback (trouter .../callAgent/<endpoint>/<operationId>/conversation/muteUnmuteAsync/) and operationId, because ECS enableAsyncMute is on. The reply is 202 {"muteUnmuteResponse":{}}, and the result comes to the callback.
 - Teams' Mute all dialog is a plain confirm ("Mute everyone?") with no option about unmuting.
 - Found live: after Mute all, the service mutes people who join later. OST missed it because that rosterUpdate arrives before the join completes. It is now kept and applied once the join shows.
+
+- Codex review: a kept rosterUpdate from an abandoned join could have muted the next call; replay is now limited to the joined call's callback tag. Re-checked live (Mute all from Teams desktop, then OST Test 2 rejoined muted). CI, CodeQL and Codex re-review clean on 65f7543f.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -64,4 +66,6 @@ Live check (linuxlt; ost-test1 organizer, OST Test 2 and OST Test 3 on virtual m
 - Teams' own requests were captured from Teams on the web (OST Test 2, fake media).
 
 Tests: unit tests for the request body, the callback URL, and the reply and async result parsing (outgoing.rs), and the roster marking (roster.rs). The full suite runs in CI.
+
+Review follow-up: rosterUpdates kept while joining are replayed only for the call that joined (by callback tag), so a failed or withdrawn join's update can't mute the next call.
 <!-- SECTION:FINAL_SUMMARY:END -->
