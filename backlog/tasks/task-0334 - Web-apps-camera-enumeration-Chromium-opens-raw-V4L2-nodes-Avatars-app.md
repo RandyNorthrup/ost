@@ -1,11 +1,11 @@
 ---
 id: TASK-0334
 title: 'Web apps'' camera enumeration: Chromium opens raw V4L2 nodes (Avatars app)'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-26T04:33:00Z'
-updated_date: '2026-11-26T15:30:00Z'
+updated_date: '2026-11-26T15:54:00Z'
 labels:
   - bug
   - privacy
@@ -22,8 +22,8 @@ Found during TASK-0321's live checks (2026-11-26): when the Avatars app starts (
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 It is known what the Avatars app (and other hosted web apps) call on navigator.mediaDevices, and what OST's permission handling answers
-- [ ] #2 Hosted web apps don't open camera devices unless a camera is granted to them, or Chromium is set to get cameras from PipeWire / the camera portal, as OST itself does
+- [x] #1 It is known what the Avatars app (and other hosted web apps) call on navigator.mediaDevices, and what OST's permission handling answers
+- [x] #2 Hosted web apps don't open camera devices unless a camera is granted to them, or Chromium is set to get cameras from PipeWire / the camera portal, as OST itself does
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -45,3 +45,22 @@ Found during TASK-0321's live checks (2026-11-26): when the Avatars app starts (
 - Live (linuxlt; /dev/video0 and video1 chmod 000 during the tests so the real camera could not be opened; bpftrace on openat of /dev/video* plus fuser every 0.1 s): before (runs tour6, tour10) every Avatars start -> QtWebEngineProc opened video0, video1, video20-22 (~140 ms); with the gate, 3 Avatars starts in a call -> no QtWebEngineProc open, no Chromium VIDEO_INPUT listing, no QtWebEngineProc in the fuser log; Avatars still listed (1 avatar, 70 backgrounds), registered for frames and rendered. Whiteboard without Media permission: getUserMedia(video) -> NotAllowedError, no listing; with Media permission on: OST's handler granted it and the page got "OST test camera A".
 - Found: ost-desktop itself opens every /dev/video* node (the real camera too) at start and when a call starts -> TASK-0338.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Embedded pages no longer make Chromium open camera devices before they hold a camera or microphone.
+
+Why: Qt WebEngine's Chromium lists cameras by opening every /dev/video* node (V4L2; the distributions' Qt WebEngine has no PipeWire camera) whenever a frame calls enumerateDevices(), adds a devicechange listener or asks for a camera, before any permission is decided. Teams' Avatars renderer does the first two as it starts, so each start opened the laptop camera (~140 ms).
+
+Changes:
+- desktop/src/media_gate.js (new): in every frame of OST's web profile (profile user script, Main.qml) and the Custom Filters view (VideoFilterHost.qml). Until the page holds the camera or microphone: enumerateDevices() answers Chromium's no-permission placeholder without asking Chromium; devicechange listeners are held and handed over later; getUserMedia with video is refused unless the app's Media permission is on (WebApp.qml marks its frames, read again on each load). Child frames are gated when reached. --media-gate-log logs it (docs/desktop.md).
+- backend.mediaGateScript(); docs/spec/app-host.md "Media devices in embedded pages".
+
+Tests (live, linuxlt; real camera chmod 000; bpftrace on openat /dev/video* + fuser every 0.1 s):
+- Before: every Avatars start -> QtWebEngineProc opened video0, video1, video20-22.
+- After: Avatars started 4 times (3 in a call, 1 in --avatar-test) -> no QtWebEngineProc open, no Chromium VIDEO_INPUT listing; Avatars listed, registered and drew as before.
+- Whiteboard: camera refused without Media permission (no listing); granted with it ("OST test camera A").
+
+Follow-up: TASK-0338 (OST's own camera list opens every V4L2 node).
+<!-- SECTION:FINAL_SUMMARY:END -->
