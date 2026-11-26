@@ -804,11 +804,12 @@ pub async fn shortcuts(
         &[("user-agent", super::client::TEAMS_WEB_UA)],
     )
     .await?;
-    Ok(shortcut_items(&reply))
+    Ok(shortcut_items(&reply, site, list))
 }
 
-/// `shortcuts`' rows (the reply has them in `ListData.Row`, or `Row`).
-pub fn shortcut_items(reply: &Value) -> Vec<super::drive::DriveItem> {
+/// `shortcuts`' rows (the reply has them in `ListData.Row`, or `Row`);
+/// `site` and `list` are the shortcut's own library.
+pub fn shortcut_items(reply: &Value, site: &str, list: &str) -> Vec<super::drive::DriveItem> {
     let rows = reply["ListData"]["Row"]
         .as_array()
         .or_else(|| reply["Row"].as_array())
@@ -882,9 +883,14 @@ pub fn shortcut_items(reply: &Value) -> Vec<super::drive::DriveItem> {
                     t if t.is_empty() => "Shared".into(),
                     t => format!("Owner: {t}"),
                 },
-                sp_site: g("SiteUrl"),
-                sp_list: trim(g("ListId")),
-                sp_item: trim(g("UniqueId")),
+                // The shortcut's own SharePoint address (its row in your
+                // library), so Move to, Copy to and the rest act on the
+                // shortcut, never on the folder it points to.
+                sp_site: site.trim_end_matches('/').to_string(),
+                sp_list: list
+                    .trim_matches(|c| c == '{' || c == '}')
+                    .to_ascii_lowercase(),
+                sp_item: trim(r["UniqueId"].as_str().unwrap_or_default().to_string()),
                 special: "shortcut".into(),
                 web_url,
                 name,
@@ -1009,10 +1015,14 @@ mod tests {
         let reply = json!({ "ListData": { "Row": [
             { "FileLeafRef": "Attachments", "ProgId": "", "UniqueId": "{1}" },
             { "FileLeafRef": "OST Test Team - General", "ProgId": "AddToOneDrive.MountPoint", "Modified.": "2026-11-25T22:06:08Z",
-              "Editor": [{ "title": "OST Test 1" }], "FileRef": "/personal/a/Documents/OST Test Team - General", ".spItemUrl": "https://x-my.sharepoint.com:443/_api/v2.0/drives/b!MwwW/items/01BV7C2BHV44?version=Published",
+              "Editor": [{ "title": "OST Test 1" }], "UniqueId": "{A61FE7F5-7002}", "FileRef": "/personal/a/Documents/OST Test Team - General", ".spItemUrl": "https://x-my.sharepoint.com:443/_api/v2.0/drives/b!MwwW/items/01BV7C2BHV44?version=Published",
               "RemoteItem": "{\"DriveId\":\"b!08rs\",\"ItemId\":\"01ZLBLND\",\"SiteUrl\":\"https://x.sharepoint.com/sites/OSTTestTeam\",\"ListId\":\"{1725E7C5-6C9A}\",\"FSObjType\":1,\"FolderChildCount\":1,\"SiteTitle\":\"OST Test Team\",\"UniqueId\":\"{9E8F3F36}\",\"SMTotalSize\":12253}" }
         ] } });
-        let items = shortcut_items(&reply);
+        let items = shortcut_items(
+            &reply,
+            "https://x-my.sharepoint.com/personal/a/",
+            "{0E0A18F3-101B}",
+        );
         assert_eq!(items.len(), 1);
         let it = &items[0];
         assert_eq!(
@@ -1031,8 +1041,10 @@ mod tests {
                 it.sp_list.as_str(),
                 it.sp_item.as_str()
             ),
-            (1, "Owner: OST Test Team", "1725e7c5-6c9a", "9e8f3f36")
+            (1, "Owner: OST Test Team", "0e0a18f3-101b", "a61fe7f5-7002")
         );
+        // The shortcut's own library, never the target's.
+        assert_eq!(it.sp_site, "https://x-my.sharepoint.com/personal/a");
         assert_eq!(it.special, "shortcut");
         assert_eq!(
             it.web_url,

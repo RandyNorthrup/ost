@@ -399,7 +399,8 @@ shortcuts out. Teams' list asks `RenderListDataAsStream` with RenderOptions
 and a `RemoteItem` (the target's drive and item ids, site, list and title).
 OST now posts OneDrive's body from `api::copy_jobs::add_shortcut` and lists
 the shortcuts from those rows (`api::list_rows::shortcuts`): the row is the
-shortcut itself (Delete removes the shortcut), opening goes to the target,
+shortcut itself (its own Graph and SharePoint ids, so Delete, Rename, Move
+to and Copy to act on the shortcut), opening goes to the target,
 and Sharing reads "Owner: {team}". Harness: `--channel-files-test
 --channel-files-shortcut`, then `--channel-files-unshortcut`.
 
