@@ -1,11 +1,11 @@
 ---
 id: TASK-0322
 title: Video clip recorder ignores the selected camera
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T05:15:00Z'
+updated_date: '2026-11-26T08:16:00Z'
 labels:
   - bug
   - privacy

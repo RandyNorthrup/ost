@@ -1,11 +1,11 @@
 ---
 id: TASK-0308
 title: 'Video clips and face capture: cameras from OST''s own camera list (PipeWire)'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T19:30:00Z'
-updated_date: '2026-11-26T06:23:00Z'
+updated_date: '2026-11-26T08:16:00Z'
 labels:
   - bug
   - calls
