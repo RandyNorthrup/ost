@@ -46,7 +46,7 @@ Popup {
     function show() {
         pose = "Center"; started = false; count = 0; learning = false; error = ""; capturedSource = ""; finished = false
         flick.contentY = 0
-        pickedIndex = -1
+        pickedId = ""
         loadCameras()
         open()
     }
@@ -70,14 +70,14 @@ Popup {
     // none is opened (never some other camera instead). The camera is open
     // only while the dialog shows its picture.
     property var cameras: []
-    /// The camera picked here (an index into `cameras`), -1 for Settings'.
-    property int pickedIndex: -1
+    /// The camera picked here (its ID), "" for Settings'.
+    property string pickedId: ""
     function loadCameras() {
         const d = JSON.parse(backend.videoDevices())
         cameras = d.devices || []
     }
     /// What opens: the picked camera, or "" for Settings > Devices' one.
-    readonly property string cameraId: pickedIndex >= 0 && pickedIndex < cameras.length ? cameras[pickedIndex].path : ""
+    readonly property string cameraId: pickedId
     readonly property bool cameraWanted: root.opened && !root.finished
     function syncCamera() {
         if (!cameraWanted) { feed.close(); return }
@@ -180,8 +180,10 @@ Popup {
             // Teams drops what follows " (" in a camera's name.
             options: root.cameras.map(c => ({ label: String(c.name).split(" (")[0] }))
             // The camera open (none while Settings' one isn't there).
-            current: root.pickedIndex >= 0 ? root.pickedIndex : root.cameras.findIndex(c => c.path === feed.camera)
-            onPicked: i => root.pickedIndex = i
+            current: root.cameras.findIndex(c => c.path === (root.pickedId || feed.camera))
+            // (The list as it is now: cameras come and go.)
+            onOpening: root.loadCameras()
+            onPicked: i => root.pickedId = root.cameras[i].path
         }
 
         // The preview: the camera, then Teams' panel with its round window.

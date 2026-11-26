@@ -892,7 +892,8 @@ Popup {
     }
     MenuPopup {
         id: camMenu
-        function popupAt(btn) { const p = btn.mapToItem(rec.contentItem, 0, 0); x = p.x; y = p.y - height - 4; open() }
+        // (The list as it is now: cameras come and go.)
+        function popupAt(btn) { rec.loadCameras(); const p = btn.mapToItem(rec.contentItem, 0, 0); x = p.x; y = p.y - height - 4; open() }
         readonly property var cams: rec.cameraList
         items: [{ label: qsTr("None"), checked: !rec.cameraOn }].concat(cams.map(c => ({ label: c.name, checked: rec.cameraOn && c.path === rec.cameraShown }))).concat([{ separator: true }, { label: qsTr("Mirror video"), checked: rec.mirror }])
         onPicked: i => {
