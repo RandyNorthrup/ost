@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T17:03:00Z'
+updated_date: '2026-11-26T19:08:00Z'
 labels:
   - bug
   - files
@@ -40,3 +40,21 @@ Found while capturing wiki screenshots (2026-11-25). Add shortcut to OneDrive re
 - Fix: channel toolbar menu posts OneDrive's body (copy_jobs::add_shortcut, folder flag); errors worded as OneDrive ("1 shortcut wasn't added. You already have a shortcut to this folder"); My files lists shortcuts from list_rows::shortcuts (own ids for Delete/Rename, target ids to open, Sharing "Owner: {team}").
 - Live on linuxlt (ost-test1): --channel-files-shortcut → "Added 1 shortcut to My files in OneDrive", listed in OST's My files and in Teams' OneDrive My files (OneDrive's web list) on winpc; repeat → "1 shortcut wasn't added. You already have a shortcut to this folder". --channel-files-unshortcut removed the test shortcuts (also the one made in Teams during the capture); the General channel folder is intact.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Add shortcut to OneDrive now makes the shortcut the way Teams does and reports failures, and My files shows the shortcuts.
+
+Cause: OST posted Graph's `POST /me/drive/root/children` with a `remoteItem` id. It did make a shortcut ("OST Test Team - General"), but OST never showed it: Graph's children and OST's own list rows leave shortcuts out.
+
+Changes:
+- Channel Shared tab: **Add shortcut to OneDrive ▾** is Teams' menu (Shortcuts, My files). It posts OneDrive's Stasher body for the folder (no `"file"`), captured from Teams on winpc.
+- Notices: "Added 1 shortcut to My files in OneDrive", or "1 shortcut wasn't added. You already have a shortcut to this folder".
+- My files lists shortcuts from `RenderListDataAsStream` with Teams' RenderOptions 5691143 (`api::list_rows::shortcuts`, ProgId `AddToOneDrive.MountPoint`, RemoteItem). The row is the shortcut: Delete removes the shortcut, opening goes to the target, and Sharing reads "Owner: {team}".
+- Harness `--channel-files-test --channel-files-shortcut` / `--channel-files-unshortcut`; docs/spec/file-actions.md.
+
+Tests: unit tests (body, errors, shortcut rows). Live as ost-test1: added, then shown in OST and in Teams' OneDrive My files on winpc. A repeat gives the error notice. The test shortcuts were removed and the channel folder is intact.
+
+PR #20.
+<!-- SECTION:FINAL_SUMMARY:END -->

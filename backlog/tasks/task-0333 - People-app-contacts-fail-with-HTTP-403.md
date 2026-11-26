@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T17:05:00Z'
+updated_date: '2026-11-26T19:08:00Z'
 labels:
   - bug
   - apps
@@ -42,3 +42,23 @@ Found while capturing wiki screenshots (2026-11-25). The People app's contacts r
 
 - --apps-test (final build): add → favorite (SfbFavorites) → delete all work against contacts v3; the test contact (@example.com) is gone.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The People app now loads contacts the way Teams does: from the Teams middle tier's contacts v3 service with the Teams token.
+
+Cause: OST read Graph beta `/me/contacts`, which OST's token cannot read (403).
+
+Changes:
+- `api::contacts` uses `{mt}/beta/contactsv3/` (paged list, POST add, PATCH favorite with Teams' systemTags body, DELETE).
+- Favorites are the "SfbFavorites" tag and categories are the contacts' tags, in first-name order.
+- The People list has Teams' columns (Name, Contact info, Company, Office location), the favorite star and the picture.
+- Harness `--apps-test [--apps-read]`; docs/desktop.md.
+
+Tests: unit tests from Teams' contacts store. Live as ost-test1: the same contact as Teams' People app on winpc (Randy Northrup, email, phone). Add, favorite and delete work.
+
+Follow-up: TASK-0339 (Teams' Add to contacts picker, Sort, Find a contact).
+
+PR #20.
+<!-- SECTION:FINAL_SUMMARY:END -->
