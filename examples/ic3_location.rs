@@ -16,7 +16,7 @@ async fn main() -> anyhow::Result<()> {
     if let Some(i) = args.iter().position(|a| a == "--report") {
         let bssid = args.get(i + 1).cloned().unwrap_or_default();
         let ssid = args.get(i + 2).cloned();
-        let body = places::network_body(&bssid, ssid.as_deref(), chrono::Utc::now());
+        let body = places::network_body(&bssid, ssid.as_deref(), jiff::Timestamp::now());
         match places::report_network(&client, &epid, &body).await {
             Ok(r) => println!("report: {r:?}"),
             Err(e) => println!("report failed: {e:#}"),

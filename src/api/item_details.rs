@@ -5,7 +5,9 @@
 //! through `ActivityLogger/FeedbackDirect`.
 
 use anyhow::{Result, bail};
-use chrono::{DateTime, Datelike, Duration, Local, TimeZone};
+use jiff::ZonedDateTime;
+
+use crate::clock;
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -426,33 +428,30 @@ const COMMENT: &str = "comment";
 
 /// OneDrive's date groups for the activity list (in the app language
 /// where Teams has the words: its search's date groups).
-pub fn group(t: DateTime<Local>, now: DateTime<Local>) -> String {
+pub fn group(t: &ZonedDateTime, now: &ZonedDateTime) -> String {
     use crate::i18n::tr_id;
-    let day = |d: DateTime<Local>| d.date_naive();
-    let today = now.date_naive();
-    let start = |d: chrono::NaiveDate| {
-        Local
-            .from_local_datetime(&d.and_hms_opt(0, 0, 0).unwrap())
-            .earliest()
-            .unwrap_or(now)
+    let day = |d: &ZonedDateTime| d.date();
+    let today = now.date();
+    let start = |d: jiff::civil::Date| {
+        clock::earliest(now.time_zone(), d.at(0, 0, 0, 0)).unwrap_or_else(|| now.clone())
     };
-    let sunday = start(today) - Duration::days(i64::from(today.weekday().num_days_from_sunday()));
+    let sunday = &start(today) - clock::days(i64::from(today.weekday().to_sunday_zero_offset()));
     if day(t) == today {
         return tr_id("Today", "search:k5qg9bmr");
     }
-    if day(t) == today - Duration::days(1) {
+    if day(t) == clock::add_days(today, -1) {
         return tr_id("Yesterday", "search:kd4t3tzrw");
     }
-    if t > sunday {
+    if *t > sunday {
         return tr_id("This week", "search:kaxicfa6c");
     }
-    if t > sunday - Duration::days(7) {
+    if *t > &sunday - clock::days(7) {
         return tr_id("Last week", "search:kbfpcdkuk");
     }
-    if t > start(today) - Duration::days(14) {
+    if *t > &start(today) - clock::days(14) {
         return tr_id("Two weeks ago", "search:k5n4pt2tw");
     }
-    if t > start(today) - Duration::days(21) {
+    if *t > &start(today) - clock::days(21) {
         return "Three weeks ago".into();
     }
     if t.year() == now.year() && t.month() == now.month() {
@@ -462,25 +461,25 @@ pub fn group(t: DateTime<Local>, now: DateTime<Local>) -> String {
         return tr_id("Last month", "search:kaud11jto");
     }
     if t.year() == now.year() {
-        return t.format("%B").to_string();
+        return clock::format(t, "%B");
     }
-    t.format("%B %Y").to_string()
+    clock::format(t, "%B %Y")
 }
 
 /// "Nov 12 at 8:48 AM" (and the year when it isn't this one).
-pub fn tip(t: DateTime<Local>, now: DateTime<Local>) -> String {
+pub fn tip(t: &ZonedDateTime, now: &ZonedDateTime) -> String {
     let date = if t.year() == now.year() {
-        t.format("%b %-d").to_string()
+        clock::format(t, "%b %-d")
     } else {
-        t.format("%b %-d, %Y").to_string()
+        clock::format(t, "%b %-d, %Y")
     };
-    format!("{date} at {}", t.format("%-I:%M %p"))
+    format!("{date} at {}", clock::format(t, "%-I:%M %p"))
 }
 
 /// The activities reply as the pane lists them. Back-to-back edits by the
 /// same person read as one (comments, shown as their own cards, don't
 /// separate them), as in Teams.
-pub fn feed(reply: &Value, me: &str, name: &str, now: DateTime<Local>) -> Vec<FeedItem> {
+pub fn feed(reply: &Value, me: &str, name: &str, now: &ZonedDateTime) -> Vec<FeedItem> {
     let mut last_editor: Option<String> = None;
     reply["value"]
         .as_array()
@@ -506,19 +505,17 @@ pub fn feed(reply: &Value, me: &str, name: &str, now: DateTime<Local>) -> Vec<Fe
                 .as_str()
                 .or(a["times"]["recordedDateTime"].as_str())
                 .or(a["activityDateTime"].as_str())?;
-            let t = DateTime::parse_from_rfc3339(when)
-                .ok()?
-                .with_timezone(&Local);
+            let t = clock::local(clock::parse_instant(when)?);
             let time = match a["@sharePoint.localizedRelativeTime"].as_str() {
                 Some(code) if !code.is_empty() => friendly_display(code),
-                _ => super::list_rows::friendly_at(t, now),
+                _ => super::list_rows::friendly_at(&t, now),
             };
             Some(FeedItem {
                 kind,
                 text,
                 time,
-                tip: tip(t, now),
-                group: group(t, now),
+                tip: tip(&t, now),
+                group: group(&t, now),
                 comment_id: String::new(),
                 author: String::new(),
                 author_email: String::new(),
@@ -526,7 +523,7 @@ pub fn feed(reply: &Value, me: &str, name: &str, now: DateTime<Local>) -> Vec<Fe
                 source: String::new(),
                 edited: false,
                 replies: Vec::new(),
-                at: t.timestamp(),
+                at: clock::seconds(t.timestamp()),
             })
         })
         .collect()
@@ -582,7 +579,7 @@ fn id_of(v: &Value) -> String {
 /// as the files list words it ("A few seconds ago", "About a minute ago"),
 /// a reply's in the client's wording ("Just now", "5m ago"); either is
 /// "Edited" once `modifiedDate` is set.
-pub fn comment_cards(reply: &Value, me: &str, now: DateTime<Local>) -> Vec<FeedItem> {
+pub fn comment_cards(reply: &Value, me: &str, now: &ZonedDateTime) -> Vec<FeedItem> {
     let author = |c: &Value| {
         let email = c["author"]["email"]
             .as_str()
@@ -600,11 +597,7 @@ pub fn comment_cards(reply: &Value, me: &str, now: DateTime<Local>) -> Vec<FeedI
         (name, email, mine)
     };
     let edited = |c: &Value| c["modifiedDate"].as_str().is_some_and(|m| !m.is_empty());
-    let when = |c: &Value| {
-        DateTime::parse_from_rfc3339(c["createdDate"].as_str()?)
-            .ok()
-            .map(|t| t.with_timezone(&Local))
-    };
+    let when = |c: &Value| clock::parse_instant(c["createdDate"].as_str()?).map(clock::local);
     reply["d"]["results"]
         .as_array()
         .into_iter()
@@ -612,13 +605,14 @@ pub fn comment_cards(reply: &Value, me: &str, now: DateTime<Local>) -> Vec<FeedI
         .filter_map(|c| {
             let t = when(c)?;
             let (name, email, mine) = author(c);
-            let mut replies: Vec<(DateTime<Local>, Reply)> = c["replies"]["results"]
+            let mut replies: Vec<(ZonedDateTime, Reply)> = c["replies"]["results"]
                 .as_array()
                 .into_iter()
                 .flatten()
                 .filter_map(|r| {
                     let rt = when(r)?;
                     let (name, email, mine) = author(r);
+                    let time = super::list_rows::activity_time(&rt, now);
                     Some((
                         rt,
                         Reply {
@@ -627,27 +621,27 @@ pub fn comment_cards(reply: &Value, me: &str, now: DateTime<Local>) -> Vec<FeedI
                             author_email: email,
                             mine,
                             text: comment_text(r),
-                            time: super::list_rows::activity_time(rt, now),
+                            time,
                             edited: edited(r),
                         },
                     ))
                 })
                 .collect();
-            replies.sort_by_key(|(rt, _)| *rt);
+            replies.sort_by_key(|(rt, _)| rt.timestamp());
             Some(FeedItem {
                 kind: "comment".into(),
                 text: comment_text(c),
                 source: comment_source(c),
-                time: super::list_rows::friendly_at(t, now),
-                tip: tip(t, now),
-                group: group(t, now),
+                time: super::list_rows::friendly_at(&t, now),
+                tip: tip(&t, now),
+                group: group(&t, now),
                 comment_id: id_of(c),
                 author: name,
                 author_email: email,
                 mine,
                 edited: edited(c),
                 replies: replies.into_iter().map(|(_, r)| r).collect(),
-                at: t.timestamp(),
+                at: clock::seconds(t.timestamp()),
             })
         })
         .collect()
@@ -690,7 +684,7 @@ pub async fn comments(item: &DriveItem, me: &str) -> Result<Vec<FeedItem>> {
     let url = comments_url(item, "GetComments()")
         + "&$top=25&$expand=replies,likedBy,replies/likedBy&$filter=NumReplies%20eq%2010&$select=*,contentAnchor";
     let reply = get_with(&url, &[]).await?;
-    Ok(comment_cards(&reply, me, Local::now()))
+    Ok(comment_cards(&reply, me, &clock::local_now()))
 }
 
 /// Delete one of the item's comments.
@@ -884,7 +878,7 @@ pub fn describe_in_folder(a: &Value, me: &str, to: Option<&str>) -> Option<(Stri
 /// A folder's activity as its Details pane lists it: a move's "from" and
 /// its matching "to" read as one, and repeated edits of one item by one
 /// person show once.
-pub fn folder_feed(reply: &Value, me: &str, now: DateTime<Local>) -> Vec<FeedItem> {
+pub fn folder_feed(reply: &Value, me: &str, now: &ZonedDateTime) -> Vec<FeedItem> {
     let acts: Vec<&Value> = reply["value"].as_array().into_iter().flatten().collect();
     let mut out: Vec<FeedItem> = Vec::new();
     let mut used = vec![false; acts.len()];
@@ -945,20 +939,19 @@ pub fn folder_feed(reply: &Value, me: &str, now: DateTime<Local>) -> Vec<FeedIte
         let Some(when) = a["times"]["recordedTime"].as_str() else {
             continue;
         };
-        let Ok(t) = DateTime::parse_from_rfc3339(when) else {
+        let Some(t) = clock::parse_instant(when).map(clock::local) else {
             continue;
         };
-        let t = t.with_timezone(&Local);
         let time = match a["@sharePoint.localizedRelativeTime"].as_str() {
             Some(code) if !code.is_empty() => friendly_display(code),
-            _ => super::list_rows::friendly_at(t, now),
+            _ => super::list_rows::friendly_at(&t, now),
         };
         out.push(FeedItem {
             kind,
             text,
             time,
-            tip: tip(t, now),
-            group: group(t, now),
+            tip: tip(&t, now),
+            group: group(&t, now),
             comment_id: String::new(),
             author: String::new(),
             author_email: String::new(),
@@ -966,7 +959,7 @@ pub fn folder_feed(reply: &Value, me: &str, now: DateTime<Local>) -> Vec<FeedIte
             source: String::new(),
             edited: false,
             replies: Vec::new(),
-            at: t.timestamp(),
+            at: clock::seconds(t.timestamp()),
         });
     }
     out
@@ -1004,7 +997,7 @@ pub async fn folder_activity(
         ],
     )
     .await?;
-    Ok(folder_feed(&reply, me, Local::now()))
+    Ok(folder_feed(&reply, me, &clock::local_now()))
 }
 
 /// `https://host` of an address.
@@ -1039,17 +1032,13 @@ pub async fn load(item: &DriveItem, me: &str) -> Result<Details> {
         get_with(&comments, &[]),
         get_with(&disabled_url, &[])
     );
-    let now = Local::now();
+    let now = clock::local_now();
     let prefs = prefs.unwrap_or_default();
     let p = prefs["notificationPreferences"]
         .as_array()
         .cloned()
         .unwrap_or_default();
-    let local = |s: &str| {
-        DateTime::parse_from_rfc3339(s)
-            .ok()
-            .map(|t| t.with_timezone(&Local))
-    };
+    let local = |s: &str| clock::parse_instant(s).map(clock::local);
     let created = prefs["createdDateTime"].as_str().and_then(local);
     let modified = local(&item.modified);
     // The path from the library's top: "My files" for your OneDrive.
@@ -1073,10 +1062,10 @@ pub async fn load(item: &DriveItem, me: &str) -> Result<Details> {
     path.push(item.name.clone());
     Ok(Details {
         activities: merge(
-            acts.map(|a| feed(&a, me, &item.name, now))
+            acts.map(|a| feed(&a, me, &item.name, &now))
                 .unwrap_or_default(),
             comments
-                .map(|c| comment_cards(&c, me, now))
+                .map(|c| comment_cards(&c, me, &now))
                 .unwrap_or_default(),
         ),
         // SharePoint leaves the preferences out of some replies to OST's
@@ -1084,10 +1073,10 @@ pub async fn load(item: &DriveItem, me: &str) -> Result<Details> {
         notify: prefs.get("notificationPreferences").is_none()
             || p.iter().all(|x| x["name"].as_str() != Some("None")),
         created: created
-            .map(|t| t.format("%m/%d/%Y %I:%M %p").to_string())
+            .map(|t| clock::format(&t, "%m/%d/%Y %I:%M %p"))
             .unwrap_or_default(),
         modified: modified
-            .map(|t| t.format("%-m/%-d/%Y %-I:%M %p").to_string())
+            .map(|t| clock::format(&t, "%-m/%-d/%Y %-I:%M %p"))
             .unwrap_or_default(),
         type_text: if item.is_folder {
             "Folder".into()
@@ -1125,7 +1114,7 @@ pub async fn set_notify(item: &DriveItem, file_url: &str, on: bool) -> Result<()
     let inner = json!({
         "Scenario": "NotificationPreference",
         "NotificationPreference": if on { "Comments" } else { "None" },
-        "ClientUTCOffsetInMinutes": -Local::now().offset().local_minus_utc() / 60,
+        "ClientUTCOffsetInMinutes": -clock::local_offset_seconds() / 60,
         "ClientApplication": "ODBWeb", "ClientVersion": "1", "Workload": "ODB", "Canvas": "DetailsPane",
         "SiteId": ids.0, "WebId": ids.1,
         "SiteUrl": site, "SourceRelativeUrl": folder, "SourceFileExtension": item.kind, "SourceFileName": name,
@@ -1250,27 +1239,28 @@ mod tests {
 
     #[test]
     fn groups_follow_onedrive() {
-        let at = |m: u32, d: u32, h: u32| Local.with_ymd_and_hms(2026, m, d, h, 0, 0).unwrap();
-        let now = at(11, 12, 9); // a Thursday
-        assert_eq!(group(at(11, 12, 8), now), "Today");
-        assert_eq!(group(at(11, 11, 22), now), "Yesterday");
-        assert_eq!(group(at(11, 8, 15), now), "This week");
-        assert_eq!(group(at(11, 5, 15), now), "Last week");
-        assert_eq!(group(at(10, 30, 15), now), "Two weeks ago");
-        assert_eq!(group(at(10, 25, 15), now), "Three weeks ago");
-        assert_eq!(group(at(10, 3, 15), now), "Last month");
-        assert_eq!(group(at(3, 3, 15), now), "March");
-        assert_eq!(
-            group(Local.with_ymd_and_hms(2025, 3, 3, 1, 0, 0).unwrap(), now),
-            "March 2025"
-        );
-        assert_eq!(tip(at(11, 12, 8), now), "Nov 12 at 8:00 AM");
+        let local = |y: i16, m: i8, d: i8, h: i8| {
+            clock::local_single(jiff::civil::datetime(y, m, d, h, 0, 0, 0)).unwrap()
+        };
+        let at = |m: i8, d: i8, h: i8| local(2026, m, d, h);
+        let now = &at(11, 12, 9); // a Thursday
+        assert_eq!(group(&at(11, 12, 8), now), "Today");
+        assert_eq!(group(&at(11, 11, 22), now), "Yesterday");
+        assert_eq!(group(&at(11, 8, 15), now), "This week");
+        assert_eq!(group(&at(11, 5, 15), now), "Last week");
+        assert_eq!(group(&at(10, 30, 15), now), "Two weeks ago");
+        assert_eq!(group(&at(10, 25, 15), now), "Three weeks ago");
+        assert_eq!(group(&at(10, 3, 15), now), "Last month");
+        assert_eq!(group(&at(3, 3, 15), now), "March");
+        assert_eq!(group(&local(2025, 3, 3, 1), now), "March 2025");
+        assert_eq!(tip(&at(11, 12, 8), now), "Nov 12 at 8:00 AM");
     }
 
     #[test]
     fn comments_become_cards_in_place_of_their_activities() {
-        let now = Local::now();
-        let reply = json!({"d": {"results": [{"author": {"email": "ost-test1@x.com", "name": "OST Test 1"}, "createdDate": (now - Duration::seconds(30)).to_rfc3339(), "id": "1", "text": "OST test 111 <b>"}]}});
+        let now = &clock::local_now();
+        let ago = |s: i64| clock::rfc3339_in(&(now - jiff::SignedDuration::from_secs(s)));
+        let reply = json!({"d": {"results": [{"author": {"email": "ost-test1@x.com", "name": "OST Test 1"}, "createdDate": ago(30), "id": "1", "text": "OST test 111 <b>"}]}});
         let cards = comment_cards(&reply, me(), now);
         assert_eq!(
             (
@@ -1282,9 +1272,9 @@ mod tests {
             ("You", "OST test 111 &lt;b&gt;", "A few seconds ago", "1")
         );
         let mut act = feed(
-            &json!({"value": [{"action": {"comment": {}}, "actor": you(), "times": {"recordedTime": now.to_rfc3339()}},
-            {"action": {"comment": {"isReply": true}}, "actor": you(), "times": {"recordedTime": now.to_rfc3339()}},
-            {"action": {"edit": {}}, "actor": you(), "times": {"recordedTime": (now - Duration::hours(1)).to_rfc3339()}}]}),
+            &json!({"value": [{"action": {"comment": {}}, "actor": you(), "times": {"recordedTime": ago(0)}},
+            {"action": {"comment": {"isReply": true}}, "actor": you(), "times": {"recordedTime": ago(0)}},
+            {"action": {"edit": {}}, "actor": you(), "times": {"recordedTime": ago(3600)}}]}),
             me(),
             "x",
             now,
@@ -1295,8 +1285,8 @@ mod tests {
         );
         // Two edits in a row by one person read as one; a move between them
         // keeps both.
-        let e = |h: i64| json!({"action": {"edit": {}}, "actor": you(), "times": {"recordedTime": (now - Duration::hours(h)).to_rfc3339()}});
-        let mv = json!({"action": {"move": {"From": "personal/a/Documents/x.txt"}}, "actor": you(), "times": {"recordedTime": (now - Duration::hours(4)).to_rfc3339()}});
+        let e = |h: i64| json!({"action": {"edit": {}}, "actor": you(), "times": {"recordedTime": ago(h * 3600)}});
+        let mv = json!({"action": {"move": {"From": "personal/a/Documents/x.txt"}}, "actor": you(), "times": {"recordedTime": ago(4 * 3600)}});
         let kinds = |v: Value| {
             feed(&v, me(), "x", now)
                 .iter()
@@ -1318,8 +1308,8 @@ mod tests {
     #[test]
     fn comments_carry_replies_edits_and_mention_names() {
         // ost-share-test.txt's comment 3 on 2026-11-12 (Teams' $expand=replies).
-        let now = Local::now();
-        let t = |s: i64| (now - Duration::seconds(s)).to_rfc3339();
+        let now = &clock::local_now();
+        let t = |s: i64| clock::rfc3339_in(&(now - jiff::SignedDuration::from_secs(s)));
         let reply = json!({"d": {"results": [{
             "author": {"email": "ost-test1@x.com", "name": "OST Test 1"}, "createdDate": t(90), "modifiedDate": t(10), "id": "3",
             "text": "OST comment test 1 edited", "mentions": {"results": []},
@@ -1370,7 +1360,7 @@ mod tests {
             a(json!({"delete": {"name": "ost-share-test.txt"}}), item("Attachments"), "1|0|5|10:28 PM"),
             a(json!({"create": {}}), item("ost-open-test.docx"), "1|0|5|10:46 PM"),
         ]});
-        let f: Vec<String> = folder_feed(&reply, me(), Local::now())
+        let f: Vec<String> = folder_feed(&reply, me(), &clock::local_now())
             .into_iter()
             .map(|i| i.text)
             .collect();
@@ -1390,7 +1380,7 @@ mod tests {
     #[test]
     fn feed_uses_sharepoints_wording_for_times() {
         let reply = json!({"value": [{"@sharePoint.localizedRelativeTime": "1|0|5|10:37 PM", "action": {"share": {}}, "actor": you(), "times": {"recordedTime": "2026-11-12T06:37:00Z"}}]});
-        let f = feed(&reply, me(), "x", Local::now());
+        let f = feed(&reply, me(), "x", &clock::local_now());
         assert_eq!(
             (f[0].kind.as_str(), f[0].time.as_str()),
             ("share", "Yesterday at 10:37 PM")

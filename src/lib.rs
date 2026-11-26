@@ -6,6 +6,7 @@
 pub mod api;
 pub mod auth;
 pub mod calling;
+pub mod clock;
 pub mod config;
 pub mod event_hub;
 pub mod feedback;

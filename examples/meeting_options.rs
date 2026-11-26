@@ -44,13 +44,13 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
     if first == "create" {
-        let now = chrono::Utc::now();
-        let fmt = |t: chrono::DateTime<chrono::Utc>| t.format("%Y-%m-%dT%H:%M:%S").to_string();
+        let now = jiff::Timestamp::now();
+        let fmt = |t: jiff::Timestamp| teams_cli::clock::format(t, "%Y-%m-%dT%H:%M:%S");
         let ev = calendar::create_event(
             &client,
             args.get(1).context("subject")?,
             &fmt(now),
-            &fmt(now + chrono::Duration::minutes(30)),
+            &fmt(now + jiff::SignedDuration::from_mins(30)),
             &[],
             true,
         )

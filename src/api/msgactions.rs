@@ -372,12 +372,7 @@ pub async fn mark_unread(
         None if client_message_id.is_empty() => "0",
         None => client_message_id,
     };
-    let value = format!(
-        "{};{};{}",
-        arrival_ms - 1,
-        chrono::Utc::now().timestamp_millis(),
-        cmid
-    );
+    let value = format!("{};{};{}", arrival_ms - 1, crate::clock::now_ms(), cmid);
     client
         .chat_request(
             reqwest::Method::PUT,
@@ -574,7 +569,7 @@ pub async fn report_security(
         .middle_tier_url()
         .context("No middle-tier address for this account")?;
     let token = super::directory::middle_tier_token().await?;
-    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let now = crate::clock::now_iso_ms();
     let resp = client
         .http()
         .post(format!("{mt}/beta/reports"))
@@ -632,7 +627,7 @@ pub async fn report_meeting(
         .middle_tier_url()
         .context("No middle-tier address for this account")?;
     let token = super::directory::middle_tier_token().await?;
-    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let now = crate::clock::now_iso_ms();
     let resp = client
         .http()
         .post(format!("{mt}/beta/reports"))
@@ -1018,7 +1013,7 @@ pub async fn set_chat_muted(client: &TeamsClient, chat_id: &str, muted: bool) ->
 /// properties `unpinnedTime` (ms) and `historyHiddenTime` (ms, as a
 /// string); Unhide writes both as null.
 pub async fn set_chat_hidden(client: &TeamsClient, chat_id: &str, hidden: bool) -> Result<()> {
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = crate::clock::now_ms();
     let base = format!(
         "{}/v1/users/ME/conversations/{}/properties",
         client.chat_service_url(),
@@ -1051,7 +1046,7 @@ pub async fn set_chat_hidden(client: &TeamsClient, chat_id: &str, hidden: bool) 
 /// `clearHistoryTime` (ms) set to now. The chat leaves your list and its
 /// messages up to then are no longer shown; others keep theirs.
 pub async fn clear_chat_history(client: &TeamsClient, chat_id: &str) -> Result<i64> {
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = crate::clock::now_ms();
     let url = format!(
         "{}/v1/users/ME/conversations/{}/properties?name=clearHistoryTime",
         client.chat_service_url(),

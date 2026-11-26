@@ -42,9 +42,9 @@ pub fn entity_state(entity: &serde_json::Value) -> Option<i64> {
 
 /// Whole days left in a trial (Teams' "60 days left": the time to its
 /// `endDate`, rounded up).
-pub fn days_left(entity: &serde_json::Value, now: chrono::DateTime<chrono::Utc>) -> Option<i64> {
-    let end = chrono::DateTime::parse_from_rfc3339(entity.get("endDate")?.as_str()?).ok()?;
-    let secs = (end.with_timezone(&chrono::Utc) - now).num_seconds();
+pub fn days_left(entity: &serde_json::Value, now: jiff::Timestamp) -> Option<i64> {
+    let end = crate::clock::parse_instant(entity.get("endDate")?.as_str()?)?;
+    let secs = (end - now).as_secs();
     Some(if secs <= 0 {
         0
     } else {
@@ -244,9 +244,7 @@ mod tests {
     #[test]
     fn days_left_round_up() {
         let e = serde_json::json!({"startDate": "2026-11-16T01:42:49Z", "endDate": "2027-01-15T01:42:45.9200065Z", "state": 1});
-        let now = chrono::DateTime::parse_from_rfc3339("2026-11-16T01:50:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = crate::clock::parse_instant("2026-11-16T01:50:00Z").unwrap();
         assert_eq!(days_left(&e, now), Some(60));
         assert_eq!(entity_state(&e), Some(1));
     }

@@ -794,12 +794,21 @@ pub async fn propose_new_time(
     if !crate::auth::oauth::browser_sign_in() {
         bail!("Proposing a new time needs the browser sign-in (Outlook's calendar service)");
     }
-    let s = chrono::DateTime::parse_from_rfc3339(start).context("Proposed start")?;
-    let e = chrono::DateTime::parse_from_rfc3339(end).context("Proposed end")?;
+    let s = crate::clock::parse_rfc3339(start).context("Proposed start")?;
+    let e = crate::clock::parse_rfc3339(end).context("Proposed end")?;
     if e <= s {
         bail!("The proposed end is before its start");
     }
-    match respond_with_time(client, ev, response, send_response, note, Some((s, e))).await {
+    match respond_with_time(
+        client,
+        ev,
+        response,
+        send_response,
+        note,
+        Some((s.clone(), e.clone())),
+    )
+    .await
+    {
         Ok(()) => Ok(()),
         // Outlook didn't take it: Graph's tentativelyAccept / decline with
         // `proposedNewTime` sends the same proposal.
@@ -810,17 +819,14 @@ pub async fn propose_new_time(
             } else {
                 "tentativelyAccept"
             };
-            let utc = |d: chrono::DateTime<chrono::FixedOffset>| {
-                d.with_timezone(&chrono::Utc)
-                    .format("%Y-%m-%dT%H:%M:%S")
-                    .to_string()
-            };
+            let utc =
+                |d: &jiff::ZonedDateTime| crate::clock::format(d.timestamp(), "%Y-%m-%dT%H:%M:%S");
             let body = serde_json::json!({
                 "comment": note.trim(),
                 "sendResponse": send_response,
                 "proposedNewTime": {
-                    "start": { "dateTime": utc(s), "timeZone": "UTC" },
-                    "end": { "dateTime": utc(e), "timeZone": "UTC" }
+                    "start": { "dateTime": utc(&s), "timeZone": "UTC" },
+                    "end": { "dateTime": utc(&e), "timeZone": "UTC" }
                 }
             });
             client
@@ -840,10 +846,7 @@ async fn respond_with_time(
     response: &str,
     send_response: bool,
     note: &str,
-    proposed: Option<(
-        chrono::DateTime<chrono::FixedOffset>,
-        chrono::DateTime<chrono::FixedOffset>,
-    )>,
+    proposed: Option<(jiff::ZonedDateTime, jiff::ZonedDateTime)>,
 ) -> Result<()> {
     let (owa_response, attendance) = match response {
         "Accept" | "Tentative" | "Decline" => (response, 0),
@@ -861,12 +864,10 @@ async fn respond_with_time(
             note,
             &tz,
         );
-        if let Some((s, e)) = proposed {
+        if let Some((s, e)) = &proposed {
             // As Outlook on the web writes them: local wall-clock times
             // (the request's TimeZoneContext names the zone), milliseconds.
-            let local = |d: chrono::DateTime<chrono::FixedOffset>| {
-                d.format("%Y-%m-%dT%H:%M:%S%.3f").to_string()
-            };
+            let local = |d: &jiff::ZonedDateTime| crate::clock::format(d, "%Y-%m-%dT%H:%M:%S%.3f");
             body["Body"]["ProposedStartTime"] = serde_json::json!(local(s));
             body["Body"]["ProposedEndTime"] = serde_json::json!(local(e));
         }
@@ -929,12 +930,8 @@ async fn respond_mt(
         "seriesMaster" => "RecurringMaster",
         _ => "Single",
     };
-    let start = chrono::DateTime::parse_from_rfc3339(&ev.start_utc)
-        .map(|d| {
-            d.with_timezone(&chrono::Utc)
-                .format("%Y-%m-%dT%H:%M:%S.000Z")
-                .to_string()
-        })
+    let start = crate::clock::parse_instant(&ev.start_utc)
+        .map(|d| crate::clock::format(d, "%Y-%m-%dT%H:%M:%S.000Z"))
         .unwrap_or_default();
     let (base, token) = crate::api::tabs::middle_tier(client).await?;
     let url = crate::auth::token_hosts::service_url(
@@ -1484,28 +1481,23 @@ pub async fn availability(
             serde_json::json!({"type": "Required", "address": mail, "name": name, "role": "Admin"}),
         );
     }
-    let s = chrono::DateTime::parse_from_rfc3339(start)?;
-    let e = chrono::DateTime::parse_from_rfc3339(end)?;
+    let s = crate::clock::parse_rfc3339(start)?;
+    let e = crate::clock::parse_rfc3339(end)?;
     // As Teams asks: UTC with milliseconds, the day's start, whole days.
-    let utc = |d: chrono::DateTime<chrono::FixedOffset>| {
-        d.with_timezone(&chrono::Utc)
-            .format("%Y-%m-%dT%H:%M:%S.000Z")
-            .to_string()
-    };
-    let day0 = s
-        .date_naive()
-        .and_hms_opt(0, 0, 0)
-        .and_then(|d| d.and_local_timezone(*s.offset()).single())
-        .unwrap_or(s);
-    let days = ((e - day0).num_hours() + 23) / 24;
+    let utc =
+        |d: &jiff::ZonedDateTime| crate::clock::format(d.timestamp(), "%Y-%m-%dT%H:%M:%S.000Z");
+    // The day's start at the time's own offset.
+    let day0 =
+        crate::clock::single(s.time_zone(), s.date().at(0, 0, 0, 0)).unwrap_or_else(|| s.clone());
+    let days = (e.duration_since(&day0).as_hours() + 23) / 24;
     let body = serde_json::json!({
         "attendees": attendees,
         "minimumSuggestionQuality": "Good",
         "numberOfDays": days.max(1),
         "requestType": "AttendeeAvailabilityOnly",
-        "startDate": utc(day0), "startTime": utc(day0), "startDateTimeZone": "Utc",
-        "meetingDurationInMinutes": (e - s).num_minutes().max(0),
-        "endTime": utc(day0 + chrono::Duration::days(days.max(1)))
+        "startDate": utc(&day0), "startTime": utc(&day0), "startDateTimeZone": "Utc",
+        "meetingDurationInMinutes": e.duration_since(&s).as_mins().max(0),
+        "endTime": utc(&(&day0 + crate::clock::days(days.max(1))))
     });
     let v: serde_json::Value = client
         .http()
@@ -1533,7 +1525,7 @@ pub async fn availability(
                 .unwrap_or_default()
                 .to_string();
         }
-        out.insert(who, serde_json::json!(busiest(u, s, e)));
+        out.insert(who, serde_json::json!(busiest(u, &s, &e)));
     }
     Ok((serde_json::Value::Object(out), tz))
 }
@@ -1542,8 +1534,8 @@ pub async fn availability(
 /// show it.
 fn busiest(
     u: &serde_json::Value,
-    s: chrono::DateTime<chrono::FixedOffset>,
-    e: chrono::DateTime<chrono::FixedOffset>,
+    s: &jiff::ZonedDateTime,
+    e: &jiff::ZonedDateTime,
 ) -> &'static str {
     let named = |st: &str| match st {
         "Oof" => ("Oof", 4),
@@ -1562,12 +1554,12 @@ fn busiest(
         let t = |k: &str| {
             ev.get(k)
                 .and_then(|x| x.as_str())
-                .and_then(|x| chrono::DateTime::parse_from_rfc3339(x).ok())
+                .and_then(|x| crate::clock::parse_rfc3339(x).ok())
         };
         let (Some(a), Some(b)) = (t("startTime"), t("endTime")) else {
             continue;
         };
-        if a < e && b > s {
+        if a < *e && b > *s {
             let n = named(
                 ev.get("freeBusyStatus")
                     .and_then(|x| x.as_str())
@@ -1676,11 +1668,10 @@ pub struct FormChannel {
 /// The calendar event Teams' form sends to the middle tier (measured
 /// 2026-11-17: Send with attendees, Save without, a channel meeting).
 fn mt_event(form: &MeetingForm, me: &Me, group_mail: Option<&str>) -> Result<serde_json::Value> {
-    let start = chrono::DateTime::parse_from_rfc3339(&form.start)
+    let start = crate::clock::parse_rfc3339(&form.start)
         .with_context(|| format!("Not a time: {}", form.start))?;
-    chrono::DateTime::parse_from_rfc3339(&form.end)
-        .with_context(|| format!("Not a time: {}", form.end))?;
-    let utc_offset = i64::from(start.offset().local_minus_utc()) / 60;
+    crate::clock::parse_rfc3339(&form.end).with_context(|| format!("Not a time: {}", form.end))?;
+    let utc_offset = i64::from(start.offset().seconds()) / 60;
     let people: Vec<&FormAttendee> = form
         .attendees
         .iter()
@@ -1711,13 +1702,9 @@ fn mt_event(form: &MeetingForm, me: &Me, group_mail: Option<&str>) -> Result<ser
         if !form.time_zone.is_empty() {
             return t.to_string();
         }
-        chrono::DateTime::parse_from_rfc3339(t)
-            .map(|d| {
-                d.with_timezone(&chrono::Utc)
-                    .format("%Y-%m-%dT%H:%M:%S+00:00")
-                    .to_string()
-            })
-            .unwrap_or_else(|_| t.to_string())
+        crate::clock::parse_instant(t)
+            .map(|d| crate::clock::format(d, "%Y-%m-%dT%H:%M:%S+00:00"))
+            .unwrap_or_else(|| t.to_string())
     };
     let mut ev = serde_json::json!({
         "attendees": attendees,
@@ -1863,18 +1850,11 @@ pub async fn schedule(
 /// Teams meetings from 60 minutes ago to 60 minutes ahead (Teams reads its
 /// calendar cache for that window), all-day ones first, then by start and
 /// subject; cancelled ones and ones without a Teams link left out.
-pub fn cast_meetings(
-    events: &[CalendarEvent],
-    now: chrono::DateTime<chrono::Utc>,
-) -> Vec<&CalendarEvent> {
-    let at = |s: &str| {
-        chrono::DateTime::parse_from_rfc3339(s)
-            .ok()
-            .map(|d| d.with_timezone(&chrono::Utc))
-    };
+pub fn cast_meetings(events: &[CalendarEvent], now: jiff::Timestamp) -> Vec<&CalendarEvent> {
+    let at = |s: &str| crate::clock::parse_instant(s);
     let (from, to) = (
-        now - chrono::Duration::minutes(60),
-        now + chrono::Duration::minutes(60),
+        now - jiff::SignedDuration::from_mins(60),
+        now + jiff::SignedDuration::from_mins(60),
     );
     let mut out: Vec<&CalendarEvent> = events
         .iter()
@@ -1971,9 +1951,7 @@ pub async fn update_instant_meeting(
         Some(o @ serde_json::Value::Object(_)) => o.clone(),
         _ => bail!("The chat has no meeting property"),
     };
-    let now = chrono::Utc::now()
-        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
-        .to_string();
+    let now = crate::clock::now_iso_ms();
     let updated = instant_meeting_property(&meeting, title, started.then_some(now.as_str()));
     super::msgactions::set_chat_topic(client, &thread, title.trim()).await?;
     let prop_url = format!(
@@ -2152,24 +2130,21 @@ fn update_event_request(
     let mut updates = Vec::new();
     let cs = |p: &str| cur.pointer(p).and_then(|x| x.as_str()).unwrap_or_default();
     // Times: the form's, with their offset, in the mailbox's zone context.
-    let start = chrono::DateTime::parse_from_rfc3339(&form.start)
+    let start = crate::clock::parse_rfc3339(&form.start)
         .with_context(|| format!("Not a time: {}", form.start))?;
-    let end = chrono::DateTime::parse_from_rfc3339(&form.end)
+    let end = crate::clock::parse_rfc3339(&form.end)
         .with_context(|| format!("Not a time: {}", form.end))?;
     let utc = |t: &str| {
-        chrono::NaiveDateTime::parse_from_str(t.split('.').next().unwrap_or(t), "%Y-%m-%dT%H:%M:%S")
-            .ok()
-            .map(|n| n.and_utc())
+        crate::clock::parse_naive(t.split('.').next().unwrap_or(t), "%Y-%m-%dT%H:%M:%S")
+            .and_then(crate::clock::as_utc)
     };
-    let same_time = utc(cs("/start/dateTime")) == Some(start.with_timezone(&chrono::Utc))
-        && utc(cs("/end/dateTime")) == Some(end.with_timezone(&chrono::Utc));
+    let same_time = utc(cs("/start/dateTime")) == Some(start.timestamp())
+        && utc(cs("/end/dateTime")) == Some(end.timestamp());
     let all_day = cur
         .get("isAllDay")
         .and_then(|b| b.as_bool())
         .unwrap_or(false);
-    let ews_time = |t: &chrono::DateTime<chrono::FixedOffset>| {
-        t.format("%Y-%m-%dT%H:%M:%S%.3f%:z").to_string()
-    };
+    let ews_time = |t: &jiff::ZonedDateTime| crate::clock::format(t, "%Y-%m-%dT%H:%M:%S%.3f%:z");
     if form.subject.trim() != cs("/subject") {
         updates.push(set(
             "Subject",
@@ -2181,16 +2156,20 @@ fn update_event_request(
     let series = cs("/type") == "seriesMaster";
     let (start, end, same_time) = match utc(cs("/start/dateTime")).zip(utc(cs("/end/dateTime"))) {
         Some((s0, e0)) if series => {
-            let off = *start.offset();
-            let (s0, e0) = (s0.with_timezone(&off), e0.with_timezone(&off));
-            let same = s0.time() == start.time() && e0 - s0 == end - start;
-            let s = s0
-                .date_naive()
-                .and_time(start.time())
-                .and_local_timezone(off)
-                .single()
-                .unwrap_or(s0);
-            (s, s + (end - start), same)
+            let off = start.time_zone().clone();
+            let (s0, e0) = (
+                s0.to_zoned_datetime(off.clone()),
+                e0.to_zoned_datetime(off.clone()),
+            );
+            let length = end.duration_since(&start);
+            let same = s0.time() == start.time() && e0.duration_since(&s0) == length;
+            let s = crate::clock::single(
+                &off,
+                jiff::civil::DateTime::from_parts(s0.date(), start.time()),
+            )
+            .unwrap_or(s0);
+            let e = &s + length;
+            (s, e, same)
         }
         _ => (start, end, same_time),
     };
@@ -2213,7 +2192,7 @@ fn update_event_request(
     {
         if following {
             r["RecurrenceRange"]["StartDate"] =
-                start.date_naive().format("%Y-%m-%d").to_string().into();
+                crate::clock::format(start.date(), "%Y-%m-%d").into();
         }
         updates.push(set("Recurrence", serde_json::json!({ "Recurrence": r })));
     }
@@ -2963,9 +2942,7 @@ mod tests {
                 ..Default::default()
             }
         };
-        let now = chrono::DateTime::parse_from_rfc3339("2026-11-20T10:00:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = crate::clock::parse_instant("2026-11-20T10:00:00Z").unwrap();
         let list = vec![
             ev(
                 "B later",
@@ -3163,17 +3140,17 @@ mod tests {
             {"freeBusyStatus": "Tentative", "startTime": "2026-11-17T22:00:00+00:00", "endTime": "2026-11-17T22:30:00+00:00"},
             {"freeBusyStatus": "Busy", "startTime": "2026-11-17T23:00:00+00:00", "endTime": "2026-11-17T23:30:00+00:00"}
         ]});
-        let t = |s: &str| chrono::DateTime::parse_from_rfc3339(s).unwrap();
+        let t = |s: &str| crate::clock::parse_rfc3339(s).unwrap();
         assert_eq!(
-            super::busiest(&u, t("2026-11-17T22:00:00Z"), t("2026-11-17T22:30:00Z")),
+            super::busiest(&u, &t("2026-11-17T22:00:00Z"), &t("2026-11-17T22:30:00Z")),
             "Tentative"
         );
         assert_eq!(
-            super::busiest(&u, t("2026-11-17T22:00:00Z"), t("2026-11-17T23:15:00Z")),
+            super::busiest(&u, &t("2026-11-17T22:00:00Z"), &t("2026-11-17T23:15:00Z")),
             "Busy"
         );
         assert_eq!(
-            super::busiest(&u, t("2026-11-18T00:00:00Z"), t("2026-11-18T01:00:00Z")),
+            super::busiest(&u, &t("2026-11-18T00:00:00Z"), &t("2026-11-18T01:00:00Z")),
             "Free"
         );
     }

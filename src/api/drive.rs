@@ -438,10 +438,10 @@ pub fn photos_from(v: &serde_json::Value) -> Vec<(DriveItem, serde_json::Value)>
 /// each with their People row's files and their page, as rows (Date
 /// shared, Shared by, Activity) carrying Graph's ids for their actions.
 pub async fn by_people(client: &TeamsClient) -> Result<Vec<PersonRows>> {
-    let now = chrono::Local::now();
+    let now = crate::clock::local_now();
     let rows = |v: Vec<(super::shared_files::SharedFile, DriveItem)>| {
         v.iter()
-            .map(|(f, it)| super::shared_files::row(f, it, now))
+            .map(|(f, it)| super::shared_files::row(f, it, &now))
             .collect::<Vec<_>>()
     };
     Ok(super::shared_files::people_rows(client)
@@ -962,11 +962,8 @@ fn folder_query(
     }
     if let Some(ms) = since_ms {
         let day = ms - ms.rem_euclid(86_400_000);
-        if let Some(t) = chrono::DateTime::from_timestamp_millis(day) {
-            query += &format!(
-                " AND (LastModifiedTime>={} )",
-                t.format("%Y-%m-%dT%H:%M:%S%.3fZ")
-            );
+        if let Some(t) = crate::clock::from_ms(day) {
+            query += &format!(" AND (LastModifiedTime>={} )", crate::clock::iso_ms(t));
         }
     }
     let template = "({searchterms}) ContentTypeId:0x0120* NOT HtmlFileType:\"OneNote.Notebook\" NOT ParentLink:SiteAssets".to_string();
@@ -1030,11 +1027,7 @@ fn location(
     (out, same)
 }
 
-fn hit(
-    h: &serde_json::Value,
-    personal: &str,
-    now: chrono::DateTime<chrono::Local>,
-) -> Option<FolderHit> {
+fn hit(h: &serde_json::Value, personal: &str, now: &jiff::ZonedDateTime) -> Option<FolderHit> {
     let r = &h["resource"];
     let f = &r["listItem"]["fields"];
     let mut item = parse_item(r)?;
@@ -1056,8 +1049,8 @@ fn hit(
         .or_else(|| f["siteTemplateId"].as_str().and_then(|t| t.parse().ok()))
         .unwrap_or(0);
     let (location, same_site) = location(&item.web_url, &web, &st("siteTitle"), template, personal);
-    let modified_text = chrono::DateTime::parse_from_rfc3339(&item.modified)
-        .map(|t| super::list_rows::activity_time(t.with_timezone(&chrono::Local), now))
+    let modified_text = crate::clock::parse_instant(&item.modified)
+        .map(|t| super::list_rows::activity_time(&crate::clock::local(t), now))
         .unwrap_or_default();
     Some(FolderHit {
         created_by: r["createdBy"]["user"]["displayName"]
@@ -1110,8 +1103,8 @@ pub async fn search_folders(
         bail!("Your OneDrive's address is unknown");
     }
     let docs = format!("{personal}/Documents");
-    let now = chrono::Local::now();
-    let since = days.map(|d| now.timestamp_millis() - 86_400_000 * d);
+    let now = crate::clock::local_now();
+    let since = days.map(|d| crate::clock::millis(now.timestamp()) - 86_400_000 * d);
     let (query_string, template) = folder_query(q, (!all).then_some(docs.as_str()), people, since);
     let body = serde_json::json!({ "requests": [{
         "entityTypes": ["driveItem"],
@@ -1130,7 +1123,7 @@ pub async fn search_folders(
         .as_array()
         .into_iter()
         .flatten()
-        .filter_map(|h| hit(h, &personal, now))
+        .filter_map(|h| hit(h, &personal, &now))
         .collect())
 }
 
@@ -1299,9 +1292,8 @@ mod tests {
             "({searchterms}) ContentTypeId:0x0120* NOT HtmlFileType:\"OneNote.Notebook\" NOT ParentLink:SiteAssets"
         );
         // Last 7 days from 2026-11-13 16:20 UTC: from midnight on the 6th.
-        let now = chrono::DateTime::parse_from_rfc3339("2026-11-13T16:20:00Z")
-            .unwrap()
-            .timestamp_millis();
+        let now =
+            crate::clock::millis(crate::clock::parse_instant("2026-11-13T16:20:00Z").unwrap());
         let (q, _) = folder_query("ost", None, &[], Some(now - 7 * 86_400_000));
         assert_eq!(q, "ost AND (LastModifiedTime>=2026-11-06T00:00:00.000Z )");
         // The Person filter, as OneDrive's search builds it.
@@ -1404,10 +1396,8 @@ mod tests {
             "parentReference": { "driveId": "b!d", "id": "01ROOT" },
             "listItem": { "fields": { "isContainer": true, "siteTitle": "OST Test 1", "spWebUrl": me, "siteTemplateId": 21 } }
         }});
-        let now = chrono::DateTime::parse_from_rfc3339("2026-11-13T16:20:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Local);
-        let f = hit(&h, me, now).unwrap();
+        let now = crate::clock::local(crate::clock::parse_instant("2026-11-13T16:20:00Z").unwrap());
+        let f = hit(&h, me, &now).unwrap();
         assert!(f.item.is_folder);
         assert_eq!(f.item.kind, "");
         assert_eq!(

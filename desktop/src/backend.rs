@@ -5940,7 +5940,7 @@ fn spawn_call_stats_logger(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
                 .unwrap_or_else(|e| e.into_inner())
                 .sample(
                     &teams_cli::calling::call_health::current(),
-                    chrono::Utc::now().timestamp_millis(),
+                    teams_cli::clock::now_ms(),
                 );
             // Talking with the mic off (Teams checks with each stats poll).
             let muted = {
@@ -6133,7 +6133,7 @@ fn premium_json(
     v["offered"] = json!(mode == "offer");
     v["inTrial"] = json!(in_trial);
     v["entity"] = entity.cloned().unwrap_or(serde_json::Value::Null);
-    v["daysLeft"] = json!(entity.and_then(|e| api::premium::days_left(e, chrono::Utc::now())));
+    v["daysLeft"] = json!(entity.and_then(|e| api::premium::days_left(e, jiff::Timestamp::now())));
     v
 }
 
@@ -7380,7 +7380,10 @@ fn feedback_base() -> std::path::PathBuf {
 
 /// A new report's folder (its screenshots and details), owner-only.
 fn new_feedback_dir() -> std::path::PathBuf {
-    let dir = feedback_base().join(chrono::Local::now().format("%Y-%m-%d %H-%M-%S").to_string());
+    let dir = feedback_base().join(teams_cli::clock::format(
+        &teams_cli::clock::local_now(),
+        "%Y-%m-%d %H-%M-%S",
+    ));
     let mut b = std::fs::DirBuilder::new();
     b.recursive(true);
     {
@@ -8991,8 +8994,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 let _ = qt.queue(move |mut this| {
                     // Teams' clock skew: measured from live updates.
                     if let Some(stamp) = t.stamp_ms {
-                        this.as_mut().rust_mut().timer_skew_ms =
-                            chrono::Utc::now().timestamp_millis() - stamp;
+                        this.as_mut().rust_mut().timer_skew_ms = teams_cli::clock::now_ms() - stamp;
                     }
                     this.as_mut().show_timers(t, true);
                 });
@@ -12206,7 +12208,7 @@ impl qobject::Backend {
         let qt = self.qt_thread();
         let out = self
             .recorder_file(&QString::from(
-                format!("clip-{}.mp4", chrono::Utc::now().timestamp_millis()).as_str(),
+                format!("clip-{}.mp4", teams_cli::clock::now_ms()).as_str(),
             ))
             .to_string();
         runtime().spawn_blocking(move || {
@@ -14624,7 +14626,7 @@ impl qobject::Backend {
         if reset {
             self.as_mut().rust_mut().transcript.clear();
         }
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = teams_cli::clock::now_ms();
         teams_cli::calling::transcript::merge_live(
             &mut self.as_mut().rust_mut().transcript,
             rows,
@@ -14638,7 +14640,7 @@ impl qobject::Backend {
     }
 
     fn show_captions(mut self: Pin<&mut Self>, rows: Vec<teams_cli::calling::transcript::Entry>) {
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = teams_cli::clock::now_ms();
         teams_cli::calling::transcript::merge_captions(
             &mut self.as_mut().rust_mut().captions,
             rows,
@@ -14740,7 +14742,7 @@ impl qobject::Backend {
             let Some(call) = slot.outgoing.as_ref() else {
                 return;
             };
-            let now = chrono::Utc::now().timestamp_millis();
+            let now = teams_cli::clock::now_ms();
             let t = &call.timers().adhoc;
             let next = match action.as_str() {
                 "start" => t.start(),
@@ -14776,7 +14778,7 @@ impl qobject::Backend {
             .cloned()
             .unwrap_or_default();
         let index = args["index"].as_u64().unwrap_or(0) as usize;
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = teams_cli::clock::now_ms();
         let elapsed = seen.elapsed_ms(now, self.rust().timer_skew_ms);
         let action = action.to_string();
         let mut publish = true;
@@ -14898,7 +14900,7 @@ impl qobject::Backend {
         tracing::info!(initiator, "real-time text on");
         self.as_mut().set_call_rtt_initiator(initiator);
         self.as_mut().set_call_rtt_on(true);
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = teams_cli::clock::now_ms();
         teams_cli::calling::transcript::merge_captions(
             &mut self.as_mut().rust_mut().captions,
             vec![teams_cli::calling::rtt::intro(now)],
@@ -14937,7 +14939,7 @@ impl qobject::Backend {
         if updates.is_empty() {
             return;
         }
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = teams_cli::clock::now_ms();
         let mut typing = std::mem::take(&mut self.as_mut().rust_mut().rtt_typing);
         let mut window = std::mem::take(&mut self.as_mut().rust_mut().captions);
         for u in &updates {
@@ -15041,7 +15043,7 @@ impl qobject::Backend {
             .find(|p| p.data_sources.contains(&i64::from(source)))
             .map(|p| (p.id.clone(), p.name.clone()))
             .unwrap_or_default();
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = teams_cli::clock::now_ms();
         let updates = self
             .as_mut()
             .rust_mut()
@@ -15072,7 +15074,7 @@ impl qobject::Backend {
     fn send_rtt_chunk(mut self: Pin<&mut Self>, chunk: String) {
         let me = self.rust().user_mri.to_string();
         let name = self.rust().user_name.to_string();
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = teams_cli::clock::now_ms();
         let updates =
             self.as_mut()
                 .rust_mut()
@@ -15332,7 +15334,7 @@ impl qobject::Backend {
                     }
                 }
             };
-            let tz = chrono::Local;
+            let tz = teams_cli::clock::local_zone();
             let hours = match (info.start, info.end) {
                 (Some(s), Some(e)) => mi::hours_text(s, e, &tz),
                 _ => None,
@@ -15354,16 +15356,20 @@ impl qobject::Backend {
             let start_text = info
                 .start
                 .map(|t| {
-                    let t = t.with_timezone(&tz);
-                    format!("{}, {}", t.format("%b %-d"), api::regional::short_time(&t))
+                    let t = t.to_zoned_datetime(tz.clone());
+                    format!(
+                        "{}, {}",
+                        teams_cli::clock::format(&t, "%b %-d"),
+                        api::regional::short_time(&t)
+                    )
                 })
                 .unwrap_or_default();
             let json = serde_json::json!({
                 "title": info.title,
                 // The scheduled times (the pre-join screen's date line while
                 // we wait in the lobby).
-                "start": info.start.map(|t| t.to_rfc3339()).unwrap_or_default(),
-                "end": info.end.map(|t| t.to_rfc3339()).unwrap_or_default(),
+                "start": info.start.map(teams_cli::clock::rfc3339).unwrap_or_default(),
+                "end": info.end.map(teams_cli::clock::rfc3339).unwrap_or_default(),
                 "startText": start_text,
                 "hours": hours.unwrap_or_default(),
                 "schedule": schedule.unwrap_or_default(),
@@ -16988,10 +16994,11 @@ impl qobject::Backend {
                 self.rust().user_mri.to_string(),
                 self.rust().user_name.to_string(),
             );
-            self.as_mut()
-                .rust_mut()
-                .attendance
-                .update((&mri, &name), &here, chrono::Local::now());
+            self.as_mut().rust_mut().attendance.update(
+                (&mri, &name),
+                &here,
+                teams_cli::clock::local_now(),
+            );
         }
         self.as_mut().rust_mut().roster = roster;
         self.as_mut()
@@ -17547,11 +17554,11 @@ impl qobject::Backend {
                         let qt2 = qt.clone();
                         let thread_enc = thread_enc.clone();
                         runtime().spawn(async move {
-                            let now = chrono::Utc::now();
-                            let fmt = |t: chrono::DateTime<chrono::Utc>| t.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+                            let now = jiff::Timestamp::now();
+                            let fmt = teams_cli::clock::iso_secs;
                             let found = async {
                                 let client = TeamsClient::new().await?;
-                                api::calendar::calendar_view(&client, &fmt(now - chrono::Duration::days(1)), &fmt(now + chrono::Duration::days(1))).await
+                                api::calendar::calendar_view(&client, &fmt(now - teams_cli::clock::days(1)), &fmt(now + teams_cli::clock::days(1))).await
                             }
                             .await;
                             let entry = match found {
@@ -17612,7 +17619,7 @@ impl qobject::Backend {
             // its end, and you didn't decline it.
             let calendar: Vec<serde_json::Value> =
                 serde_json::from_str(&self.rust().calendar_json.to_string()).unwrap_or_default();
-            let now = chrono::Utc::now();
+            let now = jiff::Timestamp::now();
             let fetched = looked_up.clone().flatten();
             // Not found by the lookup (null): not in your calendar.
             let lookup_missed = fetched.as_ref().is_some_and(|v| v.is_null());
@@ -17621,8 +17628,7 @@ impl qobject::Backend {
                 .find(|e| in_calendar(e))
                 .or(fetched.as_ref().filter(|v| v.is_object()));
             let at = |e: &serde_json::Value, k: &str| {
-                e[k].as_str()
-                    .and_then(|x| chrono::DateTime::parse_from_rfc3339(x).ok())
+                e[k].as_str().and_then(teams_cli::clock::parse_instant)
             };
             let ok = match event {
                 Some(e) => {
@@ -17630,8 +17636,8 @@ impl qobject::Backend {
                     let window = at(e, "start_utc")
                         .zip(at(e, "end_utc"))
                         .is_none_or(|(s, en)| {
-                            now >= s - chrono::Duration::minutes(15)
-                                && now <= en + chrono::Duration::minutes(5)
+                            now >= s - jiff::SignedDuration::from_mins(15)
+                                && now <= en + jiff::SignedDuration::from_mins(5)
                         });
                     !declined && window
                 }
@@ -17662,7 +17668,7 @@ impl qobject::Backend {
                     "isOrganizer": event.and_then(|e| e["is_organizer"].as_bool()).unwrap_or(false),
                     "response": event.and_then(|e| e["response"].as_str()).unwrap_or_default(),
                     "showAs": event.and_then(|e| e["show_as"].as_str()).unwrap_or_default(),
-                    "startedAt": now.to_rfc3339(),
+                    "startedAt": teams_cli::clock::rfc3339(now),
                     "initiator": start.initiator, "initiatorName": start.initiator_name,
                 }));
                 self.as_mut().set_live_meetings_json(QString::from(
@@ -18043,8 +18049,8 @@ impl qobject::Backend {
                 meeting: c["meeting"].as_bool().unwrap_or(false),
                 time: c["time"]
                     .as_str()
-                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-                    .map(|t| t.timestamp_millis())
+                    .and_then(teams_cli::clock::parse_instant)
+                    .map(teams_cli::clock::millis)
                     .unwrap_or(0),
                 channel_team: String::new(),
             })
@@ -20164,7 +20170,7 @@ impl qobject::Backend {
             self.as_mut().set_status_text(QString::from(text));
             return;
         }
-        if schedule.is_some_and(|ms| ms <= chrono::Utc::now().timestamp_millis()) {
+        if schedule.is_some_and(|ms| ms <= teams_cli::clock::now_ms()) {
             self.as_mut().set_status_text(QString::from(tr(
                 "This message was scheduled for a time in the past.",
             )));
@@ -20204,7 +20210,7 @@ impl qobject::Backend {
             Some(q) => format!("{}{}", api::messages::quote_html(q), content),
             None => content,
         };
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = teams_cli::clock::now_ms();
         // The newest message in the chat, sent or still being sent.
         let last_server = server_timelines()
             .lock()
@@ -20223,7 +20229,7 @@ impl qobject::Backend {
             content,
             display_name: self.rust().user_name.to_string(),
             sender_mri: self.rust().my_mri.clone().unwrap_or_default(),
-            compose_time: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            compose_time: teams_cli::clock::now_iso_ms(),
             arrival_ms: api::outbox::lie_arrival(now, last),
             created_ms: now,
             state: api::outbox::SendState::Sending,
@@ -20831,7 +20837,7 @@ impl qobject::Backend {
 
     /// Show Teams' in-app toast.
     fn toast(mut self: Pin<&mut Self>, text: &str, intent: &str) {
-        let id = chrono::Utc::now().timestamp_millis();
+        let id = teams_cli::clock::now_ms();
         let v = json!({ "id": id, "text": text, "intent": intent }).to_string();
         self.as_mut().set_toast_json(QString::from(v.as_str()));
     }
@@ -22438,7 +22444,7 @@ impl qobject::Backend {
         if !api::drafts::roaming_enabled() || chat.starts_with("48:") {
             return;
         }
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = teams_cli::clock::now_ms();
         let name = self.rust().user_name.to_string();
         let draft = self.as_mut().drafts_mut().get(&chat).cloned();
         // A stable clientmessageid for the draft's life.
@@ -22525,7 +22531,7 @@ impl qobject::Backend {
                         slot.id = id.clone();
                     }
                     let _ = qt.queue(move |mut this| {
-                        let synced = chrono::Utc::now().timestamp_millis() as u64;
+                        let synced = teams_cli::clock::now_ms() as u64;
                         let drafts = this.as_mut().drafts_mut();
                         if let (Some(d), Some(id)) = (drafts.get_mut(&chat), id) {
                             let r = d.roam.get_or_insert_with(Default::default);
@@ -22567,7 +22573,7 @@ impl qobject::Backend {
             r.chat = format!("{};messageid={}", r.chat, r.reply_to);
         }
         roamed.sort_by_key(|r| std::cmp::Reverse(r.time_ms));
-        let now = chrono::Utc::now().timestamp_millis() as u64;
+        let now = teams_cli::clock::now_ms() as u64;
         let view = |r: &api::drafts::Roamed| -> Option<RemoteDraft> {
             let v = api::messages::message_view(raw.get(&r.id)?, &me, &name)?;
             Some(RemoteDraft {
@@ -22760,7 +22766,7 @@ impl qobject::Backend {
                 .or_default()
                 .id
                 .replace(conflict.id.clone());
-            let now = chrono::Utc::now().timestamp_millis() as u64;
+            let now = teams_cli::clock::now_ms() as u64;
             self.as_mut().drafts_mut().insert(
                 chat.clone(),
                 Draft {
@@ -23614,7 +23620,8 @@ impl qobject::Backend {
                 .map(std::path::PathBuf::from)
                 .unwrap_or_default();
             let desktop = xdg_user_dir("DESKTOP").unwrap_or_else(|| home.join("Desktop"));
-            let stamp = chrono::Local::now().format("%Y %m %d %H %M %S");
+            let stamp =
+                teams_cli::clock::format(&teams_cli::clock::local_now(), "%Y %m %d %H %M %S");
             let dir = desktop.join(format!("OST Support Logs {stamp}"));
             std::fs::create_dir_all(&dir)?;
             std::fs::copy(crate::log_path(), dir.join("ost-desktop.log"))?;
@@ -23676,7 +23683,7 @@ impl qobject::Backend {
             &stored.to_string(),
             p.get("tabStart")
                 .and_then(|v| v.as_i64())
-                .unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
+                .unwrap_or_else(|| teams_cli::clock::now_ms()),
             &s("correlation"),
             p.get("initiator")
                 .and_then(|v| v.as_bool())
@@ -26137,7 +26144,7 @@ impl qobject::Backend {
                             std::fs::read_link("/etc/localtime").ok().and_then(|p| p.to_string_lossy().split("zoneinfo/").nth(1).map(str::to_string))
                         });
                         let iana = iana.unwrap_or_else(|| "UTC".into());
-                        let offset = chrono::Local::now().offset().local_minus_utc() as i64 / 60;
+                        let offset = teams_cli::clock::local_offset_seconds() as i64 / 60;
                         let questions: Vec<serde_json::Value> = p.get("questions").and_then(|q| q.as_array()).cloned().unwrap_or_default();
                         let answers = api::events::registration_answers(&questions, p.get("values").unwrap_or(&serde_json::Value::Null));
                         let terms = (!s("termsUrl").is_empty()).then(|| p.get("terms").and_then(|v| v.as_bool()).unwrap_or(false));
@@ -26429,7 +26436,7 @@ impl qobject::Backend {
                         let region = notes_region(&client);
                         let (oid, tid) = (client.object_id().unwrap_or_default(), client.tenant_id().unwrap_or_default());
                         let thread = s("threadId");
-                        let start_ms = chrono::DateTime::parse_from_rfc3339(&s("start")).map(|d| d.timestamp_millis()).unwrap_or_else(|_| chrono::Utc::now().timestamp_millis());
+                        let start_ms = teams_cli::clock::parse_instant(&s("start")).map(teams_cli::clock::millis).unwrap_or_else(teams_cli::clock::now_ms);
                         // The recordings from the day's contents; the
                         // highlights file from the meeting's own (V3) list.
                         let read = || async {
@@ -26570,7 +26577,7 @@ impl qobject::Backend {
                     // AugLoop; answers once it's done or failed.
                     "podcastGenerate" => {
                         let rows = p.get("meetings").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-                        let ms = |r: &serde_json::Value, k: &str| r[k].as_str().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok()).map(|d| d.timestamp_millis()).unwrap_or_default();
+                        let ms = |r: &serde_json::Value, k: &str| r[k].as_str().and_then(teams_cli::clock::parse_instant).map(teams_cli::clock::millis).unwrap_or_default();
                         let mut meetings = Vec::new();
                         for r in &rows {
                             let ical = r["iCalUid"].as_str().unwrap_or_default().to_string();
@@ -26654,7 +26661,7 @@ impl qobject::Backend {
                         let r: api::recaps::RecapRef = serde_json::from_value(p.get("recap").cloned().unwrap_or_default()).unwrap_or_default();
                         let info = api::recaps::file_info(&client, &r.drive_id, &r.item_id).await?;
                         let web = info["webUrl"].as_str().unwrap_or_default();
-                        let days = api::recaps::remaining_days(info["expiration"].as_str().unwrap_or_default(), chrono::Utc::now());
+                        let days = api::recaps::remaining_days(info["expiration"].as_str().unwrap_or_default(), jiff::Timestamp::now());
                         let copilot = api::ecs::license(&client).await.and_then(|l| l["isCopilot"].as_bool()).unwrap_or(false);
                         Ok(json!({
                             "file": info, "clipchamp": if web.is_empty() { String::new() } else { api::recaps::clipchamp_url(web) },
@@ -26669,8 +26676,8 @@ impl qobject::Backend {
                         let date = if p.get("remove").and_then(|v| v.as_bool()).unwrap_or(false) {
                             None
                         } else {
-                            let from = chrono::DateTime::parse_from_rfc3339(&s("expiration")).map(|t| t.with_timezone(&chrono::Utc)).unwrap_or_else(|_| chrono::Utc::now());
-                            Some((from + chrono::Duration::days(60)).to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+                            let from = teams_cli::clock::parse_instant(&s("expiration")).unwrap_or_else(jiff::Timestamp::now);
+                            Some(teams_cli::clock::iso_ms(from + teams_cli::clock::days(60)))
                         };
                         api::recaps::set_expiration(&site, &path, date.as_deref()).await?;
                         Ok(json!({ "expiration": date }))
@@ -27478,7 +27485,7 @@ impl qobject::Backend {
                     // without them Home still lists Recent), each person
                     // with their Teams id for the picture.
                     "recent" => {
-                        let now = chrono::Local::now();
+                        let now = teams_cli::clock::local_now();
                         let (recent, cards) = tokio::join!(
                             api::drive::recent(&client),
                             api::recommended::load(&client)
@@ -27486,7 +27493,7 @@ impl qobject::Backend {
                         out["rows"] = json!(
                             recent?
                                 .iter()
-                                .map(|(r, it)| api::recent_files::home_row(r, it, now))
+                                .map(|(r, it)| api::recent_files::home_row(r, it, &now))
                                 .collect::<Vec<_>>()
                         );
                         let cards = cards.unwrap_or_else(|e| {
@@ -27510,10 +27517,10 @@ impl qobject::Backend {
                                             .unwrap_or_default()
                                     );
                                     v["time_text"] = json!(
-                                        chrono::DateTime::parse_from_rfc3339(&c.time)
+                                        teams_cli::clock::parse_instant(&c.time)
                                             .map(|t| api::recent_files::activity_day(
-                                                t.with_timezone(&chrono::Local),
-                                                now
+                                                &teams_cli::clock::local(t),
+                                                &now
                                             ))
                                             .unwrap_or_default()
                                     );
@@ -27537,14 +27544,14 @@ impl qobject::Backend {
                     // Activity from the recent files service; the files you
                     // hid come along for its Hidden filter.
                     "shared" => {
-                        let now = chrono::Local::now();
+                        let now = teams_cli::clock::local_now();
                         let (rows, hidden) =
                             api::shared_files::with_you_and_hidden(&client).await?;
                         out["rows"] = json!(
                             rows.iter()
-                                .map(|(f, it)| api::shared_files::row(f, it, now))
+                                .map(|(f, it)| api::shared_files::row(f, it, &now))
                                 .chain(hidden.iter().map(|(f, it)| {
-                                    let mut v = api::shared_files::row(f, it, now);
+                                    let mut v = api::shared_files::row(f, it, &now);
                                     v["hidden"] = json!(true);
                                     v
                                 }))
@@ -27553,12 +27560,12 @@ impl qobject::Backend {
                     }
                     // Shared ▸ By you: Name and Modified by.
                     "shared_by_you" => {
-                        let now = chrono::Local::now();
+                        let now = teams_cli::clock::local_now();
                         out["rows"] = json!(
                             api::shared_files::by_you_rows(&client)
                                 .await?
                                 .iter()
-                                .map(|(r, it)| api::shared_files::by_you_row(r, it, now))
+                                .map(|(r, it)| api::shared_files::by_you_row(r, it, &now))
                                 .collect::<Vec<_>>()
                         );
                     }
@@ -27647,7 +27654,7 @@ impl qobject::Backend {
                 };
                 out["filters"] = json!(filters);
                 if let Some(items) = out.get("items").cloned() {
-                    let now = chrono::Local::now();
+                    let now = teams_cli::clock::local_now();
                     let items: Vec<api::drive::DriveItem> =
                         serde_json::from_value(items).unwrap_or_default();
                     out["items"] = json!(
@@ -27656,7 +27663,7 @@ impl qobject::Backend {
                             .map(|it| api::list_rows::decorate(
                                 it,
                                 rows.get(&it.sp_item.to_ascii_lowercase()),
-                                now
+                                &now
                             ))
                             .collect::<Vec<_>>()
                     );
@@ -28350,12 +28357,12 @@ impl qobject::Backend {
                     }
                     "attach_recent" => json!({ "items": api::cloud_attach::recent(&client).await? }),
                     "attach_place" => {
-                        let now = chrono::Local::now();
-                        let deco = |v: Vec<api::drive::DriveItem>| v.iter().map(|it| api::list_rows::decorate(it, None, now)).collect::<Vec<_>>();
+                        let now = teams_cli::clock::local_now();
+                        let deco = |v: Vec<api::drive::DriveItem>| v.iter().map(|it| api::list_rows::decorate(it, None, &now)).collect::<Vec<_>>();
                         match s("place").as_str() {
                             // Shared with you: Date shared, Shared by, Activity.
                             "shared" => json!({ "items": api::drive::shared_with_me(&client).await?.iter()
-                                .map(|(f, it)| api::shared_files::row(f, it, now)).collect::<Vec<_>>() }),
+                                .map(|(f, it)| api::shared_files::row(f, it, &now)).collect::<Vec<_>>() }),
                             "favorites" => json!({ "items": deco(api::drive::favorites(&client).await?) }),
                             "meetings" => json!({ "items": api::cloud_attach::meeting_files(&client).await? }),
                             // Pictures and videos (not SharePoint's own
@@ -28363,7 +28370,7 @@ impl qobject::Backend {
                             // Media: OneDrive Photos' own query (taken
                             // newest first, with sizes and when taken).
                             "media" => json!({ "items": api::drive::photos(&client).await?.into_iter().map(|(it, x)| {
-                                let mut v = api::list_rows::decorate(&it, None, now);
+                                let mut v = api::list_rows::decorate(&it, None, &now);
                                 for k in ["w", "h", "taken", "duration", "video"] { v[k] = x[k].clone(); }
                                 v
                             }).collect::<Vec<_>>() }),
@@ -28482,10 +28489,10 @@ impl qobject::Backend {
                             tracing::warn!("picker rows: {e:#}");
                             Default::default()
                         });
-                        let now = chrono::Local::now();
+                        let now = teams_cli::clock::local_now();
                         let items: Vec<serde_json::Value> = items?
                             .iter()
-                            .map(|it| api::list_rows::decorate(it, rows.get(&it.sp_item.to_ascii_lowercase()), now))
+                            .map(|it| api::list_rows::decorate(it, rows.get(&it.sp_item.to_ascii_lowercase()), &now))
                             .collect();
                         json!({ "drive_id": d, "item_id": i, "here": here?, "items": items })
                     }
@@ -28764,9 +28771,9 @@ impl qobject::Backend {
                     // Cast's meetings step: your Teams meetings from an hour
                     // ago to an hour ahead (Teams' cast wizard).
                     "castMeetings" => {
-                        let now = chrono::Utc::now();
-                        let from = (now - chrono::Duration::minutes(60)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
-                        let to = (now + chrono::Duration::minutes(60)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+                        let now = jiff::Timestamp::now();
+                        let from = teams_cli::clock::iso_secs(now - jiff::SignedDuration::from_mins(60));
+                        let to = teams_cli::clock::iso_secs(now + jiff::SignedDuration::from_mins(60));
                         let events = api::calendar::calendar_view(&client, &from, &to).await?;
                         let list: Vec<serde_json::Value> = api::calendar::cast_meetings(&events, now)
                             .into_iter()
@@ -29035,18 +29042,14 @@ impl qobject::Backend {
             self.as_mut().publish_chats();
         }
         let until = if duration == "Custom" {
-            chrono::DateTime::parse_from_rfc3339(&custom)
-                .ok()
-                .map(|t| t.with_timezone(&chrono::Local))
+            teams_cli::clock::parse_instant(&custom).map(teams_cli::clock::local)
         } else {
-            teams_cli::api::presence::expiry_for(&duration, chrono::Local::now())
+            teams_cli::api::presence::expiry_for(&duration, &teams_cli::clock::local_now())
         };
         let until = forced.as_ref().and(until);
         let until_iso = until
-            .map(|t| {
-                t.with_timezone(&chrono::Utc)
-                    .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
-            })
+            .as_ref()
+            .map(|t| teams_cli::clock::iso_ms(t.timestamp()))
             .unwrap_or_default();
         self.as_mut()
             .set_my_status_ends(QString::from(until_iso.as_str()));
@@ -29101,17 +29104,15 @@ impl qobject::Backend {
             custom.to_string(),
         );
         let until = if choice == "Custom" {
-            chrono::DateTime::parse_from_rfc3339(&custom)
-                .ok()
-                .map(|t| t.with_timezone(&chrono::Local))
+            teams_cli::clock::parse_instant(&custom).map(teams_cli::clock::local)
         } else {
-            teams_cli::api::presence::expiry_for(&choice, chrono::Local::now())
+            teams_cli::api::presence::expiry_for(&choice, &teams_cli::clock::local_now())
         };
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let http = reqwest::Client::new();
             let result =
-                teams_cli::api::presence::publish_note(&http, &message, pinned, until).await;
+                teams_cli::api::presence::publish_note(&http, &message, pinned, until.clone()).await;
             let _ = qt.queue(move |mut this| {
                 // Yours as the presence service will now say (Never is the
                 // year 9999).
@@ -29121,7 +29122,7 @@ impl qobject::Backend {
                         "text": if cleared { String::new() } else { teams_cli::api::presence::note_plain(&message) },
                         "html": if cleared { String::new() } else { teams_cli::api::messages::sanitize_html_marking(&teams_cli::api::presence::note_html_any(&message), &[]) },
                         "pinned": pinned && !cleared,
-                        "expiry": if cleared { String::new() } else { until.map(|t| t.with_timezone(&chrono::Utc).to_rfc3339_opts(chrono::SecondsFormat::Millis, true)).unwrap_or_else(|| "9999-12-31T23:59:59.999Z".into()) },
+                        "expiry": if cleared { String::new() } else { until.map(|t| teams_cli::clock::iso_ms(t.timestamp())).unwrap_or_else(|| "9999-12-31T23:59:59.999Z".into()) },
                     })
                     .to_string();
                     this.as_mut().set_my_note_json(QString::from(note.as_str()));
@@ -29405,10 +29406,10 @@ impl qobject::Backend {
                     Ok(org) => card["org"] = org,
                     Err(e) => tracing::warn!("org chart: {}", short_error(&e)),
                 }
-                if let Some(start) = card["schedule"]["start"].as_str().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                if let Some(start) = card["schedule"]["start"].as_str().and_then(teams_cli::clock::parse_instant)
                     && let Some(view) = card["schedule"]["view"].as_str()
                 {
-                    card["schedule"]["nextFree"] = json!(api::profile::next_free(view, start.with_timezone(&chrono::Utc)).map(|t| t.to_rfc3339()));
+                    card["schedule"]["nextFree"] = json!(api::profile::next_free(view, start).map(teams_cli::clock::rfc3339));
                 }
                 anyhow::Ok(card)
             }
@@ -30089,7 +30090,7 @@ impl qobject::Backend {
                 v["starting"] = json!(false);
                 match result {
                     Ok(entity) => {
-                        let days = api::premium::days_left(&entity, chrono::Utc::now());
+                        let days = api::premium::days_left(&entity, jiff::Timestamp::now());
                         v["started"] = json!(true);
                         v["offered"] = json!(false);
                         v["inTrial"] = json!(true);
@@ -30225,7 +30226,7 @@ impl qobject::Backend {
             };
             let preview = preview_allowed && load_settings().get("publicPreview").and_then(|v| v.as_str()) == Some("true");
             let result = if preview { api::updates::latest_preview_release(&http).await } else { api::updates::latest_release(&http).await };
-            let now = chrono::Utc::now().timestamp_millis();
+            let now = teams_cli::clock::now_ms();
             let v = match result {
                 Ok(release) => {
                     let mut map = load_settings();

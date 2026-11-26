@@ -411,7 +411,7 @@ pub fn current_formats() -> Formats {
     current().read().unwrap().clone()
 }
 
-/// A .NET pattern as a chrono (strftime) format.
+/// A .NET pattern as a strftime format.
 pub fn to_strftime(pattern: &str) -> String {
     let chars: Vec<char> = pattern.chars().collect();
     let mut out = String::new();
@@ -468,50 +468,32 @@ pub fn to_strftime(pattern: &str) -> String {
     out
 }
 
-fn fmt<Tz: chrono::TimeZone>(t: &chrono::DateTime<Tz>, pattern: &str) -> String
-where
-    Tz::Offset: std::fmt::Display,
-{
-    t.format(&to_strftime(pattern)).to_string()
+fn fmt(t: &jiff::ZonedDateTime, pattern: &str) -> String {
+    crate::clock::format(t, &to_strftime(pattern))
 }
 
 /// A time as the short time format shows it ("4:09 PM", "16:09").
-pub fn short_time<Tz: chrono::TimeZone>(t: &chrono::DateTime<Tz>) -> String
-where
-    Tz::Offset: std::fmt::Display,
-{
+pub fn short_time(t: &jiff::ZonedDateTime) -> String {
     fmt(t, &current_formats().short_time)
 }
 
 /// With seconds.
-pub fn long_time<Tz: chrono::TimeZone>(t: &chrono::DateTime<Tz>) -> String
-where
-    Tz::Offset: std::fmt::Display,
-{
+pub fn long_time(t: &jiff::ZonedDateTime) -> String {
     fmt(t, &current_formats().long_time)
 }
 
 /// A date as the short date format shows it ("11/14/2026").
-pub fn short_date<Tz: chrono::TimeZone>(t: &chrono::DateTime<Tz>) -> String
-where
-    Tz::Offset: std::fmt::Display,
-{
+pub fn short_date(t: &jiff::ZonedDateTime) -> String {
     fmt(t, &current_formats().short_date)
 }
 
 /// The short date with a two-digit year ("11/14/26").
-pub fn short_date_yy<Tz: chrono::TimeZone>(t: &chrono::DateTime<Tz>) -> String
-where
-    Tz::Offset: std::fmt::Display,
-{
+pub fn short_date_yy(t: &jiff::ZonedDateTime) -> String {
     fmt(t, &current_formats().short_date.replace("yyyy", "yy"))
 }
 
 /// Short date and time ("11/14/2026 4:09 PM").
-pub fn date_time<Tz: chrono::TimeZone>(t: &chrono::DateTime<Tz>) -> String
-where
-    Tz::Offset: std::fmt::Display,
-{
+pub fn date_time(t: &jiff::ZonedDateTime) -> String {
     format!("{} {}", short_date(t), short_time(t))
 }
 
@@ -634,8 +616,15 @@ mod tests {
         assert_eq!(to_strftime("dd.MM.yyyy HH:mm:ss"), "%d.%m.%Y %H:%M:%S");
         assert_eq!(to_strftime("dddd, MMMM d 'at' h"), "%A, %B %-d at %-I");
         assert_eq!(to_strftime("'100%' yy"), "100%% %y");
-        use chrono::TimeZone;
-        let t = chrono::Utc.with_ymd_and_hms(2026, 1, 31, 16, 9, 5).unwrap();
+        let utc = |y, mo, d, h, mi, s| {
+            crate::clock::utc(
+                jiff::civil::datetime(y, mo, d, h, mi, s, 0)
+                    .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                    .unwrap()
+                    .timestamp(),
+            )
+        };
+        let t = utc(2026, 1, 31, 16, 9, 5);
         assert_eq!(fmt(&t, "M/d/yyyy h:mm tt"), "1/31/2026 4:09 PM");
         assert_eq!(fmt(&t, "dd/MM/yyyy HH:mm"), "31/01/2026 16:09");
         assert_eq!(fmt(&t, "dddd, MMMM d, yyyy"), "Saturday, January 31, 2026");
@@ -644,10 +633,10 @@ mod tests {
         assert_eq!(fmt(&t, "hh:mm:ss tt"), "04:09:05 PM");
         assert_eq!(fmt(&t, "yyyy'年'M'月'd'日'"), "2026年1月31日");
         assert_eq!(fmt(&t, "'100%' d.M."), "100% 31.1.");
-        let midnight = chrono::Utc.with_ymd_and_hms(2026, 7, 4, 0, 5, 0).unwrap();
+        let midnight = utc(2026, 7, 4, 0, 5, 0);
         assert_eq!(fmt(&midnight, "h:mm tt"), "12:05 AM");
         assert_eq!(fmt(&midnight, "HH:mm"), "00:05");
-        let noon = chrono::Utc.with_ymd_and_hms(2026, 7, 4, 12, 0, 9).unwrap();
+        let noon = utc(2026, 7, 4, 12, 0, 9);
         assert_eq!(fmt(&noon, "h:mm:ss tt"), "12:00:09 PM");
         assert_eq!(fmt(&noon, "M/d/yy"), "7/4/26");
         assert_eq!(available_app_languages().len(), 109);

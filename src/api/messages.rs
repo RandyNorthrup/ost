@@ -409,11 +409,9 @@ pub fn split_forward(
         .and_then(|t| {
             t.as_i64().or_else(|| {
                 let s = t.as_str()?;
-                s.parse().ok().or_else(|| {
-                    chrono::DateTime::parse_from_rfc3339(s)
-                        .ok()
-                        .map(|d| d.timestamp_millis())
-                })
+                s.parse()
+                    .ok()
+                    .or_else(|| crate::clock::parse_instant(s).map(crate::clock::millis))
             })
         })
         .unwrap_or(0);
@@ -944,18 +942,15 @@ fn utc_time(v: Option<&serde_json::Value>) -> String {
     match v {
         Some(serde_json::Value::Number(n)) => n
             .as_i64()
-            .and_then(chrono::DateTime::from_timestamp_millis)
-            .map(|t| t.to_rfc3339())
+            .and_then(crate::clock::from_ms)
+            .map(crate::clock::rfc3339)
             .unwrap_or_default(),
-        Some(serde_json::Value::String(s)) => chrono::DateTime::parse_from_rfc3339(s)
-            .map(|t| t.with_timezone(&chrono::Utc).to_rfc3339())
-            .or_else(|_| {
-                chrono::NaiveDateTime::parse_from_str(
-                    s.trim_end_matches('Z'),
-                    "%Y-%m-%dT%H:%M:%S%.f",
-                )
-                .map(|t| t.and_utc().to_rfc3339())
+        Some(serde_json::Value::String(s)) => crate::clock::parse_instant(s)
+            .or_else(|| {
+                crate::clock::parse_naive(s.trim_end_matches('Z'), "%Y-%m-%dT%H:%M:%S%.f")
+                    .and_then(crate::clock::as_utc)
             })
+            .map(crate::clock::rfc3339)
             .unwrap_or_default(),
         _ => String::new(),
     }
@@ -1080,11 +1075,7 @@ fn call_id_of(content: &str) -> String {
 
 /// Fold each call's recordings and transcript into its ended row as
 /// Teams' recap card (only calls that have either get one).
-pub fn attach_recaps(
-    raw: &[serde_json::Value],
-    out: &mut [MessageView],
-    now: chrono::DateTime<chrono::Utc>,
-) {
+pub fn attach_recaps(raw: &[serde_json::Value], out: &mut [MessageView], now: jiff::Timestamp) {
     use std::collections::HashMap;
     let mut recaps: HashMap<String, Recap> = HashMap::new();
     let mut ends: HashMap<String, (String, String, String, String)> = HashMap::new();
@@ -1168,13 +1159,9 @@ pub fn attach_recaps(
         let can_expire = xml_attr(content, "RecordingContent", "canVideoExpire")
             .is_some_and(|v| v.eq_ignore_ascii_case("true"));
         let expires_days = can_expire
-            .then(|| chrono::DateTime::parse_from_rfc3339(&timestamp).ok())
+            .then(|| crate::clock::parse_instant(&timestamp))
             .flatten()
-            .map(|t| {
-                ((t.with_timezone(&chrono::Utc) + chrono::Duration::days(120) - now).num_seconds()
-                    + 86_399)
-                    / 86_400
-            })
+            .map(|t| ((t + crate::clock::days(120) - now).as_secs() + 86_399) / 86_400)
             .map(|d| d.max(0));
         let thumb = xml_attr(content, "URIObject", "url_thumbnail")
             .filter(|u| u.starts_with("https://"))
@@ -1209,11 +1196,10 @@ pub fn attach_recaps(
             // Teams reads these times as UTC (it appends " +00:00").
             // On the wire: "11/19/2026 04:40:00" (or ISO without a zone).
             let utc = |t: &str| {
-                if let Ok(d) = chrono::NaiveDateTime::parse_from_str(t.trim(), "%m/%d/%Y %H:%M:%S")
+                if let Some(d) = crate::clock::parse_naive(t.trim(), "%m/%d/%Y %H:%M:%S")
+                    .and_then(crate::clock::as_utc)
                 {
-                    return d
-                        .and_utc()
-                        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+                    return crate::clock::iso_secs(d);
                 }
                 if t.is_empty() || t.ends_with('Z') || t.contains('+') {
                     t.to_string()
@@ -1270,7 +1256,7 @@ pub struct ChatEvent {
 ///
 /// Transcript-only messages, and a recording's paired transcript start and
 /// stop, show nothing (Teams keeps them in the meeting's recap).
-pub fn recording_event(content: &str, now: chrono::DateTime<chrono::Utc>) -> Option<ChatEvent> {
+pub fn recording_event(content: &str, now: jiff::Timestamp) -> Option<ChatEvent> {
     let attr = |tag: &str, name: &str| -> Option<String> {
         let start = content.find(&format!("<{tag} "))?;
         let head = &content[start..start + content[start..].find('>')?];
@@ -1315,10 +1301,9 @@ pub fn recording_event(content: &str, now: chrono::DateTime<chrono::Utc>) -> Opt
             // policy); Teams counts the days left up.
             if attr("RecordingContent", "canVideoExpire").as_deref() == Some("True")
                 && let Some(start) = attr("RecordingContent", "timestamp")
-                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(&t).ok())
+                    .and_then(|t| crate::clock::parse_instant(&t))
             {
-                let left = (start.with_timezone(&chrono::Utc) + chrono::Duration::days(120) - now)
-                    .num_seconds();
+                let left = (start + crate::clock::days(120) - now).as_secs();
                 e.value = ((left + 86_399) / 86_400).max(0).to_string();
             }
             e.link = content
@@ -2035,7 +2020,7 @@ pub async fn read_timeline_page(
         .collect();
     sort_by_arrival(&mut out);
     if let Some(raw) = v.get("messages").and_then(|m| m.as_array()) {
-        attach_recaps(raw, &mut out, chrono::Utc::now());
+        attach_recaps(raw, &mut out, jiff::Timestamp::now());
     }
     name_events(client, chat_id, &mut out).await;
     let older = v.get("_metadata").and_then(backward_token);
@@ -2760,10 +2745,10 @@ fn channel_meeting(m: &serde_json::Value, content: &str) -> ChannelMeeting {
             .trim()
             .replace("&amp;", "&")
     };
-    let started_at =
-        chrono::NaiveDateTime::parse_from_str(&tag("conversationStartTime"), "%m/%d/%Y %H:%M:%S")
-            .map(|t| t.and_utc().to_rfc3339())
-            .unwrap_or_default();
+    let started_at = crate::clock::parse_naive(&tag("conversationStartTime"), "%m/%d/%Y %H:%M:%S")
+        .and_then(crate::clock::as_utc)
+        .map(crate::clock::rfc3339)
+        .unwrap_or_default();
     let s = |v: &serde_json::Value, k: &str| {
         v.get(k)
             .and_then(|x| x.as_str())
@@ -2938,7 +2923,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         });
     }
     if kind == "RichText/Media_CallRecording" {
-        let event = recording_event(&s("/content"), chrono::Utc::now())?;
+        let event = recording_event(&s("/content"), jiff::Timestamp::now())?;
         return Some(MessageView {
             kind: "event".into(),
             event: Some(event),
@@ -8091,9 +8076,7 @@ mod paging_and_event_tests {
             call_id: "c1".into(),
             ..Default::default()
         }];
-        let now = chrono::DateTime::parse_from_rfc3339("2026-11-20T16:00:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = crate::clock::parse_instant("2026-11-20T16:00:00Z").unwrap();
         attach_recaps(&raw, &mut out, now);
         let r = out[0].recap.as_ref().unwrap();
         assert_eq!(r.subject, "OST TEST");
@@ -8107,9 +8090,7 @@ mod paging_and_event_tests {
 
     #[test]
     fn recordings_are_teams_control_rows() {
-        let now = chrono::DateTime::parse_from_rfc3339("2026-11-10T16:40:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = crate::clock::parse_instant("2026-11-10T16:40:00Z").unwrap();
         let rec = |status: &str, types: &str, extra: &str| {
             format!(
                 "<URIObject type=\"Video.2/CallRecording.1\"><RecordingStatus status=\"{status}\" code=\"0\"></RecordingStatus><RecordingContent contentTypes=\"{types}\" timestamp=\"2026-11-08T23:57:07.8493222Z\" duration=\"0:07:23.8\" canVideoExpire=\"True\"><item type=\"onedriveForBusinessVideo\" uri=\"https://x-my.sharepoint.com/rec.mp4\" /></RecordingContent><RecordingInitiatorId value=\"8:orgid:me\" isAutoRecording=\"False\" /><RecordingTerminatorId value=\"8:orgid:me\" /><RecordingStorage type=\"MeetingOrganizerOneDrive\" userId=\"me\" />{extra}</URIObject>"

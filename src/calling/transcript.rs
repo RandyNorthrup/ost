@@ -176,9 +176,7 @@ fn speaker_name(id: &str, name: &str) -> String {
 /// A stored time: ISO 8601, or 100 ns ticks since 1900.
 fn stored_ms(v: Option<&Value>) -> Option<i64> {
     match v? {
-        Value::String(t) => chrono::DateTime::parse_from_rfc3339(t)
-            .ok()
-            .map(|d| d.timestamp_millis()),
+        Value::String(t) => crate::clock::parse_instant(t).map(crate::clock::millis),
         Value::Number(n) => n.as_i64().map(ntp_ticks_to_ms),
         _ => None,
     }
@@ -220,8 +218,8 @@ pub fn from_live(payload: &Value) -> Vec<Entry> {
 }
 
 fn iso_ms(t: &str) -> i64 {
-    chrono::DateTime::parse_from_rfc3339(t)
-        .map(|d| d.timestamp_millis())
+    crate::clock::parse_instant(t)
+        .map(crate::clock::millis)
         .unwrap_or_default()
 }
 
@@ -415,8 +413,8 @@ mod tests {
     fn ntp_ticks() {
         // 2026-11-09T02:22:… from a captured final.
         let ms = ntp_ticks_to_ms(40031800316768100);
-        let d = chrono::DateTime::from_timestamp_millis(ms).unwrap();
-        assert_eq!(d.format("%Y-%m-%d").to_string(), "2026-11-09");
+        let d = crate::clock::from_ms(ms).unwrap();
+        assert_eq!(crate::clock::format(d, "%Y-%m-%d"), "2026-11-09");
     }
 
     #[test]

@@ -473,7 +473,7 @@ pub fn context_from(
         "osLocaleInfo": { "platform": "windows", "regionalFormat": "en-us", "shortDate": "M/d/yyyy", "longDate": "dddd, MMMM d, yyyy",
                           "shortTime": "h:mm tt", "longTime": "h:mm:ss tt", "timezone": iana_zone() },
         "parentMessageId": "",
-        "userClickTime": chrono::Utc::now().timestamp_millis(),
+        "userClickTime": crate::clock::now_ms(),
         "userClickTimeV2": 0,
         "userFileOpenPreference": "inline",
         "manifestVersion": if manifest_version.is_empty() { "devPreview" } else { manifest_version },

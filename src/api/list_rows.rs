@@ -9,7 +9,10 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, TimeZone};
+use jiff::ZonedDateTime;
+use jiff::civil::Date;
+
+use crate::clock;
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -133,57 +136,57 @@ pub fn friendly_display(code: &str) -> String {
     }
 }
 
-fn time_of(t: &DateTime<Local>) -> String {
-    t.format("%-I:%M %p").to_string()
+fn time_of(t: &ZonedDateTime) -> String {
+    clock::format(t, "%-I:%M %p")
 }
 
 /// The same wording from a time, for rows SharePoint didn't word (as its
 /// server does: this week by weekday, then days, then the date).
-pub fn friendly_at(t: DateTime<Local>, now: DateTime<Local>) -> String {
-    let secs = (now - t).num_seconds();
-    let (day, today) = (t.date_naive(), now.date_naive());
+pub fn friendly_at(t: &ZonedDateTime, now: &ZonedDateTime) -> String {
+    let secs = now.duration_since(t).as_secs();
+    let (day, today) = (t.date(), now.date());
     if secs < -300 {
         return date_words(day, today);
     }
-    let days = (today - day).num_days();
+    let days = clock::days_between(day, today);
     match secs {
         s if s < 60 => "A few seconds ago".into(),
         s if s < 120 => "About a minute ago".into(),
         s if s < 3600 => plural(s / 60, "{0} minute ago", "{0} minutes ago"),
         s if s < 7200 => "About an hour ago".into(),
         s if days == 0 => plural(s / 3600, "{0} hour ago", "{0} hours ago"),
-        _ if days == 1 => format!("Yesterday at {}", time_of(&t)),
+        _ if days == 1 => format!("Yesterday at {}", time_of(t)),
         // Since Sunday: the weekday.
-        _ if days < i64::from(today.weekday().num_days_from_sunday()) + 1 => {
-            format!("{} at {}", t.format("%A"), time_of(&t))
+        _ if days < i64::from(today.weekday().to_sunday_zero_offset()) + 1 => {
+            format!("{} at {}", clock::format(t, "%A"), time_of(t))
         }
         _ if days < 7 => plural(days, "{0} day ago", "{0} days ago"),
         _ => date_words(day, today),
     }
 }
 
-fn date_words(day: NaiveDate, today: NaiveDate) -> String {
+fn date_words(day: Date, today: Date) -> String {
     if day.year() == today.year() {
-        day.format("%B %-d").to_string()
+        clock::format(day, "%B %-d")
     } else {
-        day.format("%B %-d, %Y").to_string()
+        clock::format(day, "%B %-d, %Y")
     }
 }
 
 /// The Activity column's time ("Yesterday at 10:37 PM", "Sun at 3:41 PM",
 /// "Nov 5"): OneDrive's client wording.
-pub fn activity_time(t: DateTime<Local>, now: DateTime<Local>) -> String {
-    let ms = (now - t).num_milliseconds();
-    let (day, today) = (t.date_naive(), now.date_naive());
-    let short = |d: NaiveDate| {
+pub fn activity_time(t: &ZonedDateTime, now: &ZonedDateTime) -> String {
+    let ms = now.duration_since(t).as_millis() as i64;
+    let (day, today) = (t.date(), now.date());
+    let short = |d: Date| {
         if d.year() == today.year() {
-            d.format("%b %-d").to_string()
+            clock::format(d, "%b %-d")
         } else {
-            d.format("%b %-d, %Y").to_string()
+            clock::format(d, "%b %-d, %Y")
         }
     };
     if ms < -300_000 {
-        return t.format("%b %-d").to_string();
+        return clock::format(t, "%b %-d");
     }
     if ms < 120_000 {
         return "Just now".into();
@@ -194,11 +197,11 @@ pub fn activity_time(t: DateTime<Local>, now: DateTime<Local>) -> String {
     if day == today {
         return format!("{}h ago", (ms as f64 / 3_600_000.0).round() as i64);
     }
-    if day >= today - Duration::days(1) {
-        return format!("Yesterday at {}", time_of(&t));
+    if day >= clock::add_days(today, -1) {
+        return format!("Yesterday at {}", time_of(t));
     }
-    if day >= today - Duration::days(6) {
-        return format!("{} at {}", t.format("%a"), time_of(&t));
+    if day >= clock::add_days(today, -6) {
+        return format!("{} at {}", clock::format(t, "%a"), time_of(t));
     }
     short(day)
 }
@@ -390,15 +393,15 @@ pub fn activity(raw: &str, me: &str) -> Option<Activity> {
 
 /// One `RenderListDataAsStream` row, keyed by its unique id (lowercase,
 /// without braces, as Graph's `sharepointIds.listItemUniqueId`).
-pub fn parse_row(row: &Value, me: &str, now: DateTime<Local>) -> Option<(String, RowInfo)> {
+pub fn parse_row(row: &Value, me: &str, now: &ZonedDateTime) -> Option<(String, RowInfo)> {
     let id = row["UniqueId"]
         .as_str()?
         .trim_matches(|c| c == '{' || c == '}')
         .to_ascii_lowercase();
     let s = |k: &str| row[k].as_str().unwrap_or_default();
     let modified_text = match s("Modified.FriendlyDisplay") {
-        "" => DateTime::parse_from_rfc3339(s("Modified."))
-            .map(|t| friendly_at(Local.from_utc_datetime(&t.naive_utc()), now))
+        "" => clock::parse_instant(s("Modified."))
+            .map(|t| friendly_at(&clock::local(t), now))
             .unwrap_or_default(),
         code => friendly_display(code),
     };
@@ -709,12 +712,12 @@ pub async fn folder_filtered(
         &[("user-agent", super::client::TEAMS_WEB_UA)],
     )
     .await?;
-    let now = Local::now();
+    let now = clock::local_now();
     Ok(reply["Row"]
         .as_array()
         .into_iter()
         .flatten()
-        .filter_map(|r| parse_row(r, me, now))
+        .filter_map(|r| parse_row(r, me, &now))
         .collect())
 }
 
@@ -906,20 +909,18 @@ pub fn shortcut_items(reply: &Value, site: &str, list: &str) -> Vec<super::drive
 pub fn decorate(
     item: &super::drive::DriveItem,
     row: Option<&RowInfo>,
-    now: DateTime<Local>,
+    now: &ZonedDateTime,
 ) -> Value {
     let mut v = serde_json::to_value(item).unwrap_or_default();
-    let t = DateTime::parse_from_rfc3339(&item.modified)
-        .ok()
-        .map(|t| t.with_timezone(&Local));
+    let t = clock::parse_instant(&item.modified).map(clock::local);
     v["modified_text"] = json!(match row {
         Some(r) if !r.modified_text.is_empty() => r.modified_text.clone(),
-        _ => t.map(|t| friendly_at(t, now)).unwrap_or_default(),
+        _ => t.as_ref().map(|t| friendly_at(t, now)).unwrap_or_default(),
     });
     v["modified_title"] = json!(match row {
         Some(r) if !r.modified_title.is_empty() => r.modified_title.clone(),
         _ => t
-            .map(|t| t.format("%-m/%-d/%Y %-I:%M %p").to_string())
+            .map(|t| clock::format(&t, "%-m/%-d/%Y %-I:%M %p"))
             .unwrap_or_default(),
     });
     if let Some(r) = row {
@@ -931,9 +932,7 @@ pub fn decorate(
         v["is_new"] = json!(r.is_new);
         v["folder_color"] = json!(r.color);
         if let Some(a) = &r.activity {
-            let when = DateTime::parse_from_rfc3339(&a.time)
-                .ok()
-                .map(|t| activity_time(t.with_timezone(&Local), now));
+            let when = clock::parse_instant(&a.time).map(|t| activity_time(&clock::local(t), now));
             v["activity"] =
                 json!({ "kind": a.kind, "text": a.text, "time": when.unwrap_or_default() });
         }
@@ -1052,8 +1051,8 @@ mod tests {
         );
     }
 
-    fn at(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> DateTime<Local> {
-        Local.with_ymd_and_hms(y, mo, d, h, mi, 0).unwrap()
+    fn at(y: i16, mo: i8, d: i8, h: i8, mi: i8) -> ZonedDateTime {
+        clock::local_single(jiff::civil::datetime(y, mo, d, h, mi, 0, 0)).unwrap()
     }
 
     #[test]
@@ -1088,39 +1087,70 @@ mod tests {
     fn local_wording_matches_the_server_on_the_same_dates() {
         let now = at(2026, 11, 12, 7, 27);
         assert_eq!(
-            friendly_at(at(2026, 11, 11, 22, 28), now),
+            friendly_at(&at(2026, 11, 11, 22, 28), &now),
             "Yesterday at 10:28 PM"
         );
         assert_eq!(
-            friendly_at(at(2026, 11, 8, 15, 41), now),
+            friendly_at(&at(2026, 11, 8, 15, 41), &now),
             "Sunday at 3:41 PM"
         );
-        assert_eq!(friendly_at(at(2026, 11, 6, 8, 34), now), "6 days ago");
-        assert_eq!(friendly_at(at(2026, 11, 5, 20, 4), now), "November 5");
-        assert_eq!(friendly_at(at(2025, 3, 2, 9, 0), now), "March 2, 2025");
+        assert_eq!(friendly_at(&at(2026, 11, 6, 8, 34), &now), "6 days ago");
+        assert_eq!(friendly_at(&at(2026, 11, 5, 20, 4), &now), "November 5");
+        assert_eq!(friendly_at(&at(2025, 3, 2, 9, 0), &now), "March 2, 2025");
         assert_eq!(
-            friendly_at(at(2026, 11, 12, 7, 26), now),
+            friendly_at(&at(2026, 11, 12, 7, 26), &now),
             "About a minute ago"
         );
-        assert_eq!(friendly_at(at(2026, 11, 12, 7, 0), now), "27 minutes ago");
-        assert_eq!(friendly_at(at(2026, 11, 12, 1, 0), now), "6 hours ago");
+        assert_eq!(friendly_at(&at(2026, 11, 12, 7, 0), &now), "27 minutes ago");
+        assert_eq!(friendly_at(&at(2026, 11, 12, 1, 0), &now), "6 hours ago");
+    }
+
+    #[test]
+    fn wording_holds_across_dst_changes() {
+        let tz = jiff::tz::TimeZone::posix("EST5EDT,M3.2.0,M11.1.0").unwrap();
+        let at = |mo, d, h, mi| {
+            clock::single(&tz, jiff::civil::datetime(2026, mo, d, h, mi, 0, 0)).unwrap()
+        };
+        // The day after the clocks went back: yesterday's times on their
+        // own clock.
+        let now = at(11, 2, 9, 0);
+        assert_eq!(
+            friendly_at(&at(11, 1, 0, 30), &now),
+            "Yesterday at 12:30 AM"
+        );
+        assert_eq!(
+            activity_time(&at(11, 1, 3, 0), &now),
+            "Yesterday at 3:00 AM"
+        );
+        // Hours ago are real hours: 23:00 on the 25-hour day is 24 hours
+        // after its midnight, 12:00 on the 23-hour day 11 hours.
+        let now = at(11, 1, 23, 0);
+        assert_eq!(friendly_at(&at(11, 1, 0, 0), &now), "24 hours ago");
+        assert_eq!(activity_time(&at(11, 1, 0, 0), &now), "24h ago");
+        let now = at(3, 8, 12, 0);
+        assert_eq!(friendly_at(&at(3, 8, 0, 0), &now), "11 hours ago");
+        assert_eq!(activity_time(&at(3, 8, 0, 0), &now), "11h ago");
+        assert_eq!(
+            activity_time(&at(3, 7, 23, 0), &now),
+            "Yesterday at 11:00 PM"
+        );
     }
 
     #[test]
     fn activity_times_read_as_teams() {
         let now = at(2026, 11, 12, 7, 31);
         assert_eq!(
-            activity_time(at(2026, 11, 11, 22, 37), now),
+            activity_time(&at(2026, 11, 11, 22, 37), &now),
             "Yesterday at 10:37 PM"
         );
         assert_eq!(
-            activity_time(at(2026, 11, 8, 15, 41), now),
+            activity_time(&at(2026, 11, 8, 15, 41), &now),
             "Sun at 3:41 PM"
         );
-        assert_eq!(activity_time(at(2026, 11, 5, 9, 0), now), "Nov 5");
-        assert_eq!(activity_time(at(2026, 11, 12, 7, 30), now), "Just now");
-        assert_eq!(activity_time(at(2026, 11, 12, 7, 1), now), "30m ago");
-        assert_eq!(activity_time(at(2026, 11, 12, 2, 0), now), "6h ago");
+        assert_eq!(activity_time(&at(2026, 11, 5, 9, 0), &now), "Nov 5");
+        assert_eq!(activity_time(&at(2026, 11, 12, 7, 30), &now), "Just now");
+        assert_eq!(activity_time(&at(2026, 11, 12, 7, 1), &now), "30m ago");
+        assert_eq!(activity_time(&at(2026, 11, 12, 2, 0), &now), "6h ago");
     }
 
     #[test]
@@ -1166,7 +1196,7 @@ mod tests {
         let row = json!({"UniqueId": "{1DD3508E-41D2-4FB6-8358-D55E775D08EB}", "Modified": "11/11/2026 10:28 PM",
             "Modified.": "2026-11-12T06:28:11Z", "Modified.FriendlyDisplay": "1|0|5|10:28 PM", "PrincipalCount": "1",
             "Created_x0020_Date.ifnew": "1", "_activity": ""});
-        let (id, info) = parse_row(&row, "me@x", at(2026, 11, 12, 7, 0)).unwrap();
+        let (id, info) = parse_row(&row, "me@x", &at(2026, 11, 12, 7, 0)).unwrap();
         assert_eq!(id, "1dd3508e-41d2-4fb6-8358-d55e775d08eb");
         assert_eq!(
             info,

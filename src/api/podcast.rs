@@ -44,9 +44,7 @@ pub fn ticks_iso(ticks: &str) -> String {
         return String::new();
     }
     let ms = (t - 621_355_968_000_000_000) / 10_000;
-    chrono::DateTime::from_timestamp_millis(ms)
-        .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
-        .unwrap_or_default()
+    crate::clock::ms_iso(ms).unwrap_or_default()
 }
 
 /// A TranscriptV2 resource as an audio recap's transcript (Teams reads
@@ -107,9 +105,7 @@ pub struct Meeting {
 }
 
 fn iso_ms(ms: i64) -> String {
-    chrono::DateTime::from_timestamp_millis(ms)
-        .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
-        .unwrap_or_default()
+    crate::clock::ms_iso(ms).unwrap_or_default()
 }
 
 /// Teams' consume check (does an audio recap of these transcripts exist?).

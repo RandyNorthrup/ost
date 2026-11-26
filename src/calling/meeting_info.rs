@@ -16,15 +16,16 @@
 //! - "November 6, 2026 at 3:00 PM - 3:30 PM" for a single meeting
 //! - "Occurs every Mon - Fri @ 9:00 AM until December 31" for a series
 
-use chrono::{DateTime, Datelike, TimeZone, Utc};
+use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use serde_json::Value;
 
 /// What the join response says about the meeting.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MeetingInfo {
     pub title: String,
-    pub start: Option<DateTime<Utc>>,
-    pub end: Option<DateTime<Utc>>,
+    pub start: Option<Timestamp>,
+    pub end: Option<Timestamp>,
     pub location: String,
     pub ical_uid: String,
     /// The join link Teams copies (the short /meet/ link when there is
@@ -66,8 +67,7 @@ pub fn from_join_response(json: &Value) -> Option<MeetingInfo> {
             .into_iter()
             .flatten()
             .find_map(|t| t.as_str())
-            .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
-            .map(|t| t.with_timezone(&Utc))
+            .and_then(crate::clock::parse_instant)
     };
     Some(MeetingInfo {
         title: s(&props, "subject"),
@@ -112,11 +112,8 @@ pub fn notes_title(info: &MeetingInfo) -> &str {
     }
 }
 
-fn time_of_day<Tz: TimeZone>(t: &DateTime<Tz>) -> String
-where
-    Tz::Offset: std::fmt::Display,
-{
-    crate::api::regional::short_time(t)
+fn time_of_day(t: Timestamp, tz: &TimeZone) -> String {
+    crate::api::regional::short_time(&t.to_zoned_datetime(tz.clone()))
 }
 
 /// Teams' `duration_full_mf` without days' seconds: "30 minutes",
@@ -146,16 +143,13 @@ fn duration_text(seconds: i64) -> String {
 }
 
 /// "3:00 PM - 3:30 PM (30 minutes)" in `tz`.
-pub fn hours_text<Tz: TimeZone>(start: DateTime<Utc>, end: DateTime<Utc>, tz: &Tz) -> Option<String>
-where
-    Tz::Offset: std::fmt::Display,
-{
-    let d = duration_text((end - start).num_seconds());
+pub fn hours_text(start: Timestamp, end: Timestamp, tz: &TimeZone) -> Option<String> {
+    let d = duration_text((end - start).as_secs());
     (!d.is_empty()).then(|| {
         format!(
             "{} - {} ({d})",
-            time_of_day(&start.with_timezone(tz)),
-            time_of_day(&end.with_timezone(tz))
+            time_of_day(start, tz),
+            time_of_day(end, tz)
         )
     })
 }
@@ -262,14 +256,7 @@ fn week_index(i: &str) -> String {
 /// every Mon - Fri @ 9:00 AM until December 31". None for no pattern.
 /// Teams' recurrence strings in the app language (its weekday and month
 /// names come from Intl, here as the code writes them).
-pub fn recurrence_text<Tz: TimeZone>(
-    recurrence: &Value,
-    start: DateTime<Utc>,
-    tz: &Tz,
-) -> Option<String>
-where
-    Tz::Offset: std::fmt::Display,
-{
+pub fn recurrence_text(recurrence: &Value, start: Timestamp, tz: &TimeZone) -> Option<String> {
     use crate::i18n::{fill, tr_id, tr_id_n};
     let p = recurrence.get("pattern")?;
     let interval = p
@@ -333,20 +320,20 @@ where
         ),
         _ => return None,
     };
-    let starttime = time_of_day(&start.with_timezone(tz));
+    let starttime = time_of_day(start, tz);
     let until = recurrence
         .pointer("/range/type")
         .and_then(Value::as_str)
         .filter(|t| *t == "endDate")
         .and_then(|_| recurrence.pointer("/range/endDate")?.as_str())
-        .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
+        .and_then(|d| crate::clock::parse_date(d, "%Y-%m-%d"));
     Some(match until {
         Some(u) => fill(
             &tr_id("%1 @ %2 until %3", "recurrence:k25q6lwga"),
             &[
                 &text,
                 &starttime,
-                &format!("{} {}", MONTHS[u.month0() as usize], u.day()),
+                &format!("{} {}", MONTHS[u.month() as usize - 1], u.day()),
             ],
         ),
         None => fill(
@@ -358,22 +345,15 @@ where
 
 /// The schedule line of a meeting that doesn't recur: "November 6, 2026
 /// at 3:00 PM - 3:30 PM".
-pub fn single_schedule_text<Tz: TimeZone>(
-    start: DateTime<Utc>,
-    end: DateTime<Utc>,
-    tz: &Tz,
-) -> String
-where
-    Tz::Offset: std::fmt::Display,
-{
-    let s = start.with_timezone(tz);
+pub fn single_schedule_text(start: Timestamp, end: Timestamp, tz: &TimeZone) -> String {
+    let s = start.to_zoned_datetime(tz.clone());
     format!(
         "{} {}, {} at {} - {}",
-        MONTHS[s.month0() as usize],
+        MONTHS[s.month() as usize - 1],
         s.day(),
         s.year(),
-        time_of_day(&s),
-        time_of_day(&end.with_timezone(tz))
+        time_of_day(start, tz),
+        time_of_day(end, tz)
     )
 }
 
@@ -653,8 +633,8 @@ fn pt_to_px(html: &str) -> String {
 mod tests {
     use super::*;
 
-    fn utc(s: &str) -> DateTime<Utc> {
-        DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc)
+    fn utc(s: &str) -> Timestamp {
+        crate::clock::parse_instant(s).unwrap()
     }
 
     #[test]
@@ -696,7 +676,7 @@ mod tests {
 
     #[test]
     fn lines_as_teams_writes_them() {
-        let pst = chrono::FixedOffset::west_opt(8 * 3600).unwrap();
+        let pst = TimeZone::fixed(jiff::tz::offset(-8));
         let (s, e) = (utc("2026-11-06T23:00:00Z"), utc("2026-11-06T23:30:00Z"));
         assert_eq!(
             hours_text(s, e, &pst).as_deref(),
@@ -720,7 +700,7 @@ mod tests {
 
     #[test]
     fn recurrence_as_teams_writes_it() {
-        let pst = chrono::FixedOffset::west_opt(8 * 3600).unwrap();
+        let pst = TimeZone::fixed(jiff::tz::offset(-8));
         let s = utc("2026-11-09T17:00:00Z");
         let r = |p: Value, range: Value| {
             recurrence_text(&serde_json::json!({"pattern": p, "range": range}), s, &pst)

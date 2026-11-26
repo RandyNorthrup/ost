@@ -97,9 +97,7 @@ fn me(client: &TeamsClient) -> Result<String> {
 }
 
 pub async fn add_delegate(client: &TeamsClient, delegate_mri: &str) -> Result<()> {
-    let now = chrono::Utc::now()
-        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
-        .to_string();
+    let now = crate::clock::now_iso_ms();
     mt_send(
         client,
         reqwest::Method::POST,

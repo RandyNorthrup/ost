@@ -1849,8 +1849,8 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
                 conv.last_message
                     .as_ref()
                     .and_then(|m| m.original_arrival_time.as_deref())
-                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-                    .map(|t| t.timestamp_millis()),
+                    .and_then(crate::clock::parse_instant)
+                    .map(crate::clock::millis),
             ),
             backroom,
             topic,
@@ -1866,8 +1866,8 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
                     .last_message
                     .as_ref()
                     .and_then(|m| m.original_arrival_time.as_deref())
-                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-                    .map(|t| t.timestamp_millis())
+                    .and_then(crate::clock::parse_instant)
+                    .map(crate::clock::millis)
                     .unwrap_or(0);
                 let joined = conv
                     .thread_properties

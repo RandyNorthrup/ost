@@ -848,11 +848,8 @@ pub fn permissions(keys: &[String]) -> Vec<PermissionCategory> {
 
 /// date-fns' formatDistanceStrict with a suffix, as Teams dates reviews:
 /// "2 days ago", "1 year ago".
-pub fn relative_time(
-    then: chrono::DateTime<chrono::Utc>,
-    now: chrono::DateTime<chrono::Utc>,
-) -> String {
-    let secs = (now - then).num_milliseconds() as f64 / 1000.0;
+pub fn relative_time(then: jiff::Timestamp, now: jiff::Timestamp) -> String {
+    let secs = (now - then).as_millis() as i64 as f64 / 1000.0;
     let past = secs >= 0.0;
     let minutes = secs.abs() / 60.0;
     let (n, unit) = if minutes < 1.0 {
@@ -877,7 +874,7 @@ pub fn relative_time(
     }
 }
 
-fn review_from(v: &serde_json::Value, now: chrono::DateTime<chrono::Utc>) -> Review {
+fn review_from(v: &serde_json::Value, now: jiff::Timestamp) -> Review {
     let me = v
         .pointer("/author/me")
         .and_then(|m| m.as_bool())
@@ -897,8 +894,8 @@ fn review_from(v: &serde_json::Value, now: chrono::DateTime<chrono::Utc>) -> Rev
     } else {
         name.to_string()
     };
-    let when = chrono::DateTime::parse_from_rfc3339(str_at(v, "updatedAt"))
-        .map(|d| relative_time(d.with_timezone(&chrono::Utc), now))
+    let when = crate::clock::parse_instant(str_at(v, "updatedAt"))
+        .map(|d| relative_time(d, now))
         .unwrap_or_default();
     Review {
         id: str_at(v, "id").into(),
@@ -1211,7 +1208,7 @@ pub(crate) async fn suggestions_token() -> Result<String> {
 
 /// Teams' clientInfo header for these services.
 pub(crate) fn client_info() -> String {
-    let offset = chrono::Local::now().offset().local_minus_utc();
+    let offset = crate::clock::local_offset_seconds();
     let sign = if offset < 0 { '-' } else { '+' };
     let o = offset.abs();
     format!(
@@ -1378,7 +1375,7 @@ pub async fn reviews(
     let v = suggestions_get(client, &url, Some(first))
         .await?
         .unwrap_or_default();
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     Ok(ReviewPage {
         count: v.get("@odata.count").and_then(|c| c.as_u64()).unwrap_or(0),
         reviews: v
@@ -1787,14 +1784,8 @@ mod tests {
 
     #[test]
     fn review_dates_read_as_date_fns_strict() {
-        let now = chrono::DateTime::parse_from_rfc3339("2026-11-09T10:00:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
-        let at = |s: &str| {
-            chrono::DateTime::parse_from_rfc3339(s)
-                .unwrap()
-                .with_timezone(&chrono::Utc)
-        };
+        let now = crate::clock::parse_instant("2026-11-09T10:00:00Z").unwrap();
+        let at = |s: &str| crate::clock::parse_instant(s).unwrap();
         assert_eq!(relative_time(at("2026-11-07T09:00:00Z"), now), "2 days ago");
         assert_eq!(relative_time(at("2025-09-25T18:45:56Z"), now), "1 year ago");
         assert_eq!(

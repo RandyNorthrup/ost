@@ -113,7 +113,7 @@ fn os_version() -> String {
 }
 
 fn utc_offset() -> String {
-    let secs = chrono::Local::now().offset().local_minus_utc();
+    let secs = crate::clock::local_offset_seconds();
     let (sign, m) = if secs < 0 {
         ('-', -secs / 60)
     } else {

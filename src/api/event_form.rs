@@ -173,14 +173,14 @@ pub fn form_updates(form: &Value) -> Vec<Value> {
 /// `DayOfWeek` filters (`"Thursday"`), the series' own days first, then the
 /// picked ones in the order they were picked.
 pub fn intent_json(
-    days: &[chrono::NaiveDate],
+    days: &[jiff::civil::Date],
     weekdays: &[String],
     times: &[(u32, u32)],
 ) -> String {
-    let mut days: Vec<chrono::NaiveDate> = days.to_vec();
+    let mut days: Vec<jiff::civil::Date> = days.to_vec();
     days.sort();
     days.dedup();
-    let day = |d: &chrono::NaiveDate| d.format("%Y-%m-%d").to_string();
+    let day = |d: &jiff::civil::Date| crate::clock::format(*d, "%Y-%m-%d");
     let mut runs: Vec<Value> = Vec::new();
     let mut seen: Vec<&String> = Vec::new();
     for w in weekdays {
@@ -192,7 +192,7 @@ pub fn intent_json(
     let mut i = 0;
     while i < days.len() {
         let mut j = i;
-        while j + 1 < days.len() && days[j + 1] - days[j] == chrono::Duration::days(1) {
+        while j + 1 < days.len() && crate::clock::days_between(days[j], days[j + 1]) == 1 {
             j += 1;
         }
         let v = if i == j {
@@ -243,14 +243,14 @@ pub fn parse_intent(intent: &str) -> (Vec<String>, Vec<String>, Vec<(u32, u32)>)
         match v.get("FilterType").and_then(Value::as_str) {
             Some("Date") => {
                 let (a, b) = val.split_once("..").unwrap_or((val, val));
-                if let (Ok(a), Ok(b)) = (
-                    chrono::NaiveDate::parse_from_str(a, "%Y-%m-%d"),
-                    chrono::NaiveDate::parse_from_str(b, "%Y-%m-%d"),
+                if let (Some(a), Some(b)) = (
+                    crate::clock::parse_date(a, "%Y-%m-%d"),
+                    crate::clock::parse_date(b, "%Y-%m-%d"),
                 ) {
                     let mut d = a;
                     while d <= b && days.len() < 400 {
-                        days.push(d.format("%Y-%m-%d").to_string());
-                        d += chrono::Duration::days(1);
+                        days.push(crate::clock::format(d, "%Y-%m-%d"));
+                        d = crate::clock::add_days(d, 1);
                     }
                 }
             }
@@ -624,7 +624,7 @@ pub async fn add_master_category(name: &str, color: i64) -> Result<()> {
             "__type": "UpdateMasterCategoryListRequest:#Exchange",
             "AddCategoryList": [{
                 "Name": name, "Color": color.clamp(-1, 24), "Id": uuid::Uuid::new_v4().to_string(),
-                "LastTimeUsed": chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string(), "KeyboardShortcut": 0
+                "LastTimeUsed": crate::clock::now_iso_ms(), "KeyboardShortcut": 0
             }],
             "RemoveCategoryList": [], "ChangeCategoryColorList": [], "UpdateCategoryLastTimeUsedList": [], "ChangeCategoryKeyboardShortcutList": []
         }
@@ -1434,7 +1434,7 @@ mod tests {
 
     #[test]
     fn intent_as_outlook_writes_it() {
-        let d = |s: &str| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+        let d = |s: &str| crate::clock::parse_date(s, "%Y-%m-%d").unwrap();
         let days = [
             d("2026-11-24"),
             d("2026-11-25"),

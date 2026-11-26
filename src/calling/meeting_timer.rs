@@ -286,9 +286,7 @@ impl Timer {
 
 /// An ISO time as Unix ms (Teams' times carry up to 7 fraction digits).
 pub fn parse_time(s: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(s)
-        .ok()
-        .map(|t| t.timestamp_millis())
+    crate::clock::parse_instant(s).map(crate::clock::millis)
 }
 
 /// Teams' normalisation of a timer that came in, with the service's stamp

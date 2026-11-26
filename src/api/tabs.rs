@@ -1137,7 +1137,7 @@ pub async fn start_conversation(
     }
     let base = client.chat_service_url();
     let me = client.self_mri().context("Not signed in")?;
-    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let now = crate::clock::now_iso_ms();
     let cmid = super::outbox::new_client_message_id();
     let body = conversation_post(
         channel_id,

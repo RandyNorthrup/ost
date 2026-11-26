@@ -26,9 +26,7 @@ pub struct Scheduled {
 /// Teams' POST body: the message as it would be sent, marked as a draft of
 /// the `48:drafts` stream, inside the scheduling envelope.
 pub fn schedule_body(o: &Outgoing, send_at_ms: i64) -> serde_json::Value {
-    let iso = chrono::DateTime::from_timestamp_millis(send_at_ms)
-        .map(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
-        .unwrap_or_default();
+    let iso = crate::clock::ms_iso(send_at_ms).unwrap_or_default();
     let mut message = super::outbox::post_body(o);
     message["properties"]["draftId"] = o.client_message_id.clone().into();
     message["draftDetails"] = serde_json::json!({ "sendAt": iso });
@@ -80,10 +78,7 @@ pub fn edit_body(id: &str, o: &Outgoing, send_at_ms: i64, now_ms: i64) -> serde_
     m["id"] = id.into();
     m["properties"]["draftId"] = id.into();
     m["properties"]["edittime"] = now_ms.into();
-    m["version"] = chrono::DateTime::from_timestamp_millis(now_ms)
-        .map(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
-        .unwrap_or_default()
-        .into();
+    m["version"] = crate::clock::ms_iso(now_ms).unwrap_or_default().into();
     b
 }
 
@@ -94,7 +89,7 @@ pub async fn edit(client: &TeamsClient, id: &str, o: &Outgoing, send_at_ms: i64)
         "Not a draft: {id}"
     );
     let url = format!("{}/v1/users/ME/drafts/{id}", client.chat_service_url());
-    let body = edit_body(id, o, send_at_ms, chrono::Utc::now().timestamp_millis());
+    let body = edit_body(id, o, send_at_ms, crate::clock::now_ms());
     client
         .chat_request(reqwest::Method::PUT, &url, &body)
         .await?;
@@ -129,11 +124,9 @@ fn send_at(details: &serde_json::Value) -> Option<i64> {
     let v = details.get("sendAt")?;
     v.as_i64().or_else(|| {
         let s = v.as_str()?;
-        s.parse().ok().or_else(|| {
-            chrono::DateTime::parse_from_rfc3339(s)
-                .ok()
-                .map(|t| t.timestamp_millis())
-        })
+        s.parse()
+            .ok()
+            .or_else(|| crate::clock::parse_instant(s).map(crate::clock::millis))
     })
 }
 

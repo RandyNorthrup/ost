@@ -431,11 +431,8 @@ pub struct RecentFile {
 
 /// date-fns' `formatDistanceStrict` in English, as Teams' file suggestions
 /// word how long ago you opened a file ("4 days", "1 hour").
-pub fn distance_strict(
-    then: chrono::DateTime<chrono::Utc>,
-    now: chrono::DateTime<chrono::Utc>,
-) -> String {
-    let ms = (now - then).num_milliseconds().unsigned_abs() as f64;
+pub fn distance_strict(then: jiff::Timestamp, now: jiff::Timestamp) -> String {
+    let ms = ((now - then).as_millis() as i64).unsigned_abs() as f64;
     let mins = ms / 60_000.0;
     let (n, unit) = if ms < 60_000.0 {
         ((ms / 1000.0).round(), "second")
@@ -454,20 +451,14 @@ pub fn distance_strict(
     format!("{n} {unit}{}", if n == 1 { "" } else { "s" })
 }
 
-fn local(t: &str) -> Option<chrono::DateTime<chrono::Local>> {
-    chrono::DateTime::parse_from_rfc3339(t)
-        .ok()
-        .map(|t| t.with_timezone(&chrono::Local))
+fn local(t: &str) -> Option<jiff::ZonedDateTime> {
+    crate::clock::parse_instant(t).map(crate::clock::local)
 }
 
 /// Home's rows from `sp.RecentFileCollection.DeltaSync` (the picker's own
 /// call): the files you opened, newest first, as OneDrive lists them
 /// (`recent_files`).
-pub fn parse_recent(
-    reply: &Value,
-    personal: &str,
-    now: chrono::DateTime<chrono::Local>,
-) -> Vec<RecentFile> {
+pub fn parse_recent(reply: &Value, personal: &str, now: &jiff::ZonedDateTime) -> Vec<RecentFile> {
     use super::recent_files;
     recent_files::listed(reply, personal)
         .into_iter()
@@ -475,12 +466,12 @@ pub fn parse_recent(
             let t = local(&r.opened)?;
             let a = r.activity.clone().unwrap_or_default();
             Some(RecentFile {
-                opened: super::list_rows::activity_time(t, now),
-                opened_title: t.format("%-m/%-d/%Y %-I:%M %p").to_string(),
+                opened: super::list_rows::activity_time(&t, now),
+                opened_title: crate::clock::format(&t, "%-m/%-d/%Y %-I:%M %p"),
                 activity: a.format,
                 activity_user: a.user,
                 activity_time: local(&a.time)
-                    .map(|t| recent_files::activity_day(t, now))
+                    .map(|t| recent_files::activity_day(&t, now))
                     .unwrap_or_default(),
                 activity_kind: a.kind,
                 opened_ago: String::new(),
@@ -498,7 +489,7 @@ pub fn parse_recent(
 /// Home's files, as the picker reads them from your OneDrive.
 pub async fn recent(client: &TeamsClient) -> Result<Vec<RecentFile>> {
     let (reply, personal) = super::recent_files::fetch_reply(client).await?;
-    Ok(parse_recent(&reply, &personal, chrono::Local::now()))
+    Ok(parse_recent(&reply, &personal, &crate::clock::local_now()))
 }
 
 /// Meetings: the files shared in your meetings, as the picker asks
@@ -581,13 +572,8 @@ pub fn parse_suggestions(reply: &Value) -> Vec<RecentFile> {
                 ],
             );
             let accessed = first(&h["UserRelationship"], &["LastAccessDateTime"]);
-            let opened_ago = chrono::DateTime::parse_from_rfc3339(&accessed)
-                .map(|t| {
-                    format!(
-                        "Opened {} ago",
-                        distance_strict(t.with_timezone(&chrono::Utc), chrono::Utc::now())
-                    )
-                })
+            let opened_ago = crate::clock::parse_instant(&accessed)
+                .map(|t| format!("Opened {} ago", distance_strict(t, jiff::Timestamp::now())))
                 .unwrap_or_default();
             let name = first(h, &["FileName", "Name", "Title", "Text", "DisplayName"]);
             if url.is_empty() || name.is_empty() {
@@ -690,7 +676,7 @@ mod tests {
         let rows = parse_recent(
             &json!({ "value": files.to_string() }),
             "https://x/personal/me",
-            now,
+            &now,
         );
         assert_eq!(rows.len(), 1);
         let r = &rows[0];
@@ -712,7 +698,7 @@ mod tests {
         );
         assert_eq!(
             r.opened,
-            super::super::list_rows::activity_time(local("2026-11-06T18:06:35Z").unwrap(), now)
+            super::super::list_rows::activity_time(&local("2026-11-06T18:06:35Z").unwrap(), &now)
         );
         // As Teams' picker words the row: no extension, the edit glyph.
         assert_eq!(
@@ -734,11 +720,7 @@ mod tests {
             ("https://x/Documents/ost-open-test.docx", "docx")
         );
         assert!(r[0].opened_ago.starts_with("Opened ") && r[0].opened_ago.ends_with(" ago"));
-        let t = |s: &str| {
-            chrono::DateTime::parse_from_rfc3339(s)
-                .unwrap()
-                .with_timezone(&chrono::Utc)
-        };
+        let t = |s: &str| crate::clock::parse_instant(s).unwrap();
         let now = t("2026-11-16T15:20:00Z");
         assert_eq!(distance_strict(t("2026-11-12T17:50:21Z"), now), "4 days");
         assert_eq!(

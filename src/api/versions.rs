@@ -2,8 +2,8 @@
 //! (docs/spec/version-history.md): SharePoint's list item versions, and
 //! its RestoreByLabel and RecycleByLabel.
 
+use crate::clock;
 use anyhow::{Result, bail};
-use chrono::{Local, NaiveDateTime, TimeZone, Utc};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -70,13 +70,9 @@ pub fn parse(reply: &Value, site: &str, file_url: &str) -> Vec<Version> {
                 .unwrap_or(0.0);
             Version {
                 label: s(&v["VersionLabel"]),
-                modified: NaiveDateTime::parse_from_str(&s(&v["Created"]), "%Y-%m-%dT%H:%M:%S")
-                    .map(|t| {
-                        Utc.from_utc_datetime(&t)
-                            .with_timezone(&Local)
-                            .format("%-m/%-d/%Y %-I:%M %p")
-                            .to_string()
-                    })
+                modified: clock::parse_naive(&s(&v["Created"]), "%Y-%m-%dT%H:%M:%S")
+                    .and_then(|t| jiff::tz::Offset::UTC.to_timestamp(t).ok())
+                    .map(|t| clock::format(&clock::local(t), "%-m/%-d/%Y %-I:%M %p"))
                     .unwrap_or_default(),
                 size: super::list_rows::size_text(bytes),
                 by: s(&v["CreatedBy"]["Title"]),
@@ -143,12 +139,10 @@ mod tests {
             v[1].url,
             "https://x-my.sharepoint.com/personal/a/_vti_history/1024/Documents/ost-share-test.txt"
         );
-        let expect = Utc
-            .with_ymd_and_hms(2026, 11, 12, 5, 57, 40)
-            .unwrap()
-            .with_timezone(&Local)
-            .format("%-m/%-d/%Y %-I:%M %p")
-            .to_string();
+        let expect = clock::format(
+            &clock::local("2026-11-12T05:57:40Z".parse().unwrap()),
+            "%-m/%-d/%Y %-I:%M %p",
+        );
         assert_eq!(v[1].modified, expect);
     }
 

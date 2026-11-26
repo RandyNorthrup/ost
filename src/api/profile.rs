@@ -75,15 +75,15 @@ pub async fn profile_card(client: &TeamsClient, oid: &str) -> Result<serde_json:
         );
     }
     if let Some(mail) = card["mail"].as_str().or(card["userPrincipalName"].as_str()) {
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         let schedules: Vec<String> = [Some(mail.to_string()), my_mail.clone()]
             .into_iter()
             .flatten()
             .collect();
         let body = serde_json::json!({
             "schedules": schedules,
-            "startTime": { "dateTime": now.format("%Y-%m-%dT%H:%M:%S").to_string(), "timeZone": "UTC" },
-            "endTime": { "dateTime": (now + chrono::Duration::days(2)).format("%Y-%m-%dT%H:%M:%S").to_string(), "timeZone": "UTC" },
+            "startTime": { "dateTime": crate::clock::format(now, "%Y-%m-%dT%H:%M:%S"), "timeZone": "UTC" },
+            "endTime": { "dateTime": crate::clock::format(now + crate::clock::days(2), "%Y-%m-%dT%H:%M:%S"), "timeZone": "UTC" },
             "availabilityViewInterval": 30,
         });
         if let Ok(r) = client.graph_post("/me/calendar/getSchedule", &body).await
@@ -91,7 +91,7 @@ pub async fn profile_card(client: &TeamsClient, oid: &str) -> Result<serde_json:
             && let Some(s) = v["value"].get(0)
         {
             card["schedule"] = serde_json::json!({
-                "start": now.to_rfc3339(),
+                "start": crate::clock::rfc3339(now),
                 "view": s["availabilityView"],
                 "workingHours": s["workingHours"],
                 "items": s["scheduleItems"],
@@ -244,15 +244,12 @@ fn loki_host() -> String {
 /// digit per 30 minutes from `start`: 0 free, 1 tentative, 2 busy, 3 out of
 /// office, 4 working elsewhere): the start of the first free slot after a
 /// busy one, or None when free now or never in the window.
-pub fn next_free(
-    view: &str,
-    start: chrono::DateTime<chrono::Utc>,
-) -> Option<chrono::DateTime<chrono::Utc>> {
+pub fn next_free(view: &str, start: jiff::Timestamp) -> Option<jiff::Timestamp> {
     if view.starts_with('0') {
         return None;
     }
     view.find('0')
-        .map(|i| start + chrono::Duration::minutes(30 * i as i64))
+        .map(|i| start + jiff::SignedDuration::from_mins(30 * i as i64))
 }
 
 #[cfg(test)]
@@ -276,12 +273,10 @@ mod tests {
 
     #[test]
     fn next_free_is_the_first_free_slot_after_busy() {
-        let start = chrono::DateTime::parse_from_rfc3339("2026-11-10T11:00:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let start = crate::clock::parse_instant("2026-11-10T11:00:00Z").unwrap();
         assert_eq!(next_free("000", start), None);
         assert_eq!(
-            next_free("2200", start).unwrap().to_rfc3339(),
+            crate::clock::rfc3339(next_free("2200", start).unwrap()),
             "2026-11-10T12:00:00+00:00"
         );
         assert_eq!(next_free("3333", start), None);

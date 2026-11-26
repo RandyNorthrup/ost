@@ -232,7 +232,7 @@ pub struct Attendance {
     pub id: String,
     pub name: String,
     pub action: AttendanceAction,
-    pub at: chrono::DateTime<chrono::Local>,
+    pub at: jiff::ZonedDateTime,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -278,12 +278,7 @@ impl AttendanceLog {
     /// The roster changed: `here` is everyone else in the meeting now
     /// (id, name). The first call notes them as "Joined before" and you
     /// (`me`) as joined; later calls note who joined and who left.
-    pub fn update(
-        &mut self,
-        me: (&str, &str),
-        here: &[(String, String)],
-        at: chrono::DateTime<chrono::Local>,
-    ) {
+    pub fn update(&mut self, me: (&str, &str), here: &[(String, String)], at: jiff::ZonedDateTime) {
         let ids: std::collections::HashSet<String> = here.iter().map(|(i, _)| i.clone()).collect();
         if !self.started {
             self.started = true;
@@ -292,14 +287,14 @@ impl AttendanceLog {
                     id: id.clone(),
                     name: name.clone(),
                     action: AttendanceAction::JoinedBefore,
-                    at,
+                    at: at.clone(),
                 });
             }
             self.note(Attendance {
                 id: me.0.into(),
                 name: me.1.into(),
                 action: AttendanceAction::Joined,
-                at,
+                at: at.clone(),
             });
             self.present = ids;
             return;
@@ -310,7 +305,7 @@ impl AttendanceLog {
                     id: id.clone(),
                     name: name.clone(),
                     action: AttendanceAction::Joined,
-                    at,
+                    at: at.clone(),
                 });
             }
         }
@@ -327,14 +322,14 @@ impl AttendanceLog {
                 id,
                 name,
                 action: AttendanceAction::Left,
-                at,
+                at: at.clone(),
             });
         }
         self.present = ids;
     }
 
     /// You left the meeting.
-    pub fn leave(&mut self, me: (&str, &str), at: chrono::DateTime<chrono::Local>) {
+    pub fn leave(&mut self, me: (&str, &str), at: jiff::ZonedDateTime) {
         if self.started {
             self.note(Attendance {
                 id: me.0.into(),
@@ -356,7 +351,7 @@ impl AttendanceLog {
                     "{}\t{}\t{}\n",
                     safe_cell(&a.name),
                     a.action.label(),
-                    a.at.format("%-m/%-d/%y, %-I:%M:%S %p")
+                    crate::clock::format(&a.at, "%-m/%-d/%y, %-I:%M:%S %p")
                 ));
             }
         }
@@ -396,7 +391,6 @@ pub fn utf16le_with_bom(text: &str) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
 
     #[test]
     fn reads_the_meeting_capability_in_either_form() {
@@ -503,9 +497,7 @@ mod tests {
     #[test]
     fn attendance_list_as_teams_writes_it() {
         let t = |s| {
-            chrono::Local
-                .with_ymd_and_hms(2026, 11, 8, 10, 21, s)
-                .unwrap()
+            crate::clock::local_single(jiff::civil::datetime(2026, 11, 8, 10, 21, s, 0)).unwrap()
         };
         let mut log = AttendanceLog::default();
         let g1 = ("8:guest:1".to_string(), "OST Guest 1".to_string());

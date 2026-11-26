@@ -296,7 +296,7 @@ async fn content(client: &TeamsClient) -> Result<serde_json::Value> {
     }
     let doc = setting("storeAppsCollectionsDoc");
     let doc = doc.as_str().unwrap_or("storev2?v=2");
-    let ts = (chrono::Utc::now().timestamp_millis() / 7_200_000) as u64;
+    let ts = (crate::clock::now_ms() / 7_200_000) as u64;
     let url = format!(
         "{CDN}/{}",
         content_path(doc, ecs::license(client).await.as_ref(), ts)

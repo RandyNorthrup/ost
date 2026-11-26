@@ -482,8 +482,12 @@ impl AspMessage {
 }
 
 /// Teams' setLocaleAndTime body: `L<locale>D<yyyy-MM-ddThh:mm:ss>` (12-hour).
-pub fn locale_payload(locale: &str, now: chrono::NaiveDateTime) -> Vec<u8> {
-    format!("L{locale}D{}", now.format("%Y-%m-%dT%I:%M:%S")).into_bytes()
+pub fn locale_payload(locale: &str, now: jiff::civil::DateTime) -> Vec<u8> {
+    format!(
+        "L{locale}D{}",
+        crate::clock::format(now, "%Y-%m-%dT%I:%M:%S")
+    )
+    .into_bytes()
 }
 
 // ---- Teams' drivers ----
@@ -1287,7 +1291,7 @@ impl Open {
             if mask & AspEvent::Dialer as u8 != 0 {
                 self.asp(&AspMessage::new(
                     msg::LOCALE,
-                    locale_payload("en-US", chrono::Local::now().naive_local()),
+                    locale_payload("en-US", crate::clock::local_now().datetime()),
                 ))?;
             }
             Some(mask)
@@ -1821,12 +1825,7 @@ mod tests {
 
     #[test]
     fn locale_and_time_are_twelve_hour() {
-        let at = |h, m, s| {
-            chrono::NaiveDate::from_ymd_opt(2026, 11, 20)
-                .unwrap()
-                .and_hms_opt(h, m, s)
-                .unwrap()
-        };
+        let at = |h, m, s| jiff::civil::datetime(2026, 11, 20, h, m, s, 0);
         assert_eq!(
             locale_payload("en-US", at(16, 5, 9)),
             b"Len-USD2026-11-20T04:05:09"

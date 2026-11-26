@@ -6,7 +6,6 @@
 //! 3. Start recording via call recorder service
 
 use anyhow::{Context, Result, bail};
-use chrono::Utc;
 use std::time::Duration;
 
 use super::call_test::extract_call_payload;
@@ -197,7 +196,7 @@ async fn start_transcription_at(
     let url = format!("{}/v2/oncommand/{}", recorder_base, params.conversation_id);
 
     let payload = serde_json::json!({
-        "timestamp": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        "timestamp": crate::clock::now_iso_ms(),
         "participantMri": params.caller_mri,
         "participantLegId": params.participant_id,
         "action": "start",
@@ -243,12 +242,12 @@ async fn start_recording_at(
     let url = format!("{}/v2/oncommand/{}", recorder_base, params.conversation_id);
 
     let correlation_id = uuid::Uuid::new_v4().to_string();
-    let now = Utc::now();
-    let date_str = now.format("%Y%m%dT%H%M%S").to_string();
+    let now = jiff::Timestamp::now();
+    let date_str = crate::clock::format(now, "%Y%m%dT%H%M%S");
     let file_name = format!("Meeting in \"av-test\"-{}-Meeting Recording", date_str);
 
     let payload = serde_json::json!({
-        "timestamp": now.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        "timestamp": crate::clock::iso_ms(now),
         "participantMri": params.caller_mri,
         "participantLegId": params.participant_id,
         "action": "start",
@@ -479,7 +478,7 @@ pub async fn stop_call_recording(http: &reqwest::Client, session: &RecordingSess
 
     // Stop recording first
     let payload = serde_json::json!({
-        "timestamp": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        "timestamp": crate::clock::now_iso_ms(),
         "participantMri": session.caller_mri,
         "participantLegId": session.participant_id,
         "action": "stop",
@@ -511,7 +510,7 @@ pub async fn stop_call_recording(http: &reqwest::Client, session: &RecordingSess
 
     // Stop transcription
     let payload = serde_json::json!({
-        "timestamp": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        "timestamp": crate::clock::now_iso_ms(),
         "participantMri": session.caller_mri,
         "participantLegId": session.participant_id,
         "action": "stop",

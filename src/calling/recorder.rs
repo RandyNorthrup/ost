@@ -139,11 +139,11 @@ pub fn body(
     me_mri: &str,
     leg_id: &str,
     meeting: &Meeting,
-    now: chrono::DateTime<chrono::Local>,
+    now: &jiff::ZonedDateTime,
     correlation_id: &str,
 ) -> Value {
     let mut b = json!({
-        "timestamp": now.with_timezone(&chrono::Utc).to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        "timestamp": crate::clock::iso_ms(now.timestamp()),
         "participantMri": me_mri,
         "participantLegId": leg_id,
         "action": command.action(),
@@ -177,7 +177,7 @@ pub fn body(
             "recordingStorageSettings": [{
                 "StorageType": "OnedriveForBusiness",
                 "StorageLocation": "Recordings",
-                "FileName": format!("{}-{}-{kind}", meeting.title, now.format("%Y%m%d_%H%M%S")),
+                "FileName": format!("{}-{}-{kind}", meeting.title, crate::clock::format(now, "%Y%m%d_%H%M%S")),
             }],
             "iCalUid": if meeting.ical_uid.is_empty() { Value::Null } else { json!(meeting.ical_uid) },
             "correlationId": correlation_id,
@@ -423,7 +423,7 @@ impl Tracker {
             me["id"].as_str().unwrap_or_default(),
             me["participantId"].as_str().unwrap_or_default(),
             meeting,
-            chrono::Local::now(),
+            &crate::clock::local_now(),
             &uuid::Uuid::new_v4().to_string(),
         );
         tracing::info!(?command, "recorder command");
@@ -452,7 +452,6 @@ pub fn command_url(json: &Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
 
     #[test]
     fn tracker_follows_the_recorder_from_join_to_roster() {
@@ -494,15 +493,14 @@ mod tests {
 
     #[test]
     fn bodies_as_teams_sends_them() {
-        let now = chrono::Local
-            .with_ymd_and_hms(2026, 11, 8, 17, 15, 15)
-            .unwrap();
+        let now =
+            crate::clock::local_single(jiff::civil::datetime(2026, 11, 8, 17, 15, 15, 0)).unwrap();
         let b = body(
             Command::StartTranscription,
             "8:orgid:a",
             "leg",
             &meeting(),
-            now,
+            &now,
             "cid",
         );
         assert_eq!(b["action"], "start");
@@ -521,7 +519,7 @@ mod tests {
             "8:orgid:a",
             "leg",
             &meeting(),
-            now,
+            &now,
             "cid",
         );
         assert!(r.get("mode").is_none());
@@ -541,7 +539,7 @@ mod tests {
             "8:orgid:a",
             "leg",
             &meeting(),
-            now,
+            &now,
             "cid",
         );
         assert_eq!(a["processingModes"], json!(["recording"]));
@@ -552,7 +550,7 @@ mod tests {
             "8:orgid:a",
             "leg",
             &meeting(),
-            now,
+            &now,
             "cid",
         );
         assert_eq!(s["action"], "stop");
@@ -562,7 +560,7 @@ mod tests {
             "8:orgid:a",
             "leg",
             &meeting(),
-            now,
+            &now,
             "cid",
         );
         assert_eq!(t["mode"], "transcription");
@@ -584,15 +582,14 @@ mod tests {
 
     #[test]
     fn copilot_only_bodies_as_teams_sends_them() {
-        let now = chrono::Local
-            .with_ymd_and_hms(2026, 11, 18, 3, 15, 0)
-            .unwrap();
+        let now =
+            crate::clock::local_single(jiff::civil::datetime(2026, 11, 18, 3, 15, 0, 0)).unwrap();
         let c = body(
             Command::StartCopilot,
             "8:orgid:a",
             "leg",
             &meeting(),
-            now,
+            &now,
             "cid",
         );
         assert_eq!(c["action"], "start");
@@ -608,7 +605,7 @@ mod tests {
             "8:orgid:a",
             "leg",
             &meeting(),
-            now,
+            &now,
             "cid",
         );
         assert_eq!(s["action"], "stop");
@@ -618,15 +615,14 @@ mod tests {
 
     #[test]
     fn captions_bodies_as_teams_sends_them() {
-        let now = chrono::Local
-            .with_ymd_and_hms(2026, 11, 8, 17, 15, 15)
-            .unwrap();
+        let now =
+            crate::clock::local_single(jiff::civil::datetime(2026, 11, 8, 17, 15, 15, 0)).unwrap();
         let c = body(
             Command::StartCaptions,
             "8:orgid:a",
             "leg",
             &meeting(),
-            now,
+            &now,
             "cid",
         );
         let mut keys: Vec<_> = c.as_object().unwrap().keys().cloned().collect();
@@ -653,7 +649,7 @@ mod tests {
             "8:orgid:a",
             "leg",
             &m,
-            now,
+            &now,
             "cid",
         );
         assert_eq!(l["action"], "setLanguage");

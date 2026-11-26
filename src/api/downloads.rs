@@ -66,7 +66,7 @@ pub fn record_in(file: &Path, path: &Path, at: i64) -> Result<()> {
 /// Record a file OST saved as a download. Failures are only logged.
 pub fn record(path: &Path) {
     let Some(file) = history_path() else { return };
-    if let Err(e) = record_in(&file, path, chrono::Utc::now().timestamp_millis()) {
+    if let Err(e) = record_in(&file, path, crate::clock::now_ms()) {
         tracing::warn!("download history: {e:#}");
     }
 }
