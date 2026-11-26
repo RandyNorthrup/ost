@@ -6584,6 +6584,13 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
     Ok((me.display_name, list))
 }
 
+/// Chats whose conversation properties a push changed, for
+/// `Backend::check_unread`.
+fn unread_to_check() -> &'static std::sync::Mutex<HashSet<String>> {
+    static SET: OnceLock<std::sync::Mutex<HashSet<String>>> = OnceLock::new();
+    SET.get_or_init(Default::default)
+}
+
 /// Messages deleted from this app since it started. Teams shows its
 /// "This message has been deleted" placeholder only to the person who just
 /// deleted it; once reloaded, deleted messages are simply gone.
@@ -18458,6 +18465,17 @@ impl qobject::Backend {
                 reload = true;
             } else if unread.contains(&id) {
                 list_changed |= self.as_mut().rust_mut().unread.insert(id);
+            } else if id.starts_with("19:")
+                && !id.contains(';')
+                && !id.ends_with("@thread.tacv2")
+                && !id.ends_with("@thread.skype")
+            {
+                // A chat's properties changed (a hide or unhide, its read
+                // horizon, Mark as unread on another device): its unread
+                // state is read back once the pushes settle.
+                if let Ok(mut s) = unread_to_check().lock() {
+                    s.insert(id);
+                }
             }
         }
         if reload {
@@ -18504,6 +18522,50 @@ impl qobject::Backend {
             let _ = qt.queue(|mut this| {
                 PENDING.store(false, Ordering::SeqCst);
                 this.as_mut().reload_chats();
+                this.as_mut().check_unread();
+            });
+        });
+    }
+
+    /// Take the chat service's unread state for the chats whose properties
+    /// changed (`unread_to_check`): marked unread or read on another device
+    /// shows here too, as in Teams. Chats beyond the service's latest
+    /// hundred keep theirs.
+    fn check_unread(self: Pin<&mut Self>) {
+        let ids: Vec<String> = match unread_to_check().lock() {
+            Ok(mut s) => s.drain().collect(),
+            Err(_) => return,
+        };
+        if ids.is_empty() {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::messages::chat_unread_states(&client).await
+            }
+            .await;
+            let states: HashMap<String, bool> = match result {
+                Ok(s) => s.into_iter().collect(),
+                Err(e) => {
+                    tracing::warn!("unread state failed: {}", short_error(&e));
+                    return;
+                }
+            };
+            let _ = qt.queue(move |mut this| {
+                let current = this.rust().current_chat_id.to_string();
+                let mut changed = false;
+                for id in ids.into_iter().filter(|i| *i != current) {
+                    changed |= match states.get(&id) {
+                        Some(true) => this.as_mut().rust_mut().unread.insert(id),
+                        Some(false) => this.as_mut().rust_mut().unread.remove(&id),
+                        None => false,
+                    };
+                }
+                if changed {
+                    this.as_mut().publish_chats();
+                }
             });
         });
     }
