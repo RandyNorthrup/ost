@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@meet'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T14:55:00Z'
+updated_date: '2026-11-26T15:46:00Z'
 labels:
   - bug
   - calls
@@ -41,4 +41,8 @@ Found while capturing wiki screenshots (2026-11-25). Shares started with a prese
 - Fix: webrtc_video::RtpLine per line (camera, sharing) carries the sequence numbers (atomic, so an old sender finishing beside a new one can't collide) and the timestamp clock across senders, as a WebRTC sender with a replaced track.
 - Verified after the fix: OST Test 2 shared a window in Standout, stopped, shared again: the second share reached OST Test 3 (stage capture) and Teams on the web. Teams on the web (OST Test 2) shared twice: OST Test 3 showed both.
 - Window shares can't be controlled (Wayland: AvailableNack SharerControlDisabled, as documented); the wiki's "capable=false" for a window share is that.
+
+- Codex review (PR #16): SRTP's sender bumped the rollover counter only on seeing 65535; with packets dropped unsent around the wrap (a sender stopped with its queue) the next sender's packets would use the old ROC. protect() now keeps the last protected sequence number per stream and counts a wrap from it (RFC 3711 packet index); test in bundled_streams_keep_counters_per_ssrc.
+- Found in the recheck: a camera turned on while waiting in a lobby was lost on admission ("camera not taken over by the new media session: Device or resource busy"): the processor moves the call to a new media session, which opened the camera while the old session still held it, so Side-by-side had no presenter to composite. answer_renegotiation now turns the old session's camera off first.
+- Q&A on the bar also verified for someone admitted from the lobby (OST Test 3: Chat, Q&A, People…) with the second share arriving.
 <!-- SECTION:NOTES:END -->
