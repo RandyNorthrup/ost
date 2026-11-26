@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T19:49:00Z'
-updated_date: '2026-11-25T20:17:00Z'
+updated_date: '2026-11-26T02:00:00Z'
 labels:
   - security
 dependencies: []
@@ -38,4 +38,6 @@ From a public code audit of OST 0.2.1 (posted on Reddit, 2026-11-25). A calendar
 
 <!-- SECTION:NOTES:BEGIN -->
 Verified (main @ 575e4404): desktop/qml/Main.qml:4851-4852 --cal-page-steps ran its text with Function("f","cv", s) (JavaScript from launch flags); Main.qml:2657/2667 --loop-test --loop-steps=<file> ran each line with runJavaScript in a Loop page; desktop/src/main.rs:229 OST_QML_DIR loaded QML from any directory; ~640 --*-test flags in Main.qml were all compiled into release builds.
+
+CI on PR #7: the new job "Release build refuses test-harness flags" builds --release and checks --nav-test, --cal-test --cal-page-steps, --loop-test --loop-steps, a positional capture path and --room --shots are refused with exit 2 (passed); clippy runs with and without the feature. Harness workflows now need cargo build -p ost-desktop --features test-harness (used for all live checks above).
 <!-- SECTION:NOTES:END -->

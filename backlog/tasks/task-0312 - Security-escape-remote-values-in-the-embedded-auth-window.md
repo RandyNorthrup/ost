@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T19:49:00Z'
-updated_date: '2026-11-25T20:16:00Z'
+updated_date: '2026-11-26T02:00:00Z'
 labels:
   - security
 dependencies: []
@@ -37,4 +37,6 @@ From a public code audit of OST 0.2.1 (posted on Reddit, 2026-11-25). The embedd
 
 <!-- SECTION:NOTES:BEGIN -->
 Verified (main @ 575e4404): desktop/qml/AppAuthWindow.qml:61 placed JSON.stringify(win.url) and JSON.stringify(win.validDomains) (from a link card's app) inside an inline <script> of a page loaded with base https://teams.microsoft.com/v2/ in the shared web profile; JSON.stringify does not escape </script> or <!--, so a crafted URL could close the script and run its own in Teams' origin. Related: desktop/qml/WebApp.qml:504 printHtml loaded HTML posted by any frame with a frame-chosen base URL and JavaScript enabled.
+
+Tests: api::app_host::script_values_cannot_break_out_of_the_script (</script>, <!--, quotes, CR/LF, U+2028/9, & round-trip as the same value; the page keeps one script element). The app sign-in window has no live trigger on the test tenant without installing a third-party app; covered by the unit test.
 <!-- SECTION:NOTES:END -->
