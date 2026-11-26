@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T15:49:00Z'
-updated_date: '2026-11-26T17:05:00Z'
+updated_date: '2026-11-26T19:08:00Z'
 labels:
   - onedrive
 dependencies: []
@@ -41,3 +41,21 @@ Teams' OneDrive Home shows For you cards (sp.RecentFileCollection.GetRecommendat
 - Live on linuxlt vs winpc: For you shows Release tasks (Open), Weekly team sync (Open), 0.2.0 release checklist (Summarize), same order as Teams at that moment; Recent rows, place lines and columns match; Loop pill and "OST Test 3" filter work (--onedrive-home-test).
 - Not built: page-level scroll (OST scrolls the list), Summarize asking Copilot the prompt (opens Copilot's page).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+OneDrive Home now looks like Teams' Home: the For you cards, the Recent pills and filter box, and OneDrive's own list with the place line.
+
+Changes:
+- New `api::recommended`: For you from `sp.RecentFileCollection.GetRecommendations`, with OneDrive's RecommendedStrip rules (tile count and width, Loop-workspace files left out, badge glyphs, and the Open / Go to comment / Summarize / Recap buttons). Without `prefer: useSmartCache`, which answers from a cache that lacks the Loop and Whiteboard cards.
+- Recent: pills All, Word, Excel, PowerPoint, PDF and More ▾ (OneNote, Lists, Videos, Loop, Whiteboard, PowerBI, Markdown, HTML), matching OneDrive's file type; the "Filter by name or person" box; Sort still applies.
+- List: OneDrive's responsive columns (Name, Opened, Owner, Activity), 56 px rows with the place line (which opens the folder), and two-line Activity with the person in bold.
+- New Fluent brand and file-type icons (NOTICE); docs/spec/onedrive-rows.md; harness `--onedrive-home-test`.
+
+Tests: unit tests (cards, tile count). Live as ost-test1 side by side with Teams on winpc: the same cards in the same order with the same buttons, the same Recent rows and columns, and the pills and filter work.
+
+Follow-up: TASK-0340 (column menus, page scroll, Summarize asking Copilot).
+
+PR #20.
+<!-- SECTION:FINAL_SUMMARY:END -->

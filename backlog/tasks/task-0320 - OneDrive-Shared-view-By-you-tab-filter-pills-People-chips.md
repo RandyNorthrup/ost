@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T21:11:00Z'
-updated_date: '2026-11-26T17:05:00Z'
+updated_date: '2026-11-26T19:08:00Z'
 labels:
   - onedrive
 dependencies: []
@@ -41,3 +41,21 @@ TASK-0303 moved OneDrive's Shared ▸ With you and Browse files by People to One
 - Live on linuxlt (--shared-files-test --shared-tabs): With you = Teams' 8 rows, same order, columns; Videos pill = the 5 recordings; By you = Teams' 62 rows in Teams' order and names; People = OST Test 2 (2 chips + "+2"), OST Test 3 (2 chips) as Teams.
 - Not built: the column header menus (Name ▾, Date shared ↓ ▾, Shared by ▾).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+OneDrive Shared and Browse by People now match Teams.
+
+Changes:
+- Shared has the With you / By you tabs. By you comes from `_api/web/onedriveshareditems?$top=1000`, in the service's order, with Name (and place line) and Modified by.
+- With you has pills (All, Folders, Word, Excel, PowerPoint, PDF, More ▾ with Photos, Agent and Hidden) and the filter box. The columns are Name with the place line, Date shared, Shared by and Activity; File size and Sharing are gone.
+- People shows file chips with the activity pill and "+n", using OneDrive's filePill fit rule, plus "Filter by person".
+- Harness `--shared-files-test --shared-tabs`; docs/spec/onedrive-rows.md.
+
+Tests: live as ost-test1 against Teams on winpc. With you has the same 8 rows, the Videos pill and By you's 62 rows match in Teams' order, and the People chips match.
+
+Follow-up: TASK-0340 (column header menus).
+
+PR #20.
+<!-- SECTION:FINAL_SUMMARY:END -->
