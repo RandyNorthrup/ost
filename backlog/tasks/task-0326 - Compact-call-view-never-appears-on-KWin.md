@@ -1,11 +1,11 @@
 ---
 id: TASK-0326
 title: Compact call view never appears on KWin
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T15:30:00Z'
+updated_date: '2026-11-26T15:54:00Z'
 labels:
   - bug
   - calls
@@ -20,7 +20,7 @@ Found while capturing wiki screenshots (2026-11-25). The compact call view (the 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The compact call view appears and behaves as in Teams on KWin (Wayland and X11) as well as Hyprland and GNOME
+- [x] #1 The compact call view appears and behaves as in Teams on KWin (Wayland and X11) as well as Hyprland and GNOME
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -41,4 +41,22 @@ Found while capturing wiki screenshots (2026-11-25). The compact call view (the 
 - Live (linuxlt, KWin 6.6 Wayland, ost-test1 spatest, solo Meet now, virtual mic/speaker): KWin-script minimize -> exposed false, minimizedNow true, compact shown at bottom right over other windows within ~0.5 s; Maximize via API and a real click (uinput) restores and activates the call window; KWin unminimize closes it; app-side showMinimized works too; a fully covered (not minimized) call window stays exposed -> no compact view (Teams shows it only when minimized); drag by title bar moved it 567/380 px for a 600/370 px drag; Minimize button hides it until restore, then it returns on the next minimize.
 - Live nested KWin X11 (Xvfb :57 + kwin_x11, QT_QPA_PLATFORM=xcb): xdotool windowminimize -> WM_STATE Iconic, visibility 3, compact at (1072,617) = bottom right minus 7/35, _NET_WM_STATE_ABOVE; restore and wm activate close it.
 - Not testable here: Hyprland and GNOME (neither installed on linuxlt or this PC). Hyprland has a layer shell and stops frame callbacks for hidden windows (same path as KWin); GNOME sends xdg suspended (same exposure path) but has no layer shell.
+
+- Final build (linuxlt): KWin Wayland minimize -> compact shown, unminimize -> closed; nested KWin X11 -> compact at bottom right, _NET_WM_STATE_ABOVE and FOCUSED (X11 activation unchanged from before), restore closed it.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Teams compact call view now appears when the meeting window is minimized on Wayland (KWin, and the same path for Hyprland and GNOME) as it did on X11.
+
+Cause: a Wayland client is never told it was minimized, so callWindow.visibility stayed Windowed and the compact view (shown only while Minimized) never showed.
+
+Changes:
+- window_tool.rs + native.cpp: WindowTool QML item (window exposed?, layer-shell prepare/place).
+- CallWindow.qml: minimizedNow = Minimized or not exposed (polled every 250 ms in a call); used for the compact view, sharing restore and side panes.
+- CompactCallWindow.qml: layer-shell surface at the work area bottom right on Wayland with a layer shell (drag by margins, Minimize puts it away), ordinary window on GNOME, unchanged on X11.
+- docs/spec/call-and-meeting-window.md.
+
+Tests: live on linuxlt, KWin Wayland (minimize by KWin and by the app, Maximize click, KWin unminimize, drag, Minimize, covered window stays without compact view) and nested KWin X11 (WM minimize, restore). Not tested: Hyprland, GNOME (not installed).
+<!-- SECTION:FINAL_SUMMARY:END -->
