@@ -71,6 +71,11 @@ impl Probe<'_> {
             Probe::All => true,
         }
     }
+
+    /// Whether this node is asked for by name (the chosen camera's).
+    fn names(&self, path: &str) -> bool {
+        matches!(self, Probe::These(ids) if ids.contains(&path))
+    }
 }
 
 /// The cameras, as Teams lists them: PipeWire's, then V4L2 nodes PipeWire
@@ -128,9 +133,13 @@ fn v4l2_fallback(pw: &[PwCamera], probe: Probe) -> Vec<(String, String)> {
         std::path::Path::new(SYS_VIDEO4LINUX),
         std::path::Path::new(UDEV_DATA),
     );
-    v4l2_cameras(&nodes, pw, &camera_pw::v4l2_nodes(), |n| {
-        probe_node(n, probe)
-    })
+    v4l2_cameras(
+        &nodes,
+        pw,
+        &camera_pw::v4l2_nodes(),
+        |path| probe.names(path),
+        |n| probe_node(n, probe),
+    )
 }
 
 /// Start watching PipeWire's cameras now, so the first list is quick.
@@ -235,11 +244,14 @@ pub fn v4l2_path(id: &str) -> Option<String> {
 /// The V4L2 nodes that are cameras, `(path, name)` in node order, of
 /// `nodes`, leaving out those PipeWire's cameras use: by what sysfs and
 /// udev tell, else by what PipeWire's V4L2 monitor read (`known`), else
-/// by what `ask` finds (opening the node).
+/// by what `ask` finds (opening the node). A node `chosen` names (the
+/// chosen camera's, asked for by name) is asked even when sysfs or
+/// PipeWire say it isn't a camera: what they recorded may be stale.
 fn v4l2_cameras(
     nodes: &[SysNode],
     pw: &[PwCamera],
     known: &[PwV4l2Node],
+    chosen: impl Fn(&str) -> bool,
     mut ask: impl FnMut(&SysNode) -> Option<String>,
 ) -> Vec<(String, String)> {
     nodes
@@ -255,6 +267,7 @@ fn v4l2_cameras(
             }
             let name = match n.listing() {
                 Listing::Camera(name) => Some(name),
+                Listing::NotCamera(_) if chosen(&path) => ask(n),
                 Listing::NotCamera(why) => {
                     tracing::trace!(path, why, "not a camera");
                     None
@@ -271,6 +284,7 @@ fn v4l2_cameras(
                         } else {
                             k.info.display_name()
                         }),
+                        _ if chosen(&path) => ask(n),
                         verdict => {
                             tracing::trace!(path, ?verdict, "not a camera (PipeWire)");
                             None
@@ -832,6 +846,7 @@ mod tests {
             loopback_state: driver.is_none().then(|| "capture".to_string()),
             loopback_format: None,
             udev_caps: Some(udev.into()),
+            ..Default::default()
         }
     }
 
@@ -888,10 +903,16 @@ mod tests {
             },
         }];
         let mut asked = Vec::new();
-        let list = v4l2_cameras(&nodes, &pw, &known, |n| {
-            asked.push(n.node.clone());
-            Some("BT878 video".into())
-        });
+        let list = v4l2_cameras(
+            &nodes,
+            &pw,
+            &known,
+            |_| false,
+            |n| {
+                asked.push(n.node.clone());
+                Some("BT878 video".into())
+            },
+        );
         assert_eq!(asked, ["video5"]);
         assert_eq!(
             list,
@@ -902,14 +923,91 @@ mod tests {
         );
         // PipeWire not there: the UVC camera from sysfs, still unopened.
         let mut asked = Vec::new();
-        let list = v4l2_cameras(&nodes, &[], &[], |n| {
-            asked.push(n.node.clone());
-            None
-        });
+        let list = v4l2_cameras(
+            &nodes,
+            &[],
+            &[],
+            |_| false,
+            |n| {
+                asked.push(n.node.clone());
+                None
+            },
+        );
         assert_eq!(asked, ["video3", "video5"]);
         let paths: Vec<&str> = list.iter().map(|(p, _)| p.as_str()).collect();
         assert_eq!(paths, ["/dev/video0", "/dev/video20"]);
         assert_eq!(list[0].1, "Integrated Camera");
+    }
+
+    /// The chosen camera is asked even when sysfs or PipeWire say it isn't
+    /// one (a loopback whose recorded state is stale, an IPU6 node PipeWire
+    /// judged); other nodes they describe as no camera are never opened.
+    #[test]
+    fn the_chosen_camera_is_asked_even_when_described_as_none() {
+        let idle = SysNode {
+            loopback_state: Some("output".into()),
+            ..sys(
+                "video21",
+                "OST test camera B",
+                None,
+                ":video_output:",
+                20739,
+            )
+        };
+        let meta = SysNode {
+            index: Some(1),
+            ..sys(
+                "video1",
+                "Integrated Camera: Integrated C",
+                Some("uvcvideo"),
+                ":",
+                20737,
+            )
+        };
+        let isys = sys(
+            "video3",
+            "Intel IPU6 ISYS Capture 0",
+            Some("isys"),
+            ":capture:",
+            20740,
+        );
+        let known = [PwV4l2Node {
+            path: "/dev/video3".into(),
+            devids: vec![20740],
+            info: camera_node::NodeInfo {
+                driver: "isys".into(),
+                capabilities: 0xa480_0001,
+                device_caps: 0x2480_0001,
+                ..Default::default()
+            },
+        }];
+        let nodes = [meta, isys, idle];
+        let run = |chosen: &[&str]| {
+            let mut asked = Vec::new();
+            let list = v4l2_cameras(
+                &nodes,
+                &[],
+                &known,
+                |p| chosen.contains(&p),
+                |n| {
+                    asked.push(n.node.clone());
+                    (n.node == "video21").then(|| "OST test camera B".to_string())
+                },
+            );
+            (asked, list)
+        };
+        let (asked, list) = run(&[]);
+        assert!(asked.is_empty() && list.is_empty());
+        let (asked, list) = run(&["/dev/video21"]);
+        assert_eq!(asked, ["video21"]);
+        assert_eq!(
+            list,
+            [("/dev/video21".to_string(), "OST test camera B".to_string())]
+        );
+        let (asked, _) = run(&["/dev/video3"]);
+        assert_eq!(asked, ["video3"]);
+        assert!(Probe::These(&["/dev/video21"]).names("/dev/video21"));
+        assert!(!Probe::All.names("/dev/video21"));
     }
 
     #[test]
