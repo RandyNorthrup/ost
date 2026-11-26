@@ -642,24 +642,6 @@ pub fn edit_body(raw: &Value, c: &Contact, e: &ContactEdit) -> Result<Value> {
         }
         body[key] = Value::Array(list);
     };
-    let company = e.company.trim().to_string();
-    change(
-        "positions",
-        (!company.is_empty() || !c.company.is_empty())
-            .then(|| serde_json::json!({ "detail": { "company": { "displayName": company } } })),
-        &|x| {
-            x.pointer("/detail/company/displayName")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                == company
-        },
-        &|x| {
-            x.pointer("/detail/company/displayName")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                == c.company
-        },
-    );
     if c.mri.is_empty() {
         let (first, last, email, phone) = (
             e.first.trim(),
@@ -696,6 +678,36 @@ pub fn edit_body(raw: &Value, c: &Contact, e: &ContactEdit) -> Result<Value> {
             &|x| s(x, "/number") == phone,
             &|x| !shown_phone.is_empty() && s(x, "/number") == shown_phone.as_str(),
         );
+    }
+    // Company: only when it changed, and only the company's name in the
+    // position the contact read (its job title and office stay).
+    let company = e.company.trim();
+    if company != c.company {
+        let company_of = |x: &Value| s(x, "/detail/company/displayName");
+        let mut list = body
+            .get_mut("positions")
+            .and_then(|v| v.as_array_mut())
+            .map(std::mem::take)
+            .unwrap_or_default();
+        let at = list
+            .iter()
+            .position(|x| !c.company.is_empty() && company_of(x) == c.company)
+            .or_else(|| {
+                list.iter()
+                    .position(|x| x["source"]["type"].as_str() == Some("UserProvided"))
+            })
+            .or(if list.is_empty() { None } else { Some(0) });
+        match at {
+            Some(i) => {
+                let p = &mut list[i];
+                p["detail"]["company"]["displayName"] = serde_json::json!(company);
+                p["source"] = serde_json::json!({ "type": "UserProvided" });
+                p["action"] = serde_json::json!("Patch");
+            }
+            None => list.push(serde_json::json!({ "detail": { "company": { "displayName": company } },
+                                                 "source": { "type": "UserProvided" }, "action": "Post" })),
+        }
+        body["positions"] = Value::Array(list);
     }
     Ok(body)
 }
@@ -1247,6 +1259,34 @@ mod tests {
         )
         .unwrap();
         assert_eq!(changed["phones"][0]["number"], "111");
+        // A job title without a company is left alone by an unrelated edit,
+        // and a company goes into it without losing the title.
+        let titled = serde_json::json!({ "id": "CCC=", "names": [{ "first": "Cy", "source": { "type": "UserProvided" } }],
+                                         "positions": [{ "id": "p", "detail": { "jobTitle": "Lead" }, "source": { "type": "UserProvided" } }] });
+        let (cy, _) = from_service(std::slice::from_ref(&titled));
+        let edit = |company: &str| {
+            edit_body(
+                &titled,
+                &cy[0],
+                &ContactEdit {
+                    first: "Cy".into(),
+                    phone: "9".into(),
+                    company: company.into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        };
+        assert_eq!(edit("")["positions"], titled["positions"]);
+        let with = edit("Contoso");
+        assert_eq!(
+            (
+                with["positions"][0]["detail"]["jobTitle"].as_str(),
+                with["positions"][0]["detail"]["company"]["displayName"].as_str(),
+                with["positions"][0]["action"].as_str()
+            ),
+            (Some("Lead"), Some("Contoso"), Some("Patch"))
+        );
         assert_eq!(
             (
                 changed["phones"][1]["number"].as_str(),
