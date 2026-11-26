@@ -355,7 +355,10 @@ Choosing OneNote in OST group test's Add a tab:
   &entryPoint=sidePanel&appSessionId=<uuid>` (frame `embedded-page-
   container`, the usual sandbox, `allow` `clipboard-write *;
   local-network-access *; autoplay`). OST's side pane now sends the call
-  and the entry point too.
+  and the entry point too. Teams' bar has Q&A after Chat in any meeting
+  with Q&A on (not only town halls and webinars); OST now shows it there
+  too, also for someone let in from the lobby (the lobby's join answer has
+  no meeting capability; the admission's is now passed on).
 - Live between OST and Teams (2026-11-26): OST Test 3 asked a question
   in OST's chat tab; Teams on the web (OST Test 2) saw it, upvoted and
   replied, and OST showed the vote and the reply; OST's reply showed in
