@@ -28,12 +28,21 @@ DV="$UV-1~$DIST"
 
 if [ "$deps" != 0 ]; then
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -q
-  apt-get install -y -q --no-install-recommends build-essential ca-certificates dpkg-dev debhelper file git
+  # A mirror in the middle of an update can list a package it no longer
+  # has (404); retry with a fresh index before giving up.
+  apt_retry() {
+    for try in 1 2 3; do
+      apt-get -o Acquire::Retries=3 update -q && apt-get -o Acquire::Retries=3 "$@" && return 0
+      echo "apt-get $1 failed (try $try of 3); retrying with a fresh index" >&2
+      sleep $((try * 20))
+    done
+    return 1
+  }
+  apt_retry install -y -q --no-install-recommends build-essential ca-certificates dpkg-dev debhelper file git
   # Build-Depends, one line, without the debhelper-compat entry.
   bd=$(sed -n '/^Build-Depends:/,/^[A-Z][A-Za-z-]*:/p' "$SRC/desktop/packaging/debian/control" \
     | sed '$d; s/^Build-Depends://' | tr -d '\n' | sed 's/debhelper-compat (= [0-9]*),//; s/,[[:space:]]*$//')
-  apt-get satisfy -y -q --no-install-recommends "$bd"
+  apt_retry satisfy -y -q --no-install-recommends "$bd"
   [ "$deps" = 2 ] && exit 0
 fi
 
