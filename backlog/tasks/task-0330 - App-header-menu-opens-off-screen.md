@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T15:54:00Z'
+updated_date: '2026-11-26T16:17:00Z'
 labels:
   - bug
   - apps
@@ -48,4 +48,6 @@ Cause: x was set from the menu width once, before opening; MenuPopup measures it
 Change: WebApp.qml binds x to the button right edge minus the current menu width; margins 4 keep it inside the window.
 
 Tests: live on linuxlt with Whiteboard in the main window and in its own window; widening the open menu kept its right edge on the button (1273 of 1280; the old x would have put it at 1457).
+
+PR #17 (branch task-0334-web-apps).
 <!-- SECTION:FINAL_SUMMARY:END -->

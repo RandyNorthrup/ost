@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T15:54:00Z'
+updated_date: '2026-11-26T16:17:00Z'
 labels:
   - bug
   - calls
@@ -44,4 +44,6 @@ Found while capturing wiki screenshots (2026-11-25). The avatar picker (Video ef
 The Avatars picker and the Avatars tab show what Teams shows for the account; the blank tab could not be reproduced.
 
 Checked live on linuxlt: the pre-join picker and Avatars pane and the call Avatars tab (9 openings) showed the Avatars app panel with Avatar 1, reactions, backgrounds, mood and camera. Teams on winpc (pre-join, DOM only) lists None, Avatar 1, Create More and the same backgrounds in the same order as OST. No code change; the Avatars app no longer makes Chromium probe the cameras as it starts (TASK-0334).
+
+PR #17 (branch task-0334-web-apps).
 <!-- SECTION:FINAL_SUMMARY:END -->
