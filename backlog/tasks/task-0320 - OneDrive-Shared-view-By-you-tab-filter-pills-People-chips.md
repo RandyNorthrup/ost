@@ -1,11 +1,11 @@
 ---
 id: TASK-0320
 title: 'OneDrive Shared view: By you tab, filter pills, People chips'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T21:11:00Z'
-updated_date: '2026-11-26T19:08:00Z'
+updated_date: '2026-11-26T20:07:00Z'
 labels:
   - onedrive
 dependencies: []

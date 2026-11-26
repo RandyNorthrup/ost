@@ -1,11 +1,11 @@
 ---
 id: TASK-0331
 title: Add shortcut to OneDrive reports success but adds nothing
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T19:08:00Z'
+updated_date: '2026-11-26T20:07:00Z'
 labels:
   - bug
   - files

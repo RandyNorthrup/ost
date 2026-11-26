@@ -1,11 +1,11 @@
 ---
 id: TASK-0304
 title: 'OneDrive Home layout as Teams: For you cards, Recent filters, place line'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T15:49:00Z'
-updated_date: '2026-11-26T19:08:00Z'
+updated_date: '2026-11-26T20:07:00Z'
 labels:
   - onedrive
 dependencies: []
