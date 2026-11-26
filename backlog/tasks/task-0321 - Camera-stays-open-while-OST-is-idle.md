@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T04:34:00Z'
+updated_date: '2026-11-26T07:24:00Z'
 labels:
   - bug
   - privacy
@@ -38,9 +38,10 @@ Found while capturing wiki screenshots (2026-11-25). Every running OST instance 
 
 <!-- SECTION:NOTES:BEGIN -->
 - Cause: VideoClipRecorder (created with Conversation.qml and NewChat.qml) and FaceCaptureDialog (created with SettingsView) each had a Qt Multimedia Camera with cameraDevice set (Qt's default camera when none was picked). Qt's V4L2 camera opens the device for its controls when the device is set and keeps the fd until the object goes, active or not.
-- Fix with TASK-0308: neither uses Qt's camera any more; CameraFeed opens OST's capture only while the dialog shows the camera.
-- Live on linuxlt (fd + PipeWire sampler every 0.1 s): idle signed-in OST 50 s, no camera handle; recorder close -> device closed in 24 ms (V4L2) / 22 ms (PipeWire stream); face capture ~0.1 s; --prejoin-camera-test and --video-effects-test unchanged; the real /dev/video0 never opened by OST.
-- Seen: QtWebEngineProc opened /dev/video0 ~140 ms when the Avatars app started (Chromium enumeration) -> TASK-0334.
+- Fix together with TASK-0308: neither uses Qt's camera any more; CameraFeed opens OST's capture only while the dialog shows the camera.
+- Live on linuxlt (fd + PipeWire sampler every 0.1 s): idle signed-in OST 50 s, no camera handle; recorder close -> device closed in 24 ms (V4L2) / 22 ms (PipeWire stream); face capture ~0.1 s; --prejoin-camera-test and --video-effects-test unchanged.
+- One intermediate review-fix build let face capture fall back to the first camera when the chosen one was missing: it opened linuxlt's real webcam ~6 s (harness photo deleted unviewed, nothing sent); fixed before the final push, rechecked.
+- Seen: QtWebEngineProc opened /dev/video0 ~140 ms when the Avatars app started (Chromium enumeration); tracked separately.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -50,9 +51,7 @@ OST no longer keeps a camera open while idle (PR #12).
 
 Cause: the video clip recorder and face capture dialogs are created up front and each held a Qt Multimedia Camera with a device set; Qt's V4L2 camera keeps the device open from then on, active or not.
 
-Changes (shared with TASK-0322/0308): both dialogs now use CameraFeed (OST's own capture), opened only while they show the camera and closed (joined) as soon as they stop.
+Changes (with TASK-0308): both dialogs now use CameraFeed (OST's own capture), opened only while they show the camera (on a worker thread, cancelled if closed meanwhile) and closed as soon as they stop.
 
 Tests: live on linuxlt with an fd/PipeWire sampler: idle OST holds no camera; recorder/face capture open the chosen camera only and close within 0.1 s; pre-join, call and video effects preview unchanged (--prejoin-camera-test, --video-effects-test).
-
-Follow-up: TASK-0334 (QtWebEngine's own camera enumeration).
 <!-- SECTION:FINAL_SUMMARY:END -->

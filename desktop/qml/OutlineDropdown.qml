@@ -16,12 +16,15 @@ Item {
     /// Shown (#616161) while nothing is chosen.
     property string placeholder: ""
     signal picked(int index)
+    /// The list is about to open (its options can be refreshed).
+    signal opening()
     /// Fluent's filled-darker look (#F5F5F5, no outline or underline).
     property bool filled: false
     /// The listbox's tallest (Teams' language lists: 340 with padding).
     property real maxListHeight: 300
     implicitWidth: 277.3; implicitHeight: 32
     function openList() {
+        root.opening()
         // Below when it fits, else above.
         const w = root.Window.window
         const h = Math.min(view.contentHeight, root.maxListHeight) + 8
