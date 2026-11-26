@@ -1,11 +1,11 @@
 ---
 id: TASK-0328
 title: Avatar picker stays blank
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T15:37:00Z'
+updated_date: '2026-11-26T15:54:00Z'
 labels:
   - bug
   - calls
@@ -20,7 +20,7 @@ Found while capturing wiki screenshots (2026-11-25). The avatar picker (Video ef
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The avatar picker shows what Teams shows for the account (avatars or Teams' empty/create state), verified against Teams on winpc
+- [x] #1 The avatar picker shows what Teams shows for the account (avatars or Teams' empty/create state), verified against Teams on winpc
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -37,3 +37,11 @@ Found while capturing wiki screenshots (2026-11-25). The avatar picker (Video ef
 - Live (linuxlt, ost-test1): the pre-join Avatars picker and "Avatars" pane, and the call's Video effects and settings > Avatars tab (opened 9 times across runs, fresh and after other use) all showed the Avatars app's own panel: Your Avatar (None, Avatar 1), Edit my avatar, reactions, backgrounds, mood, camera; the renderer listed 1 avatar and 70 backgrounds. The blank tab of the wiki run could not be reproduced (its cause isn't known; that run also had the Avatars app make Chromium probe every camera node as it started, TASK-0334, which no longer happens).
 - Teams on winpc (2026-11-26, ost-test1, a Meet now's pre-join, camera off, DOM read only, then Cancel; Teams put back on OneDrive): Effects and avatars > Avatars lists None, Avatar 1, Create More, then backgrounds None, Gold shimmer holiday, Red lights holiday, In the zone 1-3, and More avatar settings: the same as OST's pre-join picker (None, Avatar 1, Create More; the same backgrounds in the same order).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The Avatars picker and the Avatars tab show what Teams shows for the account; the blank tab could not be reproduced.
+
+Checked live on linuxlt: the pre-join picker and Avatars pane and the call Avatars tab (9 openings) showed the Avatars app panel with Avatar 1, reactions, backgrounds, mood and camera. Teams on winpc (pre-join, DOM only) lists None, Avatar 1, Create More and the same backgrounds in the same order as OST. No code change; the Avatars app no longer makes Chromium probe the cameras as it starts (TASK-0334).
+<!-- SECTION:FINAL_SUMMARY:END -->

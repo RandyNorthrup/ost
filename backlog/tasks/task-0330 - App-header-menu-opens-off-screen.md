@@ -1,11 +1,11 @@
 ---
 id: TASK-0330
 title: App header menu opens off-screen
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T15:37:00Z'
+updated_date: '2026-11-26T15:54:00Z'
 labels:
   - bug
   - apps
@@ -20,7 +20,7 @@ Found while capturing wiki screenshots (2026-11-25). The menu in a hosted app's 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The app header menu opens fully on screen next to its button, as in Teams, at any window size
+- [x] #1 The app header menu opens fully on screen next to its button, as in Teams, at any window size
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -37,3 +37,15 @@ Found while capturing wiki screenshots (2026-11-25). The menu in a hosted app's 
 - Fix: x bound to the button's right edge minus the menu's current width, and margins 4 so it never leaves the window at any size.
 - Live (linuxlt, Whiteboard in the main window and in its own window): the menu opens under ··· with its right edge on the button's (as Teams); widening the open menu (minRowWidth 300) kept its right edge at the button (1273 of 1280) where the old x would have put it at 1457.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The hosted app header menu (Reload app, About, Share app) opens under its button with its right edge on the button, as in Teams, at any window size.
+
+Cause: x was set from the menu width once, before opening; MenuPopup measures its rows again as it opens, so a menu that came out wider hung past the window edge.
+
+Change: WebApp.qml binds x to the button right edge minus the current menu width; margins 4 keep it inside the window.
+
+Tests: live on linuxlt with Whiteboard in the main window and in its own window; widening the open menu kept its right edge on the button (1273 of 1280; the old x would have put it at 1457).
+<!-- SECTION:FINAL_SUMMARY:END -->
