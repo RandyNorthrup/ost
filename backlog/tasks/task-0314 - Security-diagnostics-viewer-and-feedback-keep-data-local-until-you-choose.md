@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T19:49:00Z'
-updated_date: '2026-11-25T20:17:00Z'
+updated_date: '2026-11-26T02:00:00Z'
 labels:
   - security
 dependencies: []
@@ -41,4 +41,11 @@ Verified (main @ 575e4404):
 - src/api/ddv.rs:98-107 accepted any RFC1918 address; src/api/ddv/wire.rs:184-188 always streamed over http:// to it, for 24 h (ddv.rs:19).
 - src/feedback.rs:94-160 issue_url put area, context, version, OS, file names and, with "Yes, share", the newest masked log lines (url.push_str("&logs=") at :153) into the new-issue URL; desktop/src/backend.rs:18515 read the log for it. Opening the URL in the browser sends all of that before the user submits.
 - src/feedback.rs:163 mask_line was pattern based (eyJ JWTs, Bearer, query strings) and only applied on export; the log file itself was written raw (desktop/src/main.rs file layer), so a token in an error URL or header would land in it.
+
+Live check on linuxlt (2026-11-25, my build with --features test-harness, fresh profile OST_PROFILE=sectest as ost-test1, keyring on; removed afterwards):
+- 0309: sign-in worked; with an empty XDG_CACHE_HOME the chat list and OST group test fetched 6 card images, 40 inline images, 19 profile photos and 12 thumbnails through the new checks, with no "Refusing to send credentials" or "not following a redirect" lines.
+- 0310: config.toml has tokens_in_keyring = true and no token fields; after sign-out the keyring entry holds no tokens.
+- 0311: Planner hosted and framed (the host's new address check passed); an injected https://example.com iframe asking for microphone and geolocation was refused by origin ("device permission refused: the page isn't one of the app's"); Planner's own frame passed the origin check and was refused only by its App permission (off by default, as in Teams).
+- 0313: --sign-out-test: "signed out; restarting", the restarted process removed ~/.local/share/OST/QtWebEngine/ost-apps-sectest and its cache before Qt WebEngine opened; the next sign-in asked for the e-mail address (no remembered account). First run crashed in libQt6Qml during teardown before the restart; fixed (re-exec right after the event loop) and re-verified: restart within 1.5 s.
+- 0314: --feedback-test: the issue URL holds only template, title, text and contact ("logs in url: false"); masked logs went to OST report details.txt (0600, folder 0700) with no JWTs; the sectest log has no eyJ tokens.
 <!-- SECTION:NOTES:END -->
