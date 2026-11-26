@@ -1,9 +1,11 @@
 ---
 id: TASK-0337
 title: Help's GitHub article links point at a branch that no longer exists
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-11-26T15:21:00Z'
+updated_date: '2026-11-26T18:12:00Z'
 labels:
   - bug
   - help
@@ -19,5 +21,11 @@ src/feedback.rs docs_url() defaults to the desktop/foundation branch, which was 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Help's links to its articles on GitHub open the articles on the main branch
+- [x] #1 Help's links to its articles on GitHub open the articles on the main branch
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Help's links to its articles on GitHub (src/feedback.rs docs_url) defaulted to the desktop/foundation branch, removed on 2026-11-24, so they opened a 404. They now default to main (a build can still set OST_DOCS_BRANCH).
+<!-- SECTION:FINAL_SUMMARY:END -->
