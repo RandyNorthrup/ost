@@ -8705,15 +8705,25 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         let admitted = match call_slot().lock().await.outgoing.as_mut() {
             Some(call) if call.in_lobby() => {
                 call.admit_from_lobby(&update);
-                Some((call.capability(), call.can_send_video(), call.can_share()))
+                // The meeting's own facts come with the admission (the
+                // lobby's join answer had none): an event's, and Q&A.
+                let event = event_json(&call.event(), "", "");
+                Some((
+                    call.capability(),
+                    call.can_send_video(),
+                    call.can_share(),
+                    event,
+                ))
             }
             _ => None,
         };
-        if let Some((cap, can_video, can_share)) = admitted {
+        if let Some((cap, can_video, can_share, event)) = admitted {
             let _ = qt.queue(move |mut this| {
                 this.as_mut().show_capability(cap, false);
                 this.as_mut().set_call_can_video(can_video);
                 this.as_mut().set_call_can_share(can_share);
+                this.as_mut()
+                    .set_call_event_json(QString::from(event.as_str()));
                 this.as_mut().set_call_state(QString::from("connected"));
             });
         }
