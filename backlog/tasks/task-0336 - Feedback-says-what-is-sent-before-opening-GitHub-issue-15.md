@@ -1,11 +1,11 @@
 ---
 id: TASK-0336
 title: 'Feedback says what is sent before opening GitHub (issue #15)'
-status: In Progress
+status: Done
 assignee:
   - '@issues'
 created_date: '2026-11-26T15:10:00Z'
-updated_date: '2026-11-26T17:08:00Z'
+updated_date: '2026-11-26T18:13:00Z'
 labels:
   - privacy
   - help
@@ -26,7 +26,7 @@ GitHub issue #15: the feedback dialog prefills a GitHub issue through the browse
 <!-- AC:BEGIN -->
 - [x] #1 Before the browser opens, the dialog tells the user that the text they typed and their contact choice are sent to GitHub when the page opens, even if they don't submit the issue
 - [x] #2 The user can instead copy the text and open a blank issue form; logs and attachments stay local as now
-- [ ] #3 PRIVACY.md, OST's Help article and the wiki say the same
+- [x] #3 PRIVACY.md, OST's Help article and the wiki say the same
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -48,6 +48,8 @@ Confirmed at 8722149f:
 - The suggested-reply feedback (desktop/qml/Conversation.qml:3808-3815, SmartReplyFeedback.qml) uses the same prefilled URL.
 
 AC3: PRIVACY.md and the Help article are updated in this PR; the wiki text was handed to the session that updates the wiki, so AC3 stays open until the wiki says the same.
+
+- 2026-11-26: wiki updated (Help-and-feedback, Privacy-and-data; wiki 654466f), so AC #3 is met.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
