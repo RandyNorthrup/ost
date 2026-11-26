@@ -3858,7 +3858,7 @@ pub struct BackendRust {
     next_post: Option<NextPost>,
     last_typing_sent: Option<std::time::Instant>,
     /// Chats with messages pushed since the user last opened them.
-    unread: HashSet<String>,
+    unread: UnreadChats,
     /// The chat list as loaded, before unread flags are applied.
     chats: Vec<serde_json::Value>,
     /// The newest message id in the open chat.
@@ -6577,6 +6577,137 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
         .collect();
     list.extend(rest);
     Ok((me.display_name, list))
+}
+
+/// The chats shown unread (messages pushed since the user last opened
+/// them), with a change count per chat. Every push naming a chat and every
+/// local mark (opening it, Mark as read or unread) moves its count on, so a
+/// read-back of the service's unread state that went out before one of
+/// them doesn't undo it (`apply_read_back`).
+#[derive(Default)]
+pub(crate) struct UnreadChats {
+    set: HashSet<String>,
+    changes: HashMap<String, u64>,
+}
+
+impl UnreadChats {
+    /// The chat changed (a push named it).
+    fn touch(&mut self, id: &str) {
+        *self.changes.entry(id.to_string()).or_default() += 1;
+    }
+
+    fn insert(&mut self, id: String) -> bool {
+        self.touch(&id);
+        self.set.insert(id)
+    }
+
+    fn remove(&mut self, id: &str) -> bool {
+        self.touch(id);
+        self.set.remove(id)
+    }
+
+    fn contains(&self, id: &str) -> bool {
+        self.set.contains(id)
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &String> {
+        self.set.iter()
+    }
+
+    fn clear(&mut self) {
+        for id in std::mem::take(&mut self.set) {
+            self.touch(&id);
+        }
+    }
+
+    /// Each chat's change count, as a read-back of their unread state
+    /// goes out.
+    fn marks(&self, ids: Vec<String>) -> Vec<(String, u64)> {
+        ids.into_iter()
+            .map(|id| {
+                let n = self.changes.get(&id).copied().unwrap_or_default();
+                (id, n)
+            })
+            .collect()
+    }
+
+    /// Take the service's unread state (`states`, by chat) for the chats
+    /// marked as the read-back went out. A chat that changed since (a push
+    /// or a local mark came first) keeps what that change left, as does
+    /// the open chat and one the service didn't list. Whether any changed.
+    fn apply_read_back(
+        &mut self,
+        marks: Vec<(String, u64)>,
+        states: &HashMap<String, bool>,
+        current: &str,
+    ) -> bool {
+        let mut changed = false;
+        for (id, at) in marks {
+            if id == current || self.changes.get(&id).copied().unwrap_or_default() != at {
+                continue;
+            }
+            // (Not counted as a change: it is the service's own state.)
+            changed |= match states.get(&id) {
+                Some(true) => self.set.insert(id),
+                Some(false) => self.set.remove(&id),
+                None => false,
+            };
+        }
+        changed
+    }
+}
+
+#[cfg(test)]
+mod unread_chats_tests {
+    use super::*;
+
+    #[test]
+    fn read_back_takes_the_services_state() {
+        let mut u = UnreadChats::default();
+        u.insert("19:read@thread.v2".into());
+        let marks = u.marks(vec![
+            "19:read@thread.v2".into(),
+            "19:marked@thread.v2".into(),
+            "19:unlisted@thread.v2".into(),
+        ]);
+        let states = HashMap::from([
+            ("19:read@thread.v2".to_string(), false),
+            ("19:marked@thread.v2".to_string(), true),
+        ]);
+        assert!(u.apply_read_back(marks, &states, ""));
+        // Read on another device, marked unread on another device.
+        assert!(!u.contains("19:read@thread.v2"));
+        assert!(u.contains("19:marked@thread.v2"));
+        assert!(!u.contains("19:unlisted@thread.v2"));
+    }
+
+    #[test]
+    fn read_back_never_undoes_a_newer_change() {
+        let mut u = UnreadChats::default();
+        let marks = u.marks(vec![
+            "19:new@thread.v2".into(),
+            "19:opened@thread.v2".into(),
+            "19:pushed@thread.v2".into(),
+            "19:open@thread.v2".into(),
+        ]);
+        // While the read-back is out: a new message makes one unread, the
+        // user opens another, a push names a third.
+        u.insert("19:new@thread.v2".into());
+        u.remove("19:opened@thread.v2");
+        u.touch("19:pushed@thread.v2");
+        // The service's answer predates all of them.
+        let states = HashMap::from([
+            ("19:new@thread.v2".to_string(), false),
+            ("19:opened@thread.v2".to_string(), true),
+            ("19:pushed@thread.v2".to_string(), true),
+            ("19:open@thread.v2".to_string(), true),
+        ]);
+        assert!(!u.apply_read_back(marks, &states, "19:open@thread.v2"));
+        assert!(u.contains("19:new@thread.v2"));
+        assert!(!u.contains("19:opened@thread.v2"));
+        assert!(!u.contains("19:pushed@thread.v2"));
+        assert!(!u.contains("19:open@thread.v2"));
+    }
 }
 
 /// Chats whose conversation properties a push changed, for
@@ -18363,6 +18494,9 @@ impl qobject::Backend {
         }
         let mut reload = false;
         for id in ids.into_iter().filter(|i| !i.starts_with("48:")) {
+            // It changed: a read-back of its unread state taken before
+            // this push no longer holds (UnreadChats::apply_read_back).
+            self.as_mut().rust_mut().unread.touch(&id);
             // A thread's push names "<channel>;messageid=<post>": the open
             // channel shows its replies (and, in the Threads layout, their
             // counts and replies also sent to the channel).
@@ -18444,6 +18578,8 @@ impl qobject::Backend {
         if ids.is_empty() {
             return;
         }
+        // Where each chat stood as the request went out.
+        let marks = self.rust().unread.marks(ids);
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -18460,15 +18596,12 @@ impl qobject::Backend {
             };
             let _ = qt.queue(move |mut this| {
                 let current = this.rust().current_chat_id.to_string();
-                let mut changed = false;
-                for id in ids.into_iter().filter(|i| *i != current) {
-                    changed |= match states.get(&id) {
-                        Some(true) => this.as_mut().rust_mut().unread.insert(id),
-                        Some(false) => this.as_mut().rust_mut().unread.remove(&id),
-                        None => false,
-                    };
-                }
-                if changed {
+                if this
+                    .as_mut()
+                    .rust_mut()
+                    .unread
+                    .apply_read_back(marks, &states, &current)
+                {
                     this.as_mut().publish_chats();
                 }
             });
