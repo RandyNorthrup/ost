@@ -270,7 +270,7 @@ fn copy_plane(p: &Plane<'_>, w: usize, h: usize, out: &mut [u8]) {
 }
 
 fn avg2(a: u8, b: u8) -> u8 {
-    ((a as u16 + b as u16 + 1) / 2) as u8
+    (a as u16 + b as u16).div_ceil(2) as u8
 }
 
 fn clamp(v: i32) -> u8 {
