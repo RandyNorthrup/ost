@@ -6167,6 +6167,16 @@ pub fn favorites_from_properties(json: &str) -> Vec<String> {
 
 /// Chats with messages from someone else newer than our read horizon.
 pub async fn unread_chat_ids(client: &TeamsClient) -> Result<Vec<String>> {
+    Ok(chat_unread_states(client)
+        .await?
+        .into_iter()
+        .filter_map(|(id, unread)| unread.then_some(id))
+        .collect())
+}
+
+/// The latest-changed conversations (the chat service's first hundred) and
+/// whether each is unread by Teams' rule (`is_unread`).
+pub async fn chat_unread_states(client: &TeamsClient) -> Result<Vec<(String, bool)>> {
     let url = format!(
         "{}/v1/users/ME/conversations?view=msnp24Equivalent&pageSize=100",
         client.chat_service_url()
@@ -6182,8 +6192,10 @@ pub async fn unread_chat_ids(client: &TeamsClient) -> Result<Vec<String>> {
         .and_then(|c| c.as_array())
         .into_iter()
         .flatten()
-        .filter(|c| is_unread(c, &me))
-        .filter_map(|c| c.get("id").and_then(|i| i.as_str()).map(str::to_string))
+        .filter_map(|c| {
+            let id = c.get("id").and_then(|i| i.as_str())?;
+            Some((id.to_string(), is_unread(c, &me)))
+        })
         .collect())
 }
 
