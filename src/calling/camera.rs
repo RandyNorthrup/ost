@@ -323,7 +323,12 @@ fn probe_node(n: &SysNode, probe: Probe) -> Option<String> {
                 None
             }
         },
-        Err(_) => None,
+        // Not kept either: a failed query says nothing about the node, so
+        // the next list shown asks again.
+        Err(e) => {
+            tracing::debug!(path, "camera node query failed: {e}");
+            return None;
+        }
     };
     drop(dev);
     tracing::debug!(path, camera = ?name, "camera node asked");
