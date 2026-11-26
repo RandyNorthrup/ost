@@ -187,18 +187,37 @@ pub fn denied() -> bool {
     DENIED.load(Ordering::Relaxed)
 }
 
+/// The runtime portal calls run on. It lives as long as OST: the D-Bus
+/// connection ashpd keeps (and shares) runs its tasks on the runtime that
+/// made it, so a runtime dropped after one call would leave the next call
+/// waiting forever.
+fn portal_runtime() -> Result<&'static tokio::runtime::Runtime> {
+    static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    if let Some(rt) = RT.get() {
+        return Ok(rt);
+    }
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .thread_name("ost-camera-portal")
+        .enable_all()
+        .build()?;
+    Ok(RT.get_or_init(|| rt))
+}
+
+/// How long a portal call may take (asking for access waits for the
+/// person instead).
+const PORTAL_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// A PipeWire connection with the cameras on it, from the Camera portal
 /// (asking for access the first time). Call it off any async runtime.
 fn portal_remote() -> Result<std::os::fd::OwnedFd> {
     if denied() {
         anyhow::bail!("Camera access was denied");
     }
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
-    rt.block_on(async {
-        let camera = ashpd::desktop::camera::Camera::new()
+    portal_runtime()?.block_on(async {
+        let camera = tokio::time::timeout(PORTAL_TIMEOUT, ashpd::desktop::camera::Camera::new())
             .await
+            .context("The desktop's camera portal didn't answer")?
             .context("The desktop's camera portal isn't available")?;
         if !ACCESS.load(Ordering::Relaxed) {
             let reply = camera.request_access(Default::default()).await?.response();
@@ -209,7 +228,10 @@ fn portal_remote() -> Result<std::os::fd::OwnedFd> {
             ACCESS.store(true, Ordering::Relaxed);
             tracing::info!("camera portal: access granted");
         }
-        Ok(camera.open_pipe_wire_remote(Default::default()).await?)
+        let remote = camera.open_pipe_wire_remote(Default::default());
+        Ok(tokio::time::timeout(PORTAL_TIMEOUT, remote)
+            .await
+            .context("The desktop's camera portal didn't answer")??)
     })
 }
 
@@ -232,6 +254,9 @@ enum Snapshot {
 struct Shared {
     state: Mutex<Snapshot>,
     changed: Condvar,
+    /// When the monitor started: lists wait for its first answer only
+    /// that long after it (not again and again while the portal asks).
+    started: std::time::Instant,
 }
 
 impl Shared {
@@ -247,6 +272,7 @@ fn shared() -> &'static Shared {
         let s: &'static Shared = Box::leak(Box::new(Shared {
             state: Mutex::new(Snapshot::Starting),
             changed: Condvar::new(),
+            started: std::time::Instant::now(),
         }));
         if let Err(e) = std::thread::Builder::new()
             .name("ost-cameras".into())
@@ -259,10 +285,17 @@ fn shared() -> &'static Shared {
     })
 }
 
-/// PipeWire's cameras, waiting up to `wait` for the first list; `None`
-/// when PipeWire (or the portal) isn't there or refused.
+/// Start the monitor (if it isn't running).
+pub fn start() {
+    shared();
+}
+
+/// PipeWire's cameras, waiting for the first list until `wait` after the
+/// monitor started; `None` when PipeWire (or the portal) isn't there,
+/// refused, or is still asking.
 pub fn cameras(wait: Duration) -> Option<Vec<PwCamera>> {
     let s = shared();
+    let wait = wait.saturating_sub(s.started.elapsed());
     let guard = s.state.lock().unwrap_or_else(|e| e.into_inner());
     let (guard, _) = s
         .changed
@@ -381,6 +414,11 @@ fn watch(s: &'static Shared) -> Result<()> {
                         let listener = node
                             .add_listener_local()
                             .info(move |info| {
+                                // A state change alone comes without its
+                                // properties: keep the ones known.
+                                if !info.change_mask().contains(pw::node::NodeChangeMask::PROPS) {
+                                    return;
+                                }
                                 if let Some(props) = info.props() {
                                     nodes.borrow_mut().insert(id, own(Some(props)));
                                     publish();
@@ -400,6 +438,12 @@ fn watch(s: &'static Shared) -> Result<()> {
                         let listener = device
                             .add_listener_local()
                             .info(move |info| {
+                                if !info
+                                    .change_mask()
+                                    .contains(pw::device::DeviceChangeMask::PROPS)
+                                {
+                                    return;
+                                }
                                 if let Some(props) = info.props() {
                                     devices.borrow_mut().insert(id, own(Some(props)));
                                     publish();

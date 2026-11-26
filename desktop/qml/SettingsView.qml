@@ -3005,6 +3005,19 @@ Rectangle {
                             videoCard.previewing = backend.setCameraPreview(true)
                     }
                 }
+                // No camera yet (the camera portal still asking, or none
+                // plugged in): look again each second while shown.
+                Timer {
+                    interval: 1000; repeat: true
+                    running: videoCard.showing && videoCard.cameras.length === 0
+                    onTriggered: {
+                        const d = JSON.parse(backend.videoDevices())
+                        if (!(d.devices || []).length) return
+                        videoCard.cameras = d.devices
+                        videoCard.currentCamera = d.current || ""
+                        videoCard.previewing = backend.callState !== "connected" && backend.setCameraPreview(true)
+                    }
+                }
                 // Green Screen's detected backdrop until you pick one.
                 Timer {
                     interval: 500; repeat: true
@@ -3087,6 +3100,7 @@ Rectangle {
                 SettingsParts.SubHeading { text: qsTr("Camera") }
                 SettingsParts.Gap { size: 10.7 }
                 OutlineDropdown {
+                    id: cameraDropdown
                     width: 292.7; height: 30
                     options: videoCard.cameras.map(c => ({ label: c.name }))
                     current: Math.max(0, videoCard.cameras.findIndex(c => c.path === videoCard.currentCamera))
@@ -5238,6 +5252,12 @@ Rectangle {
     }
     Component.onCompleted: backend.loadReadReceipts()
     function setPropForTest(name, path, value) { setProp(name, path, value) }
+    /// The Video settings card in view, its camera list open.
+    function openCameraListForTest() {
+        content.contentY = Math.max(0, Math.min(content.contentHeight - content.height,
+            content.contentY + videoCard.mapToItem(content, 0, 0).y - 20))
+        Qt.callLater(cameraDropdown.openList)
+    }
     function pageForTest(p, sub) { page = p; subPage = sub || ""; content.contentY = 0 }
     /// --headset-take-at: Devices' "Transfer controls to this app" as its
     /// tap does it, when it's enabled; returns whether it was.

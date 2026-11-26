@@ -48,7 +48,27 @@ pub struct CameraInfo {
 /// doesn't offer.
 pub fn cameras() -> Vec<CameraInfo> {
     let pw = camera_pw::cameras(PIPEWIRE_WAIT).unwrap_or_default();
-    merge(&pw, v4l2_cameras(), rdev)
+    merge(&pw, v4l2_fallback(), rdev)
+}
+
+/// The V4L2 cameras OST opens itself. None when cameras come through the
+/// Camera portal: what the portal offers (or the person allowed, or is
+/// still being asked) is all there is, never a way around their answer.
+fn v4l2_fallback() -> Vec<(String, String)> {
+    if camera_pw::use_portal() {
+        Vec::new()
+    } else {
+        v4l2_cameras()
+    }
+}
+
+/// Start watching PipeWire's cameras now, so the first list is quick.
+/// Through the Camera portal it waits until a camera is first asked for
+/// (the portal may ask the person then).
+pub fn prepare() {
+    if !camera_pw::use_portal() {
+        camera_pw::start();
+    }
 }
 
 /// PipeWire's cameras and the V4L2 cameras `(path, name)`, without the
@@ -127,6 +147,10 @@ pub fn is_camera_id(id: &str) -> bool {
 
 /// The V4L2 node behind a camera (for its controls), if it has one.
 pub fn v4l2_path(id: &str) -> Option<String> {
+    // Through the portal, the device itself isn't OST's to open.
+    if camera_pw::use_portal() {
+        return None;
+    }
     if id.starts_with("/dev/video") {
         return Some(id.to_string());
     }
@@ -214,7 +238,7 @@ impl CameraCapture {
         let pw = camera_pw::cameras(PIPEWIRE_WAIT).unwrap_or_default();
         let id = match device {
             Some(d) => d.to_string(),
-            None => match merge(&pw, v4l2_cameras(), rdev).into_iter().next() {
+            None => match merge(&pw, v4l2_fallback(), rdev).into_iter().next() {
                 Some(c) => c.id,
                 None => {
                     super::device_health::note_camera(super::device_health::Open::Failed);
@@ -239,6 +263,15 @@ impl CameraCapture {
         };
         match through_pw {
             Some(cam) => Self::start_pipewire(&cam, width, height, fps),
+            // Through the portal only (see v4l2_fallback).
+            None if camera_pw::use_portal() => {
+                super::device_health::note_camera(if camera_pw::denied() {
+                    super::device_health::Open::Permission
+                } else {
+                    super::device_health::Open::Failed
+                });
+                anyhow::bail!("The camera portal doesn't offer {id}")
+            }
             None => Self::start_v4l2(&id, width, height, fps),
         }
     }

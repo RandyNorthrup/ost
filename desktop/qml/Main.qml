@@ -12863,7 +12863,11 @@ Window {
             const i = Math.floor((step - 1) / 3), k = (step - 1) % 3
             if (step >= 1 && i < pages.length) {
                 if (k === 0) settingsView.pageForTest(pages[i])
-                else if (k === 1) shot("st-" + pages[i])
+                else if (k === 1) {
+                    shot("st-" + pages[i])
+                    // Devices: then its camera list, open, and logged.
+                    if (pages[i] === "devices") { console.warn("ST cameras", backend.videoDevices()); settingsView.openCameraListForTest() }
+                } else if (pages[i] === "devices") shot("st-devices-cameras")
                 else { settingsView.scrollForTest(); shot("st-" + pages[i] + "-2") }
             } else if (step === 1 + pages.length * 3) { console.warn("ST settings", backend.settingsJson.slice(0, 1500)); settingsView.pageForTest("general", "oof") }
             else if (step === 2 + pages.length * 3) shot("st-oof")
