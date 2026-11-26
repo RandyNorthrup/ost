@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T15:54:00Z'
+updated_date: '2026-11-26T16:17:00Z'
 labels:
   - bug
   - calls
@@ -59,4 +59,6 @@ Changes:
 - docs/spec/call-and-meeting-window.md.
 
 Tests: live on linuxlt, KWin Wayland (minimize by KWin and by the app, Maximize click, KWin unminimize, drag, Minimize, covered window stays without compact view) and nested KWin X11 (WM minimize, restore). Not tested: Hyprland, GNOME (not installed).
+
+PR #18 (branch task-0326-compact-view).
 <!-- SECTION:FINAL_SUMMARY:END -->
