@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T16:01:00Z'
+updated_date: '2026-11-26T16:17:00Z'
 labels:
   - bug
   - shell
@@ -51,4 +51,6 @@ Cause: Plasma drops LauncherEntry updates for an app id without an installed des
 Changes (launcher_badge.rs, main.rs): OST writes its own desktop entry and icon for the user when none with its id is installed (rewrites only its own, once its binary is gone; never in Flatpak or Snap) and sends the count again; the entry object answers Query. Count rules unchanged. Unit tests for reading Exec, quoting and when to write.
 
 Tests: live on linuxlt, Plasma 6.6 Wayland: entry written, the Plasma error gone, Query answered, an unread chat showed 1 on OST's taskbar button and 0 after reading it. Not tested: GNOME docks.
+
+PR #19 (branch task-0332-launcher-badge).
 <!-- SECTION:FINAL_SUMMARY:END -->
