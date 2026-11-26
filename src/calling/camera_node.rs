@@ -227,13 +227,16 @@ impl SysNode {
             if self.udev_capture() == Some(true) {
                 return camera();
             }
-            if self.loopback_state.is_some() || self.udev_caps.is_some() {
+            if self.loopback_state.is_some() {
                 return Listing::NotCamera("loopback nothing writes to");
             }
-            // An older module: its format shows while it is fed.
+            // An older module without `state`: its format shows while it
+            // is fed (udev's record is from before, when it may have been
+            // idle).
             return match self.loopback_format.as_deref() {
                 Some(f) if !f.trim().is_empty() => self.loopback_fed(),
-                _ => Listing::Unknown,
+                Some(_) => Listing::NotCamera("loopback nothing writes to"),
+                None => Listing::Unknown,
             };
         }
         match self.udev_capture() {
@@ -573,7 +576,16 @@ mod tests {
             Listing::NotCamera(_)
         ));
         assert_eq!(lb(None, Some("YUYV:640x480@30"), None).listing(), a);
-        assert_eq!(lb(None, Some(""), None).listing(), Listing::Unknown);
+        // (udev saw it idle, before its producer started.)
+        assert_eq!(
+            lb(None, Some("YUYV:640x480@30"), Some(":video_output:")).listing(),
+            a
+        );
+        assert!(matches!(
+            lb(None, Some(""), Some(":video_output:")).listing(),
+            Listing::NotCamera(_)
+        ));
+        assert_eq!(lb(None, None, None).listing(), Listing::Unknown);
         // The fingerprint follows its state, so a probe is asked again.
         assert_ne!(
             lb(Some("output"), Some(""), None).fingerprint(),
