@@ -59,6 +59,10 @@ pub struct SrtpContext {
     pub remote_keys: SrtpSessionKeys,
     /// Rollover counter for outbound packets.
     pub local_roc: u32,
+    /// The last sequence number protected outbound (None before the first):
+    /// a later one that is far lower has wrapped, even when the packets
+    /// around the wrap were never sent.
+    pub local_last_seq: Option<u16>,
     /// Rollover counter for inbound packets.
     pub remote_roc: u32,
     /// Highest sequence number seen inbound.
@@ -324,6 +328,7 @@ pub fn create_context(
         local_keys,
         remote_keys,
         local_roc: 0,
+        local_last_seq: None,
         remote_roc: 0,
         remote_highest_seq: 0,
         local_srtcp_keys,
@@ -347,6 +352,24 @@ pub fn protect(ctx: &mut SrtpContext, rtp_packet: &[u8]) -> Result<Vec<u8>> {
     let ssrc = u32::from_be_bytes([header[8], header[9], header[10], header[11]]);
     let seq = u16::from_be_bytes([header[2], header[3]]);
 
+    // The packet index (RFC 3711, 3.3.1): the rollover counter goes up
+    // when the sequence number wraps. Judged from the last packet
+    // protected, not from seeing 65535 itself: packets queued around the
+    // wrap may be dropped unsent (a sender stopped with its queue), and
+    // the next sender on the line carries on the numbering (TASK-0324).
+    if let Some(last) = ctx.local_last_seq
+        && seq < last
+        && last - seq > 0x8000
+    {
+        ctx.local_roc = ctx.local_roc.wrapping_add(1);
+    }
+    if ctx
+        .local_last_seq
+        .is_none_or(|last| seq.wrapping_sub(last) < 0x8000)
+    {
+        ctx.local_last_seq = Some(seq);
+    }
+
     // Build IV for AES-128-CM (RFC 3711, 4.1.1)
     let iv = build_iv(&ctx.local_keys.salt, ssrc, ctx.local_roc, seq);
 
@@ -364,11 +387,6 @@ pub fn protect(ctx: &mut SrtpContext, rtp_packet: &[u8]) -> Result<Vec<u8>> {
     // Compute auth tag over header || encrypted payload || ROC
     let auth_tag = compute_auth_tag(&ctx.local_keys.auth_key, &srtp_packet, ctx.local_roc);
     srtp_packet.extend_from_slice(&auth_tag);
-
-    // Update ROC on sequence wrap
-    if seq == 0xFFFF {
-        ctx.local_roc = ctx.local_roc.wrapping_add(1);
-    }
 
     Ok(srtp_packet)
 }
@@ -664,6 +682,18 @@ mod tests {
                 assert_eq!(rx.unprotect(&sealed).unwrap(), p);
             }
         }
+        // A sender's numbering wraps while packets around the wrap were
+        // dropped unsent (a stopped camera or share, TASK-0324): the
+        // rollover counter still goes up, so the receiver keeps decrypting.
+        for seq in [65530u16, 65533] {
+            let p = pkt(44, seq);
+            assert_eq!(rx.unprotect(&tx.protect(&p).unwrap()).unwrap(), p);
+        }
+        for seq in [2u16, 3, 4] {
+            let p = pkt(44, seq);
+            assert_eq!(rx.unprotect(&tx.protect(&p).unwrap()).unwrap(), p);
+        }
+        assert_eq!(tx.outbound[&44].local_roc, 1);
         // A forged packet doesn't create a stream.
         let mut bad = tx.protect(&pkt(33, 5)).unwrap();
         let n = bad.len();
