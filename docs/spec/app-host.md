@@ -347,6 +347,23 @@ Choosing OneNote in OST group test's Add a tab:
   registerHandler themeChange, and shows "Q&A is not available for this
   event. Turn it on from meeting options. Learn more" (Q&A isn't turned
   on in that meeting's options).
+- With Q&A on (TASK-0327, 2026-11-26, "OST TEST 324 meet", measured in
+  Teams on the web): the chat tab frames
+  `…/teams-meeting/<ref>?client=teams&qnaAppType=native&meetingTenantId=
+  <tid>&entryPoint=chatTab&appSessionId=<uuid>`; the call's Q&A side pane
+  `…?client=teams&qnaAppType=native&meetingTenantId=<tid>&callId=<call id>
+  &entryPoint=sidePanel&appSessionId=<uuid>` (frame `embedded-page-
+  container`, the usual sandbox, `allow` `clipboard-write *;
+  local-network-access *; autoplay`). OST's side pane now sends the call
+  and the entry point too.
+- Live between OST and Teams (2026-11-26): OST Test 3 asked a question
+  in OST's chat tab; Teams on the web (OST Test 2) saw it, upvoted and
+  replied, and OST showed the vote and the reply; OST's reply showed in
+  Teams; ost-test1 as organizer in OST marked Teams' reply "Best answer"
+  (the organizer view has Engage's settings and archive). It needs the
+  browser sign-in: an account still on a device-code session (OST Test 2
+  on linuxlt) gets no NAA token for Engage (client 00bf137d: "Embedded
+  apps' tokens need the browser sign-in") and the page never loads.
 
 ## Personal apps from the app bar (measured 2026-11-16, TASK-0038)
 Teams on the web as ost-test1 in OST's web profile (spatest), opened from

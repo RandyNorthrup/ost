@@ -1,9 +1,11 @@
 ---
 id: TASK-0324
 title: Presenter modes, annotation and give/take control don't reach viewers
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@meet'
 created_date: '2026-11-25T22:56:00Z'
+updated_date: '2026-11-26T14:55:00Z'
 labels:
   - bug
   - calls
@@ -21,3 +23,22 @@ Found while capturing wiki screenshots (2026-11-25). Shares started with a prese
 <!-- AC:BEGIN -->
 - [ ] #1 Presenter modes, annotation and give/take control work between OST and Teams in both directions, verified live with test accounts
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Reproduce each case live between OST Test 2 and OST Test 3 on linuxlt and Teams (web on linuxlt; Teams desktop on winpc for presenter modes and control)
+2. Find what differs on the wire and fix OST
+3. Verify OST to OST and OST to Teams, both ways
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- 2026-11-26 rig: "OST TEST 324 meet" (organizer ost-test1); OST Test 2 presenting and OST Test 3 viewing on linuxlt (test camera A fed a synthetic face); Teams on the web in Chrome on linuxlt as ost-test1 and OST Test 2.
+- First shares worked OST to OST: Standout (window), Reporter with "Futuristic room" (background, content and cut-out presenter composited), Annotate on a screen share (viewer got "A participant started annotations…"), Take control of a screen share (Available/AvailableAck, request, accept, Ack, controlling; the desktop Remote Control portal then asks the sharer, denied here so nothing was typed on linuxlt).
+- Cause: a second share in the same call never arrived (OST Test 3: empty content tile; Teams on the web: no share; the roster said sendonly). VideoSender restarted its RTP sequence numbers at (ssrc >> 7) for every new sender on the same line, so SRTP reused packet indexes (keystream reuse) and the media processor dropped them as replays. The same applied to the camera turned off and on. The wiki captures shared several times per call.
+- Fix: webrtc_video::RtpLine per line (camera, sharing) carries the sequence numbers (atomic, so an old sender finishing beside a new one can't collide) and the timestamp clock across senders, as a WebRTC sender with a replaced track.
+- Verified after the fix: OST Test 2 shared a window in Standout, stopped, shared again: the second share reached OST Test 3 (stage capture) and Teams on the web. Teams on the web (OST Test 2) shared twice: OST Test 3 showed both.
+- Window shares can't be controlled (Wayland: AvailableNack SharerControlDisabled, as documented); the wiki's "capable=false" for a window share is that.
+<!-- SECTION:NOTES:END -->
