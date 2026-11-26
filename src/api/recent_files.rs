@@ -27,6 +27,9 @@ pub struct Recent {
     /// Extension, lowercase; "one" for a OneNote notebook.
     pub kind: String,
     pub notebook: bool,
+    /// OneDrive's type for it (Visualization.Type: "Word", "Pdf",
+    /// "Fluid", "Folder", …), which its filter pills match.
+    pub vis_type: String,
     /// A folder (OneDrive also counts "Other" items of a folder content
     /// type), not a notebook.
     pub folder: bool,
@@ -303,6 +306,11 @@ pub fn parse(entry: &Value, personal: &str) -> Recent {
     ]);
     Recent {
         title,
+        vis_type: if notebook {
+            "OneNote".into()
+        } else {
+            kind.to_string()
+        },
         kind: if notebook { "one".into() } else { ext },
         notebook,
         folder: folder && !notebook,
@@ -462,18 +470,37 @@ pub fn home_row(r: &Recent, item: &DriveItem, now: chrono::DateTime<chrono::Loca
     v["title"] = json!(r.title);
     v["location"] = json!(r.location);
     v["owner"] = json!(r.owner);
+    v["vis_type"] = json!(r.vis_type);
     if let Some(t) = local(&r.opened) {
         v["modified_text"] = json!(activity_time(t, now));
         v["modified_title"] = json!(t.format("%-m/%-d/%Y %-I:%M %p").to_string());
     }
     if let Some(a) = &r.activity {
+        let (lead, rest) = a.lead_rest();
         v["activity"] = json!({
             "kind": a.kind,
             "text": a.text,
+            "lead": lead,
+            "rest": rest,
             "time": local(&a.time).map(|t| activity_day(t, now)).unwrap_or_default(),
         });
     }
     v
+}
+
+impl Activity {
+    /// The message split as OneDrive draws it: the first person's name in
+    /// bold ("OST Test 3"), then the rest ("shared this in a Teams chat");
+    /// no name when it starts otherwise ("You edited this").
+    pub fn lead_rest(&self) -> (String, String) {
+        match self.format.strip_prefix("{0}") {
+            Some(_) if !self.user.is_empty() && self.text.starts_with(&self.user) => (
+                self.user.clone(),
+                self.text[self.user.len()..].trim_start().to_string(),
+            ),
+            _ => (String::new(), self.text.clone()),
+        }
+    }
 }
 
 /// The Activity column's day on Home ("Mon", "Nov 17"): today and

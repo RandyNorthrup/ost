@@ -12,7 +12,7 @@
 //! history, in the order of your collaborators
 //! (`sp.PeopleCollection.GetCollaboratorsAsStream`).
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -234,10 +234,25 @@ pub fn store(entries: &[Value], personal: &str) -> Vec<(SharedFile, bool)> {
 /// Shared ▸ With you: the store less hidden files and those you shared
 /// yourself (`swmFilterHelper`), newest shared first.
 pub fn with_you(entries: &[Value], personal: &str, me: &Me) -> Vec<SharedFile> {
+    with_you_where(entries, personal, me, false)
+}
+
+/// The files you hid from Shared (its More ▸ Hidden filter), newest
+/// shared first.
+pub fn hidden_with_you(entries: &[Value], personal: &str, me: &Me) -> Vec<SharedFile> {
+    with_you_where(entries, personal, me, true)
+}
+
+fn with_you_where(
+    entries: &[Value],
+    personal: &str,
+    me: &Me,
+    hidden_ones: bool,
+) -> Vec<SharedFile> {
     let (id, upn) = (me.id.to_lowercase(), me.upn.to_lowercase());
     let mut rows: Vec<SharedFile> = entries
         .iter()
-        .filter(|e| left_out(e).is_none() && !hidden(e))
+        .filter(|e| left_out(e).is_none() && hidden(e) == hidden_ones)
         .filter(|e| {
             let x = &e["file"];
             (id.is_empty() && upn.is_empty())
@@ -455,6 +470,7 @@ pub fn row(f: &SharedFile, item: &DriveItem, now: chrono::DateTime<chrono::Local
     };
     let mut v = decorate(item, None, now);
     v["title"] = json!(f.file.title);
+    v["vis_type"] = json!(f.file.vis_type);
     v["visual_title"] = json!(f.visual_title);
     v["location"] = json!(f.file.location);
     v["owner"] = json!(f.file.owner);
@@ -462,6 +478,8 @@ pub fn row(f: &SharedFile, item: &DriveItem, now: chrono::DateTime<chrono::Local
     v["shared"] = json!(f.shared);
     match local(&f.shared) {
         Some(t) => {
+            // People's chips show the day ("Mon", "Nov 19").
+            v["shared_day"] = json!(recent_files::activity_day(t, now));
             v["modified_text"] = json!(activity_time(t, now));
             v["modified_title"] = json!(t.format("%-m/%-d/%Y %-I:%M %p").to_string());
         }
@@ -474,6 +492,8 @@ pub fn row(f: &SharedFile, item: &DriveItem, now: chrono::DateTime<chrono::Local
         Some(a) => json!({
             "kind": a.kind,
             "text": a.text,
+            "lead": a.lead_rest().0,
+            "rest": a.lead_rest().1,
             "time": local(&a.time).map(|t| recent_files::activity_day(t, now)).unwrap_or_default(),
         }),
         None => Value::Null,
@@ -483,9 +503,110 @@ pub fn row(f: &SharedFile, item: &DriveItem, now: chrono::DateTime<chrono::Local
 
 /// Files shared with you, as rows with Graph's items (Shared ▸ With you).
 pub async fn with_you_rows(client: &TeamsClient) -> Result<Vec<(SharedFile, DriveItem)>> {
+    Ok(with_you_and_hidden(client).await?.0)
+}
+
+/// Shared ▸ With you's rows, and the ones you hid (its Hidden filter).
+#[allow(clippy::type_complexity)]
+pub async fn with_you_and_hidden(
+    client: &TeamsClient,
+) -> Result<(Vec<(SharedFile, DriveItem)>, Vec<(SharedFile, DriveItem)>)> {
     let (entries, personal) = fetch_entries(client).await?;
-    let files = with_you(&entries, &personal, &me(client));
-    Ok(with_items(client, files).await)
+    let me = me(client);
+    let files = with_you(&entries, &personal, &me);
+    let hidden = hidden_with_you(&entries, &personal, &me);
+    let (rows, hidden_rows) = tokio::join!(with_items(client, files), with_items(client, hidden));
+    Ok((rows, hidden_rows))
+}
+
+/// Shared ▸ By you: what you shared, in the service's order (OneDrive's
+/// `_api/web/onedriveshareditems?$top=1000` on your OneDrive's site,
+/// captured on winpc 2026-11-26), named as Teams names them (without the
+/// extension), with the place line and Modified by.
+pub fn by_you(reply: &Value, personal: &str) -> Vec<Recent> {
+    let list = reply["d"]["results"]
+        .as_array()
+        .or_else(|| reply["value"].as_array())
+        .cloned()
+        .unwrap_or_default();
+    let trim = |u: &str| u.trim_end_matches('/').to_ascii_lowercase();
+    list.iter()
+        .filter(|x| !s(&x["UniqueId"]).is_empty())
+        .map(|x| {
+            let name = s(&x["FileLeafRef"]);
+            let folder = x["IsContainer"].as_bool().unwrap_or(false);
+            let ext = s(&x["Extension"]).to_ascii_lowercase();
+            let title = match name.rsplit_once('.') {
+                Some((stem, e)) if !folder && !ext.is_empty() && e.eq_ignore_ascii_case(&ext) => {
+                    stem.to_string()
+                }
+                _ => name.clone(),
+            };
+            let site = s(&x["SiteUrl"]);
+            let host: String = site.split('/').take(3).collect::<Vec<_>>().join("/");
+            Recent {
+                title,
+                kind: ext,
+                vis_type: if folder {
+                    "Folder".into()
+                } else {
+                    String::new()
+                },
+                folder,
+                web_url: format!("{host}{}", s(&x["FileRef"])),
+                location: if trim(&site) == trim(personal) {
+                    "My Files".into()
+                } else {
+                    String::new()
+                },
+                modified: s(&x["Modified"]),
+                modified_by: s(&x["Editor"]["name"]),
+                owner: s(&x["Author"]["name"]),
+                site_url: site,
+                site_id: s(&x["SiteId"]),
+                web_id: s(&x["WebId"]),
+                list_id: s(&x["ListId"]),
+                list_item_id: x["ListItemId"]
+                    .as_u64()
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|| s(&x["ListItemId"])),
+                unique_id: s(&x["UniqueId"]),
+                name,
+                ..Default::default()
+            }
+        })
+        .collect()
+}
+
+/// Shared ▸ By you's rows, with Graph's items for their actions.
+pub async fn by_you_rows(client: &TeamsClient) -> Result<Vec<(Recent, DriveItem)>> {
+    let personal = super::quick_access::personal_site(client).await?;
+    let reply = sharing::get_with(
+        &format!("{personal}/_api/web/onedriveshareditems?$top=1000"),
+        &[("accept", "application/json;odata=verbose")],
+    )
+    .await
+    .context("Shared by you")?;
+    let files = by_you(&reply, &personal);
+    let items = recent_files::graph_items(client, &files).await;
+    Ok(files
+        .into_iter()
+        .zip(items)
+        .map(|(r, g)| {
+            let it = recent_files::drive_item(&r, g);
+            (r, it)
+        })
+        .collect())
+}
+
+/// A By you row: Name with its place line, Modified by.
+pub fn by_you_row(r: &Recent, item: &DriveItem, now: chrono::DateTime<chrono::Local>) -> Value {
+    let mut v = super::list_rows::decorate(item, None, now);
+    v["title"] = json!(r.title);
+    v["location"] = json!(r.location);
+    v["modified_by"] = json!(r.modified_by);
+    v["vis_type"] = json!(r.vis_type);
+    v
 }
 
 /// Browse files by People, each person's files with Graph's items:

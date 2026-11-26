@@ -10102,10 +10102,17 @@ Window {
             else if (step === 1) {
                 console.warn("HOME error", d.error || "")
                 for (const i of d.items || [])
-                    console.warn("HOME row", [i.title || i.name, i.location, i.modified_text, i.owner, i.activity ? (i.activity.kind + ":" + i.activity.text + " · " + i.activity.time) : "", i.kind, i.drive_id ? "graph" : "no-graph", i.sp_item ? "sp" : "no-sp"].join(" | "))
+                    console.warn("HOME row", [i.title || i.name, i.location, i.modified_text, i.owner, i.activity ? (i.activity.kind + ":" + i.activity.text + " · " + i.activity.time) : "", i.kind, i.vis_type, i.drive_id ? "graph" : "no-graph", i.sp_item ? "sp" : "no-sp"].join(" | "))
+                // For you (TASK-0304): the cards and their buttons.
+                for (const c of d.for_you || [])
+                    console.warn("HOME foryou", [c.title, c.reason, c.time_text, c.icon, c.button, c.summarize ? "summarize" : "", c.thumbnail ? "thumb" : "icon", c.actor_id ? "photo" : ""].join(" | "))
                 window.contentItem.grabToImage(r => r.saveToFile(shots + "/onedrive-home.png"))
             }
-            else if (step === 3) Qt.quit()
+            // The Recent pills and the filter box (Loop files, then a name).
+            else if (step === 2) { oneDrive.pills = ["Fluid"]; console.warn("HOME pill Loop", oneDrive.shown.map(i => i.title || i.name).join(" ; ")) }
+            else if (step === 3) { window.contentItem.grabToImage(r => r.saveToFile(shots + "/onedrive-home-loop.png")); oneDrive.pills = [] ; oneDrive.nameFilter = "OST Test 3" }
+            else if (step === 4) { console.warn("HOME filter", oneDrive.shown.map(i => i.title || i.name).join(" ; ")); window.contentItem.grabToImage(r => r.saveToFile(shots + "/onedrive-home-filter.png")) }
+            else if (step === 5) { oneDrive.nameFilter = ""; Qt.quit() }
             step++
         }
     }
@@ -10132,14 +10139,27 @@ Window {
             else if (step === 1) {
                 wait = 0
                 console.warn("SHARED error", d.error || "")
-                for (const i of d.items || []) console.warn("SHARED row", row(i))
+                for (const i of d.items || []) console.warn("SHARED row", row(i), i.hidden ? "| hidden" : "")
                 cap("withyou")
             }
             // (Each picture is taken a tick before the view changes:
             // grabToImage is asynchronous.)
-            else if (step === 2) oneDrive.open("people")
-            else if (step === 3 && !loaded("people") && ++wait < 60) return
-            else if (step === 3) {
+            // The pills (TASK-0320): Videos from More, then By you.
+            else if (step === 2 && !Qt.application.arguments.includes("--shared-tabs")) { step = 30; return }
+            else if (step === 2) { oneDrive.pills = ["Video"]; console.warn("SHARED pill Videos", oneDrive.shown.map(i => i.title || i.name).join(" ; ")) }
+            else if (step === 3) { cap("videos"); oneDrive.pills = [] }
+            else if (step === 4) oneDrive.showSharedTab("by")
+            else if (step === 5 && !loaded("shared_by_you") && ++wait < 90) return
+            else if (step === 5) {
+                wait = 0
+                console.warn("SHARED byyou error", d.error || "", "count", (d.items || []).length)
+                for (const i of d.items || []) console.warn("SHARED byyou", [i.title || i.name, i.location, i.modified_by, i.drive_id ? "graph" : "no-graph"].join(" | "))
+                cap("byyou")
+            }
+            else if (step === 6) { step = 30; return }
+            else if (step === 30) oneDrive.open("people")
+            else if (step === 31 && !loaded("people") && ++wait < 60) return
+            else if (step === 31) {
                 wait = 0
                 console.warn("SHARED people error", d.error || "")
                 for (const x of d.people || []) {
@@ -10148,23 +10168,23 @@ Window {
                 }
                 cap("people")
             }
-            else if (step === 4) { if ((d.people || []).length) { oneDrive.personId = d.people[0].id; oneDrive.person = d.people[0].name } }
-            else if (step === 5) cap("person")
-            else if (step === 6) { p.entry = "home"; p.open() }
-            else if (step === 8) p.openForTest("shared")
-            else if (step === 9 && p.loading && ++wait < 60) return
-            else if (step === 9) {
+            else if (step === 32) { if ((d.people || []).length) { oneDrive.personId = d.people[0].id; oneDrive.person = d.people[0].name } }
+            else if (step === 33) cap("person")
+            else if (step === 34) { p.entry = "home"; p.open() }
+            else if (step === 36) p.openForTest("shared")
+            else if (step === 37 && p.loading && ++wait < 60) return
+            else if (step === 37) {
                 wait = 0
                 for (const i of p.rows) console.warn("SHARED picker row", row(i))
                 cap("picker-shared")
             }
-            else if (step === 10) p.openForTest("people")
-            else if (step === 11 && p.loading && ++wait < 60) return
-            else if (step === 11) {
+            else if (step === 38) p.openForTest("people")
+            else if (step === 39 && p.loading && ++wait < 60) return
+            else if (step === 39) {
                 for (const x of p.people) console.warn("SHARED picker person", x.name, "|", (x.items || []).map(f => (f.title || f.name) + " · " + String(f.modified_text || "").replace(/ at .*$/, "")).join(" ; "))
                 cap("picker-people")
             }
-            else if (step === 12) { p.close(); Qt.quit() }
+            else if (step === 40) { p.close(); Qt.quit() }
             step++
         }
     }
@@ -10280,7 +10300,8 @@ Window {
         }
     }
 
-    // --apps-test: People (add a contact, favorite it, delete it), capturing.
+    // --apps-test: People (add a contact, favorite it, delete it), capturing;
+    // --apps-read stops after listing the contacts (APPS contact lines).
     Timer {
         running: Qt.application.arguments.indexOf("--apps-test") >= 0 && backend.signedIn
         interval: 3000; repeat: true
@@ -10289,9 +10310,14 @@ Window {
             const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
             const people = peopleApp.data_.contacts || []
             if (step === 0) rail.openApp("people")
-            else if (step === 2) { console.warn("APPS contacts", people.length, peopleApp.data_.error || "", "busy", peopleApp.busy); cap("people-empty") }
+            else if (step === 2) {
+                console.warn("APPS contacts", people.length, peopleApp.data_.error || "", "busy", peopleApp.busy)
+                for (const c of people) console.warn("APPS contact", [c.name, c.email, c.phone || c.mobile, c.company, c.office_location, c.favorite ? "favorite" : "", (c.categories || []).join(",")].join(" | "))
+                cap("people-list")
+            }
+            else if (step === 3 && Qt.application.arguments.indexOf("--apps-read") >= 0) Qt.quit()
             else if (step === 3) { peopleApp.addForTest("OST", "People test", "ost-people-test@example.com") }
-            else if (step === 5) { const c = peopleApp.find("OST People test"); console.warn("APPS contact added", !!c); if (c) peopleApp.favorite(c.id, true) }
+            else if (step === 5) { const c = peopleApp.find("OST People test"); console.warn("APPS contact added", !!c); if (c) peopleApp.favorite(JSON.stringify(c), true) }
             else if (step === 7) { const c = peopleApp.find("OST People test"); console.warn("APPS favorite", !!c && c.favorite); peopleApp.view = "favorites"; cap("people-favorites") }
             else if (step === 8) { peopleApp.view = "all"; cap("people-all"); const c = peopleApp.find("OST People test"); if (c) peopleApp.remove(c.id) }
             else if (step === 10) { console.warn("APPS contact deleted", !peopleApp.find("OST People test"), "rail extras", rail.opened.join(",")); Qt.quit() }
@@ -10319,6 +10345,26 @@ Window {
             else if (step === 5 && Qt.application.arguments.indexOf("--channel-files-share") >= 0) { console.warn("CF share ids", JSON.stringify(cf.here ? [cf.here.sp_site, cf.here.sp_list, cf.here.sp_item] : null)); cf.shareForTest() }
             else if (step === 6 && Qt.application.arguments.indexOf("--channel-files-share") >= 0) cap("share")
             else if (step === 7 && Qt.application.arguments.indexOf("--channel-files-share") >= 0) Qt.quit()
+            // --channel-files-shortcut: Add shortcut to OneDrive ▸ My files
+            // (TASK-0331); the notice is logged and captured, then My files
+            // lists the shortcuts (CF myfiles). --channel-files-unshortcut
+            // instead removes the test shortcuts ("OST Test Team - …") from
+            // My files.
+            else if (step === 5 && Qt.application.arguments.indexOf("--channel-files-unshortcut") >= 0) { step = 8; return }
+            else if (step === 5 && Qt.application.arguments.indexOf("--channel-files-shortcut") >= 0) { backend.statusText = ""; cf.addShortcut("myfiles") }
+            else if (step === 7 && Qt.application.arguments.indexOf("--channel-files-shortcut") >= 0) { console.warn("CF shortcut", JSON.stringify(backend.statusText)); cap("shortcut") }
+            else if (step === 8 && (Qt.application.arguments.indexOf("--channel-files-shortcut") >= 0 || Qt.application.arguments.indexOf("--channel-files-unshortcut") >= 0)) { rail.current = "onedrive"; oneDrive.open("myfiles") }
+            else if (step === 10 && Qt.application.arguments.indexOf("--channel-files-shortcut") >= 0) {
+                console.warn("CF myfiles", JSON.stringify(oneDrive.items.filter(i => i.remote_id).map(i => [i.name, i.sharing, i.child_count])))
+                cap("myfiles")
+            }
+            else if (step === 10 && Qt.application.arguments.indexOf("--channel-files-unshortcut") >= 0) {
+                const mine = oneDrive.items.filter(i => i.remote_id && i.name.indexOf("OST Test Team - ") === 0)
+                console.warn("CF removing", JSON.stringify(mine.map(i => i.name)))
+                for (const i of mine) oneDrive.deleteForTest(i.name)
+            }
+            else if (step === 14 && Qt.application.arguments.indexOf("--channel-files-unshortcut") >= 0) { console.warn("CF left", JSON.stringify(oneDrive.items.filter(i => i.remote_id).map(i => i.name))); Qt.quit() }
+            else if (step === 11 && Qt.application.arguments.indexOf("--channel-files-shortcut") >= 0) Qt.quit()
             else if (step === 5) cf.newFolderForTest("OST channel test")
             else if (step === 6) { console.warn("CF made", cf.items.some(i => i.name === "OST channel test")); cap("made"); cf.deleteForTest("OST channel test") }
             else if (step === 8) { console.warn("CF deleted", !cf.items.some(i => i.name === "OST channel test")); Qt.quit() }
@@ -16483,7 +16529,7 @@ Window {
         busy: backend.contactsBusy
         onLoad: backend.contactsLoad()
         onAdd: json => backend.contactsAdd(json)
-        onFavorite: (id, on) => backend.contactsFavorite(id, on)
+        onFavorite: (contactJson, on) => backend.contactsFavorite(contactJson, on)
         onRemove: id => backend.contactsDelete(id)
     }
     // Teams' Events app, drawn natively from the virtual events service
@@ -16567,6 +16613,10 @@ Window {
         driveData: backend.driveJson ? JSON.parse(backend.driveJson) : ({})
         busy: backend.driveBusy
         userName: backend.userName
+        // For you's Summarize / Recap this meeting: Copilot (Teams opens
+        // its Copilot beside the files; OST opens the Copilot page).
+        copilotOn: window.copilotInstalled
+        onAskCopilot: prompt => { rail.current = "chat"; window.composing = false; chatList.copilotOpen = true }
         onLoad: (v, d, i) => backend.driveLoad(v, d, i)
         onDownload: json => backend.driveDownload(json)
         onUpload: (d, f, paths) => backend.driveUpload(d, f, paths)

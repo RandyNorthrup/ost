@@ -304,6 +304,101 @@ odsp-web-prod_2026-11-06.005).
   backend keeps the folder's filters until another folder opens). Its words
   are OneDrive's (`x.odsp.*` ids, TASK-0233). Harness `--filter-by-test`.
 
+## Home, Shared and People (TASK-0304, TASK-0320)
+
+Teams' OneDrive app draws Home, Shared and a person's files with OneDrive's
+newer ("Spartan") list, not the files table. Measured on winpc on
+2026-11-26, from the list card's left edge:
+
+**Home**
+- "For you" (18, 600) at 8,29, then the cards from y 70. They come from
+  `{personal}/_api/sp.RecentFileCollection.GetRecommendations` (verbose
+  OData; with `prefer: useSmartCache`, as OneDrive's prefetch sends it, the
+  service answers from a cache without the Loop and Whiteboard cards). Its
+  `d.GetRecommendations` is JSON text, and the
+  cards are in `EntitySets[0].ResultSets[0].Results`. Loop files kept in a
+  Loop workspace (a `contentstorage` container) are left out. See
+  `src/api/recommended.rs`.
+- A card is 312 x 202.33: padding 16, radius 4, a 0.67 #F0F0F0 rim, 16
+  apart. From a 1464 px strip the cards are 354 wide. The strip shows
+  `clamp(floor((width + 16) / (tile + 16)), 3, 8)` cards and scrolls
+  sideways.
+  - The app icon (20) and the title (14, 600) sit over a 0.67 #EBEBEB rule
+    at 52.67.
+  - The badge is a 24 px circle (#E9EAF6, a 12 px #5B5FC7 glyph) or the
+    person's picture. Its glyph is "view" for recently opened, "edit",
+    "share", "comment" and so on; frequently opened and the rest use
+    OfficeCatchUp.
+  - The reason is 14/20 on two lines at most, the person's name in 600. The
+    day ("17m ago", "Yesterday", "Mon") is 12 px #5E5E5D.
+  - The button sits at 16.67,155.67 (30 tall, radius 4, a #D1D1D1 rim,
+    14/600). An activity link (`NavigationInfo.Id`) gives Go to comment, Go
+    to task or Watch recording. Otherwise Summarize (with a sparkle, radius
+    6) or Recap this meeting, when Copilot is on and the badge is meeting
+    preparation or "shared with you" by someone else, for files Copilot can
+    read. Otherwise Open.
+  - The picture box is 113.33 square at the right (#FAFAFA, #EBEBEB rim,
+    radius 4). It shows the file's picture, or its 40 px icon for Loop,
+    OneNote and Whiteboard.
+- "Recent" (16, 600) at 8,310. Then the pills, from 67: All, Word, Excel,
+  PowerPoint, PDF and More, 8.33 apart. They are 32 tall and round, with a
+  0.67 #D1D1D1 rim; a picked pill is #E9EAF6 with a #5B5FC7 rim. All is
+  text, the types are 45 wide with a 20 px brand icon, and More (the filter
+  glyph) is 49 wide.
+  - More ▾ (a 180 wide menu, 32 tall checkable items) holds OneNote, Lists,
+    Videos, Loop, Whiteboard, PowerBI, Markdown and HTML. More looks picked
+    while one of them is.
+  - Pills add up; All clears them. They match OneDrive's type for the file
+    (`Visualization.Type`), and Markdown and HTML by extension.
+- "Filter by name or person": 240 x 32 at the card's right edge (16 px
+  text). It matches the name, the owner and the activity.
+- The list card starts at 360.
+
+**The list** (Home, Shared ▸ With you, a person's files)
+- A 45 px selection column, then OneDrive's responsive columns
+  (`recentResponsiveBehavior` / `swmResponsiveBehavior`): Name 300-500 and
+  growing, Opened or Date shared 130-200, Owner or Shared by 130-260,
+  Activity 113-550. They are laid out over the card less 8.33 and the 45
+  px column. At 876 they come to 337.42 / 167.42 / 167.42 / 150.42.
+- The header is 48 tall (14, 600, text at 8). Rows are 56 tall with a 0.67
+  #F0F0F0 rule.
+  - Name: the 32 px icon at 8,11, the name (14) at 56,10, and the place
+    line (12, #5E5E5D) at 56,29: My Files, "OST Test 3's Files", or the
+    site. The place line opens the folder.
+  - The dates and people are 14 px #5E5E5D.
+  - Activity: the glyph at 18, then the person's name (600) and the rest at
+    38, on two lines of 14. The day falls on a third line, which the 56 px
+    row cuts off, as in Teams.
+
+**Shared**
+- The tabs "With you" and "By you" (18, 600; the picked one has a 2 px
+  #5B5FC7 underline) sit at 0,25.
+- With you has pills from 180: All, Folders, Word, Excel, PowerPoint, PDF
+  and More (OneNote, Lists, Videos, Loop, Photos, Whiteboard, PowerBI,
+  Markdown, HTML, Agent, Hidden). Hidden shows the files you hid from Shared.
+  The filter box is at the right, and the card is at 76.
+- The columns are Name, Date shared, Shared by and Activity. There is no
+  File size or Sharing.
+- By you is `{personal}/_api/web/onedriveshareditems?$top=1000` (odata
+  verbose), in the service's order. Its columns are Name (with the place
+  line) and Modified by (the editor), at 42 : 58 of a grid at least 1024
+  wide. It has no pills and no filter box.
+
+**People**
+- "People" (18, 600) at 16,30 and "Filter by person" (200 x 32) at the
+  right. The rows are on the page, with no card.
+- Rows are 65 tall, with a 0.67 rule (5% black) between them. The 40 px
+  picture is at 23 and the name (14) at 79, in a 320 cell.
+- The person's files are chips from 336. A chip (OneDrive's filePill) is 40
+  tall with a clear 1 px rim, radius 6, shadow 2, and 12 apart.
+  - It has the 16 px icon, the name (12 px), and the activity pill (#F5F5F5,
+    24 tall): the share glyph and the day in 10 px.
+  - OneDrive fits them by characters × 5.2 + 64 + the pill
+    (characters × 5.2 + 32). It starts at 50 and fits within the row's width
+    less 64, 320 and 8.
+  - The next file is shortened if 8 characters fit, then a "+n" chip (32
+    wide) stands for the rest.
+
 ## Not yet in OST
 
 - Add shortcut ▸, Version history and a folder's Request files: TASK-0115 and
@@ -312,20 +407,8 @@ odsp-web-prod_2026-11-06.005).
   media service (`{mediaBaseUrl}/transform/zip`); OST saves each file on its
   own. Both are in TASK-0116.
 - The Modified By name's profile card on click.
-- Teams' Home view (For you cards, the Recent filter pills, a location line
-  under each name) is a different layout. OST's Home still uses the files
-  table, with Teams' items, order and Opened, Owner and Activity columns from
-  the recent files service (`sp.RecentFileCollection.DeltaSync`, see
-  `src/api/recent_files.rs`).
-- Teams' Shared view has "With you" and "By you" tabs, filter pills and a
-  location line under each name. OST lists "With you" in the files table,
-  with Teams' items, order and Date shared, Shared by and Activity columns.
-  Like Home, they come from the recent files service, plus the folders
-  shared with you (`sp.SharedWithMeItemCollection.GetSharedWithMeItems?
-  fileType='folder'`), filtered by OneDrive's `isInvalidSWMItem` (see
-  `src/api/shared_files.rs`). "By you" (`_api/web/onedriveshareditems`) is
-  not built yet.
-- Browse files by People: Teams shows each person with file chips ("+N"
-  for the rest). OST lists the same people in the same order (OneDrive's
-  collaborator order), with a file count. A person's page lists what they
-  shared with you and the files they own, as Teams does.
+- Home's page scrolls as a whole in Teams. In OST the For you strip and the
+  pills stay put and the list scrolls.
+- Shared's column menus (Name ▾, Date shared ↓ ▾, Shared by ▾).
+- For you's Summarize opens Copilot's page (Teams opens Copilot beside the
+  files with "Summarize "<file>"" asked).
