@@ -361,43 +361,56 @@ pub struct CameraPreview {
 impl CameraPreview {
     pub fn start(device: Option<String>) -> anyhow::Result<Self> {
         let (w, h, fps) = capture_format(device.as_deref());
-        Self::spawn(device.as_deref(), "self".to_string(), w, h, fps, true, None)
+        let size = (w, h, fps);
+        Self::spawn(
+            device.as_deref(),
+            "self".to_string(),
+            size,
+            true,
+            None,
+            None,
+        )
     }
 
     /// The camera's own picture, without the call's video effects, as the
     /// frame `key` at about `width`x`height` and `fps` (the video clip
     /// recorder and face capture, which show and record it themselves).
     /// `ended` runs (on the capture thread) if the camera stops by itself
-    /// (unplugged, or its stream failed), not when this is dropped.
+    /// (unplugged, or its stream failed), not when this is dropped. Setting
+    /// `cancel` while it opens closes the camera again and fails.
     pub fn start_plain(
         device: Option<&str>,
         key: &str,
-        width: u32,
-        height: u32,
-        fps: u32,
+        size: (u32, u32, u32),
         ended: Box<dyn FnOnce() + Send>,
+        cancel: &AtomicBool,
     ) -> anyhow::Result<Self> {
         Self::spawn(
             device,
             key.to_string(),
-            width,
-            height,
-            fps,
+            size,
             false,
             Some(ended),
+            Some(cancel),
         )
     }
 
+    /// `size`: (width, height, fps).
     fn spawn(
         device: Option<&str>,
         key: String,
-        w: u32,
-        h: u32,
-        fps: u32,
+        (w, h, fps): (u32, u32, u32),
         with_effects: bool,
         ended: Option<Box<dyn FnOnce() + Send>>,
+        cancel: Option<&AtomicBool>,
     ) -> anyhow::Result<Self> {
-        let (camera, frames) = super::camera::CameraCapture::start(device, w, h, fps)?;
+        let (camera, frames) =
+            super::camera::CameraCapture::start_cancellable(device, w, h, fps, cancel)?;
+        if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
+            // (Dropping it closes the camera.)
+            drop(camera);
+            anyhow::bail!("Cancelled");
+        }
         let stop = Arc::new(AtomicBool::new(false));
         let stop2 = stop.clone();
         let thread = std::thread::Builder::new()

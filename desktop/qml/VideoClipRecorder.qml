@@ -355,7 +355,9 @@ Popup {
         /// What `cameraId` was when it opened.
         property string wanted: ""
         // (A camera that came later joins the list.)
-        onRunningChanged: if (running) rec.loadCameras()
+        // (Stopped, even with the next camera not open yet: its last
+        // picture goes.)
+        onRunningChanged: if (running) rec.loadCameras(); else camFeed.showIn(camPreview.videoSink)
     }
     // No camera yet (the camera portal still asking, none plugged in, or
     // it wouldn't open): look again each second while it should show.

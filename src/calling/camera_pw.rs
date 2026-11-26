@@ -611,7 +611,8 @@ fn serialize(object: spa::pod::Object) -> Result<Vec<u8>> {
 
 /// Capture from `cam`, sending frames no bigger than `width`x`height` to
 /// `tx` until `stop`. Returns once the stream is linked to the camera (or
-/// has failed to be).
+/// has failed to be); when `cancel` is set meanwhile, the stream is ended
+/// and this fails.
 pub fn capture(
     cam: &PwCamera,
     width: u32,
@@ -619,14 +620,16 @@ pub fn capture(
     fps: u32,
     tx: mpsc::SyncSender<YuvFrame>,
     stop: Arc<AtomicBool>,
+    cancel: Option<&AtomicBool>,
 ) -> Result<std::thread::JoinHandle<()>> {
     let (ready_tx, ready_rx) = mpsc::channel::<Result<()>>();
     let cam = cam.clone();
+    let stop2 = stop.clone();
     let handle = std::thread::Builder::new()
         .name("ost-camera-pw".into())
         .spawn(move || {
             let ready = ready_tx.clone();
-            if let Err(e) = stream(&cam, (width, height), fps, tx, &stop, ready_tx) {
+            if let Err(e) = stream(&cam, (width, height), fps, tx, &stop2, ready_tx) {
                 tracing::warn!(camera = cam.node_name, "PipeWire camera: {e:#}");
                 super::device_health::note_camera(if denied() {
                     super::device_health::Open::Permission
@@ -636,11 +639,23 @@ pub fn capture(
                 let _ = ready.send(Err(e));
             }
         })?;
-    match ready_rx.recv_timeout(Duration::from_secs(5)) {
-        Ok(Err(e)) => Err(e),
-        // Linked, or still negotiating (frames will tell).
-        Ok(Ok(())) | Err(mpsc::RecvTimeoutError::Timeout) => Ok(handle),
-        Err(mpsc::RecvTimeoutError::Disconnected) => Ok(handle),
+    let until = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        match ready_rx.recv_timeout(Duration::from_millis(50)) {
+            Ok(Err(e)) => return Err(e),
+            Ok(Ok(())) | Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(handle),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
+                    stop.store(true, Ordering::Relaxed);
+                    super::camera::finish_thread(handle, super::camera::STOP_WAIT);
+                    return Err(anyhow!("Cancelled"));
+                }
+                // Still negotiating (frames will tell).
+                if std::time::Instant::now() >= until {
+                    return Ok(handle);
+                }
+            }
+        }
     }
 }
 

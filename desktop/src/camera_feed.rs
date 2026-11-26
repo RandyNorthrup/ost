@@ -67,7 +67,8 @@ pub mod qobject {
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use teams_cli::calling::{camera, frames, webrtc_video::CameraPreview};
 
 pub struct CameraFeedRust {
@@ -80,6 +81,8 @@ pub struct CameraFeedRust {
     /// Counts opens and closes: what a worker brings back for an older one
     /// is let go (its camera closed).
     generation: u64,
+    /// Set to stop the open under way (closed meanwhile).
+    cancel: Arc<AtomicBool>,
     /// The frame last handed to a sink (0: none).
     shown: u64,
 }
@@ -103,6 +106,7 @@ impl cxx_qt::Constructor<()> for qobject::CameraFeed {
             camera: QString::default(),
             capture: None,
             generation: 0,
+            cancel: Arc::new(AtomicBool::new(false)),
             shown: 0,
         }
     }
@@ -127,6 +131,8 @@ impl qobject::CameraFeed {
     pub fn open(mut self: Pin<&mut Self>, id: &QString, width: i32, height: i32, fps: i32) -> bool {
         self.as_mut().close();
         let generation = self.rust().generation;
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.as_mut().rust_mut().cancel = cancel.clone();
         let wanted = Some(id.to_string())
             .filter(|i| !i.is_empty())
             .or_else(crate::backend::selected_camera);
@@ -151,7 +157,8 @@ impl qobject::CameraFeed {
                         let ended = Box::new(move || {
                             let _ = back.queue(move |this| this.ended(generation));
                         });
-                        CameraPreview::start_plain(Some(&id), &key, width, height, fps, ended)
+                        let size = (width, height, fps);
+                        CameraPreview::start_plain(Some(&id), &key, size, ended, &cancel)
                             .map(|capture| {
                                 // As the list names it (a V4L2 path saved
                                 // before PipeWire offered that camera is the
@@ -206,6 +213,8 @@ impl qobject::CameraFeed {
 
     pub fn close(mut self: Pin<&mut Self>) {
         self.as_mut().rust_mut().generation += 1;
+        // An open under way stops (its camera closes there).
+        self.rust().cancel.store(true, Ordering::Relaxed);
         // (Dropping it returns once the camera is closed.)
         if self.as_mut().rust_mut().capture.take().is_some() {
             frames::clear(&self.rust().source.to_string());
