@@ -150,7 +150,8 @@ pub fn cameras_from(nodes: &HashMap<u32, Props>, devices: &HashMap<u32, Props>) 
             .as_deref()
             .and_then(|p| p.strip_prefix("/dev/video"))
             .and_then(|n| n.parse::<u32>().ok())
-            .unwrap_or(0)
+            // Cameras without a V4L2 node (libcamera's, an app's) after.
+            .unwrap_or(u32::MAX)
     };
     list.sort_by_key(|c| (c.virtual_camera, node_number(c), c.id));
     let v4l2_ids: Vec<u64> = list
@@ -546,7 +547,7 @@ fn buffers_pod() -> Result<Vec<u8>> {
             value: Value::Choice(ChoiceValue::Int(Choice(
                 ChoiceFlags::empty(),
                 ChoiceEnum::Flags {
-                    default: types as i32,
+                    default: types,
                     flags: vec![],
                 },
             ))),
