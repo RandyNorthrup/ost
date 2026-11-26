@@ -259,7 +259,7 @@ pub fn from_service(raw: &[Value]) -> (Vec<Contact>, Vec<Category>) {
             cats.push(Category { name, color });
         }
     }
-    cats.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    cats.sort_by_key(|c| c.name.to_lowercase());
     (contacts, cats)
 }
 

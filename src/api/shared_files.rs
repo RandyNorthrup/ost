@@ -554,6 +554,8 @@ pub fn by_you(reply: &Value, personal: &str) -> Vec<Recent> {
                 },
                 folder,
                 web_url: format!("{host}{}", s(&x["FileRef"])),
+                // Opened from here when Graph has no item for it.
+                open_url: format!("{host}{}", s(&x["FileRef"])),
                 location: if trim(&site) == trim(personal) {
                     "My Files".into()
                 } else {

@@ -161,7 +161,7 @@ fn card(r: &Value, me: &str) -> Card {
     // someone else.
     let shared_by = s(&src["LastShared"]["SharedBy"]["EmailAddresses"][0]["Address"]);
     let copilot_item = badge_type == 23
-        || badge_type == 9 && !(shared_by.eq_ignore_ascii_case(me) && !me.is_empty());
+        || badge_type == 9 && (me.is_empty() || !shared_by.eq_ignore_ascii_case(me));
     Card {
         title: s(&src["Title"]),
         file_name: s(&src["FileName"]),

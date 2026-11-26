@@ -771,7 +771,7 @@ pub async fn folder_place(
 /// Add shortcut made (ProgId `AddToOneDrive.MountPoint`), which Graph's
 /// children and the plain list rows leave out.
 const SHORTCUT_RENDER_OPTIONS: u64 = 5_691_143;
-const SHORTCUT_VIEW_XML: &str = r#"<View><ViewFields><FieldRef Name="FileLeafRef"/><FieldRef Name="ProgId"/><FieldRef Name="RemoteItem"/><FieldRef Name="UniqueId"/><FieldRef Name="Modified"/><FieldRef Name="Editor"/></ViewFields><RowLimit Paged="TRUE">500</RowLimit></View>"#;
+const SHORTCUT_VIEW_XML: &str = r#"<View><ViewFields><FieldRef Name="FileLeafRef"/><FieldRef Name="FileRef"/><FieldRef Name="ProgId"/><FieldRef Name="RemoteItem"/><FieldRef Name="UniqueId"/><FieldRef Name="Modified"/><FieldRef Name="Editor"/></ViewFields><RowLimit Paged="TRUE">500</RowLimit></View>"#;
 
 /// The shortcuts in a library folder (`folder`: its server-relative path,
 /// empty at the top), as drive items of what they point to: the target's
@@ -841,6 +841,24 @@ pub fn shortcut_items(reply: &Value) -> Vec<super::drive::DriveItem> {
                 return None;
             }
             let folder = remote["FSObjType"].as_i64() == Some(1);
+            // A file shortcut opens through its mount point (OneDrive's
+            // "serverurl.progid", else the shortcut's own address, which
+            // SharePoint sends on to the file).
+            let host: String = r[".spItemUrl"]
+                .as_str()
+                .unwrap_or_default()
+                .split('/')
+                .take(3)
+                .collect::<Vec<_>>()
+                .join("/")
+                .replace(":443", "");
+            let web_url = match r["serverurl.progid"].as_str() {
+                Some(u) if u.len() > 1 && u[1..].starts_with("https://") => u[1..].to_string(),
+                _ => match r["FileRef"].as_str() {
+                    Some(f) if !f.is_empty() && !host.is_empty() => format!("{host}{f}"),
+                    _ => String::new(),
+                },
+            };
             let name = r["FileLeafRef"].as_str().unwrap_or_default().to_string();
             Some(super::drive::DriveItem {
                 kind: if folder {
@@ -868,6 +886,7 @@ pub fn shortcut_items(reply: &Value) -> Vec<super::drive::DriveItem> {
                 sp_list: trim(g("ListId")),
                 sp_item: trim(g("UniqueId")),
                 special: "shortcut".into(),
+                web_url,
                 name,
                 ..Default::default()
             })
@@ -990,7 +1009,7 @@ mod tests {
         let reply = json!({ "ListData": { "Row": [
             { "FileLeafRef": "Attachments", "ProgId": "", "UniqueId": "{1}" },
             { "FileLeafRef": "OST Test Team - General", "ProgId": "AddToOneDrive.MountPoint", "Modified.": "2026-11-25T22:06:08Z",
-              "Editor": [{ "title": "OST Test 1" }], ".spItemUrl": "https://x-my.sharepoint.com:443/_api/v2.0/drives/b!MwwW/items/01BV7C2BHV44?version=Published",
+              "Editor": [{ "title": "OST Test 1" }], "FileRef": "/personal/a/Documents/OST Test Team - General", ".spItemUrl": "https://x-my.sharepoint.com:443/_api/v2.0/drives/b!MwwW/items/01BV7C2BHV44?version=Published",
               "RemoteItem": "{\"DriveId\":\"b!08rs\",\"ItemId\":\"01ZLBLND\",\"SiteUrl\":\"https://x.sharepoint.com/sites/OSTTestTeam\",\"ListId\":\"{1725E7C5-6C9A}\",\"FSObjType\":1,\"FolderChildCount\":1,\"SiteTitle\":\"OST Test Team\",\"UniqueId\":\"{9E8F3F36}\",\"SMTotalSize\":12253}" }
         ] } });
         let items = shortcut_items(&reply);
@@ -1015,6 +1034,10 @@ mod tests {
             (1, "Owner: OST Test Team", "1725e7c5-6c9a", "9e8f3f36")
         );
         assert_eq!(it.special, "shortcut");
+        assert_eq!(
+            it.web_url,
+            "https://x-my.sharepoint.com/personal/a/Documents/OST Test Team - General"
+        );
     }
 
     fn at(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> DateTime<Local> {
