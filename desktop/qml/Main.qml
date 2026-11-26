@@ -6142,8 +6142,9 @@ Window {
     // --recorder-test: in the OST Test 2 chat, Record video clip without the
     // camera or the room's sound: Record audio (the microphone picture,
     // recorded silently), Screen, the device menus, recording, paused,
-    // review and Close's question (--recorder-camera: in camera mode on
-    // linuxlt's test camera A). --recorder-send instead continues: the
+    // review and Close's question (--recorder-camera[=<camera name>], "~"
+    // for spaces: in camera mode on that camera, default linuxlt's test
+    // camera A). --recorder-send instead continues: the
     // clip goes into the compose box, is stored, and is sent with
     // --recorder-send=<text>. Logs RECORDER lines.
     Timer {
@@ -6176,8 +6177,11 @@ Window {
                 rec.closeMenusForTest()
                 // --recorder-camera: camera mode on the test camera (never
                 // the laptop's own).
-                if (Qt.application.arguments.indexOf("--recorder-camera") >= 0 && !rec.cameraOn) {
-                    rec.pickCameraForTest("OST test camera A")
+                const camArg = Qt.application.arguments.find(a => a === "--recorder-camera" || a.startsWith("--recorder-camera="))
+                if (camArg && !rec.cameraOn) {
+                    const name = camArg.indexOf("=") > 0 ? camArg.slice(camArg.indexOf("=") + 1).replace(/~/g, " ") : "OST test camera A"
+                    rec.pickCameraForTest(name)
+                    if (!rec.cameraOn && waited++ % 5 === 0) log("camera not listed", name, rec.stateForTest().cams)
                     return
                 }
                 // --recorder-screen: screen mode (the desktop's own picker).
@@ -7935,6 +7939,26 @@ Window {
                     window.contentItem.grabToImage(r => r.saveToFile("/tmp/act/recst-" + i + ".png"))
                 }
             } else Qt.quit()
+        }
+    }
+
+    // --face-camera-test: Settings ▸ Recognition's face capture dialog
+    // opened (nothing captured or sent): FACECAM lines with its camera list,
+    // the camera it opened and whether it runs, then closed (FACECAM closed:
+    // the camera let go); quits. No pictures.
+    Timer {
+        running: Qt.application.arguments.indexOf("--face-camera-test") >= 0 && backend.signedIn
+        interval: 2000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const face = settingsView.faceDialogForTest()
+            const st = step++
+            if (st === 0) { rail.current = "settings"; settingsView.pageForTest("recognition") }
+            else if (st === 1) face.show()
+            else if (st >= 3 && st <= 6) console.warn("FACECAM", JSON.stringify(face.cameraForTest("")))
+            else if (st === 7) face.close()
+            else if (st === 9) console.warn("FACECAM closed", JSON.stringify(face.cameraForTest("")))
+            else if (st === 10) Qt.quit()
         }
     }
 
@@ -13019,6 +13043,23 @@ Window {
             else if (step === 22) backend.channelAction("team-code", team.id, team.thread_id, "remove")
             else if (step === 24) { console.warn("TSET code removed", JSON.stringify(v.code)); Qt.quit() }
             step++
+        }
+    }
+
+    // --devices-watch-test[=<seconds>] (default 60): Settings ▸ Devices
+    // left open, no pictures; every 2 s a DEVWATCH line with its camera
+    // list, the chosen camera, whether the preview runs and the preview's
+    // newest frame (sequence, size, a checksum: no picture). For cameras
+    // coming and going while the page shows. Then quits.
+    Timer {
+        readonly property int secs: parseInt((Qt.application.arguments.find(a => a.startsWith("--devices-watch-test")) || "").split("=")[1] || "60") || 60
+        running: Qt.application.arguments.some(a => a.startsWith("--devices-watch-test")) && backend.signedIn
+        interval: 2000; repeat: true
+        property int step: 0
+        onTriggered: {
+            if (step === 0) { rail.current = "settings"; settingsView.pageForTest("devices") }
+            else console.warn("DEVWATCH", "t=" + step * 2, new Date().toISOString().slice(11, 23), JSON.stringify(settingsView.cameraForTest()), "self", backend.videoFrameStats("self") || "none")
+            if (++step * 2 > secs) Qt.quit()
         }
     }
 
