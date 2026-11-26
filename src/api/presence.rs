@@ -697,6 +697,49 @@ mod expiry_tests {
     }
 
     #[test]
+    fn expiries_keep_wall_times_across_dst_changes() {
+        // The US and EU change days: "Today" still ends at 23:59:59.999
+        // local, "This week" on Saturday 00:00 local, and the hours are
+        // real hours.
+        for (m, d) in [(3, 8), (3, 29), (10, 25), (11, 1), (3, 7), (10, 31)] {
+            let now = chrono::Local
+                .with_ymd_and_hms(2026, m, d, 1, 30, 0)
+                .latest();
+            let now = now.unwrap_or_else(|| {
+                chrono::Local
+                    .with_ymd_and_hms(2026, m, d, 12, 0, 0)
+                    .unwrap()
+            });
+            let today = expiry_for("Today", now).unwrap();
+            assert_eq!(
+                today.naive_local(),
+                now.date_naive().and_hms_milli_opt(23, 59, 59, 999).unwrap()
+            );
+            assert_eq!(
+                (expiry_for("HalfHour", now).unwrap() - now).num_seconds(),
+                1800
+            );
+            assert_eq!(
+                (expiry_for("FourHours", now).unwrap() - now).num_seconds(),
+                14_400
+            );
+            let week = expiry_for("ThisWeek", now).unwrap();
+            assert_eq!(
+                (week.weekday(), week.hour(), week.minute()),
+                (chrono::Weekday::Sat, 0, 0)
+            );
+            assert!(week.date_naive() >= now.date_naive());
+        }
+        let until = chrono::DateTime::parse_from_rfc3339("2026-11-20T17:00:00+01:00")
+            .unwrap()
+            .with_timezone(&chrono::Local);
+        assert_eq!(
+            note_body("Hi", false, Some(until))["expiry"],
+            "2026-11-20T16:00:00.000Z"
+        );
+    }
+
+    #[test]
     fn notes_with_mentions_are_teams_bodies() {
         // OST's editor: one token per word, as the compose box makes them.
         let editor = r#"<p>OST status mention <a href="mention:8:orgid:4287e791-1b98-4963-8b94-281c50472683">OST</a>&nbsp;<a href="mention:8:orgid:4287e791-1b98-4963-8b94-281c50472683">Test</a>&nbsp;<a href="mention:8:orgid:4287e791-1b98-4963-8b94-281c50472683">1</a></p>"#;

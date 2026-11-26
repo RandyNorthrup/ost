@@ -610,23 +610,7 @@ pub fn day_rows(contents: Option<&Value>, catch_up: Option<&Value>) -> Vec<Value
 /// both of its days; the list keeps one (by eventId, MeetingRecapsView's
 /// `meetingList`).
 pub async fn meetings(region: &str, from_days_ago: i64, days: i64) -> Result<Value> {
-    use chrono::{Local, TimeZone};
-    let today = Local::now().date_naive();
-    let mut asks = Vec::new();
-    for i in from_days_ago..from_days_ago + days {
-        let day = today - chrono::Duration::days(i);
-        let start = Local
-            .from_local_datetime(&day.and_hms_opt(0, 0, 0).unwrap_or_default())
-            .single()
-            .map(|d| d.with_timezone(&chrono::Utc));
-        let end = Local
-            .from_local_datetime(&day.and_hms_milli_opt(23, 59, 59, 999).unwrap_or_default())
-            .single()
-            .map(|d| d.with_timezone(&chrono::Utc));
-        if let (Some(a), Some(b)) = (start, end) {
-            asks.push((day, a, b));
-        }
-    }
+    let asks = local_days(chrono::Local::now().date_naive(), from_days_ago, days);
     let f =
         |t: chrono::DateTime<chrono::Utc>| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     // At most 8 days at a time (Teams' fetchAndCacheArtifactsByUserRange).
@@ -654,6 +638,38 @@ pub async fn meetings(region: &str, from_days_ago: i64, days: i64) -> Result<Val
         }
     }
     Ok(json!({ "days": out, "next": from_days_ago + days }))
+}
+
+/// The local days `from_days_ago..from_days_ago + days` back from `today`,
+/// each with its first and last moment (00:00:00.000 and 23:59:59.999
+/// local) in UTC; a day whose bounds a DST change makes ambiguous is left
+/// out.
+pub fn local_days(
+    today: chrono::NaiveDate,
+    from_days_ago: i64,
+    days: i64,
+) -> Vec<(
+    chrono::NaiveDate,
+    chrono::DateTime<chrono::Utc>,
+    chrono::DateTime<chrono::Utc>,
+)> {
+    use chrono::{Local, TimeZone};
+    let mut asks = Vec::new();
+    for i in from_days_ago..from_days_ago + days {
+        let day = today - chrono::Duration::days(i);
+        let start = Local
+            .from_local_datetime(&day.and_hms_opt(0, 0, 0).unwrap_or_default())
+            .single()
+            .map(|d| d.with_timezone(&chrono::Utc));
+        let end = Local
+            .from_local_datetime(&day.and_hms_milli_opt(23, 59, 59, 999).unwrap_or_default())
+            .single()
+            .map(|d| d.with_timezone(&chrono::Utc));
+        if let (Some(a), Some(b)) = (start, end) {
+            asks.push((day, a, b));
+        }
+    }
+    asks
 }
 
 // ---------------------------------------------------------------------
@@ -2250,6 +2266,42 @@ mod tests {
                 [0]["messageAnnotationMetadata"]["canvasType"],
             "Recap"
         );
+    }
+
+    #[test]
+    fn days_run_from_local_midnight_to_midnight() {
+        let day = |m, d| chrono::NaiveDate::from_ymd_opt(2026, m, d).unwrap();
+        let days = local_days(day(11, 20), 0, 3);
+        assert_eq!(
+            days.iter().map(|d| d.0).collect::<Vec<_>>(),
+            [day(11, 20), day(11, 19), day(11, 18)]
+        );
+        assert_eq!(local_days(day(11, 20), 5, 2)[0].0, day(11, 15));
+        // Days around the US and EU DST changes: 23, 24 or 25 hours, each
+        // from 00:00:00.000 to 23:59:59.999 local.
+        for (today, back) in [
+            (day(3, 9), 2),
+            (day(3, 30), 2),
+            (day(10, 26), 2),
+            (day(11, 2), 2),
+        ] {
+            for (d, a, b) in local_days(today, 0, back) {
+                let (la, lb) = (
+                    a.with_timezone(&chrono::Local),
+                    b.with_timezone(&chrono::Local),
+                );
+                assert_eq!(la.naive_local(), d.and_hms_opt(0, 0, 0).unwrap());
+                assert_eq!(
+                    lb.naive_local(),
+                    d.and_hms_milli_opt(23, 59, 59, 999).unwrap()
+                );
+                let shift = la.offset().local_minus_utc() - lb.offset().local_minus_utc();
+                assert_eq!(
+                    (b - a).num_milliseconds() + 1,
+                    (86_400 + i64::from(shift)) * 1000
+                );
+            }
+        }
     }
 
     #[test]
