@@ -7373,6 +7373,7 @@ Window {
         running: Qt.application.arguments.indexOf("--chatlist-watch") >= 0 && backend.signedIn
         interval: 2000; repeat: true
         onTriggered: console.warn("CHATWATCH", new Date().toISOString(), "rows", Object.keys(chatList.rowsForTest).length,
+                                  "chats", chatList.chats.length, "shown", chatList.chats.filter(c => chatList.chatShown(c)).length,
                                   "hidden", chatList.chats.filter(c => c.hidden).length, "unread", chatList.chats.filter(c => c.unread).length)
     }
     // --hide-chats=<name>|<name>… (~ for spaces): each chat of the list
