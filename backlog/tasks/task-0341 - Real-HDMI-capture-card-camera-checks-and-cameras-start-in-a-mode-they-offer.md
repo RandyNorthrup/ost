@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-26T20:47:00Z'
-updated_date: '2026-11-26T23:15:00Z'
+updated_date: '2026-11-26T23:16:00Z'
 labels:
   - bug
   - calls
@@ -57,4 +57,24 @@ linuxlt now has a real non-loopback camera device, a MacroSilicon MS2109 USB HDM
   - Tracing (may_open + v4l2_open + openat, fuser 0.1 s): OST itself opened only the card's capture node (controls read, V4L2 capture); idle 68 s: nothing.
   - No PipeWire cameras (WirePlumber monitor.v4l2/libcamera disabled, restored after; vivid n_devs=1 node_types=0x1 as a node only opening describes): list Integrated Camera, USB Video, vivid, OST test camera A from sysfs/udev; opens: card x2, vivid x1 (asked once while the list showed); preview 640x480 YUYV@20; --prejoin-camera-test passes, card x10 only.
   - USB authorized 0/1: list drops the card within 2 s, preview stops and waits ("isn't there"), list and preview back 2-3 s after authorize; only the card's nodes opened (before and after renumbering).
+
+- PR #25.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Cameras now start in one of the modes they list, and Settings > Devices follows cameras plugged in or removed. Found with the first real non-loopback camera on linuxlt, a MacroSilicon MS2109 HDMI capture card.
+
+Changes:
+- src/calling/camera_mode.rs: orders a camera's modes as Chromium does (smallest covering size, then the lowest rate that reaches the wanted one, then the cheaper format).
+- camera_pw: reads the node's EnumFormat and offers the best modes as exact formats; before, ranges made PipeWire fixate 640x360@15 and fail with -22 on the card. camera.rs: the V4L2 path enumerates sizes and intervals.
+- Settings > Devices: the list is re-read every 2 s while shown; the preview reopens when the chosen camera returns; videoDevices().opens keeps the controls row from opening the fallback camera while the chosen one is missing (it opened /dev/video20 before).
+- Harness without pictures: --devices-watch-test, --face-camera-test, --recorder-camera=<name>, backend.videoFrameStats.
+
+Tests:
+- cargo test -p teams-cli --lib calling::camera (32 passed; new mode-order and EnumFormat tests).
+- Live on linuxlt with the card: list, preview, --prejoin-camera-test, 1:1 call received by OST Test 2, recorder clip (ffprobe, deleted unviewed), face capture list, bpftrace privacy trace, no-PipeWire V4L2 fallback (WirePlumber monitors off, vivid), USB authorized 0/1.
+
+Not verified: a changing picture (static HDMI source).
+<!-- SECTION:FINAL_SUMMARY:END -->
