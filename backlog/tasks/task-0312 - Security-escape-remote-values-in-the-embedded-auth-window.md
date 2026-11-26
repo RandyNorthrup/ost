@@ -1,11 +1,11 @@
 ---
 id: TASK-0312
 title: 'Security: escape remote values in the embedded auth window'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T19:49:00Z'
-updated_date: '2026-11-26T02:00:00Z'
+updated_date: '2026-11-26T02:01:00Z'
 labels:
   - security
 dependencies: []
@@ -20,8 +20,8 @@ From a public code audit of OST 0.2.1 (posted on Reddit, 2026-11-25). The embedd
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every value placed into injected scripts or HTML is serialized safely (JSON with <, >, &, U+2028/2029 escaped, or passed through WebChannel/messages instead of string building)
-- [ ] #2 A test shows a value containing </script>, quotes and newlines can't break out
+- [x] #1 Every value placed into injected scripts or HTML is serialized safely (JSON with <, >, &, U+2028/2029 escaped, or passed through WebChannel/messages instead of string building)
+- [x] #2 A test shows a value containing </script>, quotes and newlines can't break out
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -40,3 +40,17 @@ Verified (main @ 575e4404): desktop/qml/AppAuthWindow.qml:61 placed JSON.stringi
 
 Tests: api::app_host::script_values_cannot_break_out_of_the_script (</script>, <!--, quotes, CR/LF, U+2028/9, & round-trip as the same value; the page keeps one script element). The app sign-in window has no live trigger on the test tenant without installing a third-party app; covered by the unit test.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Remote values can't break out of the scripts and pages OST builds.
+
+Changes:
+- api::app_host::script_json (JSON with <, >, &, U+2028/2029 escaped), backend.scriptJson; AppAuthWindow.qml uses it for the link app's URL and valid domains.
+- WebApp print view: frame-supplied HTML loads with JavaScript off and only an https base.
+
+Tests: script_values_cannot_break_out_of_the_script.
+
+PR #7 (branch task-0309-0315-app-security); CI Format, Clippy (with and without test-harness), Build and test, Release build refuses test-harness flags; CodeQL clean on the PR.
+<!-- SECTION:FINAL_SUMMARY:END -->

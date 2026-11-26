@@ -1,11 +1,11 @@
 ---
 id: TASK-0313
 title: 'Security: sign-out clears web sessions'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T19:49:00Z'
-updated_date: '2026-11-26T02:00:00Z'
+updated_date: '2026-11-26T02:01:00Z'
 labels:
   - security
 dependencies: []
@@ -20,8 +20,8 @@ From a public code audit of OST 0.2.1 (posted on Reddit, 2026-11-25). Web cookie
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Signing out deletes the account's WebEngine cookies, local storage, IndexedDB, cache and service workers for every profile OST uses (sign-in, hosted apps, Loop, viewers), and the next sign-in starts clean
-- [ ] #2 Each OST profile (OST_PROFILE) keeps its own web storage, so accounts never share cookies
+- [x] #1 Signing out deletes the account's WebEngine cookies, local storage, IndexedDB, cache and service workers for every profile OST uses (sign-in, hosted apps, Loop, viewers), and the next sign-in starts clean
+- [x] #2 Each OST profile (OST_PROFILE) keeps its own web storage, so accounts never share cookies
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -44,3 +44,18 @@ Live check on linuxlt (2026-11-25, my build with --features test-harness, fresh 
 - 0313: --sign-out-test: "signed out; restarting", the restarted process removed ~/.local/share/OST/QtWebEngine/ost-apps-sectest and its cache before Qt WebEngine opened; the next sign-in asked for the e-mail address (no remembered account). First run crashed in libQt6Qml during teardown before the restart; fixed (re-exec right after the event loop) and re-verified: restart within 1.5 s.
 - 0314: --feedback-test: the issue URL holds only template, title, text and contact ("logs in url: false"); masked logs went to OST report details.txt (0600, folder 0700) with no JWTs; the sectest log has no eyJ tokens.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Sign-out clears the embedded pages' web sessions; profiles don't share them.
+
+Changes:
+- Per-profile web storage name (ost-apps, ost-apps-<profile>).
+- Sign-out writes a marker and restarts OST (re-exec right after the event loop, without QML teardown, which crashed); before Qt WebEngine starts, the profile's data and cache folders (cookies, local storage, IndexedDB, service workers, cache) are removed.
+- --sign-out-test harness flag; docs.
+
+Tests: live on linuxlt (restart, wipe, clean next sign-in).
+
+PR #7 (branch task-0309-0315-app-security); CI Format, Clippy (with and without test-harness), Build and test, Release build refuses test-harness flags; CodeQL clean on the PR.
+<!-- SECTION:FINAL_SUMMARY:END -->
