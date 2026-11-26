@@ -3467,7 +3467,7 @@ pub mod qobject {
 
 /// A download waiting for "Always ask where to save downloaded file".
 enum PendingSave {
-    Drive(api::drive::DriveItem),
+    Drive(Box<api::drive::DriveItem>),
     File(api::files::FileAttachment),
     /// A video clip (its `…/views/video` address).
     Clip(String),
@@ -27769,7 +27769,8 @@ impl qobject::Backend {
         };
         if ask_where_to_save() {
             let name = item.name.clone();
-            self.as_mut().ask_save(PendingSave::Drive(item), &name);
+            self.as_mut()
+                .ask_save(PendingSave::Drive(Box::new(item)), &name);
             return;
         }
         let Some(dir) = download_dir() else { return };
@@ -27831,7 +27832,7 @@ impl qobject::Backend {
             return;
         };
         match pending {
-            PendingSave::Drive(item) => self.as_mut().run_drive_download(item, dir, Some(target)),
+            PendingSave::Drive(item) => self.as_mut().run_drive_download(*item, dir, Some(target)),
             PendingSave::File(file) => self.as_mut().run_file_download(file, dir, Some(target)),
             PendingSave::Clip(url) => self.as_mut().run_clip_download(url, dir, Some(target)),
             PendingSave::Zip { op, items, name } => {
