@@ -18,6 +18,8 @@ pub mod camera;
 #[cfg(feature = "video")]
 pub mod camera_controls;
 #[cfg(feature = "video")]
+pub mod camera_mode;
+#[cfg(feature = "video")]
 pub mod camera_node;
 #[cfg(feature = "video")]
 pub mod camera_pw;
