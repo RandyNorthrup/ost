@@ -82,14 +82,14 @@ Window {
         // Stopping the screen share stops Annotate (Teams' stopAnnotationFromSharer).
         if (!sharing && annotating) backend.contentShareStop()
         if (sharing && meeting) showMinimized()
-        else if (!sharing && visibility === Window.Minimized) { showNormal(); raise() }
+        else if (!sharing && minimizedNow) { showNormal(); raise(); requestActivate() }
         // Teams refreshes Call health at once when your media turns on or off.
         if (side === "callHealth") refreshCallHealth()
     }
     /// The Sharing control bar's More ▸ Chat / People: the pane in the
     /// meeting window, shown again.
     function showSidePane(name) {
-        if (visibility === Window.Minimized) showNormal()
+        if (minimizedNow) showNormal()
         raise(); requestActivate()
         if (side !== name) runControl(name === "chat" ? "ChatButton" : "RosterButton")
     }
@@ -4296,6 +4296,27 @@ Window {
     property bool smallView: false
     onVisibleChanged: if (!visible) smallView = false
     onRttOnChanged: if (rttOn && smallView) { smallView = false; showNormal(); raise() }
+    /// The window is minimized. X11 says so (`visibility`); a Wayland
+    /// client is never told (KWin, GNOME and Hyprland only stop drawing
+    /// the window: minimized, on another workspace), so there it is the
+    /// window no longer being exposed (WindowTool), checked every 250 ms
+    /// during a call and taken after two checks. (`active` can't tell: a
+    /// window stays "active" while the main window it belongs to is.)
+    readonly property bool minimizedNow: visibility === Window.Minimized || unseen
+    onMinimizedNowChanged: if (!minimizedNow) compactView.putAway = false
+    property bool unseen: false
+    property int unseenChecks: 0
+    function exposedForTest() { return windowTool.exposed() }
+    WindowTool { id: windowTool }
+    Timer {
+        interval: 250; repeat: true
+        running: win.visible && (win.meeting || win.smallView) && win.state === "connected"
+        onRunningChanged: if (!running) { win.unseenChecks = 0; win.unseen = false }
+        onTriggered: {
+            win.unseenChecks = windowTool.exposed() ? 0 : win.unseenChecks + 1
+            win.unseen = win.unseenChecks >= 2
+        }
+    }
     // Teams' compact view while the meeting window is minimised (and for
     // a call opened in the small window).
     CompactCallWindow {
@@ -4303,8 +4324,10 @@ Window {
         call: win
         // "Hide Call Monitor when minimizing" (Accessibility) keeps it
         // away, except while you share (as Teams says).
-        visible: (win.meeting || win.smallView) && win.state === "connected" && win.visibility === Window.Minimized
+        visible: (win.meeting || win.smallView) && win.state === "connected" && win.minimizedNow && !putAway
                  && (win.accessibility.hideCallMonitorOnMinimize !== true || win.sharing)
+        // "Maximize meeting window": shown and activated (on Wayland the
+        // activation is what brings a minimized window back).
         onRestore: { win.showNormal(); win.raise(); win.requestActivate() }
     }
     function minimizeForTest() { win.showMinimized() }

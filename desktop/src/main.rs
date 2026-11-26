@@ -20,6 +20,7 @@ mod room_remote;
 mod tray;
 mod video_effects;
 mod video_item;
+mod window_tool;
 mod work_location;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};
