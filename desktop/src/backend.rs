@@ -5082,7 +5082,14 @@ fn update_stream(
 /// failed.
 fn event_json(e: &teams_cli::calling::live_event::LiveEvent, busy: &str, failed: &str) -> String {
     if !e.is_event() && !e.staging {
-        return String::new();
+        // A meeting with Q&A on has Teams' Q&A on the bar too (measured in
+        // Teams on the web, 2026-11-26: Chat, Q&A, People…); nothing else of
+        // an event applies.
+        return if e.qna {
+            serde_json::json!({ "qna": true }).to_string()
+        } else {
+            String::new()
+        };
     }
     let mut v = serde_json::to_value(e).unwrap_or_default();
     v["eventPhase"] = serde_json::json!(e.event_phase());
