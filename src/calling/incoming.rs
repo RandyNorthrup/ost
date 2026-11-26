@@ -419,6 +419,15 @@ pub(crate) async fn answer_renegotiation(
         let muted = current.is_muted();
         let held = current.is_held();
         let camera = current.camera_on().then(|| current.camera_device());
+        // A camera is one device: the old session lets it go first, or the
+        // new one finds it busy and the camera is lost (it was on while we
+        // waited in a lobby, TASK-0324).
+        if camera.is_some()
+            && let Some(old) = session.as_mut()
+            && let Err(e) = old.set_camera(false, None)
+        {
+            tracing::debug!("camera kept by the old media session: {e:#}");
+        }
         let mut fresh = webrtc_audio::WebRtcAudioSession::start(local, parsed).await?;
         fresh.set_local_sdp(&sdp);
         fresh.set_muted(muted);
@@ -435,7 +444,9 @@ pub(crate) async fn answer_renegotiation(
         tracing::info!(meeting = fresh.is_meeting(), "media moved to the new offer");
         // The old session (its socket, camera and tasks) stops here; the
         // call's echo canceller and send estimate are the new one's.
-        current.supersede();
+        if let Some(old) = session.as_ref() {
+            old.supersede();
+        }
         *session = Some(fresh);
     }
     Ok(session.as_ref().is_some_and(|s| s.is_held_by_peer()))
