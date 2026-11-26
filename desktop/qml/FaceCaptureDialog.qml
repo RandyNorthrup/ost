@@ -46,6 +46,7 @@ Popup {
     function show() {
         pose = "Center"; started = false; count = 0; learning = false; error = ""; capturedSource = ""; finished = false
         flick.contentY = 0
+        pickedIndex = -1
         loadCameras()
         open()
     }
@@ -64,18 +65,20 @@ Popup {
         BadLighting: qsTr("Make sure you’re in a well-lit room and try again.")
     })
 
-    // The cameras of Settings > Devices (OST's camera list), the one chosen
-    // there first; the picked one is open only while the dialog shows its
-    // picture.
+    // The cameras of Settings > Devices (OST's camera list). The one chosen
+    // there is used until another is picked here; while it isn't there,
+    // none is opened (never some other camera instead). The camera is open
+    // only while the dialog shows its picture.
     property var cameras: []
-    property int cameraIndex: 0
+    /// The camera picked here (an index into `cameras`), -1 for Settings'.
+    property int pickedIndex: -1
     function loadCameras() {
         const d = JSON.parse(backend.videoDevices())
         cameras = d.devices || []
-        cameraIndex = Math.max(0, cameras.findIndex(c => c.path === d.current))
     }
-    readonly property string cameraId: cameras.length ? cameras[Math.min(cameraIndex, cameras.length - 1)].path : ""
-    readonly property bool cameraWanted: root.opened && !root.finished && cameraId !== ""
+    /// What opens: the picked camera, or "" for Settings > Devices' one.
+    readonly property string cameraId: pickedIndex >= 0 && pickedIndex < cameras.length ? cameras[pickedIndex].path : ""
+    readonly property bool cameraWanted: root.opened && !root.finished
     function syncCamera() {
         if (!cameraWanted) { feed.close(); return }
         if (feed.running && feed.wanted === cameraId) return
@@ -88,6 +91,15 @@ Popup {
         id: feed
         /// The camera asked for when it opened.
         property string wanted: ""
+        // (A camera that came later joins the list.)
+        onRunningChanged: if (running) root.loadCameras()
+    }
+    // No camera yet (the camera portal still asking, none plugged in, or
+    // it wouldn't open): look again each second while shown.
+    Timer {
+        interval: 1000; repeat: true
+        running: root.opened && !root.finished && !feed.running
+        onTriggered: { if (!root.cameras.length) root.loadCameras(); root.syncCamera() }
     }
     /// Take the photo from the camera's newest picture.
     function shoot() {
@@ -167,8 +179,9 @@ Popup {
             placeholder: qsTr("Choose camera")
             // Teams drops what follows " (" in a camera's name.
             options: root.cameras.map(c => ({ label: String(c.name).split(" (")[0] }))
-            current: root.cameraIndex
-            onPicked: i => root.cameraIndex = i
+            // The camera open (none while Settings' one isn't there).
+            current: root.pickedIndex >= 0 ? root.pickedIndex : root.cameras.findIndex(c => c.path === feed.camera)
+            onPicked: i => root.pickedIndex = i
         }
 
         // The preview: the camera, then Teams' panel with its round window.
