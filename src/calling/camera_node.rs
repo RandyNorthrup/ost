@@ -194,6 +194,11 @@ pub struct SysNode {
     /// udev's ID_V4L_CAPABILITIES (":capture:"), read when the node
     /// appeared.
     pub udev_caps: Option<String>,
+    /// Where the node's device sits in sysfs (its bus path).
+    pub sys_path: Option<String>,
+    /// When udev set the node up (its `I:` USEC_INITIALIZED): new each
+    /// time the device is plugged in again.
+    pub udev_initialized: Option<String>,
 }
 
 /// What a node is, from [`SysNode`] alone.
@@ -273,8 +278,10 @@ impl SysNode {
     /// opening it told).
     pub fn fingerprint(&self) -> String {
         format!(
-            "{:?}|{:?}|{:?}|{:?}|{:?}|{}",
+            "{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{}",
             self.dev,
+            self.sys_path,
+            self.udev_initialized,
             self.driver,
             self.loopback_state,
             self.loopback_format,
@@ -320,13 +327,16 @@ fn sys_node(dir: &std::path::Path, node: String, number: u32, udev: &std::path::
         let (major, minor) = d.split_once(':')?;
         Some(makedev(major.parse().ok()?, minor.parse().ok()?))
     });
-    let udev_caps = dev_str.and_then(|d| {
-        std::fs::read_to_string(udev.join(format!("c{d}")))
-            .ok()?
+    let record = dev_str.and_then(|d| std::fs::read_to_string(udev.join(format!("c{d}"))).ok());
+    let field = |prefix: &str| {
+        record
+            .as_deref()?
             .lines()
-            .find_map(|l| l.strip_prefix("E:ID_V4L_CAPABILITIES="))
-            .map(str::to_string)
-    });
+            .find_map(|l| l.strip_prefix(prefix))
+            .map(|v| v.trim().to_string())
+    };
+    let udev_caps = field("E:ID_V4L_CAPABILITIES=");
+    let udev_initialized = field("I:");
     let device = dir.join("device");
     let virtual_node = std::fs::symlink_metadata(&device).is_err();
     SysNode {
@@ -341,6 +351,10 @@ fn sys_node(dir: &std::path::Path, node: String, number: u32, udev: &std::path::
         loopback_state: read("state"),
         loopback_format: read("format"),
         udev_caps,
+        sys_path: std::fs::canonicalize(dir)
+            .ok()
+            .map(|p| p.to_string_lossy().into_owned()),
+        udev_initialized,
         node,
         number,
     }
@@ -505,6 +519,7 @@ mod tests {
             loopback_state: None,
             loopback_format: None,
             udev_caps: udev.map(str::to_string),
+            ..Default::default()
         }
     }
 
@@ -672,7 +687,7 @@ mod tests {
         );
         fs::write(
             udev.join("c81:0"),
-            "E:ID_V4L_VERSION=2\nE:ID_V4L_CAPABILITIES=:capture:\n",
+            "I:51234567\nE:ID_V4L_VERSION=2\nE:ID_V4L_CAPABILITIES=:capture:\n",
         )
         .unwrap();
         fs::write(udev.join("c81:1"), "E:ID_V4L_CAPABILITIES=:\n").unwrap();
@@ -680,7 +695,24 @@ mod tests {
         fs::write(class.join("not-a-node"), "").unwrap();
 
         let nodes = sys_nodes(&class, &udev);
+        // The camera plugged in again: same node and number, a new udev
+        // record, so what a probe found isn't reused.
+        fs::write(
+            udev.join("c81:0"),
+            "I:99234567\nE:ID_V4L_VERSION=2\nE:ID_V4L_CAPABILITIES=:capture:\n",
+        )
+        .unwrap();
+        let replugged = sys_nodes(&class, &udev);
         let _ = fs::remove_dir_all(&root);
+        assert_eq!(nodes[0].udev_initialized.as_deref(), Some("51234567"));
+        assert!(
+            nodes[0]
+                .sys_path
+                .as_deref()
+                .is_some_and(|p| p.ends_with("/class/video0"))
+        );
+        assert_ne!(nodes[0].fingerprint(), replugged[0].fingerprint());
+        assert_eq!(nodes[1].fingerprint(), replugged[1].fingerprint());
         let names: Vec<&str> = nodes.iter().map(|n| n.node.as_str()).collect();
         assert_eq!(names, ["video0", "video1", "video20"]);
         assert_eq!(nodes[0].driver.as_deref(), Some("uvcvideo"));
