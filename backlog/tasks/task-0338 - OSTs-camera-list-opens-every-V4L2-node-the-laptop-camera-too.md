@@ -1,11 +1,11 @@
 ---
 id: TASK-0338
 title: OST's camera list opens every V4L2 node, the laptop camera too
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-26T15:25:00Z'
-updated_date: '2026-11-26T18:46:00Z'
+updated_date: '2026-11-26T19:27:00Z'
 labels:
   - bug
   - privacy
@@ -49,6 +49,8 @@ Found in TASK-0334's checks (2026-11-26, bpftrace on openat /dev/video* on linux
 - Mic incident: cpal ignores PULSE_SOURCE; the baseline meeting run recorded from linuxlt's built-in mic (alsa_input.pci-...) for about 10 s (joined muted) until I moved the stream; the first after-run's two streams were moved by a guard within 0.2 s. Later runs used OST_MIC_DEVICE=<remap-source node name> (null sink + module-remap-source) and recorded from it directly (pactl checked).
 
 - PR #23.
+
+- Codex review: 2 findings fixed (7de3d70c: a failed node query isn't cached; 22eb1e70: an older loopback without 'state' goes by its live format). The re-review found no issues. All CI checks pass.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
