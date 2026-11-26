@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-26T15:25:00Z'
-updated_date: '2026-11-26T19:27:00Z'
+updated_date: '2026-11-26T20:07:00Z'
 labels:
   - bug
   - privacy
@@ -51,6 +51,8 @@ Found in TASK-0334's checks (2026-11-26, bpftrace on openat /dev/video* on linux
 - PR #23.
 
 - Codex review: 2 findings fixed (7de3d70c: a failed node query isn't cached; 22eb1e70: an older loopback without 'state' goes by its live format). The re-review found no issues. All CI checks pass.
+
+- Codex follow-up (97848c75): the probe cache key also has the sysfs device path and udev's USEC_INITIALIZED, so a replugged node is probed again. The chosen camera's node is probed even when sysfs, udev or PipeWire call it no camera. Both review threads replied to and resolved. Codex found no issues on 97848c75 and all CI checks pass.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
