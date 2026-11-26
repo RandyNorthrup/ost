@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T19:30:00Z'
-updated_date: '2026-11-26T05:52:00Z'
+updated_date: '2026-11-26T06:23:00Z'
 labels:
   - bug
   - calls
@@ -50,6 +50,8 @@ The video clip recorder (VideoClipRecorder.qml) and Recognition's face capture (
 - Found in that check: face capture took videoDevices().current, which falls back to the first camera when the chosen one is missing, and opened linuxlt's real webcam ~6 s (harness photo deleted unviewed, nothing sent). Fixed: "" = the chosen camera resolved in CameraFeed, which opens a chosen camera only as itself (no listing) and the first camera only when none is chosen.
 
 - Codex review 2: CameraFeed opens on a worker thread (`opening`; stale results dropped, which closes their camera); a camera that stops by itself (start_plain callback) closes the feed so the retry reopens it. Live: PipeWire camera removed while the recorder showed it -> noticed in 60 ms, reopened 1 s after it came back; V4L2 loopback path unchanged.
+
+- Codex review 3: close() cancels an open under way (CameraCapture::start_cancellable -> camera_pw::capture polls the flag while waiting for the link, ends and joins the stream); the recorder clears its picture whenever the camera stops. Live: open + camera off at once -> PipeWire stream never linked, gone in ~120 ms.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
