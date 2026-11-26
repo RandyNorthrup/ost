@@ -1,10 +1,13 @@
 //! Feedback and help to OST's GitHub repo in Microsoft's place (Teams' Report
 //! a problem, Give a compliment and Suggest a feature; spec
 //! docs/spec/feedback-and-help.md). OST never posts anything: it opens the
-//! repo's issue form with only what the reporter typed, and saves the rest
+//! repo's issue form in the browser, filled in with only what the reporter
+//! typed and their contact answer ([`issue_url`]; GitHub gets those as the
+//! page opens, even if they never submit it, which the form says first) or
+//! empty with their text on the clipboard ([`blank_issue_url`]). The rest
 //! (where it was sent from, versions, and the masked logs when they chose
-//! to share them) to a file they review and attach themselves before
-//! submitting on GitHub. Nothing leaves the device until they do.
+//! to share them) goes to a file they review and attach themselves before
+//! submitting on GitHub: none of it leaves the device until they do.
 
 /// The repo feedback and help go to ("owner/name"); a build can set
 /// `OST_FEEDBACK_REPO` (an upstream port points it at its own repo).
@@ -93,17 +96,23 @@ fn enc(s: &str) -> String {
     url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
 }
 
-/// The new-issue address with the form filled in with only what the
-/// reporter typed or chose in it: the title (from their text), their text
-/// and their contact answer. Logs, versions, where it was sent from and
-/// file names stay on the device ([`details_text`]); opening this address
-/// sends GitHub nothing else.
-pub fn issue_url(r: &Report) -> String {
-    let template = if r.kind == "compliment" {
+/// The issue form for the report's kind.
+fn template(r: &Report) -> &'static str {
+    if r.kind == "compliment" {
         "give-a-compliment.yml"
     } else {
         "report-a-problem.yml"
-    };
+    }
+}
+
+/// The new-issue address with the form filled in with only what the
+/// reporter typed or chose in it: the title (from their text), their text
+/// and their contact answer. They are in the address, so GitHub gets them
+/// as soon as the browser opens it, even if the issue is never submitted.
+/// Logs, versions, where it was sent from and file names stay on the device
+/// ([`details_text`]); opening this address sends GitHub nothing else.
+pub fn issue_url(r: &Report) -> String {
+    let template = template(r);
     let contact = if r.contact {
         "Yes, you may contact me"
     } else {
@@ -125,6 +134,13 @@ pub fn issue_url(r: &Report) -> String {
             .join("&"),
     );
     url
+}
+
+/// The new-issue address with the report's form and nothing filled in:
+/// opening it sends GitHub nothing the reporter typed (they paste it in
+/// themselves).
+pub fn blank_issue_url(r: &Report) -> String {
+    format!("{}/issues/new?template={}", repo_url(), template(r))
 }
 
 /// What OST saves for the reporter to review and attach (DETAILS_FILE):
@@ -375,6 +391,24 @@ mod tests {
         let cu = issue_url(&c);
         assert!(cu.contains("template=give-a-compliment.yml&title=Compliment%3A+Nice"));
         assert!(cu.contains("contact=No%2C+don%27t+contact+me"));
+    }
+
+    #[test]
+    fn the_blank_issue_form_holds_nothing_typed() {
+        let r = report();
+        assert_eq!(
+            blank_issue_url(&r),
+            "https://github.com/RandyNorthrup/ost/issues/new?template=report-a-problem.yml"
+        );
+        let c = Report {
+            kind: "compliment".into(),
+            text: "Nice".into(),
+            contact: true,
+            ..Default::default()
+        };
+        let u = blank_issue_url(&c);
+        assert!(u.ends_with("?template=give-a-compliment.yml"), "{u}");
+        assert!(!u.contains("Nice") && !u.contains("contact") && !u.contains("title"));
     }
 
     #[test]

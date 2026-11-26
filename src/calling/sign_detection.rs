@@ -11,7 +11,8 @@
 //! Like Teams' model, OST's isn't shipped with the app: [`prepare`]
 //! downloads it on first need from its release, checks it against
 //! [`MODEL_SHA256`], keeps it in the cache (`~/.cache/ost/models`) and loads
-//! it on a worker thread. The camera hands frames over with [`push_frame`]
+//! it on a worker thread; after a failure the caller waits longer each time
+//! before trying again ([`Retry`]). The camera hands frames over with [`push_frame`]
 //! (dropped while the worker is busy, or detection is off); every 500 ms
 //! [`tick`] gives the messages to send. Both take times from [`now_ms`].
 
@@ -189,13 +190,13 @@ fn sha256_hex(bytes: &[u8]) -> String {
         .collect()
 }
 
-/// The cached model, when it's there and its hash checks out (a file that
-/// doesn't is removed, to be downloaded again).
+/// The cached model, when it's there and its hash is `sha256` (a file that
+/// doesn't match is removed, to be downloaded again).
 #[cfg(any(feature = "video", test))]
-fn read_cached(path: &Path) -> Option<Vec<u8>> {
+fn read_cached(path: &Path, sha256: &str) -> Option<Vec<u8>> {
     let bytes = std::fs::read(path).ok()?;
     let got = sha256_hex(&bytes);
-    if got == MODEL_SHA256 {
+    if got == sha256 {
         tracing::info!(path = %path.display(), "sign language detection model: cached, SHA-256 verified");
         Some(bytes)
     } else {
@@ -230,16 +231,14 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     result
 }
 
-/// Downloads the model from [`MODEL_URL`], checks its SHA-256 and writes it
-/// to `path`.
+/// Fetches the model from [`MODEL_URL`] (at most [`MODEL_MAX_BYTES`]).
 #[cfg(feature = "video")]
-async fn download(path: &Path) -> anyhow::Result<Vec<u8>> {
+async fn fetch() -> anyhow::Result<Vec<u8>> {
     use anyhow::Context;
     tracing::info!(
         url = MODEL_URL,
         "sign language detection model: downloading"
     );
-    let started = std::time::Instant::now();
     let mut resp = reqwest::Client::builder()
         .user_agent(concat!("OST/", env!("CARGO_PKG_VERSION")))
         .build()?
@@ -265,14 +264,37 @@ async fn download(path: &Path) -> anyhow::Result<Vec<u8>> {
             "the sign language detection model download is too large"
         );
     }
+    Ok(bytes)
+}
+
+/// The model's bytes: the cached file at `path` when its SHA-256 is
+/// `sha256`, otherwise what `fetch` gets, once its SHA-256 is checked
+/// against `sha256` and it's written to `path`. Bytes that don't match
+/// aren't used or kept.
+#[cfg(any(feature = "video", test))]
+async fn model_bytes<F, Fut>(path: &Path, sha256: &str, fetch: F) -> anyhow::Result<Vec<u8>>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<Vec<u8>>>,
+{
+    use anyhow::Context;
+    let cached = {
+        let (path, sha256) = (path.to_path_buf(), sha256.to_string());
+        tokio::task::spawn_blocking(move || read_cached(&path, &sha256)).await?
+    };
+    if let Some(bytes) = cached {
+        return Ok(bytes);
+    }
+    let started = std::time::Instant::now();
+    let bytes = fetch().await?;
     let (bytes, got) = tokio::task::spawn_blocking(move || {
         let got = sha256_hex(&bytes);
         (bytes, got)
     })
     .await?;
     anyhow::ensure!(
-        got == MODEL_SHA256,
-        "the downloaded sign language detection model's SHA-256 is {got}, not {MODEL_SHA256}"
+        got == sha256,
+        "the downloaded sign language detection model's SHA-256 is {got}, not {sha256}"
     );
     let path = path.to_path_buf();
     let (path, bytes) = tokio::task::spawn_blocking(move || {
@@ -295,10 +317,84 @@ async fn download(path: &Path) -> anyhow::Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// The first wait after a failed [`prepare`], in ms.
+pub const RETRY_FIRST_MS: u64 = 5_000;
+/// The longest wait between failed attempts, in ms.
+pub const RETRY_MAX_MS: u64 = 300_000;
+
+/// When [`prepare`] may be tried (again), so a model host that fails fast
+/// isn't asked every tick: one attempt at a time, and after a failure a
+/// wait that doubles from [`RETRY_FIRST_MS`] up to [`RETRY_MAX_MS`] (made
+/// up to a fifth shorter at random, so clients that failed together don't
+/// all retry together). A success, or the user turning Signer on again
+/// ([`Retry::reset`]), starts over. Times are on [`now_ms`]'s clock.
+#[derive(Debug, Default, Clone)]
+pub struct Retry {
+    failures: u32,
+    not_before_ms: u64,
+    busy: bool,
+}
+
+impl Retry {
+    /// An attempt may start at `now_ms`: none is running and the wait after
+    /// the last failure is over. When it may, it counts as running until
+    /// [`succeeded`](Self::succeeded) or [`failed`](Self::failed).
+    pub fn try_start(&mut self, now_ms: u64) -> bool {
+        if self.busy || now_ms < self.not_before_ms {
+            return false;
+        }
+        self.busy = true;
+        true
+    }
+
+    /// The attempt worked: the next one (if ever needed) needn't wait.
+    pub fn succeeded(&mut self) {
+        *self = Self::default();
+    }
+
+    /// The attempt failed at `now_ms`: returns how long until the next one
+    /// may start.
+    pub fn failed(&mut self, now_ms: u64) -> u64 {
+        self.failures = self.failures.saturating_add(1);
+        let wait = retry_wait_ms(self.failures, random_unit());
+        self.not_before_ms = now_ms.saturating_add(wait);
+        self.busy = false;
+        wait
+    }
+
+    /// The user turned the feature off and on again: the next attempt
+    /// needn't wait (one that is running still counts as running).
+    pub fn reset(&mut self) {
+        self.failures = 0;
+        self.not_before_ms = 0;
+    }
+
+    /// Failed attempts since the last success or reset.
+    pub fn failures(&self) -> u32 {
+        self.failures
+    }
+}
+
+/// The wait after `failures` failed attempts in a row, `jitter` (0 to 1)
+/// of the way to a fifth shorter.
+fn retry_wait_ms(failures: u32, jitter: f64) -> u64 {
+    let doublings = failures.saturating_sub(1).min(16);
+    let full = (RETRY_FIRST_MS << doublings).min(RETRY_MAX_MS);
+    full - (full as f64 * 0.2 * jitter.clamp(0.0, 1.0)) as u64
+}
+
+/// A number from 0 to 1, different each call.
+fn random_unit() -> f64 {
+    use std::hash::BuildHasher;
+    let n = std::collections::hash_map::RandomState::new().hash_one(std::time::Instant::now());
+    n as f64 / u64::MAX as f64
+}
+
 /// Gets detection ready: its model loaded (from the cache under
 /// `cache_dir`, downloaded there first when it isn't) and its worker
 /// started. Until then frames aren't looked at. Calls wait for one another;
-/// once it's ready it returns at once.
+/// once it's ready it returns at once. A caller that retries after an error
+/// waits first ([`Retry`]).
 #[cfg(feature = "video")]
 pub async fn prepare(cache_dir: &Path) -> anyhow::Result<()> {
     static BUSY: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -306,15 +402,7 @@ pub async fn prepare(cache_dir: &Path) -> anyhow::Result<()> {
     if ready() {
         return Ok(());
     }
-    let path = model_path(cache_dir);
-    let cached = {
-        let path = path.clone();
-        tokio::task::spawn_blocking(move || read_cached(&path)).await?
-    };
-    let onnx = match cached {
-        Some(b) => b,
-        None => download(&path).await?,
-    };
+    let onnx = model_bytes(&model_path(cache_dir), MODEL_SHA256, fetch).await?;
     let detector = tokio::task::spawn_blocking(move || SignDetector::new(&onnx)).await??;
     start_worker(detector)?;
     tracing::info!("sign language detection model: loaded");
@@ -358,7 +446,7 @@ mod tests {
             .collect();
         assert_eq!(left, vec![std::ffi::OsString::from(MODEL_FILE)]);
         // A file that doesn't match the hash isn't used, and is removed.
-        assert!(read_cached(&path).is_none());
+        assert!(read_cached(&path, MODEL_SHA256).is_none());
         assert!(!path.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -398,5 +486,101 @@ mod tests {
             }]
         );
         assert!(tick(1500).is_empty());
+    }
+
+    #[test]
+    fn sign_detection_retry_waits_grow_to_their_bound() {
+        assert_eq!(retry_wait_ms(1, 0.0), RETRY_FIRST_MS);
+        assert_eq!(retry_wait_ms(2, 0.0), 2 * RETRY_FIRST_MS);
+        assert_eq!(retry_wait_ms(3, 0.0), 4 * RETRY_FIRST_MS);
+        assert_eq!(retry_wait_ms(1, 1.0), RETRY_FIRST_MS * 4 / 5);
+        for n in [7, 8, 50, u32::MAX] {
+            assert_eq!(retry_wait_ms(n, 0.0), RETRY_MAX_MS);
+            assert_eq!(retry_wait_ms(n, 1.0), RETRY_MAX_MS * 4 / 5);
+        }
+        for _ in 0..100 {
+            let j = random_unit();
+            assert!((0.0..=1.0).contains(&j));
+        }
+    }
+
+    /// A model host that keeps failing, asked through [`model_bytes`] on
+    /// the desktop's 500 ms ticks with [`Retry`], for ten minutes: a
+    /// handful of attempts, one at a time, further and further apart;
+    /// bytes with the wrong hash fail and aren't kept; a reset or a
+    /// success starts over. Nothing contacts the model host.
+    #[test]
+    fn sign_detection_failed_model_downloads_back_off() {
+        use std::sync::atomic::AtomicUsize;
+        let dir = std::env::temp_dir().join(format!("ost-sld-retry-{}", std::process::id()));
+        let path = model_path(&dir);
+        let want = sha256_hex(b"fake model");
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let calls = AtomicUsize::new(0);
+        let failing = || async {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Err::<Vec<u8>, _>(anyhow::anyhow!("model host unreachable"))
+        };
+        let mut retry = Retry::default();
+        let mut starts = Vec::new();
+        for t in (0..600_000u64).step_by(500) {
+            if retry.try_start(t) {
+                // One at a time.
+                assert!(!retry.try_start(t));
+                assert!(!retry.try_start(t + 500));
+                starts.push(t);
+                assert!(rt.block_on(model_bytes(&path, &want, failing)).is_err());
+                retry.failed(t);
+            }
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), starts.len());
+        // 1,200 ticks; 7 or 8 attempts (5 s, 10 s, 20 s… up to 5 min apart).
+        assert!((7..=8).contains(&starts.len()), "{starts:?}");
+        for (i, gap) in starts.windows(2).map(|w| w[1] - w[0]).enumerate() {
+            let full = (RETRY_FIRST_MS << i).min(RETRY_MAX_MS);
+            assert!(
+                gap >= full * 4 / 5 && gap <= full + 500,
+                "attempt {} came {gap} ms after the one before ({starts:?})",
+                i + 2
+            );
+        }
+        assert_eq!(retry.failures() as usize, starts.len());
+        assert!(!path.exists());
+
+        // Bytes that aren't the pinned model fail like a download error and
+        // aren't kept.
+        let t = *starts.last().unwrap() + 1;
+        retry.reset();
+        assert!(retry.try_start(t), "turning it on again doesn't wait");
+        let wrong = rt.block_on(model_bytes(&path, &want, || async {
+            Ok(b"not the model".to_vec())
+        }));
+        assert!(wrong.unwrap_err().to_string().contains("SHA-256"));
+        assert!(!path.exists());
+        let wait = retry.failed(t);
+        assert!((RETRY_FIRST_MS * 4 / 5..=RETRY_FIRST_MS).contains(&wait));
+        assert!(!retry.try_start(t + 1000));
+        // A reset while an attempt runs still allows only that one.
+        assert!(retry.try_start(t + RETRY_FIRST_MS));
+        retry.reset();
+        assert!(!retry.try_start(t + RETRY_FIRST_MS));
+
+        // Success: written to the cache, the backoff starts over, and the
+        // next call reads the cache without fetching.
+        let got = rt.block_on(model_bytes(&path, &want, || async {
+            Ok(b"fake model".to_vec())
+        }));
+        assert_eq!(got.unwrap(), b"fake model");
+        retry.succeeded();
+        assert_eq!(retry.failures(), 0);
+        assert!(retry.try_start(t + RETRY_FIRST_MS));
+        let before = calls.load(Ordering::SeqCst);
+        let cached = rt.block_on(model_bytes(&path, &want, failing));
+        assert_eq!(cached.unwrap(), b"fake model");
+        assert_eq!(calls.load(Ordering::SeqCst), before);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

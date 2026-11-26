@@ -176,11 +176,21 @@ again if it was. The headset's mute button works without any of this.
 Feedback ▸ Report a problem and Give a compliment (the same forms Teams uses
 to send feedback to Microsoft) open a **public** issue on
 [the OST GitHub repo](https://github.com/RandyNorthrup/ost/issues).
-OST opens the issue form in your browser with only what you typed and your
-answer to **May we contact you about your feedback?**; it doesn't post
-anything itself, and nothing else leaves your device when the form opens.
-You can review and edit it, and you decide whether to submit it, under
-your own GitHub account.
+OST doesn't post anything itself. When you select **Submit**, OST shows
+what GitHub will receive before your browser opens, and you choose how to
+continue:
+
+- **Open filled-in form**: the issue form opens with a title made from your
+  text's first line, your text, and your answer to **May we contact you
+  about your feedback?** These are part of the page's address, so **GitHub
+  receives them as soon as the page opens, even if you never select
+  Create**. Nothing else is in the address.
+- **Copy text and open a blank form**: your text goes on the clipboard and
+  an empty issue form opens. GitHub gets nothing you typed until you paste
+  it in and select **Create**.
+
+Either way you can review and edit the issue, and you decide whether to
+submit it, under your own GitHub account.
 
 Everything else stays in a folder on your device that OST opens for you
 (`~/.cache/ost/feedback/<time>/`), for you to review and attach yourself
@@ -196,10 +206,11 @@ if you want to:
 
 Replies come on the issue. Your e-mail address is never added.
 
-Feedback on suggested replies works the same way: the issue form holds
-your comment (or the reasons you picked), and the details, including the
-message the suggestions were for when you choose to attach it, are saved
-in a file for you to review and attach.
+Feedback on suggested replies opens the filled-in form: the form says,
+before you select **Send**, that GitHub receives your comment (or the
+reasons you picked) as soon as the page opens, even if you never select
+Create. The details, including the message the suggestions were for when
+you choose to attach it, are saved in a file for you to review and attach.
 
 Feedback ▸ Suggest a feature opens the repo's
 [Ideas](https://github.com/RandyNorthrup/ost/discussions/categories/ideas)

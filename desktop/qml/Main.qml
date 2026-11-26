@@ -1172,8 +1172,11 @@ Window {
         onTriggered: { console.warn("SIGNOUT test: storage", backend.webStorageName(), "signing out"); backend.signOut() }
     }
     // --feedback-test: Settings and more with Feedback ▸, then Report a
-    // problem filled in with a screenshot (captures each; logs the issue
-    // address Submit would open), then Give a compliment.
+    // problem filled in with a screenshot, Submit's review step and Open
+    // filled-in form; Report a problem again with Copy text and open a
+    // blank form; Give a compliment's review and filled-in form; and
+    // Suggest a feature's address. Captures each; the window logs the
+    // addresses it would open (FEEDBACK open) instead of opening a browser.
     Timer {
         running: Qt.application.arguments.indexOf("--feedback-test") >= 0 && chatList.chats.length > 1
         interval: 2000
@@ -1182,22 +1185,39 @@ Window {
         repeat: true
         onTriggered: {
             const cap = (item, tag) => item.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            const details = () => { const x = new XMLHttpRequest(); x.open("GET", "file://" + fw.folder() + "/OST report details.txt", false); x.send(); return x.responseText }
+            const clipboard = () => { const t = Qt.createQmlObject("import QtQuick; TextEdit {}", window); t.paste(); const v = t.text; t.destroy(); return v }
+            // (Captures are taken a step before the next change: a grab
+            // finishes after the step.)
             if (step === 0) titleBar.feedbackMenuForTest()
             else if (step === 1) cap(window.contentItem, "fb-menu")
             else if (step === 2) { titleBar.feedbackMenuForTest(); fw = window.openFeedback("problem", "Settings and more", "") }
             else if (step === 3) cap(fw.contentItem, "fb-empty")
             else if (step === 4) { fw.fillForTest("Search shows nothing for OST test\nSecond line", 0, 0); fw.captureForTest() }
-            else if (step === 5) {
-                cap(fw.contentItem, "fb-filled")
-                console.warn("FEEDBACK files", JSON.stringify(fw.files), "ready", fw.ready)
-                const url = backend.feedbackIssueUrl(JSON.stringify({ kind: "problem", text: "Search shows nothing for OST test", area: "Settings and more", share_logs: true, contact: true, files: fw.files, dir: fw.folder() }))
-                console.warn("FEEDBACK url", url.length, url.slice(0, 400), "logs in url:", url.indexOf("logs=") >= 0)
-                const x = new XMLHttpRequest(); x.open("GET", "file://" + fw.folder() + "/OST report details.txt", false); x.send()
-                console.warn("FEEDBACK details", x.responseText.length, x.responseText.slice(-600))
+            else if (step === 5) { cap(fw.contentItem, "fb-filled"); console.warn("FEEDBACK files", JSON.stringify(fw.files), "ready", fw.ready) }
+            else if (step === 6) fw.reviewForTest()
+            else if (step === 7) { cap(fw.contentItem, "fb-review"); console.warn("FEEDBACK review", fw.reviewing, "title", fw.issueTitle) }
+            else if (step === 8) {
+                fw.sendForTest(false)
+                const d = details()
+                console.warn("FEEDBACK sent filled", fw.sent, "details", d.length, d.slice(-600))
             }
-            else if (step === 6) { fw.close(); fw = window.openFeedback("compliment", "Settings and more", "") }
-            else if (step === 7) { cap(fw.contentItem, "fb-compliment"); console.warn("FEEDBACK ideas", backend.feedbackLink("ideas")) }
-            else if (step === 8) { fw.close(); Qt.quit() }
+            else if (step === 9) cap(fw.contentItem, "fb-sent")
+            else if (step === 10) {
+                fw.close(); fw = window.openFeedback("problem", "Settings and more", "")
+                fw.fillForTest("Blank form test for OST\nSecond line", 1, 1)
+                fw.reviewForTest()
+            }
+            else if (step === 11) { fw.sendForTest(true); console.warn("FEEDBACK sent blank", fw.sent, "clipboard", JSON.stringify(clipboard())) }
+            else if (step === 12) cap(fw.contentItem, "fb-blank-sent")
+            else if (step === 13) {
+                fw.close(); fw = window.openFeedback("compliment", "Settings and more", "")
+                fw.fillForTest("OST test compliment", 1, 1)
+                fw.reviewForTest()
+            }
+            else if (step === 14) cap(fw.contentItem, "fb-compliment-review")
+            else if (step === 15) fw.sendForTest(false)
+            else if (step === 16) { console.warn("FEEDBACK ideas", backend.feedbackLink("ideas")); fw.close(); Qt.quit() }
             step++
         }
     }

@@ -142,9 +142,12 @@ Microsoft branding.
 - **Help and feedback**: Help (F1) is Teams' Help window with OST's own
   articles (docs/help, built in, searchable). Settings and more ▸ Feedback
   ▸ Report a problem / Give a compliment open Teams' feedback form and send
-  it as an issue on OST's GitHub. You submit it there yourself; nothing is
-  posted for you. Suggest a feature opens the repo's Ideas discussions (see
-  docs/spec/feedback-and-help.md).
+  it as an issue on OST's GitHub. Submit first shows what GitHub receives
+  when the page opens (the title, your text and your contact answer, even
+  if you never create the issue), with the choice of the filled-in form or
+  your text copied and a blank form. You submit it there yourself; nothing
+  is posted for you. Suggest a feature opens the repo's Ideas discussions
+  (see docs/spec/feedback-and-help.md).
 
 The [OST wiki](https://github.com/RandyNorthrup/ost/wiki) has a feature tour
 with screenshots, and lists what OST knowingly does differently from Teams.
@@ -315,6 +318,7 @@ account.
 | `--copilot-test` | With `--shots=<dir>`, ost-test1 (a Copilot licence): Write with Copilot in OST group test (`--copilot-channel`: OST Test Team > OST test channel 2). The popover with an empty box, a harmless test draft, Rewrite (loading and answer), Proofread, Adjust ▸ Concise and the menu, Custom ("add a cheerful good morning"), Previous and Replace; the box is cleared at the end and nothing is sent. Logs COPILOT lines (the state, each answer); pictures `copilot-*.png`. |
 | `--draft-roam-test=<out\|in\|conflict>[,<chat name>]` | Run with `OST_ROAM_DRAFTS=1` (Teams roams drafts only where `enableRoamMessageDraft` is on; it is off on this tenant) and `--shots=<dir>`; default chat OST Test 2. `out`: type a draft with a mention, let it roam (log line `DRAFT roam saved <id>`), check the Drafts view and the box after switching back, then clear it (`DRAFT roam deleted <id>`). `in`: wait for another device's draft (put there first, e.g. with `cargo run --example drafts_raw -- POST <body.json>`), capture the box and the Drafts view; `--draft-roam-clear` then clears it. `conflict`: type OST's own draft, reopen the chat until the other device's draft shows Teams' conflict banner, capture it and "Saved draft", then Discard it (or `--draft-roam-use`: "Use this version") and clear. Logs `DRAFTROAM <mode> <step> <json>`; pictures `draft-roam-<mode>-*.png`. Nothing is sent. |
 | `--filter-test` | Try each chat list filter. |
+| `--feedback-test` | With a capture path: Settings and more ▸ Feedback ▸ (`-fb-menu.png`), Report a problem empty and filled in with a screenshot (`-fb-empty/-fb-filled.png`), Submit's review step (`-fb-review.png`), Open filled-in form (`-fb-sent.png`), Report a problem again with Copy text and open a blank form (`-fb-blank-sent.png`; the clipboard is logged), Give a compliment's review (`-fb-compliment-review.png`), and Suggest a feature's address. The window logs the addresses it would open (FEEDBACK open) instead of opening a browser, so nothing reaches GitHub. |
 | `--search-test` | Search "Ran" and capture the suggestions. |
 | `--header-test` | Shared tab, a placeholder tab, find and participants. |
 | `--emoji-test` | Open the emoji picker. |
