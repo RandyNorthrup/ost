@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T04:35:00Z'
+updated_date: '2026-11-26T05:15:00Z'
 labels:
   - bug
   - privacy
@@ -40,6 +40,8 @@ Found while capturing wiki screenshots (2026-11-25). The video clip recorder (de
 - Cause: the recorder picked from QMediaDevices.videoInputs or Qt's defaultVideoInput; the cameraDevice setting and OST_CAMERA_DEVICE never reached it.
 - Fix: CameraFeed with "" opens backend::selected_camera() (OST_CAMERA_DEVICE, else Settings > Devices; never the avatar); the recorder resets to it each time it opens; its Camera menu lists Settings' cameras.
 - Live (linuxlt, UVC + loopback A/B + PipeWire test camera): env A -> only A opened; Settings B -> only B, picture shown; Settings B + recorder pick A while recording -> only A, clip shows A; PipeWire camera via env -> only its stream. Real camera never opened.
+
+- Follow-up in PR #12: a chosen camera that is missing is waited for (retried each second), never replaced by another camera.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
