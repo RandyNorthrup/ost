@@ -1912,6 +1912,10 @@ pub mod qobject {
             initiator: bool,
             extra: &QString,
         ) -> QString;
+        /// The call's id (Teams' callId, which the apps hosted in the call
+        /// are given: Q&A's side pane), or "" outside a call.
+        #[qinvokable]
+        fn current_call_id(self: &Backend) -> QString;
         /// Keep the board Whiteboard reported for the meeting (`kind`
         /// "whiteboard" or "annotation"), as Teams does.
         #[qinvokable]
