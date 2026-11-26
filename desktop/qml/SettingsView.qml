@@ -2975,6 +2975,8 @@ Rectangle {
                 property bool previewing: false
                 property bool picking: false
                 property var cameras: []
+                /// The camera that opens (its preview and controls): "" while
+                /// the chosen one is missing, so no other camera is touched.
                 property string currentCamera: ""
                 /// Teams' switch: your choice, else the camera's own state.
                 function autoCamera() {
@@ -2986,7 +2988,7 @@ Rectangle {
                     if (showing) {
                         const d = JSON.parse(backend.videoDevices())
                         cameras = d.devices || []
-                        currentCamera = d.current || ""
+                        currentCamera = d.opens || ""
                         previewing = backend.callState !== "connected" && cameras.length > 0 && backend.setCameraPreview(true)
                     } else {
                         if (picking) { picking = false; backend.setGreenScreenPicking(false) }
@@ -3014,8 +3016,32 @@ Rectangle {
                         const d = JSON.parse(backend.videoDevices())
                         if (!(d.devices || []).length) return
                         videoCard.cameras = d.devices
-                        videoCard.currentCamera = d.current || ""
+                        videoCard.currentCamera = d.opens || ""
                         videoCard.previewing = backend.callState !== "connected" && backend.setCameraPreview(true)
+                    }
+                }
+                // A camera plugged in or removed while the page shows: the
+                // list follows (Teams' device settings follow the browser's
+                // devicechange). The preview stays on the chosen camera:
+                // when it stopped (unplugged) it is opened again once that
+                // camera is back, never another one in its place.
+                Timer {
+                    interval: 2000; repeat: true
+                    running: videoCard.showing && videoCard.cameras.length > 0
+                    onTriggered: {
+                        const d = JSON.parse(backend.videoDevices())
+                        const list = d.devices || []
+                        if (JSON.stringify(list) !== JSON.stringify(videoCard.cameras) || (d.opens || "") !== videoCard.currentCamera) {
+                            videoCard.cameras = list
+                            videoCard.currentCamera = d.opens || ""
+                        }
+                        if (backend.callState === "connected" || !list.length) return
+                        if (videoCard.previewing && !backend.cameraPreviewRunning()) {
+                            videoCard.previewing = false
+                            backend.setCameraPreview(false)
+                        }
+                        if (!videoCard.previewing && (d.opens || "") !== "" && !backend.cameraPreviewRunning())
+                            videoCard.previewing = backend.setCameraPreview(true)
                     }
                 }
                 // Green Screen's detected backdrop until you pick one.
@@ -5549,7 +5575,7 @@ Rectangle {
     // Settings ▸ Devices' camera controls and spatial audio, and
     // Accessibility's TTY card (TASK-0158, 0157, 0151 harnesses).
     function scrollToCardForTest(card) { const c = card === "video" ? videoCard : card === "tty" ? ttyCard : devices; content.contentY = Math.max(0, Math.min(pageCol.y + c.y - 12, content.contentHeight - content.height)) }
-    function cameraForTest() { return { camera: videoCard.currentCamera, autoOn: autoCamRow.on, rowY: autoCamRow.mapToItem(videoCard, 0, 0).y, cardH: videoCard.height } }
+    function cameraForTest() { return { camera: videoCard.currentCamera, cameras: videoCard.cameras.map(c => c.name), previewing: videoCard.previewing, autoOn: autoCamRow.on, rowY: autoCamRow.mapToItem(videoCard, 0, 0).y, cardH: videoCard.height } }
     function toggleAutoCameraForTest(on) { autoCamRow.toggled(on) }
     function openCameraSettingsForTest() { cameraSettings.show(videoCard.currentCamera, (videoCard.cameras.find(c => c.path === videoCard.currentCamera) || {}).name || "") }
     function cameraSettingsForTest() { return cameraSettings }
