@@ -399,6 +399,30 @@ newer ("Spartan") list, not the files table. Measured on winpc on
   - The next file is shortened if 8 characters fit, then a "+n" chip (32
     wide) stands for the rest.
 
+**Column menus, page scroll and Copilot (TASK-0340, winpc 2026-11-26)**
+- Shared ▸ With you: Name ▾, Date shared ↓ ▾ and Shared by ▾ open OneDrive's
+  sort menu, 240 wide at the column's left, 36 px items with the check at 8
+  and the words (14 px #424242) at 32: A to Z / Z to A (Name, Shared by),
+  Older to newer / Newer to older (Date shared). The list starts as the
+  service gives it, Date shared newer to older; the sorted column shows
+  ↑ / ↓. By you's and Home's headers have no menus.
+- Home scrolls as one page: OneDrive's main area is the scroller, so For
+  you, Recent's pills and the list go up together; the list is as tall as
+  its rows.
+- For you ▸ Summarize opens OneDrive's Copilot pane over the files: its own
+  page `{your OneDrive}/_layouts/15/chat.aspx?app=OneDriveForBusiness&
+  chatodsp={sdk, messaging {origin, channelId, identifyParent}, authentication
+  {tokens…}, telemetry}` in a 400 px card, 12 from the top and bottom and 16
+  from the right. Its host (Teams' OneDrive; OST's OdspCopilotPane) frames it
+  from a page of the same SharePoint origin and talks OneDrive's SDK
+  messenger: identify-parent, initialize (with a port), activate; then
+  command / acknowledge / result. The host sends showView "chat",
+  updateInstruction, updateHeader (Close shown), updateDataSources (the
+  file's uniqueId, listId, webId, siteId, fileName, size, creation time and
+  extension), updateChatInput ('Ask a question about "<file>"'),
+  updateCustomPrompts and setPrompt 'Summarize "<file>"' with autoSubmit;
+  the page asks the host for tokens (fetchAuthToken {type, resource}).
+
 ## Not yet in OST
 
 - Add shortcut ▸, Version history and a folder's Request files: TASK-0115 and
@@ -407,8 +431,3 @@ newer ("Spartan") list, not the files table. Measured on winpc on
   media service (`{mediaBaseUrl}/transform/zip`); OST saves each file on its
   own. Both are in TASK-0116.
 - The Modified By name's profile card on click.
-- Home's page scrolls as a whole in Teams. In OST the For you strip and the
-  pills stay put and the list scrolls.
-- Shared's column menus (Name ▾, Date shared ↓ ▾, Shared by ▾).
-- For you's Summarize opens Copilot's page (Teams opens Copilot beside the
-  files with "Summarize "<file>"" asked).

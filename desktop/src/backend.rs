@@ -2984,6 +2984,12 @@ pub mod qobject {
         #[qinvokable]
         fn contacts_delete(self: Pin<&mut Backend>, id: &QString);
 
+        /// People: one of the People app's changes, as Teams makes them
+        /// ("add" a picked person or number, "edit", "favorite",
+        /// "speedDial", "category"); the list reloads with Teams' notice.
+        #[qinvokable]
+        fn contacts_op(self: Pin<&mut Backend>, op: &QString, json: &QString);
+
         /// OneDrive: load a view into drive_json. `view` is "recent",
         /// "shared", "libraries" or "folder" (with `drive_id` and
         /// `item_id`; both empty for your OneDrive's root).
@@ -23858,6 +23864,24 @@ impl qobject::Backend {
                     let trusted = requested || api::app_host::origin_valid_for_app(&origin, &facts.valid_domains) || api::app_host::origin_valid_for_app(&origin, &launch);
                     teams_cli::auth::broker::execute(&s("request"), &origin, trusted).await
                 }
+                // OneDrive's Copilot pane (chat.aspx) asks its host for
+                // tokens (fetchAuthToken {type, resource}); OST answers
+                // as Teams' OneDrive does, for Microsoft's own services
+                // only. Never logged.
+                "odspToken" => {
+                    let r = async {
+                        let resource = api::app_host::odsp_token_resource(&s("type"), &s("resource"))?;
+                        teams_cli::auth::oauth::access_token_for(&format!("{resource}/.default")).await
+                    }
+                    .await;
+                    match r {
+                        Ok(t) => json!({ "token": t }).to_string(),
+                        Err(e) => {
+                            tracing::warn!(kind = %s("type"), "OneDrive Copilot token failed: {}", short_error(&e));
+                            json!({ "error": short_error(&e) }).to_string()
+                        }
+                    }
+                }
                 "sso" => {
                     let asked: Vec<String> = p
                         .get("resources")
@@ -26821,6 +26845,31 @@ impl qobject::Backend {
                     // Copilot asked from search ("Ask Copilot about …"): the
                     // Microsoft 365 Copilot app in the results' right pane,
                     // with the query as its prompt (TASK-0165).
+                    // People ▸ Add contact: Teams' picker (the directory's
+                    // people, and the number the text reads as).
+                    "contactsSearch" => {
+                        let q = s("q");
+                        let people = api::contacts::search_people(&client, &q).await?;
+                        Ok(json!({ "q": q, "people": people, "number": api::contacts::typed_number(&q) }))
+                    }
+                    // OneDrive ▸ For you ▸ Summarize: the file as OneDrive's
+                    // Copilot pane takes it (updateDataSources), and where
+                    // its chat page is (your OneDrive's site).
+                    "odspChatSource" => {
+                        let site = api::app_host::sharepoint_host(&client).await;
+                        let my_site = site.strip_suffix(".sharepoint.com").map(|t| format!("{t}-my.sharepoint.com")).unwrap_or_default();
+                        let source = api::drive::copilot_source(&client, &s("drive_id"), &s("item_id")).await?;
+                        let web_url = api::drive::personal_web_url(&client).await.unwrap_or_default();
+                        // Teams' OneDrive's configure options for the page
+                        // (its chat settings and Fluent theme, captured on
+                        // winpc 2026-11-26), less its knowledge agent:
+                        // that runs OneDrive's own file tools in the host
+                        // (registerRemoteTools), which OST doesn't offer,
+                        // and without them the chat answers "Some
+                        // capabilities didn't load".
+                        let configure: serde_json::Value = serde_json::from_str(include_str!("odsp_chat_configure.json")).unwrap_or_default();
+                        Ok(json!({ "my_site": my_site, "source": source, "web_url": web_url, "configure": configure }))
+                    }
                     "searchCopilot" => {
                         let oid = client.object_id().unwrap_or_default();
                         let tid = client.tenant_id().unwrap_or_default();
@@ -27437,7 +27486,13 @@ impl qobject::Backend {
         });
     }
 
-    pub fn contacts_load(mut self: Pin<&mut Self>) {
+    pub fn contacts_load(self: Pin<&mut Self>) {
+        self.contacts_reload(String::new());
+    }
+
+    /// Load the contacts, with the notice Teams shows for the change just
+    /// made ("Contact saved.", …) when there is one.
+    fn contacts_reload(mut self: Pin<&mut Self>, notice: String) {
         self.as_mut().set_contacts_busy(true);
         let qt = self.qt_thread();
         runtime().spawn(async move {
@@ -27445,7 +27500,10 @@ impl qobject::Backend {
                 let client = TeamsClient::new().await?;
                 // Teams' contacts service: the contacts and their categories.
                 let (contacts, categories) = api::contacts::list(&client).await?;
-                anyhow::Ok(json!({ "contacts": contacts, "categories": categories }))
+                anyhow::Ok(
+                    json!({ "contacts": contacts, "categories": categories, "notice": notice,
+                                   "at": chrono::Utc::now().timestamp_millis() }),
+                )
             }
             .await;
             let _ = qt.queue(move |mut this| {
@@ -27461,17 +27519,18 @@ impl qobject::Backend {
     }
 
     /// Run a contacts change, then reload.
-    fn contacts_change<F, Fut>(mut self: Pin<&mut Self>, f: F)
+    fn contacts_change<F, Fut>(mut self: Pin<&mut Self>, notice: &str, f: F)
     where
         F: FnOnce(TeamsClient) -> Fut + Send + 'static,
         Fut: std::future::Future<Output = anyhow::Result<()>> + Send,
     {
         self.as_mut().set_contacts_busy(true);
         let qt = self.qt_thread();
+        let notice = notice.to_string();
         runtime().spawn(async move {
             let result = async { f(TeamsClient::new().await?).await }.await;
             let _ = qt.queue(move |mut this| match result {
-                Ok(()) => this.as_mut().contacts_load(),
+                Ok(()) => this.as_mut().contacts_reload(notice),
                 Err(e) => {
                     tracing::warn!("Contacts change: {}", short_error(&e));
                     this.as_mut().set_contacts_busy(false);
@@ -27484,7 +27543,7 @@ impl qobject::Backend {
 
     pub fn contacts_add(self: Pin<&mut Self>, contact_json: &QString) {
         let text = contact_json.to_string();
-        self.contacts_change(move |c| async move {
+        self.contacts_change("Contact saved.", move |c| async move {
             let new: api::contacts::NewContact = serde_json::from_str(&text)?;
             api::contacts::create(&c, &new).await.map(|_| ())
         });
@@ -27495,14 +27554,64 @@ impl qobject::Backend {
             serde_json::from_str(&contact_json.to_string()).unwrap_or_default();
         let f = move |k: &str| v[k].as_str().unwrap_or_default().to_string();
         let (id, mri, email) = (f("id"), f("mri"), f("email"));
-        self.contacts_change(move |c| async move {
+        self.contacts_change("", move |c| async move {
             api::contacts::set_favorite(&c, &id, &mri, &email, on).await
         });
     }
 
     pub fn contacts_delete(self: Pin<&mut Self>, id: &QString) {
         let id = id.to_string();
-        self.contacts_change(move |c| async move { api::contacts::delete(&c, &id).await });
+        self.contacts_change("Contact deleted.", move |c| async move {
+            api::contacts::delete(&c, &id).await
+        });
+    }
+
+    pub fn contacts_op(self: Pin<&mut Self>, op: &QString, json: &QString) {
+        let (op, text) = (op.to_string(), json.to_string());
+        let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+        let on = v["on"].as_bool().unwrap_or(false);
+        let contact: api::contacts::Contact =
+            serde_json::from_value(v["contact"].clone()).unwrap_or_default();
+        // Teams' notices (its People app's toasts and calling's speed dial
+        // strings).
+        let notice = match op.as_str() {
+            "add" | "edit" => "Contact saved.",
+            "speedDial" if on => "Added to speed dial.",
+            "speedDial" => "Removed from speed dial.",
+            _ => "",
+        };
+        self.contacts_change(notice, move |c| async move {
+            match op.as_str() {
+                "add" => {
+                    let p: api::contacts::PickedContact =
+                        serde_json::from_value(v["form"].clone())?;
+                    api::contacts::add_picked(&c, &p).await
+                }
+                "edit" => {
+                    let e: api::contacts::ContactEdit = serde_json::from_value(v["form"].clone())?;
+                    api::contacts::edit(&c, &contact, &e).await
+                }
+                "favorite" => {
+                    api::contacts::set_favorite(&c, &contact.id, &contact.mri, &contact.email, on)
+                        .await
+                }
+                "speedDial" => {
+                    api::contacts::set_speed_dial(&c, &contact.id, &contact.mri, &contact.email, on)
+                        .await
+                }
+                "category" => {
+                    api::contacts::set_category(
+                        &c,
+                        &contact,
+                        v["name"].as_str().unwrap_or_default(),
+                        v["color"].as_str().unwrap_or_default(),
+                        on,
+                    )
+                    .await
+                }
+                _ => anyhow::bail!("Unknown contacts change"),
+            }
+        });
     }
 
     pub fn drive_load(

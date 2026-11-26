@@ -247,6 +247,7 @@ fn main() {
         "qml/HelpWindow.qml",
         "qml/SearchView.qml",
         "qml/OneDriveShare.qml",
+        "qml/OdspCopilotPane.qml",
         "qml/FileActions.qml",
         "qml/DetailsPane.qml",
         "qml/FilePreview.qml",

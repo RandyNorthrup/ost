@@ -356,6 +356,79 @@ pub async fn item_by_url(client: &TeamsClient, url: &str) -> Result<DriveItem> {
     parse_item(&v).ok_or_else(|| anyhow::anyhow!("Not a file: {url}"))
 }
 
+/// A file as OneDrive's Copilot pane takes it (its host's
+/// updateDataSources, captured from Teams' OneDrive on winpc 2026-11-26):
+/// SharePoint's ids, the name, and its size, creation time and extension.
+pub fn copilot_source_of(v: &serde_json::Value) -> serde_json::Value {
+    let s = |p: &str| {
+        v.pointer(p)
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
+    let name = s("/name");
+    let created = chrono::DateTime::parse_from_rfc3339(&s("/createdDateTime"))
+        .map(|t| {
+            t.with_timezone(&chrono::Utc)
+                .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+                .to_string()
+        })
+        .unwrap_or_default();
+    let extension = name
+        .rsplit_once('.')
+        .map(|(_, e)| e.to_lowercase())
+        .unwrap_or_default();
+    serde_json::json!({
+        "type": "File",
+        "value": {
+            "uniqueId": s("/sharepointIds/listItemUniqueId"),
+            "listId": s("/sharepointIds/listId"),
+            "webId": s("/sharepointIds/webId"),
+            "siteId": s("/sharepointIds/siteId"),
+            "fileName": name,
+        },
+        "metadata": { "fileSize": v["size"].as_i64().unwrap_or(0), "fileCreated": created, "extension": extension }
+    })
+}
+
+/// The file's Copilot data source, from Graph.
+pub async fn copilot_source(
+    client: &TeamsClient,
+    drive_id: &str,
+    item_id: &str,
+) -> Result<serde_json::Value> {
+    let (d, i) = (check_id(drive_id)?, check_id(item_id)?);
+    let v: serde_json::Value = client
+        .graph_get(&format!(
+            "/drives/{d}/items/{i}?$select=id,name,size,createdDateTime,sharepointIds"
+        ))
+        .await?
+        .json()
+        .await?;
+    if v["sharepointIds"]["listItemUniqueId"]
+        .as_str()
+        .unwrap_or_default()
+        .is_empty()
+    {
+        bail!("Copilot can't read this file");
+    }
+    Ok(copilot_source_of(&v))
+}
+
+/// Your OneDrive's site (`https://{tenant}-my.sharepoint.com/personal/{you}`).
+pub async fn personal_web_url(client: &TeamsClient) -> Result<String> {
+    let v: serde_json::Value = client
+        .graph_get("/me/drive?$select=webUrl")
+        .await?
+        .json()
+        .await?;
+    let url = v["webUrl"].as_str().unwrap_or_default();
+    Ok(url
+        .rsplit_once('/')
+        .map(|(site, _)| site.to_string())
+        .unwrap_or_default())
+}
+
 /// Photos and videos in the files you can reach (Graph search).
 pub async fn media(client: &TeamsClient) -> Result<Vec<DriveItem>> {
     let q = serde_json::json!({ "requests": [{
@@ -1261,6 +1334,23 @@ pub async fn local_copy(client: &TeamsClient, item: &DriveItem) -> Result<PathBu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn copilot_source_is_onedrives() {
+        // Teams' OneDrive told its Copilot pane (winpc, 2026-11-26):
+        // {"type":"File","value":{"uniqueId":"d9840407-…","listId":"c300f6d2-…",
+        // "webId":"a3305c60-…","siteId":"86beb970-…","fileName":"0.2.0 release
+        // checklist.loop"},"metadata":{"fileSize":1354,"fileCreated":
+        // "2026-11-23T15:10:12.000Z","extension":"loop"}}
+        let v = serde_json::json!({
+            "name": "0.2.0 release checklist.loop", "size": 1354, "createdDateTime": "2026-11-23T15:10:12Z",
+            "sharepointIds": { "listItemUniqueId": "d9840407", "listId": "c300f6d2", "webId": "a3305c60", "siteId": "86beb970" }
+        });
+        assert_eq!(
+            copilot_source_of(&v).to_string(),
+            r#"{"metadata":{"extension":"loop","fileCreated":"2026-11-23T15:10:12.000Z","fileSize":1354},"type":"File","value":{"fileName":"0.2.0 release checklist.loop","listId":"c300f6d2","siteId":"86beb970","uniqueId":"d9840407","webId":"a3305c60"}}"#
+        );
+    }
 
     #[test]
     fn favorites_go_to_your_onedrive() {

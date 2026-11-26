@@ -10141,6 +10141,63 @@ Window {
         }
     }
 
+    // --onedrive-columns-test [--shots=<dir>] [--summarize]: read only
+    // (TASK-0340). Shared ▸ With you's column menus (each opened, then
+    // Name A to Z / Z to A, Shared by A to Z, Date shared Older to newer,
+    // back to Newer to older), Home scrolled as a page, and with
+    // --summarize For you's first Summarize (OneDrive's Copilot pane, its
+    // answer after 40 s). Logs COLUMNS lines.
+    Timer {
+        running: Qt.application.arguments.indexOf("--onedrive-columns-test") >= 0 && backend.signedIn
+        interval: 2000; repeat: true
+        property int step: 0
+        property int wait: 0
+        onTriggered: {
+            const shots = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=/tmp").slice(8)
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(shots + "/columns-" + tag + ".png"))
+            const d = oneDrive.driveData
+            const names = () => oneDrive.shown.map(i => (i.title || i.name) + " · " + (i.modified_by || "")).join(" ; ")
+            const sortAs = (f, asc, tag) => { oneDrive.sharedSortField = f; oneDrive.sharedSortAsc = asc; console.warn("COLUMNS", tag, names()) }
+            if (step === 0) { rail.current = "onedrive"; oneDrive.open("shared") }
+            else if (step === 1 && !(d.view === "shared" && (d.items || d.error)) && ++wait < 60) return
+            else if (step === 1) { wait = 0; console.warn("COLUMNS default", names()); cap("shared") }
+            else if (step === 2) oneDrive.sharedMenuRequested(0)
+            else if (step === 3) cap("menu-name")
+            else if (step === 4) oneDrive.sharedMenuRequested(1)
+            else if (step === 5) cap("menu-date")
+            else if (step === 6) oneDrive.sharedMenuRequested(2)
+            else if (step === 7) cap("menu-by")
+            else if (step === 8) { oneDrive.sharedMenuRequested(-1); sortAs("name", true, "name-az") }
+            else if (step === 9) { cap("name-az"); sortAs("name", false, "name-za") }
+            else if (step === 10) sortAs("by", true, "by-az")
+            else if (step === 11) { cap("by-az"); sortAs("shared", true, "date-old") }
+            else if (step === 12) sortAs("shared", false, "date-new")
+            else if (step === 13) oneDrive.open("recent")
+            else if (step === 14 && !(d.view === "recent" && (d.items || d.error)) && ++wait < 60) return
+            else if (step === 14) { wait = 0; cap("home-top") }
+            else if (step === 15) console.warn("COLUMNS home scroll", JSON.stringify(oneDrive.homeScrollForTest(400)))
+            else if (step === 16) cap("home-scrolled")
+            else if (step === 17) {
+                console.warn("COLUMNS home end", JSON.stringify(oneDrive.homeScrollForTest(100000)))
+                if (!Qt.application.arguments.includes("--summarize")) { Qt.quit(); return }
+            }
+            else if (step === 18) {
+                cap("home-end")
+                oneDrive.homeScrollForTest(0)
+                const c = (d.for_you || []).find(x => x.summarize)
+                console.warn("COLUMNS summarize", c ? c.title : "none")
+                if (!c) { Qt.quit(); return }
+                oneDrive.summarize(c, "Summarize \"" + c.file_name + "\"")
+            }
+            else if (step === 19 && oneDrive.copilotForTest().state !== "asked" && oneDrive.copilotForTest().state !== "failed" && ++wait < 30) return
+            else if (step === 19) { wait = 0; console.warn("COLUMNS copilot", JSON.stringify(oneDrive.copilotForTest())); cap("copilot-asked") }
+            else if (step === 20 && ++wait < 20) return
+            else if (step === 20) { console.warn("COLUMNS copilot later", JSON.stringify(oneDrive.copilotForTest())); cap("copilot-answer") }
+            else if (step === 21) Qt.quit()
+            step++
+        }
+    }
+
     // --shared-files-test [--shots=<dir>]: read only. OneDrive's Shared
     // rows (name, place, Date shared, Shared by, Activity, Graph ids),
     // Browse files by People (each person's row files and page), then the
@@ -10324,6 +10381,98 @@ Window {
         }
     }
 
+    // --people-test [--shots=<dir>] [--people-live]: the People app as
+    // Teams' (TASK-0339). Sort (each field), Find a contact, Manage column
+    // view, the Add to contacts picker (OST Test 2, then a typed number)
+    // and the Add contact form. With --people-live: saves OST Test 2 as a
+    // test contact, then speed dial, favorite, a test category and Edit
+    // (Company) on it, each undone, and deletes it. Logs PEOPLE lines.
+    Timer {
+        running: Qt.application.arguments.indexOf("--people-test") >= 0 && backend.signedIn
+        interval: 2000; repeat: true
+        property int step: 0
+        property int wait: 0
+        onTriggered: {
+            const shots = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=/tmp").slice(8)
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(shots + "/people-" + tag + ".png"))
+            const live = Qt.application.arguments.includes("--people-live")
+            const st = tag => console.warn("PEOPLE", tag, JSON.stringify(peopleApp.stateForTest()))
+            const t2 = () => peopleApp.find("OST Test 2")
+            const ps = () => peopleApp.pickerStateForTest()
+            if (step === 0) { rail.openApp("people"); peopleApp.view = "all" }
+            else if (step === 1 && (!peopleApp.data_.contacts || peopleApp.busy) && ++wait < 60) return
+            else if (step === 1) { wait = 0; st("list"); cap("list") }
+            // (A picture's tick changes nothing: grabToImage is asynchronous.)
+            else if (step === 2) peopleApp.openForTest("sort")
+            else if (step === 3) cap("sort-menu")
+            else if (step === 4) { peopleApp.openForTest("close"); peopleApp.pickSortField("LAST_NAME"); st("last") }
+            else if (step === 5) { peopleApp.pickSortField("COMPANY"); st("company") }
+            else if (step === 6) { peopleApp.pickSortField("RECENTLY_ADDED"); st("recent"); peopleApp.openForTest("sort") }
+            else if (step === 7) cap("sort-recent")
+            else if (step === 8) { peopleApp.openForTest("close"); peopleApp.setSort("FIRST_NAME", "DESCENDING"); st("first-za") }
+            else if (step === 9) { peopleApp.setSort("FIRST_NAME", "ASCENDING"); peopleApp.setKeywordForTest("nort"); st("find-nort") }
+            else if (step === 10) { peopleApp.setKeywordForTest("805"); st("find-805") }
+            else if (step === 11) { peopleApp.setKeywordForTest("zzqx"); st("find-none") }
+            else if (step === 12) cap("find-none")
+            else if (step === 13) { peopleApp.setKeywordForTest(""); peopleApp.openForTest("columns") }
+            else if (step === 14) cap("columns-menu")
+            else if (step === 15) { peopleApp.openForTest("close"); peopleApp.showCategories = true; st("categories-on") }
+            else if (step === 16) cap("categories-on")
+            else if (step === 17) { peopleApp.showCategories = false; peopleApp.saveColumns() }
+            // The picker: OST Test 2.
+            else if (step === 18) peopleApp.openForTest("add")
+            else if (step === 19) cap("add-empty")
+            else if (step === 20) peopleApp.pickerTypeForTest("OST Test 2")
+            else if (step === 21 && ps().options.length === 0 && ++wait < 15) return
+            else if (step === 21) { wait = 0; console.warn("PEOPLE picker", JSON.stringify(ps().options)); cap("picker") }
+            else if (step === 22) {
+                const i = ps().options.findIndex(o => o.indexOf("OST Test 2 /") === 0)
+                console.warn("PEOPLE pick", i)
+                if (i >= 0) peopleApp.pickForTest(i)
+            }
+            else if (step === 23) cap("picked")
+            else if (step === 24) { peopleApp.addPressForTest(); console.warn("PEOPLE form", JSON.stringify(peopleApp.formForTest())) }
+            else if (step === 25) cap("form")
+            else if (step === 26) {
+                if (!live || t2()) { if (t2()) console.warn("PEOPLE OST Test 2 already a contact: not adding"); peopleApp.openForTest("close"); step = live && t2() ? 27 : 60; return }
+                peopleApp.saveFormForTest()
+            }
+            // Live: the test contact, then its changes, each undone.
+            else if (step === 27 && !t2() && ++wait < 30) return
+            else if (step === 27) { wait = 0; const c = t2(); console.warn("PEOPLE added", !!c, c ? [c.email, c.mri].join(" | ") : ""); cap("added") }
+            else if (step === 28) peopleApp.op("speedDial", t2(), { on: true })
+            else if (step === 29 && !(t2() && t2().speed_dial) && ++wait < 15) return
+            else if (step === 29) { wait = 0; console.warn("PEOPLE speed dial", !!(t2() && t2().speed_dial)); peopleApp.op("favorite", t2(), { on: true }) }
+            else if (step === 30 && !(t2() && t2().favorite) && ++wait < 15) return
+            else if (step === 30) { wait = 0; console.warn("PEOPLE favorite", !!(t2() && t2().favorite)); peopleApp.op("category", t2(), { name: "OST test category", color: "", on: true }) }
+            else if (step === 31 && !(t2() && (t2().categories || []).length) && ++wait < 15) return
+            else if (step === 31) { wait = 0; console.warn("PEOPLE category", JSON.stringify(t2() ? t2().categories : []), JSON.stringify(peopleApp.categories)); cap("changed") }
+            else if (step === 32) peopleApp.editForTest(t2())
+            else if (step === 33) { console.warn("PEOPLE edit form", JSON.stringify(peopleApp.formForTest())); peopleApp.setCompanyForTest("OST test company") }
+            else if (step === 34) cap("edit")
+            else if (step === 35) peopleApp.saveFormForTest()
+            else if (step === 36 && !(t2() && t2().company === "OST test company") && ++wait < 15) return
+            else if (step === 36) { wait = 0; console.warn("PEOPLE company", t2() ? t2().company : ""); cap("edited") }
+            else if (step === 37) peopleApp.op("category", t2(), { name: "OST test category", on: false })
+            else if (step === 38 && !(t2() && (t2().categories || []).length === 0) && ++wait < 15) return
+            else if (step === 38) { wait = 0; peopleApp.op("speedDial", t2(), { on: false }) }
+            else if (step === 39 && !(t2() && !t2().speed_dial) && ++wait < 15) return
+            else if (step === 39) { wait = 0; if (!Qt.application.arguments.includes("--people-keep")) peopleApp.remove(t2().id) }
+            else if (step === 40 && t2() && !Qt.application.arguments.includes("--people-keep") && ++wait < 15) return
+            else if (step === 40) { wait = 0; console.warn("PEOPLE deleted", !t2(), "categories", JSON.stringify(peopleApp.categories)); step = 60; return }
+            // A typed number.
+            else if (step === 61) { peopleApp.openForTest("add"); peopleApp.pickerTypeForTest("5551234567") }
+            else if (step === 62 && ps().options.length === 0 && ++wait < 15) return
+            else if (step === 62) { wait = 0; console.warn("PEOPLE number", JSON.stringify(ps().options)); cap("number") }
+            else if (step === 63) peopleApp.pickForTest(0)
+            else if (step === 64) { peopleApp.addPressForTest(); console.warn("PEOPLE number form", JSON.stringify(peopleApp.formForTest())) }
+            else if (step === 65) cap("number-form")
+            else if (step === 66) peopleApp.openForTest("close")
+            else if (step === 67) Qt.quit()
+            step++
+        }
+    }
+
     // --apps-test: People (add a contact, favorite it, delete it), capturing;
     // --apps-read stops after listing the contacts (APPS contact lines).
     Timer {
@@ -10340,8 +10489,8 @@ Window {
                 cap("people-list")
             }
             else if (step === 3 && Qt.application.arguments.indexOf("--apps-read") >= 0) Qt.quit()
-            else if (step === 3) { peopleApp.addForTest("OST", "People test", "ost-people-test@example.com") }
-            else if (step === 5) { const c = peopleApp.find("OST People test"); console.warn("APPS contact added", !!c); if (c) peopleApp.favorite(JSON.stringify(c), true) }
+            else if (step === 3) { peopleApp.change("add", JSON.stringify({ form: { person: {}, first: "OST", last: "People test", email: "ost-people-test@example.com" } })) }
+            else if (step === 5) { const c = peopleApp.find("OST People test"); console.warn("APPS contact added", !!c); if (c) peopleApp.op("favorite", c, { on: true }) }
             else if (step === 7) { const c = peopleApp.find("OST People test"); console.warn("APPS favorite", !!c && c.favorite); peopleApp.view = "favorites"; cap("people-favorites") }
             else if (step === 8) { peopleApp.view = "all"; cap("people-all"); const c = peopleApp.find("OST People test"); if (c) peopleApp.remove(c.id) }
             else if (step === 10) { console.warn("APPS contact deleted", !peopleApp.find("OST People test"), "rail extras", rail.opened.join(",")); Qt.quit() }
@@ -16569,9 +16718,10 @@ Window {
         data_: backend.contactsJson ? JSON.parse(backend.contactsJson) : ({})
         busy: backend.contactsBusy
         onLoad: backend.contactsLoad()
-        onAdd: json => backend.contactsAdd(json)
-        onFavorite: (contactJson, on) => backend.contactsFavorite(contactJson, on)
+        onChange: (op, json) => backend.contactsOp(op, json)
         onRemove: id => backend.contactsDelete(id)
+        onChatWith: (mri, name) => profileCard.startChat(mri, name)
+        onCallPerson: (mri, name) => profileCard.startCall(mri, name, false)
     }
     // Teams' Events app, drawn natively from the virtual events service
     // (docs/spec/events.md); made when first opened and kept.
@@ -16654,10 +16804,9 @@ Window {
         driveData: backend.driveJson ? JSON.parse(backend.driveJson) : ({})
         busy: backend.driveBusy
         userName: backend.userName
-        // For you's Summarize / Recap this meeting: Copilot (Teams opens
-        // its Copilot beside the files; OST opens the Copilot page).
+        // For you's Summarize / Recap this meeting (Copilot on for you):
+        // OneDrive's Copilot pane beside the files, as Teams.
         copilotOn: window.copilotInstalled
-        onAskCopilot: prompt => { rail.current = "chat"; window.composing = false; chatList.copilotOpen = true }
         onLoad: (v, d, i) => backend.driveLoad(v, d, i)
         onDownload: json => backend.driveDownload(json)
         onUpload: (d, f, paths) => backend.driveUpload(d, f, paths)
