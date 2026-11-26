@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T15:54:00Z'
+updated_date: '2026-11-26T16:17:00Z'
 labels:
   - bug
   - apps
@@ -48,4 +48,6 @@ Cause: the empty dialog came from forcing Settings on the channel Notes (OneNote
 Changes: TabConfigDialog.startUpdate refuses a tab without a configuration page; --tab-settings-test logs TABSETTINGS not offered and quits for such a tab (docs/desktop.md).
 
 Tests: live on linuxlt; a SharePoint tab added to OST test channel showed SharePoint configuration page in its Settings dialog (then removed); --tab-settings-test=Notes reports not offered.
+
+PR #17 (branch task-0334-web-apps).
 <!-- SECTION:FINAL_SUMMARY:END -->

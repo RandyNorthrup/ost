@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-26T04:33:00Z'
-updated_date: '2026-11-26T15:54:00Z'
+updated_date: '2026-11-26T16:17:00Z'
 labels:
   - bug
   - privacy
@@ -63,4 +63,6 @@ Tests (live, linuxlt; real camera chmod 000; bpftrace on openat /dev/video* + fu
 - Whiteboard: camera refused without Media permission (no listing); granted with it ("OST test camera A").
 
 Follow-up: TASK-0338 (OST's own camera list opens every V4L2 node).
+
+PR #17 (branch task-0334-web-apps).
 <!-- SECTION:FINAL_SUMMARY:END -->
