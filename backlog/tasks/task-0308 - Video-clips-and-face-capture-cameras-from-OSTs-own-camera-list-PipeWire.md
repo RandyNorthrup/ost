@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T19:30:00Z'
-updated_date: '2026-11-26T03:38:00Z'
+updated_date: '2026-11-26T04:35:00Z'
 labels:
   - bug
   - calls
@@ -23,9 +23,9 @@ The video clip recorder (VideoClipRecorder.qml) and Recognition's face capture (
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The video clip recorder offers the same cameras as Settings > Devices (PipeWire cameras, filtered V4L2 nodes) and records from the chosen one
-- [ ] #2 Face capture uses the camera chosen in Settings > Devices from the same list
-- [ ] #3 No raw media-controller nodes (IPU6 ISYS and the like) appear in either
+- [x] #1 The video clip recorder offers the same cameras as Settings > Devices (PipeWire cameras, filtered V4L2 nodes) and records from the chosen one
+- [x] #2 Face capture uses the camera chosen in Settings > Devices from the same list
+- [x] #3 No raw media-controller nodes (IPU6 ISYS and the like) appear in either
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -36,3 +36,27 @@ The video clip recorder (VideoClipRecorder.qml) and Recognition's face capture (
 3. FaceCaptureDialog.qml: VideoFrame preview from CameraFeed, picker from backend.videoDevices() (Settings' camera first), photo via save_frame instead of ImageCapture.
 4. Harness --camera-privacy-test; live checks on linuxlt with virtual cameras.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- CameraFeed QML type (desktop/src/camera_feed.rs + camerafeed.cpp) over webrtc_video::CameraPreview::start_plain (no call effects): picture as a frame key, pushed into a VideoOutput sink (showIn) or drawn by VideoFrame; saveFrame writes a JPEG.
+- Recorder: camPreview fed from CameraFeed (effects shaders and ClipMask unchanged); dead Qt CaptureSession/MediaRecorder removed (recording is ClipFrames in every mode).
+- Face capture: same list, Settings' camera first, VideoFrame preview, photo via saveFrame.
+- Gotcha: #[auto_cxx_name] has to be on the invokables block too, or QML sees show_in/save_frame (showIn "is not a function").
+- AC3 by construction (camera::cameras(), TASK-0307's filtered list); no IPU6 hardware to check live.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The video clip recorder and face capture now use OST's own camera list and capture (PipeWire, the camera portal, filtered V4L2), the same as calls (PR #12).
+
+Changes:
+- desktop/src/camera_feed.rs, camerafeed.cpp: CameraFeed QML type (open/close, showIn(videoSink), saveFrame(path)); webrtc_video::CameraPreview::start_plain.
+- VideoClipRecorder.qml: CameraFeed into camPreview; Camera menu from backend.videoDevices(); Qt camera session removed.
+- FaceCaptureDialog.qml: CameraFeed + VideoFrame; photos from the newest picture.
+- --camera-privacy-test harness.
+
+Tests: live on linuxlt (loopback and PipeWire cameras): lists match Settings > Devices, the chosen camera is shown and recorded, the photo JPEG is right. Not verified: a real IPU6 camera; the Flatpak portal path for these dialogs.
+<!-- SECTION:FINAL_SUMMARY:END -->

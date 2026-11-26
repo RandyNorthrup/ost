@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T03:38:00Z'
+updated_date: '2026-11-26T04:35:00Z'
 labels:
   - bug
   - privacy
@@ -22,8 +22,8 @@ Found while capturing wiki screenshots (2026-11-25). The video clip recorder (de
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The clip recorder uses the camera selected in Settings ▸ Devices (and OST_CAMERA_DEVICE when set), like calls and the pre-join preview
-- [ ] #2 It never opens a camera other than the selected one, checked live with two cameras
+- [x] #1 The clip recorder uses the camera selected in Settings ▸ Devices (and OST_CAMERA_DEVICE when set), like calls and the pre-join preview
+- [x] #2 It never opens a camera other than the selected one, checked live with two cameras
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -33,3 +33,21 @@ Found while capturing wiki screenshots (2026-11-25). The video clip recorder (de
 2. With TASK-0308's CameraFeed, "" opens backend::selected_camera() (OST_CAMERA_DEVICE, else Settings > Devices), resolved in OST's camera list; the Camera menu lists Settings > Devices' cameras.
 3. Live: two v4l2loopback cameras, the chosen one only is opened (OST_CAMERA_DEVICE run and Settings run).
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Cause: the recorder picked from QMediaDevices.videoInputs or Qt's defaultVideoInput; the cameraDevice setting and OST_CAMERA_DEVICE never reached it.
+- Fix: CameraFeed with "" opens backend::selected_camera() (OST_CAMERA_DEVICE, else Settings > Devices; never the avatar); the recorder resets to it each time it opens; its Camera menu lists Settings' cameras.
+- Live (linuxlt, UVC + loopback A/B + PipeWire test camera): env A -> only A opened; Settings B -> only B, picture shown; Settings B + recorder pick A while recording -> only A, clip shows A; PipeWire camera via env -> only its stream. Real camera never opened.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The video clip recorder now uses the camera chosen in Settings > Devices (or OST_CAMERA_DEVICE), and the Camera menu lists the same cameras (PR #12).
+
+Cause: it used Qt Multimedia's camera list and default camera, which knew nothing of OST's setting.
+
+Tests: live on linuxlt with two v4l2loopback cameras and a PipeWire camera; only the chosen camera was ever opened, and the recorded clip shows it.
+<!-- SECTION:FINAL_SUMMARY:END -->
