@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T18:10:00Z'
-updated_date: '2026-11-26T03:21:00Z'
+updated_date: '2026-11-26T03:42:00Z'
 labels:
   - bug
   - chat
@@ -47,6 +47,8 @@ Found while staging wiki demo data: hiding many chats in a row makes OST rebuild
 
 - Codex review (PR #4): when another device marks a chat unread, that arrives as a property update, which no longer marked anything. Chats whose properties a push changed now get their unread state read back from the chat service once the pushes settle (check_unread).
 - After PR #7, profiles signed in before it fall back to the sign-in screen at startup (the silent renewal needs a web session the new per-profile web storage lacks), so the last live run on the rebased test-harness build could not list chats. The verified runs used the pre-rebase builds.
+
+- Codex review 2 (PR #4): a read-back answer older than a newer push or local mark could clear a just-unread chat. The unread set is now UnreadChats, with a change count per chat; read-back answers apply only to chats unchanged since the request went out. Unit tests cover the race.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -69,4 +71,6 @@ Tests:
 - Unit tests for unread_conversation_ids and refresh_older. CI is green: fmt, clippy, build and test, CodeQL.
 - Live on linuxlt (ost-test1, 176 real hides then unhides): main went 3.1 to 8.09 GB (stopped by the cap) with a frozen list. The fix stayed flat at 2.14 GB and the list followed every change (shown 178 -> 1 -> 175, unread 0).
 - Churn harness (400 updates): main QML 3.5 GB, under 50 updates done in 5 min; fix flat at 2.15 GB.
+
+- The unread read-back tracks a change count per chat (UnreadChats) and never undoes a newer push or local mark; unit tests cover the race.
 <!-- SECTION:FINAL_SUMMARY:END -->
