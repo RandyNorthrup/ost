@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@meet'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T15:46:00Z'
+updated_date: '2026-11-26T16:51:00Z'
 labels:
   - bug
   - calls
@@ -45,4 +45,8 @@ Found while capturing wiki screenshots (2026-11-25). Shares started with a prese
 - Codex review (PR #16): SRTP's sender bumped the rollover counter only on seeing 65535; with packets dropped unsent around the wrap (a sender stopped with its queue) the next sender's packets would use the old ROC. protect() now keeps the last protected sequence number per stream and counts a wrap from it (RFC 3711 packet index); test in bundled_streams_keep_counters_per_ssrc.
 - Found in the recheck: a camera turned on while waiting in a lobby was lost on admission ("camera not taken over by the new media session: Device or resource busy"): the processor moves the call to a new media session, which opened the camera while the old session still held it, so Side-by-side had no presenter to composite. answer_renegotiation now turns the old session's camera off first.
 - Q&A on the bar also verified for someone admitted from the lobby (OST Test 3: Chat, Q&A, People…) with the second share arriving.
+
+- Verified after the camera fix: OST Test 2 turned its camera on while waiting in the lobby (Side-by-side, "Futuristic room"), was let in (media moved to the new offer, no busy camera), shared a window: OST Test 3 composited background, content and presenter.
+- Not re-verified with Teams desktop: winpc's Teams was in use by other agents (OneDrive / People work over VNC and CDP) for the whole session, so joining a meeting there would have disturbed them. Teams on the web has no presenter modes and no Take control, so the Teams-side checks of those two still need Teams desktop (they last passed against it on 2026-11-16/18 and their signalling is unchanged; this fix is in the media layer every receiver shares, and Teams on the web confirmed it for shares in both directions). AC #1 stays open until that rerun.
+- Test meeting "OST TEST 324 meet" deleted afterwards; linuxlt cleaned (Chromes, ffmpeg, PipeWire modules, folders).
 <!-- SECTION:NOTES:END -->
