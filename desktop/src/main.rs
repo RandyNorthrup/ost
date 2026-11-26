@@ -272,6 +272,9 @@ fn main() {
     // Wayland compositors match windows to io.github.RandyNorthrup.ost.desktop
     // by app id, which is how the window gets the OST icon.
     QGuiApplication::set_desktop_file_name(&QString::from("io.github.RandyNorthrup.ost"));
+    // An OST without an installed desktop entry (a tarball, an AppImage, a
+    // build folder) writes its own, or the taskbar shows no unread badge.
+    launcher_badge::register_desktop_entry();
     if let Some(mut app) = app.as_mut() {
         app.as_mut().set_application_name(&QString::from("OST"));
         app.as_mut()
