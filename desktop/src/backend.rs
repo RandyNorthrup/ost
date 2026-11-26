@@ -3940,9 +3940,10 @@ struct CallSlot {
     /// Withdraws the call being placed (still ringing the callee).
     cancel_placing: Option<tokio::sync::oneshot::Sender<()>>,
     /// rosterUpdates that came while a meeting was still joining (no call
-    /// here yet), with when: our own mute in them is applied once the join
-    /// shows (`replay_early_rosters`).
-    early_rosters: Vec<(std::time::Instant, String)>,
+    /// here yet), with when and their call's callback tag: our own mute in
+    /// those of the joined call is applied once the join shows
+    /// (`replay_early_rosters`).
+    early_rosters: Vec<(std::time::Instant, String, String)>,
     /// The second call of a consult (Teams' Consult then transfer, Merge
     /// Calls) while the first waits on hold, its callback tag, where the
     /// consult stands, and what withdraws it while it rings.
@@ -9453,14 +9454,20 @@ async fn resume_roster(qt: &cxx_qt::CxxQtThread<qobject::Backend>, call: &outgoi
 async fn own_server_mute(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     let mut slot = call_slot().lock().await;
     let Some(call) = slot.outgoing.as_ref() else {
-        if json.contains("\"conversation/rosterUpdate") {
+        // Only a placed call's (tagged) updates: the replay matches them
+        // to the call that joined.
+        if json.contains("\"conversation/rosterUpdate")
+            && let Some(tag) = serde_json::from_str::<serde_json::Value>(json)
+                .ok()
+                .and_then(|v| v["callTag"].as_str().map(str::to_string))
+        {
             let now = std::time::Instant::now();
             slot.early_rosters
-                .retain(|(at, _)| now.duration_since(*at) < EARLY_ROSTER_MAX_AGE);
+                .retain(|(at, _, _)| now.duration_since(*at) < EARLY_ROSTER_MAX_AGE);
             if slot.early_rosters.len() >= EARLY_ROSTERS_KEPT {
                 slot.early_rosters.remove(0);
             }
-            slot.early_rosters.push((now, json.to_string()));
+            slot.early_rosters.push((now, tag, json.to_string()));
         }
         return;
     };
@@ -9514,12 +9521,21 @@ const EARLY_ROSTERS_KEPT: usize = 8;
 const EARLY_ROSTER_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// The rosterUpdates that came while we were joining, applied to our own
-/// mute once the join shows.
+/// mute once the join shows: only the joined call's (its callback tag),
+/// never those of a join that failed or was withdrawn (the endpoint id is
+/// the same from call to call).
 async fn replay_early_rosters(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
-    let early = std::mem::take(&mut call_slot().lock().await.early_rosters);
+    let (early, tag) = {
+        let mut slot = call_slot().lock().await;
+        let tag = slot.outgoing.as_ref().map(|c| c.call_tag().to_string());
+        (std::mem::take(&mut slot.early_rosters), tag)
+    };
+    let Some(tag) = tag else {
+        return;
+    };
     let now = std::time::Instant::now();
-    for (at, json) in early {
-        if now.duration_since(at) < EARLY_ROSTER_MAX_AGE {
+    for (at, from, json) in early {
+        if from == tag && now.duration_since(at) < EARLY_ROSTER_MAX_AGE {
             own_server_mute(&qt, &json).await;
         }
     }
