@@ -10434,7 +10434,7 @@ Window {
             else if (step === 24) { peopleApp.addPressForTest(); console.warn("PEOPLE form", JSON.stringify(peopleApp.formForTest())) }
             else if (step === 25) cap("form")
             else if (step === 26) {
-                if (!live || t2()) { if (t2()) console.warn("PEOPLE OST Test 2 already a contact: not adding"); peopleApp.openForTest("close"); step = live && t2() ? 27 : 60; return }
+                if (!live || t2()) { if (t2()) console.warn("PEOPLE OST Test 2 already a contact: not changing it"); peopleApp.openForTest("close"); step = 60; return }
                 peopleApp.saveFormForTest()
             }
             // Live: the test contact, then its changes, each undone.

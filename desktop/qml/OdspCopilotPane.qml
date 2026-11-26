@@ -38,6 +38,8 @@ FluentSurface {
     property var configure: ({})
     property var commandsSeen: []
     property bool framed: false
+    property int asks: 0
+    property string askTag: ""
     readonly property string tag: "odspchat" + Math.floor(Math.random() * 1e9).toString(36)
     readonly property string nonce: "ostodsp" + Math.floor(Math.random() * 1e12).toString(36) + Math.floor(Math.random() * 1e12).toString(36)
     property string channelId: ""
@@ -47,7 +49,8 @@ FluentSurface {
     /// page (or, already open, tell it the new file and prompt).
     function ask(driveId, itemId, name, text) {
         fileName = name; prompt = text; open = true
-        backend.eventsRequest("odspChatSource", tag, JSON.stringify({ drive_id: driveId, item_id: itemId }))
+        askTag = tag + "-" + (++asks)
+        backend.eventsRequest("odspChatSource", askTag, JSON.stringify({ drive_id: driveId, item_id: itemId }))
         console.info("ODSPCHAT ask")
     }
     function close() { open = false; closed() }
@@ -137,7 +140,8 @@ FluentSurface {
     Connections {
         target: backend
         function onEventsReply(id, json) {
-            if (id !== pane.tag) return
+            // (Only the latest Summarize: an earlier file's late answer is dropped.)
+            if (id !== pane.askTag) return
             let v = {}
             try { v = JSON.parse(json) } catch (e) { v = { error: "bad reply" } }
             if (v.error || !v.source || !v.my_site) { pane.state_ = "failed"; console.warn("ODSPCHAT source: " + (v.error || "none")); return }

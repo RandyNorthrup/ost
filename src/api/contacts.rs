@@ -594,7 +594,12 @@ fn typed_phones(phone: &str) -> Value {
 /// emptied one "Delete" — sent back whole.
 pub fn edit_body(raw: &Value, c: &Contact, e: &ContactEdit) -> Result<Value> {
     let mut body = raw.clone();
-    let mut change = |key: &str, new: Option<Value>, same: &dyn Fn(&Value) -> bool| {
+    // `shown`: the entry the form showed (its value as the contact read
+    // it), else the contact's own first one.
+    let mut change = |key: &str,
+                      new: Option<Value>,
+                      same: &dyn Fn(&Value) -> bool,
+                      shown: &dyn Fn(&Value) -> bool| {
         let mut list = body
             .get_mut(key)
             .and_then(|v| v.as_array_mut())
@@ -602,13 +607,21 @@ pub fn edit_body(raw: &Value, c: &Contact, e: &ContactEdit) -> Result<Value> {
             .unwrap_or_default();
         let own = list
             .iter()
-            .position(|x| x["source"]["type"].as_str() == Some("UserProvided"))
+            .position(shown)
+            .or_else(|| {
+                list.iter()
+                    .position(|x| x["source"]["type"].as_str() == Some("UserProvided"))
+            })
             .or(if list.is_empty() { None } else { Some(0) });
         match (own, new) {
             (Some(i), Some(n)) if !same(&list[i]) => {
                 let mut merged = list[i].clone();
                 if let (Some(m), Some(n)) = (merged.as_object_mut(), n.as_object()) {
                     for (k, v) in n {
+                        // (A number keeps its own kind: Business stays Business.)
+                        if k == "type" && m.contains_key("type") {
+                            continue;
+                        }
                         m.insert(k.clone(), v.clone());
                     }
                     m.insert(
@@ -640,6 +653,12 @@ pub fn edit_body(raw: &Value, c: &Contact, e: &ContactEdit) -> Result<Value> {
                 .unwrap_or_default()
                 == company
         },
+        &|x| {
+            x.pointer("/detail/company/displayName")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                == c.company
+        },
     );
     if c.mri.is_empty() {
         let (first, last, email, phone) = (
@@ -653,20 +672,29 @@ pub fn edit_body(raw: &Value, c: &Contact, e: &ContactEdit) -> Result<Value> {
         }
         check_email(email)?;
         let display = joined(first, last);
+        // The form shows the business number, else the mobile one.
+        let shown_phone = if c.phone.is_empty() {
+            c.mobile.clone()
+        } else {
+            c.phone.clone()
+        };
         change(
             "names",
             Some(serde_json::json!({ "displayName": display, "first": first, "last": last })),
             &|x| s(x, "/first") == first && s(x, "/last") == last,
+            &|x| s(x, "/first") == c.first && s(x, "/last") == c.last,
         );
         change(
             "emails",
             (!email.is_empty()).then(|| serde_json::json!({ "address": email, "type": "Main" })),
             &|x| s(x, "/address") == email,
+            &|x| !c.email.is_empty() && s(x, "/address") == c.email,
         );
         change(
             "phones",
             (!phone.is_empty()).then(|| serde_json::json!({ "number": phone, "type": "Mobile" })),
             &|x| s(x, "/number") == phone,
+            &|x| !shown_phone.is_empty() && s(x, "/number") == shown_phone.as_str(),
         );
     }
     Ok(body)
@@ -1183,6 +1211,50 @@ mod tests {
         .unwrap();
         assert!(t["names"][0].get("action").is_none());
         assert_eq!(t["emails"][0]["action"], "Delete");
+        // Two numbers: the form shows (and edits) the business one; the
+        // mobile one is left alone.
+        let two = serde_json::json!({ "id": "BBB=", "names": [{ "first": "Bo", "source": { "type": "UserProvided" } }],
+                                      "phones": [{ "id": "m", "number": "111", "type": "Mobile", "source": { "type": "UserProvided" } },
+                                                 { "id": "b", "number": "222", "type": "Business", "source": { "type": "UserProvided" } }] });
+        let (bl, _) = from_service(std::slice::from_ref(&two));
+        assert_eq!(bl[0].phone, "222");
+        let same = edit_body(
+            &two,
+            &bl[0],
+            &ContactEdit {
+                first: "Bo".into(),
+                phone: "222".into(),
+                company: "X".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(
+            same["phones"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|p| p.get("action").is_none())
+        );
+        let changed = edit_body(
+            &two,
+            &bl[0],
+            &ContactEdit {
+                first: "Bo".into(),
+                phone: "333".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(changed["phones"][0]["number"], "111");
+        assert_eq!(
+            (
+                changed["phones"][1]["number"].as_str(),
+                changed["phones"][1]["type"].as_str(),
+                changed["phones"][1]["action"].as_str()
+            ),
+            (Some("333"), Some("Business"), Some("Patch"))
+        );
         assert_eq!(
             (
                 t["phones"][0]["number"].as_str(),
