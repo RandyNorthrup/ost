@@ -1,11 +1,11 @@
 ---
 id: TASK-0314
 title: 'Security: diagnostics viewer and feedback keep data local until you choose'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T19:49:00Z'
-updated_date: '2026-11-26T02:00:00Z'
+updated_date: '2026-11-26T02:01:00Z'
 labels:
   - security
 dependencies: []
@@ -20,9 +20,9 @@ From a public code audit of OST 0.2.1 (posted on Reddit, 2026-11-25). The option
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The diagnostic data viewer streams only to a loopback address unless the user enters another host, and plain HTTP to a non-loopback host is refused
-- [ ] #2 Opening Report a problem sends nothing anywhere: logs are never put in the issue URL; OST saves them to a file the user reviews and attaches, and the issue form opens with only the text the user typed
-- [ ] #3 Log masking covers tokens (JWT, opaque bearer, Skype tokens, refresh tokens, cookies, SAS/sig query parameters, codes in URLs), email addresses and phone numbers, with tests; logs never contain tokens in the first place
+- [x] #1 The diagnostic data viewer streams only to a loopback address unless the user enters another host, and plain HTTP to a non-loopback host is refused
+- [x] #2 Opening Report a problem sends nothing anywhere: logs are never put in the issue URL; OST saves them to a file the user reviews and attaches, and the issue form opens with only the text the user typed
+- [x] #3 Log masking covers tokens (JWT, opaque bearer, Skype tokens, refresh tokens, cookies, SAS/sig query parameters, codes in URLs), email addresses and phone numbers, with tests; logs never contain tokens in the first place
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -49,3 +49,19 @@ Live check on linuxlt (2026-11-25, my build with --features test-harness, fresh 
 - 0313: --sign-out-test: "signed out; restarting", the restarted process removed ~/.local/share/OST/QtWebEngine/ost-apps-sectest and its cache before Qt WebEngine opened; the next sign-in asked for the e-mail address (no remembered account). First run crashed in libQt6Qml during teardown before the restart; fixed (re-exec right after the event loop) and re-verified: restart within 1.5 s.
 - 0314: --feedback-test: the issue URL holds only template, title, text and contact ("logs in url: false"); masked logs went to OST report details.txt (0600, folder 0700) with no JWTs; the sectest log has no eyJ tokens.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Diagnostics and feedback keep data on the device until the user chooses.
+
+Changes:
+- DDV: plain HTTP only to loopback, https:// for another host; old private-address states drop to idle; no redirects; Settings text.
+- Feedback: the issue URL holds only template, title, typed text and contact answer; version, OS, place, context, file names and opted-in masked logs go to OST report details.txt (0600, folder 0700), which opens for review; suggested-reply feedback the same.
+- Logs: scrub_secrets (JWTs, bearer/Skype/refresh/MSA tokens, cookies and auth headers, token/code/sig/secret parameters in URLs, fragments, forms and JSON, long opaque runs) applied to every event by the Scrubbed writer for the desktop log file, stderr, the CLI and TUI; mask_line adds PII masking for exports.
+- Docs: PRIVACY.md, help Report a problem, spec.
+
+Tests: ddv, feedback (URL, details file, token scrubbing, whole-event writer); live: URL without logs, details file without tokens.
+
+PR #7 (branch task-0309-0315-app-security); CI Format, Clippy (with and without test-harness), Build and test, Release build refuses test-harness flags; CodeQL clean on the PR.
+<!-- SECTION:FINAL_SUMMARY:END -->

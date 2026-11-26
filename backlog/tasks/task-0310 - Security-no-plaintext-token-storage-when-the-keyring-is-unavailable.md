@@ -1,11 +1,11 @@
 ---
 id: TASK-0310
 title: 'Security: no plaintext token storage when the keyring is unavailable'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T19:49:00Z'
-updated_date: '2026-11-26T02:00:00Z'
+updated_date: '2026-11-26T02:01:00Z'
 labels:
   - security
 dependencies: []
@@ -20,9 +20,9 @@ From a public code audit of OST 0.2.1 (posted on Reddit, 2026-11-25). If the sys
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Without a working Secret Service keyring, OST doesn't write access or refresh tokens to disk by default; it keeps them in memory and asks to sign in again next start, and Settings explains why and how to enable a keyring
-- [ ] #2 Storing tokens in a file needs an explicit opt-in (OST_NO_KEYRING=1 or a setting), is documented as weaker than the keyring, and the file is created 0600 atomically
-- [ ] #3 Existing plaintext tokens are moved into the keyring when it becomes available, and the plaintext copy is removed
+- [x] #1 Without a working Secret Service keyring, OST doesn't write access or refresh tokens to disk by default; it keeps them in memory and asks to sign in again next start, and Settings explains why and how to enable a keyring
+- [x] #2 Storing tokens in a file needs an explicit opt-in (OST_NO_KEYRING=1 or a setting), is documented as weaker than the keyring, and the file is created 0600 atomically
+- [x] #3 Existing plaintext tokens are moved into the keyring when it becomes available, and the plaintext copy is removed
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -48,3 +48,18 @@ Live check on linuxlt (2026-11-25, my build with --features test-harness, fresh 
 - 0313: --sign-out-test: "signed out; restarting", the restarted process removed ~/.local/share/OST/QtWebEngine/ost-apps-sectest and its cache before Qt WebEngine opened; the next sign-in asked for the e-mail address (no remembered account). First run crashed in libQt6Qml during teardown before the restart; fixed (re-exec right after the event loop) and re-verified: restart within 1.5 s.
 - 0314: --feedback-test: the issue URL holds only template, title, text and contact ("logs in url: false"); masked logs went to OST report details.txt (0600, folder 0700) with no JWTs; the sectest log has no eyJ tokens.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+No plaintext tokens without a keyring unless the user opts in.
+
+Changes:
+- src/config: SecretStore abstraction; save: keyring first, else this run's memory (per profile), or the 0600 file only with OST_NO_KEYRING=1 or the new allow_token_file setting; load: tokens found in the file move to the keyring (or memory) and the plaintext copy is removed; atomic 0600 writes through a fresh create_new temp file; config dir 0700; token_storage() and set_allow_token_file().
+- Settings > Accounts and orgs: a card when the sign-in isn't in the keyring, explaining why, how to enable a keyring, and the "Stay signed in without a keyring" opt-in.
+- Docs: desktop.md, PRIVACY.md, SECURITY.md, help sign-in pages, --help text.
+
+Tests: storage_tests (memory without keyring, keyring, opt-in file and its mode, migration with and without a keyring, sign-out forgets memory).
+
+PR #7 (branch task-0309-0315-app-security); CI Format, Clippy (with and without test-harness), Build and test, Release build refuses test-harness flags; CodeQL clean on the PR.
+<!-- SECTION:FINAL_SUMMARY:END -->
