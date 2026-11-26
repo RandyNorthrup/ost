@@ -3939,6 +3939,10 @@ struct CallSlot {
     left_tags: Vec<String>,
     /// Withdraws the call being placed (still ringing the callee).
     cancel_placing: Option<tokio::sync::oneshot::Sender<()>>,
+    /// rosterUpdates that came while a meeting was still joining (no call
+    /// here yet), with when: our own mute in them is applied once the join
+    /// shows (`replay_early_rosters`).
+    early_rosters: Vec<(std::time::Instant, String)>,
     /// The second call of a consult (Teams' Consult then transfer, Merge
     /// Calls) while the first waits on hold, its callback tag, where the
     /// consult stands, and what withdraws it while it rings.
@@ -8813,50 +8817,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     }
     // The meeting muting (or unmuting) us: Teams mutes you when the
     // meeting does, and opens the mic once a requested unmute goes through.
-    {
-        let slot = call_slot().lock().await;
-        if let Some(call) = slot.outgoing.as_ref()
-            && let Some(id) = call.endpoint_id()
-            && let Some(server_muted) = teams_cli::calling::roster::own_server_muted(json, id)
-        {
-            let was = call.is_server_muted();
-            call.set_server_muted(server_muted);
-            if server_muted != was {
-                tracing::info!(server_muted, "the meeting changed our mute");
-            }
-            drop(slot);
-            let _ = qt.queue(move |mut this| {
-                if this.rust().call_muted_by_meeting != server_muted {
-                    this.as_mut().set_call_muted_by_meeting(server_muted);
-                }
-                // Teams alerts only when it mutes you while you're unmuted.
-                if server_muted && !this.rust().call_muted && this.rust().call_has_audio {
-                    let n = this.rust().call_muted_remotely + 1;
-                    this.as_mut().set_call_muted_remotely(n);
-                }
-                if server_muted && !this.rust().call_muted {
-                    this.as_mut().set_call_muted(true);
-                    runtime().spawn(async {
-                        if let Some(call) = call_slot().lock().await.outgoing.as_ref() {
-                            call.set_muted(true);
-                        }
-                    });
-                } else if !server_muted && this.rust().unmute_pending {
-                    this.as_mut().rust_mut().unmute_pending = false;
-                    this.as_mut().set_call_muted(false);
-                    // Then our own endpoint state says unmuted too.
-                    runtime().spawn(async {
-                        if let Some(call) = call_slot().lock().await.outgoing.as_ref() {
-                            call.set_muted(false);
-                            if let Err(e) = call.publish_mute(false).await {
-                                tracing::warn!("mute state: {}", short_error(&e));
-                            }
-                        }
-                    });
-                }
-            });
-        }
-    }
+    own_server_mute(qt, json).await;
     // Teams' test call ends once the Echo bot, having played your
     // recording back, leaves.
     if let Some(active) = teams_cli::calling::echo_report::echo_bot_active(json) {
@@ -8876,6 +8837,15 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         if ended {
             let _ = qt.queue(|mut this| this.as_mut().hang_up());
         }
+    }
+    // The result of our Mute participant / Mute all (the muteUnmuteAsync
+    // callback): they show muted at once, as Teams marks them.
+    if let Some(muted) = teams_cli::calling::outgoing::muted_by_async_result(json) {
+        tracing::info!(muted = muted.len(), "mute result");
+        if !muted.is_empty() {
+            let _ = qt.queue(move |this| this.show_server_muted(&muted));
+        }
+        return;
     }
     if let Some(delta) = teams_cli::calling::roster::roster_delta(json) {
         tracing::info!(changes = delta.len(), "roster update");
@@ -9476,10 +9446,93 @@ async fn resume_roster(qt: &cxx_qt::CxxQtThread<qobject::Backend>, call: &outgoi
     });
 }
 
+/// Our endpoint muted (or unmuted) by the meeting, from a rosterUpdate.
+/// One that comes while we are still joining (no call in the slot yet,
+/// such as the service muting us as we join after Mute all) is kept and
+/// applied once the join shows (`replay_early_rosters`).
+async fn own_server_mute(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
+    let mut slot = call_slot().lock().await;
+    let Some(call) = slot.outgoing.as_ref() else {
+        if json.contains("\"conversation/rosterUpdate") {
+            let now = std::time::Instant::now();
+            slot.early_rosters
+                .retain(|(at, _)| now.duration_since(*at) < EARLY_ROSTER_MAX_AGE);
+            if slot.early_rosters.len() >= EARLY_ROSTERS_KEPT {
+                slot.early_rosters.remove(0);
+            }
+            slot.early_rosters.push((now, json.to_string()));
+        }
+        return;
+    };
+    let Some(server_muted) = call
+        .endpoint_id()
+        .and_then(|id| teams_cli::calling::roster::own_server_muted(json, id))
+    else {
+        return;
+    };
+    let was = call.is_server_muted();
+    call.set_server_muted(server_muted);
+    if server_muted != was {
+        tracing::info!(server_muted, "the meeting changed our mute");
+    }
+    drop(slot);
+    let _ = qt.queue(move |mut this| {
+        if this.rust().call_muted_by_meeting != server_muted {
+            this.as_mut().set_call_muted_by_meeting(server_muted);
+        }
+        // Teams alerts only when it mutes you while you're unmuted.
+        if server_muted && !this.rust().call_muted && this.rust().call_has_audio {
+            let n = this.rust().call_muted_remotely + 1;
+            this.as_mut().set_call_muted_remotely(n);
+        }
+        if server_muted && !this.rust().call_muted {
+            this.as_mut().set_call_muted(true);
+            runtime().spawn(async {
+                if let Some(call) = call_slot().lock().await.outgoing.as_ref() {
+                    call.set_muted(true);
+                }
+            });
+        } else if !server_muted && this.rust().unmute_pending {
+            this.as_mut().rust_mut().unmute_pending = false;
+            this.as_mut().set_call_muted(false);
+            // Then our own endpoint state says unmuted too.
+            runtime().spawn(async {
+                if let Some(call) = call_slot().lock().await.outgoing.as_ref() {
+                    call.set_muted(false);
+                    if let Err(e) = call.publish_mute(false).await {
+                        tracing::warn!("mute state: {}", short_error(&e));
+                    }
+                }
+            });
+        }
+    });
+}
+
+/// How many rosterUpdates that came before a join finished are kept, and
+/// for how long.
+const EARLY_ROSTERS_KEPT: usize = 8;
+const EARLY_ROSTER_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// The rosterUpdates that came while we were joining, applied to our own
+/// mute once the join shows.
+async fn replay_early_rosters(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
+    let early = std::mem::take(&mut call_slot().lock().await.early_rosters);
+    let now = std::time::Instant::now();
+    for (at, json) in early {
+        if now.duration_since(at) < EARLY_ROSTER_MAX_AGE {
+            own_server_mute(&qt, &json).await;
+        }
+    }
+}
+
 async fn seed_roster(qt: &cxx_qt::CxxQtThread<qobject::Backend>, call: &outgoing::OutgoingCall) {
     // The join response's roster first: it has everyone's streams.
     let joined = call.joined_roster();
-    tracing::info!(count = joined.len(), "joined roster");
+    let own_server_muted = call
+        .endpoint_id()
+        .and_then(|ep| joined.iter().find(|p| p.endpoint_id == ep))
+        .map(|p| p.server_muted);
+    tracing::info!(count = joined.len(), ?own_server_muted, "joined roster");
     let _ = qt.queue(move |mut this| this.as_mut().apply_roster(joined));
     match call.participants().await {
         Ok(people) => {
@@ -13623,8 +13676,9 @@ impl qobject::Backend {
             let Some(call) = slot.outgoing.as_mut() else {
                 return;
             };
+            let mut muted = Vec::new();
             let result = match action.as_str() {
-                "mute" => call.mute_participant(&id).await,
+                "mute" => call.mute_participant(&id).await.map(|m| muted = m),
                 "spotlight" => call.spotlight(&id, None).await,
                 "unspotlight" => call.spotlight(&id, Some(&state)).await,
                 "lowerHand" if !state.is_empty() => call.remove_state(&state, "Lower hand").await,
@@ -13633,6 +13687,9 @@ impl qobject::Backend {
                 _ => Ok(()),
             };
             drop(slot);
+            if !muted.is_empty() {
+                let _ = qt.queue(move |this| this.show_server_muted(&muted));
+            }
             if let Err(e) = result {
                 tracing::warn!(action, "participant action: {}", short_error(&e));
                 let _ = qt.queue(move |mut this| {
@@ -13814,15 +13871,34 @@ impl qobject::Backend {
     }
 
     pub fn mute_all(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = match call_slot().lock().await.outgoing.as_ref() {
                 Some(call) => call.mute_all().await,
                 None => return,
             };
-            if let Err(e) = result {
-                tracing::warn!("mute all failed: {}", short_error(&e));
+            match result {
+                Ok(muted) if !muted.is_empty() => {
+                    let _ = qt.queue(move |this| this.show_server_muted(&muted));
+                }
+                Ok(_) => {}
+                Err(e) => tracing::warn!("mute all failed: {}", short_error(&e)),
             }
         });
+    }
+
+    /// The people a mute reply says the meeting muted show muted at once,
+    /// as Teams marks them from the reply before the roster says so.
+    fn show_server_muted(mut self: Pin<&mut Self>, ids: &[String]) {
+        let mut roster = std::mem::take(&mut self.as_mut().rust_mut().roster);
+        let changed = teams_cli::calling::roster::mark_server_muted(&mut roster, ids);
+        let json = changed.then(|| serde_json::to_string(&roster).unwrap_or_else(|_| "[]".into()));
+        self.as_mut().rust_mut().roster = roster;
+        if let Some(json) = json {
+            tracing::info!(muted = ids.len(), "the meeting muted them");
+            self.as_mut()
+                .set_call_roster_json(QString::from(json.as_str()));
+        }
     }
 
     /// Show the meeting's lock and attendee restrictions; `notify` for a
@@ -13899,6 +13975,9 @@ impl qobject::Backend {
 
     /// The call window for a joined (or resumed) meeting.
     fn show_joined(mut self: Pin<&mut Self>, v: JoinedView, in_lobby: bool) {
+        // The meeting may have muted us as we joined (Mute all still in
+        // force): Teams joins muted then.
+        runtime().spawn(replay_early_rosters(self.qt_thread()));
         self.as_mut()
             .set_call_invite_url(QString::from(v.invite.as_str()));
         self.as_mut().rust_mut().call_meet_now = v.meet_now;

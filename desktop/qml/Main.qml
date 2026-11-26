@@ -3593,6 +3593,7 @@ Window {
             else if (st === Math.max(15, Math.floor(window.joinStay * 2 / 5) - 3)) backend.callNotesRequest("cleanup", "notescleanup", JSON.stringify({ prefix: "OST TEST 212" }))
         }
     }
+    property var muteTest: ({ phase: 0, at: 0 })
     readonly property int joinStay: Math.round(parseInt((Qt.application.arguments.find(a => a.startsWith("--join-stay=")) || "--join-stay=0").slice(12)) / 2)
     // --join-url=<link>: the test meeting's link when it isn't in the
     // calendar's loaded week.
@@ -4588,6 +4589,34 @@ Window {
             } else if (step === 11 && Qt.application.arguments.indexOf("--join-mute-all") >= 0) {
                 console.warn("JOIN after mute all", backend.callRosterJson, "can", callWindow.canMuteAll)
                 callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-muteall-after.png")))
+            } else if (step >= 7 && step <= 7 + window.joinStay && Qt.application.arguments.indexOf("--join-mute-test") >= 0) {
+                // --join-mute-test (with --join-stay, as organizer): admit
+                // whoever waits; once two others are in with their mics on,
+                // Mute participant on the first (its tile menu's choice),
+                // then 16 s later Mute all; log the roster after each and
+                // leave when the time is up.
+                JSON.parse(backend.callLobbyJson || "[]").forEach(p => backend.admitFromLobby(p.id, p.name, false))
+                const others = JSON.parse(backend.callRosterJson || "[]").filter(p => p.active && p.id !== backend.userMri.toLowerCase() && p.id.indexOf("28:") !== 0)
+                const mics = JSON.stringify(others.map(p => [p.name, p.muted, p.server_muted]))
+                const t = window.muteTest
+                if (!t.phase && others.length >= 2 && others.every(p => !p.muted)) {
+                    console.warn("JOIN mute-test muting", others[0].name, mics)
+                    callWindow.side = "people"
+                    callWindow.tileAction("mute", others[0])
+                    window.muteTest = { phase: 1, at: step }
+                } else if (t.phase === 1 && step === t.at + 3) {
+                    console.warn("JOIN mute-test after mute", mics)
+                    callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-muted-one.png")))
+                } else if (t.phase === 1 && step === t.at + 8) {
+                    console.warn("JOIN mute-test mute all", mics)
+                    callWindow.muteAll()
+                    window.muteTest = { phase: 2, at: step }
+                } else if (t.phase === 2 && step === t.at + 3) {
+                    console.warn("JOIN mute-test after mute all", mics)
+                    callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-muted-all.png")))
+                } else if (step === 7 + window.joinStay) { console.warn("JOIN mute-test leaving", mics); backend.hangUp() }
+            } else if (step === 8 + window.joinStay && Qt.application.arguments.indexOf("--join-mute-test") >= 0) {
+                Qt.quit()
             } else if (step >= 7 && step <= 7 + window.joinStay && Qt.application.arguments.indexOf("--join-deny-wait") >= 0) {
                 // --join-deny-wait (with --join-stay): deny the first person
                 // who waits in the lobby, then stay until the time is up.

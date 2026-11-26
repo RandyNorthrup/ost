@@ -772,6 +772,22 @@ fn meeting_room_of(p: &serde_json::Value) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Mark the people a mute reply names as muted by the meeting (Teams sets
+/// their audio streams serverMuted from the reply). Returns whether
+/// anyone changed.
+pub fn mark_server_muted(roster: &mut [Participant], ids: &[String]) -> bool {
+    let mut changed = false;
+    for p in roster
+        .iter_mut()
+        .filter(|p| ids.iter().any(|id| id.eq_ignore_ascii_case(&p.id)))
+    {
+        changed |= !p.server_muted || !p.muted;
+        p.server_muted = true;
+        p.muted = true;
+    }
+    changed
+}
+
 /// Apply a delta to a roster kept in join order.
 pub fn apply(roster: &mut Vec<Participant>, delta: Vec<Participant>) {
     for mut p in delta {
@@ -1286,6 +1302,24 @@ mod tests {
         assert_eq!(r.len(), 1);
         assert!(roster_delta(r#"{"callAgentPath":"call/end/","body":{}}"#).is_none());
         assert!(roster_delta("not json").is_none());
+    }
+
+    #[test]
+    fn a_mute_reply_marks_them_muted() {
+        let mut r = Vec::new();
+        apply(
+            &mut r,
+            roster_delta(&update("8:orgid:ME", "Me", "active", "organizer")).unwrap(),
+        );
+        apply(
+            &mut r,
+            roster_delta(&update("8:orgid:them", "Them", "active", "")).unwrap(),
+        );
+        r[1].muted = false;
+        assert!(mark_server_muted(&mut r, &["8:orgid:THEM".to_string()]));
+        assert!(r[1].server_muted && r[1].muted);
+        assert!(!r[0].server_muted);
+        assert!(!mark_server_muted(&mut r, &["8:orgid:them".to_string()]));
     }
 
     #[test]

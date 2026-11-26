@@ -1187,6 +1187,15 @@ A separate Raised hands pane, "Raised Hands (N)", sorts by rank. Empty state: "R
 
 ### Participant menu, in order (`Cg`)
 1. **Mute participant**: not 1:1. Needs the right to manage the participant (`canMuteOthers` with self-capabilities); disabled when the participant is already server-muted.
+   - **On the wire** (calling-pluginless `muteAsync`; captured from Teams on the web in a meeting, 2026-11-25, TASK-0323): Mute participant (MuteSpecifiedSync) and Mute all (MuteAllSync) both POST to the conversation's `mute` link with the call's headers (Bearer IC3 token with `X-MS-Migration: True`, `x-microsoft-skype-chain-id`, a fresh `x-microsoft-skype-message-id`, `x-microsoft-skype-client`, `ms-teams-partition/region/ring`). The body is `{"from":{id, displayName, endpointId, participantId, languageId}, "scope":"specified"|"all", "muteParticipants":[{"id":"8:orgid:…"}], "mediaTypes":["audio"], "links":{"clientCallback":"<trouter>/callAgent/<endpoint>/<operationId>/conversation/muteUnmuteAsync/"}, "operationId":"<uuid>"}`.
+     - Each person is an `{id}` object; a bare MRI string is refused with HTTP 400.
+     - Mute all names no one (`[]`) and mutes everyone but you.
+     - `links` and `operationId` are sent because ECS SkypeCalling `enableAsyncMute` is on.
+   - The service answers 202 with `{"muteUnmuteResponse":{}}`. The result follows on the callback as `{"muteUnmuteResponseAsync":{…}, "operationId"}`, a map of each MRI to their endpoints' results (`{participantId, reason, serverMuteVersion}`). For each `reason` "success" Teams marks that endpoint's audio as `serverMuted` straight away, before the roster update arrives. OST does the same with both the reply and the callback.
+   - Teams' Mute all dialog ("Mute everyone?" / "This will mute everyone in the meeting but you." [Cancel] [Mute]) has no option about unmuting. People it mutes can unmute themselves. Stopping attendees from unmuting is the separate Disable mic for attendees (hard mute).
+   - After Mute all, the service also mutes people who join later in the same meeting session: a Teams web guest and OST Test 2 on the web joined to "You've been muted".
+     - The rosterUpdate that says so can arrive a moment before the join completes.
+     - OST keeps the rosterUpdates that arrive while it joins and applies its own server mute from them once the join shows. It then joins muted with the same notice.
 2. Allow mic / Disable mic, Allow camera / Disable camera (per attendee).
 3. **Lower hand**: their hand is raised, it isn't you, and you are not an attendee or guest.
 4. **Pin for me** / Unpin (for yourself: "Pin for me" / "Unpin for me"). Disabled at the pin limit ("You reached the maximum number of pins"), when spotlighted ("Can't pin a participant that is spotlighted"), and in managed/presenter mode. Local only (`togglePinItem`).
