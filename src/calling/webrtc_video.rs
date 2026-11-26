@@ -361,20 +361,31 @@ pub struct CameraPreview {
 impl CameraPreview {
     pub fn start(device: Option<String>) -> anyhow::Result<Self> {
         let (w, h, fps) = capture_format(device.as_deref());
-        Self::spawn(device.as_deref(), "self".to_string(), w, h, fps, true)
+        Self::spawn(device.as_deref(), "self".to_string(), w, h, fps, true, None)
     }
 
     /// The camera's own picture, without the call's video effects, as the
     /// frame `key` at about `width`x`height` and `fps` (the video clip
     /// recorder and face capture, which show and record it themselves).
+    /// `ended` runs (on the capture thread) if the camera stops by itself
+    /// (unplugged, or its stream failed), not when this is dropped.
     pub fn start_plain(
         device: Option<&str>,
         key: &str,
         width: u32,
         height: u32,
         fps: u32,
+        ended: Box<dyn FnOnce() + Send>,
     ) -> anyhow::Result<Self> {
-        Self::spawn(device, key.to_string(), width, height, fps, false)
+        Self::spawn(
+            device,
+            key.to_string(),
+            width,
+            height,
+            fps,
+            false,
+            Some(ended),
+        )
     }
 
     fn spawn(
@@ -384,6 +395,7 @@ impl CameraPreview {
         h: u32,
         fps: u32,
         with_effects: bool,
+        ended: Option<Box<dyn FnOnce() + Send>>,
     ) -> anyhow::Result<Self> {
         let (camera, frames) = super::camera::CameraCapture::start(device, w, h, fps)?;
         let stop = Arc::new(AtomicBool::new(false));
@@ -412,6 +424,11 @@ impl CameraPreview {
                     }
                 }
                 super::frames::clear(&key);
+                if !stop2.load(Ordering::Relaxed)
+                    && let Some(ended) = ended
+                {
+                    ended();
+                }
             })?;
         Ok(Self {
             stop,

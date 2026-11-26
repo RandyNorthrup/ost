@@ -3,7 +3,9 @@
 //! for the video clip recorder and face capture, captured as calls
 //! capture it, instead of Qt Multimedia's camera list and capture. The
 //! camera is open only between `open` and `close` (or the item going):
-//! Teams opens a camera only while it shows its picture.
+//! Teams opens a camera only while it shows its picture. It opens on a
+//! worker thread (`opening` meanwhile), and `running` goes false again if
+//! the camera stops by itself (unplugged), so the dialogs can try again.
 //!
 //! The picture is published as the frame `source` (for a `VideoFrame`),
 //! can be handed to a QML video sink (`show_in`, for a `VideoOutput` the
@@ -24,6 +26,8 @@ pub mod qobject {
         #[qproperty(QString, source)]
         /// The camera is open.
         #[qproperty(bool, running)]
+        /// The camera is being opened.
+        #[qproperty(bool, opening)]
         /// The camera opened (its ID in OST's camera list), empty when
         /// none is.
         #[qproperty(QString, camera)]
@@ -34,7 +38,8 @@ pub mod qobject {
     unsafe extern "RustQt" {
         /// Open camera `id` ("" for the one chosen in Settings > Devices)
         /// at about `width` x `height` and `fps`, closing the one open
-        /// first. Whether it opened.
+        /// first. `running` follows once it is open; false when it
+        /// couldn't start trying.
         #[qinvokable]
         fn open(
             self: Pin<&mut CameraFeed>,
@@ -56,10 +61,11 @@ pub mod qobject {
     }
 
     impl cxx_qt::Constructor<()> for CameraFeed {}
+    impl cxx_qt::Threading for CameraFeed {}
 }
 
 use core::pin::Pin;
-use cxx_qt::CxxQtType;
+use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
 use std::sync::atomic::{AtomicU64, Ordering};
 use teams_cli::calling::{camera, frames, webrtc_video::CameraPreview};
@@ -67,9 +73,13 @@ use teams_cli::calling::{camera, frames, webrtc_video::CameraPreview};
 pub struct CameraFeedRust {
     source: QString,
     running: bool,
+    opening: bool,
     camera: QString,
     /// The open camera (dropping it closes the camera).
     capture: Option<CameraPreview>,
+    /// Counts opens and closes: what a worker brings back for an older one
+    /// is let go (its camera closed).
+    generation: u64,
     /// The frame last handed to a sink (0: none).
     shown: u64,
 }
@@ -89,8 +99,10 @@ impl cxx_qt::Constructor<()> for qobject::CameraFeed {
         CameraFeedRust {
             source: QString::from(format!("camera-feed-{n}").as_str()),
             running: false,
+            opening: false,
             camera: QString::default(),
             capture: None,
+            generation: 0,
             shown: 0,
         }
     }
@@ -114,55 +126,92 @@ unsafe extern "C" {
 impl qobject::CameraFeed {
     pub fn open(mut self: Pin<&mut Self>, id: &QString, width: i32, height: i32, fps: i32) -> bool {
         self.as_mut().close();
+        let generation = self.rust().generation;
         let wanted = Some(id.to_string())
             .filter(|i| !i.is_empty())
             .or_else(crate::backend::selected_camera);
-        // That camera and no other: while it isn't there, nothing opens
-        // (it is asked for again). With none chosen, the first camera, as
-        // calls do. (A chosen camera is opened without listing them all:
-        // listing opens every V4L2 node.)
-        let id = match wanted {
-            Some(w) => w,
-            None => match camera::cameras().into_iter().next() {
-                Some(c) => c.id,
-                None => {
-                    tracing::info!("camera feed: no camera");
-                    return false;
-                }
-            },
-        };
         let key = self.rust().source.to_string();
         let size = |v: i32, d: u32| u32::try_from(v).ok().filter(|v| *v > 0).unwrap_or(d);
-        match CameraPreview::start_plain(
-            Some(&id),
-            &key,
-            size(width, 1280),
-            size(height, 720),
-            size(fps, 30),
-        ) {
-            Ok(capture) => {
-                tracing::info!(camera = id, key, "camera feed opened");
+        let (width, height, fps) = (size(width, 1280), size(height, 720), size(fps, 30));
+        let qt = self.qt_thread();
+        // (Opening may take seconds: a PipeWire camera links and
+        // negotiates first.)
+        let spawned = std::thread::Builder::new()
+            .name("ost-camera-feed".into())
+            .spawn(move || {
+                // That camera and no other: while it isn't there, nothing
+                // opens (it is asked for again). With none chosen, the
+                // first camera, as calls do. (A chosen camera is opened
+                // without listing them all: listing opens every V4L2 node.)
+                let id = wanted.or_else(|| camera::cameras().into_iter().next().map(|c| c.id));
+                let opened = match id {
+                    None => Err(anyhow::anyhow!("no camera")),
+                    Some(id) => {
+                        let back = qt.clone();
+                        let ended = Box::new(move || {
+                            let _ = back.queue(move |this| this.ended(generation));
+                        });
+                        CameraPreview::start_plain(Some(&id), &key, width, height, fps, ended)
+                            .map(|capture| {
+                                // As the list names it (a V4L2 path saved
+                                // before PipeWire offered that camera is the
+                                // PipeWire one).
+                                let shown = camera::find(&camera::cameras(), &id)
+                                    .map_or_else(|| id.clone(), |c| c.id.clone());
+                                (shown, capture)
+                            })
+                            .map_err(|e| e.context(id))
+                    }
+                };
+                // (If the feed is gone, the camera closes here.)
+                let _ = qt.queue(move |this| this.opened(generation, opened));
+            });
+        if let Err(e) = spawned {
+            tracing::info!("camera feed: {e}");
+            return false;
+        }
+        self.as_mut().set_opening(true);
+        true
+    }
+
+    /// A worker's open for `generation` is done.
+    fn opened(
+        mut self: Pin<&mut Self>,
+        generation: u64,
+        opened: anyhow::Result<(String, CameraPreview)>,
+    ) {
+        if generation != self.rust().generation {
+            // Closed (or opened again) meanwhile: let it go.
+            return;
+        }
+        self.as_mut().set_opening(false);
+        match opened {
+            Ok((id, capture)) => {
+                tracing::info!(camera = id, key = %self.rust().source, "camera feed opened");
                 self.as_mut().rust_mut().capture = Some(capture);
-                // As the list names it (a V4L2 path saved before PipeWire
-                // offered that camera is the PipeWire one).
-                let id = camera::find(&camera::cameras(), &id).map_or(id, |c| c.id.clone());
                 self.as_mut().set_camera(QString::from(id.as_str()));
                 self.as_mut().set_running(true);
-                true
             }
-            Err(e) => {
-                tracing::info!(camera = id, "camera feed: {e:#}");
-                false
-            }
+            Err(e) => tracing::info!("camera feed: {e:#}"),
+        }
+    }
+
+    /// The camera of `generation` stopped by itself.
+    fn ended(self: Pin<&mut Self>, generation: u64) {
+        if generation == self.rust().generation && self.rust().capture.is_some() {
+            tracing::info!(key = %self.rust().source, "camera feed: the camera stopped");
+            self.close();
         }
     }
 
     pub fn close(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().generation += 1;
         // (Dropping it returns once the camera is closed.)
         if self.as_mut().rust_mut().capture.take().is_some() {
             frames::clear(&self.rust().source.to_string());
             tracing::info!(key = %self.rust().source, "camera feed closed");
         }
+        self.as_mut().set_opening(false);
         self.as_mut().set_running(false);
         self.as_mut().set_camera(QString::default());
     }
