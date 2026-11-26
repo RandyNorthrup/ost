@@ -1998,7 +1998,8 @@ Item {
         favoriteIds: root.driveData.favorite_ids || []
         canWrite: root.canWrite
         folder: root.view === "folder" ? { drive_id: root.here.drive_id, item_id: root.here.item_id } : { drive_id: "-", item_id: "-" }
-        onChanged: root.load(root.view, root.here.drive_id, root.here.item_id)
+        // Shared's By you reloads By you's own list.
+        onChanged: root.load(root.byYou ? "shared_by_you" : root.view, root.here.drive_id, root.here.item_id)
         onDeleteItem: it => root.remove(it.drive_id, it.id)
         onFavoriteItem: (it, on) => root.favorite(it.drive_id, it.id, on)
         onDownloadItem: it => root.download(JSON.stringify(it))
