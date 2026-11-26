@@ -737,22 +737,8 @@ fn modes_of(param: &spa::pod::Value, want: (u32, u32), fps: u32) -> Vec<SpaMode>
     };
     let rates: Vec<Fraction> = match get(F::VideoFramerate) {
         Some(Value::Fraction(f)) => vec![*f],
-        Some(Value::Choice(ChoiceValue::Fraction(c))) => values(&c.1, |min, max, _| {
-            let rate = |f: &Fraction| {
-                if f.denom == 0 {
-                    0.0
-                } else {
-                    f64::from(f.num) / f64::from(f.denom)
-                }
-            };
-            let wanted = f64::from(fps);
-            if wanted < rate(min) {
-                *min
-            } else if rate(max) > 0.0 && wanted > rate(max) {
-                *max
-            } else {
-                Fraction { num: fps, denom: 1 }
-            }
+        Some(Value::Choice(ChoiceValue::Fraction(c))) => values(&c.1, |min, max, step| {
+            rate_in(fps, *min, *max, step.copied())
         }),
         // No rate given: whatever it delivers.
         None => vec![Fraction { num: 0, denom: 1 }],
@@ -774,6 +760,52 @@ fn modes_of(param: &spa::pod::Value, want: (u32, u32), fps: u32) -> Vec<SpaMode>
         }
     }
     modes
+}
+
+/// The frame rate a camera's range (`min..=max`, on `step` when given)
+/// offers for `fps`: the lowest on it that reaches `fps`, else the highest.
+fn rate_in(
+    fps: u32,
+    min: spa::utils::Fraction,
+    max: spa::utils::Fraction,
+    step: Option<spa::utils::Fraction>,
+) -> spa::utils::Fraction {
+    use spa::utils::Fraction;
+    let value = |f: Fraction| {
+        if f.denom == 0 {
+            0.0
+        } else {
+            f64::from(f.num) / f64::from(f.denom)
+        }
+    };
+    let wanted = f64::from(fps);
+    let (lo, hi) = (value(min), value(max));
+    if wanted <= lo {
+        return min;
+    }
+    if hi > 0.0 && wanted >= hi {
+        return max;
+    }
+    let Some(step) = step.filter(|s| value(*s) > 0.0 && min.denom > 0) else {
+        return Fraction { num: fps, denom: 1 };
+    };
+    // min + k * step, k the first that reaches fps (as one fraction).
+    let k = ((wanted - lo) / value(step)).ceil() as u64;
+    let denom = u64::from(min.denom) * u64::from(step.denom);
+    let num =
+        u64::from(min.num) * u64::from(step.denom) + k * u64::from(step.num) * u64::from(min.denom);
+    let (mut a, mut b) = (num, denom);
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    let g = a.max(1);
+    let (num, denom) = (num / g, denom / g);
+    match (u32::try_from(num), u32::try_from(denom)) {
+        (Ok(num), Ok(denom)) if hi <= 0.0 || f64::from(num) / f64::from(denom) <= hi => {
+            Fraction { num, denom }
+        }
+        _ => max,
+    }
 }
 
 /// A Format pod naming one mode exactly.
@@ -1605,6 +1637,13 @@ mod tests {
             ),
             (Some(V::NV12), 1280, 720, 30)
         );
+        // A stepped rate (10 to 30 in steps of 10): on the step.
+        let f = |num| Fraction { num, denom: 1 };
+        assert_eq!(rate_in(15, f(10), f(30), Some(f(10))), f(20));
+        assert_eq!(rate_in(15, f(10), f(30), None), f(15));
+        assert_eq!(rate_in(5, f(10), f(30), Some(f(10))), f(10));
+        assert_eq!(rate_in(60, f(10), f(30), Some(f(10))), f(30));
+        assert_eq!(rate_in(28, f(10), f(25), Some(f(10))), f(25));
         // No rate: whatever it delivers (0/1).
         let modes = modes_of(
             &enum_format(Some(Value::Id(Id(V::YUY2.as_raw()))), size, None),

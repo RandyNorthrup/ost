@@ -3035,7 +3035,8 @@ Rectangle {
                             videoCard.cameras = list
                             videoCard.currentCamera = d.opens || ""
                         }
-                        if (backend.callState === "connected" || !list.length) return
+                        // (A call being set up or under way has the camera.)
+                        if ((backend.callState !== "" && backend.callState !== "ended") || !list.length) return
                         if (videoCard.previewing && !backend.cameraPreviewRunning()) {
                             videoCard.previewing = false
                             backend.setCameraPreview(false)
