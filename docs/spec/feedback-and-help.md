@@ -33,14 +33,28 @@ OST builds the same form natively; only the text that names Microsoft changes.
 | "Add more details", then 12 px #616161 "Drag and drop files here or paste an image from your clipboard". **Capture screenshot** (173.7 × 31.3, 20 px icon) and **Attach file** (116.1 × 31.3) | Same. Capture screenshot grabs OST's main window, and the files show as thumbnails with an ×. Dropping files and pasting images also work |
 | "Share relevant content samples and additional log files? **Learn more** \*" with **Yes, share** / **No, don't share** (32 px radios, 14 px #616161 labels) | Same. "Learn more" opens the help article "What feedback shares". Yes adds the support log's recent lines to the details file the reporter reviews and attaches (never to the issue URL), with names, addresses and tokens masked |
 | "May we contact you about your feedback? \*" with **Yes, you may contact me** / **No, don't contact me** | Same. Yes adds "The reporter is happy to answer questions on this issue." |
-| Footer (10 px): "Signed in as {email}. **Learn more** about how this data is used and your rights. By pressing Submit, your feedback will be used to improve Microsoft products and services. **Privacy statement.**" | "Signed in as {email}. **Learn more** about how this data is used and your rights. By pressing Submit, your feedback opens as a **public** issue on GitHub ({repo}) and will be used to improve OST. **Privacy statement.**" The links go to the help article and PRIVACY.md. The address is never put in the issue |
+| Footer (10 px): "Signed in as {email}. **Learn more** about how this data is used and your rights. By pressing Submit, your feedback will be used to improve Microsoft products and services. **Privacy statement.**" | "Signed in as {email}. **Learn more** about how this data is used and your rights. By pressing Submit, you see what goes to GitHub ({repo}) before your browser opens it as a **public** issue. Your feedback will be used to improve OST. **Privacy statement.**" The links go to the help article and PRIVACY.md. The address is never put in the issue |
 | **Submit** (96 × 31.3, brand; #F0F0F0 / #BDBDBD until the required answers are given) and **Cancel** (96 × 31.3, outline) | Same |
 
-**What Submit does.** It opens GitHub's new-issue page with the matching issue
-form (`.github/ISSUE_TEMPLATE/report-a-problem.yml` or
+**What Submit does.** Teams sends the form at once. OST adds a step first
+(issue #15, TASK-0336), drawn in the form's own type and buttons: "Before
+your browser opens" (20/600), a 14 px paragraph saying that the browser opens
+a new public issue filled in with the feedback and the contact answer, and
+that GitHub receives them as soon as the page opens, even if the reporter
+never selects Create; "What GitHub receives" with the title, the text and
+the contact answer in a box; a paragraph saying the screenshots, files,
+details and log lines stay on the device; and one offering the blank form.
+Its buttons (31.3 tall, 12 apart, at the end, 536 down) are **Open
+filled-in form** (brand), **Copy text and open a blank form** and **Back**
+(outline). Escape goes back.
+
+**Open filled-in form** opens GitHub's new-issue page with the matching
+issue form (`.github/ISSUE_TEMPLATE/report-a-problem.yml` or
 `give-a-compliment.yml`), filled from the URL with only what the reporter
 gave in the form: the title (the first line of the text), the text and the
 contact answer. Opening that page sends GitHub nothing else (TASK-0314).
+**Copy text and open a blank form** puts the text on the clipboard and opens
+the same form with nothing filled in (`?template=…` only).
 
 Everything else stays on the device until the reporter attaches it: OST
 writes **OST report details.txt** (0600) into the report's folder
@@ -49,12 +63,15 @@ knows about it, OST's version, the OS, the names of the files added and, when
 the reporter chose **Yes, share**, the support log's recent lines with names,
 addresses, ids and tokens masked. The folder opens with the issue page.
 
-GitHub can't take attachments in a URL. So OST copies the first screenshot to
-the clipboard and opens the folder holding the details file and the other
-files. Then it shows Teams' thank-you state, with one line added: "Finish on
-GitHub: review the report details in the folder that opened, drop the file
-in if you want to share it, and select Create." The reporter submits it on
-GitHub themselves; OST never posts anything on its own.
+GitHub can't take attachments in a URL. So with the filled-in form OST copies
+the first screenshot to the clipboard (with the blank form the clipboard
+holds the text), and either way opens the folder holding the details file
+and the other files. Then it shows Teams' thank-you state, with one line
+added: "Finish on GitHub: review the report details in the folder that
+opened, drop the file in if you want to share it, and select Create." (for
+the blank form: paste the text, add a title and the contact answer first).
+The reporter submits it on GitHub themselves; OST never posts anything on
+its own.
 
 ## 3. Suggest a feature
 

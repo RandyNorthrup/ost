@@ -19,11 +19,17 @@ import QtQuick.Dialogs
 //   #616161 at 58); "May we contact you about your feedback? *" at 394.7
 //   with Yes, you may contact me / No, don't contact me; the 10 px footer
 //   at 492; Submit and Cancel (96 x 31.3) at 510 and 618, 536 down.
-// - Submit (once the text and both answers are given) opens the repo's
-//   issue form with only the text typed and the contact answer, saves the
-//   rest (and the masked logs, when shared) to a file in the report's
-//   folder for the reporter to review and attach, puts the first picture
-//   on the clipboard, and says how to finish on GitHub.
+// - Submit (once the text and both answers are given) first shows what
+//   GitHub gets and when (OST's own step, issue #15: the filled-in form's
+//   address carries the title, the text and the contact answer, so GitHub
+//   has them as the page opens, even if the issue is never created), in
+//   the form's type and buttons. From there Open filled-in form opens the
+//   repo's issue form with only those and puts the first picture on the
+//   clipboard; Copy text and open a blank form puts the text on the
+//   clipboard and opens the empty form. Either way the rest (and the
+//   masked logs, when shared) is saved to a file in the report's folder
+//   for the reporter to review and attach, and the window says how to
+//   finish on GitHub.
 Window {
     id: win
     /// "problem" or "compliment".
@@ -48,6 +54,13 @@ Window {
     property int share: -1          // 0 yes, 1 no
     property int contact: -1
     property bool sent: false
+    /// Submit was pressed: what GitHub gets is shown before the browser
+    /// opens.
+    property bool reviewing: false
+    /// The blank form was opened (the text is on the clipboard).
+    property bool blankSent: false
+    readonly property string typed: text.text
+    readonly property string issueTitle: reviewing ? backend.feedbackIssueTitle(JSON.stringify({ kind: kind, text: typed })) : ""
     readonly property bool ready: text.text.trim().length > 0 && share >= 0 && contact >= 0
     function folder() { if (!dir) dir = backend.feedbackDir(); return dir }
     function addFile(p) { if (p && files.indexOf(p) < 0) files = files.concat([p]) }
@@ -56,15 +69,49 @@ Window {
         const path = folder() + "/Screenshot " + (files.filter(f => /Screenshot/.test(f)).length + 1) + ".png"
         captureTarget.grabToImage(r => { if (r.saveToFile(path)) win.addFile(path) })
     }
-    // Submit opens the issue form with only what you typed; the details,
-    // and the masked logs if you chose to share them, are saved in the
-    // report's folder (which opens) for you to review and drop in.
-    function submit() {
-        const report = { kind: kind, text: text.text, area: area, context: context, share_logs: share === 0, contact: contact === 0, files: files, dir: folder() }
+    // Submit shows what GitHub gets first; nothing opens yet.
+    function submit() { reviewing = true }
+    // Opens the issue form, filled in with only what you typed (or blank,
+    // your text on the clipboard); the details, and the masked logs if you
+    // chose to share them, are saved in the report's folder (which opens)
+    // for you to review and drop in.
+    function send(blank) {
+        const report = { kind: kind, text: text.text, area: area, context: context, share_logs: share === 0, contact: contact === 0, files: files, dir: folder(), blank: blank }
         const url = backend.feedbackIssueUrl(JSON.stringify(report))
-        Qt.openUrlExternally(url)
-        Qt.openUrlExternally("file://" + folder())
+        openUrl(url)
+        openUrl("file://" + folder())
+        blankSent = blank
+        reviewing = false
         sent = true
+    }
+    // --feedback-test logs the addresses instead of opening a browser.
+    readonly property bool dryRun: Qt.application.arguments.indexOf("--feedback-test") >= 0
+    function openUrl(u) {
+        if (dryRun) console.warn("FEEDBACK open", u)
+        else Qt.openUrlExternally(u)
+    }
+
+    // The window's buttons (96 x 31.3 at least, 14/600; brand or outline).
+    component DialogButton: Rectangle {
+        id: db
+        property string label
+        property bool primary: false
+        signal clicked()
+        width: Math.max(96, dbText.implicitWidth + 24); height: 31.3; radius: 4
+        color: db.primary ? (dbHover.hovered ? theme.brandHover : theme.brandFill)
+                          : dbTap.pressed ? theme.pick("#E0E0E0", "#2E2E2E", "#1AEBFF") : dbHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface
+        border.color: db.primary ? "transparent" : theme.stroke; border.width: db.primary ? 0 : 0.67
+        Rectangle { anchors.fill: parent; anchors.margins: -3; radius: 6; color: "transparent"; border.width: 2; border.color: theme.text; visible: db.activeFocus }
+        Text { id: dbText; anchors.centerIn: parent; text: db.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(db, db.primary ? theme.textOnBrand : theme.text) }
+        HoverHandler { id: dbHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { id: dbTap; onTapped: db.clicked() }
+        activeFocusOnTab: true
+        Keys.onSpacePressed: db.clicked()
+        Keys.onReturnPressed: db.clicked()
+        Keys.onEnterPressed: db.clicked()
+        Accessible.role: Accessible.Button
+        Accessible.name: db.label
+        Accessible.onPressAction: db.clicked()
     }
 
     Rectangle { anchors.fill: parent; color: theme.surface }
@@ -73,7 +120,7 @@ Window {
     // The form.
     Item {
         id: form
-        visible: !win.sent
+        visible: !win.sent && !win.reviewing
         x: 24; y: 58; width: parent.width - 48; height: parent.height - y
         Text {
             x: 24; y: 24; height: 28
@@ -240,7 +287,7 @@ Window {
             linkColor: theme.brandLink
             text: (backend.userMail ? qsTr("Signed in as %1.").arg(backend.userMail) + " " : "")
                 + "<a href=\"learn\">" + qsTr("Learn more") + "</a>"
-                + qsTr(" about how this data is used and your rights. By pressing Submit, your feedback opens as a public issue on GitHub (%1) and will be used to improve OST.").arg(backend.feedbackLink("repo").replace("https://github.com/", ""))
+                + qsTr(" about how this data is used and your rights. By pressing Submit, you see what goes to GitHub (%1) before your browser opens it as a public issue. Your feedback will be used to improve OST.").arg(backend.feedbackLink("repo").replace("https://github.com/", ""))
                 + " <a href=\"privacy\">" + qsTr("Privacy statement") + ".</a>"
             font.family: theme.font; font.pixelSize: 10; color: theme.textSecondary
             onLinkActivated: l => Qt.openUrlExternally(backend.feedbackLink(l === "privacy" ? "privacy" : "privacy-feedback"))
@@ -269,6 +316,88 @@ Window {
         }
     }
 
+    // After Submit: what GitHub gets, and when, before the browser opens.
+    Item {
+        id: review
+        visible: win.reviewing && !win.sent
+        x: 24; y: 58; width: parent.width - 48; height: parent.height - y
+        Text {
+            x: 24; y: 24; height: 28
+            text: qsTr("Before your browser opens")
+            font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
+            Accessible.role: Accessible.Heading
+        }
+        Flickable {
+            id: reviewScroll
+            x: 0; y: 58; width: parent.width; height: 484.7 - 58
+            contentHeight: reviewCol.height + 8
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            Column {
+                id: reviewCol
+                x: 26; y: 4; width: Math.min(669.3, reviewScroll.width - 40)
+                spacing: 12
+                Text {
+                    width: parent.width
+                    wrapMode: Text.Wrap
+                    text: qsTr("Your browser opens a new public issue on GitHub (%1), filled in with your feedback and your answer to “May we contact you about your feedback?” GitHub receives them as soon as the page opens, even if you never select Create.").arg(backend.feedbackRepo())
+                    font.family: theme.font; font.pixelSize: 14; color: theme.text
+                }
+                Text {
+                    text: qsTr("What GitHub receives")
+                    font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
+                }
+                Rectangle {
+                    id: sentBox
+                    width: parent.width; height: sentCol.height + 16; radius: 4
+                    color: theme.pick("#FAFAFA", "#1F1F1F", "#000000")
+                    border.color: theme.stroke; border.width: 0.67
+                    Column {
+                        id: sentCol
+                        x: 12; y: 8; width: parent.width - 24
+                        spacing: 4
+                        Text {
+                            width: parent.width; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                            text: win.issueTitle
+                            font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(sentBox, theme.text)
+                        }
+                        Text {
+                            width: parent.width; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                            maximumLineCount: 8; elide: Text.ElideRight
+                            text: win.typed.trim()
+                            font.family: theme.font; font.pixelSize: 14; color: theme.onFill(sentBox, theme.text)
+                        }
+                        Text {
+                            width: parent.width; wrapMode: Text.Wrap
+                            text: win.contact === 0 ? qsTr("Yes, you may contact me") : qsTr("No, don't contact me")
+                            font.family: theme.font; font.pixelSize: 12; color: theme.onFill(sentBox, theme.textSecondary)
+                        }
+                    }
+                }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.Wrap
+                    text: qsTr("Your screenshots, files and the report details stay on this device, with OST's log lines if you chose to share them. OST opens their folder so you can review them and attach only what you want.")
+                    font.family: theme.font; font.pixelSize: 14; color: theme.text
+                }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.Wrap
+                    text: qsTr("To send GitHub nothing until you select Create, copy your text and open a blank form instead. Then paste your text into it.")
+                    font.family: theme.font; font.pixelSize: 14; color: theme.text
+                }
+            }
+        }
+        Row {
+            x: Math.max(24, parent.width - 24 - width); y: 536
+            spacing: 12
+            DialogButton { primary: true; label: qsTr("Open filled-in form"); onClicked: win.send(false) }
+            DialogButton { label: qsTr("Copy text and open a blank form"); onClicked: win.send(true) }
+            DialogButton { label: qsTr("Back"); onClicked: win.reviewing = false }
+        }
+    }
+
     // After Submit: finish on GitHub.
     Item {
         visible: win.sent
@@ -282,7 +411,9 @@ Window {
         Text {
             y: thanks.height + 16; width: parent.width
             wrapMode: Text.Wrap
-            text: win.files.length
+            text: win.blankSent
+                ? qsTr("Finish on GitHub: your text is on the clipboard. Paste it (Ctrl+V) into the form, add a title and whether we may contact you, review the report details and any other files in the folder that opened, drop in what you want to share, and select Create.")
+                : win.files.length
                 ? qsTr("Finish on GitHub: paste your screenshot (Ctrl+V), review the report details and any other files in the folder that opened, drop in what you want to share, and select Create.")
                 : qsTr("Finish on GitHub: review the report details in the folder that opened, drop the file in if you want to share it, and select Create.")
             font.family: theme.font; font.pixelSize: 14; color: theme.text
@@ -306,9 +437,11 @@ Window {
         fileMode: FileDialog.OpenFiles
         onAccepted: { for (const u of selectedFiles) win.addFile(decodeURIComponent(String(u).replace(/^file:\/\//, ""))) }
     }
-    Shortcut { sequence: "Escape"; onActivated: win.close() }
+    Shortcut { sequence: "Escape"; onActivated: if (win.reviewing && !win.sent) win.reviewing = false; else win.close() }
 
     // Test hooks.
     function fillForTest(t, s, c) { text.text = t; share = s; contact = c }
     function captureForTest() { capture() }
+    function reviewForTest() { submit() }
+    function sendForTest(blank) { send(blank) }
 }

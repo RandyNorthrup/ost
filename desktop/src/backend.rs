@@ -839,12 +839,19 @@ pub mod qobject {
         fn find_people(self: Pin<&mut Backend>, channel: &QString, keyword: &QString);
         /// Feedback (Report a problem / Give a compliment): the repo's new
         /// issue form filled in from `report_json` ({kind, text, area,
-        /// context, share_logs, contact, files, dir}) with only the text
-        /// typed; the rest (and the masked logs, when shared) is saved to
-        /// `dir`'s report details file for the reporter to review and
-        /// attach. The first picture goes on the clipboard to paste.
+        /// context, share_logs, contact, files, dir, blank}) with only the
+        /// text typed and the contact answer (GitHub gets them when the
+        /// page opens), or with `blank` the empty form, the text then on
+        /// the clipboard to paste; the rest (and the masked logs, when
+        /// shared) is saved to `dir`'s report details file for the
+        /// reporter to review and attach. Otherwise the first picture goes
+        /// on the clipboard to paste.
         #[qinvokable]
         fn feedback_issue_url(self: Pin<&mut Backend>, report_json: &QString) -> QString;
+        /// The title the filled-in issue form gets for `report_json`
+        /// ({kind, text}).
+        #[qinvokable]
+        fn feedback_issue_title(self: &Backend, report_json: &QString) -> QString;
         /// The feedback repo's pages: "ideas" (Suggest a feature), "privacy",
         /// "privacy-feedback", "repo".
         #[qinvokable]
@@ -3641,8 +3648,9 @@ pub struct BackendRust {
     active_signers: Vec<String>,
     /// We are a Signer in this meeting (we published dhhSigner).
     sign_signer: bool,
-    /// The sign detection model is being fetched.
-    sign_model_loading: bool,
+    /// When the sign detection model may be fetched (again): one at a
+    /// time, waiting longer after each failure.
+    sign_model_retry: teams_cli::calling::sign_detection::Retry,
     /// The 500 ms sign detection ticker runs.
     sign_ticker: bool,
     call_muted_by_meeting: bool,
@@ -14953,14 +14961,32 @@ impl qobject::Backend {
             tracing::info!(on, ready = sd::ready(), "sign language detection");
             sd::set_enabled(on);
         }
-        if on && !sd::ready() && !self.rust().sign_model_loading {
-            self.as_mut().rust_mut().sign_model_loading = true;
+        if on
+            && !sd::ready()
+            && self
+                .as_mut()
+                .rust_mut()
+                .sign_model_retry
+                .try_start(sd::now_ms())
+        {
             let qt = self.qt_thread();
             runtime().spawn(async move {
-                if let Err(e) = sd::prepare(&cache_base()).await {
-                    tracing::warn!("sign language detection unavailable: {}", short_error(&e));
-                }
-                let _ = qt.queue(|mut this| this.as_mut().rust_mut().sign_model_loading = false);
+                let result = sd::prepare(&cache_base()).await;
+                let _ = qt.queue(move |mut this| {
+                    let retry = &mut this.as_mut().rust_mut().sign_model_retry;
+                    match result {
+                        Ok(()) => retry.succeeded(),
+                        Err(e) => {
+                            let wait = retry.failed(sd::now_ms());
+                            tracing::warn!(
+                                failures = retry.failures(),
+                                retry_in_s = wait / 1000,
+                                "sign language detection unavailable: {}",
+                                short_error(&e)
+                            );
+                        }
+                    }
+                });
             });
         }
         let messages = sd::tick(sd::now_ms());
@@ -16486,7 +16512,13 @@ impl qobject::Backend {
     ) {
         let kind = kind.to_string();
         // Teams detects signing only for a Signer (isVideoDHHSigner).
-        self.as_mut().rust_mut().sign_signer = kind == "dhhSigner";
+        let signer = kind == "dhhSigner";
+        if signer && !self.rust().sign_signer {
+            // Turned on again: a model that failed to download is tried
+            // again at once.
+            self.as_mut().rust_mut().sign_model_retry.reset();
+        }
+        self.as_mut().rust_mut().sign_signer = signer;
         if !self.rust().sign_ticker {
             self.as_mut().rust_mut().sign_ticker = true;
             let qt = self.qt_thread();
@@ -19099,10 +19131,14 @@ impl qobject::Backend {
         let text = report_json.to_string();
         let mut report: teams_cli::feedback::Report =
             serde_json::from_str(&text).unwrap_or_default();
-        let dir = serde_json::from_str::<serde_json::Value>(&text)
-            .ok()
-            .and_then(|v| v["dir"].as_str().map(std::path::PathBuf::from))
+        let v = serde_json::from_str::<serde_json::Value>(&text).unwrap_or_default();
+        let dir = v["dir"]
+            .as_str()
+            .map(std::path::PathBuf::from)
             .filter(|d| d.starts_with(feedback_base()));
+        // Copy text and open a blank form: GitHub gets nothing typed until
+        // the reporter pastes it and submits.
+        let blank = v["blank"].as_bool().unwrap_or(false);
         // The report goes to GitHub in English, whatever the app language:
         // where it was sent from, as OST's English.
         report.area = teams_cli::i18n::english(&report.area);
@@ -19126,16 +19162,28 @@ impl qobject::Backend {
                 .inspect_err(|e| tracing::warn!("saving the report details failed: {e}"))
                 .is_ok()
         });
-        let url = teams_cli::feedback::issue_url(&report);
+        let url = if blank {
+            teams_cli::feedback::blank_issue_url(&report)
+        } else {
+            teams_cli::feedback::issue_url(&report)
+        };
         // The diagnostic data a report carries (View Diagnostic Data).
         api::ddv::record(
             "Ost.Feedback.Report",
             json!({
                 "kind": report.kind, "area": report.area, "version": version, "os": teams_cli::feedback::os_name(),
                 "logsSavedForReview": saved && !logs.is_empty(), "contact": report.contact, "files": report.files.len(),
-                "destination": teams_cli::feedback::repo(), "url": url,
+                "destination": teams_cli::feedback::repo(), "url": url, "prefilled": !blank,
             }),
         );
+        if blank {
+            if let Ok(t) = std::ffi::CString::new(report.text.as_str()) {
+                // SAFETY: NUL-terminated strings, copied by Qt before
+                // returning.
+                unsafe { ost_set_clipboard(t.as_ptr(), c"".as_ptr()) };
+            }
+            return QString::from(url.as_str());
+        }
         // GitHub takes pictures by paste: the first one goes on the clipboard.
         let picture = report.files.iter().find(|f| {
             let f = f.to_ascii_lowercase();
@@ -19148,6 +19196,12 @@ impl qobject::Backend {
             unsafe { ost_set_clipboard_image(p.as_ptr()) };
         }
         QString::from(url.as_str())
+    }
+
+    pub fn feedback_issue_title(&self, report_json: &QString) -> QString {
+        let report: teams_cli::feedback::Report =
+            serde_json::from_str(&report_json.to_string()).unwrap_or_default();
+        QString::from(teams_cli::feedback::title(&report).as_str())
     }
 
     pub fn duration_text(&self, kind: &QString, seconds: i64) -> QString {

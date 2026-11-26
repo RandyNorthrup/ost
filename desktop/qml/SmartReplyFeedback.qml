@@ -140,7 +140,7 @@ Popup {
         Item { width: 1; height: 14 }
         Text {
             width: parent.width
-            text: qsTr("Your feedback opens as a public issue on GitHub (%1).").arg(backend.feedbackRepo())
+            text: qsTr("Send opens a public issue form on GitHub (%1) in your browser with what you picked and typed. GitHub receives it as soon as the page opens, even if you never select Create.").arg(backend.feedbackRepo())
             wrapMode: Text.Wrap
             font.family: theme.font; font.pixelSize: 12
             lineHeight: 16; lineHeightMode: Text.FixedHeight
