@@ -4,7 +4,7 @@ title: Teams desktop draws OST's Standout/Reporter camera with a black box
 status: To Do
 assignee: []
 created_date: '2026-11-26T21:39:00Z'
-updated_date: '2026-11-26T21:39:00Z'
+updated_date: '2026-11-26T21:44:00Z'
 labels:
   - bug
   - calls
@@ -32,7 +32,6 @@ Also seen in the same check: while OST controlled Teams' shared test window, "OS
 <!-- AC:BEGIN -->
 - [ ] #1 OST's Standout and Reporter camera shows cut out, with no black box, in Teams desktop, verified live
 - [ ] #2 Keys OST sends while controlling a Teams share arrive with their modifiers, verified live
-- [ ] #3 OST's Take control request to a Teams desktop sharer brings up Teams' request alert (twice on 2026-11-26 Teams answered Available with AvailableAck but showed no alert for the ControlRequest, which timed out; it worked on 2026-11-16), verified live
 <!-- AC:END -->
 
 ## Implementation Notes

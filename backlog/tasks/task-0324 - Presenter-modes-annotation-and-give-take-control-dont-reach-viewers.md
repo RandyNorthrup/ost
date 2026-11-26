@@ -1,11 +1,11 @@
 ---
 id: TASK-0324
 title: Presenter modes, annotation and give/take control don't reach viewers
-status: Done
+status: In Progress
 assignee:
   - '@meet'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T21:40:00Z'
+updated_date: '2026-11-26T21:44:00Z'
 labels:
   - bug
   - calls
@@ -21,7 +21,7 @@ Found while capturing wiki screenshots (2026-11-25). Shares started with a prese
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] #1 Presenter modes, annotation and give/take control work between OST and Teams in both directions, verified live with test accounts
+- [ ] #1 Presenter modes, annotation and give/take control work between OST and Teams in both directions, verified live with test accounts
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -57,44 +57,16 @@ Found while capturing wiki screenshots (2026-11-25). Shares started with a prese
   - Shares on winpc: only a throwaway test window ("OST TEST 324 window"). On linuxlt: KWrite, or KDE's "Share virtual screen".
 - OST presents, Teams desktop views.
   - Standout, then Reporter (switched by Layout): Teams showed "Content shared by OST Test 2 in presentation mode" and laid the camera out by mode.
-  - Teams draws OST's cut-out camera with a black box instead of transparency. Follow-up: TASK-0342.
+  - Teams draws OST's cut-out camera with a black box instead of transparency (a later task tracks it).
 - Teams presents, OST views. winpc's C920 was on for about 5 minutes; no frames were kept, and OST's stage captures were deleted unseen.
   - Standout, then Reporter and Side-by-side from Teams' Layout menu.
   - OST Test 3 received each layout and composited it: Weatherperson, NewsAnchor with Teams' "Futuristic room" background, and SideBySide with the content left and the presenter right.
   - Teams' camera arrived with the implicit mask.
 - Give/take control.
-  - Teams gives control to OST: GiveControl, OST Ack, controlling. OST clicked and typed into Teams' shared test window; it arrived as "OST TESt", see TASK-0342.
+  - Teams gives control to OST: GiveControl, OST Ack, controlling. OST clicked and typed into Teams' shared test window; it arrived as "OST TESt" (a later task tracks it).
   - OST gives control to Teams (OST sharing a KDE virtual screen): GiveControl, Teams Ack, and Teams showed Stop control.
   - Teams takes control of OST: Teams' "Request control?" then Request, ControlRequest, OST AcceptRequest, Teams Ack and Stop control; Teams' Stop control sent Terminate (reason 6), which OST acknowledged.
   - The desktop Remote Control prompt on linuxlt was dismissed each time, so no input reached a real desktop.
-  - Not shown by Teams: OST's own Take control request to a Teams desktop sharer. Teams answered Available with AvailableAck, but showed no alert for the ControlRequest, which timed out after 30 s, twice. It worked on 2026-11-16. Added to TASK-0342.
+  - Not shown by Teams: OST's own Take control request to a Teams desktop sharer. Teams answered Available with AvailableAck, but showed no alert for the ControlRequest, which timed out after 30 s, twice. It worked on 2026-11-16. This part of AC #1 is still open.
 - Cleanup: OBS, installed briefly for a virtual camera that Teams' WebView2 doesn't list, was uninstalled. The winpc test window and tasks are removed; Teams is left running as found.
 <!-- SECTION:NOTES:END -->
-
-## Final Summary
-
-<!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Shares started with a presenter mode, with Annotate, or with give/take control now reach viewers, OST and Teams, both ways.
-
-Causes, fixed in PR #16:
-- Every new sender on a video line restarted its RTP numbering. SRTP then reused packet indexes, and the meeting dropped the second share in a call (and a camera turned on again) as replays.
-- SRTP counted a rollover only on seeing 65535.
-- A camera turned on in the lobby was lost when the lobby let us in.
-
-Changes (PR #16):
-- `webrtc_video::RtpLine` carries each line's sequence numbers and timestamp clock across senders.
-- SRTP counts a rollover from the last sequence number it protected (RFC 3711).
-- On admission, the old media session releases the camera before the new session opens it.
-- Specs updated.
-
-Live checks:
-- OST to OST: Standout, Reporter and Side-by-side with a background, Annotate, Take control and a second share in one call. Teams on the web saw both shares.
-- With Teams desktop on winpc (2026-11-26):
-  - Each presenter mode reached the other side, both ways. OST composited Teams' layouts with Teams' mask.
-  - Control: Teams gave control to OST, OST gave control to Teams, and Teams took control of OST, each ending cleanly.
-
-Follow-ups in TASK-0342:
-- Teams desktop draws OST's cut-out camera with a black box.
-- One typed key lost its Shift.
-- Teams showed no alert for OST's own control request.
-<!-- SECTION:FINAL_SUMMARY:END -->
