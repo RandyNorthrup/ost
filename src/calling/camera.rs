@@ -232,6 +232,18 @@ impl CameraCapture {
         height: u32,
         fps: u32,
     ) -> Result<(Self, mpsc::Receiver<YuvFrame>)> {
+        Self::start_cancellable(device, width, height, fps, None)
+    }
+
+    /// As [`start`](Self::start); setting `cancel` while a PipeWire camera
+    /// is still being linked ends that and fails.
+    pub fn start_cancellable(
+        device: Option<&str>,
+        width: u32,
+        height: u32,
+        fps: u32,
+        cancel: Option<&AtomicBool>,
+    ) -> Result<(Self, mpsc::Receiver<YuvFrame>)> {
         if device == Some(AVATAR_DEVICE) {
             return Ok(Self::avatar(width, height, fps));
         }
@@ -262,7 +274,7 @@ impl CameraCapture {
                 .cloned(),
         };
         match through_pw {
-            Some(cam) => Self::start_pipewire(&cam, width, height, fps),
+            Some(cam) => Self::start_pipewire(&cam, width, height, fps, cancel),
             // Through the portal only (see v4l2_fallback).
             None if camera_pw::use_portal() => {
                 super::device_health::note_camera(if camera_pw::denied() {
@@ -281,6 +293,7 @@ impl CameraCapture {
         width: u32,
         height: u32,
         fps: u32,
+        cancel: Option<&AtomicBool>,
     ) -> Result<(Self, mpsc::Receiver<YuvFrame>)> {
         if let Some(path) = &cam.v4l2_path {
             // Teams' "Automatically adjust camera controls", where chosen.
@@ -289,7 +302,7 @@ impl CameraCapture {
         let (tx, rx) = mpsc::sync_channel::<YuvFrame>(2);
         let stop = Arc::new(AtomicBool::new(false));
         let run = super::device_health::camera_started();
-        match camera_pw::capture(cam, width, height, fps, tx, stop.clone()) {
+        match camera_pw::capture(cam, width, height, fps, tx, stop.clone(), cancel) {
             Ok(handle) => Ok((
                 CameraCapture {
                     handle: Some(handle),
