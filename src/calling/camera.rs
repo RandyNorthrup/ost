@@ -30,6 +30,7 @@ use v4l::io::traits::CaptureStream;
 use v4l::video::Capture;
 use v4l::{Device, FourCC};
 
+use super::camera_mode;
 use super::camera_node::{self, Listing, SysNode, Verdict};
 use super::camera_pw::{self, PwCamera, PwV4l2Node};
 use super::pixfmt::{self, PixelFormat};
@@ -496,25 +497,46 @@ impl CameraCapture {
         // Teams' "Automatically adjust camera controls", where chosen.
         super::camera_controls::apply_preferred(path);
 
-        // The best format it offers (a loopback device fed already offers
-        // just its producer's).
+        // The best of the modes it offers (camera_mode; a loopback device
+        // fed already offers just its producer's). Without a list, the
+        // best format at the size asked, as the driver rounds it.
         let mut fmt = dev
             .format()
             .inspect_err(|_| failed())
             .context("Failed to get camera format")?;
-        let offered: Vec<FourCC> = dev
-            .enum_formats()
-            .map(|f| f.into_iter().map(|d| d.fourcc).collect())
-            .unwrap_or_default();
-        if let Some(best) = offered
-            .iter()
-            .filter(|c| PixelFormat::from_fourcc(&c.repr).is_some())
-            .min_by_key(|c| PixelFormat::from_fourcc(&c.repr).map_or(u8::MAX, PixelFormat::rank))
-        {
-            fmt.fourcc = *best;
+        let mut modes = v4l2_modes(&dev, (width, height), fps);
+        camera_mode::order(&mut modes, (width, height), fps);
+        let mode = modes.first().copied();
+        if let Some(m) = mode {
+            tracing::info!(
+                path,
+                modes = modes.len(),
+                fourcc = %m.format,
+                m.width,
+                m.height,
+                fps = format!("{}/{}", m.fps_num, m.fps_den),
+                "camera mode"
+            );
+            fmt.fourcc = m.format;
+            fmt.width = m.width;
+            fmt.height = m.height;
+        } else {
+            let offered: Vec<FourCC> = dev
+                .enum_formats()
+                .map(|f| f.into_iter().map(|d| d.fourcc).collect())
+                .unwrap_or_default();
+            if let Some(best) = offered
+                .iter()
+                .filter(|c| PixelFormat::from_fourcc(&c.repr).is_some())
+                .min_by_key(|c| {
+                    PixelFormat::from_fourcc(&c.repr).map_or(u8::MAX, PixelFormat::rank)
+                })
+            {
+                fmt.fourcc = *best;
+            }
+            fmt.width = width;
+            fmt.height = height;
         }
-        fmt.width = width;
-        fmt.height = height;
         let actual = dev
             .set_format(&fmt)
             .inspect_err(|_| failed())
@@ -536,7 +558,12 @@ impl CameraCapture {
 
         // Set frame rate via stream parameters
         if let Ok(mut params) = dev.params() {
-            params.interval = v4l::Fraction::new(1, fps);
+            params.interval = match mode {
+                Some(m) if m.fps_num > 0 && m.fps_den > 0 => {
+                    v4l::Fraction::new(m.fps_den, m.fps_num)
+                }
+                _ => v4l::Fraction::new(1, fps),
+            };
             let _ = dev.set_params(&params);
         }
 
@@ -570,6 +597,61 @@ impl CameraCapture {
             rx,
         ))
     }
+}
+
+/// The modes an open V4L2 node offers in the formats OST reads (a
+/// stepwise size or rate taken at `want` / `fps` within it).
+fn v4l2_modes(dev: &Device, want: (u32, u32), fps: u32) -> Vec<camera_mode::Mode<FourCC>> {
+    use v4l::frameinterval::FrameIntervalEnum;
+    use v4l::framesize::FrameSizeEnum;
+    let mut out = Vec::new();
+    for desc in dev.enum_formats().unwrap_or_default() {
+        let Some(pixel) = PixelFormat::from_fourcc(&desc.fourcc.repr) else {
+            continue;
+        };
+        for size in dev.enum_framesizes(desc.fourcc).unwrap_or_default() {
+            let (w, h) = match size.size {
+                FrameSizeEnum::Discrete(d) => (d.width, d.height),
+                FrameSizeEnum::Stepwise(s) => (
+                    camera_mode::in_range(want.0, s.min_width, s.max_width, s.step_width),
+                    camera_mode::in_range(want.1, s.min_height, s.max_height, s.step_height),
+                ),
+            };
+            let mode = |fps_num, fps_den| camera_mode::Mode {
+                format: desc.fourcc,
+                pixel,
+                width: w,
+                height: h,
+                fps_num,
+                fps_den,
+            };
+            let rates = dev
+                .enum_frameintervals(desc.fourcc, w, h)
+                .unwrap_or_default();
+            if rates.is_empty() {
+                out.push(mode(0, 1));
+            }
+            for r in rates {
+                match r.interval {
+                    // An interval: frames per second is its inverse.
+                    FrameIntervalEnum::Discrete(f) => out.push(mode(f.denominator, f.numerator)),
+                    FrameIntervalEnum::Stepwise(s) => {
+                        let rate = |f: v4l::Fraction| {
+                            if f.numerator == 0 {
+                                0
+                            } else {
+                                f.denominator / f.numerator
+                            }
+                        };
+                        // The longest interval is the lowest rate.
+                        let (lo, hi) = (rate(s.max), rate(s.min));
+                        out.push(mode(fps.clamp(lo.min(hi), hi.max(lo)).max(1), 1));
+                    }
+                }
+            }
+        }
+    }
+    out
 }
 
 /// A V4L2 capture's negotiated picture.

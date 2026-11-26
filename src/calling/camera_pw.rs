@@ -22,6 +22,7 @@ use pipewire as pw;
 use pw::spa;
 
 use super::camera::YuvFrame;
+use super::camera_mode::{self, Mode};
 use super::camera_node::{NodeInfo, Verdict};
 use super::pixfmt::{self, PixelFormat, Plane};
 
@@ -644,6 +645,265 @@ fn format_pod(mjpg: bool, want: (u32, u32), max: (u32, u32), fps: u32) -> Result
     })
 }
 
+/// A camera mode as PipeWire names its format: a raw SPA video format,
+/// or `None` for Motion JPEG.
+type SpaMode = Mode<Option<spa::param::video::VideoFormat>>;
+
+/// The modes one of a camera's EnumFormat params offers, in the formats
+/// OST reads. A size or rate given as a range is taken at `want` / `fps`
+/// within it.
+fn modes_of(param: &spa::pod::Value, want: (u32, u32), fps: u32) -> Vec<SpaMode> {
+    use spa::param::format::{FormatProperties as F, MediaSubtype, MediaType};
+    use spa::pod::{ChoiceValue, Value};
+    use spa::utils::{ChoiceEnum, Fraction, Id, Rectangle};
+    fn values<T: Clone + spa::pod::CanonicalFixedSizedPod>(
+        c: &ChoiceEnum<T>,
+        ranged: impl Fn(&T, &T, Option<&T>) -> T,
+    ) -> Vec<T> {
+        match c {
+            ChoiceEnum::None(v) => vec![v.clone()],
+            ChoiceEnum::Enum {
+                default,
+                alternatives,
+            } => {
+                let mut v = vec![default.clone()];
+                v.extend(alternatives.iter().cloned());
+                v
+            }
+            ChoiceEnum::Range { min, max, .. } => vec![ranged(min, max, None)],
+            ChoiceEnum::Step { min, max, step, .. } => vec![ranged(min, max, Some(step))],
+            ChoiceEnum::Flags { .. } => Vec::new(),
+        }
+    }
+    let Value::Object(obj) = param else {
+        return Vec::new();
+    };
+    let get = |key: F| {
+        obj.properties
+            .iter()
+            .find(|p| p.key == key.as_raw())
+            .map(|p| &p.value)
+    };
+    if get(F::MediaType) != Some(&Value::Id(Id(MediaType::Video.as_raw()))) {
+        return Vec::new();
+    }
+    let mjpg = match get(F::MediaSubtype) {
+        Some(Value::Id(Id(s))) if *s == MediaSubtype::Mjpg.as_raw() => true,
+        Some(Value::Id(Id(s))) if *s == MediaSubtype::Raw.as_raw() => false,
+        _ => return Vec::new(),
+    };
+    let formats: Vec<(Option<spa::param::video::VideoFormat>, PixelFormat)> = if mjpg {
+        vec![(None, PixelFormat::Mjpg)]
+    } else {
+        let ids = match get(F::VideoFormat) {
+            Some(Value::Id(id)) => vec![*id],
+            Some(Value::Choice(ChoiceValue::Id(c))) => values(&c.1, |a, _, _| *a),
+            _ => Vec::new(),
+        };
+        let mut seen = Vec::new();
+        ids.into_iter()
+            .filter_map(|Id(raw)| {
+                raw_formats()
+                    .into_iter()
+                    .find(|(v, _)| v.as_raw() == raw)
+                    .map(|(v, p)| (Some(v), p))
+            })
+            .filter(|f| {
+                let new = !seen.contains(&f.0);
+                seen.push(f.0);
+                new
+            })
+            .collect()
+    };
+    let sizes: Vec<Rectangle> = match get(F::VideoSize) {
+        Some(Value::Rectangle(r)) => vec![*r],
+        Some(Value::Choice(ChoiceValue::Rectangle(c))) => {
+            values(&c.1, |min, max, step| Rectangle {
+                width: camera_mode::in_range(
+                    want.0,
+                    min.width,
+                    max.width,
+                    step.map_or(1, |s| s.width),
+                ),
+                height: camera_mode::in_range(
+                    want.1,
+                    min.height,
+                    max.height,
+                    step.map_or(1, |s| s.height),
+                ),
+            })
+        }
+        _ => Vec::new(),
+    };
+    let rates: Vec<Fraction> = match get(F::VideoFramerate) {
+        Some(Value::Fraction(f)) => vec![*f],
+        Some(Value::Choice(ChoiceValue::Fraction(c))) => values(&c.1, |min, max, _| {
+            let rate = |f: &Fraction| {
+                if f.denom == 0 {
+                    0.0
+                } else {
+                    f64::from(f.num) / f64::from(f.denom)
+                }
+            };
+            let wanted = f64::from(fps);
+            if wanted < rate(min) {
+                *min
+            } else if rate(max) > 0.0 && wanted > rate(max) {
+                *max
+            } else {
+                Fraction { num: fps, denom: 1 }
+            }
+        }),
+        // No rate given: whatever it delivers.
+        None => vec![Fraction { num: 0, denom: 1 }],
+        _ => Vec::new(),
+    };
+    let mut modes = Vec::new();
+    for &(format, pixel) in &formats {
+        for size in &sizes {
+            for rate in &rates {
+                modes.push(Mode {
+                    format,
+                    pixel,
+                    width: size.width,
+                    height: size.height,
+                    fps_num: rate.num,
+                    fps_den: rate.denom,
+                });
+            }
+        }
+    }
+    modes
+}
+
+/// A Format pod naming one mode exactly.
+fn mode_pod(mode: &SpaMode) -> Result<Vec<u8>> {
+    use spa::param::format::{FormatProperties as F, MediaSubtype, MediaType};
+    use spa::pod::{Object, Property, PropertyFlags, Value};
+    use spa::utils::{Fraction, Id, Rectangle};
+    let prop = |key: F, value: Value| Property {
+        key: key.as_raw(),
+        flags: PropertyFlags::empty(),
+        value,
+    };
+    let mut properties = vec![
+        prop(F::MediaType, Value::Id(Id(MediaType::Video.as_raw()))),
+        prop(
+            F::MediaSubtype,
+            Value::Id(Id(match mode.format {
+                None => MediaSubtype::Mjpg,
+                Some(_) => MediaSubtype::Raw,
+            }
+            .as_raw())),
+        ),
+    ];
+    if let Some(f) = mode.format {
+        properties.push(prop(F::VideoFormat, Value::Id(Id(f.as_raw()))));
+    }
+    properties.push(prop(
+        F::VideoSize,
+        Value::Rectangle(Rectangle {
+            width: mode.width,
+            height: mode.height,
+        }),
+    ));
+    properties.push(prop(
+        F::VideoFramerate,
+        Value::Fraction(Fraction {
+            num: mode.fps_num,
+            denom: mode.fps_den.max(1),
+        }),
+    ));
+    serialize(Object {
+        type_: spa::utils::SpaTypes::ObjectParamFormat.as_raw(),
+        id: spa::param::ParamType::EnumFormat.as_raw(),
+        properties,
+    })
+}
+
+/// How many of a camera's modes a stream offers, best first.
+const MODES_OFFERED: usize = 8;
+
+/// The camera node `id`'s EnumFormat params (its modes), asked over
+/// `core` on `mainloop`'s loop; empty when it doesn't answer in time.
+fn node_formats(
+    mainloop: &pw::main_loop::MainLoopRc,
+    core: &pw::core::CoreRc,
+    id: u32,
+) -> Vec<spa::pod::Value> {
+    use pw::types::ObjectType;
+    let Ok(registry) = core.get_registry_rc() else {
+        return Vec::new();
+    };
+    let params: Rc<RefCell<Vec<spa::pod::Value>>> = Rc::default();
+    let bound: Rc<RefCell<Option<Box<dyn std::any::Any>>>> = Rc::default();
+    // 0: looking for the node; 1: its params asked; 2: done.
+    let stage = Rc::new(Cell::new(0u8));
+    let seq = Rc::new(Cell::new(None));
+    let _registry_listener = registry
+        .add_listener_local()
+        .global({
+            let (registry, params, bound) = (registry.clone(), params.clone(), bound.clone());
+            move |global| {
+                if global.id != id || global.type_ != ObjectType::Node || bound.borrow().is_some() {
+                    return;
+                }
+                let Ok(node) = registry.bind::<pw::node::Node, _>(global) else {
+                    return;
+                };
+                let params = params.clone();
+                let listener = node
+                    .add_listener_local()
+                    .param(move |_, kind, _, _, pod| {
+                        if kind != spa::param::ParamType::EnumFormat {
+                            return;
+                        }
+                        if let Some(pod) = pod
+                            && let Ok((_, value)) =
+                                spa::pod::deserialize::PodDeserializer::deserialize_any_from(
+                                    pod.as_bytes(),
+                                )
+                        {
+                            params.borrow_mut().push(value);
+                        }
+                    })
+                    .register();
+                node.enum_params(0, Some(spa::param::ParamType::EnumFormat), 0, u32::MAX);
+                *bound.borrow_mut() = Some(Box::new((node, listener)));
+            }
+        })
+        .register();
+    let _core_listener = core
+        .add_listener_local()
+        .done({
+            let (core, stage, seq, bound) =
+                (core.clone(), stage.clone(), seq.clone(), bound.clone());
+            move |cid, s| {
+                if cid != pw::core::PW_ID_CORE || seq.get() != Some(s) {
+                    return;
+                }
+                // The globals are in: if the node was found, one more
+                // round trip brings its params.
+                if stage.get() == 0 && bound.borrow().is_some() {
+                    stage.set(1);
+                    seq.set(core.sync(0).ok());
+                } else {
+                    stage.set(2);
+                }
+            }
+        })
+        .register();
+    seq.set(core.sync(0).ok());
+    let until = std::time::Instant::now() + Duration::from_millis(1500);
+    while stage.get() < 2 && std::time::Instant::now() < until {
+        mainloop
+            .loop_()
+            .iterate(pw::loop_::Timeout::Finite(Duration::from_millis(50)));
+    }
+    drop(bound.borrow_mut().take());
+    params.take()
+}
+
 /// Buffers OST can read without a GPU: memory it can map.
 fn buffers_pod() -> Result<Vec<u8>> {
     use spa::pod::{ChoiceValue, Object, Property, PropertyFlags, Value};
@@ -876,16 +1136,47 @@ fn stream(
         })
         .register()?;
 
-    // Preferred: raw at about the size asked; then raw up to twice that;
-    // then any raw size; then Motion JPEG.
-    let twice = (want.0 * 2, want.1 * 2);
-    let pods = [
-        format_pod(false, want, want, fps)?,
-        format_pod(false, want, twice, fps)?,
-        format_pod(false, want, (8192, 8192), fps)?,
-        format_pod(true, want, twice, fps)?,
-        format_pod(true, want, (8192, 8192), fps)?,
-    ];
+    // The camera's own modes, best first (camera_mode): a camera asked
+    // for a mode it lacks may fail to start. Without them (no answer in
+    // time), ranges: raw at about the size asked; then raw up to twice
+    // that; then any raw size; then Motion JPEG.
+    let mut modes: Vec<SpaMode> = node_formats(&mainloop, &core, cam.id)
+        .iter()
+        .flat_map(|p| modes_of(p, want, fps))
+        .collect();
+    camera_mode::order(&mut modes, want, fps);
+    let mut seen: Vec<SpaMode> = Vec::new();
+    modes.retain(|m| {
+        let new = !seen.contains(m);
+        seen.push(*m);
+        new
+    });
+    let pods: Vec<Vec<u8>> = if modes.is_empty() {
+        let twice = (want.0 * 2, want.1 * 2);
+        vec![
+            format_pod(false, want, want, fps)?,
+            format_pod(false, want, twice, fps)?,
+            format_pod(false, want, (8192, 8192), fps)?,
+            format_pod(true, want, twice, fps)?,
+            format_pod(true, want, (8192, 8192), fps)?,
+        ]
+    } else {
+        let best = &modes[0];
+        tracing::info!(
+            camera = cam.node_name,
+            modes = modes.len(),
+            format = ?best.format,
+            best.width,
+            best.height,
+            fps = format!("{}/{}", best.fps_num, best.fps_den),
+            "PipeWire camera mode"
+        );
+        modes
+            .iter()
+            .take(MODES_OFFERED)
+            .map(mode_pod)
+            .collect::<Result<_>>()?
+    };
     let mut params: Vec<&spa::pod::Pod> = pods
         .iter()
         .map(|b| spa::pod::Pod::from_bytes(b).context("format pod"))
@@ -1169,5 +1460,159 @@ mod tests {
                 .is_some()
         );
         assert!(spa::pod::Pod::from_bytes(&buffers_pod().unwrap()).is_some());
+    }
+
+    /// An EnumFormat param as PipeWire's V4L2 source gives it: `format`
+    /// (raw) or none (Motion JPEG), a size and rates.
+    fn enum_format(
+        format: Option<spa::pod::Value>,
+        size: spa::pod::Value,
+        rate: Option<spa::pod::Value>,
+    ) -> spa::pod::Value {
+        use spa::param::format::{FormatProperties as F, MediaSubtype, MediaType};
+        use spa::pod::{Object, Property, PropertyFlags, Value};
+        use spa::utils::Id;
+        let prop = |key: F, value: Value| Property {
+            key: key.as_raw(),
+            flags: PropertyFlags::empty(),
+            value,
+        };
+        let sub = if format.is_some() {
+            MediaSubtype::Raw
+        } else {
+            MediaSubtype::Mjpg
+        };
+        let mut properties = vec![
+            prop(F::MediaType, Value::Id(Id(MediaType::Video.as_raw()))),
+            prop(F::MediaSubtype, Value::Id(Id(sub.as_raw()))),
+        ];
+        if let Some(f) = format {
+            properties.push(prop(F::VideoFormat, f));
+        }
+        properties.push(prop(F::VideoSize, size));
+        if let Some(r) = rate {
+            properties.push(prop(F::VideoFramerate, r));
+        }
+        Value::Object(Object {
+            type_: spa::utils::SpaTypes::ObjectParamFormat.as_raw(),
+            id: spa::param::ParamType::EnumFormat.as_raw(),
+            properties,
+        })
+    }
+
+    fn rates(r: &[u32]) -> spa::pod::Value {
+        use spa::pod::{ChoiceValue, Value};
+        use spa::utils::{Choice, ChoiceEnum, ChoiceFlags, Fraction};
+        let f = |n| Fraction { num: n, denom: 1 };
+        Value::Choice(ChoiceValue::Fraction(Choice(
+            ChoiceFlags::empty(),
+            ChoiceEnum::Enum {
+                default: f(r[0]),
+                alternatives: r.iter().map(|&n| f(n)).collect(),
+            },
+        )))
+    }
+
+    #[test]
+    fn a_cameras_own_modes_are_read_from_its_formats() {
+        use spa::param::video::VideoFormat as V;
+        use spa::pod::Value;
+        use spa::utils::{Id, Rectangle};
+        let rect = |width, height| Value::Rectangle(Rectangle { width, height });
+        // linuxlt's MS2109 capture card: YUYV 640x480 at 30/20/10/5 fps,
+        // Motion JPEG 1280x720 at 60/30/25/20/10.
+        let yuyv = enum_format(
+            Some(Value::Id(Id(V::YUY2.as_raw()))),
+            rect(640, 480),
+            Some(rates(&[30, 30, 20, 10, 5])),
+        );
+        let mjpg = enum_format(
+            None,
+            rect(1280, 720),
+            Some(rates(&[60, 60, 30, 25, 20, 10])),
+        );
+        let mut modes = modes_of(&yuyv, (640, 360), 15);
+        modes.dedup();
+        assert_eq!(modes.len(), 4);
+        assert!(
+            modes
+                .iter()
+                .all(|m| m.format == Some(V::YUY2) && (m.width, m.height) == (640, 480))
+        );
+        modes.extend(modes_of(&mjpg, (640, 360), 15));
+        camera_mode::order(&mut modes, (640, 360), 15);
+        assert_eq!((modes[0].format, modes[0].fps_num), (Some(V::YUY2), 20));
+        camera_mode::order(&mut modes, (1280, 720), 30);
+        assert_eq!(
+            (modes[0].format, modes[0].width, modes[0].fps_num),
+            (None, 1280, 30)
+        );
+        let pod = mode_pod(&modes[0]).unwrap();
+        assert!(spa::pod::Pod::from_bytes(&pod).is_some());
+    }
+
+    #[test]
+    fn a_range_is_taken_at_the_size_and_rate_wanted() {
+        use spa::param::video::VideoFormat as V;
+        use spa::pod::{ChoiceValue, Value};
+        use spa::utils::{Choice, ChoiceEnum, ChoiceFlags, Fraction, Id, Rectangle};
+        // A virtual camera (videotestsrc into pipewiresink): NV12 or an
+        // unknown format, any size, any rate up to 60.
+        let formats = Value::Choice(ChoiceValue::Id(Choice(
+            ChoiceFlags::empty(),
+            ChoiceEnum::Enum {
+                default: Id(V::NV12.as_raw()),
+                alternatives: vec![Id(V::NV12.as_raw()), Id(0xffff)],
+            },
+        )));
+        let size = Value::Choice(ChoiceValue::Rectangle(Choice(
+            ChoiceFlags::empty(),
+            ChoiceEnum::Range {
+                default: Rectangle {
+                    width: 320,
+                    height: 240,
+                },
+                min: Rectangle {
+                    width: 1,
+                    height: 1,
+                },
+                max: Rectangle {
+                    width: 1920,
+                    height: 1080,
+                },
+            },
+        )));
+        let rate = Value::Choice(ChoiceValue::Fraction(Choice(
+            ChoiceFlags::empty(),
+            ChoiceEnum::Range {
+                default: Fraction { num: 30, denom: 1 },
+                min: Fraction { num: 0, denom: 1 },
+                max: Fraction { num: 60, denom: 1 },
+            },
+        )));
+        let modes = modes_of(
+            &enum_format(Some(formats), size.clone(), Some(rate)),
+            (1280, 720),
+            30,
+        );
+        assert_eq!(modes.len(), 1);
+        assert_eq!(
+            (
+                modes[0].format,
+                modes[0].width,
+                modes[0].height,
+                modes[0].fps_num
+            ),
+            (Some(V::NV12), 1280, 720, 30)
+        );
+        // No rate: whatever it delivers (0/1).
+        let modes = modes_of(
+            &enum_format(Some(Value::Id(Id(V::YUY2.as_raw()))), size, None),
+            (640, 360),
+            15,
+        );
+        assert_eq!((modes[0].width, modes[0].fps_num), (640, 0));
+        // Not video: nothing.
+        assert!(modes_of(&Value::Int(3), (640, 360), 15).is_empty());
     }
 }
