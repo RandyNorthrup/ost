@@ -163,7 +163,7 @@ fn is_channel_post(conversation: &str) -> bool {
 fn banner_card(theme: &str, image: Option<&BannerImage>) -> String {
     let mut b = [0u8; 16];
     if getrandom::fill(&mut b).is_err() {
-        b = (chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0) as u128).to_le_bytes();
+        b = (crate::clock::now_ns() as u128).to_le_bytes();
     }
     let hex: String = b.iter().map(|x| format!("{x:02x}")).collect();
     let card = match image.filter(|i| !i.id.is_empty()) {
@@ -215,7 +215,7 @@ const DELIVERED_KEEP_MS: i64 = 600_000;
 pub fn new_client_message_id() -> String {
     let mut b = [0u8; 8];
     if getrandom::fill(&mut b).is_err() {
-        let n = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64;
+        let n = crate::clock::now_ns() as u64;
         b = n.to_le_bytes();
     }
     let a = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
@@ -414,9 +414,7 @@ pub fn can_retry(pipeline: Option<&str>) -> bool {
 }
 
 fn iso(ms: i64) -> String {
-    chrono::DateTime::from_timestamp_millis(ms)
-        .unwrap_or_default()
-        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    crate::clock::iso_ms(crate::clock::from_ms(ms).unwrap_or_default())
 }
 
 /// JavaScript's encodeURIComponent, as Teams encodes the conversation in
@@ -851,7 +849,7 @@ pub struct Outbox {
 }
 
 fn now_ms() -> i64 {
-    chrono::Utc::now().timestamp_millis()
+    crate::clock::now_ms()
 }
 
 impl Outbox {

@@ -18,10 +18,13 @@ static ZIPS: AtomicU32 = AtomicU32::new(0);
 
 /// The zip's name: the one item's ("Notebooks.zip"), else
 /// "OneDrive_{n}_{M-D-YYYY}.zip".
-pub fn zip_name(items: &[DriveItem], n: u32, today: chrono::NaiveDate) -> String {
+pub fn zip_name(items: &[DriveItem], n: u32, today: jiff::civil::Date) -> String {
     match items {
         [one] => format!("{}.zip", one.name),
-        _ => format!("OneDrive_{n}_{}.zip", today.format("%-m-%-d-%Y")),
+        _ => format!(
+            "OneDrive_{n}_{}.zip",
+            crate::clock::format(today, "%-m-%-d-%Y")
+        ),
     }
 }
 
@@ -98,7 +101,7 @@ pub async fn download(items: &[DriveItem], dir: &Path, name: Option<&str>) -> Re
         None => zip_name(
             items,
             ZIPS.fetch_add(1, Ordering::SeqCst) + 1,
-            chrono::Local::now().date_naive(),
+            crate::clock::local_now().date(),
         ),
     };
     let form = [
@@ -146,7 +149,7 @@ mod tests {
 
     #[test]
     fn zips_are_named_as_onedrive_names_them() {
-        let day = chrono::NaiveDate::from_ymd_opt(2026, 11, 12).unwrap();
+        let day = jiff::civil::date(2026, 11, 12);
         assert_eq!(
             zip_name(&[item("Notebooks", true)], 1, day),
             "Notebooks.zip"

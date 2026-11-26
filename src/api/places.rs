@@ -450,17 +450,12 @@ pub fn ssid_list_from(v: &serde_json::Value) -> Vec<String> {
 
 /// The network body Teams reports (its reportDetectedNetworkForUpdate;
 /// the SSID only with ECS places.useSSIDForIC3LSNetworkApiRequest).
-pub fn network_body(
-    bssid: &str,
-    ssid: Option<&str>,
-    at: chrono::DateTime<chrono::Utc>,
-) -> serde_json::Value {
+pub fn network_body(bssid: &str, ssid: Option<&str>, at: jiff::Timestamp) -> serde_json::Value {
     let mut b = serde_json::json!({ "bssid": bssid });
     if let Some(s) = ssid {
         b["ssid"] = serde_json::Value::String(s.to_string());
     }
-    b["eventTime"] =
-        serde_json::Value::String(at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+    b["eventTime"] = serde_json::Value::String(crate::clock::iso_ms(at));
     b["shouldUpdate"] = serde_json::Value::Bool(true);
     b["canShareLocationDetails"] = serde_json::Value::Bool(true);
     b
@@ -637,9 +632,7 @@ mod location_tests {
 
     #[test]
     fn network_body_is_teams() {
-        let at = chrono::DateTime::parse_from_rfc3339("2026-11-20T17:00:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let at = crate::clock::parse_instant("2026-11-20T17:00:00Z").unwrap();
         let b = network_body("f4:92:bf:00:00:01", None, at);
         assert_eq!(
             b,

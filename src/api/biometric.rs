@@ -629,7 +629,7 @@ pub fn voice_outcome(event: &serde_json::Value, threshold: f64) -> VoiceOutcome 
 /// body, or a binary frame of a 2-byte big-endian header length, the
 /// headers and the payload.
 fn speech_headers(path: &str, request_id: &str, content_type: Option<&str>) -> String {
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ");
+    let now = crate::clock::now_iso_ms();
     let mut h = format!("Path: {path}\r\nX-RequestId: {request_id}\r\nX-Timestamp: {now}\r\n");
     if let Some(ct) = content_type {
         h.push_str(&format!("Content-Type: {ct}\r\n"));

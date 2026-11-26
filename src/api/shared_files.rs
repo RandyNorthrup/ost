@@ -77,8 +77,8 @@ fn low(v: &Value) -> String {
 /// A time's milliseconds (0 when there is none), as OneDrive compares
 /// `new Date(...)`.
 fn millis(t: &str) -> i64 {
-    chrono::DateTime::parse_from_rfc3339(t)
-        .map(|t| t.timestamp_millis())
+    crate::clock::parse_instant(t)
+        .map(crate::clock::millis)
         .unwrap_or(0)
 }
 
@@ -461,13 +461,9 @@ pub async fn with_items(
 
 /// A shared file's row: Date shared, Shared by and Activity as Teams
 /// shows them.
-pub fn row(f: &SharedFile, item: &DriveItem, now: chrono::DateTime<chrono::Local>) -> Value {
+pub fn row(f: &SharedFile, item: &DriveItem, now: &jiff::ZonedDateTime) -> Value {
     use super::list_rows::{activity_time, decorate};
-    let local = |t: &str| {
-        chrono::DateTime::parse_from_rfc3339(t)
-            .ok()
-            .map(|t| t.with_timezone(&chrono::Local))
-    };
+    let local = |t: &str| crate::clock::parse_instant(t).map(crate::clock::local);
     let mut v = decorate(item, None, now);
     v["title"] = json!(f.file.title);
     v["vis_type"] = json!(f.file.vis_type);
@@ -479,9 +475,9 @@ pub fn row(f: &SharedFile, item: &DriveItem, now: chrono::DateTime<chrono::Local
     match local(&f.shared) {
         Some(t) => {
             // People's chips show the day ("Mon", "Nov 19").
-            v["shared_day"] = json!(recent_files::activity_day(t, now));
-            v["modified_text"] = json!(activity_time(t, now));
-            v["modified_title"] = json!(t.format("%-m/%-d/%Y %-I:%M %p").to_string());
+            v["shared_day"] = json!(recent_files::activity_day(&t, now));
+            v["modified_text"] = json!(activity_time(&t, now));
+            v["modified_title"] = json!(crate::clock::format(&t, "%-m/%-d/%Y %-I:%M %p"));
         }
         None => {
             v["modified_text"] = json!("");
@@ -494,7 +490,7 @@ pub fn row(f: &SharedFile, item: &DriveItem, now: chrono::DateTime<chrono::Local
             "text": a.text,
             "lead": a.lead_rest().0,
             "rest": a.lead_rest().1,
-            "time": local(&a.time).map(|t| recent_files::activity_day(t, now)).unwrap_or_default(),
+            "time": local(&a.time).map(|t| recent_files::activity_day(&t, now)).unwrap_or_default(),
         }),
         None => Value::Null,
     };
@@ -602,7 +598,7 @@ pub async fn by_you_rows(client: &TeamsClient) -> Result<Vec<(Recent, DriveItem)
 }
 
 /// A By you row: Name with its place line, Modified by.
-pub fn by_you_row(r: &Recent, item: &DriveItem, now: chrono::DateTime<chrono::Local>) -> Value {
+pub fn by_you_row(r: &Recent, item: &DriveItem, now: &jiff::ZonedDateTime) -> Value {
     let mut v = super::list_rows::decorate(item, None, now);
     v["title"] = json!(r.title);
     v["location"] = json!(r.location);
@@ -968,14 +964,10 @@ mod tests {
     fn rows_word_date_shared_and_activity() {
         let entries = merge(&reply(), &Value::Null, &Value::Null, &Value::Null);
         let rows = with_you(&entries, ME_SITE, &me());
-        let at = |s: &str| {
-            chrono::DateTime::parse_from_rfc3339(s)
-                .unwrap()
-                .with_timezone(&chrono::Local)
-        };
+        let at = |s: &str| crate::clock::local(crate::clock::parse_instant(s).unwrap());
         let now = at("2026-11-25T18:30:00Z");
         let it = recent_files::drive_item(&rows[0].file, None);
-        let v = row(&rows[0], &it, now);
+        let v = row(&rows[0], &it, &now);
         assert_eq!(v["title"], "Release-notes-0.3");
         assert_eq!(v["modified_by"], "OST Test 3");
         assert_eq!(v["modified_text"], "1h ago");
@@ -987,7 +979,7 @@ mod tests {
         let v = row(
             &rows[4],
             &recent_files::drive_item(&rows[4].file, None),
-            now,
+            &now,
         );
         assert!(v["activity"].is_null());
     }

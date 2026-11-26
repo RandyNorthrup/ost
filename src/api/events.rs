@@ -70,17 +70,13 @@ pub struct DiscoverFilter {
     pub to: String,
 }
 
-fn iso(t: chrono::DateTime<chrono::Utc>) -> String {
-    t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+fn iso(t: jiff::Timestamp) -> String {
+    crate::clock::iso_ms(t)
 }
 
 /// A Discover request's address (relative to the service), as Teams asks.
-pub fn discover_query(
-    list: DiscoverList,
-    now: chrono::DateTime<chrono::Utc>,
-    filter: &DiscoverFilter,
-) -> String {
-    let soon = now + chrono::Duration::minutes(5);
+pub fn discover_query(list: DiscoverList, now: jiff::Timestamp, filter: &DiscoverFilter) -> String {
+    let soon = now + jiff::SignedDuration::from_mins(5);
     let status = if filter.my_events {
         "&includeRequesterStatus=Registered&includeRequesterStatus=Invited"
     } else {
@@ -486,7 +482,7 @@ async fn get_json(url: &str, api_v2: bool) -> Result<Value> {
 /// Discover's three lists (or the filtered one), as Teams asks for them.
 pub async fn discover(client: &TeamsClient, filter: &DiscoverFilter) -> Result<Value> {
     let ams = client.ams_v2_url().unwrap_or_default();
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     // Teams asks its virtual events service at the regional address (ECS
     // virtualEvents.useRegionalVirtualEventsServiceEndpointResolver, on):
     // the same address as Manage and the filtered lists.
@@ -823,9 +819,9 @@ pub fn create_body(e: &NewEvent, owner: &Value, tz: Value, promo: &str) -> Value
     let mut meeting_options = new_meeting_options(e, town_hall);
     merge_options(&mut meeting_options, e.meeting_options.as_ref());
     let to_ms = |s: &str| {
-        chrono::DateTime::parse_from_rfc3339(s)
-            .map(|d| iso(d.with_timezone(&chrono::Utc)))
-            .unwrap_or_else(|_| s.to_string())
+        crate::clock::parse_instant(s)
+            .map(iso)
+            .unwrap_or_else(|| s.to_string())
     };
     json!({
         "type": if e.event_type.is_empty() { "Webinar" } else { e.event_type.as_str() },
@@ -1014,7 +1010,7 @@ fn tz_for(e: &NewEvent) -> Value {
         return z;
     }
     let iana = super::find::local_timezone();
-    let offset = chrono::Local::now().offset().local_minus_utc() as i64 / 60;
+    let offset = crate::clock::local_offset_seconds() as i64 / 60;
     time_zone_details(&iana, offset)
 }
 
@@ -1316,7 +1312,7 @@ pub async fn see_more(client: &TeamsClient, section: &str, skip: &str) -> Result
     } else {
         format!("&skipToken={}", urlencoding(skip))
     };
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let f = DiscoverFilter::default();
     let url = match section {
         "Draft" | "Published" | "Past" => format!(
@@ -1400,9 +1396,9 @@ pub async fn event_form(client: &TeamsClient, id: &str) -> Result<Value> {
 /// meeting options; captured 2026-11-18).
 pub fn update_body(e: &NewEvent) -> Value {
     let to_ms = |s: &str| {
-        chrono::DateTime::parse_from_rfc3339(s)
-            .map(|d| iso(d.with_timezone(&chrono::Utc)))
-            .unwrap_or_else(|_| s.to_string())
+        crate::clock::parse_instant(s)
+            .map(iso)
+            .unwrap_or_else(|| s.to_string())
     };
     let mut options = new_meeting_options(e, e.event_type == "Townhall");
     merge_options(&mut options, e.meeting_options.as_ref());
@@ -2383,10 +2379,8 @@ mod tests {
         );
     }
 
-    fn at(s: &str) -> chrono::DateTime<chrono::Utc> {
-        chrono::DateTime::parse_from_rfc3339(s)
-            .unwrap()
-            .with_timezone(&chrono::Utc)
+    fn at(s: &str) -> jiff::Timestamp {
+        crate::clock::parse_instant(s).unwrap()
     }
 
     #[test]

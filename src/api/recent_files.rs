@@ -346,8 +346,8 @@ pub fn listed(reply: &Value, personal: &str) -> Vec<Recent> {
         .collect();
     // ISO times in UTC sort as text; parse anyway for odd offsets.
     let key = |r: &Recent| {
-        chrono::DateTime::parse_from_rfc3339(&r.opened)
-            .map(|t| t.timestamp_millis())
+        crate::clock::parse_instant(&r.opened)
+            .map(crate::clock::millis)
             .unwrap_or(0)
     };
     rows.sort_by_key(|r| std::cmp::Reverse(key(r)));
@@ -459,21 +459,17 @@ pub async fn graph_items(client: &TeamsClient, files: &[Recent]) -> Vec<Option<D
 
 /// The OneDrive app's Home rows: its recent files as drive items, with
 /// Opened, Owner and Activity as Teams shows them.
-pub fn home_row(r: &Recent, item: &DriveItem, now: chrono::DateTime<chrono::Local>) -> Value {
+pub fn home_row(r: &Recent, item: &DriveItem, now: &jiff::ZonedDateTime) -> Value {
     use super::list_rows::{activity_time, decorate};
-    let local = |t: &str| {
-        chrono::DateTime::parse_from_rfc3339(t)
-            .ok()
-            .map(|t| t.with_timezone(&chrono::Local))
-    };
+    let local = |t: &str| crate::clock::parse_instant(t).map(crate::clock::local);
     let mut v = decorate(item, None, now);
     v["title"] = json!(r.title);
     v["location"] = json!(r.location);
     v["owner"] = json!(r.owner);
     v["vis_type"] = json!(r.vis_type);
     if let Some(t) = local(&r.opened) {
-        v["modified_text"] = json!(activity_time(t, now));
-        v["modified_title"] = json!(t.format("%-m/%-d/%Y %-I:%M %p").to_string());
+        v["modified_text"] = json!(activity_time(&t, now));
+        v["modified_title"] = json!(crate::clock::format(&t, "%-m/%-d/%Y %-I:%M %p"));
     }
     if let Some(a) = &r.activity {
         let (lead, rest) = a.lead_rest();
@@ -482,7 +478,7 @@ pub fn home_row(r: &Recent, item: &DriveItem, now: chrono::DateTime<chrono::Loca
             "text": a.text,
             "lead": lead,
             "rest": rest,
-            "time": local(&a.time).map(|t| activity_day(t, now)).unwrap_or_default(),
+            "time": local(&a.time).map(|t| activity_day(&t, now)).unwrap_or_default(),
         });
     }
     v
@@ -505,12 +501,9 @@ impl Activity {
 
 /// The Activity column's day on Home ("Mon", "Nov 17"): today and
 /// yesterday as OneDrive words them, this week by weekday, then the date.
-pub fn activity_day(
-    t: chrono::DateTime<chrono::Local>,
-    now: chrono::DateTime<chrono::Local>,
-) -> String {
-    let (day, today) = (t.date_naive(), now.date_naive());
-    let days = (today - day).num_days();
+pub fn activity_day(t: &jiff::ZonedDateTime, now: &jiff::ZonedDateTime) -> String {
+    let (day, today) = (t.date(), now.date());
+    let days = crate::clock::days_between(day, today);
     if days <= 0 {
         return super::list_rows::activity_time(t, now);
     }
@@ -518,12 +511,12 @@ pub fn activity_day(
         return "Yesterday".into();
     }
     if days <= 6 {
-        return t.format("%a").to_string();
+        return crate::clock::format(t, "%a");
     }
-    if t.format("%Y").to_string() == now.format("%Y").to_string() {
-        t.format("%b %-d").to_string()
+    if crate::clock::format(t, "%Y") == crate::clock::format(now, "%Y") {
+        crate::clock::format(t, "%b %-d")
     } else {
-        t.format("%b %-d, %Y").to_string()
+        crate::clock::format(t, "%b %-d, %Y")
     }
 }
 
@@ -664,16 +657,15 @@ mod tests {
 
     #[test]
     fn home_words_times_as_teams() {
-        let at = |s: &str| {
-            chrono::DateTime::parse_from_rfc3339(s)
-                .unwrap()
-                .with_timezone(&chrono::Local)
-        };
-        let now = at("2026-11-25T12:00:00-08:00");
-        assert_eq!(activity_day(at("2026-11-23T07:11:17-08:00"), now), "Mon");
-        assert_eq!(activity_day(at("2026-11-17T07:11:17-08:00"), now), "Nov 17");
+        let at = |s: &str| crate::clock::local(crate::clock::parse_instant(s).unwrap());
+        let now = &at("2026-11-25T12:00:00-08:00");
+        assert_eq!(activity_day(&at("2026-11-23T07:11:17-08:00"), now), "Mon");
         assert_eq!(
-            activity_day(at("2026-11-24T07:11:17-08:00"), now),
+            activity_day(&at("2026-11-17T07:11:17-08:00"), now),
+            "Nov 17"
+        );
+        assert_eq!(
+            activity_day(&at("2026-11-24T07:11:17-08:00"), now),
             "Yesterday"
         );
     }

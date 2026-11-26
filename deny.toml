@@ -31,11 +31,6 @@ ignore = [
     { id = "RUSTSEC-2026-0370", reason = "zvariant merged into zbus 6; reached through zbus 5 (ksni, keyring's Secret Service store). Review by 2027-02-25" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names merged into zbus 6; reached through zbus 5 (ksni, keyring's Secret Service store). Review by 2027-02-25" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive merged into zbus 6; reached through zbus 5 (ksni, keyring's Secret Service store). Review by 2027-02-25" },
-    # chrono is unmaintained (since 2026-09-14); jiff replaces it. OST uses
-    # it directly in about 50 files, where the port changes wire formats
-    # and local-time math, so it is its own change: TASK-0319. Not a
-    # vulnerability. Review by 2027-01-31.
-    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained; replaced by jiff in TASK-0319. Review by 2027-01-31" },
 ]
 
 [licenses]

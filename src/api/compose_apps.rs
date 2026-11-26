@@ -233,9 +233,7 @@ pub async fn record_usage(client: &TeamsClient, app_id: &str) -> Result<()> {
         .filter(|x| x.is_object())
         .cloned()
         .unwrap_or_else(|| json!({}));
-    let now = chrono::Utc::now()
-        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
-        .to_string();
+    let now = crate::clock::now_iso_ms();
     bump_usage(&mut usage, app_id, &now);
     client
         .http()

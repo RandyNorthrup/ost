@@ -246,11 +246,7 @@ async fn artifacts_v3_as(
 /// meeting by its thread.
 pub async fn artifacts(region: &str, start_ms: i64) -> Result<Value> {
     let token = token().await?;
-    let f = |ms: i64| {
-        chrono::DateTime::from_timestamp_millis(ms)
-            .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
-            .unwrap_or_default()
-    };
+    let f = |ms: i64| crate::clock::ms_iso(ms).unwrap_or_default();
     let url = format!(
         "{}/user/meetings/contents?top=20&startDateTime={}&endDateTime={}&includeTypes=Recording,TranscriptV2,Highlights,Notes",
         base(region),

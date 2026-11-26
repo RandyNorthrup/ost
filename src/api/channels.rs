@@ -551,7 +551,7 @@ pub async fn create_channel(
             .await?
             .error_for_status()
             .context("Recommend the channel")?;
-        let now = chrono::Utc::now().timestamp_millis().to_string();
+        let now = crate::clock::now_ms().to_string();
         set_property(client, &id, "lastTimeFavorited", &now).await?;
     }
     Ok(id)

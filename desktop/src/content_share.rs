@@ -361,7 +361,7 @@ impl qobject::Backend {
         };
         let user = teams_cli::identity::mri_id(&self.rust().user_mri.to_string()).to_string();
         let e = |v: &str| teams_cli::api::tabs::encode_uri_component(v);
-        let now = chrono::Utc::now().timestamp_millis().to_string();
+        let now = teams_cli::clock::now_ms().to_string();
         let name = st(&c, "name");
         let fields: Vec<(&str, String)> = vec![
             ("parentWindowOrigin", "https://teams.microsoft.com".into()),
@@ -813,7 +813,7 @@ async fn start_content(
             call.participant_id().to_string(),
         )
     };
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = teams_cli::clock::now_ms();
     // A file named in your OneDrive's root (the harness): its ids.
     let mut args = args.clone();
     if let Some(name) = args

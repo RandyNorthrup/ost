@@ -152,10 +152,7 @@ pub fn roam_body(o: &Outgoing) -> serde_json::Value {
         message["id"] = id.into();
         message["properties"]["draftId"] = id.into();
         message["properties"]["edittime"] = o.now_ms.into();
-        message["version"] = chrono::DateTime::from_timestamp_millis(o.now_ms)
-            .map(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
-            .unwrap_or_default()
-            .into();
+        message["version"] = crate::clock::ms_iso(o.now_ms).unwrap_or_default().into();
     }
     serde_json::json!({
         "draftType": "RegularDraft",

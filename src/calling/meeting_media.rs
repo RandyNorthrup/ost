@@ -704,7 +704,7 @@ async fn run(
                     None => tracing::warn!("real-time text before the data channel is up: dropped"),
                 },
                 Some(Command::SignLanguage { detected, duration_ms }) => {
-                    match session.sign_language(detected, duration_ms, chrono::Utc::now().timestamp_millis()) {
+                    match session.sign_language(detected, duration_ms, crate::clock::now_ms()) {
                         Some(packet) => {
                             sender.send(packet);
                         }

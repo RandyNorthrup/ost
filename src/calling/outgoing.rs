@@ -573,7 +573,7 @@ impl OutgoingCall {
             from,
             id,
             &op,
-            &chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            &crate::clock::now_iso_ms(),
             &signaling::trouter_callback(
                 &self.callbacks.0,
                 &self.callbacks.1,

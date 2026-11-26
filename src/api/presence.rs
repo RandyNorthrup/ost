@@ -92,26 +92,21 @@ pub async fn force_availability(http: &reqwest::Client, availability: Option<&st
 /// Teams' expiry choices (worker module 49107 `Rn`), from local time `now`:
 /// HalfHour, OneHour, TwoHours, FourHours, Today (23:59:59.999), ThisWeek
 /// (the Saturday of this week, 00:00), or Never (none).
-pub fn expiry_for(
-    choice: &str,
-    now: chrono::DateTime<chrono::Local>,
-) -> Option<chrono::DateTime<chrono::Local>> {
-    use chrono::{Datelike, Duration, TimeZone};
-    let at = |d: chrono::NaiveDate, h, m, s, ms| {
-        chrono::Local
-            .from_local_datetime(&d.and_hms_milli_opt(h, m, s, ms)?)
-            .earliest()
+pub fn expiry_for(choice: &str, now: &jiff::ZonedDateTime) -> Option<jiff::ZonedDateTime> {
+    use jiff::SignedDuration;
+    let at = |d: jiff::civil::Date, h, m, s, ms: i32| {
+        crate::clock::earliest(now.time_zone(), d.at(h, m, s, ms * 1_000_000))
     };
     match choice {
-        "HalfHour" => Some(now + Duration::minutes(30)),
-        "OneHour" => Some(now + Duration::hours(1)),
-        "TwoHours" => Some(now + Duration::hours(2)),
-        "FourHours" => Some(now + Duration::hours(4)),
-        "Today" => at(now.date_naive(), 23, 59, 59, 999),
+        "HalfHour" => Some(now + SignedDuration::from_mins(30)),
+        "OneHour" => Some(now + SignedDuration::from_hours(1)),
+        "TwoHours" => Some(now + SignedDuration::from_hours(2)),
+        "FourHours" => Some(now + SignedDuration::from_hours(4)),
+        "Today" => at(now.date(), 23, 59, 59, 999),
         "ThisWeek" => {
             // Weeks start on Sunday; endOfWeek is Saturday, then its start of day.
-            let days_to_sat = 6 - now.weekday().num_days_from_sunday() as i64;
-            at(now.date_naive() + Duration::days(days_to_sat), 0, 0, 0, 0)
+            let days_to_sat = 6 - i64::from(now.weekday().to_sunday_zero_offset());
+            at(crate::clock::add_days(now.date(), days_to_sat), 0, 0, 0, 0)
         }
         _ => None,
     }
@@ -122,7 +117,7 @@ pub fn expiry_for(
 pub async fn force_availability_until(
     http: &reqwest::Client,
     availability: Option<&str>,
-    until: Option<chrono::DateTime<chrono::Local>>,
+    until: Option<jiff::ZonedDateTime>,
 ) -> Result<()> {
     if let Some(a) = availability
         && ![
@@ -143,10 +138,7 @@ pub async fn force_availability_until(
         .bearer_auth(token);
     // Teams sends "activity":"OffWork" with Offline (its check rejects
     // Offline without it).
-    let expiry = until.map(|t| {
-        t.with_timezone(&chrono::Utc)
-            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
-    });
+    let expiry = until.map(|t| crate::clock::iso_ms(t.timestamp()));
     req = match availability {
         Some(a) => {
             let mut body = serde_json::json!({ "availability": a });
@@ -172,7 +164,7 @@ pub async fn force_availability_until(
 /// Office `{"location":1,"expirationTime":<end of today>}`, Remote 2, and
 /// clearing `{"location":0}`.
 pub async fn set_work_location(http: &reqwest::Client, location: Option<&str>) -> Result<()> {
-    let body = work_location_body(location, chrono::Local::now())?;
+    let body = work_location_body(location, &crate::clock::local_now())?;
     let token = crate::auth::oauth::access_token_for(PRESENCE_SCOPE).await?;
     let resp = http
         .put(format!("{PRESENCE_URL}/v1/me/workLocation/"))
@@ -194,7 +186,7 @@ pub async fn set_work_location(http: &reqwest::Client, location: Option<&str>) -
 /// none 0) and, when set, the end of today (23:59:59.999 local) in UTC.
 pub fn work_location_body(
     location: Option<&str>,
-    now: chrono::DateTime<chrono::Local>,
+    now: &jiff::ZonedDateTime,
 ) -> Result<serde_json::Value> {
     let n = match location {
         None => return Ok(serde_json::json!({ "location": 0 })),
@@ -205,7 +197,7 @@ pub fn work_location_body(
     let end = expiry_for("Today", now).context("No end of today")?;
     Ok(serde_json::json!({
         "location": n,
-        "expirationTime": end.with_timezone(&chrono::Utc).to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        "expirationTime": crate::clock::iso_ms(end.timestamp()),
     }))
 }
 
@@ -470,7 +462,7 @@ pub async fn publish_note(
     http: &reqwest::Client,
     message: &str,
     pinned: bool,
-    until: Option<chrono::DateTime<chrono::Local>>,
+    until: Option<jiff::ZonedDateTime>,
 ) -> Result<()> {
     let token = crate::auth::oauth::access_token_for(PRESENCE_SCOPE).await?;
     let body = note_body(message, pinned, until);
@@ -606,9 +598,8 @@ pub fn note_plain(editor_html: &str) -> String {
 pub fn note_body(
     message: &str,
     pinned: bool,
-    until: Option<chrono::DateTime<chrono::Local>>,
+    until: Option<jiff::ZonedDateTime>,
 ) -> serde_json::Value {
-    use chrono::TimeZone;
     if message.trim().is_empty() {
         return serde_json::json!({ "message": "" });
     }
@@ -630,14 +621,28 @@ pub fn note_body(
             ""
         }
     );
-    let never = chrono::Local
-        .with_ymd_and_hms(9999, 12, 31, 0, 0, 0)
-        .earliest();
-    let expiry = until.or(never).map(|t| {
-        t.with_timezone(&chrono::Utc)
-            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
-    });
+    let expiry = match until {
+        Some(t) => Some(crate::clock::iso_ms(t.timestamp())),
+        None => never_expiry(&crate::clock::local_zone()),
+    };
     serde_json::json!({ "expiry": expiry, "message": html })
+}
+
+/// A note that doesn't expire: 9999-12-31 00:00 local, in UTC (past the
+/// last moment jiff holds, so worked out on the wall clock).
+fn never_expiry(tz: &jiff::tz::TimeZone) -> Option<String> {
+    use jiff::tz::AmbiguousOffset;
+    let wall = jiff::civil::datetime(9999, 12, 31, 0, 0, 0, 0);
+    let offset = match tz.to_ambiguous_timestamp(wall).offset() {
+        AmbiguousOffset::Unambiguous { offset } | AmbiguousOffset::Fold { before: offset, .. } => {
+            offset
+        }
+        AmbiguousOffset::Gap { .. } => return None,
+    };
+    let utc = wall
+        .checked_sub(jiff::SignedDuration::from_secs(i64::from(offset.seconds())))
+        .ok()?;
+    Some(crate::clock::format(utc, "%Y-%m-%dT%H:%M:%S%.3fZ"))
 }
 
 #[cfg(test)]
@@ -646,22 +651,19 @@ mod expiry_tests {
 
     #[test]
     fn work_location_bodies_are_teams() {
-        use chrono::TimeZone;
-        let now = chrono::Local
-            .with_ymd_and_hms(2026, 11, 10, 9, 0, 0)
-            .unwrap();
+        let now = &local(2026, 11, 10, 9, 0);
         assert_eq!(
             work_location_body(None, now).unwrap(),
             serde_json::json!({ "location": 0 })
         );
         let office = work_location_body(Some("Office"), now).unwrap();
         assert_eq!(office["location"], 1);
-        let end = chrono::DateTime::parse_from_rfc3339(office["expirationTime"].as_str().unwrap())
-            .unwrap()
-            .with_timezone(&chrono::Local);
+        let end = crate::clock::local(
+            crate::clock::parse_instant(office["expirationTime"].as_str().unwrap()).unwrap(),
+        );
         assert_eq!(
-            (end.date_naive(), end.format("%H:%M:%S%.3f").to_string()),
-            (now.date_naive(), "23:59:59.999".to_string())
+            (end.date(), crate::clock::format(&end, "%H:%M:%S%.3f")),
+            (now.date(), "23:59:59.999".to_string())
         );
         assert_eq!(
             work_location_body(Some("Remote"), now).unwrap()["location"],
@@ -669,14 +671,14 @@ mod expiry_tests {
         );
         assert!(work_location_body(Some("Moon"), now).is_err());
     }
-    use chrono::{Datelike, TimeZone, Timelike};
+    fn local(y: i16, m: i8, d: i8, h: i8, mi: i8) -> jiff::ZonedDateTime {
+        crate::clock::local_single(jiff::civil::datetime(y, m, d, h, mi, 0, 0)).unwrap()
+    }
 
     #[test]
     fn expiries_are_teams_choices() {
         // A Wednesday afternoon.
-        let now = chrono::Local
-            .with_ymd_and_hms(2026, 11, 4, 15, 20, 0)
-            .unwrap();
+        let now = &local(2026, 11, 4, 15, 20);
         let today = expiry_for("Today", now).unwrap();
         assert_eq!(
             (today.day(), today.hour(), today.minute(), today.second()),
@@ -685,15 +687,53 @@ mod expiry_tests {
         let week = expiry_for("ThisWeek", now).unwrap();
         assert_eq!(
             (week.weekday(), week.day(), week.hour()),
-            (chrono::Weekday::Sat, 7, 0)
+            (jiff::civil::Weekday::Saturday, 7, 0)
         );
         assert_eq!(expiry_for("HalfHour", now).unwrap().minute(), 50);
         assert!(expiry_for("Never", now).is_none());
         // Saturday's "This week" is that same day, 00:00.
-        let sat = chrono::Local
-            .with_ymd_and_hms(2026, 11, 7, 10, 0, 0)
-            .unwrap();
+        let sat = &local(2026, 11, 7, 10, 0);
         assert_eq!(expiry_for("ThisWeek", sat).unwrap().day(), 7);
+    }
+
+    #[test]
+    fn expiries_in_a_dst_zone() {
+        let tz = jiff::tz::TimeZone::posix("EST5EDT,M3.2.0,M11.1.0").unwrap();
+        let at = |mo, d, h, mi| {
+            crate::clock::single(&tz, jiff::civil::datetime(2026, mo, d, h, mi, 0, 0)).unwrap()
+        };
+        let iso = |t: Option<jiff::ZonedDateTime>| crate::clock::iso_ms(t.unwrap().timestamp());
+        // Sunday November 1, 00:30 daylight time: the day ends in standard
+        // time, four hours are four real hours.
+        let now = &at(11, 1, 0, 30);
+        assert_eq!(iso(expiry_for("Today", now)), "2026-11-02T04:59:59.999Z");
+        assert_eq!(
+            iso(expiry_for("FourHours", now)),
+            "2026-11-01T08:30:00.000Z"
+        );
+        assert_eq!(iso(expiry_for("ThisWeek", now)), "2026-11-07T05:00:00.000Z");
+        assert_eq!(
+            work_location_body(Some("Office"), now).unwrap()["expirationTime"],
+            "2026-11-02T04:59:59.999Z"
+        );
+        // Saturday March 7: the week ends that day, before the change.
+        let now = &at(3, 7, 22, 0);
+        assert_eq!(iso(expiry_for("ThisWeek", now)), "2026-03-07T05:00:00.000Z");
+        assert_eq!(iso(expiry_for("TwoHours", now)), "2026-03-08T05:00:00.000Z");
+        // A note without an end: 9999-12-31 00:00 on the zone's clock.
+        assert_eq!(
+            never_expiry(&tz).as_deref(),
+            Some("9999-12-31T05:00:00.000Z")
+        );
+        let sydney = jiff::tz::TimeZone::posix("AEST-10AEDT,M10.1.0,M4.1.0/3").unwrap();
+        assert_eq!(
+            never_expiry(&sydney).as_deref(),
+            Some("9999-12-30T13:00:00.000Z")
+        );
+        assert_eq!(
+            never_expiry(&jiff::tz::TimeZone::UTC).as_deref(),
+            Some("9999-12-31T00:00:00.000Z")
+        );
     }
 
     #[test]
@@ -702,37 +742,33 @@ mod expiry_tests {
         // local, "This week" on Saturday 00:00 local, and the hours are
         // real hours.
         for (m, d) in [(3, 8), (3, 29), (10, 25), (11, 1), (3, 7), (10, 31)] {
-            let now = chrono::Local
-                .with_ymd_and_hms(2026, m, d, 1, 30, 0)
-                .latest();
-            let now = now.unwrap_or_else(|| {
-                chrono::Local
-                    .with_ymd_and_hms(2026, m, d, 12, 0, 0)
-                    .unwrap()
-            });
+            let now = crate::clock::local_earliest(jiff::civil::datetime(2026, m, d, 1, 30, 0, 0));
+            let now = &now.unwrap_or_else(|| local(2026, m, d, 12, 0));
             let today = expiry_for("Today", now).unwrap();
+            assert_eq!(today.datetime(), now.date().at(23, 59, 59, 999_000_000));
             assert_eq!(
-                today.naive_local(),
-                now.date_naive().and_hms_milli_opt(23, 59, 59, 999).unwrap()
-            );
-            assert_eq!(
-                (expiry_for("HalfHour", now).unwrap() - now).num_seconds(),
+                expiry_for("HalfHour", now)
+                    .unwrap()
+                    .duration_since(now)
+                    .as_secs(),
                 1800
             );
             assert_eq!(
-                (expiry_for("FourHours", now).unwrap() - now).num_seconds(),
+                expiry_for("FourHours", now)
+                    .unwrap()
+                    .duration_since(now)
+                    .as_secs(),
                 14_400
             );
             let week = expiry_for("ThisWeek", now).unwrap();
             assert_eq!(
                 (week.weekday(), week.hour(), week.minute()),
-                (chrono::Weekday::Sat, 0, 0)
+                (jiff::civil::Weekday::Saturday, 0, 0)
             );
-            assert!(week.date_naive() >= now.date_naive());
+            assert!(week.date() >= now.date());
         }
-        let until = chrono::DateTime::parse_from_rfc3339("2026-11-20T17:00:00+01:00")
-            .unwrap()
-            .with_timezone(&chrono::Local);
+        let until =
+            crate::clock::local(crate::clock::parse_instant("2026-11-20T17:00:00+01:00").unwrap());
         assert_eq!(
             note_body("Hi", false, Some(until))["expiry"],
             "2026-11-20T16:00:00.000Z"

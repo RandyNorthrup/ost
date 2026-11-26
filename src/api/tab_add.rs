@@ -683,7 +683,7 @@ pub async fn add_app_tab(
         .unwrap_or(app_name);
     let name = stored_name(suggested, &names);
     let id = format!("tab::{}", uuid::Uuid::new_v4());
-    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let now = crate::clock::now_iso_ms();
     let property = extension_property(&id, add_order(&orders), app_id, &name, settings, &now);
     put_property(client, thread_id, &id, Some(&property)).await?;
     record_used(app_id);
@@ -725,7 +725,7 @@ pub async fn add_list_tab(
 ) -> Result<String> {
     let (orders, names) = existing_tabs(client, channel_id).await?;
     let id = format!("tab::{}", uuid::Uuid::new_v4());
-    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let now = crate::clock::now_iso_ms();
     let settings = serde_json::json!({ "contentUrl": list_tab_url(existing) });
     let property = extension_property(
         &id,
@@ -802,7 +802,7 @@ pub async fn add_page_tab_without_link(
 ) -> Result<String> {
     let (orders, names) = existing_tabs(client, channel_id).await?;
     let id = format!("tab::{}", uuid::Uuid::new_v4());
-    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let now = crate::clock::now_iso_ms();
     let property = page_property(
         &id,
         add_order(&orders),
@@ -975,7 +975,7 @@ pub async fn add_existing_page(
     }
     let (orders, names) = existing_tabs(client, channel_id).await?;
     let id = format!("tab::{}", uuid::Uuid::new_v4());
-    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let now = crate::clock::now_iso_ms();
     let me = client.self_mri().unwrap_or_default();
     let property = page_property(
         &id,
@@ -1119,7 +1119,7 @@ pub async fn add_website(
         .filter(|o| o.is_finite() && *o < f64::MAX)
         .collect();
     let id = format!("tab::{}", uuid::Uuid::new_v4());
-    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let now = crate::clock::now_iso_ms();
     let name = name.trim();
     let property = website_property(&id, add_order(&orders), url, &now, name);
     put_property(client, thread_id, &id, Some(&property)).await?;
@@ -1146,7 +1146,7 @@ async fn post_link(
     text: &str,
 ) -> Result<String> {
     let me = client.self_mri().context("Not signed in")?;
-    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let now = crate::clock::now_iso_ms();
     let body = tabs::tab_link_post(
         thread_id,
         tab_id,

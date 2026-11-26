@@ -82,13 +82,13 @@ pub fn create_body(
     me: &str,
     prompt: &str,
     image: &str,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Value {
     let name: String = format!("{channel} Agent").chars().take(30).collect();
-    let start = now + chrono::Duration::hours(1);
-    let end = start + chrono::Duration::days(90);
+    let start = now + jiff::SignedDuration::from_hours(1);
+    let end = start + crate::clock::days(90);
     // Teams sends the UTC weekday as a number (Sunday 0: getUTCDay).
-    let day = chrono::Datelike::weekday(&start).num_days_from_sunday();
+    let day = crate::clock::utc(start).weekday().to_sunday_zero_offset();
     json!({
         "agentName": name,
         "agentType": "StatusReportAgent",
@@ -99,7 +99,7 @@ pub fn create_body(
         "botId": app_id(),
         "recurrence": {
             "pattern": { "patternType": "Weekly", "weekly": { "interval": 1, "daysOfTheWeek": [day] } },
-            "range": { "startDate": start.to_rfc3339_opts(chrono::SecondsFormat::Millis, true), "endDate": end.to_rfc3339_opts(chrono::SecondsFormat::Millis, true) }
+            "range": { "startDate": crate::clock::iso_ms(start), "endDate": crate::clock::iso_ms(end) }
         },
         "approvalList": [me],
         "threadListInformation": { "channelList": [{ "teamId": team_thread, "channelId": team_thread }] },
@@ -163,7 +163,7 @@ pub async fn add_to_new_team(
         &me,
         prompt,
         image,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     let r = client
         .http()
@@ -263,9 +263,7 @@ mod tests {
 
     #[test]
     fn create_body_as_teams() {
-        let now = chrono::DateTime::parse_from_rfc3339("2026-11-21T03:44:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = crate::clock::parse_instant("2026-11-21T03:44:00Z").unwrap();
         let b = create_body(
             "A channel with a rather long name",
             "19:t@thread.tacv2",

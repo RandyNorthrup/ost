@@ -97,10 +97,9 @@ pub fn parse_reply(v: &Value) -> Reply {
 
 /// How long to wait after a pending answer (Teams: the expiry, else 5 s,
 /// at most 30 s).
-pub fn retry_delay(expiry: &str, now: chrono::DateTime<chrono::Utc>) -> std::time::Duration {
-    let ms = chrono::DateTime::parse_from_rfc3339(expiry)
-        .ok()
-        .map(|e| (e.with_timezone(&chrono::Utc) - now).num_milliseconds())
+pub fn retry_delay(expiry: &str, now: jiff::Timestamp) -> std::time::Duration {
+    let ms = crate::clock::parse_instant(expiry)
+        .map(|e| (e - now).as_millis() as i64)
         .filter(|ms| *ms > 0)
         .unwrap_or(5000);
     std::time::Duration::from_millis(ms.clamp(1000, 30_000) as u64)
@@ -197,7 +196,7 @@ pub async fn get_or_create(m: &Meeting) -> Result<String> {
             return Ok(r.location);
         }
         if r.state == "pending" && attempt < RETRIES {
-            tokio::time::sleep(retry_delay(&r.expiry, chrono::Utc::now())).await;
+            tokio::time::sleep(retry_delay(&r.expiry, jiff::Timestamp::now())).await;
             continue;
         }
         anyhow::bail!(
@@ -743,9 +742,7 @@ mod tests {
         );
         assert_eq!(r.location, "https://x/:fl:/p");
         assert_eq!(r.state, "committed");
-        let now = chrono::DateTime::parse_from_rfc3339("2026-11-16T23:00:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = crate::clock::parse_instant("2026-11-16T23:00:00Z").unwrap();
         assert_eq!(retry_delay("2026-11-16T23:00:05Z", now).as_millis(), 5000);
         assert_eq!(retry_delay("2026-11-16T23:05:00Z", now).as_millis(), 30_000);
         assert_eq!(retry_delay("", now).as_millis(), 5000);

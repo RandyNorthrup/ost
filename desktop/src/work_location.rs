@@ -303,7 +303,7 @@ async fn process(
             let body = places::network_body(
                 bssid,
                 with_ssid.then_some(ssid.as_str()),
-                chrono::Utc::now(),
+                jiff::Timestamp::now(),
             );
             let r = places::report_network(&client, &epid, &body).await?;
             Ok(format!("{r:?}"))

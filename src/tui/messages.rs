@@ -1,6 +1,8 @@
 //! Messages pane: displays channel messages with reactions, replies, and attachments.
 
-use chrono::{Datelike, Local, NaiveDate, NaiveDateTime, Timelike, Weekday};
+use jiff::civil::{Date as NaiveDate, Weekday};
+
+use crate::clock;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -352,7 +354,7 @@ fn build_message_lines(
     width: usize,
     user_name: &str,
 ) -> (Vec<Line<'static>>, Vec<(usize, usize)>) {
-    let today = Local::now().naive_local().date();
+    let today = clock::local_now().date();
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut ranges: Vec<(usize, usize)> = Vec::new();
 
@@ -677,16 +679,18 @@ fn format_timestamp(raw: &str, today: NaiveDate) -> String {
     let is_utc = trimmed.ends_with('Z');
     let stripped = trimmed.trim_end_matches('Z');
 
-    let parsed = NaiveDateTime::parse_from_str(stripped, "%Y-%m-%dT%H:%M:%S%.f")
-        .or_else(|_| NaiveDateTime::parse_from_str(stripped, "%Y-%m-%dT%H:%M:%S"));
-    let naive = match parsed {
-        Ok(dt) => dt,
-        Err(_) => return raw.to_string(),
+    let parsed = clock::parse_naive(stripped, "%Y-%m-%dT%H:%M:%S%.f")
+        .or_else(|| clock::parse_naive(stripped, "%Y-%m-%dT%H:%M:%S"));
+    let Some(naive) = parsed else {
+        return raw.to_string();
     };
 
     // Convert UTC timestamps to local time.
     let local_dt = if is_utc {
-        naive.and_utc().with_timezone(&Local).naive_local()
+        match clock::as_utc(naive) {
+            Some(t) => clock::local(t).datetime(),
+            None => return raw.to_string(),
+        }
     } else {
         naive
     };
@@ -696,16 +700,16 @@ fn format_timestamp(raw: &str, today: NaiveDate) -> String {
     if ts_date == today {
         format!("{:02}:{:02}", local_dt.hour(), local_dt.minute())
     } else {
-        let days_ago = (today - ts_date).num_days();
+        let days_ago = clock::days_between(ts_date, today);
         if days_ago > 0 && days_ago < 7 {
             let weekday = match ts_date.weekday() {
-                Weekday::Mon => "Mon",
-                Weekday::Tue => "Tue",
-                Weekday::Wed => "Wed",
-                Weekday::Thu => "Thu",
-                Weekday::Fri => "Fri",
-                Weekday::Sat => "Sat",
-                Weekday::Sun => "Sun",
+                Weekday::Monday => "Mon",
+                Weekday::Tuesday => "Tue",
+                Weekday::Wednesday => "Wed",
+                Weekday::Thursday => "Thu",
+                Weekday::Friday => "Fri",
+                Weekday::Saturday => "Sat",
+                Weekday::Sunday => "Sun",
             };
             format!(
                 "{} {:02}:{:02}",
@@ -1085,7 +1089,7 @@ mod time_tests {
     #[test]
     fn timestamps_read_by_age() {
         // A Friday.
-        let today = NaiveDate::from_ymd_opt(2026, 11, 20).unwrap();
+        let today = jiff::civil::date(2026, 11, 20);
         let f = |s: &str| format_timestamp(s, today);
         assert_eq!(f("2026-11-20T09:05:00"), "09:05");
         assert_eq!(f("2026-11-20T09:05:00.1234567"), "09:05");

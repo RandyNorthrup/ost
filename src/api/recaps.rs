@@ -57,8 +57,8 @@ async fn get(url: &str) -> Result<Value> {
 /// examples/recap_days).
 pub async fn day_contents(
     region: &str,
-    start: chrono::DateTime<chrono::Utc>,
-    end: chrono::DateTime<chrono::Utc>,
+    start: jiff::Timestamp,
+    end: jiff::Timestamp,
 ) -> Result<Value> {
     get(&format!("{}/{}", base(region), day_query(start, end))).await
 }
@@ -102,12 +102,8 @@ pub async fn podcast_consume(region: &str, query: &str) -> Result<Option<Value>>
 }
 
 /// A day's request, as Teams asks (the local day's first and last moment).
-pub fn day_query(
-    start: chrono::DateTime<chrono::Utc>,
-    end: chrono::DateTime<chrono::Utc>,
-) -> String {
-    let f =
-        |t: chrono::DateTime<chrono::Utc>| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+pub fn day_query(start: jiff::Timestamp, end: jiff::Timestamp) -> String {
+    let f = crate::clock::iso_ms;
     format!(
         "user/meetings/contents?top=20&startDateTime={}&endDateTime={}&includeTypes=Recording,TranscriptV2,MeetingChat,MeetingStage,Notes",
         f(start),
@@ -610,9 +606,8 @@ pub fn day_rows(contents: Option<&Value>, catch_up: Option<&Value>) -> Vec<Value
 /// both of its days; the list keeps one (by eventId, MeetingRecapsView's
 /// `meetingList`).
 pub async fn meetings(region: &str, from_days_ago: i64, days: i64) -> Result<Value> {
-    let asks = local_days(chrono::Local::now().date_naive(), from_days_ago, days);
-    let f =
-        |t: chrono::DateTime<chrono::Utc>| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let asks = local_days(crate::clock::local_now().date(), from_days_ago, days);
+    let f = crate::clock::iso_ms;
     // At most 8 days at a time (Teams' fetchAndCacheArtifactsByUserRange).
     use futures::StreamExt;
     let owned: Vec<(String, String, String)> = asks
@@ -634,7 +629,7 @@ pub async fn meetings(region: &str, from_days_ago: i64, days: i64) -> Result<Val
     for ((day, _, _), (contents, catch_up)) in asks.iter().zip(replies) {
         let list = day_rows(contents.as_ref().ok(), catch_up.as_ref().ok());
         if !list.is_empty() {
-            out.push(json!({ "day": day.format("%Y-%m-%d").to_string(), "meetings": list }));
+            out.push(json!({ "day": crate::clock::format(*day, "%Y-%m-%d"), "meetings": list }));
         }
     }
     Ok(json!({ "days": out, "next": from_days_ago + days }))
@@ -645,26 +640,26 @@ pub async fn meetings(region: &str, from_days_ago: i64, days: i64) -> Result<Val
 /// local) in UTC; a day whose bounds a DST change makes ambiguous is left
 /// out.
 pub fn local_days(
-    today: chrono::NaiveDate,
+    today: jiff::civil::Date,
     from_days_ago: i64,
     days: i64,
-) -> Vec<(
-    chrono::NaiveDate,
-    chrono::DateTime<chrono::Utc>,
-    chrono::DateTime<chrono::Utc>,
-)> {
-    use chrono::{Local, TimeZone};
+) -> Vec<(jiff::civil::Date, jiff::Timestamp, jiff::Timestamp)> {
+    days_in(&crate::clock::local_zone(), today, from_days_ago, days)
+}
+
+/// `local_days` in `zone`.
+pub fn days_in(
+    zone: &jiff::tz::TimeZone,
+    today: jiff::civil::Date,
+    from_days_ago: i64,
+    days: i64,
+) -> Vec<(jiff::civil::Date, jiff::Timestamp, jiff::Timestamp)> {
     let mut asks = Vec::new();
     for i in from_days_ago..from_days_ago + days {
-        let day = today - chrono::Duration::days(i);
-        let start = Local
-            .from_local_datetime(&day.and_hms_opt(0, 0, 0).unwrap_or_default())
-            .single()
-            .map(|d| d.with_timezone(&chrono::Utc));
-        let end = Local
-            .from_local_datetime(&day.and_hms_milli_opt(23, 59, 59, 999).unwrap_or_default())
-            .single()
-            .map(|d| d.with_timezone(&chrono::Utc));
+        let day = crate::clock::add_days(today, -i);
+        let start = crate::clock::single(zone, day.at(0, 0, 0, 0)).map(|d| d.timestamp());
+        let end =
+            crate::clock::single(zone, day.at(23, 59, 59, 999_000_000)).map(|d| d.timestamp());
         if let (Some(a), Some(b)) = (start, end) {
             asks.push((day, a, b));
         }
@@ -917,7 +912,7 @@ pub async fn resolve_contents(
     region: &str,
     r: &mut RecapRef,
 ) -> Result<(Value, Option<MeetingContents>)> {
-    let day = |ms: i64| chrono::DateTime::from_timestamp_millis(ms).unwrap_or_default();
+    let day = |ms: i64| crate::clock::from_ms(ms).unwrap_or_default();
     let (a, b) = (
         day(r.start_ms - 86_400_000),
         day(r.end_ms.max(r.start_ms) + 86_400_000),
@@ -1241,12 +1236,10 @@ fn percent_decode(s: &str) -> String {
 }
 
 /// Days left before the recording expires (rounded up), -1 for none.
-pub fn remaining_days(expiration: &str, now: chrono::DateTime<chrono::Utc>) -> i64 {
-    match chrono::DateTime::parse_from_rfc3339(expiration) {
-        Ok(t) => ((t.with_timezone(&chrono::Utc) - now).num_seconds() as f64 / 86_400.0)
-            .ceil()
-            .max(0.0) as i64,
-        Err(_) => -1,
+pub fn remaining_days(expiration: &str, now: jiff::Timestamp) -> i64 {
+    match crate::clock::parse_instant(expiration) {
+        Some(t) => ((t - now).as_secs() as f64 / 86_400.0).ceil().max(0.0) as i64,
+        None => -1,
     }
 }
 
@@ -1425,7 +1418,7 @@ pub struct Place {
 impl Place {
     pub fn here() -> Place {
         Place {
-            offset_minutes: -(chrono::Local::now().offset().local_minus_utc() as i64) / 60,
+            offset_minutes: -(crate::clock::local_offset_seconds() as i64) / 60,
             zone: super::compose_copilot::iana_timezone(),
         }
     }
@@ -1850,8 +1843,8 @@ pub fn fill_from_catch_up(r: &mut RecapRef, v: &Value) {
             .to_string()
     };
     let ms = |p: &str| {
-        chrono::DateTime::parse_from_rfc3339(&s(p))
-            .map(|t| t.timestamp_millis())
+        crate::clock::parse_instant(&s(p))
+            .map(crate::clock::millis)
             .unwrap_or(0)
     };
     if r.organizer_id.is_empty() {
@@ -2207,9 +2200,7 @@ mod tests {
             clipchamp_url("https://x-my.sharepoint.com/personal/o/Documents/Recordings/a.mp4"),
             "https://x-my.sharepoint.com/personal/o/Documents/Recordings/a.mp4?web=1&referrer=Teams.TEAMS-ELECTRON&referrerScenario=RecapOpenInStreamButton.view"
         );
-        let now = chrono::DateTime::parse_from_rfc3339("2026-11-20T00:00:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = crate::clock::parse_instant("2026-11-20T00:00:00Z").unwrap();
         assert_eq!(remaining_days("2027-03-19T12:00:00Z", now), 120);
         assert_eq!(remaining_days("", now), -1);
         let m = mentions_from(
@@ -2270,7 +2261,7 @@ mod tests {
 
     #[test]
     fn days_run_from_local_midnight_to_midnight() {
-        let day = |m, d| chrono::NaiveDate::from_ymd_opt(2026, m, d).unwrap();
+        let day = |m, d| jiff::civil::date(2026, m, d);
         let days = local_days(day(11, 20), 0, 3);
         assert_eq!(
             days.iter().map(|d| d.0).collect::<Vec<_>>(),
@@ -2286,18 +2277,12 @@ mod tests {
             (day(11, 2), 2),
         ] {
             for (d, a, b) in local_days(today, 0, back) {
-                let (la, lb) = (
-                    a.with_timezone(&chrono::Local),
-                    b.with_timezone(&chrono::Local),
-                );
-                assert_eq!(la.naive_local(), d.and_hms_opt(0, 0, 0).unwrap());
+                let (la, lb) = (crate::clock::local(a), crate::clock::local(b));
+                assert_eq!(la.datetime(), d.at(0, 0, 0, 0));
+                assert_eq!(lb.datetime(), d.at(23, 59, 59, 999_000_000));
+                let shift = la.offset().seconds() - lb.offset().seconds();
                 assert_eq!(
-                    lb.naive_local(),
-                    d.and_hms_milli_opt(23, 59, 59, 999).unwrap()
-                );
-                let shift = la.offset().local_minus_utc() - lb.offset().local_minus_utc();
-                assert_eq!(
-                    (b - a).num_milliseconds() + 1,
+                    (b - a).as_millis() as i64 + 1,
                     (86_400 + i64::from(shift)) * 1000
                 );
             }
@@ -2306,12 +2291,8 @@ mod tests {
 
     #[test]
     fn asks_and_reads_as_teams() {
-        let a = chrono::DateTime::parse_from_rfc3339("2026-11-18T08:00:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
-        let b = chrono::DateTime::parse_from_rfc3339("2026-11-19T07:59:59.999Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let a = crate::clock::parse_instant("2026-11-18T08:00:00Z").unwrap();
+        let b = crate::clock::parse_instant("2026-11-19T07:59:59.999Z").unwrap();
         assert_eq!(
             day_query(a, b),
             "user/meetings/contents?top=20&startDateTime=2026-11-18T08:00:00.000Z&endDateTime=2026-11-19T07:59:59.999Z&includeTypes=Recording,TranscriptV2,MeetingChat,MeetingStage,Notes"
