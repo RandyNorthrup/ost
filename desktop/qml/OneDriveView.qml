@@ -140,11 +140,13 @@ Item {
         pills = i >= 0 ? pills.filter(p => p !== id) : pills.concat([id])
     }
     readonly property var shown: {
-        if (spartan && view !== "people") return filterRows(items)
-        if (!sortField) return items
+        // Home and Shared filter first (pills, the filter box); any Sort
+        // picked then applies as everywhere.
+        const base = spartan && view !== "people" ? filterRows(items) : items
+        if (!sortField) return base
         const key = it => sortField === "size" ? (it.is_folder ? it.child_count || 0 : it.size || 0)
                         : sortField === "kind" ? String(it.kind || "") : String(it[sortField] || "").toLowerCase()
-        const out = items.slice()
+        const out = base.slice()
         out.sort((a, b) => {
             if (a.is_folder !== b.is_folder) return a.is_folder ? -1 : 1
             const x = key(a), y = key(b)
@@ -1079,7 +1081,7 @@ Item {
                             onTapped: (ev) => actions.popup(frow.modelData, frow, ev.position.x, ev.position.y)
                         }
                         function activate() {
-                            if (modelData.remote_id) root.openFolder(modelData.name, modelData.remote_drive_id, modelData.remote_id)
+                            if (modelData.remote_id && modelData.is_folder) root.openFolder(modelData.name, modelData.remote_drive_id, modelData.remote_id)
                             else if (modelData.is_folder) root.openFolder(modelData.name, modelData.drive_id, modelData.id)
                             else if (modelData.web_url) backend.openFile(modelData.web_url, modelData.name, JSON.stringify(modelData))
                         }
@@ -1157,7 +1159,7 @@ Item {
     /// Opens a row or chip's file (a folder opens in the app).
     function openSharedFile(f) {
         if (!f) return
-        if (f.remote_id) root.openFolder(f.name, f.remote_drive_id, f.remote_id)
+        if (f.remote_id && f.is_folder) root.openFolder(f.name, f.remote_drive_id, f.remote_id)
         else if (f.is_folder) root.openFolder(f.name, f.drive_id, f.id)
         else if (f.web_url) backend.openFile(f.web_url, f.name, JSON.stringify(f))
     }
@@ -1796,7 +1798,7 @@ Item {
         }
         HoverHandler { id: th; cursorShape: Qt.PointingHandCursor }
         TapHandler {
-            onTapped: (ev, button) => (ev.modifiers & Qt.ControlModifier) ? root.toggle(tile.modelData) : tile.modelData.remote_id ? root.openFolder(tile.modelData.name, tile.modelData.remote_drive_id, tile.modelData.remote_id) : tile.modelData.is_folder ? root.openFolder(tile.modelData.name, tile.modelData.drive_id, tile.modelData.id) : root.selectOnly(tile.modelData)
+            onTapped: (ev, button) => (ev.modifiers & Qt.ControlModifier) ? root.toggle(tile.modelData) : tile.modelData.remote_id && tile.modelData.is_folder ? root.openFolder(tile.modelData.name, tile.modelData.remote_drive_id, tile.modelData.remote_id) : tile.modelData.is_folder ? root.openFolder(tile.modelData.name, tile.modelData.drive_id, tile.modelData.id) : root.selectOnly(tile.modelData)
             onDoubleTapped: if (!tile.modelData.is_folder && tile.modelData.web_url) backend.openFile(tile.modelData.web_url, tile.modelData.name, JSON.stringify(tile.modelData))
         }
         TapHandler { acceptedButtons: Qt.RightButton; onTapped: (ev) => actions.popup(tile.modelData, tile, ev.position.x, ev.position.y) }
