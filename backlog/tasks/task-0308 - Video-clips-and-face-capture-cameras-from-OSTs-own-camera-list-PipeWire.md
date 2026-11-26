@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T19:30:00Z'
-updated_date: '2026-11-26T04:35:00Z'
+updated_date: '2026-11-26T05:15:00Z'
 labels:
   - bug
   - calls
@@ -45,6 +45,9 @@ The video clip recorder (VideoClipRecorder.qml) and Recognition's face capture (
 - Face capture: same list, Settings' camera first, VideoFrame preview, photo via saveFrame.
 - Gotcha: #[auto_cxx_name] has to be on the invokables block too, or QML sees show_in/save_frame (showIn "is not a function").
 - AC3 by construction (camera::cameras(), TASK-0307's filtered list); no IPU6 hardware to check live.
+
+- Codex review (PR #12): retry while no camera (portal pending): both dialogs look again each second while shown. Live: PipeWire camera started 2 s after open -> picked up within ~1 s.
+- Found in that check: face capture took videoDevices().current, which falls back to the first camera when the chosen one is missing, and opened linuxlt's real webcam ~6 s (harness photo deleted unviewed, nothing sent). Fixed: "" = the chosen camera resolved in CameraFeed, which opens a chosen camera only as itself (no listing) and the first camera only when none is chosen.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
