@@ -332,18 +332,15 @@ Popup {
     // The camera's picture (shown, and so recorded, in camera mode): from
     // OST's camera list, captured as calls capture it, and open only while
     // it shows (Teams opens a camera only then).
-    /// The cameras (Settings > Devices' list): [{path, name}], and the one
-    /// chosen there.
+    /// The cameras (Settings > Devices' list): [{path, name}].
     property var cameraList: []
-    property string chosenCamera: ""
     function loadCameras() {
-        const d = JSON.parse(backend.videoDevices())
-        cameraList = d.devices || []
-        chosenCamera = d.current || ""
+        cameraList = JSON.parse(backend.videoDevices()).devices || []
     }
     onOpenedChanged: if (opened) loadCameras()
-    /// The camera picked here ("" until one is), else Settings > Devices'.
-    readonly property string cameraShown: cameraId || chosenCamera
+    /// The camera the menu checks: the one picked here, else the one open
+    /// (Settings > Devices' one; none while it isn't there).
+    readonly property string cameraShown: cameraId || camFeed.camera
     readonly property bool cameraWanted: opened && cameraOn && !screenMode && stage !== "review"
     function syncCamera() {
         if (!cameraWanted) { camFeed.close(); camFeed.showIn(camPreview.videoSink); return }
@@ -357,6 +354,15 @@ Popup {
         id: camFeed
         /// What `cameraId` was when it opened.
         property string wanted: ""
+        // (A camera that came later joins the list.)
+        onRunningChanged: if (running) rec.loadCameras()
+    }
+    // No camera yet (the camera portal still asking, none plugged in, or
+    // it wouldn't open): look again each second while it should show.
+    Timer {
+        interval: 1000; repeat: true
+        running: rec.cameraWanted && !camFeed.running
+        onTriggered: { if (!rec.cameraList.length) rec.loadCameras(); rec.syncCamera() }
     }
     Timer {
         interval: 15; repeat: true

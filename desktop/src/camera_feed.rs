@@ -117,13 +117,14 @@ impl qobject::CameraFeed {
         let wanted = Some(id.to_string())
             .filter(|i| !i.is_empty())
             .or_else(crate::backend::selected_camera);
-        // The listed camera it names (a V4L2 path saved before PipeWire
-        // offered that camera is the PipeWire one); else the first camera.
-        let list = camera::cameras();
-        let id = match wanted.as_deref() {
-            Some(w) => camera::find(&list, w).map_or_else(|| w.to_string(), |c| c.id.clone()),
-            None => match list.first() {
-                Some(c) => c.id.clone(),
+        // That camera and no other: while it isn't there, nothing opens
+        // (it is asked for again). With none chosen, the first camera, as
+        // calls do. (A chosen camera is opened without listing them all:
+        // listing opens every V4L2 node.)
+        let id = match wanted {
+            Some(w) => w,
+            None => match camera::cameras().into_iter().next() {
+                Some(c) => c.id,
                 None => {
                     tracing::info!("camera feed: no camera");
                     return false;
@@ -142,6 +143,9 @@ impl qobject::CameraFeed {
             Ok(capture) => {
                 tracing::info!(camera = id, key, "camera feed opened");
                 self.as_mut().rust_mut().capture = Some(capture);
+                // As the list names it (a V4L2 path saved before PipeWire
+                // offered that camera is the PipeWire one).
+                let id = camera::find(&camera::cameras(), &id).map_or(id, |c| c.id.clone());
                 self.as_mut().set_camera(QString::from(id.as_str()));
                 self.as_mut().set_running(true);
                 true
