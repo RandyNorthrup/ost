@@ -309,6 +309,25 @@ fn main() {
     if let Some(app) = app.as_mut() {
         app.exec();
     }
+    // Teams' Save and restart (and Sign out, which restarts to clear the
+    // web storage): start again with the same arguments, straight away.
+    // exec replaces the whole process, so nothing needs tearing down, and
+    // tearing down a signed-in session's QML first can crash in libQt6Qml
+    // before the restart happens (seen on sign-out, 2026-11-25).
+    if backend::restart_requested()
+        && let Ok(exe) = std::env::current_exe()
+    {
+        use std::os::unix::process::CommandExt;
+        if std::env::args().len() <= 1
+            && let Some(path) = instance_socket()
+        {
+            let _ = std::fs::remove_file(path);
+        }
+        let err = std::process::Command::new(exe)
+            .args(std::env::args_os().skip(1))
+            .exec();
+        tracing::warn!("restart failed: {err}");
+    }
     // Tear down our own Qt objects while the application still exists: the
     // QML engine (windows, Backend and its callbacks) first, then the app.
     drop(engine);
@@ -318,16 +337,6 @@ fn main() {
         && let Some(path) = instance_socket()
     {
         let _ = std::fs::remove_file(path);
-    }
-    // Teams' Save and restart: start again with the same arguments.
-    if backend::restart_requested()
-        && let Ok(exe) = std::env::current_exe()
-    {
-        use std::os::unix::process::CommandExt;
-        let err = std::process::Command::new(exe)
-            .args(std::env::args_os().skip(1))
-            .exec();
-        tracing::warn!("restart failed: {err}");
     }
     exit_without_static_teardown();
 }
