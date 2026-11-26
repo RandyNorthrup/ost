@@ -812,6 +812,13 @@ pub fn apply(roster: &mut Vec<Participant>, delta: Vec<Participant>) {
                     p.endpoint_id = std::mem::take(&mut x.endpoint_id);
                     p.participant_id = std::mem::take(&mut x.participant_id);
                 }
+                // An update that only names someone (`{details:
+                // {displayName}, state}`, seen right after an organizer
+                // joins) doesn't repeat their meeting role; Teams keeps
+                // it (its participant merges what an update carries).
+                if p.role.is_empty() {
+                    p.role = std::mem::take(&mut x.role);
+                }
                 *x = p
             }
             None => roster.push(p),
@@ -1278,6 +1285,27 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn an_update_that_only_names_someone_keeps_their_role() {
+        // TASK-0325: right after an organizer joined, Teams sent their
+        // entry with the role, then one with only the name and state
+        // (captured 2026-11-26); the organizer's Lobby chat went with it.
+        let mut r = Vec::new();
+        apply(
+            &mut r,
+            roster_delta(&update("8:orgid:me", "Me", "active", "organizer")).unwrap(),
+        );
+        let named = r#"{"callAgentPath":"conversation/rosterUpdate/","body":{"participants":{"8:orgid:me":{"details":{"displayName":"Me"},"state":"active"}}}}"#;
+        apply(&mut r, roster_delta(named).unwrap());
+        assert_eq!(r[0].role, "organizer");
+        // A role the update does carry still replaces it.
+        apply(
+            &mut r,
+            roster_delta(&update("8:orgid:me", "Me", "active", "presenter")).unwrap(),
+        );
+        assert_eq!(r[0].role, "presenter");
     }
 
     #[test]
