@@ -603,28 +603,38 @@ impl OutgoingCall {
         Ok(())
     }
 
-    /// Mute one participant (Teams' Mute participant: the mute link, scope
-    /// "specified").
-    pub async fn mute_participant(&self, id: &str) -> Result<()> {
+    /// Mute one participant (Teams' Mute participant: MuteSpecifiedSync on
+    /// the conversation's mute link, scope "specified"). Returns who the
+    /// reply says the meeting muted (the full result comes later, to the
+    /// muteUnmuteAsync callback).
+    pub async fn mute_participant(&self, id: &str) -> Result<Vec<String>> {
+        self.mute(&[id], "Mute participant").await
+    }
+
+    /// Teams' mute of others (calling-pluginless muteAsync with ECS
+    /// SkypeCalling enableAsyncMute on): POST the body to the conversation's
+    /// mute link with a muteUnmuteAsync callback and an operation id. The
+    /// service answers 202 at once and sends the result to the callback.
+    async fn mute(&self, ids: &[&str], what: &str) -> Result<Vec<String>> {
         let link = self
             .mute_link
             .clone()
             .context("This meeting can't mute others")?;
-        let body = serde_json::json!({
-            "from": self.me.0,
-            "scope": "specified",
-            "muteParticipants": [id],
-            "mediaTypes": ["audio"],
-        });
-        cc_post(
+        let operation = uuid::Uuid::new_v4().to_string();
+        let callback = mute_callback(&self.callbacks.0, &self.callbacks.1, &operation);
+        let scope = if ids.is_empty() { "all" } else { "specified" };
+        let body = mute_body(&self.me.0, scope, ids, &callback, &operation);
+        let reply = cc_send_in_call(
             &self.http,
+            reqwest::Method::POST,
             &self.skype_token,
             &link,
             &body,
-            "Mute participant",
+            what,
+            Some(&self.call_id),
         )
         .await?;
-        Ok(())
+        Ok(muted_by_reply(&reply))
     }
 
     /// Change someone's meeting role (Teams' Make an attendee / Make a
@@ -2775,16 +2785,11 @@ impl OutgoingCall {
         Ok(())
     }
 
-    /// Mute everyone else (Teams' Mute all: the conversation's mute link
-    /// with scope "all" and no one named).
-    pub async fn mute_all(&self) -> Result<()> {
-        let link = self
-            .mute_link
-            .clone()
-            .context("This meeting can't mute others")?;
-        let body = mute_all_body(&self.me.0);
-        cc_post(&self.http, &self.skype_token, &link, &body, "Mute all").await?;
-        Ok(())
+    /// Mute everyone else (Teams' Mute all: MuteAllSync on the
+    /// conversation's mute link, scope "all" and no one named). Returns who
+    /// the reply says the meeting muted.
+    pub async fn mute_all(&self) -> Result<Vec<String>> {
+        self.mute(&[], "Mute all").await
     }
 
     /// The meeting's link to share (Teams' Share invite).
@@ -3037,11 +3042,37 @@ async fn cc_send(
     body: &serde_json::Value,
     what: &str,
 ) -> Result<serde_json::Value> {
+    cc_send_in_call(http, method, skype_token, url, body, what, None).await
+}
+
+/// A conversation request; with the call's chain id it carries the headers
+/// Teams' calling stack puts on each request of the call (its chain and
+/// message ids, client, partition, region and ring, as on the join).
+async fn cc_send_in_call(
+    http: &reqwest::Client,
+    method: reqwest::Method,
+    skype_token: &str,
+    url: &str,
+    body: &serde_json::Value,
+    what: &str,
+    chain_id: Option<&str>,
+) -> Result<serde_json::Value> {
     if !super::incoming::is_service_link(url) {
         bail!("{what}: not a Teams service link");
     }
+    let message_id = uuid::Uuid::new_v4().to_string();
     let send = |bearer: Option<String>| {
-        let req = http.request(method.clone(), url).json(body);
+        let mut req = http.request(method.clone(), url).json(body);
+        if let Some(chain) = chain_id {
+            req = req
+                .header("x-microsoft-skype-chain-id", chain)
+                .header("x-microsoft-skype-message-id", &message_id)
+                .header("x-microsoft-skype-client", signaling::SKYPE_CLIENT_HEADER)
+                .header("Referer", "https://teams.microsoft.com/")
+                .header("ms-teams-partition", signaling::TEAMS_PARTITION)
+                .header("ms-teams-region", signaling::TEAMS_REGION)
+                .header("ms-teams-ring", signaling::TEAMS_RING);
+        }
         match bearer {
             Some(t) => req.bearer_auth(t).header("X-MS-Migration", "True"),
             None => req.header("X-Skypetoken", skype_token),
@@ -3222,15 +3253,77 @@ pub(crate) fn media_descriptions_body(
     serde_json::json!({"UpdateMediaDescriptions": {"mediaDescriptions": descriptions}})
 }
 
-/// Teams' MuteAllSync body: scope "all" (everyone but you) with an empty
-/// list, audio only (Teams' muteAllParticipants passes MuteScope.All, []).
-fn mute_all_body(me: &serde_json::Value) -> serde_json::Value {
+/// Teams' body for muting others (calling-pluginless IV, as Teams sent it
+/// in a meeting, 2026-11-25): who we are, the scope ("specified" for
+/// MuteSpecifiedSync; "all" for MuteAllSync, which names no one and mutes
+/// everyone but you), the people as `{id}` objects, audio only, and the
+/// callback and operation id the result comes back with.
+fn mute_body(
+    me: &serde_json::Value,
+    scope: &str,
+    ids: &[&str],
+    callback: &str,
+    operation: &str,
+) -> serde_json::Value {
+    let people: Vec<serde_json::Value> = ids
+        .iter()
+        .map(|id| serde_json::json!({ "id": id }))
+        .collect();
     serde_json::json!({
-        "from": me,
-        "scope": "all",
-        "muteParticipants": [],
+        "from": super::meeting_options::state_from(me),
+        "scope": scope,
+        "muteParticipants": people,
         "mediaTypes": ["audio"],
+        "links": { "clientCallback": callback },
+        "operationId": operation,
     })
+}
+
+/// Teams' muteUnmuteAsync callback for one operation: the operation id is
+/// the callback's own segment (`…/callAgent/<endpoint>/<operation>/
+/// conversation/muteUnmuteAsync/`).
+fn mute_callback(surl: &str, endpoint_id: &str, operation: &str) -> String {
+    format!("{surl}callAgent/{endpoint_id}/{operation}/conversation/muteUnmuteAsync/")
+}
+
+/// Who a mute result says the meeting muted, from the event pushed to the
+/// muteUnmuteAsync callback (`{muteUnmuteResponseAsync, operationId}`);
+/// None for any other event.
+pub fn muted_by_async_result(json: &str) -> Option<Vec<String>> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    if !v
+        .get("callAgentPath")?
+        .as_str()?
+        .starts_with("conversation/muteUnmuteAsync")
+    {
+        return None;
+    }
+    Some(muted_by_reply(v.get("body")?))
+}
+
+/// Who a mute reply says the meeting muted. Its `muteUnmuteResponse` (the
+/// callback's `muteUnmuteResponseAsync`) maps each MRI to their endpoints'
+/// results (`{participantId, reason, serverMuteVersion}`); Teams marks an
+/// endpoint's audio server-muted for each `reason` "success" at once,
+/// before the roster says so (calling-pluginless
+/// handleParticipantsMutedUpdated). The lowercased MRIs of everyone all of
+/// whose listed endpoints succeeded.
+fn muted_by_reply(reply: &serde_json::Value) -> Vec<String> {
+    reply
+        .get("muteUnmuteResponse")
+        .or_else(|| reply.get("muteUnmuteResponseAsync"))
+        .and_then(|m| m.as_object())
+        .into_iter()
+        .flatten()
+        .filter(|(_, endpoints)| {
+            endpoints.as_array().is_some_and(|e| {
+                !e.is_empty()
+                    && e.iter()
+                        .all(|x| x.get("reason").and_then(|r| r.as_str()) == Some("success"))
+            })
+        })
+        .map(|(mri, _)| mri.to_ascii_lowercase())
+        .collect()
 }
 
 /// Teams' body for deleting the conversation controller (End meeting).
@@ -5234,10 +5327,59 @@ mod tests {
 
     #[test]
     fn mute_all_names_everyone_else() {
-        let body = mute_all_body(&serde_json::json!({ "id": "8:orgid:me" }));
+        let me = serde_json::json!({ "id": "8:orgid:me", "displayName": "Me", "endpointId": "e",
+            "participantId": "p", "languageId": "en-US" });
+        let cb = mute_callback("https://t.example/x1/", "ep", "op1");
+        assert_eq!(
+            cb,
+            "https://t.example/x1/callAgent/ep/op1/conversation/muteUnmuteAsync/"
+        );
+        let body = mute_body(&me, "all", &[], &cb, "op1");
         assert_eq!(body["scope"], "all");
-        assert_eq!(body["muteParticipants"].as_array().map(Vec::len), Some(0));
-        assert_eq!(body["mediaTypes"][0], "audio");
+        assert_eq!(body["muteParticipants"], serde_json::json!([]));
+        assert_eq!(body["mediaTypes"], serde_json::json!(["audio"]));
+        assert_eq!(body["from"], me);
+        assert_eq!(body["links"]["clientCallback"], cb);
+        assert_eq!(body["operationId"], "op1");
+    }
+
+    #[test]
+    fn mute_participant_names_them_as_objects() {
+        let me = serde_json::json!({ "id": "8:orgid:me", "displayName": "Me", "endpointId": "e",
+            "participantId": "p", "languageId": "en-US", "extra": 1 });
+        let body = mute_body(&me, "specified", &["8:orgid:them"], "cb", "op");
+        assert_eq!(body["scope"], "specified");
+        assert_eq!(
+            body["muteParticipants"],
+            serde_json::json!([{ "id": "8:orgid:them" }])
+        );
+        assert!(body["from"].get("extra").is_none());
+        assert_eq!(body["from"]["participantId"], "p");
+    }
+
+    #[test]
+    fn mute_reply_names_who_was_muted() {
+        let reply = serde_json::json!({ "muteUnmuteResponse": {
+            "8:orgid:A": [{ "participantId": "1", "reason": "success", "serverMuteVersion": 2 }],
+            "8:orgid:b": [{ "participantId": "2", "reason": "success", "serverMuteVersion": 2 },
+                          { "participantId": "3", "reason": "notSupported", "serverMuteVersion": 0 }],
+            "8:orgid:c": [] } });
+        assert_eq!(muted_by_reply(&reply), vec!["8:orgid:a".to_string()]);
+        assert!(muted_by_reply(&serde_json::Value::Null).is_empty());
+        // The async operation's reply is empty; its result comes to the
+        // callback.
+        assert!(muted_by_reply(&serde_json::json!({ "muteUnmuteResponse": {} })).is_empty());
+        let event = serde_json::json!({ "callAgentPath": "conversation/muteUnmuteAsync/",
+            "body": { "operationId": "op", "muteUnmuteResponseAsync": {
+                "8:teamsvisitor:g": [{ "participantId": "1", "reason": "success", "serverMuteVersion": 3 }] } } });
+        assert_eq!(
+            muted_by_async_result(&event.to_string()),
+            Some(vec!["8:teamsvisitor:g".to_string()])
+        );
+        assert_eq!(
+            muted_by_async_result(r#"{"callAgentPath":"call/end/","body":{}}"#),
+            None
+        );
     }
 
     #[test]
