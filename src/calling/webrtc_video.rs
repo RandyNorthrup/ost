@@ -395,6 +395,12 @@ impl CameraPreview {
         )
     }
 
+    /// Whether it still shows the camera (false once the camera stopped
+    /// by itself).
+    pub fn running(&self) -> bool {
+        self.thread.as_ref().is_some_and(|t| !t.is_finished())
+    }
+
     /// `size`: (width, height, fps).
     fn spawn(
         device: Option<&str>,

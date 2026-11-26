@@ -1506,6 +1506,11 @@ pub mod qobject {
         /// ("self", "slot-2"…) to a PNG file, as decoded (no overlays).
         #[qinvokable]
         fn save_video_frame(self: &Backend, key: &QString, path: &QString) -> bool;
+        /// Test hook: what the newest frame of a video stream is, without
+        /// its picture: JSON {seq, width, height, sum} (sum: a checksum of
+        /// its pixels, to tell frames apart), "" when there is none.
+        #[qinvokable]
+        fn video_frame_stats(self: &Backend, key: &QString) -> QString;
         /// The system's time zone (IANA name, "America/Los_Angeles").
         #[qinvokable]
         fn time_zone_name(self: Pin<&mut Backend>) -> QString;
@@ -1796,7 +1801,13 @@ pub mod qobject {
         /// False when the camera can't be opened.
         #[qinvokable]
         fn set_camera_preview(self: Pin<&mut Backend>, on: bool) -> bool;
-        /// The cameras: JSON {devices: [{path, name}], current: path}.
+        /// Whether that preview still runs (false once its camera stopped
+        /// by itself: unplugged, or its stream failed).
+        #[qinvokable]
+        fn camera_preview_running(self: &Backend) -> bool;
+        /// The cameras: JSON {devices: [{path, name}], current: path (the
+        /// chosen camera, else the first), opens: path (the camera that
+        /// opens: "" while the chosen one is missing)}.
         #[qinvokable]
         fn video_devices(self: Pin<&mut Backend>) -> QString;
         /// Use this camera (a V4L2 path), switching a running call's camera
@@ -6228,6 +6239,11 @@ fn test_camera() -> Option<(String, String)> {
 /// The camera chosen in Settings > Devices (a camera ID: a PipeWire node or
 /// a V4L2 path), else the default; your avatar while it is on (Teams
 /// selects the avatar as the camera).
+/// Settings' and the pre-join screen's camera preview.
+static CAMERA_PREVIEW: OnceLock<
+    std::sync::Mutex<Option<teams_cli::calling::webrtc_video::CameraPreview>>,
+> = OnceLock::new();
+
 fn camera_device() -> Option<String> {
     if ost_vfx::avatar::active() {
         return Some(teams_cli::calling::camera::AVATAR_DEVICE.to_string());
@@ -12374,6 +12390,23 @@ impl qobject::Backend {
         ost_vfx::avatar::drawing()
     }
 
+    pub fn video_frame_stats(&self, key: &QString) -> QString {
+        let Some(f) = teams_cli::calling::frames::latest(&key.to_string()) else {
+            return QString::default();
+        };
+        // Every 97th byte is enough to tell two pictures apart.
+        let sum = f
+            .rgba
+            .iter()
+            .step_by(97)
+            .fold(0u64, |a, &b| a.wrapping_mul(31).wrapping_add(u64::from(b)));
+        QString::from(
+            serde_json::json!({ "seq": f.seq, "width": f.width, "height": f.height, "sum": sum })
+                .to_string()
+                .as_str(),
+        )
+    }
+
     pub fn save_video_frame(&self, key: &QString, path: &QString) -> bool {
         let Some(f) = teams_cli::calling::frames::latest(&key.to_string()) else {
             return false;
@@ -15888,17 +15921,27 @@ impl qobject::Backend {
         // may be asked, once.)
         let devices = teams_cli::calling::camera::cameras_shown();
         // A V4L2 path saved before PipeWire offered that camera is it.
-        let current = camera_device()
-            .and_then(|c| teams_cli::calling::camera::find(&devices, &c))
+        let chosen = camera_device();
+        let listed = chosen
+            .as_deref()
+            .and_then(|c| teams_cli::calling::camera::find(&devices, c));
+        let current = listed
             .or_else(|| devices.first())
             .map(|c| c.id.clone())
             .unwrap_or_default();
+        // The camera that opens (the preview, its controls): the chosen
+        // one while it is there, none while it is missing (never another
+        // in its place), the first when none is chosen.
+        let opens = match chosen {
+            Some(_) => listed.map(|c| c.id.clone()).unwrap_or_default(),
+            None => current.clone(),
+        };
         let list: Vec<serde_json::Value> = devices
             .iter()
             .map(|c| serde_json::json!({ "path": c.id, "name": c.name }))
             .collect();
         QString::from(
-            serde_json::json!({ "devices": list, "current": current })
+            serde_json::json!({ "devices": list, "current": current, "opens": opens })
                 .to_string()
                 .as_str(),
         )
@@ -15929,11 +15972,17 @@ impl qobject::Backend {
         });
     }
 
+    pub fn camera_preview_running(&self) -> bool {
+        CAMERA_PREVIEW
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .is_some_and(|p| p.running())
+    }
+
     pub fn set_camera_preview(self: Pin<&mut Self>, on: bool) -> bool {
-        static PREVIEW: OnceLock<
-            std::sync::Mutex<Option<teams_cli::calling::webrtc_video::CameraPreview>>,
-        > = OnceLock::new();
-        let mut p = PREVIEW
+        let mut p = CAMERA_PREVIEW
             .get_or_init(Default::default)
             .lock()
             .unwrap_or_else(|e| e.into_inner());
