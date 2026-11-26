@@ -107,10 +107,16 @@ Microsoft branding.
   Modified By, opening folders and files, deleting.
 - **People**: your contacts as Teams' People app shows them, from Teams'
   contacts service (`{mt}/beta/contactsv3/`, the Teams token; Graph's
-  `/me/contacts` answers 403 for OST's token): All contacts by first name
-  with Name, Contact info, Company and Office location, Favorites (the
-  "SfbFavorites" tag), Categories (the contacts' tags), Add new contact,
-  the favorite star, send or copy an email, delete.
+  `/me/contacts` answers 403 for OST's token): All contacts (with their
+  count), Favorites (the "SfbFavorites" tag) and Categories (the contacts'
+  tags); Teams' Sort (First name, Last name, Company, Recently added; A to Z
+  / Z to A or New to Old / Old to New), Find a contact (name, email or
+  number), column headers that sort, Manage column view (Categories,
+  Company, Office location), and on each row the star, Chat, Audio call and
+  More options (Edit, favorites, speed dial, Add category, Chat, Audio call,
+  Email, Delete). Add contact is Teams' "Add to contacts" picker ("Type a
+  name or number": the directory's people and the typed number), then the
+  Add contact form.
 - **OneNote**: your notebooks (Create notebook), a notebook's sections
   and pages beside the page (Add section, Add page), reading and deleting
   pages, and Open in OneNote.

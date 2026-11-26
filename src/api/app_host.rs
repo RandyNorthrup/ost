@@ -571,6 +571,40 @@ fn iana_zone() -> String {
         .unwrap_or_else(|| "UTC".into())
 }
 
+/// The service a OneDrive Copilot pane's fetchAuthToken asks for: its
+/// `resource` when that is a Microsoft service's address (SharePoint
+/// sends the site), else the service its `type` names. Anything else is
+/// refused.
+pub fn odsp_token_resource(kind: &str, resource: &str) -> Result<String> {
+    const ALLOWED: &[&str] = &[
+        ".sharepoint.com",
+        ".microsoft.com",
+        ".office.com",
+        ".office.net",
+        ".cloud.microsoft",
+        ".microsoftonline.com",
+    ];
+    if let Ok(u) = reqwest::Url::parse(resource.trim()) {
+        let host = u.host_str().unwrap_or_default().to_ascii_lowercase();
+        anyhow::ensure!(
+            u.scheme() == "https"
+                && ALLOWED
+                    .iter()
+                    .any(|d| host.ends_with(d) || format!(".{host}") == *d),
+            "Not a Microsoft service"
+        );
+        return Ok(format!("https://{host}"));
+    }
+    let by_type = match kind.to_ascii_lowercase().as_str() {
+        "graph" | "msgraph" => "https://graph.microsoft.com",
+        "substrate" | "mssubstrate" | "mssubstratetenantfeedback" => "https://substrate.office.com",
+        "augloop" => "https://augloop.office.com",
+        "ocps" => "https://clients.config.office.net",
+        _ => anyhow::bail!("Unknown token kind"),
+    };
+    Ok(by_type.into())
+}
+
 /// The tenant's SharePoint host (`<tenant>.sharepoint.com`), from Graph's
 /// root site (cached).
 pub async fn sharepoint_host(client: &TeamsClient) -> String {
@@ -942,6 +976,21 @@ pub fn board_frame_url(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn odsp_tokens_only_for_microsoft() {
+        assert_eq!(
+            odsp_token_resource("SharePoint", "https://x-my.sharepoint.com/personal/a").unwrap(),
+            "https://x-my.sharepoint.com"
+        );
+        assert_eq!(
+            odsp_token_resource("MSGraph", "").unwrap(),
+            "https://graph.microsoft.com"
+        );
+        assert!(odsp_token_resource("SharePoint", "https://evil.example/x").is_err());
+        assert!(odsp_token_resource("SharePoint", "http://x.sharepoint.com").is_err());
+        assert!(odsp_token_resource("Other", "").is_err());
+    }
 
     #[test]
     fn deep_naa_follows_teams_allow_list() {

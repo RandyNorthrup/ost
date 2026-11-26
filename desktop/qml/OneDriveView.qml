@@ -105,6 +105,22 @@ Item {
     /// (List, Compact List, Tiles). Both last for the session.
     property string sortField: ""
     property bool sortAsc: true
+    /// Shared ▸ With you's column menus (OneDrive sorts by Date shared,
+    /// newer to older, until another is picked): "name", "shared", "by".
+    property string sharedSortField: "shared"
+    property bool sharedSortAsc: false
+    function sharedSorted(list) {
+        if (view !== "shared" || byYou || (sharedSortField === "shared" && !sharedSortAsc)) return list
+        const key = it => sharedSortField === "name" ? String(it.title || it.name || "").toLowerCase()
+                        : sharedSortField === "by" ? String(it.modified_by || "").toLowerCase() : String(it.shared || "")
+        const out = list.map((it, i) => ({ it: it, i: i }))
+        out.sort((a, b) => {
+            const x = key(a.it), y = key(b.it)
+            const c = x === y ? 0 : sharedSortField === "shared" ? (x < y ? -1 : 1) : x.localeCompare(y)
+            return (sharedSortAsc ? c : -c) || a.i - b.i
+        })
+        return out.map(o => o.it)
+    }
     property string listView: "list"
     // OneDrive's filter pills (its filterPivots): which rows each keeps, by
     // OneDrive's type for the file (Visualization.Type) or its extension.
@@ -142,7 +158,7 @@ Item {
     readonly property var shown: {
         // Home and Shared filter first (pills, the filter box); any Sort
         // picked then applies as everywhere.
-        const base = spartan && view !== "people" ? filterRows(items) : items
+        const base = spartan && view !== "people" ? sharedSorted(filterRows(items)) : items
         if (!sortField) return base
         const key = it => sortField === "size" ? (it.is_folder ? it.child_count || 0 : it.size || 0)
                         : sortField === "kind" ? String(it.kind || "") : String(it[sortField] || "").toLowerCase()
@@ -513,7 +529,7 @@ Item {
         DetailsPane {
             id: details
             visible: !!item || !!folder
-            x: card.x + card.width + 2; y: card.y; width: 304; height: card.height
+            x: card.x + card.width + 2; y: card.y; width: 304; height: root.view === "recent" ? content.height - card.y - 16 : card.height
             item: null
             actions: actions
             onDismissed: { item = null; folder = null }
@@ -634,7 +650,24 @@ Item {
         }
         // Home's For you, Recent's pills and filter box; Shared's tabs and
         // pills (OneDrive's Spartan header).
-        SpartanHeader { id: spartanHead; visible: (root.view === "recent" || root.view === "shared") && root.selection.length === 0; width: card.width }
+        // Home scrolls as one page, as OneDrive's does (its main area is the
+        // scroller: For you, Recent's pills and the list go up together).
+        Flickable {
+            id: homePage
+            z: -1
+            visible: root.view === "recent"
+            anchors.fill: parent
+            contentWidth: width; contentHeight: card.y + card.height + 16
+            boundsBehavior: Flickable.StopAtBounds
+            flickableDirection: Flickable.VerticalFlick
+            clip: true
+            ScrollBar.vertical: ScrollBar { policy: homePage.contentHeight > homePage.height ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded }
+        }
+        SpartanHeader {
+            id: spartanHead
+            parent: root.view === "recent" ? homePage.contentItem : content
+            visible: (root.view === "recent" || root.view === "shared") && root.selection.length === 0; width: card.width
+        }
         // People's "Filter by person" (200 x 32 at the right).
         FilterBox {
             visible: root.view === "people" && !root.person
@@ -643,8 +676,10 @@ Item {
         }
         Rectangle {
             id: card
+            parent: root.view === "recent" ? homePage.contentItem : content
             x: 0; y: root.sub ? 144.67 : root.view === "recent" ? 360 : root.view === "people" && !root.person ? 88.67 : 76
-            width: parent.width - 16 - (details.visible ? 304 + 2 : 0); height: parent.height - y - 16
+            width: content.width - 16 - (details.visible ? 304 + 2 : 0)
+            height: root.view === "recent" ? Math.max(homePage.height - y - 16, spartanList.fullHeight) : content.height - y - 16
             radius: 4
             border.width: root.spartan ? 0.67 : 0; border.color: root.hairline
             color: root.listView === "tiles" && root.view === "folder" || root.view === "people" && !root.person ? "transparent" : theme.surface
@@ -767,7 +802,7 @@ Item {
             // 136, File size 91, Sharing 81, Activity 119; header and rows
             // 49 tall. A hovered row is #EBEBEB, a selected one #E9EAF6,
             // both inset 8 with radius 8.
-            SpartanList { id: spartanList; visible: root.spartan; anchors.fill: parent }
+            SpartanList { id: spartanList; visible: root.spartan; anchors.fill: parent; pageScroll: root.view === "recent" }
             Item {
                 id: table
                 visible: !root.spartan && root.view !== "libraries" && root.view !== "recycle" && (root.view !== "people" || !!root.person)
@@ -1151,6 +1186,23 @@ Item {
             BusyIndicator { anchors.centerIn: parent; running: root.busy; visible: root.busy }
         }
     }
+    // Summarize / Recap: OneDrive's Copilot pane over the files, 400 wide at
+    // the right (12 from the top and bottom, 16 from the right, radius 12),
+    // the rest of OneDrive under a 40% white veil; a click on it closes the
+    // pane (OneDrive's rightPaneOverlay).
+    Rectangle {
+        id: copilotVeil
+        anchors.fill: parent
+        z: 19
+        visible: odspCopilot.open
+        color: theme.surface; opacity: 0.4
+        MouseArea { anchors.fill: parent; hoverEnabled: true; onClicked: odspCopilot.close(); onWheel: w => w.accepted = true }
+    }
+    OdspCopilotPane {
+        id: odspCopilot
+        z: 20; width: 400
+        anchors { right: parent.right; rightMargin: 16; top: parent.top; topMargin: 12; bottom: parent.bottom; bottomMargin: 12 }
+    }
 
     // ---- OneDrive's Spartan views (Home, Shared, People), measured on
     // winpc 2026-11-26 (TASK-0304, TASK-0320). Coordinates are OneDrive's,
@@ -1443,7 +1495,7 @@ Item {
             TapHandler {
                 onTapped: {
                     if (fc.modelData.nav_url) Qt.openUrlExternally(fc.modelData.nav_url)
-                    else if (fcButton.sparkle) root.askCopilot(fcButton.kind === "recap" ? qsTr("Recap this meeting") : qsTr("Summarize \"%1\"").arg(fc.modelData.file_name))
+                    else if (fcButton.sparkle) root.summarize(fc.modelData, fcButton.kind === "recap" ? "Recap this meeting" : "Summarize \"" + fc.modelData.file_name + "\"")
                     else root.openSharedFile(fc.it)
                 }
             }
@@ -1468,7 +1520,13 @@ Item {
     function esc(t) { return String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
     /// Teams shows Summarize / Recap when Copilot is on for you.
     property bool copilotOn: false
-    signal askCopilot(string prompt)
+    /// Summarize / Recap this meeting: OneDrive's Copilot pane with the file
+    /// and the prompt asked (as Teams' OneDrive does).
+    function summarize(card, prompt) { odspCopilot.ask(card.drive_id, card.item_id, card.file_name, prompt) }
+    function copilotForTest() { return odspCopilot.stateForTest() }
+    /// Test hooks: open a Shared column's menu (-1 closes), scroll Home.
+    signal sharedMenuRequested(int i)
+    function homeScrollForTest(y) { homePage.contentY = Math.min(y, Math.max(0, homePage.contentHeight - homePage.height)); return { y: homePage.contentY, h: homePage.contentHeight, view: homePage.height } }
 
     // The list: a 45 px selection column, then Name (its icon at 8, the
     // name at 56 over the place line), Opened / Date shared, Owner /
@@ -1477,6 +1535,9 @@ Item {
     component SpartanList: Item {
         id: sl
         clip: true
+        /// Home: the page scrolls, not the list (it is as tall as its rows).
+        property bool pageScroll: false
+        readonly property real fullHeight: 48 + root.shown.length * 56 + 1
         readonly property real grid: width - 8.33 - 45
         readonly property var w: root.byYou ? [Math.max(grid, 979) * 0.42, Math.max(grid, 979) * 0.58, 0, 0] : root.spartanWidths(grid)
         readonly property real gridWidth: 45 + w.reduce((a, b) => a + b, 0)
@@ -1490,13 +1551,69 @@ Item {
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: root.hairline }
             Repeater {
                 model: sl.heads
-                Text {
+                Item {
+                    id: shc
                     required property string modelData
                     required property int index
+                    // Shared ▸ With you: Name, Date shared and Shared by
+                    // have OneDrive's sort menus (a chevron; ↑ / ↓ on the
+                    // sorted one; Date shared ↓ until another is picked).
+                    readonly property string field: root.view === "shared" && !root.byYou ? ["name", "shared", "by", ""][index] : ""
+                    readonly property bool sorted: !!field && root.sharedSortField === field
                     visible: sl.w[index] > 0
-                    x: sl.colX(index) + 8; anchors.verticalCenter: parent.verticalCenter
-                    width: sl.w[index] - 16; elide: Text.ElideRight
-                    text: modelData; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink
+                    x: sl.colX(index); width: sl.w[index]; height: 48
+                    Rectangle { anchors.fill: parent; visible: !!shc.field && shch.hovered && !sharedMenu.opened; color: theme.rowHover }
+                    Row {
+                        x: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 4
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: Math.min(implicitWidth, shc.width - 16 - (shc.field ? 40 : 0)); elide: Text.ElideRight
+                            text: shc.modelData; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink
+                        }
+                        FluentIcon {
+                            visible: shc.sorted; anchors.verticalCenter: parent.verticalCenter
+                            name: root.sharedSortAsc ? "arrow-up-12" : "arrow-down-12"; size: 12; color: root.ink
+                        }
+                        FluentIcon {
+                            visible: !!shc.field; anchors.verticalCenter: parent.verticalCenter
+                            name: "chevron-down-12"; size: 12; color: root.ink
+                        }
+                    }
+                    HoverHandler { id: shch; enabled: !!shc.field; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { enabled: !!shc.field; onTapped: sharedMenu.open() }
+                    Accessible.role: Accessible.ColumnHeader
+                    Accessible.name: shc.sorted ? (root.sharedSortAsc ? qsTr("%1, sorted ascending") : qsTr("%1, sorted descending")).arg(shc.modelData) : shc.modelData
+                    // OneDrive's column menu (measured 2026-11-26): 240 wide
+                    // at the column's left, items 36 tall (the check at 8,
+                    // the words 14 px #424242 at 32): A to Z / Z to A, or
+                    // Older to newer / Newer to older.
+                    Popup {
+                        id: sharedMenu
+                        y: 41; width: 240; padding: 4
+                        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                        background: FluentSurface { depth: 8; radius: 4; color: theme.surface }
+                        contentItem: Column {
+                            Repeater {
+                                model: shc.field === "shared" ? [{ label: qsTr("Older to newer"), asc: true }, { label: qsTr("Newer to older"), asc: false }]
+                                                              : [{ label: qsTr("A to Z"), asc: true }, { label: qsTr("Z to A"), asc: false }]
+                                Rectangle {
+                                    id: smi
+                                    required property var modelData
+                                    readonly property bool on: shc.sorted && root.sharedSortAsc === modelData.asc
+                                    width: 232; height: 36; radius: 4
+                                    color: smih.hovered ? theme.rowHover : theme.surface
+                                    FluentIcon { visible: smi.on; x: 8; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.onFill(smi, theme.textStrong) }
+                                    Text { x: 32; anchors.verticalCenter: parent.verticalCenter; text: smi.modelData.label; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(smi, theme.pick("#424242", "#D6D6D6", "#FFFFFF")) }
+                                    HoverHandler { id: smih; cursorShape: Qt.PointingHandCursor }
+                                    TapHandler { onTapped: { root.sharedSortField = shc.field; root.sharedSortAsc = smi.modelData.asc; sharedMenu.close() } }
+                                    Accessible.role: Accessible.CheckBox
+                                    Accessible.name: smi.modelData.label
+                                    Accessible.checked: smi.on
+                                }
+                            }
+                        }
+                    }
+                    Connections { target: root; function onSharedMenuRequested(i) { if (i === shc.index && shc.field) sharedMenu.open(); else sharedMenu.close() } }
                 }
             }
         }
@@ -1504,6 +1621,7 @@ Item {
             id: slList
             anchors { top: slHead.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
             clip: true
+            interactive: !sl.pageScroll
             model: root.shown
             boundsBehavior: Flickable.StopAtBounds
             contentWidth: Math.max(width, sl.gridWidth)
