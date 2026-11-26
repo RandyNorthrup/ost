@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T18:10:00Z'
-updated_date: '2026-11-25T21:25:00Z'
+updated_date: '2026-11-26T02:18:00Z'
 labels:
   - bug
   - chat
@@ -35,3 +35,13 @@ Found while staging wiki demo data: hiding many chats in a row makes OST rebuild
 4. Add a --chatlist-churn-test harness; measure RSS on linuxlt before/after (main QML vs fixed QML via OST_QML_DIR), then a live burst of real hides/unhides on a test account.
 5. Unit tests for the push filtering; CI fmt/clippy/tests on linuxlt.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Cause: ChatList was a Repeater over JS arrays, so every chatsJson change destroyed and rebuilt every row; each row also built a menu, a flyout and three dialogs. With ~180 chats one update took tens of seconds of main-thread time, and the rows waiting for deleteLater piled up. On top of that, every hide push caused a reload, and conversation updates marked chats unread, which published the list again.
+- Fix: keyed ListModels synced in place, popups created lazily, push reloads debounced (400 ms quiet, 2 s max), unread set only by new messages from others, older chat-list slices kept current from the first page (bursts brought hidden chats back or dropped chats).
+- linuxlt, ost-test1 (spatest), 176 real hides and then unhides through the chat service, 300 ms apart. main: 3.1 GB rising to 8.09 GB (stopped by the 8 GB cap), list frozen. Fix: flat at 2.14 GB, list follows each hide and unhide (shown 178 -> 1 -> 175), unread stays 0.
+- Churn harness (400 updates, no server writes): main QML 3.5 GB, under 50 updates done in 5 min; fix flat at 2.15 GB, 400 updates in ~45 s.
+- PR #4 (RandyNorthrup/ost): CI green, Codex found nothing.
+<!-- SECTION:NOTES:END -->
