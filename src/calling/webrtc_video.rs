@@ -9,7 +9,7 @@
 //! IDR picture arrives.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::mpsc;
 
 /// One RTP packet's video payload.
@@ -679,14 +679,53 @@ pub fn scale_i420(data: &[u8], w: u32, h: u32, nw: u32, nh: u32) -> Vec<u8> {
     out
 }
 
+/// One sending line's RTP position (its SSRC, the next sequence number and
+/// the timestamp clock), kept across the senders that take turns on it: the
+/// camera turned off and on again, a second share in the same call. A new
+/// sender carries on where the last one stopped, as a WebRTC sender does
+/// when its track is replaced. Starting the numbers over would send packet
+/// indexes SRTP has already used (the same keystream again), and the
+/// meeting's media processor drops them as replays: the picture never
+/// reaches anyone (TASK-0324).
+pub struct RtpLine {
+    ssrc: u32,
+    next_seq: AtomicU16,
+    epoch: std::time::Instant,
+}
+
+impl RtpLine {
+    pub fn new(ssrc: u32) -> Arc<Self> {
+        Arc::new(Self {
+            ssrc,
+            next_seq: AtomicU16::new((ssrc >> 7) as u16),
+            epoch: std::time::Instant::now(),
+        })
+    }
+
+    pub fn ssrc(&self) -> u32 {
+        self.ssrc
+    }
+
+    /// The next packet's sequence number (unique even while an old sender
+    /// is still finishing beside a new one).
+    fn take_seq(&self) -> u16 {
+        self.next_seq.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// The RTP timestamp now (90 kHz from when the line was set up).
+    fn timestamp(&self) -> u32 {
+        (self.epoch.elapsed().as_micros() * 90 / 1000) as u32
+    }
+}
+
 impl VideoSender {
     /// Open the camera (`device`, else /dev/video0) and start sending RTP
-    /// packets (payload type `pt`, `ssrc`) to `out`; in a meeting,
+    /// packets (payload type `pt`) on `line` to `out`; in a meeting,
     /// `control` carries what the media processor asks for.
     pub fn start(
         out: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
         pt: u8,
-        ssrc: u32,
+        line: Arc<RtpLine>,
         device: Option<String>,
         control: Option<Arc<SendControl>>,
     ) -> anyhow::Result<Self> {
@@ -706,7 +745,7 @@ impl VideoSender {
                 let _camera = camera;
                 send_loop(
                     frames,
-                    RtpOut { tx: out, pt, ssrc },
+                    RtpOut { tx: out, pt, line },
                     &stop2,
                     &key2,
                     cfg,
@@ -721,12 +760,12 @@ impl VideoSender {
         })
     }
 
-    /// Send a screen capture's frames (payload type `pt`, `ssrc`) to `out`.
+    /// Send a screen capture's frames (payload type `pt`) on `line` to `out`.
     #[cfg(feature = "screencast")]
     pub fn start_screen(
         out: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
         pt: u8,
-        ssrc: u32,
+        line: Arc<RtpLine>,
         capture: super::screencast::ScreenCapture,
         frames: mpsc::Receiver<super::camera::YuvFrame>,
         control: Option<Arc<SendControl>>,
@@ -740,7 +779,7 @@ impl VideoSender {
                 let _capture = capture;
                 send_loop(
                     frames,
-                    RtpOut { tx: out, pt, ssrc },
+                    RtpOut { tx: out, pt, line },
                     &stop2,
                     &key2,
                     SCREEN,
@@ -773,11 +812,11 @@ impl Drop for VideoSender {
     }
 }
 
-/// Where a sender's RTP goes: the channel, its payload type and SSRC.
+/// Where a sender's RTP goes: the channel, its payload type and line.
 struct RtpOut {
     tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     pt: u8,
-    ssrc: u32,
+    line: Arc<RtpLine>,
 }
 
 fn send_loop(
@@ -792,13 +831,12 @@ fn send_loop(
     let mut encoder: Option<((u32, u32, u32, u32), super::codec::H264Encoder)> = None;
     let mut last: Option<super::camera::YuvFrame> = None;
     let mut last_sent = std::time::Instant::now();
-    let started = std::time::Instant::now();
-    let RtpOut { tx: out, pt, ssrc } = out;
+    let RtpOut { tx: out, pt, line } = out;
+    let ssrc = line.ssrc();
     // Call health: OpenH264 encodes in software.
     let media = super::call_health::current();
     media.set_codec(cfg.health, "H264 sw");
     let health = media.stream(cfg.health, ssrc);
-    let mut seq: u16 = (ssrc >> 7) as u16;
     let mut sent = 0u64;
     let mut last_frame: Option<std::time::Instant> = None;
     let mut effects = cfg.effects.then(ost_vfx::Processor::new);
@@ -932,15 +970,14 @@ fn send_loop(
                 continue;
             }
         };
-        let ts = (started.elapsed().as_micros() * 90 / 1000) as u32;
+        let ts = line.timestamp();
         for (payload, marker) in packetize(&nals, MTU) {
             if out
-                .send(rtp_packet(pt, marker, seq, ts, ssrc, &payload))
+                .send(rtp_packet(pt, marker, line.take_seq(), ts, ssrc, &payload))
                 .is_err()
             {
                 return;
             }
-            seq = seq.wrapping_add(1);
         }
         sent += 1;
         health.frame(f.width, f.height);
@@ -977,6 +1014,25 @@ pub fn pli(sender: u32, media: u32) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_line_never_repeats_a_sequence_number() {
+        // TASK-0324: a second share (or the camera on again) is a new
+        // sender on the same SSRC; it must carry on the numbering, not
+        // start it over (SRTP would reuse packet indexes and the meeting
+        // drops them as replays).
+        let line = RtpLine::new(0x1234_5678);
+        let first: Vec<u16> = (0..3).map(|_| line.take_seq()).collect();
+        let ts1 = line.timestamp();
+        // The next sender on the same line.
+        let again = line.clone();
+        let second: Vec<u16> = (0..3).map(|_| again.take_seq()).collect();
+        let start = (0x1234_5678u32 >> 7) as u16;
+        assert_eq!(first, [start, start + 1, start + 2]);
+        assert_eq!(second, [start + 3, start + 4, start + 5]);
+        assert!(again.timestamp() >= ts1);
+        assert_eq!(again.ssrc(), 0x1234_5678);
+    }
 
     fn pkt(payload: &[u8], marker: bool, seq: u16, ts: u32) -> VideoPacket {
         VideoPacket {

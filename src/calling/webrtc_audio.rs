@@ -1572,6 +1572,8 @@ struct VideoOut {
     srtp: Arc<Mutex<Option<srtp::SrtpStreams>>>,
     pt: u8,
     ssrc: u32,
+    /// The line's RTP numbering, carried on by each sender in turn.
+    rtp: Arc<super::webrtc_video::RtpLine>,
     /// Where the RTCP reader flags keyframe requests for the camera.
     keyframe_req: KeyframeSlot,
     bwe: Option<super::send_bwe::Shared>,
@@ -1839,7 +1841,7 @@ impl WebRtcAudioSession {
             let sender = super::webrtc_video::VideoSender::start(
                 tx,
                 v.pt,
-                v.ssrc,
+                v.rtp.clone(),
                 device,
                 Some(self.send_control.clone()),
             )?;
@@ -2030,7 +2032,7 @@ impl WebRtcAudioSession {
         let sender = super::webrtc_video::VideoSender::start_screen(
             tx,
             v.pt,
-            v.ssrc,
+            v.rtp.clone(),
             capture,
             frames,
             Some(self.share_control.clone()),
@@ -2615,6 +2617,7 @@ impl WebRtcAudioSession {
                 srtp: srtp_ctx.clone(),
                 pt: v.payload_type,
                 ssrc: local.video_ssrc,
+                rtp: super::webrtc_video::RtpLine::new(local.video_ssrc),
                 keyframe_req: keyframe_req.clone(),
                 bwe: bwe.clone(),
             });
@@ -2627,6 +2630,7 @@ impl WebRtcAudioSession {
             srtp: srtp_ctx.clone(),
             pt: v.payload_type,
             ssrc: local.share_ssrc,
+            rtp: super::webrtc_video::RtpLine::new(local.share_ssrc),
             keyframe_req: share_keyframe_req.clone(),
             bwe: bwe.clone(),
         });
