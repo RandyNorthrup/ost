@@ -43,8 +43,16 @@ if [ "$deps" != 0 ]; then
 fi
 
 mkdir -p "$W/SOURCES"
+# Write the tarball outside the source tree, then move it in: the work
+# folder ($W) is often inside the checkout (the release workflow uses
+# ./rpm), and tar would otherwise read its own growing output.
+tmp=$(mktemp -d)
+skip_w=./target
+case "$W" in "$SRC"/*) skip_w="./${W#"$SRC"/}" ;; esac
 (cd "$SRC" && tar --exclude=./target --exclude=./.git --exclude=./.claude \
-  --transform "s,^\.,ost-$RV," -czf "$W/SOURCES/ost-$RV.tar.gz" .)
+  --exclude="$skip_w" \
+  --transform "s,^\.,ost-$RV," -czf "$tmp/ost-$RV.tar.gz" .)
+mv "$tmp/ost-$RV.tar.gz" "$W/SOURCES/" && rmdir "$tmp"
 when=${SOURCE_DATE_EPOCH:-$(git -C "$SRC" log -1 --format=%ct 2>/dev/null || date +%s)}
 {
   sed "s/^Version:.*/Version:        $RV/" "$SPEC"
