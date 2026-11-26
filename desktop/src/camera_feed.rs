@@ -147,9 +147,8 @@ impl qobject::CameraFeed {
             .spawn(move || {
                 // That camera and no other: while it isn't there, nothing
                 // opens (it is asked for again). With none chosen, the
-                // first camera, as calls do. (A chosen camera is opened
-                // without listing them all: listing opens every V4L2 node.)
-                let id = wanted.or_else(|| camera::cameras().into_iter().next().map(|c| c.id));
+                // first camera, as calls do.
+                let id = wanted.or_else(|| camera::first_camera().map(|c| c.id));
                 let opened = match id {
                     None => Err(anyhow::anyhow!("no camera")),
                     Some(id) => {
@@ -163,8 +162,9 @@ impl qobject::CameraFeed {
                                 // As the list names it (a V4L2 path saved
                                 // before PipeWire offered that camera is the
                                 // PipeWire one).
-                                let shown = camera::find(&camera::cameras(), &id)
-                                    .map_or_else(|| id.clone(), |c| c.id.clone());
+                                let shown =
+                                    camera::find(&camera::cameras_with(&[id.as_str()]), &id)
+                                        .map_or_else(|| id.clone(), |c| c.id.clone());
                                 (shown, capture)
                             })
                             .map_err(|e| e.context(id))

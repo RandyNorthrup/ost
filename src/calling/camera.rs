@@ -12,6 +12,12 @@
 //! A camera's ID is `pipewire:<node.name>` or its V4L2 path
 //! (`/dev/videoN`); a saved V4L2 path that PipeWire now offers is that
 //! PipeWire camera.
+//!
+//! Listing cameras opens no camera node: what PipeWire's V4L2 monitor
+//! read, sysfs and udev tell what each node is. Only a node none of them
+//! describes well enough (a capture card, a media-controller node without
+//! PipeWire) is opened to ask, and only while the camera list is shown or
+//! when it is the chosen camera, once ([`Probe`]).
 
 use anyhow::{Context, Result};
 use std::os::unix::fs::MetadataExt;
@@ -24,8 +30,8 @@ use v4l::io::traits::CaptureStream;
 use v4l::video::Capture;
 use v4l::{Device, FourCC};
 
-use super::camera_node::{self, Verdict};
-use super::camera_pw::{self, PwCamera};
+use super::camera_node::{self, Listing, SysNode, Verdict};
+use super::camera_pw::{self, PwCamera, PwV4l2Node};
 use super::pixfmt::{self, PixelFormat};
 
 /// The ID prefix of a PipeWire camera.
@@ -44,22 +50,87 @@ pub struct CameraInfo {
     pub v4l2_path: Option<String>,
 }
 
-/// The cameras, as Teams lists them: PipeWire's, then V4L2 nodes PipeWire
-/// doesn't offer.
-pub fn cameras() -> Vec<CameraInfo> {
-    let pw = camera_pw::cameras(PIPEWIRE_WAIT).unwrap_or_default();
-    merge(&pw, v4l2_fallback(), rdev)
+/// Which V4L2 nodes a list may open to ask what they are, of those that
+/// neither PipeWire nor sysfs describe well enough. No other node is
+/// opened to list cameras.
+#[derive(Debug, Clone, Copy)]
+pub enum Probe<'a> {
+    /// None: such a node is listed only as an earlier probe found it.
+    Nothing,
+    /// These cameras' nodes (the chosen camera's).
+    These(&'a [&'a str]),
+    /// Any: the camera list is being shown.
+    All,
 }
 
-/// The V4L2 cameras OST opens itself. None when cameras come through the
+impl Probe<'_> {
+    fn allows(&self, path: &str) -> bool {
+        match self {
+            Probe::Nothing => false,
+            Probe::These(ids) => ids.contains(&path),
+            Probe::All => true,
+        }
+    }
+}
+
+/// The cameras, as Teams lists them: PipeWire's, then V4L2 nodes PipeWire
+/// doesn't offer. Opens no camera node ([`Probe::Nothing`]).
+pub fn cameras() -> Vec<CameraInfo> {
+    cameras_probing(Probe::Nothing)
+}
+
+/// The cameras for a camera list being shown (Settings > Devices, the
+/// pre-join screen, a call's camera menu).
+pub fn cameras_shown() -> Vec<CameraInfo> {
+    cameras_probing(Probe::All)
+}
+
+/// The cameras, asking the nodes of `ids` (the chosen camera) if need be.
+pub fn cameras_with(ids: &[&str]) -> Vec<CameraInfo> {
+    cameras_probing(Probe::These(ids))
+}
+
+pub fn cameras_probing(probe: Probe) -> Vec<CameraInfo> {
+    let pw = camera_pw::cameras(PIPEWIRE_WAIT).unwrap_or_default();
+    merge(&pw, v4l2_fallback(&pw, probe), rdev)
+}
+
+/// The camera a call uses when none is chosen: the first one (asking
+/// nodes only when nothing else is a camera).
+pub fn first_camera() -> Option<CameraInfo> {
+    let pw = camera_pw::cameras(PIPEWIRE_WAIT).unwrap_or_default();
+    first_of(&pw)
+}
+
+fn first_of(pw: &[PwCamera]) -> Option<CameraInfo> {
+    merge(pw, v4l2_fallback(pw, Probe::Nothing), rdev)
+        .into_iter()
+        .next()
+        .or_else(|| {
+            merge(pw, v4l2_fallback(pw, Probe::All), rdev)
+                .into_iter()
+                .next()
+        })
+}
+
+/// Where V4L2 nodes and udev's records of them are.
+const SYS_VIDEO4LINUX: &str = "/sys/class/video4linux";
+const UDEV_DATA: &str = "/run/udev/data";
+
+/// The V4L2 cameras OST lists itself. None when cameras come through the
 /// Camera portal: what the portal offers (or the person allowed, or is
 /// still being asked) is all there is, never a way around their answer.
-fn v4l2_fallback() -> Vec<(String, String)> {
+fn v4l2_fallback(pw: &[PwCamera], probe: Probe) -> Vec<(String, String)> {
     if camera_pw::use_portal() {
-        Vec::new()
-    } else {
-        v4l2_cameras()
+        return Vec::new();
     }
+    let nodes = camera_node::sys_nodes(
+        std::path::Path::new(SYS_VIDEO4LINUX),
+        std::path::Path::new(UDEV_DATA),
+    );
+    v4l2_cameras(&nodes, pw, &camera_pw::v4l2_nodes(), |n| {
+        probe_node(n, probe)
+    })
 }
 
 /// Start watching PipeWire's cameras now, so the first list is quick.
@@ -127,7 +198,7 @@ pub fn same_camera(a: &str, b: &str) -> bool {
     if a == b {
         return true;
     }
-    let list = cameras();
+    let list = cameras_with(&[a, b]);
     match (find(&list, a), find(&list, b)) {
         (Some(x), Some(y)) => x.id == y.id,
         _ => false,
@@ -161,42 +232,104 @@ pub fn v4l2_path(id: &str) -> Option<String> {
         .v4l2_path
 }
 
-/// The V4L2 nodes that are cameras: `(path, name)`, in node order.
-fn v4l2_cameras() -> Vec<(String, String)> {
-    let mut nodes: Vec<(u32, String)> = std::fs::read_dir("/dev")
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|e| {
-            let name = e.file_name().into_string().ok()?;
-            let n: u32 = name.strip_prefix("video")?.parse().ok()?;
-            Some((n, name))
-        })
-        .collect();
-    nodes.sort();
+/// The V4L2 nodes that are cameras, `(path, name)` in node order, of
+/// `nodes`, leaving out those PipeWire's cameras use: by what sysfs and
+/// udev tell, else by what PipeWire's V4L2 monitor read (`known`), else
+/// by what `ask` finds (opening the node).
+fn v4l2_cameras(
+    nodes: &[SysNode],
+    pw: &[PwCamera],
+    known: &[PwV4l2Node],
+    mut ask: impl FnMut(&SysNode) -> Option<String>,
+) -> Vec<(String, String)> {
     nodes
-        .into_iter()
-        .filter_map(|(_, node)| {
-            let path = format!("/dev/{node}");
-            let dev = match Device::with_path(&path) {
-                Ok(d) => d,
-                // A camera you may not open is still there (Teams lists it
-                // and reports "Teams needs permission to use this device").
-                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                    return camera_node::unopenable_camera(&node).map(|n| (path, n));
-                }
-                Err(_) => return None,
-            };
-            let info = camera_node::query(&dev).ok()?;
-            match info.verdict() {
-                Verdict::Camera => Some((path, info.display_name())),
-                verdict => {
-                    tracing::trace!(path, driver = info.driver, ?verdict, "not a camera");
+        .iter()
+        .filter_map(|n| {
+            let path = format!("/dev/{}", n.node);
+            let taken = pw.iter().any(|c| {
+                c.v4l2_path.as_deref() == Some(path.as_str())
+                    || n.dev.is_some_and(|d| c.devids.contains(&d))
+            });
+            if taken {
+                return None;
+            }
+            let name = match n.listing() {
+                Listing::Camera(name) => Some(name),
+                Listing::NotCamera(why) => {
+                    tracing::trace!(path, why, "not a camera");
                     None
                 }
-            }
+                // (A loopback device's caps change as producers come and
+                // go; PipeWire's are from when it found it.)
+                Listing::Unknown => match known
+                    .iter()
+                    .find(|k| k.path == path && !k.info.is_loopback())
+                {
+                    Some(k) => match k.info.verdict() {
+                        Verdict::Camera => Some(if k.info.card.is_empty() {
+                            camera_node::clean_card(&n.name)
+                        } else {
+                            k.info.display_name()
+                        }),
+                        verdict => {
+                            tracing::trace!(path, ?verdict, "not a camera (PipeWire)");
+                            None
+                        }
+                    },
+                    None => ask(n),
+                },
+            }?;
+            Some((path, name))
         })
         .collect()
+}
+
+/// What opening nodes found: path -> (the node's fingerprint, its name if
+/// it is a camera).
+static PROBED: std::sync::Mutex<Vec<(String, String, Option<String>)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Whether a node sysfs and PipeWire don't describe is a camera: what an
+/// earlier probe of it found, else (where `probe` allows) what opening it
+/// tells.
+fn probe_node(n: &SysNode, probe: Probe) -> Option<String> {
+    let path = format!("/dev/{}", n.node);
+    let fingerprint = n.fingerprint();
+    let mut probed = PROBED.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((_, _, name)) = probed
+        .iter()
+        .find(|(p, f, _)| *p == path && *f == fingerprint)
+    {
+        return name.clone();
+    }
+    if !probe.allows(&path) {
+        return None;
+    }
+    let dev = match Device::with_path(&path) {
+        Ok(d) => d,
+        // A camera you may not open is still there (Teams lists it and
+        // reports "Teams needs permission to use this device"). Not kept:
+        // the permission may change.
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            return camera_node::unopenable_camera(&n.node);
+        }
+        Err(_) => return None,
+    };
+    let name = match camera_node::query(&dev) {
+        Ok(info) => match info.verdict() {
+            Verdict::Camera => Some(info.display_name()),
+            verdict => {
+                tracing::trace!(path, driver = info.driver, ?verdict, "not a camera");
+                None
+            }
+        },
+        Err(_) => None,
+    };
+    drop(dev);
+    tracing::debug!(path, camera = ?name, "camera node asked");
+    probed.retain(|(p, _, _)| *p != path);
+    probed.push((path, fingerprint, name.clone()));
+    name
 }
 
 /// A captured YUV420 (I420) frame.
@@ -250,7 +383,7 @@ impl CameraCapture {
         let pw = camera_pw::cameras(PIPEWIRE_WAIT).unwrap_or_default();
         let id = match device {
             Some(d) => d.to_string(),
-            None => match merge(&pw, v4l2_fallback(), rdev).into_iter().next() {
+            None => match first_of(&pw) {
                 Some(c) => c.id,
                 None => {
                     super::device_health::note_camera(super::device_health::Open::Failed);
@@ -679,6 +812,111 @@ mod tests {
             "OST test camera A"
         );
         assert!(find(&list, "/dev/video9").is_none());
+    }
+
+    fn sys(node: &str, name: &str, driver: Option<&str>, udev: &str, dev: u64) -> SysNode {
+        SysNode {
+            node: node.into(),
+            number: node.trim_start_matches("video").parse().unwrap(),
+            name: name.into(),
+            index: Some(0),
+            dev: Some(dev),
+            driver: driver.map(str::to_string),
+            virtual_node: driver.is_none(),
+            loopback: driver.is_none(),
+            loopback_state: driver.is_none().then(|| "capture".to_string()),
+            loopback_format: None,
+            udev_caps: Some(udev.into()),
+        }
+    }
+
+    /// linuxlt's nodes: the UVC camera PipeWire offers, its metadata node,
+    /// a loopback PipeWire found idle (so offers no node for) and a
+    /// capture-card node; an IPU6 ISYS node PipeWire describes. Only the
+    /// capture card would be opened, and only when probing is allowed.
+    #[test]
+    fn v4l2_list_opens_only_nodes_nothing_describes() {
+        let nodes = [
+            sys(
+                "video0",
+                "Integrated Camera: Integrated C",
+                Some("uvcvideo"),
+                ":capture:",
+                20736,
+            ),
+            SysNode {
+                index: Some(1),
+                ..sys(
+                    "video1",
+                    "Integrated Camera: Integrated C",
+                    Some("uvcvideo"),
+                    ":",
+                    20737,
+                )
+            },
+            sys(
+                "video3",
+                "Intel IPU6 ISYS Capture 0",
+                Some("intel-ipu6-isys"),
+                ":capture:",
+                20739,
+            ),
+            sys("video5", "BT878 video", Some("bttv"), ":capture:", 20741),
+            sys(
+                "video20",
+                "OST test camera A",
+                None,
+                ":video_output:",
+                20738,
+            ),
+        ];
+        let pw = [pw("v4l2_input.usb", Some("/dev/video0"), &[20736])];
+        let known = [PwV4l2Node {
+            path: "/dev/video3".into(),
+            devids: vec![20739],
+            info: camera_node::NodeInfo {
+                driver: "isys".into(),
+                card: "ipu6".into(),
+                capabilities: 0xa480_0001,
+                device_caps: 0x2480_0001,
+                ..Default::default()
+            },
+        }];
+        let mut asked = Vec::new();
+        let list = v4l2_cameras(&nodes, &pw, &known, |n| {
+            asked.push(n.node.clone());
+            Some("BT878 video".into())
+        });
+        assert_eq!(asked, ["video5"]);
+        assert_eq!(
+            list,
+            [
+                ("/dev/video5".to_string(), "BT878 video".to_string()),
+                ("/dev/video20".to_string(), "OST test camera A".to_string()),
+            ]
+        );
+        // PipeWire not there: the UVC camera from sysfs, still unopened.
+        let mut asked = Vec::new();
+        let list = v4l2_cameras(&nodes, &[], &[], |n| {
+            asked.push(n.node.clone());
+            None
+        });
+        assert_eq!(asked, ["video3", "video5"]);
+        let paths: Vec<&str> = list.iter().map(|(p, _)| p.as_str()).collect();
+        assert_eq!(paths, ["/dev/video0", "/dev/video20"]);
+        assert_eq!(list[0].1, "Integrated Camera");
+    }
+
+    #[test]
+    fn probing_is_allowed_for_the_list_shown_or_the_chosen_camera() {
+        assert!(!Probe::Nothing.allows("/dev/video5"));
+        assert!(Probe::All.allows("/dev/video5"));
+        let chosen = Probe::These(&["/dev/video5", "pipewire:x"]);
+        assert!(chosen.allows("/dev/video5"));
+        assert!(!chosen.allows("/dev/video6"));
+        // An unprobed node isn't opened when probing isn't allowed.
+        let n = sys("video97", "Nothing", Some("bttv"), ":capture:", 1);
+        assert_eq!(probe_node(&n, Probe::Nothing), None);
     }
 
     /// A live check on a machine with cameras: lists them, and captures a

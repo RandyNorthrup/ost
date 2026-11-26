@@ -6217,12 +6217,12 @@ fn echo_watch() -> &'static std::sync::Mutex<Option<teams_cli::calling::echo_rep
 /// The camera a call would use, (path, name): the one chosen in Settings
 /// > Devices, else the first camera, as the test call report names it.
 fn test_camera() -> Option<(String, String)> {
-    let cameras = teams_cli::calling::camera::cameras();
+    use teams_cli::calling::camera;
     let c = match camera_device() {
-        Some(id) => teams_cli::calling::camera::find(&cameras, &id),
-        None => cameras.first(),
+        Some(id) => camera::find(&camera::cameras_with(&[id.as_str()]), &id).cloned(),
+        None => camera::first_camera(),
     }?;
-    Some((c.id.clone(), c.name.clone()))
+    Some((c.id, c.name))
 }
 
 /// The camera chosen in Settings > Devices (a camera ID: a PipeWire node or
@@ -15884,7 +15884,9 @@ impl qobject::Backend {
     }
 
     pub fn video_devices(self: Pin<&mut Self>) -> QString {
-        let devices = teams_cli::calling::camera::cameras();
+        // (The list is being shown: a node only opening it tells about
+        // may be asked, once.)
+        let devices = teams_cli::calling::camera::cameras_shown();
         // A V4L2 path saved before PipeWire offered that camera is it.
         let current = camera_device()
             .and_then(|c| teams_cli::calling::camera::find(&devices, &c))

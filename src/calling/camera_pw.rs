@@ -171,6 +171,55 @@ pub fn cameras_from(nodes: &HashMap<u32, Props>, devices: &HashMap<u32, Props>) 
     list
 }
 
+/// A V4L2 node PipeWire describes (a Video/Device of WirePlumber's V4L2
+/// monitor or its Video/Source node), whether or not it is a camera: what
+/// the monitor read when it found the node, so OST needn't open it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PwV4l2Node {
+    pub path: String,
+    pub devids: Vec<u64>,
+    pub info: NodeInfo,
+}
+
+/// Every V4L2 node PipeWire's devices and nodes describe with its caps.
+pub fn v4l2_nodes_from(
+    nodes: &HashMap<u32, Props>,
+    devices: &HashMap<u32, Props>,
+) -> Vec<PwV4l2Node> {
+    let mut out: Vec<PwV4l2Node> = Vec::new();
+    for props in devices.values().chain(nodes.values()) {
+        let get = |k: &str| props.get(k).map(String::as_str).filter(|v| !v.is_empty());
+        if get("device.api") != Some("v4l2") {
+            continue;
+        }
+        let hex =
+            |k: &str| get(k).and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok());
+        let (Some(path), Some(capabilities), Some(device_caps)) = (
+            get("api.v4l2.path"),
+            hex("api.v4l2.cap.capabilities"),
+            hex("api.v4l2.cap.device-caps"),
+        ) else {
+            continue;
+        };
+        if out.iter().any(|n| n.path == path) {
+            continue;
+        }
+        out.push(PwV4l2Node {
+            path: path.to_string(),
+            devids: get("device.devids").map(parse_devids).unwrap_or_default(),
+            info: NodeInfo {
+                driver: get("api.v4l2.cap.driver").unwrap_or_default().to_string(),
+                card: get("api.v4l2.cap.card").unwrap_or_default().to_string(),
+                bus_info: get("api.v4l2.cap.bus_info").unwrap_or_default().to_string(),
+                capabilities,
+                device_caps,
+                formats: None,
+            },
+        });
+    }
+    out
+}
+
 /// Whether cameras come through the Camera portal.
 pub fn use_portal() -> bool {
     std::path::Path::new("/.flatpak-info").exists()
@@ -253,6 +302,8 @@ enum Snapshot {
 
 struct Shared {
     state: Mutex<Snapshot>,
+    /// The V4L2 nodes PipeWire describes (with the last list).
+    v4l2: Mutex<Vec<PwV4l2Node>>,
     changed: Condvar,
     /// When the monitor started: lists wait for its first answer only
     /// that long after it (not again and again while the portal asks).
@@ -271,6 +322,7 @@ fn shared() -> &'static Shared {
     SHARED.get_or_init(|| {
         let s: &'static Shared = Box::leak(Box::new(Shared {
             state: Mutex::new(Snapshot::Starting),
+            v4l2: Mutex::new(Vec::new()),
             changed: Condvar::new(),
             started: std::time::Instant::now(),
         }));
@@ -305,6 +357,19 @@ pub fn cameras(wait: Duration) -> Option<Vec<PwCamera>> {
         Snapshot::Ready(list) => Some(list.clone()),
         _ => None,
     }
+}
+
+/// The V4L2 nodes PipeWire describes, as of the last list (none while it
+/// isn't there). Read after [`cameras`], which waits for the first list.
+pub fn v4l2_nodes() -> Vec<PwV4l2Node> {
+    let s = shared();
+    if !matches!(
+        *s.state.lock().unwrap_or_else(|e| e.into_inner()),
+        Snapshot::Ready(_)
+    ) {
+        return Vec::new();
+    }
+    s.v4l2.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 /// Keep the list current, reconnecting when PipeWire restarts.
@@ -356,6 +421,8 @@ fn watch(s: &'static Shared) -> Result<()> {
         Rc::new(move || {
             if synced.get() {
                 let list = cameras_from(&nodes.borrow(), &devices.borrow());
+                *s.v4l2.lock().unwrap_or_else(|e| e.into_inner()) =
+                    v4l2_nodes_from(&nodes.borrow(), &devices.borrow());
                 tracing::debug!(cameras = list.len(), "PipeWire cameras");
                 s.set(Snapshot::Ready(list));
             }
@@ -896,6 +963,63 @@ mod tests {
         assert_eq!(c.serial, "66");
         assert_eq!(c.v4l2_path.as_deref(), Some("/dev/video0"));
         assert_eq!(c.devids, vec![20736]);
+    }
+
+    /// The V4L2 nodes PipeWire knows, cameras or not (values from
+    /// linuxlt's pw-dump): the UVC camera's node and device, its metadata
+    /// node's device (no Video/Source), a loopback device; a libcamera
+    /// device has no V4L2 caps.
+    #[test]
+    fn v4l2_nodes_pipewire_describes() {
+        let mut nodes = HashMap::new();
+        nodes.insert(171, uvc_node());
+        let mut devices = HashMap::new();
+        devices.insert(
+            166,
+            props(&[
+                ("device.api", "v4l2"),
+                ("media.class", "Video/Device"),
+                ("api.v4l2.path", "/dev/video0"),
+                ("api.v4l2.cap.driver", "uvcvideo"),
+                ("api.v4l2.cap.capabilities", "0x84a00001"),
+                ("api.v4l2.cap.device-caps", "0x04200001"),
+                ("device.devids", "[ 20736 ]"),
+            ]),
+        );
+        devices.insert(
+            204,
+            props(&[
+                ("device.api", "v4l2"),
+                ("media.class", "Video/Device"),
+                ("api.v4l2.path", "/dev/video1"),
+                ("api.v4l2.cap.driver", "uvcvideo"),
+                ("api.v4l2.cap.capabilities", "0x84a00001"),
+                ("api.v4l2.cap.device-caps", "0x04a00000"),
+                ("device.devids", "[ 20737 ]"),
+            ]),
+        );
+        devices.insert(
+            52,
+            props(&[
+                ("device.api", "v4l2"),
+                ("api.v4l2.path", "/dev/video20"),
+                ("api.v4l2.cap.driver", "v4l2 loopback"),
+                ("api.v4l2.cap.capabilities", "0x85200002"),
+                ("api.v4l2.cap.device-caps", "0x05200002"),
+            ]),
+        );
+        devices.insert(
+            80,
+            props(&[("device.api", "libcamera"), ("device.devids", "[ 20739 ]")]),
+        );
+        let mut known = v4l2_nodes_from(&nodes, &devices);
+        known.sort_by(|a, b| a.path.cmp(&b.path));
+        let paths: Vec<&str> = known.iter().map(|n| n.path.as_str()).collect();
+        assert_eq!(paths, ["/dev/video0", "/dev/video1", "/dev/video20"]);
+        assert_eq!(known[0].info.verdict(), Verdict::Camera);
+        assert_eq!(known[1].info.verdict(), Verdict::NotCapture);
+        assert_eq!(known[1].devids, vec![20737]);
+        assert!(known[2].info.is_loopback());
     }
 
     /// The node WirePlumber would make of an IPU6 ISYS capture node (when

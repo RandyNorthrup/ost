@@ -166,6 +166,183 @@ pub fn query(dev: &v4l::Device) -> std::io::Result<NodeInfo> {
     Ok(info)
 }
 
+/// What sysfs and udev tell about a V4L2 node, read without opening it
+/// (opening a camera node, even to ask what it is, wakes the camera and
+/// touches a device the person may not have chosen).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SysNode {
+    /// "video0".
+    pub node: String,
+    pub number: u32,
+    /// The node's name (the driver's card name).
+    pub name: String,
+    /// Its index among its device's nodes (a UVC camera's picture is 0,
+    /// its metadata 1).
+    pub index: Option<u32>,
+    /// Its device number (dev_t), as PipeWire's device.devids give it.
+    pub dev: Option<u64>,
+    /// The parent device's driver ("uvcvideo"); none for a virtual node.
+    pub driver: Option<String>,
+    /// No parent device (v4l2loopback and other virtual drivers).
+    pub virtual_node: bool,
+    /// A v4l2loopback device (it has the module's sysfs attributes).
+    pub loopback: bool,
+    /// v4l2loopback's `state`: "capture" while a producer writes to it.
+    pub loopback_state: Option<String>,
+    /// v4l2loopback's `format` ("YUYV:1280x720@15"), empty while idle.
+    pub loopback_format: Option<String>,
+    /// udev's ID_V4L_CAPABILITIES (":capture:"), read when the node
+    /// appeared.
+    pub udev_caps: Option<String>,
+}
+
+/// What a node is, from [`SysNode`] alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Listing {
+    /// A camera, by this name.
+    Camera(String),
+    /// Not a camera (why, for the log).
+    NotCamera(&'static str),
+    /// Only the node itself can tell (a driver sysfs says too little
+    /// about, such as a capture card or an IPU6 ISYS node).
+    Unknown,
+}
+
+impl SysNode {
+    fn udev_capture(&self) -> Option<bool> {
+        self.udev_caps
+            .as_deref()
+            .map(|c| c.split(':').any(|t| t == "capture"))
+    }
+
+    /// What the node is, as far as sysfs and udev tell.
+    pub fn listing(&self) -> Listing {
+        let camera = || Listing::Camera(clean_card(&self.name));
+        if self.loopback {
+            // Capturing only while something writes to it (exclusive_caps=1),
+            // or always (exclusive_caps=0, which udev saw as capture).
+            if self.loopback_state.as_deref() == Some("capture") {
+                return self.loopback_fed();
+            }
+            if self.udev_capture() == Some(true) {
+                return camera();
+            }
+            if self.loopback_state.is_some() || self.udev_caps.is_some() {
+                return Listing::NotCamera("loopback nothing writes to");
+            }
+            // An older module: its format shows while it is fed.
+            return match self.loopback_format.as_deref() {
+                Some(f) if !f.trim().is_empty() => self.loopback_fed(),
+                _ => Listing::Unknown,
+            };
+        }
+        match self.udev_capture() {
+            Some(false) => return Listing::NotCamera("no video capture"),
+            None if self.driver.as_deref() == Some("uvcvideo") && self.index != Some(0) => {
+                return Listing::NotCamera("UVC metadata node");
+            }
+            _ => {}
+        }
+        if self.driver.as_deref() == Some("uvcvideo") {
+            return camera();
+        }
+        Listing::Unknown
+    }
+
+    /// A loopback device something writes to: a camera, unless what is
+    /// written is a format OST can't show.
+    fn loopback_fed(&self) -> Listing {
+        let fourcc = self
+            .loopback_format
+            .as_deref()
+            .and_then(|f| f.split(':').next())
+            .map(str::as_bytes)
+            .and_then(|b| <[u8; 4]>::try_from(b).ok());
+        match fourcc {
+            Some(f) if PixelFormat::from_fourcc(&f).is_none() => {
+                Listing::NotCamera("loopback fed a format OST can't show")
+            }
+            _ => Listing::Camera(clean_card(&self.name)),
+        }
+    }
+
+    /// Changes when what the node is may have (for a cache of what
+    /// opening it told).
+    pub fn fingerprint(&self) -> String {
+        format!(
+            "{:?}|{:?}|{:?}|{:?}|{:?}|{}",
+            self.dev,
+            self.driver,
+            self.loopback_state,
+            self.loopback_format,
+            self.udev_caps,
+            self.name
+        )
+    }
+}
+
+/// A device number as the kernel packs it (glibc's makedev).
+pub fn makedev(major: u64, minor: u64) -> u64 {
+    ((major & 0xffff_f000) << 32)
+        | ((major & 0xfff) << 8)
+        | ((minor & 0xffff_ff00) << 12)
+        | (minor & 0xff)
+}
+
+/// The V4L2 nodes in `class` (/sys/class/video4linux) with what udev
+/// recorded in `udev` (/run/udev/data), in node order. Nothing is opened.
+pub fn sys_nodes(class: &std::path::Path, udev: &std::path::Path) -> Vec<SysNode> {
+    let mut nodes: Vec<SysNode> = std::fs::read_dir(class)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let node = e.file_name().into_string().ok()?;
+            let number: u32 = node.strip_prefix("video")?.parse().ok()?;
+            Some(sys_node(&e.path(), node, number, udev))
+        })
+        .collect();
+    nodes.sort_by_key(|n| n.number);
+    nodes
+}
+
+fn sys_node(dir: &std::path::Path, node: String, number: u32, udev: &std::path::Path) -> SysNode {
+    let read = |f: &str| {
+        std::fs::read_to_string(dir.join(f))
+            .ok()
+            .map(|s| s.trim().to_string())
+    };
+    let dev_str = read("dev");
+    let dev = dev_str.as_deref().and_then(|d| {
+        let (major, minor) = d.split_once(':')?;
+        Some(makedev(major.parse().ok()?, minor.parse().ok()?))
+    });
+    let udev_caps = dev_str.and_then(|d| {
+        std::fs::read_to_string(udev.join(format!("c{d}")))
+            .ok()?
+            .lines()
+            .find_map(|l| l.strip_prefix("E:ID_V4L_CAPABILITIES="))
+            .map(str::to_string)
+    });
+    let device = dir.join("device");
+    let virtual_node = std::fs::symlink_metadata(&device).is_err();
+    SysNode {
+        name: read("name").unwrap_or_default(),
+        index: read("index").and_then(|i| i.parse().ok()),
+        dev,
+        driver: std::fs::read_link(device.join("driver"))
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned())),
+        virtual_node,
+        loopback: virtual_node && dir.join("max_openers").exists(),
+        loopback_state: read("state"),
+        loopback_format: read("format"),
+        udev_caps,
+        node,
+        number,
+    }
+}
+
 /// For a node OST may not open (no permission): whether to list it
 /// anyway, from sysfs. Nothing can be checked but what sysfs tells, so
 /// only a USB camera's first node or a v4l2loopback device is listed (and
@@ -310,6 +487,201 @@ mod tests {
         // Fed something OST can't show.
         let bayer = node("v4l2 loopback", "Raw", 0x8520_0001, 0x0520_0001, &[b"BA81"]);
         assert_eq!(bayer.verdict(), Verdict::NoUsableFormat);
+    }
+
+    fn sys(node: &str, name: &str, driver: Option<&str>, udev: Option<&str>) -> SysNode {
+        SysNode {
+            node: node.into(),
+            number: node.trim_start_matches("video").parse().unwrap(),
+            name: name.into(),
+            index: Some(0),
+            dev: None,
+            driver: driver.map(str::to_string),
+            virtual_node: driver.is_none(),
+            loopback: false,
+            loopback_state: None,
+            loopback_format: None,
+            udev_caps: udev.map(str::to_string),
+        }
+    }
+
+    /// linuxlt's UVC camera (sysfs and udev as they are there): its picture
+    /// node is a camera by its name, its metadata node isn't, with or
+    /// without udev's record.
+    #[test]
+    fn uvc_nodes_from_sysfs() {
+        let cam = sys(
+            "video0",
+            "Integrated Camera: Integrated C",
+            Some("uvcvideo"),
+            Some(":capture:"),
+        );
+        assert_eq!(cam.listing(), Listing::Camera("Integrated Camera".into()));
+        let meta = SysNode {
+            index: Some(1),
+            ..sys(
+                "video1",
+                "Integrated Camera: Integrated C",
+                Some("uvcvideo"),
+                Some(":"),
+            )
+        };
+        assert!(matches!(meta.listing(), Listing::NotCamera(_)));
+        let no_udev = |index| SysNode {
+            index: Some(index),
+            ..sys("video1", "Integrated Camera", Some("uvcvideo"), None)
+        };
+        assert!(matches!(no_udev(1).listing(), Listing::NotCamera(_)));
+        assert_eq!(
+            no_udev(0).listing(),
+            Listing::Camera("Integrated Camera".into())
+        );
+    }
+
+    /// v4l2loopback: a camera while something writes to it (`state`
+    /// capture, as /dev/video20 on linuxlt), or always with
+    /// exclusive_caps=0 (udev saw capture); not while idle; an older
+    /// module without `state` shows its format while fed.
+    #[test]
+    fn loopback_nodes_from_sysfs() {
+        let lb = |state: Option<&str>, format: Option<&str>, udev: Option<&str>| SysNode {
+            loopback: true,
+            loopback_state: state.map(str::to_string),
+            loopback_format: format.map(str::to_string),
+            ..sys("video20", "OST test camera A", None, udev)
+        };
+        let a = Listing::Camera("OST test camera A".into());
+        assert_eq!(
+            lb(
+                Some("capture"),
+                Some("YUYV:1280x720@15"),
+                Some(":video_output:")
+            )
+            .listing(),
+            a
+        );
+        assert!(matches!(
+            lb(Some("output"), Some(""), Some(":video_output:")).listing(),
+            Listing::NotCamera(_)
+        ));
+        assert_eq!(
+            lb(Some("output"), Some(""), Some(":capture:video_output:")).listing(),
+            a
+        );
+        assert!(matches!(
+            lb(Some("capture"), Some("BA81:640x480@30"), None).listing(),
+            Listing::NotCamera(_)
+        ));
+        assert_eq!(lb(None, Some("YUYV:640x480@30"), None).listing(), a);
+        assert_eq!(lb(None, Some(""), None).listing(), Listing::Unknown);
+        // The fingerprint follows its state, so a probe is asked again.
+        assert_ne!(
+            lb(Some("output"), Some(""), None).fingerprint(),
+            lb(Some("capture"), Some("YUYV:640x480@30"), None).fingerprint()
+        );
+    }
+
+    /// A node of a driver sysfs says too little about (IPU6 ISYS capture
+    /// nodes, which udev sees as capture devices; a capture card) is for
+    /// PipeWire or the node itself to tell; one udev saw without capture
+    /// isn't a camera.
+    #[test]
+    fn other_drivers_from_sysfs() {
+        let isys = sys(
+            "video3",
+            "Intel IPU6 ISYS Capture 0",
+            Some("intel-ipu6-isys"),
+            Some(":capture:"),
+        );
+        assert_eq!(isys.listing(), Listing::Unknown);
+        assert_eq!(
+            sys("video5", "BT878 video", Some("bttv"), None).listing(),
+            Listing::Unknown
+        );
+        assert!(matches!(
+            sys("video9", "vim2m", Some("vim2m"), Some(":video_output:")).listing(),
+            Listing::NotCamera(_)
+        ));
+        assert_eq!(makedev(81, 0), 20736);
+        assert_eq!(makedev(81, 4), 20740);
+    }
+
+    /// The nodes are read from sysfs and udev's records (a tree laid out
+    /// as /sys/class/video4linux and /run/udev/data are).
+    #[test]
+    fn sys_nodes_reads_sysfs_and_udev() {
+        use std::fs;
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!("ost-sysfs-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let class = root.join("class");
+        let udev = root.join("udev");
+        let usb = root.join("devices/usb1/1-8:1.0");
+        fs::create_dir_all(root.join("drivers/uvcvideo")).unwrap();
+        fs::create_dir_all(&usb).unwrap();
+        fs::create_dir_all(&udev).unwrap();
+        symlink(root.join("drivers/uvcvideo"), usb.join("driver")).unwrap();
+        let node = |n: &str, files: &[(&str, &str)], parent: Option<&std::path::Path>| {
+            let d = class.join(n);
+            fs::create_dir_all(&d).unwrap();
+            for (f, v) in files {
+                fs::write(d.join(f), format!("{v}\n")).unwrap();
+            }
+            if let Some(p) = parent {
+                symlink(p, d.join("device")).unwrap();
+            }
+        };
+        let cam = [
+            ("name", "Integrated Camera: Integrated C"),
+            ("index", "0"),
+            ("dev", "81:0"),
+        ];
+        node("video0", &cam, Some(&usb));
+        node(
+            "video1",
+            &[
+                ("name", "Integrated Camera: Integrated C"),
+                ("index", "1"),
+                ("dev", "81:1"),
+            ],
+            Some(&usb),
+        );
+        node(
+            "video20",
+            &[
+                ("name", "OST test camera A"),
+                ("index", "0"),
+                ("dev", "81:2"),
+                ("max_openers", "10"),
+                ("state", "capture"),
+                ("format", "YUYV:1280x720@15"),
+            ],
+            None,
+        );
+        fs::write(
+            udev.join("c81:0"),
+            "E:ID_V4L_VERSION=2\nE:ID_V4L_CAPABILITIES=:capture:\n",
+        )
+        .unwrap();
+        fs::write(udev.join("c81:1"), "E:ID_V4L_CAPABILITIES=:\n").unwrap();
+        fs::write(udev.join("c81:2"), "E:ID_V4L_CAPABILITIES=:video_output:\n").unwrap();
+        fs::write(class.join("not-a-node"), "").unwrap();
+
+        let nodes = sys_nodes(&class, &udev);
+        let _ = fs::remove_dir_all(&root);
+        let names: Vec<&str> = nodes.iter().map(|n| n.node.as_str()).collect();
+        assert_eq!(names, ["video0", "video1", "video20"]);
+        assert_eq!(nodes[0].driver.as_deref(), Some("uvcvideo"));
+        assert_eq!(nodes[0].dev, Some(20736));
+        assert_eq!(nodes[0].udev_caps.as_deref(), Some(":capture:"));
+        assert!(!nodes[0].virtual_node && !nodes[0].loopback);
+        assert_eq!(nodes[1].index, Some(1));
+        assert!(nodes[2].virtual_node && nodes[2].loopback);
+        assert_eq!(nodes[2].loopback_state.as_deref(), Some("capture"));
+        let listings: Vec<Listing> = nodes.iter().map(SysNode::listing).collect();
+        assert_eq!(listings[0], Listing::Camera("Integrated Camera".into()));
+        assert!(matches!(listings[1], Listing::NotCamera(_)));
+        assert_eq!(listings[2], Listing::Camera("OST test camera A".into()));
     }
 
     #[test]
