@@ -81,7 +81,7 @@ Popup {
     readonly property bool cameraWanted: root.opened && !root.finished
     function syncCamera() {
         if (!cameraWanted) { feed.close(); return }
-        if (feed.running && feed.wanted === cameraId) return
+        if ((feed.running || feed.opening) && feed.wanted === cameraId) return
         feed.wanted = cameraId
         if (!feed.open(cameraId, 1280, 720, 30)) console.warn("FACE camera didn't open", cameraId)
     }
@@ -98,7 +98,7 @@ Popup {
     // it wouldn't open): look again each second while shown.
     Timer {
         interval: 1000; repeat: true
-        running: root.opened && !root.finished && !feed.running
+        running: root.opened && !root.finished && !feed.running && !feed.opening
         onTriggered: { if (!root.cameras.length) root.loadCameras(); root.syncCamera() }
     }
     /// Take the photo from the camera's newest picture.

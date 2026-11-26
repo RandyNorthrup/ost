@@ -344,7 +344,7 @@ Popup {
     readonly property bool cameraWanted: opened && cameraOn && !screenMode && stage !== "review"
     function syncCamera() {
         if (!cameraWanted) { camFeed.close(); camFeed.showIn(camPreview.videoSink); return }
-        if (camFeed.running && camFeed.wanted === cameraId) return
+        if ((camFeed.running || camFeed.opening) && camFeed.wanted === cameraId) return
         camFeed.wanted = cameraId
         if (!camFeed.open(cameraId, 1280, 720, 30)) console.warn("RECORDER camera didn't open", cameraId)
     }
@@ -361,7 +361,7 @@ Popup {
     // it wouldn't open): look again each second while it should show.
     Timer {
         interval: 1000; repeat: true
-        running: rec.cameraWanted && !camFeed.running
+        running: rec.cameraWanted && !camFeed.running && !camFeed.opening
         onTriggered: { if (!rec.cameraList.length) rec.loadCameras(); rec.syncCamera() }
     }
     Timer {
