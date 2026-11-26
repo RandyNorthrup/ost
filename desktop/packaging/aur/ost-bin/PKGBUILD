@@ -11,7 +11,7 @@
 
 pkgname=ost-bin
 _name=ost
-pkgver=0.2.1
+pkgver=0.3.0
 pkgrel=1
 pkgdesc='Native Linux desktop client for Microsoft Teams: chat, channels, calls and meetings, calendar and files (unofficial, prebuilt)'
 arch=('x86_64')

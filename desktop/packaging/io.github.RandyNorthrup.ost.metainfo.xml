@@ -94,6 +94,9 @@
     <content_attribute id="social-info">mild</content_attribute>
   </content_rating>
   <releases>
+    <release version="0.3.0" date="2026-11-26">
+      <url type="details">https://github.com/RandyNorthrup/ost/releases/tag/v0.3.0</url>
+    </release>
     <release version="0.2.1" date="2026-11-25">
       <url type="details">https://github.com/RandyNorthrup/ost/releases/tag/v0.2.1</url>
     </release>

@@ -5,7 +5,7 @@
 # sha256sums for each release and pushes it here.
 
 pkgname=ost
-pkgver=0.2.1
+pkgver=0.3.0
 pkgrel=1
 pkgdesc='Native Linux desktop client for Microsoft Teams: chat, channels, calls and meetings, calendar and files (unofficial)'
 arch=('x86_64')

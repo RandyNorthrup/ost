@@ -63,21 +63,21 @@ GitHub's runners from the tagged commit, and that it hasn't changed since.
 Check one with the [GitHub CLI](https://cli.github.com/) (2.49 or newer):
 
 ```sh
-gh attestation verify OST-0.2.2-x86_64.AppImage -R RandyNorthrup/ost
+gh attestation verify OST-0.3.0-x86_64.AppImage -R RandyNorthrup/ost
 ```
 
 To also pin the workflow and the tag:
 
 ```sh
-gh attestation verify OST-0.2.2-x86_64.AppImage -R RandyNorthrup/ost \
+gh attestation verify OST-0.3.0-x86_64.AppImage -R RandyNorthrup/ost \
   --signer-workflow RandyNorthrup/ost/.github/workflows/release.yml \
-  --source-ref refs/tags/v0.2.2 --deny-self-hosted-runners
+  --source-ref refs/tags/v0.3.0 --deny-self-hosted-runners
 ```
 
 `sha256sum -c SHA256SUMS --ignore-missing` in the download folder checks the
 files against the checksums; on its own that only shows they weren't
 damaged, so verify `SHA256SUMS` itself with `gh attestation verify` first.
-Releases before 0.2.2 have checksums only.
+Releases before 0.3.0 have checksums only.
 
 The AUR packages are updated from the same release files: `ost-bin` checks
 the AppImage against the SHA-256 recorded when the release was published,
