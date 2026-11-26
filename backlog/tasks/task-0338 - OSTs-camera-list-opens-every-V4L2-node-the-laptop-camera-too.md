@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-26T15:25:00Z'
-updated_date: '2026-11-26T18:45:00Z'
+updated_date: '2026-11-26T18:46:00Z'
 labels:
   - bug
   - privacy
@@ -47,6 +47,8 @@ Found in TASK-0334's checks (2026-11-26, bpftrace on openat /dev/video* on linux
   - before/after, pre-join + solo meeting x2 (--prejoin-camera-test): video41 x10 each (camera on each time), nothing else; all checks passed.
   - after with the PipeWire camera chosen: Settings and pre-join + meeting x2 -> 0 V4L2 opens by OST.
 - Mic incident: cpal ignores PULSE_SOURCE; the baseline meeting run recorded from linuxlt's built-in mic (alsa_input.pci-...) for about 10 s (joined muted) until I moved the stream; the first after-run's two streams were moved by a guard within 0.2 s. Later runs used OST_MIC_DEVICE=<remap-source node name> (null sink + module-remap-source) and recorded from it directly (pactl checked).
+
+- PR #23.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
