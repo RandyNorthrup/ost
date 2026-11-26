@@ -361,7 +361,31 @@ pub struct CameraPreview {
 impl CameraPreview {
     pub fn start(device: Option<String>) -> anyhow::Result<Self> {
         let (w, h, fps) = capture_format(device.as_deref());
-        let (camera, frames) = super::camera::CameraCapture::start(device.as_deref(), w, h, fps)?;
+        Self::spawn(device.as_deref(), "self".to_string(), w, h, fps, true)
+    }
+
+    /// The camera's own picture, without the call's video effects, as the
+    /// frame `key` at about `width`x`height` and `fps` (the video clip
+    /// recorder and face capture, which show and record it themselves).
+    pub fn start_plain(
+        device: Option<&str>,
+        key: &str,
+        width: u32,
+        height: u32,
+        fps: u32,
+    ) -> anyhow::Result<Self> {
+        Self::spawn(device, key.to_string(), width, height, fps, false)
+    }
+
+    fn spawn(
+        device: Option<&str>,
+        key: String,
+        w: u32,
+        h: u32,
+        fps: u32,
+        with_effects: bool,
+    ) -> anyhow::Result<Self> {
+        let (camera, frames) = super::camera::CameraCapture::start(device, w, h, fps)?;
         let stop = Arc::new(AtomicBool::new(false));
         let stop2 = stop.clone();
         let thread = std::thread::Builder::new()
@@ -369,13 +393,15 @@ impl CameraPreview {
             .spawn(move || {
                 let _camera = camera;
                 // The preview shows the video effects as they'll be sent.
-                let mut effects = ost_vfx::Processor::new();
+                let mut effects = with_effects.then(ost_vfx::Processor::new);
                 while !stop2.load(Ordering::Relaxed) {
                     match frames.recv_timeout(std::time::Duration::from_millis(50)) {
                         Ok(mut f) => {
-                            effects.process(f.width, f.height, &mut f.data);
+                            if let Some(effects) = effects.as_mut() {
+                                effects.process(f.width, f.height, &mut f.data);
+                            }
                             super::frames::publish(
-                                "self",
+                                &key,
                                 f.width,
                                 f.height,
                                 preview_rgba(&f.data, f.width, f.height),
@@ -385,7 +411,7 @@ impl CameraPreview {
                         Err(mpsc::RecvTimeoutError::Disconnected) => break,
                     }
                 }
-                super::frames::clear("self");
+                super::frames::clear(&key);
             })?;
         Ok(Self {
             stop,

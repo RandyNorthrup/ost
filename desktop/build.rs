@@ -414,6 +414,7 @@ fn main() {
         .file("src/rich_text.rs")
         .file("src/clip_frames.rs")
         .file("src/clip_mask.rs")
+        .file("src/camera_feed.rs")
         .qt_module("Quick")
         .qt_module("QuickControls2")
         .qt_module("Multimedia")
@@ -438,6 +439,7 @@ fn main() {
             cc.file("src/richtext.cpp");
             cc.file("src/clipframes.cpp");
             cc.file("src/clipmask.cpp");
+            cc.file("src/camerafeed.cpp");
             cc.file("src/clipedit.cpp");
             cc.file("src/vfxplayer.cpp");
             cc.file("src/vfxpicture.cpp");
@@ -449,6 +451,7 @@ fn main() {
     println!("cargo::rerun-if-changed=src/richtext.cpp");
     println!("cargo::rerun-if-changed=src/clipframes.cpp");
     println!("cargo::rerun-if-changed=src/clipmask.cpp");
+    println!("cargo::rerun-if-changed=src/camerafeed.cpp");
     println!("cargo::rerun-if-changed=src/clipedit.cpp");
     println!("cargo::rerun-if-changed=src/vfxplayer.cpp");
     println!("cargo::rerun-if-changed=src/vfxpicture.cpp");

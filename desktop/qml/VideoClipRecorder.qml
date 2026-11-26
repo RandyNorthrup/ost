@@ -59,16 +59,11 @@ Popup {
     property bool micOn: true
     property bool screenOn: false
     property bool mirror: false
+    /// The camera picked in the Camera menu, "" for the one chosen in
+    /// Settings > Devices.
     property string cameraId: ""
     property string micId: ""
-    // The chosen microphone (a stable value: re-binding a session's device
-    // reopens it).
-    property var micDevice: devices.defaultAudioInput
-    onMicIdChanged: {
-        const c = devices.audioInputs.find(d => d.id == micId)
-        micDevice = c || devices.defaultAudioInput
-        if (wantFrames) prepareFrames()
-    }
+    onMicIdChanged: if (wantFrames) prepareFrames()
     readonly property bool screenMode: screenOn || (!cameraOn && !micOn)
     readonly property bool audioMode: !screenMode && !cameraOn
     readonly property int limitMs: 5 * 60 * 1000
@@ -105,6 +100,7 @@ Popup {
     function openFor(chat) {
         fx.resetAll()
         chatId = chat
+        cameraId = ""
         cameraOn = true
         screenOn = false
         reset()
@@ -123,22 +119,12 @@ Popup {
         recordedBefore = 0
         segmentStart = 0
         const file = cacheFile("recording-" + Date.now() + ".mp4")
-        // The camera and the screen are recorded straight from the device
-        // (at full frame rate); Record audio records its picture.
-        // The screen is recorded as the picture shows it (with what is
-        // drawn over it), so pausing keeps sound and picture together.
         // Everything records what the picture shows (with its backdrop,
-        // effects and drawings), as Stream records its canvas.
-        engine = "frames"
-        if (engine === "frames") {
-            if (!framesReady) prepareFrames()
-            if (!frames.start(file)) { console.warn("RECORDER couldn't start"); return }
-            framesReady = false
-        } else {
-            const r = camRecorder
-            r.outputLocation = "file://" + file
-            r.record()
-        }
+        // effects and drawings), as Stream records its canvas; so pausing
+        // keeps sound and picture together.
+        if (!framesReady) prepareFrames()
+        if (!frames.start(file)) { console.warn("RECORDER couldn't start"); return }
+        framesReady = false
         stage = "recording"
         frameTimer.restart()
         firstFrame.restart()
@@ -152,11 +138,9 @@ Popup {
     onWantFramesChanged: if (wantFrames) prepareFrames(); else if (stage === "setup" && framesReady) { frames.release(); framesReady = false }
     onMicOnChanged: if (wantFrames) prepareFrames()
     onTestSilentChanged: if (wantFrames) prepareFrames()
-    /// What records: "camera", "screen" or "frames" (Record audio).
-    property string engine: ""
-    function enginePause() { if (engine === "frames") frames.pause(); else camRecorder.pause() }
-    function engineResume() { if (engine === "frames") frames.resume(); else camRecorder.record() }
-    function engineStop() { if (engine === "frames") frames.stop(); else camRecorder.stop() }
+    function enginePause() { frames.pause() }
+    function engineResume() { frames.resume() }
+    function engineStop() { frames.stop() }
     function recorded(path) {
         screen.active = false
         if (discardOnStop) {
@@ -345,29 +329,39 @@ Popup {
             fx.selected = -2
         }
     }
-    // The camera's picture (shown, and so recorded, in camera mode).
-    CaptureSession {
-        camera: Camera {
-            id: camera
-            active: rec.opened && rec.cameraOn && !rec.screenMode && rec.stage !== "review"
-            cameraDevice: {
-                const list = devices.videoInputs
-                const c = list.find(d => d.id == rec.cameraId)
-                return c || devices.defaultVideoInput
-            }
-        }
-        audioInput: AudioInput {
-            muted: !rec.micOn || rec.testSilent
-            device: rec.micDevice
-        }
-        recorder: MediaRecorder {
-            id: camRecorder
-            mediaFormat { fileFormat: MediaFormat.MPEG4; videoCodec: MediaFormat.VideoCodec.H264; audioCodec: MediaFormat.AudioCodec.AAC }
-            quality: MediaRecorder.HighQuality
-            onRecorderStateChanged: if (recorderState === MediaRecorder.StoppedState && rec.engine === "camera") rec.recorded(String(actualLocation))
-            onErrorOccurred: (e, s) => { console.warn("RECORDER camera", s); rec.stage = "setup" }
-        }
-        videoOutput: camPreview
+    // The camera's picture (shown, and so recorded, in camera mode): from
+    // OST's camera list, captured as calls capture it, and open only while
+    // it shows (Teams opens a camera only then).
+    /// The cameras (Settings > Devices' list): [{path, name}], and the one
+    /// chosen there.
+    property var cameraList: []
+    property string chosenCamera: ""
+    function loadCameras() {
+        const d = JSON.parse(backend.videoDevices())
+        cameraList = d.devices || []
+        chosenCamera = d.current || ""
+    }
+    onOpenedChanged: if (opened) loadCameras()
+    /// The camera picked here ("" until one is), else Settings > Devices'.
+    readonly property string cameraShown: cameraId || chosenCamera
+    readonly property bool cameraWanted: opened && cameraOn && !screenMode && stage !== "review"
+    function syncCamera() {
+        if (!cameraWanted) { camFeed.close(); camFeed.showIn(camPreview.videoSink); return }
+        if (camFeed.running && camFeed.wanted === cameraId) return
+        camFeed.wanted = cameraId
+        if (!camFeed.open(cameraId, 1280, 720, 30)) console.warn("RECORDER camera didn't open", cameraId)
+    }
+    onCameraWantedChanged: syncCamera()
+    onCameraIdChanged: if (cameraWanted) syncCamera()
+    CameraFeed {
+        id: camFeed
+        /// What `cameraId` was when it opened.
+        property string wanted: ""
+    }
+    Timer {
+        interval: 15; repeat: true
+        running: camFeed.running
+        onTriggered: camFeed.showIn(camPreview.videoSink)
     }
     // The screen (or window) being recorded.
     CaptureSession {
@@ -891,11 +885,11 @@ Popup {
     MenuPopup {
         id: camMenu
         function popupAt(btn) { const p = btn.mapToItem(rec.contentItem, 0, 0); x = p.x; y = p.y - height - 4; open() }
-        readonly property var cams: devices.videoInputs
-        items: [{ label: qsTr("None"), checked: !rec.cameraOn }].concat(cams.map(c => ({ label: c.description, checked: rec.cameraOn && (rec.cameraId ? c.id == rec.cameraId : c.isDefault) }))).concat([{ separator: true }, { label: qsTr("Mirror video"), checked: rec.mirror }])
+        readonly property var cams: rec.cameraList
+        items: [{ label: qsTr("None"), checked: !rec.cameraOn }].concat(cams.map(c => ({ label: c.name, checked: rec.cameraOn && c.path === rec.cameraShown }))).concat([{ separator: true }, { label: qsTr("Mirror video"), checked: rec.mirror }])
         onPicked: i => {
             if (i === 0) rec.cameraOn = false
-            else if (i <= cams.length) { rec.cameraId = String(cams[i - 1].id); rec.cameraOn = true }
+            else if (i <= cams.length) { rec.cameraId = cams[i - 1].path; rec.cameraOn = true }
             else rec.mirror = !rec.mirror
         }
     }
@@ -1557,7 +1551,7 @@ Popup {
     // Test hooks (--recorder-test). `testSilent` records without the
     // microphone, so a test never captures the room.
     property bool testSilent: false
-    function pickCameraForTest(name) { const c = devices.videoInputs.find(d => d.description === name); if (c) { cameraId = String(c.id); cameraOn = true } }
+    function pickCameraForTest(name) { const c = cameraList.find(d => d.name === name); if (c) { cameraId = c.path; cameraOn = true } }
     function pauseForTest() { enginePause(); stage = "paused"; frameTimer.stop() }
     function resumeForTest() { engineResume(); stage = "recording"; frameTimer.start() }
     function continueForTest() { finishClip() }
@@ -1573,7 +1567,7 @@ Popup {
     function pickSongForTest(cat, idx) { pickSong(library[cat], library[cat].songs[idx]) }
     function musicPanelForTest(on) { musicPanel.visible = on }
     function screenFrameForTest() { const z = screenPreview.videoSink ? screenPreview.videoSink.videoSize : null; return z ? [z.width, z.height] : null }
-    function stateForTest() { return { stage: stage, cameraOn: cameraOn, micOn: micOn, recordedMs: recordedMs, clip: String(clipPath), segments: segments.length, frames: shots.length, screen: screenMode, audio: audioMode, thumb: thumbPath, cams: devices.videoInputs.map(c => c.description), mics: devices.audioInputs.length, duration: player.duration, size: [clipW, clipH] } }
+    function stateForTest() { return { stage: stage, cameraOn: cameraOn, micOn: micOn, recordedMs: recordedMs, clip: String(clipPath), segments: segments.length, frames: shots.length, screen: screenMode, audio: audioMode, thumb: thumbPath, cams: cameraList.map(c => c.name), camera: camFeed.camera, picture: camPreview.videoSink ? [camPreview.videoSink.videoSize.width, camPreview.videoSink.videoSize.height] : null, mics: devices.audioInputs.length, duration: player.duration, size: [clipW, clipH] } }
     function openCamMenuForTest() { camMenu.popupAt(camMenuBtn) }
     function openMicMenuForTest() { micMenu.popupAt(micMenuBtn) }
     function closeMenusForTest() { camMenu.close(); micMenu.close(); effectsMenu.close() }

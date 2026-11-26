@@ -6204,10 +6204,16 @@ fn test_camera() -> Option<(String, String)> {
 /// a V4L2 path), else the default; your avatar while it is on (Teams
 /// selects the avatar as the camera).
 fn camera_device() -> Option<String> {
-    use teams_cli::calling::camera::is_camera_id;
     if ost_vfx::avatar::active() {
         return Some(teams_cli::calling::camera::AVATAR_DEVICE.to_string());
     }
+    selected_camera()
+}
+
+/// The camera chosen in Settings > Devices (OST_CAMERA_DEVICE when set),
+/// never your avatar: what the video clip recorder and face capture open.
+pub(crate) fn selected_camera() -> Option<String> {
+    use teams_cli::calling::camera::is_camera_id;
     // OST_CAMERA_DEVICE=/dev/videoN or pipewire:<node>: this instance's
     // camera (tests on a machine other instances share, whose settings file
     // is common).
