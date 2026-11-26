@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@time'
 created_date: '2026-11-25T20:24:00Z'
-updated_date: '2026-11-26T12:49:00Z'
+updated_date: '2026-11-26T23:31:00Z'
 labels:
   - security
   - dependencies
@@ -40,3 +40,14 @@ RUSTSEC-2026-0543 (2026-09-14) declares chrono unmaintained, with jiff and time 
 8. Live check on linuxlt (ost-test1): calendar day/week/month + event times, chat timestamps, Activity times, before/after screenshots.
 9. PR, CI, Codex review.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Ported every chrono use (engine, desktop, examples) through src/clock.rs on jiff 1.0.3; chrono gone from Cargo.lock; RUSTSEC-2026-0543 exception removed (deny.toml, .cargo/audit.toml); notices and Flatpak sources updated.
+- Baseline tests written and run against chrono first (commit 1); TZ matrix (7 zones) identical before/after on linuxlt.
+- Differential harness chrono vs clock.rs, 14 zones: no differences in parsing/shapes/formats/date math; wall readings differ only within the first second of a skipped hour / last second of a repeated one (chrono inconsistent there).
+- earliest() keeps chrono's fold choice (standard-time reading); Teams/JS takes the daylight one: left as before.
+- Live (linuxlt, ost-test1 spatest, LA and Berlin): calendar views/card/page, chat, Activity identical before/after. Screenshots in ~/ost-live-checks/task-0319 on the dev PC.
+- PR #27.
+<!-- SECTION:NOTES:END -->

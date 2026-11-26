@@ -23683,7 +23683,7 @@ impl qobject::Backend {
             &stored.to_string(),
             p.get("tabStart")
                 .and_then(|v| v.as_i64())
-                .unwrap_or_else(|| teams_cli::clock::now_ms()),
+                .unwrap_or_else(teams_cli::clock::now_ms),
             &s("correlation"),
             p.get("initiator")
                 .and_then(|v| v.as_bool())
