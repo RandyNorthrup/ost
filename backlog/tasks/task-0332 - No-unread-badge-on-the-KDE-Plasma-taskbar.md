@@ -1,11 +1,11 @@
 ---
 id: TASK-0332
 title: No unread badge on the KDE Plasma taskbar
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T15:30:00Z'
+updated_date: '2026-11-26T15:55:00Z'
 labels:
   - bug
   - shell
@@ -20,7 +20,7 @@ Found while capturing wiki screenshots (2026-11-25). OST's unread count doesn't 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The unread count shows on the Plasma task manager (Unity LauncherEntry API) and on other desktops that support it
+- [x] #1 The unread count shows on the Plasma task manager (Unity LauncherEntry API) and on other desktops that support it
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -38,3 +38,15 @@ Found while capturing wiki screenshots (2026-11-25). OST's unread count doesn't 
 - Fix: launcher_badge::register_desktop_entry() at start writes ~/.local/share/applications/io.github.RandyNorthrup.ost.desktop (Exec = the running binary or the AppImage, marked X-OST-Generated) and the 256 px icon when no entry with that id exists in the XDG data dirs; it rewrites only its own entry, once that binary is gone; never in Flatpak or Snap. After writing it sends the count again (5 s, 20 s). The launcher entry object also answers Query (/com/canonical/unity/launcherentry/ost), as libunity apps do. Count rules unchanged (Main.qml taskbarCount: unread unmuted chats + Activity).
 - Live (linuxlt Plasma 6.6 Wayland, spatest = ost-test1): entry and icon written; no more "Failed to find service" lines; Query answers (app uri, count, count-visible); marking a chat unread sent Update {count 1, count-visible true} and Plasma's task manager showed "1" on the OST button; marked read again -> 0.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The unread count shows on the KDE Plasma task manager (and other docks that read the Unity launcher API) also when OST runs outside a package.
+
+Cause: Plasma drops LauncherEntry updates for an app id without an installed desktop entry ("Failed to find service for Unity Launcher"), which every unpackaged OST run lacked.
+
+Changes (launcher_badge.rs, main.rs): OST writes its own desktop entry and icon for the user when none with its id is installed (rewrites only its own, once its binary is gone; never in Flatpak or Snap) and sends the count again; the entry object answers Query. Count rules unchanged. Unit tests for reading Exec, quoting and when to write.
+
+Tests: live on linuxlt, Plasma 6.6 Wayland: entry written, the Plasma error gone, Query answered, an unread chat showed 1 on OST's taskbar button and 0 after reading it. Not tested: GNOME docks.
+<!-- SECTION:FINAL_SUMMARY:END -->
