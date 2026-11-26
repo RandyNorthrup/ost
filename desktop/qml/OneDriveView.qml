@@ -159,7 +159,8 @@ Item {
         // Home and Shared filter first (pills, the filter box); any Sort
         // picked then applies as everywhere.
         const base = spartan && view !== "people" ? sharedSorted(filterRows(items)) : items
-        if (!sortField) return base
+        // (Shared ▸ With you sorts by its own column menus only.)
+        if (!sortField || view === "shared" && !byYou) return base
         const key = it => sortField === "size" ? (it.is_folder ? it.child_count || 0 : it.size || 0)
                         : sortField === "kind" ? String(it.kind || "") : String(it[sortField] || "").toLowerCase()
         const out = base.slice()
