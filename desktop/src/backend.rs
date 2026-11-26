@@ -10153,6 +10153,8 @@ fn apply_audio_devices(map: &serde_json::Map<String, serde_json::Value>) {
     // speaker's own audio (x-much2), as Teams' isSpatialCapable does.
     teams_cli::calling::spatial::set_capable(spatial_capable());
     teams_cli::calling::camera_controls::set_preferred_auto(local("autoCameraControls"));
+    // The camera list ready before it's first shown.
+    teams_cli::calling::camera::prepare();
 }
 
 /// Teams' isSpatialCapable for the speaker calls use: stereo and not
