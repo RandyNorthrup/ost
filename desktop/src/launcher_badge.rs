@@ -130,52 +130,98 @@ fn data_dirs() -> (Option<PathBuf>, Vec<PathBuf>) {
     (home, dirs)
 }
 
-/// The binary a generated entry starts (its `Exec`, unquoted).
+/// The binary a generated entry starts (its `Exec`), read back the way
+/// desktop environments read it: the value as a desktop-entry string
+/// (`\\` is `\`, `\s` a space…), then its first argument (inside quotes
+/// `\x` stands for x), then `%%` for `%`.
 fn entry_exec(text: &str) -> Option<PathBuf> {
-    let line = text.lines().find_map(|l| l.strip_prefix("Exec="))?;
-    let line = line.trim();
-    let path = match line.strip_prefix('"') {
-        // Up to the closing quote, with `\x` standing for x.
+    let raw = text.lines().find_map(|l| l.strip_prefix("Exec="))?.trim();
+    let mut value = String::new();
+    let mut chars = raw.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            value.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('s') => value.push(' '),
+            Some('n') => value.push('\n'),
+            Some('t') => value.push('\t'),
+            Some('r') => value.push('\r'),
+            Some('\\') => value.push('\\'),
+            Some(o) => {
+                value.push('\\');
+                value.push(o);
+            }
+            None => value.push('\\'),
+        }
+    }
+    let arg = match value.strip_prefix('"') {
         Some(rest) => {
-            let mut path = String::new();
+            let mut arg = String::new();
             let mut chars = rest.chars();
             while let Some(c) = chars.next() {
                 match c {
                     '"' => break,
-                    '\\' => path.extend(chars.next()),
-                    c => path.push(c),
+                    '\\' => arg.extend(chars.next()),
+                    c => arg.push(c),
                 }
             }
-            path
+            arg
         }
-        None => line
+        None => value
             .split_whitespace()
             .next()
             .unwrap_or_default()
             .to_string(),
     };
+    let mut path = String::new();
+    let mut chars = arg.chars().peekable();
+    while let Some(c) = chars.next() {
+        path.push(c);
+        if c == '%' && chars.peek() == Some(&'%') {
+            chars.next();
+        }
+    }
     (!path.is_empty()).then(|| PathBuf::from(path))
+}
+
+/// `exe` as the desktop entry specification has it in `Exec`: quoted, with
+/// `"`, `` ` ``, `$` and `\` escaped inside the quotes, then every `\`
+/// doubled again because the value is itself an escaped string. None for a
+/// path an entry can't hold: not UTF-8, control characters, or `%` (the
+/// specification's `%%` launches, but GLib looks for a binary named with
+/// the `%%` and drops the entry; a single `%` would be a field code).
+fn exec_value(exe: &Path) -> Option<String> {
+    let path = exe.to_str()?;
+    if path.chars().any(|c| c.is_control() || c == '%') {
+        return None;
+    }
+    let mut arg = String::from("\"");
+    for c in path.chars() {
+        match c {
+            '"' | '`' | '$' | '\\' => {
+                arg.push('\\');
+                arg.push(c);
+            }
+            c => arg.push(c),
+        }
+    }
+    arg.push('"');
+    Some(arg.replace('\\', "\\\\"))
 }
 
 /// The desktop entry OST writes for itself: the packaged entry's fields,
 /// started with the binary (or AppImage) now running.
-fn entry_text(exe: &Path) -> String {
-    // Quoted as the desktop entry specification asks (`"`, `` ` ``, `$`
-    // and `\` escaped inside the quotes).
-    let mut quoted = String::new();
-    for c in exe.to_string_lossy().chars() {
-        if matches!(c, '"' | '`' | '$' | '\\') {
-            quoted.push('\\');
-        }
-        quoted.push(c);
-    }
-    format!(
+fn entry_text(exe: &Path) -> Option<String> {
+    let exec = exec_value(exe)?;
+    Some(format!(
         "[Desktop Entry]\nType=Application\nName=OST\nGenericName=Team chat and calls\n\
          Comment=Native client for Microsoft Teams chats, calls and meetings\n\
-         Exec=\"{quoted}\"\nIcon={APP_ID}\nTerminal=false\n\
+         Exec={exec}\nIcon={APP_ID}\nTerminal=false\n\
          Categories=Network;InstantMessaging;Chat;VideoConference;\n\
          StartupWMClass=ost-desktop\n{GENERATED_KEY}\n"
-    )
+    ))
 }
 
 /// What [`register_desktop_entry`] should do, from what is installed.
@@ -265,7 +311,11 @@ pub fn register_desktop_entry() {
     if !has_icon && let Err(e) = write(&home.join(&icon), ICON_PNG) {
         tracing::warn!("desktop entry: icon not written: {e}");
     }
-    match write(&target, entry_text(&exe).as_bytes()) {
+    let Some(text) = entry_text(&exe) else {
+        tracing::warn!("desktop entry: not written: the binary's path can't be in one");
+        return;
+    };
+    match write(&target, text.as_bytes()) {
         Ok(()) => {
             tracing::info!("desktop entry: wrote {}", target.display());
             crate::backend::runtime().spawn(resend_later());
@@ -294,7 +344,7 @@ mod tests {
     #[test]
     fn writes_only_where_no_working_entry_is() {
         let packaged = "[Desktop Entry]\nExec=ost-desktop\n";
-        let ours = entry_text(Path::new("/home/u/OST.AppImage"));
+        let ours = entry_text(Path::new("/home/u/OST.AppImage")).unwrap();
         assert_eq!(plan(None, |_| true), EntryPlan::Write);
         // A package's entry is never touched, whatever its Exec.
         assert_eq!(plan(Some(packaged), |_| false), EntryPlan::Keep);
@@ -304,14 +354,26 @@ mod tests {
     }
 
     #[test]
-    fn generated_entry_quotes_its_binary() {
-        let text = entry_text(Path::new("/tmp/a \"b\"/ost-desktop"));
-        assert!(text.contains("Exec=\"/tmp/a \\\"b\\\"/ost-desktop\"\n"));
-        assert_eq!(
-            entry_exec(&text),
-            Some(PathBuf::from("/tmp/a \"b\"/ost-desktop"))
-        );
+    fn generated_exec_is_escaped_for_both_parsing_stages() {
+        // Quoting inside the argument, then the desktop-entry string's own
+        // escapes (every backslash doubled). The same paths were launched
+        // through GLib's loader (Gio.DesktopAppInfo) to check them.
+        let text = entry_text(Path::new("/tmp/a \"b\"/done/$x`y\\z")).unwrap();
+        assert!(text.contains("Exec=\"/tmp/a \\\\\"b\\\\\"/done/\\\\$x\\\\`y\\\\\\\\z\"\n"));
         assert!(text.contains(&format!("Icon={APP_ID}\n")));
         assert!(text.lines().any(|l| l == GENERATED_KEY));
+        for p in [
+            "/opt/my apps/ost-desktop",
+            "/tmp/a \"b\"/done/$x`y\\z",
+            "/home/u/OST.AppImage",
+        ] {
+            assert_eq!(
+                entry_exec(&entry_text(Path::new(p)).unwrap()),
+                Some(PathBuf::from(p))
+            );
+        }
+        // Paths an entry can't hold.
+        assert!(entry_text(Path::new("/tmp/a\nb")).is_none());
+        assert!(entry_text(Path::new("/tmp/100%done/ost-desktop")).is_none());
     }
 }
