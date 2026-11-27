@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude-0363'
 created_date: '2026-11-27T18:19:00Z'
-updated_date: '2026-11-27T18:34:00Z'
+updated_date: '2026-11-27T18:59:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -36,3 +36,12 @@ From the 2026-11-27 parity audit (scope A), which compared Teams (desktop for so
 4. A-10: research Remind me (rcmetadata r/dr, 48:reminders), Ask Copilot (BizChat side pane, ChatHighlights prompt) and Forward split (This message / Multiple messages + multiselect forward mode); implement in a second PR.
 5. Live checks side by side with Teams (web as OST Test 2 / desktop on testpc2) and OST on linuxlt as OST Test 2/3.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- A-09 cause: Conversation's list is BottomToTop, so the message above is a later delegate and paints over the bar that sits on this bubble's top edge. Fix: delegate z 2 while its bar shows; the bar's HoverHandler is blocking, so the message under it doesn't take the hover. Channel replies already raised themselves.
+- A-04: Teams' renderer links only <a> (721466 TextDeserializer passes text through; Teams on the web shows the audit URL as text). sanitize_html no longer linkifies; status notes keep it (sanitize_note_html).
+- A-20: Teams' worker 92502 `d` sets reply `attached`; measured on Teams web (OST test channel 2): grouped reply is 28 tall (4+20+4, margins 4), avatar+indicator visibility:hidden, no header. ChannelPosts and PostThread group with MessageHost.replyAttached.
+- A-10 research (Remind me / Ask Copilot / Forward split) done; implemented in a second PR (branch task-0363-message-menu).
+<!-- SECTION:NOTES:END -->
