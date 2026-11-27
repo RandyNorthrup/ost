@@ -1,11 +1,11 @@
 ---
 id: TASK-0317
 title: 'Security: least-privilege Flatpak and documented system changes'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T19:49:00Z'
-updated_date: '2026-11-27T12:29:00Z'
+updated_date: '2026-11-27T12:51:00Z'
 labels:
   - security
 dependencies: []
@@ -51,6 +51,8 @@ From a public code audit of OST 0.2.1 (posted on Reddit, 2026-11-25). The Flatpa
   - Audio: microphone list from PipeWire (Built-in Audio Analog Stereo, USB Video Analog Stereo; virtual null-sink sources are filtered as before). Make a test call (Teams' echo bot): capture from ost_secwrap_mic (pactl source-output ost-desktop -> ost_secwrap_mic), playback started, ICE/DTLS up, camera sent in the call; results screen: speaker, camera, network connected (mic "didn't work" because the virtual mic is silent). Mic watcher logged no stream on alsa_input.*.
   - Cleanup: flatpak kill, keyring entry cleared, app uninstalled with --delete-data, local remote and camera permission removed, modules unloaded, gst and watcher stopped, ~/ost-build-secwrap* removed.
 - AC #3: PRIVACY.md and the wiki's Privacy and data page reconciled. PRIVACY.md gained the hfp-calls state folder, "tokens in config.toml only with Stay signed in without a keyring", "Extended diagnostics data", X11 shared memory, /dev/snd and KDE runtime notes, "nothing is paired" for BlueZ. The wiki page gained the full host list (same as PRIVACY.md), a SECURITY.md link and the same Flatpak notes (wiki commit cc4a346). SECURITY.md covers token handling and links PRIVACY.md for storage, token location, hosts, Flatpak permissions and the HFP setup's system changes.
+
+- PR #40: CI (build/test, clippy, format, dependency audit, release-build harness check, CodeQL) all passed; Codex code and security review: no findings.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

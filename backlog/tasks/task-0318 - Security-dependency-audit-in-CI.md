@@ -1,11 +1,11 @@
 ---
 id: TASK-0318
 title: 'Security: dependency audit in CI'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T19:49:00Z'
-updated_date: '2026-11-27T11:34:00Z'
+updated_date: '2026-11-27T12:51:00Z'
 labels:
   - security
 dependencies: []
@@ -46,6 +46,8 @@ From a public code audit of OST 0.2.1 (posted on Reddit, 2026-11-25). The audit 
 - 2026-11-27 (AC #2): chrono was replaced by jiff in TASK-0319 (Cargo.lock has no chrono; cargo-sources.json lists jiff 1.0.3), and its dated exception is already gone from deny.toml and .cargo/audit.toml.
 - Pinned cargo-deny 0.22.1 and cargo-audit 0.23.0 (release binaries, SHA-256 checked as in ci.yml) on linuxlt against main + this branch: "advisories ok, bans ok, licenses ok, sources ok"; cargo audit scanned 610 crates with no vulnerabilities and no warnings outside the ignore list.
 - The only unmaintained crates left are zvariant, zbus_names and zvariant_derive (RUSTSEC-2026-0370/0371/0372): standalone crates zbus 6 merged in. No replacement can be made from OST's side: ksni 0.3.8 (released 2026-11-26) and zbus-secret-service-keyring-store 1.0.1 (latest) still depend on zbus ^5, and moving OST's own D-Bus code to zbus 6 would add zbus 6 beside zbus 5 without removing them. Recorded in deny.toml (checked 2026-11-27, review by 2027-02-25).
+
+- PR #40: CI (build/test, clippy, format, dependency audit, release-build harness check, CodeQL) all passed; Codex code and security review: no findings.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
