@@ -1,11 +1,11 @@
 ---
 id: TASK-0316
 title: 'Security: pinned, verified release toolchain and provenance'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T19:49:00Z'
-updated_date: '2026-11-27T12:29:00Z'
+updated_date: '2026-11-27T12:51:00Z'
 labels:
   - security
 dependencies: []
@@ -49,6 +49,8 @@ From a public code audit of OST 0.2.1 (posted on Reddit, 2026-11-25). The AppIma
 
 - 2026-11-27 AC #3: v0.3.0 carries attestations, and the wiki's Installation page has "Verifying downloads" with the plain and the strict gh attestation verify commands (--signer-workflow RandyNorthrup/ost/.github/workflows/release.yml --source-ref refs/tags/vX.Y.Z --deny-self-hosted-runners) and the SHA256SUMS check; SECURITY.md has the same. Checked against the real release: the strict command on v0.3.0's SHA256SUMS exits 0; with --source-ref refs/tags/v0.2.1 it fails ("expected SourceRepositoryRef to be refs/tags/v0.2.1, got refs/tags/v0.3.0").
 - AC #4: release dry run on main (gh workflow run release.yml --ref main), run 45990740483 on b1e719f3: version, ubuntu, debian, rpm fedora:45, rpm opensuse/tumbleweed, flatpak and release all succeeded; the release job skipped "Build-provenance attestations" and "Attach to the release", aur was skipped; artifacts uploaded (release-files 904 MB, flatpak 139 MB). The v0.3.0 tag build itself (run 45815741896) also built every package with the pinned toolchain and attested them. No tag or release was created.
+
+- PR #40: CI (build/test, clippy, format, dependency audit, release-build harness check, CodeQL) all passed; Codex code and security review: no findings.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
