@@ -3,11 +3,11 @@ id: TASK-0349
 title: >-
   Camera fails right after a lobby admission (media descriptions go to the old
   call leg)
-status: In Progress
+status: Done
 assignee:
   - '@lobbycam'
 created_date: '2026-11-27T08:07:00Z'
-updated_date: '2026-11-27T10:55:00Z'
+updated_date: '2026-11-27T11:25:00Z'
 labels:
   - bug
   - calls
