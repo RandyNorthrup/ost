@@ -324,6 +324,13 @@ pub mod qobject {
         /// The call is a channel's Meet now: a meeting, ad hoc (Teams shows
         /// it a meeting's controls but Notes).
         #[qproperty(bool, call_adhoc_meeting)]
+        /// The call is a group call, not a meeting: a 1:1 call someone was
+        /// invited into (Teams' People pane then says "Currently in this
+        /// call" and lists "People added to the chat").
+        #[qproperty(bool, call_group)]
+        /// People invited into the call from the People pane who are still
+        /// being rung: [{id, name}] (Teams' "Calling...").
+        #[qproperty(QString, call_invites_json)]
         /// Held in a meeting's lobby (call_state "lobby"): someone is in
         /// the meeting, so Teams says they'll let you in shortly.
         #[qproperty(bool, call_lobby_presenter)]
@@ -2046,6 +2053,11 @@ pub mod qobject {
         /// End the consult call and go back to the held one.
         #[qinvokable]
         fn consult_end(self: Pin<&mut Backend>);
+        /// Invite someone (an MRI and their name) into the call from the
+        /// People pane (Teams' "Invite someone or dial a number"): a 1:1
+        /// call becomes a group call with them.
+        #[qinvokable]
+        fn invite_to_call(self: Pin<&mut Backend>, mri: &QString, name: &QString);
         /// Park the call (Teams' Park Call).
         #[qinvokable]
         fn park_call(self: Pin<&mut Backend>);
@@ -3577,6 +3589,9 @@ pub struct BackendRust {
     /// Room mode: the ad-hoc meeting had more than one other person in it
     /// (Teams Rooms' meetingEscalated): then it isn't left at once.
     room_escalated: bool,
+    /// A 1:1 call became a group call: its title is the others in its
+    /// chat, as Teams titles it, once the chat's members are known.
+    call_title_from_chat: bool,
     /// Room mode: the title Teams Rooms gives the invitation's call
     /// ([`teams_cli::calling::room_mode::call_title`]), shown once accepted.
     room_call_title: String,
@@ -3678,6 +3693,8 @@ pub struct BackendRust {
     call_network_strength: QString,
     call_scheduled: bool,
     call_adhoc_meeting: bool,
+    call_group: bool,
+    call_invites_json: QString,
     call_lobby_presenter: bool,
     call_attendee_restrictions: i32,
     call_speaking_while_muted: bool,
@@ -5670,6 +5687,7 @@ async fn room_incoming(
         this.as_mut().set_call_meeting(conference);
         this.as_mut().set_call_scheduled(false);
         this.as_mut().set_call_adhoc_meeting(false);
+        this.as_mut().set_call_group(false);
         this.as_mut().rust_mut().roster.clear();
         this.as_mut().rust_mut().room_auto_exit = auto_exit;
         this.as_mut()
@@ -6570,11 +6588,28 @@ fn short_error(e: &anyhow::Error) -> String {
 static CHANNEL_ACTIVITY: std::sync::Mutex<std::collections::BTreeMap<String, i64>> =
     std::sync::Mutex::new(std::collections::BTreeMap::new());
 
+/// Your group chats without a name of their own, hidden ones too, from
+/// the chat service's list: the chats a call someone is invited into can
+/// go on in (Teams' chatsWithUsers searches its whole local store).
+static UNNAMED_GROUP_CHATS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
 async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
     let client = TeamsClient::new().await?;
     let my_oid = client.object_id().unwrap_or_default();
     let me = api::whoami_data(&client).await?;
     let chats = api::list_chats_data(&client, CHAT_LIMIT).await?;
+    if let Ok(mut g) = UNNAMED_GROUP_CHATS.lock() {
+        *g = chats
+            .iter()
+            .filter(|c| {
+                c.is_group
+                    && !c.named
+                    && c.id.ends_with("@thread.v2")
+                    && !c.id.starts_with("19:meeting_")
+            })
+            .map(|c| c.id.clone())
+            .collect();
+    }
     // Channels' last activity (the new chat form's local channel search
     // orders by it).
     if let Ok(mut m) = CHANNEL_ACTIVITY.lock() {
@@ -8814,7 +8849,25 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         || json.contains("conversation/addParticipantFailure"))
         && let Ok(v) = serde_json::from_str::<serde_json::Value>(json)
     {
+        tracing::debug!(event = %json.chars().take(1500).collect::<String>(), "add participant outcome");
         let mut slot = call_slot().lock().await;
+        // Someone invited from the People pane answered, or couldn't be
+        // reached.
+        let calls = &mut *slot;
+        let invited = match (calls.active.as_mut(), calls.outgoing.as_mut()) {
+            (Some(call), _) => call.invite_outcome(&v),
+            (None, Some(call)) => call.invite_outcome(&v),
+            _ => None,
+        };
+        if let Some((mri, outcome)) = invited {
+            drop(slot);
+            match &outcome {
+                Ok(()) => tracing::info!("the person invited joined the call"),
+                Err(text) => tracing::info!(%text, "the person invited wasn't added"),
+            }
+            let _ = qt.queue(move |mut this| this.as_mut().invite_ended(&mri));
+            return;
+        }
         if let Some(call) = slot.outgoing.as_mut()
             && let Some(outcome) = call.room_outcome(&v)
         {
@@ -8873,6 +8926,19 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     {
         tracing::debug!(event = %json.chars().take(3000).collect::<String>(), "conversation update");
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(json) {
+            // Someone in a 1:1 call with us invited a third person: the
+            // conversation turns multi-party on its group chat, and Teams
+            // shows it as a group call.
+            if let Some(thread) = teams_cli::calling::incoming::escalated_to(&v) {
+                let _ = qt.queue(move |mut this| {
+                    if !this.rust().call_meeting
+                        && this.rust().call_state.to_string() == "connected"
+                    {
+                        tracing::info!("the 1:1 call became a group call");
+                        this.as_mut().call_escalated(&thread, "");
+                    }
+                });
+            }
             let changed = call_slot()
                 .lock()
                 .await
@@ -9205,6 +9271,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 this.as_mut().set_call_meeting(false);
                 this.as_mut().set_call_scheduled(false);
                 this.as_mut().set_call_adhoc_meeting(false);
+                this.as_mut().set_call_group(false);
                 this.as_mut().set_call_state(QString::from("ringing"));
             });
         }
@@ -11646,6 +11713,7 @@ impl qobject::Backend {
         self.as_mut().set_call_meeting(false);
         self.as_mut().set_call_scheduled(false);
         self.as_mut().set_call_adhoc_meeting(false);
+        self.as_mut().set_call_group(false);
         self.as_mut().set_call_ai_indicator(false);
         self.as_mut().show_processing(Default::default());
         self.as_mut().show_transcript(Vec::new(), true);
@@ -11938,6 +12006,12 @@ impl qobject::Backend {
         // A channel's Meet now (no group call kind) is a meeting, ad hoc.
         self.as_mut()
             .set_call_adhoc_meeting(kind.is_none() && !test);
+        // A group chat's Audio call is a group call (conversationType
+        // groupCall, as a 1:1 call someone was invited into).
+        self.as_mut().set_call_group(matches!(
+            kind,
+            Some(teams_cli::calling::signaling::GroupCallKind::Ring)
+        ));
         self.as_mut().set_call_ai_indicator(false);
         self.as_mut().show_processing(Default::default());
         self.as_mut().show_transcript(Vec::new(), true);
@@ -14199,6 +14273,7 @@ impl qobject::Backend {
         self.as_mut().rust_mut().attendance = Default::default();
         self.as_mut().set_call_scheduled(true);
         self.as_mut().set_call_adhoc_meeting(false);
+        self.as_mut().set_call_group(false);
         self.as_mut().set_call_meeting_locked(false);
         self.as_mut().set_call_attendee_restrictions(0);
         self.as_mut().set_call_speaking_while_muted(false);
@@ -16886,6 +16961,124 @@ impl qobject::Backend {
         });
     }
 
+    /// Teams' roster people picker: ring `mri` into the call. A 1:1 call
+    /// escalates first (Teams' CallEscalationService): the invitation names
+    /// the group chat of everyone in the call, an existing one with exactly
+    /// those people or a new one (getChatConversationWith), and the call
+    /// goes on as that chat's group call. A group call invites into its own
+    /// chat. Until they answer, they show as "Calling...".
+    pub fn invite_to_call(mut self: Pin<&mut Self>, mri: &QString, name: &QString) {
+        let (mri, name) = (mri.to_string(), name.to_string());
+        if teams_cli::identity::work_object_id(&mri).is_none()
+            || self.rust().call_state.to_string() != "connected"
+        {
+            return;
+        }
+        let mut invites: Vec<serde_json::Value> =
+            serde_json::from_str(&self.rust().call_invites_json.to_string()).unwrap_or_default();
+        let here = |m: &str| m.eq_ignore_ascii_case(&mri);
+        if invites.iter().any(|i| i["id"].as_str().is_some_and(here))
+            || self.rust().roster.iter().any(|p| p.active && here(&p.id))
+        {
+            return;
+        }
+        invites.push(serde_json::json!({ "id": mri, "name": name }));
+        self.as_mut().set_call_invites_json(QString::from(
+            serde_json::Value::Array(invites).to_string().as_str(),
+        ));
+        let one_to_one = !self.rust().call_meeting;
+        let peer = self.rust().call_peer_id.to_string();
+        let thread = self.rust().call_thread_id.to_string();
+        // The chats that can be the call's: unnamed group chats, hidden
+        // ones too (Teams' chatsWithUsers without a topic: with OST Test 1,
+        // 2 and 3 in both "Release planning" and an unnamed chat they had
+        // hidden, Teams took the unnamed one).
+        let group_chats: Vec<String> = UNNAMED_GROUP_CHATS
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_default();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let thread = if one_to_one {
+                    let oid = |m: &str| teams_cli::identity::work_object_id(m).map(str::to_string);
+                    let targets: Vec<serde_json::Value> = [oid(&peer), oid(&mri)]
+                        .into_iter()
+                        .map(|o| o.context("Not a person in the organization"))
+                        .map(|o| o.map(|o| serde_json::json!({ "kind": "person", "oid": o })))
+                        .collect::<anyhow::Result<_>>()?;
+                    let client = TeamsClient::new().await?;
+                    picked_conversation(&client, &targets, &group_chats).await?
+                } else {
+                    thread
+                };
+                let people = std::slice::from_ref(&mri);
+                let mut guard = call_slot().lock().await;
+                let slot = &mut *guard;
+                match (slot.active.as_mut(), slot.outgoing.as_mut()) {
+                    (Some(call), _) => {
+                        let auth = CallAuth::load().await?;
+                        call.invite_people(&auth, &thread, people).await?
+                    }
+                    (None, Some(call)) => call.invite_people(&thread, people).await?,
+                    _ => anyhow::bail!("No call to invite into"),
+                }
+                anyhow::Ok(thread)
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(thread) => {
+                    tracing::info!(escalated = one_to_one, "invited into the call");
+                    if one_to_one {
+                        this.as_mut().call_escalated(&thread, &name);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("invite into the call: {}", short_error(&e));
+                    this.as_mut().invite_ended(&mri);
+                }
+            });
+        });
+    }
+
+    /// A 1:1 call became a group call on `thread` (we invited `name`, or
+    /// the other person invited someone: `name` empty): the window takes
+    /// the group call's layout, People pane and chat, and Teams' title,
+    /// the others' names.
+    fn call_escalated(mut self: Pin<&mut Self>, thread: &str, name: &str) {
+        let peer = self.rust().call_peer.to_string();
+        let title = [peer, name.to_string()]
+            .into_iter()
+            .filter(|n| !n.is_empty())
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.as_mut().set_call_peer(QString::from(title.as_str()));
+        self.as_mut().rust_mut().call_title_from_chat = true;
+        self.as_mut().set_call_thread_id(QString::from(thread));
+        self.as_mut().set_call_group(true);
+        self.as_mut().set_call_meeting(true);
+        self.as_mut().load_call_chat_members();
+        self.as_mut().reload_chats();
+    }
+
+    /// Someone we invited joined, declined or wasn't reached: they stop
+    /// showing as "Calling...".
+    fn invite_ended(mut self: Pin<&mut Self>, mri: &str) {
+        let mut invites: Vec<serde_json::Value> =
+            serde_json::from_str(&self.rust().call_invites_json.to_string()).unwrap_or_default();
+        let before = invites.len();
+        invites.retain(|i| {
+            !i["id"]
+                .as_str()
+                .is_some_and(|m| m.eq_ignore_ascii_case(mri))
+        });
+        if invites.len() != before {
+            self.as_mut().set_call_invites_json(QString::from(
+                serde_json::Value::Array(invites).to_string().as_str(),
+            ));
+        }
+    }
+
     pub fn consult_end(self: Pin<&mut Self>) {
         let qt = self.qt_thread();
         runtime().spawn(async move {
@@ -17066,7 +17259,18 @@ impl qobject::Backend {
                 teams_cli::clock::local_now(),
             );
         }
+        // Whoever we invited and is now in the call stops "Calling...".
+        let joined: Vec<String> = roster
+            .iter()
+            .filter(|p| p.active)
+            .map(|p| p.id.clone())
+            .collect();
         self.as_mut().rust_mut().roster = roster;
+        if !self.rust().call_invites_json.is_empty() {
+            for id in &joined {
+                self.as_mut().invite_ended(id);
+            }
+        }
         self.as_mut()
             .set_call_roster_json(QString::from(json.as_str()));
         // Your role may have changed who sees the lobby.
@@ -17151,6 +17355,9 @@ impl qobject::Backend {
     /// Show the call as over; the UI fades it out from "ended".
     fn end_call_ui(mut self: Pin<&mut Self>) {
         teams_cli::calling::meeting_media::clear_control_role();
+        self.as_mut().set_call_invites_json(QString::default());
+        self.as_mut().set_call_group(false);
+        self.as_mut().rust_mut().call_title_from_chat = false;
         // A room ended (or was left): the main meeting's kept conversation
         // waits a little for the way back, then is left.
         leave_kept_main_later();
@@ -19945,9 +20152,27 @@ impl qobject::Backend {
                     return;
                 }
                 match result {
-                    Ok(text) => this
-                        .as_mut()
-                        .set_call_chat_members_json(QString::from(text.as_str())),
+                    Ok(text) => {
+                        // An escalated call: titled with the others in
+                        // its chat ("OST Test 2, OST Test 3").
+                        if this.rust().call_title_from_chat {
+                            let mut names: Vec<String> =
+                                serde_json::from_str::<Vec<serde_json::Value>>(&text)
+                                    .unwrap_or_default()
+                                    .iter()
+                                    .filter(|m| m["me"].as_bool() != Some(true))
+                                    .filter_map(|m| m["name"].as_str().map(str::to_string))
+                                    .filter(|n| !n.is_empty())
+                                    .collect();
+                            names.sort();
+                            if !names.is_empty() {
+                                this.as_mut()
+                                    .set_call_peer(QString::from(names.join(", ").as_str()));
+                            }
+                        }
+                        this.as_mut()
+                            .set_call_chat_members_json(QString::from(text.as_str()))
+                    }
                     Err(e) => tracing::info!("call chat members unavailable: {}", short_error(&e)),
                 }
             });

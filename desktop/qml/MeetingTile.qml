@@ -33,7 +33,7 @@ Item {
     readonly property string reaction: { if (!call) return ""; call.reactions; return call.reactionOf(person.id || "") }
     /// Teams' tile ··· menu (VideoTileMenu.qml): on the people tiles of a
     /// meeting or group call, not the compact view's or the room's own.
-    readonly property bool menuOffered: !!call && !compact && !forRoom && !call.roomMode && !bot && person.id !== undefined
+    readonly property bool menuOffered: !!call && !compact && !forRoom && !call.roomMode && !bot && !person.calling && person.id !== undefined
                                         && (call.meeting || !call.oneOnOne || videoKey !== "")
     readonly property string menuKey: self ? "me" : (person.id || "")
     readonly property bool menuOpen: !!call && call.tileMenuFor !== "" && call.tileMenuFor === menuKey
@@ -90,14 +90,27 @@ Item {
             }
         }
         Avatar {
+            id: tileAvatar
             ring: false
             anchors.centerIn: parent
+            // Someone being rung: the avatar moves up over Teams'
+            // "Calling..." line.
+            anchors.verticalCenterOffset: mt.person.calling ? -(callingText.height + 8) / 2 : 0
             // Teams' tile avatar: about half the tile's height, at most
             // 200 (a whole-stage tile, measured on winpc 2026-11-10).
             size: Math.min(200, Math.round(parent.height * 0.4975))
             name: mt.person.name || ""
             photoId: mt.self ? "me" : (mt.person.id || "")
             visible: !video.visible && !mt.bot
+        }
+        Text {
+            id: callingText
+            visible: !!mt.person.calling && !mt.nameless
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: tileAvatar.bottom; anchors.topMargin: 8
+            text: qsTr("Calling...")
+            font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold
+            color: theme.text
         }
         // A bot (a 28: participant: the Echo bot in the test call) gets
         // Teams' agent avatar instead, at the same size.

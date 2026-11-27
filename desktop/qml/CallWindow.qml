@@ -342,7 +342,11 @@ Window {
     /// A participant menu action for the meeting (mute, roles, spotlight,
     /// remove).
     signal participantAction(string action, string id, string name, string stateId)
+    // Everyone else in the call, then whoever we invited and is still
+    // being rung (Teams' "Calling..." tile and roster row).
     readonly property var others: roster.filter(p => p.id !== selfId)
+        .concat(invites.filter(i => !roster.some(p => (p.id || "").toLowerCase() === (i.id || "").toLowerCase()))
+                       .map(i => ({ id: i.id, name: i.name, calling: true, muted: false })))
     // In-room attendees (Teams' hybrid companion join): once you add a
     // nearby Teams Room (Cast, Room audio), your endpoint names it
     // (meetingRoom) and everyone in the room with you, the room too, is
@@ -634,9 +638,10 @@ Window {
         ? [{ name: selfName || qsTr("You"), id: "me", you: true, mutedNow: muted || !hasAudio, hand: handRaised,
              role: (roster.find(p => p.id === selfId) || {}).role || "", meetingRoom: myRoom }]
           .concat(others.map(p => ({ name: p.name, id: p.id, you: false, mutedNow: p.muted, role: p.role, hand: !!p.hand, guest: !!p.guest, suspected: !!p.suspected, spotlight: p.spotlight || "", signLine: signLine(p), signFirst: signMode && (iSign ? p.sign_role === "signLanguageInterpreter" : p.sign_role === "dhhSigner"),
-                                     room: !!p.room, meetingRoom: p.meeting_room || "" })))
+                                     room: !!p.room, meetingRoom: p.meeting_room || "", calling: !!p.calling })))
         : [{ name: selfName || qsTr("You"), id: "me", you: true, mutedNow: muted || !hasAudio },
            { name: peer, id: backend.callPeerId, you: false, mutedNow: false }]
+          .concat(invites.map(i => ({ name: i.name, id: i.id, you: false, mutedNow: false, calling: true })))
     /// Hold: you put the call on hold, or the other person did.
     property bool held: false
     property bool heldByPeer: false
@@ -999,6 +1004,14 @@ Window {
     property bool scheduled: false
     /// A channel's Meet now: a meeting, ad hoc.
     property bool adhocMeeting: false
+    /// A group call, not a meeting: a group chat's call, or a 1:1 call
+    /// someone was invited into.
+    property bool groupCall: false
+    /// People invited from the People pane, still being rung: [{id, name}].
+    property var invites: []
+    /// Teams' roster people picker: ring someone into a 1:1 or group call.
+    signal invitePerson(string mri, string name)
+    readonly property bool canInvite: state === "connected" && !testCall && !voicemail && !attendantTest && !roomMode && !pstnCall && (!meeting || groupCall)
     // Teams' New meeting controls (Settings ▸ General ▸ Meeting, a Teams
     // Labs feature kept on this device): its InlineCentered layout. Read
     // again whenever the window is activated, so turning it on or off in
@@ -3818,6 +3831,9 @@ Window {
             lobbyChatAvailable: win.lobbyChatAvailable
             onChatLobby: win.openLobbyChat()
             meeting: win.meeting
+            groupCall: win.groupCall
+            canInvite: win.canInvite
+            onInvite: (mri, name) => win.invitePerson(mri, name)
             managed: !!win.liveEvent.managed
             onClosed: win.side = ""
             onAdmit: (id, name) => win.admitLobby(id, name, false)
@@ -5659,6 +5675,10 @@ Window {
     }
 
     function consultForTest(oid, name) { consulting = { id: oid, name: name }; consult(oid, name) }
+    // --invite-test: the People pane's people picker.
+    function inviteTypeForTest(t) { side = "people"; peoplePane.typeForTest(t) }
+    function inviteOptionsForTest() { return peoplePane.inviteOptionsForTest() }
+    function invitePickForTest(i) { peoplePane.pickForTest(i) }
     function consultByCallForTest(oid, name) { consultByCall(oid, name) }
     function transferFromConsultForTest() { const c = consulting; consulting = null; transfer(c.id, c.name) }
     function dialPadForTest() { dialPad.open() }
