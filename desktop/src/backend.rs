@@ -602,6 +602,10 @@ pub mod qobject {
         #[qproperty(bool, system_frame)]
         /// Unsent drafts, newest first: [{id, name, text, time, peerMri}].
         #[qproperty(QString, drafts_json)]
+        /// Bumped when Teams pushes a change to your followed threads
+        /// (48:threads) or saved messages (48:saved): the chat list's Quick
+        /// views count them again.
+        #[qproperty(i32, quick_views_version)]
         /// The Activity feed (ActivityItem list, newest first).
         #[qproperty(QString, activity_json)]
         /// Unread Activity items, for the rail badge.
@@ -3889,6 +3893,7 @@ pub struct BackendRust {
     window_active: bool,
     system_frame: bool,
     drafts_json: QString,
+    quick_views_version: i32,
     activity_json: QString,
     activity_unread: i32,
     theme_mode: QString,
@@ -19100,6 +19105,11 @@ impl qobject::Backend {
         // New notifications: refresh Activity (and its badge).
         if ids.iter().any(|i| i == "48:notifications") {
             self.as_mut().load_activity();
+        }
+        // Followed threads and Saved changed: the list's Quick views recount.
+        if ids.iter().any(|i| i == "48:threads" || i == "48:saved") {
+            let v = self.rust().quick_views_version.wrapping_add(1);
+            self.as_mut().set_quick_views_version(v);
         }
         for id in ids.iter().filter(|i| !i.starts_with("48:")) {
             let channel = id.split(';').next().unwrap_or_default().to_string();

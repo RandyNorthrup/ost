@@ -85,6 +85,10 @@ Popup {
     padding: darkCallout ? 4 : newStyle ? 12.67 : viewStyle ? 16.67 : fabric ? 0 : 4
     /// Rows at least this wide (Teams' More menu and its submenus: 230).
     property real minRowWidth: 0
+    /// Labels too long for the widest menu wrap (Fluent's MenuItem, as
+    /// Teams desktop's New items ▸ "New message in new window"): the row
+    /// grows by a line, its icon and keys stay with the first line.
+    property bool wrapLabels: false
     /// Fluent's hasCheckmarks (Teams' tab dropdown): every row keeps a
     /// check column (the 16 px check 8 in), so icons sit at 30 and their
     /// labels at 54, and rows without an icon have their label at 30.
@@ -253,7 +257,9 @@ Popup {
                 width: root.width - 2 * root.padding
                 // A divider takes 1 px plus 4 above and below (the column's
                 // 2 px gaps count towards those).
-                height: modelData.separator ? root.separatorHeight : modelData.outlined ? 33.33 : root.rowHeight > 0 && !modelData.heading ? root.rowHeight : modelData.toggle || root.fabric ? 36 : 32
+                height: modelData.separator ? root.separatorHeight : modelData.outlined ? 33.33 : root.rowHeight > 0 && !modelData.heading ? root.rowHeight : modelData.toggle || root.fabric ? 36
+                    : root.wrapLabels ? Math.max(32, rowLabel.implicitHeight + 12) : 32
+                readonly property bool wrapped: height > 32 && root.wrapLabels
                 Rectangle {
                     visible: !!row.modelData.separator
                     anchors.verticalCenter: parent.verticalCenter
@@ -332,7 +338,7 @@ Popup {
                     }
                     FluentIcon {
                         visible: !!row.modelData.icon
-                        x: root.radioColumn ? 26 : root.checkColumn ? 30 : root.fabric ? 8 : 6; anchors.verticalCenter: parent.verticalCenter; size: root.fabric ? 16 : 20
+                        x: root.radioColumn ? 26 : root.checkColumn ? 30 : root.fabric ? 8 : 6; y: row.wrapped ? 6 : (parent.height - height) / 2; size: root.fabric ? 16 : 20
                         name: row.modelData.icon || ""
                         // Teams' new-controls menus turn a hovered row's
                         // glyph brand (Fluent's MenuItem icon hover).
@@ -377,8 +383,13 @@ Popup {
                         color: theme.onFill(hcFill1, row.on ? theme.textSecondary : theme.disabled)
                     }
                     Text {
-                        x: row.modelData.toggle ? 60 : root.viewStyle && !row.modelData.icon ? 10 : root.rowLabelX(row.modelData); anchors.verticalCenter: parent.verticalCenter
-                        width: parent.width - x - 6 - (secondaryText.visible ? secondaryText.implicitWidth + 8 : 0); elide: Text.ElideRight
+                        id: rowLabel
+                        x: row.modelData.toggle ? 60 : root.viewStyle && !row.modelData.icon ? 10 : root.rowLabelX(row.modelData); y: row.wrapped ? 6 : (parent.height - height) / 2
+                        width: parent.width - x - 6 - (secondaryText.visible ? secondaryText.implicitWidth + 8 : 0)
+                            - (root.wrapLabels && row.modelData.keys ? 24 + keysText.implicitWidth : 0)
+                        elide: root.wrapLabels ? Text.ElideNone : Text.ElideRight
+                        wrapMode: root.wrapLabels ? Text.Wrap : Text.NoWrap
+                        lineHeight: root.wrapLabels ? 20 : 1; lineHeightMode: root.wrapLabels ? Text.FixedHeight : Text.ProportionalHeight
                         text: row.modelData.label || ""
                         font.family: theme.font; font.pixelSize: theme.base
                         color: theme.onFill(hcFill1, row.modelData.toggle ? theme.text : row.ink)
@@ -397,8 +408,9 @@ Popup {
                         name: root.viewStyle ? "view-chevron-16" : "chevron-right-" + root.chevronSize; size: root.chevronSize; color: theme.onFill(hcFill1, row.ink)
                     }
                     Text {
+                        id: keysText
                         // Before a check row's 16 px check (6 either side).
-                        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                        anchors.right: parent.right; y: row.wrapped ? 6 + (20 - height) / 2 : (parent.height - height) / 2
                         anchors.rightMargin: row.modelData.split ? 31 + 8.6 : root.keysMargin + (row.modelData.endCheck !== undefined ? 22 : 0)
                         text: row.modelData.keys || ""
                         font.family: theme.font; font.pixelSize: theme.small

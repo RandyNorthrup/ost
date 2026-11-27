@@ -66,7 +66,7 @@ Window {
         id: copilot
         open: chat.copilotOpen
         request: chat.copilotRequest
-        anchors { top: titleRow.bottom; right: parent.right; bottom: parent.bottom }
+        anchors { top: titleRow.bottom; right: history.left; bottom: parent.bottom }
         width: open ? 360 : 0
         onClosed: chat.copilotOpen = false
         onOpenLink: url => {
@@ -74,6 +74,14 @@ Window {
             if (m && decodeURIComponent(m[1]) === win.chatId) chat.showFound(m[2], [], "")
             else if (!m) chat.openLink(url)
         }
+    }
+    // More chat options ▸ View Copilot history, in the same place.
+    CopilotHistoryPane {
+        id: history
+        visible: chat.copilotHistoryOpen
+        anchors { top: titleRow.bottom; right: parent.right; bottom: parent.bottom }
+        width: visible ? 360 : 0
+        onClosed: chat.copilotHistoryOpen = false
     }
     Conversation {
         id: chat

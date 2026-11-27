@@ -27,6 +27,39 @@ Rectangle {
     property bool mentionsOpen: false
     /// Quick views ▸ Followed threads / Saved ("followed", "saved" or "").
     property string quickOpen: ""
+    // ---- Quick views' rows (Teams' slice providers, read from Teams
+    // 26304's worker; docs/spec/chat-list-and-header.md §3) ----
+    // Teams hides a slice whose activityCount is 0: Mentions and Followed
+    // threads count their items, Saved is 1 once you've saved a message,
+    // Drafts is always 1 (listed even with nothing pending) and Discover
+    // always 1 where the view shows channels. A slice is bold while its
+    // unreadCount is above 0 (never Reminders), and Mentions, tag mentions
+    // and Followed threads show that count in a badge (live flags
+    // enableBadgingVNextBadgeCountChanges and …ForFollowedThreads).
+    /// Unread mentions (Teams' mentions slice unreadCount).
+    property int mentionsUnread: 0
+    /// Followed threads: how many, and how many with unread replies.
+    property int followedCount: 0
+    property int followedUnread: 0
+    /// Saved messages.
+    property int savedCount: 0
+    /// Followed threads and Saved as the list counts them, loaded at sign-in
+    /// and whenever Teams pushes a change to 48:threads or 48:saved.
+    function loadQuickCounts() {
+        if (!backend.signedIn) return
+        backend.channelAction("quick-followed", "", "", "")
+        backend.channelAction("quick-saved", "", "", "")
+    }
+    Connections {
+        target: backend
+        function onQuickViewsVersionChanged() { root.loadQuickCounts() }
+    }
+    onQuickOpenChanged: loadQuickCounts()
+    // Once the teams are known (a followed thread counts only where its
+    // channel is), and again a little later if the service didn't answer.
+    property bool quickCountsTeams: false
+    onTeamsChanged: if (!quickCountsTeams && teams.length > 0) { quickCountsTeams = true; loadQuickCounts() }
+    Timer { id: quickRetry; interval: 15000; onTriggered: root.loadQuickCounts() }
     signal openQuick(string kind)
     signal openMentions()
     signal chatSelected(string id, string name)
@@ -254,8 +287,8 @@ Rectangle {
     /// ({id, email}); loaded at start and after each change.
     property var notifyTagged: ({})
     readonly property bool signedIn: backend.signedIn
-    onSignedInChanged: if (signedIn) backend.channelAction("notify-tagged", "", "", "")
-    Component.onCompleted: { syncSections(); if (signedIn) backend.channelAction("notify-tagged", "", "", ""); if (backend.signedIn) backend.loadSettings() }
+    onSignedInChanged: if (signedIn) { backend.channelAction("notify-tagged", "", "", ""); loadQuickCounts() }
+    Component.onCompleted: { syncSections(); if (signedIn) { backend.channelAction("notify-tagged", "", "", ""); loadQuickCounts() } if (backend.signedIn) backend.loadSettings() }
     Connections {
         target: backend
         function onChannelActionResultChanged() {
@@ -268,6 +301,19 @@ Rectangle {
                 backend.channelAction("notify-tagged", "", "", "")
             } else if ((r.op === "notify-on" || r.op === "notify-off") && !r.ok) {
                 backend.toast(qsTr("Something went wrong on our end. Please try again."), "error")
+            } else if (r.op === "quick-followed" && r.ok) {
+                // (Teams drops a thread whose conversation it doesn't know,
+                // as Quick views ▸ Followed threads lists them.)
+                const known = id => root.teams.some(t => (t.channels || []).some(c => c.id === id))
+                const items = (r.data || []).filter(i => !i.channel || !root.teams.length || known(i.thread_id))
+                root.followedCount = items.length
+                root.followedUnread = items.filter(i => i.unread).length
+            } else if ((r.op === "quick-followed" || r.op === "quick-saved") && !r.ok) {
+                quickRetry.restart()
+            } else if (r.op === "quick-saved" && r.ok) {
+                root.savedCount = (r.data || []).length
+            } else if (r.op === "quick-unsave" || r.op === "quick-unfollow") {
+                root.loadQuickCounts()
             }
         }
     }
@@ -316,14 +362,38 @@ Rectangle {
         else { unreadOn = false; category = chipFilter }
     }
     readonly property bool filtered: unreadOn || category.length > 0 || nameFilter.length > 0
+    // Teams' filter text box (sticky filter, measured on Teams web
+    // 2026-11-27): it opens above the pills, which stay; Esc or the toggle
+    // closes it and drops the text. The text filters 250 ms after typing
+    // stops (simpleCollabFilterTextDebouceTimeInMS), up to 100 characters.
     function openFilter() { filtering = true; filterField.forceActiveFocus() }
+    function closeFilter() { filterField.text = ""; nameFilter = ""; filtering = false }
+    /// The box's placeholder and name, by the list (unified, the Chat app,
+    /// the Teams app).
+    readonly property string filterLabel: pane === "chats" ? qsTr("Filter by person or chat name")
+        : pane === "teams" ? qsTr("Filter by channel name") : qsTr("Filter by person, chat or channel name")
+    Timer { id: filterDebounce; interval: 250; onTriggered: root.nameFilter = filterField.text.trim().toLowerCase() }
+    /// The filter box's height and its gap (pills and the list move down by it).
+    readonly property real filterBoxH: filtering ? 48 : 0
     /// Teams' pill toggle: Unread on its own, categories single-select.
     function setChip(c) {
         if (c === "unread") unreadOn = !unreadOn
         else category = category === c ? "" : c
     }
     function clearFilters() { unreadOn = false; category = ""; nameFilter = ""; filterField.text = ""; filtering = false; chipFilter = "" }
+    function filterBoxForTest() { return filterBox }
+    function setFilterTextForTest(t) { filterField.text = t }
     function nameMatches(n) { return !nameFilter || (n || "").toLowerCase().indexOf(nameFilter) >= 0 }
+    /// The quick view open beside the list ("mentions", "drafts", "followed", "saved" or "").
+    readonly property string openSlice: mentionsOpen ? "mentions" : draftsOpen ? "drafts" : quickOpen
+    /// A quick view under the filters, as Teams' list (Teams web
+    /// 2026-11-27): none under a category pill; with Unread only those with
+    /// unread items; with text those whose name matches, and the open one.
+    function sliceShown(s) {
+        if (category) return false
+        if (unreadOn && !(s.unread > 0)) return false
+        return nameMatches(s.label) || (!!nameFilter && s.key === openSlice)
+    }
 
     // ---- Server sections ----
     readonly property var folderData: backend.foldersJson ? JSON.parse(backend.foldersJson) : null
@@ -408,16 +478,16 @@ Rectangle {
     readonly property var sections: folders.filter(f => folderInPane(f)).map(f => {
         let rows = []
         if (f.kind === "QuickViews") {
-            if (category || unreadOn || nameFilter) rows = []
-            else {
-                if (root.hasMentions) rows.push({ type: "slice", key: "mentions", label: qsTr("Mentions"), icon: "mention-20" })
-                // Separate view's Chat has no Followed threads (Teams'
-                // quickViewsSupportedSlicesForViewType CHATS: Mentions,
-                // Drafts, Saved; seen on winpc 2026-11-21).
-                if (pane !== "chats") rows.push({ type: "slice", key: "followed", label: qsTr("Followed threads"), icon: "followed-threads-20" })
-                if (root.draftIds.length > 0) rows.push({ type: "slice", key: "drafts", label: qsTr("Drafts"), icon: "drafts-20" })
-                rows.push({ type: "slice", key: "saved", label: qsTr("Saved"), icon: "bookmark-20" })
-            }
+            // In the folder's order (Mentions, Followed threads, Discover,
+            // Drafts, Saved). Separate view's Chat has no Followed threads
+            // (Teams' quickViewsSupportedSlicesForViewType SPLIT_CHAT;
+            // seen on winpc 2026-11-21).
+            const all = []
+            if (root.hasMentions) all.push({ type: "slice", key: "mentions", label: qsTr("Mentions"), icon: "mention-20", unread: root.mentionsUnread, badge: root.mentionsUnread })
+            if (pane !== "chats" && root.followedCount > 0) all.push({ type: "slice", key: "followed", label: qsTr("Followed threads"), icon: "followed-threads-20", unread: root.followedUnread, badge: root.followedUnread })
+            all.push({ type: "slice", key: "drafts", label: qsTr("Drafts"), icon: "drafts-20", unread: 0, badge: 0 })
+            if (root.savedCount > 0) all.push({ type: "slice", key: "saved", label: qsTr("Saved"), icon: "bookmark-20", unread: 0, badge: 0 })
+            rows = all.filter(s => root.sliceShown(s))
         } else if (f.kind === "Favorites") {
             rows = f.id ? heldRows(f) : root.favorites.map(c => ({ type: "chat", chat: c }))
         } else if (root.isUsers(f)) {
@@ -527,6 +597,48 @@ Rectangle {
     readonly property string markAllEntities: category === "chats" || appMode === "chat" ? qsTr("chats")
         : category === "channels" || appMode === "channel" ? qsTr("channels") : qsTr("chats, channels, and communities")
 
+    // ---- New items ▾ (Teams' Nb, unified list; docs/spec/
+    // chat-list-and-header.md §2.3) ----
+    // New message (Ctrl+N), New message in new window (Ctrl+Shift+N; not
+    // when new chats always open in a window), New channel, New storyline
+    // post | Join team, New team | Join communities | New section. The Chat
+    // app of the separate view has New message, the window one, New
+    // storyline post | New section. Storyline and communities need Viva
+    // Engage (the Communities section is there).
+    signal newChatWindow()
+    signal newStorylinePost()
+    signal joinTeam()
+    signal newTeam()
+    /// New chats always open in a window (Settings: Teams' alwaysPopOutNewChat).
+    property bool newChatInWindow: false
+    readonly property var newItems: {
+        const out = [{ key: "message", label: qsTr("New message"), icon: "compose-20", keys: "Ctrl+N" }]
+        if (!newChatInWindow) out.push({ key: "messageWindow", label: qsTr("New message in new window"), icon: "open-window-20", keys: "Ctrl+Shift+N" })
+        if (appMode !== "chat") out.push({ key: "channel", label: qsTr("New channel"), icon: "channel-add-nm-20" })
+        if (hasCommunities) out.push({ key: "storyline", label: qsTr("New storyline post"), icon: "storyline-add-20" })
+        if (appMode !== "chat") {
+            out.push({ separator: true }, { key: "joinTeam", label: qsTr("Join team"), icon: "people-team-join-20" }, { key: "newTeam", label: qsTr("New team"), icon: "people-team-new-20" })
+            if (hasCommunities) out.push({ separator: true }, { key: "joinCommunities", label: qsTr("Join communities"), icon: "people-community-join-20" })
+        }
+        out.push({ separator: true }, { key: "section", label: qsTr("New section"), icon: "section-add-20" })
+        return out
+    }
+    function newItemPicked(key) {
+        if (key === "message") root.newChat()
+        else if (key === "messageWindow") root.newChatWindow()
+        else if (key === "channel") newChannelDialog.startPick()
+        else if (key === "storyline") root.newStorylinePost()
+        else if (key === "joinTeam") root.joinTeam()
+        else if (key === "newTeam") root.newTeam()
+        else if (key === "joinCommunities") root.openCommunities()
+        else if (key === "section") sectionDialog.create("", "")
+    }
+    // New channel: Teams' Create a channel with its team picker.
+    CreateChannelDialog { id: newChannelDialog; onCreated: (id, name) => root.chatSelected(id, name) }
+    function newChannelDialogForTest() { return newChannelDialog }
+    function openNewItemsForTest() { newMenu.open() }
+    function newItemsMenuForTest() { return newMenu }
+
     // ---- The divider (Teams' resize handle, role slider "Resize left
     // panel", 280-400) ----
     Item {
@@ -562,12 +674,17 @@ Rectangle {
         property alias icon: hbIcon.name
         property int iconSize: 20
         property color iconColor: theme.textStrong
+        /// Its tooltip ("" for none).
+        property string tip: ""
         signal clicked()
         width: 32; height: 32; radius: theme.radius
         color: hbHover.hovered ? theme.hover : "transparent"
         HoverHandler { id: hbHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: hb.clicked() }
         FluentIcon { id: hbIcon; anchors.centerIn: parent; size: hb.iconSize; color: theme.onFill(hb, hb.iconColor) }
+        ToolTip.visible: hb.tip !== "" && hbHover.hovered
+        ToolTip.delay: 600
+        ToolTip.text: hb.tip
     }
 
     // Header: "Chat", then more / filter / new message (with its menu).
@@ -601,9 +718,17 @@ Rectangle {
                 onSubPicked: (i, j) => root.markAllRead(root.listMenuItems[i].submenu[j].appType)
             }
         }
+        // Teams' filter toggle (sticky-filter-v2-button, Teams web
+        // 2026-11-27): its magnifier filled and brand while the box is open;
+        // "Show filter text box" (Ctrl+Shift+F) / "Close filter text box".
         HeaderButton {
-            x: root.width - 94; y: 15; icon: "search-20"; Accessible.name: qsTr("Show filter text box")
-            onClicked: { root.filtering = !root.filtering; if (root.filtering) filterField.forceActiveFocus(); else { filterField.text = "" } }
+            id: filterToggle
+            x: root.width - 94; y: 15
+            icon: root.filtering ? "list-filter-search-20-filled" : "list-filter-search-20"
+            iconColor: root.filtering ? theme.brand : theme.textStrong
+            tip: root.filtering ? qsTr("Close filter text box") : qsTr("Show filter text box") + " (Ctrl+Shift+F)"
+            Accessible.name: root.filtering ? qsTr("Close filter text box") : qsTr("Show filter text box")
+            onClicked: root.filtering ? root.closeFilter() : root.openFilter()
         }
         HeaderButton {
             x: root.width - 62; y: 14; width: 26; icon: "compose-20"
@@ -611,13 +736,18 @@ Rectangle {
             onClicked: root.newChat()
         }
         HeaderButton {
-            x: root.width - 36; y: 14; width: 20; icon: "chevron-down-12"; iconSize: 12; Accessible.name: qsTr("New items")
+            id: newItems
+            x: root.width - 36; y: 14; width: 20; icon: "chevron-down-12"; iconSize: 12
+            tip: qsTr("New items"); Accessible.name: qsTr("New items")
             onClicked: newMenu.open()
+            // Teams' New items (Nb; Teams desktop on testpc2 and Teams web,
+            // 2026-11-27), below the chevron with their ends lined up.
             MenuPopup {
                 id: newMenu
-                x: -200; y: parent.height + 4
-                items: [{ label: qsTr("New chat"), icon: "compose-20", keys: "Ctrl+N" }]
-                onPicked: root.newChat()
+                x: parent.width - width; y: parent.height + 4
+                wrapLabels: true
+                items: root.newItems
+                onPicked: i => root.newItemPicked(root.newItems[i].key)
             }
         }
     }
@@ -639,7 +769,7 @@ Rectangle {
      .filter(p => pane === "chats" ? ["unread", "chats", "unmuted", "meetings"].indexOf(p.key) >= 0
                 : p.key === "unmuted" ? false
                 : pane === "teams" ? ["unread", "channels", "communities"].indexOf(p.key) >= 0 : true)
-    onPaneChanged: { category = ""; unreadOn = false }
+    onPaneChanged: { category = ""; unreadOn = false; updateJump() }
     function pillOn(k) { return k === "unread" ? unreadOn : category === k }
     FontMetrics { id: pillMetrics; font.family: theme.font; font.pixelSize: 12 }
     function pillWidth(label) { return Math.ceil(pillMetrics.advanceWidth(label)) + 18 }
@@ -680,66 +810,80 @@ Rectangle {
         Accessible.checked: pill.on
     }
     Row {
-        visible: !root.filtering && root.filtersShown
-        x: 32; y: 69
+        visible: root.filtersShown
+        x: 32; y: 69 + root.filterBoxH
         spacing: 4
         Repeater { model: root.pillRows.first; Pill { required property var modelData; def: modelData } }
     }
     Row {
-        visible: !root.filtering && root.secondRow && root.filtersShown
-        x: 32; y: 101
+        visible: root.secondRow && root.filtersShown
+        x: 32; y: 101 + root.filterBoxH
         spacing: 4
         Repeater { model: root.secondRow ? root.pillRows.second : []; Pill { required property var modelData; def: modelData } }
     }
     // More filters / Fewer filters: only when pills overflow.
     HeaderButton {
-        visible: !root.filtering && root.pillRows.second.length > 0 && root.filtersShown
-        x: root.width - 38; y: 65; width: 24; height: 24; radius: 4
+        visible: root.pillRows.second.length > 0 && root.filtersShown
+        x: root.width - 38; y: 65 + root.filterBoxH; width: 24; height: 24; radius: 4
         icon: root.moreFiltersOpen ? "chevron-up-16" : "chevron-down-16"; iconSize: 16
         iconColor: root.moreFiltersOpen ? theme.brand : theme.textStrong
         onClicked: root.moreFiltersOpen = !root.moreFiltersOpen
         ToolTip.visible: false
         Accessible.name: root.moreFiltersOpen ? qsTr("Fewer filters") : qsTr("More filters")
     }
-    // "Show filter text box": filter the list by name.
-    Rectangle {
+    // "Show filter text box" (Teams web 2026-11-27, at 360 wide): a 32 px
+    // box 32 in and 16 from the end, 11 under the header, white with
+    // Fluent's shadow 2 and radius 4, no icon; the text 13 in (14/20,
+    // NeutralForeground4 placeholder); a 2 px brand line along its bottom
+    // while it has the focus; with text, Clear filter text (24 px, a 20 px
+    // dismiss, 6 from its end).
+    Item {
+        id: filterBox
         visible: root.filtering
-        x: 32; y: 65; width: root.width - 48; height: 32; radius: theme.radius
-        color: theme.input
-        border.color: filterField.activeFocus ? theme.brand : theme.stroke
-        FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 16; color: theme.textSecondary }
+        x: 32; y: 72; width: root.width - 48; height: 32
+        FluentSurface { anchors.fill: parent; depth: 2; radius: 4; color: theme.input }
+        Rectangle {
+            visible: filterField.activeFocus
+            anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1
+            color: theme.brand
+        }
         TextInput {
             id: filterField
-            x: 32; width: parent.width - 64
+            x: 13; width: parent.width - x - (clearFilter.visible ? 36 : 12)
             anchors.verticalCenter: parent.verticalCenter
             font.family: theme.font; font.pixelSize: theme.base
             color: theme.text
+            selectionColor: theme.brand; selectedTextColor: "white"
             clip: true
-            onTextChanged: root.nameFilter = text.trim().toLowerCase()
-            Keys.onEscapePressed: { text = ""; root.filtering = false }
-            Text { visible: !filterField.text; text: qsTr("Filter by name"); color: theme.textTertiary; font: filterField.font }
-            Accessible.name: qsTr("Filter by name")
+            maximumLength: 100
+            onTextChanged: { if (!text) { filterDebounce.stop(); root.nameFilter = "" } else filterDebounce.restart() }
+            Keys.onEscapePressed: root.closeFilter()
+            Text { visible: !filterField.text; width: filterField.width; elide: Text.ElideRight; text: root.filterLabel; color: theme.textTertiary; font: filterField.font }
+            Accessible.role: Accessible.EditableText
+            Accessible.name: root.filterLabel
         }
         Rectangle {
-            id: hcFill1
-            anchors.right: parent.right; anchors.rightMargin: 4
-            anchors.verticalCenter: parent.verticalCenter
-            width: 24; height: 24; radius: theme.radius
-            color: clh.hovered ? theme.rowHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "dismiss-12"; size: 12; color: theme.onFill(hcFill1, theme.textStrong) }
+            id: clearFilter
+            visible: filterField.text.length > 0
+            x: parent.width - 6 - width; anchors.verticalCenter: parent.verticalCenter
+            width: 24; height: 24; radius: 4
+            color: clh.hovered ? theme.hover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: clh.hovered ? "dismiss-20-filled" : "dismiss-20"; size: 20; color: theme.onFill(clearFilter, theme.textStrong) }
             HoverHandler { id: clh; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: { filterField.text = ""; root.filtering = false } }
+            TapHandler { onTapped: { filterField.text = ""; filterField.forceActiveFocus() } }
             Accessible.role: Accessible.Button
-            Accessible.name: qsTr("Close filter")
+            Accessible.name: qsTr("Clear filter text")
         }
     }
 
     // ---- The list ----
     Flickable {
         id: list
-        y: root.filtering ? 106 : !root.filtersShown ? 66 : root.secondRow ? 138 : 106
+        y: root.filterBoxH + (!root.filtersShown ? 66 : root.secondRow ? 138 : 106)
         width: parent.width - 1
-        height: parent.height - y
+        height: parent.height - y - (root.jumpShown ? jumpBar.height : 0)
+        onContentYChanged: root.updateJump()
+        onHeightChanged: root.updateJump()
         clip: true
         contentHeight: listCol.height + 8
         boundsBehavior: Flickable.StopAtBounds
@@ -750,14 +894,16 @@ Rectangle {
             // Copilot: a single row above Quick views (Teams'
             // list-item-metaos-copilot, measured 32 tall at the list's top),
             // which opens Copilot beside the list as Teams hosts it.
+            // It stays while the list is filtered (Teams web 2026-11-27:
+            // text, Unread and the Chats pill all kept it).
             ListRow {
-                visible: root.showCopilot && !root.filtered && root.pane !== "teams"
+                visible: root.showCopilot && root.pane !== "teams"
                 height: visible ? 32 : 0
                 label: qsTr("Copilot"); icon: "mo-copilot"
                 selected: root.copilotOpen
                 onClicked: root.openCopilot()
             }
-            Item { width: 1; height: root.showCopilot && !root.filtered && root.pane !== "teams" ? 4 : 0 }
+            Item { width: 1; height: root.showCopilot && root.pane !== "teams" ? 4 : 0 }
             // Sections and their rows are keyed models kept in step with
             // the data (syncKeys, syncRows): an update (a chat hidden or
             // shown, a new message, presence) changes only the rows it
@@ -797,7 +943,12 @@ Rectangle {
                         root.syncKeys(rowModel, keys)
                     }
                     onModelDataChanged: syncRows()
-                    Component.onCompleted: syncRows()
+                    // (The Jump to bar watches where Teams and channels is.)
+                    readonly property bool teamsSection: folder.kind === "TeamsAndChannels"
+                    onTeamsSectionChanged: if (teamsSection) root.teamsSectionItem = sec; else if (root.teamsSectionItem === sec) root.teamsSectionItem = null
+                    onYChanged: if (teamsSection) root.updateJump()
+                    Component.onCompleted: { syncRows(); if (teamsSection) root.teamsSectionItem = sec }
+                    Component.onDestruction: if (root.teamsSectionItem === sec) root.teamsSectionItem = null
                     width: list.width
                     // Quick views end with a hairline (12 below, the next
                     // section 4 after it).
@@ -830,9 +981,9 @@ Rectangle {
                                 : joinCommunitiesComp
                         }
                     }
-                    Item { width: 1; height: sec.folder.kind === "QuickViews" && !root.filtered ? 12 : 8 }
-                    Rectangle { visible: sec.folder.kind === "QuickViews" && !root.filtered; x: 16; width: list.width - 32; height: 1; color: theme.divider }
-                    Item { width: 1; height: sec.folder.kind === "QuickViews" && !root.filtered ? 4 : 0 }
+                    Item { width: 1; height: sec.folder.kind === "QuickViews" ? 12 : 8 }
+                    Rectangle { visible: sec.folder.kind === "QuickViews"; x: 16; width: list.width - 32; height: 1; color: theme.divider }
+                    Item { width: 1; height: sec.folder.kind === "QuickViews" ? 4 : 0 }
                 }
             }
             // Teams' empty filter result.
@@ -868,6 +1019,83 @@ Rectangle {
         }
     }
 
+    // ---- Jump to Teams and channels (Teams' left-rail-teams-and-channels-
+    // jumper, enableSimpleCollabLeftRailTeamsAndChannelsJumper; measured on
+    // Teams web 2026-11-27 at 360 wide) ----
+    // In the unified list, while the Teams and channels section is below
+    // what the list shows (Teams' observer: not in view and not above it),
+    // a 42 px toolbar "Jump to" sits under the list: a 2 px rule (16 in;
+    // 1 px 5 % black over 1 px 10 % black) and the section's name as a
+    // 40 px button (14/20 NeutralForeground2, 32 in; bold NeutralForeground1
+    // while a channel there is unread; brand with a 16 px arrow down 4
+    // after it on hover). The list ends above it. Clicking it opens the
+    // section if it's collapsed and scrolls it to the top.
+    property Item teamsSectionItem: null
+    onTeamsSectionItemChanged: updateJump()
+    property bool jumpShown: false
+    function updateJump() {
+        const s = teamsSectionItem
+        if (pane !== "combined" || !s || !s.visible) { jumpShown = false; return }
+        // The bar takes the list's bottom while it shows, so it hides only
+        // once the section is in the smaller view (no flicker either way).
+        const below = s.y >= list.contentY + list.height
+        if (jumpShown !== below) jumpShown = below
+    }
+    readonly property bool teamsUnread: shownTeams.some(t => t.channels.some(c => c.unread))
+    property bool pendingJump: false
+    function jumpToTeams() {
+        const s = teamsSectionItem
+        if (!s) return
+        if (!s.folder.expanded && s.folder.id) { pendingJump = true; jumpTimer.restart(); backend.folderAction("expand", JSON.stringify({ id: s.folder.id })) }
+        scrollToTeams()
+        root.forceActiveFocus()
+    }
+    function scrollToTeams() {
+        const s = teamsSectionItem
+        if (s) list.contentY = Math.max(0, Math.min(s.y, list.contentHeight - list.height))
+    }
+    // An opened section's rows arrive with the folders' answer: scroll once more.
+    Timer { id: jumpTimer; interval: 3000; onTriggered: root.pendingJump = false }
+    Connections { target: listCol; function onHeightChanged() { if (root.pendingJump) root.scrollToTeams(); root.updateJump() } }
+    function jumpBarForTest() { return jumpBar }
+    Item {
+        id: jumpBar
+        visible: root.jumpShown
+        anchors.bottom: parent.bottom
+        width: parent.width - 1; height: 42
+        Accessible.role: Accessible.ToolBar
+        Accessible.name: qsTr("Jump to")
+        Column {
+            x: 16; width: parent.width - 32
+            Rectangle { width: parent.width; height: 1; color: theme.pick("#0D000000", "#0DFFFFFF", "#FFFFFF") }
+            Rectangle { width: parent.width; height: 1; color: theme.pick("#1A000000", "#1AFFFFFF", "#FFFFFF") }
+        }
+        Item {
+            id: jumpButton
+            x: 16; y: 2; width: parent.width - 32; height: 40
+            Text {
+                id: jumpText
+                x: 16; anchors.verticalCenter: parent.verticalCenter
+                width: Math.min(implicitWidth, parent.width - x - 36)
+                elide: Text.ElideRight
+                text: root.folderTitle({ kind: "TeamsAndChannels" })
+                font.family: theme.font; font.pixelSize: theme.base
+                font.weight: root.teamsUnread ? Font.DemiBold : Font.Normal
+                color: jumpHover.hovered ? theme.brand : root.teamsUnread ? theme.text : theme.textSecondary
+            }
+            FluentIcon {
+                visible: jumpHover.hovered
+                x: jumpText.x + jumpText.width + 4; anchors.verticalCenter: parent.verticalCenter
+                name: "arrow-down-20"; size: 16; color: theme.brand
+            }
+            HoverHandler { id: jumpHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.jumpToTeams() }
+            Accessible.role: Accessible.Button
+            Accessible.name: jumpText.text
+            Accessible.onPressAction: root.jumpToTeams()
+        }
+    }
+
     Component { id: chatRowComp; ChatRow { chat: parent && parent.row ? parent.row.chat : ({}); section: parent ? parent.section : null } }
     Component { id: channelRowComp; ChannelRow { channel: parent && parent.row ? parent.row.channel : ({}); team: parent && parent.row ? parent.row.team : ({}); section: parent ? parent.section : null; indent: 32 } }
     Component { id: teamComp; TeamRows { team: parent && parent.row ? parent.row.team : ({ name: "", channels: [] }) } }
@@ -875,6 +1103,7 @@ Rectangle {
         id: sliceComp
         ListRow {
             label: parent.row.label; icon: parent.row.icon
+            unread: parent.row.unread > 0; badge: parent.row.badge || 0; marks: true
             selected: parent.row.key === "mentions" ? root.mentionsOpen : parent.row.key === "drafts" ? root.draftsOpen : root.quickOpen === parent.row.key
             onClicked: parent.row.key === "mentions" ? root.openMentions() : parent.row.key === "drafts" ? root.openDrafts() : root.openQuick(parent.row.key)
         }
@@ -1085,6 +1314,7 @@ Rectangle {
             // Teams: bold only when unread; the open chat is just darker.
             font.weight: row.unread ? Font.DemiBold : Font.Normal
             color: theme.onFill(hcFill2, row.selected || row.unread ? theme.text : theme.textSecondary)
+            FilterMarks { query: root.nameFilter }
         }
         // A call going on in the chat (Teams: the regular sound-wave 14 in
         // NeutralForeground3 at 244, 9 in the 288-wide row).
@@ -1433,6 +1663,7 @@ Rectangle {
             // A hidden channel stays listed, in italics, while it's open.
             font.italic: chRow.channel.shown === false
             color: chRow.selected || chRow.unread ? theme.text : theme.textSecondary
+            FilterMarks { query: root.nameFilter }
         }
         NewBadge { id: newBadge; visible: !!chRow.channel.new; x: chName.x + chName.width + 8; anchors.verticalCenter: parent.verticalCenter }
         Text {
@@ -1590,6 +1821,7 @@ Rectangle {
                 font.family: theme.font; font.pixelSize: theme.base
                 font.weight: teamRows.unread ? Font.DemiBold : Font.Normal
                 color: teamRows.unread ? theme.text : theme.textSecondary
+                FilterMarks { query: root.nameFilter }
             }
             NewBadge { id: teamNew; visible: !!teamRows.team.new; x: teamName.x + teamName.width + 8; anchors.verticalCenter: parent.verticalCenter }
             HoverHandler { id: teamHover }
@@ -1625,28 +1857,56 @@ Rectangle {
     }
 
     // A row with an icon instead of a picture (Quick views).
+    // A row of its own (Copilot, a quick view, New message). A quick view
+    // with unread items is bold (700, NeutralForeground1) and its count
+    // shows in Teams' badge (measured on Teams web 2026-11-27: a 16 px
+    // circle 12 in from the row's end, 10/600 white on the brand).
     component ListRow: Item {
         id: lr
         property string label
         property string icon
         property bool selected: false
+        property bool unread: false
+        property int badge: 0
+        /// Mark the filter's text in the label.
+        property bool marks: false
         signal clicked()
         width: list.width; height: 32
         Rectangle {
+            id: lrFill
             x: 16; width: parent.width - 32; height: 32; radius: theme.radius
             color: lr.selected ? theme.selected : (lrHover.hovered ? theme.rowHover : "transparent")
         }
-        FluentIcon { x: 32; y: 6; name: lr.icon; size: 20; color: theme.textSecondary }
+        FluentIcon { x: 32; y: 6; name: lr.icon; size: 20; color: theme.onFill(lrFill, lr.selected || lr.unread ? theme.text : theme.textSecondary) }
         Text {
             x: 64; y: 6
+            width: Math.min(implicitWidth, (lrBadge.visible ? lrBadge.x - 8 : parent.width - 24) - x)
+            elide: Text.ElideRight
             text: lr.label
             font.family: theme.font; font.pixelSize: theme.base
-            color: lr.selected ? theme.text : theme.textSecondary
+            font.weight: lr.unread ? Font.Bold : Font.Normal
+            color: theme.onFill(lrFill, lr.selected || lr.unread ? theme.text : theme.textSecondary)
+            FilterMarks { query: lr.marks ? root.nameFilter : "" }
+        }
+        Rectangle {
+            id: lrBadge
+            visible: lr.badge > 0
+            height: 16; radius: 8
+            width: Math.max(16, lrBadgeText.implicitWidth + 8)
+            x: parent.width - 16 - 12 - width; y: 8
+            color: theme.brandFill
+            Text {
+                id: lrBadgeText
+                anchors.centerIn: parent
+                text: lr.badge > 99 ? "99+" : String(lr.badge)
+                font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold
+                color: theme.onFill(lrBadge, "white")
+            }
         }
         HoverHandler { id: lrHover }
         TapHandler { onTapped: lr.clicked() }
         Accessible.role: Accessible.Button
-        Accessible.name: lr.label
+        Accessible.name: lr.badge > 0 ? lr.label + ", " + qsTr("%n unread", "", lr.badge) : lr.label
     }
 
     // Section header: 12 px chevron and label, 28 px tall; your own

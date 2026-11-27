@@ -8,6 +8,7 @@ fn main() {
         "qml/TitleBar.qml",
         "qml/AppRail.qml",
         "qml/ChatList.qml",
+        "qml/FilterMarks.qml",
         "qml/ListKeys.qml",
         "qml/LeaveChatDialog.qml",
         "qml/Conversation.qml",

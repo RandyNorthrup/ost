@@ -1380,8 +1380,18 @@ OST Guest accounts; all were removed afterwards.
 
 #### 5.6.12 Quick views ▸ Followed threads and Saved; team order (measured 2026-11-09)
 
-- Quick views: Mentions (when there are any), Followed threads, Drafts
-  (when there are any), Saved.
+- Quick views (re-read from Teams 26304's worker for TASK-0365, checked on
+  Teams web and desktop as OST Test 2, 2026-11-27): the QuickViews folder
+  lists every slice; the worker hides one whose activityCount is 0.
+  Mentions and Followed threads count their items, Saved is 1 once you've
+  saved a message, Drafts is always 1 (listed with nothing pending: Teams'
+  192 px check picture and "You have no draft messages."), Discover always
+  1 where the view shows channels. A slice with unreadCount > 0 is bold
+  (700; never Reminders); Mentions, tag mentions, Reminders and (live)
+  Followed threads show that count in a 16 px brand badge 12 in from the
+  row's end. Under a category pill no slice shows; with Unread only those
+  with unread items; with filter text those whose name matches and the
+  open one. The Copilot row stays while filtered.
 - Both views: a 380 px list (title 16/22 bold at 32, 19; pills 12/16,
   23.3 tall, 69.5 down: Unread / Channels / Chats, Saved without Unread),
   rows from 104.8 with a 36 px picture at 32 (square for a channel's team,
@@ -2079,7 +2089,7 @@ the channel again, or **Go to channel**, returns to its posts).
 - [x] Mark all as read from the menu without confirmation; Shift+Esc with the confirmation dialog and "Don't ask again" (on this device) (TASK-0179).
 - [ ] Collapse all sections saves expanded state on the server.
 - [ ] Filter toggle labels, Ctrl+Shift+F, text box placeholder by mode, 100-char limit, 250 ms debounce, Esc closes, empty-result state.
-- [ ] New message button + New items ▾ split; menu items, order, dividers and their conditions.
+- [x] New message button + New items ▾ split; menu items, order, dividers and their conditions (TASK-0365: New message, New message in new window, New channel with Create a channel's team picker, New storyline post | Join team, New team | Join communities | New section).
 - [x] Sections from `conversationFolders` in server order with their expanded state (Quick views, Favorites, your sections, Chats, Teams and channels, Communities). Still to come (TASK-0075): the Copilot row, See more paging, and the Followed threads / Saved quick views.
 - [ ] Section ··· menu per section type; create / rename / remove section dialogs; emoji icons.
 - [x] Filter pills in config order (Unread, Channels, Chats, Meeting chats, Communities); single-select categories; Unread combinable; width-based overflow with More filters / Fewer filters second row; selected pills stay visible; "You're all caught up!" with Clear filters.

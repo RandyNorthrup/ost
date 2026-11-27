@@ -492,14 +492,22 @@ Rectangle {
     readonly property var copilotState: { try { return JSON.parse(backend.composeCopilotJson || "{}") } catch (e) { return {} } }
     readonly property int copilotButton: !pane && !isChannel && !readOnly && chatId !== "" && (isMeetingChat ? !!copilotState.meetingChat : !!copilotState.chat) ? 1 : 0
     property bool copilotOpen: false
-    onCopilotButtonChanged: if (!copilotButton) copilotOpen = false
+    onCopilotButtonChanged: if (!copilotButton) { copilotOpen = false; copilotHistoryOpen = false }
+    // More chat options ▸ View Copilot history (Teams' chat-app IC,
+    // viewSummaryHistory: shown where the chat's Copilot is, as its first
+    // item): Teams' history-only Copilot (personalCopilot, isHistoryOnly)
+    // in the Copilot pane's place. Copilot, Find and the details pane each
+    // take its place.
+    property bool copilotHistoryOpen: false
+    onCopilotOpenChanged: if (copilotOpen) copilotHistoryOpen = false
+    onCopilotHistoryOpenChanged: if (copilotHistoryOpen) { copilotOpen = false; finding = false; participants.visible = false }
     function toggleCopilot() {
         if (!copilotButton) return
         copilotOpen = !copilotOpen
         if (copilotOpen) { finding = false; participants.visible = false; copilotUnread = unreadTime() }
         console.info("COPILOT chat pane", copilotOpen, isMeetingChat ? "meeting" : "chat")
     }
-    onFindingChanged: if (finding) copilotOpen = false
+    onFindingChanged: if (finding) { copilotOpen = false; copilotHistoryOpen = false }
     // The chat's unread time when Copilot opened (Teams'
     // unreadMessageTime, only while the chat had unread messages): the
     // message before the first unread one.
@@ -995,7 +1003,7 @@ Rectangle {
         openedAt = new Date()
         tab = ""; finding = false; findMark = { id: "", terms: [] }; seekId = ""; participants.visible = false; posting = false
         // (Teams closes a chat's Copilot when another chat opens.)
-        copilotOpen = false; copilotUnread = 0
+        copilotOpen = false; copilotHistoryOpen = false; copilotUnread = 0
         editingId = ""
         // A thread view keeps its reply's draft as Teams does (its post's
         // reply chain, "{channel};messageid={post}"), roamed with it.
@@ -2092,6 +2100,8 @@ Rectangle {
                 ].filter(i => i !== null)
                 readonly property bool calls: !root.isSelf && !root.isMeetingChat
                 items: (moved.length ? moved.concat([{ separator: true }]) : []).concat([
+                    root.copilotButton ? { key: "copilotHistory", label: qsTr("View Copilot history"), icon: "history-copilot-20" } : null,
+                    root.copilotButton ? { separator: true } : null,
                     root.popout ? null : { key: "window", label: qsTr("Open in new window"), icon: "open-window-20", keys: "Ctrl+O" },
                     root.popout ? null : { separator: true },
                     calls ? { key: "meeting", label: qsTr("Schedule meeting"), icon: "calendar-add-20" } : null,
@@ -2109,6 +2119,7 @@ Rectangle {
                     const k = items[i].key
                     if (k === "details" || k === "participants") participants.visible = !participants.visible
                     else if (k === "find") root.toggleFind()
+                    else if (k === "copilotHistory") root.copilotHistoryOpen = true
                     else if (k === "meetingDetails") root.openMeetingDetails(root.meeting.join_url, root.meeting.ical_uid, root.meeting.start || "")
                     else if (k === "mute") backend.setChatMuted(root.chatId, !root.chatMuted)
                     else if (k === "meeting") root.scheduleMeeting()
@@ -4632,7 +4643,7 @@ Rectangle {
     Item {
         id: participants
         visible: false
-        onVisibleChanged: if (visible) root.copilotOpen = false
+        onVisibleChanged: if (visible) { root.copilotOpen = false; root.copilotHistoryOpen = false }
         z: 50
         anchors { top: header.bottom; right: parent.right; topMargin: 4; rightMargin: 16 }
         width: 251.3
