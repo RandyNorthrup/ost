@@ -792,12 +792,13 @@ Item {
             Rectangle {
                 id: quickSend
                 anchors.right: parent.right; width: 32; height: 32; radius: theme.radius
-                color: qsh.hovered && quick.text.trim() ? theme.rowHover : "transparent"
-                // What's being sent, given back to the box if it fails.
+                color: qsh.hovered && quick.text.trim() && !sending ? theme.rowHover : "transparent"
+                // What's being sent, given back to the box if it fails (one
+                // at a time: the next waits for this one's answer).
                 property var sending: null
                 function go() {
                     const t = quick.text.trim()
-                    if (!t || !details.c) return
+                    if (!t || !details.c || sending) return
                     const target = root.chatTarget(details.c)
                     sending = { id: root.selectedId, text: quick.text }
                     quick.text = ""
@@ -814,7 +815,7 @@ Item {
                         root.toastError(qsTr("Message didn't send. Check your connection or try again later.", "messaging:k15klm2m"))
                     }
                 }
-                FluentIcon { anchors.centerIn: parent; name: "send-20"; size: 20; color: theme.onFill(quickSend, quick.text.trim() ? theme.brand : theme.textSecondary) }
+                FluentIcon { anchors.centerIn: parent; name: "send-20"; size: 20; color: theme.onFill(quickSend, quick.text.trim() && !quickSend.sending ? theme.brand : theme.textSecondary) }
                 HoverHandler { id: qsh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: quickSend.go() }
                 Accessible.role: Accessible.Button
