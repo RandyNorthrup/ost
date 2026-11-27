@@ -1065,6 +1065,63 @@ Window {
         }
     }
 
+    // --chatlist-parity-test [--shots=dir] (TASK-0365): the chat list as
+    // Teams' (New items, the filter box over the pills with its marks and
+    // Clear filter text, the Jump to bar, Quick views' rows and counts, an
+    // empty Drafts, New channel's team picker); shots of each, the rows
+    // logged. Nothing is changed; quit.
+    Timer {
+        running: Qt.application.arguments.indexOf("--chatlist-parity-test") >= 0 && backend.signedIn && chatList.chats.length > 0 && chatList.teams.length > 0
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=/tmp").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "parity-" + n + ".png"))
+            const qv = () => (chatList.sections.find(s => s.folder.kind === "QuickViews") || { rows: [] }).rows.map(r => [r.label, r.unread, r.badge])
+            const st = step++
+            if (st === 0) { rail.current = "chat"; console.warn("PARITY quick views", JSON.stringify(qv()), "followed", chatList.followedCount, chatList.followedUnread, "saved", chatList.savedCount, "mentions", chatList.mentionsUnread) }
+            else if (st === 1) shot("list")
+            else if (st === 2) { chatList.openNewItemsForTest(); console.warn("PARITY new items", JSON.stringify(chatList.newItems.map(i => i.separator ? "|" : i.label + (i.keys ? " " + i.keys : "")))) }
+            else if (st === 3) shot("new-items")
+            else if (st === 4) { chatList.newItemsMenuForTest().close(); chatList.openFilter() }
+            else if (st === 5) shot("filter-open")
+            else if (st === 6) chatList.setFilterTextForTest("ost")
+            else if (st === 7) { console.warn("PARITY filtered quick views", JSON.stringify(qv())); shot("filter-ost") }
+            else if (st === 8) { chatList.closeFilter(); console.warn("PARITY jump shown", chatList.jumpShown) }
+            else if (st === 9) shot("jump")
+            else if (st === 10) { chatList.jumpToTeams(); }
+            else if (st === 11) { console.warn("PARITY after jump", chatList.jumpShown); shot("jumped") }
+            else if (st === 12) chatList.openDrafts()
+            else if (st === 13) shot("drafts")
+            else if (st === 14) { chatList.draftsOpen = false; chatList.newChannelDialogForTest().startPick() }
+            else if (st === 15) shot("new-channel")
+            else if (st === 16) chatList.newChannelDialogForTest().openPicker()
+            else if (st === 17) shot("new-channel-pick")
+            else if (st === 18) { chatList.newChannelDialogForTest().close(); Qt.quit() }
+        }
+    }
+
+    // --copilot-history-test=<chat name> [--shots=dir] (TASK-0365): open
+    // that chat, its More chat options (logged and shot), then View Copilot
+    // history (shot). Nothing is changed; quit.
+    Timer {
+        readonly property string target: (Qt.application.arguments.find(a => a.startsWith("--copilot-history-test=")) || "").slice(23)
+        running: target.length > 0 && backend.signedIn && chatList.chats.length > 0
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=/tmp").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "history-" + n + ".png"))
+            const st = step++
+            if (st === 0) { const c = chatList.chats.find(c => c.name === target); if (c) chatList.chatSelected(c.id, c.name) }
+            else if (st === 2) { conversation.chatMenuForTest().open(); console.warn("HISTORY menu", conversation.copilotButton, JSON.stringify(conversation.chatMenuForTest().items.map(i => i.separator ? "|" : i.label))) }
+            else if (st === 3) shot("menu")
+            else if (st === 4) { conversation.chatMenuForTest().close(); conversation.copilotHistoryOpen = true }
+            else if (st === 6) shot("pane")
+            else if (st === 7) Qt.quit()
+        }
+    }
+
     // --filter-test: try each chip and a name filter, logging what shows.
     Timer {
         running: Qt.application.arguments.indexOf("--filter-test") >= 0 && chatList.chats.length > 0 && chatList.teams.length > 0
@@ -17168,6 +17225,19 @@ Window {
         currentId: window.composing ? "" : backend.currentChatId
         onChatSelected: (id, name) => { window.composing = false; copilotOpen = false; draftsOpen = false; mentionsOpen = false; quickOpen = ""; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; backend.selectChat(id, name) }
         onNewChat: { copilotOpen = false; draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; window.startNewChat() }
+        // New items ▸ (Teams' Nb): the pop-out compose, a storyline post
+        // (your own chat on its Storyline tab, Teams' clickStorylineCreation),
+        // Join team and New team.
+        newChatInWindow: window.newChatInWindow
+        onNewChatWindow: { draftsOpen = false; mentionsOpen = false; window.startNewChat(true) }
+        onNewStorylinePost: {
+            const me = chats.find(c => c.isSelf)
+            chatSelected(me ? me.id : "48:notes", me ? me.name : backend.userName)
+            Qt.callLater(() => conversation.tab = "Storyline")
+        }
+        onJoinTeam: window.openTeamPage("join")
+        onNewTeam: createTeamDialog.startScratch()
+        mentionsUnread: mentionsView.mentions.filter(m => m.unread).length
         onOpenCopilot: { window.composing = false; draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; quickOpen = ""; window.manage = null; window.manageTeamId = ""; copilotOpen = true }
         onOpenYourTeams: window.openYourTeams("teams")
         onOpenChatWindow: (id, name, photo, presence) => window.openChatWindow(id, name, photo, presence)
@@ -18419,10 +18489,20 @@ Window {
         readonly property bool shown: conversation.visible && conversation.copilotOpen
         open: shown
         request: conversation.copilotRequest
-        anchors { top: appBanner.bottom; bottom: statusBar.top; right: findPane.left }
+        anchors { top: appBanner.bottom; bottom: statusBar.top; right: chatCopilotHistory.left }
         width: shown ? 360 : 0
         onClosed: conversation.copilotOpen = false
         onOpenLink: url => window.openCopilotLink(url)
+    }
+    // More chat options ▸ View Copilot history: the history-only Copilot in
+    // the same place.
+    CopilotHistoryPane {
+        id: chatCopilotHistory
+        readonly property bool shown: conversation.visible && conversation.copilotHistoryOpen
+        visible: shown
+        anchors { top: appBanner.bottom; bottom: statusBar.top; right: findPane.left }
+        width: shown ? 360 : 0
+        onClosed: conversation.copilotHistoryOpen = false
     }
     /// A link Copilot's pane opened: a Source (a message link) jumps to its
     /// message, in this conversation or another (Teams keeps the pane

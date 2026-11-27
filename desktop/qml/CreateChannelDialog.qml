@@ -24,6 +24,16 @@ import QtQuick.Controls.Basic
 // Creating posts it as Teams does (api::channels::create_channel) and opens
 // the new channel; a private one first gets Teams' member step (Add members
 // to the {channel} channel: Skip / Add).
+// From the chat list's New items ▸ New channel (`startPick`, Teams web
+// 2026-11-27) the form starts with "Add the channel to a team" * (12/16,
+// an info glyph "Every channel must be hosted by a team") over a 49 px
+// button (a 1 px #D1D1D1 edge, radius 4): "Select a team" (14/600), or
+// the team's 32 px picture, name (a 14 px lock for a private one) and
+// "N members" (12/16 #616161), with a chevron at its end; 16 under it the
+// form goes on. The button opens "Pick a team to add new channel to": Find
+// teams (32 tall, #F5F5F5, a search glyph 10 from its end) and the teams
+// (rows 50 tall, 2 apart: a 16 px check when chosen 7 in, the picture at
+// 27, the name at 73; the chosen row #F5F5F5), then Back and Done (96 x 32).
 Popup {
     id: dlg
     property string teamId: ""
@@ -54,13 +64,34 @@ Popup {
         return ""
     }
     readonly property bool nameGood: name.trim().length > 0 && !nameError
-    readonly property bool canCreate: nameGood && !!type && !creating
+    readonly property bool canCreate: nameGood && !!type && !creating && !!teamId
 
     function start(tid, tname) {
         teamId = tid; teamName = tname
+        pickTeam = false; picking = false
         name = ""; description = ""; type = ""; recommend = false; layout = "Conversational"
         creating = false; failure = ""
         open()
+        nameField.forceActiveFocus()
+    }
+    /// New items ▸ New channel: the team is picked in the dialog.
+    property bool pickTeam: false
+    property bool picking: false
+    /// The team chosen on the picker page (its thread id), before Done.
+    property string pickChoice: ""
+    property string teamQuery: ""
+    readonly property var allTeams: (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).filter(t => !t.archived)
+    readonly property var pickedTeam: allTeams.find(t => t.id === teamId) || null
+    readonly property var pickList: allTeams.filter(t => !teamQuery || (t.name || "").toLowerCase().indexOf(teamQuery.toLowerCase()) >= 0)
+    function startPick() {
+        start("", "")
+        pickTeam = true
+    }
+    function openPicker() { pickChoice = teamId; teamQuery = ""; findTeams.text = ""; picking = true; findTeams.forceActiveFocus() }
+    function pickDone() {
+        const t = allTeams.find(t => t.id === pickChoice)
+        if (t) { teamId = t.id; teamName = t.name || "" }
+        picking = false
         nameField.forceActiveFocus()
     }
     function create() {
@@ -90,6 +121,36 @@ Popup {
     height: Overlay.overlay ? Overlay.overlay.height : 680
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
 
+    // A team as the picker shows it: its 32 px picture (radius 4), its name
+    // (a 14 px lock 10 after a private one's) and "N members" under it.
+    component TeamLine: Item {
+        id: tl
+        property var team: null
+        property Item fill: null
+        property bool dim: false
+        width: 480; height: 36
+        Avatar {
+            x: 0; y: 2; size: 32; square: true
+            name: tl.team ? tl.team.name || "" : ""
+            initialsText: tl.team ? (tl.team.name || "").split(/\s+/).filter(w => w).slice(0, 2).map(w => w[0]).join("").toUpperCase() : ""
+            photoId: tl.team ? "team:" + tl.team.id : ""
+        }
+        Row {
+            x: 46; y: 0; spacing: 10
+            Text {
+                text: tl.team ? tl.team.name || "" : ""
+                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                color: theme.onFill(tl.fill, tl.dim ? theme.textStrong : theme.text)
+            }
+            FluentIcon { visible: !!tl.team && !tl.team["public"]; anchors.verticalCenter: parent.verticalCenter; name: "lock-closed-16"; size: 14; color: theme.onFill(tl.fill, tl.dim ? theme.textStrong : theme.text) }
+        }
+        Text {
+            x: 46; y: 20
+            text: tl.team ? qsTr("%n members", "", tl.team.people || 0) : ""
+            font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
+            color: theme.onFill(tl.fill, tl.dim ? theme.textSecondary : theme.text)
+        }
+    }
     component Label: Row {
         property string text
         property bool required: false
@@ -143,15 +204,52 @@ Popup {
     contentItem: Item {
         Text {
             x: 0.7; y: 0.7
-            text: qsTr("Create a channel")
+            text: dlg.picking ? qsTr("Pick a team to add new channel to") : qsTr("Create a channel")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
             lineHeight: 28; lineHeightMode: Text.FixedHeight
             color: theme.text
             Accessible.role: Accessible.Heading
         }
         Column {
+            visible: !dlg.picking
             x: 2.7; y: 42.7; width: 546.7
             spacing: 0
+            // New items ▸ New channel: the team first.
+            Row {
+                visible: dlg.pickTeam
+                height: visible ? 16 : 0
+                Label { text: qsTr("Add the channel to a team"); required: true }
+                FluentIcon {
+                    id: hostInfo
+                    name: "info-16-regular"; size: 16; color: theme.text
+                    HoverHandler { id: hostInfoHover }
+                    ToolTip.visible: hostInfoHover.hovered; ToolTip.delay: 300; ToolTip.text: qsTr("Every channel must be hosted by a team")
+                    Accessible.role: Accessible.Graphic
+                    Accessible.name: qsTr("Every channel must be hosted by a team")
+                }
+            }
+            Item { width: 1; height: dlg.pickTeam ? 4 : 0 }
+            Rectangle {
+                id: teamButton
+                visible: dlg.pickTeam
+                width: parent.width; height: visible ? 49 : 0; radius: 4
+                color: teamHover.hovered ? theme.rowHover : theme.surface
+                border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 1
+                Text {
+                    visible: !dlg.pickedTeam
+                    x: 13; anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("Select a team")
+                    font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                    color: theme.onFill(teamButton, theme.text)
+                }
+                TeamLine { visible: !!dlg.pickedTeam; team: dlg.pickedTeam; x: 13; y: 6; fill: teamButton }
+                FluentIcon { x: parent.width - 18 - 20; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-20"; size: 20; color: theme.onFill(teamButton, theme.text) }
+                HoverHandler { id: teamHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: dlg.openPicker() }
+                Accessible.role: Accessible.Button
+                Accessible.name: dlg.pickedTeam ? qsTr("Selected team: %1").arg(dlg.pickedTeam.name) : qsTr("Select a team")
+            }
+            Item { width: 1; height: dlg.pickTeam ? 16 : 0 }
             Label { text: qsTr("Channel name"); required: true }
             Item { width: 1; height: 3 }
             Rectangle {
@@ -306,7 +404,84 @@ Popup {
                 font.family: theme.font; font.pixelSize: 12; color: theme.danger
             }
         }
+        // The picker page.
+        Item {
+            id: picker
+            visible: dlg.picking
+            y: 36; width: 550; height: parent.height - y - 31.3 - 8.7 - 8
+            Rectangle {
+                width: parent.width; height: 32; radius: 4
+                color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
+                TextInput {
+                    id: findTeams
+                    x: 13; width: parent.width - 13 - 40
+                    anchors.verticalCenter: parent.verticalCenter
+                    font.family: theme.font; font.pixelSize: 14
+                    color: theme.text
+                    clip: true
+                    onTextChanged: dlg.teamQuery = text.trim()
+                    Keys.onEscapePressed: dlg.picking = false
+                    Text { visible: !findTeams.text; text: qsTr("Find teams"); font: findTeams.font; color: theme.textTertiary }
+                    Accessible.role: Accessible.EditableText
+                    Accessible.name: qsTr("Find teams")
+                }
+                FluentIcon { x: parent.width - 10 - 20; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 20; color: theme.textSecondary }
+                Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: findTeams.activeFocus ? 2 : 0; color: theme.brand }
+            }
+            ListView {
+                y: 48; width: parent.width; height: parent.height - y
+                clip: true
+                spacing: 2
+                model: dlg.pickList
+                boundsBehavior: Flickable.StopAtBounds
+                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                delegate: Rectangle {
+                    id: teamRow
+                    required property var modelData
+                    readonly property bool chosen: dlg.pickChoice === modelData.id
+                    width: ListView.view.width; height: 50; radius: 4
+                    color: chosen || rowHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : "transparent"
+                    FluentIcon { visible: teamRow.chosen; x: 7; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.onFill(teamRow, theme.text) }
+                    TeamLine { team: teamRow.modelData; x: 27; y: 7; fill: teamRow; dim: !teamRow.chosen && !rowHover.hovered }
+                    HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: dlg.pickChoice = teamRow.modelData.id; onDoubleTapped: { dlg.pickChoice = teamRow.modelData.id; dlg.pickDone() } }
+                    Accessible.role: Accessible.RadioButton
+                    Accessible.checked: teamRow.chosen
+                    Accessible.name: (teamRow.modelData.name || "") + (teamRow.modelData["public"] ? "" : " " + qsTr("Private"))
+                }
+            }
+        }
         Row {
+            visible: dlg.picking
+            width: parent.width
+            y: parent.height - 31.3 - 8.7
+            Rectangle {
+                id: backButton
+                width: 96; height: 32; radius: 4
+                color: backHover.hovered ? theme.rowHover : "transparent"
+                Row {
+                    anchors.centerIn: parent; spacing: 6
+                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-left-20"; size: 20; color: theme.onFill(backButton, theme.textStrong) }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Back"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(backButton, theme.textStrong) }
+                }
+                HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: dlg.picking = false }
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Back")
+            }
+            Item { width: parent.width - 96 - 96 - 25; height: 1 }
+            Rectangle {
+                id: doneButton
+                readonly property bool on: !!dlg.pickChoice
+                width: 96; height: 32; radius: 4
+                color: !on ? theme.pick("#F0F0F0", "#141414", "#000000") : doneHover.hovered ? theme.brandHover : theme.brandFill
+                Text { anchors.centerIn: parent; text: qsTr("Done"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(doneButton, doneButton.on ? "white" : theme.disabled) }
+                HoverHandler { id: doneHover; cursorShape: doneButton.on ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                TapHandler { enabled: doneButton.on; onTapped: dlg.pickDone() }
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Done")
+            }
+        }
+        Row {
+            visible: !dlg.picking
             anchors.right: parent.right; anchors.rightMargin: -2
             y: parent.height - 31.3 - 8.7
             spacing: 8

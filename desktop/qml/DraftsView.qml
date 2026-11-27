@@ -115,17 +115,36 @@ Rectangle {
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("Draft to %1").arg(item.modelData.name)
             }
+        }
+        // Nothing pending (Teams web 2026-11-27, Drafts is always listed):
+        // Teams' 192 px check picture centred in the pane from 101 down to
+        // 100 above its bottom, and "You have no draft messages." (16/24
+        // bold) 20 under it.
+        Item {
+            id: emptyArea
+            visible: root.shown.length === 0
+            y: 101; width: parent.width - 1; height: parent.height - 101 - 100
+            Image {
+                id: emptyPicture
+                x: (parent.width - width) / 2; y: (parent.height - height) / 2
+                width: 192; height: 192
+                source: "../assets/illustrations/drafts-empty.png"
+                sourceSize: Qt.size(192, 192)
+            }
             Text {
-                visible: root.drafts.length === 0
-                x: 32; y: 8
+                x: 21; y: emptyPicture.y + emptyPicture.height + 20; width: parent.width - 42
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
                 text: qsTr("You have no draft messages.")
-                font.family: theme.font; font.pixelSize: theme.base
-                color: theme.textSecondary
+                font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
+                lineHeight: 24; lineHeightMode: Text.FixedHeight
+                color: theme.text
             }
         }
     }
 
     Column {
+        visible: root.shown.length > 0
         anchors.centerIn: hint
         spacing: 16
         FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; name: "drafts-20"; size: 64; color: theme.brand }
