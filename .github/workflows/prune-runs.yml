@@ -39,10 +39,10 @@ jobs:
           python3 - <<'EOF'
           import csv, os
           repo = os.environ["REPO"]
-          prs = list(csv.reader(open("open-prs.tsv"), delimiter="\t"))
+          prs = list(csv.reader(open("open-prs.tsv"), delimiter="\t", quoting=csv.QUOTE_NONE))
           open_nums = {n for n, _, _ in prs}
           open_heads = {(r, b) for _, r, b in prs}
-          rows = sorted(csv.reader(open("runs.tsv"), delimiter="\t"), key=lambda r: r[5], reverse=True)
+          rows = sorted(csv.reader(open("runs.tsv"), delimiter="\t", quoting=csv.QUOTE_NONE), key=lambda r: r[5], reverse=True)
           def ctx(r):
               """What a run belongs to: one open PR, main of this repo, or something else.
               CodeQL's default setup names runs "PR #n" and reports the branch as refs/pull/n/head."""
