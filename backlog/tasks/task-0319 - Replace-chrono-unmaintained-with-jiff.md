@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@time'
 created_date: '2026-11-25T20:24:00Z'
-updated_date: '2026-11-26T23:31:00Z'
+updated_date: '2026-11-27T00:11:00Z'
 labels:
   - security
   - dependencies
@@ -21,10 +21,10 @@ RUSTSEC-2026-0543 (2026-09-14) declares chrono unmaintained, with jiff and time 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 chrono is gone from Cargo.lock; time handling uses jiff
-- [ ] #2 Every timestamp OST sends to Teams/Graph keeps its current format (RFC 3339 shape, offset, fractional digits), covered by tests
-- [ ] #3 Local-time displays (chat, calendar, presence, recaps) render as before, including across DST changes
-- [ ] #4 The RUSTSEC-2026-0543 exception is removed from deny.toml and cargo deny passes
+- [x] #1 chrono is gone from Cargo.lock; time handling uses jiff
+- [x] #2 Every timestamp OST sends to Teams/Graph keeps its current format (RFC 3339 shape, offset, fractional digits), covered by tests
+- [x] #3 Local-time displays (chat, calendar, presence, recaps) render as before, including across DST changes
+- [x] #4 The RUSTSEC-2026-0543 exception is removed from deny.toml and cargo deny passes
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -51,3 +51,22 @@ RUSTSEC-2026-0543 (2026-09-14) declares chrono unmaintained, with jiff and time 
 - Live (linuxlt, ost-test1 spatest, LA and Berlin): calendar views/card/page, chat, Activity identical before/after. Screenshots in ~/ost-live-checks/task-0319 on the dev PC.
 - PR #27.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Replaced chrono (unmaintained, RUSTSEC-2026-0543) with jiff 1.0.3 across the engine, desktop and examples (PR #27).
+
+Changes:
+- New src/clock.rs keeps chrono's results: its RFC 3339 grammar (ported from chrono 0.4.45), the shapes Teams/Graph get (.000Z, Z, +00:00 with 3/6/9 fraction places, floor ms), local times in the system zone, 24-hour days on times and calendar days on dates, and chrono's readings of wall times a DST change skips or repeats.
+- Presence's 9999 "never" expiry is computed on the wall clock (past jiff's range).
+- chrono is out of Cargo.lock; its exception is gone from deny.toml and .cargo/audit.toml; notices and Flatpak sources updated.
+
+Tests:
+- Baseline tests written and run against chrono first, then kept green; the time-related engine tests run in 7 time zones give identical results before and after.
+- Differential harness chrono vs clock.rs (14 zones, every DST change 2000-2060, 200k fuzzed RFC 3339 strings): identical except sub-second DST-boundary quirks where chrono contradicted itself.
+- Live on linuxlt (ost-test1; LA and Berlin): calendar views and event card/page, a chat, Activity: same before and after.
+- CI (build/test, clippy, audit, CodeQL) green; Codex: no findings.
+
+Note: in an hour a DST change repeats, chrono (and so OST) reads a wall time at standard time; Teams' JavaScript takes the daylight reading. Kept as before.
+<!-- SECTION:FINAL_SUMMARY:END -->
