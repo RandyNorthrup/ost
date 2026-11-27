@@ -945,7 +945,7 @@ pub fn soften(yplane: &mut [u8], mask: &[f32], w: usize, h: usize, scratch: &mut
 /// it is taken as it is, so motion never smears. What counts as "a
 /// little" follows the camera's own grain, measured on each frame (the
 /// median frame-to-frame change), so a clean camera is left alone and a
-/// grainy one in low light is calmed.
+/// grainy one in low light is calmed (by about half, on a still picture).
 #[derive(Default)]
 pub struct Denoiser {
     /// The last frame shown (I420), and its size.
@@ -957,11 +957,14 @@ pub struct Denoiser {
 
 /// The threshold's bounds (luma steps), and its share for chroma.
 const DENOISE_MIN: f32 = 6.0;
-const DENOISE_MAX: f32 = 36.0;
+const DENOISE_MAX: f32 = 40.0;
 const DENOISE_CHROMA: f32 = 0.7;
 /// How much of a still point's new value is taken (of 256): the rest is
 /// the frames before it.
-const DENOISE_KEEP: u32 = 64;
+const DENOISE_KEEP: u32 = 40;
+/// Up to this share of the threshold a change is all grain; above it the
+/// new value is taken more and more, all of it at the threshold.
+const DENOISE_KNEE: f32 = 0.6;
 
 impl Denoiser {
     pub fn reset(&mut self) {
@@ -983,8 +986,8 @@ impl Denoiser {
             return;
         }
         // The grain: the median change of a sample of points. Grain of
-        // standard deviation s changes a point by about s (median); three
-        // times that covers nearly all of it.
+        // standard deviation s changes a point by about 0.7 s (median);
+        // four times that covers nearly all of it.
         let mut hist = [0u32; 256];
         let mut n = 0u32;
         for (c, p) in data[..w * h].iter().zip(&self.prev[..w * h]).step_by(7) {
@@ -999,7 +1002,7 @@ impl Denoiser {
                 seen * 2 >= n
             })
             .unwrap_or(0) as f32;
-        let want = (median * 3.0 + 1.0).clamp(DENOISE_MIN, DENOISE_MAX);
+        let want = (median * 4.0 + 1.0).clamp(DENOISE_MIN, DENOISE_MAX);
         self.threshold = if self.threshold == 0.0 {
             want
         } else {
@@ -1020,8 +1023,11 @@ fn weights(threshold: f32) -> [u32; 256] {
     let mut out = [256u32; 256];
     for (d, w) in out.iter_mut().enumerate() {
         let x = d as f32 / t;
-        if x < 1.0 {
-            *w = DENOISE_KEEP + ((256 - DENOISE_KEEP) as f32 * x * x) as u32;
+        if x < DENOISE_KNEE {
+            *w = DENOISE_KEEP;
+        } else if x < 1.0 {
+            let ramp = (x - DENOISE_KNEE) / (1.0 - DENOISE_KNEE);
+            *w = DENOISE_KEEP + ((256 - DENOISE_KEEP) as f32 * ramp) as u32;
         }
     }
     out
