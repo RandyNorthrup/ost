@@ -1297,6 +1297,14 @@ Window {
             }
         }
     }
+    function audioTestForTest() { return audioTest }
+    /// Open a device picker ("mic", "speaker", "camera"), or close them ("").
+    function deviceFlyoutForTest(which) {
+        deviceFlyout.close(); cameraFlyout.close()
+        if (which === "mic") openDeviceFlyout(micTrigger, "mic")
+        else if (which === "speaker") openDeviceFlyout(speakerTrigger, "speaker")
+        else if (which === "camera") { cameraFlyout.parent = camTrigger; cameraFlyout.open() }
+    }
     AudioTestDialog {
         id: audioTest
         onClosed: win.devicesRev++
