@@ -72,7 +72,9 @@ Rectangle {
     onExistingChatChanged: if (visible) root.previewChat(existingChat, existingChat ? picked[0].name : "")
     color: history ? "transparent" : theme.surface
 
-    onVisibleChanged: if (visible) {
+    onVisibleChanged: if (visible) reset()
+    /// An empty form (shown afresh, or filled by a new-chat link).
+    function reset() {
         picked = []; naming = false; field.text = ""; nameField.text = ""; compose.clear(); clearAttachments()
         highlight = -1; suggestOpen = true; field.forceActiveFocus()
         root.search("")

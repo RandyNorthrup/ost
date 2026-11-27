@@ -2186,7 +2186,8 @@ Window {
         const chats = chatList.chats || []
         const channels = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat((t.channels || []).map(c => Object.assign({ team: t.name }, c))), [])
         const nameOf = id => { const c = chats.find(c => c.id === id) || channels.find(c => c.id === id); return c ? c.name : "" }
-        const toChat = (id, name) => { rail.current = "chat"; window.composing = false; backend.selectChat(id, name || nameOf(id)) }
+        // As picking it in the chat list: Drafts, Copilot and the like close.
+        const toChat = (id, name) => { rail.current = "chat"; chatList.chatSelected(id, name || nameOf(id)) }
         const cant = (text, url) => window.showToast({ text: text, intent: "error", duration: 10000, action: url ? qsTr("Open in browser") : "", onAction: url ? () => backend.openExternal(url) : null })
         switch (l.kind) {
         case "open": return true
@@ -2220,7 +2221,9 @@ Window {
             toChat(l.thread, "")
             return true
         case "newChat":
-            rail.current = "chat"; window.composing = true
+            rail.current = "chat"
+            chatList.copilotOpen = false; chatList.draftsOpen = false; chatList.mentionsOpen = false; chatList.yourTeamsOpen = false
+            window.composing = true
             newChatLink.begin(l)
             return true
         case "file":
@@ -2267,6 +2270,8 @@ Window {
         property var link: null
         property int waited: 0
         function begin(l) {
+            // A form already open starts over: only the link's people.
+            newChat.reset()
             link = l; want = l.users.slice(); waited = 0
             if (l.message) newChat.setMessage(l.message)
             if (l.topic && l.users.length > 1) { newChat.naming = true; newChat.nameText = l.topic }
