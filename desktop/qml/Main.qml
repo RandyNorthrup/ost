@@ -2167,6 +2167,9 @@ Window {
     PreJoin {
         id: preJoin
         onGreenScreenSettings: window.showGreenScreenSettings()
+        // A device flyout's More audio settings: Settings ▸ Devices.
+        // (The pre-join stays open.)
+        onMoreAudioSettings: { rail.current = "settings"; settingsView.pageForTest("devices"); window.raise(); window.requestActivate() }
         // Held in the lobby: Teams shows this screen again until we're let in.
         lobby: backend.callState === "lobby"
         presenterConnected: backend.callLobbyPresenter

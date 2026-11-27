@@ -10,6 +10,8 @@ pub mod apm;
 #[cfg(feature = "audio")]
 pub mod audio;
 pub mod audio_codec;
+#[cfg(feature = "audio")]
+pub mod audio_test;
 pub mod breakout;
 pub mod call_health;
 pub mod call_test;
