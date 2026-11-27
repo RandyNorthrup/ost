@@ -253,7 +253,8 @@ Rectangle {
         case "community": backend.openExternal("https://web.yammer.com/main/groups/" + encodeURIComponent(item.id)); break
         case "event": root.openMeeting(item.join || "", item.uid || "", item.start || ""); break
         case "message": case "image": root.openMessage(item.thread, item.id, item.parent || "", !!item.channel, terms); break
-        case "text": root.submit(item.query || item.title); return
+        // A recent or suggested search keeps a chosen scope ("is:Files").
+        case "text": root.submit((item.query || item.title) + (root.searchScope ? " is:" + root.scopeKeys[root.searchScope] : "")); return
         // "<person> in all results": the results with that person.
         case "pcs":
             root.keepSuggestionsOpen = false; field.text = item.title; field.focus = false

@@ -172,6 +172,8 @@ Rectangle {
     // search): everything with that person, found by their address, with
     // Person ▾ set to them; the box shows their name.
     property string personKeywords: ""
+    // Person ▾ cleared (its chip, Clear all, another tab): the box's words again.
+    onPersonChanged: if (!person) personKeywords = ""
     function searchPerson(p) {
         query = p.name
         tab = "all"; clearFilters(false)

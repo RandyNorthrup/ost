@@ -94,8 +94,16 @@ FluentSurface {
         if (y < flick.contentY) flick.contentY = y
         else if (y + row.height > flick.contentY + flick.height) flick.contentY = Math.min(y + row.height - flick.height, Math.max(0, flick.contentHeight - flick.height))
     }
+    // A new query drops the pick; the same query's later answer (pictures,
+    // communities added) keeps it.
+    property string answered: ""
     onQueryChanged: current = -1
-    onReplyChanged: current = -1
+    onReplyChanged: {
+        const q = String((reply || {}).query || "")
+        if (q !== answered) current = -1
+        else if (current >= options.length) current = options.length - 1
+        answered = q
+    }
 
     // Bold the typed words where a word starts with them (Teams marks
     // "release" in "Software_release": "_" separates words too).
@@ -209,11 +217,15 @@ FluentSurface {
                         width: parent.width; height: visible ? 37.1 : 0
                         Text { x: 16; y: 12; text: grp.modelData.title || ""; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                     }
-                    // The People row (nothing typed) and Recent images are rows of cells.
-                    Row {
-                        visible: (grp.modelData.id === "PEOPLE" && !root.typed) || grp.modelData.id === "IMAGES"
-                        x: 16; spacing: grp.modelData.id === "IMAGES" ? 11.3 : 8
-                        height: visible ? (grp.modelData.id === "IMAGES" ? 117.3 : 84) : 0
+                    // The People row (nothing typed) and Recent images are rows
+                    // of cells; images that don't fit wrap to the next line.
+                    Flow {
+                        readonly property bool images: grp.modelData.id === "IMAGES"
+                        visible: (grp.modelData.id === "PEOPLE" && !root.typed) || images
+                        x: 16; width: groupCol.width - 32
+                        spacing: images ? 11.3 : 8
+                        topPadding: images ? 8 : 0; bottomPadding: images ? 8 : 0
+                        height: visible ? implicitHeight : 0
                         Repeater {
                             model: parent.visible ? grp.modelData.items : []
                             Loader {
@@ -455,7 +467,7 @@ FluentSurface {
         Rectangle {
             id: ic
             property var it: ({})
-            y: 8; width: 101.3; height: 101.3; radius: 8
+            width: 101.3; height: 101.3; radius: 8
             color: theme.pick("#FAFAFA", "#1F1F1F", "#000000")
             border.width: 0.67; border.color: ich.hovered ? theme.brand : theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF")
             Image {
