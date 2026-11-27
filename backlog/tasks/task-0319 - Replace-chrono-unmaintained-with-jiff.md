@@ -1,11 +1,11 @@
 ---
 id: TASK-0319
 title: Replace chrono (unmaintained) with jiff
-status: In Progress
+status: Done
 assignee:
   - '@time'
 created_date: '2026-11-25T20:24:00Z'
-updated_date: '2026-11-27T00:11:00Z'
+updated_date: '2026-11-27T00:33:00Z'
 labels:
   - security
   - dependencies
