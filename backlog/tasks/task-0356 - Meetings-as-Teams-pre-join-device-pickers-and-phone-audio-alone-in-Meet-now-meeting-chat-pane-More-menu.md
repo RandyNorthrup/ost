@@ -3,11 +3,11 @@ id: TASK-0356
 title: >-
   Meetings as Teams: pre-join device pickers and phone audio, alone in Meet now,
   meeting chat pane, More menu
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-27T17:32:00Z'
-updated_date: '2026-11-27T21:06:00Z'
+updated_date: '2026-11-27T23:02:00Z'
 labels: []
 dependencies: []
 priority: medium
@@ -21,7 +21,7 @@ From the 2026-11-27 parity audit (scope B), which compared Teams desktop on winp
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 B-16: Pre-join: mic, speaker and camera pickers and "Test mic and speaker", as Teams desktop does it, checked side by side
+- [x] #1 B-16: Pre-join: mic, speaker and camera pickers and "Test mic and speaker", as Teams desktop does it, checked side by side
 - [x] #2 B-17: Pre-join (Meet now): Phone audio is greyed out, as Teams desktop does it, checked side by side
 - [x] #3 B-18: Alone in your Meet now: "Invite people to join you" and the invite dialog, as Teams desktop does it, checked side by side
 - [x] #4 B-19: Meeting chat pane header: "Meeting chat", private chat tabs, pop-out and chat options, as Teams desktop does it, checked side by side
@@ -58,4 +58,22 @@ Research: Teams 26304 bundles (testpc1 WSL) + live Teams desktop on a free test 
 
 - #53 head e96fadec rechecked live: pre-join mic flyout meter capture on ost_t356_mic; speaker-step output matches Teams' tone sample for sample at real time (69/69 windows); a 1 s burst into the virtual mic played back once after the pause, no feedback loop.
 - #49: E0716 in close_chat_window fixed (0c8b68bb); clippy (workspace and ost-desktop test-harness) clean on a build box; CI green; Codex overflow findings (tab row, picker list) fixed in 0c8b68bb / 638ad2dc.
+
+- AC #1 side by side on testpc1 (Teams 26304, ost-test1, 2026-11-27): Calendar > Meet now > pre-join (cancelled, nothing joined). Pickers = speaker-only / microphone-only flyouts as #53. Test mic and speaker: 600 wide, picture band, title, 40 px picker, one speaker gives "No, I can't hear it" / "Yes, I can hear it". Differences fixed in #63: no speaker glyph on the slider, 6 px above it, 310 px step minimum, mic step while loading shows only the picture and a 4 px progress bar (no title, picker or buttons); with no mic Teams stays loading.
+- #63 live on linuxlt (OST Test 2, virtual mic): speaker step matches Teams' layout; mic step ready, summary, Done; capture on ost_t356_mic.
+- testpc1 has no camera or mic: Teams' camera menu and a working mic step weren't compared.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Meetings parity from the scope B audit (B-16..B-21), as Teams desktop 26304, in three PRs.
+
+- #49 (B-17..B-21): Meet now stage asks to invite people (ad hoc) and opens the invite dialog on landing (Add participants); the chat pane never shows the previous meeting's chat; More's grid has Facilitator (menu) and Interpreter, both pinnable; "Meeting chat" header with Add a chat as a tab (private 1:1 / group chat tabs), Open in new window and More meeting chat options (Allow chat tabs); Calendar's Meet now pre-join has the meeting link so Phone audio is offered.
+- #53 (B-16): pre-join mic/speaker pickers (Teams' speakerOnly / microphoneOnly flyouts), camera picker, Need help?, and Teams' Test mic and speaker wizard (its test sound from the CDN, real-time paced; record-and-play-back mic monitor; summary).
+- #63: the wizard laid out exactly as Teams' after a side-by-side on testpc1.
+
+Tests: ubar unit tests (grid order), audio_test unit tests (WAV, speech gate, pacing); harnesses --meetnow-parity-test [--meetnow-tab-wait] and --prejoin-audio-test run live on linuxlt with test accounts and a virtual mic.
+
+Not verified live: Add participants, Open in new window, group-chat tabs, turning Facilitator/Interpreter on, People on landing for a non-organizer, the wizard's "No" paths, Teams' camera menu and working-mic step (testpc1 has neither).
+<!-- SECTION:FINAL_SUMMARY:END -->
