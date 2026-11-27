@@ -3949,6 +3949,11 @@ Window {
                                               "bar", !!callWindow.sharingBarForTest(), "expanded", callWindow.sharingBarForTest() ? callWindow.sharingBarForTest().expanded : false,
                                               "minimized", callWindow.minimizedNow)
                 const st = callWindow.controlState
+                // --join-present-admitted: held in a lobby, start once
+                // admitted (TASK-0342: the processor's move re-offer).
+                if (step === 8 && Qt.application.arguments.indexOf("--join-present-admitted") >= 0 && backend.callState !== "connected") {
+                    console.warn("JOIN present waiting, state", backend.callState); return
+                }
                 if (step === 8) { callWindow.side = ""; if (mode && !backend.callCameraOn) backend.toggleCamera() }
                 // Content from camera's drill-down, captured on the way.
                 else if (step === 9) { callWindow.runControl("ShareButton"); callWindow.shareTrayForTest().drill = "camera" }

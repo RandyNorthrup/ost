@@ -322,8 +322,18 @@ impl MidMap {
 /// prefix units), as its desktop app and the media processor write it.
 pub const PT_X_H264UC: u8 = 122;
 
-/// A receive-only video m-line of ours with X-H264UC offered before its
-/// H.264 `pt` (`a=rtpmap:122 X-H264UC/90000`, `mst-mode=NI-TC`).
+/// OST_VIDEO_NATIVE_SEND=1 (TASK-0342 protocol research, off by default):
+/// our meeting camera line offers (and answers) X-H264UC before H.264.
+/// The processor answers our own offer with H.264 only, but its re-offer
+/// after moving the call (a lobby admission) lists X-H264UC, which we then
+/// answer first and send (2026-11-27: it forwarded none of it to Teams
+/// desktop, so this stays research).
+pub fn native_send() -> bool {
+    std::env::var_os("OST_VIDEO_NATIVE_SEND").is_some_and(|v| v == "1")
+}
+
+/// A video m-line of ours with X-H264UC offered before its H.264 `pt`
+/// (`a=rtpmap:122 X-H264UC/90000`, `mst-mode=NI-TC`).
 fn with_native_codec(section: &str, pt: u8) -> String {
     let mut out = String::with_capacity(section.len() + 160);
     for line in section.split_inclusive("\r\n") {
@@ -1128,10 +1138,17 @@ impl LocalAudio {
                         t.to_ascii_lowercase()
                             .contains(&format!("a=rtpmap:{PT_X_H264UC} x-h264uc/"))
                     });
-                    if slots.contains(mid)
-                        && native_offered
-                        && std::env::var_os("OST_VIDEO_NATIVE").is_some()
-                    {
+                    let native = if mid == mm::CAMERA_MID {
+                        native_send()
+                    } else {
+                        slots.contains(mid) && std::env::var_os("OST_VIDEO_NATIVE").is_some()
+                    };
+                    // Our camera goes in X-H264UC when we answer it first.
+                    #[cfg(feature = "video")]
+                    if mid == mm::CAMERA_MID {
+                        super::webrtc_video::set_native_camera(native && native_offered);
+                    }
+                    if native && native_offered {
                         with_native_codec(&section, v.payload_type)
                     } else {
                         section
@@ -1189,7 +1206,7 @@ impl LocalAudio {
         s.push_str(&format!("a=group:BUNDLE 0 {}\r\n", mids.join(" ")));
         s.push_str("a=msid-semantic: WMS ost\r\n");
         s.push_str(&self.audio_section(port, &addr, "0", "actpass", self.dtmf_pt, None));
-        s.push_str(&self.video_section(
+        let camera = self.video_section(
             port,
             &addr,
             VideoLine {
@@ -1204,7 +1221,14 @@ impl LocalAudio {
                 label: "main-video",
                 ssrc: self.video_ssrc,
             },
-        ));
+        );
+        // OST_VIDEO_NATIVE_SEND=1 (protocol research, off by default): our
+        // camera line offers Teams' native X-H264UC first, H.264 after it.
+        if native_send() {
+            s.push_str(&with_native_codec(&camera, PT_H264_OFFER));
+        } else {
+            s.push_str(&camera);
+        }
         // OST_VIDEO_NATIVE=1 (protocol research, off by default): the
         // receive slots also offer Teams' native X-H264UC first, so the
         // processor may forward others' cameras in it.

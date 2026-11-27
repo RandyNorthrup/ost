@@ -541,6 +541,186 @@ fn insert_before_slice(nals: &mut Vec<Vec<u8>>, sei: Vec<u8>) {
     nals.insert(at, sei);
 }
 
+/// Our camera in Teams' native X-H264UC (TASK-0342 research,
+/// OST_VIDEO_NATIVE_SEND=1): set while our answer to the media processor
+/// puts X-H264UC first on the camera line. Each access unit then opens
+/// with a PACSI (stream layout on IDR pictures, bitstream info, and the
+/// cropping info in Standout or Reporter) and each slice gets an SVC
+/// prefix. Live (2026-11-27) the processor took the stream but forwarded
+/// none of it to Teams desktop.
+static NATIVE_CAMERA: AtomicBool = AtomicBool::new(false);
+
+pub fn set_native_camera(on: bool) {
+    if NATIVE_CAMERA.swap(on, Ordering::Relaxed) != on {
+        tracing::info!(on, "camera in X-H264UC");
+    }
+}
+
+fn native_camera() -> bool {
+    NATIVE_CAMERA.load(Ordering::Relaxed)
+}
+
+/// MS-H264PF's stream layout SEI message (section 2.2.5).
+const STREAM_LAYOUT_UUID: [u8; 16] = [
+    0x13, 0x9f, 0xb1, 0xa9, 0x44, 0x6a, 0x4d, 0xec, 0x8c, 0xbf, 0x65, 0xb1, 0xe1, 0x2d, 0x2c, 0xfd,
+];
+/// MS-H264PF's bitstream info SEI message (section 2.2.7).
+const BITSTREAM_INFO_UUID: [u8; 16] = [
+    0x05, 0xfb, 0xc6, 0xb9, 0x5a, 0x80, 0x40, 0xe5, 0xa2, 0x2a, 0xab, 0x40, 0x20, 0x26, 0x7e, 0x26,
+];
+/// The priority ID of our one (base) layer.
+const NATIVE_PRID: u8 = 0;
+
+/// The one layer we send, as a stream layout describes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeLayer {
+    pub width: u16,
+    pub height: u16,
+    pub bps: u32,
+    pub fps: u32,
+}
+
+/// MS-H264PF's frame rate table index (7.5, 12.5, 15, 25, 30, 50, 60).
+fn fps_index(fps: u32) -> u8 {
+    match fps {
+        0..=9 => 0,
+        10..=13 => 1,
+        14..=20 => 2,
+        21..=27 => 3,
+        28..=40 => 4,
+        41..=55 => 5,
+        _ => 6,
+    }
+}
+
+/// A full stream layout SEI NAL unit for our one layer: its presence bit,
+/// P set, and one 16-byte layer description (constrained baseline, base
+/// layer). As MS-H264PF writes its SEI, no emulation prevention or
+/// trailing bits.
+pub fn stream_layout_sei(layer: NativeLayer) -> Vec<u8> {
+    let mut nal = vec![0x06, 5, 16 + 8 + 2 + 16];
+    nal.extend_from_slice(&STREAM_LAYOUT_UUID);
+    let mut presence = [0u8; 8];
+    presence[usize::from(NATIVE_PRID / 8)] |= 1 << (NATIVE_PRID % 8);
+    nal.extend_from_slice(&presence);
+    // R 0, P 1; LDSize 16.
+    nal.extend_from_slice(&[0x01, 16]);
+    for v in [layer.width, layer.height, layer.width, layer.height] {
+        nal.extend_from_slice(&v.to_be_bytes());
+    }
+    nal.extend_from_slice(&layer.bps.to_be_bytes());
+    // FPSIdx and LT 0 (base layer); PRID, CB 1, R 0; R2.
+    nal.extend_from_slice(&[fps_index(layer.fps) << 3, (NATIVE_PRID << 2) | 0x02, 0, 0]);
+    nal
+}
+
+/// Builds each access unit's PACSI for X-H264UC (MS-H264PF section 2.2.4:
+/// the layer's first NAL unit, never fragmented).
+pub struct NativePacsi {
+    /// The bitstream info's reference frame count (random start).
+    ref_count: u8,
+    /// The decoding order number of the next NAL unit (NI-TC's CS-DON).
+    don: u16,
+    /// RFC 6190's TL0PICIDX (one per base layer picture) and IDRPICID
+    /// (one per IDR picture).
+    tl0: u8,
+    idr_id: u16,
+}
+
+impl NativePacsi {
+    pub fn new(seed: u32) -> Self {
+        Self {
+            ref_count: seed as u8,
+            don: 0,
+            tl0: (seed >> 8) as u8,
+            idr_id: (seed >> 16) as u16,
+        }
+    }
+
+    /// The access unit's NAL units with an SVC prefix NAL unit (type 14,
+    /// RFC 6190) before each picture slice: the slice's NRI, the SVC
+    /// extension as the PACSI's (our PRID, TID 0), and
+    /// prefix_nal_unit_svc (store_ref_base_pic_flag and
+    /// additional_prefix_nal_unit_extension_flag 0 for a reference slice,
+    /// nothing otherwise) with its trailing bits.
+    pub fn with_prefixes(nals: &[Vec<u8>]) -> Vec<Vec<u8>> {
+        let mut out = Vec::with_capacity(nals.len() * 2);
+        for n in nals {
+            if let Some(&h) = n.first()
+                && matches!(h & 0x1f, 1 | 5)
+            {
+                let idr = h & 0x1f == 5;
+                let nri = h & 0x60;
+                out.push(vec![
+                    nri | 14,
+                    0x80 | if idr { 0x40 } else { 0 } | NATIVE_PRID,
+                    0x80,
+                    0x07,
+                    if nri != 0 { 0x20 } else { 0x80 },
+                ]);
+            }
+            out.push(n.clone());
+        }
+        out
+    }
+
+    /// The PACSI NAL unit (RFC 6190 section 4.9) for one access unit:
+    /// the SVC extension (R 1, I for an IDR picture, our PRID; N 1, DID
+    /// and QID 0; TID 0, O 1), the X, Y, T, A and S flags, TL0PICIDX,
+    /// IDRPICID and DONC, then a
+    /// full stream layout SEI on an IDR picture (`layer`) and an SEI with
+    /// the bitstream info and, in Standout or Reporter, the cropping info,
+    /// each prefixed by its 16-bit size.
+    pub fn build(
+        &mut self,
+        nals: &[Vec<u8>],
+        layer: Option<NativeLayer>,
+        crop: Option<CropWindow>,
+    ) -> Vec<u8> {
+        let kind = |n: &Vec<u8>| n.first().map(|b| b & 0x1f);
+        let idr = nals.iter().any(|n| kind(n) == Some(5));
+        let reference = nals
+            .iter()
+            .any(|n| matches!(kind(n), Some(1 | 5)) && n[0] & 0x60 != 0);
+        if reference {
+            self.ref_count = self.ref_count.wrapping_add(1);
+        }
+        let nri = nals
+            .iter()
+            .map(|n| n.first().map_or(0, |b| b & 0x60))
+            .max()
+            .unwrap_or(0x60);
+        let mut p = vec![
+            nri | 30,
+            0x80 | if idr { 0x40 } else { 0 } | NATIVE_PRID,
+            0x80,
+            0x07,
+            // X, Y, T, A (an IDR picture), S.
+            0x80 | 0x40 | 0x20 | if idr { 0x10 } else { 0 } | 0x02,
+        ];
+        self.tl0 = self.tl0.wrapping_add(1);
+        if idr {
+            self.idr_id = self.idr_id.wrapping_add(1);
+        }
+        p.push(self.tl0);
+        p.extend_from_slice(&self.idr_id.to_be_bytes());
+        p.extend_from_slice(&self.don.to_be_bytes());
+        self.don = self.don.wrapping_add(nals.len() as u16);
+        let mut sei = vec![0x06, 5, 18];
+        sei.extend_from_slice(&BITSTREAM_INFO_UUID);
+        sei.extend_from_slice(&[self.ref_count, nals.len().min(255) as u8]);
+        if let Some(w) = crop {
+            sei.extend(crop_info_message(w, CROP_CONFIDENCE));
+        }
+        let units = layer.map(stream_layout_sei).into_iter().chain([sei]);
+        for u in units {
+            p.extend_from_slice(&(u.len() as u16).to_be_bytes());
+            p.extend(u);
+        }
+        p
+    }
+}
+
 /// Largest RTP payload we send (leaves room for SRTP, UDP and TURN).
 pub const MTU: usize = 1100;
 
@@ -1121,6 +1301,9 @@ fn send_loop(
     let mut sent = 0u64;
     let mut last_frame: Option<std::time::Instant> = None;
     let mut effects = cfg.effects.then(ost_vfx::Processor::new);
+    // TASK-0342 research: the camera in X-H264UC once negotiated.
+    let mut pacsi = NativePacsi::new(ssrc);
+    let mut was_native = false;
     while !stop.load(Ordering::Relaxed) {
         // A meeting's processor may ask for less (Teams' vdclc).
         let limits = control.as_ref().and_then(|c| c.get());
@@ -1241,9 +1424,13 @@ fn send_loop(
         let Some((_, enc)) = encoder.as_mut() else {
             continue;
         };
-        if keyframe.swap(false, Ordering::Relaxed) {
+        // X-H264UC starts with a keyframe: its first PACSI carries the full
+        // stream layout.
+        let native = cfg.effects && native_camera();
+        if keyframe.swap(false, Ordering::Relaxed) || (native && !was_native) {
             enc.force_keyframe();
         }
+        was_native = native;
         let mut nals = match enc.encode(&f.data) {
             Ok(n) => n,
             Err(e) => {
@@ -1252,17 +1439,40 @@ fn send_loop(
             }
         };
         // Standout and Reporter: where the person is (Teams' cropping info).
-        if cfg.effects
-            && ost_vfx::presenter_mask()
-            && crop_sei_enabled()
-            && let Some(win) = person_window(&f.data, f.width, f.height)
-        {
-            insert_before_slice(&mut nals, crop_info_sei(win, CROP_CONFIDENCE));
-        }
+        let crop = (cfg.effects && ost_vfx::presenter_mask() && (native || crop_sei_enabled()))
+            .then(|| person_window(&f.data, f.width, f.height))
+            .flatten();
         let ts = line.timestamp();
-        for (payload, marker) in packetize(&nals, MTU) {
+        let (pt_now, packets) = if native {
+            let idr = nals
+                .iter()
+                .any(|n| n.first().is_some_and(|b| b & 0x1f == 5));
+            let layer = idr.then_some(NativeLayer {
+                width: f.width as u16,
+                height: f.height as u16,
+                bps: kbps * 1000,
+                fps,
+            });
+            let nals = NativePacsi::with_prefixes(&nals);
+            let mut packets = vec![(pacsi.build(&nals, layer, crop), false)];
+            packets.extend(packetize(&nals, MTU));
+            (super::webrtc_audio::PT_X_H264UC, packets)
+        } else {
+            if let Some(win) = crop.filter(|_| crop_sei_enabled()) {
+                insert_before_slice(&mut nals, crop_info_sei(win, CROP_CONFIDENCE));
+            }
+            (pt, packetize(&nals, MTU))
+        };
+        for (payload, marker) in packets {
             if out
-                .send(rtp_packet(pt, marker, line.take_seq(), ts, ssrc, &payload))
+                .send(rtp_packet(
+                    pt_now,
+                    marker,
+                    line.take_seq(),
+                    ts,
+                    ssrc,
+                    &payload,
+                ))
                 .is_err()
             {
                 return;
@@ -1360,6 +1570,81 @@ mod tests {
             CROP_CONFIDENCE,
         );
         assert_eq!(plain.len(), 1 + 29 + 1);
+    }
+
+    #[test]
+    fn stream_layout_follows_ms_h264pf() {
+        // The spec's first layer (section 4.1): 1280x720, 1.5 Mbit/s,
+        // 15 fps, a base layer; ours is PRID 0, constrained baseline.
+        let nal = stream_layout_sei(NativeLayer {
+            width: 1280,
+            height: 720,
+            bps: 1_500_000,
+            fps: 15,
+        });
+        assert_eq!(&nal[..3], &[0x06, 0x05, 42]);
+        assert_eq!(&nal[3..19], &STREAM_LAYOUT_UUID);
+        // PRID 0 present; P set, LDSize 16.
+        assert_eq!(&nal[19..29], &[1, 0, 0, 0, 0, 0, 0, 0, 0x01, 16]);
+        assert_eq!(
+            &nal[29..],
+            &[
+                0x05, 0x00, 0x02, 0xd0, 0x05, 0x00, 0x02, 0xd0, 0x00, 0x16, 0xe3, 0x60, 0x10, 0x02,
+                0x00, 0x00
+            ]
+        );
+    }
+
+    #[test]
+    fn a_native_access_unit_opens_with_its_pacsi() {
+        let mut p = NativePacsi::new(9);
+        let idr = vec![vec![0x67, 1], vec![0x68, 2], vec![0x65, 3]];
+        let layer = NativeLayer {
+            width: 640,
+            height: 360,
+            bps: 500_000,
+            fps: 15,
+        };
+        let crop = CropWindow {
+            left: 1,
+            right: 2,
+            top: 3,
+            bottom: 4,
+        };
+        let a = p.build(&idr, Some(layer), Some(crop));
+        // Type 30 at the AU's NRI; I set, PRID 0; N; TID 0, O, RR; X, T,
+        // A, S; DONC 0.
+        // Y: TL0PICIDX and IDRPICID, one on from the seed's.
+        assert_eq!(&a[..10], &[0x7e, 0xc0, 0x80, 0x07, 0xf2, 1, 0, 1, 0, 0]);
+        // The stream layout SEI, then the bitstream info with the
+        // cropping info in the same SEI.
+        let first = u16::from_be_bytes([a[10], a[11]]) as usize;
+        assert_eq!(first, 45);
+        let at = 12 + first;
+        let second = u16::from_be_bytes([a[at], a[at + 1]]) as usize;
+        assert_eq!(second, 1 + 2 + 18 + 29);
+        let sei = &a[at + 2..];
+        assert_eq!(sei.len(), second);
+        assert_eq!(&sei[..3], &[0x06, 5, 18]);
+        // ref_frm_cnt counted this reference picture; 3 NAL units.
+        assert_eq!(&sei[19..21], &[10, 3]);
+        assert_eq!(&sei[21..23], &[5, 27]);
+        // A P picture: no stream layout, DONC moved on by 3.
+        let b = p.build(&[vec![0x41, 7]], None, None);
+        assert_eq!(&b[..10], &[0x5e, 0x80, 0x80, 0x07, 0xe2, 2, 0, 1, 0, 3]);
+        assert_eq!(u16::from_be_bytes([b[10], b[11]]), 21);
+        assert_eq!(b[10 + 2 + 19], 11);
+    }
+
+    #[test]
+    fn native_slices_get_svc_prefixes() {
+        let nals = vec![vec![0x67, 1], vec![0x65, 2], vec![0x01, 3]];
+        let out = NativePacsi::with_prefixes(&nals);
+        assert_eq!(out.len(), 5);
+        assert_eq!(out[1], vec![0x6e, 0xc0, 0x80, 0x07, 0x20]);
+        assert_eq!(out[2], vec![0x65, 2]);
+        // A non-reference slice: no prefix fields, trailing bits only.
+        assert_eq!(out[3], vec![0x0e, 0x80, 0x80, 0x07, 0x80]);
     }
 
     #[test]
