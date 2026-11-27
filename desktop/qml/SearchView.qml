@@ -172,13 +172,14 @@ Rectangle {
     // search): everything with that person, found by their address, with
     // Person ▾ set to them; the box shows their name.
     property string personKeywords: ""
-    // Person ▾ cleared (its chip, Clear all, another tab): the box's words again.
-    onPersonChanged: if (!person) personKeywords = ""
+    // Person ▾ cleared (its chip, Clear all, another tab) or set to someone
+    // else: the box's words again.
+    onPersonChanged: if (!person || String(person.mail || person.name || "") !== personKeywords) personKeywords = ""
     function searchPerson(p) {
         query = p.name
         tab = "all"; clearFilters(false)
-        person = p
         personKeywords = p.mail || p.name
+        person = p
         run()
     }
     function setTab(t) { if (t === tab) return; tab = t; clearFilters(false); tabChanged2(t); run() }
