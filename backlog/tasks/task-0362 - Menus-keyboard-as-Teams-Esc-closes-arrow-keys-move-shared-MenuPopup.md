@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@task-0362-agent'
 created_date: '2026-11-27T18:19:00Z'
-updated_date: '2026-11-27T19:39:00Z'
+updated_date: '2026-11-27T19:45:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -61,6 +61,8 @@ PR #48 opened (live checks pending in its body).
 Codex review on #48 (3 findings, fixed in 528ef3fd, threads answered and resolved): row chords (Ctrl+C/Ctrl+A of the text menu) pick their row; focus goes to the accessible row item (wrapper for disabled rows); persistent split labels stay open on Enter.
 Live (linuxlt, OST Test 3, own test-harness build): --menu-keys-test 46 ok / 0 FAIL, incl. More list options (split + submenu) and a chat ··· menu (typeahead to Move to section, its submenu). Screens compared with Teams web shots (outline, split part, submenu row fill).
 Teams side effects of the research: on OST Test 3's web session, pressing s / u in a message menu saved/unsaved and marked unread one message in the 1:1 chat with OST Test 2 (Teams' accelerators); the menu shows "Save this message" again, so it ended unsaved.
+
+Codex 2nd round: Shift+Esc (Mark all as read) was taken as the menu's Esc; Teams closes the menu and still asks (checked). Fixed in c6f0fc80 (modified Escape closes the menu and passes to its shortcut); harness 47 ok / 0 FAIL.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
