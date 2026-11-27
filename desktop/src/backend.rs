@@ -6365,59 +6365,72 @@ async fn enrich_calls(client: &TeamsClient, calls: &mut [api::CallRecord]) {
     }
     // A group call's chat: its topic names it (Teams' groupCall, asked for
     // multi-party calls in a chat).
-    // Whether you're still in it is its roster (Teams' isUserMember). Each
-    // chat is asked once per session (four at a time: the chat service
-    // throttles a burst), so reopening Calls is immediate.
-    static CHATS: std::sync::Mutex<Option<HashMap<String, (String, bool)>>> =
-        std::sync::Mutex::new(None);
+    // Its topic is asked once per session; whether you're still in it is its
+    // roster (Teams' isUserMember): the chat roster OST keeps (dropped when
+    // the chat list says it changed), else read. Four at a time: the chat
+    // service throttles a burst.
+    static TOPICS: std::sync::Mutex<Option<HashMap<String, String>>> = std::sync::Mutex::new(None);
     let me = client.self_mri().unwrap_or_default().to_ascii_lowercase();
-    let known = |id: &str| {
-        CHATS
+    let topic_of = |id: &str| {
+        TOPICS
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .as_ref()
             .and_then(|m| m.get(id).cloned())
     };
-    let mut todo: Vec<String> = calls
+    let mut threads: Vec<String> = calls
         .iter()
         .filter(|c| c.call_type.eq_ignore_ascii_case("multiParty") && !c.thread_id.is_empty())
         .map(|c| c.thread_id.clone())
-        .filter(|t| known(t).is_none())
         .collect();
-    todo.sort();
-    todo.dedup();
-    let found: Vec<(String, (String, bool))> = futures::stream::iter(todo)
+    threads.sort();
+    threads.dedup();
+    let found: Vec<(String, String, bool)> = futures::stream::iter(threads)
         .map(|thread| {
             let me = me.clone();
+            let known_topic = topic_of(&thread);
             async move {
-                let topic = api::activity::thread_facts(client, &thread)
-                    .await
-                    .map(|f| f.topic)
-                    .unwrap_or_default();
+                let topic = match known_topic {
+                    Some(t) => t,
+                    None => api::activity::thread_facts(client, &thread)
+                        .await
+                        .map(|f| f.topic)
+                        .unwrap_or_default(),
+                };
+                let roster = match api::known_member_ids(&thread) {
+                    Some(ids) => Ok(ids),
+                    None => api::thread_member_ids(client, &thread).await,
+                };
                 // (unknown counts as in it, as Teams treats a chat it
                 // couldn't load)
-                let member = match api::thread_member_ids(client, &thread).await {
+                let member = match roster {
                     Ok(ids) => ids.iter().any(|i| i.to_ascii_lowercase() == me),
                     Err(e) => {
                         tracing::info!("call history: chat roster not read: {}", short_error(&e));
                         true
                     }
                 };
-                (thread, (topic, member))
+                (thread, topic, member)
             }
         })
         .buffer_unordered(4)
         .collect()
         .await;
     {
-        let mut m = CHATS.lock().unwrap_or_else(|e| e.into_inner());
+        let mut m = TOPICS.lock().unwrap_or_else(|e| e.into_inner());
         let m = m.get_or_insert_with(HashMap::new);
-        m.extend(found);
+        for (thread, topic, _) in &found {
+            m.insert(thread.clone(), topic.clone());
+        }
     }
+    let chats: HashMap<String, (String, bool)> = found
+        .into_iter()
+        .map(|(t, topic, member)| (t, (topic, member)))
+        .collect();
     for c in calls.iter_mut() {
-        if let Some((topic, member)) = known(&c.thread_id) {
-            c.title = topic;
-            c.member = member;
+        if let Some((topic, member)) = chats.get(&c.thread_id) {
+            c.title = topic.clone();
+            c.member = *member;
         }
     }
     // Unread missed calls.

@@ -16789,6 +16789,7 @@ Window {
         isContact: mri => (peopleApp.all || []).some(c => (c.mri || "").toLowerCase() === String(mri).toLowerCase())
         onSearchPeople: q => backend.searchPeople(q)
         onToast: text => window.showToast({ text: text, intent: "success" })
+        onToastError: text => window.showToast({ text: text, intent: "error" })
         onShowOrg: mri => { profileCard.show(mri); profileCard.tab = "organization" }
         onAddContact: p => peopleApp.addContactFor(p)
         // A group call's chat by its thread; a person's 1:1 chat.

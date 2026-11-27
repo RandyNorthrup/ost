@@ -37,6 +37,7 @@ Item {
     signal addContact(var person)
     signal showOrg(string mri)
     signal toast(string text)
+    signal toastError(string text)
 
     /// The type filter: "" (Teams' All), missed, incoming, outgoing or
     /// voicemail.
@@ -792,12 +793,26 @@ Item {
                 id: quickSend
                 anchors.right: parent.right; width: 32; height: 32; radius: theme.radius
                 color: qsh.hovered && quick.text.trim() ? theme.rowHover : "transparent"
+                // What's being sent, given back to the box if it fails.
+                property var sending: null
                 function go() {
                     const t = quick.text.trim()
                     if (!t || !details.c) return
                     const target = root.chatTarget(details.c)
+                    sending = { id: root.selectedId, text: quick.text }
                     quick.text = ""
                     root.quickMessage(target.mri, target.name, target.thread, t)
+                }
+                Connections {
+                    target: backend
+                    function onCallActionDone(op, ok) {
+                        if (op !== "quick" || !quickSend.sending) return
+                        const s = quickSend.sending
+                        quickSend.sending = null
+                        if (ok) return
+                        if (root.selectedId === s.id && !quick.text) quick.text = s.text
+                        root.toastError(qsTr("Message didn't send. Check your connection or try again later.", "messaging:k15klm2m"))
+                    }
                 }
                 FluentIcon { anchors.centerIn: parent; name: "send-20"; size: 20; color: theme.onFill(quickSend, quick.text.trim() ? theme.brand : theme.textSecondary) }
                 HoverHandler { id: qsh; cursorShape: Qt.PointingHandCursor }
