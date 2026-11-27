@@ -8747,12 +8747,41 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                     call.can_send_video(),
                     call.can_share(),
                     event,
+                    call.thread().to_string(),
                 ))
             }
             _ => None,
         };
-        if let Some((cap, can_video, can_share, event)) = admitted {
+        if let Some((cap, can_video, can_share, event, thread)) = admitted {
             let _ = qt.queue(move |mut this| {
+                // Joined by the meeting's ID while the lobby held us: its
+                // chat is known now.
+                if this.rust().call_thread_id.is_empty() && !thread.is_empty() {
+                    tracing::info!("the meeting's chat named on admission");
+                    this.as_mut()
+                        .set_call_thread_id(QString::from(thread.as_str()));
+                    this.as_mut().load_call_chat_members();
+                    // Its title too (the ID named none): the chat's topic,
+                    // as Teams then titles the meeting.
+                    let qt = this.qt_thread();
+                    runtime().spawn(async move {
+                        let topic = async {
+                            let client = TeamsClient::new().await?;
+                            api::tab_add::thread_properties(&client, &thread).await
+                        }
+                        .await
+                        .ok()
+                        .and_then(|p| p["topic"].as_str().map(str::to_string))
+                        .filter(|t| !t.is_empty());
+                        if let Some(topic) = topic {
+                            let _ = qt.queue(move |mut this| {
+                                if this.rust().call_thread_id.to_string() == thread {
+                                    this.as_mut().set_call_peer(QString::from(topic.as_str()));
+                                }
+                            });
+                        }
+                    });
+                }
                 this.as_mut().show_capability(cap, false);
                 this.as_mut().set_call_can_video(can_video);
                 this.as_mut().set_call_can_share(can_share);
@@ -13642,7 +13671,9 @@ impl qobject::Backend {
         if !self.rust().call_state.is_empty() {
             return;
         }
-        let Some(link) = outgoing::MeetingLink::parse(&join_url.to_string()) else {
+        // A short link: a meeting known by its ID (Join with an ID while
+        // the lobby holds us).
+        let Some(link) = outgoing::MeetingLink::parse_join(&join_url.to_string()) else {
             self.as_mut().set_status_text(QString::from(tr(
                 "Looks like the meeting URL is incorrect. Please check the URL and try again.",
             )));
@@ -28955,6 +28986,12 @@ impl qobject::Backend {
                                 tracing::warn!("join with an ID: {e:#}");
                                 anyhow::anyhow!("We couldn't find a meeting with that ID and passcode.")
                             })?;
+                        // The lobby holds us, so no thread yet: joined by
+                        // the meeting's ID (its short link), as Teams does.
+                        if link.thread_id.is_empty() {
+                            let url = link.meeting_data.as_ref().and_then(|d| d["meetingUrl"].as_str()).unwrap_or_default().to_string();
+                            return Ok(json!({ "joinUrl": url, "subject": if subject.is_empty() { "Meeting".to_string() } else { subject } }));
+                        }
                         let enc = |t: &str| t.replace(':', "%3a").replace('@', "%40");
                         let ctx = match (&link.tenant_id, &link.organizer_id) {
                             (Some(t), Some(o)) => format!("?context=%7b%22Tid%22%3a%22{t}%22%2c%22Oid%22%3a%22{o}%22%7d"),

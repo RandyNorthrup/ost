@@ -1292,7 +1292,14 @@ async fn join_conversation_only(
     params: &ConversationCallParams<'_>,
     opts: &CreateOptions<'_>,
 ) -> Result<(String, Option<String>)> {
-    join_conversation_with(http, epconv_url, params, opts, None)
+    // A meeting known only by its ID: joined by its meetingData (Teams'
+    // joinType MeetingData), no thread.
+    let by_code = params
+        .thread_id
+        .is_empty()
+        .then_some(opts.meeting_data.as_ref())
+        .flatten();
+    join_conversation_with(http, epconv_url, params, opts, by_code)
         .await
         .map(|(c, l, _)| (c, l))
 }
@@ -1456,13 +1463,14 @@ async fn join_conversation_with(
 /// meeting ID and passcode (`meetingData`, as Teams' calling stack sends it
 /// for joinType MeetingData; no thread, no meetingInfo), read for the
 /// meeting's thread, organizer and tenant, then left. Answers (thread id,
-/// organizer id, tenant id).
+/// organizer id, tenant id, subject); no thread while the lobby holds us
+/// (the meeting names it only once we're let in).
 pub async fn resolve_meeting_code(
     http: &reqwest::Client,
     epconv_url: &str,
     params: &ConversationCallParams<'_>,
     meeting_data: &serde_json::Value,
-) -> Result<(String, Option<String>, Option<String>, String)> {
+) -> Result<(Option<String>, Option<String>, Option<String>, String)> {
     let opts = CreateOptions {
         group_chat: true,
         meeting_message_id: None,
@@ -1506,7 +1514,6 @@ pub async fn resolve_meeting_code(
             .send()
             .await;
     }
-    let thread = thread.context("The meeting's conversation named no thread")?;
     Ok((thread, organizer, tenant, subject))
 }
 
@@ -1740,6 +1747,12 @@ async fn create_call_with(
     if let Some(md) = meeting_data {
         tracing::info!("the call carries the meeting's meetingData");
         payload["meetingData"] = md;
+        // Known only by its ID (no thread yet): no group chat or
+        // meetingInfo, as Teams' MeetingData join.
+        if params.thread_id.is_empty() {
+            payload["groupChat"] = serde_json::Value::Null;
+            payload["meetingInfo"] = serde_json::Value::Null;
+        }
     }
     // The call request failed after we joined the conversation: leave it,
     // so no participant without a call stays behind.
