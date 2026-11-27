@@ -119,17 +119,36 @@ fn keyring_disabled() -> bool {
     std::env::var_os("OST_NO_KEYRING").is_some()
 }
 
-/// This profile's keyring entry. With `OST_NO_KEYRING=1` there is one
-/// only while the profile's config file says its tokens are in the
-/// keyring: another run of the profile without the variable (OST,
-/// `teams-cli`) moved the file's tokens there, and this run must still
-/// find them, then put them back in the file it was asked to use
-/// (TASK-0368). Otherwise such a run never contacts the keyring.
+/// This profile's keyring entry, for signing out. With `OST_NO_KEYRING=1`
+/// there is one only while the profile's tokens are in the keyring
+/// (another run of the profile without the variable, such as OST or
+/// `teams-cli`, moved them there; TASK-0368). Otherwise such a run never
+/// contacts the keyring.
 fn keyring_entry(tokens_in_keyring: impl FnOnce() -> bool) -> Option<keyring::Entry> {
     if keyring_disabled() && !tokens_in_keyring() {
         return None;
     }
     keyring::Entry::new(KEYRING_SERVICE, &keyring_account()).ok()
+}
+
+/// This profile's keyring entry, opened on first use: a load or save asks
+/// for it only when it needs the keyring. An `OST_NO_KEYRING` run opens it
+/// only when the config it just read names the keyring (another run moved
+/// the tokens there), so it reads them from there, then puts them back in
+/// the file at its next save (TASK-0368).
+struct LazyKeyring(std::cell::OnceCell<Option<keyring::Entry>>);
+
+impl LazyKeyring {
+    fn new() -> Self {
+        Self(std::cell::OnceCell::new())
+    }
+
+    fn get(&self) -> Option<&dyn SecretStore> {
+        self.0
+            .get_or_init(|| keyring::Entry::new(KEYRING_SERVICE, &keyring_account()).ok())
+            .as_ref()
+            .map(|e| e as &dyn SecretStore)
+    }
 }
 
 /// Whether the config file at `path` says the tokens are in the keyring.
@@ -314,9 +333,14 @@ impl Config {
     /// this run's memory, or the file when opted in).
     pub fn load() -> Result<Self> {
         let path = Self::config_path()?;
-        let entry = keyring_entry(|| on_disk_in_keyring(&path));
-        let store = entry.as_ref().map(|e| e as &dyn SecretStore);
-        Self::load_from(&path, store, keyring_disabled(), &keyring_account())
+        let keyring = LazyKeyring::new();
+        Self::load_locked(
+            &path,
+            &|| keyring.get(),
+            keyring_disabled(),
+            &keyring_account(),
+            None,
+        )
     }
 
     fn load_from(
@@ -325,17 +349,18 @@ impl Config {
         no_keyring: bool,
         account: &str,
     ) -> Result<Self> {
-        Self::load_locked(path, store, no_keyring, account, None)
+        Self::load_locked(path, &|| store, no_keyring, account, None)
     }
 
     /// [`Config::load_from`]. Reading needs no lock; moving the tokens
     /// (and finding them gone from the keyring the file names, which a
     /// save in progress elsewhere can show) starts again under the
     /// profile's lock (`lock`), so the file is read again and nothing
-    /// another run writes meanwhile is lost.
-    fn load_locked(
+    /// another run writes meanwhile is lost. `store` opens the keyring
+    /// when this read of the file needs it.
+    fn load_locked<'s>(
         path: &std::path::Path,
-        store: Option<&dyn SecretStore>,
+        store: &dyn Fn() -> Option<&'s dyn SecretStore>,
         no_keyring: bool,
         account: &str,
         lock: Option<&ProfileLock>,
@@ -355,7 +380,7 @@ impl Config {
             // where the config says they are. With OST_NO_KEYRING=1 that is
             // a keyring another run of this profile moved them to: they
             // move back to the file at this run's next save.
-            match store.map(|s| s.get()) {
+            match store().map(|s| s.get()) {
                 Some(Ok(Some(json))) => {
                     config.apply_secrets(
                         serde_json::from_str(&json).context("Keyring entry is not valid")?,
@@ -396,7 +421,7 @@ impl Config {
                 // and the plaintext copy goes.
                 let secrets = config.secrets();
                 let mut on_disk = config.clone_settings();
-                match store.map(|s| s.set(&secrets.to_json())) {
+                match store().map(|s| s.set(&secrets.to_json())) {
                     Some(Ok(())) => {
                         on_disk.tokens_in_keyring = true;
                         note_storage(TokenStorage::Keyring);
@@ -433,16 +458,31 @@ impl Config {
     pub fn save(&self) -> Result<()> {
         let dir = Self::config_dir()?;
         create_private_dir(&dir)?;
-        let path = Self::config_path()?;
-        let entry = keyring_entry(|| on_disk_in_keyring(&path));
-        let store = entry.as_ref().map(|e| e as &dyn SecretStore);
-        self.save_to(&path, store, keyring_disabled(), &keyring_account())
+        let keyring = LazyKeyring::new();
+        self.save_with(
+            &Self::config_path()?,
+            &|| keyring.get(),
+            keyring_disabled(),
+            &keyring_account(),
+        )
     }
 
     fn save_to(
         &self,
         path: &std::path::Path,
         store: Option<&dyn SecretStore>,
+        no_keyring: bool,
+        account: &str,
+    ) -> Result<()> {
+        self.save_with(path, &|| store, no_keyring, account)
+    }
+
+    /// [`Config::save_to`], opening the keyring (`store`) only when this
+    /// save needs it.
+    fn save_with<'s>(
+        &self,
+        path: &std::path::Path,
+        store: &dyn Fn() -> Option<&'s dyn SecretStore>,
         no_keyring: bool,
         account: &str,
     ) -> Result<()> {
@@ -463,7 +503,7 @@ impl Config {
         if no_keyring {
             to_file(&mut on_disk, secrets);
         } else {
-            match store.map(|s| s.set(&secrets.to_json())) {
+            match store().map(|s| s.set(&secrets.to_json())) {
                 Some(Ok(())) => {
                     on_disk.tokens_in_keyring = true;
                     memory_set(account, None);
@@ -491,7 +531,7 @@ impl Config {
         }
         let content = toml::to_string_pretty(&on_disk).context("Failed to serialize config")?;
         write_private(path, content.as_bytes())?;
-        if drop_keyring_copy && let Some(Err(e)) = store.map(|s| s.delete()) {
+        if drop_keyring_copy && let Some(Err(e)) = store().map(|s| s.delete()) {
             tracing::warn!("Could not remove the keyring's copy of the sign-in: {e}");
         }
         Ok(())
@@ -1348,6 +1388,30 @@ mod storage_tests {
         assert!(on_disk(&path).contains("refresh-secret") && !on_disk_in_keyring(&path));
         let back = Config::load_from(&path, None, true, &account).unwrap();
         assert_eq!(back.refresh_token.as_deref(), Some("refresh-secret"));
+    }
+
+    #[test]
+    fn no_keyring_runs_open_the_keyring_only_when_the_config_they_read_names_it() {
+        // The keyring is chosen from the same read of the file that the
+        // tokens come from, not from an earlier look at it.
+        let path = dir("lazy");
+        let account = format!("test-lazy-{}", uuid::Uuid::new_v4());
+        let keyring = FakeStore::new(true);
+        let opened = std::cell::Cell::new(0);
+        let store = || {
+            opened.set(opened.get() + 1);
+            Some(&keyring as &dyn SecretStore)
+        };
+        signed_in()
+            .save_with(&path, &store, true, &account)
+            .unwrap();
+        let c = Config::load_locked(&path, &store, true, &account, None).unwrap();
+        assert_eq!(c.refresh_token.as_deref(), Some("refresh-secret"));
+        assert_eq!(opened.get(), 0, "an OST_NO_KEYRING run opened the keyring");
+        Config::load_from(&path, Some(&keyring), false, &account).unwrap();
+        let c = Config::load_locked(&path, &store, true, &account, None).unwrap();
+        assert_eq!(c.refresh_token.as_deref(), Some("refresh-secret"));
+        assert_eq!(opened.get(), 1);
     }
 
     #[test]
