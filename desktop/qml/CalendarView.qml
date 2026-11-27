@@ -482,6 +482,8 @@ Item {
     /// The event page; for your series' event, which events it edits
     /// ("occurrence", "following", "series"; the card's Edit menu).
     function openPage(e, scope) {
+        // (someone's free/busy has no event to open)
+        if (!e || e.free_busy || !e.id) return
         const ev = withTeam(e)
         formLayer.visible = true
         form.detail = ({})
@@ -1074,7 +1076,9 @@ Item {
                     onClicked: root.openAddCalendar()
                 }
                 Repeater {
-                    model: root.paneGroups.filter(g => g.calendars.some(c => root.showAllCalendars || root.calendarOn(c)))
+                    // (My calendars always shows, with Calendar, so the
+                    // default calendar can be ticked again)
+                    model: root.paneGroups.filter(g => g.kind === "mine" || g.calendars.some(c => root.showAllCalendars || root.calendarOn(c)))
                     Column {
                         id: grp
                         required property var modelData
@@ -1111,7 +1115,7 @@ Item {
                             Accessible.description: grp.open ? qsTr("Expanded") : qsTr("Collapsed")
                         }
                         Repeater {
-                            model: grp.open ? grp.modelData.calendars.filter(c => root.showAllCalendars || root.calendarOn(c)) : []
+                            model: grp.open ? grp.modelData.calendars.filter(c => root.showAllCalendars || c.is_default || root.calendarOn(c)) : []
                             CalRow {
                                 required property var modelData
                                 topPadding: 1
@@ -2054,6 +2058,7 @@ Item {
                     font.family: theme.font; font.pixelSize: 21; font.weight: Font.DemiBold; color: theme.pick(theme.text, "#ADADAD", "#FFFFFF")
                 }
                 NavButton {
+                    visible: !details.ev.free_busy
                     anchors.right: parent.right; y: 2; width: 24; height: 24; iconSize: 16
                     icon: "open-20"; tip: qsTr("View event")
                     onClicked: { const e = details.ev; details.close(); root.openPage(e) }
