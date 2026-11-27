@@ -123,3 +123,13 @@ Microsoft 365 services go to Microsoft through the
 [Microsoft Security Response Center](https://msrc.microsoft.com/report).
 Problems in a distribution's Qt, OpenSSL or other system libraries go to
 that project or distribution.
+
+## Acknowledgements
+
+Thank you to the people who reported security problems and helped fix them:
+
+- **[Serph91P](https://github.com/Serph91P)** reported that links in message
+  cards could open any URI scheme
+  ([#34](https://github.com/RandyNorthrup/ost/issues/34)), then hardened local
+  file opening and the live event key token
+  ([#45](https://github.com/RandyNorthrup/ost/pull/45)).
