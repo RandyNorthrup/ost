@@ -2606,6 +2606,20 @@ pub fn escalated_to(event: &serde_json::Value) -> Option<String> {
     (thread.starts_with("19:") && thread.ends_with("@thread.v2")).then(|| thread.to_string())
 }
 
+/// Whether a conversation (a join's response, or a conversationUpdate
+/// event) says it is a group call, not a meeting: `state.conversationType`
+/// "groupCall" (Teams' escalated 1:1 call, a group chat's call).
+pub fn is_group_call(v: &serde_json::Value) -> bool {
+    [
+        "/state/conversationType",
+        "/conversationResponse/state/conversationType",
+        "/body/state/conversationType",
+    ]
+    .iter()
+    .find_map(|p| v.pointer(p).and_then(|t| t.as_str()))
+    .is_some_and(|t| t.eq_ignore_ascii_case("groupCall"))
+}
+
 /// Whether a call event says the call is over (remote hang-up, cancel
 /// while ringing, or the conversation ending).
 pub fn is_call_end_event(json: &str) -> bool {
@@ -2762,9 +2776,20 @@ mod tests {
         other["callAgentPath"] = "subscription/conversationUpdate/".into();
         assert_eq!(escalated_to(&other), None);
         // A meeting's chat isn't a group call's.
-        let mut meeting = ev;
+        let mut meeting = ev.clone();
         meeting["body"]["activeModalities"]["groupChat"]["threadId"] = "19:x@thread.tacv2".into();
         assert_eq!(escalated_to(&meeting), None);
+        // The later update names the conversation's type.
+        assert!(!is_group_call(&ev));
+        let mut typed = ev;
+        typed["body"]["state"]["conversationType"] = "groupCall".into();
+        assert!(is_group_call(&typed));
+        assert!(is_group_call(
+            &serde_json::json!({ "conversationResponse": { "state": { "conversationType": "groupCall" } } })
+        ));
+        assert!(!is_group_call(
+            &serde_json::json!({ "state": { "conversationType": "meeting" } })
+        ));
     }
 
     #[test]
