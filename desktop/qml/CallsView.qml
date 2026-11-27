@@ -28,8 +28,9 @@ Item {
     signal openChatWith(string mri, string name)
     signal callPerson(string oid, string name)
     signal searchPeople(string query)
-    /// A group call's chat (by thread), or a 1:1 chat with `mri`.
-    signal openChat(string mri, string name, string threadId)
+    /// A group call's chat (by thread), a 1:1 chat with `mri`, or (a group
+    /// call outside a chat) a new chat with its people ([{mri, name}]).
+    signal openChat(string mri, string name, string threadId, var people)
     /// Call back: the person, or the group call's chat.
     signal startCall(string mri, string name, string threadId, bool video)
     signal quickMessage(string mri, string name, string threadId, string text)
@@ -149,8 +150,8 @@ Item {
     function isSelf(c) { return !!root.myMri && c.peer_mri === root.myMri }
     /// The person (or chat) Call back, Chat and the Details buttons reach.
     function chatTarget(c) {
-        return c.is_group ? { mri: "", name: names(c, history.width).title, thread: c.thread_id }
-            : { mri: c.peer_mri || "", name: c.peer_name || "", thread: "" }
+        return c.is_group ? { mri: "", name: names(c, history.width).title, thread: c.thread_id || "", people: people_(c) }
+            : { mri: c.peer_mri || "", name: c.peer_name || "", thread: "", people: [] }
     }
     function openDetails(c) {
         root.selectedId = c.message_id
@@ -174,7 +175,7 @@ Item {
     function act(key, c) {
         const t = chatTarget(c)
         if (key === "callback") root.startCall(t.mri, t.name, t.thread, false)
-        else if (key === "chat") root.openChat(t.mri, t.name, t.thread)
+        else if (key === "chat") root.openChat(t.mri, t.name, t.thread, t.people)
         else if (key === "remove") { if (root.selectedId === c.message_id) root.selectedId = ""; backend.removeCall(c.message_id) }
         else if (key === "speeddial") root.saveSpeedDial(root.speedDial.concat([{ id: oidOf(c.peer_mri), name: c.peer_name }]))
         else if (key === "contact") root.addContact({ mri: c.peer_mri, name: c.peer_name })
@@ -694,10 +695,14 @@ Item {
         // someone to chat with; no calls to yourself.
         readonly property bool self_: !!c && root.isSelf(c)
         readonly property bool canChat: !!c && (c.is_group ? (c.participants || []).length > 0 : !!c.peer_mri)
-        readonly property bool canCall: !!c && !self_ && (c.is_group ? (c.participants || []).length > 0 : !!c.peer_mri)
+        // (a group call outside a chat has no conversation to call or write
+        // into from here: its Chat starts a new chat with its people)
+        readonly property bool canCall: !!c && !self_ && (c.is_group ? (c.participants || []).length > 0 && !!c.thread_id : !!c.peer_mri)
         // Teams' quick message: hidden on a call to yourself and in a chat
         // you're no longer in.
-        readonly property bool canMessage: canChat && !self_ && (!c.is_group || !c.thread_id || !!c.member)
+        readonly property bool canMessage: canChat && !self_ && (!c.is_group || (!!c.thread_id && !!c.member))
+        // A draft is for this call's person or chat only.
+        onCChanged: quick.text = ""
         Text { x: 20; y: 15; text: qsTr("Details", "calling:k62e0gpus"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text }
         Rectangle {
             id: detClose
@@ -747,7 +752,7 @@ Item {
                         enabled: detBtn.modelData.on
                         onTapped: {
                             const t = root.chatTarget(details.c)
-                            if (detBtn.modelData.key === "chat") root.openChat(t.mri, t.name, t.thread)
+                            if (detBtn.modelData.key === "chat") root.openChat(t.mri, t.name, t.thread, t.people)
                             else if (detBtn.modelData.key === "org") root.showOrg(details.c.peer_mri)
                             else root.startCall(t.mri, t.name, t.thread, detBtn.modelData.key === "video")
                         }
@@ -1135,6 +1140,9 @@ Item {
     function menuForTest(i) { testHover = i; list.positionViewAtIndex(i, ListView.Contain); testRow = list.itemAtIndex(i); if (testRow) testRow.openMenu(); return menuItems(shown[i]).map(e => e.label) }
     function closeMenusForTest() { if (testRow) testRow.closeMenu(); testRow = null; testHover = -1 }
     function detailsForTest(i) { openDetails(shown[i]) }
+    function quickForTest() { return quick.text }
+    function setQuickForTest(t) { quick.text = t }
+    function detailsButtonsForTest() { return { chat: details.canChat, call: details.canCall, message: details.canMessage } }
     function filterForTest(text, type) { filtering = true; nameBoxField.text = text; filterType = type }
     function unfilterForTest() { closeFilter.go() }
     function reportForTest(i) { reportDialog.start(shown[i]) }
