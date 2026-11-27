@@ -17540,6 +17540,8 @@ Window {
     /// (its bot or connector) and, for a bot, start an @mention.
     property var pendingUse: null
     function useAppIn(app, place) {
+        // A channel meeting (offered only for apps that work in channels)
+        // takes the app in its channel.
         const channel = place.kind === "channel" || !!place.channelMeeting
         rail.current = "chat"
         backend.selectChat(place.id, place.name)

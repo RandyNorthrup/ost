@@ -149,10 +149,15 @@ FluentSurface {
         send({ command: "updateTelemetryManagerContext", context: { context: { Scenario: "ChatPane" } } })
     }
     property bool promptSent: false
+    /// A file's data source went to the page (Summarize, Recap).
+    property bool fileSent: false
     function sendPrompt() {
         if (promptSent || (!source && !question) || state_ === "" || state_ === "loading") return
         promptSent = true
         if (question) {
+            // (No file: a chat Summarize opened before drops its file;
+            // OneDrive's fresh pane sends no data sources at all.)
+            if (fileSent) { send({ command: "updateDataSources", dataSources: [] }); fileSent = false }
             send({ command: "updateChatInput" })
             send({ command: "updateCustomPrompts", customPrompts: questionPrompts() })
             send({ command: "clearInputAreaText", force: true })
@@ -161,6 +166,7 @@ FluentSurface {
             return
         }
         send({ command: "updateDataSources", dataSources: [source] })
+        fileSent = true
         send({ command: "updateChatInput", chatInput: { placeholder: "Ask a question about \"" + fileName + "\"", isDisabled: false } })
         send({ command: "updateCustomPrompts", customPrompts: prompts() })
         send({ command: "setPrompt", prompt: prompt, autoSubmit: true })
@@ -183,7 +189,7 @@ FluentSurface {
             if (pane.state_ === "ready" || pane.state_ === "asked") { pane.state_ = "ready"; pane.sendStart(); pane.sendPrompt(); return }
             pane.mySite = v.my_site; pane.webUrl = v.web_url || ""; pane.configure = v.configure || ({})
             pane.channelId = "ChatODSP-" + Qt.md5(String(Math.random()) + Date.now()).replace(/^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/, "$1-$2-$3-$4-$5")
-            pane.state_ = "loading"; pane.framed = false
+            pane.state_ = "loading"; pane.framed = false; pane.fileSent = false
             web.loadHtml("<!doctype html><html lang=\"en-us\"><head><meta charset=\"utf-8\"><title>Copilot</title>"
                          + "<style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:transparent}</style></head><body></body></html>",
                          "https://" + pane.mySite + "/_layouts/15/ostchathost.aspx")

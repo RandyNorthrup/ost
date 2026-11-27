@@ -125,10 +125,13 @@ Popup {
         const out = [], seen = {}
         for (const m of meetings) {
             if (m.chat_id) {
-                if (!known[m.chat_id] || seen[m.chat_id]) continue
+                // (Teams lists a meeting whose chat hasn't started yet too:
+                // its resolver marks it isConversationInitialized false.)
+                if (seen[m.chat_id]) continue
                 seen[m.chat_id] = true
-                out.push({ kind: "meeting", id: m.chat_id, name: m.title, sub: "" })
-            } else if (channelIds[m.channel_id]) {
+                out.push({ kind: "meeting", id: m.chat_id, name: m.title, sub: "", initialized: !!known[m.chat_id] })
+            } else if (channelIds[m.channel_id] && places.team) {
+                // A channel meeting takes the app as its channel does.
                 const t = channelIds[m.channel_id]
                 out.push({ kind: "meeting", id: m.channel_id, messageId: m.message_id, name: m.title, sub: "", teamId: t.id, teamThread: t.thread_id, channelMeeting: true })
             }
