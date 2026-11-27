@@ -3,7 +3,9 @@
 Research for adding personal Microsoft account (MSA: outlook.com, hotmail.com,
 live.com) support to OST. Compiled 2026-11-25 from Microsoft Support, Microsoft
 Learn and Microsoft Q&A. Each item has a source. Nothing here was checked
-against a live client; see [Verify on real Teams](#verify-on-real-teams).
+against a live client at first; the items in
+[Verify on real Teams](#verify-on-real-teams-checked-2026-11-27) were then
+checked on real Teams on 2026-11-27.
 
 ## Naming and doc state
 
@@ -259,57 +261,207 @@ For reference only, in case Teams still shows Communities when OST ships:
 - **Shared:** the shell, chat compose, the meeting stage, devices, appearance,
   accessibility and the multi-account switcher.
 
-## Verify on real Teams
+## Verify on real Teams (checked 2026-11-27)
 
-Check these on winpc with a personal test account next to ost-test1:
+Checked on 2026-11-27 (TASK-0287) on Teams desktop `26304.1207.5384.858` on
+testpc2 (Windows 11), signed in as OST Test 2, with the personal account OST
+Personal 2 added through the profile menu (Add another account > email >
+"Use your password instead" > password > "Use this account everywhere on your
+device": **Microsoft apps only**). Where the desktop couldn't show something,
+teams.live.com (web client `1415/26101516645`) was used and is named.
+Screenshots are kept outside the repo (coordinator PC,
+`~/.local/share/ost-remaining/personal/`, files `ac2-*`). Status: **Verified**,
+**Corrected** or **Partly verified** (with the reason).
 
-1. The exact left rail for a personal account, and whether Communities still
-   shows in late 2026 (creation blocked).
-2. The profile menu and account switcher with one work and one personal
-   account. Do they run in separate windows or one window? What does pinning
-   look like? Where does the other-account badge appear?
-3. Whether a second personal account can be added, and what error Teams shows.
-4. Every Settings page and toggle for a personal account, especially Plans and
-   upgrades, People, Files and links, and Privacy.
-5. The Meet app layout: Meeting links list, Scheduled list, recent calls, Join
-   with ID.
-6. Whether the Calendar shows the Outlook.com calendar (two-way?) or only
-   meetings made in Teams.
-7. The meeting link format and passcode for a personal meeting, and how
-   `teams.live.com/meet/...` links open in the app.
-8. The 60-minute meeting limit: warning timing and text, the upsell, what ends.
-   Does the 20-participant limit for chat calls still hold?
-9. The chat request UI on desktop (Preview, Accept, Block) and what the sender
-   sees while it's pending.
-10. Chat between a personal account and ost-test1: the External label, which
-    buttons are disabled, and file and photo behavior in both directions.
-11. Whether the Skype Dial Pad entry still exists after Skype Credit ended in
-    May 2026.
-12. Desktop invite flow (Invite to Teams link and email/phone invites), plus the
-    QR code and join-link toggle for group chats on desktop.
-13. Live captions, translated captions or transcripts for free and subscribed
-    accounts. Is Together mode available?
-14. The Files tab in a chat, and whether OneDrive is browsable on desktop.
-15. What Copilot entry points appear for a free account (an upsell or nothing).
-16. Missed-activity email settings and notification settings for a personal
-    account.
+1. **Left rail. Corrected.** Personal: Chat, Meet, People, **Copilot**,
+   Communities, Calendar, Activity; at the bottom Upgrade (diamond) and
+   "Activity in other accounts and orgs" (with a count badge). No Teams,
+   Calls, OneDrive or Apps. **Communities still shows** (27 November 2026)
+   with the banner "Communities is retiring soon. Use a group chat to stay
+   connected." (Learn more, Start chat) and a "Communities is retiring
+   soon" dialog (Learn more, Ok). "Create your own" and the templates no
+   longer create a community: they open "Create a group chat" ("Communities
+   is retiring soon. Create a group chat to connect, share and
+   collaborate.", Learn more, Create).
+2. **Profile menu and switcher. Verified, with details.** Each account has
+   **its own window** (titles `<view> | Personal | <email> | Microsoft Teams`
+   and `<view> | <org name> | <email> | Microsoft Teams`) and its own taskbar
+   button (the personal one has the Teams personal icon). Once a second
+   account exists the work window title gains the org name. Teams also keeps
+   a hidden page per account in the background. Work profile menu: header
+   with the org name ("Secure Coast Netw…") and Sign out, the account card
+   (photo, name, email, View account), Available, Pause notifications, Set
+   work location, Set status message, then the other account (avatar, "OST
+   Personal 2", email) and "Add another account". Personal profile menu:
+   header "Personal" and Sign out, the card (name, email, "My Microsoft
+   account"), Available, Set status message (no Pause notifications or work
+   location), "Switch to account ost-test2@…" and "Add another account".
+   Choosing the other account opens or focuses its window. The
+   other-account badge is the "Activity in other accounts and orgs" button
+   at the bottom of the rail; its flyout lists each other account (avatar
+   with count, name, email, a Switch button and a pin button) and the kind
+   of activity ("Unread chat messages"). Pinning only filled the pin icon;
+   no extra rail entry appeared in the personal window.
+3. **Second personal account. Verified.** Teams lets you go through the
+   sign-in, then shows "Multiple personal accounts aren't supported in Teams
+   yet. To use another personal account, open Teams on the web." with "Open
+   Teams on the web" and Cancel.
+4. **Settings. Verified.** Pages: General, Appearance, Chats, Notifications
+   and activity, Accounts and orgs, Privacy, Accessibility, Devices, People,
+   Files and links, Plans and upgrades, Teams Insider, About Teams.
+   - General: Auto-start Teams, Open application in background, open chats
+     and meetings in the main or a new window.
+   - Appearance: Theme ("This will apply to all your Teams apps", Follow
+     operating system theme), Always use dark theme for calls and meetings,
+     a None…Dark radio row, Show app names, Auto collapse app bar.
+   - Chats: Show message previews, Show time stamps, Filters, Comfy or
+     Compact, Read receipts.
+   - Notifications and activity: Mute all notifications (except calls and
+     meetings), Windows Do not disturb, Sound (with Preview sound), Display
+     (Test notification, previews, during calls, flash taskbar); Chat (Chat
+     message notifications "Show in banner", @Mentions and Likes and
+     reactions "Show in Activity and banner"); Meetings (Meeting start
+     notifications, Show meeting join bar, Meeting chat notifications "Mute
+     until I join or send a message", Meet now start notifications off).
+   - Accounts and orgs: each account (name, email, Manage account link)
+     under "Personal" and the org name.
+   - Privacy: **Manage contact information** opens "Manage how people can
+     find you" with one switch for the profile name (on) and one for the
+     email (**off** on both new accounts, although onboarding posted
+     `scd/searchability` with `searchable: true`); Manage who can add you to
+     groups (Anyone); Manage who can call you (Your contacts); Turn off my
+     camera and mic when my screen locks; Extended diagnostics data; Manage
+     profile; Optional connected experiences; Experiences that analyze your
+     content.
+   - Accessibility: Sign language mode, Muted notification, single pointer
+     controls.
+   - Devices: speaker, microphone, Automatically adjust mic sensitivity,
+     Sync device buttons, Noise suppression, Video.
+   - People: Manage (contact sync).
+   - Files and links: download location with Change, Always ask where to
+     save, Always open web links in (browser list).
+   - Plans and upgrades: "Microsoft 365 plan" (30 hours for each meeting
+     and call, up to 300 participants, 1 TB storage (2 TB shared),
+     productivity apps with Copilot, record calls and meetings, more), an
+     Upgrade button, "Already have a subscription?", and "Your free
+     benefits": 1 hour for each meeting and call, up to 100 participants,
+     5 GB OneDrive.
+   - Teams Insider: Join, Learn more, Terms and Conditions.
+5. **Meet app. Verified.** Left list: Meeting links, Schedule a meeting,
+   Calls. Meeting links page: "Create a meeting link", "Join with a meeting
+   ID", "Quickly create, save, and share links with anyone." Create a
+   meeting link asks "Give your meeting a title", then "Create and copy
+   link" (toast "Link copied to clipboard"); the list item shows the title
+   and "Created just now" with More options, Edit meeting name, Join and
+   Share link.
+6. **Calendar. Verified: two-way with Outlook.com.** The Calendar app has
+   Join with an ID, Meet now and New meeting over a work-week grid. An
+   event created in Outlook.com (outlook.live.com) appeared in the Teams
+   calendar, and a meeting saved from Teams' New meeting form appeared in
+   Outlook.com. Teams reads the calendar through the middle tier
+   (`teams.live.com/api/mt/v2.0/me/calendars/default/calendarView`); the
+   Graph token of Teams free can't read calendars. The New meeting form
+   says "With your current Teams plan, you get up to 60 minutes per meeting
+   with up to 100 participants." and "For non-Teams contacts, they will
+   receive an email invite to the meeting with a join link.", and has
+   Title, Invite attendees, start and end date and time, All day, Time
+   zone, recurrence, Location, Meeting options and a details editor.
+7. **Meeting link. Verified (format), partly verified (opening).** Link:
+   `https://teams.live.com/meet/9364181390928?p=wZiZR41JQZUcjwfkBW`, a
+   13-digit id and an 18-character passcode. Join from Meet opens the
+   pre-join screen in a separate "Meeting with …" window with Computer
+   audio, Phone audio and Don't use audio. Opening the link in a browser
+   that is signed in to teams.live.com goes to the pre-join screen of the
+   web client. How a pasted `teams.live.com/meet/…` link opens in the
+   desktop app was not tried.
+8. **60-minute limit. See the result below.** The authz response carries
+   `maxMeetingDurationMinutes: 60` and `maxMeetingParticipants: 100`. The
+   20-participant limit for calls from a chat can't be tested with two
+   accounts.
+9. **Chat request UI. Partly verified.** Checked the request a work user
+   gets from a personal user (desktop, OST Test 2): the chat sits at the top
+   of the list in bold; opening it shows "OST Personal 2
+   (ost-personal2-0238@outlook.com) wants to chat with you", a box "This
+   person is from outside your organization" (spam and phishing warning,
+   "Note: This person is not sharing their email in Teams. To be safe,
+   preview their messages."), Block and Accept, and "By selecting Accept,
+   you agree to receive future communications and share some account
+   information such as your name and status with OST Personal 2
+   (External)." The sender sees a normal chat with the note "When you start
+   this chat, your email address will be visible to the recipient to help
+   build trust on Teams." A personal-to-personal request was not seen: with
+   email discovery on, Teams still answered NotFound for both personal
+   accounts' emails during the session (Invite was offered instead).
+10. **Chat with ost-test accounts. Verified (started by the personal
+    user).** Work side: header "OST Personal 2" with an **External** badge,
+    "Calling isn't available in this chat." on the call button, a banner
+    "OST Personal 2 is outside your org. Some Teams features aren't
+    available in this chat.", "Replying to external participants." over
+    the compose box, and **no Attach button** (only formatting, emoji, Loop
+    and Actions and apps); the window title says "(External unfamiliar)".
+    Personal side: header with the work user's name and email, Chat, Files
+    and Photos tabs, video and audio call buttons disabled ("Calling isn't
+    available in this chat."), the banner "OST Test 2 is part of an
+    external organization. It's possible they have message-related policies
+    that will apply to the chat.", and Attach files (Attach cloud files,
+    Upload from this device) and Attach media available. A file uploaded
+    from the personal side showed "Anyone with the link can edit"; the send
+    itself did not complete in the headless web client, so delivery to the
+    work side wasn't seen. **Work user starting the chat:** typing a
+    personal email that Teams can't resolve offers it with an External tag,
+    and sending invites it as a B2B guest of the work tenant ("Your
+    invitation is on its way... it may take a couple of minutes.", a group
+    chat titled "<email> and OST Test 2" with only an emoji button).
+11. **Skype Dial Pad. Verified: gone.** Settings and more holds Upgrade, Pin
+    window on top, Settings, Zoom, Help, Feedback, Keyboard shortcuts, Get
+    the mobile app (New), Teams Insider (New) and What's new.
+12. **Invites. Verified (desktop and web), partly (group chat link).**
+    People > Invite to Teams copies a link ("Link copied to clipboard"). In
+    a new chat, an email Teams can't find is offered with "Invite";
+    choosing it copies an invite link ("Invite link copied"), from
+    `POST mt/beta/join/template` →
+    `https://teams.live.com/l/invite/<id>?v=g1` with the text "Let's chat
+    on Microsoft Teams! …". Teams sends no email or SMS itself. The group
+    chat QR code and join-link toggle were not checked.
+13. **Captions, transcripts, Together mode (free account). Verified.** In a
+    personal meeting, More > Language and speech offers Show live captions
+    and Turn on RTT for this call; there is no transcript option. View
+    offers Gallery, Speaker, Large gallery, Focus on content, Gallery size,
+    Show videos first and More options (Show gallery at top, Turn off other
+    videos, Hide me): **no Together mode**. The toolbar has Record (marked
+    as a premium feature), Chat, People, Raise, React, View, More, Camera,
+    Mic, Share, Leave; More has Meeting info, Timer, Video effects and
+    settings, Audio settings, Language and speech, Settings. Subscribed
+    accounts were not tested (no Microsoft 365 subscription).
+14. **Files tab and OneDrive. Verified.** Chats have Chat, Files and Photos
+    tabs. There is no OneDrive app; the compose Attach menu offers "Attach
+    cloud files" and "Upload from this device". Uploads go to "Microsoft
+    Teams Chat Files" in the user's OneDrive through Graph.
+15. **Copilot. Corrected.** Free accounts have a Copilot rail app that is an
+    upsell: "Chat with Copilot in Teams", "Collaborate with an AI companion
+    to brainstorm, draft messages, and more with a Microsoft 365
+    subscription.", View all benefits, Explore plans now, "Already have a
+    subscription? Start using Copilot".
+16. **Missed-activity email and notification settings. Verified.** The
+    desktop Notifications and activity page has no missed-activity email
+    setting (its contents are under item 4).
 
 ## Open questions
 
-- **Protocols.** Which services do personal accounts use: chat service
-  regions, Graph versus consumer APIs, calendar (Outlook.com REST?), presence,
-  contacts, OneDrive personal (`api.onedrive.com`), and the token audience for
-  `teams.live.com`? This needs a capture from the Windows app; no doc covers it.
-- **Test account.** Creating a personal Microsoft account needs the user (a
-  phone or email for verification). Do we use an existing personal account or
-  create a new one?
+- **Protocols.** Answered by the 2026-11-27 capture: see
+  docs/research/personal-accounts-protocol.md §7 (calendar through the middle
+  tier, files through Graph, presence through UPS, chat through the consumer
+  chat service).
+- **Test accounts.** Answered: two dedicated personal accounts exist (OST
+  Personal 1 and 2, in creds.md); sign-in may ask for a code sent to the
+  recovery mailbox.
 - **Subscription testing.** Recording, the 30 h / 300 limits and Copilot need
   Microsoft 365 Personal or Family. Is buying a trial acceptable?
 - **Communities.** They end in December 2026. Skip them, or build read-only
   support for the remaining weeks?
-- **Personal-to-work chat.** Does it depend on the work tenant's setting
-  (`AllowTeamsConsumer`)? Our test tenant's value is unknown, so check
-  `Get-CsTenantFederationConfiguration`.
+- **Personal-to-work chat.** It depends on `AllowTeamsConsumer` and
+  `AllowTeamsConsumerInbound`. The test tenant has both on (read 2026-11-27,
+  Global external access policy too), and personal-to-work chat worked.
 - **Group limits.** Group chat size (250?) and group call size (20 from a chat)
   aren't documented for personal accounts.
 - **Age verification.** Whether the region-gated age checks and minor
