@@ -34,10 +34,11 @@ pub mod qobject {
         #[qinvokable]
         fn drag(self: Pin<&mut KeyTyper>, x1: f64, y1: f64, x2: f64, y2: f64);
 
-        /// Move the mouse (no button held) to (x, y) in this item's
-        /// coordinates: what's there is hovered.
+        /// Move the mouse to (x, y) in this item's coordinates (`press`: 0
+        /// none, 1 press the left button, 2 release it): a hover, or with a
+        /// press then a release, a click.
         #[qinvokable]
-        fn hover(self: Pin<&mut KeyTyper>, x: f64, y: f64);
+        fn hover(self: Pin<&mut KeyTyper>, x: f64, y: f64, press: i32);
     }
 
     // QQuickItem takes a QQuickItem parent; QML parents it.
@@ -53,8 +54,9 @@ unsafe extern "C" {
     fn ost_type_keys(item: *mut core::ffi::c_void, utf8: *const core::ffi::c_char);
     /// Drag the mouse across `item`'s window (src/webengine.cpp).
     fn ost_mouse_drag(item: *mut core::ffi::c_void, x1: f64, y1: f64, x2: f64, y2: f64);
-    /// Move the mouse over `item`'s window (src/webengine.cpp).
-    fn ost_mouse_move(item: *mut core::ffi::c_void, x: f64, y: f64);
+    /// Move (and press or release) the mouse over `item`'s window
+    /// (src/webengine.cpp).
+    fn ost_mouse_move(item: *mut core::ffi::c_void, x: f64, y: f64, press: i32);
 }
 
 #[derive(Default)]
@@ -96,12 +98,12 @@ impl qobject::KeyTyper {
         }
     }
 
-    pub fn hover(self: Pin<&mut Self>, x: f64, y: f64) {
+    pub fn hover(self: Pin<&mut Self>, x: f64, y: f64, press: i32) {
         // SAFETY: `self` is the live C++ KeyTyper (a QQuickItem); the call
         // only reads its window and sends it a mouse move.
         unsafe {
             let item = self.get_unchecked_mut() as *mut Self as *mut core::ffi::c_void;
-            ost_mouse_move(item, x, y);
+            ost_mouse_move(item, x, y, press);
         }
     }
 }

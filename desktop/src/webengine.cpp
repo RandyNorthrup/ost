@@ -102,16 +102,23 @@ extern "C" void ost_mouse_drag(void *item, double x1, double y1, double x2, doub
     QTimer::singleShot(30 + 30 * 9 + 60, window, [=] { send(QEvent::MouseButtonRelease, QPointF(x2, y2), Qt::LeftButton, Qt::NoButton); });
 }
 
-// Move the mouse, no button held, to (x, y) in `item`'s coordinates: the
-// window's items see it as hovering there. Only this window gets it.
-extern "C" void ost_mouse_move(void *item, double x, double y)
+// Move the mouse to (x, y) in `item`'s coordinates (`press`: 0 none, 1
+// press the left button there, 2 release it): the window's items see a
+// hover, or a click from a press and a release. Only this window gets them.
+extern "C" void ost_mouse_move(void *item, double x, double y, int press)
 {
     auto *it = static_cast<QQuickItem *>(item);
     QQuickWindow *window = it ? it->window() : nullptr;
     if (!window)
         return;
+    static quint64 stamp = 1;
+    stamp += 20;
     const QPointF scene = it->mapToScene(QPointF(x, y));
-    QMouseEvent e(QEvent::MouseMove, scene, scene, window->mapToGlobal(scene), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    const QEvent::Type type = press == 1 ? QEvent::MouseButtonPress : press == 2 ? QEvent::MouseButtonRelease : QEvent::MouseMove;
+    const Qt::MouseButton button = press ? Qt::LeftButton : Qt::NoButton;
+    const Qt::MouseButtons buttons = press == 1 ? Qt::LeftButton : Qt::NoButton;
+    QMouseEvent e(type, scene, scene, window->mapToGlobal(scene), button, buttons, Qt::NoModifier);
+    e.setTimestamp(stamp);
     QCoreApplication::sendEvent(window, &e);
 }
 

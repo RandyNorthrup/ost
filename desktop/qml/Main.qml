@@ -1021,8 +1021,8 @@ Window {
             const op = c.slice(0, i), arg = c.slice(i + 1)
             const xy = arg.split(",").map(Number)
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
-            if (op === "hover") pointerTyper.hover(xy[0], xy[1])
-            else if (op === "click") pointerTyper.drag(xy[0], xy[1], xy[0], xy[1])
+            if (op === "hover") pointerTyper.hover(xy[0], xy[1], 0)
+            else if (op === "click") { pointerTyper.hover(xy[0], xy[1], 0); pointerTyper.hover(xy[0], xy[1], 1); pointerTyper.hover(xy[0], xy[1], 2) }
             else if (op === "wait") until = Date.now() + Number(arg)
             else if (op === "shot") window.contentItem.grabToImage(r => r.saveToFile(dir + arg + ".png"))
             else if (op === "open") backend.selectChat(arg, (chatList.chats.find(ch => ch.id === arg) || { name: "" }).name)
