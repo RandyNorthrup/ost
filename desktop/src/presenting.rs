@@ -112,6 +112,9 @@ pub fn share_screen() -> ShareScreen {
     *SHARE_SCREEN.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// How long a control command waits for its call to be in place.
+const COMMAND_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Tell the meeting's media control plane, in order (keys and clicks
 /// must reach the presenter as they were made).
 fn command(c: ControlCommand) {
@@ -121,8 +124,21 @@ fn command(c: ControlCommand) {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ControlCommand>();
         runtime().spawn(async move {
             while let Some(c) = rx.recv().await {
-                if let Some(call) = call_slot().lock().await.outgoing.as_ref() {
-                    call.screen_control(c);
+                // The join's first roster (a share already on: watch it)
+                // comes before the call is in its slot; wait for it, in
+                // order, rather than lose the command.
+                let deadline = std::time::Instant::now() + COMMAND_WAIT;
+                let mut c = Some(c);
+                while let Some(cmd) = c.take() {
+                    if let Some(call) = call_slot().lock().await.outgoing.as_ref() {
+                        call.screen_control(cmd);
+                    } else if std::time::Instant::now() < deadline {
+                        c = Some(cmd);
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                    } else {
+                        // (Not the command: input may be typed secrets.)
+                        tracing::debug!("screen control: no call for a command");
+                    }
                 }
             }
         });

@@ -2772,6 +2772,10 @@ async fn recv_loop(ctx: RecvCtx) {
     // Video streams seen, and streams nothing took, noted once each
     // (diagnostics).
     let mut noted = std::collections::HashSet::<(u32, u8)>::new();
+    #[cfg(feature = "video")]
+    let mut video_meta = std::collections::HashMap::<u32, (u32, String)>::new();
+    #[cfg(feature = "video")]
+    let mut video_meta_lines = 0u32;
     let mut spatializer = super::spatial::Spatializer::new(super::audio_codec::CALL_RATE);
     let mut much = super::much::MuchMixer::new(super::audio_codec::CALL_RATE);
     let pt = ctx.much_pt.load(Ordering::Relaxed);
@@ -2919,6 +2923,26 @@ async fn recv_loop(ctx: RecvCtx) {
                     s.packets_received += 1;
                     s.bytes_received += len as u64;
                 }
+                // OST_DUMP_RTP=<file>: every decrypted RTP packet of payload
+                // type OST_DUMP_RTP_PT (default 113, x-much2; a camera's H.264
+                // type works too), length-prefixed (protocol research).
+                if let Ok(path) = std::env::var("OST_DUMP_RTP") {
+                    let want: u8 = std::env::var("OST_DUMP_RTP_PT")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(113);
+                    if pt == want {
+                        use std::io::Write;
+                        if let Ok(mut f) = std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(&path)
+                        {
+                            let _ = f.write_all(&(plain.len() as u32).to_le_bytes());
+                            let _ = f.write_all(&plain);
+                        }
+                    }
+                }
                 // A meeting slot by its SSRC range, else the line by its
                 // payload type (RTX on a slot's range falls through).
                 #[cfg(feature = "video")]
@@ -2935,6 +2959,26 @@ async fn recv_loop(ctx: RecvCtx) {
                 {
                     if noted.insert((ssrc, pt)) {
                         tracing::debug!(ssrc, pt, to = stream.rx.key(), "video stream routed");
+                    }
+                    // OST_VIDEO_META=1: each video stream's header extensions
+                    // and NAL types (SEI/PACSI bytes, never the picture) when
+                    // they change (protocol research).
+                    if std::env::var_os("OST_VIDEO_META").is_some() && video_meta_lines < 3000 {
+                        let meta = rtp::h264_metadata(&plain);
+                        let shape: String = meta
+                            .split(' ')
+                            .map(|w| w.split(':').next().unwrap_or(w))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        let seen = video_meta
+                            .entry(ssrc)
+                            .or_insert_with(|| (0u32, String::new()));
+                        seen.0 += 1;
+                        if seen.0 <= 20 || seen.1 != shape || meta.contains('[') {
+                            video_meta_lines += 1;
+                            tracing::info!(ssrc, pt, to = stream.rx.key(), n = seen.0, %meta, "video meta");
+                            seen.1 = shape;
+                        }
                     }
                     if let Ok(pkt) = rtp::decode(&plain) {
                         let kind = if stream.rx.key() == "share" {
@@ -2954,26 +2998,6 @@ async fn recv_loop(ctx: RecvCtx) {
                         });
                     }
                     continue;
-                }
-                // OST_DUMP_RTP=<file>: every decrypted RTP packet of payload
-                // type OST_DUMP_RTP_PT (default 113, x-much2), length-prefixed
-                // (protocol research).
-                if let Ok(path) = std::env::var("OST_DUMP_RTP") {
-                    let want: u8 = std::env::var("OST_DUMP_RTP_PT")
-                        .ok()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(113);
-                    if pt == want {
-                        use std::io::Write;
-                        if let Ok(mut f) = std::fs::OpenOptions::new()
-                            .create(true)
-                            .append(true)
-                            .open(&path)
-                        {
-                            let _ = f.write_all(&(plain.len() as u32).to_le_bytes());
-                            let _ = f.write_all(&plain);
-                        }
-                    }
                 }
                 // Meeting audio: the mix, or each speaker's own (x-much2).
                 let much_packet = pt != 0 && ctx.much_pt.load(Ordering::Relaxed) == pt;

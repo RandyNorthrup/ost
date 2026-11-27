@@ -1047,9 +1047,8 @@ pub struct ActiveCall {
     /// camera and sharing lines do (the acceptance's
     /// `updateMediaDescriptions`), and the requests' count.
     media_descriptions: Option<(String, std::sync::atomic::AtomicU64)>,
-    /// What the last description said of sharing, and the shares so far.
-    described_sharing: std::sync::atomic::AtomicBool,
-    shares: std::sync::atomic::AtomicU64,
+    /// The negotiation tags of what we describe (shares, camera).
+    tags: super::outgoing::MediaTags,
     /// A meeting we were invited into (a Teams Room's): its call recorder
     /// (live captions), from the attach's join answer and the roster.
     recorder: super::recorder::Tracker,
@@ -1582,15 +1581,9 @@ impl ActiveCall {
         };
         let (camera, sharing) = (w.camera_on(), w.is_sharing());
         let request_id = seq.fetch_add(1, Relaxed) + 1;
-        let was_sharing = self.described_sharing.swap(sharing, Relaxed);
-        let tag = sharing.then(|| {
-            let n = if was_sharing {
-                self.shares.load(Relaxed)
-            } else {
-                self.shares.fetch_add(1, Relaxed) + 1
-            };
-            format!("{};ss_{n}", self.call_id().unwrap_or_default())
-        });
+        let tag = self
+            .tags
+            .tag(&self.call_id().unwrap_or_default(), camera, sharing);
         use super::meeting_media::{CAMERA_MID, SHARE_MID};
         let mids = (w.wire_mid(CAMERA_MID), w.wire_mid(SHARE_MID));
         tracing::info!(
@@ -1601,6 +1594,7 @@ impl ActiveCall {
         );
         let body = super::outgoing::media_descriptions_body(
             camera,
+            sharing,
             tag.as_deref(),
             request_id,
             (&mids.0, &mids.1),
@@ -2040,8 +2034,7 @@ pub async fn answer(
         remote_legs: std::collections::HashMap::new(),
         joined_content: std::collections::HashMap::new(),
         media_descriptions: None,
-        described_sharing: Default::default(),
-        shares: Default::default(),
+        tags: Default::default(),
         recorder: Default::default(),
     }
     .with_conversation())
@@ -2123,8 +2116,7 @@ async fn answer_webrtc(
         remote_legs: std::collections::HashMap::new(),
         joined_content: std::collections::HashMap::new(),
         media_descriptions: None,
-        described_sharing: Default::default(),
-        shares: Default::default(),
+        tags: Default::default(),
         recorder: Default::default(),
     }
     .with_conversation())
@@ -2232,8 +2224,7 @@ async fn answer_meeting_offer(
         remote_legs: std::collections::HashMap::new(),
         joined_content: std::collections::HashMap::new(),
         media_descriptions: leg.media_descriptions.map(|l| (l, Default::default())),
-        described_sharing: Default::default(),
-        shares: Default::default(),
+        tags: Default::default(),
         recorder: Default::default(),
     }
     .with_conversation())
