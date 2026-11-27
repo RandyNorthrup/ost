@@ -48,6 +48,11 @@ Item {
     signal reactRequested(string messageId, string key, bool on)
     signal deleteRequested(string messageId)
     function replyWithQuote(m) { root.quoteRequested(m) }
+    /// Quick views ▸ Discover's cards: their ··· adds "Don't show …"
+    /// (`discoverHide`: "POST", "AUTHOR" or "CHANNEL").
+    property bool discoverActions: false
+    property string authorName: ""
+    signal discoverHide(string kind)
     function react(id, key, on) { root.reactRequested(id, key, on) }
     signal openChatSettings()
     // The popups, for test hooks.
@@ -161,6 +166,33 @@ Item {
         const translate = m.translated
             ? { key: "original", label: m.translated_from ? qsTr("See original message (%1)").arg(m.translated_from) : qsTr("See original message"), icon: "translate-20" }
             : { key: "translate", label: qsTr("Translate"), icon: "translate-20" }
+        // A Discover card's post (Teams web 2026-11-27, OST Test 2): Forward,
+        // Follow thread, Copy post link, Save this message, Don't show this
+        // post again, Don't show posts from {author}, Don't show posts from
+        // {channel} | Share to Outlook, Translate, Immersive Reader | Report
+        // this message | More actions.
+        if (context === "discover") {
+            out.push({ key: "forward", label: qsTr("Forward"), icon: "share-forward-20", keys: "F" })
+            out.push(m.following
+                ? { key: "unfollow", label: qsTr("Unfollow thread"), icon: "chat-multiple-minus-20" }
+                : { key: "follow", label: qsTr("Follow thread"), icon: "chat-multiple-20" })
+            out.push({ key: "copy-link", label: qsTr("Copy post link"), icon: "link-20" })
+            out.push(save)
+            out.push({ key: "discover-post", label: qsTr("Don't show this post again"), icon: "eye-off-20" })
+            if (!own) out.push({ key: "discover-author", label: qsTr("Don't show posts from %1").arg(m.sender || root.authorName), icon: "discover-hide-person-20" })
+            out.push({ key: "discover-channel", label: qsTr("Don't show posts from %1").arg(root.chatName), icon: "discover-hide-channel-20" })
+            out.push({ separator: true })
+            out.push({ key: "share-outlook", label: qsTr("Share to Outlook"), icon: "mail-20" })
+            out.push(translate)
+            out.push({ key: "immersive-reader", label: qsTr("Immersive Reader"), icon: "immersive-reader-20" })
+            if (!own) {
+                out.push({ separator: true })
+                out.push({ key: "report", label: qsTr("Report this message"), icon: "report-message-20" })
+            }
+            out.push({ separator: true })
+            out.push({ key: "more", label: qsTr("More actions"), chevron: true })
+            return out
+        }
         // Channel posts and replies (measured in a classic channel; Edit and
         // Reply with quote are on the hover bar). Share to Outlook and
         // Immersive Reader are not built yet.
@@ -287,6 +319,10 @@ Item {
                 translationMenu.parent = messageMenu.parent; translationMenu.x = messageMenu.x + messageMenu.width; translationMenu.y = messageMenu.y; translationMenu.open()
             }
             else if (it.key === "share-outlook") shareToOutlook.start(m)
+            else if (it.key === "immersive-reader") root.openImmersiveReader(m)
+            else if (it.key === "discover-post") root.discoverHide("POST")
+            else if (it.key === "discover-author") root.discoverHide("AUTHOR")
+            else if (it.key === "discover-channel") root.discoverHide("CHANNEL")
             else if (it.key === "more") {
                 moreActionsMenu.message = m
                 moreActionsMenu.items = [{ key: "immersive-reader", label: qsTr("Immersive Reader"), icon: "immersive-reader-20" }]

@@ -27042,6 +27042,31 @@ impl qobject::Backend {
                     // unfollow {thread, chain}.
                     "quick-saved" => Ok(serde_json::to_value(api::quick_views::saved(&client).await?)?),
                     "quick-followed" => Ok(serde_json::to_value(api::quick_views::followed(&client).await?)?),
+                    // Quick views ▸ Discover (Teams' discover surface over
+                    // CSA): a page of suggested posts (arg: the next page's
+                    // token), "Is this useful?", and what's left out.
+                    "discover-feed" => Ok(serde_json::to_value(api::discover::feed(&client, &arg).await?)?),
+                    "discover-feedback" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let item: api::discover::DiscoverItem = serde_json::from_value(a["item"].clone()).unwrap_or_default();
+                        let page = api::discover::DiscoverPage {
+                            trace_id: a["trace_id"].as_str().unwrap_or_default().to_string(),
+                            logical_id: a["logical_id"].as_str().unwrap_or_default().to_string(),
+                            ..Default::default()
+                        };
+                        let position = u32::try_from(a["position"].as_u64().unwrap_or(0)).unwrap_or(0);
+                        let body = api::discover::feedback_body(&item, &page, a["useful"].as_bool().unwrap_or(false), position, &teams_cli::clock::now_iso_ms());
+                        api::discover::feedback(&client, &body).await?;
+                        Ok(serde_json::Value::Null)
+                    }
+                    "discover-exclude" | "discover-include" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let f = |k: &str| a[k].as_str().unwrap_or_default().to_string();
+                        let body = api::discover::preference_body(&f("kind"), &f("id"), &f("name"), &f("feedback_id"));
+                        api::discover::set_excluded(&client, &body, op == "discover-exclude").await?;
+                        Ok(serde_json::Value::Null)
+                    }
+                    "discover-excluded" => Ok(serde_json::to_value(api::discover::excluded(&client).await?)?),
                     "quick-unsave" => {
                         let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
                         let f = |k: &str| a[k].as_str().unwrap_or_default().to_string();

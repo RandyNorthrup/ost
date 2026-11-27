@@ -31,6 +31,7 @@ pub mod custom_emoji;
 pub mod ddv;
 pub mod devices;
 pub mod directory;
+pub mod discover;
 pub mod downloads;
 pub mod drafts;
 pub mod drive;
