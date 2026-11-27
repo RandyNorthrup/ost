@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@time'
 created_date: '2026-11-27T00:11:00Z'
-updated_date: '2026-11-27T00:36:00Z'
+updated_date: '2026-11-27T00:56:00Z'
 labels:
   - dst
   - time
@@ -41,3 +41,16 @@ TASK-0319 kept chrono's choice for a wall time in an hour that a DST change repe
 - clock::earliest now uses the offset before the change; presence's never-expiry already did.
 - Affected tests (clock, presence, item_details, list_rows, recaps; 43) pass with TZ=UTC, America/New_York and America/Santiago on linuxlt.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+When a DST change repeats an hour, OST now reads wall times in it as Teams does: the earlier moment, in daylight time (PR #28). TASK-0319 had kept chrono's standard-time reading.
+
+Changes:
+- clock::earliest uses the offset in force before the change. Presence's Today/This week expiries and OneDrive's start-of-day groups follow it, so in zones whose clocks go back at midnight (e.g. Chile) Today ends at the first 23:59:59.999, as Teams' does.
+
+Tests:
+- US Eastern repeated hour (clock, presence) and Chile's midnight change (clock earliest, presence Today).
+- Affected engine tests pass with TZ=UTC, America/New_York and America/Santiago on linuxlt; CI green; Codex: no findings.
+<!-- SECTION:FINAL_SUMMARY:END -->
