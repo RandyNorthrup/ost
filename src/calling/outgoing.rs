@@ -149,6 +149,9 @@ pub struct OutgoingCall {
     /// People invited from the People pane (Teams' Invite someone), by
     /// MRI, until the call says they joined or couldn't be added.
     invited: Vec<String>,
+    /// The conversation is a group call (`state.conversationType`
+    /// groupCall), not a meeting.
+    group_call: bool,
     /// The meeting's message id in its chat ("0" for a scheduled
     /// meeting, the post for a channel meeting): Teams' teamsMessageId.
     group_message_id: Option<String>,
@@ -1449,6 +1452,12 @@ impl OutgoingCall {
             }
         }
         Ok(())
+    }
+
+    /// The join said the conversation is a group call (a group chat's
+    /// call), not a meeting.
+    pub fn is_group_call(&self) -> bool {
+        self.group_call
     }
 
     /// The call's answer to someone we invited, if `event` is one: their
@@ -5252,6 +5261,9 @@ async fn start_tagged(
                 .find_map(|p| v.pointer(p).and_then(|b| b.as_bool()))
             })
             .unwrap_or(true),
+        group_call: serde_json::from_str::<serde_json::Value>(&created.response_body)
+            .ok()
+            .is_some_and(|v| super::incoming::is_group_call(&v)),
         leave_link: leave_url.clone(),
         streaming: acceptance.streaming,
         stream: acceptance

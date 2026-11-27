@@ -6588,6 +6588,16 @@ fn short_error(e: &anyhow::Error) -> String {
 static CHANNEL_ACTIVITY: std::sync::Mutex<std::collections::BTreeMap<String, i64>> =
     std::sync::Mutex::new(std::collections::BTreeMap::new());
 
+/// The id of the call in the slot (the answered one, else the one we
+/// placed or joined).
+fn slot_call_id(slot: &CallSlot) -> Option<String> {
+    match (&slot.active, &slot.outgoing) {
+        (Some(call), _) => call.call_id(),
+        (None, Some(call)) => Some(call.call_id().to_string()),
+        _ => None,
+    }
+}
+
 /// Your group chats without a name of their own, hidden ones too, from
 /// the chat service's list: the chats a call someone is invited into can
 /// go on in (Teams' chatsWithUsers searches its whole local store).
@@ -8929,6 +8939,23 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             // Someone in a 1:1 call with us invited a third person: the
             // conversation turns multi-party on its group chat, and Teams
             // shows it as a group call.
+            // A chat's call we joined names itself a group call (not a
+            // Meet now meeting): its People pane invites as Teams' does.
+            if json.contains("conversation/conversationUpdate")
+                && teams_cli::calling::incoming::is_group_call(&v)
+            {
+                let _ = qt.queue(|mut this| {
+                    if this.rust().call_meeting
+                        && !this.rust().call_group
+                        && !this.rust().call_scheduled
+                        && !this.rust().call_adhoc_meeting
+                        && !this.rust().call_test
+                    {
+                        tracing::info!("the call is a group call");
+                        this.as_mut().set_call_group(true);
+                    }
+                });
+            }
             if let Some(thread) = teams_cli::calling::incoming::escalated_to(&v) {
                 let _ = qt.queue(move |mut this| {
                     if !this.rust().call_meeting
@@ -12037,11 +12064,15 @@ impl qobject::Backend {
                     let can_dtmf = call.can_dtmf();
                     let can_video = call.can_send_video();
                     let can_share = call.can_share();
+                    // Joining a chat's ongoing call: the conversation says
+                    // whether it's a group call (not a Meet now meeting).
+                    let group_call = call.is_group_call();
                     tracing::info!(
                         has_audio,
                         can_dtmf,
                         can_video,
                         can_share,
+                        group_call,
                         "group call started"
                     );
                     // The group call's dial-in (Teams' Join info ▸ Call me).
@@ -12057,6 +12088,9 @@ impl qobject::Backend {
                         this.as_mut().set_call_can_dtmf(can_dtmf);
                         this.as_mut().set_call_can_video(can_video);
                         this.as_mut().set_call_can_share(can_share);
+                        if group_call && !test {
+                            this.as_mut().set_call_group(true);
+                        }
                         this.as_mut().set_call_state(QString::from("connected"));
                         // Teams' test call starts with the camera on
                         // (its intent's outgoingVideo), when there is one.
@@ -16997,6 +17031,9 @@ impl qobject::Backend {
             .lock()
             .map(|g| g.clone())
             .unwrap_or_default();
+        // The call this is for: the chat lookup can take a while, and the
+        // invitation goes to this call only.
+        let call_id = runtime().block_on(async { slot_call_id(&*call_slot().lock().await) });
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -17015,6 +17052,9 @@ impl qobject::Backend {
                 let people = std::slice::from_ref(&mri);
                 let mut guard = call_slot().lock().await;
                 let slot = &mut *guard;
+                if call_id.is_none() || slot_call_id(slot) != call_id {
+                    anyhow::bail!("The call ended before the invitation went out");
+                }
                 match (slot.active.as_mut(), slot.outgoing.as_mut()) {
                     (Some(call), _) => {
                         let auth = CallAuth::load().await?;
@@ -17029,7 +17069,7 @@ impl qobject::Backend {
             let _ = qt.queue(move |mut this| match result {
                 Ok(thread) => {
                     tracing::info!(escalated = one_to_one, "invited into the call");
-                    if one_to_one {
+                    if one_to_one && this.rust().call_state.to_string() == "connected" {
                         this.as_mut().call_escalated(&thread, &name);
                     }
                 }
