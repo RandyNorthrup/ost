@@ -638,7 +638,12 @@ Item {
                                 // has its header (Teams' summary view).
                                 readonly property bool grouped: index > 0 && !!root.host
                                     && root.host.replyAttached(card.replies, card.replies.length - card.shown.length + index)
-                                readonly property real headH: grouped ? 0 : root.compact ? 34.2 : 20
+                                // A grouped reply keeps its status bar
+                                // (Teams' header row holds only that for a
+                                // "bottom" reply): "Edited" on a line of its
+                                // own where the name would be.
+                                readonly property bool groupedEdited: grouped && modelData.edited === true && !modelData.deleted
+                                readonly property real headH: grouped ? (groupedEdited ? 20 : 0) : root.compact ? 34.2 : 20
                                 width: card.width
                                 // Editing, Teams' compose spans the card in the reply's
                                 // place, from the line above it.
@@ -657,6 +662,11 @@ Item {
                                     x: 18; y: 0; size: 20
                                     name: rep.modelData.sender; photoId: rep.modelData.sender_mri + (rep.modelData.sender_app ? "#" + rep.modelData.sender_app : "")
                                     opensProfile: true
+                                }
+                                Text {
+                                    visible: rep.groupedEdited && !rep.editing
+                                    x: 50; y: 1.4
+                                    text: qsTr("Edited"); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary
                                 }
                                 Text {
                                     visible: !rep.editing && !rep.grouped

@@ -566,13 +566,17 @@ Item {
                         // time lines; the text sits at the reply's top
                         // padding. A day divider starts a new group.
                         readonly property bool grouped: repSlot.divider === "" && thost.replyAttached(win.replies, repSlot.index)
+                        // A grouped reply keeps its status bar: "Edited"
+                        // on the name's line, the text under it.
+                        readonly property bool groupedEdited: grouped && modelData.edited === true && !modelData.deleted
+                        readonly property real bodyY: grouped ? (groupedEdited ? 25.1 : 8) : 42.2
                         readonly property var mark: editing || grouped ? null : thost.highlight(modelData)
                         width: card.width
                         readonly property bool callRow: modelData.kind === "call"
                         // Teams' Attendance card under the end, at the text (54), 32 down.
                         readonly property bool attendanceCard: callRow && win.canSeeAttendance && modelData.call_state !== "missed" && modelData.call_state !== "started" && !!modelData.call_id
                         height: callRow ? (attendanceCard ? 32 + 49.3 + 12 : 52) : editing ? (repEdit.item ? repEdit.item.height : 0) + 8
-                            : (grouped ? 8 : 42.2) + repBody.height + ((modelData.reactions || []).length > 0 ? 8 + 26 : 0) + 8.1
+                            : bodyY + repBody.height + ((modelData.reactions || []).length > 0 ? 8 + 26 : 0) + 8.1
                         // A call's end (Teams' call row).
                         FluentIcon {
                             visible: rep.callRow
@@ -616,6 +620,14 @@ Item {
                             lineHeight: 17.14; lineHeightMode: Text.FixedHeight
                             color: theme.text
                         }
+                        Text {
+                            visible: rep.groupedEdited && !rep.editing && !rep.callRow
+                            x: 50; y: 8
+                            text: qsTr("Edited")
+                            font.family: theme.font; font.pixelSize: 12
+                            lineHeight: 17.14; lineHeightMode: Text.FixedHeight
+                            color: theme.textSecondary
+                        }
                         Row {
                             visible: !rep.editing && !rep.callRow && !rep.grouped
                             x: 50; y: 25.1
@@ -638,7 +650,7 @@ Item {
                         PostBody {
                             id: repBody
                             visible: !rep.editing && !rep.callRow
-                            x: 50; y: rep.grouped ? 8 : 42.2; width: card.width - 70
+                            x: 50; y: rep.bodyY; width: card.width - 70
                             message: rep.modelData
                             mark: win.markFor(rep.modelData ? rep.modelData.id : "")
                         }
