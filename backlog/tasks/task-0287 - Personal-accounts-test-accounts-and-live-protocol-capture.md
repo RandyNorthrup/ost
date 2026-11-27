@@ -1,11 +1,11 @@
 ---
 id: TASK-0287
 title: 'Personal accounts: test accounts and live protocol capture'
-status: Done
+status: To Do
 assignee:
   - '@agent-personal287'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-27T19:09:00Z'
+updated_date: '2026-11-27T20:29:00Z'
 labels:
   - personal-accounts
 dependencies: []
@@ -23,8 +23,8 @@ Teams for personal use (personal Microsoft accounts: outlook.com, hotmail, live.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] #1 Every item of 'Must verify live' in personal-accounts-protocol.md is confirmed or corrected from captures, and the doc marks each as verified
-- [x] #2 Every item of 'Verify on real Teams' in personal-accounts-features.md is checked on winpc's Teams desktop with a personal account next to ost-test1, with screenshots kept outside the repo
+- [ ] #1 Every item of 'Must verify live' in personal-accounts-protocol.md is confirmed or corrected from captures, and the doc marks each as verified
+- [ ] #2 Every item of 'Verify on real Teams' in personal-accounts-features.md is checked on winpc's Teams desktop with a personal account next to ost-test1, with screenshots kept outside the repo
 - [x] #3 The test tenant's setting for chat with personal accounts (AllowTeamsConsumer) is known, and enabled if it is off
 - [x] #4 Two personal test accounts exist (created or signed in by an agent or the user) and are recorded in ~/coding/.secrets/creds.md
 <!-- AC:END -->
@@ -49,6 +49,9 @@ Teams for personal use (personal Microsoft accounts: outlook.com, hotmail, live.
 
 - AC2 results written to docs/research/personal-accounts-features.md "Verify on real Teams" (16 items, testpc2 desktop with OST Personal 2 next to OST Test 2; screenshots in ~/.local/share/ost-remaining/personal/ac2-*). Partly verified: 7 (pasted meet link opening in desktop not tried), 8 (single-organizer meeting ran past 60 min with no warning, two-person end not observed), 9 (personal-to-personal request not seen: email search NotFound), 10 (file send from personal side did not complete in headless web), 12 (group-chat QR/join-link toggle not checked), 13 (subscribed account not available).
 - Cleanup: headless Chromes and captures stopped, their profiles deleted; testpc2 Teams restarted without the debug port (env value removed, port closed), helper folder removed, tunnel closed; OST Personal 2 stays added on testpc2 for later tasks. Local ost-signin: ssh output now decoded with errors=replace (status crashed on non-UTF-8 output once two accounts were in Teams).
+
+Reopened 2026-11-27 (Codex review on PR #51): AC #1 and #2 are not fully met.
+Built so far: all AC #3/#4 work done; protocol doc items verified or corrected except consumer SDES acceptance (needs consumer calling code, TASK-0298); features doc verified except: meeting warning/end at 60 min with 2+ people present, personal-to-personal chat request (Teams answered NotFound for both personal emails), delivery of a file message from headless Chrome, the 20-person limit for calls from a chat (needs more accounts), opening a pasted teams.live.com/meet link in Teams desktop, and the group-chat QR code. See PR #46 docs.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
