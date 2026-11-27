@@ -3708,7 +3708,8 @@ Window {
                 // denied), capture the meeting, then leave.
                 const st = backend.callState
                 if (step % 5 === 3) console.warn("JOIN lobby-wait state", st, "visible", preJoin.visible, "lobby", preJoin.lobby,
-                                                 "chat", backend.callThreadId.length > 0, "title", backend.callPeer)
+                                                 "chat", backend.callThreadId.length > 0, "title", backend.callPeer,
+                                                 "options", backend.callOptionsUrl.length > 0)
                 // --join-lobby-data (TASK-0213): once admitted, use the
                 // meeting's data channel as it came back after the media
                 // moved: live captions on (someone speaks), then take

@@ -4934,6 +4934,9 @@ async fn breakout_run_at(
 /// What the call window shows of a meeting once it's joined (or resumed).
 struct JoinedView {
     invite: String,
+    /// The meeting's chat as the join names it (a meeting joined by its ID
+    /// learns it here, or on admission).
+    thread: String,
     capability: teams_cli::calling::meeting_options::MeetingCapability,
     processing: teams_cli::calling::roster::Processing,
     ai_indicator: bool,
@@ -5019,6 +5022,7 @@ impl JoinedView {
     fn of(call: &OutgoingCall) -> Self {
         Self {
             invite: call.invite_url().unwrap_or_default().to_string(),
+            thread: call.thread().to_string(),
             capability: call.capability(),
             processing: call.processing(),
             ai_indicator: call.shows_ai_indicator(),
@@ -8756,32 +8760,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             let _ = qt.queue(move |mut this| {
                 // Joined by the meeting's ID while the lobby held us: its
                 // chat is known now.
-                if this.rust().call_thread_id.is_empty() && !thread.is_empty() {
-                    tracing::info!("the meeting's chat named on admission");
-                    this.as_mut()
-                        .set_call_thread_id(QString::from(thread.as_str()));
-                    this.as_mut().load_call_chat_members();
-                    // Its title too (the ID named none): the chat's topic,
-                    // as Teams then titles the meeting.
-                    let qt = this.qt_thread();
-                    runtime().spawn(async move {
-                        let topic = async {
-                            let client = TeamsClient::new().await?;
-                            api::tab_add::thread_properties(&client, &thread).await
-                        }
-                        .await
-                        .ok()
-                        .and_then(|p| p["topic"].as_str().map(str::to_string))
-                        .filter(|t| !t.is_empty());
-                        if let Some(topic) = topic {
-                            let _ = qt.queue(move |mut this| {
-                                if this.rust().call_thread_id.to_string() == thread {
-                                    this.as_mut().set_call_peer(QString::from(topic.as_str()));
-                                }
-                            });
-                        }
-                    });
-                }
+                this.as_mut().adopt_meeting_chat(&thread);
                 this.as_mut().show_capability(cap, false);
                 this.as_mut().set_call_can_video(can_video);
                 this.as_mut().set_call_can_share(can_share);
@@ -14252,6 +14231,7 @@ impl qobject::Backend {
         // The meeting may have muted us as we joined (Mute all still in
         // force): Teams joins muted then.
         runtime().spawn(replay_early_rosters(self.qt_thread()));
+        self.as_mut().adopt_meeting_chat(&v.thread);
         self.as_mut()
             .set_call_invite_url(QString::from(v.invite.as_str()));
         self.as_mut().rust_mut().call_meet_now = v.meet_now;
@@ -19871,6 +19851,85 @@ impl qobject::Backend {
     }
 
     /// The call's chat members (a meeting's or group's thread).
+    /// A meeting joined by its ID learns its chat only from the join's
+    /// answer or, held in the lobby, from the update that admits us: take
+    /// it then, with what an ordinary join knows from its link (Teams
+    /// titles the meeting with the chat's topic): the title, the full
+    /// join link (Controls, meeting options) and the chat's members.
+    fn adopt_meeting_chat(mut self: Pin<&mut Self>, thread: &str) {
+        if thread.is_empty() || !self.rust().call_thread_id.is_empty() {
+            return;
+        }
+        tracing::info!("the meeting's chat named after joining by its ID");
+        self.as_mut().set_call_thread_id(QString::from(thread));
+        self.as_mut().load_call_chat_members();
+        let qt = self.qt_thread();
+        let thread = thread.to_string();
+        runtime().spawn(async move {
+            let props = async {
+                let client = TeamsClient::new().await?;
+                api::tab_add::thread_properties(&client, &thread).await
+            }
+            .await;
+            let props = match props {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::info!("meeting chat properties: {}", short_error(&e));
+                    return;
+                }
+            };
+            let topic = props["topic"]
+                .as_str()
+                .filter(|t| !t.is_empty())
+                .map(str::to_string);
+            // The chat's `meeting` property (JSON in a string): its join
+            // link, else the organizer and tenant to make one.
+            let meeting: serde_json::Value = props["meeting"]
+                .as_str()
+                .and_then(|m| serde_json::from_str(m).ok())
+                .unwrap_or_default();
+            let link = meeting["meetingJoinUrl"]
+                .as_str()
+                .and_then(outgoing::MeetingLink::parse)
+                .filter(|l| l.thread_id == thread && l.organizer_id.is_some())
+                .or_else(|| {
+                    let (o, t) = (meeting["organizerId"].as_str()?, meeting["tenantId"].as_str()?);
+                    Some(outgoing::MeetingLink {
+                        thread_id: thread.clone(),
+                        message_id: "0".into(),
+                        organizer_id: Some(o.to_string()),
+                        tenant_id: Some(t.to_string()),
+                        meeting_data: None,
+                    })
+                });
+            let _ = qt.queue(move |mut this| {
+                if this.rust().call_thread_id.to_string() != thread {
+                    return;
+                }
+                if let Some(topic) = topic {
+                    this.as_mut().set_call_peer(QString::from(topic.as_str()));
+                }
+                if let Some(link) = link {
+                    let enc = |t: &str| t.replace(':', "%3a").replace('@', "%40");
+                    let (o, t) = (
+                        link.organizer_id.clone().unwrap_or_default(),
+                        link.tenant_id.clone().unwrap_or_default(),
+                    );
+                    let url = format!(
+                        "https://teams.microsoft.com/l/meetup-join/{}/{}?context=%7b%22Tid%22%3a%22{t}%22%2c%22Oid%22%3a%22{o}%22%7d",
+                        enc(&link.thread_id),
+                        link.message_id
+                    );
+                    this.as_mut().rust_mut().last_join.0 = QString::from(url.as_str());
+                    this.as_mut().set_call_options_url(QString::from(
+                        link.options_url().unwrap_or_default().as_str(),
+                    ));
+                    this.as_mut().load_meeting_controls();
+                }
+            });
+        });
+    }
+
     fn load_call_chat_members(mut self: Pin<&mut Self>) {
         let thread = self.rust().call_thread_id.to_string();
         self.as_mut()
