@@ -1160,7 +1160,9 @@ Window {
             // With --discover-feedback: Is this useful? Yes on the first post.
             else if (st === 31 && Qt.application.arguments.indexOf("--discover-feedback") < 0) Qt.quit()
             else if (st === 31) discoverView.sendFeedback(discoverView.itemsForTest()[0], true)
-            else if (st === 33) { shot("feedback"); Qt.quit() }
+            else if (st === 33) { shot("feedback"); const i0 = discoverView.itemsForTest()[0]; backend.toggleReaction(i0.post_id, "like", true) }
+            else if (st === 37) { const i0 = discoverView.itemsForTest()[0]; const p = (discoverView.threads[i0.channel_id + ";messageid=" + i0.post_id] || []).find(m => m.id === i0.post_id); console.warn("DISCOVER reacted", JSON.stringify(p ? p.reactions : null)); shot("reacted"); backend.toggleReaction(i0.post_id, "like", false) }
+            else if (st === 41) { const i0 = discoverView.itemsForTest()[0]; const p = (discoverView.threads[i0.channel_id + ";messageid=" + i0.post_id] || []).find(m => m.id === i0.post_id); console.warn("DISCOVER unreacted", JSON.stringify(p ? p.reactions : null)); Qt.quit() }
         }
     }
 
@@ -17457,6 +17459,7 @@ Window {
         myName: backend.userName
         onOpenChannel: (id, name) => { chatList.quickOpen = ""; backend.selectChat(id, name) }
         onTellUsWhy: window.openFeedback("problem", "Discover", "")
+        onOpenImage: (l, i, m) => conversation.openImageViewer(l, i, m)
     }
     DraftsView {
         id: draftsView

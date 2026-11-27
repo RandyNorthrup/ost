@@ -20389,7 +20389,9 @@ impl qobject::Backend {
                 .get(key)
                 .is_some_and(|t| t.iter().any(|m| m.id == message_id))
         };
-        if current.is_empty() || has(&current) {
+        // (With nothing open, a message shown elsewhere, a Discover card's
+        // post, is still found in its thread window.)
+        if !current.is_empty() && has(&current) {
             return current;
         }
         self.rust()
