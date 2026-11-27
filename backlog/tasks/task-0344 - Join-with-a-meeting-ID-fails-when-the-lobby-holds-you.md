@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@meet'
 created_date: '2026-11-27T04:51:00Z'
-updated_date: '2026-11-27T05:54:00Z'
+updated_date: '2026-11-27T06:46:00Z'
 labels:
   - bug
   - calls
@@ -47,6 +47,12 @@ Found during TASK-0342 (2026-11-26): with the Meet-now meeting set to Only organ
   - OST Test 3 joined by ID and passcode: "no thread before the lobby; joining by meetingData", then the call carried meetingData and waited in the lobby.
   - OST Test 2 admitted it (--join-admit-each). The chat was named on admission (the meeting's own thread; its members loaded), and the title became "OST TEST 344".
 - Harness: --join-admit-each admits everyone who waits; the --join-lobby-wait log shows chat and title.
+
+- Codex review (PR #33):
+  - The chat a short-link join names without a lobby wasn't copied to the call window.
+  - After admission, the meeting kept its short link, so its options link and Controls stayed empty.
+- Fixed with one step for both paths (adopt_meeting_chat: the join's answer via JoinedView, and the admitting update). It sets the chat and loads its members, then reads the chat's properties: the topic for the title, and the `meeting` property's join link (or organizer and tenant) for the full join link. That gives the options link and loads Controls.
+- Re-verified live with "OST TEST 344b" (lobby OrganizerOnly, restored to EveryoneInCompany and read back, meeting deleted): after admission, chat true, title "OST TEST 344b", options true.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -68,4 +74,6 @@ Tests:
 - cargo test --features audio,video --lib -- calling::outgoing calling::signaling
 - Live with OST Test 3 by ID into a lobby-held test meeting (OST Test 2 organizer admitting): lobby, admission, chat and title.
 - Teams desktop on testpc1 compared.
+
+Review follow-up: the chat, title and full join link (meeting options, Controls) are taken the same way whether the join names the chat or the admission does; re-verified live.
 <!-- SECTION:FINAL_SUMMARY:END -->
