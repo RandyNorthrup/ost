@@ -2136,7 +2136,8 @@ Window {
             const j = window.linkJump
             if (!j || backend.currentChatId !== j.thread || !backend.messagesJson || backend.messagesJson === "[]") return
             window.linkJump = null
-            conversation.showFound(j.message, [], j.parent)
+            // After the chat's view has taken the new messages.
+            Qt.callLater(() => conversation.showFound(j.message, [], j.parent))
         }
     }
     /// A Join with an ID started by a short link: its failure is told (the
