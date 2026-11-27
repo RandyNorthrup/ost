@@ -132,4 +132,8 @@ Thank you to the people who reported security problems and helped fix them:
   cards could open any URI scheme
   ([#34](https://github.com/RandyNorthrup/ost/issues/34)), then hardened local
   file opening and the live event key token
-  ([#45](https://github.com/RandyNorthrup/ost/pull/45)).
+  ([#45](https://github.com/RandyNorthrup/ost/pull/45)). They also reported
+  that the TeamsJS app host answered token and context calls from any https
+  page in an app's frame
+  ([#35](https://github.com/RandyNorthrup/ost/issues/35), fixed in
+  [#59](https://github.com/RandyNorthrup/ost/pull/59)).
