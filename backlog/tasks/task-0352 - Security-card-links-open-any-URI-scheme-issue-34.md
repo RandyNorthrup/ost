@@ -1,11 +1,11 @@
 ---
 id: TASK-0352
 title: 'Security: card links open any URI scheme (issue #34)'
-status: In Progress
+status: Done
 assignee:
   - '@seccards'
 created_date: '2026-11-27T15:36:00Z'
-updated_date: '2026-11-27T15:56:00Z'
+updated_date: '2026-11-27T16:42:00Z'
 labels:
   - security
   - bug
@@ -21,9 +21,9 @@ GitHub issue #34 (Serph91P): links from card content (Adaptive Card Action.OpenU
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every remote-data call site of Qt.openUrlExternally goes through one native gate that allows only https, http, mailto, tel and OST's own schemes and refuses everything else, matching what Teams desktop opens from cards
-- [ ] #2 Card markdown links and RichTextBlock selectAction URLs are scheme-checked and HTML-escaped, so a card can't inject markup
-- [ ] #3 Unit tests cover the gate and the escaping; issue #34 is answered and closed after the fix is merged
+- [x] #1 Every remote-data call site of Qt.openUrlExternally goes through one native gate that allows only https, http, mailto, tel and OST's own schemes and refuses everything else, matching what Teams desktop opens from cards
+- [x] #2 Card markdown links and RichTextBlock selectAction URLs are scheme-checked and HTML-escaped, so a card can't inject markup
+- [x] #3 Unit tests cover the gate and the escaping; issue #34 is answered and closed after the fix is merged
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -45,3 +45,15 @@ GitHub issue #34 (Serph91P): links from card content (Adaptive Card Action.OpenU
 - OST gate: desktop/src/link_gate.rs (https/http/mailto/tel), backend.openExternal / linkHref / openLocalPath / refuseLink; native.cpp registers refuseLink for every other scheme the desktop has a handler for (x-scheme-handler associations + GIO/KIO built-ins).
 - All 173 Qt.openUrlExternally sites in desktop/qml migrated (5 local-file ones and third-party notices to openLocalPath); a unit test fails if one comes back.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Merged in PR #43 (7124f4f4); issue #34 answered and closed.
+
+- One gate for every link OST opens outside the app (desktop/src/link_gate.rs): https, http with a host, mailto and tel only; everything else refused and logged by scheme.
+- All 173 Qt.openUrlExternally calls in QML replaced by backend.openExternal / openLocalPath / linkHref; a unit test keeps them out.
+- Cards: markdown links placeholdered before other rules, RichTextBlock text and selectAction escaped, connector HTML reduced to text tags, refused links shown as plain text (as Teams does).
+- native.cpp registers a refusing handler for every other desktop scheme (defense in depth).
+- Live check on linuxlt: web and mail opened; file: and smb: refused before xdg-open; attribute-breakout stayed one https link.
+<!-- SECTION:FINAL_SUMMARY:END -->
