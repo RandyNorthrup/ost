@@ -110,6 +110,14 @@ Rectangle {
         const name = p ? p.name : (!mri && !m.is_organizer ? m.organizer_name : "")
         return name ? qsTr("%1 invited you").arg(name) : ""
     }
+    /// Whether the meeting is in your own calendar (its details can open
+    /// there).
+    function inMyCalendar(m) {
+        if (!m || (!m.ical_uid && !m.join_url)) return false
+        let mine = []
+        try { mine = JSON.parse(backend.calendarJson || "[]") } catch (e) {}
+        return mine.some(e => (!!m.ical_uid && e.ical_uid === m.ical_uid) || (!!m.join_url && e.join_url === m.join_url))
+    }
     function timeText(m) {
         const s = new Date(m.start), e = new Date(m.end)
         if (isNaN(s) || isNaN(e)) return ""
@@ -219,7 +227,7 @@ Rectangle {
                 anchors.fill: parent
                 readonly property var m: row.modelData
                 Rectangle { anchors.fill: parent; color: cardHover.hovered ? theme.rowHover : "transparent" }
-                HoverHandler { id: cardHover; cursorShape: Qt.PointingHandCursor }
+                HoverHandler { id: cardHover; cursorShape: pane.inMyCalendar(card.m) ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler { onTapped: pane.openMeeting(card.m) }
                 Rectangle {
                     x: 17; y: 15; width: 40; height: 40; radius: 4

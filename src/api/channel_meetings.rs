@@ -315,7 +315,12 @@ pub async fn channel_meetings(
     by_start(&mut past);
     let mut meetings = past;
     let n = meetings.len();
-    let mut future = future?;
+    // A meeting that is on now overlaps both ranges (calendarView returns
+    // what overlaps): it is shown once, before "now".
+    let mut future: Vec<ChannelMeeting> = future?
+        .into_iter()
+        .filter(|f| f.id.is_empty() || !meetings.iter().any(|p| p.id == f.id))
+        .collect();
     by_start(&mut future);
     meetings.extend(future);
     Ok(ChannelMeetings { meetings, past: n })

@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude-0364'
 created_date: '2026-11-27T18:19:00Z'
-updated_date: '2026-11-27T22:10:00Z'
+updated_date: '2026-11-27T22:19:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -53,3 +53,21 @@ From the 2026-11-27 parity audit (scope A), which compared Teams (desktop for so
   - Header: people (not in General) + meeting button + menu match Teams' positions (1600: people at W-217, meeting W-183) and items; ··· matches Teams item for item for ost-test1 (owner) in OST test channel 2 and OST Test 2 in General / OST threads test / OST test channel 2 (plus desktop's Open in new window); View meetings shows General's "Design review" (Dec 1) as Teams does, and Teams' empty state elsewhere.
 - Found and fixed on the way: a Threads-layout channel showed its composer over other tabs (Page).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Channels now show Teams' Page, header buttons and header menu (PR #60).
+
+Cause of A-18: not a code regression. The two audited channels never had a Page tab of their own; Teams draws a client-side stand-in Page (isLieChannelPageTab) unless defaultTabHiddenApps::ChannelPageTab is set, and OST only ever listed stored Page tabs (TASK-0039 was checked in a channel that had one).
+
+Changes:
+- api::tabs: Teams' Page rules (others' link-less Pages dropped, the stand-in after Shared with a stable id and only Move left/right); tab_add::provision_lie_page writes the tab Teams' provisionFluidForPageTab writes when the stand-in is opened; removing the last Page sets the hidden flag.
+- Header: people button + ChannelAudiencePopover; CalendarVideo meeting button with Meet now / Schedule meeting / View meetings; ChannelMeetingsPane over api::channel_meetings (group calendarView narrowed to the channel) with Date and Organizer filters and Teams' empty state.
+- ChannelMenu header mode as Teams' channel header menu (View meetings, Mark as unread/read, admin items only where Teams shows them, Delete per the team's member setting).
+- Threads-layout channels no longer show the composer over other tabs.
+
+Tests: unit tests for the Page rules, provisioned property, hidden flag, calendarView request/parsing and month math, team delete setting; live on linuxlt (--channel-header-test) side by side with Teams web as OST Test 2 / ost-test1.
+
+Left: Agents and bots lists every team bot (Teams showed only Forms); People uses the roster, not recent contributors; Meetings pane lacks per-meeting ··· and the custom date range; Teams desktop itself not driven (web used); ChannelWindow pop-out header unchanged.
+<!-- SECTION:FINAL_SUMMARY:END -->
