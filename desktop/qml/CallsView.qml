@@ -73,6 +73,8 @@ Item {
     /// a missed call's activity, Voicemail for a voicemail's).
     function showFilter(f) {
         historyOpen = true
+        // (a name search left open here would hide what the activity asks for)
+        closeFilter.go()
         if (root.filterLabels[f] !== undefined) root.filter = f
     }
     property bool historyOpen: true
