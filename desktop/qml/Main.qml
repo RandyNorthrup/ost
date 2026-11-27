@@ -3596,6 +3596,38 @@ Window {
             }
         }
     }
+    // --join-lobby-camera[=<ms>] (with --join-lobby-wait, TASK-0349): turn
+    // the camera on the moment the lobby lets us in, or <ms> later (the
+    // call is moved to the meeting's leg within a second or two of the
+    // admission), then log the camera and the status line each second for
+    // ten seconds (JOIN lobby-camera lines).
+    property bool lobbyHeld: false
+    property int lobbyCameraLogs: 0
+    readonly property string lobbyCameraArg: Qt.application.arguments.find(a => a === "--join-lobby-camera" || a.startsWith("--join-lobby-camera=")) || ""
+    Connections {
+        target: window.lobbyCameraArg ? backend : null
+        function onCallStateChanged() {
+            if (backend.callState === "lobby") window.lobbyHeld = true
+            else if (backend.callState === "connected" && window.lobbyHeld && window.lobbyCameraLogs === 0) {
+                window.lobbyCameraLogs = 1
+                lobbyCameraDelay.interval = Math.max(1, parseInt(window.lobbyCameraArg.split("=")[1] || "1"))
+                console.warn("JOIN lobby-camera admitted; camera on in", lobbyCameraDelay.interval, "ms")
+                lobbyCameraDelay.start()
+            }
+        }
+    }
+    Timer {
+        id: lobbyCameraDelay
+        onTriggered: { console.warn("JOIN lobby-camera toggling"); backend.toggleCamera() }
+    }
+    Timer {
+        running: window.lobbyCameraLogs > 0 && window.lobbyCameraLogs <= 10
+        interval: 1000; repeat: true
+        onTriggered: {
+            console.warn("JOIN lobby-camera", window.lobbyCameraLogs, "camera", backend.callCameraOn, "status", JSON.stringify(backend.statusText))
+            window.lobbyCameraLogs++
+        }
+    }
     property var controlKeys: []
     property int controlTypedAt: 0
     Timer {

@@ -25,6 +25,8 @@ pub struct OutgoingCall {
     http: reqwest::Client,
     /// A meeting's updateMediaDescriptions link, and the last request id.
     media_descriptions: Option<(String, std::sync::atomic::AtomicU64)>,
+    /// Our leg moving to the meeting's call after a lobby admission.
+    leg_move: LegMove,
     /// The call's id (our chain id): Teams tags each share and each time
     /// the camera goes on with it ([`MediaTags`]).
     call_id: String,
@@ -836,8 +838,13 @@ impl OutgoingCall {
 
     /// Our leg was moved to another call (admitted from the lobby, the
     /// lobby's call hands us to the meeting's): from now on the leg's links
-    /// are the new ones, so hanging up ends the leg we're really on.
-    pub fn retarget(&mut self, links: LegLinks) {
+    /// are the new ones, so hanging up, hold, transfers, sharing and our
+    /// media descriptions go to the leg we're really on. Returns whether
+    /// our media must now be described to the new leg
+    /// ([`Self::describe_media`]): a description the old leg refused, or a
+    /// camera or screen already sending (the meeting's processor knows our
+    /// lines by its new mids).
+    pub fn retarget(&mut self, links: LegLinks) -> bool {
         tracing::info!("call leg retargeted");
         self.call_leg = Some(links.call_leg);
         if links.hold.is_some() {
@@ -845,6 +852,9 @@ impl OutgoingCall {
         }
         if links.transfer.is_some() {
             self.transfer_link = links.transfer;
+        }
+        if links.replacement.is_some() {
+            self.replace_link = links.replacement;
         }
         if let Some(l) = links
             .renegotiation
@@ -857,11 +867,16 @@ impl OutgoingCall {
         {
             *old = l;
         }
+        let sending = self.camera_on() || self.is_sharing();
+        self.leg_move.finish(sending) && self.media_descriptions.is_some()
     }
 
     /// Admitted from the lobby: take the conversation's links from the
     /// update that admitted us (the lobby's join response has only a few).
     pub fn admit_from_lobby(&mut self, update: &serde_json::Value) {
+        // The service now moves our leg to the meeting's call (the
+        // retarget, [`Self::retarget`]).
+        self.leg_move.start();
         let body = update.to_string();
         let link = |name: &str| conversation_link(&body, name);
         self.state_links = (
@@ -2669,15 +2684,28 @@ impl OutgoingCall {
             request_id,
             (&mids.0, &mids.1),
         );
-        cc_post(
+        match cc_post(
             &self.http,
             &self.skype_token,
             link,
             &body,
             "Media descriptions",
         )
-        .await?;
-        Ok(())
+        .await
+        {
+            // Just let in from the lobby: the service may already have
+            // ended the leg it's moving us from ("Call is ended", 406)
+            // while the new leg's links are on their way. The description
+            // goes there once they come.
+            Err(e) if self.leg_move.defer() => {
+                tracing::info!(
+                    "media descriptions wait for the moved call leg: {}",
+                    e.to_string().chars().take(160).collect::<String>()
+                );
+                Ok(())
+            }
+            r => r.map(|_| ()),
+        }
     }
 
     pub fn can_send_video(&self) -> bool {
@@ -3878,12 +3906,50 @@ fn endpoint_in_lobby(create_response: &str, endpoint_id: &str) -> bool {
         .any(|ep| ep.get("lobby").is_some() && ep.get("call").is_none())
 }
 
+/// Our leg's move to the meeting's call after a lobby admission (Teams'
+/// participant retarget): it starts with the admission and finishes with
+/// the `call/mediaAcknowledgement` naming the new leg. Media descriptions
+/// the old leg refuses meanwhile are owed to the new one.
+#[derive(Default)]
+struct LegMove {
+    moving: std::sync::atomic::AtomicBool,
+    owed: std::sync::atomic::AtomicBool,
+}
+
+impl LegMove {
+    fn start(&self) {
+        self.moving
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// A description failed: true when it's owed to the new leg instead
+    /// (the leg is moving).
+    fn defer(&self) -> bool {
+        use std::sync::atomic::Ordering::Relaxed;
+        let moving = self.moving.load(Relaxed);
+        if moving {
+            self.owed.store(true, Relaxed);
+        }
+        moving
+    }
+
+    /// The leg moved: whether our media must be described to the new leg
+    /// (a description is owed, or something of ours is sending).
+    fn finish(&self, sending: bool) -> bool {
+        use std::sync::atomic::Ordering::Relaxed;
+        self.moving.store(false, Relaxed);
+        self.owed.swap(false, Relaxed) || sending
+    }
+}
+
 /// A call leg's links after the service moved it to another call.
 #[derive(Debug, PartialEq)]
 pub struct LegLinks {
     pub call_leg: String,
     pub hold: Option<String>,
     pub transfer: Option<String>,
+    /// What a transfer replacing this call names (`links.replacement`).
+    pub replacement: Option<String>,
     pub renegotiation: Option<String>,
     pub media_descriptions: Option<String>,
 }
@@ -3906,6 +3972,7 @@ pub fn leg_retarget(json: &str) -> Option<LegLinks> {
         call_leg: link("callLeg")?,
         hold: link("hold"),
         transfer: link("transfer"),
+        replacement: link("replacement").or_else(|| link("replace")),
         renegotiation: link("mediaRenegotiation"),
         media_descriptions: link("updateMediaDescriptions"),
     })
@@ -5099,6 +5166,7 @@ async fn start_tagged(
             .clone()
             .filter(|_| meeting_media)
             .map(|l| (l, std::sync::atomic::AtomicU64::new(1))),
+        leg_move: LegMove::default(),
         joined_roster: super::roster::joined(&created.response_body),
         call_id: chain_id.clone(),
         call_tag: call_tag.clone(),
@@ -5833,6 +5901,21 @@ mod tests {
             "https://cc/v1/active/89306a7a/204715502/a4/"
         );
         assert!(links.hold.unwrap().ends_with("/hold"));
+        assert!(
+            links
+                .media_descriptions
+                .unwrap()
+                .ends_with("/a4/updateMediaDescriptions")
+        );
+        assert_eq!(links.replacement, None);
+        // A lobby admission's (OST Test 3, 2026-11-27): the new leg's
+        // replacement link too.
+        let moved = r#"{"body":{"links":{"callLeg":"https://cc/v1/active/9fdc0b30/959/a4/1899","replacement":"https://cc/v1/callParticipant/9fdc0b30/13/k3/543/replacement","updateMediaDescriptions":"https://cc/v1/active/9fdc0b30/959/a4/1899/updateMediaDescriptions"},"mediaAcknowledgement":{"code":0,"subCode":10109,"phrase":"Participant retarget was successful."}},"callAgentPath":"call/mediaAcknowledgement/"}"#;
+        let links = leg_retarget(moved).unwrap();
+        assert_eq!(
+            links.replacement.as_deref(),
+            Some("https://cc/v1/callParticipant/9fdc0b30/13/k3/543/replacement")
+        );
         // A plain acknowledgement moves nothing.
         let ack = r#"{"body":{"debugContent":{},"links":{"callLeg":null},"mediaAcknowledgement":{"code":0,"phrase":"Success"}},"callAgentPath":"call/mediaAcknowledgement/"}"#;
         assert!(leg_retarget(ack).is_none());
@@ -5842,6 +5925,24 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn descriptions_refused_while_the_leg_moves_go_to_the_new_leg() {
+        // Not moving: a failed description is a failure.
+        let m = LegMove::default();
+        assert!(!m.defer());
+        assert!(!m.finish(false));
+        // Let in from the lobby: the old leg refuses ("Call is ended"), so
+        // the description is owed to the new leg, once.
+        m.start();
+        assert!(m.defer());
+        assert!(m.finish(false));
+        assert!(!m.defer());
+        assert!(!m.finish(false));
+        // A camera already sending is described to the new leg anyway.
+        m.start();
+        assert!(m.finish(true));
     }
 
     #[test]
