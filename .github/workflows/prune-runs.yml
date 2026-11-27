@@ -31,31 +31,48 @@ jobs:
       - name: Delete unneeded runs
         run: |
           set -euo pipefail
-          gh pr list -R "$REPO" --state open --limit 200 --json number,headRefName \
-            --jq '.[] | .headRefName, "refs/pull/\(.number)/head", "refs/pull/\(.number)/merge"' > open-branches.txt
+          # every open PR, all pages: a PR missing here would have its runs treated as closed
+          gh api --paginate "repos/$REPO/pulls?state=open&per_page=100" \
+            --jq '.[] | [(.number|tostring), (.head.repo.full_name // ""), .head.ref] | @tsv' > open-prs.tsv
           gh api --paginate "repos/$REPO/actions/runs?per_page=100" \
-            --jq '.workflow_runs[] | [.id, (.workflow_id|tostring), .head_branch // "", .status, .conclusion // "", .created_at, .path] | @tsv' > runs.tsv
+            --jq '.workflow_runs[] | [.id, (.workflow_id|tostring), .head_branch // "", .status, .conclusion // "", .created_at, .path, (.head_repository.full_name // ""), .event, ([.pull_requests[]?.number|tostring]|join(","))] | @tsv' > runs.tsv
           python3 - <<'EOF'
-          import csv
-          open_b = set(l.strip() for l in open("open-branches.txt") if l.strip())
+          import csv, os
+          repo = os.environ["REPO"]
+          prs = list(csv.reader(open("open-prs.tsv"), delimiter="\t"))
+          open_nums = {n for n, _, _ in prs}
+          open_heads = {(r, b) for _, r, b in prs}
           rows = sorted(csv.reader(open("runs.tsv"), delimiter="\t"), key=lambda r: r[5], reverse=True)
+          def ctx(r):
+              """What a run belongs to: one open PR, main of this repo, or something else.
+              CodeQL's default setup names runs "PR #n" and reports the branch as refs/pull/n/head."""
+              _, _, branch, _, _, _, _, head_repo, event, nums = r
+              m = branch.startswith("refs/pull/") and branch.split("/")[2]
+              if m:
+                  return ("pr", m)
+              if event in ("pull_request", "pull_request_target"):
+                  return ("pr", nums.split(",")[0] if nums else f"{head_repo}:{branch}")
+              return (event if event in ("push", "schedule", "workflow_dispatch", "dynamic") else "other", f"{head_repo}:{branch}")
+          def live(c):
+              kind, key = c
+              if kind == "pr":
+                  return key in open_nums or tuple(key.split(":", 1)) in open_heads
+              return key == f"{repo}:main"
           newest = {}
           for r in rows:
-              newest.setdefault((r[1], r[2]), r[0])
-          keep_branch = lambda b: b == "main" or b in open_b
+              newest.setdefault((r[1], ctx(r)), r[0])   # grouped by workflow id and context
           out = []
-          # runs are grouped by workflow id (CodeQL's default setup names its runs "PR #n" /
-          # "Push on main", and reports a PR's branch as refs/pull/n/head)
-          for rid, wf, branch, status, concl, _, path in rows:
-              if status != "completed" or path.endswith("/release.yml"):
-                  continue
-              is_newest = newest[(wf, branch)] == rid
+          for r in rows:
+              rid, wf, _, status, concl, _, path = r[:7]
+              if status != "completed" or path.split("@", 1)[0].endswith("/release.yml"):
+                  continue                         # never a Release run (path may carry @ref)
+              c = ctx(r)
               if concl == "cancelled":
                   out.append(rid)
-              elif not is_newest:
-                  out.append(rid)              # a newer run of this check exists on this branch
-              elif not keep_branch(branch):
-                  out.append(rid)              # the branch is merged, closed or a deleted tag test
+              elif newest[(wf, c)] != rid:
+                  out.append(rid)                  # a newer run of this workflow exists for the same PR or branch
+              elif not live(c):
+                  out.append(rid)                  # its PR or branch is merged, closed or gone
           open("delete.txt", "w").write("\n".join(out) + ("\n" if out else ""))
           print(f"{len(rows)} runs, deleting {len(out)}")
           EOF
