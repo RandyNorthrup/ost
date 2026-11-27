@@ -135,7 +135,9 @@ its manifest (`desktop/packaging/flatpak/io.github.RandyNorthrup.ost.yml`):
   (HID) would need access to all devices, so they aren't available in the
   Flatpak: use the .deb, .rpm or AppImage for them.
 - **PipeWire and PulseAudio**: microphones, speakers, ringtones and the
-  screen-share streams the desktop's portal hands over.
+  screen-share streams the desktop's portal hands over. With PulseAudio,
+  Flatpak also shows the sandbox the sound card nodes (`/dev/snd`); OST
+  doesn't open them.
 - **Downloads folder** only: downloaded files go there, as in Teams.
   Nothing else in your home folder is visible to it.
 - **Session bus names**: notifications, the keyring (Secret Service), the
@@ -145,6 +147,10 @@ its manifest (`desktop/packaging/flatpak/io.github.RandyNorthrup.ost.yml`):
   NetworkManager (work location from the Wi-Fi network's name), BlueZ (a
   Bluetooth scan for nearby Teams Rooms while the pre-join screen looks for
   them; nothing is paired or changed).
+
+The KDE runtime adds read access to KDE's global settings (`kdeglobals`:
+theme, fonts) and the bus names KDE apps use to follow settings changes and
+the global menu.
 
 Screen sharing, opening links and picking files go through the desktop
 portals, which ask you each time.
