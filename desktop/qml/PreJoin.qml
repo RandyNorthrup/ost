@@ -240,7 +240,6 @@ Window {
     readonly property var audioDevices: { devicesRev; try { return JSON.parse(backend.audioDevices()) } catch (e) { return {} } }
     readonly property string mic: { devicesRev; const v = backend.setting("micDevice"); return v && v !== "default" ? v : audioDevices.defaultInput || qsTr("Default microphone") }
     readonly property string speaker: { devicesRev; const v = backend.setting("speakerDevice"); return v && v !== "default" ? v : audioDevices.defaultOutput || qsTr("Default speaker") }
-    onVisibleChanged: if (visible) devicesRev++
     /// More audio settings (the device flyouts): Settings ▸ Devices.
     signal moreAudioSettings()
 
@@ -275,6 +274,8 @@ Window {
     // (closed by the time setCameraPreview returns). Shown again for the
     // lobby with the camera on: your preview again, as Teams.
     onVisibleChanged: {
+        // The device rows name what's in use now.
+        if (visible) devicesRev++
         if (!visible && (cameraOn || avatarPreview)) backend.setCameraPreview(false)
         else if (visible && cameraOn && !backend.setCameraPreview(true)) cameraOn = false
         // Bluetooth room discovery stops with the pre-join screen.
