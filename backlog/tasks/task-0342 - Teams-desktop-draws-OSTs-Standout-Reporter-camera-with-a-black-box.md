@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@meet'
 created_date: '2026-11-26T21:39:00Z'
-updated_date: '2026-11-27T05:42:00Z'
+updated_date: '2026-11-27T07:00:00Z'
 labels:
   - bug
   - calls
@@ -108,4 +108,12 @@ Teams desktop was in a scheduled test meeting, sharing a window, with its status
   1. In Standout and Reporter only, have OST's camera encoder emit an SEI NAL (type 6) in each access unit, before the first slice. It carries one user_data_unregistered message in Teams' Cropping Info layout: the UUID above, then 1, 0, confidence 100, and the left/right/top/bottom offsets of the person's bounding box taken from OST's segmentation mask. Optionally also send Teams' per-frame Bitstream Info SEI (05FBC6B9-5A80-40E5-A22A-AB4020267E26, ref_frm_cnt and num_of_nal_unit).
   2. Verify with the same rig: OST presents in Standout while testpc2 Teams views, with pktmon on testpc2. If the frame-leading packets grow by the SEI's size, the processor forwards OST's SEI; if Teams desktop then cuts OST out, AC #1 is met.
   3. If the processor strips SEI from H.264 senders, the remaining route is sending X-H264UC with a PACSI that carries the same SEI. The processor has only ever answered OST with 107, so that likely needs the native send negotiation.
+
+- Cropping info SEI experiment, 2026-11-27 06:37–06:58 UTC. OST Test 3 (linuxlt, test camera C fed a StyleGAN synthetic face, virtual mic) presented a KWrite test window to the scheduled test meeting "OST TEST 342 SEI" (deleted afterwards). testpc2's Teams desktop (OST Test 2) viewed it with pktmon running.
+  - OST_CROP_SEI=1 (new developer switch, off by default): in Standout and Reporter, each camera frame carries one MS-H264PF cropping info SEI NAL before the slice. That's UUID BB7FC1A0-6986-4052-90F0-0929217539CF, one window with confidence 100, and offsets from the person's box in the cut-out luma (implemented from spec sections 2.2.6 and 4.2; the unit test reproduces the spec's example bytes). OST's log showed `nals=[6, 1]` on every frame.
+  - The media processor forwards the SEI. Teams desktop receives OST's H.264 camera repacketized as X-H264UC (PT 122 plus PT 123), with a 73-byte frame-leading PACSI packet that the processor builds itself. With the switch on, a 72-byte packet follows that PACSI in every frame (Standout 321 of 321 frames, Reporter 438 of 437), so the SEI travels as its own NAL unit. It isn't merged into the PACSI the way Teams' own crop info is (Teams: the PACSI packet grows 73 to 102).
+  - Teams desktop on testpc2 still drew OST's Standout and Reporter camera with the black box (screen checked, picture deleted).
+  - A PACSI variant was also tried: OST put its own PACSI NAL (type 30, RFC 6190 layout, carrying the SEI unescaped as MS-H264PF says) first in each frame. The processor then forwarded almost nothing: 19 frames in 39 s of Standout and 15 in 75 s of Reporter, all keyframes. Each had OST's PACSI as an extra 77-byte packet next to the processor's own. Teams desktop showed no camera in Standout and a frozen older frame in Reporter; video came back once the share stopped. That variant was removed.
+- Conclusion: the processor passes a bare SEI but builds the PACSI itself for an H.264 sender, so OST can't place the crop info where Teams desktop puts it (inside the PACSI). Teams desktop either reads it only from there, or the cut-out depends on more than the crop info (the PACSI or bitstream info differ in size too: the processor's PACSI for OST is 39 bytes of payload, Teams' own is 43). Either way, AC #1 isn't reachable on the H.264 path.
+- Native-format route: only a sender of X-H264UC builds its own PACSI. The processor has answered OST's receive offers with H.264 only (earlier note), and OST's send line was never offered X-H264UC. Next step if pursued: offer X-H264UC (`packetization-mode=1;mst-mode=NI-TC`) on OST's camera send line with OST_VIDEO_NATIVE. If the processor accepts, send MS-H264PF packets: a PACSI first in every frame, with a DONC, a bitstream info SEI and, in Standout/Reporter, the crop info SEI. If it answers 107 again, the route is closed to OST.
 <!-- SECTION:NOTES:END -->
