@@ -6563,6 +6563,14 @@ async fn premium_view(
     }
     let trial = trial.ok().flatten();
     let policy = policy.unwrap_or_default();
+    // Teams reads these from ECS: wait for it (sign-in starts both at
+    // once); without it, show nothing and keep the device's marks as they
+    // are rather than deciding from defaults.
+    if !api::ecs::wait_loaded(std::time::Duration::from_secs(60)).await {
+        tracing::warn!("premium: ECS settings didn't load");
+        let marks = premium_marks(&user);
+        return (json!({ "mode": "none", "error": "ECS" }), user, marks);
+    }
     let ecs: serde_json::Map<String, serde_json::Value> = [
         "enableTeamsPremiumGlobalEntry",
         "enableLazyEligibilityCheckGlobalEntry",
