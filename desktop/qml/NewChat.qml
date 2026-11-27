@@ -126,7 +126,7 @@ Rectangle {
         const text = compose.plainText()
         const m = {
             text: text, html: text.trim() ? compose.formattedText() : "", media: compose.mediaInUse(),
-            importance: compose.importance, files: root.pendingFiles, cloud: cloudAttach.pending, clip: compose.clip
+            importance: compose.importance, files: root.externalPicked ? [] : root.pendingFiles, cloud: root.externalPicked ? [] : cloudAttach.pending, clip: root.externalPicked ? null : compose.clip
         }
         const empty = !text.trim() && m.media.length === 0 && m.files.length === 0 && m.cloud.length === 0 && !m.clip
         return empty ? "" : JSON.stringify(m)
@@ -366,9 +366,15 @@ Rectangle {
     }
 
     // The compose box, as the conversation's (Teams always shows it).
+    /// Someone on Teams free is among the people picked: Teams turns files
+    /// off in chats with them (no Attach; attachments already added aren't
+    /// sent). Pictures stay: in a chat you start, photos are allowed.
+    readonly property bool externalPicked: picked.some(p => p.external === true || Mri.isConsumer(p.id))
+    onExternalPickedChanged: if (externalPicked) clearAttachments()
     ComposeBox {
         id: compose
         visible: !root.history
+        filesAllowed: !root.externalPicked
         readonly property real gut: root.width < 480 ? 14 : root.width < 720 ? 32 : 72
         anchors { left: parent.left; right: parent.right; leftMargin: gut; rightMargin: gut }
         y: root.height - height - 6

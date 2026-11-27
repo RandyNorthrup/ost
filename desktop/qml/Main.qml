@@ -15033,7 +15033,8 @@ Window {
     }
 
     // --external-chat-test=<chat id> with --shots=<dir>: a chat with someone
-    // on Teams free (TASK-0289): the chat opened (EXTCHAT lines: the header
+    // on Teams free (TASK-0289): the chat opened (with
+    // --external-request-look its request pane, even once answered; EXTCHAT lines: the header
     // flags, the banner, the compose note and tools, the call buttons;
     // external-chat.png), then with --external-preview its "preview their
     // messages." (external-preview.png), with --external-accept Accept
@@ -15059,6 +15060,7 @@ Window {
                 tools: c.composeBox.toolModel.map(t => t.id), note: c.composeBox.noteText, members: c.chatMembers.map(m => m.name + " " + m.mri + " " + (m.mail || "")),
                 messages: c.messages.filter(m => m.kind === "message").slice(-3).map(m => (m.sender || "") + ": " + (m.text || "").slice(0, 60)) })
             if (step === 0) { rail.current = "chat"; const e = chatList.chats.find(x => x.id === id); log("listed", e ? { name: e.name, isGroup: e.isGroup, peerMri: e.peerMri, request: e.request, external: e.external } : null); backend.selectChat(id, e ? e.name : "") }
+            else if (step === 2 && has("--external-request-look")) c.requestLookForTest = true
             else if (step === 3) { log("state", state()); shot("external-chat") }
             else if (step === 4 && has("--external-preview") && c.chatRequest) { c.requestPreview = true }
             else if (step === 6 && has("--external-preview") && c.chatRequest) { log("preview", state()); shot("external-preview") }

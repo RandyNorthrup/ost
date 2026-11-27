@@ -828,11 +828,14 @@ Rectangle {
     /// device, cloud files and a recorded clip go as from this chat's own
     /// compose box (Teams makes the chat as the first message goes).
     function adoptAndSend(p) {
+        // (No files into a chat with someone on Teams free: Teams turns
+        // them off there, and their sharing would leave that person out.)
+        const files = compose.filesAllowed
         compose.setDraftState({ text: p.text || "", html: p.html || "", media: p.media || [] })
         compose.importance = p.importance || ""
-        root.pendingFiles = p.files || []
-        cloudAttach.pending = p.cloud || []
-        if (p.clip) {
+        root.pendingFiles = files ? (p.files || []) : []
+        cloudAttach.pending = files ? (p.cloud || []) : []
+        if (p.clip && files) {
             compose.clip = Object.assign({}, p.clip, { uploading: true, id: "", url: "", rendering: !!p.clip.spec && !p.clip.path })
             root.sendAfterClip = true
             if (compose.clip.rendering) backend.renderClip(JSON.stringify(compose.clip.spec))
@@ -887,7 +890,9 @@ Rectangle {
     readonly property bool externalOneOnOne: externalChat && !root.isGroup
     /// A chat request you haven't answered (Teams: "… wants to chat with
     /// you", Block and Accept; the chat's relationshipState.inQuarantine).
-    readonly property bool chatRequest: !!(chatEntry && chatEntry.request) && !root.requestAnswered[root.chatId]
+    readonly property bool chatRequest: (!!(chatEntry && chatEntry.request) || root.requestLookForTest) && !root.requestAnswered[root.chatId]
+    /// Test hook: show the request pane for an answered chat (layout checks).
+    property bool requestLookForTest: false
     /// Requests answered here, until the chat list catches up.
     property var requestAnswered: ({})
     /// The Teams free person a 1:1 request or chat is with.
@@ -1058,6 +1063,7 @@ Rectangle {
     function insertTextForTest(t) { compose.insertText(t) }
     onChatIdChanged: {
         requestPreview = false
+        requestBusy = false
         smartReplies = null
         if (chatId && !isChannel) backend.loadSmartReplies(chatId)
         postViewRoot = ""
@@ -5536,12 +5542,12 @@ Rectangle {
     }
     Connections {
         target: backend
+        // (Recorded whichever chat is open by then.)
         function onChatRequestAnswered(chatId, action, ok) {
-            if (chatId !== root.chatId) return
-            root.requestBusy = false
+            if (chatId === root.chatId) root.requestBusy = false
             if (!ok) return
             const d = Object.assign({}, root.requestAnswered); d[chatId] = action; root.requestAnswered = d
-            root.requestPreview = false
+            if (chatId === root.chatId) root.requestPreview = false
         }
     }
     // The peer's status bar (Teams' compose notification, 29.33 tall over

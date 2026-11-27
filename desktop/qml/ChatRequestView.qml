@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic
 
 // Teams' chat request (a 1:1 chat someone outside your org, on Teams free,
 // started with you: your membership's relationshipState.inQuarantine).
@@ -42,103 +43,135 @@ Rectangle {
     // Teams' tfwTfwFedOneOnOneNewUILearnMoreUrl.
     readonly property string learnMoreUrl: "https://go.microsoft.com/fwlink/?linkid=2243561"
 
-    Column {
-        id: content
-        visible: !root.previewing
-        width: parent.width
-        spacing: 0
-        Item { width: 1; height: 1 }
-        Image {
-            anchors.horizontalCenter: parent.horizontalCenter
-            source: "../assets/illustrations/chat-request.svg"
-            sourceSize: Qt.size(200, 200)
-            width: 200; height: 200
-        }
-        Item { width: 1; height: 43 }
-        Text {
-            width: Math.min(parent.width - 48, 800); anchors.horizontalCenter: parent.horizontalCenter
-            horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-            text: root.personMail
-                ? qsTr("%1 (%2) wants to chat with you", "messaging:k8i85rtfs").arg(root.personName).arg(root.personMail)
-                : qsTr("%1 wants to chat with you", "messaging:k8zm4zvb2").arg(root.personName)
-            font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
-            lineHeight: 28; lineHeightMode: Text.FixedHeight
-            color: theme.text
-            Accessible.role: Accessible.Heading
-            Accessible.name: text
-        }
-        Item { width: 1; height: 17 }
-        Rectangle {
-            id: box
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: Math.min(600, parent.width - 48); height: boxCol.height + 48
-            radius: 4
-            color: theme.pick("#EBEBEB", "#292929", "#000000")
-            border.color: theme.hc("transparent", "#FFFFFF"); border.width: theme.highContrast ? 1 : 0
-            Column {
-                id: boxCol
-                x: 32; y: 24; width: parent.width - 64
-                spacing: 20
-                Row {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    spacing: 6
-                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "warning-20"; size: 16; color: theme.text }
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: qsTr("This person is from outside your organization", "messaging:kc21tzs78")
-                        font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                        color: theme.text
-                    }
-                }
-                Text {
-                    width: parent.width
-                    horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-                    text: qsTr("Messages from unknown or unexpected people could be spam or phishing attempts. Never share your account information or authorize sign-in requests over chat.", "messaging:karvikcmc")
-                    font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
-                    color: theme.text
-                }
+    // The pane scrolls when the window is too short for it.
+    Flickable {
+        id: scroller
+        anchors.fill: parent
+        contentWidth: width
+        contentHeight: root.previewing ? height : Math.max(height, disclaimer.y + disclaimer.height + 12)
+        boundsBehavior: Flickable.StopAtBounds
+        clip: true
+        interactive: !root.previewing && contentHeight > height
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        Column {
+            id: content
+            visible: !root.previewing
+            width: parent.width
+            spacing: 0
+            Item { width: 1; height: 1 }
+            Image {
+                anchors.horizontalCenter: parent.horizontalCenter
+                source: "../assets/illustrations/chat-request.svg"
+                sourceSize: Qt.size(200, 200)
+                width: 200; height: 200
+            }
+            Item { width: 1; height: 43 }
+            Text {
+                width: Math.min(parent.width - 48, 800); anchors.horizontalCenter: parent.horizontalCenter
+                horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                text: root.personMail
+                    ? qsTr("%1 (%2) wants to chat with you", "messaging:k8i85rtfs").arg(root.personName).arg(root.personMail)
+                    : qsTr("%1 wants to chat with you", "messaging:k8zm4zvb2").arg(root.personName)
+                font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
+                lineHeight: 28; lineHeightMode: Text.FixedHeight
+                color: theme.text
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
+            }
+            Item { width: 1; height: 17 }
+            Rectangle {
+                id: box
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: Math.min(600, parent.width - 48); height: boxCol.height + 48
+                radius: 4
+                color: theme.pick("#EBEBEB", "#292929", "#000000")
+                border.color: theme.hc("transparent", "#FFFFFF"); border.width: theme.highContrast ? 1 : 0
                 Column {
-                    width: parent.width
-                    spacing: 6
+                    id: boxCol
+                    x: 32; y: 24; width: parent.width - 64
+                    spacing: 20
+                    Row {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        spacing: 6
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "warning-20"; size: 16; color: theme.text }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("This person is from outside your organization", "messaging:kc21tzs78")
+                            font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                            color: theme.text
+                        }
+                    }
                     Text {
                         width: parent.width
                         horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-                        textFormat: Text.StyledText
-                        // (As Teams showed it for both test accounts, whose
-                        // addresses are private; someone sharing theirs gets
-                        // only "To be safe, preview their messages.")
-                        text: (root.mailPrivate ? "<b>" + qsTr("Note: ", "messaging:k6f4shg5b").trim() + "</b> "
-                            + qsTr("This person is not sharing their email in Teams. ", "messaging:k1icza3g0") : "") + qsTr("To be safe, ", "messaging:k7fj7t837").trim()
+                        text: qsTr("Messages from unknown or unexpected people could be spam or phishing attempts. Never share your account information or authorize sign-in requests over chat.", "messaging:karvikcmc")
                         font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
                         color: theme.text
                     }
-                    Text {
-                        id: previewLink
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        text: qsTr("preview their messages.", "messaging:k8dhlu5yh")
-                        font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
-                        font.underline: previewHover.hovered
-                        color: theme.brandForeground1
-                        HoverHandler { id: previewHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: root.preview() }
-                        Accessible.role: Accessible.Link
-                        Accessible.name: text
+                    Column {
+                        width: parent.width
+                        spacing: 6
+                        Text {
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                            textFormat: Text.StyledText
+                            // (As Teams showed it for both test accounts, whose
+                            // addresses are private; someone sharing theirs gets
+                            // only "To be safe, preview their messages.")
+                            text: (root.mailPrivate ? "<b>" + qsTr("Note: ", "messaging:k6f4shg5b").trim() + "</b> "
+                                + qsTr("This person is not sharing their email in Teams. ", "messaging:k1icza3g0") : "") + qsTr("To be safe, ", "messaging:k7fj7t837").trim()
+                            font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                            color: theme.text
+                        }
+                        Text {
+                            id: previewLink
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: qsTr("preview their messages.", "messaging:k8dhlu5yh")
+                            font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                            font.underline: previewHover.hovered
+                            color: theme.brandForeground1
+                            HoverHandler { id: previewHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: root.preview() }
+                            Accessible.role: Accessible.Link
+                            Accessible.name: text
+                        }
                     }
                 }
             }
+            Item { width: 1; height: 38 }
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 8
+                RequestButton { text: qsTr("Block"); onClicked: root.block() }
+                RequestButton { text: qsTr("Accept"); onClicked: root.accept() }
+            }
         }
-        Item { width: 1; height: 38 }
-        Row {
+        Text {
+            id: disclaimer
             anchors.horizontalCenter: parent.horizontalCenter
-            spacing: 8
-            RequestButton { text: qsTr("Block"); onClicked: root.block() }
-            RequestButton { text: qsTr("Accept"); onClicked: root.accept() }
+            // At the bottom, but never over Block and Accept: in a short window
+            // (the 588 x 493 chat pop-out) the pane scrolls instead.
+            y: root.previewing ? root.height - 12 - height : Math.max(content.y + content.height + 40, root.height - 78 - height)
+            width: Math.min(580, parent.width - 48)
+            horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+            textFormat: Text.RichText
+            text: theme.linkCss(theme.brandForeground1, true)
+                + qsTr("By selecting Accept, you agree to receive future communications and share some account information such as your name and status with %1 (External). To limit communications, you can block them at any time.", "messaging:k9lkmkyv7")
+                    .arg(root.personName).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                + " <a href=\"" + root.learnMoreUrl + "\">" + qsTr("Learn more") + "</a>"
+            font.family: theme.font; font.pixelSize: 12; lineHeight: 17; lineHeightMode: Text.FixedHeight
+            color: theme.textStrong
+            onLinkActivated: link => backend.openExternal(link)
+            HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
         }
+
     }
     // The Block / Accept bar under a preview.
     Rectangle {
         visible: root.previewing
-        anchors { left: parent.left; right: parent.right; bottom: disclaimer.top; bottomMargin: 16 }
+        // (16 over the disclaimer; the pane doesn't scroll while previewing.)
+        anchors { left: parent.left; right: parent.right }
+        y: disclaimer.y - 16 - height
         height: 32
         color: "transparent"
         Row {
@@ -148,24 +181,6 @@ Rectangle {
             RequestButton { text: qsTr("Accept"); onClicked: root.accept() }
         }
     }
-    Text {
-        id: disclaimer
-        anchors.horizontalCenter: parent.horizontalCenter
-        // At the bottom, but never over Block and Accept (a short window).
-        y: root.previewing ? parent.height - 12 - height : Math.max(content.y + content.height + 40, parent.height - 78 - height)
-        width: Math.min(580, parent.width - 48)
-        horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-        textFormat: Text.RichText
-        text: theme.linkCss(theme.brandForeground1, true)
-            + qsTr("By selecting Accept, you agree to receive future communications and share some account information such as your name and status with %1 (External). To limit communications, you can block them at any time.", "messaging:k9lkmkyv7")
-                .arg(root.personName).replace(/&/g, "&amp;").replace(/</g, "&lt;")
-            + " <a href=\"" + root.learnMoreUrl + "\">" + qsTr("Learn more") + "</a>"
-        font.family: theme.font; font.pixelSize: 12; lineHeight: 17; lineHeightMode: Text.FixedHeight
-        color: theme.textStrong
-        onLinkActivated: link => backend.openExternal(link)
-        HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
-    }
-
     component RequestButton: Rectangle {
         id: btn
         property string text
