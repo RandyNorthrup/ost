@@ -19491,14 +19491,16 @@ Window {
         teamId: conversation.isChannel ? conversation.teamId : ""
         channelId: conversation.isChannel ? conversation.chatId : ""
         onClosed: conversation.meetingsOpen = false
-        onOpenMeeting: m => { if (m.ical_uid || m.join_url) conversation.openMeetingDetails(m.join_url || "", m.ical_uid || "", m.start || "") }
+        // A meeting's details open in Calendar when it is in yours (the
+        // pane's meetings are the team's group calendar's).
+        onOpenMeeting: m => { if (channelMeetings.inMyCalendar(m)) conversation.openMeetingDetails(m.join_url || "", m.ical_uid || "", m.start || "") }
         // Chat with participants: the meeting's conversation (a channel
         // meeting's is its post in the channel).
         onOpenChat: m => {
             const j = /meetup-join\/([^/?]+)(?:\/([0-9]+))?/.exec(m.join_url || "")
             if (!j) return
             const thread = decodeURIComponent(j[1])
-            if (thread === conversation.chatId && j[2]) { conversation.showFound(j[2], [], j[2]); return }
+            if (thread === conversation.chatId && j[2]) { conversation.tab = ""; conversation.showFound(j[2], [], j[2]); return }
             rail.current = "chat"
             backend.selectChat(thread, m.subject || "")
         }
