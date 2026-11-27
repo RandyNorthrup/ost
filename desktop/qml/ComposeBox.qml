@@ -1980,11 +1980,13 @@ Item {
             importance: root.importance,
             removedFiles: root.editFilesAtStart.filter(k => kept.indexOf(k) < 0),
             keptFiles: kept.length,
-            files: root.editLocalFiles.concat(root.editAttach ? root.editAttach.lines() : []).join("\n")
+            // (Files the box doesn't allow aren't sent: a chat with someone
+            // on Teams free.)
+            files: root.filesAllowed ? root.editLocalFiles.concat(root.editAttach ? root.editAttach.lines() : []).join("\n") : ""
         }
         const l = root.loopForSend()
         if (l) x.loop = JSON.parse(l)
-        if (root.clip && root.clip.id) x.clip = { id: root.clip.id, url: root.clip.url, duration: root.clip.duration, width: root.clip.width, height: root.clip.height }
+        if (root.clip && root.clip.id && root.filesAllowed) x.clip = { id: root.clip.id, url: root.clip.url, duration: root.clip.duration, width: root.clip.width, height: root.clip.height }
         if (root.removedLoops.length) x.removedLoops = root.removedLoops
         if (root.removedClips.length) x.removedClips = root.removedClips
         // A post (Teams' post composer): its subject, who may reply (sent
