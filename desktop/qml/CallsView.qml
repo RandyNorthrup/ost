@@ -705,8 +705,14 @@ Item {
         // (on a group call the log may name you as its person; the message
         // goes to its chat, so that doesn't matter there)
         readonly property bool canMessage: canChat && (c.is_group ? !!c.thread_id && !!c.member : !self_)
-        // A draft is for this call's person or chat only.
-        onCChanged: quick.text = ""
+        // A draft is for this call's person or chat only (the list being
+        // reloaded or another row removed doesn't change the call).
+        property string draftFor: ""
+        onCChanged: {
+            const id = c ? c.message_id : ""
+            if (id !== draftFor) quick.text = ""
+            draftFor = id
+        }
         Text { x: 20; y: 15; text: qsTr("Details", "calling:k62e0gpus"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text }
         Rectangle {
             id: detClose
