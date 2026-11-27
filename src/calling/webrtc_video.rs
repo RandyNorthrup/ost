@@ -248,6 +248,15 @@ fn decode_loop(rx: mpsc::Receiver<VideoPacket>, want: Arc<AtomicBool>, key: &str
                         } else {
                             yuv.write_rgba8(&mut rgba);
                         }
+                        // OST_VIDEO_STATS=1: statistics of a received camera
+                        // picture, never the picture (protocol research).
+                        if key != "share"
+                            && decoded.is_multiple_of(150)
+                            && std::env::var_os("OST_VIDEO_STATS").is_some()
+                        {
+                            let stats = frame_stats(yuv.y(), yuv.u(), yuv.v(), yuv.strides(), w, h);
+                            tracing::info!(key, %stats, "camera frame stats");
+                        }
                         super::frames::publish(key, w as u32, h as u32, rgba);
                         health.frame(w as u32, h as u32);
                         decoded += 1;
@@ -264,6 +273,147 @@ fn decode_loop(rx: mpsc::Receiver<VideoPacket>, want: Arc<AtomicBool>, key: &str
             }
         }
     }
+}
+
+/// Developer aid: a camera picture's statistics as text, never its pixels.
+/// Background is what Teams' implicit mask clears (luma under 23), the
+/// person what its encoding keeps (luma 59 and up); the band between is
+/// edges. For each: its share of the picture and the Y, U, V mean, spread
+/// and range; the most common background (Y, U, V) values; how much of
+/// the picture's border is background; the person's bounding box; and the
+/// mean of each corner's 8 x 8 block (a marker would show there).
+pub fn frame_stats(
+    y: &[u8],
+    u: &[u8],
+    v: &[u8],
+    strides: (usize, usize, usize),
+    w: usize,
+    h: usize,
+) -> String {
+    use std::fmt::Write;
+    #[derive(Default)]
+    struct Acc {
+        n: u64,
+        sum: [f64; 3],
+        sq: [f64; 3],
+        min: [u8; 3],
+        max: [u8; 3],
+    }
+    impl Acc {
+        fn add(&mut self, px: [u8; 3]) {
+            if self.n == 0 {
+                self.min = px;
+                self.max = px;
+            }
+            self.n += 1;
+            for (i, c) in px.iter().enumerate() {
+                let x = *c as f64;
+                self.sum[i] += x;
+                self.sq[i] += x * x;
+                self.min[i] = self.min[i].min(*c);
+                self.max[i] = self.max[i].max(*c);
+            }
+        }
+        fn mean(&self, i: usize) -> f64 {
+            self.sum[i] / (self.n.max(1) as f64)
+        }
+        fn show(&self, total: u64) -> String {
+            if self.n == 0 {
+                return "0%".into();
+            }
+            let n = self.n as f64;
+            let part = |i: usize| {
+                let m = self.sum[i] / n;
+                let sd = (self.sq[i] / n - m * m).max(0.0).sqrt();
+                format!("{m:.1}±{sd:.1}[{}..{}]", self.min[i], self.max[i])
+            };
+            format!(
+                "{:.1}% Y{} U{} V{}",
+                n * 100.0 / total.max(1) as f64,
+                part(0),
+                part(1),
+                part(2)
+            )
+        }
+    }
+    if w < 16 || h < 16 || y.len() < strides.0 * (h - 1) + w {
+        return format!("{w}x{h} too small");
+    }
+    let px = |x: usize, yy: usize| {
+        [
+            y[yy * strides.0 + x],
+            u[(yy / 2) * strides.1 + x / 2],
+            v[(yy / 2) * strides.2 + x / 2],
+        ]
+    };
+    let (mut bg, mut edge, mut person) = (Acc::default(), Acc::default(), Acc::default());
+    let mut bg_values = std::collections::HashMap::<[u8; 3], u64>::new();
+    let (mut border, mut border_bg) = (0u64, 0u64);
+    let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0, 0);
+    for yy in 0..h {
+        for x in 0..w {
+            let p = px(x, yy);
+            let on_border = x == 0 || yy == 0 || x == w - 1 || yy == h - 1;
+            border += on_border as u64;
+            if p[0] < 23 {
+                bg.add(p);
+                *bg_values.entry(p).or_default() += 1;
+                border_bg += on_border as u64;
+            } else if p[0] < 59 {
+                edge.add(p);
+            } else {
+                person.add(p);
+                x0 = x0.min(x);
+                y0 = y0.min(yy);
+                x1 = x1.max(x);
+                y1 = y1.max(yy);
+            }
+        }
+    }
+    let total = (w * h) as u64;
+    let mut s = format!("{w}x{h} strides {strides:?}");
+    let _ = write!(s, " | bg {}", bg.show(total));
+    let _ = write!(s, " | edge {}", edge.show(total));
+    let _ = write!(s, " | person {}", person.show(total));
+    let mut top: Vec<_> = bg_values.into_iter().collect();
+    top.sort_by_key(|t| std::cmp::Reverse(t.1));
+    let _ = write!(s, " | bg values");
+    for (p, n) in top.iter().take(4) {
+        let _ = write!(s, " {:?}:{:.1}%", p, *n as f64 * 100.0 / total as f64);
+    }
+    let _ = write!(
+        s,
+        " | border bg {:.1}%",
+        border_bg as f64 * 100.0 / border.max(1) as f64
+    );
+    if x1 >= x0 && y1 >= y0 {
+        let _ = write!(
+            s,
+            " | person box x {:.2}..{:.2} y {:.2}..{:.2}",
+            x0 as f64 / w as f64,
+            x1 as f64 / w as f64,
+            y0 as f64 / h as f64,
+            y1 as f64 / h as f64
+        );
+    }
+    let corner = |cx: usize, cy: usize| {
+        let mut a = Acc::default();
+        for yy in cy..cy + 8 {
+            for x in cx..cx + 8 {
+                a.add(px(x, yy));
+            }
+        }
+        format!("({:.0},{:.0},{:.0})", a.mean(0), a.mean(1), a.mean(2))
+    };
+    let _ = write!(
+        s,
+        " | corners {} {} {} {}",
+        corner(0, 0),
+        corner(w - 8, 0),
+        corner(0, h - 8),
+        corner(w - 8, h - 8)
+    );
+    s
 }
 
 /// Largest RTP payload we send (leaves room for SRTP, UDP and TURN).
@@ -1020,6 +1170,26 @@ pub fn pli(sender: u32, media: u32) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frame_stats_split_background_edge_and_person() {
+        // 32 x 16: the left half black background (0, 128, 128), the
+        // right half a person at luma 200.
+        let (w, h) = (32usize, 16usize);
+        let mut y = vec![0u8; w * h];
+        for row in y.chunks_mut(w) {
+            row[16..].fill(200);
+        }
+        let (u, v) = (vec![128u8; w * h / 4], vec![128u8; w * h / 4]);
+        let s = frame_stats(&y, &u, &v, (w, w / 2, w / 2), w, h);
+        assert!(s.starts_with("32x16"), "{s}");
+        assert!(s.contains("bg 50.0% Y0.0±0.0[0..0] U128.0"), "{s}");
+        assert!(s.contains("edge 0%"), "{s}");
+        assert!(s.contains("person 50.0% Y200.0"), "{s}");
+        assert!(s.contains("[0, 128, 128]:50.0%"), "{s}");
+        assert!(s.contains("person box x 0.50..0.97 y 0.00..0.94"), "{s}");
+        assert!(s.contains("corners (0,128,128) (200,128,128)"), "{s}");
+    }
 
     #[test]
     fn a_line_never_repeats_a_sequence_number() {
