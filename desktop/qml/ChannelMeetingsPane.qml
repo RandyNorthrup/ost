@@ -113,10 +113,12 @@ Rectangle {
     /// Whether the meeting is in your own calendar (its details can open
     /// there).
     function inMyCalendar(m) {
-        if (!m || (!m.ical_uid && !m.join_url)) return false
+        // By iCalUId alone: Graph gives each occurrence its own, while a
+        // series shares its join link.
+        if (!m || !m.ical_uid) return false
         let mine = []
         try { mine = JSON.parse(backend.calendarJson || "[]") } catch (e) {}
-        return mine.some(e => (!!m.ical_uid && e.ical_uid === m.ical_uid) || (!!m.join_url && e.join_url === m.join_url))
+        return mine.some(e => e.ical_uid === m.ical_uid)
     }
     function timeText(m) {
         const s = new Date(m.start), e = new Date(m.end)
