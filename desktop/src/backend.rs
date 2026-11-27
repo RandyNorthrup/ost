@@ -11899,12 +11899,16 @@ impl qobject::Backend {
             .and_then(|c| c.object_id())
             .unwrap_or_default();
         tracing::info!(chat = %chat_id, has_oid = !my_oid.is_empty(), "start call");
-        // In a group chat this is the chevron's Audio call: members are rung.
+        // In a group chat this is the chevron's Audio or Video call:
+        // members are rung (a video call turns the camera on once
+        // connected, as Teams' outgoingVideo).
         if outgoing::is_group_chat(&chat_id) {
-            self.start_group_call(
+            self.start_group_call_as(
                 chat_id,
                 peer,
                 Some(teams_cli::calling::signaling::GroupCallKind::Ring),
+                false,
+                video,
             );
             return;
         }
@@ -12267,7 +12271,7 @@ impl qobject::Backend {
         // None: a new meeting in a channel, titled `title` (Meet now).
         kind: Option<teams_cli::calling::signaling::GroupCallKind>,
     ) {
-        self.start_group_call_as(chat_id, title, kind, false);
+        self.start_group_call_as(chat_id, title, kind, false, false);
     }
 
     pub fn make_test_call(mut self: Pin<&mut Self>) {
@@ -12276,7 +12280,7 @@ impl qobject::Backend {
         }
         // Teams' window is titled with the bot's name.
         self.as_mut()
-            .start_group_call_as(String::new(), QString::from("Echo"), None, true);
+            .start_group_call_as(String::new(), QString::from("Echo"), None, true, false);
     }
 
     fn start_group_call_as(
@@ -12285,6 +12289,8 @@ impl qobject::Backend {
         title: QString,
         kind: Option<teams_cli::calling::signaling::GroupCallKind>,
         test: bool,
+        // A video call: the camera goes on once connected.
+        video: bool,
     ) {
         self.as_mut().set_call_test(test);
         self.as_mut().set_call_test_report(QString::default());
@@ -12375,8 +12381,9 @@ impl qobject::Backend {
                         }
                         this.as_mut().set_call_state(QString::from("connected"));
                         // Teams' test call starts with the camera on
-                        // (its intent's outgoingVideo), when there is one.
-                        if test && can_video && test_camera().is_some() {
+                        // (its intent's outgoingVideo), when there is one;
+                        // so does a group video call.
+                        if can_video && ((test && test_camera().is_some()) || (video && !test)) {
                             this.as_mut().toggle_camera();
                         }
                     });
