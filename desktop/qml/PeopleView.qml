@@ -663,7 +663,9 @@ Item {
                         id: pickInput
                         x: 12; width: parent.width - 44; anchors.verticalCenter: parent.verticalCenter
                         font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
-                        onTextChanged: { if (text.trim()) pickDebounce.restart(); else { addDialog.results = []; addDialog.number = null } }
+                        // (The last search's people and number go at once: only
+                        // the current text's answer can be picked.)
+                        onTextChanged: { addDialog.results = []; addDialog.number = null; addDialog.highlighted = 0; if (text.trim()) pickDebounce.restart() }
                         Keys.onDownPressed: addDialog.highlighted = Math.min(addDialog.options.length - 1, addDialog.highlighted + 1)
                         Keys.onUpPressed: addDialog.highlighted = Math.max(0, addDialog.highlighted - 1)
                         Keys.onReturnPressed: if (addDialog.options.length) addDialog.choose(addDialog.options[addDialog.highlighted])

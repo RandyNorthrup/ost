@@ -48,7 +48,8 @@ FluentSurface {
     /// Summarize / Recap: ask for the file's data source, then open the
     /// page (or, already open, tell it the new file and prompt).
     function ask(driveId, itemId, name, text) {
-        fileName = name; prompt = text; open = true
+        // (A new file: nothing is asked until its own source arrives.)
+        fileName = name; prompt = text; open = true; source = null; promptSent = false
         askTag = tag + "-" + (++asks)
         backend.eventsRequest("odspChatSource", askTag, JSON.stringify({ drive_id: driveId, item_id: itemId }))
         console.info("ODSPCHAT ask")
