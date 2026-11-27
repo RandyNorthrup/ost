@@ -21595,7 +21595,14 @@ impl qobject::Backend {
             field(&place, "team_name"),
             field(&place, "channel_name"),
         );
-        let conv = self.current_chat_id.to_string();
+        // The message's conversation: the open one, unless the view names
+        // its own (Discover's cards are posts of other channels).
+        let named = field(&place, "conversation").to_string();
+        let conv = if named.is_empty() {
+            self.current_chat_id.to_string()
+        } else {
+            named
+        };
         let id = message_id.to_string();
         let channel = conv.ends_with("@thread.tacv2");
         let (url, label) = if channel {

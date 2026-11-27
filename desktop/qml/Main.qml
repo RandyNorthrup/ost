@@ -1268,14 +1268,26 @@ Window {
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "discover-" + n + ".png"))
             const st = step++
             if (st === 0) { rail.current = "chat"; chatList.openQuick("discover") }
-            else if (st === 3) { console.warn("DISCOVER items", JSON.stringify(discoverView.itemsForTest().map(i => [i.reason, i.team_name, i.post_id, i.author_name]))); shot("feed") }
-            else if (st === 4) discoverView.openFirstMenuForTest()
-            else if (st === 5) shot("menu")
-            else if (st === 6) { discoverView.closeMenusForTest(); discoverView.scrollToEndForTest() }
-            else if (st === 9) shot("end")
-            else if (st === 10) discoverView.settingsForTest().start()
-            else if (st === 12) shot("settings")
-            else if (st === 13) { discoverView.settingsForTest().close(); Qt.quit() }
+            else if (st === 6) { console.warn("DISCOVER items", JSON.stringify(discoverView.itemsForTest().map(i => [i.reason, i.team_name, i.post_id, i.author_name]))); shot("feed") }
+            else if (st === 7) { const i0 = discoverView.itemsForTest()[0]; if (i0) console.warn("DISCOVER thread0", JSON.stringify((discoverView.threads[i0.channel_id + ";messageid=" + i0.post_id] || []).map(m => [m.id, m.kind, m.sender, (m.text || "").slice(0, 30), m.time, !!m.deleted, m.client_message_id || ""]))); discoverView.openFirstMenuForTest() }
+            else if (st === 8) { console.warn("DISCOVER menu", JSON.stringify(discoverView.firstMenuForTest())); shot("menu") }
+            else if (st === 9) { discoverView.closeMenusForTest(); discoverView.scrollToEndForTest() }
+            else if (st === 11) discoverView.scrollToEndForTest()
+            else if (st === 13) discoverView.scrollToEndForTest()
+            else if (st === 15) { console.warn("DISCOVER end", discoverView.itemsForTest().length, discoverView.ended); shot("end") }
+            else if (st === 16) discoverView.settingsForTest().start()
+            else if (st === 18) shot("settings")
+            else if (st === 19) discoverView.settingsForTest().close()
+            // With --discover-hide: hide the first post's channel, show the
+            // hidden card and Settings listing it, then Undo (nothing left).
+            else if (st === 20 && Qt.application.arguments.indexOf("--discover-hide") < 0) Qt.quit()
+            else if (st === 20) { discoverView.scrollToTopForTest(); discoverView.hide(discoverView.itemsForTest()[0], "CHANNEL") }
+            else if (st === 22) shot("hidden")
+            else if (st === 23) discoverView.settingsForTest().start()
+            else if (st === 25) { console.warn("DISCOVER excluded", JSON.stringify(discoverView.settingsForTest().list)); shot("settings-listed") }
+            else if (st === 26) { discoverView.settingsForTest().close(); discoverView.undoHide(discoverView.itemsForTest()[0]) }
+            else if (st === 28) { discoverView.settingsForTest().start() }
+            else if (st === 30) { console.warn("DISCOVER excluded after undo", JSON.stringify(discoverView.settingsForTest().list)); discoverView.settingsForTest().close(); Qt.quit() }
         }
     }
 
