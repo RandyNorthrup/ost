@@ -253,6 +253,8 @@ fn main() {
         "qml/CopilotHistoryPane.qml",
         "qml/ScheduledMeetingCard.qml",
         "qml/FindPane.qml",
+        "qml/ChannelMeetingsPane.qml",
+        "qml/ChannelAudiencePopover.qml",
         "qml/FeedbackWindow.qml",
         "qml/HelpView.qml",
         "qml/HelpWindow.qml",

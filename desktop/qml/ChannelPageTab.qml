@@ -12,6 +12,10 @@ import QtQuick.Controls.Basic
 // - A New page: Loop's page container makes the page in the channel's
 //   folder ("Loop paragraph", its page header drawn by Loop) and the tab is
 //   pointed at it, as Teams does.
+// - Teams' stand-in Page (a channel with no Page of its own shows one):
+//   opening it makes the page the same way, and the stand-in becomes a
+//   real "Page" tab with its id (Teams' provisionFluidForPageTab; seen in
+//   Teams on the web, OST test channel 2, 2026-11-27).
 Rectangle {
     id: root
     /// The channel's Page tab (OST's tab: id, name, content_url).
@@ -110,7 +114,7 @@ Rectangle {
             componentUrl: root.create ? "" : root.link
             onCreated: url => {
                 root.createdUrl = url
-                backend.loopHostRequest("saveComponentUrl", root.hostId + ":save", JSON.stringify({ channel: root.channel, tab: root.tab ? root.tab.id : "", url: url }))
+                backend.loopHostRequest("saveComponentUrl", root.hostId + ":save", JSON.stringify({ channel: root.channel, tab: root.tab ? root.tab.id : "", url: url, lie: !!(root.tab && root.tab.lie) }))
                 backend.loopHostRequest("pageName", root.hostId + ":name", JSON.stringify({ url: url }))
             }
         }

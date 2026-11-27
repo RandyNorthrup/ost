@@ -84,10 +84,58 @@ Item {
         { key: "archive", label: qsTr("Archive channel"), icon: "archive-20" },
         { key: "delete", label: qsTr("Delete channel"), icon: "delete-20" }
     ] : []
+    /// The channel header's More channel options (Teams' ChannelHeader
+    /// entry point, Teams on the web 2026-11-27, ost-test1 and OST Test 2 in
+    /// OST Test Team): [View meetings] | See new posts at top | Open in new
+    /// window | Mark as unread, Manage notifications ▸ (shown channels),
+    /// Move to section ▸, Hide | Edit channel, Manage channel (a private or
+    /// shared channel's owners), Copy link, Get email address, Workflows |
+    /// Archive channel (a private or shared channel's owners), Delete
+    /// channel (owners, or members when the team lets them). No Recommend
+    /// for everyone there (Teams keeps it to Manage team's channel list).
+    property bool header: false
+    /// View meetings leads the header menu unless the Meetings pane is open.
+    property bool meetingsShown: true
+    signal viewMeetings()
+    readonly property var teamEntry: JSON.parse(backend.teamsJson || "[]").find(t => t.id === root.teamId) || ({})
+    readonly property bool channelAdmin: root.channel.owner === true && (root.channel.channel_type || 0) !== 0
+    readonly property bool canDelete: root.channel.general !== true && teamEntry.archived !== true
+        && (root.teamOwner || root.channelAdmin
+            || ((root.channel.channel_type || 0) === 0 && (teamEntry.role === "guest" ? (teamEntry.member_delete_channels === true && teamEntry.guest_delete_channels === true) : teamEntry.member_delete_channels === true)))
+    readonly property var headerItems: [].concat(
+        // Teams' "Sidepane Features" group: View meetings and the header
+        // items that didn't fit.
+        root.meetingsShown ? [{ key: "meetings", label: qsTr("View meetings"), icon: "calendar-ltr-20" }] : [],
+        root.movedItems,
+        root.meetingsShown || root.movedItems.length ? [{ separator: true }] : [],
+        root.threads ? [] : [root.postsAtBottom
+            ? { key: "top", label: qsTr("See new posts at top"), icon: "channel-posts-top-20" }
+            : { key: "bottom", label: qsTr("See new posts at bottom"), icon: "channel-posts-top-20" },
+            { separator: true }],
+        [{ key: "window", label: qsTr("Open in new window"), icon: "open-window-20" }, { separator: true },
+         root.channel.unread === true
+            ? { key: "read", label: qsTr("Mark as read"), icon: "glasses-20" }
+            : { key: "unread", label: qsTr("Mark as unread"), icon: "glasses-off-20" }],
+        root.channel.general === true || root.channel.shown !== false ? [{ key: "notify", label: qsTr("Manage notifications"), icon: "alert-20", flyout: true }] : [],
+        [{ key: "move", label: qsTr("Move to section"), icon: "star-20", submenu: root.moveTargets() },
+         root.channel.shown === false ? { key: "show", label: qsTr("Show"), icon: "eye-20" } : { key: "hide", label: qsTr("Hide"), icon: "eye-off-20" },
+         { separator: true },
+         root.channel.channel_type === 1 && (root.channel.owner === true || root.teamOwner) ? { key: "addMembers", label: qsTr("Add members"), icon: "person-add-20" } : null,
+         // General is renamed by its owners only (Teams: rename General
+         // needs the channel's admin).
+         root.channel.general !== true || root.teamOwner ? { key: "edit", label: qsTr("Edit channel"), icon: "edit-20" } : null,
+         root.channelAdmin && !root.threads ? { key: "manage", label: qsTr("Manage channel"), icon: "settings-20" } : null,
+         { key: "link", label: qsTr("Copy link"), icon: "link-20" },
+         { key: "email", label: qsTr("Get email address"), icon: "mail-20" },
+         { key: "workflows", label: qsTr("Workflows"), icon: "workflows-20" }],
+        root.channelAdmin && root.channel.general !== true || root.canDelete ? [{ separator: true }] : [],
+        root.channelAdmin && root.channel.general !== true && !root.threads ? [{ key: "archive", label: qsTr("Archive channel"), icon: "archive-20" }] : [],
+        root.canDelete ? [{ key: "delete", label: qsTr("Delete channel"), icon: "delete-20" }] : []
+    ).filter(i => i !== null)
     MenuPopup {
         id: menu
         margins: 8
-        items: root.channel.archived === true ? root.archivedItems : (root.manageMode
+        items: root.channel.archived === true ? root.archivedItems : root.header ? root.headerItems : (root.manageMode
             ? [{ key: "go", label: qsTr("Go to channel"), icon: "channel-20" },
                { key: "window", label: qsTr("Open in new window"), icon: "open-window-20" },
                { separator: true }]
@@ -125,6 +173,8 @@ Item {
         onPicked: i => {
             const k = items[i].key
             if (k === "top" || k === "bottom") root.act(k === "top" ? "posts-at-top" : "posts-at-bottom")
+            else if (k === "meetings") root.viewMeetings()
+            else if (k === "unread" || k === "read") root.act(k)
             else if (k === "go") root.goToChannel()
             else if (k === "details") root.openDetails()
             else if (k === "window") root.openInNewWindow()
