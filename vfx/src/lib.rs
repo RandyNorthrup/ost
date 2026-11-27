@@ -1132,18 +1132,19 @@ mod tests {
             d.apply(w, h, &mut moved);
             assert!(moved.iter().all(|&v| v == 250), "grain {a}");
         }
-        // A new size starts over, untouched; a clean camera stays as it is.
+        // The first frame (or one of a new size) is taken as it is, and a
+        // clean camera stays exactly as it is.
         let mut d = Denoiser::default();
         let mut first = grain(4);
         let copy = first.clone();
         d.apply(w, h, &mut first);
         assert_eq!(first, copy);
-        let still = vec![90u8; len];
-        let mut f = still.clone();
-        d.apply(w, h, &mut f);
-        let mut f = still.clone();
-        d.apply(w, h, &mut f);
-        assert!(f.iter().all(|&v| (v as i32 - 90).abs() <= 2));
+        let mut d = Denoiser::default();
+        for _ in 0..3 {
+            let mut f = vec![90u8; len];
+            d.apply(w, h, &mut f);
+            assert!(f.iter().all(|&v| v == 90));
+        }
     }
 
     #[test]
