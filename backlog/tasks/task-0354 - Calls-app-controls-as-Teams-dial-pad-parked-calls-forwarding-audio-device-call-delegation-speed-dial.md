@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude-task-0354'
 created_date: '2026-11-27T17:31:00Z'
-updated_date: '2026-11-27T17:33:00Z'
+updated_date: '2026-11-27T18:08:00Z'
 labels: []
 dependencies: []
 priority: medium
@@ -28,3 +28,20 @@ From the 2026-11-27 parity audit (scope B), which compared Teams desktop on winp
 - [ ] #5 B-05: Calls app: Intelligent call delegation banner and onboarding pane, as Teams desktop does it, checked side by side
 - [ ] #6 B-10: Calls app: speed dial empty-state illustration, as Teams desktop does it, checked side by side
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Research Teams 26304 bundles (DialpadContainer, CallForwardingSettings, AudioDeviceSettings, PA onboarding/banner, Nova speed dial) for gating, strings and behaviour; measure the audit screenshots at 1x.
+2. Backend: calling policy adds pstn/park/forwarding (Teams callingSupportService checks); PSTN dial-out call (Placement::Phone, outgoing::call_phone); PipeWire audio device groups; Copilot licence flag for PA eligibility.
+3. QML: CallsDialPane (picker, keypad, Call, Parked calls, forwarding menu, device menu), PaPane (banner pane: splash, Voice, Exemptions, Review, done, summary), speed dial illustration; drop the header ··· menu.
+4. Unit tests, build on a build box, live side-by-side on linuxlt vs Teams.
+5. PR, CI, Codex.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Research (Teams 26304 bundles on testpc1): dial pad shows when callingSupportService.isPSTNCallingAllowed (allowPrivateCalling, isSfbCloud, isEvEnabled, Online pstnType or own trunk); placeholder dialpad_placeholder vs _no_pstn; keys append to the picker, holding 0 for 1 s types +; Call is enabled with someone picked or any text, text-only dials 4:<number>. Parked calls (UnparkCallButtonRenderer) needs CallParkEnabled (teamsCallParkPolicy.allowCallPark) and EV. Forwarding quick menu (non-enhanced, ECS default): header Forwarding, Don't forward / Forward to voicemail / call group / delegates / Forward to <favourite>, More Settings -> Settings > Calls; hidden when isForwardingAllowed is false or Intelligent call delegation is on. Audio device menu: Audio Devices header, paired mic+speaker devices, Custom Setup (checked) when mic and speaker are on different devices, Device settings. PA banner when isUserPAEligible (ECS enablePersonalAttendant, Copilot licence, policy); onboarding splash/Voice/Exemptions/Review/confirm. Speed dial empty state: evergreen avatar-add-multiple illustration, 20rem tall.
+- Teams desktop on winpc/testpc1/testpc2 was in use by other agents (CDP sessions open), so measurements come from the audit's 1x screenshots of Teams and the bundle code.
+<!-- SECTION:NOTES:END -->
