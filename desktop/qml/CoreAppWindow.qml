@@ -21,8 +21,11 @@ Window {
     property bool splitView: false
     /// The main window has mentions (the list's Mentions quick view).
     property bool hasMentions: false
+    property int mentionsUnread: 0
     /// The list's Copilot row (as the main window's).
     property bool showCopilot: false
+    /// New chats always open in a window (the list leaves out New message in new window).
+    property bool newChatInWindow: false
     /// The list's pills, sections and quick views as shown (harness wlist).
     function listForTest() {
         const l = side.item
@@ -89,12 +92,21 @@ Window {
                 onChatSelected: (id, name) => win.showChat(id, name)
                 draftIds: (backend.draftsJson ? JSON.parse(backend.draftsJson) : []).map(d => d.id)
                 hasMentions: win.hasMentions
+                mentionsUnread: win.mentionsUnread
                 showCopilot: win.showCopilot
                 onOpenCopilot: win.openInMain("copilot", {})
                 onOpenMentions: win.openInMain("mentions", {})
                 onOpenDrafts: win.openInMain("drafts", {})
                 onOpenQuick: kind => win.openInMain("quick", { kind: kind })
                 onNewChat: win.openInMain("newChat", {})
+                // New items ▸ (the list's own New channel and New section
+                // open here; the rest in the main window).
+                newChatInWindow: win.newChatInWindow
+                onNewChatWindow: win.openInMain("newChatWindow", {})
+                onNewStorylinePost: win.openInMain("storyline", {})
+                onJoinTeam: win.openInMain("joinTeam", {})
+                onNewTeam: win.openInMain("newTeam", {})
+                onOpenCommunities: win.openInMain("communities", {})
                 onOpenChatWindow: (id, name, photo, presence) => win.openInMain("chatWindow", { id: id, name: name, photo: photo, presence: presence })
             }
         }
@@ -123,10 +135,18 @@ Window {
             }
         }
         // The chat beside the list or the feed.
+        // More chat options ▸ View Copilot history, at the window's right.
+        CopilotHistoryPane {
+            id: history
+            visible: chat.visible && chat.copilotHistoryOpen
+            anchors { top: parent.top; bottom: parent.bottom; right: parent.right }
+            width: visible ? 360 : 0
+            onClosed: chat.copilotHistoryOpen = false
+        }
         Conversation {
             id: chat
             visible: side.active && win.chatId !== ""
-            anchors { top: parent.top; bottom: parent.bottom; left: side.right; right: parent.right }
+            anchors { top: parent.top; bottom: parent.bottom; left: side.right; right: history.left }
             popout: true
             // Teams' Chat window keeps the chat's tabs row.
             windowTabs: true

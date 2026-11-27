@@ -1074,6 +1074,7 @@ Window {
         running: Qt.application.arguments.indexOf("--chatlist-parity-test") >= 0 && backend.signedIn && chatList.chats.length > 0 && chatList.teams.length > 0
         interval: 2500; repeat: true
         property int step: 0
+        property var parityWin: null
         onTriggered: {
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=/tmp").slice(8) + "/"
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "parity-" + n + ".png"))
@@ -1097,7 +1098,9 @@ Window {
             else if (st === 15) shot("new-channel")
             else if (st === 16) chatList.newChannelDialogForTest().openPicker()
             else if (st === 17) shot("new-channel-pick")
-            else if (st === 18) { chatList.newChannelDialogForTest().close(); Qt.quit() }
+            else if (st === 18) { chatList.newChannelDialogForTest().close(); parityWin = window.popOutCore("chat") }
+            else if (st === 21) { if (parityWin) parityWin.contentItem.grabToImage(r => r.saveToFile(dir + "parity-chat-window.png")); console.warn("PARITY window", !!parityWin) }
+            else if (st === 22) { if (parityWin) parityWin.close(); Qt.quit() }
         }
     }
 
@@ -16647,7 +16650,9 @@ Window {
         // The list's quick views as the main window's (Mentions when there
         // are any, Drafts when there are any).
         w.hasMentions = Qt.binding(() => mentionsView.mentions.length > 0)
+        w.mentionsUnread = Qt.binding(() => mentionsView.mentions.filter(m => m.unread).length)
         w.showCopilot = Qt.binding(() => window.copilotInChatList)
+        w.newChatInWindow = Qt.binding(() => window.newChatInWindow)
         // Teams' Chat window opens on the chat you were in (OST: the main
         // window's chat, when it is one the window lists).
         const cur = backend.currentChatId || "", isCh = cur.endsWith("@thread.tacv2")
@@ -16667,6 +16672,11 @@ Window {
             if (kind === "mentions") { rail.current = "chat"; chatList.openMentions(); return }
             if (kind === "drafts") { rail.current = "chat"; chatList.openDrafts(); return }
             if (kind === "quick") { rail.current = "chat"; chatList.openQuick(d.kind); return }
+            if (kind === "newChatWindow") { window.startNewChat(true); return }
+            if (kind === "storyline") { rail.current = "chat"; chatList.newStorylinePost(); return }
+            if (kind === "joinTeam") { window.openTeamPage("join"); return }
+            if (kind === "newTeam") { createTeamDialog.startScratch(); return }
+            if (kind === "communities") { rail.openApp("communities"); return }
             rail.current = "chat"; window.composing = false
             if (kind === "newChat") window.startNewChat()
             else if (kind === "chat") backend.selectChat(d.id, d.name)
