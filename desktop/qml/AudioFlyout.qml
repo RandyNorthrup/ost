@@ -53,8 +53,9 @@ Popup {
         musicInFlyout = backend.setting("musicModeInFlyout") === "on"
         noiseSuppression = backend.setting("noiseSuppression") !== "off"
         devices = JSON.parse(backend.audioDevices())
-        mic = backend.setting("micDevice") || ""
-        speaker = backend.setting("speakerDevice") || ""
+        // A saved device that isn't connected: the default is in use.
+        mic = (devices.inputs || []).indexOf(backend.setting("micDevice")) >= 0 ? backend.setting("micDevice") : ""
+        speaker = (devices.outputs || []).indexOf(backend.setting("speakerDevice")) >= 0 ? backend.setting("speakerDevice") : ""
         volume = backend.speakerVolume()
         flick.contentY = 0
     }

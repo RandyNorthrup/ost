@@ -238,8 +238,9 @@ Window {
     // name), as their pickers do.
     property int devicesRev: 0
     readonly property var audioDevices: { devicesRev; try { return JSON.parse(backend.audioDevices()) } catch (e) { return {} } }
-    readonly property string mic: { devicesRev; const v = backend.setting("micDevice"); return v && v !== "default" ? v : audioDevices.defaultInput || qsTr("Default microphone") }
-    readonly property string speaker: { devicesRev; const v = backend.setting("speakerDevice"); return v && v !== "default" ? v : audioDevices.defaultOutput || qsTr("Default speaker") }
+    // (A saved device that isn't connected: the one in use, the default.)
+    readonly property string mic: { devicesRev; const v = backend.setting("micDevice"); return v && v !== "default" && (audioDevices.inputs || []).indexOf(v) >= 0 ? v : audioDevices.defaultInput || qsTr("Default microphone") }
+    readonly property string speaker: { devicesRev; const v = backend.setting("speakerDevice"); return v && v !== "default" && (audioDevices.outputs || []).indexOf(v) >= 0 ? v : audioDevices.defaultOutput || qsTr("Default speaker") }
     /// More audio settings (the device flyouts): Settings ▸ Devices.
     signal moreAudioSettings()
 
