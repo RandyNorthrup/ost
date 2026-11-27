@@ -59,7 +59,7 @@ Rectangle {
         if (!teamId || !channelId) return
         loading = true; failed = false; generation++
         const r = range()
-        const arg = { organizer: organizer ? organizer.mri : "" }
+        const arg = { organizer: organizer ? organizer.mri : "", gen: generation }
         if (r) { arg.from = r[0].getTime(); arg.to = r[1].getTime() }
         backend.channelAction("channel-meetings", teamId, channelId, JSON.stringify(arg))
         backend.channelAction("channel-audience", teamId, channelId, "")
@@ -76,6 +76,9 @@ Rectangle {
             if (r.channel !== pane.channelId) return
             if (r.op === "channel-audience" && r.ok && r.data) pane.people = r.data.people || []
             if (r.op !== "channel-meetings") return
+            // Only the answer to the latest request (filters changed while
+            // an earlier one ran).
+            if (r.ok && r.data && r.data.gen !== pane.generation) return
             pane.loading = false
             pane.failed = !r.ok
             pane.meetings = r.ok && r.data ? (r.data.meetings || []) : []

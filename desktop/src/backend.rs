@@ -27177,7 +27177,11 @@ impl qobject::Backend {
                             organizer: a["organizer"].as_str().unwrap_or_default().to_string(),
                         };
                         let m = api::channel_meetings::channel_meetings(&client, &team, &channel, &f).await?;
-                        Ok(json!(m))
+                        // The pane's request number comes back, so a slower
+                        // earlier answer can be told apart.
+                        let mut out = json!(m);
+                        out["gen"] = a["gen"].clone();
+                        Ok(out)
                     }
                     // The channel header's people button (Teams' channel
                     // audience): the team's people (you first), its
