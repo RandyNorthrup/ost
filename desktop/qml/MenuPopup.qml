@@ -317,11 +317,14 @@ Popup {
         if (a && a !== w.contentItem && a.visible && !owns(a)) return
         if (p.visible && p.enabled) p.forceActiveFocus()
     }
-    onAboutToShow: {
-        measureRev++
+    function toFirstStop() {
         const s = stops()
         current = s.length ? s[0].i : -1
         currentPart = s.length ? s[0].part : ""
+    }
+    onAboutToShow: {
+        measureRev++
+        toFirstStop()
         focusRing = false
         if (!ownerMenu) {
             const w = (root.parent && root.parent.Window.window) || (contentItem && contentItem.Window.window)
@@ -384,6 +387,9 @@ Popup {
         const sub = submenu()
         const it = items[i]
         if (!it || !it.submenu || it.enabled === false) { sub.close(); subIndex = -1; return }
+        // Moving to another submenu row while one is open: the open
+        // submenu shows the new row's list, the keys on its first row.
+        const switching = sub.opened && subIndex !== i
         subIndex = i
         const p = rowItem.mapToItem(root.contentItem, 0, 0)
         sub.items = it.submenu
@@ -406,6 +412,7 @@ Popup {
                 sub.y = p.y + rowItem.height - sub.implicitHeight
         }
         sub.open()
+        if (switching) { sub.toFirstStop(); sub.takeKeys() }
         // Opened from the keyboard: the outline on its first row.
         if (viaKeys || root.focusRing) sub.focusRing = true
         // Once laid out with its rows (its size can lag the new items),

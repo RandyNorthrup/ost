@@ -17,7 +17,12 @@ Item {
     property string rowId: ""
     property int moveRow: -1
     readonly property string shotDir: (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "").slice(8)
-    function check(name, ok) { console.warn("MENUKEYS", ok ? "ok  " : "FAIL", name); if (!ok) fails.push(name) }
+    function check(name, ok) {
+        console.warn("MENUKEYS", ok ? "ok  " : "FAIL", name)
+        if (ok) return
+        fails.push(name)
+        console.warn("MENUKEYS   window active:", win.active, "focus:", String(win.activeFocusItem), "menu open:", menu.opened, "row:", menu.current, menu.currentPart, "submenu open:", !!menu.subMenu && menu.subMenu.opened)
+    }
     function shot(n) { if (shotDir) win.contentItem.grabToImage(r => r.saveToFile(shotDir + "/menukeys-" + n + ".png")) }
     function at(m, i, part) { return m.current === i && m.currentPart === (part || "") }
     TestCase { id: t; when: false; name: "menukeys" }
@@ -134,29 +139,44 @@ Item {
             else if (s === 40) { t.keyClick(Qt.Key_Escape, Qt.ControlModifier) }
             else if (s === 41) {
                 root.check("Ctrl+Esc closes the menu and runs its shortcut", !menu.opened && root.ctrlEscShortcuts === 1)
+                menu.items = [{ label: "Golf", submenu: [{ label: "G1" }, { label: "G2" }] }, { label: "Hotel", submenu: [{ label: "H1" }, { label: "H2" }] }]
+                menu.open()
+            }
+            // The pointer from one submenu row to another: the open
+            // submenu shows the new list, with the keys on its first row.
+            else if (s === 42) { const r = menu.rowAt(0); t.mouseMove(r, 20, r.height / 2) }
+            else if (s === 43) { const r = menu.rowAt(1); t.mouseMove(r, 20, r.height / 2) }
+            else if (s === 44) {
+                const m = menu.subMenu
+                root.check("hover from one submenu row to another: its list, the keys on its first row", m.opened && m.items[0].label === "H1" && root.at(m, 0) && m.keysHere)
+                k(Qt.Key_Down)
+            }
+            else if (s === 45) {
+                root.check("and Down moves in that submenu", root.at(menu.subMenu, 1) && root.at(menu, 1))
+                k(Qt.Key_Escape); k(Qt.Key_Escape)
                 if (!w.backendReady) { console.warn("MENUKEYS (not signed in: skipping the chat list's menu)"); root.step = 100 }
             }
             // The chat list's ··· More list options (signed in).
-            else if (s === 42) { opener.forceActiveFocus(); w.kChatList.openListMenuForTest() }
-            else if (s === 43) {
+            else if (s === 46) { opener.forceActiveFocus(); w.kChatList.openListMenuForTest() }
+            else if (s === 47) {
                 const m = w.kChatList.listMenuForTest()
                 root.check("More list options: open with the focus on Mark all as read", m.opened && m.current === 0 && m.owns(w.activeFocusItem))
                 k(Qt.Key_Down)
             }
-            else if (s === 44) {
+            else if (s === 48) {
                 const m = w.kChatList.listMenuForTest(), it = m.items[0]
                 root.check("More list options: Down", it.split ? root.at(m, 0, "chevron") : root.at(m, 1))
                 root.shot("chatlist-down")
                 if (it.split) k(Qt.Key_Right)
             }
-            else if (s === 45) {
+            else if (s === 49) {
                 const m = w.kChatList.listMenuForTest()
                 if (m.items[0].split) root.check("More list options: Right opens Mark all as read's options", m.subMenu && m.subMenu.opened && root.at(m.subMenu, 0))
                 root.shot("chatlist-submenu")
                 k(Qt.Key_Escape)
             }
-            else if (s === 46) { k(Qt.Key_Escape) }
-            else if (s === 47) {
+            else if (s === 50) { k(Qt.Key_Escape) }
+            else if (s === 51) {
                 const m = w.kChatList.listMenuForTest()
                 root.check("More list options: Esc, Esc closes it", !m.opened && opener.activeFocus)
                 // A chat's ··· menu: its Move to section submenu.
@@ -166,7 +186,7 @@ Item {
                 opener.forceActiveFocus()
                 w.kChatList.openRowMenuForTest(id)
             }
-            else if (s === 48) {
+            else if (s === 52) {
                 const m = w.kChatList.rowsForTest[root.rowId].menu()
                 root.check("chat menu: open with the focus on its first row", m.opened && m.current === 0 && m.owns(w.activeFocusItem))
                 root.moveRow = m.items.findIndex(i => i.key === "move")
@@ -174,24 +194,24 @@ Item {
                 // starting with M (Mark as read, Manage notifications, Move).
                 for (let n = 0; n < m.items.length && m.current !== root.moveRow; n++) k(Qt.Key_M)
             }
-            else if (s === 49) {
+            else if (s === 53) {
                 const m = w.kChatList.rowsForTest[root.rowId].menu()
                 root.check("chat menu: M, M... reaches Move to section", m.current === root.moveRow && m.focusRing)
                 root.shot("chatrow-move")
                 k(Qt.Key_Right)
             }
-            else if (s === 50) {
+            else if (s === 54) {
                 const m = w.kChatList.rowsForTest[root.rowId].menu()
                 root.check("chat menu: Right opens Move to section on its first row", !!m.subMenu && m.subMenu.opened && root.at(m.subMenu, 0) && m.subMenu.owns(w.activeFocusItem) && !m.keysHere)
                 root.shot("chatrow-submenu")
                 k(Qt.Key_Left)
             }
-            else if (s === 51) {
+            else if (s === 55) {
                 const m = w.kChatList.rowsForTest[root.rowId].menu()
                 root.check("chat menu: Left back on Move to section", !m.subMenu.opened && m.opened && m.current === root.moveRow && m.keysHere)
                 k(Qt.Key_Escape)
             }
-            else if (s === 52) {
+            else if (s === 56) {
                 const m = w.kChatList.rowsForTest[root.rowId].menu()
                 root.check("chat menu: Esc closes it, the focus back", !m.opened && opener.activeFocus)
                 root.step = 100
