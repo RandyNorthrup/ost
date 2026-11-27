@@ -3583,6 +3583,7 @@ Window {
     property int controlAsked: 0
     property int controlGot: 0
     property var controlKeys: []
+    property int controlTypedAt: 0
     Timer {
         id: controlKeyTimer
         interval: 100; repeat: true
@@ -4008,13 +4009,27 @@ Window {
                     const keys = [[0x01000020, 50, false], [0x4f, 32, false], [0x4f, 32, true], [0x53, 39, false], [0x53, 39, true], [0x54, 28, false], [0x54, 28, true], [0x01000020, 50, true],
                                   [0x20, 65, false], [0x20, 65, true],
                                   [0x01000020, 50, false], [0x54, 28, false], [0x54, 28, true], [0x45, 26, false], [0x45, 26, true], [0x53, 39, false], [0x53, 39, true], [0x54, 28, false], [0x54, 28, true], [0x01000020, 50, true]]
+                    // --join-control-text=<text> types that instead: Shift
+                    // held across each run of capitals, keys by Qt key
+                    // (no scan code).
+                    const text = (Qt.application.arguments.find(a => a.startsWith("--join-control-text=")) || "").slice(20)
+                    const typed = []
+                    let shift = false
+                    for (const ch of text) {
+                        const up = ch >= "A" && ch <= "Z"
+                        if (up !== shift) { typed.push([0x01000020, 0, !up]); shift = up }
+                        const k = ch.toUpperCase().charCodeAt(0)
+                        typed.push([k, 0, false]); typed.push([k, 0, true])
+                    }
+                    if (shift) typed.push([0x01000020, 0, true])
                     // As typed: one key event every 100 ms.
-                    window.controlKeys = keys
+                    window.controlKeys = text ? typed : keys
+                    window.controlTypedAt = step + Math.ceil(window.controlKeys.length / 10) + 2
                     controlKeyTimer.start()
                     log("typing")
                 }
-                else if (window.controlGot && step === window.controlGot + 5) { shot("typed"); callWindow.runControl("ScreensharingControlButton"); log("released") }
-                else if (window.controlGot && step === window.controlGot + 7) { log("after release"); shot("released") }
+                else if (window.controlTypedAt && step === window.controlTypedAt) { shot("typed"); callWindow.runControl("ScreensharingControlButton"); log("released") }
+                else if (window.controlTypedAt && step === window.controlTypedAt + 2) { log("after release"); shot("released") }
                 if (callWindow.presenting && step % 10 === 0) {
                     log("wait")
                     console.warn("JOIN control composite", JSON.stringify(callWindow.presenterCompositeForTest()))

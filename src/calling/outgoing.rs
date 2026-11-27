@@ -25,13 +25,12 @@ pub struct OutgoingCall {
     http: reqwest::Client,
     /// A meeting's updateMediaDescriptions link, and the last request id.
     media_descriptions: Option<(String, std::sync::atomic::AtomicU64)>,
-    /// The call's id (our chain id) and how many screens we've shared:
-    /// Teams tags each share "<callId>;ss_<n>".
+    /// The call's id (our chain id): Teams tags each share and each time
+    /// the camera goes on with it ([`MediaTags`]).
     call_id: String,
     /// The tag in this call's callback URLs (events carry it as callTag).
     call_tag: String,
-    shares: std::sync::atomic::AtomicU64,
-    described_sharing: std::sync::atomic::AtomicBool,
+    tags: MediaTags,
     /// The join response's roster (people and their streams).
     joined_roster: Vec<super::roster::Participant>,
     skype_token: String,
@@ -2549,18 +2548,7 @@ impl OutgoingCall {
             return Ok(());
         };
         let request_id = seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-        // Each share gets the next number; describing an ongoing share
-        // again keeps its tag.
-        use std::sync::atomic::Ordering::Relaxed;
-        let was_sharing = self.described_sharing.swap(sharing, Relaxed);
-        let tag = sharing.then(|| {
-            let n = if was_sharing {
-                self.shares.load(Relaxed)
-            } else {
-                self.shares.fetch_add(1, Relaxed) + 1
-            };
-            format!("{};ss_{n}", self.call_id)
-        });
+        let tag = self.tags.tag(&self.call_id, camera, sharing);
         // The processor's mids for our lines (its own after it moved the
         // call to itself).
         use super::meeting_media::{CAMERA_MID, SHARE_MID};
@@ -2568,7 +2556,13 @@ impl OutgoingCall {
             Some(m) => (m.wire_mid(CAMERA_MID), m.wire_mid(SHARE_MID)),
             None => (CAMERA_MID.to_string(), SHARE_MID.to_string()),
         };
-        let body = media_descriptions_body(camera, tag.as_deref(), request_id, (&mids.0, &mids.1));
+        let body = media_descriptions_body(
+            camera,
+            sharing,
+            tag.as_deref(),
+            request_id,
+            (&mids.0, &mids.1),
+        );
         cc_post(
             &self.http,
             &self.skype_token,
@@ -3224,14 +3218,57 @@ fn endpoint_state_body(from: &serde_json::Value, muted: bool, seq: u64) -> serde
     })
 }
 
+/// The negotiation tags Teams puts on UpdateMediaDescriptions: a share
+/// is "<callId>;ss_<n>" and the camera, each time it goes on,
+/// "<callId>;v_<n>" (the roster then carries the tag as the stream's
+/// `metadata.negotiationTag`, as it does for Teams' own camera). A
+/// description that changes nothing keeps the ongoing share's tag, else
+/// the camera's.
+#[derive(Default)]
+pub(crate) struct MediaTags {
+    described_sharing: std::sync::atomic::AtomicBool,
+    described_camera: std::sync::atomic::AtomicBool,
+    shares: std::sync::atomic::AtomicU64,
+    cameras: std::sync::atomic::AtomicU64,
+}
+
+impl MediaTags {
+    /// The tag for a description saying `camera` and `sharing`.
+    pub(crate) fn tag(&self, call_id: &str, camera: bool, sharing: bool) -> Option<String> {
+        use std::sync::atomic::Ordering::Relaxed;
+        let share_started = !self.described_sharing.swap(sharing, Relaxed) && sharing;
+        let camera_started = !self.described_camera.swap(camera, Relaxed) && camera;
+        if share_started {
+            self.shares.fetch_add(1, Relaxed);
+        }
+        if camera_started {
+            self.cameras.fetch_add(1, Relaxed);
+        }
+        let share = || format!("{call_id};ss_{}", self.shares.load(Relaxed));
+        let video = || format!("{call_id};v_{}", self.cameras.load(Relaxed));
+        if share_started {
+            Some(share())
+        } else if camera_started {
+            Some(video())
+        } else if sharing {
+            Some(share())
+        } else if camera {
+            Some(video())
+        } else {
+            None
+        }
+    }
+}
+
 /// Teams' UpdateMediaDescriptions: what our camera and sharing lines do
 /// (both are sendrecv in our offer; a line described sending must be, else
 /// 1047 "Invalid MediaDescriptions"). Off, a line is "recvonly"; a shared
-/// screen is "sendonly", tagged with the call's id and the share's number
-/// (Teams: "<callId>;ss_<n>"). `mids`: the camera's and sharing line's.
+/// screen is "sendonly". `tag`: the description's negotiation tag
+/// ([`MediaTags`]). `mids`: the camera's and sharing line's.
 pub(crate) fn media_descriptions_body(
     camera: bool,
-    sharing: Option<&str>,
+    sharing: bool,
+    tag: Option<&str>,
     request_id: u64,
     (camera_mid, share_mid): (&str, &str),
 ) -> serde_json::Value {
@@ -3240,14 +3277,14 @@ pub(crate) fn media_descriptions_body(
     } else {
         serde_json::json!({"mid": camera_mid, "direction": "recvonly"})
     };
-    let share = if sharing.is_some() {
+    let share = if sharing {
         serde_json::json!({"mid": share_mid, "direction": "sendonly", "label": "applicationsharing-video"})
     } else {
         serde_json::json!({"mid": share_mid, "direction": "recvonly"})
     };
     let mut descriptions =
         serde_json::json!({"descriptions": [camera, share], "requestId": request_id});
-    if let Some(tag) = sharing {
+    if let Some(tag) = tag {
         descriptions["negotiationTag"] = tag.into();
     }
     serde_json::json!({"UpdateMediaDescriptions": {"mediaDescriptions": descriptions}})
@@ -4858,8 +4895,7 @@ async fn start_tagged(
         joined_roster: super::roster::joined(&created.response_body),
         call_id: chain_id.clone(),
         call_tag: call_tag.clone(),
-        shares: std::sync::atomic::AtomicU64::new(0),
-        described_sharing: std::sync::atomic::AtomicBool::new(false),
+        tags: MediaTags::default(),
         http,
         skype_token,
         end_url: acceptance.end,
@@ -5301,7 +5337,7 @@ mod tests {
 
     #[test]
     fn media_descriptions_say_what_the_lines_do() {
-        let b = media_descriptions_body(true, None, 2, ("1", "11"));
+        let b = media_descriptions_body(true, false, None, 2, ("1", "11"));
         let d = &b["UpdateMediaDescriptions"]["mediaDescriptions"];
         assert_eq!(d["requestId"], 2);
         assert_eq!(
@@ -5313,7 +5349,7 @@ mod tests {
         );
         assert!(d.get("negotiationTag").is_none());
         // A share is "sendonly", tagged as Teams tags it.
-        let s = media_descriptions_body(false, Some("f74ff03b;ss_2"), 3, ("1", "11"));
+        let s = media_descriptions_body(false, true, Some("f74ff03b;ss_2"), 3, ("1", "11"));
         let d = &s["UpdateMediaDescriptions"]["mediaDescriptions"];
         assert_eq!(
             d["descriptions"],
@@ -5323,6 +5359,27 @@ mod tests {
             ])
         );
         assert_eq!(d["negotiationTag"], "f74ff03b;ss_2");
+    }
+
+    #[test]
+    fn the_camera_and_each_share_are_tagged_as_teams_tags_them() {
+        let t = MediaTags::default();
+        assert_eq!(t.tag("c", false, false), None);
+        // Camera on: v_1, and again while it stays on.
+        assert_eq!(t.tag("c", true, false).as_deref(), Some("c;v_1"));
+        assert_eq!(t.tag("c", true, false).as_deref(), Some("c;v_1"));
+        // A share starts: ss_1, kept while it goes on.
+        assert_eq!(t.tag("c", true, true).as_deref(), Some("c;ss_1"));
+        assert_eq!(t.tag("c", true, true).as_deref(), Some("c;ss_1"));
+        // Camera off and on during the share: v_2 for that change.
+        assert_eq!(t.tag("c", false, true).as_deref(), Some("c;ss_1"));
+        assert_eq!(t.tag("c", true, true).as_deref(), Some("c;v_2"));
+        // The share stops; the next one is ss_2. The camera off and on
+        // again is v_3.
+        assert_eq!(t.tag("c", true, false).as_deref(), Some("c;v_2"));
+        assert_eq!(t.tag("c", true, true).as_deref(), Some("c;ss_2"));
+        assert_eq!(t.tag("c", false, false), None);
+        assert_eq!(t.tag("c", true, false).as_deref(), Some("c;v_3"));
     }
 
     #[test]

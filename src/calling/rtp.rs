@@ -93,6 +93,110 @@ pub fn encode(payload_type: u8, seq: u16, timestamp: u32, ssrc: u32, payload: &[
     buf
 }
 
+/// A packet's header extension elements (RFC 8285 one- and two-byte
+/// forms): the profile and each `(id, data)`.
+pub fn extension_elements(data: &[u8]) -> Option<(u16, Vec<(u8, Vec<u8>)>)> {
+    if data.len() < RTP_HEADER_SIZE || (data[0] >> 4) & 1 == 0 {
+        return None;
+    }
+    let at = RTP_HEADER_SIZE + (data[0] & 0x0F) as usize * 4;
+    let head = data.get(at..at + 4)?;
+    let profile = u16::from_be_bytes([head[0], head[1]]);
+    let words = u16::from_be_bytes([head[2], head[3]]) as usize;
+    let body = data.get(at + 4..at + 4 + words * 4)?;
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < body.len() {
+        let (id, len, hdr) = if profile == 0xBEDE {
+            let b = body[i];
+            if b == 0 {
+                i += 1;
+                continue;
+            }
+            if b >> 4 == 15 {
+                break;
+            }
+            (b >> 4, (b & 0x0F) as usize + 1, 1)
+        } else if profile & 0xFFF0 == 0x1000 {
+            if body[i] == 0 {
+                i += 1;
+                continue;
+            }
+            (body[i], *body.get(i + 1)? as usize, 2)
+        } else {
+            out.push((0, body.to_vec()));
+            break;
+        };
+        let v = body.get(i + hdr..i + hdr + len)?;
+        out.push((id, v.to_vec()));
+        i += hdr + len;
+    }
+    Some((profile, out))
+}
+
+/// Developer aid (protocol research, no picture data): an H.264 RTP
+/// packet's metadata as text: its header extensions and NAL unit types,
+/// with the bytes of SEI (6), SPS (7), PPS (8) and PACSI (30) units, which
+/// carry no picture.
+pub fn h264_metadata(data: &[u8]) -> String {
+    use std::fmt::Write;
+    let mut s = String::new();
+    if let Some((profile, ext)) = extension_elements(data) {
+        let _ = write!(s, "ext {profile:04x}");
+        for (id, v) in ext {
+            let _ = write!(s, " {id}:{}", hex(&v));
+        }
+    }
+    let Some(at) = full_header_len(data) else {
+        return s;
+    };
+    let mut payload = &data[at..];
+    if data[0] & 0x20 != 0
+        && let Some(&pad) = payload.last()
+    {
+        payload = &payload[..payload.len().saturating_sub(pad as usize)];
+    }
+    let Some(&first) = payload.first() else {
+        return s;
+    };
+    let unit = |s: &mut String, nal: &[u8]| {
+        let t = nal.first().map(|b| b & 0x1F).unwrap_or(0);
+        let _ = write!(s, " nal {t}");
+        if matches!(t, 6..=8 | 30) {
+            let _ = write!(s, "[{}]", hex(&nal[..nal.len().min(64)]));
+        }
+    };
+    match first & 0x1F {
+        24 | 25 => {
+            let mut i = if first & 0x1F == 24 { 1 } else { 3 };
+            let _ = write!(s, " stap");
+            while i + 2 <= payload.len() {
+                let n = u16::from_be_bytes([payload[i], payload[i + 1]]) as usize;
+                let Some(nal) = payload.get(i + 2..i + 2 + n) else {
+                    break;
+                };
+                unit(&mut s, nal);
+                i += 2 + n;
+            }
+        }
+        28 | 29 => {
+            let fu = payload.get(1).copied().unwrap_or(0);
+            let _ = write!(
+                s,
+                " fu {}{}",
+                fu & 0x1F,
+                if fu & 0x80 != 0 { " start" } else { "" }
+            );
+        }
+        _ => unit(&mut s, payload),
+    }
+    s
+}
+
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
 /// An RTP packet with one-byte header extensions (RFC 8285): each
 /// `(id, data)` with 1–16 bytes of data.
 pub fn encode_with_extensions(
@@ -392,6 +496,24 @@ mod tests {
                 decoded,
             );
         }
+    }
+
+    #[test]
+    fn extension_elements_and_h264_metadata_read_back() {
+        let pkt = encode_with_extensions(
+            107,
+            1,
+            2,
+            3,
+            &[(3, &[1, 2]), (5, &[9])],
+            &[0x06, 0xaa, 0xbb],
+        );
+        let (profile, ext) = extension_elements(&pkt).unwrap();
+        assert_eq!(profile, 0xBEDE);
+        assert_eq!(ext, vec![(3, vec![1, 2]), (5, vec![9])]);
+        assert_eq!(h264_metadata(&pkt), "ext bede 3:0102 5:09 nal 6[06aabb]");
+        let fu = encode(107, 1, 2, 3, &[0x7c, 0x85, 0xff]);
+        assert_eq!(h264_metadata(&fu), " fu 5 start");
     }
 
     #[test]
