@@ -27502,7 +27502,7 @@ impl qobject::Backend {
                 let (contacts, categories) = api::contacts::list(&client).await?;
                 anyhow::Ok(
                     json!({ "contacts": contacts, "categories": categories, "notice": notice,
-                                   "at": chrono::Utc::now().timestamp_millis() }),
+                                   "at": teams_cli::clock::now_ms() }),
                 )
             }
             .await;
