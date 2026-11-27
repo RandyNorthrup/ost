@@ -5,11 +5,12 @@
 //! 3339 grammar (the times every Teams and Graph reply carries), its
 //! timestamp shapes (`.000Z` milliseconds, `+00:00`), whole-millisecond
 //! epoch values, and local times in the system's time zone (TZ, else
-//! /etc/localtime) with chrono's answers for times that a DST change skips
-//! or repeats. Where chrono 0.4.45 answered differently only within the
-//! first second of a skipped hour or the last second of a repeated one
-//! (its zone-file and POSIX-rule lookups also disagreed there), jiff's
-//! reading is used.
+//! /etc/localtime) with chrono's answers for times that a DST change
+//! skips, and Teams' for times it repeats (the daylight-time reading, where
+//! chrono took standard time). Where chrono 0.4.45 answered differently
+//! only within the first second of a skipped hour or the last second of a
+//! repeated one (its zone-file and POSIX-rule lookups also disagreed
+//! there), jiff's reading is used.
 
 use jiff::civil;
 use jiff::tz::{AmbiguousOffset, Offset, TimeZone};
@@ -272,16 +273,16 @@ pub fn single(tz: &TimeZone, dt: civil::DateTime) -> Option<ZonedDateTime> {
     }
 }
 
-/// A wall-clock time in `tz` as chrono's `earliest` read it: in an hour a
-/// DST change repeats, the reading at the smaller UTC offset (standard
-/// time, the later moment; JavaScript's Date, so Teams, takes the other);
-/// none in an hour it skips except that hour's first instant (see
-/// `single`).
+/// A wall-clock time in `tz` as Teams reads it (JavaScript's Date): in an
+/// hour a DST change repeats, the earlier moment, at the offset in force
+/// before the change (daylight time when clocks go back); none in an hour
+/// it skips except that hour's first instant (see `single`). chrono, which
+/// OST used before, took the later, standard-time reading.
 pub fn earliest(tz: &TimeZone, dt: civil::DateTime) -> Option<ZonedDateTime> {
     match tz.to_ambiguous_timestamp(dt).offset() {
         AmbiguousOffset::Unambiguous { offset } => read(tz, offset, dt),
         AmbiguousOffset::Gap { before, .. } => gap_start(tz, before, dt),
-        AmbiguousOffset::Fold { before, after } => read(tz, before.min(after), dt),
+        AmbiguousOffset::Fold { before, .. } => read(tz, before, dt),
     }
 }
 
@@ -458,11 +459,15 @@ mod tests {
             Some("2026-03-08T07:00:00.000Z")
         );
         // The repeated hour (November 1, 01:00-02:00): no single reading;
-        // chrono's "earliest" was the standard-time one.
+        // the earlier one, daylight time, as Teams reads it.
         assert_eq!(single(&tz, wall(2026, 11, 1, 1, 30)), None);
         assert_eq!(
             iso(&earliest(&tz, wall(2026, 11, 1, 1, 30))).as_deref(),
-            Some("2026-11-01T06:30:00.000Z")
+            Some("2026-11-01T05:30:00.000Z")
+        );
+        assert_eq!(
+            iso(&earliest(&tz, wall(2026, 11, 1, 1, 0))).as_deref(),
+            Some("2026-11-01T05:00:00.000Z")
         );
         assert_eq!(
             iso(&single(&tz, wall(2026, 11, 1, 2, 0))).as_deref(),
@@ -475,6 +480,18 @@ mod tests {
             Some("2026-09-06T04:00:00.000Z")
         );
         assert_eq!(single(&chile, wall(2026, 9, 6, 0, 30)), None);
+        // Clocks there go back at midnight (Sunday April 5, 00:00 to
+        // Saturday 23:00), so Saturday's last hour comes twice: Teams reads
+        // it at daylight time, the first time round.
+        assert_eq!(single(&chile, wall(2026, 4, 4, 23, 30)), None);
+        assert_eq!(
+            iso(&earliest(
+                &chile,
+                civil::datetime(2026, 4, 4, 23, 59, 59, 999_000_000)
+            ))
+            .as_deref(),
+            Some("2026-04-05T02:59:59.999Z")
+        );
     }
 
     #[test]

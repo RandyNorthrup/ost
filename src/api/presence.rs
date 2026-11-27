@@ -720,6 +720,20 @@ mod expiry_tests {
         let now = &at(3, 7, 22, 0);
         assert_eq!(iso(expiry_for("ThisWeek", now)), "2026-03-07T05:00:00.000Z");
         assert_eq!(iso(expiry_for("TwoHours", now)), "2026-03-08T05:00:00.000Z");
+        // A repeated hour reads at daylight time, the first time round, as
+        // Teams reads it.
+        let early = &at(11, 1, 0, 30);
+        assert_eq!(
+            iso(crate::clock::earliest(&tz, early.date().at(1, 30, 0, 0))),
+            "2026-11-01T05:30:00.000Z"
+        );
+        // Where clocks go back at midnight (Chile: Sunday April 5, 00:00
+        // back to Saturday 23:00), Saturday's end comes twice; Teams'
+        // "Today" ends at the first, in daylight time.
+        let chile = jiff::tz::TimeZone::posix("<-04>4<-03>,M9.1.0/0,M4.1.0/0").unwrap();
+        let sat =
+            &crate::clock::single(&chile, jiff::civil::datetime(2026, 4, 4, 12, 0, 0, 0)).unwrap();
+        assert_eq!(iso(expiry_for("Today", sat)), "2026-04-05T02:59:59.999Z");
         // A note without an end: 9999-12-31 00:00 on the zone's clock.
         assert_eq!(
             never_expiry(&tz).as_deref(),
