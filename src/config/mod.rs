@@ -387,7 +387,10 @@ impl Config {
                     config.apply_secrets(
                         serde_json::from_str(&json).context("Keyring entry is not valid")?,
                     );
-                    if no_keyring {
+                    // (Said once a run: every load reads them until then.)
+                    static SAID: std::sync::atomic::AtomicBool =
+                        std::sync::atomic::AtomicBool::new(false);
+                    if no_keyring && !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
                         tracing::info!(
                             "OST_NO_KEYRING is set, but another run moved this sign-in to the keyring; it goes back to the config file at the next save"
                         );
