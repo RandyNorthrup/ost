@@ -2970,9 +2970,7 @@ async fn recv_loop(ctx: RecvCtx) {
                             .map(|w| w.split(':').next().unwrap_or(w))
                             .collect::<Vec<_>>()
                             .join(" ");
-                        let seen = video_meta
-                            .entry(ssrc)
-                            .or_insert_with(|| (0u32, String::new()));
+                        let seen = video_meta.entry(ssrc).or_default();
                         seen.0 += 1;
                         if seen.0 <= 20 || seen.1 != shape || meta.contains('[') {
                             video_meta_lines += 1;

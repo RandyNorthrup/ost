@@ -93,9 +93,12 @@ pub fn encode(payload_type: u8, seq: u16, timestamp: u32, ssrc: u32, payload: &[
     buf
 }
 
+/// Header extension elements, each `(id, data)`.
+pub type ExtensionElements = Vec<(u8, Vec<u8>)>;
+
 /// A packet's header extension elements (RFC 8285 one- and two-byte
 /// forms): the profile and each `(id, data)`.
-pub fn extension_elements(data: &[u8]) -> Option<(u16, Vec<(u8, Vec<u8>)>)> {
+pub fn extension_elements(data: &[u8]) -> Option<(u16, ExtensionElements)> {
     if data.len() < RTP_HEADER_SIZE || (data[0] >> 4) & 1 == 0 {
         return None;
     }
