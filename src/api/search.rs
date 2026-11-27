@@ -856,7 +856,116 @@ pub async fn new_chat_suggestions(
         .error_for_status()?
         .json()
         .await?;
-    Ok(new_chat_arrange(&reply, my_oid, local, keyword))
+    let mut out = new_chat_arrange(&reply, my_oid, local, keyword);
+    // An address typed in full: Teams also asks who has it outside the
+    // org, Teams free people included, and lists them in its federated
+    // slot (after five people) with an External tag.
+    if is_email_query(keyword) {
+        match external_people(keyword).await {
+            Ok(found) => insert_external(&mut out, found),
+            Err(e) => tracing::debug!("external people search: {e:#}"),
+        }
+    }
+    Ok(out)
+}
+
+/// Whether the picker's text is one whole email address (what Teams'
+/// external search takes).
+pub fn is_email_query(q: &str) -> bool {
+    let q = q.trim();
+    let Some((user, domain)) = q.split_once('@') else {
+        return false;
+    };
+    !user.is_empty()
+        && domain.contains('.')
+        && !domain.starts_with('.')
+        && !domain.ends_with('.')
+        && !q.contains(char::is_whitespace)
+        && !domain.contains('@')
+        && !q.contains(['/', '?', '#', '%'])
+}
+
+/// The people outside your org with an address, as Teams' new chat picker
+/// finds them: `GET {mt}/beta/users/{email}/externalsearchv3?includeTFLUsers=true`
+/// (`x-ms-client-caller: newChat` and the client's type and version, live
+/// capture 2026-11-27). Only Teams
+/// free people (`TflConsumer`) are kept: they're who a chat by address
+/// reaches without inviting a guest. An address Teams free doesn't let
+/// anyone find gives `[]`, and then nobody is listed (Teams would offer to
+/// invite the address as a guest of your org; OST doesn't).
+pub async fn external_people(email: &str) -> Result<Vec<serde_json::Value>> {
+    let email = email.trim();
+    anyhow::ensure!(is_email_query(email), "Not an email address");
+    let client = super::client::TeamsClient::new().await?;
+    let (base, token) = super::tabs::middle_tier(&client).await?;
+    let path: String = url::form_urlencoded::byte_serialize(email.as_bytes()).collect();
+    let v: serde_json::Value = client
+        .http()
+        .get(format!(
+            "{base}/beta/users/{path}/externalsearchv3?includeTFLUsers=true"
+        ))
+        .bearer_auth(&token)
+        .header("x-ms-client-caller", "newChat")
+        // (Without a client type the middle tier's user discovery answers
+        // 400 "Workload Unknown"; live check 2026-11-27.)
+        .header("x-ms-client-type", "cdlworker")
+        .header("x-ms-client-version", "1415/26110100723")
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    Ok(external_candidates(&v, email))
+}
+
+/// externalsearchv3's answer (an array, or `{value: […]}`) as picker rows:
+/// `{kind: "person", id: <MRI>, name, sub: <address>, external: true}`.
+pub fn external_candidates(v: &serde_json::Value, email: &str) -> Vec<serde_json::Value> {
+    let list = v
+        .as_array()
+        .or_else(|| v["value"].as_array())
+        .cloned()
+        .unwrap_or_default();
+    list.iter()
+        .filter_map(super::directory::tfl_profile_record)
+        .filter(|p| !p["displayName"].as_str().unwrap_or_default().is_empty())
+        .map(|p| {
+            let mail = Some(p["email"].as_str().unwrap_or_default().to_string())
+                .filter(|m| !m.is_empty())
+                .unwrap_or_else(|| email.to_string());
+            serde_json::json!({
+                "kind": "person",
+                "id": p["mri"],
+                "name": p["displayName"],
+                "plain_name": p["displayName"],
+                "sub": mail,
+                "upn": mail,
+                "external": true,
+            })
+        })
+        .collect()
+}
+
+/// Put external people in Teams' federated slot: after the first five
+/// people, ahead of the rest; the list stays at its 22.
+pub fn insert_external(out: &mut Vec<serde_json::Value>, found: Vec<serde_json::Value>) {
+    let mut at = 0;
+    let mut people = 0;
+    for (i, v) in out.iter().enumerate() {
+        if v["kind"] == "person" {
+            people += 1;
+            at = i + 1;
+            if people == 5 {
+                break;
+            }
+        }
+    }
+    for (n, f) in found.into_iter().take(5).enumerate() {
+        if !out.iter().any(|v| v["id"] == f["id"]) {
+            out.insert((at + n).min(out.len()), f);
+        }
+    }
+    out.truncate(22);
 }
 
 /// Teams' local chat match (worker 54954 with the matcher 68583): every
@@ -1332,6 +1441,34 @@ async fn fill_by_thread(client: &super::client::TeamsClient, found: &mut Found) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn teams_free_people_found_by_address_go_in_the_federated_slot() {
+        assert!(is_email_query("ost-personal1-5135@outlook.com"));
+        assert!(!is_email_query("ost personal"));
+        assert!(!is_email_query("a@b") && !is_email_query("@outlook.com"));
+        assert!(!is_email_query("a@b.com/x") && !is_email_query("a b@c.com"));
+        let found = external_candidates(
+            &serde_json::json!([
+                {"mri": "8:live:.cid.abc", "displayName": "OST Personal 1", "type": "TflConsumer", "emailsInfo": []},
+                {"mri": "8:orgid:x", "displayName": "Someone federated", "type": "Federated"}
+            ]),
+            "ost-personal1-5135@outlook.com",
+        );
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0]["id"], "8:live:.cid.abc");
+        assert_eq!(found[0]["sub"], "ost-personal1-5135@outlook.com");
+        assert_eq!(found[0]["external"], true);
+        let person = |i: usize| serde_json::json!({"kind": "person", "id": format!("p{i}")});
+        let mut out: Vec<serde_json::Value> = (0..7).map(person).collect();
+        out.insert(2, serde_json::json!({"kind": "chat", "id": "c"}));
+        insert_external(&mut out, found.clone());
+        // After five people (and the chat among them), ahead of the rest.
+        assert_eq!(out[6]["id"], "8:live:.cid.abc");
+        let mut few = vec![person(0)];
+        insert_external(&mut few, found);
+        assert_eq!(few[1]["id"], "8:live:.cid.abc");
+    }
 
     #[test]
     fn new_chat_arranges_as_teams() {

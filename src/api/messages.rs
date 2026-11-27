@@ -2036,9 +2036,13 @@ pub async fn read_timeline_page(
 
 /// Control messages Teams doesn't show in a chat: in a 1:1, the members
 /// being added (the service records both when the chat is created; worker
-/// `getCtrlMsgFilter(isOneOnOneChat, [AddMember])`).
+/// `getCtrlMsgFilter(isOneOnOneChat, [AddMember])`). A chat a Teams free
+/// user starts is a 1:1 with a thread's id (`productThreadType`
+/// OneToOneChat): Teams shows no "… added … to the chat." there either
+/// (testpc2, 2026-11-27).
 pub fn hidden_control(chat_id: &str, m: &MessageView) -> bool {
-    chat_id.ends_with("@unq.gbl.spaces") && m.event.as_ref().is_some_and(|e| e.kind == "AddMember")
+    (chat_id.ends_with("@unq.gbl.spaces") || super::chat::known_one_on_one_thread(chat_id))
+        && m.event.as_ref().is_some_and(|e| e.kind == "AddMember")
 }
 
 /// People's display names by MRI, learnt from messages, events and Graph

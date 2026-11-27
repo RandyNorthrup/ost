@@ -149,6 +149,33 @@ pub fn is_person_mri(mri: &str) -> bool {
     mri.starts_with("8:") && mri.len() > 2
 }
 
+/// Whether an MRI names someone on Teams free (a personal Microsoft
+/// account, `8:live:…`, or one of Teams free's other consumer kinds), whom
+/// a work account sees as an external, unmanaged Teams user. Teams' work
+/// client lists the consumer prefixes `live`, `sip_profile`, `myspace`,
+/// `c2c`, `sms`, `facebook` and `fb` after `8:` (TFL-js MRI constants, see
+/// docs/research/personal-accounts-protocol.md §4).
+pub fn is_consumer_mri(mri: &str) -> bool {
+    let Some(rest) = mri.strip_prefix("8:") else {
+        return false;
+    };
+    [
+        "live",
+        "sip_profile",
+        "myspace",
+        "c2c",
+        "sms",
+        "facebook",
+        "fb",
+    ]
+    .iter()
+    .any(|p| {
+        rest.strip_prefix(p)
+            .and_then(|r| r.strip_prefix(':'))
+            .is_some_and(|r| !r.is_empty())
+    })
+}
+
 /// `{digits}:` at the start, as every MRI has (`8:`, `28:`, `4:`, `19:`).
 fn has_type_prefix(s: &str) -> bool {
     s.split_once(':').is_some_and(|(t, rest)| {
@@ -268,6 +295,13 @@ mod tests {
         assert_eq!(mri_id("28:bot"), "bot");
         assert_eq!(mri_id("a"), "a");
         assert!(is_person_mri("8:live:x") && is_person_mri("8:orgid:x"));
+        assert!(is_consumer_mri("8:live:.cid.ca2738c364862c6"));
+        assert!(is_consumer_mri("8:live:someskypename"));
+        assert!(!is_consumer_mri(
+            "8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5"
+        ));
+        assert!(!is_consumer_mri("8:live:") && !is_consumer_mri("8:liveabc:x"));
+        assert!(!is_consumer_mri("28:live:x") && !is_consumer_mri("8:teamsvisitor:x"));
         assert!(!is_person_mri("28:x") && !is_person_mri("8:"));
     }
 

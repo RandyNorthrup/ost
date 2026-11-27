@@ -116,8 +116,8 @@ pub use chat::{
     CallParticipant, CallRecord, LiveCall, Member, ThreadMeeting, call_history, call_time_ms,
     chat_meeting, chat_members, create_group_chat, ensure_one_on_one_chat, ensure_unique_chat,
     known_member_ids, list_chats_data, listed_chats, notes_name, read_messages_data, remove_call,
-    report_call, send_html_with_client, send_message_with_client, send_typing, strip_html,
-    thread_live_call, thread_meeting, thread_member_ids, user_display_name,
+    report_call, send_html_with_client, send_message_with_client, send_typing, start_external_chat,
+    strip_html, thread_live_call, thread_meeting, thread_member_ids, user_display_name,
 };
 pub use me::whoami_data;
 pub use presence::get_presence_data;

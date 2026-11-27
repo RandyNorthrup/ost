@@ -1013,6 +1013,16 @@ pub mod qobject {
         /// Mute or unmute a chat (Teams' Mute / Unmute).
         #[qinvokable]
         fn set_chat_muted(self: Pin<&mut Backend>, chat_id: &QString, muted: bool);
+        /// Answer a chat request from `mri` (someone on Teams free):
+        /// `action` "accept" or "block" (Teams' Accept / Block).
+        /// chat_request_answered tells how it went.
+        #[qinvokable]
+        fn answer_chat_request(
+            self: Pin<&mut Backend>,
+            chat_id: &QString,
+            mri: &QString,
+            action: &QString,
+        );
         /// Add people (`mris_json`, a JSON array of MRIs) to the open group
         /// chat with Teams' history choice: `days` < 0 none, 0 all, else
         /// the past `days` days. The roster reloads after.
@@ -1787,6 +1797,12 @@ pub mod qobject {
         /// people), made without opening it: meeting_private_chat_created.
         #[qinvokable]
         fn create_meeting_private_chat(self: Pin<&mut Backend>, oids: &QString);
+        /// Start the 1:1 chat with someone on Teams free (`mri`, found by
+        /// their address in the new chat form), as Teams does with the
+        /// first message: the chat is made, opened, and group_chat_created
+        /// says so (the form's message then goes into it).
+        #[qinvokable]
+        fn start_external_chat(self: Pin<&mut Backend>, mri: &QString, name: &QString);
 
         /// Load the Calls history.
         #[qinvokable]
@@ -2331,6 +2347,15 @@ pub mod qobject {
         /// chat tab (`oids` as asked; `chat_id` empty when it failed).
         #[qsignal]
         fn meeting_private_chat_created(self: Pin<&mut Backend>, oids: QString, chat_id: QString);
+        /// answer_chat_request finished (`ok` false: it failed, the status
+        /// bar says why).
+        #[qsignal]
+        fn chat_request_answered(
+            self: Pin<&mut Backend>,
+            chat_id: QString,
+            action: QString,
+            ok: bool,
+        );
 
         /// A card_invoke finished: its op, the outcome (JSON) and an error.
         #[qsignal]
@@ -7081,7 +7106,11 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
                 "backroom": c.backroom,
                 "topic": c.topic,
                 "named": c.named,
-                "peerMri": outgoing::callee_mri_for_chat(&c.id, &my_oid),
+                "peerMri": c.peer.clone().or_else(|| outgoing::callee_mri_for_chat(&c.id, &my_oid)),
+                // A chat request (Teams' "… wants to chat with you"), and
+                // a chat with someone on Teams free (External).
+                "request": c.request,
+                "external": c.external,
                 "favorite": fav_rank(&c.id).is_some(),
                 "favoriteRank": fav_rank(&c.id),
             })
@@ -11134,6 +11163,11 @@ fn photo_target(id: &str, my_oid: Option<&str>) -> Option<(api::directory::Photo
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b"@._-+'".contains(&b));
         return valid.then(|| (PhotoOwner::Mail, mail.to_ascii_lowercase()));
+    }
+    // Someone on Teams free (8:live:…): asked for by their MRI.
+    if teams_cli::identity::is_consumer_mri(id) {
+        let cid = teams_cli::identity::mri_id(id).to_ascii_lowercase();
+        return api::directory::consumer_id_ok(&cid).then_some((PhotoOwner::Consumer, cid));
     }
     let (owner, oid) = if id == "me" {
         (PhotoOwner::User, my_oid?.to_string())
@@ -18951,7 +18985,7 @@ impl qobject::Backend {
                             .into_iter()
                             .map(|p| {
                                 let kind = p["kind"].as_str().unwrap_or("person").to_string();
-                                json!({ "id": p["id"], "name": p["name"], "plain_name": p["plain_name"], "sub": p["sub"], "guest": p["guest"], "upn": p["upn"],
+                                json!({ "id": p["id"], "name": p["name"], "plain_name": p["plain_name"], "sub": p["sub"], "guest": p["guest"], "upn": p["upn"], "external": p["external"],
                                         "kind": kind, "chat": matches!(kind.as_str(), "chat" | "channel" | "team"), "group": p["group"] })
                             })
                             .collect();
@@ -18959,6 +18993,45 @@ impl qobject::Backend {
                         this.as_mut().set_new_chat_people_json(QString::from(v.to_string().as_str()));
                     }
                     Err(e) => tracing::warn!("new chat suggestions failed: {}", short_error(&e)),
+                }
+            });
+        });
+    }
+
+    pub fn start_external_chat(mut self: Pin<&mut Self>, mri: &QString, name: &QString) {
+        let (mri, name) = (mri.to_string(), name.to_string());
+        let Some(me) = teams_cli::config::Config::load()
+            .ok()
+            .and_then(|c| c.self_mri())
+        else {
+            return;
+        };
+        if !teams_cli::identity::is_consumer_mri(&mri) {
+            return;
+        }
+        self.as_mut().set_busy(true);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::start_external_chat(&client, &me, &mri).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_busy(false);
+                match result {
+                    Ok(id) => {
+                        tracing::info!("chat with a Teams free user started");
+                        this.as_mut().select_chat(
+                            &QString::from(id.as_str()),
+                            &QString::from(name.as_str()),
+                        );
+                        this.as_mut().group_chat_created(QString::from(id.as_str()));
+                        this.as_mut().reload_chats();
+                    }
+                    Err(e) => this
+                        .as_mut()
+                        .set_status_text(QString::from(short_error(&e).as_str())),
                 }
             });
         });
@@ -21816,6 +21889,57 @@ impl qobject::Backend {
         });
     }
 
+    pub fn answer_chat_request(
+        self: Pin<&mut Self>,
+        chat_id: &QString,
+        mri: &QString,
+        action: &QString,
+    ) {
+        let (chat_id, mri, action) = (chat_id.to_string(), mri.to_string(), action.to_string());
+        let answer = match action.as_str() {
+            "accept" => api::msgactions::RequestAnswer::Accept,
+            "block" => api::msgactions::RequestAnswer::Block,
+            _ => return,
+        };
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::msgactions::answer_chat_request(&client, &chat_id, &mri, answer).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                let ok = result.is_ok();
+                if let Err(e) = &result {
+                    tracing::warn!("chat request {action}: {}", short_error(e));
+                    this.as_mut()
+                        .set_status_text(QString::from(short_error(e).as_str()));
+                } else if let Some(c) = this
+                    .as_mut()
+                    .rust_mut()
+                    .chats
+                    .iter_mut()
+                    .find(|c| c["id"].as_str() == Some(chat_id.as_str()))
+                {
+                    // Shown at once; the reload confirms it.
+                    c["request"] = json!(false);
+                    if action == "block" {
+                        c["hidden"] = json!(true);
+                    }
+                }
+                if ok {
+                    this.as_mut().publish_chats();
+                }
+                this.as_mut().chat_request_answered(
+                    QString::from(chat_id.as_str()),
+                    QString::from(action.as_str()),
+                    ok,
+                );
+                this.as_mut().reload_chats();
+            });
+        });
+    }
+
     pub fn rename_chat(mut self: Pin<&mut Self>, topic: &QString) {
         let topic = topic.to_string().trim().to_string();
         let chat_id = self.rust().current_chat_id.to_string();
@@ -23411,7 +23535,9 @@ impl qobject::Backend {
         {
             let oid_key = if matches!(
                 owner,
-                api::directory::PhotoOwner::Chat | api::directory::PhotoOwner::Mail
+                api::directory::PhotoOwner::Chat
+                    | api::directory::PhotoOwner::Mail
+                    | api::directory::PhotoOwner::Consumer
             ) {
                 format!(
                     "{:08x}",
@@ -23429,6 +23555,7 @@ impl qobject::Backend {
                     api::directory::PhotoOwner::User => "user",
                     api::directory::PhotoOwner::Chat => "chat",
                     api::directory::PhotoOwner::Mail => "mail",
+                    api::directory::PhotoOwner::Consumer => "tfl",
                 }
             );
             for e in entries.flatten() {
@@ -23523,10 +23650,13 @@ impl qobject::Backend {
         let name_hash = name.bytes().fold(0x811c9dc5u32, |h, b| {
             (h ^ b as u32).wrapping_mul(0x01000193)
         });
-        // Thread ids aren't file names: chats are keyed by their hash.
+        // Thread ids (and Teams free ids) aren't file names: they're keyed
+        // by their hash.
         let oid_key = if matches!(
             owner,
-            api::directory::PhotoOwner::Chat | api::directory::PhotoOwner::Mail
+            api::directory::PhotoOwner::Chat
+                | api::directory::PhotoOwner::Mail
+                | api::directory::PhotoOwner::Consumer
         ) {
             format!(
                 "{:08x}",
@@ -23544,6 +23674,7 @@ impl qobject::Backend {
                 api::directory::PhotoOwner::User => "user",
                 api::directory::PhotoOwner::Chat => "chat",
                 api::directory::PhotoOwner::Mail => "mail",
+                api::directory::PhotoOwner::Consumer => "tfl",
             }
         );
         let (cached, fresh) = photo_from_disk(&key);
@@ -33441,6 +33572,16 @@ mod tests {
             photo_target("8:teamsvisitor:43cf0b1e5a8d4c2f9e7f0a1b2c3d4e5f", None),
             Some((PhotoOwner::Named, String::new()))
         );
+        // Someone on Teams free, by their MRI's id.
+        assert_eq!(
+            photo_target("8:live:.cid.ca2738c364862c6", None),
+            Some((
+                PhotoOwner::Consumer,
+                "live:.cid.ca2738c364862c6".to_string()
+            ))
+        );
+        assert_eq!(photo_target("8:live:.cid.a/../b", None), None);
+        assert_eq!(photo_target("8:live:x?y=1", None), None);
         // Anything that could change the request path is refused.
         assert_eq!(photo_target("../../me", None), None);
         assert_eq!(photo_target("8:orgid:abc?x=1", None), None);

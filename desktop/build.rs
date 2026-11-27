@@ -279,6 +279,8 @@ fn main() {
         "qml/FaceCaptureDialog.qml",
         "qml/VoiceCaptureDialog.qml",
         "qml/VoicemailTransferPicker.qml",
+        "qml/ExternalBadge.qml",
+        "qml/ChatRequestView.qml",
         "qml/UnparkDialog.qml",
         "qml/ChatNotesTab.qml",
         "qml/LoopPage.qml",

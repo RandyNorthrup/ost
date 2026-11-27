@@ -159,6 +159,16 @@ Item {
     // its text 14/20 #424242 (#616161 when the chat is unavailable).
     property string noteText: ""
     property bool noteMuted: false
+    /// The note has Teams' Close (the "Replying to external participants."
+    /// note in a chat with someone on Teams free), which emits noteDismissed.
+    property bool noteDismissible: false
+    signal noteDismissed()
+    /// Files can be attached (Teams turns files off in chats with someone
+    /// on Teams free: no Attach).
+    property bool filesAllowed: true
+    /// Pictures can be pasted in (in a chat a Teams free user started, work
+    /// users can't send photos either; in one they started, they can).
+    property bool picturesAllowed: true
     readonly property real noteH: noteText ? noteLabel.implicitHeight + 14 : 0
     // Teams' DefaultBanner (pre-send checks, measured on winpc 2026-11-16:
     // "Please type a message to continue.") has no Close and is 28 tall,
@@ -732,11 +742,23 @@ Item {
         Rectangle { width: parent.width; height: 0.67; color: theme.divider; radius: 6 }
         Text {
             id: noteLabel
-            x: 16; y: 8; width: parent.width - 32
+            x: 16; y: 8; width: parent.width - 32 - (root.noteDismissible ? 28 : 0)
             wrapMode: Text.Wrap
             text: root.noteText
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: root.noteMuted ? theme.textSecondary : theme.textStrong
+        }
+        Rectangle {
+            id: hcFillNote
+            visible: root.noteDismissible
+            x: parent.width - 32; y: 4; width: 28; height: 28; radius: 4
+            color: closeNoteHover.hovered ? theme.menuHover : "transparent"
+            FluentIcon { anchors.centerIn: parent; size: 16; name: "dismiss-16"; color: theme.onFill(hcFillNote, closeNoteHover.hovered ? theme.brand : theme.textStrong) }
+            HoverHandler { id: closeNoteHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.noteDismissed() }
+            ToolTip.visible: closeNoteHover.hovered; ToolTip.delay: 500; ToolTip.text: qsTr("Close this notification")
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("Close notification")
         }
         Accessible.role: Accessible.StaticText
         Accessible.name: root.noteText
@@ -1508,7 +1530,7 @@ Item {
                     if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_V) {
                         // A picture (and no text) on the clipboard goes in
                         // as a picture, as Teams' box takes it.
-                        if (!root.textOnly && !root.editing && root.pastePicture()) { event.accepted = true; return }
+                        if (!root.textOnly && root.picturesAllowed && !root.editing && root.pastePicture()) { event.accepted = true; return }
                         root.pasteFrom = input.selectionStart; Qt.callLater(root.autoLinkPaste); return
                     }
                     if (!(event.modifiers & Qt.ControlModifier)) return
@@ -1651,7 +1673,7 @@ Item {
     readonly property var toolModel: [
         { id: "expand-compose", icon: "format-20", label: root.formatting ? qsTr("Hide Formatting options") : qsTr("Show Formatting options"), pressed: root.formatting },
         { id: "UnifiedFunPicker", icon: "emoji-20", label: qsTr("Emoji, GIFs and Stickers"), hidden: root.textOnly },
-        { id: "FilePicker", icon: "attach-20", label: qsTr("Attach files") + " (Alt+Shift+O)", hidden: root.textOnly },
+        { id: "FilePicker", icon: "attach-20", label: qsTr("Attach files") + " (Alt+Shift+O)", hidden: root.textOnly || !root.filesAllowed },
         // (Also while editing a sent message: Teams' edit box keeps Write
         // with Copilot, its popover over the edit box, measured 2026-11-23.)
         { id: "open-compose-copilot", icon: "pen-sparkle-20", label: qsTr("Write with Copilot") + " (Alt+A)", hidden: root.textOnly || !root.copilotAllowed, pressed: copilotPopover.opened },

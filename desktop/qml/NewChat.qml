@@ -62,7 +62,8 @@ Rectangle {
     function composeBox() { return compose }
 
     function chatWith(oid) {
-        const mri = Mri.work(oid)
+        // (Someone on Teams free is picked by their MRI.)
+        const mri = Mri.isConsumer(oid) ? oid : Mri.work(oid)
         const c = root.chats.find(c => c.peerMri === mri && !c.isGroup && !c.isSelf && !c.meeting)
         return c ? c.id : ""
     }
@@ -82,7 +83,7 @@ Rectangle {
         // A distribution list or group: its people join the To: line
         // (Teams' chat with a group, allowChatWithGroup).
         if (p.kind === "dl") { backend.channelAction("group-people", "", "", p.id); field.text = ""; root.search(""); highlight = -1; field.forceActiveFocus(); return }
-        if (!picked.some(x => x.id === p.id)) picked = picked.concat([{ id: p.id, name: (p.plain_name || p.name), mail: p.guest ? (p.sub || "") : (p.upn || p.mail || "") }])
+        if (!picked.some(x => x.id === p.id)) picked = picked.concat([{ id: p.id, name: (p.plain_name || p.name), mail: p.guest || p.external ? (p.sub || "") : (p.upn || p.mail || ""), external: p.external === true }])
         field.text = ""
         root.search("")
         highlight = -1
@@ -452,7 +453,7 @@ Rectangle {
                     id: person
                     required property var modelData
                     required property int index
-                    readonly property bool guest: person.modelData.guest === true
+                    readonly property bool guest: person.modelData.guest === true || person.modelData.external === true
                     readonly property string second: person.modelData.sub || ""
                     width: suggestCol.width; height: guest ? 52 : 50; radius: 4
                     color: hover.hovered || root.highlight === index ? theme.hc(theme.menuHover, theme.hcHighlight) : "transparent"
@@ -479,7 +480,7 @@ Rectangle {
                     }
                     Rectangle {
                         id: guestTag
-                        visible: person.guest
+                        visible: person.modelData.guest === true
                         x: personName.x + personName.implicitWidth + 4; y: 6
                         width: 12 + 16 + 2 + guestText.implicitWidth; height: 24; radius: 4
                         color: theme.pick("#EBEBEB", "#3D3D3D", "transparent")
@@ -493,6 +494,12 @@ Rectangle {
                             color: theme.onFill(guestTag, theme.textSecondary)
                         }
                     }
+                    // Someone on Teams free found by their address: Teams'
+                    // External tag 4 after the name, as the guest tag sits.
+                    ExternalBadge {
+                        visible: person.modelData.external === true
+                        x: personName.x + personName.implicitWidth + 4; y: 6
+                    }
                     Text {
                         visible: person.second.length > 0
                         x: 60; y: personName.y + 21; width: person.width - 60 - 8
@@ -505,7 +512,7 @@ Rectangle {
                     HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.pick(person.modelData) }
                     Accessible.role: Accessible.ListItem
-                    Accessible.name: person.modelData.name + (person.guest ? " " + qsTr("Guest") : "") + (person.second ? ", " + person.second : "")
+                    Accessible.name: person.modelData.name + (person.modelData.external === true ? " " + qsTr("External") : person.guest ? " " + qsTr("Guest") : "") + (person.second ? ", " + person.second : "")
                 }
             }
         }
