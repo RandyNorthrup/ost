@@ -11796,6 +11796,37 @@ Window {
         function onEventsReply(id, json) { if (id === "recapsclean") console.warn("RECAPS cleanup", json) }
     }
 
+    // --prejoin-audio-test (TASK-0356 B-16): the Meet now pre-join with its
+    // device pickers, the camera picker and Test mic and speaker's steps
+    // (speaker, microphone, summary), captured as prejoin-audio-<tag>.png;
+    // lines PREJOINAUDIO. Nothing is joined: it cancels at the end.
+    Timer {
+        running: Qt.application.arguments.indexOf("--prejoin-audio-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const log = (...a) => console.warn("PREJOINAUDIO", ...a)
+            const shot = (w, tag) => w.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-prejoin-audio-" + tag + ".png")))
+            const t = preJoin.audioTestForTest()
+            if (step === 0) preJoin.openMeetNow("", "OST TEST 356 audio")
+            else if (step === 1) { log("rows", preJoin.mic, "|", preJoin.speaker); shot(preJoin, "prejoin") }
+            else if (step === 2) preJoin.deviceFlyoutForTest("mic")
+            else if (step === 3) { shot(preJoin, "mic-flyout"); preJoin.deviceFlyoutForTest("") }
+            else if (step === 4) preJoin.deviceFlyoutForTest("speaker")
+            else if (step === 5) { shot(preJoin, "speaker-flyout"); preJoin.deviceFlyoutForTest("") }
+            else if (step === 6) preJoin.deviceFlyoutForTest("camera")
+            else if (step === 7) { shot(preJoin, "camera-flyout"); preJoin.deviceFlyoutForTest(""); t.start() }
+            else if (step === 9) { log("speaker step", t.page, backend.audioTestJson, t.speakerLeft, t.actionButton ? t.actionButton.text : "-", t.proceedButton.text); shot(preJoin, "speaker") }
+            else if (step === 10) t.proceedButton.run()
+            else if (step === 13) { log("mic step", t.page, backend.audioTestJson, t.micLeft, t.actionButton ? t.actionButton.text : "-", t.proceedButton.text); shot(preJoin, "mic") }
+            else if (step === 14) t.proceedButton.run()
+            else if (step === 15) { log("summary", t.page, t.allGood, backend.audioTestJson); shot(preJoin, "summary") }
+            else if (step === 16) { t.proceedButton.run(); log("closed", t.visible, backend.audioTestJson) }
+            else if (step === 17) { preJoin.cancel(); Qt.quit() }
+            step++
+        }
+    }
+
     // --call-notes-test: a solo Teams meeting of your own (a calendar
     // event "OST TEST 212 notes OST" with nobody invited, made now for 30
     // minutes; OST has no calendar Meet now), joined with camera, mic and
