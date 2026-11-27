@@ -180,6 +180,7 @@ pub struct Places {
     /// against a bot or connector the app is added for.
     pub team_tab: bool,
     pub chat_tab: bool,
+    pub meeting_tab: bool,
     /// The channel kinds it supports besides standard ones.
     pub private_channels: bool,
     pub shared_channels: bool,
@@ -189,6 +190,7 @@ pub struct Places {
 /// picker's `w` check: bots and configurable tabs by scope, connectors in
 /// teams, meeting contexts for meetings).
 pub fn places(def: &serde_json::Value) -> Places {
+    use super::store_content::IcKind;
     let list = |k: &str| {
         def.get(k)
             .and_then(|v| v.as_array())
@@ -201,25 +203,33 @@ pub fn places(def: &serde_json::Value) -> Places {
                 .any(|x| x.as_str().is_some_and(|x| x.eq_ignore_ascii_case(want)))
         })
     };
-    let meeting_context = |t: &serde_json::Value| {
-        t.get("context")
-            .and_then(|c| c.as_array())
-            .is_some_and(|c| {
-                c.iter().any(|x| {
-                    x.as_str()
-                        .is_some_and(|x| x.to_ascii_lowercase().starts_with("meeting"))
-                })
-            })
-    };
     let bots = list("bots");
-    let tabs: Vec<serde_json::Value> = ["configurableTabs", "galleryTabs"]
-        .iter()
-        .flat_map(|k| list(k))
-        .collect();
     let bot = |scope: &str| bots.iter().any(|b| has(b, "scopes", scope));
-    let tab = |scope: &str| tabs.iter().any(|t| has(t, "scopes", scope));
-    let team_tab = tab("team");
-    let chat_tab = tab("groupChat");
+    // Tabs Go sets up (configurable ones), by scope and context as Add a
+    // tab matches them: a chat tab needs privateChatTab, a meeting tab
+    // meetingChatTab, a channel tab channelTab (or no context at all).
+    let configurable = serde_json::json!({
+        "configurableTabs": def.get("configurableTabs").cloned().unwrap_or_default(),
+        "galleryTabs": def.get("galleryTabs").cloned().unwrap_or_default(),
+    });
+    let team_tab = IcKind::TabChannel.supports(&configurable);
+    let chat_tab = IcKind::TabChat.supports(&configurable);
+    // A meeting takes a group chat tab made for any meeting surface (its
+    // chat, details, side panel or stage; Teams' meeting features).
+    let meeting_tab = IcKind::TabMeeting.supports(&configurable)
+        || ["configurableTabs", "galleryTabs"].iter().any(|k| {
+            list(k).iter().any(|t| {
+                has(t, "scopes", "groupChat")
+                    && t.get("context")
+                        .and_then(|c| c.as_array())
+                        .is_some_and(|c| {
+                            c.iter().any(|x| {
+                                x.as_str()
+                                    .is_some_and(|x| x.to_ascii_lowercase().starts_with("meeting"))
+                            })
+                        })
+            })
+        });
     let channels: Vec<String> = list("supportedChannelTypes")
         .iter()
         .filter_map(|v| v.as_str().map(str::to_lowercase))
@@ -229,16 +239,15 @@ pub fn places(def: &serde_json::Value) -> Places {
             .iter()
             .any(|t| has(t, "scopes", "personal"))
             || bot("personal")
-            || !list("composeExtensions").is_empty()
-            || !list("inputExtensions").is_empty(),
+            || ["composeExtensions", "messageExtensions", "inputExtensions"]
+                .iter()
+                .any(|k| !list(k).is_empty()),
         team: team_tab || bot("team") || !list("connectors").is_empty(),
         chat: chat_tab || bot("groupChat"),
-        meeting: bot("groupChat")
-            || tabs
-                .iter()
-                .any(|t| has(t, "scopes", "groupChat") && meeting_context(t)),
+        meeting: meeting_tab || bot("groupChat"),
         team_tab,
         chat_tab,
+        meeting_tab,
         private_channels: channels.iter().any(|c| c == "privatechannels"),
         shared_channels: channels.iter().any(|c| c == "sharedchannels"),
     }
@@ -1781,6 +1790,12 @@ mod tests {
         });
         let p = places(&pbi);
         assert!(p.personal && p.team && p.chat && p.meeting && p.team_tab && p.chat_tab);
+        // Forms: a channel and meeting-chat tab, no ordinary chats.
+        let forms = serde_json::json!({ "configurableTabs": [{ "scopes": ["team", "groupChat"], "context": ["channelTab", "meetingChatTab"] }] });
+        let p = places(&forms);
+        assert!(p.team && p.team_tab && p.meeting && p.meeting_tab && !p.chat && !p.chat_tab);
+        // A message extension alone: used on your own.
+        assert!(places(&serde_json::json!({ "messageExtensions": [{ "botId": "b" }] })).personal);
         assert!(p.private_channels && !p.shared_channels);
         let mut def = pbi.clone();
         def["configurableTabs"][0]["configurationUrl"] =

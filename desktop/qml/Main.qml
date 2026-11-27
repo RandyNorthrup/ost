@@ -17467,7 +17467,7 @@ Window {
         chatList.copilotOpen = false; chatList.draftsOpen = false; chatList.mentionsOpen = false; chatList.quickOpen = ""
         chatList.yourTeamsOpen = false; window.manage = null; window.manageTeamId = ""
         backend.selectChat(place.id, place.name)
-        if (channel ? app.team_tab : app.chat_tab) {
+        if (channel ? app.team_tab : place.kind === "meeting" ? app.meeting_tab : app.chat_tab) {
             pendingUse = null
             tabConfig.start({ id: app.id, name: app.name, icon: app.icon || "", config_url: app.config_url || "" }, place.id, channel ? place.teamId : "", channel)
             // Back returns to the quick-start dialog it came from.
