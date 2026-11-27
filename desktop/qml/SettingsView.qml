@@ -2952,9 +2952,11 @@ Rectangle {
             // Green Screen on, "What is your background color?" and a 14 px
             // swatch in a 22 px white frame at its right — pressing it
             // turns the preview into an eyedropper: click your backdrop),
-            // Camera, Green Screen, Mirror my video, Adjust brightness and
-            // Soft focus, with "Automatically adjust camera controls" and
-            // "Open camera settings" under Camera (the camera's V4L2
+            // Camera, Green Screen, Mirror my video, Adjust brightness, Soft
+            // focus and Denoising (a temporal filter on the camera,
+            // ost_vfx::Denoiser; on by default, kept on this device), with
+            // "Automatically adjust camera controls" and "Open camera
+            // settings" under Camera (the camera's V4L2
             // controls, calling::camera_controls). Super resolution is
             // TASK-0139's.
             Text {
@@ -3198,6 +3200,15 @@ Rectangle {
                     sublabel: qsTr("Smoothen your appearance for a polished look.")
                     on: videoEffects.softFocus
                     onToggled: v => videoEffects.setSoftFocus(v)
+                }
+                // Teams' Denoising (after Super resolution, which OST
+                // doesn't offer): its text as Teams has it, "availlable"
+                // and all.
+                SettingsParts.SwitchRow {
+                    label: qsTr("Denoising")
+                    sublabel: qsTr("Enhance the quality of your video by reducing visual noise. This setting only works when your device has resources availlable.")
+                    on: videoEffects.denoising
+                    onToggled: v => videoEffects.setDenoising(v)
                 }
             }
             CameraSettingsDialog { id: cameraSettings }
@@ -4991,7 +5002,7 @@ Rectangle {
                         elide: Text.ElideRight
                         text: parent.u.state === "error" ? qsTr("Issue occurred while checking for updates.")
                             : parent.u.state === "available" ? qsTr("An update is available.")
-                            : qsTr("You've got the latest version. %1").arg(parent.u.checkedAt ? qsTr("It was last checked on %1.").arg(Qt.formatDate(new Date(parent.u.checkedAt), Qt.locale(), Locale.ShortFormat)) : "").trim()
+                            : qsTr("You've got the latest version. %1").arg(parent.u.checkedAt ? qsTr("It was last checked on %1.").arg(backend.numericDate(new Date(parent.u.checkedAt).getTime())) : "").trim()
                         font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
                     }
                 }

@@ -20,8 +20,8 @@ import com.ost.desktop
 //   Teams' info bar over the grid (#EBEBEB, a #D1D1D1 edge, 37.3 high)
 //   says "Background added.", "Background removed." or why it couldn't.
 // - Settings: accordions Camera (the cameras as radios), Appearance
-//   (Adjust brightness, Soft focus) and Advanced settings (Mirror my
-//   video), each row a 14 px #424242 label with Teams' info button and a
+//   (Adjust brightness, Soft focus) and Advanced settings (Denoising,
+//   Mirror my video), each row a 14 px #424242 label with Teams' info button and a
 //   Fluent switch at the row's end.
 // With the camera off in a call Teams adds a footer: "Others won't see
 // your video while you preview." (12 px, an info glyph before it), Preview
@@ -445,6 +445,14 @@ Rectangle {
             Column {
                 visible: root.expanded.advanced
                 x: 16.7; width: 321.3
+                // Teams' advanced settings: Super resolution (not
+                // offered), Denoising, then Mirror my video.
+                SettingSwitch {
+                    label: qsTr("Denoising")
+                    info: qsTr("Enhance the quality of your video by reducing visual noise. This setting only works when your device has resources availlable.")
+                    checked: videoEffects.denoising
+                    onToggled: videoEffects.setDenoising(!checked)
+                }
                 SettingSwitch {
                     label: qsTr("Mirror my video")
                     info: qsTr("Changing this setting will only change the view for you. This setting doesn’t currently work in Together mode.")

@@ -89,9 +89,11 @@ All of these were measured on 2026-11-15, when a trial was started and then canc
   - "Are you sure you want to cancel your trial?" (20/28 semibold) at y 322.
   - The two lines at y 363 and 438.
   - Never mind and Cancel trial at y 546.7.
-- **The ··· button by mode**
-  - **Trial (state 0/1):** a bordered button: the premium glyph, "N days left" and ···. The menu starts with "Teams Premium benefits".
-  - **After cancelling (state 2):** the same button reading "Get Premium". The menu starts with "Get Teams Premium" and "Teams Premium benefits", both opening "You’ve got Teams Premium!".
+- **The ··· button and menu: Teams' rule** (TASK-0357; MSTeams 26304's TeamsPremiumTitleBar and TeamsPremiumMoreOptionsMenuItem, OST's `api::premium::entry`)
+  - **The trial as Teams reads it.** The eligibility reply (or, with a Premium licence or the trial's — licenceDetails isTPManagement / isTeamsPremiumSelfAssigned — the entity reply). 200 eligible; 403 carries `ineligibilityReason` as a number (0 EXPIRED_LFT, 1 COMMERCE_HARD_BLOCK) and the trial, whose `state` 0/1/2 is Pending/Active/Inactive. Ended = EXPIRED_LFT, or Inactive with an end date. Days left = the end date's day minus today (local days), Active only.
+  - **The menu has one Premium row:** "Get Teams Premium" once the trial ended (or the end date kept on the device has passed; it opens the licence request dialog), "Teams Premium benefits" during an active trial, "Unlock Teams Premium" while you are eligible. A second "Teams Premium benefits" row shows only with a Premium licence (isTPManagement) outside an active trial — as right after Cancel trial, before the service removes the trial licence (what was measured on 2026-11-15).
+  - **The pill** (the bordered button): "N days left" during the trial; the device then keeps the trial's end date (localStorage TeamsPremiumUserTrialEndDateGlobalEntryPoint). After a trial, "Get Premium" for ECS premiumTitleBarConfig.postTrialPromoDurationInDays (14) days from the first time it shows (…FirstViewPostTrialGlobalEntryPoint). Teams only asks for the trial for the pill while that promo is on and no end date is kept, so a device that showed the trial shows no pill until the day after the kept end date; a device that never did shows "Get Premium" at once. Before a trial, "Get Premium" during the pre-trial promo (promoDurationInDays from first view, or promoStartDate..promoEndDate; ended 2026-05-10 for ost-test1).
+  - **Checked 2026-11-27** (ost-test1, trial ended, licence flags false): winpc keeps the end date 2027-01-15 and shows the plain ··· with one "Get Teams Premium" row; testpc1 (signed in on 2026-11-26) kept FirstViewPostTrial and shows "Get Premium". OST keeps the marks per account in desktop.json ("premiumEntryMarks").
 
 ## Cast
 

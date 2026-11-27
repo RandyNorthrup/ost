@@ -497,9 +497,123 @@ pub fn date_time(t: &jiff::ZonedDateTime) -> String {
     format!("{} {}", short_date(t), short_time(t))
 }
 
+/// A culture's numeric date as JavaScript's `Intl` gives it for
+/// `{year: "numeric", month: "numeric", day: "numeric"}` (ICU's `yMd`
+/// skeleton): its pattern (`{y}`, `{M}`/`{MM}`, `{d}`/`{dd}` and literal
+/// text), calendar and digits. Generated from ICU (Node's Intl) for every
+/// app language and culture Teams knows, with ICU's narrow no-break
+/// spaces as plain ones (V8's `format` and `toLocaleString` replace them).
+#[derive(Deserialize)]
+struct NumericDate {
+    pattern: String,
+    #[serde(default)]
+    calendar: String,
+    #[serde(default)]
+    digits: String,
+}
+
+fn numeric_dates() -> &'static std::collections::HashMap<String, NumericDate> {
+    static N: std::sync::OnceLock<std::collections::HashMap<String, NumericDate>> =
+        std::sync::OnceLock::new();
+    N.get_or_init(|| {
+        serde_json::from_str(include_str!("regional_numeric_dates.json"))
+            .expect("regional_numeric_dates.json")
+    })
+}
+
+/// A date with a numeric day, month and full year in a culture, as Teams
+/// shows it where it formats with `toLocaleString(undefined, {year,
+/// month, day: "numeric"})` in its app language (Settings ▸ About's "It
+/// was last checked on 11/27/2026."): "27/11/2026" in en-GB, "27.11.2026"
+/// in de-DE, "2026/11/27" in ja-JP, the Persian calendar in fa-IR and the
+/// Buddhist era in th-TH. A culture ICU doesn't list falls back as Teams'
+/// strings do (`string_locale`).
+pub fn numeric_date(culture: &str, date: jiff::civil::Date) -> String {
+    let table = numeric_dates();
+    let c = culture.trim().replace('_', "-").to_lowercase();
+    let Some(nd) = table
+        .get(&c)
+        .or_else(|| table.get(string_locale(&c)))
+        .or_else(|| table.get("en-us"))
+    else {
+        return date.to_string();
+    };
+    let (y, m, d) = match nd.calendar.as_str() {
+        "persian" => {
+            gregorian_to_jalali(date.year().into(), date.month().into(), date.day().into())
+        }
+        "buddhist" => (
+            i32::from(date.year()) + 543,
+            date.month().into(),
+            date.day().into(),
+        ),
+        _ => (date.year().into(), date.month().into(), date.day().into()),
+    };
+    let text = nd
+        .pattern
+        .replace("{y}", &y.to_string())
+        .replace("{MM}", &format!("{m:02}"))
+        .replace("{M}", &m.to_string())
+        .replace("{dd}", &format!("{d:02}"))
+        .replace("{d}", &d.to_string());
+    let zero = match nd.digits.as_str() {
+        "arab" => '\u{0660}',
+        "arabext" => '\u{06F0}',
+        _ => return text,
+    };
+    text.chars()
+        .map(|ch| match ch.to_digit(10) {
+            Some(n) => char::from_u32(zero as u32 + n).unwrap_or(ch),
+            None => ch,
+        })
+        .collect()
+}
+
+/// A Gregorian date in the Persian (Solar Hijri) calendar, by the
+/// arithmetic rule ICU's Persian calendar follows (33-year cycles).
+fn gregorian_to_jalali(gy: i32, gm: i32, gd: i32) -> (i32, i32, i32) {
+    const BEFORE: [i32; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+    let gy2 = if gm > 2 { gy + 1 } else { gy };
+    let mut days = 355_666 + 365 * gy + (gy2 + 3) / 4 - (gy2 + 99) / 100
+        + (gy2 + 399) / 400
+        + gd
+        + BEFORE[(gm - 1).clamp(0, 11) as usize];
+    let mut jy = -1595 + 33 * (days / 12_053);
+    days %= 12_053;
+    jy += 4 * (days / 1461);
+    days %= 1461;
+    if days > 365 {
+        jy += (days - 1) / 365;
+        days = (days - 1) % 365;
+    }
+    if days < 186 {
+        (jy, 1 + days / 31, 1 + days % 31)
+    } else {
+        (jy, 7 + (days - 186) / 30, 1 + (days - 186) % 30)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every culture's numeric date matches ICU's (Node's Intl, as Teams'
+    /// WebView2 formats it): [culture, year, month, day, text].
+    #[test]
+    fn numeric_dates_match_intl() {
+        let rows: Vec<(String, i16, i8, i8, String)> =
+            serde_json::from_str(include_str!("regional_numeric_dates_test.json")).unwrap();
+        for (culture, y, m, d, want) in rows {
+            let date = jiff::civil::date(y, m, d);
+            assert_eq!(numeric_date(&culture, date), want, "{culture} {date}");
+        }
+        let date = jiff::civil::date(2026, 11, 27);
+        assert_eq!(numeric_date("en-US", date), "11/27/2026");
+        assert_eq!(numeric_date("en_GB", date), "27/11/2026");
+        // Not in ICU's list: as Teams' strings fall back.
+        assert_eq!(numeric_date("de-xx", date), "27.11.2026");
+        assert_eq!(numeric_date("", date), "11/27/2026");
+    }
 
     #[test]
     fn cultures_and_choices_as_teams_resolves_them() {

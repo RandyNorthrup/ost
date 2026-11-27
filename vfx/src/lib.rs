@@ -1,6 +1,6 @@
 //! Video effects, as Teams applies them to your camera: Standard and
 //! Portrait blur, a background picture (still or animated), Adjust
-//! brightness (low light) and Soft focus, on I420 frames. A person segmentation model (PP-HumanSeg, Apache-2.0, run with
+//! brightness (low light), Soft focus and Denoising, on I420 frames. A person segmentation model (PP-HumanSeg, Apache-2.0, run with
 //! tract) finds you in the picture on a worker thread; each frame uses the
 //! newest mask, smoothed over time, so the camera never waits for it.
 
@@ -127,6 +127,11 @@ pub struct Settings {
     pub brightness: bool,
     /// Teams' Soft focus: your skin smoothed.
     pub soft_focus: bool,
+    /// Teams' Denoising (Settings ▸ Devices ▸ Video, on unless turned
+    /// off): the camera's grain evened out over time before the other
+    /// effects (Teams' camera video filter `Denoising`, set on the camera
+    /// itself, so your preview and what is sent both show it).
+    pub denoise: bool,
     /// Teams' Green Screen: with a background on, what is your backdrop's
     /// colour is keyed out (sharper edges, things you hold stay). `None`
     /// keeps the person mask alone.
@@ -418,6 +423,7 @@ pub struct Processor {
     /// The background picture fitted to the frame size (cached).
     fitted: Option<(usize, usize, *const Picture, Vec<u8>)>,
     blur: Vec<u8>,
+    denoiser: Denoiser,
 }
 
 // The cached picture pointer is only compared, never read through.
@@ -438,6 +444,7 @@ impl Processor {
             have_mask: false,
             fitted: None,
             blur: Vec::new(),
+            denoiser: Denoiser::default(),
         }
     }
 
@@ -480,13 +487,20 @@ impl Processor {
     }
 
     pub fn process(&mut self, width: u32, height: u32, data: &mut [u8]) {
-        // While you pick Green Screen's colour you see your real backdrop.
-        if PICKING.load(std::sync::atomic::Ordering::Relaxed) {
-            return;
-        }
         // An avatar is drawn with its own background; Teams' video effects
         // are the camera's.
         if avatar::active() {
+            return;
+        }
+        // Denoising is the camera's own filter: first, and also while you
+        // pick Green Screen's colour.
+        if current().denoise {
+            self.denoiser.apply(width as usize, height as usize, data);
+        } else {
+            self.denoiser.reset();
+        }
+        // While you pick Green Screen's colour you see your real backdrop.
+        if PICKING.load(std::sync::atomic::Ordering::Relaxed) {
             return;
         }
         self.own_effects(width, height, data);
@@ -925,6 +939,104 @@ pub fn soften(yplane: &mut [u8], mask: &[f32], w: usize, h: usize, scratch: &mut
     }
 }
 
+/// Denoising: a motion-adaptive temporal filter. Where a point changes a
+/// little from one frame to the next (sensor grain), the new value is
+/// blended into what was shown there; where it changes a lot (you moved),
+/// it is taken as it is, so motion never smears. What counts as "a
+/// little" follows the camera's own grain, measured on each frame (the
+/// median frame-to-frame change), so a clean camera is left alone and a
+/// grainy one in low light is calmed.
+#[derive(Default)]
+pub struct Denoiser {
+    /// The last frame shown (I420), and its size.
+    prev: Vec<u8>,
+    size: (usize, usize),
+    /// The noise threshold in use (luma, eased between frames).
+    threshold: f32,
+}
+
+/// The threshold's bounds (luma steps), and its share for chroma.
+const DENOISE_MIN: f32 = 6.0;
+const DENOISE_MAX: f32 = 36.0;
+const DENOISE_CHROMA: f32 = 0.7;
+/// How much of a still point's new value is taken (of 256): the rest is
+/// the frames before it.
+const DENOISE_KEEP: u32 = 64;
+
+impl Denoiser {
+    pub fn reset(&mut self) {
+        self.prev.clear();
+        self.size = (0, 0);
+        self.threshold = 0.0;
+    }
+
+    pub fn apply(&mut self, w: usize, h: usize, data: &mut [u8]) {
+        let len = w * h + 2 * (w.div_ceil(2) * h.div_ceil(2));
+        if w == 0 || h == 0 || data.len() < len {
+            return;
+        }
+        if self.size != (w, h) || self.prev.len() != len {
+            self.prev.clear();
+            self.prev.extend_from_slice(&data[..len]);
+            self.size = (w, h);
+            self.threshold = 0.0;
+            return;
+        }
+        // The grain: the median change of a sample of points. Grain of
+        // standard deviation s changes a point by about s (median); three
+        // times that covers nearly all of it.
+        let mut hist = [0u32; 256];
+        let mut n = 0u32;
+        for (c, p) in data[..w * h].iter().zip(&self.prev[..w * h]).step_by(7) {
+            hist[(*c as i32 - *p as i32).unsigned_abs() as usize] += 1;
+            n += 1;
+        }
+        let mut seen = 0u32;
+        let median = hist
+            .iter()
+            .position(|&k| {
+                seen += k;
+                seen * 2 >= n
+            })
+            .unwrap_or(0) as f32;
+        let want = (median * 3.0 + 1.0).clamp(DENOISE_MIN, DENOISE_MAX);
+        self.threshold = if self.threshold == 0.0 {
+            want
+        } else {
+            self.threshold * 0.8 + want * 0.2
+        };
+        let luma = weights(self.threshold);
+        let chroma = weights((self.threshold * DENOISE_CHROMA).max(DENOISE_MIN * 0.7));
+        let (y, uv) = data[..len].split_at_mut(w * h);
+        let (py, puv) = self.prev.split_at_mut(w * h);
+        blend(y, py, &luma);
+        blend(uv, puv, &chroma);
+    }
+}
+
+/// The share of the new value taken (of 256) for each size of change.
+fn weights(threshold: f32) -> [u32; 256] {
+    let t = threshold.max(1.0);
+    let mut out = [256u32; 256];
+    for (d, w) in out.iter_mut().enumerate() {
+        let x = d as f32 / t;
+        if x < 1.0 {
+            *w = DENOISE_KEEP + ((256 - DENOISE_KEEP) as f32 * x * x) as u32;
+        }
+    }
+    out
+}
+
+fn blend(cur: &mut [u8], prev: &mut [u8], weight: &[u32; 256]) {
+    for (c, p) in cur.iter_mut().zip(prev.iter_mut()) {
+        let (a, b) = (*p as i32, *c as i32);
+        let k = weight[(b - a).unsigned_abs() as usize] as i32;
+        let v = (a + (((b - a) * k + 128) >> 8)) as u8;
+        *c = v;
+        *p = v;
+    }
+}
+
 /// Adjust brightness: a dim picture is lifted (gamma), a well-lit one left
 /// as it is.
 pub fn brighten(yplane: &mut [u8]) {
@@ -970,6 +1082,62 @@ mod tests {
         let mut frame = vec![200u8; w * h * 3 / 2];
         composite(&mut frame, &back, &vec![1.0; MASK * MASK], w, h);
         assert!(frame.iter().all(|&v| v == 200));
+    }
+
+    #[test]
+    fn denoising_calms_grain_but_keeps_motion() {
+        let (w, h) = (64usize, 36usize);
+        let len = w * h * 3 / 2;
+        // A still grey picture with grain (amplitude `a`) that changes
+        // every frame.
+        let mut seed = 1u32;
+        let mut grain = |a: i32| -> Vec<u8> {
+            (0..len)
+                .map(|_| {
+                    seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+                    (128 + ((seed >> 16) % (2 * a as u32 + 1)) as i32 - a) as u8
+                })
+                .collect()
+        };
+        let change = |a: &[u8], b: &[u8]| {
+            a[..w * h]
+                .iter()
+                .zip(&b[..w * h])
+                .map(|(x, y)| (*x as i32 - *y as i32).abs())
+                .sum::<i32>() as f32
+                / (w * h) as f32
+        };
+        for a in [6, 20] {
+            let mut d = Denoiser::default();
+            let mut out = Vec::new();
+            let mut raw = Vec::new();
+            for _ in 0..30 {
+                let f = grain(a);
+                let mut g = f.clone();
+                d.apply(w, h, &mut g);
+                raw.push(f);
+                out.push(g);
+            }
+            let before = change(&raw[28], &raw[29]);
+            let after = change(&out[28], &out[29]);
+            assert!(after < before * 0.6, "grain {a}: {after} vs {before}");
+            // You move: a big change comes through at once.
+            let mut moved = vec![250u8; len];
+            d.apply(w, h, &mut moved);
+            assert!(moved.iter().all(|&v| v == 250), "grain {a}");
+        }
+        // A new size starts over, untouched; a clean camera stays as it is.
+        let mut d = Denoiser::default();
+        let mut first = grain(4);
+        let copy = first.clone();
+        d.apply(w, h, &mut first);
+        assert_eq!(first, copy);
+        let still = vec![90u8; len];
+        let mut f = still.clone();
+        d.apply(w, h, &mut f);
+        let mut f = still.clone();
+        d.apply(w, h, &mut f);
+        assert!(f.iter().all(|&v| (v as i32 - 90).abs() <= 2));
     }
 
     #[test]

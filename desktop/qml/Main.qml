@@ -7166,7 +7166,7 @@ Window {
         onTriggered: {
             const st = step++
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile("/tmp/act/premium-" + n + ".png"))
-            if (st === 2) { console.warn("PREMIUM", backend.premiumJson, "mode", titleBar.premiumMode, "days", titleBar.premiumDaysLeft); shot("titlebar") }
+            if (st === 2) { console.warn("PREMIUM", backend.premiumJson, "pill", titleBar.premiumPill, "menu", titleBar.premiumMenu, "benefitsRow", titleBar.premiumBenefitsRow, "days", titleBar.premiumDaysLeft); shot("titlebar") }
             else if (st === 3) titleBar.moreMenuForTest(true)
             else if (st === 4) shot("menu")
             else if (st >= 5 && st < 5 + pages.length * 2) {
@@ -9360,6 +9360,50 @@ Window {
         }
     }
 
+    // --denoise-test=<camera path>: Denoising on a (virtual) camera, in a
+    // Meet now's pre-join (never joined): two pictures of the preview with
+    // Denoising on, two with it off (/tmp/t357-denoise-{on,off}{1,2}.png),
+    // then the camera and the setting put back as they were. DENOISE lines
+    // with the grain and frame-to-frame change measured on the sent frame.
+    Timer {
+        readonly property string cam: (Qt.application.arguments.find(a => a.startsWith("--denoise-test=")) || "").slice(15)
+        running: cam.length > 0 && backend.signedIn
+        interval: 1500; repeat: true
+        property int step: 0
+        property var before: null
+        property var samples: []
+        // The sent picture itself (the "self" frame, full size): its red at
+        // 20 x 20 points, and over two such samples the grain (spread) and
+        // the change from one frame to the next.
+        function grid() {
+            const out = []
+            for (let y = 0; y < 20; y++)
+                for (let x = 0; x < 20; x++) out.push(parseInt(backend.previewColorAt(0.1 + 0.04 * x, 0.1 + 0.04 * y).slice(1, 3), 16))
+            return out
+        }
+        function stats(a, b) {
+            const mean = a.reduce((s, v) => s + v, 0) / a.length
+            const sd = Math.sqrt(a.reduce((s, v) => s + (v - mean) * (v - mean), 0) / a.length)
+            const change = a.reduce((s, v, i) => s + Math.abs(v - b[i]), 0) / a.length
+            return { grain: Math.round(sd * 100) / 100, change: Math.round(change * 100) / 100 }
+        }
+        onTriggered: {
+            const cap = tag => preJoin.contentItem.grabToImage(r => r.saveToFile("/tmp/t357-denoise-" + tag + ".png"))
+            const log = (...a) => console.warn("DENOISE", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            switch (step++) {
+            case 0: before = { d: videoEffects.denoising, cam: backend.setting("cameraDevice") }; log("before", before); backend.setCameraDevice(cam); preJoin.openMeetNow("", "OST denoise test"); break
+            case 1: preJoin.cameraOn = true; videoEffects.setDenoising(true); break
+            case 6: cap("on1"); samples = grid(); break
+            case 7: cap("on2"); log("on", backend.setting("videoDenoising"), stats(samples, grid())); break
+            case 8: videoEffects.setDenoising(false); break
+            case 12: cap("off1"); samples = grid(); break
+            case 13: cap("off2"); log("off", backend.setting("videoDenoising"), stats(samples, grid())); break
+            case 14: preJoin.cameraOn = false; preJoin.cancel(); break
+            case 15: backend.setSetting("videoDenoising", before.d ? "true" : "false"); backend.setCameraDevice(before.cam || ""); log("restored", backend.setting("videoDenoising"), backend.setting("cameraDevice")); break
+            case 16: Qt.quit(); break
+            }
+        }
+    }
     // --video-effects-test: Teams' video effects on the camera. Before
     // joining (a Meet now's pre-join, never joined): the camera on, the
     // effects picker with None, Standard blur, Portrait blur, a catalog
@@ -15948,7 +15992,9 @@ Window {
         onZoomOut: window.zoomOut()
         onZoomReset: window.zoomReset()
         readonly property var premium: backend.premiumJson ? JSON.parse(backend.premiumJson) : ({})
-        premiumMode: premium.mode || (premium.starting ? "offer" : "")
+        premiumPill: premium.pill || ""
+        premiumMenu: premium.menu || (premium.starting ? "unlock" : "")
+        premiumBenefitsRow: !!premium.benefitsRow
         premiumDaysLeft: premium.daysLeft || 0
         onOpenPremium: kind => premiumDialog.openFor(kind)
         onOpenCast: castWindow.start()

@@ -1128,6 +1128,12 @@ pub mod qobject {
         /// firstDayOfWeek}.
         #[qinvokable]
         fn regional_formats_json(self: Pin<&mut Backend>) -> QString;
+        /// A moment (ms since the epoch) as a date with a numeric day,
+        /// month and full year in the app language, as Teams' Intl
+        /// `toLocaleString(undefined, {year, month, day: "numeric"})`
+        /// shows it ("11/27/2026" in en-US; Settings ▸ About).
+        #[qinvokable]
+        fn numeric_date(self: &Backend, ms: f64) -> QString;
         /// The Fluent icons Teams mirrors in right-to-left languages (its
         /// icon library's flipInRtl), as a JSON list of name stems
         /// ("arrow-reply").
@@ -6467,34 +6473,151 @@ const RECORDING_DOWNLOAD_NAME: &str = "Recording.mp4";
 /// The name Teams gives a downloaded clip ("MicrosoftTeams-video", an MP4).
 const CLIP_DOWNLOAD_NAME: &str = "MicrosoftTeams-video.mp4";
 
-/// Teams Premium's trial for QML: the offer, and a trial you have (its
-/// days left; Teams counts it as yours from when it is set up).
-fn premium_json(
-    s: &api::premium::TrialState,
-    entity: Option<&serde_json::Value>,
-) -> serde_json::Value {
-    let mut v = json!(s);
-    let state = entity.and_then(api::premium::entity_state);
-    let in_trial = matches!(state, Some(0) | Some(1));
-    // Teams' modes (winpc 2026-11-15): "offer" (Unlock Teams Premium),
-    // "trial" (the "N days left" pill, Teams Premium benefits) and
-    // "canceled" (state 2: the "Get Premium" pill, Get Teams Premium and
-    // Teams Premium benefits while Premium lasts).
-    let mode = if in_trial {
-        "trial"
-    } else if state == Some(2) {
-        "canceled"
-    } else if s.offered() && entity.is_none() {
-        "offer"
-    } else {
-        "none"
+/// Where OST keeps Teams Premium's entry marks (Teams' localStorage
+/// TeamsPremiumUser…GlobalEntryPoint keys, per account on the device):
+/// desktop.json's "premiumEntryMarks", a JSON object by account id.
+const PREMIUM_MARKS: &str = "premiumEntryMarks";
+
+fn premium_marks_all(
+    map: &serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Map<String, serde_json::Value> {
+    map.get(PREMIUM_MARKS)
+        .and_then(|v| v.as_str())
+        .and_then(|t| serde_json::from_str(t).ok())
+        .unwrap_or_default()
+}
+
+fn premium_marks(user: &str) -> api::premium::EntryMarks {
+    let all = premium_marks_all(&load_settings());
+    let m = all.get(user);
+    let get = |k: &str| {
+        m.and_then(|m| m.get(k))
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
     };
-    v["mode"] = json!(mode);
-    v["offered"] = json!(mode == "offer");
-    v["inTrial"] = json!(in_trial);
-    v["entity"] = entity.cloned().unwrap_or(serde_json::Value::Null);
-    v["daysLeft"] = json!(entity.and_then(|e| api::premium::days_left(e, jiff::Timestamp::now())));
-    v
+    api::premium::EntryMarks {
+        trial_end: get("trialEndDate"),
+        first_view_pre: get("firstView"),
+        first_view_post: get("firstViewPostTrial"),
+    }
+}
+
+fn save_premium_marks(user: &str, marks: &api::premium::EntryMarks) {
+    let mut map = load_settings();
+    let mut all = premium_marks_all(&map);
+    all.insert(
+        user.to_string(),
+        json!({
+            "trialEndDate": marks.trial_end,
+            "firstView": marks.first_view_pre,
+            "firstViewPostTrial": marks.first_view_post,
+        }),
+    );
+    map.insert(
+        PREMIUM_MARKS.into(),
+        serde_json::Value::String(serde_json::Value::Object(all).to_string()),
+    );
+    if let Err(e) = save_settings(&map) {
+        tracing::warn!("saving settings failed: {}", short_error(&e));
+    }
+}
+
+/// Teams Premium as Teams' title bar and ··· menu show it, for QML: the
+/// pill ("days" with daysLeft, "get" for Get Premium, or ""), the menu
+/// row ("unlock", "benefits", "get" or ""), benefitsRow (Teams' separate
+/// Teams Premium benefits row) and mode ("offer", "trial", "ended" or
+/// "none") for the Premium dialog. `marks` are the device's marks after
+/// showing it, to keep (api::premium::entry has Teams' rule).
+async fn premium_view(
+    http: &reqwest::Client,
+) -> (serde_json::Value, String, api::premium::EntryMarks) {
+    use api::premium::{MenuRow, Pill};
+    let client = TeamsClient::new().await.ok();
+    let license = match &client {
+        Some(c) => api::ecs::license(c).await,
+        None => None,
+    };
+    let flag = |k: &str| {
+        license
+            .as_ref()
+            .and_then(|l| l.get(k))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    };
+    let (tp_management, self_assigned) =
+        (flag("isTPManagement"), flag("isTeamsPremiumSelfAssigned"));
+    let user = client
+        .as_ref()
+        .and_then(|c| c.object_id())
+        .unwrap_or_default();
+    let policy = api::premium::policy(http).await;
+    let trial = api::premium::trial(http, tp_management || self_assigned).await;
+    if let (Err(e), Err(_)) = (&policy, &trial) {
+        tracing::warn!("premium trial: {}", short_error(e));
+        let marks = premium_marks(&user);
+        return (
+            json!({ "mode": "none", "error": short_error(e) }),
+            user,
+            marks,
+        );
+    }
+    let trial = trial.ok().flatten();
+    let policy = policy.unwrap_or_default();
+    let ecs: serde_json::Map<String, serde_json::Value> = [
+        "enableTeamsPremiumGlobalEntry",
+        "enableLazyEligibilityCheckGlobalEntry",
+        "enableDtbPolicyCheck",
+        "enableTeamsPremiumPolicyDisabledGlobalEntry",
+        "enableTeamsPremiumLicensedBenefitsGlobal",
+        "premiumTitleBarConfig",
+    ]
+    .iter()
+    .filter_map(|k| Some((k.to_string(), api::ecs::setting("premium", k)?)))
+    .collect();
+    let cfg = api::premium::EntryConfig::from_ecs(&serde_json::Value::Object(ecs));
+    let marks = premium_marks(&user);
+    let now = jiff::Timestamp::now();
+    let tz = jiff::tz::TimeZone::system();
+    let e = api::premium::entry(
+        trial.as_ref(),
+        &policy,
+        tp_management,
+        self_assigned,
+        &cfg,
+        &marks,
+        now,
+        &tz,
+    );
+    let today = now.to_zoned_datetime(tz.clone()).date();
+    let days = trial.as_ref().and_then(|t| t.remaining_days(today, &tz));
+    let in_trial = matches!(e.menu, Some(MenuRow::Benefits));
+    let mode = match e.menu {
+        Some(MenuRow::Benefits) => "trial",
+        Some(MenuRow::Unlock) => "offer",
+        Some(MenuRow::Get) => "ended",
+        None => "none",
+    };
+    let v = json!({
+        "pill": match e.pill {
+            Some(Pill::DaysLeft(_)) => "days",
+            Some(Pill::PostTrial) | Some(Pill::PreTrial) => "get",
+            None => "",
+        },
+        "daysLeft": match e.pill { Some(Pill::DaysLeft(d)) => Some(d), _ => days },
+        "menu": match e.menu {
+            Some(MenuRow::Unlock) => "unlock",
+            Some(MenuRow::Benefits) => "benefits",
+            Some(MenuRow::Get) => "get",
+            None => "",
+        },
+        "benefitsRow": e.benefits_row,
+        "mode": mode,
+        "offered": mode == "offer",
+        "inTrial": in_trial,
+        "policy": policy,
+        "endDate": trial.as_ref().and_then(|t| t.end_date.clone()),
+    });
+    (v, user, e.marks)
 }
 
 unsafe extern "C" {
@@ -22227,6 +22350,14 @@ impl qobject::Backend {
         QString::from(include_str!("../i18n/rtl_flip_icons.json"))
     }
 
+    pub fn numeric_date(&self, ms: f64) -> QString {
+        let Ok(t) = jiff::Timestamp::from_millisecond(ms as i64) else {
+            return QString::default();
+        };
+        let date = t.to_zoned_datetime(jiff::tz::TimeZone::system()).date();
+        QString::from(api::regional::numeric_date(&regional_in_effect().0, date).as_str())
+    }
+
     pub fn regional_formats_json(self: Pin<&mut Self>) -> QString {
         use teams_cli::api::regional::{to_qt, without_year};
         let (culture, f) = regional_in_effect();
@@ -24096,6 +24227,7 @@ impl qobject::Backend {
             "videoBlur",
             "adjustBrightness",
             "softFocus",
+            "videoDenoising",
             "greenScreen",
             "greenScreenColor",
         ]
@@ -31426,23 +31558,11 @@ impl qobject::Backend {
     pub fn load_premium(self: Pin<&mut Self>) {
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let http = reqwest::Client::new();
-            let v = match api::premium::state(&http).await {
-                Ok(s) => {
-                    // The eligibility reply carries a trial you already
-                    // have; else ask for it.
-                    let entity = match s.entity.clone() {
-                        Some(e) => Some(e),
-                        None => api::premium::entity(&http).await.ok().flatten(),
-                    };
-                    premium_json(&s, entity.as_ref())
-                }
-                Err(e) => {
-                    tracing::warn!("premium trial: {}", short_error(&e));
-                    json!({ "offered": false, "error": short_error(&e) })
-                }
-            };
+            let (v, user, marks) = premium_view(&reqwest::Client::new()).await;
             let _ = qt.queue(move |mut this| {
+                if !user.is_empty() && marks != premium_marks(&user) {
+                    save_premium_marks(&user, &marks);
+                }
                 this.as_mut()
                     .set_premium_json(QString::from(v.to_string().as_str()))
             });
@@ -31482,7 +31602,7 @@ impl qobject::Backend {
                     "The trial didn't become active"
                 );
                 let _ = api::ecs::refresh_license().await;
-                anyhow::Ok(entity)
+                anyhow::Ok(premium_view(&http).await)
             }
             .await;
             let _ = qt.queue(move |mut this| {
@@ -31491,14 +31611,12 @@ impl qobject::Backend {
                         .unwrap_or_else(|_| json!({}));
                 v["starting"] = json!(false);
                 match result {
-                    Ok(entity) => {
-                        let days = api::premium::days_left(&entity, jiff::Timestamp::now());
+                    Ok((view, user, marks)) => {
+                        if !user.is_empty() && marks != premium_marks(&user) {
+                            save_premium_marks(&user, &marks);
+                        }
+                        v = view;
                         v["started"] = json!(true);
-                        v["offered"] = json!(false);
-                        v["inTrial"] = json!(true);
-                        v["mode"] = json!("trial");
-                        v["daysLeft"] = json!(days);
-                        v["entity"] = entity;
                     }
                     Err(e) => v["error"] = json!(short_error(&e)),
                 }
@@ -31517,17 +31635,27 @@ impl qobject::Backend {
             .set_premium_json(QString::from(v.to_string().as_str()));
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let result = api::premium::cancel(&reqwest::Client::new()).await;
+            let http = reqwest::Client::new();
+            // Then Teams' entry as it now stands (the licence asked again).
+            let result = match api::premium::cancel(&http).await {
+                Ok(()) => {
+                    let _ = api::ecs::refresh_license().await;
+                    Ok(premium_view(&http).await)
+                }
+                Err(e) => Err(e),
+            };
             let _ = qt.queue(move |mut this| {
                 let mut v: serde_json::Value =
                     serde_json::from_str(&this.rust().premium_json.to_string())
                         .unwrap_or_else(|_| json!({}));
                 v["canceling"] = json!(false);
                 match result {
-                    Ok(()) => {
+                    Ok((view, user, marks)) => {
+                        if !user.is_empty() && marks != premium_marks(&user) {
+                            save_premium_marks(&user, &marks);
+                        }
+                        v = view;
                         v["canceled"] = json!(true);
-                        v["inTrial"] = json!(false);
-                        v["mode"] = json!("canceled");
                     }
                     Err(e) => v["cancelError"] = json!(short_error(&e)),
                 }
