@@ -101,3 +101,17 @@ extern "C" void ost_mouse_drag(void *item, double x1, double y1, double x2, doub
         QTimer::singleShot(30 + 30 * i, window, [=] { send(QEvent::MouseMove, QPointF(x1 + (x2 - x1) * i / 8, y1 + (y2 - y1) * i / 8), Qt::NoButton, Qt::LeftButton); });
     QTimer::singleShot(30 + 30 * 9 + 60, window, [=] { send(QEvent::MouseButtonRelease, QPointF(x2, y2), Qt::LeftButton, Qt::NoButton); });
 }
+
+// Move the mouse, no button held, to (x, y) in `item`'s coordinates: the
+// window's items see it as hovering there. Only this window gets it.
+extern "C" void ost_mouse_move(void *item, double x, double y)
+{
+    auto *it = static_cast<QQuickItem *>(item);
+    QQuickWindow *window = it ? it->window() : nullptr;
+    if (!window)
+        return;
+    const QPointF scene = it->mapToScene(QPointF(x, y));
+    QMouseEvent e(QEvent::MouseMove, scene, scene, window->mapToGlobal(scene), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(window, &e);
+}
+
