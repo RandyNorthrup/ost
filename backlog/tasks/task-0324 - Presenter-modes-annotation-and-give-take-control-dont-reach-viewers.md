@@ -1,11 +1,11 @@
 ---
 id: TASK-0324
 title: Presenter modes, annotation and give/take control don't reach viewers
-status: In Progress
+status: Done
 assignee:
   - '@meet'
 created_date: '2026-11-25T22:56:00Z'
-updated_date: '2026-11-26T21:44:00Z'
+updated_date: '2026-11-27T00:41:00Z'
 labels:
   - bug
   - calls
@@ -21,7 +21,7 @@ Found while capturing wiki screenshots (2026-11-25). Shares started with a prese
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Presenter modes, annotation and give/take control work between OST and Teams in both directions, verified live with test accounts
+- [x] #1 Presenter modes, annotation and give/take control work between OST and Teams in both directions, verified live with test accounts
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -69,4 +69,45 @@ Found while capturing wiki screenshots (2026-11-25). Shares started with a prese
   - The desktop Remote Control prompt on linuxlt was dismissed each time, so no input reached a real desktop.
   - Not shown by Teams: OST's own Take control request to a Teams desktop sharer. Teams answered Available with AvailableAck, but showed no alert for the ControlRequest, which timed out after 30 s, twice. It worked on 2026-11-16. This part of AC #1 is still open.
 - Cleanup: OBS, installed briefly for a virtual camera that Teams' WebView2 doesn't list, was uninstalled. The winpc test window and tasks are removed; Teams is left running as found.
+
+- OST's own Take control request to Teams desktop, 2026-11-26 evening.
+  - Rig: winpc Teams desktop as ost-test1 in a Meet-now test meeting "OST TEST 342", sharing only a throwaway test window ("OST TEST 342 window"), with the VB-Audio CABLE virtual mic; OST Test 3 on linuxlt.
+  - Teams' log shows the request every time: "incoming control request", then `adding new alert: SharingIncomingControlRequest "OST Test 3 is requesting control."`, and an always-on-top alert window is created. The earlier "never shows" was this window, which CDP screenshots of the main window don't capture.
+  - Accepted live: Give control → AcceptRequest → OST's Ack → controlling. OST clicked into the test window and typed 16 Shift-held capitals, a space and 4 more; all arrived as typed.
+  - Later requests in the same meeting timed out (SharerNoResponse). Teams still raised the alert in its log, but its window never showed on screen. While presenting, Teams had switched its own status to Presenting, shown as Do not disturb with its banner "Your status is set to do not disturb…". Setting the status to Available by hand didn't hold while sharing. With no second Teams desktop signed in (testpc1/testpc2 still at sign-in), a Teams-to-Teams request couldn't be compared.
+- Found and fixed: a viewer that joins while a share is already on never got Take control. Its first control command (watch the sharer) came from the join's roster before the call was in its slot, and was dropped. The command queue now waits for the call (up to 10 s, in order). Verified OST to OST: watching started before the media session was up, Available went out once it was, and the sharer answered (AvailableNack 9 for a window share, as expected).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Shares started with a presenter mode, with Annotate, or with give/take control now reach viewers, OST and Teams, both ways.
+
+Causes and fixes:
+- PR #16:
+  - Every new sender on a video line restarted its RTP numbering, so SRTP reused packet indexes. The meeting dropped a call's second share, and a camera turned on again, as replays.
+  - SRTP counted a rollover only on seeing 65535.
+  - A camera turned on in the lobby was lost on admission.
+- This PR:
+  - A viewer joining while a share was already on lost its first control command, so it never got Take control.
+
+Changes:
+- PR #16:
+  - `webrtc_video::RtpLine` carries sequence numbers and the timestamp clock across senders.
+  - SRTP counts the rollover from the last protected sequence number (RFC 3711).
+  - On admission, the old media session releases the camera first.
+- This PR:
+  - `presenting::command` waits for the call, in order, before handing over control commands.
+
+Live checks:
+- OST to OST: each presenter mode, Annotate, Take control, and a second share in one call.
+- With Teams desktop on winpc, both ways:
+  - Presenter modes reached the other side.
+  - Teams gave control to OST, and OST gave control to Teams.
+  - Teams took control of OST.
+  - OST asked Teams for control: Teams showed "OST Test 3 is requesting control." and Give control handed it over; OST's keys arrived as typed.
+
+Notes:
+- While Teams desktop presents, it sets its own status to Do not disturb. Its alert is then raised (in its log) but not shown, so later requests time out. That's Teams' side.
+- Teams desktop draws OST's cut-out camera with a black box; that is tracked as its own task.
+<!-- SECTION:FINAL_SUMMARY:END -->
