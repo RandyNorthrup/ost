@@ -57,7 +57,7 @@ Popup {
         y: 146
         icon: "invite-mail-16"
         label: qsTr("Share via default email")
-        onClicked: Qt.openUrlExternally("mailto:?subject=" + encodeURIComponent(qsTr("Join Teams meeting in progress"))
+        onClicked: backend.openExternal("mailto:?subject=" + encodeURIComponent(qsTr("Join Teams meeting in progress"))
             + "&body=" + encodeURIComponent(qsTr("You're invited to join a Microsoft Teams meeting\r\n\r\nUse the link below to join\r\n%1").arg(root.link)))
     }
 

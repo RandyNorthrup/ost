@@ -350,7 +350,7 @@ Popup {
                                         font.family: theme.font; font.pixelSize: 12
                                         lineHeight: 16; lineHeightMode: Text.FixedHeight
                                         color: theme.text
-                                        onLinkActivated: url => Qt.openUrlExternally(url)
+                                        onLinkActivated: url => backend.openExternal(url)
                                         HoverHandler { cursorShape: noteText.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
                                     }
                                     Accessible.role: Accessible.AlertMessage

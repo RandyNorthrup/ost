@@ -1824,7 +1824,7 @@ Window {
                    : qsTr("Copilot uses your data to generate responses during the meeting. Interactions with Copilot might be retained due to the host organization's policy."))
                   + (win.privacyUrl ? " <a href=\"" + win.privacyUrl + "\">" + qsTr("Privacy policy") + "</a>" : "")
             linkColor: theme.link
-            onLinkActivated: link => Qt.openUrlExternally(link)
+            onLinkActivated: link => backend.openExternal(link)
             wrapMode: Text.Wrap
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: theme.textSecondary
@@ -4614,7 +4614,7 @@ Window {
                 font.family: theme.font; font.pixelSize: 12
                 lineHeight: win.e2ee ? 20 : 16; lineHeightMode: Text.FixedHeight
                 color: theme.textSecondary
-                onLinkActivated: l => Qt.openUrlExternally(l)
+                onLinkActivated: l => backend.openExternal(l)
                 HoverHandler { cursorShape: encryptionText.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 Accessible.name: win.e2ee ? qsTr("Learn more about OST End-to-end encryption") : qsTr("Learn more about OST data encryption")
             }
@@ -4917,8 +4917,8 @@ Window {
         ]
         onPicked: i => {
             const l = items[i].label
-            if (l === "Whiteboard") Qt.openUrlExternally("https://whiteboard.cloud.microsoft/")
-            else if (l === "Clipchamp") Qt.openUrlExternally("https://app.clipchamp.com/")
+            if (l === "Whiteboard") backend.openExternal("https://whiteboard.cloud.microsoft/")
+            else if (l === "Clipchamp") backend.openExternal("https://app.clipchamp.com/")
             else win.openApp(l.toLowerCase())
         }
     }

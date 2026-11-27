@@ -174,7 +174,7 @@ Rectangle {
                 font.family: theme.font; font.pixelSize: 12
                 lineHeight: 16; lineHeightMode: Text.FixedHeight
                 color: theme.text
-                onLinkActivated: link => Qt.openUrlExternally(link)
+                onLinkActivated: link => backend.openExternal(link)
                 HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
             }
             Item { width: 1; height: 5 }

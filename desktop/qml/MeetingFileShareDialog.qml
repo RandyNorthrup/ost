@@ -52,7 +52,7 @@ Popup {
               + (root.learnMoreUrl ? "<a href=\"" + root.learnMoreUrl + "\">" + qsTr("Learn more") + "</a>" : qsTr("Learn more"))
         font.family: theme.font; font.pixelSize: 14
         color: theme.text
-        onLinkActivated: link => Qt.openUrlExternally(link)
+        onLinkActivated: link => backend.openExternal(link)
         HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
     }
     FluentSurface {

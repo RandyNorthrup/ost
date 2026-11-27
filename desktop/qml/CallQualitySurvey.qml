@@ -223,7 +223,7 @@ Rectangle {
             linkColor: theme.brandForeground1
             font.family: theme.font; font.pixelSize: 10; lineHeight: 14; lineHeightMode: Text.FixedHeight
             color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
-            onLinkActivated: Qt.openUrlExternally(backend.feedbackLink("privacy-feedback"))
+            onLinkActivated: backend.openExternal(backend.feedbackLink("privacy-feedback"))
             HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
         }
         Row {

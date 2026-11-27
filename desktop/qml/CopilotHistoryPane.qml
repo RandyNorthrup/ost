@@ -48,7 +48,7 @@ Rectangle {
             lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: learnHover.hovered ? theme.brandHover : theme.brandForeground1
             HoverHandler { id: learnHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: Qt.openUrlExternally(root.learnMoreUrl) }
+            TapHandler { onTapped: backend.openExternal(root.learnMoreUrl) }
             Accessible.role: Accessible.Link
             Accessible.name: text
         }

@@ -29,7 +29,7 @@ Rectangle {
     function act(b) {
         if (!b) return
         const t = String(b.type || "").toLowerCase()
-        if (t === "openurl" || t === "signin") Qt.openUrlExternally(b.value)
+        if (t === "openurl" || t === "signin") backend.openExternal(b.value)
         else if (t === "imback") card.imBack(String(b.value || b.title || ""))
     }
 

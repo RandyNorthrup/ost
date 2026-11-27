@@ -223,7 +223,7 @@ Popup {
                 font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: root.ink
                 elide: Text.ElideRight
             }
-            IconButton { x: 389; y: 24; width: 30; icon: "question-circle-20"; label: qsTr("Help"); onClicked: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2103402") }
+            IconButton { x: 389; y: 24; width: 30; icon: "question-circle-20"; label: qsTr("Help"); onClicked: backend.openExternal("https://go.microsoft.com/fwlink/?linkid=2103402") }
             IconButton { x: 424; y: 24; icon: "dismiss-20"; label: qsTr("Close"); onClicked: root.close() }
 
             // Recipients.
@@ -486,7 +486,7 @@ Popup {
             IconButton { visible: !root.chatMode; x: 24; y: 30.67; icon: "arrow-left-20"; label: qsTr("Back"); onClicked: root.view = "main" }
             Text { x: root.chatMode ? 24 : 65; y: 24; width: 313; height: 26.67; text: qsTr("Link settings"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: root.ink }
             Text { x: root.chatMode ? 24 : 65; y: 50.67; width: 313; elide: Text.ElideMiddle; text: root.fileName; font.family: theme.font; font.pixelSize: 14; color: root.ink }
-            IconButton { x: 387; y: 30.67; icon: "info-20"; label: qsTr("Learn more"); onClicked: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2185222") }
+            IconButton { x: 387; y: 30.67; icon: "info-20"; label: qsTr("Learn more"); onClicked: backend.openExternal("https://go.microsoft.com/fwlink/?linkid=2185222") }
             IconButton { x: 424; y: 30.67; icon: "dismiss-20"; label: qsTr("Close"); onClicked: root.close() }
             Text { x: 24; y: 93.33; text: qsTr("The link works for"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
             Column {
@@ -797,7 +797,7 @@ Popup {
                     width: 432; wrapMode: Text.Wrap; textFormat: Text.StyledText
                     text: qsTr("This file has not been shared with a group yet.") + " <a href=\"learn\" style=\"color:" + root.accent + "\">" + qsTr("Learn more") + "</a>"
                     font.family: theme.font; font.pixelSize: 14; color: root.ink
-                    onLinkActivated: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2185222")
+                    onLinkActivated: backend.openExternal("https://go.microsoft.com/fwlink/?linkid=2185222")
                     HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 }
                 Row {

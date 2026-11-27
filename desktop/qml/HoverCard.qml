@@ -155,7 +155,7 @@ Popup {
                                 const n = root.displayName
                                 if (modelData.act === "chat") { root.close(); root.startChat(root.mri, n) }
                                 else if (modelData.act === "org") root.full("organization")
-                                else if (modelData.act === "linkedin") Qt.openUrlExternally("https://www.linkedin.com/search/results/people/?keywords=" + encodeURIComponent(n))
+                                else if (modelData.act === "linkedin") backend.openExternal("https://www.linkedin.com/search/results/people/?keywords=" + encodeURIComponent(n))
                                 else { root.close(); root.startCall(root.mri, n, modelData.act === "video") }
                             }
                         }
@@ -217,7 +217,7 @@ Popup {
                 FluentIcon { x: 25; anchors.verticalCenter: parent.verticalCenter; name: "mail-20"; size: 16; color: theme.onFill(hcFill2, theme.textStrong) }
                 Text { x: 57; width: 290.7 - 57 - 8; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; text: parent.mail; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill2, theme.brand) }
                 HoverHandler { id: mh; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: Qt.openUrlExternally("mailto:" + parent.mail) }
+                TapHandler { onTapped: backend.openExternal("mailto:" + parent.mail) }
                 Rectangle {
                     id: hcFill3
                     x: 290.7 - 5; anchors.verticalCenter: parent.verticalCenter; width: 24; height: 24; radius: 4

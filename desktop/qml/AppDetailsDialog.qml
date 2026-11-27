@@ -103,7 +103,10 @@ Popup {
     // Teams' "By using <app>, you agree to the privacy policy, terms of use,
     // and permissions." with the parts that are links.
     function agreement(permissionsLink) {
-        const p = root.d && root.d.privacy_url ? root.d.privacy_url : "", t = root.d && root.d.terms_url ? root.d.terms_url : ""
+        // An app's own links (its manifest): as attributes, and only ones
+        // OST would open (issue #34).
+        const link = u => u ? backend.linkHref(String(u)) : ""
+        const p = link(root.d && root.d.privacy_url), t = link(root.d && root.d.terms_url)
         return qsTr("By using %1, you agree to the <1>%2</1>, <2>%3</2>, and <3>%4</3>.").arg(root.name).arg(qsTr("privacy policy")).arg(qsTr("terms of use")).arg(qsTr("permissions"))
             .replace("<1>", p ? '<a href="' + p + '">' : "").replace("</1>", p ? "</a>" : "")
             .replace("<2>", t ? '<a href="' + t + '">' : "").replace("</2>", t ? "</a>" : "")
@@ -127,7 +130,7 @@ Popup {
         color: theme.brandLink
         font.underline: ltHover.hovered
         HoverHandler { id: ltHover; cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: { if (lt.url) Qt.openUrlExternally(lt.url); lt.activated() } }
+        TapHandler { onTapped: { if (lt.url) backend.openExternal(lt.url); lt.activated() } }
         Accessible.role: Accessible.Link
         Accessible.name: text
     }
@@ -426,7 +429,7 @@ Popup {
                         font.family: theme.font; font.pixelSize: 14; color: theme.textStrong
                         lineHeight: 20; lineHeightMode: Text.FixedHeight
                         linkColor: theme.brandLink
-                        onLinkActivated: link => Qt.openUrlExternally(link)
+                        onLinkActivated: link => backend.openExternal(link)
                     }
 
                     // Capabilities in Teams.
@@ -656,7 +659,7 @@ Popup {
                     font.family: theme.font; font.pixelSize: 14; color: theme.text
                     onLinkActivated: link => {
                         if (link === "#permissions") mainFlick.contentY = Math.min(perms.y - 24, mainFlick.contentHeight - mainFlick.height)
-                        else Qt.openUrlExternally(link)
+                        else backend.openExternal(link)
                     }
                     HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 }
@@ -803,7 +806,7 @@ Popup {
                     textFormat: Text.StyledText; linkColor: theme.brandLink
                     text: root.agreement(false)
                     font.family: theme.font; font.pixelSize: 14; color: theme.text
-                    onLinkActivated: link => Qt.openUrlExternally(link)
+                    onLinkActivated: link => backend.openExternal(link)
                 }
             }
         }

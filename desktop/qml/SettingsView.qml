@@ -161,7 +161,7 @@ Rectangle {
         wrapMode: Text.Wrap
         font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
         color: theme.textSecondary
-        onLinkActivated: link => Qt.openUrlExternally(link === "learn"
+        onLinkActivated: link => backend.openExternal(link === "learn"
             ? "https://learn.microsoft.com/en-us/microsoftteams/rooms/voice-and-face-recognition?branch=main#data-retention"
             : "https://myaccount.microsoft.com/settingsandprivacy/privacy")
         HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
@@ -340,10 +340,10 @@ Rectangle {
         Text { anchors.verticalCenter: parent.verticalCenter; text: al.label; font.family: theme.font; font.pixelSize: 14; color: alHover.hovered ? theme.brandHover : theme.brandForeground1; font.underline: alHover.hovered }
         FluentIcon { visible: al.external; anchors.verticalCenter: parent.verticalCenter; name: "open-16"; size: 16; color: theme.brandForeground1 }
         HoverHandler { id: alHover; cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: { if (al.url) Qt.openUrlExternally(al.url); else al.activated() } }
+        TapHandler { onTapped: { if (al.url) backend.openExternal(al.url); else al.activated() } }
         Accessible.role: Accessible.Link
         Accessible.name: external ? qsTr("%1 (opens in new window)").arg(label) : label
-        Accessible.onPressAction: { if (al.url) Qt.openUrlExternally(al.url); else al.activated() }
+        Accessible.onPressAction: { if (al.url) backend.openExternal(al.url); else al.activated() }
     }
 
     // Left: title, find box, pages.
@@ -458,7 +458,7 @@ Rectangle {
             anchors.right: parent.right; anchors.rightMargin: Math.max(22, content.width - pageCol.x - pageCol.width)
             y: 14.8
             label: qsTr("Update now")
-            onClicked: if (u.url) Qt.openUrlExternally(u.url)
+            onClicked: if (u.url) backend.openExternal(u.url)
         }
     }
 
@@ -2004,7 +2004,7 @@ Rectangle {
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-16"; size: 14; color: theme.onFill(hcFill5, theme.text) }
                     }
                     HoverHandler { id: manageHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: Qt.openUrlExternally("https://myaccount.microsoft.com/?login_hint=" + encodeURIComponent(backend.userMail)) }
+                    TapHandler { onTapped: backend.openExternal("https://myaccount.microsoft.com/?login_hint=" + encodeURIComponent(backend.userMail)) }
                     Accessible.role: Accessible.Link
                     Accessible.name: qsTr("Manage Account for %1 (opens in new tab)").arg(backend.userName)
                 }
@@ -2104,7 +2104,7 @@ Rectangle {
                     ? qsTr("Automatically set my location across all devices when connecting to my organization's networks and devices.") + " " + link("learn", qsTr("Learn about automatically setting a work location"))
                     : qsTr("Automatically setting your work location has been turned off by your IT department.") + " " + link("https://support.microsoft.com/en-us/office/first-things-to-know-about-bookable-desks-in-microsoft-teams-5d10c217-1205-48a1-a883-ff4533f4ae71?preview=true", qsTr("Learn more"))
                         + (outlookLink ? "<br>" + outlookNote : "")
-                onLinkActivated: l => { if (l === "learn") autoLocationDialog.open(); else Qt.openUrlExternally(l) }
+                onLinkActivated: l => { if (l === "learn") autoLocationDialog.open(); else backend.openExternal(l) }
                 trailingGapX: 0
                 bodyGap: 11.9
                 trailingY: detection ? (pad + headerHeight + bodyGap + bodyHeight + bottomPad - 36) / 2 : NaN
@@ -2129,7 +2129,7 @@ Rectangle {
                     linkColor: theme.brandForeground1
                     font.family: theme.font; font.pixelSize: 12; lineHeight: 17.14; lineHeightMode: Text.FixedHeight
                     color: theme.textSecondary
-                    onLinkActivated: l => Qt.openUrlExternally(l)
+                    onLinkActivated: l => backend.openExternal(l)
                     HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 }
             }
@@ -2404,12 +2404,12 @@ Rectangle {
                 textWidth: 433.4
                 subtitleFormat: Text.RichText
                 subtitle: qsTr("You can delete your history in your Microsoft account.") + " <a href=\"learn\" style=\"color:" + theme.brandForeground1 + ";text-decoration:none\">" + qsTr("Learn how to delete Copilot activity history") + "</a>"
-                onLinkActivated: Qt.openUrlExternally(window.copilotState.deleteHistoryLearnUrl)
+                onLinkActivated: backend.openExternal(window.copilotState.deleteHistoryLearnUrl)
                 trailing: Component {
                     SettingsParts.Button {
                         icon: "open-20"
                         label: qsTr("Open Copilot activity history")
-                        onClicked: Qt.openUrlExternally(window.copilotState.deleteHistoryUrl)
+                        onClicked: backend.openExternal(window.copilotState.deleteHistoryUrl)
                     }
                 }
             }
@@ -2470,7 +2470,7 @@ Rectangle {
                     font.underline: ddvLink.hovered
                     color: theme.brandForeground1
                     HoverHandler { id: ddvLink; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: Qt.openUrlExternally("https://support.microsoft.com/office/using-the-diagnostic-data-viewer-with-office-cf761ce9-d805-4c60-a339-4e07f3182855") }
+                    TapHandler { onTapped: backend.openExternal("https://support.microsoft.com/office/using-the-diagnostic-data-viewer-with-office-cf761ce9-d805-4c60-a339-4e07f3182855") }
                     Accessible.role: Accessible.Link
                     Accessible.name: text
                 }
@@ -2555,14 +2555,14 @@ Rectangle {
                 visible: root.page === "privacy" && !root.subPage
                 icon: "call-20"; title: qsTr("End-to-end encrypted calls")
                 subtitle: qsTr("One-on-one OST calls are end-to-end encrypted if both participants turn on this setting. Some features won't be available, including recording and transcription. %1").arg("<a href=\"https://go.microsoft.com/fwlink/?linkid=2174740\">" + qsTr("Learn more") + "</a>")
-                onLinkActivated: l => Qt.openUrlExternally(l)
+                onLinkActivated: l => backend.openExternal(l)
                 trailing: Component { SettingsParts.Toggle { on: root.mt.useEndToEndEncryption === true; usable: root.mt.e2eeAllowedByAdmin === true; accessibleName: qsTr("End-to-end encrypted calls"); onToggled: v => root.setMt("useEndToEndEncryption", v) } }
             }
             SettingsParts.Card {
                 visible: root.page === "privacy" && !root.subPage
                 icon: "image-sparkle-20"; title: qsTr("Optional connected experiences")
                 subtitle: qsTr("Enhance your OST experience with cloud-backed services, including Giphy, URL Preview, and more.") + " <a href=\"https://go.microsoft.com/fwlink/?linkid=2295907\">" + qsTr("Learn More") + "</a><br><a href=\"https://privacy.microsoft.com/privacystatement\">" + qsTr("Microsoft Privacy Statement") + "</a>"
-                onLinkActivated: l => Qt.openUrlExternally(l)
+                onLinkActivated: l => backend.openExternal(l)
                 trailing: Component { SettingsParts.Toggle { on: root.prop("controllerConnectedServicesEnabled", [], "true") !== "false"; accessibleName: qsTr("Optional connected experiences"); onToggled: v => root.setProp("controllerConnectedServicesEnabled", "", v ? "true" : "false") } }
             }
             SettingsParts.Card {
@@ -2926,7 +2926,7 @@ Rectangle {
                         usable: capable && !inOneToOne
                         on: usable && root.local("spatialAudio", "false") === "true"
                         onToggled: v => { backend.setSetting("spatialAudio", v ? "true" : "false"); on = v }
-                        onLinkActivated: Qt.openUrlExternally("https://support.microsoft.com/en-us/office/spatial-audio-in-teams-meetings-547b5f81-1825-4ee1-a1cf-f02e12db4fdb")
+                        onLinkActivated: backend.openExternal("https://support.microsoft.com/en-us/office/spatial-audio-in-teams-meetings-547b5f81-1825-4ee1-a1cf-f02e12db4fdb")
                     }
                 }
                 SettingsParts.Gap { size: 22.6 }
@@ -3225,7 +3225,7 @@ Rectangle {
                     on: root.local("pushToRoomAudio", "true") !== "false"
                     onToggled: v => backend.setSetting("pushToRoomAudio", v ? "true" : "false")
                     link: (msg.match(/<0>([\s\S]*)<\/0>/) || ["", qsTr("Learn More")])[1]; centred: true
-                    onLinkActivated: Qt.openUrlExternally("https://aka.ms/meetingroommode")
+                    onLinkActivated: backend.openExternal("https://aka.ms/meetingroommode")
                 }
             }
             // Devices ▸ Manage devices (Teams' BttDeviceSettings): "Select a
@@ -4798,7 +4798,7 @@ Rectangle {
                     text: qsTr("Control what your apps can access when using Teams. Some apps have permissions enabled by default for your convenience.") + " <a href=\"https://go.microsoft.com/fwlink/?linkid=2166702&clcid=0x409\" style=\"color:" + theme.brandLink + ";text-decoration:none\">" + qsTr("Learn more") + "</a>"
                     font.family: theme.font; font.pixelSize: 12; lineHeight: 17.14; lineHeightMode: Text.FixedHeight
                     color: theme.text
-                    onLinkActivated: l => Qt.openUrlExternally(l)
+                    onLinkActivated: l => backend.openExternal(l)
                 }
                 Column {
                     id: permList
@@ -5020,7 +5020,7 @@ Rectangle {
                         }
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-20"; size: 20; color: ringLink.color }
                         HoverHandler { id: aboutRingHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: if (parent.parent.ring && parent.parent.ring.url) Qt.openUrlExternally(parent.parent.ring.url) }
+                        TapHandler { onTapped: if (parent.parent.ring && parent.parent.ring.url) backend.openExternal(parent.parent.ring.url) }
                         Accessible.role: Accessible.Link
                         Accessible.name: ringLink.text
                     }
@@ -5036,7 +5036,7 @@ Rectangle {
             }
             AboutCard {
                 icon: "document-text-20"; title: qsTr("Third party notice")
-                AboutLink { label: qsTr("Desktop"); external: false; onActivated: { const u = backend.thirdPartyNoticesUrl(); if (u) Qt.openUrlExternally(u) } }
+                AboutLink { label: qsTr("Desktop"); external: false; onActivated: { const u = backend.thirdPartyNoticesUrl(); if (u) backend.openLocalPath(u) } }
             }
             // Teams' Early access card, after Third party notice (Teams 26304, measured on winpc
             // 2026-11-20, 121.3 tall: the title row, then "Public preview",
@@ -5174,7 +5174,7 @@ Rectangle {
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-16"; size: 14; color: theme.onFill(oacManage, theme.text) }
             }
             HoverHandler { id: oacHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: Qt.openUrlExternally("https://myaccount.microsoft.com/?login_hint=" + encodeURIComponent(oac.modelData.upn)) }
+            TapHandler { onTapped: backend.openExternal("https://myaccount.microsoft.com/?login_hint=" + encodeURIComponent(oac.modelData.upn)) }
             Accessible.role: Accessible.Link
             Accessible.name: qsTr("Manage Account for %1 (opens in new tab)").arg(oac.modelData.name || oac.modelData.upn)
         }

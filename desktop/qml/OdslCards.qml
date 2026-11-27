@@ -251,7 +251,7 @@ Column {
                     visible: plan.saved
                     glyph: "open-20"
                     label: root.str(plan.c, "ODSL_VIEW_IN_PLANNER_LABEL", qsTr("View in Planner", "messaging:kd5n2nr8"))
-                    onClicked: if (plan.c.plan_link) Qt.openUrlExternally(plan.c.plan_link)
+                    onClicked: if (plan.c.plan_link) backend.openExternal(plan.c.plan_link)
                 }
             }
         }
@@ -312,7 +312,7 @@ Column {
                         font.underline: linkHover.hovered
                         color: theme.text
                         HoverHandler { id: linkHover; enabled: !!taskCard.modelData.link; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { enabled: !!taskCard.modelData.link; onTapped: Qt.openUrlExternally(taskCard.modelData.link) }
+                        TapHandler { enabled: !!taskCard.modelData.link; onTapped: backend.openExternal(taskCard.modelData.link) }
                         Accessible.role: Accessible.Link; Accessible.name: text
                     }
                     Row {

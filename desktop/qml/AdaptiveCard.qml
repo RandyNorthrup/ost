@@ -95,20 +95,32 @@ Item {
     function setValue(id, v) { if (!id) return; const o = Object.assign({}, values); o[id] = v; values = o }
     function run(a) {
         const t = lc(a.type, "")
-        if (t === "action.openurl") { if (card.hostsLinks) card.openLink(a.url); else Qt.openUrlExternally(a.url) }
+        if (t === "action.openurl") { if (card.hostsLinks) card.openLink(a.url); else backend.openExternal(a.url) }
         else if (t === "action.showcard") openShowCard = openShowCard === (a.id || a.title) ? "" : (a.id || a.title)
         else if (t === "action.togglevisibility") toggle(a.targetElements)
         else card.action(a, values)
     }
+    /// Text for an HTML attribute or element: nothing in it can close the
+    /// attribute or open a tag (issue #34).
+    function esc(v) { return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;") }
+    /// A card link's href, or "" for a link Teams wouldn't open (file:,
+    /// smb:, other apps' schemes: shown as plain text, as Teams' sanitizer
+    /// leaves them).
+    function href(url) { return url ? backend.linkHref(String(url)) : "" }
     // Markdown as Teams' cards support it: **bold**, _italic_ / *italic*,
     // [links](url), "- " and "1. " lists, line breaks.
     function markdown(t) {
         if (t === undefined || t === null) return ""
-        let s = String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-        s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" style="color:' + theme.brandForeground1 + '">$1</a>')
+        // Links become markers first, so the other rules never reach into
+        // an href; refused links keep only their text.
+        const links = []
+        let s = String(t).replace(/[\u0001-\u0003]/g, "")
+            .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, label, url) => { const h = card.href(url); if (!h) return label; links.push(h); return "\u0001" + (links.length - 1) + "\u0002" + label + "\u0003" })
+        s = s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
         s = s.replace(/\*\*([^*]+)\*\*/g, '<b style="font-weight:700">$1</b>')
         s = s.replace(/(^|[^\w*])\*([^*\n]+)\*(?!\*)/g, '$1<i>$2</i>')
         s = s.replace(/(^|[^\w])_([^_\n]+)_(?!\w)/g, '$1<i>$2</i>')
+        s = s.replace(/\u0001(\d+)\u0002/g, (m, i) => '<a href="' + links[Number(i)] + '" style="color:' + theme.brandForeground1 + '">').replace(/\u0003/g, "</a>")
         const lines = s.split(/\r?\n/)
         let out = "", list = ""
         for (const line of lines) {
@@ -275,7 +287,7 @@ Item {
             color: card.colorOf(e.color, e.isSubtle === true)
             linkColor: theme.brandForeground1
             horizontalAlignment: card.lc(e.horizontalAlignment, "left") === "center" ? Text.AlignHCenter : card.lc(e.horizontalAlignment, "left") === "right" ? Text.AlignRight : Text.AlignLeft
-            onLinkActivated: link => Qt.openUrlExternally(link)
+            onLinkActivated: link => backend.openExternal(link)
             HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
         }
     }
@@ -294,7 +306,7 @@ Item {
             horizontalAlignment: card.lc(e.horizontalAlignment, "left") === "center" ? Text.AlignHCenter : card.lc(e.horizontalAlignment, "left") === "right" ? Text.AlignRight : Text.AlignLeft
             text: theme.linkCss(linkColor) + (e.inlines || []).map(r => {
                 if (typeof r === "string") return card.markdown(r)
-                let t = String(r.text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                let t = card.esc(r.text || "")
                 const st = []
                 st.push("font-size:" + (card.sizePx[card.lc(r.size, "default")] || 14) + "px")
                 st.push("color:" + card.colorOf(r.color, r.isSubtle === true))
@@ -305,10 +317,11 @@ Item {
                 if (r.highlight) st.push("background-color:" + theme.pick("#FFEDD6", "#4D2A00"))
                 if (card.lc(r.fontType, "") === "monospace") st.push("font-family:monospace")
                 t = '<span style="' + st.join(";") + '">' + t + "</span>"
-                if (r.selectAction && card.lc(r.selectAction.type, "") === "action.openurl") t = '<a href="' + r.selectAction.url + '">' + t + "</a>"
+                const link = r.selectAction && card.lc(r.selectAction.type, "") === "action.openurl" ? card.href(r.selectAction.url) : ""
+                if (link) t = '<a href="' + link + '">' + t + "</a>"
                 return t
             }).join("")
-            onLinkActivated: link => Qt.openUrlExternally(link)
+            onLinkActivated: link => backend.openExternal(link)
         }
     }
     Component {
@@ -643,7 +656,7 @@ Item {
                             lineHeight: 20; lineHeightMode: Text.FixedHeight
                             font.family: theme.font; font.pixelSize: 14; color: theme.text
                             linkColor: theme.brandForeground1
-                            onLinkActivated: link => Qt.openUrlExternally(link)
+                            onLinkActivated: link => backend.openExternal(link)
                         }
                     }
                 }

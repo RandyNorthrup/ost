@@ -138,7 +138,7 @@ Item {
             }
         }
         HoverHandler { id: titleHover; cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: if (root.link) Qt.openUrlExternally(root.link) }
+        TapHandler { onTapped: if (root.link) backend.openExternal(root.link) }
         Accessible.role: Accessible.Button
         Accessible.name: root.title
     }
@@ -174,7 +174,7 @@ Item {
                     text: root.title; font.underline: true
                     lineHeight: 20; lineHeightMode: Text.FixedHeight; font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: { locations.close(); if (root.link) Qt.openUrlExternally(root.link) } }
+                    TapHandler { onTapped: { locations.close(); if (root.link) backend.openExternal(root.link) } }
                     Accessible.role: Accessible.Link; Accessible.name: qsTr("Shared locations for") + " " + root.title
                 }
             }
@@ -199,7 +199,7 @@ Item {
                                 Text { width: parent.width; elide: Text.ElideRight; text: root.placeSubtitle(place.modelData); font.family: theme.font; font.pixelSize: 12; color: theme.onFill(place, theme.textSecondary) }
                             }
                             HoverHandler { id: placeHover; cursorShape: place.modelData.url ? Qt.PointingHandCursor : Qt.ArrowCursor }
-                            TapHandler { enabled: !!place.modelData.url; onTapped: { locations.close(); Qt.openUrlExternally(place.modelData.url) } }
+                            TapHandler { enabled: !!place.modelData.url; onTapped: { locations.close(); backend.openExternal(place.modelData.url) } }
                             Accessible.role: Accessible.Link; Accessible.name: root.placeTitle(place.modelData)
                         }
                     }
@@ -217,7 +217,7 @@ Item {
                     Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Add to %1 workspace").arg("Loop"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(workspaceButton, theme.pick("#424242", "#D6D6D6", "#FFFFFF")) }
                 }
                 HoverHandler { id: wsHover; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: { locations.close(); Qt.openUrlExternally(root.workspaceUrl) } }
+                TapHandler { onTapped: { locations.close(); backend.openExternal(root.workspaceUrl) } }
                 ToolTip.visible: wsHover.hovered; ToolTip.delay: 500
                 ToolTip.text: qsTr("Adding this component will link it to a workspace so you can start organizing and collecting content.")
                 Accessible.role: Accessible.Button; Accessible.name: qsTr("Add to %1 workspace").arg("Loop")

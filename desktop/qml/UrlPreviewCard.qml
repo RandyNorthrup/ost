@@ -115,7 +115,7 @@ Item {
     // (Remove URL Preview's corner doesn't open the link.)
     TapHandler {
         enabled: card.clickable
-        onTapped: ev => { if (!(card.removable && ev.position.x >= 120 + 300 && ev.position.y <= 32)) Qt.openUrlExternally(card.url) }
+        onTapped: ev => { if (!(card.removable && ev.position.x >= 120 + 300 && ev.position.y <= 32)) backend.openExternal(card.url) }
     }
     Accessible.role: card.clickable ? Accessible.Link : Accessible.Grouping
     Accessible.name: card.title || card.url

@@ -1048,7 +1048,7 @@ Item {
                         id: noticeText
                         x: 46; y: 5; width: parent.width - 46 - 44; wrapMode: Text.Wrap; textFormat: Text.StyledText
                         text: qsTr("External guests will receive a tailored invitation for this scheduled online meeting. They will join from a mobile or web browser and experience a virtual lobby before the appointment begins.") + " <a href=\"https://go.microsoft.com/fwlink/?linkid=2209737\">" + qsTr("Learn more") + "</a>"
-                        linkColor: theme.brand; onLinkActivated: l => Qt.openUrlExternally(l)
+                        linkColor: theme.brand; onLinkActivated: l => backend.openExternal(l)
                         font.family: theme.font; font.pixelSize: 12; lineHeight: 18; lineHeightMode: Text.FixedHeight; color: theme.text
                     }
                     Rectangle {
@@ -1607,7 +1607,7 @@ Item {
                         color: root.outlookEdit ? theme.pick("#000000", "#FFFFFF", "#FFFFFF") : root.outlookRead ? theme.textSecondary : theme.text
                         onTextChanged: { root.markDirty(); root.checkBodySpelling() }
                         onActiveFocusChanged: if (activeFocus && root.outlookEdit && !root.spellingOn) { root.spellingOn = true; root.checkBodySpelling() }
-                        onLinkActivated: link => Qt.openUrlExternally(link)
+                        onLinkActivated: link => backend.openExternal(link)
                         // Outlook's body marks misspelt words as the browser's
                         // spellchecker does once the body is first focused
                         // (Teams desktop on winpc, 2026-11-24: a wavy #FF0000
@@ -3520,7 +3520,7 @@ Item {
             timeSuggestions = error ? [] : (r.suggestions || [])
         } else if (op === "attachFile" && !error && r.id) { attachments = attachments.concat([r]); markDirty() }
         else if (op === "deleteAttachment" && !error) { attachments = attachments.filter(a => a.id !== r.attachmentId); markDirty() }
-        else if (op === "attachmentFile" && !error && r.path) { if (!r.download) Qt.openUrlExternally("file://" + r.path) }
+        else if (op === "attachmentFile" && !error && r.path) { if (!r.download) backend.openLocalPath(r.path) }
         else if ((op === "eventOptions" || op === "setEventOptions") && !error) {
             if (r.facilitator !== undefined && r.facilitator !== null) facilitatorOn = r.facilitator
             // (The dialog takes the options by name.)

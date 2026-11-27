@@ -47,7 +47,7 @@ Popup {
             textFormat: Text.RichText
             text: "<style>a { color: " + theme.brandForeground1 + "; text-decoration: none; }</style>" + qsTr("This app has permissions enabled by default for your convenience. Adjust these permissions at any time. <0>%1</0>").arg(qsTr("Learn more")).replace("<0>", "<a href=\"https://go.microsoft.com/fwlink/?linkid=2166702&clcid=0x409\">").replace("</0>", "</a>")
             linkColor: theme.brandForeground1
-            onLinkActivated: link => Qt.openUrlExternally(link)
+            onLinkActivated: link => backend.openExternal(link)
             lineHeight: 16; lineHeightMode: Text.FixedHeight
             font.family: theme.font; font.pixelSize: 12; color: theme.text
             HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }

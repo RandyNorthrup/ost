@@ -349,7 +349,7 @@ Item {
             anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter }
             spacing: 4
             HeaderButton { icon: "arrow-clockwise-20"; label: qsTr("Reload"); onClicked: web.reload() }
-            HeaderButton { icon: "open-20"; label: qsTr("Open in browser"); onClicked: Qt.openUrlExternally(web.url) }
+            HeaderButton { icon: "open-20"; label: qsTr("Open in browser"); onClicked: backend.openExternal(String(web.url)) }
         }
         // Teams' app header (entity-header, measured on winpc for Help,
         // 2026-11-09): 61 tall with a 0.67 #E0E0E0 line; the app's tile
@@ -532,7 +532,7 @@ Item {
     function printed(filePath, success) {
         console.warn("WEBAPP printed", filePath, success)
         root.pagePrinted(filePath, success)
-        if (success && !root.printQuietly) Qt.openUrlExternally("file://" + filePath)
+        if (success && !root.printQuietly) backend.openLocalPath(filePath)
     }
     /// Tests: print without opening the PDF.
     property bool printQuietly: false
@@ -614,7 +614,7 @@ Item {
                 text: web.title && web.title !== "Microsoft Loop" ? web.title.replace(/ - Loop$/, "") : root.appName
                 font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: Qt.openUrlExternally(root.home) }
+                TapHandler { onTapped: backend.openExternal(String(root.home)) }
             }
         }
         Row {

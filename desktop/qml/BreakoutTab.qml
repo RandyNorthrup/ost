@@ -280,7 +280,7 @@ Rectangle {
                             ]
                             onPicked: i => {
                                 if (i === 0) { roomText.thread = card.modelData.thread; roomText.title = qsTr("Rename %1?").arg(card.modelData.name); roomText.initial = card.modelData.name; roomText.show() }
-                                else if (i === 1) { if (card.modelData.options_url) Qt.openUrlExternally(card.modelData.options_url) }
+                                else if (i === 1) { if (card.modelData.options_url) backend.openExternal(card.modelData.options_url) }
                                 else { deleteRoomAsk.thread = card.modelData.thread; deleteRoomAsk.title = qsTr("Delete %1?").arg(card.modelData.name); deleteRoomAsk.open() }
                             }
                         }

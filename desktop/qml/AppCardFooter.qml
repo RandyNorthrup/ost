@@ -26,7 +26,7 @@ Item {
         font.family: theme.font; font.pixelSize: 10; color: theme.textStrong
         font.underline: slHover.hovered
         HoverHandler { id: slHover; cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: { if (sl.url) Qt.openUrlExternally(sl.url); sl.activated() } }
+        TapHandler { onTapped: { if (sl.url) backend.openExternal(sl.url); sl.activated() } }
         Accessible.role: Accessible.Link
         Accessible.name: text
     }

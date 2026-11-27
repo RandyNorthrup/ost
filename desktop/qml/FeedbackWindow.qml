@@ -79,7 +79,7 @@ Window {
         const report = { kind: kind, text: text.text, area: area, context: context, share_logs: share === 0, contact: contact === 0, files: files, dir: folder(), blank: blank }
         const url = backend.feedbackIssueUrl(JSON.stringify(report))
         openUrl(url)
-        openUrl("file://" + folder())
+        if (dryRun) console.warn("FEEDBACK open", "file://" + folder()); else backend.openLocalPath(folder())
         blankSent = blank
         reviewing = false
         sent = true
@@ -88,7 +88,7 @@ Window {
     readonly property bool dryRun: Qt.application.arguments.indexOf("--feedback-test") >= 0
     function openUrl(u) {
         if (dryRun) console.warn("FEEDBACK open", u)
-        else Qt.openUrlExternally(u)
+        else backend.openExternal(u)
     }
 
     // The window's buttons (96 x 31.3 at least, 14/600; brand or outline).
@@ -240,7 +240,7 @@ Window {
                     text: qsTr("Share relevant content samples and additional log files?") + " <a href=\"learn\">" + qsTr("Learn more") + "</a> <font color=\"#D13438\">*</font>"
                     linkColor: theme.brandLink
                     font.family: theme.font; font.pixelSize: 14; color: theme.text
-                    onLinkActivated: Qt.openUrlExternally(backend.feedbackLink("privacy-feedback"))
+                    onLinkActivated: backend.openExternal(backend.feedbackLink("privacy-feedback"))
                     HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 }
                 component Radio: Item {
@@ -290,7 +290,7 @@ Window {
                 + qsTr(" about how this data is used and your rights. By pressing Submit, you see what goes to GitHub (%1) before your browser opens it as a public issue. Your feedback will be used to improve OST.").arg(backend.feedbackLink("repo").replace("https://github.com/", ""))
                 + " <a href=\"privacy\">" + qsTr("Privacy statement") + ".</a>"
             font.family: theme.font; font.pixelSize: 10; color: theme.textSecondary
-            onLinkActivated: l => Qt.openUrlExternally(backend.feedbackLink(l === "privacy" ? "privacy" : "privacy-feedback"))
+            onLinkActivated: l => backend.openExternal(backend.feedbackLink(l === "privacy" ? "privacy" : "privacy-feedback"))
             HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
         }
         Rectangle {

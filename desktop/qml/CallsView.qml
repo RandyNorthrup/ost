@@ -91,7 +91,7 @@ Item {
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "share-20"; size: 16; color: theme.onFill(hcFill2, theme.textStrong) }
             }
             HoverHandler { id: vch; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: Qt.openUrlExternally("https://outlook.office.com/people/") }
+            TapHandler { onTapped: backend.openExternal("https://outlook.office.com/people/") }
             Accessible.role: Accessible.Button
             Accessible.name: qsTr("View contacts")
         }

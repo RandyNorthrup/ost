@@ -262,7 +262,7 @@ Rectangle {
                 Text {
                     text: qsTr(" Watch this"); font.family: theme.font; font.pixelSize: 14; font.underline: true; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.brandForeground1
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: Qt.openUrlExternally("https://aka.ms/microsoftteams") }
+                    TapHandler { onTapped: backend.openExternal("https://aka.ms/microsoftteams") }
                     Accessible.role: Accessible.Link; Accessible.name: qsTr(" Watch this").trim()
                 }
             }
@@ -285,7 +285,7 @@ Rectangle {
                 Text {
                     text: qsTr(" Watch this"); font.family: theme.font; font.pixelSize: 14; font.underline: true; color: theme.brandForeground1
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: Qt.openUrlExternally("https://aka.ms/microsoftteams") }
+                    TapHandler { onTapped: backend.openExternal("https://aka.ms/microsoftteams") }
                     Accessible.role: Accessible.Link; Accessible.name: qsTr(" Watch this").trim()
                 }
             }

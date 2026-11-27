@@ -143,7 +143,7 @@ Popup {
         x: 24.67; y: 479.33; height: 20
         text: qsTr("Learn more"); font.family: theme.font; font.pixelSize: 14; color: theme.brandLink
         HoverHandler { cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2321802") }
+        TapHandler { onTapped: backend.openExternal("https://go.microsoft.com/fwlink/?linkid=2321802") }
         Accessible.role: Accessible.Link; Accessible.name: text
     }
     Row {

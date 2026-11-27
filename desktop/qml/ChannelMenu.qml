@@ -315,7 +315,7 @@ Item {
                 : qsTr("Are you sure you want to delete the <0>%1</0> channel? All conversations will be deleted.").arg(esc).replace("<0>", "<b>").replace("</0>", "</b>") + " "
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
             linkColor: theme.brandForeground1
-            onLinkActivated: link => Qt.openUrlExternally(link)
+            onLinkActivated: link => backend.openExternal(link)
             HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
         }
     }

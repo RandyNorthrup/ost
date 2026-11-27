@@ -203,7 +203,7 @@ Column {
                                             }
                                         }
                                         HoverHandler { id: setupHover; cursorShape: Qt.PointingHandCursor }
-                                        TapHandler { onTapped: Qt.openUrlExternally(String(modelData.link)) }
+                                        TapHandler { onTapped: backend.openExternal(String(modelData.link)) }
                                         Accessible.role: Accessible.Button
                                         Accessible.name: root.text("reasoning_message_link", qsTr("View workflow setup message", "messaging:k4jkg2njx"))
                                     }

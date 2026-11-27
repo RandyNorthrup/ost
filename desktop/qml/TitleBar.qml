@@ -694,7 +694,7 @@ Rectangle {
                         Text { text: qsTr("View account"); font.family: theme.font; font.pixelSize: theme.small; color: theme.textStrong }
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-16"; size: 12; color: theme.textStrong }
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: { menu.visible = false; Qt.openUrlExternally("https://myaccount.microsoft.com/") } }
+                        TapHandler { onTapped: { menu.visible = false; backend.openExternal("https://myaccount.microsoft.com/") } }
                         Accessible.role: Accessible.Link
                         Accessible.name: qsTr("View account")
                     }

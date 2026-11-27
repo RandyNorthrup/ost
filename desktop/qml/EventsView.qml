@@ -1220,7 +1220,7 @@ Rectangle {
                             text: (registerDialog.terms.split("<0>")[1] || "").split("</0>")[0]; font.underline: termsHover.hovered
                             font.family: theme.font; font.pixelSize: 14; color: theme.pick("#4F52B2", "#7F85F5", "#FFFF00")
                             HoverHandler { id: termsHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2210903") }
+                            TapHandler { onTapped: backend.openExternal("https://go.microsoft.com/fwlink/?linkid=2210903") }
                             Accessible.role: Accessible.Link; Accessible.name: text
                         }
                         Text { visible: text !== ""; anchors.verticalCenter: parent.verticalCenter; text: registerDialog.terms.split("</0>")[1] || ""; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
@@ -1582,7 +1582,7 @@ Rectangle {
                     Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("Immersive Events will remain available and supported through April 2027. If your organization uses Immersive Events, please review future event plans and watch for additional guidance."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                     Text { text: qsTr("Learn more"); font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1; font.underline: true
                            HoverHandler { cursorShape: Qt.PointingHandCursor }
-                           TapHandler { onTapped: Qt.openUrlExternally("https://aka.ms/ImmersiveUpdate") }
+                           TapHandler { onTapped: backend.openExternal("https://aka.ms/ImmersiveUpdate") }
                            Accessible.role: Accessible.Link; Accessible.name: qsTr("Learn more about the Immersive Events update (opens in new tab)") } }
                 Btn { anchors.right: parent.right; anchors.rightMargin: 8; y: 8; icon: "dismiss-20"; text: ""; pad: 6; Accessible.name: qsTr("Dismiss"); onClicked: root.retirementDismissed = true }
             }
@@ -3241,7 +3241,7 @@ Rectangle {
                             url: root.hl.player
                             settings.javascriptCanOpenWindows: false
                             settings.localContentCanAccessRemoteUrls: false
-                            onNewWindowRequested: req => { const u = req.requestedUrl.toString(); if (u.indexOf("https://") === 0) Qt.openUrlExternally(u) }
+                            onNewWindowRequested: req => { const u = req.requestedUrl.toString(); if (u.indexOf("https://") === 0) backend.openExternal(u) }
                             Component.onCompleted: profile = webAppsProfile.instance()
                         }
                     }
@@ -4183,7 +4183,7 @@ Rectangle {
                         Text { x: 16; y: 52; width: parent.width - 32; elide: Text.ElideRight; text: integ.modelData.name; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                         Text { x: 16; y: 78; width: parent.width - 32; wrapMode: Text.Wrap; maximumLineCount: 3; text: integ.modelData.description; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
                         HoverHandler { id: ih; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: Qt.openUrlExternally(integ.modelData.link) }
+                        TapHandler { onTapped: backend.openExternal(integ.modelData.link) }
                         Accessible.role: Accessible.Button; Accessible.name: integ.modelData.name
                     }
                 }

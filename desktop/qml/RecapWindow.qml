@@ -275,7 +275,7 @@ Window {
             BandButton { icon: "share-20"; label: qsTr("Share"); onClicked: shareMenu.popup(this, 0, height + 4) }
             // Teams' "Open in Clipchamp" (MeetingRecap.enableOpenInClipchamp's
             // label for Watch in browser): the recording's web page.
-            BandButton { visible: !!win.extras && !!win.extras.clipchamp; icon: "open-20"; label: qsTr("Open in Clipchamp"); onClicked: Qt.openUrlExternally(win.extras.clipchamp) }
+            BandButton { visible: !!win.extras && !!win.extras.clipchamp; icon: "open-20"; label: qsTr("Open in Clipchamp"); onClicked: backend.openExternal(win.extras.clipchamp) }
             // Copilot (licensed users): the Copilot pane over the right side.
             BandButton {
                 visible: !!win.extras && win.extras.copilot
@@ -317,7 +317,7 @@ Window {
                     url: win.data_ && win.data_.player ? win.data_.player : ""
                     settings.javascriptCanOpenWindows: false
                     settings.localContentCanAccessRemoteUrls: false
-                    onNewWindowRequested: req => { const u = req.requestedUrl.toString(); if (u.indexOf("https://") === 0) Qt.openUrlExternally(u) }
+                    onNewWindowRequested: req => { const u = req.requestedUrl.toString(); if (u.indexOf("https://") === 0) backend.openExternal(u) }
                     Component.onCompleted: profile = webAppsProfile.instance()
                 }
                 BusyIndicator { anchors.centerIn: parent; running: win.loading; visible: running }
@@ -395,7 +395,7 @@ Window {
                           + " <a href=\"https://support.microsoft.com/office/meeting-recap-in-microsoft-teams-c2e3a0fe-504f-4b2c-bf85-504938f110ef\" style=\"color:" + theme.brandForeground1 + "; text-decoration:none\">" + qsTr("Learn more") + "</a>"
                     lineHeight: 28; lineHeightMode: Text.FixedHeight
                     font.family: theme.font; font.pixelSize: 14; color: theme.text
-                    onLinkActivated: link => Qt.openUrlExternally(link)
+                    onLinkActivated: link => backend.openExternal(link)
                     HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 }
             }
@@ -915,7 +915,7 @@ Window {
                             width: parent.width; wrapMode: Text.Wrap; textFormat: Text.MarkdownText
                             text: win.summaryText
                             font.family: theme.font; font.pixelSize: 14; color: theme.text
-                            onLinkActivated: link => { if (link.indexOf("https://") === 0) Qt.openUrlExternally(link) }
+                            onLinkActivated: link => { if (link.indexOf("https://") === 0) backend.openExternal(link) }
                         }
                         Rectangle {
                             id: copyAll

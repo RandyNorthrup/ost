@@ -187,8 +187,8 @@ Popup {
         DialogButton { x: 24; kind: "subtle"; size: 12; label: qsTr("Cancel trial"); onClicked: { root.backTo = root.page; root.page = "cancel" } }
         Row {
             x: 576 - width; spacing: 10
-            DialogButton { label: qsTr("Buy now"); icon: "open-20"; onClicked: Qt.openUrlExternally("https://signup.microsoft.com/get-started/signup?products=CFQ7TTC0RM8K%3a0007&fOfferId=a8a931ff-8672-48ce-b5db-8d70f738012c") }
-            DialogButton { kind: "primary"; label: qsTr("Request a license"); onClicked: Qt.openUrlExternally("https://admin.microsoft.com/centrohost?appname=LicenseRequest&feature=host-license-request-app") }
+            DialogButton { label: qsTr("Buy now"); icon: "open-20"; onClicked: backend.openExternal("https://signup.microsoft.com/get-started/signup?products=CFQ7TTC0RM8K%3a0007&fOfferId=a8a931ff-8672-48ce-b5db-8d70f738012c") }
+            DialogButton { kind: "primary"; label: qsTr("Request a license"); onClicked: backend.openExternal("https://admin.microsoft.com/centrohost?appname=LicenseRequest&feature=host-license-request-app") }
         }
     }
 
@@ -227,11 +227,11 @@ Popup {
             color: theme.brandLink
             font.underline: termsHover.hovered
             HoverHandler { id: termsHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2194722") }
+            TapHandler { onTapped: backend.openExternal("https://go.microsoft.com/fwlink/?linkid=2194722") }
             Accessible.role: Accessible.Link
             Accessible.name: text
         }
-        DialogButton { x: 24; y: 544.67; kind: "subtle"; label: qsTr("View all benefits"); onClicked: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2227979") }
+        DialogButton { x: 24; y: 544.67; kind: "subtle"; label: qsTr("View all benefits"); onClicked: backend.openExternal("https://go.microsoft.com/fwlink/?linkid=2227979") }
         DialogButton { x: 480; y: 544.67; kind: "primary"; label: root.st.error ? qsTr("Try again") : qsTr("Start trial"); onClicked: backend.startPremiumTrial() }
     }
 
@@ -405,7 +405,7 @@ Popup {
                         }
                     }
                     Item { width: 1; height: 24 }
-                    DialogButton { label: qsTr("Learn more"); icon: "open-20"; width: 123.4; onClicked: Qt.openUrlExternally(sec.url) }
+                    DialogButton { label: qsTr("Learn more"); icon: "open-20"; width: 123.4; onClicked: backend.openExternal(sec.url) }
                 }
             }
             Section {

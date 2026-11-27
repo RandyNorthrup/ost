@@ -64,7 +64,7 @@ Item {
         // Alerts whose text Teams gives as HTML (a span at 600, a link).
         text: root.richText ? "<style>a { color: " + theme.brandLink + "; text-decoration: none; }</style>" + root.text : root.text
         textFormat: root.richText ? Text.RichText : Text.PlainText
-        onLinkActivated: link => Qt.openUrlExternally(link)
+        onLinkActivated: link => backend.openExternal(link)
         HoverHandler { enabled: root.richText; cursorShape: body.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
         font.family: theme.font; font.pixelSize: 14
         color: root.icon.length > 0 ? theme.textSecondary : theme.text

@@ -1290,7 +1290,7 @@ Item {
                 onRemoveRequested: root.setAppCard({ removed: true })
                 onSettingsRequested: root.appCardSettingsRequested()
                 onPermissionsRequested: root.appCardPermissionsRequested(root.appCard ? root.appCard.app_id : "")
-                onOpenLink: url => Qt.openUrlExternally(url)
+                onOpenLink: url => backend.openExternal(url)
                 // Teams' permission card: Show Preview installs the app for
                 // you and asks it again; Sign in opens the app's sign-in
                 // window, and once its page reports success the app is
@@ -2376,7 +2376,7 @@ Item {
                                     TapHandler {
                                         onTapped: {
                                             if (lnk.modelData.k === "permissions") { plusFlyout.close(); root.appPermissionsRequested(sug.modelData.id) }
-                                            else if (sug.modelData[lnk.modelData.k]) Qt.openUrlExternally(sug.modelData[lnk.modelData.k])
+                                            else if (sug.modelData[lnk.modelData.k]) backend.openExternal(sug.modelData[lnk.modelData.k])
                                         }
                                     }
                                     Accessible.role: Accessible.Link; Accessible.name: text

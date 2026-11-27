@@ -90,7 +90,7 @@ Item {
             wrapMode: Text.Wrap
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: theme.text
-            onLinkActivated: Qt.openUrlExternally(done.privacyUrl)
+            onLinkActivated: backend.openExternal(done.privacyUrl)
             HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
             Accessible.role: Accessible.StaticText
             Accessible.name: sec.body + (sec.enrolled ? "" : " " + sec.privacyName)

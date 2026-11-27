@@ -1040,7 +1040,7 @@ Rectangle {
                     RoundedCorners { anchors.fill: parent; radius: 4; background: theme.surface }
                 }
                 Text { x: 62; y: 20; width: parent.width - 80; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.parent.c.name); lineHeight: 20; lineHeightMode: Text.FixedHeight; font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                TapHandler { onTapped: Qt.openUrlExternally("https://web.yammer.com/main/groups/" + encodeURIComponent(parent.parent.c.id)) }
+                TapHandler { onTapped: backend.openExternal("https://web.yammer.com/main/groups/" + encodeURIComponent(parent.parent.c.id)) }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
             }
             Accessible.role: Accessible.ListItem
@@ -1437,7 +1437,7 @@ Rectangle {
                                 onPicked: i => {
                                     close()
                                     const label = items[i].label
-                                    if (label === qsTr("Open in Browser")) Qt.openUrlExternally(gcard.modelData.url)
+                                    if (label === qsTr("Open in Browser")) backend.openExternal(gcard.modelData.url)
                                     else if (label === qsTr("Share")) shareFile.openFor({ site: gcard.modelData.file_site, list: gcard.modelData.file_list, item: gcard.modelData.id }, gcard.modelData.file_name, gcard.modelData.file_type, gcard.link)
                                     else if (label === qsTr("Download")) backend.findFileAction("download", gcard.link)
                                     else if (label === qsTr("Copy link")) { backend.copyText(gcard.modelData.url); backend.statusText = qsTr("Link copied") }

@@ -645,7 +645,7 @@ Rectangle {
             height: heading ? 17.1 + 16 : isFile ? 54 : 12 + textBlock.y + textBlock.height + 8
             function open() {
                 if (heading) return
-                if (isFile) { Qt.openUrlExternally(modelData.url); return }
+                if (isFile) { backend.openExternal(modelData.url); return }
                 pane.selectedId = modelData.id
                 pane.jumpTo(modelData, pane.terms)
             }
@@ -749,7 +749,7 @@ Rectangle {
                             onPicked: i => {
                                 close()
                                 const key = items[i].key
-                                if (key === "browser") Qt.openUrlExternally(hitRow.modelData.url)
+                                if (key === "browser") backend.openExternal(hitRow.modelData.url)
                                 else if (key === "download") backend.findFileAction("download", hitRow.modelData.file_url || hitRow.modelData.url)
                                 else if (key === "link") { backend.copyText(hitRow.modelData.url); backend.statusText = qsTr("Link copied") }
                                 else backend.findFileAction("favorite", hitRow.modelData.file_url || hitRow.modelData.url)

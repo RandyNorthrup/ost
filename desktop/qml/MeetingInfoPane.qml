@@ -115,7 +115,7 @@ Rectangle {
                         font.underline: localHover.hovered
                         color: theme.brandLink
                         HoverHandler { id: localHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: Qt.openUrlExternally(dialBlock.dial.localNumbersUrl) }
+                        TapHandler { onTapped: backend.openExternal(dialBlock.dial.localNumbersUrl) }
                         Accessible.role: Accessible.Link
                         Accessible.name: text
                     }
@@ -170,7 +170,7 @@ Rectangle {
                 lineHeight: 20.95; lineHeightMode: Text.FixedHeight
                 color: theme.text
                 linkColor: theme.brandLink
-                onLinkActivated: link => Qt.openUrlExternally(link)
+                onLinkActivated: link => backend.openExternal(link)
                 HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
             }
         }
@@ -189,7 +189,7 @@ Rectangle {
             font.underline: numberHover.hovered
             color: theme.brandLink
             HoverHandler { id: numberHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: Qt.openUrlExternally("tel:" + parent.parent.number) }
+            TapHandler { onTapped: backend.openExternal("tel:" + parent.parent.number) }
             Accessible.role: Accessible.Link
             Accessible.name: parent.aria
         }

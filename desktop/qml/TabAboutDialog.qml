@@ -66,7 +66,7 @@ Popup {
                         text: aboutDialog.about ? theme.linkCss(linkColor) + aboutDialog.about.description : ""
                         font.family: theme.font; font.pixelSize: theme.base; color: theme.text
                         linkColor: theme.hc("#0000EE", "#FFFF00")
-                        onLinkActivated: link => { if (/^https:/.test(link)) Qt.openUrlExternally(link) }
+                        onLinkActivated: link => { if (/^https:/.test(link)) backend.openExternal(link) }
                     }
                     Text {
                         visible: !!aboutDialog.about && !!aboutDialog.about.developer && !!aboutDialog.about.developer_url
@@ -74,7 +74,7 @@ Popup {
                         text: aboutDialog.about ? "<a href=\"" + aboutDialog.about.developer_url + "\">" + aboutDialog.about.developer + "</a>" : ""
                         font.family: theme.font; font.pixelSize: theme.base
                         linkColor: theme.brandLink
-                        onLinkActivated: link => Qt.openUrlExternally(link)
+                        onLinkActivated: link => backend.openExternal(link)
                     }
                 }
             }
@@ -92,7 +92,7 @@ Popup {
                     .replace("<0>", "<a href=\"" + aboutDialog.about.privacy_url + "\">").replace("</0>", "</a>").replace("<1>", "<a href=\"" + aboutDialog.about.terms_url + "\">").replace("</1>", "</a>") : ""
                 font.family: theme.font; font.pixelSize: theme.base; color: theme.text
                 linkColor: theme.brandLink
-                onLinkActivated: link => Qt.openUrlExternally(link)
+                onLinkActivated: link => backend.openExternal(link)
             }
         }
     }

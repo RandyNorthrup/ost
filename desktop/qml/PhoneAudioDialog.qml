@@ -253,7 +253,7 @@ Item {
                         font.underline: tollHover.hovered
                         color: theme.brandLink
                         HoverHandler { id: tollHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: Qt.openUrlExternally("tel:" + root.dial.toll) }
+                        TapHandler { onTapped: backend.openExternal("tel:" + root.dial.toll) }
                         Accessible.role: Accessible.Link
                         Accessible.name: root.dial ? root.dial.tollAria : ""
                     }
@@ -273,7 +273,7 @@ Item {
                         font.underline: tollFreeHover.hovered
                         color: theme.brandLink
                         HoverHandler { id: tollFreeHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: Qt.openUrlExternally("tel:" + root.dial.tollFree) }
+                        TapHandler { onTapped: backend.openExternal("tel:" + root.dial.tollFree) }
                         Accessible.role: Accessible.Link
                         Accessible.name: root.dial ? root.dial.tollFreeAria : ""
                     }
@@ -292,7 +292,7 @@ Item {
                     font.underline: localHover.hovered
                     color: theme.brandLink
                     HoverHandler { id: localHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: Qt.openUrlExternally(root.dial.localNumbersUrl) }
+                    TapHandler { onTapped: backend.openExternal(root.dial.localNumbersUrl) }
                     Accessible.role: Accessible.Link
                     Accessible.name: text
                 }

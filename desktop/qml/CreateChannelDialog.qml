@@ -211,7 +211,7 @@ Popup {
                     color: infoHover.hovered ? theme.rowHover : "transparent"
                     FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: "info-20"; size: 20; color: theme.onFill(hcFill2, theme.textStrong) }
                     HoverHandler { id: infoHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: Qt.openUrlExternally("https://learn.microsoft.com/en-us/microsoftteams/teams-channels-overview") }
+                    TapHandler { onTapped: backend.openExternal("https://learn.microsoft.com/en-us/microsoftteams/teams-channels-overview") }
                     ToolTip.visible: infoHover.hovered; ToolTip.delay: 300; ToolTip.text: qsTr("Learn more about channel types")
                     Accessible.role: Accessible.Button
                     Accessible.name: qsTr("Learn more about channel types")
