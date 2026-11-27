@@ -3592,6 +3592,10 @@ pub struct BackendRust {
     /// A 1:1 call became a group call: its title is the others in its
     /// chat, as Teams titles it, once the chat's members are known.
     call_title_from_chat: bool,
+    /// A 1:1 call is turning into a group call (its first invitation is
+    /// out); people picked meanwhile wait in `queued_invites` (MRI, name).
+    escalating: bool,
+    queued_invites: Vec<(String, String)>,
     /// Room mode: the title Teams Rooms gives the invitation's call
     /// ([`teams_cli::calling::room_mode::call_title`]), shown once accepted.
     room_call_title: String,
@@ -6588,15 +6592,10 @@ fn short_error(e: &anyhow::Error) -> String {
 static CHANNEL_ACTIVITY: std::sync::Mutex<std::collections::BTreeMap<String, i64>> =
     std::sync::Mutex::new(std::collections::BTreeMap::new());
 
-/// The id of the call in the slot (the answered one, else the one we
-/// placed or joined).
-fn slot_call_id(slot: &CallSlot) -> Option<String> {
-    match (&slot.active, &slot.outgoing) {
-        (Some(call), _) => call.call_id(),
-        (None, Some(call)) => Some(call.call_id().to_string()),
-        _ => None,
-    }
-}
+/// Counts the calls that ended: an invitation started in one call goes
+/// out only while that call goes on (it is read without the call slot, so
+/// asking never waits on a call request in progress).
+static CALL_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Your group chats without a name of their own, hidden ones too, from
 /// the chat service's list: the chats a call someone is invited into can
@@ -17020,7 +17019,21 @@ impl qobject::Backend {
         self.as_mut().set_call_invites_json(QString::from(
             serde_json::Value::Array(invites).to_string().as_str(),
         ));
+        // While a 1:1 call is turning into a group call, more people wait
+        // for its group chat (else each would get a chat of its own).
+        if self.rust().escalating {
+            self.as_mut().rust_mut().queued_invites.push((mri, name));
+            return;
+        }
+        self.start_invite(mri, name);
+    }
+
+    /// Send one invitation (see [`Self::invite_to_call`]).
+    fn start_invite(mut self: Pin<&mut Self>, mri: String, name: String) {
         let one_to_one = !self.rust().call_meeting;
+        if one_to_one {
+            self.as_mut().rust_mut().escalating = true;
+        }
         let peer = self.rust().call_peer_id.to_string();
         let thread = self.rust().call_thread_id.to_string();
         // The chats that can be the call's: unnamed group chats, hidden
@@ -17033,7 +17046,7 @@ impl qobject::Backend {
             .unwrap_or_default();
         // The call this is for: the chat lookup can take a while, and the
         // invitation goes to this call only.
-        let call_id = runtime().block_on(async { slot_call_id(&*call_slot().lock().await) });
+        let generation = CALL_GENERATION.load(Ordering::SeqCst);
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -17052,7 +17065,7 @@ impl qobject::Backend {
                 let people = std::slice::from_ref(&mri);
                 let mut guard = call_slot().lock().await;
                 let slot = &mut *guard;
-                if call_id.is_none() || slot_call_id(slot) != call_id {
+                if CALL_GENERATION.load(Ordering::SeqCst) != generation {
                     anyhow::bail!("The call ended before the invitation went out");
                 }
                 match (slot.active.as_mut(), slot.outgoing.as_mut()) {
@@ -17066,16 +17079,35 @@ impl qobject::Backend {
                 anyhow::Ok(thread)
             }
             .await;
-            let _ = qt.queue(move |mut this| match result {
-                Ok(thread) => {
-                    tracing::info!(escalated = one_to_one, "invited into the call");
-                    if one_to_one && this.rust().call_state.to_string() == "connected" {
-                        this.as_mut().call_escalated(&thread, &name);
+            let _ = qt.queue(move |mut this| {
+                if CALL_GENERATION.load(Ordering::SeqCst) != generation {
+                    return;
+                }
+                match result {
+                    Ok(thread) => {
+                        tracing::info!(escalated = one_to_one, "invited into the call");
+                        if one_to_one {
+                            this.as_mut().call_escalated(&thread, &name);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("invite into the call: {}", short_error(&e));
+                        this.as_mut().invite_ended(&mri);
                     }
                 }
-                Err(e) => {
-                    tracing::warn!("invite into the call: {}", short_error(&e));
-                    this.as_mut().invite_ended(&mri);
+                if one_to_one {
+                    this.as_mut().rust_mut().escalating = false;
+                    // Those who waited: into the group call now (or, if
+                    // it didn't escalate, the next one escalates it).
+                    let queued = std::mem::take(&mut this.as_mut().rust_mut().queued_invites);
+                    let mut rest = queued.into_iter();
+                    while let Some((m, n)) = rest.next() {
+                        this.as_mut().start_invite(m, n);
+                        if this.rust().escalating {
+                            this.as_mut().rust_mut().queued_invites.extend(rest);
+                            break;
+                        }
+                    }
                 }
             });
         });
@@ -17398,6 +17430,10 @@ impl qobject::Backend {
         self.as_mut().set_call_invites_json(QString::default());
         self.as_mut().set_call_group(false);
         self.as_mut().rust_mut().call_title_from_chat = false;
+        self.as_mut().rust_mut().escalating = false;
+        self.as_mut().rust_mut().queued_invites.clear();
+        // Invitations still on their way were for this call.
+        CALL_GENERATION.fetch_add(1, Ordering::SeqCst);
         // A room ended (or was left): the main meeting's kept conversation
         // waits a little for the way back, then is left.
         leave_kept_main_later();

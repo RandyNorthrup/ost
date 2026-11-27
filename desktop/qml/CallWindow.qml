@@ -5679,6 +5679,7 @@ Window {
     function inviteTypeForTest(t) { side = "people"; peoplePane.typeForTest(t) }
     function inviteOptionsForTest() { return peoplePane.inviteOptionsForTest() }
     function invitePickForTest(i) { peoplePane.pickForTest(i) }
+    function invitePickAllForTest() { peoplePane.pickAllForTest() }
     function consultByCallForTest(oid, name) { consultByCall(oid, name) }
     function transferFromConsultForTest() { const c = consulting; consulting = null; transfer(c.id, c.name) }
     function dialPadForTest() { dialPad.open() }

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@calls2'
 created_date: '2026-11-27T05:47:00Z'
-updated_date: '2026-11-27T07:38:00Z'
+updated_date: '2026-11-27T07:56:00Z'
 labels:
   - calls
   - bug
@@ -45,3 +45,17 @@ Found in wiki round 3 (row 446): a channel Meet now started by OST Test 3 gave O
 
 - AC #1 (OST should show the banner) was removed: Teams desktop 26304 shows neither a banner nor an activity entry for a channel Meet now (tested twice on testpc1, also with Meet now start notifications on), so showing one would not match Teams. Replaced by the parity AC.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+No code change. Teams desktop doesn't show a "Meeting started" banner or activity when a team member starts a channel Meet now, and OST already behaves the same.
+
+Evidence:
+- Teams desktop 26304 on testpc1 (OST Test 1) showed nothing for two channel Meet nows started by OST Test 2, with "Meet now start notifications" off and on. Teams on the web showed nothing either.
+- Members receive only the channel's Event/Call callStarted post.
+- Teams' MeetingStartedNotificationService raises toasts only for HuddleMeetingStart and MeetingStart pushes and for calendar meetings (MeetingStartFromChatSvc).
+- OST (OST Test 1) live: it got the post pushes and showed no banner.
+
+The AC was corrected to parity. Recorded in PR #37.
+<!-- SECTION:FINAL_SUMMARY:END -->

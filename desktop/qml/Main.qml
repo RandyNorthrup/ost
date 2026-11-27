@@ -10417,8 +10417,10 @@ Window {
             else if (step === 2) { callWindow.inviteTypeForTest(window.inviteQuery) }
             else if (step === 3) { console.warn("INVITE options", JSON.stringify(callWindow.inviteOptionsForTest())); cap("picker") }
             else if (step === 4) {
+                // --invite-all: everyone suggested, picked at once.
                 const i = callWindow.inviteOptionsForTest().indexOf(window.inviteQuery)
-                if (i >= 0) callWindow.invitePickForTest(i)
+                if (Qt.application.arguments.indexOf("--invite-all") >= 0) callWindow.invitePickAllForTest()
+                else if (i >= 0) callWindow.invitePickForTest(i)
                 else console.warn("INVITE no exact match")
             }
             // Captures while they're rung and after; then hang up

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@calls2'
 created_date: '2026-11-27T05:46:00Z'
-updated_date: '2026-11-27T07:38:00Z'
+updated_date: '2026-11-27T07:56:00Z'
 labels:
   - calls
   - bug
@@ -21,7 +21,7 @@ Found in wiki round 3 (checklist row 215): Teams' call People pane lets you add 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The call's People pane has Teams' add-people box and adds a person to an ongoing 1:1 or group call as in Teams, verified between test accounts
+- [x] #1 The call's People pane has Teams' add-people box and adds a person to an ongoing 1:1 or group call as in Teams, verified between test accounts
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -51,3 +51,31 @@ Found in wiki round 3 (checklist row 215): Teams' call People pane lets you add 
 - Chat choice: with OST Test 1/2/3 in both "Release planning" (named) and an unnamed hidden chat, Teams took the unnamed one; OST now does too (first run had picked Release planning; a second run made one extra unnamed chat before the hidden-chat fix).
 - Not done (follow-ups): the typed-number row and dialing out (TASK-0347, no test phone line), adding a non-member to a group chat when inviting them into its call (TASK-0348).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The call's People pane is now Teams' people picker ("Invite someone or dial a number"). Picking someone rings them into the ongoing call, as Teams does. PR #37.
+
+Changes:
+- Engine: `OutgoingCall::invite_people` / `ActiveCall::invite_people` send Teams' request: the addParticipantAndModality link with `outgoing::invite_body` (participantInvitationData {}, groupChat of the call's chat), captured from Teams on the web. `invite_outcome` reads addParticipantSuccess/Failure. `incoming::escalated_to` and `is_group_call` read conversationUpdate.
+- Desktop:
+  - `invite_to_call`: a 1:1 call goes on in the unnamed group chat with exactly those people (hidden ones too), else in a new one. A group call goes on in its own chat. The invitation goes only into the call it was asked for.
+  - The window becomes the group call (`callGroup`, Teams' title from the chat's other members).
+  - `callInvitesJson` shows "Calling..." until the person joins or fails.
+  - A 1:1 call the other side escalates also becomes a group call, and a joined chat call with conversationType groupCall can invite.
+- QML: the PeoplePane picker (1:1 box measured on Teams desktop: full width, #F0F0F0, 33 tall; 50 px suggestion rows, typed prefix in bold, alias in capitals). Also "Calling..." roster rows and tiles, "Currently in this call" for group calls, and the `--invite-test` harness.
+
+Tests:
+- Unit tests: `outgoing::tests::invitations_are_teams`, `incoming::tests::a_call_turning_multi_party_names_its_chat`.
+- Live on linuxlt (OST as OST Test 1, Teams on the web as OST Test 3 and OST Test 2):
+  - Outgoing 1:1 escalated: Test 2 joins and the roster shows 3.
+  - Decline: Test 2 moves to "People added to the chat".
+  - Answered 1:1 escalated by OST.
+  - 1:1 escalated by the Teams side: OST turns into the group call.
+  - The mic stream stayed on the virtual mic throughout.
+
+Follow-ups:
+- TASK-0347: dial a number (no test phone line).
+- TASK-0348: add a non-member to a group chat when inviting them into its call.
+<!-- SECTION:FINAL_SUMMARY:END -->
