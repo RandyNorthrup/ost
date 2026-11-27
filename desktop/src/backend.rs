@@ -8396,7 +8396,8 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             .filter(|(c, _, _)| c.call_tag() == tag)
         {
             if let Some(links) = teams_cli::calling::outgoing::leg_retarget(json) {
-                pending.retarget(links);
+                // Not our call yet: what it sends is described once it is.
+                let _ = pending.retarget(links);
             }
             if teams_cli::calling::incoming::is_call_end_event(json) {
                 tracing::info!("the main meeting's lobby call ended; staying in the room");
@@ -8775,11 +8776,33 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         });
     }
     // Our leg moved to another call (the lobby handed us to the meeting):
-    // hang-up and hold now go to the new leg.
-    if let Some(links) = teams_cli::calling::outgoing::leg_retarget(json)
-        && let Some(call) = call_slot().lock().await.outgoing.as_mut()
-    {
-        call.retarget(links);
+    // hang-up, hold, sharing and media descriptions now go to the new leg,
+    // which is told what our camera and screen send (a camera turned on
+    // while the leg moved included).
+    if let Some(links) = teams_cli::calling::outgoing::leg_retarget(json) {
+        let mut slot = call_slot().lock().await;
+        if let Some(call) = slot.outgoing.as_mut()
+            && call.retarget(links)
+        {
+            let camera = call.camera_on();
+            tracing::info!(
+                camera,
+                sharing = call.is_sharing(),
+                "describing our media to the moved call leg"
+            );
+            if let Err(e) = call.describe_media(camera, call.is_sharing()).await {
+                tracing::warn!("media descriptions (moved leg): {}", short_error(&e));
+                if camera {
+                    let _ = call.set_camera(false, None);
+                    drop(slot);
+                    let _ = qt.queue(|mut this| {
+                        this.as_mut().show_call_camera(false);
+                        this.as_mut()
+                            .set_status_text(QString::from(tr("Your camera failed").as_str()));
+                    });
+                }
+            }
+        }
     }
     // Admitted from the lobby: the call modality arrives with the
     // conversation's links; Teams then shows the meeting.
