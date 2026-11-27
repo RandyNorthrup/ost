@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude-0363'
 created_date: '2026-11-27T18:19:00Z'
-updated_date: '2026-11-27T18:59:00Z'
+updated_date: '2026-11-27T20:38:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -21,10 +21,10 @@ From the 2026-11-27 parity audit (scope A), which compared Teams (desktop for so
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A-09: Message hover bar is drawn underneath the message above it; fixed to match Teams desktop, checked side by side
+- [x] #1 A-09: Message hover bar is drawn underneath the message above it; fixed to match Teams desktop, checked side by side
 - [ ] #2 A-10: Message ··· menu lacks "Remind me", "Ask Copilot" and Forward's split submenu; fixed to match Teams desktop, checked side by side
-- [ ] #3 A-04: OST turns plain-text URLs in received/sent messages into links; Teams shows them as text; fixed to match Teams desktop, checked side by side
-- [ ] #4 A-20: Consecutive replies by the same person in a channel thread aren't grouped; fixed to match Teams desktop, checked side by side
+- [x] #3 A-04: OST turns plain-text URLs in received/sent messages into links; Teams shows them as text; fixed to match Teams desktop, checked side by side
+- [x] #4 A-20: Consecutive replies by the same person in a channel thread aren't grouped; fixed to match Teams desktop, checked side by side
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -44,4 +44,8 @@ From the 2026-11-27 parity audit (scope A), which compared Teams (desktop for so
 - A-04: Teams' renderer links only <a> (721466 TextDeserializer passes text through; Teams on the web shows the audit URL as text). sanitize_html no longer linkifies; status notes keep it (sanitize_note_html).
 - A-20: Teams' worker 92502 `d` sets reply `attached`; measured on Teams web (OST test channel 2): grouped reply is 28 tall (4+20+4, margins 4), avatar+indicator visibility:hidden, no header. ChannelPosts and PostThread group with MessageHost.replyAttached.
 - A-10 research (Remind me / Ask Copilot / Forward split) done; implemented in a second PR (branch task-0363-message-menu).
+
+- Live (linuxlt, OST Test 3, PR1 build, --pointer-script harness in OST's own window): hovering "One more thing" draws its bar over "The slides…"; moving up onto it keeps it (More reactions tooltip); a received message's bar sits over the "Today" divider and stays while moving up; the ··· of the short "Also, lunch…" opens its menu (Reply with quote … Delete). Teams on the web (OST Test 2) side by side.
+- Live A-04: "OST TEST 363 plain URL check: https://example.com/… is the guide" sent from Teams on the web (no anchor in its HTML; Teams shows text) shows as plain text in OST. The audit's Fedora message in OST Test 1 ↔ OST Test 2 also has no anchor in Teams.
+- Live A-20: OST test channel 2 — OST Test 2's two replies under one header, the second text 36 px under the first (Teams on the web: 36).
 <!-- SECTION:NOTES:END -->
