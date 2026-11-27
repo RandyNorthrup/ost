@@ -3,11 +3,11 @@ id: TASK-0307
 title: >-
   Cameras from PipeWire: Intel IPU6 and other libcamera cameras, v4l2loopback
   (issue #1)
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-25T19:08:00Z'
-updated_date: '2026-11-26T03:05:00Z'
+updated_date: '2026-11-27T11:31:00Z'
 labels:
   - bug
   - calls
@@ -30,7 +30,7 @@ GitHub issue #1 (openSUSE Tumbleweed): a built-in Intel IPU6 camera that works t
 - [x] #2 Raw V4L2 nodes that can't deliver video (IPU6 ISYS capture nodes, metadata nodes and the like) are not listed
 - [x] #3 v4l2loopback cameras are listed and work
 - [x] #4 In the Flatpak, cameras come through the camera portal
-- [ ] #5 Issue #1's reporter gets a reply once the fix is released (posted only with the user's OK)
+- [x] #5 Issue #1's reporter gets a reply once the fix is released (posted only with the user's OK)
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -55,6 +55,8 @@ GitHub issue #1 (openSUSE Tumbleweed): a built-in Intel IPU6 camera that works t
 - Codex review: never fall back to direct V4L2 when the portal is in use (fixed). Flatpak narrowed to --device=dri + camera portal; headset HID buttons documented as .deb/.rpm/AppImage only (manifest, PRIVACY.md).
 - Live on linuxlt: Settings > Devices list (UVC + 3 loopbacks via PipeWire V4L2 nodes, PipeWire-only videotestsrc and GStreamer NV12 720p cameras, own v4l2loopback /dev/video40 via V4L2), each once; preview from the NV12 camera; same through the host Camera portal (loopback not in PipeWire correctly absent). --prejoin-camera-test (pre-join, meeting, toggles, rejoin) passed with the PipeWire NV12 camera and with /dev/video40. 1:1 calls ost-test1 -> OST Test 2: PipeWire camera and loopback each received by the other side.
 - AC5 (reply to the reporter) waits for the release and the user's OK; draft reply in the agent report.
+
+- AC #5 verified 2026-11-27: the reply to the reporter is on issue #1 (https://github.com/RandyNorthrup/ost/issues/1#issuecomment-7192617801), posted 2026-11-26 12:54 UTC, 8 minutes after v0.3.0 was published (12:46 UTC), with the user's OK. It points to 0.3.0 and asks for pw-dump/v4l2-ctl output and a debug log if the camera still doesn't show. Nothing new was posted.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -79,4 +81,6 @@ Tests:
   - 1:1 video calls between ost-test1 and OST Test 2 with each camera kind.
 
 Not verified: a real IPU6/libcamera camera, which linuxlt does not have. The libcamera path is covered only by unit tests that use the properties libcamera and WirePlumber publish. The Flatpak build itself was not run; its portal code path was exercised on the host.
+
+Issue #1: the reply to the reporter was posted after v0.3.0 was released (https://github.com/RandyNorthrup/ost/issues/1#issuecomment-7192617801).
 <!-- SECTION:FINAL_SUMMARY:END -->

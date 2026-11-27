@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-25T19:49:00Z'
-updated_date: '2026-11-25T20:26:00Z'
+updated_date: '2026-11-27T12:29:00Z'
 labels:
   - security
 dependencies: []
@@ -22,8 +22,8 @@ From a public code audit of OST 0.2.1 (posted on Reddit, 2026-11-25). The AppIma
 <!-- AC:BEGIN -->
 - [x] #1 Every tool the release and CI workflows download is pinned to an exact version and verified by SHA-256 (or signature) before it runs; GitHub Actions are pinned to commit SHAs
 - [x] #2 Python dependencies for build tools are pinned with hashes (pip --require-hashes)
-- [ ] #3 Releases publish GitHub build-provenance attestations (Sigstore) for every file, and the wiki explains how to verify them with gh attestation verify
-- [ ] #4 A test pre-release tag builds all packages successfully with the pinned toolchain
+- [x] #3 Releases publish GitHub build-provenance attestations (Sigstore) for every file, and the wiki explains how to verify them with gh attestation verify
+- [x] #4 A test pre-release tag builds all packages successfully with the pinned toolchain
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -46,4 +46,25 @@ From a public code audit of OST 0.2.1 (posted on Reddit, 2026-11-25). The AppIma
 - release job: actions/attest-build-provenance v4.2.2 on dist/* (id-token + attestations write); workflow_dispatch dry run (always on a branch) builds every package, uploads release-files, skips attestation/release/AUR
 - actionlint 1.7.12 clean except two pre-existing shellcheck infos
 - Open: AC #3 needs the wiki text (Installation: Verifying downloads); AC #4 needs a dry-run on main (gh workflow run release.yml --ref main)
+
+- 2026-11-27 AC #3: v0.3.0 carries attestations, and the wiki's Installation page has "Verifying downloads" with the plain and the strict gh attestation verify commands (--signer-workflow RandyNorthrup/ost/.github/workflows/release.yml --source-ref refs/tags/vX.Y.Z --deny-self-hosted-runners) and the SHA256SUMS check; SECURITY.md has the same. Checked against the real release: the strict command on v0.3.0's SHA256SUMS exits 0; with --source-ref refs/tags/v0.2.1 it fails ("expected SourceRepositoryRef to be refs/tags/v0.2.1, got refs/tags/v0.3.0").
+- AC #4: release dry run on main (gh workflow run release.yml --ref main), run 45990740483 on b1e719f3: version, ubuntu, debian, rpm fedora:45, rpm opensuse/tumbleweed, flatpak and release all succeeded; the release job skipped "Build-provenance attestations" and "Attach to the release", aur was skipped; artifacts uploaded (release-files 904 MB, flatpak 139 MB). The v0.3.0 tag build itself (run 45815741896) also built every package with the pinned toolchain and attested them. No tag or release was created.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Releases are now built with a pinned, verified toolchain and carry Sigstore build-provenance attestations for every file.
+
+Changes:
+- GitHub Actions in ci.yml and release.yml pinned to commit SHAs; the Flatpak builder image pinned by digest.
+- build-appimage.sh: linuxdeploy, appimagetool and the type2 runtime pinned by URL + SHA-256 and checked on every run (runtime passed with --runtime-file); linuxdeploy-plugin-qt built from an exact commit with its exclude list pinned, no build-time fetches.
+- Flatpak job: flatpak-cargo-generator.py at an exact commit + SHA-256; its Python deps from a hashed requirements file (pip --require-hashes --only-binary :all:); Flathub's signing key hash pinned.
+- release job: actions/attest-build-provenance on every file; a workflow_dispatch dry run builds every package and skips attestation, release and AUR.
+- Docs: SECURITY.md "Verifying a download" and "How the releases are built"; wiki Installation "Verifying downloads" with the gh attestation verify commands (strict form with --signer-workflow and --source-ref) and SHA256SUMS.
+
+Tests:
+- AppImage toolchain in ubuntu:26.04 on linuxlt (identical AppDir to upstream's continuous plugin; tampered tool refused); actionlint.
+- gh attestation verify (strict) on v0.3.0's SHA256SUMS passes; a wrong --source-ref fails.
+- Release dry run on main (run 45990740483) built all packages; the v0.3.0 tag run built and attested them.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -21,7 +21,11 @@ command: ost-desktop
 # Each permission below is one OST uses, with what for; anything not listed
 # (home folder, other files, other D-Bus names, the session's other apps)
 # stays out of reach. Screen sharing, opening links and picking files to
-# send go through the desktop portals, which need no permission here.
+# send go through the desktop portals, which need no permission here. The
+# KDE runtime adds its own: read access to kdeglobals (theme, fonts) and the
+# bus names KDE apps use to follow settings changes and the global menu
+# (org.kde.KGlobalSettings, org.kde.kconfig.notify,
+# com.canonical.AppMenu.Registrar).
 finish-args:
   # Teams' service, its calls' media (TURN/UDP) and the Microsoft 365 web
   # apps it embeds.
@@ -45,7 +49,9 @@ finish-args:
   # Audio: microphones and speakers by PipeWire node, and the screen-share
   # streams the ScreenCast portal hands over (xdg-run/pipewire-0); ringtones,
   # notification sounds and video clips through Qt Multimedia's PulseAudio
-  # output (PipeWire's pulse server).
+  # output (PipeWire's pulse server). Flatpak also shows the sandbox the
+  # sound card nodes (/dev/snd) with --socket=pulseaudio; OST doesn't open
+  # them (cpal plays and records through PipeWire).
   - --filesystem=xdg-run/pipewire-0
   - --socket=pulseaudio
   # Downloaded files go to Downloads without a dialog, as in Teams. Only
