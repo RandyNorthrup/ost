@@ -59,8 +59,14 @@ live check corrected say so.
   once authz works and the headers are right.
 - **Identity is the biggest code change.** OST builds `8:orgid:{oid}` from
   the access token's `oid` claim in about 52 files. Personal access tokens
-  are opaque (`EwA…`). The personal MRI is `8:live:.cid.<hex>`, taken from
-  the Skype token's `skypeid` claim. There is no tenant ID.
+  are opaque (MSA tickets `EwA…`/`EwB…` or encrypted JWE). The personal MRI
+  is `8:live:.cid.<hex>`, taken from the Skype token's `skypeid` claim; the
+  id_token's `oid` is `00000000-0000-0000-<cid>` and its `tid` is the MSA
+  tenant.
+- **Live check (2026-11-27, §7):** the Teams free web client's Graph token
+  only carries `Files.ReadWrite`, so the calendar, contacts and profile come
+  from the consumer middle tier instead of Graph; chat push works over the
+  Skype Trouter; CSA works for consumers; authz v1 does not.
 - **Several subsystems have no consumer equivalent:** teams and channels,
   Graph presence, Substrate/Loki search and people cards, Viva Engage
   communities, Teams Premium, recording through the work recorder, and
