@@ -5,9 +5,9 @@ title: >-
   (issue #35)
 status: In Progress
 assignee:
-  - '@secjs'
+  - '@t353b'
 created_date: '2026-11-27T15:36:00Z'
-updated_date: '2026-11-27T16:31:00Z'
+updated_date: '2026-11-27T21:10:00Z'
 labels:
   - security
   - bug
@@ -50,4 +50,15 @@ GitHub issue #35 (Serph91P): desktop/src/app_host.js answers getContext, authent
 - getAuthToken calls seen in Teams on testpc1 opening 23 apps (Calendar, Planner, Workflows, Word, Whiteboard, Clipchamp, Polly, Power BI, OneNote, PowerPoint, Excel, Help, Shifts, Events, People, Visio, Loop, Meeting Recaps, Updates, Viva Learning, SharePoint, Activity): Calendar (outlook.office.com) asks https://outlook.office.com/ and https://ic3.teams.office.com/; SharePoint (scnetsolutions.sharepoint.com) asks api://<tenant>.sharepoint.com and https://<tenant>.sharepoint.com; Polly (teams.polly.ai) asks with no resource (its webApplicationInfo). All other first-party apps use NAA. Every full-trust request is on Teams' ECS lists, so FULL_TRUST_RESOURCES is those lists' commercial-cloud entries.
 - testpc1: Teams restarted normally (debug port off, HKCU value removed), C:\Users\Public\secjs deleted.
 - Unit tests (cargo test --lib api::app_host on linuxlt): 14 passed.
+
+- t353b (2026-11-27): took over from the earlier agent's branch (abaeca4f), rebased cleanly on origin/main; reviewed against ACs: every frame message now passes appOrigin (current origin = first origin, switches only to a valid domain), events posted to the current origin only, sso/naa/ssrToken carry the asking origin and Rust checks it (sso_origin_allowed), full-trust resources limited to ECS overrides or FULL_TRUST_RESOURCES, navigateCrossDomain limited to valid domains. No other TeamsJS host in OST answers getAuthToken (AppAuthWindow.qml already keeps to the first valid-domain origin).
+
+- Live (t353b, testpc2 WSLg, OST Test 3, this branch's debug build, CDP into the app frames' main world):
+  - Planner (--app-window-test=planner): loads (framed, initialize, appLoaded, success). From tasks.teams.microsoft.com: initialize, getContext (39 keys), getUser answered; navigateCrossDomain https://example.com → [false, "Url is invalid"]; getAuthToken → FailedToGetToken (Planner has no webApplicationInfo; Teams answers the same). Frame sent to https://example.com by script: initialize, getContext, getUser, getAuthToken x2, navigateCrossDomain all unanswered, no events in 12 s; log: "APPHOST Planner ignored <func> from a page outside the app's domains". Back on tasks.teams.microsoft.com it is answered again.
+  - Calendar's New event form (--cal-test --cal-event-form; outlook.office.com): form draws (framed, initialize 2.58.0, appLoaded, success). From outlook.office.com getAuthToken https://outlook.office.com/ → token; https://graph.microsoft.com → refused (Invalid resource: not on Teams' list for 5966c135). Same frame on https://example.com: nothing answered, all ignored.
+  - SharePoint tab configuration (--add-tab-test --add-tab-app=SharePoint, OST layout test channel, nothing saved): page draws (Recommended/Pages/Lists/Document libraries); from scnetsolutions.sharepoint.com getContext (48 keys) and getAuthToken https://scnetsolutions.sharepoint.com and Graph → tokens (full-trust, not on an ECS override list, so FULL_TRUST_RESOURCES applies).
+  - Copilot (--embedded-apps-test=copilot): server-rendered page gets its ssrToken and loads (framed, initialize, ChatReady, success). OneNote (--app-window-test=onenote): framed, initialize, appLoaded, success.
+  - Loop/Notes tabs use OST's own Loop host (LoopPage.qml, not app_host.js / teamsHost), so this change doesn't touch them.
+  - One harmless console line: an event posted to the SharePoint origin before the frame's page had loaded (about:blank) is dropped by the browser; before it went to "*" and reached the blank page.
+  - ECS on test3: restrictedFullTrustOverrides lists d2c6f111 (SharePoint), b5abf2ae, bd9fb5cb, 5966c135 (Calendar), as the earlier notes say.
 <!-- SECTION:NOTES:END -->
