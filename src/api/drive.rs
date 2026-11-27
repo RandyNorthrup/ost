@@ -367,12 +367,8 @@ pub fn copilot_source_of(v: &serde_json::Value) -> serde_json::Value {
             .to_string()
     };
     let name = s("/name");
-    let created = chrono::DateTime::parse_from_rfc3339(&s("/createdDateTime"))
-        .map(|t| {
-            t.with_timezone(&chrono::Utc)
-                .format("%Y-%m-%dT%H:%M:%S%.3fZ")
-                .to_string()
-        })
+    let created = crate::clock::parse_instant(&s("/createdDateTime"))
+        .map(crate::clock::iso_ms)
         .unwrap_or_default();
     let extension = name
         .rsplit_once('.')
