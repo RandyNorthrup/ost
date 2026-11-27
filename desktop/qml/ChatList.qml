@@ -385,6 +385,12 @@ Rectangle {
     function filterBoxForTest() { return filterBox }
     function setFilterTextForTest(t) { filterField.text = t }
     function nameMatches(n) { return !nameFilter || (n || "").toLowerCase().indexOf(nameFilter) >= 0 }
+    /// A slice the server's Quick views folder lists (all of them until
+    /// the folders have loaded).
+    function sliceListed(id) {
+        const f = folders.find(f => f.kind === "QuickViews")
+        return !f || !f.id || !f.items.length || f.items.indexOf(id) >= 0
+    }
     /// The quick view open beside the list ("mentions", "drafts", "followed", "saved" or "").
     readonly property string openSlice: mentionsOpen ? "mentions" : draftsOpen ? "drafts" : quickOpen
     /// A quick view under the filters, as Teams' list (Teams web
@@ -486,6 +492,9 @@ Rectangle {
             const all = []
             if (root.hasMentions) all.push({ type: "slice", key: "mentions", label: qsTr("Mentions"), icon: "mention-20", unread: root.mentionsUnread, badge: root.mentionsUnread })
             if (pane !== "chats" && root.followedCount > 0) all.push({ type: "slice", key: "followed", label: qsTr("Followed threads"), icon: "followed-threads-20", unread: root.followedUnread, badge: root.followedUnread })
+            // Discover: where the view shows channels (Teams' SPLIT_CHAT has
+            // none), always listed (its slice reports one item).
+            if (pane !== "chats" && root.sliceListed("slice-discover")) all.push({ type: "slice", key: "discover", label: qsTr("Discover"), icon: "compass-northwest-20", unread: 0, badge: 0 })
             all.push({ type: "slice", key: "drafts", label: qsTr("Drafts"), icon: "drafts-20", unread: 0, badge: 0 })
             if (root.savedCount > 0) all.push({ type: "slice", key: "saved", label: qsTr("Saved"), icon: "bookmark-20", unread: 0, badge: 0 })
             rows = all.filter(s => root.sliceShown(s))

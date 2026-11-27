@@ -1125,6 +1125,29 @@ Window {
         }
     }
 
+    // --discover-test [--shots=dir] (TASK-0365): Quick views ▸ Discover:
+    // the feed (logged and shot), a card's ··· menu, the end of the feed and
+    // the settings dialog. Nothing is changed; quit.
+    Timer {
+        running: Qt.application.arguments.indexOf("--discover-test") >= 0 && backend.signedIn && chatList.chats.length > 0 && chatList.teams.length > 0
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=/tmp").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "discover-" + n + ".png"))
+            const st = step++
+            if (st === 0) { rail.current = "chat"; chatList.openQuick("discover") }
+            else if (st === 3) { console.warn("DISCOVER items", JSON.stringify(discoverView.itemsForTest().map(i => [i.reason, i.team_name, i.post_id, i.author_name]))); shot("feed") }
+            else if (st === 4) discoverView.openFirstMenuForTest()
+            else if (st === 5) shot("menu")
+            else if (st === 6) { discoverView.closeMenusForTest(); discoverView.scrollToEndForTest() }
+            else if (st === 9) shot("end")
+            else if (st === 10) discoverView.settingsForTest().start()
+            else if (st === 12) shot("settings")
+            else if (st === 13) { discoverView.settingsForTest().close(); Qt.quit() }
+        }
+    }
+
     // --filter-test: try each chip and a name filter, logging what shows.
     Timer {
         running: Qt.application.arguments.indexOf("--filter-test") >= 0 && chatList.chats.length > 0 && chatList.teams.length > 0
@@ -17310,8 +17333,8 @@ Window {
     // item's chat or channel beside it.
     QuickListView {
         id: quickView
-        kind: chatList.quickOpen || "followed"
-        visible: rail.current === "chat" && !!chatList.quickOpen
+        kind: chatList.quickOpen === "saved" ? "saved" : "followed"
+        visible: rail.current === "chat" && !!chatList.quickOpen && chatList.quickOpen !== "discover"
         enterToOpen: window.enterToShow
         // (With the thread view's Copilot open the list takes the chat
         // list's place.)
@@ -17410,6 +17433,15 @@ Window {
         onJoinMeetingRequested: (url, title) => preJoin.openFor(url, title, "", "")
     }
     Component { id: followedWindowComponent; ThreadWindow {} }
+    // Quick views ▸ Discover: Teams' suggested channel posts.
+    DiscoverView {
+        id: discoverView
+        visible: rail.current === "chat" && chatList.quickOpen === "discover"
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
+        myName: backend.userName
+        onOpenChannel: (id, name) => { chatList.quickOpen = ""; backend.selectChat(id, name) }
+        onTellUsWhy: window.openFeedback("problem", "Discover", "")
+    }
     DraftsView {
         id: draftsView
         visible: rail.current === "chat" && chatList.draftsOpen
