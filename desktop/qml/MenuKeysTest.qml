@@ -5,7 +5,8 @@ import QtTest
 // menus take it, with real key events. First a menu of every kind of row
 // (a heading, a disabled row, a separator, a split row, a submenu row),
 // then, once signed in, the chat list's ··· More list options (a split
-// Mark all as read with its submenu). MENUKEYS ok / FAIL lines, then
+// Mark all as read with its submenu) and a chat's ··· menu (typeahead to
+// Move to section and its submenu). MENUKEYS ok / FAIL lines, then
 // "MENUKEYS done, failures: N". With --shots=<dir>: menukeys-*.png.
 Item {
     id: root
@@ -13,6 +14,8 @@ Item {
     property int step: 0
     property var fails: []
     property var log: []
+    property string rowId: ""
+    property int moveRow: -1
     readonly property string shotDir: (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "").slice(8)
     function check(name, ok) { console.warn("MENUKEYS", ok ? "ok  " : "FAIL", name); if (!ok) fails.push(name) }
     function shot(n) { if (shotDir) win.contentItem.grabToImage(r => r.saveToFile(shotDir + "/menukeys-" + n + ".png")) }
@@ -42,7 +45,7 @@ Item {
                 { separator: true },
                 { label: "Charlie", split: true, submenu: [{ label: "One" }, { label: "Two" }] },
                 { label: "Delta", submenu: [{ label: "Echo" }, { label: "Foxtrot", keys: "X" }] },
-                { label: "Charlie two" }
+                { label: "Charlie two", keys: "Ctrl+G" }
             ]
             onPicked: i => picks.push("p" + i)
             onSubPicked: (i, j) => picks.push("s" + i + "." + j)
@@ -65,7 +68,7 @@ Item {
             }
             else if (s === 2) {
                 root.check("Down: the disabled row is a stop", root.at(menu, 2) && menu.focusRing)
-                root.check("the row itself has the focus (for screen readers)", w.activeFocusItem === menu.rowAt(2))
+                root.check("the row itself has the focus (for screen readers)", w.activeFocusItem === menu.rowAt(2).focusItem)
                 k(Qt.Key_Down)
             }
             else if (s === 3) { root.check("Down: past the separator to the split row's label", root.at(menu, 4)); k(Qt.Key_Down) }
@@ -118,32 +121,70 @@ Item {
             else if (s === 37) { root.check("hovering a row moves the keyboard there", root.at(menu, 6)); k(Qt.Key_Up) }
             else if (s === 38) {
                 root.check("and the keys go on from it", root.at(menu, 5) && menu.subMenu && !menu.subMenu.opened)
-                k(Qt.Key_Escape)
+                t.keyClick(Qt.Key_G, Qt.ControlModifier)
+            }
+            else if (s === 39) {
+                root.check("a row's own chord (Ctrl+G) picks it", menu.picks.indexOf("p6") >= 0 && !menu.opened)
                 if (!w.backendReady) { console.warn("MENUKEYS (not signed in: skipping the chat list's menu)"); root.step = 100 }
             }
             // The chat list's ··· More list options (signed in).
-            else if (s === 39) { opener.forceActiveFocus(); w.kChatList.openListMenuForTest() }
-            else if (s === 40) {
+            else if (s === 40) { opener.forceActiveFocus(); w.kChatList.openListMenuForTest() }
+            else if (s === 41) {
                 const m = w.kChatList.listMenuForTest()
                 root.check("More list options: open with the focus on Mark all as read", m.opened && m.current === 0 && m.owns(w.activeFocusItem))
                 k(Qt.Key_Down)
             }
-            else if (s === 41) {
+            else if (s === 42) {
                 const m = w.kChatList.listMenuForTest(), it = m.items[0]
                 root.check("More list options: Down", it.split ? root.at(m, 0, "chevron") : root.at(m, 1))
                 root.shot("chatlist-down")
                 if (it.split) k(Qt.Key_Right)
             }
-            else if (s === 42) {
+            else if (s === 43) {
                 const m = w.kChatList.listMenuForTest()
                 if (m.items[0].split) root.check("More list options: Right opens Mark all as read's options", m.subMenu && m.subMenu.opened && root.at(m.subMenu, 0))
                 root.shot("chatlist-submenu")
                 k(Qt.Key_Escape)
             }
-            else if (s === 43) { k(Qt.Key_Escape) }
-            else if (s === 44) {
+            else if (s === 44) { k(Qt.Key_Escape) }
+            else if (s === 45) {
                 const m = w.kChatList.listMenuForTest()
                 root.check("More list options: Esc, Esc closes it", !m.opened && opener.activeFocus)
+                // A chat's ··· menu: its Move to section submenu.
+                const id = w.kChatList.chats.map(c => c.id).find(i => !!w.kChatList.rowsForTest[i])
+                if (!id) { root.check("a chat row to open the menu of", false); root.step = 100; return }
+                root.rowId = id
+                opener.forceActiveFocus()
+                w.kChatList.openRowMenuForTest(id)
+            }
+            else if (s === 46) {
+                const m = w.kChatList.rowsForTest[root.rowId].menu()
+                root.check("chat menu: open with the focus on its first row", m.opened && m.current === 0 && m.owns(w.activeFocusItem))
+                root.moveRow = m.items.findIndex(i => i.key === "move")
+                // Typeahead to Move to section: m goes from row to row
+                // starting with M (Mark as read, Manage notifications, Move).
+                for (let n = 0; n < m.items.length && m.current !== root.moveRow; n++) k(Qt.Key_M)
+            }
+            else if (s === 47) {
+                const m = w.kChatList.rowsForTest[root.rowId].menu()
+                root.check("chat menu: M, M... reaches Move to section", m.current === root.moveRow && m.focusRing)
+                root.shot("chatrow-move")
+                k(Qt.Key_Right)
+            }
+            else if (s === 48) {
+                const m = w.kChatList.rowsForTest[root.rowId].menu()
+                root.check("chat menu: Right opens Move to section on its first row", !!m.subMenu && m.subMenu.opened && root.at(m.subMenu, 0) && m.subMenu.owns(w.activeFocusItem) && !m.keysHere)
+                root.shot("chatrow-submenu")
+                k(Qt.Key_Left)
+            }
+            else if (s === 49) {
+                const m = w.kChatList.rowsForTest[root.rowId].menu()
+                root.check("chat menu: Left back on Move to section", !m.subMenu.opened && m.opened && m.current === root.moveRow && m.keysHere)
+                k(Qt.Key_Escape)
+            }
+            else if (s === 50) {
+                const m = w.kChatList.rowsForTest[root.rowId].menu()
+                root.check("chat menu: Esc closes it, the focus back", !m.opened && opener.activeFocus)
                 root.step = 100
             }
             else if (s > 100) { console.warn("MENUKEYS done, failures:", root.fails.length, JSON.stringify(root.fails)); Qt.quit() }
