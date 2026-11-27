@@ -95,12 +95,22 @@ pub fn refusal_note(url: &str) -> String {
     }
 }
 
-/// A local file or folder OST saved, as a path or a `file://` URL: the
-/// absolute path when it names something that exists, else None.
-pub fn local_path(path_or_url: &str) -> Option<PathBuf> {
+/// A local file or folder OST saved, as a path or a `file://` URL: its
+/// resolved path when it exists inside one of `roots` (the folders OST
+/// saves into), else None. Resolving first (symlinks, `..`) keeps a path
+/// from leaving its root, so only what OST saved itself is opened.
+pub fn local_path(path_or_url: &str, roots: &[PathBuf]) -> Option<PathBuf> {
+    let roots: Vec<PathBuf> = roots
+        .iter()
+        .filter_map(|r| std::fs::canonicalize(r).ok())
+        .collect();
     let found = |p: &str| {
         let path = Path::new(p);
-        (path.is_absolute() && path.exists()).then(|| path.to_path_buf())
+        if !path.is_absolute() {
+            return None;
+        }
+        let real = std::fs::canonicalize(path).ok()?;
+        roots.iter().any(|r| real.starts_with(r)).then_some(real)
     };
     match path_or_url.strip_prefix("file://") {
         // OST builds some of these by hand ("file://" + path), so a path
@@ -110,6 +120,22 @@ pub fn local_path(path_or_url: &str) -> Option<PathBuf> {
             .or_else(|| found(rest)),
         None => found(path_or_url),
     }
+}
+
+/// The desktop's Downloads folder as `user-dirs.dirs` names it
+/// (`XDG_DOWNLOAD_DIR="$HOME/…"`), which is where Qt's DownloadLocation
+/// points; None when the file doesn't name one.
+pub fn xdg_download_dir(user_dirs: &str, home: &Path) -> Option<PathBuf> {
+    let line = user_dirs
+        .lines()
+        .map(str::trim)
+        .find(|l| l.starts_with("XDG_DOWNLOAD_DIR="))?;
+    let value = line["XDG_DOWNLOAD_DIR=".len()..].trim().trim_matches('"');
+    let path = match value.strip_prefix("$HOME") {
+        Some(rest) => home.join(rest.trim_start_matches('/')),
+        None => PathBuf::from(value),
+    };
+    path.is_absolute().then_some(path)
 }
 
 fn percent_decode(s: &str) -> Option<String> {
@@ -288,21 +314,83 @@ mod tests {
 
     #[test]
     fn local_paths_must_be_absolute_and_exist() {
-        let dir = std::env::temp_dir();
+        let dir = std::fs::canonicalize(std::env::temp_dir()).unwrap();
+        let roots = [dir.clone()];
         let d = dir.display().to_string();
-        assert_eq!(local_path(&d), Some(dir.clone()));
-        assert_eq!(local_path(&format!("file://{d}")), Some(dir.clone()));
-        assert_eq!(local_path("relative/path"), None);
-        assert_eq!(local_path("/no/such/ost/path/at/all"), None);
-        assert_eq!(local_path("smb://host/share"), None);
-        assert_eq!(local_path("file://%zz"), None);
+        assert_eq!(local_path(&d, &roots), Some(dir.clone()));
+        assert_eq!(
+            local_path(&format!("file://{d}"), &roots),
+            Some(dir.clone())
+        );
+        assert_eq!(local_path("relative/path", &roots), None);
+        assert_eq!(local_path("/no/such/ost/path/at/all", &roots), None);
+        assert_eq!(local_path("smb://host/share", &roots), None);
+        assert_eq!(local_path("file://%zz", &roots), None);
         let spaced = dir.join("ost link gate test");
         std::fs::create_dir_all(&spaced).unwrap();
         assert_eq!(
-            local_path(&format!("file://{}", spaced.display()).replace(' ', "%20")),
+            local_path(
+                &format!("file://{}", spaced.display()).replace(' ', "%20"),
+                &roots
+            ),
             Some(spaced.clone())
         );
         std::fs::remove_dir(&spaced).unwrap();
+    }
+
+    #[test]
+    fn local_paths_stay_inside_ost_folders() {
+        let base = std::fs::canonicalize(std::env::temp_dir())
+            .unwrap()
+            .join(format!("ost-link-gate-roots-{}", std::process::id()));
+        let root = base.join("ost");
+        let outside = base.join("elsewhere");
+        std::fs::create_dir_all(root.join("open")).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("secret.txt"), b"x").unwrap();
+        let roots = [root.clone()];
+        // Inside: opens.
+        assert_eq!(
+            local_path(&root.join("open").display().to_string(), &roots),
+            Some(root.join("open"))
+        );
+        // Outside, through `..`, or through a symlink inside the root: no.
+        assert_eq!(
+            local_path(&outside.join("secret.txt").display().to_string(), &roots),
+            None
+        );
+        let dotdot = format!("{}/open/../../elsewhere/secret.txt", root.display());
+        assert_eq!(local_path(&dotdot, &roots), None);
+        std::os::unix::fs::symlink(&outside, root.join("link")).unwrap();
+        assert_eq!(
+            local_path(&root.join("link/secret.txt").display().to_string(), &roots),
+            None
+        );
+        // A sibling whose name only starts like the root: no.
+        std::fs::create_dir_all(base.join("ost-other")).unwrap();
+        assert_eq!(
+            local_path(&base.join("ost-other").display().to_string(), &roots),
+            None
+        );
+        assert_eq!(local_path("/etc/passwd", &roots), None);
+        assert_eq!(local_path("/etc/passwd", &[]), None);
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn downloads_folder_from_user_dirs() {
+        let home = Path::new("/home/me");
+        let text = "# comment\nXDG_DESKTOP_DIR=\"$HOME/Desktop\"\nXDG_DOWNLOAD_DIR=\"$HOME/Téléchargements\"\n";
+        assert_eq!(
+            xdg_download_dir(text, home),
+            Some(PathBuf::from("/home/me/Téléchargements"))
+        );
+        assert_eq!(
+            xdg_download_dir("XDG_DOWNLOAD_DIR=\"/data/dl\"\n", home),
+            Some(PathBuf::from("/data/dl"))
+        );
+        assert_eq!(xdg_download_dir("XDG_DOWNLOAD_DIR=\"rel\"\n", home), None);
+        assert_eq!(xdg_download_dir("", home), None);
     }
 
     /// QML never hands a link to Qt directly: every one goes through

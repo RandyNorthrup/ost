@@ -389,11 +389,14 @@ fn sniff_extension(head: &[u8]) -> Option<&'static str> {
 /// Teams desktop as a town hall attendee, 2026-11-18); segments and
 /// playlists go without.
 fn is_key_request(url: &str) -> bool {
-    url.contains("/get-key/")
-        || url::Url::parse(url)
-            .ok()
-            .and_then(|u| u.host_str().map(|h| h.contains(".keys.")))
-            .unwrap_or(false)
+    // The key token goes to Teams' own services over https only, never to
+    // a host a (proxied, rewritten) playlist names.
+    if !crate::auth::token_hosts::allowed(url, crate::auth::token_hosts::Audience::Teams) {
+        return false;
+    }
+    url::Url::parse(url).is_ok_and(|u| {
+        u.path().contains("/get-key/") || u.host_str().is_some_and(|h| h.contains(".keys."))
+    })
 }
 
 impl StreamProxy {
@@ -654,6 +657,32 @@ mod tests {
         assert_eq!(site_host("https://t-my.sharepoint.com/personal/u/_api/v2.1/drives/b/items/i/versions/current/streams/a.m3u8/content").as_deref(), Some("t-my.sharepoint.com"));
         assert_eq!(site_host("http://t-my.sharepoint.com/x"), None);
         assert_eq!(site_host("https://evil.example/x.sharepoint.com"), None);
+    }
+
+    #[test]
+    fn key_tokens_go_only_to_teams_key_service() {
+        assert!(is_key_request(
+            "https://euno.keys.ml.teams.microsoft.com/v3/hlskeydelivery/s/get-key/k1"
+        ));
+        assert!(is_key_request(
+            "https://x.teams.microsoft.com/v3/hlskeydelivery/s/get-key/k1"
+        ));
+        // Another host, even one that names the key path or a `.keys.` label.
+        assert!(!is_key_request("https://evil.example/get-key/k1"));
+        assert!(!is_key_request("https://a.keys.evil.example/k1"));
+        assert!(!is_key_request(
+            "https://evil.example/x?u=https://a.keys.ml.teams.microsoft.com/get-key/"
+        ));
+        assert!(!is_key_request(
+            "https://keys.ml.teams.microsoft.com.evil.example/get-key/k1"
+        ));
+        // Not https, or not a key address.
+        assert!(!is_key_request(
+            "http://euno.keys.ml.teams.microsoft.com/v3/hlskeydelivery/s/get-key/k1"
+        ));
+        assert!(!is_key_request(
+            "https://x.teams.microsoft.com/hls/seg-1.ts"
+        ));
     }
 
     #[test]

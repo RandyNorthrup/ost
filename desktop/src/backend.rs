@@ -7450,12 +7450,35 @@ pub fn machine_lock_changed(locked: bool) {
 
 /// Where feedback reports are put together: ~/.cache/ost/feedback.
 fn feedback_base() -> std::path::PathBuf {
+    ost_cache_dir().join("feedback")
+}
+
+/// OST's own cache folder ($XDG_CACHE_HOME/ost): feedback reports, files
+/// opened in their app, meeting attachments, the third-party notices.
+fn ost_cache_dir() -> std::path::PathBuf {
     std::env::var_os("XDG_CACHE_HOME")
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
         .unwrap_or_else(std::env::temp_dir)
         .join("ost")
-        .join("feedback")
+}
+
+/// The folders `open_local_path` opens files in: the ones OST saves into
+/// (its cache, the download folder from Settings, and the desktop's
+/// Downloads folder, where printed pages go). Anything else is refused, so
+/// a path that came from a server can't open arbitrary local files.
+fn local_open_roots() -> Vec<std::path::PathBuf> {
+    let mut roots = vec![ost_cache_dir()];
+    roots.extend(download_dir());
+    if let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) {
+        let config = std::env::var_os("XDG_CONFIG_HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| home.join(".config"));
+        if let Ok(text) = std::fs::read_to_string(config.join("user-dirs.dirs")) {
+            roots.extend(crate::link_gate::xdg_download_dir(&text, &home));
+        }
+    }
+    roots
 }
 
 /// A new report's folder (its screenshots and details), owner-only.
@@ -28477,8 +28500,8 @@ impl qobject::Backend {
     }
 
     pub fn open_local_path(&self, path: &QString) -> bool {
-        let Some(p) = crate::link_gate::local_path(&path.to_string()) else {
-            tracing::warn!("links: refused a local path that isn't there");
+        let Some(p) = crate::link_gate::local_path(&path.to_string(), &local_open_roots()) else {
+            tracing::warn!("links: refused a local path outside OST's folders");
             return false;
         };
         std::process::Command::new("xdg-open")
@@ -29375,7 +29398,15 @@ impl qobject::Backend {
                     "attachmentFile" => {
                         let bytes = api::event_form::attachment_bytes(&client, &s("id"), &s("attachmentId")).await?;
                         let download = args["download"].as_bool().unwrap_or(false);
-                        let dir = if download { download_dir().ok_or_else(|| anyhow::anyhow!("No Downloads folder"))? } else { std::env::temp_dir() };
+                        let dir = if download {
+                            download_dir().ok_or_else(|| anyhow::anyhow!("No Downloads folder"))?
+                        } else {
+                            // Opened in its app: kept in OST's cache, one of the
+                            // folders open_local_path opens.
+                            let d = ost_cache_dir().join("attachments");
+                            std::fs::create_dir_all(&d)?;
+                            d
+                        };
                         let path = teams_cli::api::files::save_unique(&dir, &s("name"), &bytes)?;
                         Ok(json!({ "path": path.display().to_string(), "download": download }))
                     }
