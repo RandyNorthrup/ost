@@ -699,9 +699,11 @@ Item {
         // into from here: its Chat starts a new chat with its people; a
         // meeting's chat is joined from the meeting, not rung)
         readonly property bool canCall: !!c && !self_ && (c.is_group ? (c.participants || []).length > 0 && !!c.thread_id && !String(c.thread_id).startsWith("19:meeting_") : !!c.peer_mri)
-        // Teams' quick message: hidden on a call to yourself and in a chat
-        // you're no longer in.
-        readonly property bool canMessage: canChat && !self_ && (!c.is_group || (!!c.thread_id && !!c.member))
+        // Teams' quick message: hidden on a 1:1 call to yourself and in a
+        // chat you're no longer in.
+        // (on a group call the log may name you as its person; the message
+        // goes to its chat, so that doesn't matter there)
+        readonly property bool canMessage: canChat && (c.is_group ? !!c.thread_id && !!c.member : !self_)
         // A draft is for this call's person or chat only.
         onCChanged: quick.text = ""
         Text { x: 20; y: 15; text: qsTr("Details", "calling:k62e0gpus"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text }
@@ -1143,6 +1145,7 @@ Item {
     function detailsForTest(i) { openDetails(shown[i]) }
     function quickForTest() { return quick.text }
     function setQuickForTest(t) { quick.text = t }
+    function sendQuickForTest() { quickSend.go() }
     function detailsButtonsForTest() { return { chat: details.canChat, call: details.canCall, message: details.canMessage } }
     function filterForTest(text, type) { filtering = true; nameBoxField.text = text; filterType = type }
     function unfilterForTest() { closeFilter.go() }
