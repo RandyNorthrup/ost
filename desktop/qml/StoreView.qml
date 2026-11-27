@@ -859,6 +859,8 @@ Item {
 
     // Test harness hooks
     function searchForTest(q) { search.text = q }
+    /// The quick-start dialog again (a tab configuration's Back).
+    function quickStartShow(app) { quickStart.show(app) }
     function quickStartForTest(name) {
         for (const c of root.feedCols) for (const a of c.apps) if (a.name === name) { quickStart.show(a); return quickStart }
         return null

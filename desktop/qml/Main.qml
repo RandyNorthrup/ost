@@ -17442,7 +17442,10 @@ Window {
     TabConfigDialog {
         id: tabConfig
         teamThread: conversation.isChannel ? conversation.teamThread : ""
-        onBack: tabPicker.reopen()
+        onBack: {
+            if (backTo) { const a = backTo; rail.current = "add"; store.quickStartShow(a) }
+            else tabPicker.reopen()
+        }
         // A tab's Settings saved: the tabs read again and the tab's page
         // framed afresh at its new address.
         onUpdated: tabId => { conversation.tabRevision++; conversation.reloadTabs() }
@@ -17459,10 +17462,16 @@ Window {
         // takes the app in its channel.
         const channel = place.kind === "channel" || !!place.channelMeeting
         rail.current = "chat"
+        // As picking it in the chat list: the place shows, not a subview.
+        window.composing = false
+        chatList.copilotOpen = false; chatList.draftsOpen = false; chatList.mentionsOpen = false; chatList.quickOpen = ""
+        chatList.yourTeamsOpen = false; window.manage = null; window.manageTeamId = ""
         backend.selectChat(place.id, place.name)
         if (channel ? app.team_tab : app.chat_tab) {
             pendingUse = null
             tabConfig.start({ id: app.id, name: app.name, icon: app.icon || "", config_url: app.config_url || "" }, place.id, channel ? place.teamId : "", channel)
+            // Back returns to the quick-start dialog it came from.
+            tabConfig.backTo = app
         } else {
             pendingUse = { app: app.id, conversation: place.id, name: app.name }
             backend.addApp(app.id, place.id, channel)

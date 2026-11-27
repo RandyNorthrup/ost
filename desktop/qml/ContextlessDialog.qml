@@ -121,7 +121,7 @@ Popup {
         const known = {}
         chatsList.forEach(c => { known[c.id] = c })
         const channelIds = {}
-        teamsList.forEach(t => (t.channels || []).forEach(c => { if (!t.archived) channelIds[c.id] = t }))
+        teamsList.forEach(t => (t.channels || []).forEach(c => { channelIds[c.id] = { t: t, c: c } }))
         const out = [], seen = {}
         for (const m of meetings) {
             if (m.chat_id) {
@@ -132,8 +132,10 @@ Popup {
                 out.push({ kind: "meeting", id: m.chat_id, name: m.title, sub: "", initialized: !!known[m.chat_id] })
             } else if (channelIds[m.channel_id] && places.team) {
                 // A channel meeting takes the app as its channel does.
-                const t = channelIds[m.channel_id]
-                out.push({ kind: "meeting", id: m.channel_id, messageId: m.message_id, name: m.title, sub: "", teamId: t.id, teamThread: t.thread_id, channelMeeting: true })
+                // (Its channel's own checks apply: archived, permissions,
+                // private or shared channels.)
+                const t = channelIds[m.channel_id].t, c = channelIds[m.channel_id].c
+                out.push({ kind: "meeting", id: m.channel_id, messageId: m.message_id, name: m.title, sub: "", teamId: t.id, teamThread: t.thread_id, channelMeeting: true, why: unsupported(t, c) })
             }
         }
         // Meeting chats not on the calendar follow.
