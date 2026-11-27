@@ -2224,6 +2224,11 @@ Rectangle {
         delegate: Item {
             id: msg
             required property var modelData
+            // The list grows upward, so the message above is created later
+            // and would paint over this one's hover bar (which sits on the
+            // bubble's top edge, over the message above). Teams' bar is
+            // always on top: raise the message while its bar shows.
+            z: actions.visible ? 2 : 1
             function focusReactions() { actions.focusReactions() }
             readonly property bool reactionsFocused: actions.activeFocus
             // In channels every post is a left-aligned card, yours included.

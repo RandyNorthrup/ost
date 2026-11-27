@@ -810,7 +810,7 @@ p, li { white-space: pre-wrap; }
         assert_eq!(note_html(doc), note_html(editor));
         // What the profile flyout shows: one mention.
         assert_eq!(
-            crate::api::messages::sanitize_html_marking(&note_html(editor), &[]),
+            crate::api::messages::sanitize_note_html(&note_html(editor)),
             r#"<p>OST status mention <span class="mention">OST Test 1</span></p>"#
         );
     }
@@ -918,7 +918,7 @@ fn parse_presences(v: &serde_json::Value) -> Vec<UserPresence> {
                 note_html: if body.trim().is_empty() {
                     String::new()
                 } else {
-                    super::messages::sanitize_html_marking(&body, &[])
+                    super::messages::sanitize_note_html(&body)
                 },
                 note_text: super::strip_html(&body).trim().to_string(),
                 note_pinned: pinned,

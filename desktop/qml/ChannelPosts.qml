@@ -629,27 +629,37 @@ Item {
                                 required property var modelData
                                 required property int index
                                 readonly property bool editing: !!root.host && root.host.editingId === modelData.id
+                                // Teams groups a person's replies sent minutes
+                                // apart: the later ones drop the avatar (and
+                                // the indicator bar beside it) and the
+                                // name/time line, the text 8 under the one
+                                // before (measured on Teams on the web,
+                                // 2026-11-27). The first reply shown always
+                                // has its header (Teams' summary view).
+                                readonly property bool grouped: index > 0 && !!root.host
+                                    && root.host.replyAttached(card.replies, card.replies.length - card.shown.length + index)
+                                readonly property real headH: grouped ? 0 : root.compact ? 34.2 : 20
                                 width: card.width
                                 // Editing, Teams' compose spans the card in the reply's
                                 // place, from the line above it.
                                 height: editing ? (repEdit.item ? repEdit.item.height : 0) - 7.4 + 11.4
-                                    : (root.compact ? 34.2 : 20) + repBody.height + ((modelData.reactions || []).length > 0 ? 8 + 26 : 0) + 16
+                                    : headH + repBody.height + ((modelData.reactions || []).length > 0 ? 8 + 26 : 0) + 16
                                 z: repHover.hovered || repBar.hovered ? 2 : 1
                                 // A reply's indicator bar: 4 x 20 beside its avatar.
                                 Rectangle {
-                                    readonly property var mark: rep.editing ? null : root.highlight(rep.modelData)
+                                    readonly property var mark: rep.editing || rep.grouped ? null : root.highlight(rep.modelData)
                                     visible: !!mark
                                     x: 4; y: 0; width: 4; height: 20; radius: 2
                                     color: mark ? mark.color : "transparent"
                                 }
                                 Avatar {
-                                    visible: !rep.editing
+                                    visible: !rep.editing && !rep.grouped
                                     x: 18; y: 0; size: 20
                                     name: rep.modelData.sender; photoId: rep.modelData.sender_mri + (rep.modelData.sender_app ? "#" + rep.modelData.sender_app : "")
                                     opensProfile: true
                                 }
                                 Text {
-                                    visible: !rep.editing
+                                    visible: !rep.editing && !rep.grouped
                                     x: 50; y: root.compact ? 0 : 1.4
                                     text: rep.modelData.sender; font.family: theme.font; font.pixelSize: theme.small; color: theme.text
                                     HoverHandler { enabled: (rep.modelData.sender_mri || "").indexOf("8:orgid:") === 0; cursorShape: Qt.PointingHandCursor }
@@ -672,7 +682,7 @@ Item {
                                     readonly property real full: contentH
                                     onFullChanged: root.seeMoreFull[rep.modelData.id] = full
                                     visible: !rep.editing
-                                    x: 50; y: root.compact ? 34.2 : 20; width: card.width - 70
+                                    x: 50; y: rep.headH; width: card.width - 70
                                     height: !cut ? contentH : (open ? contentH : limit) + 20
                                     Item {
                                         width: parent.width

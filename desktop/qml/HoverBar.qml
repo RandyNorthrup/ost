@@ -45,7 +45,10 @@ Item {
     Keys.onSpacePressed: kbReact()
     Keys.onEscapePressed: keyboardDone()
     FluentSurface { anchors.fill: parent; depth: 16; radius: 4 }
-    HoverHandler { id: barHover }
+    // The bar overlaps the message above (or the post's card edge): the
+    // pointer on the bar hovers only the bar, so that message doesn't
+    // take the hover (and its own bar) while you move up to this one's ···.
+    HoverHandler { id: barHover; blocking: true }
     Accessible.role: Accessible.ToolBar
     Accessible.name: qsTr("Reactions and message actions")
     Row {
