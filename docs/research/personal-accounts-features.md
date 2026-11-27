@@ -300,8 +300,9 @@ Screenshots are kept outside the repo (coordinator PC,
    other-account badge is the "Activity in other accounts and orgs" button
    at the bottom of the rail; its flyout lists each other account (avatar
    with count, name, email, a Switch button and a pin button) and the kind
-   of activity ("Unread chat messages"). Pinning only filled the pin icon;
-   no extra rail entry appeared in the personal window.
+   of activity ("Unread chat messages"). Clicking the pin filled its icon
+   while the flyout was open, but no pinned entry appeared in the rail and
+   the pin showed as unpinned when the flyout was opened again later.
 3. **Second personal account. Verified.** Teams lets you go through the
    sign-in, then shows "Multiple personal accounts aren't supported in Teams
    yet. To use another personal account, open Teams on the web." with "Open
@@ -365,7 +366,10 @@ Screenshots are kept outside the repo (coordinator PC,
    with up to 100 participants." and "For non-Teams contacts, they will
    receive an email invite to the meeting with a join link.", and has
    Title, Invite attendees, start and end date and time, All day, Time
-   zone, recurrence, Location, Meeting options and a details editor.
+   zone, recurrence, Location, Meeting options and a details editor. Save
+   opens "Share meeting invite" ("Send the meeting link, date, and time to
+   invite others.", an invitation preview "<name> invited you to a Teams
+   Meeting:" with title, date, time and a Meetup-Join link, and Copy).
 7. **Meeting link. Verified (format), partly verified (opening).** Link:
    `https://teams.live.com/meet/9364181390928?p=wZiZR41JQZUcjwfkBW`, a
    13-digit id and an 18-character passcode. Join from Meet opens the
