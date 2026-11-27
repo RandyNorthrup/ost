@@ -219,7 +219,9 @@ Rectangle {
         chats: root.chats
         copilot: root.copilotSearch
         readonly property var items: options
-        onVisibleChanged: if (visible && !root.searchWords) root.askSuggestions()
+        // Opening asks again: nothing typed (Teams asks on every focus), or
+        // words the last answer wasn't for (a picked search put them there).
+        onVisibleChanged: if (visible && (!root.searchWords || String((reply || {}).query || "").trim() !== root.searchWords)) root.askSuggestions()
         function choose(item) { root.pick(item) }
         onActivate: item => root.pick(item)
         onPickScope: key => {
