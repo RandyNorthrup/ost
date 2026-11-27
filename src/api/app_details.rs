@@ -1790,13 +1790,13 @@ mod tests {
         });
         let p = places(&pbi);
         assert!(p.personal && p.team && p.chat && p.meeting && p.team_tab && p.chat_tab);
+        assert!(p.meeting_tab && p.private_channels && !p.shared_channels);
         // Forms: a channel and meeting-chat tab, no ordinary chats.
         let forms = serde_json::json!({ "configurableTabs": [{ "scopes": ["team", "groupChat"], "context": ["channelTab", "meetingChatTab"] }] });
         let p = places(&forms);
         assert!(p.team && p.team_tab && p.meeting && p.meeting_tab && !p.chat && !p.chat_tab);
         // A message extension alone: used on your own.
         assert!(places(&serde_json::json!({ "messageExtensions": [{ "botId": "b" }] })).personal);
-        assert!(p.private_channels && !p.shared_channels);
         let mut def = pbi.clone();
         def["configurableTabs"][0]["configurationUrl"] =
             "https://app.powerbi.com/groups/me/teams?ctx={teamId}".into();
