@@ -1575,6 +1575,18 @@ Live: header 892 px wide (bucket 834) in a 1280 px window.
   - Hidden when: the user is blocked, a member is TFL off-network or
     an unverified SMS user, a bot chat without calling, a write-locked
     thread, or the only member is me. Click → `fireCallingIntent`.
+  - In a group chat the intent is `GroupCall` with `coordinates.groupCall
+    {conversationId: chat.id, participants: chat.memberIds}` (module
+    300373): the members come from Teams' own copy of the chat, not a
+    read at call time, so a call started while the chat service
+    throttles reads (HTTP 429 "20Per10Secs", common right after sign-in)
+    still rings them. Teams' HTTP layer asks a throttled request again
+    after its `Retry-After` (HttpThrottleHandler). OST names the members
+    it read last (opening the chat, naming it, its call's People), reads
+    them only for a chat it hasn't read, asking again after
+    `Retry-After`, and fails the call ("Couldn't start the call") rather
+    than start one that rings nobody (the call service makes that an
+    `adHocMeeting`: "… wants you to join a meeting").
 - **Measured live** (winpc, 1280 wide, 2026-11-07):
   - the primary button (24 × 31.3, padding 5) sits at W−199 and the chevron (24 × 31.3, padding 7, 16 px icon) at W−175; the roster button follows at W−151;
   - the chevron's menu is 171.8 wide, 4.9 below the button, ending 4.6 left of the chevron's right edge;

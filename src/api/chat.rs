@@ -918,7 +918,8 @@ pub async fn thread_member_ids(client: &TeamsClient, thread: &str) -> Result<Vec
         thread
     );
     let v: serde_json::Value = client.chat_get(&url).await?.json().await?;
-    Ok(v.get("members")
+    let ids: Vec<String> = v
+        .get("members")
         .and_then(|m| m.as_array())
         .into_iter()
         .flatten()
@@ -927,7 +928,34 @@ pub async fn thread_member_ids(client: &TeamsClient, thread: &str) -> Result<Vec
                 .and_then(|i| i.as_str())
                 .map(|i| i.to_ascii_lowercase())
         })
-        .collect())
+        .collect();
+    tracing::debug!(thread, members = ids.len(), "chat members read");
+    remember_members(thread, ids.clone());
+    Ok(ids)
+}
+
+pub(crate) fn remember_members(thread: &str, ids: Vec<String>) {
+    KNOWN_MEMBERS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(Default::default)
+        .insert(thread.to_string(), ids);
+}
+
+/// Chats' member MRIs (lowercase) as last read, by chat: OST's copy of
+/// each chat's roster, as Teams keeps the chat's `memberIds` in its store.
+static KNOWN_MEMBERS: std::sync::Mutex<Option<std::collections::HashMap<String, Vec<String>>>> =
+    std::sync::Mutex::new(None);
+
+/// A chat's members as last read (opening the chat, naming it, its call),
+/// without asking the chat service.
+pub fn known_member_ids(thread: &str) -> Option<Vec<String>> {
+    KNOWN_MEMBERS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()?
+        .get(thread)
+        .cloned()
 }
 
 /// A chat member as Teams lists people (the mention picker, the roster).

@@ -4803,21 +4803,23 @@ async fn start_tagged(
 
     // Listen before placing the call so the answer cannot be missed.
     let mut events = event_hub::subscribe();
-    // A group call names the chat's members (rung, or nudged for Meet now).
-    let members: Vec<String> = if matches!(target, Target::Group(_)) {
-        match crate::api::client::TeamsClient::new().await {
-            Ok(client) => match crate::api::files::member_mris(&client, thread_id).await {
-                Ok(mris) => mris.into_iter().take(MAX_RING).collect(),
-                Err(e) => {
-                    tracing::warn!("Group members unavailable: {:#}", e);
-                    Vec::new()
-                }
-            },
-            Err(e) => {
-                tracing::warn!("Group members unavailable: {:#}", e);
-                Vec::new()
-            }
-        }
+    // A group call names the chat's members (rung, or nudged for Meet now),
+    // from the chat as last read, as Teams does. Without them the call
+    // service would make it an ad hoc meeting that rings nobody, so a chat
+    // whose members can't be read fails the call instead.
+    let members: Vec<String> = if matches!(
+        target,
+        Target::Group(signaling::GroupCallKind::Ring | signaling::GroupCallKind::Huddle)
+    ) {
+        let client = crate::api::client::TeamsClient::new()
+            .await
+            .context("Group members unavailable")?;
+        crate::api::files::call_member_mris(&client, thread_id)
+            .await
+            .context("Group members unavailable")?
+            .into_iter()
+            .take(MAX_RING)
+            .collect()
     } else {
         Vec::new()
     };
