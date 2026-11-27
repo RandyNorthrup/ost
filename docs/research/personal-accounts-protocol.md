@@ -2,13 +2,12 @@
 
 Research for planning support for personal Microsoft accounts (MSA,
 "Microsoft Teams (free)", teams.live.com) in OST. It compares what OST
-uses for work and school accounts today with what Teams free uses. Nothing
-here was tested with a signed-in personal account. The only network checks
-were unauthenticated: OpenID discovery, the authorize endpoint with
-`prompt=none`, the authz endpoints without a token, and the public
-teams.live.com web bundle.
+uses for work and school accounts today with what Teams free uses.
 
-Researched 2026-11-25.
+Researched 2026-11-25 from documentation, the public web bundle and
+open-source clients. **Checked live on 2026-11-27** with two personal test
+accounts (TASK-0287): §7 lists every result, and the rows below that the
+live check corrected say so.
 
 ## Confidence levels
 
@@ -22,6 +21,7 @@ Researched 2026-11-25.
   it was verified live against Microsoft, with file and line cited.
 - **Documented**: Microsoft Learn says so.
 - **Guessed**: inferred by analogy. Must be verified live.
+- **Verified live**: seen in a real capture on 2026-11-27 (§7).
 
 ## Sources
 
@@ -103,16 +103,16 @@ The leftover `personal()` config would not work as written, for two reasons:
 |---|---|---|---|
 | Client ID | `4b3e8f46-56d3-427f-b1e2-d239b2ea6bca` | TFL-cfg `configs.auth.clientId` (prod has `5e3ce6c0-…` in the same place); MT `client.go:16`; NS doc:418 | Confirmed (bundle) |
 | Authority | `login.microsoftonline.com` with audience `consumers`; it 302s to `https://login.live.com/oauth20_authorize.srf` | TFL-cfg `audience:"consumers"`, `cloudAuthorityMap` life → `https://login.microsoftonline.com/`; probe | Confirmed (bundle + probe) |
-| Return address | `https://teams.live.com/v2`: with `prompt=none` and no session, login.live.com redirects to `https://teams.live.com/v2#error=login_required…`. `/v2/authv2` is also accepted; a foreign host is not. | Probe; TFL-cfg `redirectUrl:"https://teams.live.com"`, `redirectUrlPath:"v2"`; MT `client.go:13-17` | Confirmed (probe) |
-| Origin for code and refresh redemption | `https://teams.live.com` (SPA tokens are redeemed cross-origin, as on work) | MT `token.go:30-35, 60-62` | Confirmed in code |
-| Token endpoint | `https://login.microsoftonline.com/consumers/oauth2/v2.0/token`. Use `consumers`, not the MSA tenant GUID (MX `auth.go:259-262` says the GUID is rejected; PT and MN use the GUID) | MX, TM, NS | Confirmed in code (contested) |
+| Return address | **`https://teams.live.com/v2/authv2`** (what the client sends; §7.1). `/v2` is also accepted; a foreign host is not. | Live capture; probe; TFL-cfg; MT `client.go:13-17` | Verified live |
+| Origin for code and refresh redemption | `https://teams.live.com`, required: without it AADSTS90023 | Live capture and probe (§7.1) | Verified live |
+| Token endpoint | Code: `https://login.microsoftonline.com/consumers/oauth2/v2.0/token`. Refresh: the web client uses `…/9188040d-6c67-4c5b-b112-36a304b66dad/oauth2/v2.0/token`; `consumers` works too | Live capture and probe (§7.1) | Verified live |
 | Authz scope (v2, on in life) | `https://auth.fl.teams.microsoft.com/teams.auth.readwrite` | TFL-cfg `authzResourceV2`, `enableAuthzResourceV2:true`; TFL-js constant `AUTHZ_AADV2_TFL` | Confirmed (bundle) |
 | Authz scope (v1 fallback) | `service::api.fl.spaces.skype.com::MBI_SSL` | TFL-cfg `authzResource`; PT `teams_login.c:279`; NS | Confirmed (bundle + code) |
 | Middle-tier scope | `https://mtsvc.fl.teams.microsoft.com/teams.mt.readwrite`; life always uses the AAD v2 MT token | TFL-cfg `mtResourceV2`; TFL-js (`useAadV2Token = … \|\| buildCloud === life`) | Confirmed (bundle) |
 | Other scopes the web client warms | `service::api.fl.teams.microsoft.com::MBI_SSL`, `service::api.fl.sms-free.spaces.skype.com::MBI_SSL`, `https://chatsvcagg.teams.microsoft.com` | TFL-cfg `criticalResources`, `prefetchTokens` | Confirmed (bundle) |
 | Groups service scope | `https://groupssvc.fl.teams.microsoft.com/teams.readwrite` | TFL-js constant `GROUPS_SERVICE`; TM `config.ts:47` | Confirmed (bundle) |
 | Profile card (Loki) audience | `liveprofilecard.access` | TFL-js `LOKI_TFL_AUTH_TOKEN_AUDIENCE` | Confirmed (bundle), unused |
-| Refresh token | 24 hours for an SPA redirect, with the same silent `prompt=none` renewal OST already does for work (`src/auth/spa.rs:12-15`). Refresh tokens rotate; store the new one each time. | [MS refresh tokens](https://learn.microsoft.com/en-us/entra/identity-platform/refresh-tokens); PT `teams_login.c:351-357` | Documented |
+| Refresh token | 24 hours (`refresh_token_expires_in` 86400), with the same silent `prompt=none` renewal OST already does for work (`src/auth/spa.rs:12-15`). Refresh tokens rotate; store the new one each time. | Live capture; [MS refresh tokens](https://learn.microsoft.com/en-us/entra/identity-platform/refresh-tokens) | Verified live |
 
 ### 1.3 Native client (alternative, not what Teams free web uses)
 
@@ -140,7 +140,9 @@ not found in public sources. **Guessed**: capture it on winpc if needed.
 
 ### 1.5 Token contents (identity)
 
-- Personal access tokens are opaque (`EwA…`), not JWTs (NS doc:334-338).
+- Personal access tokens are opaque: MSA tickets (`EwA…`/`EwB…`) or, for
+  the `fl` resources, encrypted JWE (`eyJ…` with five segments). Verified
+  live (§7.4).
   Microsoft says clients must treat access tokens as opaque
   ([MS access tokens](https://learn.microsoft.com/en-us/entra/identity-platform/access-tokens)).
 - OST reads `name`, `upn`/`unique_name`, `oid` and `tid` from the access
@@ -159,7 +161,7 @@ not found in public sources. **Guessed**: capture it on winpc if needed.
 | URL | `https://teams.microsoft.com/api/authsvc/v1.0/authz` (`src/auth/skype.rs:37`) | v2 (on in life): `https://teams.live.com/api/auth/v2.0/authz/consumer` with the `auth.fl…/teams.auth.readwrite` token. v1: `https://teams.live.com/api/auth/v1.0/authz/consumer` with the MBI_SSL token (already in `src/auth/skype.rs:38`). Also `…/v1.0/authzcore/consumer`. | TFL-cfg `authzAadV2Url`, `authzUrl`, `authzV2Url`; TFL-js picks `authzAadV2Url` when `enableAuthzResourceV2 && buildCloud === life`; PT `teams_login.c:242` | Confirmed (bundle + code) |
 | Probe | n/a | Both endpoints are live. v1 without a token answers 400 `"Bearer token missing"`; v2 answers 401 `invalid_token`. | Probe 2026-11-25 | Confirmed (probe) |
 | Request | `POST`, bearer, empty body | Same, plus the web client's headers: `ms-teams-authz-type: ExplicitLogin` or `TokenRefresh`, `x-ms-client-type`, `x-ms-client-version`, `claimsChallengeCapable: true`. Without the v2 resource, the web client adds `x-ms-skip-phone: true`. PT/MN add `X-MS-Client-Consumer-Type: teams4life`. | TFL-js header builder; PT `teams_connection.c:129-132` | Confirmed (bundle + code) |
-| Response | `tokens.skypeToken`, `tokens.expiresIn`, `regionGtms`, `licenseDetails` (`src/auth/skype.rs:9-35`) | `skypeToken.skypetoken`, `skypeToken.expiresIn` (about 86,398 s), `skypeToken.skypeid` (`live:.cid.…`), `signinname`, `isBusinessTenant`, `regionGtms`. `AuthzResponse` must accept both shapes. | MT `skype_token.go:19-27`; MX `auth.go:108-122`; NS `auth.rs:666-668` | Confirmed in code |
+| Response | `tokens.skypeToken`, `tokens.expiresIn`, `regionGtms`, `licenseDetails` (`src/auth/skype.rs:9-35`) | `skypeToken.skypetoken`, `skypeToken.expiresIn` (28,799 s, about 8 h), `skypeToken.skypeid` (`live:.cid.…`), `signinname`, `isBusinessTenant`, plus `regionGtms`, `regionSettings` and `consumerLicenseDetails` (§7.3). `AuthzResponse` must accept both shapes. v1 does not work with the web client's tokens. | Live capture (§7.3) | Verified live |
 | regionGtms (consumer) | `chatService` (default `amer.ng.msg.teams.microsoft.com`, `src/api/client.rs:15`) | `chatService` = `https://msgapi.teams.live.com`; `chatServiceAfd` = `https://teams.live.com/api/chatsvc/consumer`; `middleTier` = `https://teams.live.com/api/mt`; also `unifiedPresence`, `ams`, `mcpService`, `chatSvcAggAfd` | NS doc:336-338; MX `auth.go:503-529`; TM `config.ts:67-69` | Confirmed in code |
 
 ## 3. Subsystem map
@@ -187,8 +189,8 @@ not found in public sources. **Guessed**: capture it on winpc if needed.
 |---|---|---|---|---|
 | Base `chat_service_url()` from regionGtms `chatService` (`src/api/client.rs:364-373`) | regionGtms gives `https://msgapi.teams.live.com`. PT and MN use the front door `https://teams.live.com/api/chatsvc/consumer/v1/…`. TFL-cfg `chatServiceAfdHostnames` includes `teams.live.com`, and `useChatServiceAfd:true`. | PT `libteams.h:148-151`; MN `teams_http.cpp:29`; MX prefers `chatServiceAfd` | Confirmed in code | Reuse (prefer `chatServiceAfd`) |
 | Paths `v1/users/ME/conversations`, `…/messages`, `v1/threads/{id}`, `users/ME/properties`, consumption horizons (`src/api/chat.rs`, `src/api/messages.rs:6186`, `src/api/preferences.rs:14`) | The same paths | PT `teams_messages.c:1475, 1836, 1875, 2098`; MT `consumption_horizons.go:16` | Confirmed in code | Reuse |
-| Auth header `Authentication: skypetoken=…` (`src/api/client.rs:477-532`) | Same, plus `ms-ic3-product: tfl`, `ms-ic3-additional-product: Sfl` (not on `POST /v1/threads` or thread-member changes, TM `base.ts:68-72`), `X-Stratus-Caller: skypeteams`, and `Origin`/`Referer: https://teams.live.com`. On teams.live.com the chat service rejects `X-Skypetoken`. | PT `teams_connection.c:139-152`; TM `base.ts:68-89` | Confirmed in code | Adapt (headers) |
-| Chat list through CSA first, then chatsvcagg, then the chat service (`src/api/chat.rs:1536-1563`) | NS found no CSA for consumers. TD lists `https://teams.live.com/api/csa/api/v3/teams/users/me?…` with `x-skypetoken` only; TFL-cfg `csaService.apiConstants.host = https://teams.live.com/api/csa` and `onlySkypeTokenForAllAPIs:true`. | TD `02-http-protocol.md:11, 264-268`; NS doc:327; TFL-cfg | Contested | Adapt (try CSA at `teams.live.com/api/csa` with the Skype token, then fall back to the chat service) |
+| Auth header `Authentication: skypetoken=…` (`src/api/client.rs:477-532`) | Same. The web client adds `ms-ic3-product: tfl`, `ms-ic3-additional-product: Sfl`, `behavioroverride: redirectAs404` and `clientinfo`; reads work without them, and `X-Skypetoken` is accepted too (§7.5). | Live capture and probe | Verified live | Reuse (add the TFL headers) |
+| Chat list through CSA first, then chatsvcagg, then the chat service (`src/api/chat.rs:1536-1563`) | CSA works: `https://teams.live.com/api/csa/api/v3/teams/users/me?…` with `x-skypetoken` only (§7.6). | Live capture and probe | Verified live | Adapt (CSA at `teams.live.com/api/csa`, Skype token only) |
 | New 1:1 chat `POST {chat}/v1/threads` (`src/api/chat.rs:1013-1086`) | The web client uses `POST https://teams.live.com/api/groups/v1/threads` (groupssvc bearer plus `x-skypetoken`). `{chat}/v1/threads` with the Skype token also works. 1:1 IDs are `19:uni01_…@thread.v2`. | NS doc:340, 456-460; PT `teams_messages.c:3262-3307` | Confirmed in code | Adapt |
 | Sending (`src/api/chat.rs:1174-1225`) | Same; `clientmessageid` must be numeric | NS doc:342 | Confirmed in code | Reuse (check that the ID is numeric) |
 | Activity feed `48:notifications` (`src/api/activity.rs:75`) | Probably the same on the consumer chat service | — | Guessed | Reuse? |
@@ -200,7 +202,7 @@ not found in public sources. **Guessed**: capture it on winpc if needed.
 | Work today (OST) | Consumer | Source | Confidence | Verdict |
 |---|---|---|---|---|
 | `middle_tier_url()` from regionGtms (`src/api/client.rs:377`); `…/beta/users/fetchShortProfile` (`src/api/directory.rs:342`), profile pictures (`:261-282`), `beta/usersettings/8:orgid:{oid}/…` (`src/api/preferences.rs:396, 552`), `beta/contactsv3` (`src/api/contacts.rs:279-356`) | `https://teams.live.com/api/mt/beta/…`: `users/me`, `users/fetchShortProfile`, `users/fetchFederated` (work users), `users/fetchTflConsumers`, `users/searchV2`, `users/searchUsers`, `scd/lookup`, `contactsv3/`, `contacts/buddylist`, `userSettings/blocklist(/manage)` (also TFL-cfg `callBlockingSettings`). Pictures: `users/{mri}/profilepicturev2` with a cookie from `POST mt/beta/imageauth/cookie`. | PT `libteams.h:170`, `teams_contacts.c:1827-1829, 2910-2914`; TM `people.ts:274, 298`; NS doc:435-442 | Confirmed in code | Adapt |
-| Auth: bearer `api.spaces.skype.com` | Bearer `mtsvc.fl…` **and** `X-Skypetoken`; either alone gets 401. TFL-cfg `requireSkypetokenForMT:true`. NS still got 401 on `fetchShortProfile` with a native token. | PT `teams_connection.c:202-214`; TD; TFL-cfg | Confirmed in code | Adapt |
+| Auth: bearer `api.spaces.skype.com` | Bearer `mtsvc.fl…` **and** `x-skypetoken`; either alone gets 401. With the web client's tokens `fetchShortProfile` works. People search is `POST users/searchUsers` (not `searchV2`); pictures need the `imageauth/cookie` cookie (§7.7). | Live capture and probe | Verified live | Adapt |
 | Privacy profile `beta/tenant/privacyProfile` (`src/api/directory.rs:99`) | No tenant | — | Guessed | None |
 | Meet now and private meetings `beta/me/calendarEvents/privateMeeting/schedulingService/create` (`src/api/calendar.rs:1841, 1902`) | The same path on `teams.live.com/api/mt/beta/` | TM `config.ts:66` | Confirmed in code | Reuse |
 
@@ -219,7 +221,7 @@ not found in public sources. **Guessed**: capture it on winpc if needed.
 | Work today (OST) | Consumer | Source | Confidence | Verdict |
 |---|---|---|---|---|
 | Graph `/me/presence`, `setUserPreferredPresence` (`src/api/presence.rs:39, 74`) | Not supported for personal accounts | [MS get presence](https://learn.microsoft.com/en-us/graph/api/presence-get?view=graph-rest-1.0) | Documented | None |
-| `https://presence.teams.microsoft.com/v1/…` with a `presence.teams.microsoft.com` bearer (`src/api/presence.rs:82-83`; `me/endpoints`, `forceavailability`, `reportmyactivity`, `publishnote`, `presence/getpresence`, `:142-788`) | Unified presence at `https://teams.live.com/ups/global/v1/…`. TFL-cfg `presence.defaultPresenceAfdRegionGTM = "https://teams.live.com/ups/global/"`; prod's is empty. NS and TM use `ups/global/v1/presence/getpresence/` with the mtsvc bearer plus `x-skypetoken`. PT and MN still use `presence.teams.live.com/v1/…` with `X-Skypetoken` and `x-ms-endpoint-id` (a 2024 macro). regionGtms has `unifiedPresence`. | TFL-cfg; NS `presence.rs:8, 105-113`; TM `presence.ts:9`; PT `libteams.h:157` | Confirmed (bundle) for the host; auth contested | Adapt (same paths, host from regionGtms `unifiedPresence`) |
+| `https://presence.teams.microsoft.com/v1/…` with a `presence.teams.microsoft.com` bearer (`src/api/presence.rs:82-83`; `me/endpoints`, `forceavailability`, `reportmyactivity`, `publishnote`, `presence/getpresence`, `:142-788`) | Unified presence at `https://teams.live.com/ups/global/v1/…`. TFL-cfg `presence.defaultPresenceAfdRegionGTM = "https://teams.live.com/ups/global/"`; prod's is empty. NS and TM use `ups/global/v1/presence/getpresence/` with the mtsvc bearer plus `x-skypetoken`. PT and MN still use `presence.teams.live.com/v1/…` with `X-Skypetoken` and `x-ms-endpoint-id` (a 2024 macro). regionGtms has `unifiedPresence`. | TFL-cfg; NS `presence.rs:8, 105-113`; TM `presence.ts:9`; PT `libteams.h:157` | Verified live (§7.8): the web client uses `teams.live.com/ups/global/v1/…` with bearer plus Skype token; the Skype token alone also works, on both hosts | Adapt (same paths, host from regionGtms `presenceUPS`) |
 | Work location (`src/api/presence.rs:174`) | Probably not used by consumers | — | Guessed | None |
 | Presence of work users seen from a personal account | Push doesn't arrive; PT polls it | PT `teams_messages.c:2543-2555` | Confirmed in code | Adapt |
 
@@ -227,11 +229,11 @@ not found in public sources. **Guessed**: capture it on winpc if needed.
 
 | Work today (OST) | Consumer | Source | Confidence | Verdict |
 |---|---|---|---|---|
-| Negotiate `https://go.trouter.teams.microsoft.com/v4/a?epid=…` with `X-Skypetoken` (`src/trouter/session.rs:120`) | `https://go.trouter.skype.com/v4/a` (TFL-cfg `trouterService.trouterDefaultEndpoint`; prod is `go.trouter.teams.microsoft.com`). The socket.io flow is the same. | TFL-cfg; NS `socket.rs:366-381`; MX `trouter.go:56-59`; MN | Confirmed (bundle + code) | Adapt (host) |
+| Negotiate `https://go.trouter.teams.microsoft.com/v4/a?epid=…` with `X-Skypetoken` (`src/trouter/session.rs:120`) | Chat: `go.trouter.skype.com`; the web client checks `/?check=` and connects straight to `wss://pub-csm-…-t.trouter.skype.com/v4/c`, then authenticates with `user.authenticate` (§7.9). Calling keeps `go.trouter.teams.microsoft.com`. | Live capture | Verified live | Adapt (host) |
 | Registrar from the negotiate answer, defaulting to `prod.registrar.skype.com` (`src/trouter/mod.rs:188`, `src/api/better_together.rs:45`) | Chat: `https://edge.skype.com/registrar/prod/v2/registrations` (TFL-cfg `registrarDefaultEndpoint`; prod is `teams.microsoft.com/registrar/prod/v3/registrations`), with `X-Skypetoken` and `X-MS-Migration: True`. Calling: `https://teams.microsoft.com/registrar/prod/v2/registrations` (TFL-cfg `registrarServiceUrl`). | TFL-cfg; NS `socket.rs:374, 441`; PT `teams_trouter.c:711, 780-807` | Confirmed (bundle + code) | Adapt |
-| Registrations `TeamsCDLWebWorker_2.1` with empty context; `SkypeSpacesWeb_2.4`; `DesktopNgc_2.5:SkypeNgc`; `platformUIVersion "49/1.0.0"` (`src/trouter/registrar.rs:13-37, 195-200`) | `TeamsCDLWebWorker` with `templateKey TeamsCDLWebWorker_2.6` and `productContext: "TFL"`; calling `SkypeSpacesWeb` with `TFLSkypeSpacesWeb_2.0` and transport context `TFL`. OST's own comment at `registrar.rs:14-18` records that 2.6/TFL is the consumer template. | NS `socket.rs:455-533`; MX `trouter.go:1230-1234`; PT `teams_trouter.c:780-801`, `docs/CALLING.md:126-133` | Confirmed in code | Adapt (per-account table) |
-| Re-registration TTL 86400 s (`src/trouter/mod.rs:187`) | The server ignores 86400; PT re-registers every 300 s, NS every 3600 s | PT `teams_trouter.c:902-910`; NS `socket.rs:437` | Confirmed in code | Adapt |
-| Chat push through Trouter | **Contested.** PT says consumer chat messages don't arrive by push and polls every 8 s (PT `libteams.c:30-35`). NS and MX receive chat events over the Skype Trouter. | PT, NS, MX | Contested | Must verify |
+| Registrations `TeamsCDLWebWorker_2.1` with empty context; `SkypeSpacesWeb_2.4`; `DesktopNgc_2.5:SkypeNgc`; `platformUIVersion "49/1.0.0"` (`src/trouter/registrar.rs:13-37, 195-200`) | `TeamsCDLWebWorker` with **`templateKey TeamsCDLWebWorker_2.7`** and `productContext: "TFL"` (ttl 3600), plus `<id>_GG` with `TeamsCDLWebWorker_2.3`; calling `SkypeSpacesWeb` with `TFLSkypeSpacesWeb_2.0` and transport context `TFL` (§7.9). | Live capture | Verified live | Adapt (per-account table) |
+| Re-registration TTL 86400 s (`src/trouter/mod.rs:187`) | The web client registers with `ttl 3600`; no timed re-registration was seen in 35 minutes (§7.9) | Live capture; PT; NS | Verified live (ttl) | Adapt |
+| Chat push through Trouter | Chat messages **do** arrive by push on the Skype Trouter (`/messaging`, `NewMessage`); no polling needed (§7.9). | Live capture | Verified live | Adapt |
 | Teams push service (TPS) | TFL-cfg `teamsPushService` lists `https://teams.microsoft.com/api/tps` | TFL-cfg | Confirmed (bundle) | Unknown |
 
 ### 3.7 Calling and meetings
@@ -253,7 +255,7 @@ not found in public sources. **Guessed**: capture it on winpc if needed.
 
 | Work today (OST) | Consumer | Source | Confidence | Verdict |
 |---|---|---|---|---|
-| Graph `/me/calendarView`, `/me/calendars`, `/me/events` (`src/api/calendar.rs:91-495`) | Supported for personal accounts (Outlook.com calendar) | [MS calendarView](https://learn.microsoft.com/en-us/graph/api/user-list-calendarview?view=graph-rest-1.0); TFL-cfg `calendar.graphEndpointBaseUrl = https://graph.microsoft.com` | Documented | Reuse |
+| Graph `/me/calendarView`, `/me/calendars`, `/me/events` (`src/api/calendar.rs:91-495`) | Graph supports personal accounts, but the Teams free client's Graph token has only `Files.ReadWrite` (`/me/calendarView` is 403). Teams free reads the calendar through the middle tier: `GET https://teams.live.com/api/mt/v2.0/me/calendars/default/calendarView?StartDate=…&EndDate=…&shouldDecryptData=false` (bearer plus Skype token) | Live capture and probe (§7.2, §7.12) | Verified live | Adapt (MT calendar) |
 | `/me/memberOf/microsoft.graph.group` (group calendars, `src/api/calendar.rs:149`) | Not supported for MSA | [MS memberOf](https://learn.microsoft.com/en-us/graph/api/user-list-memberof?view=graph-rest-1.0) | Documented | None |
 | `/me/calendar/getSchedule` (`src/api/profile.rs:89`) | Not supported for MSA | MS getSchedule | Documented | None |
 | (none) | Teams free can also link a Google calendar and contacts (TFL-cfg `calendar.googleAuthConfig`; `externalAccounts`, `requestSource "TflCloudCache"`) | TFL-cfg | Confirmed (bundle) | New (later) |
@@ -267,7 +269,7 @@ not found in public sources. **Guessed**: capture it on winpc if needed.
 | `/me/drive/recent` (`src/api/drive.rs:196`) | Supported for MSA, but **deprecated, stops returning data after November 2026** for every account type | [MS drive recent](https://learn.microsoft.com/en-us/graph/api/drive-recent?view=graph-rest-1.0) | Documented | Replaced for work accounts by SharePoint `sp.RecentFileCollection.DeltaSync`, as Teams does (TASK-0301); personal accounts: TASK-0300 |
 | `/groups/{id}/drive`, SharePoint `_api/v2.1/favorites`, `tenant-my.sharepoint.com` (`src/api/drive.rs:236, 279-298`) | No SharePoint for MSA | — | Documented | None |
 | `/search/query` (`src/api/drive.rs:333`) | Not supported for MSA | [MS search query](https://learn.microsoft.com/en-us/graph/api/search-query?view=graph-rest-1.0) | Documented | None (use `/me/drive/root/search(q=…)`, guessed) |
-| Chat file upload to `/me/drive/root:/Microsoft Teams Chat Files/…` and `/invite` (`src/api/files.rs:167-219`) | Teams free has a OneDrive consumer path: TFL-cfg `files.oneDriveConsumerAppId 242df6f5-…`, `ODCConvergedEndpoint https://my.microsoftpersonalcontent.com`, the legacy "vroom" API `https://api.onedrive.com` with `WLID1.1` and `service::lw.onedrive.com::MBI_SSL` (`preferGraphOverVroom:false`). NS uses Graph. | TFL-cfg; NS doc:466 | Confirmed (bundle) | Adapt |
+| Chat file upload to `/me/drive/root:/Microsoft Teams Chat Files/…` and `/invite` (`src/api/files.rs:167-219`) | **Live (§7.12):** the web client uploads with Graph `PUT /v1.0/me/drive/root:/Microsoft Teams Chat Files/<name>:/content`, the same path as OST. The bundle also lists a OneDrive consumer path: TFL-cfg `files.oneDriveConsumerAppId 242df6f5-…`, `ODCConvergedEndpoint https://my.microsoftpersonalcontent.com`, the legacy "vroom" API `https://api.onedrive.com` with `WLID1.1` and `service::lw.onedrive.com::MBI_SSL` (`preferGraphOverVroom:false`). NS uses Graph. | TFL-cfg; NS doc:466 | Confirmed (bundle) | Adapt |
 | Office web viewers (`officeapps.live.com`, already used) | Same, plus `odwebp.svc.ms/embed` one-up viewer | TFL-cfg | Confirmed (bundle) | Reuse |
 
 ### 3.10 Teams, channels and communities
@@ -320,7 +322,7 @@ is checked live.
 
 | | Work | Personal |
 |---|---|---|
-| User MRI | `8:orgid:{oid}` | `8:live:.cid.<16 hex>`. Older accounts migrated from Skype may be `8:live:<skypename>` (PT `teams_contacts.c:1222-1233`). TFL-js lists the consumer prefixes `live`, `sip_profile`, `myspace`, `c2c`, `sms`, `facebook`, `fb` after `8:`. |
+| User MRI | `8:orgid:{oid}` | `8:live:.cid.<hex>`, the cid **without leading zeros** (verified live: oid `00000000-0000-0000-0ca2-738c364862c6` is `8:live:.cid.ca2738c364862c6`). Older accounts migrated from Skype may be `8:live:<skypename>` (PT `teams_contacts.c:1222-1233`). TFL-js lists the consumer prefixes `live`, `sip_profile`, `myspace`, `c2c`, `sms`, `facebook`, `fb` after `8:`. |
 | Source | `oid` claim of the access token (`src/config/mod.rs:125-128`) | `skypeid` in the Skype token (a JWT) or in authz `skypeToken.skypeid` |
 | Tenant | `tid` claim | none (MSA tenant `9188040d-…`); `isBusinessTenant:false` |
 | Other MRIs Teams free uses | | `8:tfloffnetwork:email:…` / `phone:…` (invited people not on Teams), `50:sms:`, `50:smsunverified:`, `8:teamsvisitor:` (anonymous), `tflfed:` (federation) (TFL-js MRI constants) |
@@ -341,8 +343,8 @@ bodies and ECS filters.
 | Work client flag | TFL-js `enableTfwTflFederation` (TFW is Teams for work, TFL is Teams for life): `true` in prod (`false` in GCC), `false` in life. So the work client hosts these chats. | TFL-cfg vs prod | Confirmed (bundle) |
 | Chat flags | Conversation fields `hasTflConsumerUser`, `isTfwTflFedChat`, `hasTflOffnetworkUser`, `hasTflSmsUser`; these chats count as external | TFL-js GraphQL fragments | Confirmed (bundle) |
 | MRIs across the boundary | A personal user sees work users as `8:orgid:<guid>`; a work user sees personal users as `8:live:…` | PT `teams_messages.c:2543-2555` | Confirmed in code |
-| Profile lookup | From personal: MT `users/fetchFederated` for work users. From work: probably MT `users/fetchTflConsumers` or search by email. | PT, TM | Confirmed in code (personal side); Guessed (work side) |
-| Starting a chat | No public source shows a personal account starting a chat with a work user, or the work side's flow | — | Must verify |
+| Profile lookup | From personal: MT `users/fetchFederated` for work users. From work: MT `users/fetchTflProfiles` (`{"mris":[…]}`) and `users/<email>/externalsearchv3?includeTFLUsers=true` for search (§7.13). | Live capture | Verified live |
+| Starting a chat | Personal side: `searchUsers` by email finds the work user (`Federated`), then `groups/v1/threads`. Work side: the chat arrives quarantined (`relationshipState.inQuarantine`) with Block/Accept; the profile comes from `fetchTflProfiles`. A work user typing an undiscoverable personal email creates a B2B guest invite instead (§7.13). | Live capture | Verified live |
 
 For OST this matters even without personal sign-in. A work user in OST
 can already receive chats from personal users, and OST would mishandle
@@ -352,7 +354,7 @@ can already receive chats from personal users, and OST would mishandle
 
 | OST call | File | MSA |
 |---|---|---|
-| `/me` | `src/api/me.rs:43` | Supported (User.Read, own profile only) |
+| `/me` | `src/api/me.rs:43` | Supported for MSA in general, but **403 with the Teams free client's Graph token** (it only carries `Files.ReadWrite`; verified live, §7.12). Use the id_token and MT `users/me/` instead |
 | `/users/{oid}`, `/manager`, `/directReports` | `src/api/profile.rs:47-63`, `src/api/teams.rs:1011`, `src/api/channels.rs:927`, `src/api/files.rs:373` | **Fails** (personal accounts read only their own profile) |
 | `/users?$search=` | `src/api/directory.rs:30-41` | **Fails** (directory) |
 | `/me/presence`, `setUserPreferredPresence` | `src/api/presence.rs:39, 74` | **Not supported** |
@@ -361,67 +363,281 @@ can already receive chats from personal users, and OST would mishandle
 | `/me/calendar/getSchedule` | `src/api/profile.rs:89` | **Not supported** |
 | `/search/query` | `src/api/drive.rs:333` | **Not supported** |
 | `/groups/{id}/drive` | `src/api/drive.rs:236` | **Fails** (no groups) |
-| `/me/calendarView`, `/me/calendars`, `/me/events` | `src/api/calendar.rs` | Supported |
-| `/me/contacts`, `/me/outlook/masterCategories` | `src/api/contacts.rs:121-211` | Supported (contacts; categories guessed) |
-| `/me/drive/…`, `/shares/…` | `src/api/drive.rs`, `src/api/files.rs` | Supported (`recent` deprecated for everyone; work accounts now use SharePoint's recent files service) |
-| `/me/people` (not used yet) | — | Supported (People.Read) |
+| `/me/calendarView`, `/me/calendars`, `/me/events` | `src/api/calendar.rs` | Supported for MSA, but 403 with the Teams free client's token; use MT `v2.0/me/calendars/default/calendarView` |
+| `/me/contacts`, `/me/outlook/masterCategories` | `src/api/contacts.rs:121-211` | Supported for MSA, but 403 with the Teams free client's token |
+| `/me/drive/…`, `/shares/…` | `src/api/drive.rs`, `src/api/files.rs` | Supported, also with the Teams free client's token (verified live: `/me/drive`, `/me/drive/root/children`) (`recent` deprecated for everyone; work accounts now use SharePoint's recent files service) |
+| `/me/people` (not used yet) | — | Supported for MSA, but 403 with the Teams free client's token |
 
 Sources: the Microsoft Graph v1.0 permission tables linked in §3. They
 were read 2026-11-25.
 
-## 7. Must verify live
+## 7. Must verify live (verified 2026-11-27)
 
-Each item needs a personal test account, one we create, signed in once in
-OST's web view:
+Every item below was checked live on 2026-11-27 (TASK-0287) with the two
+personal test accounts (OST Personal 1 and 2, `ost-personal1-5135@outlook.com`
+and `ost-personal2-0238@outlook.com`) and the work test accounts. How:
 
-1. **Return address and Origin.** Which return address Teams free's MSAL
-   really uses: `https://teams.live.com/v2` or `/v2/authv2`, both
-   accepted by the probe. Also confirm that code redemption needs
-   `Origin: https://teams.live.com`. Capture a real sign-in in OST's web
-   view.
-2. **Scopes the consumer authorize accepts in one request.** Both the
-   `https://…/teams.auth.readwrite` style and the `service::…::MBI_SSL`
-   style. Which ones a single refresh token can mint (authz, mtsvc,
-   groupssvc, Graph, substrate `M365.Access`, recorder).
-3. **authz v1 vs v2.** Response shape and `regionGtms` keys from
-   `v2.0/authz/consumer`; whether `licenseDetails` is present; the full
-   set of regionGtms keys (especially `unifiedPresence`,
-   `calling_conversationServiceUrl`, `ams`, `amsV2`,
-   `chatServiceAggregator`).
-4. **Opaque tokens.** Whether the MSA access tokens are opaque; what
-   `id_token` and `client_info` hold (`oid`, `preferred_username`,
-   `name`).
-5. **Chat service host.** `msgapi.teams.live.com` vs
-   `teams.live.com/api/chatsvc/consumer`; which headers are required
-   (`ms-ic3-product: tfl`, `X-MS-Client-Consumer-Type`); whether
-   `X-Skypetoken` really fails there.
-6. **CSA for consumers.** Whether `teams.live.com/api/csa/api/v1|v3/…`
-   answers, and what the chat list call is.
-7. **Middle-tier auth.** Whether the web client's mtsvc token plus the
-   Skype token passes `fetchShortProfile`, `searchV2` and
-   `profilepicturev2`. NS got 401s with a native token.
-8. **Presence.** Host and auth: `teams.live.com/ups/global/v1/…` with
-   mtsvc bearer plus Skype token, vs `presence.teams.live.com`.
-9. **Trouter.** `go.trouter.skype.com` negotiate; `edge.skype.com`
-   registrar with `TeamsCDLWebWorker_2.6` / `TFL`; **whether chat
-   messages arrive by push** (PT says no; NS and MX say yes); the
-   required re-registration interval.
-10. **Calling.** `api.flightproxy.skype.com/api/v2/cpconv` with
-    `X-Skypetoken`; the regionGtms calling keys; whether OST's
-    desktop-dialect SDP is accepted, or whether consumer calls need the
-    browser dialect (DTLS-SRTP, BUNDLE). Use a Meet now alone first, as
-    NS did; no calls to other people without the user's go-ahead.
-11. **ECS for consumers.** Request parameters (`TflNorthstar` agents, IDs
-    instead of tenant and licence filters).
-12. **OneDrive.** Whether Graph `/me/drive` works with the Teams free
-    client's Graph token, and how chat file sharing is done (Graph or
-    vroom).
-13. **Federation from the work side.** How a work account in OST finds,
-    starts and renders a chat with an `8:live:` user (search, profile,
-    presence, "external" label). Test with ost-test1 and the personal
-    test account.
-14. **Teams desktop MSA client ID.** Only if the web client turns out
-    insufficient: capture it on winpc.
+- **Web:** teams.live.com in two isolated headless Chrome profiles on the
+  coordinator PC (Chrome 153, web client `1415/26101516645`), one per
+  personal account, with a CDP network capture that kept only token shapes
+  (prefix, length, segment count; JWT claims without signatures). A probe
+  script then redeemed its own PKCE code for the Teams free client and
+  called the endpoints directly. The work side (ost-test1) was captured the
+  same way on teams.microsoft.com (web client `1415/26110100723`).
+- **Desktop:** Teams `26304.1207.5384.858` on testpc2 with OST Personal 2
+  added next to OST Test 2 (see the features doc). WebView2's DevTools
+  endpoint hung each time Teams opened a new window or flyout, so the
+  desktop checks are UI-level (UI Automation and screenshots).
+
+Status per item: **Verified** (as written), **Corrected** (the earlier text
+was wrong; the live value is given) or **Partly verified** (what is still
+open and why).
+
+1. **Return address and Origin. Corrected.** Teams free's MSAL (msal.js
+   browser 5.6.3) sends `redirect_uri=https://teams.live.com/v2/authv2`, not
+   `/v2`. The first authorize asks only `openid profile offline_access`
+   with `tenant=consumers`, `response_mode=fragment`, `prompt=select_account`,
+   `client_info=1` and PKCE; login.microsoftonline.com/consumers hands off to
+   `login.live.com/oauth20_authorize.srf`. The code is redeemed at
+   `https://login.microsoftonline.com/consumers/oauth2/v2.0/token` with
+   `Origin: https://teams.live.com`. **Origin is required:** a redemption
+   or refresh without it fails with AADSTS90023 ("Tokens issued for the
+   'Single-Page Application' client-type should only be redeemed via
+   cross-origin requests"), and that failed attempt burns the code.
+   `response_mode=query` with `prompt=none` also works for the client.
+   Refresh tokens: `refresh_token_expires_in` 86400 (24 h), rotated on every
+   redemption. The web client redeems refreshes at
+   `login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/oauth2/v2.0/token`
+   (the MSA tenant GUID); `/consumers` works too.
+   A new account also met: "Verify your email" (a code to the recovery
+   address, with a "Use your password" link), "Stay signed in?", then a
+   Teams welcome page ("Welcome, <name>", Continue) and a two-step "What is
+   your primary use for Teams?" survey.
+2. **Scopes one refresh token can mint. Verified, with corrections.** One
+   SPA refresh token (client `4b3e8f46-…`, Origin set) minted all of these:
+   `https://auth.fl.teams.microsoft.com/teams.auth.readwrite`,
+   `https://mtsvc.fl.teams.microsoft.com/teams.mt.readwrite`,
+   `https://groupssvc.fl.teams.microsoft.com/teams.readwrite` (granted with
+   `…/teams.communities.export`), `https://recordersvc.fl.teams.microsoft.com/access_recorder_service`,
+   `https://substrate.office.com/M365.Access`, `https://augloop.office.com/v2/.default`,
+   `https://m365copilotapp.svc.cloud.microsoft/.default`,
+   `https://consentservice.microsoft.com/checkin/UnifiedUserConsent.Read`,
+   `liveprofilecard.access`, and the MBI_SSL style
+   `service::api.fl.spaces.skype.com::MBI_SSL`, `service::api.fl.teams.microsoft.com::MBI_SSL`,
+   `service::api.fl.sms-free.spaces.skype.com::MBI_SSL`, `service::lw.onedrive.com::MBI_SSL`.
+   Graph: `https://graph.microsoft.com/.default` is granted as
+   **`Files.ReadWrite` only** (the client also asks
+   `https://graph.microsoft.com/Files.ReadWrite` directly); `User.Read` and
+   `Calendars.Read` are refused. Refused with AADSTS70011 (invalid scope):
+   `chatsvcagg.teams.microsoft.com/.default`, `searchsvc.fl…/teams.search.readwrite`,
+   `teamsopenaisvc.fl…/teams.readwrite`, the scheduler resource
+   `7557eb47-…/.default`, `service::officeapps.live.com::MBI_SSL_SHORT`.
+   `presence.teams.microsoft.com/.default` fails with AADSTS9002332.
+   `https://api.spaces.skype.com/.default` is silently dropped (the token
+   comes back with only `openid profile`).
+3. **authz v1 vs v2. Verified, with corrections.** The web client calls
+   `POST https://teams.live.com/api/auth/v2.0/authz/consumer` with the
+   `auth.fl` bearer, an empty body and `ms-teams-authz-type: ExplicitLogin`,
+   `x-ms-client-type: web`, `x-ms-client-version: 1415/<build>`,
+   `claimschallengecapable: true`, `clientrequestid`, `x-ms-request-id`
+   (no `X-MS-Client-Consumer-Type`). The response has four top-level keys:
+   `skypeToken` {`skypetoken`, `expiresIn` (28,799 s, about 8 h, not 24 h),
+   `skypeid` (`live:.cid.<hex>`), `signinname` (the display name),
+   `isBusinessTenant: false`}, `regionGtms`, `regionSettings`
+   {`isUnifiedPresenceEnabled`, `isOutOfOfficeIntegrationEnabled`,
+   `isContactMigrationEnabled`, `isAppsDiscoveryEnabled`, `isFederationEnabled`}
+   and **`consumerLicenseDetails`** (not `licenseDetails`): `teamsFree`
+   {`maxMeetingDurationMinutes` 60, `maxMeetingParticipants` 100,
+   `copilotEnabled`, `callRecordingEnabled`, `premiumMeetingOptionsEnabled`,
+   `decorateMeetingBackgroundEnabled`, `intelligentRecapEnabled`} plus the
+   same fields at top level, `hasTeamsLicense: false` and
+   `licenseVersionTimestamp`. The Skype token is an RS256 JWT with
+   `skypeid`, `cid`, `scp: 956`, `csi`, `aat`, `iat`, `exp`.
+   `regionGtms` has 42 keys: `ams` (`https://us-api.asm.skype.com`), `amsV2`
+   (`https://experimental-api.asm.skype.com`), `chatService`
+   (`https://msgapi.teams.live.com`), `chatServiceAfd`
+   (`https://teams.live.com/api/chatsvc/consumer`), `chatServiceS2S`,
+   `chatServiceAggregator` (`https://chatsvcagg.teams.microsoft.com`),
+   `middleTier`, `mtImageService`, `teamsAndChannelsService`,
+   `consumerLicenses`, `groupsService` (all `https://teams.live.com/api/mt`),
+   `groupsServiceV2`/`communitiesServiceV2` (`https://teams.live.com/api/groups`),
+   `unifiedPresence` (`https://presence.teams.live.com`), `presenceUPS`
+   (`https://teams.live.com/ups/global`), `search` (`https://msgsearch.skype.com`),
+   `searchService` (`https://teams.live.com/api/search`), `openAIService`,
+   `eventService`, `authService`, `userIntelligenceService`, `vaultService`,
+   `urlp`, `drad`, `userProfileService`, `appsDataLayerService`,
+   `wikiService`, `powerPointStateService`, `calling_callControllerServiceUrl`
+   (`https://api.cc.skype.com`), `calling_conversationServiceCaptchaUrl`,
+   and `…EndpointMetadata` objects ({`endpointUrl`, `authority`,
+   `tokenScopes`}) for groups, communities, groupsSvc, communitiesSvc,
+   openAISvc, searchSvc, middleTierSvc, eventSvc and authSvc. There is **no
+   `calling_conversationServiceUrl`** or `calling_potentialCallRequestUrl`.
+   The **v1 endpoint does not work** with this client:
+   `v1.0/authz/consumer` answers 400 `{"status":{"code":40013,"text":"Access token created for a different site."}}`
+   for its MBI_SSL token and 401 code 40110 for the `auth.fl` token;
+   `v1.0/authzcore/consumer` answers 404. Use v2.
+4. **Opaque tokens. Corrected.** All access tokens are opaque to the
+   client, in two forms: the `fl` resources, AugLoop, Copilot and the
+   consent service come back as **JWE** (`eyJ…`, five segments,
+   `alg: dir`/`enc: A256CBC-HS512` or `alg: RSA-OAEP`/`enc: A128CBC-HS256`,
+   `zip: DEF`, lifetime 28,799 s), while `openid profile`, Graph,
+   `liveprofilecard.access`, substrate and the MBI_SSL scopes come back as
+   MSA tickets (`EwA…`/`EwB…`, one segment). Neither can be decoded. The
+   identity comes from the `id_token` (`iss` …/9188040d-…/v2.0, `aud` the
+   client, `name`, `preferred_username` (the email), `oid`
+   `00000000-0000-0000-<cid as 4+12 hex>`, `tid` 9188040d-…, `puid`,
+   `ageGroup`, `idtyp: user`, `signin_state: ["kmsi"]`, sometimes `email`)
+   and from `client_info` {`uid` = `oid` = `home_oid`, `utid` = MSA tenant,
+   `name`, `preferred_username`, `sub`}. The cid in the MRI drops leading
+   zeros: OST Personal 2's `oid` is `00000000-0000-0000-0ca2-738c364862c6`
+   but its MRI is `8:live:.cid.ca2738c364862c6` (15 hex digits).
+5. **Chat service host. Verified, with corrections.** The web client uses
+   the front door `https://teams.live.com/api/chatsvc/consumer/v1/…` from
+   its web worker with `Authentication: skypetoken=…`,
+   `ms-ic3-product: tfl`, `ms-ic3-additional-product: Sfl`,
+   `behavioroverride: redirectAs404` and a `clientinfo` header; no
+   `X-Stratus-Caller` and no `X-MS-Client-Consumer-Type`. Both hosts
+   (`teams.live.com/api/chatsvc/consumer` and `msgapi.teams.live.com`)
+   answered `users/ME/properties` and `users/ME/conversations` with
+   `Authentication: skypetoken=`, with `X-Skypetoken`, and without the
+   ic3 headers: **`X-Skypetoken` does not fail** there. `users/ME/properties`
+   returns `primaryMemberName` (`live:.cid.…`), `cid`, `cidHex`,
+   `skypeName`, `locale`, `firstLoginInformation`, `selfChatSettings`,
+   `favorites`, `dogfoodUser`. New 1:1 and group chats are created with
+   `POST https://teams.live.com/api/groups/v1/threads` (`groupssvc` bearer
+   plus `x-skypetoken`; body `{"members":[{"id":…,"role":"User"},…],"properties":{"threadType":"chat","isStickyThread":"true"}}`),
+   which returns `{"value":{"threadId":"19:uni01_…@thread.v2","membersStatus":[…]}}`.
+   Messages are posted to `…/v1/users/ME/conversations/{id}/messages` as
+   `RichText/Html` with a numeric `clientmessageid` and
+   `properties.formatVariant: "TEAMS"`.
+6. **CSA for consumers. Corrected.** CSA works for consumers:
+   `GET https://teams.live.com/api/csa/api/v3/teams/users/me?isPrefetch=false&enableMembershipSummary=true&…`
+   with `x-skypetoken` only (no bearer) returns `conversationFolders`,
+   `teams`, `chats`, `users`, `privateFeeds` and `metadata` (`syncToken`,
+   `hasMoreChats`); `…/me/updates?…` is the delta call. `api/v1/…` and
+   `api/v2/…` also answer 200. Folder ids are
+   `9188040d-…~<oid>~Favorites|RecentChats|TeamsAndChannels`.
+   `api/csa/api/v1/translator/languages` is used too.
+7. **Middle-tier auth. Verified, with corrections.** MT needs **both** the
+   `mtsvc.fl` bearer and `x-skypetoken`: `users/me/` answers 200 with both,
+   401 with either alone. `POST mt/beta/users/fetchShortProfile?…` with an
+   MRI array works with both. People search by email or phone is
+   **`POST mt/beta/users/searchUsers?ggEnabled=true`** with
+   `{"emails":[…],"phones":[]}` (`x-ms-client-caller: people-picker`); it
+   returns `{<email>: {"userProfiles":[…],"status":"Success"|"NotFound"}}`,
+   with work users as `"type":"Federated"` plus `tenantId`/`tenantName`.
+   `users/searchV2` does not exist on the consumer MT (404 "Controller is
+   not registered"), and `users/fetchTflConsumers` answers 405. Work users
+   are resolved with `POST mt/beta/users/fetchFederated` (`["8:orgid:…"]`).
+   Pictures: `GET mt/beta/users/{mri}/profilepicturev2?displayname=…&size=HR64x64`
+   uses a **cookie** set by `POST mt/beta/imageauth/cookie` (bearer plus
+   Skype token); with headers alone it answers 401. Other MT calls seen:
+   `users/me/`, `users/tenantsv2`, `users/istfluser`, `users/useraggregatesettings`,
+   `users/updateNameAndSkypeAvatar`, `scd/searchability`, `contacts/buddylist`,
+   `contacts/buddylist/TflContacts/managebuddies`, `contacts/syncSettings`,
+   `contacts/sync/outlook`, `userSettings/blocklist`, `join/template`
+   (invite links), `chats/{id}/apps/chatentitlements`, `me/engagementSurfaces`,
+   `v1/users/tflIntent`, `v2.0/me/calendars/default/calendarView`.
+8. **Presence. Verified, with corrections.** The web client uses UPS at
+   `https://teams.live.com/ups/global/v1/…` (`PUT me/endpoints/`,
+   `POST presence/getpresence/`, `POST pubsub/subscriptions/{endpoint}`)
+   with the `mtsvc` bearer plus `x-skypetoken`, `x-ms-endpoint-id` and
+   `x-ms-client-consumer-type: teams4life`. Direct calls: `getpresence`
+   works with both, and with the Skype token alone; bearer alone is 401.
+   `https://presence.teams.live.com/v1/presence/getpresence/` (regionGtms
+   `unifiedPresence`) also answers with `X-Skypetoken` alone. Presence of
+   a personal user is
+   `{"sourceNetwork":"Unknown","availability":…,"activity":…}`.
+9. **Trouter. Verified, with corrections.** There is no `v4/a` negotiate:
+   the client checks `GET https://go.trouter.skype.com/?check=…&epid=…&tc=…`
+   (answer `Trouter`), then opens
+   `wss://pub-csm-<region>-t.trouter.skype.com/v4/c?tc=…&timeout=40&epid=…`
+   and sends `user.authenticate` with `X-Skypetoken`,
+   `X-MS-Migration: True` and `connectparams` (`sr`, `sp`, `se`, `st`).
+   Chat registration: `POST https://edge.skype.com/registrar/prod/v2/registrations`
+   (`X-Skypetoken`, `X-MS-Migration: True`, `x-ms-test-user: False`) with
+   `appId TeamsCDLWebWorker`, **`templateKey TeamsCDLWebWorker_2.7`**,
+   `productContext TFL`, `ttl 3600`, plus a second registration
+   `<id>_GG` with `TeamsCDLWebWorker_2.3`, empty context, `ttl 86523`.
+   Calling uses a separate socket on `go.trouter.teams.microsoft.com`
+   (`ua SkypeSpaces`) registered at `teams.microsoft.com/registrar/prod/v2/registrations`
+   with `SkypeSpacesWeb`/`TFLSkypeSpacesWeb_2.0`, transport context `TFL`,
+   `ttl 3600`. **Chat messages arrive by push:** a work reply reached the
+   personal client as a `/messaging` request (`resourceType NewMessage`,
+   plus `ThreadUpdate`, `ConversationUpdate`) within a second; presence
+   arrives on `/unifiedPresenceService`. Re-registration: no timed
+   re-registration was seen within the 35 minutes observed (only after
+   reloads), so use the registration `ttl` (3600 s).
+10. **Calling. Partly verified.** A personal meeting (Meet > Create a meeting
+    link > Join) joined from the web client: `POST https://api.flightproxy.skype.com/api/v2/cpconv`
+    with `X-Skypetoken`, `X-Microsoft-Skype-Chain-ID`, `X-Microsoft-Skype-Message-ID`,
+    `MS-Teams-Ring: general`, `X-Microsoft-Skype-Client: SkypeSpaces/1415/<build>/…/TsCallingVersion=2026.40.01.8/…`
+    and a `conversationRequest` with `applicationType: "TFL"`. The answer's
+    `Location`, `conversationController` and links point at
+    `https://api.flightproxy.teams.microsoft.com/api/v2/ep/conv-usea-05-prod-aks.conv.skype.com/conv/…`,
+    the broker (`…/ep/broker-…broker.skype.com/api/v1/subscribe/…`) and the
+    call controller (`…/ep/cc-…cc.skype.com/cc/v1/…`). The meeting state is
+    `conversationType: scheduledMeeting`, `isHostless: true`; others wait in
+    the lobby until the organizer admits them. Without a Skype token
+    cpconv answers 401/403 "Anonymous access is not allowed". TURN:
+    `GET https://edge.skype.com/trap/tokens` with `X-Skypetoken` returns
+    `realm`, `username`, `password`, `expires`. Media: the web client
+    answered the server's offer (`cc/v1/negotiations/…/answer`) in the
+    browser dialect (BUNDLE, DTLS `a=fingerprint`/`a=setup:active`,
+    `a=ice-options:trickle`, H264). **Open:** whether consumer calls accept
+    OST's desktop dialect (SDES) can only be tested by sending OST's offer,
+    which needs the consumer calling code first (TASK-0298); the Windows
+    desktop client's dialect could not be captured because its DevTools
+    endpoint hung.
+11. **ECS for consumers. Verified.** `GET https://config.teams.microsoft.com/config/v1/MicrosoftTeams/1415_1.0.0.0`
+    with `environment=life`, `experience=react-web-client`, `buildType`,
+    `browser`, `browserVersion`, `osPlatform`, `isOcdi`, `isPwa`,
+    `id=<oid>`, `aaduserid=<oid>`, `tenantId=9188040d-…`, `experienceBuild`,
+    `teamsLocale`, `mtmaCount`, `sessionId`, `clientId`,
+    `agents=TflNorthstar,TeamsBuilds,Segmentation`, `ECSCanary=1`; no
+    licence parameters and no auth header. The client also fetches
+    `config/v1/Skype/1415_1.0.0.0` and `config.edge.skype.com/config/v1/CHILL/0.0.13`.
+12. **OneDrive. Verified, with one open point.** The Graph token
+    (`Files.ReadWrite`) works for `GET /me/drive` and
+    `/me/drive/root/children`; `/me`, `/me/calendarView`, `/me/contacts`
+    and `/me/people` answer 403 and `/me/presence` 400. Chat file upload
+    uses Graph: `PUT https://graph.microsoft.com/v1.0/me/drive/root:/Microsoft%20Teams%20Chat%20Files/<name>:/content?@microsoft.graph.conflictBehavior=rename&select=*,sharepointIds`,
+    after `GET /beta/me/settings/storage/quota` and `GET /v1.0/me/drive`,
+    and the client stores `personalFileSite` = `{"driveId":"<cid>"}` with
+    `PUT chatsvc/…/users/ME/properties?name=personalFileSite`. The compose
+    box showed "Anyone with the link can edit". **Open:** the send of that
+    file message never completed in the headless web client, so the
+    message's `files` property and the link-creation call were not seen.
+13. **Federation from the work side. Verified.** Search: the work client
+    calls `GET mt/…/beta/users/<email>/externalsearchv3?includeTFLUsers=true`
+    (`x-ms-client-caller: newChat`). For personal accounts whose email
+    isn't discoverable it returns `[]`; the picker still offers the email
+    with an "External" tag, and starting the chat then **invites the
+    address as a B2B guest** (`PUT mt/…/beta/teams/inviteAndAddSingleGuestToTenant`
+    `{"emailAddress":…}` → `{"invited":{"role":"Guest","userPrincipalName":"…#EXT#@…","mri":"8:orgid:…"}}`)
+    and shows "Your invitation is on its way…". That is a guest chat, not a
+    Teams-free chat. When a personal user starts the chat (personal side:
+    `searchUsers` finds the work user as `Federated`, then
+    `groups/v1/threads`), the work client gets a 1:1 thread
+    `19:uni01_…@thread.v2` whose thread properties have
+    `productContext: "TFL"`, `partnerName: "TFLGroupService"`,
+    `tenantid 00000000-0000-0000-0000-000000000000`, creator `8:live:…`, and
+    whose member properties carry **`relationshipState.inQuarantine: true`**
+    until the work user accepts (CSA lists it with `hidden: true`). The
+    work client resolves the person with
+    `POST mt/…/beta/users/fetchTflProfiles?edEnabled=false&includeDisabledAccounts=true`
+    (`{"mris":[…]}` or `{"invitersToThreads":{mri: threadId}}` →
+    `resolvedUsers[]` with `"type":"TflConsumer"`, `skypeId`, `displayName`,
+    `emailsInfo` with `visibility`), loads the picture from
+    `GET mt/…/beta/users/<own oid>/profilepicturev2/8:live:.cid.…?displayname=…&size=HR64x64`,
+    and gets presence from work UPS (`ups/noam/v1/presence/getpresence/`
+    and a `pubsub` subscription), which answered `PresenceUnknown` (status
+    50000) before the request was accepted. The UI is in the features doc
+    (item 10).
+14. **Teams desktop MSA client ID. Not needed.** The web client covers
+    every flow OST needs, so this was not captured (the desktop signs in
+    through WAM; its DevTools endpoint hung when the sign-in window
+    opened).
 
 ## 8. Suggested backlog breakdown (for planning)
 
