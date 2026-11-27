@@ -2050,6 +2050,7 @@ Window {
         interval: 2500
         repeat: true
         property int step: 0
+        property int waited: 0
         function shot(name) { window.contentItem.grabToImage(g => g.saveToFile(dir + "/" + name + ".png")) }
         function arg(n) { const a = args.find(x => x.startsWith("--" + n + "=")); return a ? a.slice(n.length + 3) : "" }
         onTriggered: {
@@ -2067,6 +2068,7 @@ Window {
             else if (step === 6) { shot("act-filter"); console.warn("T367 filter", activityView.nameFilter, "shown", activityView.shown.length, "of", items.length) }
             else if (step === 7) { activityView.toggleFilter(); if (missed) activityView.openItem(missed); console.warn("T367 missed", !!missed, missed ? missed.title : "") }
             else if (step === 8) { console.warn("T367 calls", window.activityCalls, callsView.visible, callsView.filter, callsView.inActivity, "conversation", conversation.visible); shot("act-missed") }
+            else if (step === 9) { if (callsView.calls.length === 0 && waited++ < 12) return; console.warn("T367 calls rows", callsView.calls.length, callsView.shown.length); shot("act-missed-later") }
             else if (step === 10) { rail.current = "calendar" }
             else if (step === 11) { console.warn("T367 scroll", JSON.stringify(calendarView.gridScrollForTest()), new Date().toTimeString()); shot("cal-open") }
             else if (step === 12) calendarView.monthOpen = false
