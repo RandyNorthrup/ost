@@ -10,13 +10,15 @@
   <a href="https://github.com/RandyNorthrup/ost/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/RandyNorthrup/ost?style=flat-square&color=E3B341&label=stars"></a>
   <a href="https://github.com/RandyNorthrup/ost/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/RandyNorthrup/ost/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/RandyNorthrup/ost?style=flat-square&color=8957E5"></a>
+  <a href="https://github.com/sponsors/RandyNorthrup"><img alt="Sponsor on GitHub" src="https://img.shields.io/badge/sponsor-GitHub-DB61A2?style=flat-square&logo=githubsponsors&logoColor=white"></a>
 </p>
 
 <p align="center">
   <a href="#install">Install</a> ·
   <a href="#features">Features</a> ·
   <a href="https://github.com/RandyNorthrup/ost/wiki">Wiki</a> ·
-  <a href="#development">Development</a>
+  <a href="#development">Development</a> ·
+  <a href="#sponsor">Sponsor</a>
 </p>
 
 OST looks and works like Teams for Windows, screen for screen: chat,
@@ -110,11 +112,6 @@ submit yourself. OST has no telemetry and sends nothing to the project; see
 [PRIVACY.md](PRIVACY.md). Report security problems privately as described
 in [SECURITY.md](SECURITY.md).
 
-If OST is useful to you, you can
-[sponsor on GitHub](https://github.com/sponsors/RandyNorthrup) or
-[donate with PayPal](https://www.paypal.com/donate/?hosted_button_id=Q9VC7B42R7K82).
-Thank you!
-
 ## Development
 
 OST builds with Rust stable and Qt 6.9 or newer:
@@ -129,6 +126,17 @@ The build dependencies for each distribution are listed in
 Before opening a pull request, read [CONTRIBUTING.md](CONTRIBUTING.md) and
 the [code of conduct](CODE_OF_CONDUCT.md). Architecture and protocol notes
 live in [docs/](docs/).
+
+## Sponsor
+
+OST is built and maintained in spare time and is free for everyone. If it
+saves you a browser tab every workday, you can help keep it going.
+
+<p align="center">
+  <a href="https://github.com/sponsors/RandyNorthrup"><img alt="Sponsor on GitHub" src="https://img.shields.io/badge/Sponsor_on_GitHub-DB61A2?style=for-the-badge&logo=githubsponsors&logoColor=white" height="36"></a>
+  &nbsp;
+  <a href="https://www.paypal.com/donate/?hosted_button_id=Q9VC7B42R7K82"><img alt="Donate with PayPal" src="https://img.shields.io/badge/Donate_with_PayPal-003087?style=for-the-badge&logo=paypal&logoColor=white" height="36"></a>
+</p>
 
 ## Authors
 
