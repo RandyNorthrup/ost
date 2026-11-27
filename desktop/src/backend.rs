@@ -17088,6 +17088,38 @@ impl qobject::Backend {
         // invitation goes to this call only.
         let generation = CALL_GENERATION.load(Ordering::SeqCst);
         let qt = self.qt_thread();
+        // A group chat's call: someone who isn't in the chat is added to
+        // it while they're rung, as Teams' CallingAddParticipantService
+        // does (at the same time as the invitation, not before it; not in
+        // a channel or a meeting's chat).
+        if !one_to_one && !thread.is_empty() {
+            let (qt, thread, mri) = (qt.clone(), thread.clone(), mri.clone());
+            runtime().spawn(async move {
+                // A call's start reads its chat a lot, and the chat service
+                // throttles a thread's reads (429, "20Per10Secs" measured
+                // right after a join): ask again as Teams' HTTP layer does.
+                let result = retry_throttled(|| async {
+                    let client = TeamsClient::new().await?;
+                    api::msgactions::add_call_invitee_to_chat(&client, &thread, &mri).await
+                })
+                .await;
+                match result {
+                    Ok(added) => {
+                        tracing::info!(added, "invitee and the call's chat");
+                        if added {
+                            let _ = qt.queue(move |mut this| {
+                                if this.rust().call_thread_id.to_string() == thread {
+                                    this.as_mut().load_call_chat_members();
+                                }
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("add the invitee to the call's chat: {}", short_error(&e))
+                    }
+                }
+            });
+        }
         runtime().spawn(async move {
             let result = async {
                 let thread = if one_to_one {

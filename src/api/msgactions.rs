@@ -1132,6 +1132,69 @@ pub async fn add_chat_members(
     Ok(())
 }
 
+/// The body Teams' calling sends to add someone it rings into a chat's
+/// call to that chat (`addMembersToConversation` without a history
+/// choice): `{"members": [{id, role: "Admin"}]}`, no `shareHistoryTime`.
+/// The chat service then shares the chat from the moment they're added
+/// (captured from Teams on the web 2026-11-27: the member came back with
+/// `shareHistoryTime` = the time of the add).
+pub fn call_invitee_body(mri: &str) -> serde_json::Value {
+    serde_json::json!({ "members": [{ "id": mri, "role": "Admin" }] })
+}
+
+/// Whether Teams adds someone invited into a call on `thread` to that chat
+/// (`CallingAddParticipantService.handleAddParticipant`): only when they
+/// aren't a member, and not in a channel or a meeting's own chat (ECS
+/// `addNudgedUserToThread`, off). `members` are the thread's MRIs.
+pub fn adds_call_invitee(
+    thread: &str,
+    thread_type: Option<&str>,
+    members: &[String],
+    mri: &str,
+) -> bool {
+    use crate::calling::room_mode::{ConversationKind, conversation_kind};
+    !matches!(
+        conversation_kind(thread, thread_type),
+        ConversationKind::Channel | ConversationKind::PrivateMeeting
+    ) && !members.iter().any(|m| m.eq_ignore_ascii_case(mri))
+}
+
+/// Add someone being invited into the call on `thread` to that chat, as
+/// Teams does alongside ringing them ([`adds_call_invitee`],
+/// [`call_invitee_body`]): `PUT /v1/threads/{id}/members`. Returns whether
+/// they were added (false: already a member, or a chat Teams leaves alone).
+pub async fn add_call_invitee_to_chat(
+    client: &TeamsClient,
+    thread: &str,
+    mri: &str,
+) -> Result<bool> {
+    let base = format!("{}/v1/threads/{}", client.chat_service_url(), thread);
+    let v: serde_json::Value = client
+        .chat_get(&format!("{base}?view=msnp24Equivalent"))
+        .await?
+        .json()
+        .await
+        .context("The call's chat")?;
+    let members: Vec<String> = v["members"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|m| m["id"].as_str().map(str::to_string))
+        .collect();
+    let thread_type = v.pointer("/properties/threadType").and_then(|t| t.as_str());
+    if !adds_call_invitee(thread, thread_type, &members, mri) {
+        return Ok(false);
+    }
+    client
+        .chat_request(
+            reqwest::Method::PUT,
+            &format!("{base}/members"),
+            &call_invitee_body(mri),
+        )
+        .await?;
+    Ok(true)
+}
+
 /// Remove someone from a group chat as Teams does:
 /// `DELETE /v1/threads/{id}/members/{mri}`.
 pub async fn remove_chat_member(client: &TeamsClient, chat_id: &str, mri: &str) -> Result<()> {
@@ -1167,6 +1230,39 @@ mod add_members_tests {
             add_members_body(&m, SharedHistory::Days(3), now)["members"][0]["shareHistoryTime"],
             now - 3 * 86_400_000
         );
+    }
+
+    #[test]
+    fn call_invitees_join_group_chats_as_teams_adds_them() {
+        let t2 = "8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5";
+        // Captured from Teams on the web (2026-11-27).
+        assert_eq!(
+            call_invitee_body(t2),
+            serde_json::json!({"members": [{"id": t2, "role": "Admin"}]})
+        );
+        let chat = "19:e201a9bbafb941039539cddc43c16d5c@thread.v2";
+        let members = vec!["8:orgid:01c4860d-5776-4b16-8736-6a739fcc8b34".to_string()];
+        assert!(adds_call_invitee(chat, Some("chat"), &members, t2));
+        // Already a member (MRIs compared without case).
+        assert!(!adds_call_invitee(
+            chat,
+            Some("chat"),
+            &[t2.to_uppercase()],
+            t2
+        ));
+        // A meeting's chat or a channel: rung only.
+        assert!(!adds_call_invitee(
+            "19:meeting_abc@thread.v2",
+            Some("meeting"),
+            &members,
+            t2
+        ));
+        assert!(!adds_call_invitee(
+            "19:abc@thread.tacv2",
+            Some("topic"),
+            &members,
+            t2
+        ));
     }
 }
 
