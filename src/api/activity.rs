@@ -626,6 +626,14 @@ fn item_of(m: &serde_json::Value) -> Option<ActivityItem> {
             format!("{who} replied to your message"),
             in_where(&thread_type, &topic),
         ),
+        // Your reminder came due (Teams' dueReminder / dueReminderInChat
+        // processors, behind enableReminderFeedItems): "Reminder due",
+        // the message, and where it is.
+        ("dueReminder" | "dueReminderInChat", _) => (
+            "reminder",
+            tr_id("Reminder due", "activity:k90ftcegy"),
+            in_where(&thread_type, &topic),
+        ),
         ("call", "missedCall") => (
             "missedCall",
             fill(&tr_id("Missed call from %1", "activity:kdp1gq3h3"), &[&who]),
@@ -775,6 +783,19 @@ mod tests {
         assert_eq!(items[1].thread_id, "19:x@unq.gbl.spaces");
         assert_eq!(items[2].context, "OST call");
         assert!(parse_feed("not json").is_empty());
+    }
+
+    #[test]
+    fn due_reminders_read_reminder_due() {
+        let feed = serde_json::json!({ "messages": [
+            msg("9", serde_json::json!({"activityType":"dueReminderInChat","sourceThreadType":"chat",
+                "sourceUserImDisplayName":"OST Test 3","messagePreview":"Also, lunch is at 12:30"}), false)
+        ]});
+        let items = parse_feed(&feed.to_string());
+        assert_eq!(items[0].kind, "reminder");
+        assert_eq!(items[0].title, "Reminder due");
+        assert_eq!(items[0].preview, "Also, lunch is at 12:30");
+        assert_eq!(items[0].context, "In chat with you");
     }
 
     #[test]

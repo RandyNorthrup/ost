@@ -450,7 +450,39 @@ Rectangle {
     readonly property real gutL: width < 480 ? 14 : 32
     // Without pictures (a lobby's view of the organizers' messages) the
     // bubbles start 16.7 in from the row (Teams' waiting-side Lobby pane).
-    readonly property real gutContent: noAvatars ? gutL + 16.7 : gutL + 40
+    readonly property real gutContent: (noAvatars ? gutL + 16.7 : gutL + 40) + (selecting ? 24 : 0)
+    // Forward ▸ Multiple messages (Teams' forward multiselect, 282978 `E`;
+    // measured on Teams on the web 2026-11-27): each message gets a 16 px
+    // checkbox (radius 2, a 1 px #616161 border; checked brand) 4 in from
+    // the avatar's place, centred on the row; pictures go and the bubbles
+    // move 24 right; clicking a row toggles it; the compose box gives way
+    // to the selection bar ("{n} selected", Cancel, Next). Deleted, system,
+    // unsent and scheduled messages can't be picked, and at most
+    // forwardMultiselectSelectionLimit (5) at once.
+    property bool selecting: false
+    property var selectedIds: []
+    readonly property int selectLimit: 5
+    function selectableReason(m) {
+        if (!m || m.kind !== "message" || m.deleted) return "none"
+        if (m.scheduled_at) return qsTr("Scheduled messages can't be forwarded until they're sent.")
+        if (m.send_state) return qsTr("Undelivered messages can't be forwarded.")
+        if (selectedIds.indexOf(m.id) < 0 && selectedIds.length >= selectLimit) return qsTr("You can only forward up to %1 messages at a time.").arg(selectLimit)
+        return ""
+    }
+    function toggleSelected(m) {
+        if (selectableReason(m) !== "" && selectedIds.indexOf(m.id) < 0) return
+        const i = selectedIds.indexOf(m.id)
+        const next = selectedIds.slice()
+        if (i >= 0) next.splice(i, 1); else next.push(m.id)
+        selectedIds = next
+    }
+    function startSelecting(m) { editingId = ""; selectedIds = m ? [m.id] : []; selecting = true }
+    function stopSelecting() { selecting = false; selectedIds = []; focusCompose() }
+    function forwardSelected() {
+        const ids = selectedIds.slice().sort((a, b) => Number(a) - Number(b))
+        const list = ids.map(id => (root.messages || []).find(m => m.id === id)).filter(m => !!m)
+        msgHost.forwardMany(list)
+    }
     readonly property real gutR: width < 480 ? 28 : width < 720 ? 32 : 72
     readonly property real composeGut: width < 480 ? 14 : width < 720 ? 32 : 72
     // While a meeting is live, Teams draws its chat's header in the dark
@@ -1016,6 +1048,7 @@ Rectangle {
         tab = ""; finding = false; findMark = { id: "", terms: [] }; seekId = ""; participants.visible = false; posting = false
         // (Teams closes a chat's Copilot when another chat opens.)
         copilotOpen = false; copilotHistoryOpen = false; copilotUnread = 0
+        selecting = false; selectedIds = []
         editingId = ""
         // A thread view keeps its reply's draft as Teams does (its post's
         // reply chain, "{channel};messageid={post}"), roamed with it.
@@ -1090,6 +1123,29 @@ Rectangle {
         onThreadWindowRequested: m => root.openThreadWindow(m)
         canRecordClip: root.canRecordClips
         onRecordClipRequestedFor: box => { root.clipBox = box; clipRecorder.openFor(root.chatId) }
+        // Forward ▸ Multiple messages in chats (Teams'
+        // enableForwardMultiselectChatPane); not in a lobby's read-only view.
+        multiselectContexts: !root.isChannel && !root.readOnly && !root.threadPane ? ["chat"] : []
+        onMultiselectRequested: (m, context) => root.startSelecting(m)
+        onForwarded: if (root.selecting) root.stopSelecting()
+        // Ask Copilot: the chat's Copilot pane, asked about the message.
+        canAskCopilot: root.copilotButton > 0
+        onAskCopilotRequested: m => root.askCopilot(m)
+    }
+    // Ask Copilot (629737 `da`): Copilot's side pane opens (or stays) on
+    // this chat and gets Teams' prompt, "Search for more context and
+    // explain this in more detail" (ask_copilot_handoff_prompt_a), with
+    // the message as its annotation; a message of up to 3 words and 40
+    // characters goes in the prompt itself (740386 `m`). It runs at once.
+    property var copilotAsk: null
+    function askCopilot(m) {
+        const text = msgHost.askableText(m)
+        if (!text || !copilotButton) return
+        const prompt = qsTr("Search for more context and explain this in more detail")
+        const brief = text.split(/\s+/).filter(w => w).length <= 3 && text.length <= 40
+        copilotAsk = { id: Date.now(), promptText: brief ? prompt + " \"" + text + "\"" : prompt, text: text, chatId: root.chatId }
+        if (!copilotOpen) toggleCopilot()
+        console.info("COPILOT ask on message", m.id)
     }
     // Open conversation in new window: the post's thread in a window of
     // its own, one per post (opening it again brings that one forward).
@@ -2264,7 +2320,7 @@ Rectangle {
         }
         // Read-only (a lobby's view): the messages start at the top, as
         // Teams' waiting-side Lobby pane lists them.
-        anchors { top: header.bottom; bottom: root.readOnly ? undefined : root.peerNoteShown ? peerNoteBar.top : compose.top; left: parent.left; right: parent.right }
+        anchors { top: header.bottom; bottom: root.readOnly ? undefined : root.selecting ? selectBar.top : root.peerNoteShown ? peerNoteBar.top : compose.top; left: parent.left; right: parent.right }
         height: Math.min(contentHeight + 12, root.height - header.height - 12)
         anchors.bottomMargin: 12
         clip: true
@@ -2338,7 +2394,13 @@ Rectangle {
             // #616161) over its bubble, 2 under the group's previous one and
             // 3 above its own (OST TEST 126's results, edited by Polls).
             readonly property bool groupedEdited: !root.compact && !isRow && !showMeta && grouped && modelData.edited === true && !modelData.deleted
-            readonly property int bubbleY: root.compact && !isRow ? topPad + (showMeta ? 26 : 2) : topPad + (groupedEdited ? 21 : !showMeta || isCall ? 0 : meta.height + 2)
+            // A grouped message's status bar without "Edited": its Saved and
+            // reminder icons (16 px) on a line of their own, 2 under the
+            // message before and 2 above the bubble (Teams on the web,
+            // 2026-11-27).
+            readonly property bool groupedIcons: !root.compact && !isRow && !showMeta && grouped && !modelData.deleted && !groupedEdited
+                && (modelData.saved === true || (modelData.reminder_due || 0) > 0)
+            readonly property int bubbleY: root.compact && !isRow ? topPad + (showMeta ? 26 : 2) : topPad + (groupedEdited ? 21 : groupedIcons ? 18 : !showMeta || isCall ? 0 : meta.height + 2)
             // A thread starter's replies line (Threads layout), 28 tall.
             readonly property real threadLineH: root.threadsLayout && (modelData.thread_replies || 0) > 0 ? 30 : 0
             // A thread pane's "{N} replies" divider under its first message
@@ -2520,7 +2582,7 @@ Rectangle {
                 color: theme.brand
             }
             Avatar {
-                visible: (!msg.mine || root.compact) && !msg.grouped && !msg.isRow && !root.noAvatars
+                visible: (!msg.mine || root.compact) && !msg.grouped && !msg.isRow && !root.noAvatars && !root.selecting
                 x: root.compact ? 16 : root.gutL; y: root.compact ? msg.topPad + 8 : msg.bubbleY
                 size: root.compact ? 36 : 32; name: msg.modelData.sender
                 photoId: (msg.modelData.sender_mri || "") + (msg.modelData.sender_app ? "#" + msg.modelData.sender_app : "")
@@ -2535,13 +2597,19 @@ Rectangle {
                 // Teams shows the sender's presence on message avatars too.
                 presence: msg.modelData.ai_agent ? "Available" : msg.modelData.sender_mri && msg.modelData.sender_mri === root.chatPhotoId ? root.chatPresence : ""
             }
-            Text {
-                visible: msg.groupedEdited
+            Row {
+                visible: (msg.groupedEdited || msg.groupedIcons) && !msg.editingThis
                 x: msg.mine ? bubble.x + bubble.width - width : bubble.x
-                y: msg.topPad + 2; height: 16
-                text: qsTr("Edited")
-                font.family: theme.font; font.pixelSize: theme.small
-                color: theme.textSecondary
+                y: msg.groupedEdited ? msg.topPad + 2 : msg.topPad
+                height: 16; spacing: 4
+                Text {
+                    visible: msg.groupedEdited
+                    height: 16
+                    text: qsTr("Edited")
+                    font.family: theme.font; font.pixelSize: theme.small
+                    color: theme.textSecondary
+                }
+                MessageStatusIcons { message: msg.modelData }
             }
             // Name line: [failed text] sender, time, details. A failed
             // message's text replaces the details (Teams' statusMessage).
@@ -2696,20 +2764,9 @@ Rectangle {
                     FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "error-circle-20-filled"; size: 16; color: theme.redForeground1 }
                     Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Failed to translate"); font.family: theme.font; font.pixelSize: theme.small; color: theme.redForeground1 }
                 }
-                // Saved by you: Teams' magenta bookmark at the line's end.
-                FluentIcon {
-                    visible: msg.modelData.saved === true
-                    anchors.verticalCenter: parent.verticalCenter
-                    name: "bookmark-16-filled"; size: 16; color: theme.savedFg
-                    HoverHandler { id: savedHover }
-                    ToolTip {
-                        visible: savedHover.hovered; delay: 500
-                        y: -height - 4; padding: 8
-                        background: FluentSurface { depth: 16; radius: 4 }
-                        contentItem: Text { text: qsTr("Saved by you. Others won't see that it was saved."); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
-                    }
-                    Accessible.name: qsTr("Saved by you. Others won't see that it was saved.")
-                }
+                // Saved by you and your reminder: Teams' magenta bookmark and
+                // alarm at the line's end.
+                MessageStatusIcons { anchors.verticalCenter: parent.verticalCenter; message: msg.modelData }
             }
             function editBoxForTest() { return editLoader.item }
             Loader {
@@ -3556,6 +3613,36 @@ Rectangle {
                 z: 4
             }
             HoverHandler { id: msgHover }
+            // Selecting (Forward ▸ Multiple messages): the row's checkbox
+            // and a layer over the row that toggles it.
+            Item {
+                id: selectLayer
+                readonly property string reason: root.selecting ? root.selectableReason(msg.modelData) : "none"
+                readonly property bool checked: root.selectedIds.indexOf(msg.modelData.id) >= 0
+                visible: root.selecting && reason !== "none"
+                z: 20
+                y: msg.dividerH; width: msg.width; height: msg.height - msg.dividerH
+                Rectangle {
+                    x: root.gutL + 4; y: (parent.height - 2 - height) / 2
+                    width: 16; height: 16; radius: 2
+                    color: selectLayer.checked ? theme.brand : "transparent"
+                    border.width: 1; border.color: selectLayer.checked ? theme.brand : (selectLayer.reason !== "" ? theme.disabled : theme.textSecondary)
+                    FluentIcon { visible: selectLayer.checked; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: "white" }
+                }
+                HoverHandler { id: selectHover; cursorShape: selectLayer.reason === "" || selectLayer.checked ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                TapHandler { onTapped: root.toggleSelected(msg.modelData) }
+                ToolTip {
+                    visible: selectHover.hovered && selectLayer.reason !== "" && !selectLayer.checked; delay: 300
+                    x: selectHover.point.position.x + 15; y: selectHover.point.position.y + 15; padding: 8
+                    background: FluentSurface { depth: 16; radius: 4 }
+                    contentItem: Text { text: selectLayer.reason; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                }
+                Accessible.role: Accessible.CheckBox
+                Accessible.name: qsTr("Select message")
+                Accessible.description: qsTr("%1 selected").arg(root.selectedIds.length)
+                Accessible.checked: checked
+                Accessible.onToggleAction: root.toggleSelected(msg.modelData)
+            }
             // Teams' hover bar, end-aligned on the bubble's top edge.
             Item {
                 visible: msg.repliesDivH > 0
@@ -3597,7 +3684,7 @@ Rectangle {
             }
             HoverBar {
                 id: actions
-                readonly property bool can: !msg.isRow && !msg.modelData.deleted && !msg.sendPending && !msg.sendFailed && !msg.editingThis
+                readonly property bool can: !msg.isRow && !msg.modelData.deleted && !msg.sendPending && !msg.sendFailed && !msg.editingThis && !root.selecting
                 host: msgHost
                 message: msg.modelData
                 // A reply also sent to the channel: Reply in thread (its
@@ -5364,6 +5451,14 @@ Rectangle {
     }
     // The chat's compose (Teams' simplified compose; ComposeBox). It sits
     // 72 in on each side, 6 above the bottom, its hint row included.
+    ForwardSelectBar {
+        id: selectBar
+        visible: root.selecting && root.tab === ""
+        anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+        count: root.selectedIds.length
+        onCancelled: root.stopSelecting()
+        onNext: root.forwardSelected()
+    }
     ComposeBox {
         id: compose
         // Link previews: Optional connected experiences on, your messaging
@@ -5377,7 +5472,7 @@ Rectangle {
         // The app card's settings button: Settings ▸ Privacy (Teams).
         onAppCardSettingsRequested: root.openPrivacySettings()
         onAppCardPermissionsRequested: id => root.openAppDetails(id)
-        visible: root.chatName.length > 0 && (!root.isChannel || root.posting || root.threadsLayout) && ["Attendance", "Breakout Rooms", "Q&A", "Meeting Whiteboard", "Notes", "Recap", "Storyline"].indexOf(root.tab) < 0 && !root.channelTabs.some(t => t.name === root.tab && !root.isChannel) && !root.readOnly
+        visible: root.chatName.length > 0 && (!root.isChannel || root.posting || root.threadsLayout) && ["Attendance", "Breakout Rooms", "Q&A", "Meeting Whiteboard", "Notes", "Recap", "Storyline"].indexOf(root.tab) < 0 && !root.channelTabs.some(t => t.name === root.tab && !root.isChannel) && !root.readOnly && !root.selecting
         // New posts at the top: in the list's top card, scrolling with it.
         readonly property bool atTop: post && channelPosts.newestAtTop
         anchors { left: parent.left; right: parent.right }

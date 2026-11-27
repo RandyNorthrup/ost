@@ -62,6 +62,13 @@ Rectangle {
     Timer { id: quickRetry; interval: 15000; onTriggered: root.loadQuickCounts() }
     property int quickRetries: 0
     signal openQuick(string kind)
+    /// Your reminders (backend.remindersJson), for Quick views ▸ Reminders.
+    readonly property var reminders: { try { return JSON.parse(backend.remindersJson || "[]") } catch (e) { return [] } }
+    property bool remindersSeen: backend.setting("remindersSliceSeen") === "true"
+    Connections {
+        target: root
+        function onOpenQuick(kind) { if (kind === "reminders" && !root.remindersSeen) { root.remindersSeen = true; backend.setSetting("remindersSliceSeen", "true") } }
+    }
     signal openMentions()
     signal chatSelected(string id, string name)
     // Keyboard: Up / Down move through the chats and channels shown (a
@@ -288,8 +295,8 @@ Rectangle {
     /// ({id, email}); loaded at start and after each change.
     property var notifyTagged: ({})
     readonly property bool signedIn: backend.signedIn
-    onSignedInChanged: if (signedIn) { backend.channelAction("notify-tagged", "", "", ""); loadQuickCounts() }
-    Component.onCompleted: { syncSections(); if (signedIn) { backend.channelAction("notify-tagged", "", "", ""); loadQuickCounts() } if (backend.signedIn) backend.loadSettings() }
+    onSignedInChanged: if (signedIn) { backend.channelAction("notify-tagged", "", "", ""); loadQuickCounts(); backend.loadReminders() }
+    Component.onCompleted: { syncSections(); if (signedIn) { backend.channelAction("notify-tagged", "", "", ""); loadQuickCounts() } if (backend.signedIn) { backend.loadSettings(); backend.loadReminders() } }
     Connections {
         target: backend
         function onChannelActionResultChanged() {
@@ -487,6 +494,14 @@ Rectangle {
             if (root.hasMentions) all.push({ type: "slice", key: "mentions", label: qsTr("Mentions"), icon: "mention-20", unread: root.mentionsUnread, badge: root.mentionsUnread })
             if (pane !== "chats" && root.followedCount > 0) all.push({ type: "slice", key: "followed", label: qsTr("Followed threads"), icon: "followed-threads-20", unread: root.followedUnread, badge: root.followedUnread })
             all.push({ type: "slice", key: "drafts", label: qsTr("Drafts"), icon: "drafts-20", unread: 0, badge: 0 })
+            // Reminders (Teams' REMINDERS slice): while you have any
+            // (AlwaysShowWhenNonEmpty), after Drafts; never bold, its count
+            // the reminders due (the label then NeutralForeground1); "New"
+            // until you first open it.
+            if (root.reminders.length > 0) {
+                const due = root.reminders.filter(r => r.is_due).length
+                all.push({ type: "slice", key: "reminders", label: qsTr("Reminders"), icon: "clock-alarm-20", unread: 0, badge: due, strong: due > 0, isNew: !root.remindersSeen })
+            }
             if (root.savedCount > 0) all.push({ type: "slice", key: "saved", label: qsTr("Saved"), icon: "bookmark-20", unread: 0, badge: 0 })
             rows = all.filter(s => root.sliceShown(s))
         } else if (f.kind === "Favorites") {
@@ -1105,6 +1120,7 @@ Rectangle {
         ListRow {
             label: parent.row.label; icon: parent.row.icon
             unread: parent.row.unread > 0; badge: parent.row.badge || 0; marks: true
+            strong: parent.row.strong === true; isNew: parent.row.isNew === true
             selected: parent.row.key === "mentions" ? root.mentionsOpen : parent.row.key === "drafts" ? root.draftsOpen : root.quickOpen === parent.row.key
             onClicked: parent.row.key === "mentions" ? root.openMentions() : parent.row.key === "drafts" ? root.openDrafts() : root.openQuick(parent.row.key)
         }
@@ -1871,6 +1887,10 @@ Rectangle {
         property int badge: 0
         /// Mark the filter's text in the label.
         property bool marks: false
+        /// The label in NeutralForeground1 without bold (Reminders with
+        /// some due), and Teams' "New" badge 4 after the label.
+        property bool strong: false
+        property bool isNew: false
         signal clicked()
         width: list.width; height: 32
         Rectangle {
@@ -1880,15 +1900,17 @@ Rectangle {
         }
         FluentIcon { x: 32; y: 6; name: lr.icon; size: 20; color: theme.onFill(lrFill, lr.selected || lr.unread ? theme.text : theme.textSecondary) }
         Text {
+            id: lrLabel
             x: 64; y: 6
             width: Math.min(implicitWidth, (lrBadge.visible ? lrBadge.x - 8 : parent.width - 24) - x)
             elide: Text.ElideRight
             text: lr.label
             font.family: theme.font; font.pixelSize: theme.base
             font.weight: lr.unread ? Font.Bold : Font.Normal
-            color: theme.onFill(lrFill, lr.selected || lr.unread ? theme.text : theme.textSecondary)
+            color: theme.onFill(lrFill, lr.selected || lr.unread || lr.strong ? theme.text : theme.textSecondary)
             FilterMarks { query: lr.marks ? root.nameFilter : "" }
         }
+        NewBadge { visible: lr.isNew; x: lrLabel.x + lrLabel.width + 4; anchors.verticalCenter: parent.verticalCenter }
         Rectangle {
             id: lrBadge
             visible: lr.badge > 0

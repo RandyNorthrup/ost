@@ -17,9 +17,15 @@ import QtQuick.Controls.Basic
 Popup {
     id: root
     property var message: null
+    /// Forward ▸ Multiple messages: the selected messages (in order); the
+    /// preview stacks their cards, 8 apart, in a 250 tall box (Teams on
+    /// the web, 2026-11-27). Empty for one message.
+    property var messages: []
+    readonly property var shownMessages: messages && messages.length ? messages : (message ? [message] : [])
+    readonly property bool several: shownMessages.length > 1
     signal forwardTo(var targets, string note)
     modal: true; focus: true
-    width: 600; height: 487 + (multiPeople ? 24 : 0)
+    width: 600; height: 487 + (multiPeople ? 24 : 0) + (several ? 82 : 0)
     padding: 0
     anchors.centerIn: Overlay.overlay
     closePolicy: Popup.CloseOnEscape
@@ -117,7 +123,7 @@ Popup {
     // Preview: the note, the card, Emoji
     Rectangle {
         id: previewBox
-        x: 33; y: 231 + (root.multiPeople ? 24 : 0) + (root.picked.length > 0 ? 6 : 0); width: 535; height: 168; radius: 6
+        x: 33; y: 231 + (root.multiPeople ? 24 : 0) + (root.picked.length > 0 ? 6 : 0); width: 535; height: root.several ? 250 : 168; radius: 6
         color: theme.inputFilled; border.color: theme.divider
         TextArea {
             id: note
@@ -128,10 +134,27 @@ Popup {
             font.family: theme.font; font.pixelSize: theme.base; color: theme.text
             placeholderText: qsTr("Add a message (optional)"); placeholderTextColor: theme.textSecondary
         }
-        ForwardCard { x: 11; y: 47; maxWidth: 535 - 22; forward: root.message ? { sender_mri: root.message.sender_mri, sender_name: root.message.sender, arrival_ms: parseInt(root.message.id), html: root.message.html, text: root.message.text } : null }
+        Flickable {
+            x: 11; y: 47; width: 535 - 22; height: parent.height - 47 - 37
+            clip: true
+            contentHeight: cards.height
+            boundsBehavior: Flickable.StopAtBounds
+            Column {
+                id: cards
+                spacing: 8
+                Repeater {
+                    model: root.shownMessages
+                    ForwardCard {
+                        required property var modelData
+                        maxWidth: 535 - 22
+                        forward: ({ sender_mri: modelData.sender_mri, sender_name: modelData.sender, arrival_ms: parseInt(modelData.id), html: modelData.html, text: modelData.text })
+                    }
+                }
+            }
+        }
         Rectangle {
             id: hcFill1
-            x: 494; y: 131; width: 32; height: 32; radius: 4
+            x: 494; y: parent.height - 37; width: 32; height: 32; radius: 4
             color: emojiHover.hovered ? theme.menuHover : "transparent"
             FluentIcon { anchors.centerIn: parent; name: "emoji-16"; size: 16; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: emojiHover; cursorShape: Qt.PointingHandCursor }

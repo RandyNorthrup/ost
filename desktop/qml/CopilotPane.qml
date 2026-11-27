@@ -30,6 +30,28 @@ Rectangle {
     signal openLink(string url)
     property var launch: null
     property string requested: ""
+    /// Ask Copilot on a message ({id, promptText, text, chatId}): handed to
+    /// the app as Teams' processPromptInput does (830567: the frame's
+    /// updatePromptInputData with the prompt, not a draft, and the message
+    /// as a client-annotated Chat annotation), once it is up.
+    property var ask: null
+    property var askSent: null
+    property bool appReady: false
+    function sendAsk() {
+        const a = pane.ask
+        if (!a || !app.item || !pane.appReady || pane.askSent === a.id) return
+        pane.askSent = a.id
+        const now = Date.now()
+        const ref = "teams-msg-" + Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2) + "-" + now
+        app.item.sendFrameMessage("updatePromptInputData", [{
+            promptText: a.promptText, isDraft: false, promptTimestamp: now,
+            rawEntityData: [{ type: "Chat", data: { id: a.chatId, referenceId: ref, name: a.text } }],
+            queryAnnotations: [{ queryAnnotationType: "Chat", id: a.chatId, text: a.text, messageAnnotationSource: "ClientAnnotated",
+                messageAnnotationMetadata: { "@type": "Chat", selectedContentContext: { selectedContents: [{ "@type": "Text", selectedContent: a.text }] } } }]
+        }])
+        console.info("COPILOTPANE ask sent")
+    }
+    onAskChanged: Qt.callLater(sendAsk)
     readonly property string tag: "copilotpane-" + Math.floor(Math.random() * 1e9).toString(36)
     color: theme.surface
     visible: open
@@ -39,6 +61,7 @@ Rectangle {
         if (key === requested) return
         requested = key
         launch = null
+        appReady = false
         if (!key) return
         const theme_ = theme.highContrast ? "contrast" : theme.dark ? "dark" : "default"
         backend.eventsRequest("chatCopilot", tag, JSON.stringify(Object.assign({ theme: theme_ }, request)))
@@ -88,6 +111,7 @@ Rectangle {
         id: app
         anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: parent.bottom; leftMargin: 0.67 }
         active: pane.open && !!pane.launch
+        onActiveChanged: if (!active) pane.appReady = false
         sourceComponent: WebApp {
             showHeader: false; teamsHost: true; deepNaa: true
             appName: "Copilot"; appId: "b5abf2ae-c16b-4310-8f8a-d3bcdb52f162"
@@ -108,6 +132,8 @@ Rectangle {
                 if (name === "ChatReady") {
                     sendFrameMessage("contextualChatChanged", [pane.launch.contextualChat])
                     sendFrameMessage("updateCapabilities", [pane.launch.capabilities])
+                    pane.appReady = true
+                    pane.sendAsk()
                 } else if (name === "openLink") {
                     let u = ""
                     try { u = JSON.parse(json).url || "" } catch (e) { u = "" }

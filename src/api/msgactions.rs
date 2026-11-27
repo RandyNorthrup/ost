@@ -147,6 +147,108 @@ pub async fn set_saved(
     Ok(())
 }
 
+/// Set (or move) your reminder on a message, Teams' Remind me
+/// (`createOrUpdateMessageReminder`): `PUT …/rcmetadata/{rcId||msgId}` with
+/// `{r: due ms, mid}`; `r: 0` marks it completed (Teams' COMPLETE).
+pub async fn set_reminder(
+    client: &TeamsClient,
+    conv: &str,
+    reply_chain: &str,
+    message_id: &str,
+    due_ms: i64,
+) -> Result<()> {
+    put_rc_metadata(
+        client,
+        conv,
+        reply_chain,
+        message_id,
+        |mid| serde_json::json!({ "r": due_ms, "mid": mid }),
+    )
+    .await
+}
+
+/// Remove your reminder on a message (Teams' `deleteMessageReminder`:
+/// the same PUT with `{dr: true, mid}`).
+pub async fn remove_reminder(
+    client: &TeamsClient,
+    conv: &str,
+    reply_chain: &str,
+    message_id: &str,
+) -> Result<()> {
+    put_rc_metadata(
+        client,
+        conv,
+        reply_chain,
+        message_id,
+        |mid| serde_json::json!({ "dr": true, "mid": mid }),
+    )
+    .await
+}
+
+async fn put_rc_metadata(
+    client: &TeamsClient,
+    conv: &str,
+    reply_chain: &str,
+    message_id: &str,
+    body: impl FnOnce(i64) -> serde_json::Value,
+) -> Result<()> {
+    let url = format!(
+        "{}/v1/users/ME/conversations/{}/rcmetadata/{}",
+        client.chat_service_url(),
+        conv,
+        if reply_chain.is_empty() {
+            message_id
+        } else {
+            reply_chain
+        }
+    );
+    let mid: i64 = message_id.parse().context("message id")?;
+    client
+        .chat_request(reqwest::Method::PUT, &url, &body(mid))
+        .await?;
+    Ok(())
+}
+
+/// Your reminders' due times (ms) by message id: a thread's root from
+/// `r`, its replies from `rl2` (`{replyId: due}`); 0 or none is no
+/// reminder.
+pub fn reminders_from(v: &serde_json::Value) -> std::collections::HashMap<String, i64> {
+    let mut out = std::collections::HashMap::new();
+    let num = |x: &serde_json::Value| {
+        x.as_i64()
+            .or_else(|| x.as_f64().map(|f| f as i64))
+            .or_else(|| x.as_str().and_then(|s| s.parse().ok()))
+            .unwrap_or(0)
+    };
+    for item in v
+        .get("rcMetadataList")
+        .and_then(|l| l.as_array())
+        .into_iter()
+        .flatten()
+    {
+        let root = item
+            .get("rootMessageId")
+            .map(|r| r.to_string().trim_matches('"').to_string())
+            .unwrap_or_default();
+        let md = item.get("rcMetadata");
+        if let Some(r) = md.and_then(|m| m.get("r")).map(num).filter(|r| *r > 0) {
+            out.insert(root, r);
+        }
+        for (id, due) in md
+            .and_then(|m| m.get("rl2"))
+            .and_then(|l| l.as_object())
+            .into_iter()
+            .flatten()
+        {
+            let due = num(due);
+            if due > 0 {
+                out.insert(id.clone(), due);
+            }
+        }
+    }
+    out
+}
+
 /// The ids of a conversation's saved messages (roots with `s == 1`, plus
 /// saved replies `sl2`). No metadata yet (404) means none.
 pub async fn saved_ids(client: &TeamsClient, conv: &str) -> Result<HashSet<String>> {
@@ -223,16 +325,17 @@ pub fn horizons_from(v: &serde_json::Value) -> std::collections::HashMap<String,
     out
 }
 
-/// The rcmetadata of a conversation: saved messages, thread follow states
-/// and thread read states.
+/// The rcmetadata of a conversation: saved messages, thread follow states,
+/// thread read states and your reminders' due times.
 pub type RcMetadata = (
     HashSet<String>,
     std::collections::HashMap<String, i64>,
     std::collections::HashMap<String, ThreadHorizon>,
+    std::collections::HashMap<String, i64>,
 );
 
-/// A conversation's saved messages, thread follow states and thread read
-/// states, from one rcmetadata read.
+/// A conversation's saved messages, thread follow states, thread read
+/// states and reminders, from one rcmetadata read.
 pub async fn rc_metadata(client: &TeamsClient, conv: &str) -> Result<RcMetadata> {
     let url = format!(
         "{}/v1/users/ME/conversations/{}/rcmetadata?startTime=0&pageSize=200",
@@ -245,7 +348,12 @@ pub async fn rc_metadata(client: &TeamsClient, conv: &str) -> Result<RcMetadata>
         Err(e) => return Err(e),
     };
     let v: serde_json::Value = resp.json().await?;
-    Ok((saved_from(&v), follow_from(&v), horizons_from(&v)))
+    Ok((
+        saved_from(&v),
+        follow_from(&v),
+        horizons_from(&v),
+        reminders_from(&v),
+    ))
 }
 
 /// A change to a Threads-layout thread's read state, as Teams sends it
@@ -830,6 +938,19 @@ pub async fn translate_with(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reminders_come_from_r_and_rl2() {
+        let v = serde_json::json!({ "rcMetadataList": [
+            { "rootMessageId": 100, "rcMetadata": { "s": 1, "r": 1_800_000_000_000i64, "rl2": { "101": 1_800_000_100_000i64, "102": 0 } } },
+            { "rootMessageId": "200", "rcMetadata": { "r": 0 } },
+            { "rootMessageId": "300", "rcMetadata": { "f": 1 } },
+        ]});
+        let r = reminders_from(&v);
+        assert_eq!(r.get("100"), Some(&1_800_000_000_000));
+        assert_eq!(r.get("101"), Some(&1_800_000_100_000));
+        assert_eq!(r.len(), 2);
+    }
 
     #[test]
     fn meeting_report_as_teams_sends_it() {
