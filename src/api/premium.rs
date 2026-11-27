@@ -489,15 +489,14 @@ pub fn entry(
         || disabled_row
         || (lazy && !tp_management)
         || post_trial;
-    let menu = shown.then(|| {
-        if disabled_row || post_trial {
-            MenuRow::Get
-        } else if in_trial {
-            MenuRow::Benefits
-        } else {
-            MenuRow::Unlock
-        }
-    });
+    let row = if disabled_row || post_trial {
+        MenuRow::Get
+    } else if in_trial {
+        MenuRow::Benefits
+    } else {
+        MenuRow::Unlock
+    };
+    let menu = shown.then_some(row);
     let benefits_row = cfg.licensed_benefits
         && tp_management
         && !(self_assigned && trial.is_some_and(|t| t.status == "Active"));
