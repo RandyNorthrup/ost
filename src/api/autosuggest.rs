@@ -781,7 +781,7 @@ mod tests {
         assert_eq!(m.len(), 3);
         assert_eq!(m[0]["prefix"], "Cy: ");
         assert_eq!(m[0]["topic"], "Release planning");
-        assert_eq!(m[0]["place"], "Bob");
+        assert_eq!(m[0]["place"], "Bob, +2");
         assert_eq!(m[0]["icons"], json!(["attach", "image"]));
         assert_eq!(m[1]["prefix"], "Ada (You): ");
         assert_eq!(m[1]["title"], "0.3 release - checklist");

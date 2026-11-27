@@ -61,6 +61,9 @@ FluentSurface {
         // The People row shows as many as fit.
         const row = gs.find(g => g.id === "PEOPLE" && !root.typed)
         if (row) row.items = row.items.slice(0, Math.max(1, Math.floor((root.width - 32) / 88)))
+        // Each item's place among the options (the arrows' order).
+        let i = 0
+        for (const g of gs) g.items = g.items.map(it => Object.assign({}, it, { _i: i++ }))
         return gs
     }
     // Everything the arrows move through, in order.
@@ -69,7 +72,7 @@ FluentSurface {
         for (const g of groups) for (const it of g.items) out.push(it)
         return out
     }
-    function optionIndex(item) { return options.indexOf(item) }
+    function picked(item) { return root.current >= 0 && !!item && item._i === root.current }
     function move(step) {
         if (!options.length) return
         current = current < 0 ? (step > 0 ? 0 : options.length - 1) : (current + step + options.length) % options.length
@@ -124,6 +127,7 @@ FluentSurface {
     Item {
         id: pillBand
         x: 1.7; y: 4.7; width: parent.width - 3.4; height: 44
+        clip: true
         Row {
             x: 16; y: 8; spacing: 8
             Repeater {
@@ -151,8 +155,8 @@ FluentSurface {
                 }
             }
         }
-        Rectangle { y: parent.height + 1.9; width: parent.width; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D", "#FFFFFF") }
     }
+    Rectangle { x: 1.7; y: 50.6; width: parent.width - 3.4; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D", "#FFFFFF") }
 
     Flickable {
         id: flick
@@ -208,7 +212,7 @@ FluentSurface {
     component RowFill: Rectangle {
         property var it
         anchors.fill: parent
-        readonly property bool on: rowHover.hovered || root.current === root.optionIndex(it)
+        readonly property bool on: rowHover.hovered || root.picked(it)
         color: on ? theme.menuHover : "transparent"
         HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.activate(it) }
@@ -397,7 +401,7 @@ FluentSurface {
             width: 80; height: 84
             Rectangle {
                 anchors.fill: parent; radius: 4
-                color: pch.hovered || root.current === root.optionIndex(pc.it) ? theme.menuHover : "transparent"
+                color: pch.hovered || root.picked(pc.it) ? theme.menuHover : "transparent"
             }
             Avatar { x: 24; y: 4; size: 32; name: pc.nm; photoId: pc.it.mri || "" }
             Text { x: 0; y: 41; width: 80; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight; text: pc.first; font.family: theme.font; font.pixelSize: 12; color: theme.text }
