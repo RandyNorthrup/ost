@@ -1,11 +1,11 @@
 ---
 id: TASK-0343
 title: Read repeated-hour wall times as Teams does (daylight-time reading)
-status: In Progress
+status: Done
 assignee:
   - '@time'
 created_date: '2026-11-27T00:11:00Z'
-updated_date: '2026-11-27T00:56:00Z'
+updated_date: '2026-11-27T01:15:00Z'
 labels:
   - dst
   - time
