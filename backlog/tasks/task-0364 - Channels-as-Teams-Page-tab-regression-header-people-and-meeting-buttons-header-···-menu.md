@@ -3,11 +3,11 @@ id: TASK-0364
 title: >-
   Channels as Teams: Page tab regression, header people and meeting buttons,
   header ··· menu
-status: In Progress
+status: Done
 assignee:
   - '@claude-0364'
 created_date: '2026-11-27T18:19:00Z'
-updated_date: '2026-11-27T22:19:00Z'
+updated_date: '2026-11-27T22:54:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -52,6 +52,8 @@ From the 2026-11-27 parity audit (scope A), which compared Teams (desktop for so
   - Removing the last Page (ost-test1; OST Test 2's chat-service PUT gets HTTP 500 on that channel, an existing limit) wrote defaultTabHiddenApps::ChannelPageTab = "true"; Teams web then showed no Page. Both test channels were put back to their audit state afterwards (Page removed, flag cleared with examples/page_tab_hidden): Teams and OST show the stand-in again. The two "Loop paragraph.loop" files stay in those channels' folders.
   - Header: people (not in General) + meeting button + menu match Teams' positions (1600: people at W-217, meeting W-183) and items; ··· matches Teams item for item for ost-test1 (owner) in OST test channel 2 and OST Test 2 in General / OST threads test / OST test channel 2 (plus desktop's Open in new window); View meetings shows General's "Design review" (Dec 1) as Teams does, and Teams' empty state elsewhere.
 - Found and fixed on the way: a Threads-layout channel showed its composer over other tabs (Page).
+
+- PR #60: CI (Format, Clippy, Build and test, release-flags check, dependency audit) and CodeQL green on b82bb07; Codex's 7 findings fixed (stale Meetings answers, tab drop index with the stand-in, calendarView $select, a meeting on now listed twice, Chat with participants from another tab, meeting details only for meetings in your calendar, occurrence by iCalUId), threads answered and resolved; its review of b82bb07 added none.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
