@@ -50,6 +50,8 @@ Rectangle {
     property bool loading: false
     property bool failed: false
     property bool loaded: false
+    /// The latest feed request (its answer echoes it).
+    property int feedReq: 0
     /// Feedback given, by feedbackId: "yes", "no" or "tell".
     property var feedback: ({})
     /// Hidden cards, by feedbackId: {kind: "POST"|"AUTHOR"|"CHANNEL", name}.
@@ -59,7 +61,8 @@ Rectangle {
         if (loading || (more && !continuation)) return
         loading = true; failed = false
         if (!more) { closeThreads(); items = []; cardModel.clear(); continuation = ""; feedback = ({}); hidden = ({}) }
-        backend.channelAction("discover-feed", "", "", more ? continuation : "")
+        feedReq++
+        backend.channelAction("discover-feed", "", "", JSON.stringify({ continuation: more ? continuation : "", req: feedReq }))
     }
     ListModel { id: cardModel }
     /// A picture clicked: Teams' viewer on the message's pictures.
@@ -85,11 +88,13 @@ Rectangle {
         function onChannelActionResultChanged() {
             const r = JSON.parse(backend.channelActionResult || "{}")
             if (r.op === "discover-feed") {
-                root.loading = false
-                // (An answer that arrives after Discover closed opens nothing.)
-                if (!root.visible) return
-                if (!r.ok) { root.failed = true; return }
+                // Only the latest load's answer counts (an older visit's, or
+                // one after Discover closed, changes nothing).
                 const page = r.data || {}
+                if (r.ok && page.req !== root.feedReq) return
+                if (!root.visible || !root.loading) return
+                root.loading = false
+                if (!r.ok) { root.failed = true; return }
                 const seen = {}
                 for (const i of root.items) seen[i.feedback_id] = true
                 const fresh = (page.items || []).filter(i => !seen[i.feedback_id])

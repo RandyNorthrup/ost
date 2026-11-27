@@ -25798,7 +25798,15 @@ impl qobject::Backend {
                     // Quick views ▸ Discover (Teams' discover surface over
                     // CSA): a page of suggested posts (arg: the next page's
                     // token), "Is this useful?", and what's left out.
-                    "discover-feed" => Ok(serde_json::to_value(api::discover::feed(&client, &arg).await?)?),
+                    // (arg: {continuation, req}; the answer echoes req so the
+                    // view can tell its own load from an older one.)
+                    "discover-feed" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let page = api::discover::feed(&client, a["continuation"].as_str().unwrap_or_default()).await?;
+                        let mut v = serde_json::to_value(page)?;
+                        v["req"] = a["req"].clone();
+                        Ok(v)
+                    }
                     "discover-feedback" => {
                         let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
                         let item: api::discover::DiscoverItem = serde_json::from_value(a["item"].clone()).unwrap_or_default();
