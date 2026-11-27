@@ -1,0 +1,67 @@
+# Deletes workflow runs nobody needs any more, every hour: cancelled runs
+# (CI cancels a PR's run when a new commit arrives), failed runs that a newer
+# run has replaced, older runs of a check on the same branch, and runs from
+# branches that are merged or closed.
+# It never deletes a Release run, a run that is still going, or the newest run
+# of each workflow on main and on each open pull request.
+name: Prune workflow runs
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  pull-requests: read
+
+concurrency:
+  group: prune-runs
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    name: Prune workflow runs
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Delete unneeded runs
+        run: |
+          set -euo pipefail
+          gh pr list -R "$REPO" --state open --limit 200 --json number,headRefName \
+            --jq '.[] | .headRefName, "refs/pull/\(.number)/head", "refs/pull/\(.number)/merge"' > open-branches.txt
+          gh api --paginate "repos/$REPO/actions/runs?per_page=100" \
+            --jq '.workflow_runs[] | [.id, (.workflow_id|tostring), .head_branch // "", .status, .conclusion // "", .created_at, .path] | @tsv' > runs.tsv
+          python3 - <<'EOF'
+          import csv
+          open_b = set(l.strip() for l in open("open-branches.txt") if l.strip())
+          rows = sorted(csv.reader(open("runs.tsv"), delimiter="\t"), key=lambda r: r[5], reverse=True)
+          newest = {}
+          for r in rows:
+              newest.setdefault((r[1], r[2]), r[0])
+          keep_branch = lambda b: b == "main" or b in open_b
+          out = []
+          # runs are grouped by workflow id (CodeQL's default setup names its runs "PR #n" /
+          # "Push on main", and reports a PR's branch as refs/pull/n/head)
+          for rid, wf, branch, status, concl, _, path in rows:
+              if status != "completed" or path.endswith("/release.yml"):
+                  continue
+              is_newest = newest[(wf, branch)] == rid
+              if concl == "cancelled":
+                  out.append(rid)
+              elif not is_newest:
+                  out.append(rid)              # a newer run of this check exists on this branch
+              elif not keep_branch(branch):
+                  out.append(rid)              # the branch is merged, closed or a deleted tag test
+          open("delete.txt", "w").write("\n".join(out) + ("\n" if out else ""))
+          print(f"{len(rows)} runs, deleting {len(out)}")
+          EOF
+          deleted=0
+          while read -r id; do
+            [ -n "$id" ] || continue
+            if gh api -X DELETE "repos/$REPO/actions/runs/$id" >/dev/null 2>&1; then deleted=$((deleted+1)); fi
+          done < delete.txt
+          echo "Deleted $deleted runs" | tee -a "$GITHUB_STEP_SUMMARY"
