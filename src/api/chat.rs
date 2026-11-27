@@ -1462,62 +1462,6 @@ pub fn backroom_kind(
     }
 }
 
-/// A meeting chat's backroom kind from its thread (the chat list's
-/// threadProperties leave `meetingChatType` out; the chat service's thread
-/// has it), asked once per chat and session.
-async fn meeting_backroom(client: &TeamsClient, id: &str) -> String {
-    static KNOWN: std::sync::Mutex<Option<std::collections::HashMap<String, String>>> =
-        std::sync::Mutex::new(None);
-    if let Some(k) = KNOWN
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .as_ref()
-        .and_then(|m| m.get(id).cloned())
-    {
-        return k;
-    }
-    let url = format!(
-        "{}/v1/threads/{}?view=msnp24Equivalent",
-        client.chat_service_url(),
-        id
-    );
-    let kind = match client.chat_get(&url).await {
-        Ok(r) => match r.json::<serde_json::Value>().await {
-            Ok(v) => {
-                let props: std::collections::HashMap<String, serde_json::Value> = v
-                    .get("properties")
-                    .and_then(|p| p.as_object())
-                    .map(|o| o.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
-                    .unwrap_or_default();
-                let k = backroom_kind(&props).to_string();
-                if !k.is_empty() {
-                    let meeting = props
-                        .get("meeting")
-                        .map(|m| m.to_string())
-                        .unwrap_or_default();
-                    tracing::info!(
-                        "backroom chat {}: {k} (meeting has templateDetails: {})",
-                        &id[..id.len().min(24)],
-                        meeting.contains("templateDetails")
-                    );
-                }
-                Some(k)
-            }
-            Err(_) => None,
-        },
-        Err(_) => None,
-    };
-    let Some(kind) = kind else {
-        return String::new();
-    };
-    KNOWN
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .get_or_insert_with(Default::default)
-        .insert(id.to_string(), kind.clone());
-    kind
-}
-
 /// The backroom chats seen in the chat list: chat id → (kind, title).
 static BACKROOMS: std::sync::RwLock<Option<std::collections::HashMap<String, (String, String)>>> =
     std::sync::RwLock::new(None);
@@ -1733,9 +1677,9 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
         .map(|d| d.as_secs())
         .unwrap_or_default();
     let mut names: std::collections::HashMap<String, Option<String>> = Default::default();
-    // Meeting chats' backroom kinds, asked all at once (cached after).
-    // (Only the titled ones whose properties don't say already, a few at a
-    // time: with every page read there can be hundreds.)
+    // Meeting chats' backroom kinds, as Teams learns them: from its chat
+    // sync (CSA), not from each meeting's thread (see `chat_sync`). Only
+    // the titled ones whose properties don't say already.
     let meeting_ids: Vec<String> = conversations
         .iter()
         .filter(|c| {
@@ -1753,14 +1697,7 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
         titled_meetings = meeting_ids.len(),
         "chat list read"
     );
-    let mut kinds: Vec<String> = Vec::with_capacity(meeting_ids.len());
-    for chunk in meeting_ids.chunks(12) {
-        kinds.extend(
-            futures::future::join_all(chunk.iter().map(|id| meeting_backroom(client, id))).await,
-        );
-    }
-    let backrooms: std::collections::HashMap<String, String> =
-        meeting_ids.into_iter().zip(kinds).collect();
+    let backrooms = super::chat_sync::meeting_kinds(client, &meeting_ids).await;
     // Each chat's roster version: a chat whose members changed since OST
     // last read them is read again when it's called.
     note_roster_versions(conversations.iter().filter_map(|c| {
