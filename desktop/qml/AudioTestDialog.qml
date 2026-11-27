@@ -48,6 +48,9 @@ Popup {
     /// The microphone (or the speaker for its playback) couldn't be opened:
     /// no longer loading; another microphone can be tried.
     readonly property bool monitorFailed: state_.monitor === "error"
+    /// The microphone step before the microphone is ready: Teams shows only
+    /// its picture and a progress bar (no title, picker or buttons).
+    readonly property bool micLoading: page === "mic" && !monitorReady && !monitorFailed && micLeft !== "error"
     property int level: 0
 
     function start() {
@@ -181,21 +184,38 @@ Popup {
                 Accessible.name: qsTr("Close")
             }
         }
-        // The step's card (24 in, 24 down).
-        Column {
-            x: 24; width: root.width - 48
-            topPadding: 24
+        // The step (Teams' carousel slide: at least 310 tall with its
+        // picture, measured on testpc1 2026-11-27).
+        Item {
+            width: root.width
+            height: Math.max(310 - 140, root.micLoading ? 0 : card.implicitHeight)
+            // Getting your microphone ready: Teams' progress bar, the
+            // dialog's width right under the picture (4 tall, #E6E6E6 track).
             Item {
-                // Getting your microphone ready: Teams' progress bar.
-                visible: root.page === "mic" && !root.monitorReady && !root.monitorFailed && root.micLeft !== "error"
-                width: parent.width; height: visible ? 2 : 0
-                Rectangle { width: parent.width; height: 2; color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF") }
+                visible: root.micLoading
+                width: parent.width; height: 4
+                clip: true
+                Rectangle { anchors.fill: parent; color: theme.pick("#E6E6E6", "#3D3D3D", "#FFFFFF") }
                 Rectangle {
-                    id: bar; height: 2; width: parent.width * 0.33; color: theme.brand
-                    SequentialAnimation on x { running: parent.visible; loops: Animation.Infinite
+                    id: bar; height: 4; width: parent.width * 0.33; radius: 2
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0; color: "transparent" }
+                        GradientStop { position: 0.5; color: theme.brand }
+                        GradientStop { position: 1; color: "transparent" }
+                    }
+                    SequentialAnimation on x { running: bar.parent.visible; loops: Animation.Infinite
                         NumberAnimation { from: -bar.width; to: bar.parent.width; duration: 1500 } }
                 }
+                Accessible.role: Accessible.ProgressBar
+                Accessible.name: qsTr("Getting your microphone ready…")
             }
+        // The step's card (24 in, 24 down).
+        Column {
+            id: card
+            visible: !root.micLoading
+            x: 24; width: root.width - 48
+            topPadding: 24
             Text {
                 width: parent.width; height: 28 + 12
                 verticalAlignment: Text.AlignTop; topPadding: 0
@@ -205,7 +225,6 @@ Popup {
                          : root.speakerUsable ? qsTr("Do you hear the test sound?") : qsTr("All of your speakers have been tested"))
                       : root.page === "mic"
                       ? (root.micLeft === "error" ? qsTr("No microphones could be found")
-                         : !root.monitorReady && !root.monitorFailed ? qsTr("Getting your microphone ready…")
                          : root.micUsable ? qsTr("Speak and pause. Do you hear the playback?") : qsTr("All of your microphones have been tested"))
                       : root.allGood ? qsTr("Your audio is ready for the meeting") : qsTr("There was a problem with your audio")
                 font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
@@ -230,20 +249,21 @@ Popup {
             Item {
                 id: volumeRow
                 visible: root.page === "speaker" && root.speakerUsable && root.speakerLeft !== "error" && !root.toneError
-                width: parent.width; height: visible ? 40 : 0
+                // (6 above, as the picker's: Teams' slider, no glyph, the
+                // card's width, measured on testpc1.)
+                width: parent.width; height: visible ? 46 : 0
                 property int volume: backend.speakerVolume()
-                FluentIcon { x: 0; anchors.verticalCenter: parent.verticalCenter; name: "flyout-speaker-20"; size: 20; color: theme.textStrong }
                 Item {
                     id: vol
-                    x: 23 + 8; width: parent.width - 23 - 9 - 8; height: 24
-                    anchors.verticalCenter: parent.verticalCenter
-                    Rectangle { y: 11; width: parent.width; height: 2; radius: 8; color: theme.textSecondary }
-                    Rectangle { y: 11; width: parent.width * volumeRow.volume / 100; height: 2; radius: 8; color: theme.brand }
-                    Rectangle { x: parent.width * volumeRow.volume / 100 - 8; y: 4; width: 16; height: 16; radius: 8; color: theme.brand }
+                    x: 0; y: 6 + 8; width: parent.width; height: 24
+                    readonly property real span: width - 10
+                    Rectangle { x: 5; y: 11; width: vol.span; height: 2; radius: 8; color: theme.textSecondary }
+                    Rectangle { x: 5; y: 11; width: vol.span * volumeRow.volume / 100; height: 2; radius: 8; color: theme.brand }
+                    Rectangle { x: vol.span * volumeRow.volume / 100; y: 7; width: 10; height: 10; radius: 5; color: theme.brand }
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
-                        function setFrom(mx) { volumeRow.volume = Math.round(Math.max(0, Math.min(1, mx / vol.width)) * 100); backend.setSpeakerVolume(volumeRow.volume) }
+                        function setFrom(mx) { volumeRow.volume = Math.round(Math.max(0, Math.min(1, (mx - 5) / vol.span)) * 100); backend.setSpeakerVolume(volumeRow.volume) }
                         onPressed: m => setFrom(m.x)
                         onPositionChanged: m => { if (pressed) setFrom(m.x) }
                     }
@@ -254,9 +274,9 @@ Popup {
             // Microphone: the level meter (40 tall, centred).
             Item {
                 visible: root.page === "mic" && root.monitorReady && root.micUsable
-                width: parent.width; height: visible ? 40 : 0
+                width: parent.width; height: visible ? 46 : 0
                 Row {
-                    anchors.centerIn: parent
+                    anchors.horizontalCenter: parent.horizontalCenter; y: 6 + 12
                     spacing: 8.2
                     Repeater {
                         model: 17
@@ -326,17 +346,21 @@ Popup {
                 }
             }
         }
+        }
         // The nav bar: 12 24 24 24; Back (the microphone step) at the
-        // start, the action and proceed buttons at the end, 8 apart.
+        // start, the action and proceed buttons at the end, 8 apart
+        // (hidden while the microphone gets ready, as Teams').
         Item {
-            width: root.width; height: 12 + 32 + 24
+            // (Empty while loading: Teams' dialog is then 352 tall.)
+            width: root.width; height: root.micLoading ? 352 - 310 : 12 + 32 + 24
             NavButton {
-                visible: root.page === "mic"
+                visible: root.page === "mic" && !root.micLoading
                 x: 24; y: 12
                 text: qsTr("Back")
                 onClicked: root.page = "speaker"
             }
             Row {
+                visible: !root.micLoading
                 anchors.right: parent.right; anchors.rightMargin: 24; y: 12
                 spacing: 8
                 NavButton {
