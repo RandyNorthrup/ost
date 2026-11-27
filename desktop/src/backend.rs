@@ -27086,7 +27086,8 @@ impl qobject::Backend {
                         let f = |k: &str| a[k].as_str().unwrap_or_default().to_string();
                         let body = api::discover::preference_body(&f("kind"), &f("id"), &f("name"), &f("feedback_id"));
                         api::discover::set_excluded(&client, &body, op == "discover-exclude").await?;
-                        Ok(serde_json::Value::Null)
+                        // (Echoed so each answer is told apart from the last.)
+                        Ok(serde_json::json!({ "req": a["req"] }))
                     }
                     "discover-excluded" => Ok(serde_json::to_value(api::discover::excluded(&client).await?)?),
                     "quick-unsave" => {

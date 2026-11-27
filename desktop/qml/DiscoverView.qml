@@ -99,6 +99,8 @@ Rectangle {
                 for (const i of root.items) seen[i.feedback_id] = true
                 const fresh = (page.items || []).filter(i => !seen[i.feedback_id])
                 root.items = root.items.concat(fresh)
+                // (Each post keeps its own page's instrumentation for feedback.)
+                for (const i of fresh) { i.trace_id = page.trace_id || ""; i.logical_id = page.logical_id || "" }
                 for (const i of fresh) cardModel.append({ json: JSON.stringify(i) })
                 root.continuation = fresh.length ? page.continuation || "" : ""
                 root.traceId = page.trace_id || root.traceId
@@ -116,7 +118,7 @@ Rectangle {
             } else if (r.op === "discover-exclude" || r.op === "discover-include") {
                 // Changes answer in order: a failed one is put back.
                 const p = root.pendingPrefs.length ? root.pendingPrefs[0] : null
-                if (!p || p.op !== r.op) return
+                if (!p || p.op !== r.op || (r.ok && (r.data || {}).req !== p.args.req)) return
                 root.pendingPrefs = root.pendingPrefs.slice(1)
                 if (!r.ok) {
                     p.undo()
@@ -134,15 +136,17 @@ Rectangle {
     }
     function sendFeedback(item, useful) {
         const f = Object.assign({}, feedback); f[item.feedback_id] = useful ? "yes" : "no"; feedback = f
-        backend.channelAction("discover-feedback", "", "", JSON.stringify({ item: item, trace_id: traceId, logical_id: logicalId, useful: useful, position: Math.max(0, items.findIndex(i => i.feedback_id === item.feedback_id)) }))
+        backend.channelAction("discover-feedback", "", "", JSON.stringify({ item: item, trace_id: item.trace_id || traceId, logical_id: item.logical_id || logicalId, useful: useful, position: Math.max(0, items.findIndex(i => i.feedback_id === item.feedback_id)) }))
     }
     /// Preference changes sent and not yet answered, oldest first, each
     /// with how to put the screen back if it fails.
     property var pendingPrefs: []
+    property int prefReq: 0
     // One at a time (the backend answers each call on its own, and a
     // result names no request), so each answer is the head's.
     function sendPref(op, args, undo) {
-        pendingPrefs = pendingPrefs.concat([{ op: op, args: args, undo: undo }])
+        prefReq++
+        pendingPrefs = pendingPrefs.concat([{ op: op, args: Object.assign({ req: prefReq }, args), undo: undo }])
         if (pendingPrefs.length === 1) sendHead()
     }
     function sendHead() {
@@ -681,6 +685,9 @@ Rectangle {
                                 const t = getText(0, length).trim()
                                 if (!t) return
                                 const esc = t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")
+                                // Nothing staged by another conversation's send (a link
+                                // preview, an app card, a Loop) goes with it.
+                                backend.setNextUrlPreview(""); backend.setNextAppCard(""); backend.setNextLoop("")
                                 // Teams' size check (maxMessageContentSize): the reply stays.
                                 if (backend.composeTooLarge("<p>" + esc + "</p>", "[]")) { backend.toast(qsTr("Message is too large to send."), "error"); return }
                                 backend.sendThreadReply(card.item.channel_id, card.item.post_id, "<p>" + esc + "</p>", "[]", card.quote ? JSON.stringify(card.quote) : "", false)
