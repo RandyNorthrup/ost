@@ -103,6 +103,40 @@ doesn't handle gets no answer.
 | `loadingCallback` (Whiteboard) | `[success, errorMessage?]` | `[]` (Teams logs it) |
 | `changeWhiteboardUrl` (Whiteboard) | `[url, passThrough?]` | `[]`; Teams keeps the board for the meeting (below) |
 
+### Which pages Teams answers (measured 2026-11-27, TASK-0353)
+- Teams' iframe bridge (module 927719 `onMessageReceived`) keeps the
+  frame's current origin: the one it framed, then any origin a message
+  comes from that is valid for the app (isValidOriginForApp, module
+  775554: the definition's `validDomains` and its tabs' hosts, with
+  `{teamSiteDomain}` / `{mySiteDomain}` filled from the context). Only the
+  frame's own document from that origin is answered; Teams' events and
+  answers are posted to that origin. Frames nested in the app may only
+  send `nestedAppAuth.execute`, which the NAA broker checks itself.
+- The frame itself is not held to its valid domains: on Teams 26304 for
+  Windows 11 (testpc1, over CDP) both `location.href = …` and a real
+  click on a link took the Calendar app's frame from outlook.office.com
+  to example.com and iana.org inside the frame; no browser opened. From
+  there `initialize` and `getContext` got no answer, while the same
+  `getContext` from outlook.office.com was answered.
+- `navigateCrossDomain [url]`: Teams loads the address in the frame when
+  it is on one of the app's valid domains (handleLoadCrossDomainUrl),
+  `[true]`; else `[false, "Url is invalid"]`.
+- `authentication.getAuthToken` (module 434318 `D`): an app gets its
+  webApplicationInfo resource (the asked resources don't matter, except
+  `api://{teamSiteDomain}` for a `https://{teamSiteDomain}` resource),
+  and only when that resource is the asking origin's own
+  (`^((https|api)://<origin host>([:/].*)?)$`, "App resource defined in
+  manifest and iframe origin do not match"). A full-trust app gets what
+  it asks for, unless ECS `extensibility.restrictedFullTrustOverrides`
+  lists resources for it: then each asked resource must be on that list
+  (`requireOriginMatch`: only for a page on that host). The list names
+  Calendar (5966c135: Outlook and ic3), SharePoint (d2c6f111) and Viva
+  Connections (bd9fb5cb: `{sharePointDomains}`, securebroker, spaces) and
+  b5abf2ae (Outlook, Substrate, Graph, Loki, AugLoop, Power Platform, …).
+  OST mints only for the app's own pages and limits full-trust apps
+  without a list to the resources on those lists
+  (`FULL_TRUST_RESOURCES`, src/api/app_host.rs).
+
 The runtime Teams answers (apiVersion 4):
 `{apiVersion: 4, hostVersionsInfo: {adaptiveCardSchemaVersion: {1, 5}},
 canParentManageNAATrustedOrigins: true, isDeeplyNestedAuthSupported: true,

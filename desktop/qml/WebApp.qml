@@ -679,7 +679,11 @@ Item {
             }
         }
         // https only (and the host page OST itself loads); frames inside a
-        // hosted app may also be about:, blob: or data: documents.
+        // hosted app may also be about:, blob: or data: documents. Like
+        // Teams desktop (measured 2026-11-27, Teams 26304 on Windows 11: a
+        // script or a clicked link took the app's frame to another site,
+        // in the frame), the app's frame may go to another site; such a
+        // page gets no TeamsJS answers, events or tokens (app_host.js).
         onNavigationRequested: req => {
             const u = req.url.toString()
             if (root.teamsHost && root.hostLoading && req.isMainFrame) return

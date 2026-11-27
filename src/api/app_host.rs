@@ -101,10 +101,19 @@ pub fn facts_from(d: &serde_json::Value) -> AppFacts {
     {
         add(v.as_str().unwrap_or_default());
     }
+    // A tab address's host; one that is a placeholder Teams fills from the
+    // context (Lists' `https://{teamSiteDomain}{teamSitePath}/…`) is kept
+    // as that placeholder and filled when checked ([`app_domains`]).
     let host = |u: &str| {
-        url::Url::parse(&u.replace(['{', '}'], ""))
+        let rest = u.strip_prefix("https://")?;
+        if rest.starts_with('{') {
+            let end = rest.find('}')?;
+            return Some(rest[..=end].to_string());
+        }
+        url::Url::parse(u)
             .ok()
             .and_then(|u| u.host_str().map(str::to_string))
+            .filter(|h| !h.contains(['{', '}', '%']))
     };
     for (list, key) in [
         ("galleryTabs", "configurationUrl"),
@@ -300,6 +309,290 @@ pub fn origin_valid_for_app(origin: &str, valid_domains: &[String]) -> bool {
     })
 }
 
+/// The values Teams fills into an app's valid domains and token resources
+/// from the app's context: its team's and your own SharePoint site, the
+/// tenant's SharePoint hosts (`{sharePointDomains}`) and the tenant.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct HostSites {
+    pub team_site_domain: String,
+    pub my_site_domain: String,
+    pub share_point_domains: Vec<String>,
+    pub tid: String,
+}
+
+impl HostSites {
+    /// `{teamSiteDomain}` and `{mySiteDomain}` filled, as Teams does (its
+    /// module 775554 `te`/`G`); a placeholder without a value stays, so
+    /// it matches nothing.
+    pub fn fill(&self, s: &str) -> String {
+        let mut out = s.to_string();
+        for (k, v) in [
+            ("{teamSiteDomain}", &self.team_site_domain),
+            ("{mySiteDomain}", &self.my_site_domain),
+        ] {
+            if !v.is_empty() {
+                out = out.replace(k, v);
+            }
+        }
+        out
+    }
+
+    /// The tenant's SharePoint hosts: the root site's and its OneDrive
+    /// (`<tenant>-my.sharepoint.com`), plus the context's sites.
+    pub fn with_tenant_host(mut self, root: &str) -> Self {
+        let root = root.trim().to_ascii_lowercase();
+        let mut add = |h: String| {
+            if !h.is_empty() && !self.share_point_domains.contains(&h) {
+                self.share_point_domains.push(h);
+            }
+        };
+        if let Some(name) = root.strip_suffix(".sharepoint.com") {
+            add(root.clone());
+            add(format!("{name}-my.sharepoint.com"));
+        }
+        add(self.team_site_domain.to_ascii_lowercase());
+        add(self.my_site_domain.to_ascii_lowercase());
+        self
+    }
+}
+
+/// An app's valid domains as Teams checks origins against them (module
+/// 775554 `S`): the definition's, placeholders filled from the context.
+pub fn app_domains(f: &AppFacts, sites: &HostSites) -> Vec<String> {
+    f.valid_domains.iter().map(|d| sites.fill(d)).collect()
+}
+
+/// Whether a page served from `origin` may have the app's tokens (getAuthToken,
+/// the server-rendered first page's token): one of the app's valid domains
+/// (Teams' isValidOriginForApp), or one a Microsoft-owned launch of it names
+/// (`launch`, Teams' launch input for a task module). Any other page in the
+/// app's frame (a site it navigated to) gets none.
+pub fn sso_origin_allowed(
+    origin: &str,
+    f: &AppFacts,
+    sites: &HostSites,
+    launch: &[String],
+) -> bool {
+    origin_valid_for_app(origin, &app_domains(f, sites)) || origin_valid_for_app(origin, launch)
+}
+
+/// Whether a token resource belongs to the asking page (Teams' check for
+/// an app's own webApplicationInfo resource, module 434318 `A`): the
+/// origin itself, or `https://` / `api://` with the origin's host (and
+/// port) followed by nothing, `:` or `/`.
+pub fn resource_matches_origin(resource: &str, origin: &str) -> bool {
+    if resource.is_empty() || origin.is_empty() {
+        return false;
+    }
+    if resource == origin {
+        return true;
+    }
+    let Some(host) = url::Url::parse(origin).ok().and_then(|u| {
+        let h = u.host_str()?.to_string();
+        Some(match u.port() {
+            Some(p) => format!("{h}:{p}"),
+            None => h,
+        })
+    }) else {
+        return false;
+    };
+    let pattern = format!("(?i)^((https|api)://{}([:/].*)?)$", regex::escape(&host));
+    regex::Regex::new(&pattern).is_ok_and(|r| r.is_match(resource))
+}
+
+/// The resources a full-trust Microsoft app may have a token for when
+/// Teams' service names no list of its own for the app (ECS
+/// `extensibility.restrictedFullTrustOverrides`): the resources Teams' own
+/// lists give its first-party apps (measured 2026-11-27: Calendar,
+/// SharePoint, Viva Connections and the Microsoft 365 app) and the ones
+/// those apps were seen asking for in Teams. `{sharePointDomains}` stands
+/// for the tenant's SharePoint hosts, `{mySiteDomain}` for your OneDrive's.
+pub const FULL_TRUST_RESOURCES: &[&str] = &[
+    "https://outlook.office.com",
+    "https://outlook.office365.com",
+    "https://outlook.office365.com/connectors",
+    "https://ic3.teams.office.com",
+    "https://api.spaces.skype.com",
+    "https://teams.microsoft.com",
+    "https://substrate.office.com",
+    "https://substrate.office.com/search",
+    "https://substrate.office.com/sydney",
+    "https://substrate.office.com/tenantfeedback",
+    "https://augloop.office.com/v2",
+    "https://loki.delve.office.com",
+    "https://clients.config.office.net",
+    "https://titles.prod.mos.microsoft.com",
+    "https://api.office.net",
+    "https://gcs.office.com",
+    "https://pushchannel.1drv.ms",
+    "https://service.flow.microsoft.com",
+    "https://api.powerplatform.com",
+    "https://api.bap.microsoft.com",
+    "https://apihub.azure.com",
+    "https://designerappservice.officeapps.live.com",
+    "https://dataservice.o365filtering.com",
+    "https://safelinks.protection.office365.com",
+    "https://graph.microsoft.com",
+    "https://securebroker.sharepointonline.com",
+    "https://{sharePointDomains}",
+    "api://{sharePointDomains}",
+    "https://{mySiteDomain}",
+];
+
+/// Teams' list of resources for a full-trust app (ECS
+/// `restrictedFullTrustOverrides`), if its service names one: each entry
+/// `{resource, requireOriginMatch}`.
+pub fn full_trust_override(app_id: &str) -> Option<Vec<(String, bool)>> {
+    let list = super::ecs::setting("extensibility", "restrictedFullTrustOverrides")?;
+    full_trust_override_in(&list, app_id)
+}
+
+fn full_trust_override_in(list: &serde_json::Value, app_id: &str) -> Option<Vec<(String, bool)>> {
+    let entry = list.as_array()?.iter().find(|e| {
+        e.get("appId")
+            .and_then(|a| a.as_str())
+            .is_some_and(|a| a.eq_ignore_ascii_case(app_id))
+    })?;
+    Some(
+        entry
+            .get("resources")
+            .and_then(|r| r.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|r| {
+                let res = r.get("resource")?.as_str()?.to_string();
+                let origin = r
+                    .get("requireOriginMatch")
+                    .and_then(|b| b.as_bool())
+                    .unwrap_or(false);
+                Some((res, origin))
+            })
+            .collect(),
+    )
+}
+
+/// The ways a listed resource can be written: placeholders filled, each of
+/// the tenant's SharePoint hosts for `{sharePointDomains}`, the tenant for
+/// `{tid}`.
+fn listed_forms(listed: &str, sites: &HostSites) -> Vec<String> {
+    let base = sites.fill(listed).replace("{tid}", &sites.tid);
+    if base.contains("{sharePointDomains}") {
+        sites
+            .share_point_domains
+            .iter()
+            .map(|h| base.replace("{sharePointDomains}", h))
+            .collect()
+    } else {
+        vec![base]
+    }
+}
+
+/// Whether `resource` is on a list of resources (Teams' full-trust check,
+/// module 434318 `x`): equal to an entry once both are filled in, and,
+/// for an entry with `requireOriginMatch`, asked by a page on the
+/// resource's own host.
+pub fn resource_listed(
+    resource: &str,
+    list: &[(String, bool)],
+    origin: &str,
+    sites: &HostSites,
+) -> bool {
+    let host = |u: &str| {
+        url::Url::parse(u)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
+    };
+    let key = resource_key(&sites.fill(resource));
+    list.iter().any(|(entry, need_origin)| {
+        listed_forms(entry, sites).iter().any(|form| {
+            resource_key(form) == key
+                && (!need_origin || host(form).is_some_and(|h| Some(h) == host(origin)))
+        })
+    })
+}
+
+/// The hosts of Outlook's hosted calendar, the page OST frames for Teams'
+/// Calendar (its own frame, whatever the app's definition lists).
+pub fn hosted_calendar_domains() -> Vec<String> {
+    vec!["outlook.office.com".into(), "outlook.office365.com".into()]
+}
+
+/// The resources Teams' Calendar (Outlook's hosted calendar) may have a
+/// token for: Teams' list for it (ECS `restrictedFullTrustOverrides`, app
+/// 5966c135-…), else the ones that list names in Microsoft's commercial
+/// cloud (measured 2026-11-27).
+pub fn calendar_resources() -> Vec<(String, bool)> {
+    full_trust_override(super::app_bar::CALENDAR_M365).unwrap_or_else(|| {
+        ["https://outlook.office.com", "https://ic3.teams.office.com"]
+            .iter()
+            .map(|r| (r.to_string(), false))
+            .collect()
+    })
+}
+
+/// A resource as compared with a list: without case or a trailing `/`.
+fn resource_key(r: &str) -> String {
+    r.trim().trim_end_matches('/').to_ascii_lowercase()
+}
+
+/// The resource authentication.getAuthToken asks a token for, as Teams
+/// picks it (module 434318 `D`, module 775554 `N`):
+/// - a full-trust Microsoft app's first asked resource, when every asked
+///   resource is on Teams' list for the app (`overrides`, ECS
+///   `restrictedFullTrustOverrides`; an entry with `requireOriginMatch`
+///   only for a page on the resource's own host) or, without one, on
+///   [`FULL_TRUST_RESOURCES`];
+/// - else the app's webApplicationInfo resource (its `{teamSiteDomain}` or
+///   `{mySiteDomain}` filled; `api://` for it when the app asks so), which
+///   must be the asking page's own (`origin`, [`resource_matches_origin`]).
+pub fn sso_resource(
+    f: &AppFacts,
+    origin: &str,
+    sites: &HostSites,
+    asked: Option<&serde_json::Value>,
+    overrides: Option<&[(String, bool)]>,
+) -> Result<String> {
+    let asked: Vec<String> = asked
+        .and_then(|a| a.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    if f.full_trust && f.microsoft_owned && !asked.is_empty() {
+        let default: Vec<(String, bool)> = FULL_TRUST_RESOURCES
+            .iter()
+            .map(|r| (r.to_string(), false))
+            .collect();
+        let list = overrides.unwrap_or(&default);
+        let listed = |r: &str| resource_listed(r, list, origin, sites);
+        if let Some(bad) = asked.iter().find(|r| !listed(r)) {
+            anyhow::bail!("Resource {bad} is not one this app may have");
+        }
+        return Ok(sites.fill(&asked[0]));
+    }
+    anyhow::ensure!(
+        !f.web_app_resource.is_empty(),
+        "App webApplicationInfo or resource not defined in manifest"
+    );
+    let api_form = asked.len() == 1
+        && ((asked[0] == "api://{teamSiteDomain}"
+            && f.web_app_resource == "https://{teamSiteDomain}")
+            || (asked[0] == "api://{mySiteDomain}"
+                && f.web_app_resource == "https://{mySiteDomain}"));
+    let mine = sites.fill(if api_form {
+        &asked[0]
+    } else {
+        &f.web_app_resource
+    });
+    anyhow::ensure!(
+        resource_matches_origin(&mine, origin),
+        "App resource defined in manifest and iframe origin do not match"
+    );
+    Ok(mine)
+}
+
 /// A value as JavaScript source that is safe inside an inline `<script>`
 /// of a page OST builds: JSON with `<`, `>` and `&` written as `\u003c`,
 /// `\u003e`, `\u0026` (so `</script>` or `<!--` in it can't end or
@@ -336,49 +629,6 @@ pub fn device_origin_allowed(origin: &str, facts: &AppFacts) -> bool {
     }
     origin_valid_for_app(origin, &facts.valid_domains)
         || (facts.microsoft_owned && crate::auth::token_hosts::redirect_allowed(origin))
-}
-
-/// The resource authentication.getAuthToken asks a token for, as Teams
-/// picks it (module 9883 `w`): a full-trust Microsoft app's first asked
-/// resource, else the app's webApplicationInfo resource (its
-/// `{teamSiteDomain}` filled), which an asked resource must match.
-pub fn sso_resource(
-    f: &AppFacts,
-    team_site_domain: &str,
-    asked: Option<&serde_json::Value>,
-) -> Result<String> {
-    let asked: Vec<String> = asked
-        .and_then(|a| a.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
-    if f.full_trust
-        && f.microsoft_owned
-        && let Some(r) = asked.first()
-    {
-        anyhow::ensure!(
-            r.starts_with("https://") || r.starts_with("api://"),
-            "Invalid resource"
-        );
-        return Ok(r.clone());
-    }
-    anyhow::ensure!(
-        !f.web_app_resource.is_empty(),
-        "App webApplicationInfo or resource not defined in manifest"
-    );
-    let mine = f
-        .web_app_resource
-        .replace("{teamSiteDomain}", team_site_domain);
-    if let Some(r) = asked.first() {
-        anyhow::ensure!(
-            r.eq_ignore_ascii_case(&mine),
-            "App resource defined in manifest and iframe origin do not match"
-        );
-    }
-    Ok(mine)
 }
 
 /// Whether Teams offers deeply nested NAA (and managing trusted origins)
@@ -1270,5 +1520,243 @@ mod tests {
         assert_eq!(f.web_app_id, "app");
         assert_eq!(f.web_app_resource, "https://onenote.com");
         assert!(!f.microsoft_owned);
+    }
+
+    fn sites() -> HostSites {
+        HostSites {
+            team_site_domain: "contoso.sharepoint.com".into(),
+            my_site_domain: "contoso-my.sharepoint.com".into(),
+            tid: "tenant-id".into(),
+            ..Default::default()
+        }
+        .with_tenant_host("contoso.sharepoint.com")
+    }
+
+    #[test]
+    fn placeholder_tab_hosts_are_filled_from_the_context() {
+        let d = serde_json::json!({
+            "validDomains": ["{teamSiteDomain}"],
+            "staticTabs": [{"contentUrl": "https://{mySiteDomain}{mySitePath}/_layouts/15/x.aspx"},
+                           {"contentUrl": "https://tasks.office.com/{tid}/Home"}]
+        });
+        let f = facts_from(&d);
+        assert_eq!(
+            f.valid_domains,
+            vec!["{teamSiteDomain}", "{mySiteDomain}", "tasks.office.com"]
+        );
+        let s = sites();
+        assert!(sso_origin_allowed(
+            "https://contoso.sharepoint.com",
+            &f,
+            &s,
+            &[]
+        ));
+        assert!(sso_origin_allowed(
+            "https://contoso-my.sharepoint.com",
+            &f,
+            &s,
+            &[]
+        ));
+        assert!(sso_origin_allowed("https://tasks.office.com", &f, &s, &[]));
+        assert!(!sso_origin_allowed(
+            "https://fabrikam.sharepoint.com",
+            &f,
+            &s,
+            &[]
+        ));
+        // Without a site in the context its placeholder matches nothing.
+        assert!(!sso_origin_allowed(
+            "https://contoso.sharepoint.com",
+            &f,
+            &HostSites::default(),
+            &[]
+        ));
+    }
+
+    #[test]
+    fn tokens_only_for_the_apps_own_pages() {
+        let f = AppFacts {
+            valid_domains: vec!["app.contoso.com".into(), "*.contoso.net".into()],
+            ..Default::default()
+        };
+        let s = sites();
+        assert!(sso_origin_allowed("https://app.contoso.com", &f, &s, &[]));
+        assert!(sso_origin_allowed("https://eu.contoso.net", &f, &s, &[]));
+        // A site the frame navigated to, a look-alike, http, an opaque origin.
+        for o in [
+            "https://evil.example",
+            "https://app.contoso.com.evil.example",
+            "https://a.b.contoso.net",
+            "http://app.contoso.com",
+            "null",
+            "",
+        ] {
+            assert!(!sso_origin_allowed(o, &f, &s, &[]), "{o}");
+        }
+        // A Microsoft-owned launch's own domains count.
+        assert!(sso_origin_allowed(
+            "https://make.powerautomate.com",
+            &f,
+            &s,
+            &["make.powerautomate.com".into()]
+        ));
+    }
+
+    #[test]
+    fn resources_belong_to_the_asking_page() {
+        assert!(resource_matches_origin(
+            "api://app.contoso.com/1234-abcd",
+            "https://app.contoso.com"
+        ));
+        assert!(resource_matches_origin(
+            "https://app.contoso.com",
+            "https://app.contoso.com"
+        ));
+        assert!(resource_matches_origin(
+            "https://APP.contoso.com/x",
+            "https://app.contoso.com"
+        ));
+        assert!(!resource_matches_origin(
+            "api://app.contoso.com.evil.example/x",
+            "https://app.contoso.com"
+        ));
+        assert!(!resource_matches_origin(
+            "api://app.contoso.com/x",
+            "https://evil.example"
+        ));
+        assert!(!resource_matches_origin(
+            "https://graph.microsoft.com",
+            "https://app.contoso.com"
+        ));
+        assert!(!resource_matches_origin("", "https://app.contoso.com"));
+    }
+
+    #[test]
+    fn sso_resource_for_an_app_is_its_own() {
+        let f = AppFacts {
+            web_app_resource: "api://app.contoso.com/1234".into(),
+            ..Default::default()
+        };
+        let s = sites();
+        let asked = serde_json::json!(["https://graph.microsoft.com"]);
+        // What the app asks for doesn't matter: its manifest's resource.
+        assert_eq!(
+            sso_resource(&f, "https://app.contoso.com", &s, Some(&asked), None).unwrap(),
+            "api://app.contoso.com/1234"
+        );
+        // Not for another site in the frame.
+        assert!(sso_resource(&f, "https://evil.example", &s, Some(&asked), None).is_err());
+        // SharePoint's api:// form for its own site.
+        let sp = AppFacts {
+            web_app_resource: "https://{teamSiteDomain}".into(),
+            ..Default::default()
+        };
+        let api = serde_json::json!(["api://{teamSiteDomain}"]);
+        assert_eq!(
+            sso_resource(&sp, "https://contoso.sharepoint.com", &s, Some(&api), None).unwrap(),
+            "api://contoso.sharepoint.com"
+        );
+        assert_eq!(
+            sso_resource(&sp, "https://contoso.sharepoint.com", &s, None, None).unwrap(),
+            "https://contoso.sharepoint.com"
+        );
+        // Unfilled (no team site): nothing.
+        assert!(
+            sso_resource(
+                &sp,
+                "https://contoso.sharepoint.com",
+                &HostSites::default(),
+                None,
+                None
+            )
+            .is_err()
+        );
+        assert!(
+            sso_resource(
+                &AppFacts::default(),
+                "https://app.contoso.com",
+                &s,
+                None,
+                None
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn full_trust_resources_are_limited() {
+        let f = AppFacts {
+            full_trust: true,
+            microsoft_owned: true,
+            ..Default::default()
+        };
+        let s = sites();
+        let ask = |r: &[&str]| serde_json::json!(r);
+        let o = "https://outlook.office.com";
+        // Without Teams' own list for the app: OST's list.
+        for r in [
+            "https://outlook.office.com/",
+            "https://substrate.office.com/search",
+            "https://contoso.sharepoint.com",
+            "api://contoso-my.sharepoint.com",
+        ] {
+            assert_eq!(
+                sso_resource(&f, o, &s, Some(&ask(&[r])), None).unwrap(),
+                r,
+                "{r}"
+            );
+        }
+        for r in [
+            "https://management.azure.com",
+            "https://vault.azure.net",
+            "https://fabrikam.sharepoint.com",
+            "https://evil.example",
+            "api://evil.example/x",
+        ] {
+            assert!(
+                sso_resource(&f, o, &s, Some(&ask(&[r])), None).is_err(),
+                "{r}"
+            );
+        }
+        // Every asked resource must be listed.
+        assert!(
+            sso_resource(
+                &f,
+                o,
+                &s,
+                Some(&ask(&[
+                    "https://outlook.office.com",
+                    "https://management.azure.com"
+                ])),
+                None
+            )
+            .is_err()
+        );
+        // Teams' list for the app (ECS restrictedFullTrustOverrides).
+        let list = serde_json::json!([{ "appId": "OTHER", "resources": [] }, { "appId": "app-1", "resources": [
+            { "requireOriginMatch": false, "resource": "https://{sharePointDomains}" },
+            { "requireOriginMatch": false, "resource": "https://{tid}/{sharePointDomains}" },
+            { "requireOriginMatch": true, "resource": "https://securebroker.sharepointonline.com" }
+        ] }]);
+        assert!(full_trust_override_in(&list, "app-2").is_none());
+        let over = full_trust_override_in(&list, "APP-1").unwrap();
+        assert_eq!(over.len(), 3);
+        let r =
+            |res: &str, origin: &str| sso_resource(&f, origin, &s, Some(&ask(&[res])), Some(&over));
+        assert!(r("https://contoso.sharepoint.com", o).is_ok());
+        assert!(r("https://tenant-id/contoso-my.sharepoint.com", o).is_ok());
+        // Graph isn't on this app's list.
+        assert!(r("https://graph.microsoft.com", o).is_err());
+        // requireOriginMatch: only for a page on that host.
+        assert!(r("https://securebroker.sharepointonline.com", o).is_err());
+        assert!(
+            r(
+                "https://securebroker.sharepointonline.com",
+                "https://securebroker.sharepointonline.com"
+            )
+            .is_ok()
+        );
+        // No resource asked: the app's own (none here).
+        assert!(sso_resource(&f, o, &s, None, Some(&over)).is_err());
     }
 }

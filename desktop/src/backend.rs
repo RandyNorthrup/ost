@@ -24313,7 +24313,14 @@ impl qobject::Backend {
                         Ok(c) => api::app_host::facts(&c, &app).await.unwrap_or_default(),
                         Err(_) => Default::default(),
                     };
-                    json!(facts.valid_domains).to_string()
+                    // Filled from the app's context, as Teams checks them.
+                    let sites = api::app_host::HostSites { team_site_domain: s("teamSiteDomain"), my_site_domain: s("mySiteDomain"), ..Default::default() };
+                    let mut domains = api::app_host::app_domains(&facts, &sites);
+                    // Outlook's hosted calendar (OST's frame of Teams' Calendar).
+                    if app.eq_ignore_ascii_case(api::app_bar::CALENDAR) {
+                        domains.extend(api::app_host::hosted_calendar_domains());
+                    }
+                    json!(domains).to_string()
                 }
                 "joinedTeams" => {
                     let r = async { api::teams::list_teams_csa(&TeamsClient::new().await?).await }.await;
@@ -24327,6 +24334,9 @@ impl qobject::Backend {
                         let c = TeamsClient::new().await?;
                         let f = api::app_host::facts(&c, &app).await?;
                         anyhow::ensure!(!f.web_app_id.is_empty() && f.web_app_resource.starts_with("https://"), "No web application for the app");
+                        // Only for a page of the app's own (TASK-0353).
+                        let sites = api::app_host::HostSites { team_site_domain: s("teamSiteDomain"), my_site_domain: s("mySiteDomain"), ..Default::default() };
+                        anyhow::ensure!(api::app_host::sso_origin_allowed(&s("origin"), &f, &sites, &[]), "The page is not one of the app's");
                         let scope = format!("{}/.default", f.web_app_resource.trim_end_matches('/'));
                         teams_cli::auth::oauth::brokered_token(&f.web_app_id, &s("origin"), &scope, None).await
                     }
@@ -24357,7 +24367,8 @@ impl qobject::Backend {
                         .and_then(|a| a.as_array())
                         .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
                         .unwrap_or_default();
-                    let trusted = requested || api::app_host::origin_valid_for_app(&origin, &facts.valid_domains) || api::app_host::origin_valid_for_app(&origin, &launch);
+                    let sites = api::app_host::HostSites { team_site_domain: s("teamSiteDomain"), my_site_domain: s("mySiteDomain"), ..Default::default() };
+                    let trusted = requested || api::app_host::sso_origin_allowed(&origin, &facts, &sites, &launch);
                     teams_cli::auth::broker::execute(&s("request"), &origin, trusted).await
                 }
                 // OneDrive's Copilot pane (chat.aspx) asks its host for
@@ -24384,14 +24395,41 @@ impl qobject::Backend {
                         .and_then(|a| a.as_array())
                         .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
                         .unwrap_or_default();
+                    // The page that asked (TASK-0353): only the app's own
+                    // pages get its tokens, as Teams answers only them.
+                    let origin = s("origin");
                     let r = async {
+                        let c = TeamsClient::new().await?;
+                        let calendar = app.eq_ignore_ascii_case(api::app_bar::CALENDAR);
+                        let f = match api::app_host::facts(&c, &app).await {
+                            Ok(f) => f,
+                            // Outlook's hosted calendar is OST's own frame of
+                            // Teams' Calendar: its pages are Outlook's.
+                            Err(_) if calendar => Default::default(),
+                            Err(e) => return Err(e),
+                        };
+                        let sites = api::app_host::HostSites {
+                            team_site_domain: s("teamSiteDomain"),
+                            my_site_domain: s("mySiteDomain"),
+                            tid: c.tenant_id().unwrap_or_default(),
+                            ..Default::default()
+                        };
+                        let sites = if f.full_trust { sites.with_tenant_host(&api::app_host::sharepoint_host(&c).await) } else { sites };
+                        let launch: Vec<String> = p
+                            .get("launchDomains")
+                            .and_then(|a| a.as_array())
+                            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                            .unwrap_or_default();
+                        let own = api::app_host::sso_origin_allowed(&origin, &f, &sites, &launch)
+                            || (calendar && api::app_host::origin_valid_for_app(&origin, &api::app_host::hosted_calendar_domains()));
+                        anyhow::ensure!(own, "The asking page is not one of the app's");
                         // Teams' calendar (Outlook's hosted calendar): its own
-                        // app's token through Teams' broker, for Outlook.
-                        if app.eq_ignore_ascii_case("ef56c0de-36fc-4ef8-b417-3d82ba9d073c") {
+                        // app's token through Teams' broker, for Outlook, and
+                        // only for the resources Teams lists for it.
+                        if calendar {
                             let resource = asked.first().cloned().unwrap_or_else(|| "https://outlook.office.com".into());
-                            let host = reqwest::Url::parse(&resource).ok().and_then(|u| u.host_str().map(str::to_ascii_lowercase)).unwrap_or_default();
                             anyhow::ensure!(
-                                resource.starts_with("https://") && [".office.com", ".skype.com", ".microsoft.com"].iter().any(|d| host.ends_with(d)),
+                                resource.starts_with("https://") && api::app_host::resource_listed(&resource, &api::app_host::calendar_resources(), &origin, &sites),
                                 "Invalid resource"
                             );
                             // Teams' own services (the calling stack's ic3,
@@ -24408,16 +24446,19 @@ impl qobject::Backend {
                             .await?;
                             return Ok(t);
                         }
-                        let c = TeamsClient::new().await?;
-                        let f = api::app_host::facts(&c, &app).await?;
-                        let resource = api::app_host::sso_resource(&f, &s("teamSiteDomain"), p.get("resources"))?;
+                        let overrides = api::app_host::full_trust_override(&app);
+                        let resource = api::app_host::sso_resource(&f, &origin, &sites, p.get("resources"), overrides.as_deref())?;
                         teams_cli::auth::oauth::access_token_for(&format!("{}/.default", resource.trim_end_matches('/'))).await
                     }
                     .await;
                     match r {
-                        Ok(t) => json!({ "token": t }).to_string(),
+                        Ok(t) => {
+                            // The resources only, never the token.
+                            tracing::info!(?asked, origin = %origin, "getAuthToken for {app}");
+                            json!({ "token": t }).to_string()
+                        }
                         Err(e) => {
-                            tracing::warn!(?asked, "getAuthToken for {app} failed: {}", short_error(&e));
+                            tracing::warn!(?asked, origin = %origin, "getAuthToken for {app} failed: {}", short_error(&e));
                             json!({ "error": "FailedToGetToken" }).to_string()
                         }
                     }

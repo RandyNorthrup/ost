@@ -91,6 +91,12 @@
         let frame = null;
         // The origin of the address OST framed first (the app's own).
         let firstOrigin = "";
+        // The origin the app's frame is on now, as Teams' iframe bridge
+        // keeps it (its getOrigin/setOrigin): the one framed first, then any
+        // of the app's valid domains a message comes from. Only messages
+        // from it are answered and Teams' events go only to it; a page the
+        // frame navigated to elsewhere gets nothing (TASK-0353).
+        let current = "";
         let handlers = new Set();
         let unloadWaiter = null;
         const trusted = new Set();
@@ -125,6 +131,29 @@
             pending.set(id, resolve);
             ost.request(kind, id, JSON.stringify(payload));
         });
+        // The context's sites, which Teams fills into an app's valid
+        // domains and resources ({teamSiteDomain}, {mySiteDomain}).
+        const sites = () => ({ teamSiteDomain: ctx.teamSiteDomain || "", mySiteDomain: ctx.mySiteDomain || "" });
+        // A Microsoft-owned launch's own valid domains (Teams' launch input
+        // for a task module, as for the workflow suggestion's dialog).
+        const launchDomains = cfg.launchMicrosoftOwned && Array.isArray(cfg.launchDomains) ? cfg.launchDomains : [];
+        // The app's valid domains, read once (Teams' isValidOriginForApp).
+        let domains = null;
+        const domainsReady = native("validDomains", sites()).then(json => {
+            let d = [];
+            try { d = JSON.parse(json) } catch (e) { d = [] }
+            domains = (Array.isArray(d) ? d : []).concat(launchDomains);
+            return domains;
+        });
+        // Whether a message from the frame's document at `from` is the
+        // app's: from the current origin, or from the one framed first or
+        // one of the app's valid domains (which becomes the current one).
+        const appOrigin = async from => {
+            if (from === current) return true;
+            await domainsReady;
+            if (from !== current && (from === firstOrigin || onValidDomain(from, domains))) current = from;
+            return from === current;
+        };
         // Teams' answer (its sendResponseMessage): the request's id, its
         // uuid, the result and the app's origin.
         const respond = (source, to, d, args) => {
@@ -137,7 +166,9 @@
             if (cfg.video && /^meeting\./.test(func)) ost.log("event " + func + (handlers.has(func) ? "" : " (not listened to)"));
             const msg = { func, monotonicTimestamp: now() };
             if (args !== undefined) msg.args = args;
-            try { frame.contentWindow.postMessage(msg, "*") } catch (e) {}
+            // To the app's current origin only, as Teams posts them.
+            if (!current) return;
+            try { frame.contentWindow.postMessage(msg, current) } catch (e) {}
         };
         // The context in Teams' own key order (its getContext answers,
         // captured for a channel tab and Copilot's side panel); others after.
@@ -248,8 +279,7 @@
         const relaunch = async (entityId, template) => {
             // Only one of the app's own addresses (TASK-0311/0312): the
             // address can come from the app (settings.setSettings).
-            let domains = [];
-            try { domains = JSON.parse(await native("validDomains", {})) } catch (e) { domains = [] }
+            await domainsReady;
             // Filled in with the new entity, then kept only if it's valid.
             const before = ctx.entityId;
             ctx.entityId = entityId || ctx.entityId;
@@ -334,8 +364,8 @@
                 ost.event("failure", JSON.stringify({ reason: String((args[0] && args[0].reason) || args[0] || "") }));
                 return;
             case "nestedAppAuth.execute": {
-                const r = await native("naa", { request: typeof d.data === "string" ? d.data : "", origin: from, requestedTrust: trusted.has(from), nested,
-                                                launchDomains: cfg.launchMicrosoftOwned ? (cfg.launchDomains || []) : [] });
+                const r = await native("naa", Object.assign({ request: typeof d.data === "string" ? d.data : "", origin: from, requestedTrust: trusted.has(from), nested,
+                                                launchDomains }, sites()));
                 respond(source, from, d, [null, r]);
                 return;
             }
@@ -355,7 +385,10 @@
             }
             case "authentication.getAuthToken": {
                 const opts = args[0] && typeof args[0] === "object" && !Array.isArray(args[0]) ? args[0] : { resources: args[0], claims: args[1], silent: args[2] };
-                const r = JSON.parse(await native("sso", { resources: opts.resources || [], claims: opts.claims || [], silent: !!opts.silent, teamSiteDomain: ctx.teamSiteDomain || "" }));
+                // The asking page's origin: OST mints only for the app's own
+                // pages (TASK-0353).
+                const r = JSON.parse(await native("sso", Object.assign({ resources: opts.resources || [], claims: opts.claims || [], silent: !!opts.silent,
+                                                                         origin: from, launchDomains }, sites())));
                 respond(source, from, d, r.token ? [true, r.token] : [false, r.error || "FailedToGetToken"]);
                 return;
             }
@@ -387,6 +420,17 @@
                 return;
             case "conversations.closeConversation":
                 return;
+            case "navigateCrossDomain": {
+                // pages.navigateCrossDomain: Teams loads the address in the
+                // frame when it is on one of the app's valid domains, else
+                // answers "Url is invalid" (measured in Teams' code).
+                await domainsReady;
+                const url = appAddress(fill(String(args[0] || "")), "", domains);
+                if (!url) { respond(source, from, d, [false, "Url is invalid"]); return; }
+                respond(source, from, d, [true]);
+                frame.src = url;
+                return;
+            }
             case "navigateBack":
                 // The page's own back or Close (an Office file's Close):
                 // Teams answers, then unloads the page and goes back.
@@ -610,7 +654,15 @@
             if (nested && (cfg.deepNaa === false || !NESTED_FUNCS.has(d.func))) return;
             const from = origin(e.origin);
             if (!from.startsWith("https://")) return;
-            handle(d, e.source, from, nested);
+            // Frames nested in the app may only do NAA, whose broker checks
+            // their origin itself; the frame's own document must be the
+            // app's (Teams' onMessageReceived), or it gets no answer.
+            if (nested) { handle(d, e.source, from, nested); return; }
+            const source = e.source;
+            appOrigin(from).then(ok => {
+                if (ok) handle(d, source, from, false);
+                else ost.log("ignored " + String(d.func).slice(0, 80) + " from a page outside the app's domains");
+            });
         });
 
         // The app's frame, as Teams' hwc-iframe.
@@ -629,6 +681,7 @@
         const first = appAddress(fill(cfg.url), origin(fill(cfg.url)), []);
         if (!first) { ost.event("failure", JSON.stringify({ reason: "address" })); return; }
         firstOrigin = origin(first);
+        current = firstOrigin;
         if (!cfg.ssr) {
             frame.src = first;
             document.body.appendChild(frame);
@@ -642,7 +695,7 @@
         frame.name = "embedded-page-container_" + uuid();
         document.body.appendChild(frame);
         const action = first;
-        native("ssrToken", { origin: origin(action) }).then(json => {
+        native("ssrToken", Object.assign({ origin: origin(action) }, sites())).then(json => {
             let r = {};
             try { r = JSON.parse(json) } catch (e) {}
             if (!r.token) { ost.event("failure", JSON.stringify({ reason: "ssrToken" })); return; }
