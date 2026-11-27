@@ -166,7 +166,7 @@ pub fn h264_metadata(data: &[u8]) -> String {
         let t = nal.first().map(|b| b & 0x1F).unwrap_or(0);
         let _ = write!(s, " nal {t}");
         if matches!(t, 6..=8 | 30) {
-            let _ = write!(s, "[{}]", hex(&nal[..nal.len().min(64)]));
+            let _ = write!(s, "[{}]", hex(&nal[..nal.len().min(160)]));
         }
     };
     match first & 0x1F {

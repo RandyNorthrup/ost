@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@meet'
 created_date: '2026-11-26T21:39:00Z'
-updated_date: '2026-11-27T02:00:00Z'
+updated_date: '2026-11-27T04:51:00Z'
 labels:
   - bug
   - calls
@@ -82,4 +82,17 @@ Teams desktop was in a scheduled test meeting, sharing a window, with its status
   1. Keep the current Standout/Reporter output. It is exactly Teams' own scheme, so OST viewers cut it out, and Teams desktop at least places the camera correctly by mode (the black rectangle is the only flaw).
   2. To find the native signal: offer X-H264UC and the native extmaps as a receiver on the camera slots, receive Teams desktop's Standout camera that way, and compare its PACSI/SEI and extensions between Standout and normal. Then send whatever differs.
   3. Optional cosmetic mitigation until then: crop OST's outgoing presenter frame to the person's box, so Teams desktop's rectangle is mostly person, not black. This changes the camera's aspect for every viewer, so only with the user's OK.
+
+- Native X-H264UC receive (step 2), 2026-11-26 night, winpc Teams desktop (ost-test1) in the Meet-now test meeting with OST Test 3 on linuxlt.
+  - The media processor's own offers list x-h264uc (pt 122) and H265v2 (114) before H.264 (107), with its fast_bandwidth_feedback extension (id 3). Clients' offers are answered H.264 only.
+  - OST_VIDEO_NATIVE=1 (developer switch, off by default) offers X-H264UC (`packetization-mode=1;mst-mode=NI-TC`) first on the receive slots. The processor still answered every slot `107` only, including with Teams desktop's client version (tried, then reverted).
+  - The processor's own offers come when it moves a call: here, after a lobby admission.
+    - To get one, the meeting was set to let only organizers bypass the lobby (value before: "People in my org and guests"; restored and checked afterwards).
+    - OST answered the move with `122 107` on every slot.
+    - Teams desktop's camera (C920 on about 47 s; metadata only, nothing saved) still reached OST as H.264 pt 107, and not one pt 122 packet arrived.
+    - So the processor forwards Teams' camera natively only to native endpoints and never sends X-H264UC to OST, however OST negotiates.
+  - The depacketizer now keeps only the base layer of an X-H264UC stream (drops SVC prefix 14 and extension slices 20, as it did PACSI 30), so that path decodes if a processor ever sends it.
+- Conclusion: whatever lets Teams desktop cut out a presenter's camera travels only on the native path between Teams desktop clients and the processor (X-H264UC/H265 with their own metadata). That path isn't open to OST's WebRTC-style endpoint, so OST can't observe it or send it. Everything OST can see is already identical to Teams desktop's own Standout camera.
+- Recommendation: keep OST's Standout/Reporter output as it is (Teams' exact scheme: OST viewers cut it out; Teams desktop draws it in place with a black background). Leave AC #1 open as a Teams-side limitation unless a native capture becomes possible (only by decoding Teams desktop's own native media, which OST can't).
+- Also found: joining by meeting ID fails while the lobby holds you. Filed separately.
 <!-- SECTION:NOTES:END -->

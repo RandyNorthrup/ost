@@ -318,6 +318,36 @@ impl MidMap {
     }
 }
 
+/// Teams' native video payload (MS-H264PF: H.264 with PACSI and SVC
+/// prefix units), as its desktop app and the media processor write it.
+pub const PT_X_H264UC: u8 = 122;
+
+/// A receive-only video m-line of ours with X-H264UC offered before its
+/// H.264 `pt` (`a=rtpmap:122 X-H264UC/90000`, `mst-mode=NI-TC`).
+fn with_native_codec(section: &str, pt: u8) -> String {
+    let mut out = String::with_capacity(section.len() + 160);
+    for line in section.split_inclusive("\r\n") {
+        if line.starts_with("m=video ") {
+            let mut f: Vec<&str> = line.trim_end().split(' ').collect();
+            if f.len() > 3 {
+                f.insert(3, "122");
+            }
+            out.push_str(&f.join(" "));
+            out.push_str("\r\n");
+        } else if line.starts_with(&format!("a=rtpmap:{pt} ")) {
+            out.push_str(&format!("a=rtpmap:{PT_X_H264UC} X-H264UC/90000\r\n"));
+            out.push_str(&format!(
+                "a=fmtp:{PT_X_H264UC} packetization-mode=1;mst-mode=NI-TC\r\n"
+            ));
+            out.push_str(&format!("a=rtcp-fb:{PT_X_H264UC} nack pli\r\n"));
+            out.push_str(line);
+        } else {
+            out.push_str(line);
+        }
+    }
+    out
+}
+
 /// The payload type an SDP of ours gives the line `mid` (its first
 /// format), unless the line is turned down.
 pub fn answered_pt(sdp: &str, mid: &str) -> Option<u8> {
@@ -1079,7 +1109,7 @@ impl LocalAudio {
                     } else {
                         ("recvonly", "main-video", 1)
                     };
-                    self.video_section(
+                    let section = self.video_section(
                         port,
                         &addr,
                         VideoLine {
@@ -1091,7 +1121,21 @@ impl LocalAudio {
                             label,
                             ssrc,
                         },
-                    )
+                    );
+                    // OST_VIDEO_NATIVE=1 (protocol research): a receive
+                    // slot the processor offers X-H264UC on takes it first.
+                    let native_offered = section_with_mid(canonical, mid).is_some_and(|t| {
+                        t.to_ascii_lowercase()
+                            .contains(&format!("a=rtpmap:{PT_X_H264UC} x-h264uc/"))
+                    });
+                    if slots.contains(mid)
+                        && native_offered
+                        && std::env::var_os("OST_VIDEO_NATIVE").is_some()
+                    {
+                        with_native_codec(&section, v.payload_type)
+                    } else {
+                        section
+                    }
                 })
             } else if kind == "x-data" && mid == mm::DATA_MID {
                 Some(
@@ -1161,9 +1205,13 @@ impl LocalAudio {
                 ssrc: self.video_ssrc,
             },
         ));
+        // OST_VIDEO_NATIVE=1 (protocol research, off by default): the
+        // receive slots also offer Teams' native X-H264UC first, so the
+        // processor may forward others' cameras in it.
+        let native = std::env::var_os("OST_VIDEO_NATIVE").is_some();
         for mid in mm::slot_mids() {
             // Receive only: Teams writes these with the SSRC range 1-1.
-            s.push_str(&self.video_section(
+            let section = self.video_section(
                 port,
                 &addr,
                 VideoLine {
@@ -1175,7 +1223,12 @@ impl LocalAudio {
                     label: "main-video",
                     ssrc: 1,
                 },
-            ));
+            );
+            if native {
+                s.push_str(&with_native_codec(&section, PT_H264_OFFER));
+            } else {
+                s.push_str(&section);
+            }
         }
         s.push_str(&self.video_section(
             port,
@@ -2954,7 +3007,13 @@ async fn recv_loop(ctx: RecvCtx) {
                 if let Some(stream) = ctx
                     .video
                     .iter()
-                    .find(|v| v.pt == pt && v.range.as_ref().is_some_and(|r| in_range(r, ssrc)))
+                    .find(|v| {
+                        // A slot answered with X-H264UC first may carry
+                        // H.264 too, and the other way round.
+                        let camera = |p: u8| p == PT_X_H264UC || p == PT_H264_OFFER;
+                        (v.pt == pt || (camera(pt) && camera(v.pt)))
+                            && v.range.as_ref().is_some_and(|r| in_range(r, ssrc))
+                    })
                     .or_else(|| ctx.video.iter().find(|v| v.pt == pt && v.range.is_none()))
                 {
                     if noted.insert((ssrc, pt)) {
@@ -3883,6 +3942,19 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
         assert!(!offer_holds(&resume));
         let b = reanswer(ours, &resume, 4, "active");
         assert!(b.contains("a=mid:0\r\na=sendrecv") && b.contains("a=mid:1\r\na=sendrecv"));
+    }
+
+    #[test]
+    fn a_receive_slot_can_offer_x_h264uc_first() {
+        let line = "m=video 9 RTP/SAVP 107\r\nc=IN IP4 1.2.3.4\r\na=mid:5\r\na=recvonly\r\n\
+                    a=rtpmap:107 H264/90000\r\na=fmtp:107 packetization-mode=1\r\n";
+        let s = with_native_codec(line, 107);
+        assert!(s.starts_with("m=video 9 RTP/SAVP 122 107\r\n"), "{s}");
+        assert!(s.contains(
+            "a=rtpmap:122 X-H264UC/90000\r\na=fmtp:122 packetization-mode=1;mst-mode=NI-TC\r\n\
+             a=rtcp-fb:122 nack pli\r\na=rtpmap:107 H264/90000\r\n"
+        ));
+        assert!(s.lines().all(|l| l.len() > 2 && &l[1..2] == "="), "{s}");
     }
 
     #[test]

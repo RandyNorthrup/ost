@@ -55,6 +55,12 @@ impl Depacketizer {
         if nal.is_empty() || self.au.len() + nal.len() + 4 > MAX_ACCESS_UNIT {
             return;
         }
+        // X-H264UC (MS-H264PF): the base layer decodes as H.264; SVC
+        // prefix (14) and extension slices (20) are left out, as PACSI
+        // (30) is.
+        if matches!(nal[0] & 0x1f, 14 | 20) {
+            return;
+        }
         if nal[0] & 0x1f == 5 {
             self.has_idr = true;
         }
@@ -1291,6 +1297,21 @@ mod tests {
             d.push(&pkt(&[0x41, 9], true, 4, 180)),
             Output::AccessUnit(want, false)
         );
+    }
+
+    #[test]
+    fn x_h264uc_keeps_only_the_base_layer() {
+        let mut d = Depacketizer::default();
+        // PACSI (30) alone, then a STAP-A with an SVC prefix (14) and an
+        // IDR slice, and an extension slice (20): only the IDR is kept.
+        assert_eq!(
+            d.push(&pkt(&[0x7e, 0x80, 0x80], false, 1, 90)),
+            Output::Pending
+        );
+        let stap = [24, 0, 2, 0x6e, 1, 0, 2, 0x65, 7];
+        assert_eq!(d.push(&pkt(&stap, false, 2, 90)), Output::Pending);
+        let out = d.push(&pkt(&[0x74, 3], true, 3, 90));
+        assert_eq!(out, Output::AccessUnit(vec![0, 0, 0, 1, 0x65, 7], true));
     }
 
     #[test]
