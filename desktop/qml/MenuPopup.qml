@@ -247,7 +247,9 @@ Popup {
         if (e.key !== Qt.Key_Escape && ownRow(e) >= 0) return true
         if (e.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return false
         switch (e.key) {
-        case Qt.Key_Escape: case Qt.Key_Up: case Qt.Key_Down: case Qt.Key_Left: case Qt.Key_Right:
+        case Qt.Key_Escape:
+            return !(e.modifiers & Qt.ShiftModifier)
+        case Qt.Key_Up: case Qt.Key_Down: case Qt.Key_Left: case Qt.Key_Right:
         case Qt.Key_Home: case Qt.Key_End: case Qt.Key_PageUp: case Qt.Key_PageDown:
         case Qt.Key_Return: case Qt.Key_Enter: case Qt.Key_Space: case Qt.Key_Tab: case Qt.Key_Backtab:
             return true
@@ -450,7 +452,13 @@ Popup {
         focus: true
         // The menu's keys come first: a window's Shortcut (Escape) doesn't
         // take them while it is open.
-        Keys.onShortcutOverride: e => { if (root.keyboardNavigation && root.handlesKey(e)) e.accepted = true }
+        // Escape with a modifier closes the menu and still runs its shortcut
+        // (Teams: Shift+Esc's Mark all as read asks with the menu open).
+        Keys.onShortcutOverride: e => {
+            if (!root.keyboardNavigation) return
+            if (e.key === Qt.Key_Escape && (e.modifiers & (Qt.ShiftModifier | Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) { root.close(); return }
+            if (root.handlesKey(e)) e.accepted = true
+        }
         Keys.onPressed: e => { if (root.keyboardNavigation && root.handlesKey(e)) { e.accepted = true; root.keyPressed(e) } }
         Loader {
             active: !!root.header
