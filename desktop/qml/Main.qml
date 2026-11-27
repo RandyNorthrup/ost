@@ -1287,7 +1287,11 @@ Window {
             else if (st === 25) { console.warn("DISCOVER excluded", JSON.stringify(discoverView.settingsForTest().list)); shot("settings-listed") }
             else if (st === 26) { discoverView.settingsForTest().close(); discoverView.undoHide(discoverView.itemsForTest()[0]) }
             else if (st === 28) { discoverView.settingsForTest().start() }
-            else if (st === 30) { console.warn("DISCOVER excluded after undo", JSON.stringify(discoverView.settingsForTest().list)); discoverView.settingsForTest().close(); Qt.quit() }
+            else if (st === 30) { console.warn("DISCOVER excluded after undo", JSON.stringify(discoverView.settingsForTest().list)); discoverView.settingsForTest().close() }
+            // With --discover-feedback: Is this useful? Yes on the first post.
+            else if (st === 31 && Qt.application.arguments.indexOf("--discover-feedback") < 0) Qt.quit()
+            else if (st === 31) discoverView.sendFeedback(discoverView.itemsForTest()[0], true)
+            else if (st === 33) { shot("feedback"); Qt.quit() }
         }
     }
 

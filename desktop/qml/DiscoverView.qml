@@ -110,6 +110,8 @@ Rectangle {
                     p.undo()
                     backend.toast(qsTr("Something went wrong on our end. Please try again."), "error")
                 }
+            } else if (r.op === "discover-feedback") {
+                console.info("DISCOVER feedback", r.ok)
             } else if (r.op === "discover-excluded") {
                 settings.loading = false
                 settings.failed = !r.ok
@@ -128,6 +130,20 @@ Rectangle {
         pendingPrefs = pendingPrefs.concat([{ undo: undo }])
         backend.channelAction(op, "", "", JSON.stringify(args))
     }
+    /// Why a card is hidden: its own "Don't show …", or another card's
+    /// author or channel rule that covers it (Teams hides every post they
+    /// cover, each with its own hidden card).
+    function hiddenFor(item) {
+        const own = hidden[item.feedback_id]
+        if (own) return own
+        for (const i of items) {
+            const h = hidden[i.feedback_id]
+            if (!h) continue
+            if (h.kind === "CHANNEL" && i.channel_id === item.channel_id) return Object.assign({ owner: i }, h)
+            if (h.kind === "AUTHOR" && i.author_id && i.author_id === item.author_id) return Object.assign({ owner: i }, h)
+        }
+        return null
+    }
     function setHidden(item, h) {
         const n = Object.assign({}, hidden)
         if (h) n[item.feedback_id] = h; else delete n[item.feedback_id]
@@ -139,6 +155,8 @@ Rectangle {
         sendPref("discover-exclude", excludeArgs(item, kind), () => setHidden(item, null))
     }
     function undoHide(item) {
+        const via = hiddenFor(item)
+        if (via && via.owner) item = via.owner
         const h = hidden[item.feedback_id]
         if (!h) return
         setHidden(item, null)
@@ -285,7 +303,7 @@ Rectangle {
             return out
         }
         readonly property var shownReplies: replies.length <= 3 ? replies : replies.slice(replies.length - 3)
-        readonly property var hiddenAs: root.hidden[item.feedback_id] || null
+        readonly property var hiddenAs: root.hiddenFor(item)
         readonly property string fb: root.feedback[item.feedback_id] || ""
         property bool replying: false
         /// Reply with quote's message ({message_id, sender_mri, sender_name, preview}).
@@ -326,9 +344,12 @@ Rectangle {
                 }
                 Text {
                     width: parent.width; elide: Text.ElideRight
+                    // (The author's or channel's name in bold, as Teams'.)
+                    textFormat: Text.StyledText
+                    readonly property string who: card.hiddenAs ? "<b>" + String(card.hiddenAs.name || "").replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b>" : ""
                     text: !card.hiddenAs ? ""
-                        : card.hiddenAs.kind === "AUTHOR" ? qsTr("You won't see posts from the") + " " + card.hiddenAs.name + " " + qsTr("again in Discover.")
-                        : card.hiddenAs.kind === "CHANNEL" ? qsTr("You won't see posts from the") + " " + card.hiddenAs.name + " " + qsTr("channel again in Discover.")
+                        : card.hiddenAs.kind === "AUTHOR" ? qsTr("You won't see posts from the") + " " + who + " " + qsTr("again in Discover.")
+                        : card.hiddenAs.kind === "CHANNEL" ? qsTr("You won't see posts from the") + " " + who + " " + qsTr("channel again in Discover.")
                         : qsTr("You won't see this post again in Discover.")
                     font.family: theme.font; font.pixelSize: 12; lineHeight: 17.14; lineHeightMode: Text.FixedHeight
                     color: theme.text
@@ -689,11 +710,12 @@ Rectangle {
         background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
         readonly property var channels: list.filter(e => e.kind === "CHANNEL")
         readonly property var people: list.filter(e => e.kind === "AUTHOR")
-        function channelLabel(e) {
+        /// An excluded channel's team and name ({team, teamId, channel}).
+        function channelOf(e) {
             const m = /^uri:\/\/channel\/[^/]+\/(.+)$/.exec(e.id || "")
             const id = m ? m[1] : ""
-            for (const t of root.teams) { const c = (t.channels || []).find(c => c.id === id); if (c) return c.name }
-            return id
+            for (const t of root.teams) { const c = (t.channels || []).find(c => c.id === id); if (c) return { team: t.name || "", teamId: t.id, channel: c.name } }
+            return { team: "", teamId: "", channel: id }
         }
         contentItem: Column {
             spacing: 0
@@ -731,8 +753,9 @@ Rectangle {
             }
             // The lists scroll inside the window's height.
             Flickable {
+                visible: settings.list.length > 0
                 width: parent.width
-                height: Math.min(groups.height, Math.max(120, (Overlay.overlay ? Overlay.overlay.height : 600) - 64 - 32 - 23 - 48))
+                height: !visible ? 0 : Math.min(groups.height, Math.max(120, (Overlay.overlay ? Overlay.overlay.height : 600) - 64 - 32 - 23 - 48))
                 contentHeight: groups.height
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
@@ -740,48 +763,74 @@ Rectangle {
                 Column {
                     id: groups
                     width: parent.width
+                    // Teams' accordion (discover-user-pref-accordion, Teams web
+                    // 2026-11-27): "People (N)" and "Channels (N)" (14/600 after
+                    // a 20 px caret, 30 tall), each open with its list 10 in:
+                    // rows 48 tall, the picture (32; a team's square, radius 4),
+                    // the team's name over the channel's (14/20, the channel
+                    // light) or the person's name, and Remove (a 32 px dismiss)
+                    // at the end. Removed rows leave the list.
                     Repeater {
-                        model: [{ title: qsTr("Channels"), rows: settings.channels }, { title: qsTr("People"), rows: settings.people }]
+                        model: [{ key: "people", title: qsTr("People (%1)").arg(settings.people.filter(e => !settings.removed[e.id]).length), rows: settings.people },
+                                { key: "channels", title: qsTr("Channels (%1)").arg(settings.channels.filter(e => !settings.removed[e.id]).length), rows: settings.channels }]
                         Column {
                             id: group
                             required property var modelData
-                            visible: modelData.rows.length > 0
+                            property bool open: true
                             width: parent.width
-                            Text {
-                                text: group.modelData.title
-                                topPadding: 8; bottomPadding: 8
-                                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
+                            Item {
+                                width: parent.width; height: 30
+                                FluentIcon { x: 0; anchors.verticalCenter: parent.verticalCenter; name: "caret-down-20-filled"; size: 20; color: theme.text; rotation: group.open ? 0 : -90 }
+                                Text {
+                                    x: 20; anchors.verticalCenter: parent.verticalCenter
+                                    text: group.modelData.title
+                                    font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
+                                }
+                                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: group.open = !group.open }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: group.modelData.title
                             }
                             Repeater {
-                                model: group.modelData.rows
+                                model: group.open ? group.modelData.rows.filter(e => !settings.removed[e.id]) : []
                                 Item {
                                     id: pref
                                     required property var modelData
-                                    readonly property string label: modelData.kind === "AUTHOR" ? modelData.name : settings.channelLabel(modelData)
-                                    readonly property bool gone: !!settings.removed[modelData.id]
-                                    width: group.width; height: 40
-                                    Text {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        width: parent.width - prefButton.width - 16; elide: Text.ElideRight
-                                        text: pref.label
-                                        font.family: theme.font; font.pixelSize: 14; color: theme.text
+                                    readonly property bool channel: modelData.kind === "CHANNEL"
+                                    readonly property var where: channel ? settings.channelOf(modelData) : null
+                                    readonly property string label: channel ? (where ? where.channel : "") : modelData.name
+                                    x: 10; width: group.width - 10; height: 48
+                                    Avatar {
+                                        x: 0; y: 8; size: 32; square: pref.channel
+                                        name: pref.channel ? (pref.where ? pref.where.team : "") : pref.modelData.name || ""
+                                        initialsText: pref.channel && pref.where ? pref.where.team.split(/\s+/).filter(w => w).slice(0, 2).map(w => w[0]).join("").toUpperCase() : ""
+                                        photoId: pref.channel ? (pref.where ? "team:" + pref.where.teamId : "") : pref.modelData.id
+                                    }
+                                    Column {
+                                        x: 42; anchors.verticalCenter: parent.verticalCenter
+                                        width: parent.width - 42 - 40
+                                        Text {
+                                            visible: pref.channel
+                                            width: parent.width; elide: Text.ElideRight
+                                            text: pref.where ? pref.where.team : ""
+                                            font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
+                                        }
+                                        Text {
+                                            width: parent.width; elide: Text.ElideRight
+                                            text: pref.label
+                                            font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                                            font.weight: pref.channel ? Font.ExtraLight : Font.Normal
+                                            color: theme.text
+                                        }
                                     }
                                     Rectangle {
                                         id: prefButton
                                         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                                        width: prefText.implicitWidth + 24; height: 32; radius: 4
-                                        color: pref.gone ? "transparent" : prefHover.hovered ? theme.rowHover : theme.surface
-                                        border.color: pref.gone ? "transparent" : theme.stroke; border.width: 1
-                                        Text {
-                                            id: prefText
-                                            anchors.centerIn: parent
-                                            text: pref.gone ? qsTr("Removed") : qsTr("Remove")
-                                            font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                                            color: theme.onFill(prefButton, pref.gone ? theme.textSecondary : theme.text)
-                                        }
-                                        HoverHandler { id: prefHover; cursorShape: pref.gone ? Qt.ArrowCursor : Qt.PointingHandCursor }
+                                        width: 32; height: 32; radius: 4
+                                        color: prefHover.hovered ? theme.hover : "transparent"
+                                        FluentIcon { anchors.centerIn: parent; name: prefHover.hovered ? "dismiss-20-filled" : "dismiss-20"; size: 20; color: theme.onFill(prefButton, theme.textStrong) }
+                                        HoverHandler { id: prefHover; cursorShape: Qt.PointingHandCursor }
                                         TapHandler {
-                                            enabled: !pref.gone
                                             onTapped: {
                                                 const id = pref.modelData.id
                                                 const r = Object.assign({}, settings.removed); r[id] = true; settings.removed = r
@@ -790,7 +839,7 @@ Rectangle {
                                             }
                                         }
                                         Accessible.role: Accessible.Button
-                                        Accessible.name: pref.gone ? qsTr("%1 Removed").arg(pref.label) : qsTr("Remove %1").arg(pref.label)
+                                        Accessible.name: qsTr("Remove %1").arg(pref.label)
                                     }
                                 }
                             }
