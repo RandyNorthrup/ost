@@ -70,7 +70,7 @@ Rectangle {
         for (const k of opened) backend.closeThreadWindow(k.channel, k.post)
         opened = []
     }
-    onVisibleChanged: if (visible) load(false); else closeThreads()
+    onVisibleChanged: if (visible) load(false); else { closeThreads(); loading = false }
     Component.onDestruction: closeThreads()
     readonly property var threads: backend.threadWindowsJson ? JSON.parse(backend.threadWindowsJson) : ({})
     readonly property var teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
@@ -86,6 +86,8 @@ Rectangle {
             const r = JSON.parse(backend.channelActionResult || "{}")
             if (r.op === "discover-feed") {
                 root.loading = false
+                // (An answer that arrives after Discover closed opens nothing.)
+                if (!root.visible) return
                 if (!r.ok) { root.failed = true; return }
                 const page = r.data || {}
                 const seen = {}
@@ -109,11 +111,13 @@ Rectangle {
             } else if (r.op === "discover-exclude" || r.op === "discover-include") {
                 // Changes answer in order: a failed one is put back.
                 const p = root.pendingPrefs.length ? root.pendingPrefs[0] : null
+                if (!p || p.op !== r.op) return
                 root.pendingPrefs = root.pendingPrefs.slice(1)
-                if (!r.ok && p) {
+                if (!r.ok) {
                     p.undo()
                     backend.toast(qsTr("Something went wrong on our end. Please try again."), "error")
                 }
+                root.sendHead()
             } else if (r.op === "discover-feedback") {
                 console.info("DISCOVER feedback", r.ok)
             } else if (r.op === "discover-excluded") {
@@ -130,9 +134,15 @@ Rectangle {
     /// Preference changes sent and not yet answered, oldest first, each
     /// with how to put the screen back if it fails.
     property var pendingPrefs: []
+    // One at a time (the backend answers each call on its own, and a
+    // result names no request), so each answer is the head's.
     function sendPref(op, args, undo) {
-        pendingPrefs = pendingPrefs.concat([{ undo: undo }])
-        backend.channelAction(op, "", "", JSON.stringify(args))
+        pendingPrefs = pendingPrefs.concat([{ op: op, args: args, undo: undo }])
+        if (pendingPrefs.length === 1) sendHead()
+    }
+    function sendHead() {
+        const p = pendingPrefs[0]
+        if (p) backend.channelAction(p.op, "", "", JSON.stringify(p.args))
     }
     /// Why a card is hidden: its own "Don't show …", or another card's
     /// author or channel rule that covers it (Teams hides every post they
