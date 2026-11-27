@@ -8784,23 +8784,40 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         if let Some(call) = slot.outgoing.as_mut()
             && call.retarget(links)
         {
-            let camera = call.camera_on();
+            let (camera, sharing) = (call.camera_on(), call.is_sharing());
             tracing::info!(
                 camera,
-                sharing = call.is_sharing(),
+                sharing,
                 "describing our media to the moved call leg"
             );
-            if let Err(e) = call.describe_media(camera, call.is_sharing()).await {
+            // The meeting wasn't told: what we send stops, as a camera or
+            // share the old leg refused would have (toggle_camera,
+            // offer_capture).
+            if let Err(e) = call.describe_media(camera, sharing).await {
                 tracing::warn!("media descriptions (moved leg): {}", short_error(&e));
                 if camera {
                     let _ = call.set_camera(false, None);
-                    drop(slot);
-                    let _ = qt.queue(|mut this| {
-                        this.as_mut().show_call_camera(false);
-                        this.as_mut()
-                            .set_status_text(QString::from(tr("Your camera failed").as_str()));
-                    });
                 }
+                if sharing {
+                    call.stop_share();
+                }
+                drop(slot);
+                let _ = qt.queue(move |mut this| {
+                    if camera {
+                        this.as_mut().show_call_camera(false);
+                    }
+                    if sharing {
+                        this.as_mut().set_call_sharing(false);
+                    }
+                    let text = if sharing {
+                        tr("Couldn't share your content")
+                    } else {
+                        tr("Your camera failed")
+                    };
+                    if camera || sharing {
+                        this.as_mut().set_status_text(QString::from(text.as_str()));
+                    }
+                });
             }
         }
     }
