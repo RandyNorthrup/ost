@@ -129,7 +129,7 @@ Rectangle {
     }
     function sendFeedback(item, useful) {
         const f = Object.assign({}, feedback); f[item.feedback_id] = useful ? "yes" : "no"; feedback = f
-        backend.channelAction("discover-feedback", "", "", JSON.stringify({ item: item, trace_id: traceId, logical_id: logicalId, useful: useful, position: items.indexOf(item) }))
+        backend.channelAction("discover-feedback", "", "", JSON.stringify({ item: item, trace_id: traceId, logical_id: logicalId, useful: useful, position: Math.max(0, items.findIndex(i => i.feedback_id === item.feedback_id)) }))
     }
     /// Preference changes sent and not yet answered, oldest first, each
     /// with how to put the screen back if it fails.
@@ -676,6 +676,8 @@ Rectangle {
                                 const t = getText(0, length).trim()
                                 if (!t) return
                                 const esc = t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")
+                                // Teams' size check (maxMessageContentSize): the reply stays.
+                                if (backend.composeTooLarge("<p>" + esc + "</p>", "[]")) { backend.toast(qsTr("Message is too large to send."), "error"); return }
                                 backend.sendThreadReply(card.item.channel_id, card.item.post_id, "<p>" + esc + "</p>", "[]", card.quote ? JSON.stringify(card.quote) : "", false)
                                 text = ""
                                 card.replying = false
