@@ -110,6 +110,11 @@ submit yourself. OST has no telemetry and sends nothing to the project; see
 [PRIVACY.md](PRIVACY.md). Report security problems privately as described
 in [SECURITY.md](SECURITY.md).
 
+If OST is useful to you, you can
+[sponsor on GitHub](https://github.com/sponsors/RandyNorthrup) or
+[donate with PayPal](https://www.paypal.com/donate/?hosted_button_id=Q9VC7B42R7K82).
+Thank you!
+
 ## Development
 
 OST builds with Rust stable and Qt 6.9 or newer:
