@@ -58,9 +58,12 @@ Rectangle {
     function load(more) {
         if (loading || (more && !continuation)) return
         loading = true; failed = false
-        if (!more) { closeThreads(); items = []; continuation = ""; feedback = ({}); hidden = ({}) }
+        if (!more) { closeThreads(); items = []; cardModel.clear(); continuation = ""; feedback = ({}); hidden = ({}) }
         backend.channelAction("discover-feed", "", "", more ? continuation : "")
     }
+    ListModel { id: cardModel }
+    /// A picture clicked: Teams' viewer on the message's pictures.
+    signal openImage(var images, int index, var message)
     /// Each post loads (and stays live) as a thread does.
     property var opened: []
     function closeThreads() {
@@ -89,6 +92,7 @@ Rectangle {
                 for (const i of root.items) seen[i.feedback_id] = true
                 const fresh = (page.items || []).filter(i => !seen[i.feedback_id])
                 root.items = root.items.concat(fresh)
+                for (const i of fresh) cardModel.append({ json: JSON.stringify(i) })
                 root.continuation = fresh.length ? page.continuation || "" : ""
                 root.traceId = page.trace_id || root.traceId
                 root.logicalId = page.logical_id || root.logicalId
@@ -233,10 +237,12 @@ Rectangle {
             x: (flick.width - flick.cardW) / 2; y: 12
             width: flick.cardW
             spacing: 24
+            // (A ListModel the pages are appended to: the cards already
+            // shown, and a reply being written in one, stay as they are.)
             Repeater {
                 id: cardsRepeater
-                model: root.items
-                DiscoverCard { required property var modelData; required property int index; item: modelData; position: index; width: flick.cardW }
+                model: cardModel
+                DiscoverCard { required property string json; required property int index; item: JSON.parse(json); position: index; width: flick.cardW }
             }
             // The end of the feed.
             Item {
@@ -492,6 +498,7 @@ Rectangle {
                     }
                     PostBody {
                         id: postBody
+                        onOpenImage: (list, i) => root.openImage(list, i, postItem.m)
                         visible: !!postItem.m
                         x: 18; y: 64 + (postSubject.visible ? postSubject.height : 0); width: card.width - 36
                         message: postItem.m
@@ -558,6 +565,7 @@ Rectangle {
                                 }
                                 PostBody {
                                     id: repBody
+                                    onOpenImage: (list, i) => root.openImage(list, i, rep.modelData)
                                     x: 50; y: rep.cont ? 0 : 20; width: card.width - 70
                                     message: rep.modelData
                                 }
