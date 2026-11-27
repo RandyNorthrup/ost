@@ -3,11 +3,11 @@ id: TASK-0353
 title: >-
   Security: TeamsJS host answers token and context calls for any https origin
   (issue #35)
-status: In Progress
+status: Done
 assignee:
   - '@t353c'
 created_date: '2026-11-27T15:36:00Z'
-updated_date: '2026-11-27T23:29:00Z'
+updated_date: '2026-11-27T23:54:00Z'
 labels:
   - security
   - bug
@@ -27,7 +27,7 @@ GitHub issue #35 (Serph91P): desktop/src/app_host.js answers getContext, authent
 - [x] #2 Native sso and ssrToken receive the caller's origin and refuse to mint a token for an origin outside the app's domains; full-trust resources are limited to an allowlist
 - [x] #3 The app frame navigates as in Teams desktop (measured: it may go to another site in the frame); a page outside the app's valid domains gets no TeamsJS answers, events or tokens, and navigateCrossDomain only loads valid-domain addresses
 - [x] #4 Tests cover the origin checks; existing apps (Planner, OneNote, SharePoint tabs, Copilot, Loop) still work live
-- [ ] #5 Issue #35 is answered and closed after the fix is merged
+- [x] #5 Issue #35 is answered and closed after the fix is merged
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -73,6 +73,8 @@ GitHub issue #35 (Serph91P): desktop/src/app_host.js answers getContext, authent
 - wslbuild.sh fix (coordinator's script, not in the repo): touch ~/b/<name> created a file where the build folder goes, so every first build on a box failed (exit 74); now touch -c.
 
 - AC #3 split (t353c): its tests and live app part is now AC #4 (checked); the issue #35 part is AC #5, left for the coordinator after merge.
+
+Issue #35 answered (fix summary, credit) and closed by the coordinator after #59 merged; SECURITY.md credit merged in #64; tests and live checks merged in #65. Advisory GHSA-538r-5xxx-gpff to be published with credit once a release includes #59.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
