@@ -897,6 +897,14 @@ impl OutgoingCall {
             self.capability = c;
         }
         self.lobby_thread = group_chat_field(&body, "lobbyThreadId").or(self.lobby_thread.take());
+        // Joined by the meeting's ID while the lobby held us: its chat is
+        // named now.
+        if self.thread_id.is_empty()
+            && let Some(t) = group_chat_field(&body, "threadId").filter(|t| t.starts_with("19:"))
+        {
+            tracing::info!("the meeting's chat is named on admission");
+            self.thread_id = t;
+        }
         self.in_lobby = false;
         tracing::info!(
             has_mute = self.mute_link.is_some(),
@@ -3904,9 +3912,51 @@ pub struct MeetingLink {
     /// From the link's context: the organizer's object id and the tenant.
     pub organizer_id: Option<String>,
     pub tenant_id: Option<String>,
+    /// A meeting known only by its ID and passcode (Teams' MeetingData
+    /// join: `{meetingCode, passcode, meetingUrl}`), its thread still
+    /// unknown: `thread_id` is empty until the meeting names it.
+    pub meeting_data: Option<serde_json::Value>,
 }
 
 impl MeetingLink {
+    /// A meeting by its short link (`https://teams.microsoft.com/meet/
+    /// <ID>?p=<passcode>`), joined as Teams' Join with an ID does: by
+    /// `meetingData`, its thread unknown until it's named.
+    pub fn parse_short(url: &str) -> Option<Self> {
+        let rest = url.strip_prefix("https://teams.microsoft.com/meet/")?;
+        let (code, query) = rest.split_once('?').unwrap_or((rest, ""));
+        let code = code.trim_end_matches('/');
+        if code.is_empty() || !code.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let pass = query
+            .split('&')
+            .find_map(|kv| kv.strip_prefix("p="))
+            .and_then(percent_decode)
+            .unwrap_or_default();
+        Some(Self::by_code(code, &pass))
+    }
+
+    /// A meeting by its ID and passcode (see [`Self::parse_short`]).
+    pub fn by_code(code: &str, pass: &str) -> Self {
+        Self {
+            thread_id: String::new(),
+            message_id: "0".into(),
+            organizer_id: None,
+            tenant_id: None,
+            meeting_data: Some(serde_json::json!({
+                "meetingCode": code,
+                "passcode": if pass.is_empty() { serde_json::Value::Null } else { pass.into() },
+                "meetingUrl": format!("https://teams.microsoft.com/meet/{code}?p={pass}"),
+            })),
+        }
+    }
+
+    /// A join link of either kind ([`Self::parse`], [`Self::parse_short`]).
+    pub fn parse_join(url: &str) -> Option<Self> {
+        Self::parse(url).or_else(|| Self::parse_short(url))
+    }
+
     pub fn parse(url: &str) -> Option<Self> {
         let rest = url
             .strip_prefix("https://teams.microsoft.com/l/meetup-join/")
@@ -3948,6 +3998,7 @@ impl MeetingLink {
             message_id: message,
             organizer_id: guid("Oid"),
             tenant_id: guid("Tid"),
+            meeting_data: None,
         })
     }
 
@@ -4262,20 +4313,24 @@ pub async fn resolve_meeting_id(meeting_id: &str, passcode: &str) -> Result<(Mee
         caller_oid: &oid,
         tenant_id: &tenant_id,
     };
-    let data = serde_json::json!({
-        "meetingCode": code,
-        "passcode": if pass.is_empty() { serde_json::Value::Null } else { pass.clone().into() },
-        "meetingUrl": format!("https://teams.microsoft.com/meet/{code}?p={pass}"),
-    });
+    let by_code = MeetingLink::by_code(&code, &pass);
+    let data = by_code.meeting_data.clone().unwrap_or_default();
     let (thread, organizer, tenant, subject) =
         signaling::resolve_meeting_code(&reqwest::Client::new(), &epconv_url, &params, &data)
             .await?;
+    // The lobby holds us: the meeting names no thread until we're let
+    // in, so it's joined by its meetingData, as Teams joins it.
+    let Some(thread) = thread else {
+        tracing::info!("join with an ID: no thread before the lobby; joining by meetingData");
+        return Ok((by_code, subject));
+    };
     Ok((
         MeetingLink {
             thread_id: thread,
             message_id: "0".into(),
             organizer_id: organizer,
             tenant_id: tenant,
+            meeting_data: None,
         },
         subject,
     ))
@@ -4476,12 +4531,14 @@ async fn start_tagged(
     // Joining a call that's going on (a meeting's, or a chat's), Teams
     // uses that call's id as the chain id: it's the call's id for
     // everyone in it (shares are tagged with it). A new call gets a new id.
-    let joins_ongoing = matches!(
-        target,
-        Target::Meeting(..)
-            | Target::MeetingPreheat(..)
-            | Target::Group(signaling::GroupCallKind::Join)
-    );
+    // (A meeting known only by its ID has no thread to look up.)
+    let joins_ongoing = !thread_id.is_empty()
+        && matches!(
+            target,
+            Target::Meeting(..)
+                | Target::MeetingPreheat(..)
+                | Target::Group(signaling::GroupCallKind::Join)
+        );
     let ongoing = if joins_ongoing {
         match crate::api::client::TeamsClient::new().await {
             Ok(client) => crate::api::thread_live_call(&client, thread_id)
@@ -4563,7 +4620,12 @@ async fn start_tagged(
             let opts = signaling::MeetingJoinOptions {
                 preheat: false,
                 meeting_data_wait: how.meeting_data_wait,
-                meeting_data: how.kept.and_then(|k| k.meeting_data.clone()),
+                // A meeting known by its ID only: its meetingData (Teams'
+                // MeetingData join).
+                meeting_data: how
+                    .kept
+                    .and_then(|k| k.meeting_data.clone())
+                    .or_else(|| link.meeting_data.clone()),
                 conversation_url: how.kept.map(|k| k.controller.as_str()),
                 as_attendee: how.as_attendee,
             };
@@ -5019,7 +5081,15 @@ async fn start_tagged(
         timers,
         notes,
         notes_organizer,
-        thread_id: thread_id.to_string(),
+        // Joined by the meeting's ID: its chat as the join names it (in
+        // the lobby, not until we're let in).
+        thread_id: if thread_id.is_empty() {
+            group_chat_field(&created.response_body, "threadId")
+                .filter(|t| t.starts_with("19:"))
+                .unwrap_or_default()
+        } else {
+            thread_id.to_string()
+        },
         unmute_link,
         lobby_thread,
         server_muted: std::sync::atomic::AtomicBool::new(false),
@@ -5527,6 +5597,31 @@ mod tests {
             MeetingLink::parse("https://teams.microsoft.com/l/meetup-join/19%3a%40thread.tacv2/1")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn a_short_link_is_a_meeting_known_by_its_id() {
+        let s =
+            MeetingLink::parse_join("https://teams.microsoft.com/meet/280904668281902?p=FQ9mZD%3D")
+                .unwrap();
+        assert!(s.thread_id.is_empty());
+        assert_eq!(s.message_id, "0");
+        assert_eq!(
+            s.meeting_data,
+            Some(serde_json::json!({
+                "meetingCode": "280904668281902",
+                "passcode": "FQ9mZD=",
+                "meetingUrl": "https://teams.microsoft.com/meet/280904668281902?p=FQ9mZD=",
+            }))
+        );
+        // No passcode: null, as Teams sends it.
+        let n = MeetingLink::parse_short("https://teams.microsoft.com/meet/123").unwrap();
+        assert_eq!(n.meeting_data.unwrap()["passcode"], serde_json::Value::Null);
+        assert!(MeetingLink::parse_short("https://teams.microsoft.com/meet/12a3?p=x").is_none());
+        assert!(MeetingLink::parse_short("https://evil.example/meet/123?p=x").is_none());
+        // A full link still parses as one, with no meetingData.
+        let full = "https://teams.microsoft.com/l/meetup-join/19%3ameeting_YTQy%40thread.v2/0";
+        assert_eq!(MeetingLink::parse_join(full).unwrap().meeting_data, None);
     }
 
     #[test]

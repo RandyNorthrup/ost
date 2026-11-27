@@ -3582,6 +3582,17 @@ Window {
     property int presentGiven: 0
     property int controlAsked: 0
     property int controlGot: 0
+    // --join-admit-each: admit everyone who waits in the lobby, as they come.
+    Timer {
+        running: Qt.application.arguments.indexOf("--join-admit-each") >= 0 && backend.callState === "connected"
+        interval: 2000; repeat: true
+        onTriggered: {
+            for (const p of JSON.parse(backend.callLobbyJson || "[]")) {
+                console.warn("JOIN admit-each", p.name)
+                backend.admitFromLobby(p.id, p.name, false)
+            }
+        }
+    }
     property var controlKeys: []
     property int controlTypedAt: 0
     Timer {
@@ -3696,7 +3707,8 @@ Window {
                 // capture the waiting screen, wait to be admitted (or
                 // denied), capture the meeting, then leave.
                 const st = backend.callState
-                if (step % 5 === 3) console.warn("JOIN lobby-wait state", st, "visible", preJoin.visible, "lobby", preJoin.lobby)
+                if (step % 5 === 3) console.warn("JOIN lobby-wait state", st, "visible", preJoin.visible, "lobby", preJoin.lobby,
+                                                 "chat", backend.callThreadId.length > 0, "title", backend.callPeer)
                 // --join-lobby-data (TASK-0213): once admitted, use the
                 // meeting's data channel as it came back after the media
                 // moved: live captions on (someone speaks), then take
@@ -16414,7 +16426,9 @@ Window {
         }
         // Join: Teams' pre-join window first, then the meeting.
         onJoinMeeting: (url, subject) => {
-            if (url.indexOf("/l/meetup-join/") < 0) { Qt.openUrlExternally(url); return }
+            // A meeting link, or a short link (/meet/<ID>?p=…): Join with
+            // an ID while the lobby holds you joins by the meeting's ID.
+            if (url.indexOf("/l/meetup-join/") < 0 && !/^https:\/\/teams\.microsoft\.com\/meet\/\d+/.test(url)) { Qt.openUrlExternally(url); return }
             const ev = (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).find(e => e.join_url === url)
             preJoin.openFor(url, subject, ev ? ev.start_utc : "", ev ? ev.end_utc : "")
         }
