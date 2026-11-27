@@ -325,6 +325,21 @@ impl Config {
         no_keyring: bool,
         account: &str,
     ) -> Result<Self> {
+        Self::load_locked(path, store, no_keyring, account, None)
+    }
+
+    /// [`Config::load_from`]. Reading needs no lock; moving the tokens
+    /// (and finding them gone from the keyring the file names, which a
+    /// save in progress elsewhere can show) starts again under the
+    /// profile's lock (`lock`), so the file is read again and nothing
+    /// another run writes meanwhile is lost.
+    fn load_locked(
+        path: &std::path::Path,
+        store: Option<&dyn SecretStore>,
+        no_keyring: bool,
+        account: &str,
+        lock: Option<&ProfileLock>,
+    ) -> Result<Self> {
         if !path.exists() {
             let mut c = Self::default();
             if let Some(s) = memory_get(account) {
@@ -352,6 +367,10 @@ impl Config {
                     }
                     note_storage(TokenStorage::Keyring);
                 }
+                Some(Ok(None)) if lock.is_none() => {
+                    let lock = ProfileLock::take(path);
+                    return Self::load_locked(path, store, no_keyring, account, Some(&lock));
+                }
                 Some(Ok(None)) => {
                     tracing::warn!("Tokens were in the keyring but are gone; sign in again");
                 }
@@ -366,6 +385,9 @@ impl Config {
         } else if config.secrets().any() {
             if no_keyring {
                 note_storage(TokenStorage::File);
+            } else if lock.is_none() {
+                let lock = ProfileLock::take(path);
+                return Self::load_locked(path, store, no_keyring, account, Some(&lock));
             } else {
                 // Tokens in the file: move them to the keyring once it
                 // works (OST 0.2.1 and earlier fell back to the file
@@ -424,6 +446,9 @@ impl Config {
         no_keyring: bool,
         account: &str,
     ) -> Result<()> {
+        // Under the profile's lock, so another run's move of the tokens
+        // can't fall between writing them here and removing the other copy.
+        let _lock = ProfileLock::take(path);
         let secrets = self.secrets();
         let mut on_disk = self.clone_settings();
         let to_file = |on_disk: &mut Config, secrets: Secrets| {
@@ -653,6 +678,54 @@ fn write_private(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
         let _ = fs::remove_file(&tmp);
     }
     written
+}
+
+/// A profile's lock, held while its tokens move between the keyring and
+/// the config file (a save, or a load that moves them): runs of the same
+/// profile with and without `OST_NO_KEYRING` take turns, so neither removes
+/// the copy the other just made (TASK-0368). An advisory `flock` on
+/// `.config.toml.lock` next to the config, released when dropped; without
+/// one (an unsupported file system) the move goes ahead unlocked.
+struct ProfileLock {
+    _file: Option<fs::File>,
+}
+
+impl ProfileLock {
+    fn take(config: &std::path::Path) -> Self {
+        let name = config
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("config.toml");
+        let path = config.with_file_name(format!(".{name}.lock"));
+        let mut opts = fs::OpenOptions::new();
+        opts.read(true).write(true).create(true).truncate(false);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let file = match opts.open(&path) {
+            Ok(f) => f,
+            Err(e) => {
+                tracing::warn!("Could not lock the profile ({e})");
+                return Self { _file: None };
+            }
+        };
+        #[cfg(unix)]
+        {
+            use std::os::unix::io::AsRawFd;
+            // SAFETY: flock on a descriptor this function owns, open for
+            // the call; the lock goes with the file when it is dropped.
+            if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0 {
+                tracing::warn!(
+                    "Could not lock the profile ({})",
+                    std::io::Error::last_os_error()
+                );
+                return Self { _file: None };
+            }
+        }
+        Self { _file: Some(file) }
+    }
 }
 
 /// The config folder, owner-only (0700) when it is created.
@@ -1275,6 +1348,31 @@ mod storage_tests {
         assert!(on_disk(&path).contains("refresh-secret") && !on_disk_in_keyring(&path));
         let back = Config::load_from(&path, None, true, &account).unwrap();
         assert_eq!(back.refresh_token.as_deref(), Some("refresh-secret"));
+    }
+
+    #[test]
+    fn moving_the_tokens_waits_for_the_profiles_lock() {
+        // Another run's save holds the profile's lock: this run's move of
+        // the file's tokens waits for it, then reads the file again.
+        let path = dir("lock");
+        let account = format!("test-lock-{}", uuid::Uuid::new_v4());
+        signed_in().save_to(&path, None, true, &account).unwrap();
+        let lock = ProfileLock::take(&path);
+        let (p, a) = (path.clone(), account.clone());
+        let mover = std::thread::spawn(move || {
+            Config::load_from(&p, None, false, &a)
+                .unwrap()
+                .refresh_token
+        });
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(
+            on_disk(&path).contains("refresh-secret"),
+            "moved while another run held the lock"
+        );
+        drop(lock);
+        assert_eq!(mover.join().unwrap().as_deref(), Some("refresh-secret"));
+        assert!(!on_disk(&path).contains("secret"));
+        memory_set(&account, None);
     }
 
     #[test]
