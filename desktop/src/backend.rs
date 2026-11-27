@@ -26581,6 +26581,11 @@ impl qobject::Backend {
                     | "teams-find"
                     | "team-join"
                     | "team-join-code"
+                    | "discover-feed"
+                    | "discover-feedback"
+                    | "discover-exclude"
+                    | "discover-include"
+                    | "discover-excluded"
             )
         {
             return;
