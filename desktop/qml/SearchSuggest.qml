@@ -239,15 +239,23 @@ FluentSurface {
             height: glyph ? 44 : kind === "person" || kind === "channel" || kind === "team" ? 48 : 50
             RowFill { it: pr.it }
             Avatar {
-                visible: !pr.glyph && pr.kind !== "file"
+                visible: !pr.glyph && pr.kind !== "file" && !(pr.kind === "community" && !!pr.it.avatar)
                 x: 16; anchors.verticalCenter: parent.verticalCenter; size: 32
+                colorful: pr.kind === "community"; squareRadius: 4
                 name: pr.kind === "chat" ? root.chatName(pr.it) : pr.kind === "channel" ? (pr.it.sub || pr.it.title || "") : (pr.it.plain_name || pr.it.title || pr.it.name || "")
                 photoId: pr.kind === "person" ? (pr.it.mri || "") : pr.kind === "chat" && !pr.it.meeting ? "chat:" + pr.it.thread : (pr.kind === "team" || pr.kind === "channel") && pr.it.group ? "team:" + pr.it.group : ""
-                square: pr.kind === "team" || pr.kind === "channel"
+                square: pr.kind === "team" || pr.kind === "channel" || pr.kind === "community"
                 group: pr.kind === "chat" && !pr.it.meeting
                 meeting: pr.kind === "chat" && !!pr.it.meeting
             }
             FluentIcon { visible: pr.kind === "file"; x: 16; anchors.verticalCenter: parent.verticalCenter; size: 32; name: root.fileIcon(pr.it.ext) }
+            Image {
+                visible: pr.kind === "community" && !!pr.it.avatar
+                x: 16; anchors.verticalCenter: parent.verticalCenter; width: 32; height: 32
+                source: { backend.emoticonsVersion; const a = pr.it.avatar; return pr.kind === "community" && a ? backend.cardImage(a.replace("{width}", "64").replace("{height}", "64")) : "" }
+                fillMode: Image.PreserveAspectCrop
+                RoundedCorners { anchors.fill: parent; radius: 4; background: theme.menu }
+            }
             GlyphCircle {
                 visible: pr.glyph
                 x: 16; anchors.verticalCenter: parent.verticalCenter

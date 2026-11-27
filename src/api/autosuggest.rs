@@ -652,6 +652,23 @@ pub fn arrange(reply: &Value, query: &str, me: &Me, people: Vec<Value>) -> Vec<V
         .collect()
 }
 
+/// Teams' Communities group (Viva Engage's communities matching the
+/// query), after the others; at most three.
+pub fn communities_group(hits: &[super::search::CommunityHit]) -> Option<Value> {
+    let items: Vec<Value> = hits
+        .iter()
+        .take(3)
+        .map(|c| json!({ "kind": "community", "id": c.id, "title": c.name, "avatar": c.avatar }))
+        .collect();
+    (!items.is_empty()).then(|| {
+        group(
+            "ENGAGECOMMUNITY",
+            crate::i18n::tr_id("Communities", "autosuggest:kh863a35"),
+            items,
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -826,6 +843,19 @@ mod tests {
         // An attendee matching the query comes first.
         let e = event(&reply()["Groups"][4]["Suggestions"][0], "di", &me());
         assert_eq!(e["who"], "You invited Di, Bob +1 others");
+    }
+
+    #[test]
+    fn communities_after_the_rest() {
+        let c = super::super::search::CommunityHit {
+            id: "g1".into(),
+            name: "OST Test Community".into(),
+            ..Default::default()
+        };
+        let g = communities_group(&[c]).unwrap();
+        assert_eq!(g["id"], "ENGAGECOMMUNITY");
+        assert_eq!(g["items"][0]["kind"], "community");
+        assert!(communities_group(&[]).is_none());
     }
 
     #[test]

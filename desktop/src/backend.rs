@@ -18878,6 +18878,13 @@ impl qobject::Backend {
                     )
                 };
                 let mut groups = api::autosuggest::arrange(&reply, q.trim(), &me, people);
+                // And Viva Engage's communities, as Teams lists them last.
+                if !empty
+                    && let Ok(hits) = api::search::communities(q.trim()).await
+                    && let Some(g) = api::autosuggest::communities_group(&hits)
+                {
+                    groups.push(g);
+                }
                 // Recent images: the pictures, cached as the chat caches them.
                 let ams = client
                     .ams_url()
