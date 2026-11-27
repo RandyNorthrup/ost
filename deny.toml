@@ -22,7 +22,10 @@ ignore = [
     # their standalone crates won't get releases. They come in with zbus 5,
     # which ksni 0.3 (the tray icon) and keyring 4's Secret Service store
     # (zbus-secret-service-keyring-store 1.0 → secret-service 5; the sign-in
-    # tokens) require in their latest releases (as of 2026-11-25), and which
+    # tokens) require in their latest releases (checked 2026-11-27: ksni
+    # 0.3.8 and zbus-secret-service-keyring-store 1.0.1 still need zbus 5;
+    # chrono, the other unmaintained crate, was replaced by jiff in
+    # TASK-0319), and which
     # OST's own D-Bus calls share with them (desktop/Cargo.toml). Moving OST
     # alone to zbus 6 would add zbus 6 next to zbus 5, not remove these;
     # OST moves when ksni and the keyring store do (secret-service 6.0.0,
