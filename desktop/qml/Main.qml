@@ -12404,14 +12404,20 @@ Window {
     property bool preheatEventAsked: false
     property int preheatEventAt: 0
 
-    // --search-test: type "Ran" into search and capture the suggestions.
+    // --search-test[=<text>]: type <text> ("Ran" by default; "" for the
+    // box focused with nothing typed) into search and capture the
+    // suggestions, logged as SEARCHSUGGEST lines.
     Timer {
-        running: Qt.application.arguments.indexOf("--search-test") >= 0 && backend.signedIn
+        readonly property string arg: Qt.application.arguments.find(a => a === "--search-test" || a.startsWith("--search-test=")) || ""
+        running: arg !== "" && backend.signedIn
         interval: 4000; repeat: true
         property int n: 0
         onTriggered: {
-            if (n++ === 0) { titleBar.typeSearch("Ran"); return }
-            if (backend.peopleJson && backend.peopleJson.length > 2) {
+            const text = arg.indexOf("=") > 0 ? arg.slice(arg.indexOf("=") + 1) : "Ran"
+            if (n++ === 0) { titleBar.typeSearch(text); return }
+            const r = backend.suggestJson ? JSON.parse(backend.suggestJson) : {}
+            if ((String(r.query || "") === text.trim() && (r.groups || []).length) || n > 8) {
+                for (const g of (r.groups || [])) console.warn("SEARCHSUGGEST", g.id, g.title, JSON.stringify(g.items.map(i => [i.kind, i.title || i.name || "", i.sub || i.who || i.place || ""])))
                 window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath); Qt.quit() })
                 stop()
             }
@@ -15912,6 +15918,14 @@ Window {
         onSearchPeople: q => backend.searchPeople(q)
         onOpenChat: (id, name) => { rail.current = "chat"; window.composing = false; backend.selectChat(id, name) }
         onOpenPerson: (oid, name) => { rail.current = "chat"; window.composing = false; backend.openChatWith(oid, name) }
+        onOpenMeeting: (url, uid, start) => { rail.current = "calendar"; if (url || uid) calendarView.showMeeting(url, uid, start, true) }
+        onOpenMessage: (thread, messageId, parentId, channel, terms) => {
+            rail.current = "chat"; window.composing = false
+            const c = chatList.chats.find(c => c.id === thread)
+            backend.selectChat(thread, c ? c.name : "")
+            if (messageId) conversation.showFound(messageId, terms, channel && parentId && parentId !== messageId ? parentId : "")
+        }
+        onSearchFeedback: (kind, q) => backend.requestFeedback(kind, "Search", "Search suggestions: “" + q + "”")
         onSearchSubmitted: text => window.openSearch(text)
         copilotSearch: !!window.copilotState.search
         onAskCopilot: text => { window.openSearch(text); searchView.askCopilot(text) }

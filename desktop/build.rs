@@ -251,6 +251,7 @@ fn main() {
         "qml/FeedbackWindow.qml",
         "qml/HelpView.qml",
         "qml/HelpWindow.qml",
+        "qml/SearchSuggest.qml",
         "qml/SearchView.qml",
         "qml/OneDriveShare.qml",
         "qml/OdspCopilotPane.qml",
