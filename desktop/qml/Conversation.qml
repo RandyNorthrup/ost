@@ -5213,7 +5213,9 @@ Rectangle {
     MenuPopup {
         id: textMenu
         property var target: null
-        function popup(anchor, px, py) { parent = anchor; x = px; y = py; open() }
+        // The body keeps its selection while the menu has the keyboard.
+        function popup(anchor, px, py) { parent = anchor; x = px; y = py; if (target) target.persistentSelection = true; open() }
+        onClosed: if (target) target.persistentSelection = false
         margins: 8
         items: [{ key: "copy", label: qsTr("Copy"), keys: "Ctrl+C" }, { key: "all", label: qsTr("Select all"), keys: "Ctrl+A" }]
         onPicked: i => { if (!target) return; if (items[i].key === "copy") target.copy(); else target.selectAll() }

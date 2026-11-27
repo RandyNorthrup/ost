@@ -1016,7 +1016,7 @@ Rectangle {
             FluentIcon { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.onFill(dd, theme.text) }
             HoverHandler { id: ddHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { id: ddTap; onTapped: { dd.forceActiveFocus(); ddMenu.opened ? ddMenu.close() : ddMenu.open() } }
-            Keys.onPressed: e => { if (e.key === Qt.Key_Space || e.key === Qt.Key_Return || e.key === Qt.Key_Down) { ddMenu.open(); e.accepted = true } }
+            Keys.onPressed: e => { if (e.key === Qt.Key_Space || e.key === Qt.Key_Return || e.key === Qt.Key_Down) { ddMenu.open(); ddMenu.focusRing = true; e.accepted = true } }
             // Fluent Menu openOnHover: open after the hover delay; close once
             // the pointer has left both the trigger and the menu.
             Timer { interval: 500; running: ddHover.hovered && !ddMenu.opened; onTriggered: ddMenu.open() }
@@ -1128,7 +1128,7 @@ Rectangle {
             FluentIcon { anchors.right: parent.right; anchors.rightMargin: 11; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.textSecondary }
             HoverHandler { id: fdHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { id: fdTap; onTapped: { fd.forceActiveFocus(); fdMenu.opened ? fdMenu.close() : fdMenu.open() } }
-            Keys.onPressed: e => { if (e.key === Qt.Key_Space || e.key === Qt.Key_Return || e.key === Qt.Key_Down || (e.key === Qt.Key_Down && e.modifiers & Qt.AltModifier)) { fdMenu.open(); e.accepted = true } }
+            Keys.onPressed: e => { if (e.key === Qt.Key_Space || e.key === Qt.Key_Return || e.key === Qt.Key_Down || (e.key === Qt.Key_Down && e.modifiers & Qt.AltModifier)) { fdMenu.open(); fdMenu.focusRing = true; e.accepted = true } }
             MenuPopup {
                 id: fdMenu
                 y: fd.height + 2; width: fd.width

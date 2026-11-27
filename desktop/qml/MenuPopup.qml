@@ -27,6 +27,19 @@ import QtQuick.Window
 // glyph at 30 with the label at 56; `outlined` rows (a 0.67 #BDBDBD edge:
 // "Filter applied"); and `radioColumn` menus (the view menu: a 16 px
 // check 6 in, icons at 26, labels at 52).
+// The keyboard, as Teams' Fluent menus take it (measured in Teams,
+// 2026-11-27): the menu takes the focus when it opens, on its first row
+// (no outline after a click). Down / Up move and wrap; Home / PageUp and
+// End / PageDown go to the first and last row; a letter goes to the next
+// row whose label starts with it (a row whose `keys` is a single letter,
+// or Del, is picked by it: the message menu's Q, E, F, S). Enter / Space pick (or open a row's
+// submenu); Right opens a submenu on its first row (on a split row it
+// first moves to the chevron part) and Left or Esc closes it again. Esc
+// closes the menu and Tab / Shift+Tab close it too; the focus goes back to
+// where it was. Hovering a row moves the keyboard there as well. The
+// outline (2 px strokeFocus2, 2 px outside the row) shows once a key was
+// used. Separators, headings and group labels are skipped; disabled rows
+// are stops but can't be picked (Fluent's disabledFocusable).
 Popup {
     id: root
     property var items: []
@@ -107,7 +120,6 @@ Popup {
     // Selawik finished loading kept the fallback font's narrower widths and
     // elided its labels. Measure again each time the menu opens.
     property int measureRev: 0
-    onAboutToShow: measureRev++
     QtObject {
         id: widest
         readonly property real value: {
@@ -134,6 +146,173 @@ Popup {
     // The open submenu: beside the list (overlapping our padding), its
     // list's top level with the row's top, as Teams' View menu opens them.
     property int subIndex: -1
+    /// Take the keyboard while open (see above); false leaves the keys
+    /// (and the focus) where they are.
+    property bool keyboardNavigation: true
+    focus: keyboardNavigation
+    /// The keyboard's row (the pointer's too), and on a split row its part
+    /// ("chevron": the submenu part).
+    property int current: -1
+    property string currentPart: ""
+    /// Draw the focus outline (a key was used; or opened from the keyboard,
+    /// as an owner's Enter on its trigger sets it after open()).
+    property bool focusRing: false
+    /// The menu a submenu belongs to (null for a menu of its own).
+    property var ownerMenu: null
+    // The item that had the focus before the menu took it.
+    property var restoreFocusItem: null
+    function isStop(it) { return !!it && !it.separator && !it.heading && !it.group }
+    /// The keyboard's stops in order: [{ i, part }].
+    function stops() {
+        const s = []
+        for (let i = 0; i < items.length; i++) {
+            const it = items[i]
+            if (!isStop(it)) continue
+            s.push({ i: i, part: "" })
+            if (it.split && it.submenu) s.push({ i: i, part: "chevron" })
+        }
+        return s
+    }
+    function rowAt(i) { return rowsRepeater.itemAt(i) }
+    // Whether the item is inside this menu itself, or in it or its open
+    // submenu.
+    function ownsDirectly(item) {
+        const box = contentItem ? contentItem.parent : null
+        for (let p = item; p; p = p.parent) if (p === box) return true
+        return false
+    }
+    function owns(item) { return ownsDirectly(item) || (!!subMenu && subMenu.owns(item)) }
+    // The keyboard's row has the real focus (a screen reader follows it),
+    // while the menu has the keyboard; the menu's Keys get the keys from it.
+    function focusCurrent() {
+        if (!opened || !keyboardNavigation || !contentItem) return
+        const w = contentItem.Window.window
+        const a = w ? w.activeFocusItem : null
+        if (!a || !ownsDirectly(a)) return
+        const r = rowAt(current)
+        const target = !r ? contentItem : currentPart === "chevron" && r.chevronItem ? r.chevronItem : r
+        if (target !== a) target.forceActiveFocus()
+    }
+    // Take the keyboard back (from a submenu, or as a row is hovered).
+    function takeKeys() {
+        if (!opened || !keyboardNavigation) return
+        const w = contentItem.Window.window
+        if (!(w && w.activeFocusItem && ownsDirectly(w.activeFocusItem))) contentItem.forceActiveFocus()
+        focusCurrent()
+    }
+    onCurrentChanged: focusCurrent()
+    onCurrentPartChanged: focusCurrent()
+    onOpened: focusCurrent()
+    function goTo(stop) {
+        if (!stop) return
+        if (subMenu && subMenu.opened && stop.i !== subIndex) { subMenu.close(); subIndex = -1 }
+        if (hasFlyout) root.flyoutRequested(-1, null)
+        current = stop.i
+        currentPart = stop.part
+    }
+    // Enter / Space (and Right on a submenu row): the row's tap.
+    function activate(i, part) {
+        const it = items[i]
+        if (!isStop(it) || it.enabled === false) return
+        if (it.split) {
+            if (part === "chevron") { if (it.submenu) hoverRow(i, rowAt(i), "chevron", true) }
+            else { close(); picked(i) }
+            return
+        }
+        if (it.submenu || it.flyout) { hoverRow(i, rowAt(i), "", true); return }
+        if (it.toggle || it.persist) { picked(i); return }
+        close(); picked(i)
+    }
+    function handlesKey(e) {
+        if (e.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return false
+        switch (e.key) {
+        case Qt.Key_Escape: case Qt.Key_Up: case Qt.Key_Down: case Qt.Key_Left: case Qt.Key_Right:
+        case Qt.Key_Home: case Qt.Key_End: case Qt.Key_PageUp: case Qt.Key_PageDown:
+        case Qt.Key_Return: case Qt.Key_Enter: case Qt.Key_Space: case Qt.Key_Tab: case Qt.Key_Backtab:
+            return true
+        case Qt.Key_Delete:
+            return items.some(t => t && t.keys === "Del")
+        }
+        return e.text.length === 1 && e.text.trim().length === 1
+    }
+    function keyPressed(e) {
+        const rtl = Qt.application.layoutDirection === Qt.RightToLeft
+        const forward = rtl ? Qt.Key_Left : Qt.Key_Right, back = rtl ? Qt.Key_Right : Qt.Key_Left
+        if (e.key === Qt.Key_Escape) { close(); return }
+        // A row's own key (the message menu's Q, E, F, S, P, U and Del):
+        // Teams picks that row.
+        const own = items.findIndex(t => isStop(t) && t.enabled !== false && t.keys
+            && (e.key === Qt.Key_Delete ? t.keys === "Del" : t.keys.length === 1 && t.keys.toLowerCase() === e.text.toLowerCase()))
+        if (own >= 0) { current = own; currentPart = ""; activate(own, ""); return }
+        if (e.key === Qt.Key_Tab || e.key === Qt.Key_Backtab) {
+            let top = root
+            while (top.ownerMenu) top = top.ownerMenu
+            const backwards = e.key === Qt.Key_Backtab || (e.modifiers & Qt.ShiftModifier)
+            const prev = top.restoreFocusItem
+            top.close()
+            // Teams: Tab goes on to what follows the trigger.
+            if (!backwards && prev && prev.Window.window) {
+                const next = prev.nextItemInFocusChain(true)
+                if (next && next !== prev) next.forceActiveFocus(Qt.TabFocusReason)
+            }
+            return
+        }
+        focusRing = true
+        const s = stops()
+        if (!s.length) return
+        const k = s.findIndex(t => t.i === current && t.part === currentPart)
+        const it = items[current]
+        switch (e.key) {
+        case Qt.Key_Down: goTo(s[k < 0 ? 0 : (k + 1) % s.length]); return
+        case Qt.Key_Up: goTo(s[k < 0 ? s.length - 1 : (k - 1 + s.length) % s.length]); return
+        case Qt.Key_Home: case Qt.Key_PageUp: goTo(s[0]); return
+        case Qt.Key_End: case Qt.Key_PageDown: goTo(s[s.length - 1]); return
+        case Qt.Key_Return: case Qt.Key_Enter: case Qt.Key_Space: if (k >= 0) activate(current, currentPart); return
+        }
+        if (e.key === forward) {
+            if (!it || it.enabled === false) return
+            if (it.split) { if (currentPart !== "chevron") { if (it.submenu) currentPart = "chevron" } else activate(current, "chevron") }
+            else if (it.submenu || it.flyout || it.chevron) activate(current, "")
+            return
+        }
+        if (e.key === back) {
+            if (it && it.split && currentPart === "chevron") currentPart = ""
+            else if (ownerMenu) close()
+            return
+        }
+        // Typeahead: the next row (after this one, wrapping) whose label
+        // starts with the letter.
+        const ch = e.text.toLowerCase()
+        const rows = s.filter(t => t.part === "")
+        const from = rows.findIndex(t => t.i === current)
+        for (let n = 1; n <= rows.length; n++) {
+            const t = rows[(from + n) % rows.length]
+            if ((items[t.i].label || "").charAt(0).toLowerCase() === ch) { goTo(t); return }
+        }
+    }
+    function restoreFocus() {
+        const p = restoreFocusItem
+        restoreFocusItem = null
+        if (!p || !keyboardNavigation) return
+        const w = p.Window.window
+        if (!w) return
+        // A pick that moved the focus on purpose keeps it.
+        const a = w.activeFocusItem
+        if (a && a !== w.contentItem && a.visible && !owns(a)) return
+        if (p.visible && p.enabled) p.forceActiveFocus()
+    }
+    onAboutToShow: {
+        measureRev++
+        const s = stops()
+        current = s.length ? s[0].i : -1
+        currentPart = s.length ? s[0].part : ""
+        focusRing = false
+        if (!ownerMenu) {
+            const w = (root.parent && root.parent.Window.window) || (contentItem && contentItem.Window.window)
+            const a = w ? w.activeFocusItem : null
+            restoreFocusItem = a && !owns(a) ? a : null
+        }
+    }
     /// Open submenus to the left of the list (Teams' More menu).
     property bool submenuLeft: false
     // A submenu is this same menu, made on first use (QML won't nest a
@@ -144,6 +323,7 @@ Popup {
             // At least as wide as this menu (Teams' submenus match More's
             // 230), wider when a row needs it.
             subMenu = Qt.createComponent("MenuPopup.qml").createObject(root.contentItem, {
+                ownerMenu: root,
                 viewStyle: Qt.binding(() => root.viewStyle),
                 newStyle: Qt.binding(() => root.newStyle),
                 fabric: Qt.binding(() => root.fabric),
@@ -155,6 +335,8 @@ Popup {
                 if (!(it && it.persist)) root.close()
                 root.subPicked(s, i)
             })
+            // Left or Esc in the submenu: the keyboard is back on its row.
+            subMenu.closed.connect(() => root.takeKeys())
             subMenu.subPicked.connect((i, j) => {
                 const s = root.subIndex, it = subMenu.items[i] && subMenu.items[i].submenu ? subMenu.items[i].submenu[j] : null
                 if (!(it && it.persist)) root.close()
@@ -164,8 +346,11 @@ Popup {
         return subMenu
     }
     readonly property bool hasFlyout: items.some(i => i && i.flyout === true)
-    function hoverRow(i, rowItem, part) {
+    function hoverRow(i, rowItem, part, viaKeys) {
         const it0 = items[i]
+        // Fluent: the hovered row takes the focus (back from a submenu).
+        if (isStop(it0)) { current = i; currentPart = part === "chevron" && it0.split ? "chevron" : "" }
+        if (!viaKeys) takeKeys()
         // A split row's label part never opens its submenu.
         if (it0 && it0.split && part !== "chevron") {
             if (subMenu) subMenu.close()
@@ -205,6 +390,8 @@ Popup {
                 sub.y = p.y + rowItem.height - sub.implicitHeight
         }
         sub.open()
+        // Opened from the keyboard: the outline on its first row.
+        if (viaKeys || root.focusRing) sub.focusRing = true
         // Once laid out with its rows (its size can lag the new items),
         // keep it on screen: flipped left past the window's right, lifted
         // to end above the window's bottom.
@@ -220,13 +407,20 @@ Popup {
             if (top + sub.height > win.height) sub.y = Math.max(-top + sub.y + 8, sub.y - (top + sub.height - win.height) - 8)
         })
     }
-    onClosed: if (subMenu) subMenu.close()
+    onClosed: {
+        if (subMenu) subMenu.close()
+        if (!ownerMenu) restoreFocus()
+    }
     // A persistent pick changes the rows (a checkbox): an open submenu
     // shows its row's new list.
-    onItemsChanged: if (subMenu && subMenu.opened && subIndex >= 0) {
-        const it = items[subIndex]
-        if (it && it.submenu) subMenu.items = it.submenu
-        else { subMenu.close(); subIndex = -1 }
+    onItemsChanged: {
+        if (subMenu && subMenu.opened && subIndex >= 0) {
+            const it = items[subIndex]
+            if (it && it.submenu) subMenu.items = it.submenu
+            else { subMenu.close(); subIndex = -1 }
+        }
+        // The rows are made again: the keyboard's row gets the focus back.
+        if (opened) Qt.callLater(focusCurrent)
     }
     /// Open row `i`'s submenu as hovering it would (tests).
     function openSubmenuForTest(i) {
@@ -235,6 +429,11 @@ Popup {
     }
     contentItem: Column {
         spacing: root.rowSpacing
+        focus: true
+        // The menu's keys come first: a window's Shortcut (Escape) doesn't
+        // take them while it is open.
+        Keys.onShortcutOverride: e => { if (root.keyboardNavigation && root.handlesKey(e)) e.accepted = true }
+        Keys.onPressed: e => { if (root.keyboardNavigation && root.handlesKey(e)) { e.accepted = true; root.keyPressed(e) } }
         Loader {
             active: !!root.header
             visible: active
@@ -247,11 +446,14 @@ Popup {
             Rectangle { anchors.verticalCenter: parent.verticalCenter; x: -root.padding; width: root.width; height: 1; color: theme.divider }
         }
         Repeater {
+            id: rowsRepeater
             model: root.items
             Item {
                 id: row
                 required property var modelData
                 required property int index
+                // A split row's chevron part, for the keyboard's focus.
+                readonly property Item chevronItem: splitPart
                 readonly property bool on: modelData.enabled !== false && !modelData.heading && !modelData.group
                 readonly property color ink: !on ? theme.disabled : modelData.danger ? theme.redForeground1 : root.darkCallout ? theme.hc("#F3F2F1", "#FFFFFF") : mh.hovered ? theme.text : theme.textStrong
                 width: root.width - 2 * root.padding
@@ -293,7 +495,7 @@ Popup {
                     id: hcFill1
                     visible: !row.modelData.separator && !row.modelData.heading && !row.modelData.group
                     anchors.fill: parent; radius: root.darkCallout ? 2 : root.fabric ? 0 : 4
-                    color: (mh.hovered || (row.modelData.outlined && root.subIndex === row.index)) && row.on && !row.modelData.toggle && !row.modelData.split ? (root.darkCallout ? theme.hc("#323130", "#1AEBFF") : row.modelData.danger ? theme.redBackground1 : theme.menuHover) : "transparent"
+                    color: (mh.hovered || (root.subIndex === row.index && (row.modelData.outlined || (!!row.modelData.submenu && !!root.subMenu && root.subMenu.visible)))) && row.on && !row.modelData.toggle && !row.modelData.split ? (root.darkCallout ? theme.hc("#323130", "#1AEBFF") : row.modelData.danger ? theme.redBackground1 : theme.menuHover) : "transparent"
                     border.width: row.modelData.outlined ? 0.67 : 0
                     border.color: theme.hc("#BDBDBD", "#FFFFFF")
                     // A split row: the label part and the chevron part
@@ -321,6 +523,17 @@ Popup {
                         TapHandler { enabled: row.on; onTapped: root.hoverRow(row.index, row, "chevron") }
                         Accessible.role: Accessible.MenuItem
                         Accessible.name: row.modelData.splitLabel || ""
+                    }
+                    // The keyboard's outline (Fluent's focus stroke: 2 px
+                    // strokeFocus2, 2 px outside the row or the split part).
+                    Rectangle {
+                        readonly property bool chevronPart: !!row.modelData.split && root.currentPart === "chevron"
+                        visible: root.focusRing && root.current === row.index
+                        x: (chevronPart ? parent.width - 31 : 0) - 2; y: -2
+                        width: (chevronPart ? 31 : row.modelData.split ? parent.width - 31 : parent.width) + 4
+                        height: parent.height + 4
+                        radius: 4; color: "transparent"
+                        border.width: 2; border.color: theme.dark || theme.highContrast ? "#FFFFFF" : "#000000"
                     }
                     // A switch row's track and knob.
                     Rectangle {

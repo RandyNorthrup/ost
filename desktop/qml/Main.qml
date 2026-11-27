@@ -506,6 +506,11 @@ Window {
         source: "KbDialogTest.qml"
         onLoaded: item.win = window
     }
+    Loader {
+        active: Qt.application.arguments.indexOf("--menu-keys-test") >= 0
+        source: "MenuKeysTest.qml"
+        onLoaded: item.win = window
+    }
     // Pin window on top.
     property bool pinned: false
     // Zoom (Teams' Settings and more ▸ Zoom, measured on winpc 2026-11-15):

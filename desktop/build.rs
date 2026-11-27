@@ -29,6 +29,7 @@ fn main() {
         "qml/KeyboardShortcuts.qml",
         "qml/KeysTest.qml",
         "qml/KbDialogTest.qml",
+        "qml/MenuKeysTest.qml",
         "qml/MentionsView.qml",
         "qml/PreJoin.qml",
         "qml/RoomHome.qml",
