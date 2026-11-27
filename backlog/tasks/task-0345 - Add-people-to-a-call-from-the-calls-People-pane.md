@@ -1,11 +1,11 @@
 ---
 id: TASK-0345
 title: Add people to a call from the call's People pane
-status: In Progress
+status: Done
 assignee:
   - '@calls2'
 created_date: '2026-11-27T05:46:00Z'
-updated_date: '2026-11-27T07:56:00Z'
+updated_date: '2026-11-27T09:11:00Z'
 labels:
   - calls
   - bug
@@ -78,4 +78,6 @@ Tests:
 Follow-ups:
 - TASK-0347: dial a number (no test phone line).
 - TASK-0348: add a non-member to a group chat when inviting them into its call.
+
+Review (Codex, fixed): invitations are tied to their call by a call generation (no GUI wait on the call slot). People picked while a 1:1 call escalates queue for its group chat (live: two at once, one chat). A joined chat call with conversationType groupCall can invite. CI green.
 <!-- SECTION:FINAL_SUMMARY:END -->
