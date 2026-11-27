@@ -84,8 +84,11 @@ Popup {
     readonly property bool website: !!app && app.id === "com.microsoft.teamspace.tab.web"
     readonly property bool valid: website ? (!nameError && !urlError && urlField.text.length > 0) : (appValid && !!configPage.item)
 
+    /// Opened from the Store's quick-start dialog (its app): Back returns
+    /// there rather than to Add a tab.
+    property var backTo: null
     function start(a, id, team, isChannel) {
-        updating = null
+        updating = null; backTo = null
         app = a; conversationId = id; teamId = team || ""; channel = isChannel
         saving = false; failure = ""; barShown = true; appValid = false; appSettings = null
         nameField.text = a && a.name ? a.name : qsTr("Website")
@@ -101,7 +104,7 @@ Popup {
         // (api::tabs::menus: the app's configuration page is then known);
         // without that page the dialog would stay empty.
         if (!t || !t.config_url) { console.warn("Tab settings: the tab has no configuration page"); return }
-        updating = t
+        updating = t; backTo = null
         app = { id: t.app_id, name: "", icon: t.icon || "", config_url: t.config_url || "" }
         conversationId = id; teamId = team || ""; channel = isChannel
         saving = false; failure = ""; appValid = false; appSettings = null
