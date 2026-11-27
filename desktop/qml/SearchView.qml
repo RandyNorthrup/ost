@@ -154,17 +154,29 @@ Rectangle {
     function run() {
         preview = null
         generation++
-        if (query) backend.searchPage(key, tab, query, JSON.stringify(filters()), 0)
+        if (query) backend.searchPage(key, tab, personKeywords || query, JSON.stringify(filters()), 0)
         list.contentY = 0
     }
     function more() {
         if (!page || !result || result.loading) return
         const set = tab === "files" ? page.files : tab === "images" ? page.images : page.messages
-        if (set && set.more) backend.searchPage(key, tab, query, JSON.stringify(filters()), set.hits.length)
+        if (set && set.more) backend.searchPage(key, tab, personKeywords || query, JSON.stringify(filters()), set.hits.length)
     }
     function search(q, t) {
         query = q
+        personKeywords = ""
         if (t && t !== tab) { tab = t; clearFilters(false) }
+        run()
+    }
+    // The search box's "<person> in all results" (Teams' people-centric
+    // search): everything with that person, found by their address, with
+    // Person ▾ set to them; the box shows their name.
+    property string personKeywords: ""
+    function searchPerson(p) {
+        query = p.name
+        tab = "all"; clearFilters(false)
+        person = p
+        personKeywords = p.mail || p.name
         run()
     }
     function setTab(t) { if (t === tab) return; tab = t; clearFilters(false); tabChanged2(t); run() }
