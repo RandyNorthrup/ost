@@ -678,6 +678,27 @@ client only filters and hoists:
   with no `meetingChatPolicy`); a chat whose `memberProperties.interest`
   isn't "Interested" (left, or only visited through a lobby); a hidden chat
   until something newer is said.
+- **Event and planning group chats** (a meeting's `meetingChatType`
+  "backroom") are titled "Event group: {title}" (a town hall's or
+  webinar's template) or "Planning group: {title}". The chat service's
+  chat list leaves `meetingChatType` out; Teams learns it from its CSA
+  start-up sync (bundles 26304, shared worker): `GET {csa}/api/v3/teams/users/me?isPrefetch=false&enableMembershipSummary=true&supportsAdditionalSystemGeneratedFolders=true&supportsSliceItems=true&enableEngageCommunities=true`
+  once (`startupclean`), then `GET {csa}/api/v3/teams/users/me/updates?…`
+  with the `x-ms-synctoken` it handed out (`startupdelta`). Each chat in
+  it has `meetingChatType` and `meetingInformation.templateDetails`, copied
+  into the chat's threadProperties. It reads no meeting thread for this:
+  testpc1's Teams (2026-11-27), 12 minutes from its start, had read the
+  `updates` sync and not one `v1/threads/19:meeting_…`. OST does the same
+  (`api::chat_sync`): one clean sync per session, a delta at most once a
+  minute and only when the list shows a titled meeting chat no sync has
+  been asked about (a new one), a refused sync not asked again before its
+  `Retry-After` (else 5 s doubling to 5 min). The clean sync is partial
+  (`hasMoreChats`; for ost-test1 269 of 373 chats); a listed meeting chat
+  it leaves out keeps its plain title and isn't asked about again (of 66
+  such chats for ost-test1, none of the 63 readable was a backroom). Before (TASK-0351) OST read every titled meeting
+  chat's thread on each list read, about 220 for ost-test1, which the chat
+  service throttles (429 "20Per10SecswithDepth6") along with every other
+  thread read.
 - **A group chat's picture** (no picture of its own): Teams' merged picture
   of its members, `GET {mt}/beta/users/{me}/mergedProfilePicturev2?usersInfo=[{userId, displayName, avatarETag}…]&size=HR64x64`
   (the other people by display name, up to three): a circle split with the

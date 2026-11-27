@@ -17,6 +17,7 @@ pub mod call_forwarding;
 pub mod channels;
 mod chat;
 pub mod chat_notes;
+mod chat_sync;
 pub mod client;
 pub mod cloud_attach;
 pub mod compose_apps;

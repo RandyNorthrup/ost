@@ -787,6 +787,11 @@ async fn check_response(resp: reqwest::Response, url: &str) -> Result<reqwest::R
     }
     if !status.is_success() {
         let retry_after = retry_after(resp.headers());
+        tracing::debug!(
+            status = status.as_u16(),
+            url = url.split('?').next().unwrap_or_default(),
+            "HTTP error answer"
+        );
         let body = resp.text().await.unwrap_or_default();
         return Err(HttpError {
             status: status.as_u16(),
@@ -821,7 +826,7 @@ impl std::error::Error for HttpError {}
 /// A `Retry-After` in seconds, as the Teams services send it. Zero (the
 /// chat service's throttle sends `Retry-After: 0`) says nothing, as for
 /// Teams' retry policy, which waits only for a positive one.
-fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<std::time::Duration> {
+pub(crate) fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<std::time::Duration> {
     let secs: f64 = headers
         .get(reqwest::header::RETRY_AFTER)?
         .to_str()
