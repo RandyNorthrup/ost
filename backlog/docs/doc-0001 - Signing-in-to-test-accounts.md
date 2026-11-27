@@ -9,6 +9,14 @@ created_date: '2026-11-27T05:08:00Z'
 
 **Agents may sign in to the test accounts themselves.** The user confirmed this on 2026-11-26. You don't need to ask, and you don't need the user to type anything. Some older notes said "the assistant may not enter passwords" or "the user has to do it". That was never a rule; those notes have been corrected. If you find such wording anywhere, it's wrong. Fix it.
 
+**Use the tool first.** `.local/signin/ost-signin` (local, untracked) does the sign-in itself and never shows you a password:
+- `ost-signin teams testpc1|testpc2|winpc [account]`
+- `ost-signin ost <account> --host linuxlt --port <QTWEBENGINE_REMOTE_DEBUGGING port>`
+- `ost-signin status <host>`
+- `ost-signin totp <account>`
+
+See `.local/signin/README.md`. The manual steps below are for anything the tool doesn't cover.
+
 This covers every place a test account is used: OST profiles (linuxlt or this PC), Teams desktop on winpc, testpc1 and testpc2, Teams or Outlook on the web, the Entra and Teams admin portals, and Microsoft's sign-in popups inside apps.
 
 ## Accounts and secrets
