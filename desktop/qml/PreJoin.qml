@@ -203,12 +203,28 @@ Window {
     title: qsTr("Meeting join | %1").arg(subject)
 
     function openMeetNow(channel, subj) {
-        meetNow = true; meetChannel = channel; joinUrl = ""; subject = subj
+        meetNow = true; meetChannel = channel; joinUrl = ""; subject = subj; createdSubject = subj
         micOn = true; audio = "computer"; cameraOn = false
         effectsOpen = false; effectsPaneOpen = false
         findRooms()
         // A meeting started now has no dial-in to look up yet.
         backend.checkPrejoinPhone("")
+        show(); raise(); requestActivate()
+        titleField.forceActiveFocus(); titleField.cursorPosition = titleField.text.length
+    }
+    /// The subject a Meet now was created with (its pre-join may rename it).
+    property string createdSubject: ""
+    /// Calendar's Meet now: the meeting exists (its link), so its pre-join
+    /// preheats it as any meeting's (Teams' Meet now pre-join, measured on
+    /// winpc 2026-11-27: "Microsoft Teams meeting" over the title field,
+    /// no time, and Phone audio offered from the meeting's dial-in).
+    function openMeetNowLink(url, subj) {
+        meetNow = true; meetChannel = ""; joinUrl = url; subject = subj; createdSubject = subj
+        micOn = true; audio = "computer"; cameraOn = false
+        effectsOpen = false; effectsPaneOpen = false
+        retryReason = ""
+        findRooms()
+        backend.checkPrejoinPhone(url)
         show(); raise(); requestActivate()
         titleField.forceActiveFocus(); titleField.cursorPosition = titleField.text.length
     }

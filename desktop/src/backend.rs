@@ -333,6 +333,10 @@ pub mod qobject {
         /// audio_test_monitor): {tone: "" | "loading" | "playing" |
         /// "error", monitor: "" | "starting" | "ready" | "error"}.
         #[qproperty(QString, audio_test_json)]
+        /// The meeting is a Meet now (its meetingType MeetNow): Teams'
+        /// ad hoc meeting, so its stage asks you to invite people and it
+        /// opens with the invite dialog (or People) on landing.
+        #[qproperty(bool, call_meet_now)]
         /// The call is a group call, not a meeting: a 1:1 call someone was
         /// invited into (Teams' People pane then says "Currently in this
         /// call" and lists "People added to the chat").
@@ -966,6 +970,11 @@ pub mod qobject {
         /// Rename the open group chat (Teams' Name group chat).
         #[qinvokable]
         fn rename_chat(self: Pin<&mut Backend>, topic: &QString);
+
+        /// Name a Meet now you started (its pre-join's title field, as
+        /// Teams: "<you> named the meeting <title>.").
+        #[qinvokable]
+        fn set_meeting_topic(self: Pin<&mut Backend>, thread_id: &QString, topic: &QString);
 
         /// The chat list's Mark as read / Mark as unread for any chat.
         #[qinvokable]
@@ -1741,6 +1750,15 @@ pub mod qobject {
         /// Open (or start) the 1:1 chat with a person by object id.
         #[qinvokable]
         fn open_chat_with(self: Pin<&mut Backend>, oid: &QString, name: &QString);
+        /// Your 1:1 chat's id with this person (object id), without
+        /// opening it (Teams' meeting chat tabs).
+        #[qinvokable]
+        fn one_on_one_chat_id(self: &Backend, oid: &QString) -> QString;
+        /// A group chat with these people (comma-separated object ids) for
+        /// a meeting chat tab (Teams' Add a chat as a tab with several
+        /// people), made without opening it: meeting_private_chat_created.
+        #[qinvokable]
+        fn create_meeting_private_chat(self: Pin<&mut Backend>, oids: &QString);
 
         /// Load the Calls history.
         #[qinvokable]
@@ -2250,6 +2268,10 @@ pub mod qobject {
         /// create_group_chat made the chat and opened it.
         #[qsignal]
         fn group_chat_created(self: Pin<&mut Backend>, id: QString);
+        /// create_meeting_private_chat made the group chat for a meeting
+        /// chat tab (`oids` as asked; `chat_id` empty when it failed).
+        #[qsignal]
+        fn meeting_private_chat_created(self: Pin<&mut Backend>, oids: QString, chat_id: QString);
 
         /// A card_invoke finished: its op, the outcome (JSON) and an error.
         #[qsignal]
@@ -3710,6 +3732,10 @@ pub struct BackendRust {
     channel_posts_at_top: bool,
     /// The threads open in windows ("<channel>;messageid=<post>").
     thread_windows: Vec<String>,
+    /// How many views show each chat window's timeline (`win:<chat>`): a
+    /// pop-out chat window, a meeting chat tab, the lobby pane. It stays
+    /// loaded until the last one closes.
+    chat_window_refs: HashMap<String, u32>,
     messages_has_older: bool,
     messages_loading_older: bool,
     /// The channel name channel_tabs_load was last given (reloads reuse it).
@@ -5743,6 +5769,7 @@ async fn room_incoming(
         this.as_mut().set_call_video_offered(offered);
         this.as_mut().set_call_meeting(conference);
         this.as_mut().set_call_scheduled(false);
+        this.as_mut().set_call_meet_now(false);
         this.as_mut().set_call_adhoc_meeting(false);
         this.as_mut().set_call_group(false);
         this.as_mut().rust_mut().roster.clear();
@@ -9412,6 +9439,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 this.as_mut().set_call_video_offered(video);
                 this.as_mut().set_call_meeting(false);
                 this.as_mut().set_call_scheduled(false);
+                this.as_mut().set_call_meet_now(false);
                 this.as_mut().set_call_adhoc_meeting(false);
                 this.as_mut().set_call_group(false);
                 this.as_mut().set_call_state(QString::from("ringing"));
@@ -11854,6 +11882,7 @@ impl qobject::Backend {
         self.as_mut().set_call_video_offered(false);
         self.as_mut().set_call_meeting(false);
         self.as_mut().set_call_scheduled(false);
+        self.as_mut().set_call_meet_now(false);
         self.as_mut().set_call_adhoc_meeting(false);
         self.as_mut().set_call_group(false);
         self.as_mut().set_call_ai_indicator(false);
@@ -12145,6 +12174,7 @@ impl qobject::Backend {
             .set_call_thread_id(QString::from(chat_id.as_str()));
         self.as_mut().load_call_chat_members();
         self.as_mut().set_call_scheduled(false);
+        self.as_mut().set_call_meet_now(false);
         // A channel's Meet now (no group call kind) is a meeting, ad hoc.
         self.as_mut()
             .set_call_adhoc_meeting(kind.is_none() && !test);
@@ -14432,7 +14462,7 @@ impl qobject::Backend {
         self.as_mut().set_call_copilot_only(false);
         self.as_mut().set_call_copilot_running(false);
         self.as_mut().set_call_ai_facilitator(false);
-        self.as_mut().rust_mut().call_meet_now = false;
+        self.as_mut().set_call_meet_now(false);
         self.as_mut().set_call_interpreter_json(QString::default());
         teams_cli::calling::ai_interpreter::set_listening(None);
         self.as_mut().set_call_ai_facilitator_voice(false);
@@ -14458,7 +14488,7 @@ impl qobject::Backend {
         self.as_mut().adopt_meeting_chat(&v.thread);
         self.as_mut()
             .set_call_invite_url(QString::from(v.invite.as_str()));
-        self.as_mut().rust_mut().call_meet_now = v.meet_now;
+        self.as_mut().set_call_meet_now(v.meet_now);
         self.as_mut().show_capability(v.capability, false);
         runtime().spawn(interpreter_joined(self.qt_thread()));
         self.as_mut().rust_mut().timer_skew_ms = 0;
@@ -18622,6 +18652,56 @@ impl qobject::Backend {
         self.select_chat(&QString::from(id.as_str()), name);
     }
 
+    pub fn one_on_one_chat_id(&self, oid: &QString) -> QString {
+        let Some(me) = teams_cli::config::Config::load()
+            .ok()
+            .and_then(|c| c.object_id())
+        else {
+            return QString::default();
+        };
+        QString::from(api::directory::one_on_one_chat_id(&me, &oid.to_string()).as_str())
+    }
+
+    pub fn create_meeting_private_chat(self: Pin<&mut Self>, oids: &QString) {
+        let asked = oids.to_string();
+        let Some(me) = teams_cli::config::Config::load()
+            .ok()
+            .and_then(|c| c.self_mri())
+        else {
+            return;
+        };
+        let mut members = vec![me];
+        members.extend(
+            asked
+                .split(',')
+                .map(str::trim)
+                .filter(|o| !o.is_empty())
+                .map(teams_cli::identity::user_mri),
+        );
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::create_group_chat(&client, &members, "").await
+            }
+            .await;
+            let id = match result {
+                Ok(id) => id,
+                Err(e) => {
+                    tracing::warn!("meeting chat tab: {}", short_error(&e));
+                    String::new()
+                }
+            };
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().meeting_private_chat_created(
+                    QString::from(asked.as_str()),
+                    QString::from(id.as_str()),
+                );
+                this.as_mut().reload_chats();
+            });
+        });
+    }
+
     pub fn load_calls(self: Pin<&mut Self>) {
         let qt = self.qt_thread();
         runtime().spawn(async move {
@@ -20523,6 +20603,12 @@ impl qobject::Backend {
             return;
         }
         let key = format!("win:{chat}");
+        *self
+            .as_mut()
+            .rust_mut()
+            .chat_window_refs
+            .entry(key.clone())
+            .or_insert(0) += 1;
         if !self.rust().thread_windows.contains(&key) {
             self.as_mut().rust_mut().thread_windows.push(key.clone());
         }
@@ -20532,6 +20618,18 @@ impl qobject::Backend {
 
     pub fn close_chat_window(mut self: Pin<&mut Self>, chat_id: &QString) {
         let key = format!("win:{}", chat_id);
+        // Another view still shows it (a meeting tab and a pop-out of the
+        // same chat): keep it loaded.
+        let left = {
+            let mut this = self.as_mut().rust_mut();
+            let refs = this.chat_window_refs.entry(key.clone()).or_insert(1);
+            *refs = refs.saturating_sub(1);
+            *refs
+        };
+        if left > 0 {
+            return;
+        }
+        self.as_mut().rust_mut().chat_window_refs.remove(&key);
         self.as_mut()
             .rust_mut()
             .thread_windows
@@ -21255,6 +21353,28 @@ impl qobject::Backend {
                 }
                 this.as_mut().reload_chats();
             });
+        });
+    }
+
+    pub fn set_meeting_topic(self: Pin<&mut Self>, thread_id: &QString, topic: &QString) {
+        let topic = topic.to_string().trim().to_string();
+        let thread = thread_id.to_string();
+        if topic.is_empty() || topic.chars().count() > 250 || thread.is_empty() {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::msgactions::set_chat_topic(&client, &thread, &topic).await
+            }
+            .await;
+            match result {
+                Ok(()) => {
+                    let _ = qt.queue(|mut this| this.as_mut().reload_chats());
+                }
+                Err(e) => tracing::warn!("meeting title: {}", short_error(&e)),
+            }
         });
     }
 

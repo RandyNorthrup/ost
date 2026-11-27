@@ -53,6 +53,18 @@ Rectangle {
     property bool paneTitleSemibold: false
     property real paneTitleX: 16
     property real paneCloseRight: 44
+    property int paneTitleSize: 16
+    /// The pane header's buttons before Close, left to right, 32 apart
+    /// (Teams' meeting chat: Add a chat as a tab, Open in new window, More
+    /// meeting chat options): [{key, icon, tip}]; those in
+    /// `paneActionsOn` (their menu open) show in brand.
+    property var paneActions: []
+    property var paneActionsOn: []
+    signal paneAction(string key, Item button)
+    /// Press a pane header button (test harness).
+    function paneActionForTest(key) {
+        for (let i = 0; i < paneActRepeater.count; i++) if (paneActions[i].key === key) paneAction(key, paneActRepeater.itemAt(i))
+    }
     /// A channel post's thread shown as a chat (a tab's conversation): its
     /// root post. Sends reply in that thread; no draft or typing is kept.
     property string threadRoot: ""
@@ -1204,8 +1216,25 @@ Rectangle {
             Text {
                 x: root.paneTitleX; anchors.verticalCenter: parent.verticalCenter
                 text: root.paneTitle
-                font.family: theme.font; font.pixelSize: 16; font.weight: root.paneTitleSemibold ? Font.DemiBold : Font.Bold
+                font.family: theme.font; font.pixelSize: root.paneTitleSize; font.weight: root.paneTitleSemibold ? Font.DemiBold : Font.Bold
                 color: theme.text
+            }
+            Repeater {
+                id: paneActRepeater
+                model: root.paneActions
+                HeaderAction {
+                    id: paneAct
+                    required property var modelData
+                    required property int index
+                    x: parent.width - root.paneCloseRight - 32 * (root.paneActions.length - index)
+                    icon: modelData.icon
+                    iconColor: root.paneActionsOn.indexOf(modelData.key) >= 0 ? theme.brand : root.hdrStrong
+                    onClicked: root.paneAction(modelData.key, paneAct)
+                    ToolTip.visible: paneActHover.hovered && !!modelData.tip; ToolTip.delay: 500; ToolTip.text: modelData.tip || ""
+                    HoverHandler { id: paneActHover }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: modelData.tip || ""
+                }
             }
             HeaderAction {
                 x: parent.width - root.paneCloseRight; icon: "dismiss-20"; Accessible.name: qsTr("Close %1").arg(root.paneTitle.toLowerCase())
@@ -1223,9 +1252,37 @@ Rectangle {
             y: theme.headerHeight
             width: parent.width; height: 47.2
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: Math.max(0.67, 1 / Screen.devicePixelRatio); color: theme.divider }
+            // More tabs than fit (several private chats): the row scrolls
+            // sideways (wheel or drag) and keeps the chosen tab in view.
+            Flickable {
+                id: paneTabsFlick
+                x: 8; width: parent.width - 16; height: 46.5
+                contentWidth: paneTabsRow.width; contentHeight: height
+                flickableDirection: Flickable.HorizontalFlick
+                boundsBehavior: Flickable.StopAtBounds
+                interactive: contentWidth > width
+                clip: true
+                function showChosen() {
+                    for (let i = 0; i < paneTabsRepeater.count; i++) {
+                        const t = paneTabsRepeater.itemAt(i)
+                        if (!t || !t.chosen) continue
+                        if (t.x < contentX) contentX = t.x
+                        else if (t.x + t.width > contentX + width) contentX = Math.min(t.x + t.width - width, Math.max(0, contentWidth - width))
+                    }
+                }
+                Connections { target: root; function onPaneTabChanged() { Qt.callLater(paneTabsFlick.showChosen) } }
+                onContentWidthChanged: Qt.callLater(showChosen)
+                WheelHandler {
+                    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                    onWheel: ev => {
+                        const d = ev.angleDelta.x !== 0 ? -ev.angleDelta.x : -ev.angleDelta.y
+                        paneTabsFlick.contentX = Math.max(0, Math.min(paneTabsFlick.contentWidth - paneTabsFlick.width, paneTabsFlick.contentX + d / 2))
+                    }
+                }
             Row {
-                x: 8
+                id: paneTabsRow
                 Repeater {
+                    id: paneTabsRepeater
                     model: root.paneTabs
                     Item {
                         id: ptab
@@ -1236,6 +1293,12 @@ Rectangle {
                             id: ptRow
                             x: 12; anchors.verticalCenter: parent.verticalCenter
                             spacing: 8
+                            // A private chat tab: its picture first.
+                            Avatar {
+                                visible: !!ptab.modelData.person
+                                anchors.verticalCenter: parent.verticalCenter
+                                size: 20; name: ptab.modelData.label; photoId: ptab.modelData.photoId || ""
+                            }
                             Text {
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: ptab.modelData.label
@@ -1270,6 +1333,7 @@ Rectangle {
                         Accessible.selected: ptab.chosen
                     }
                 }
+            }
             }
         }
         Item {

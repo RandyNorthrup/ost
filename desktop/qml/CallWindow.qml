@@ -919,9 +919,111 @@ Window {
     readonly property bool lobbyTabShown: lobbyChatAvailable && backend.callLobbyThread !== ""
     property string chatTab: "everyone"
     readonly property var chatTabs: [
-        { key: "everyone", label: qsTr("Everyone"), tip: qsTr("Chat for everyone in the meeting") },
-        { key: "lobby", label: qsTr("Lobby"), tip: qsTr("Chat for organizers messaging people in the lobby"), badge: qsTr("%n waiting", "", lobby.length), count: lobby.length }
-    ]
+        { key: "everyone", label: qsTr("Everyone"), tip: qsTr("Chat for everyone in the meeting") }]
+        .concat(lobbyTabShown ? [{ key: "lobby", label: qsTr("Lobby"), tip: qsTr("Chat for organizers messaging people in the lobby"), badge: qsTr("%n waiting", "", lobby.length), count: lobby.length }] : [])
+        .concat(chatTabsAllowed ? privateTabs.map(t => ({ key: "pc:" + t.threadId, label: t.title, photoId: t.members.length === 1 ? t.members[0].id : "", person: true, tip: t.title })) : [])
+    /// The tab shown is a private chat's (none while chat tabs are off).
+    readonly property var privateTab: chatTabsAllowed && chatTab.indexOf("pc:") === 0 ? (privateTabs.find(t => "pc:" + t.threadId === chatTab) || null) : null
+
+    // ── Teams' meeting chat pane (its rail header and private chat tabs,
+    // read in Teams' chat-app and meeting-relevant-people code, 2026-11-27;
+    // measured on winpc): "Meeting chat" (18 bold, 20 in), then "Add a
+    // chat as a tab", "Open in new window", "More meeting chat options"
+    // and Close, 32 apart, Close 32.5 from the edge.
+    readonly property bool meetingChat: meeting && (scheduled || adhoc) && threadId !== ""
+    readonly property var chatPaneActions: meetingChat ? [
+        { key: "tab", icon: "chat-add-20", tip: qsTr("Add a chat as a tab") },
+        { key: "popout", icon: "window-new-20", tip: qsTr("Open in new window") },
+        { key: "options", icon: "more-horizontal-20", tip: qsTr("More meeting chat options") }
+    ] : []
+    readonly property var chatPaneActionsOn: (chatPicker.visible ? ["tab"] : []).concat(chatOptions.visible ? ["options"] : [])
+    /// Pop a chat out into its own window (Teams hides the pane).
+    signal popoutChat(string chatId, string name)
+    function chatPaneAction(key, button) {
+        if (key === "tab") { if (chatPicker.visible) chatPicker.close(); else chatPicker.openFor(button) }
+        else if (key === "popout") {
+            const t = privateTab
+            side = ""
+            if (t) popoutChat(t.threadId, t.title)
+            else if (chatTab === "lobby" && lobbyTabShown) popoutChat(backend.callLobbyThread, qsTr("Lobby"))
+            else popoutChat(threadId, peer)
+        }
+        else if (key === "options") { if (chatOptions.visible) chatOptions.close(); else chatOptions.openFor(button) }
+    }
+    // Private chat tabs (Teams' openPrivateChatTab): a chat with the
+    // people picked (your 1:1 chat with one, a group chat with several),
+    // shown in the meeting chat pane as a tab; its messages come as a chat
+    // window's. [{threadId, title, members: [{id, name}]}].
+    property var privateTabs: []
+    function openPrivateTab(threadId, members) {
+        if (!threadId) return
+        // The meeting's own chat: back to Everyone (Teams' redirect).
+        if (threadId === win.threadId) { chatTab = "everyone"; return }
+        if (!privateTabs.some(t => t.threadId === threadId)) {
+            privateTabs = privateTabs.concat([{ threadId: threadId, title: members.map(m => m.name).join(", "), members: members }])
+            backend.openChatWindow(threadId)
+        }
+        chatTab = "pc:" + threadId
+        // Teams turns chat tabs on with the first one.
+        if (!chatTabsAllowed) setChatTabsAllowed(true)
+        contentItem.Accessible.announce(qsTr("Only people in this chat can see the messages"))
+    }
+    function closePrivateTab(threadId) {
+        if (chatTab === "pc:" + threadId) chatTab = "everyone"
+        backend.closeChatWindow(threadId)
+        privateTabs = privateTabs.filter(t => t.threadId !== threadId)
+    }
+    function closeAllPrivateTabs() { for (const t of privateTabs.slice()) closePrivateTab(t.threadId) }
+    /// Picked in "Select a participant": [{id, name}] (MRIs).
+    function startPrivateChat(people) {
+        const oids = people.map(p => win.workOid(p.id)).filter(o => !!o)
+        if (oids.length === 0) return
+        if (oids.length === 1) { openPrivateTab(backend.oneOnOneChatId(oids[0]), people); return }
+        pendingPrivateChat = { oids: oids.join(","), people: people, thread: threadId }
+        backend.createMeetingPrivateChat(oids.join(","))
+    }
+    property var pendingPrivateChat: null
+    /// A work user's object id from their MRI ("" for anyone else).
+    function workOid(mri) { return (mri || "").indexOf(Mri.workPrefix) === 0 ? mri.slice(Mri.workPrefix.length) : "" }
+    Connections {
+        target: backend
+        function onMeetingPrivateChatCreated(oids, chatId) {
+            const p = win.pendingPrivateChat
+            // (Asked in this meeting, still going.)
+            if (!p || p.oids !== oids || p.thread !== win.threadId || win.state !== "connected") return
+            win.pendingPrivateChat = null
+            if (chatId) win.openPrivateTab(chatId, p.people)
+        }
+    }
+    function privateTabMessages(threadId) {
+        const all = backend.threadWindowsJson ? JSON.parse(backend.threadWindowsJson) : {}
+        return all["win:" + threadId] || []
+    }
+    // Teams' "Allow chat tabs" (More meeting chat options): your synced
+    // simpleCollabUserSettings.hasUserEnabledNewPrivateChatInMeetingChat,
+    // Settings' "Show private chats in meetings" (on unless turned off).
+    readonly property var syncedProps: { try { return (JSON.parse(backend.settingsJson || "{}").props) || {} } catch (e) { return {} } }
+    readonly property bool chatTabsAllowed: ((syncedProps.simpleCollabUserSettings || {}).hasUserEnabledNewPrivateChatInMeetingChat) !== false
+    function setChatTabsAllowed(on) {
+        // Off: the private tabs go (Everyone shows); they come back on.
+        if (!on && chatTab.indexOf("pc:") === 0) chatTab = "everyone"
+        backend.changeSetting("prop", "simpleCollabUserSettings", JSON.stringify({ hasUserEnabledNewPrivateChatInMeetingChat: on }))
+        contentItem.Accessible.announce(on ? qsTr("Private meeting chats turned on") : qsTr("Private meeting chats turned off"))
+    }
+    MeetingChatPicker {
+        id: chatPicker
+        people: win.others.filter(p => p.id && p.id !== win.selfId && win.workOid(p.id) !== "")
+        onSubmitted: people => win.startPrivateChat(people)
+    }
+    MeetingChatOptions {
+        id: chatOptions
+        allowTabs: win.chatTabsAllowed
+        tabs: win.privateTabs
+        onAllowTabsToggled: on => win.setChatTabsAllowed(on)
+        onCloseAllTabs: win.closeAllPrivateTabs()
+        onCloseTab: id => win.closePrivateTab(id)
+        onPopoutTab: id => { const t = win.privateTabs.find(x => x.threadId === id); win.side = ""; win.popoutChat(id, t ? t.title : "") }
+    }
     function openLobbyChat() {
         side = "chat"; openChat(); chatTab = "lobby"
         backend.openLobbyChat()
@@ -986,7 +1088,11 @@ Window {
             nextConnectedAt = 0; seconds = Math.floor((Date.now() - connectedAt) / 1000)
         }
         else consulting = null
-        if (state === "ended" || state === "") connectedAt = 0
+        if (state === "ended" || state === "") { connectedAt = 0; landingShown = false; castJoin = false }
+        // The window closes: the next call opens without a side pane (Teams
+        // opens a new call window), so the chat pane never shows the last
+        // meeting's chat.
+        if (state === "") { side = ""; closeAllPrivateTabs(); pendingPrivateChat = null; chatTab = "everyone" }
         // A new call: lobby notifications are on again.
         if (state === "calling") lobbyToast.resetForCall()
         if (state === "calling" || state === "connecting") { transcriptRan = false; openTranscriptWhenStarted = false }
@@ -1004,6 +1110,34 @@ Window {
     property bool scheduled: false
     /// A channel's Meet now: a meeting, ad hoc.
     property bool adhocMeeting: false
+    /// A Meet now (its meetingType MeetNow).
+    property bool meetNow: false
+    /// Teams' isAdhoc (the calling intent's coordinates): a Meet now, or a
+    /// channel's Meet now.
+    readonly property bool adhoc: adhocMeeting || meetNow
+    /// The call's chat thread (a meeting's chat).
+    property string threadId: ""
+    // The chat pane shows the meeting's chat: a new thread (a breakout
+    // room, or the meeting's chat arriving) loads it.
+    onThreadIdChanged: if (side === "chat" && meeting && threadId) openChat()
+    /// Joined to cast to a room (Teams' isCast): no landing element.
+    property bool castJoin: false
+    // Teams' landing element (useOnLandingDisplayComponentManager and
+    // useShouldShowShareInviteOnLanding, read in Teams' calling code
+    // 2026-11-27): once per call, once your meeting role is known, in an
+    // ad hoc meeting. Its organizer, alone (no one else connecting,
+    // connected, on hold or in the lobby), gets the "Invite people to join
+    // you" dialog (enableMeetNowShareInviteOnLanding); otherwise People
+    // opens (isCallingScreenInteractive).
+    property bool landingShown: false
+    readonly property bool landingReady: state === "connected" && meeting && adhoc && myRole !== "" && !landingShown && !castJoin
+    onLandingReadyChanged: if (landingReady) Qt.callLater(showLanding)
+    function showLanding() {
+        if (!landingReady) return
+        landingShown = true
+        if (organizer && others.length === 0 && invites.length === 0 && lobby.length === 0 && inviteUrl) inviteDialog.openOnLanding()
+        else side = "people"
+    }
     /// A group call, not a meeting: a group chat's call, or a 1:1 call
     /// someone was invited into.
     property bool groupCall: false
@@ -1295,6 +1429,7 @@ Window {
             VideoButton: cCamera, MicrophoneButton: cMic, ShareButton: cShare,
             // More's grid controls the user pinned to the bar.
             RecordingButton: cPinned, TranscriptButton: cPinned, MeetingFacilitatorTimerButton: cPinned,
+            FacilitatorButton: cPinned, AiInterpretationButtonForAll: cPinned,
             ClosedCaptionsButton: cPinned, RealTimeTextButton: cPinned,
             ScreensharingControlButton: cTakeControl,
             WhiteboardControlsSection: cContentStop, PptControlsSection: cPptControls
@@ -1353,6 +1488,21 @@ Window {
         else if (name === "MeetingHelpButton") { helpWindow.show(); helpWindow.raise(); helpWindow.requestActivate() }
         else if (name === "ReportMeetingButton") openMeetingReport()
         else if (name === "MeetingFacilitatorTimerButton") toggleTimer()
+        // Interpreter: pinned to the bar while it has actions (it's on), its
+        // menu under it (Turn off for me / for all, Interpreter settings);
+        // otherwise (and from More's grid) Turn on.
+        else if (name === "AiInterpretationButtonForAll") {
+            if (ubar.bar.indexOf(name) >= 0 && interpreterItems.length > 0) {
+                if (interpreterBarMenu.visible) interpreterBarMenu.close()
+                else { interpreterBarMenu.parent = barItem(name); interpreterBarMenu.open() }
+            } else interpreterAction(name)
+        }
+        // Facilitator pinned to the bar: its menu under it (Turn on / off,
+        // Enable / Disable voice).
+        else if (name === "FacilitatorButton") {
+            if (facilitatorBarMenu.visible) facilitatorBarMenu.close()
+            else { facilitatorBarMenu.parent = barItem(name); facilitatorBarMenu.open() }
+        }
         else if (name === "StartBreakoutRoomButton") { side = side === "rooms" ? "" : "rooms"; if (side === "rooms") backend.breakoutAction("refresh", "{}") }
         else if (name === "ReturnToBreakoutRoomButton") joinBreakoutRoom()
         else if (name === "BreakoutRoomReturnToMainButton") returnToMainMeeting()
@@ -3045,8 +3195,11 @@ Window {
             Avatar { ring: false; size: 154; name: win.selfName || qsTr("You"); photoId: "me"; anchors.horizontalCenter: parent.horizontalCenter }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                // (Teams: an organizer or presenter is asked to invite.)
-                text: win.state === "connected" ? (win.canMuteAll ? qsTr("Invite people to join you") : qsTr("Waiting for others to join...")) : win.state === "ended" ? qsTr("You left the meeting") : qsTr("Connecting...", "calling:kdhfq8tet")
+                // Teams (callParticipant state text, read 2026-11-27): an ad
+                // hoc meeting (a Meet now) asks you to invite people
+                // (calling_screen_onlyOneHere_adhoc), whatever your role; a
+                // scheduled one waits (calling_screen_onlyOneHere_scheduled).
+                text: win.state === "connected" ? (win.adhoc ? qsTr("Invite people to join you") : qsTr("Waiting for others to join...")) : win.state === "ended" ? qsTr("You left the meeting") : qsTr("Connecting...", "calling:kdhfq8tet")
                 color: theme.text
                 font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold
             }
@@ -3596,6 +3749,8 @@ Window {
 
     // Side pane: the chat with them, or the people in the call.
     property alias chatPane: chatPane
+    property alias privatePaneForTest: privatePane
+    function chatOptionsForTest() { return chatOptions }
     property alias meetingNotesPaneForTest: meetingNotesPane
     Rectangle {
         id: sidePane
@@ -3610,13 +3765,44 @@ Window {
         clip: true
         Conversation {
             id: chatPane
-            visible: win.side === "chat" && (win.chatTab === "everyone" || !win.lobbyTabShown)
+            visible: win.side === "chat" && (win.chatTab === "everyone" || (!win.lobbyTabShown && !win.privateTab))
             anchors.fill: parent; anchors.margins: 1
             pane: true
-            paneTabs: win.lobbyTabShown ? win.chatTabs : []
+            paneTitle: win.meetingChat ? qsTr("Meeting chat") : qsTr("Chat")
+            paneTitleSize: win.meetingChat ? 18 : 16
+            paneTitleX: win.meetingChat ? 20 : 16
+            paneCloseRight: win.meetingChat ? 48.5 : 44
+            paneActions: win.chatPaneActions
+            paneActionsOn: win.chatPaneActionsOn
+            onPaneAction: (key, button) => win.chatPaneAction(key, button)
+            paneTabs: win.chatTabs.length > 1 ? win.chatTabs : []
             paneTab: win.chatTab
             onPaneTabPicked: key => win.chatTab = key
             onClosePane: win.side = ""
+        }
+        // A private chat tab (Teams' in-meeting private chat): the chat with
+        // the people picked, live as a chat window's.
+        Conversation {
+            id: privatePane
+            visible: win.side === "chat" && !!win.privateTab
+            anchors.fill: parent; anchors.margins: 1
+            pane: true; popout: true
+            chatId: win.privateTab ? win.privateTab.threadId : ""
+            chatName: win.privateTab ? win.privateTab.title : ""
+            myName: backend.userName
+            isGroup: !!win.privateTab && win.privateTab.members.length > 1
+            messages: { backend.threadWindowsJson; return win.privateTab ? win.privateTabMessages(win.privateTab.threadId) : [] }
+            paneTitle: qsTr("Meeting chat"); paneTitleSize: 18; paneTitleX: 20; paneCloseRight: 48.5
+            paneActions: win.chatPaneActions
+            paneActionsOn: win.chatPaneActionsOn
+            onPaneAction: (key, button) => win.chatPaneAction(key, button)
+            paneTabs: win.chatTabs
+            paneTab: win.chatTab
+            onPaneTabPicked: key => win.chatTab = key
+            onClosePane: win.side = ""
+            onReact: (id, key, on) => backend.toggleReaction(id, key, on)
+            onEditMessage: (id, text) => backend.editMessage(id, text)
+            onDeleteMessage: id => backend.deleteMessage(id)
         }
         // Teams' Lobby tab: the meeting's lobby chat thread, live as a chat
         // window's, sent to through the chat window path.
@@ -3630,6 +3816,13 @@ Window {
             myName: backend.userName
             isGroup: true
             messages: win.lobbyMessages
+            paneTitle: win.meetingChat ? qsTr("Meeting chat") : qsTr("Chat")
+            paneTitleSize: win.meetingChat ? 18 : 16
+            paneTitleX: win.meetingChat ? 20 : 16
+            paneCloseRight: win.meetingChat ? 48.5 : 44
+            paneActions: win.chatPaneActions
+            paneActionsOn: win.chatPaneActionsOn
+            onPaneAction: (key, button) => win.chatPaneAction(key, button)
             paneTabs: win.chatTabs
             paneTab: win.chatTab
             onPaneTabPicked: key => win.chatTab = key
@@ -4364,7 +4557,13 @@ Window {
         confirmText: qsTr("Mute")
         onConfirmed: win.muteAll()
     }
-    InviteDialog { id: inviteDialog; link: win.inviteUrl }
+    InviteDialog {
+        id: inviteDialog
+        link: win.inviteUrl
+        rosterOpen: win.side === "people"
+        // Teams' Add participants: People opens (toggleInfoPane roster).
+        onAddParticipants: win.side = "people"
+    }
     // Teams' attendee mic / camera confirmations (confirm-attendee-hard-
     // mute-dialog, 410 wide, a warning before the title when disabling).
     ConfirmDialog {
@@ -4957,6 +5156,12 @@ Window {
                                                  icon: "transcript-panel-20", checked: side === "transcript" }]
         }
         else if (name === "MeetingFacilitatorTimerButton") e = timerCanView ? { label: qsTr("Timer"), icon: "nmc-timer", checked: timerVisible } : null
+        // Facilitator (Teams' FacilitatorButton in the grid: its glyph and
+        // "Facilitator", the chevron "More options for Facilitator" with
+        // Turn on / off Facilitator and Enable / Disable voice; the item
+        // itself opens that menu, as enableUbarMultiModalAiSplitControls
+        // is off).
+        else if (name === "FacilitatorButton") e = { label: qsTr("Facilitator"), icon: "ai-facilitator", checked: aiFacilitator, submenu: facilitatorItems, menuOnly: true }
         // Interpreter (Teams' More grid, measured on winpc 2026-11-20).
         else if (name === "AiInterpretationButtonForAll") { e = interpreterShown ? { label: qsTr("Interpreter"), icon: "sound-wave-circle-sparkle-20", checked: interpreterInGroup } : null; if (e && interpreterItems.length) e.submenu = interpreterItems }
         else if (name === "MeetingDetailsButton") e = { label: qsTr("Notes"), icon: "nmc-notes", checked: side === "notes" }
@@ -5177,6 +5382,13 @@ Window {
                             enabled: cell.on
                             onTapped: {
                                 const n = cell.modelData.name
+                                // An item whose menu holds its actions opens it.
+                                if (cell.modelData.menuOnly) {
+                                    cellMenu.items = cell.modelData.submenu
+                                    cellMenu.parent = hcFillCellChev
+                                    cellMenu.open()
+                                    return
+                                }
                                 newMore.close()
                                 win.runControl(n)
                             }
@@ -5231,6 +5443,22 @@ Window {
                 Accessible.name: qsTr("Apps")
             }
         }
+    }
+    MenuPopup {
+        id: interpreterBarMenu
+        viewStyle: true; newStyle: true
+        minRowWidth: 230
+        items: win.interpreterItems
+        x: 0; y: parent ? parent.height + 4 : 0
+        onPicked: i => win.interpreterAction(win.interpreterItems[i].name)
+    }
+    MenuPopup {
+        id: facilitatorBarMenu
+        viewStyle: true; newStyle: true
+        minRowWidth: 230
+        items: win.facilitatorItems
+        x: 0; y: parent ? parent.height + 4 : 0
+        onPicked: i => win.facilitatorAction(win.facilitatorItems[i].name)
     }
     // A grid item's own menu (Transcribe ▸ Show transcript).
     MenuPopup {
@@ -5686,6 +5914,7 @@ Window {
     function leaveMenuForTest() { leaveMenu.open() }
     function audioOptionsForTest() { openAudioOptions(barItem("MicrophoneButton")) }
     function inviteForTest() { side = "people"; inviteDialog.open() }
+    function inviteDialogForTest() { return inviteDialog }
     function closeDialPadForTest() { dialPad.close() }
     function pressForTest(keys) { for (const k of keys) dialPad.press(k) }
 

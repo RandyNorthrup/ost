@@ -344,6 +344,9 @@ Item {
     readonly property real copilotWidth: copilotOpen ? 580 : 0
     signal rangeChanged(string startUtc, string endUtc)
     signal joinMeeting(string joinUrl, string subject)
+    /// Meet now's Start meeting: its pre-join (Teams' Meet now pre-join,
+    /// the title to edit).
+    signal startMeetNow(string joinUrl, string subject)
     signal createEvent(string subject, string startUtc, string endUtc, string attendees, bool teamsMeeting)
     signal openMeetingChat(string joinUrl, string subject)
     signal deleteEvent(string id)
@@ -518,7 +521,7 @@ Item {
         else if ((op === "schedule" || op === "update" || op === "cancel") && !error) formLayer.visible = false
         else if (op === "joinById" && !error && r.joinUrl) root.joinMeeting(r.joinUrl, r.subject || qsTr("Meeting"))
         else if (op === "meetNow" && !error && r.joinUrl) {
-            if (meetNowDialog.linkOnly) { meetNowDialog.link = r.joinUrl } else { meetNowDialog.close(); root.joinMeeting(r.joinUrl, r.subject || qsTr("Meeting")) }
+            if (meetNowDialog.linkOnly) { meetNowDialog.link = r.joinUrl } else { meetNowDialog.close(); root.startMeetNow(r.joinUrl, r.subject || qsTr("Meeting")) }
         }
     }
 
