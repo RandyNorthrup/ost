@@ -11718,19 +11718,21 @@ Window {
             const t = preJoin.audioTestForTest()
             if (step === 0) preJoin.openMeetNow("", "OST TEST 356 audio")
             else if (step === 1) { log("rows", preJoin.mic, "|", preJoin.speaker); shot(preJoin, "prejoin") }
+            // (A capture is taken a frame later: each closes the step after.)
             else if (step === 2) preJoin.deviceFlyoutForTest("mic")
-            else if (step === 3) { shot(preJoin, "mic-flyout"); preJoin.deviceFlyoutForTest("") }
+            else if (step === 3) shot(preJoin, "mic-flyout")
             else if (step === 4) preJoin.deviceFlyoutForTest("speaker")
-            else if (step === 5) { shot(preJoin, "speaker-flyout"); preJoin.deviceFlyoutForTest("") }
+            else if (step === 5) shot(preJoin, "speaker-flyout")
             else if (step === 6) preJoin.deviceFlyoutForTest("camera")
-            else if (step === 7) { shot(preJoin, "camera-flyout"); preJoin.deviceFlyoutForTest(""); t.start() }
-            else if (step === 9) { log("speaker step", t.page, backend.audioTestJson, t.speakerLeft, t.actionButton ? t.actionButton.text : "-", t.proceedButton.text); shot(preJoin, "speaker") }
-            else if (step === 10) t.proceedButton.run()
-            else if (step === 13) { log("mic step", t.page, backend.audioTestJson, t.micLeft, t.actionButton ? t.actionButton.text : "-", t.proceedButton.text); shot(preJoin, "mic") }
-            else if (step === 14) t.proceedButton.run()
-            else if (step === 15) { log("summary", t.page, t.allGood, backend.audioTestJson); shot(preJoin, "summary") }
-            else if (step === 16) { t.proceedButton.run(); log("closed", t.visible, backend.audioTestJson) }
-            else if (step === 17) { preJoin.cancel(); Qt.quit() }
+            else if (step === 7) shot(preJoin, "camera-flyout")
+            else if (step === 8) { preJoin.deviceFlyoutForTest(""); t.start() }
+            else if (step === 10) { log("speaker step", t.page, backend.audioTestJson, t.speakerLeft, t.actionButton ? t.actionButton.text : "-", t.proceedButton.text); shot(preJoin, "speaker") }
+            else if (step === 11) t.proceedButton.run()
+            else if (step === 14) { log("mic step", t.page, backend.audioTestJson, t.micLeft, t.actionButton ? t.actionButton.text : "-", t.proceedButton.text); shot(preJoin, "mic") }
+            else if (step === 16) t.proceedButton.run()
+            else if (step === 17) { log("summary", t.page, t.allGood, backend.audioTestJson); shot(preJoin, "summary") }
+            else if (step === 18) { t.proceedButton.run(); log("closed", t.visible, backend.audioTestJson) }
+            else if (step === 19) { preJoin.cancel(); Qt.quit() }
             step++
         }
     }
