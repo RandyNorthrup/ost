@@ -994,8 +994,27 @@ Item {
 
     // Test harness hooks
     /// Add contact for someone picked elsewhere (the Calls history's
-    /// Add contact): Teams' Add contact form with what's known of them.
-    function addContactFor(p) { formDialog.start(p) }
+    /// Add contact): Teams' Add contact form with the directory's record of
+    /// them (as the people picker finds it: names, mail, account), or what
+    /// the caller knows when the directory has nobody by that id.
+    property var pendingAdd: null
+    readonly property string pendingTag: "calladd" + Math.floor(Math.random() * 1e9).toString(36)
+    function addContactFor(p) {
+        pendingAdd = p
+        backend.eventsRequest("contactsSearch", pendingTag, JSON.stringify({ q: p.name || "" }))
+    }
+    Connections {
+        target: backend
+        function onEventsReply(id, json) {
+            if (id !== root.pendingTag || !root.pendingAdd) return
+            const p = root.pendingAdd
+            root.pendingAdd = null
+            let v = {}
+            try { v = JSON.parse(json) } catch (e) {}
+            const found = (v.people || []).find(c => String(c.mri || "").toLowerCase() === String(p.mri || "").toLowerCase())
+            formDialog.start(found || p)
+        }
+    }
     function addForTest(person) { root.change("add", JSON.stringify({ form: { person: person, first: person.given || "", last: person.surname || "", email: person.mail || "" } })) }
     function find(name) { return root.all.find(c => c.name === name) }
     function stateForTest() { return { sort: sortField + " " + sortDirection, keyword: keyword, shown: shown.map(c => c.name), columns: columns.map(c => c.id + "@" + Math.round(c.x) + "+" + Math.round(c.w)) } }

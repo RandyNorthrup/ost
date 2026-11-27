@@ -690,29 +690,34 @@ Window {
             else if (step === 6) shot("menu-group")
             else if (step === 7) { v.closeMenusForTest(); console.warn("CALLS menu 1to1", JSON.stringify(v.menuForTest(find("^OST Test 3 \\| Incoming$"))), "contacts", JSON.stringify((peopleApp.all || []).map(c => c.name + " " + c.mri))) }
             else if (step === 8) shot("menu-1to1")
-            else if (step >= 9 && step <= 18) {
+            else if (step >= 9 && step <= 20) {
                 // Odd steps open a call's Details, even ones capture it.
                 const k = Math.floor((step - 9) / 2)
-                if ((step - 9) % 2 === 1) { shot("details-" + k); return step++ }
+                if ((step - 9) % 2 === 1) { console.warn("CALLS buttons", k, JSON.stringify(v.detailsButtonsForTest())); shot("details-" + k); return step++ }
                 v.closeMenusForTest()
-                const which = ["^OST TEST 348 ost \\| Outgoing", "^OST Test 3 \\| Missed incoming$", "^OST Test 3, \\+1 \\| Incoming from", "^Release planning", "^OST Test 3 \\| Incoming$"][k]
+                const which = ["^OST TEST 348 ost \\| Outgoing", "^OST Test 3 \\| Missed incoming$", "^OST Test 3, \\+1 \\| Incoming from", "^Release planning", "^OST Test 3 \\| Incoming$", "^OST, \\+1 \\| Incoming from OST Test 2"][k]
                 const i = find(which)
                 if (i >= 0) { const c = v.shown[i]; console.warn("CALLS details", which, i, "member", c.member, "group", c.is_group, "thread", (c.thread_id || "").slice(0, 12)) }
-                if (i >= 0) v.detailsForTest(i)
+                // (a draft typed for one call is gone on the next)
+                if (i >= 0) {
+                    v.detailsForTest(i)
+                    if (k > 0) console.warn("CALLS quick draft after switching", JSON.stringify(v.quickForTest()))
+                    v.setQuickForTest("draft for " + which)
+                }
             }
-            else if (step === 19) { v.filterForTest("test 3", ""); }
-            else if (step === 20) { v.rowsForTest().slice(0, 6).forEach(r => console.warn("CALLS filtered", r)); shot("filter-name") }
-            else if (step === 21) { v.filterForTest("", "missed") }
-            else if (step === 22) { v.rowsForTest().slice(0, 4).forEach(r => console.warn("CALLS missed", r)); shot("filter-missed") }
-            else if (step === 23) { v.filterForTest("348", "") }
-            else if (step === 24) { console.warn("CALLS filter 348:", v.rowsForTest().length, "rows"); v.unfilterForTest(); v.reportForTest(find("^OST Test 3 \\| Incoming$")) }
-            else if (step === 25) shot("report")
-            else if (step === 26) {
+            else if (step === 21) { v.filterForTest("test 3", ""); }
+            else if (step === 22) { v.rowsForTest().slice(0, 6).forEach(r => console.warn("CALLS filtered", r)); shot("filter-name") }
+            else if (step === 23) { v.filterForTest("", "missed") }
+            else if (step === 24) { v.rowsForTest().slice(0, 4).forEach(r => console.warn("CALLS missed", r)); shot("filter-missed") }
+            else if (step === 25) { v.filterForTest("348", "") }
+            else if (step === 26) { console.warn("CALLS filter 348:", v.rowsForTest().length, "rows"); v.unfilterForTest(); v.reportForTest(find("^OST Test 3 \\| Incoming$")) }
+            else if (step === 27) shot("report")
+            else if (step === 28) {
                 v.closeReportForTest()
                 const rm = (args.find(a => a.startsWith("--calls-history-remove=")) || "").slice(23)
                 if (rm) { console.warn("CALLS removing", rm); backend.removeCall(rm) }
             }
-            else if (step === 27) { console.warn("CALLS rows now", v.calls.length); Qt.quit() }
+            else if (step === 29) { console.warn("CALLS rows now", v.calls.length); Qt.quit() }
             step++
         }
     }
@@ -16740,9 +16745,15 @@ Window {
         onShowOrg: mri => { profileCard.show(mri); profileCard.tab = "organization" }
         onAddContact: p => peopleApp.addContactFor(p)
         // A group call's chat by its thread; a person's 1:1 chat.
-        onOpenChat: (mri, name, thread) => {
+        onOpenChat: (mri, name, thread, people) => {
             if (thread) { rail.current = "chat"; window.composing = false; backend.selectChat(thread, name) }
-            else callsView.openChatWith(mri, name)
+            else if (mri) callsView.openChatWith(mri, name)
+            else if (people && people.length) {
+                // A group call outside a chat: a new chat with its people.
+                rail.current = "chat"; window.composing = true
+                const picked = people.map(p => ({ id: p.mri.replace(/^8:orgid:/, ""), name: p.name }))
+                Qt.callLater(() => { newChat.picked = picked })
+            }
         }
         onStartCall: (mri, name, thread, video) => {
             if (!thread) { profileCard.startCall(mri, name, video); return }
