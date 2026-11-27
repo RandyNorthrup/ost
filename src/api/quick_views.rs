@@ -131,6 +131,144 @@ pub fn followed_from(v: &serde_json::Value) -> Vec<QuickItem> {
     items_from(v, false)
 }
 
+/// A row of Chat ▸ Reminders (Teams' RemindersSliceManager over your
+/// `48:reminders` stream): the message the reminder is on, its due time
+/// and, once done, when it was completed.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct ReminderItem {
+    #[serde(flatten)]
+    pub item: QuickItem,
+    /// The stream message (the slice item's id).
+    pub stream_id: String,
+    /// Due time, ms since the epoch.
+    pub due: i64,
+    /// Completed at (ms; 0 while open).
+    pub completed: i64,
+    /// Due: the service marked it (`isdue`) or its time has come.
+    pub is_due: bool,
+    /// Its due record asks for a banner (activityContext.displayBanner).
+    pub banner: bool,
+}
+
+/// Your reminders from `48:reminders` (Teams' nF.isMessageValid and
+/// cF.toMetadata): `duedate` must be a number; `isReminderDeleted` (true
+/// or "true") drops the item; `completeddate` ends it. The service posts a
+/// record per change (newReminder, editReminder, then reminderDue, which
+/// carries no preview or sender name; seen for OST Test 3, 2026-11-27):
+/// one item per source message, the newest record's state, with what it
+/// leaves out taken from the older ones. Completed items older than
+/// 7 days are gone (remindersMaxCompletedRetentionInDays). Open items
+/// come first, soonest due at the top, then completed ones, the latest
+/// first.
+pub fn reminders_from(v: &serde_json::Value, now_ms: i64) -> Vec<ReminderItem> {
+    const WEEK_MS: i64 = 7 * 24 * 3600 * 1000;
+    let mut msgs: Vec<&serde_json::Value> =
+        v["messages"].as_array().into_iter().flatten().collect();
+    msgs.sort_by(|a, b| {
+        b["originalarrivaltime"]
+            .as_str()
+            .cmp(&a["originalarrivaltime"].as_str())
+    });
+    let num = |x: &serde_json::Value| {
+        x.as_i64()
+            .or_else(|| x.as_f64().map(|f| f as i64))
+            .or_else(|| x.as_str().and_then(|s| s.parse().ok()))
+    };
+    let truthy = |x: &serde_json::Value| x.as_bool() == Some(true) || x.as_str() == Some("true");
+    // Each source message's item in `out` (None: its newest record
+    // dropped it).
+    let mut seen: std::collections::HashMap<String, Option<usize>> = Default::default();
+    let mut out: Vec<ReminderItem> = Vec::new();
+    for m in msgs {
+        let p = &m["properties"];
+        let a = if p["activity"].is_string() {
+            serde_json::from_str(p["activity"].as_str().unwrap_or_default()).unwrap_or_default()
+        } else {
+            p["activity"].clone()
+        };
+        let text = |k: &str| {
+            a[k].as_str()
+                .map(str::to_string)
+                .or_else(|| a[k].as_i64().map(|n| n.to_string()))
+                .unwrap_or_default()
+        };
+        let thread = text("sourceThreadId");
+        if thread.is_empty() {
+            continue;
+        }
+        let key = format!("{thread}|{}", text("sourceMessageId"));
+        if let Some(at) = seen.get(&key) {
+            // An older record: only what the newer one left out.
+            if let Some(r) = at.and_then(|i| out.get_mut(i)) {
+                let fill = |f: &mut String, v: String| {
+                    if f.is_empty() {
+                        *f = v;
+                    }
+                };
+                fill(&mut r.item.sender, text("sourceUserImDisplayName"));
+                fill(&mut r.item.sender_mri, text("sourceUserId"));
+                fill(&mut r.item.preview, text("messagePreview"));
+                fill(&mut r.item.topic, text("sourceThreadTopic"));
+            }
+            continue;
+        }
+        let completed = num(&p["completeddate"]).unwrap_or(0).max(0);
+        let due = num(&p["duedate"]).filter(|d| *d > 0);
+        // Removed: the service rewrites the newest record as a deletion
+        // (activityReason "deleted", activitySubtype deleteReminder, with
+        // deleteActivityTimestamp; seen 2026-11-27); Teams' own soft
+        // delete is isReminderDeleted.
+        let removed = text("activityReason") == "deleted"
+            || text("activitySubtype") == "deleteReminder"
+            || !a["deleteActivityTimestamp"].is_null();
+        if truthy(&p["isReminderDeleted"])
+            || removed
+            || due.is_none()
+            || (completed > 0 && now_ms - completed > WEEK_MS)
+        {
+            seen.insert(key, None);
+            continue;
+        }
+        let due = due.unwrap_or_default();
+        seen.insert(key, Some(out.len()));
+        let item = QuickItem {
+            channel: thread.ends_with("@thread.tacv2") || text("sourceThreadType") == "space",
+            thread_id: thread,
+            message_id: text("sourceMessageId"),
+            reply_chain: text("sourceReplyChainId"),
+            topic: text("sourceThreadTopic"),
+            sender: text("sourceUserImDisplayName"),
+            sender_mri: text("sourceUserId"),
+            preview: text("messagePreview"),
+            time: m["originalarrivaltime"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            unread: !truthy(&p["isRead"]) && p["isRead"].as_bool() == Some(false),
+            ..Default::default()
+        };
+        out.push(ReminderItem {
+            item,
+            stream_id: m["id"].as_str().unwrap_or_default().to_string(),
+            due,
+            completed,
+            is_due: completed == 0 && (truthy(&p["isdue"]) || due <= now_ms),
+            banner: a["activityContext"]["displayBanner"].as_str() != Some("false"),
+        });
+    }
+    out.sort_by(|a, b| match (a.completed > 0, b.completed > 0) {
+        (false, false) => a.due.cmp(&b.due),
+        (true, true) => b.completed.cmp(&a.completed),
+        (a_done, _) => a_done.cmp(&!a_done),
+    });
+    out
+}
+
+/// Your reminders (Chat ▸ Reminders).
+pub async fn reminders(client: &TeamsClient, now_ms: i64) -> Result<Vec<ReminderItem>> {
+    Ok(reminders_from(&read(client, "48:reminders").await?, now_ms))
+}
+
 async fn read(client: &TeamsClient, conv: &str) -> Result<serde_json::Value> {
     let url = format!(
         "{}/v1/users/ME/conversations/{conv}/messages?view=msnp24Equivalent&pageSize=100",
@@ -162,6 +300,83 @@ pub async fn followed(client: &TeamsClient) -> Result<Vec<QuickItem>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reminders_read_like_teams() {
+        let now = 1_000_000_000_000i64;
+        let rec = |id: &str, t: &str, msg: i64, props: serde_json::Value| {
+            let mut p = props;
+            p["activity"] = serde_json::json!({
+                "sourceThreadId": "19:a@unq.gbl.spaces", "sourceMessageId": msg,
+                "sourceUserImDisplayName": "OST Test 3", "sourceUserId": "8:orgid:x",
+                "messagePreview": format!("m{msg}"), "activitySubtype": "newReminder"
+            });
+            serde_json::json!({ "id": id, "originalarrivaltime": t, "properties": p })
+        };
+        let v = serde_json::json!({ "messages": [
+            // Edited later: the newest record wins.
+            rec("1", "2026-11-27T10:00:00Z", 11, serde_json::json!({ "duedate": now + 10 })),
+            rec("2", "2026-11-27T11:00:00Z", 11, serde_json::json!({ "duedate": now + 5000 })),
+            // Due (its time has come), and one flagged due.
+            rec("3", "2026-11-27T10:00:00Z", 12, serde_json::json!({ "duedate": now - 5 })),
+            rec("4", "2026-11-27T10:00:00Z", 13, serde_json::json!({ "duedate": now + 9, "isdue": true })),
+            // Deleted, a duedate that isn't a number, an old completion.
+            rec("5", "2026-11-27T10:00:00Z", 14, serde_json::json!({ "duedate": now, "isReminderDeleted": "true" })),
+            rec("6", "2026-11-27T10:00:00Z", 15, serde_json::json!({ "duedate": "x" })),
+            rec("7", "2026-11-27T10:00:00Z", 16, serde_json::json!({ "duedate": now - 9, "completeddate": now - 8 * 86_400_000 })),
+            rec("8", "2026-11-27T10:00:00Z", 17, serde_json::json!({ "duedate": now - 9, "completeddate": now - 60_000 })),
+        ]});
+        let r = reminders_from(&v, now);
+        let ids: Vec<&str> = r.iter().map(|x| x.item.message_id.as_str()).collect();
+        assert_eq!(ids, ["12", "13", "11", "17"]);
+        assert_eq!(r[2].due, now + 5000);
+        assert!(r[0].is_due && r[1].is_due && !r[2].is_due && !r[3].is_due);
+        assert_eq!(r[3].completed, now - 60_000);
+        assert_eq!(r[0].item.sender, "OST Test 3");
+        assert_eq!(r[0].stream_id, "3");
+
+        // The due record (no preview, no name) over the newReminder one.
+        let mut due = rec(
+            "9",
+            "2026-11-27T12:00:00Z",
+            20,
+            serde_json::json!({ "duedate": now - 1, "isdue": true }),
+        );
+        due["properties"]["activity"]["messagePreview"] = serde_json::json!("");
+        due["properties"]["activity"]["sourceUserImDisplayName"] = serde_json::Value::Null;
+        due["properties"]["activity"]["activityContext"] =
+            serde_json::json!({ "displayBanner": "true" });
+        let set = rec(
+            "8",
+            "2026-11-27T11:59:58Z",
+            20,
+            serde_json::json!({ "duedate": now - 1, "isdue": false }),
+        );
+        let r = reminders_from(&serde_json::json!({ "messages": [set, due] }), now);
+        assert_eq!(r.len(), 1);
+        assert!(r[0].is_due && r[0].banner);
+        assert_eq!(r[0].stream_id, "9");
+        assert_eq!(r[0].item.sender, "OST Test 3");
+        assert_eq!(r[0].item.preview, "m20");
+
+        // Removed: the newest record says so, and the older ones don't
+        // bring it back.
+        let mut gone = rec(
+            "10",
+            "2026-11-27T12:05:00Z",
+            20,
+            serde_json::json!({ "duedate": now - 1, "isdue": false }),
+        );
+        gone["properties"]["activity"]["activityReason"] = serde_json::json!("deleted");
+        gone["properties"]["activity"]["activitySubtype"] = serde_json::json!("deleteReminder");
+        let set = rec(
+            "8",
+            "2026-11-27T11:59:58Z",
+            20,
+            serde_json::json!({ "duedate": now - 1 }),
+        );
+        assert!(reminders_from(&serde_json::json!({ "messages": [set, gone] }), now).is_empty());
+    }
 
     fn rec(
         time: &str,

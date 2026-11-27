@@ -557,6 +557,9 @@ pub mod qobject {
         /// Teams' in-app toast: `{id, text, intent}` (intent "success" or
         /// "error"); a new id each time.
         #[qproperty(QString, toast_json)]
+        /// Chat ▸ Reminders: your reminders (quick_views::ReminderItem
+        /// rows, open ones first), "" until read.
+        #[qproperty(QString, reminders_json)]
         /// The open chat's newest pinned message for Teams' pinned banner:
         /// `{id, sender, sender_mri, text, time, count}`, or "".
         #[qproperty(QString, pinned_json)]
@@ -1018,6 +1021,22 @@ pub mod qobject {
         /// Save or unsave a message (Teams' Save this message).
         #[qinvokable]
         fn set_message_saved(self: Pin<&mut Backend>, message_id: &QString, save: bool);
+        /// Set (or move) your reminder on a message, due at `due_ms` (Teams'
+        /// Remind me); `reply_chain` is a channel reply's post ("" else).
+        #[qinvokable]
+        fn set_message_reminder(
+            self: Pin<&mut Backend>,
+            message_id: &QString,
+            reply_chain: &QString,
+            due_ms: f64,
+        );
+        /// Remove your reminder on a message (Teams' Remove reminder).
+        #[qinvokable]
+        fn remove_message_reminder(
+            self: Pin<&mut Backend>,
+            message_id: &QString,
+            reply_chain: &QString,
+        );
         /// Mark a message unread (Teams' bookmark behind the horizon).
         #[qinvokable]
         fn mark_message_unread(
@@ -1038,6 +1057,15 @@ pub mod qobject {
         fn forward_message(
             self: Pin<&mut Backend>,
             message_id: &QString,
+            targets_json: &QString,
+            note: &QString,
+        );
+        /// Forward several messages of the open chat together (Teams'
+        /// Forward ▸ Multiple messages): `ids_json` a JSON list of ids.
+        #[qinvokable]
+        fn forward_messages(
+            self: Pin<&mut Backend>,
+            ids_json: &QString,
             targets_json: &QString,
             note: &QString,
         );
@@ -2478,6 +2506,35 @@ pub mod qobject {
         /// Load the Activity feed.
         #[qinvokable]
         fn load_activity(self: Pin<&mut Backend>);
+        /// Read your reminders (Chat ▸ Reminders) into remindersJson; a
+        /// reminder that has come due since shows Teams' "Reminder due"
+        /// banner.
+        #[qinvokable]
+        fn load_reminders(self: Pin<&mut Backend>);
+        /// A Reminders row's actions, by its message: set (or move) the
+        /// due time, mark it completed, or remove it.
+        #[qinvokable]
+        fn set_reminder_at(
+            self: Pin<&mut Backend>,
+            thread_id: &QString,
+            message_id: &QString,
+            reply_chain: &QString,
+            due_ms: f64,
+        );
+        #[qinvokable]
+        fn complete_reminder(
+            self: Pin<&mut Backend>,
+            thread_id: &QString,
+            message_id: &QString,
+            reply_chain: &QString,
+        );
+        #[qinvokable]
+        fn remove_reminder_at(
+            self: Pin<&mut Backend>,
+            thread_id: &QString,
+            message_id: &QString,
+            reply_chain: &QString,
+        );
 
         /// The Activity view is showing: mark the feed read, as Teams does.
         #[qinvokable]
@@ -3877,6 +3934,11 @@ pub struct BackendRust {
     reaction_prefs_result: QString,
     message_readers_json: QString,
     toast_json: QString,
+    reminders_json: QString,
+    /// Reminders already due at the last read (no second banner), and
+    /// when each was last set here (Teams skips a banner within 60 s).
+    reminders_due_seen: HashSet<String>,
+    reminders_set_at: HashMap<String, i64>,
     pinned_json: QString,
     report_result: QString,
     quick_reactions_json: QString,
@@ -6437,6 +6499,8 @@ struct NotifyPrefs {
     sound: bool,
     sound_when_busy: bool,
     meet_now: bool,
+    /// Reminders' banner ("Reminder due"; toastSettings.Reminder).
+    reminder_banners: bool,
     /// Meetings ▸ "Meeting start notifications" (toastSettings.MeetingWentLiveNotification).
     meeting_start: bool,
     /// Meetings ▸ "Show meeting join bar" (toastSettings.liveMeetingStatusBanner).
@@ -6492,6 +6556,7 @@ fn notify_prefs(
         sound: ups["soundsSettings"]["alertSound"].as_str() != Some("Off"),
         sound_when_busy: on_off(t("PlayNotificationSoundsWhenBusyOrInMeetings"), true),
         meet_now: flag(t("HuddleStartedNotification"), false),
+        reminder_banners: flag(t("Reminder"), true),
         meeting_start: t("MeetingWentLiveNotification")
             .as_bool()
             .unwrap_or_else(|| on_off(t("MeetingWentLiveNotification"), true)),
@@ -8124,13 +8189,14 @@ async fn load_thread(thread: &str) -> anyhow::Result<()> {
         api::msgactions::rc_metadata(&client, &channel),
         api::msgactions::pinned_ids(&client, &channel),
     );
-    let (saved, follow, horizons) = rc.unwrap_or_default();
+    let (saved, follow, horizons, reminders) = rc.unwrap_or_default();
     let pinned = pinned.unwrap_or_default();
     api::messages::apply_following(&mut timeline, &follow);
     api::messages::apply_thread_horizons(&mut timeline, &horizons);
     for m in timeline.iter_mut() {
         m.saved = saved.contains(&m.id);
         m.pinned = pinned.contains(&m.id);
+        m.reminder_due = reminders.get(&m.id).copied().unwrap_or(0);
     }
     for img in timeline.iter_mut().flat_map(|m| m.images.iter_mut()) {
         match cached_image(&client, img).await {
@@ -8218,7 +8284,7 @@ async fn load_messages(
         api::msgactions::rc_metadata(&client, &chat_id),
         api::msgactions::pinned_ids(&client, &chat_id),
     );
-    let (saved, follow, horizons) = rc.unwrap_or_default();
+    let (saved, follow, horizons, reminders) = rc.unwrap_or_default();
     match horizon {
         Ok(h) => api::messages::apply_seen(&mut timeline, h),
         Err(e) => tracing::debug!("read horizons unavailable: {}", short_error(&e)),
@@ -8229,6 +8295,7 @@ async fn load_messages(
     for m in timeline.iter_mut() {
         m.saved = saved.contains(&m.id);
         m.pinned = pinned.contains(&m.id);
+        m.reminder_due = reminders.get(&m.id).copied().unwrap_or(0);
     }
     // Teams' banner shows the newest pin; fetch it if it isn't loaded.
     let banner = match pinned.first() {
@@ -19111,6 +19178,11 @@ impl qobject::Backend {
             let v = self.rust().quick_views_version.wrapping_add(1);
             self.as_mut().set_quick_views_version(v);
         }
+        // A reminder set, changed or come due (Teams' reminders slice
+        // follows its 48:reminders stream live).
+        if ids.iter().any(|i| i == "48:reminders") {
+            self.as_mut().load_reminders();
+        }
         for id in ids.iter().filter(|i| !i.starts_with("48:")) {
             let channel = id.split(';').next().unwrap_or_default().to_string();
             let open: Vec<String> = self
@@ -21296,6 +21368,103 @@ impl qobject::Backend {
         });
     }
 
+    pub fn set_message_reminder(
+        mut self: Pin<&mut Self>,
+        message_id: &QString,
+        reply_chain: &QString,
+        due_ms: f64,
+    ) {
+        let id = message_id.to_string();
+        let conv = window_channel(&self.chat_of(&id)).to_string();
+        let chain = reply_chain.to_string();
+        let due = due_ms as i64;
+        if due <= 0 {
+            return;
+        }
+        // Teams writes the due time on the message at once (its optimistic
+        // response) and puts it back if the call fails.
+        let before = self.shown_reminder(&id);
+        self.as_mut()
+            .rust_mut()
+            .reminders_set_at
+            .insert(id.clone(), teams_cli::clock::now_ms());
+        self.as_mut().update_shown(&id, |m| m.reminder_due = due);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::msgactions::set_reminder(&client, &conv, &chain, &id, due).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => {
+                    this.as_mut().reminder_toast();
+                    this.as_mut().load_reminders_soon();
+                }
+                Err(e) => {
+                    tracing::warn!("reminder not set: {}", short_error(&e));
+                    this.as_mut().update_shown(&id, |m| m.reminder_due = before);
+                    this.as_mut().toast_with(
+                        &tr("A reminder could not be set."),
+                        &tr("Try again later."),
+                        "error",
+                        "",
+                    );
+                }
+            });
+        });
+    }
+
+    pub fn remove_message_reminder(
+        mut self: Pin<&mut Self>,
+        message_id: &QString,
+        reply_chain: &QString,
+    ) {
+        let id = message_id.to_string();
+        let conv = window_channel(&self.chat_of(&id)).to_string();
+        let chain = reply_chain.to_string();
+        let before = self.shown_reminder(&id);
+        self.as_mut().update_shown(&id, |m| m.reminder_due = 0);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::msgactions::remove_reminder(&client, &conv, &chain, &id).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => this.as_mut().load_reminders_soon(),
+                Err(e) => {
+                    tracing::warn!("reminder not removed: {}", short_error(&e));
+                    this.as_mut().update_shown(&id, |m| m.reminder_due = before);
+                    this.as_mut().toast_with(
+                        &tr("A reminder could not be removed."),
+                        &tr("Try again later."),
+                        "error",
+                        "",
+                    );
+                }
+            });
+        });
+    }
+
+    /// A shown message's reminder due time (0: none).
+    fn shown_reminder(&self, message_id: &str) -> i64 {
+        server_timelines()
+            .lock()
+            .unwrap()
+            .values()
+            .flat_map(|t| t.iter())
+            .find(|m| m.id == message_id)
+            .map(|m| m.reminder_due)
+            .unwrap_or(0)
+    }
+
+    /// Teams' "A reminder has been set." with View (the Reminders view).
+    fn reminder_toast(self: Pin<&mut Self>) {
+        self.toast_with(&tr("A reminder has been set."), "", "success", "reminders");
+    }
+
     pub fn mark_message_unread(
         mut self: Pin<&mut Self>,
         message_id: &QString,
@@ -21403,14 +21572,43 @@ impl qobject::Backend {
         self.as_mut().set_toast_json(QString::from(v.as_str()));
     }
 
+    /// A toast with a second line and/or an action the window runs
+    /// (`view`: "reminders" opens Chat ▸ Reminders).
+    fn toast_with(mut self: Pin<&mut Self>, text: &str, body: &str, intent: &str, view: &str) {
+        let id = teams_cli::clock::now_ms();
+        let v = json!({ "id": id, "text": text, "body": body, "intent": intent, "view": view })
+            .to_string();
+        self.as_mut().set_toast_json(QString::from(v.as_str()));
+    }
+
     pub fn forward_message(
         self: Pin<&mut Self>,
         message_id: &QString,
         targets_json: &QString,
         note: &QString,
     ) {
-        let source = self.chat_of(&message_id.to_string());
-        let id = message_id.to_string();
+        let ids = vec![message_id.to_string()];
+        self.forward_ids(ids, targets_json, note);
+    }
+
+    pub fn forward_messages(
+        self: Pin<&mut Self>,
+        ids_json: &QString,
+        targets_json: &QString,
+        note: &QString,
+    ) {
+        let mut ids: Vec<String> = serde_json::from_str(&ids_json.to_string()).unwrap_or_default();
+        // Teams sends the selection in message order.
+        ids.sort_by_key(|i| i.parse::<u64>().unwrap_or(0));
+        ids.dedup();
+        if ids.is_empty() {
+            return;
+        }
+        self.forward_ids(ids, targets_json, note);
+    }
+
+    fn forward_ids(self: Pin<&mut Self>, ids: Vec<String>, targets_json: &QString, note: &QString) {
+        let source = window_channel(&self.chat_of(&ids[0])).to_string();
         let note = note.to_string();
         let targets: Vec<serde_json::Value> =
             serde_json::from_str(&targets_json.to_string()).unwrap_or_default();
@@ -21425,14 +21623,7 @@ impl qobject::Backend {
                 } else {
                     api::outbox::plain_html(&note)
                 };
-                api::msgactions::forward(
-                    &client,
-                    &source,
-                    std::slice::from_ref(&id),
-                    &target,
-                    &note_html,
-                )
-                .await
+                api::msgactions::forward(&client, &source, &ids, &target, &note_html).await
             }
             .await;
             let _ = qt.queue(move |mut this| match result {
@@ -23464,6 +23655,238 @@ impl qobject::Backend {
                 }
                 Err(e) => tracing::warn!("activity failed: {}", short_error(&e)),
             }
+        });
+    }
+
+    /// Read the reminders now and again shortly: the service writes the
+    /// 48:reminders record a second or so after a change, and an edit or
+    /// removal comes with no push.
+    fn load_reminders_soon(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        self.load_reminders();
+        runtime().spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            let _ = qt.queue(|this| this.load_reminders());
+        });
+    }
+
+    pub fn load_reminders(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::quick_views::reminders(&client, teams_cli::clock::now_ms()).await
+            }
+            .await;
+            match result {
+                Ok(items) => {
+                    let _ = qt.queue(move |mut this| this.as_mut().publish_reminders(items));
+                }
+                Err(e) => tracing::warn!("reminders unavailable: {}", short_error(&e)),
+            }
+        });
+    }
+
+    /// Show the reminders, and Teams' "Reminder due" banner for each that
+    /// came due since the last read (none on the first read, none for one
+    /// set here in the last minute; several at once: "{n} reminders due").
+    fn publish_reminders(mut self: Pin<&mut Self>, items: Vec<api::quick_views::ReminderItem>) {
+        let now = teams_cli::clock::now_ms();
+        let first = self.rust().reminders_json.is_empty();
+        let due: Vec<&api::quick_views::ReminderItem> = items.iter().filter(|r| r.is_due).collect();
+        let fresh: Vec<&api::quick_views::ReminderItem> = due
+            .iter()
+            .copied()
+            .filter(|r| r.banner && !self.rust().reminders_due_seen.contains(&r.item.message_id))
+            .filter(|r| {
+                self.rust()
+                    .reminders_set_at
+                    .get(&r.item.message_id)
+                    .is_none_or(|t| now - t > 60_000)
+            })
+            .collect();
+        if !first && !fresh.is_empty() {
+            let prefs = notify_prefs(&self.rust().settings_json.to_string(), &load_settings());
+            if prefs.reminder_banners && !prefs.mute_all && banners_available() {
+                let one = fresh[0];
+                let (title, text) = if fresh.len() > 1 {
+                    (
+                        tr("%1 reminders due").replace("%1", &fresh.len().to_string()),
+                        tr("View your reminders"),
+                    )
+                } else {
+                    let place = if one.item.topic.is_empty() {
+                        one.item.sender.clone()
+                    } else if one.item.sender.is_empty() {
+                        one.item.topic.clone()
+                    } else {
+                        format!("{} > {}", one.item.topic, one.item.sender)
+                    };
+                    (
+                        tr("Reminder due"),
+                        if place.is_empty() {
+                            tr("View your reminders")
+                        } else {
+                            place
+                        },
+                    )
+                };
+                let banner = serde_json::json!({
+                    "id": format!("reminder:{}", one.stream_id),
+                    "kind": "standard",
+                    "title": title, "subtitle": "", "text": text,
+                    "view": "reminders",
+                    "senderMri": if fresh.len() > 1 { "" } else { one.item.sender_mri.as_str() },
+                    "senderName": if fresh.len() > 1 { "" } else { one.item.sender.as_str() },
+                    "badge": "reminder",
+                    "seconds": prefs.seconds,
+                    "silent": !prefs.sound,
+                    "sound": prefs.sound_file,
+                });
+                self.as_mut()
+                    .banner_requested(QString::from(banner.to_string().as_str()));
+            }
+        }
+        let seen: HashSet<String> = due.iter().map(|r| r.item.message_id.clone()).collect();
+        self.as_mut().rust_mut().reminders_due_seen = seen;
+        // The shown messages' markers follow the list (clearing only when
+        // the whole list was read: one page of 100).
+        let whole = items.len() < 100;
+        let dues: HashMap<String, i64> = items
+            .iter()
+            .filter(|r| r.completed == 0)
+            .map(|r| (r.item.message_id.clone(), r.due))
+            .collect();
+        for t in server_timelines().lock().unwrap().values_mut() {
+            for m in t.iter_mut() {
+                let d = dues.get(&m.id).copied().unwrap_or(0);
+                if m.reminder_due != d && (d > 0 || whole) {
+                    m.reminder_due = d;
+                }
+            }
+        }
+        self.as_mut().refresh_lies();
+        let json = serde_json::to_string(&items).unwrap_or_else(|_| "[]".into());
+        self.as_mut()
+            .set_reminders_json(QString::from(json.as_str()));
+    }
+
+    pub fn set_reminder_at(
+        mut self: Pin<&mut Self>,
+        thread_id: &QString,
+        message_id: &QString,
+        reply_chain: &QString,
+        due_ms: f64,
+    ) {
+        let (conv, id, chain, due) = (
+            thread_id.to_string(),
+            message_id.to_string(),
+            reply_chain.to_string(),
+            due_ms as i64,
+        );
+        if due <= 0 {
+            return;
+        }
+        self.as_mut()
+            .rust_mut()
+            .reminders_set_at
+            .insert(id.clone(), teams_cli::clock::now_ms());
+        self.as_mut().update_shown(&id, |m| m.reminder_due = due);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::msgactions::set_reminder(&client, &conv, &chain, &id, due).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(()) => {
+                    this.as_mut().reminder_toast();
+                    this.as_mut().load_reminders_soon();
+                }
+                Err(e) => {
+                    tracing::warn!("reminder not set: {}", short_error(&e));
+                    this.as_mut().toast_with(
+                        &tr("A reminder could not be set."),
+                        &tr("Try again later."),
+                        "error",
+                        "",
+                    );
+                    this.as_mut().load_reminders_soon();
+                }
+            });
+        });
+    }
+
+    pub fn complete_reminder(
+        self: Pin<&mut Self>,
+        thread_id: &QString,
+        message_id: &QString,
+        reply_chain: &QString,
+    ) {
+        let (conv, id, chain) = (
+            thread_id.to_string(),
+            message_id.to_string(),
+            reply_chain.to_string(),
+        );
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::msgactions::set_reminder(&client, &conv, &chain, &id, 0).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                match result {
+                    Ok(()) => this
+                        .as_mut()
+                        .toast(&tr("Reminder marked as completed."), "success"),
+                    Err(e) => {
+                        tracing::warn!("reminder not completed: {}", short_error(&e));
+                        this.as_mut()
+                            .toast(&tr("Reminder could not be marked as completed."), "error");
+                    }
+                }
+                this.as_mut().update_shown(&id, |m| m.reminder_due = 0);
+                this.as_mut().load_reminders_soon();
+            });
+        });
+    }
+
+    pub fn remove_reminder_at(
+        mut self: Pin<&mut Self>,
+        thread_id: &QString,
+        message_id: &QString,
+        reply_chain: &QString,
+    ) {
+        let (conv, id, chain) = (
+            thread_id.to_string(),
+            message_id.to_string(),
+            reply_chain.to_string(),
+        );
+        self.as_mut().update_shown(&id, |m| m.reminder_due = 0);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::msgactions::remove_reminder(&client, &conv, &chain, &id).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                match result {
+                    Ok(()) => this.as_mut().toast(&tr("Reminder removed."), "success"),
+                    Err(e) => {
+                        tracing::warn!("reminder not removed: {}", short_error(&e));
+                        this.as_mut().toast_with(
+                            &tr("A reminder could not be removed."),
+                            &tr("Try again later."),
+                            "error",
+                            "",
+                        );
+                    }
+                }
+                this.as_mut().load_reminders_soon();
+            });
         });
     }
 

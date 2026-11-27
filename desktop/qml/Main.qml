@@ -2078,6 +2078,11 @@ Window {
     NotificationBanners {
         id: banners
         onOpenChat: (chatId, chatName) => backend.openFromNotification(chatId, chatName)
+        onOpenView: view => {
+            if (view !== "reminders") return
+            window.show(); window.raise(); window.requestActivate()
+            rail.current = "chat"; chatList.openQuick("reminders")
+        }
         onJoinMeeting: (chatId, chatName) => backend.joinFromNotification(chatId, chatName)
         // A scheduled meeting's start notification: its pre-join.
         onJoinMeetingUrl: (url, title) => preJoin.openFor(url, title, "", "")
@@ -15600,7 +15605,8 @@ Window {
         z: 200
         x: 83; y: window.height - 16 - height
         width: 288
-        height: Math.max(46, 12.67 + toastTitle.height + (toastAction.visible ? 11 + 20 : 0) + 12.67)
+        readonly property bool inline: !!(toastData && toastData.inline)
+        height: Math.max(46, 12.67 + toastTitle.height + (toastBody.visible ? toastBody.height + 2 : 0) + (toastAction.visible && !inline ? 11 + 20 : 0) + 12.67)
         FluentSurface { anchors.fill: parent; depth: 16; radius: 8; color: theme.surface }
         FluentIcon {
             x: 12.67; y: 14.67; size: 16
@@ -15609,17 +15615,29 @@ Window {
         }
         Text {
             id: toastTitle
-            x: 36.67; y: 12.67; width: 202.67
+            x: 36.67; y: 12.67; width: toast.inline ? toast.width - 36.67 - 12.67 - toastAction.implicitWidth - 8 : 202.67
             wrapMode: Text.Wrap
             text: toast.toastData ? toast.toastData.text : ""
             font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
             lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: theme.text
         }
+        // A second line (Teams' toast body: "Try again later.").
+        Text {
+            id: toastBody
+            visible: !!(toast.toastData && toast.toastData.body)
+            x: 36.67; y: toastTitle.y + toastTitle.height + 2; width: 202.67
+            wrapMode: Text.Wrap
+            text: visible ? toast.toastData.body : ""
+            font.family: theme.font; font.pixelSize: theme.base
+            lineHeight: 20; lineHeightMode: Text.FixedHeight
+            color: theme.text
+        }
         Text {
             id: toastAction
             visible: !!(toast.toastData && toast.toastData.action)
-            x: 36.67; y: toastTitle.y + toastTitle.height + 11; height: 20
+            x: toast.inline ? toast.width - 12.67 - implicitWidth : 36.67
+            y: toast.inline ? toastTitle.y : toastTitle.y + toastTitle.height + 11; height: 20
             verticalAlignment: Text.AlignVCenter
             text: visible ? toast.toastData.action : ""
             font.family: theme.font; font.pixelSize: theme.base
@@ -15638,6 +15656,7 @@ Window {
         }
         Rectangle {
             id: hcFill1
+            visible: !toast.inline
             x: 251.33; y: 12.67; width: 24; height: 20; radius: 4
             color: toastClose.hovered ? theme.menuHover : "transparent"
             FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
@@ -15651,7 +15670,17 @@ Window {
         Accessible.name: toastData ? toastData.text : ""
         Connections {
             target: backend
-            function onToastJsonChanged() { if (backend.toastJson) window.showToast(JSON.parse(backend.toastJson)) }
+            function onToastJsonChanged() {
+                if (!backend.toastJson) return
+                const d = JSON.parse(backend.toastJson)
+                // "A reminder has been set." with View (Teams: the action at
+                // the title's end, no close button) opens Chat ▸ Reminders.
+                if (d.view === "reminders") {
+                    d.action = qsTr("View"); d.inline = true
+                    d.onAction = () => { rail.current = "chat"; chatList.openQuick("reminders") }
+                }
+                window.showToast(d)
+            }
         }
     }
     // The Meeting Recaps app on Audio recaps (the audio recap mini player's
@@ -18573,6 +18602,7 @@ Window {
         readonly property bool shown: conversation.visible && conversation.copilotOpen
         open: shown
         request: conversation.copilotRequest
+        ask: conversation.copilotAsk
         anchors { top: appBanner.bottom; bottom: statusBar.top; right: chatCopilotHistory.left }
         width: shown ? 360 : 0
         onClosed: conversation.copilotOpen = false

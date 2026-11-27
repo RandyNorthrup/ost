@@ -47,6 +47,9 @@ Window {
     readonly property string appName: "OST"
 
     signal openChat(string chatId, string chatName)
+    /// A banner that opens a view rather than a chat ("reminders": Teams'
+    /// Reminder due opens Chat ▸ Reminders).
+    signal openView(string view)
     signal joinMeeting(string chatId, string chatName)
     signal joinMeetingUrl(string url, string title)
     signal openSettings()
@@ -456,7 +459,8 @@ Window {
             property string reaction: ""
             onActivated: {
                 if (!toast) return
-                if (toast.chatId) root.openChat(toast.chatId, toast.chatName || "")
+                if (toast.view) root.openView(toast.view)
+                else if (toast.chatId) root.openChat(toast.chatId, toast.chatName || "")
                 root.dismiss(toast.id)
             }
             function react(key) {

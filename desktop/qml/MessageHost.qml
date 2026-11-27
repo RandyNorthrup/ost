@@ -34,6 +34,15 @@ Item {
     property string forceChannelBarId: ""
     /// Posts offer "Open conversation in new window" (not in that window).
     property bool canPopOut: false
+    /// Ask Copilot (Teams' ask-copilot: a Microsoft 365 Copilot licence,
+    /// the conversation's Copilot side pane): the view sets it where its
+    /// Copilot pane can open, and opens it on askCopilotRequested.
+    property bool canAskCopilot: false
+    signal askCopilotRequested(var message)
+    /// Forward ▸ Multiple messages (Teams' forward multiselect): which
+    /// contexts the view can select messages in ("chat", "post", "reply").
+    property var multiselectContexts: []
+    signal multiselectRequested(var message, string context)
     signal threadWindowRequested(var post)
     signal quoteRequested(var message)
     signal reactRequested(string messageId, string key, bool on)
@@ -118,6 +127,26 @@ Item {
         reactionPicker.mine = m ? (m.reactions || []).filter(r => r.mine) : []
         reactionPicker.messageId = messageId; reactionPicker.parent = anchor; reactionPicker.open()
     }
+    // Forward: Teams' split item where messages can be selected (Forward,
+    // then a chevron part, "Forward options", opening This message /
+    // Multiple messages); a plain item elsewhere.
+    function forwardItem(m, context) {
+        const it = { key: "forward", label: qsTr("Forward"), icon: "share-forward-20", keys: "F" }
+        if ((root.multiselectContexts || []).indexOf(context) < 0) return it
+        return Object.assign(it, { split: true, splitLabel: qsTr("Forward options"), submenu: [
+            { key: "forward-one", label: qsTr("This message") },
+            { key: "forward-many", label: qsTr("Multiple messages") }] })
+    }
+    // Remind me ▸ (Teams' reminder item, 629737 `Tn`): ReminderPresets'
+    // submenu; Edit reminder, with Remove reminder, once one is set. Not in
+    // your notes to self (enableRemindersSliceForSelfChat is off).
+    ReminderPresets { id: presets }
+    function reminderItem(m) {
+        if (root.isSelfChat) return null
+        const t = presets.times(new Date())
+        const set = (m.reminder_due || 0) > 0
+        return { key: "reminder", label: set ? qsTr("Edit reminder") : qsTr("Remind me"), icon: "clock-alarm-20", submenu: presets.submenu(t, set), times: t }
+    }
     // The message ··· menu (Teams' registry order; the hover bar's own
     // actions are left out when it opens from there, kept on right-click).
     function messageMenuItems(m, rightClick, context) {
@@ -138,16 +167,19 @@ Item {
         if (context === "post" || context === "reply") {
             if (rightClick && own) out.push({ key: "edit", label: qsTr("Edit"), icon: "edit-20", keys: "E" })
             if (rightClick && !own) out.push({ key: "reply", label: qsTr("Reply with quote"), icon: "quote-reply-20", keys: "Q" })
-            out.push({ key: "forward", label: qsTr("Forward"), icon: "share-forward-20", keys: "F" })
+            out.push(root.forwardItem(m, context))
             if (context === "post") out.push(m.following
                 ? { key: "unfollow", label: qsTr("Unfollow thread"), icon: "chat-multiple-minus-20" }
                 : { key: "follow", label: qsTr("Follow thread"), icon: "chat-multiple-20" })
             out.push({ key: "copy-link", label: qsTr("Copy link"), icon: "link-20" })
             out.push(save)
+            const remindPost = root.reminderItem(m)
+            if (remindPost) out.push(remindPost)
             if (own) out.push({ key: "delete", label: qsTr("Delete"), icon: "delete-menu-20", keys: "Del" })
             if (context === "post") out.push(m.pinned
                 ? { key: "unpin", label: qsTr("Unpin for everyone"), icon: "pin-off-20", keys: "P" }
                 : { key: "pin", label: qsTr("Pin for everyone"), icon: "pin-20", keys: "P" })
+            if (root.canAskCopilot && root.askableText(m)) out.push({ key: "ask-copilot", label: qsTr("Ask Copilot"), icon: "ai-copilot" })
             if (context === "post" && root.canPopOut) out.push({ key: "popout", label: qsTr("Open conversation in new window"), icon: "window-new-20" })
             out.push({ separator: true })
             if (context === "post") out.push({ key: "unread", label: qsTr("Mark as unread"), icon: "mail-unread-20", keys: "U" })
@@ -159,13 +191,17 @@ Item {
         // Core items, in Teams' registry order.
         if (rightClick || own) out.push({ key: "reply", label: qsTr("Reply with quote"), icon: "quote-reply-20", keys: "Q" })
         if (rightClick && own) out.push({ key: "edit", label: qsTr("Edit"), icon: "edit-20", keys: "E" })
-        out.push({ key: "forward", label: qsTr("Forward"), icon: "share-forward-20", keys: "F" })
+        out.push(root.forwardItem(m, "chat"))
         out.push({ key: "copy-link", label: qsTr("Copy link"), icon: "link-20" })
         out.push(save)
+        const remind = root.reminderItem(m)
+        if (remind) out.push(remind)
         if (own) out.push({ key: "delete", label: qsTr("Delete"), icon: "delete-menu-20", keys: "Del" })
         out.push(m.pinned
             ? { key: "unpin", label: qsTr("Unpin for everyone"), icon: "pin-off-20", keys: "P" }
             : { key: "pin", label: qsTr("Pin for everyone"), icon: "pin-20", keys: "P" })
+        // Ask Copilot (core, after Pin): a delivered message with text.
+        if (root.canAskCopilot && root.askableText(m)) out.push({ key: "ask-copilot", label: qsTr("Ask Copilot"), icon: "ai-copilot" })
         // Read by N of M: your messages in group chats, once the readers
         // are known; disabled when nobody has read it.
         const r = root.readersFor(m.id)
@@ -214,6 +250,10 @@ Item {
         property string context: "chat"
         labelInset: 32; separatorHeight: 8.6
         chevronSize: 20; chevronMargin: 5.6; keysMargin: 8
+        splitChevronSize: 20
+        // Teams' Remind me and Forward submenus: 170 wide, no icons.
+        submenuMinWidth: 162
+        onSubPicked: (i, j) => root.messageSubPicked(items[i], items[i].submenu[j], message)
         margins: 8
         header: rightClick ? reactionStrip : null
         // The readers' list arrives after the menu opens.
@@ -229,7 +269,8 @@ Item {
             else if (it.key === "edit") root.startEdit(m)
             else if (it.key === "delete") root.deleteRequested(m.id)
             else if (it.key === "delete-scheduled") backend.cancelScheduled(m.draft_id)
-            else if (it.key === "forward") { forwardDialog.message = m; forwardDialog.open() }
+            else if (it.key === "forward") root.forwardOne(m)
+            else if (it.key === "ask-copilot") root.askCopilotRequested(m)
             else if (it.key === "report") { backend.reportResult = ""; reportDialog.message = m; reportDialog.open() }
             else if (it.key === "copy-link") backend.copyMessageLink(JSON.stringify({ id: m.id, sender: m.sender || "", text: m.text || "", root_id: m.root_id || "" }), JSON.stringify({ team_id: root.teamId, team_name: root.teamName, channel_name: root.isChannel ? root.chatName : "" }))
             else if (it.key === "save" || it.key === "unsave") backend.setMessageSaved(m.id, it.key === "save")
@@ -255,9 +296,63 @@ Item {
         }
     }
     ReportDialog { id: reportDialog }
+    function forwardOne(m) { forwardDialog.messages = []; forwardDialog.message = m; forwardDialog.open() }
+    /// Forward several selected messages (Next in the selection footer).
+    function forwardMany(list) {
+        if (!list || !list.length) return
+        forwardDialog.messages = list
+        forwardDialog.message = list[0]
+        forwardDialog.open()
+    }
+    signal forwarded()
+    // Remind me: set (or move) the reminder, or remove it; Teams flips the
+    // message's marker at once and says "A reminder has been set."
+    function setReminder(m, due) { backend.setMessageReminder(m.id, m.root_id || "", Math.round(due.getTime())) }
+    function removeReminder(m) { backend.removeMessageReminder(m.id, m.root_id || "") }
+    function messageSubPicked(it, sub, m) {
+        if (it.key === "forward") {
+            if (sub.key === "forward-one") root.forwardOne(m)
+            else root.multiselectRequested(m, messageMenu.context)
+            return
+        }
+        if (it.key !== "reminder") return
+        const at = presets.at(sub.key, it.times)
+        if (at) root.setReminder(m, at)
+        else if (sub.key === "remove") root.removeReminder(m)
+        else if (sub.key === "custom") { customReminder.message = m; customReminder.open() }
+    }
+    CustomReminderDialog {
+        id: customReminder
+        property var message: null
+        due: message && (message.reminder_due || 0) > Date.now() ? new Date(message.reminder_due) : null
+        onAdded: when => root.setReminder(message, when)
+    }
+    readonly property alias customReminderForTest: customReminder
+    // The text Ask Copilot hands on (Teams' `ca`): line breaks for <br>
+    // and block ends, a quote as `Name: "preview" rest`, a channel post's
+    // subject first; empty for messages Teams doesn't offer it on.
+    function askableText(m) {
+        if (!m || m.deleted || m.send_state || m.kind && m.kind !== "message") return ""
+        if ((m.media || []).some(x => x.kind === "audio") || (m.videos || []).length > 0) return ""
+        const html = String(m.html || "")
+            .replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div|li|h[1-6]|pre|blockquote|tr)>/gi, "\n")
+        const plain = html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+            .replace(/&quot;/g, "\"").replace(/&#39;/g, "'").replace(/&amp;/g, "&").replace(/\n{2,}/g, "\n").trim()
+        let text = plain || String(m.text || "").trim()
+        if (m.quote && m.quote.text) {
+            const name = m.quote.sender && m.quote.sender !== "Display Name" ? m.quote.sender + ": " : ""
+            text = name + "\"" + m.quote.text + "\" " + text
+        }
+        if (m.subject) text = "[Subject: " + m.subject + "] " + text
+        return text.trim()
+    }
     ForwardDialog {
         id: forwardDialog
-        onForwardTo: (targets, note) => backend.forwardMessage(message.id, JSON.stringify(targets), note)
+        onForwardTo: (targets, note) => {
+            if (several) backend.forwardMessages(JSON.stringify(shownMessages.map(m => m.id)), JSON.stringify(targets), note)
+            else backend.forwardMessage(message.id, JSON.stringify(targets), note)
+            root.forwarded()
+        }
     }
     // More actions ▸: Immersive Reader (Teams' L2 items; apps' message
     // actions aren't listed yet).

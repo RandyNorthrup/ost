@@ -845,6 +845,10 @@ pub struct MessageView {
     /// Saved by you (Teams' Save this message).
     #[serde(default)]
     pub saved: bool,
+    /// Your reminder's due time (ms since the epoch; 0 = none), Teams'
+    /// Remind me.
+    #[serde(default)]
+    pub reminder_due: i64,
     /// Pinned for everyone in the chat.
     #[serde(default)]
     pub pinned: bool,

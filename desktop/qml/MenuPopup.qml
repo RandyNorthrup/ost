@@ -74,6 +74,8 @@ Popup {
     property real labelInset: -1
     property real separatorHeight: newStyle ? 20.67 : viewStyle ? 16.67 : fabric ? 9 : 5
     property int chevronSize: viewStyle ? 16 : 12
+    /// A split row's chevron (16; the message menu's Forward has 20).
+    property int splitChevronSize: 16
     property real chevronMargin: viewStyle ? 6 : 8
     property real keysMargin: 6
     // An optional strip above the items (the right-click reactions), with a
@@ -555,7 +557,7 @@ Popup {
                         Rectangle { width: 1; height: 20; anchors.verticalCenter: parent.verticalCenter; color: theme.divider }
                         FluentIcon {
                             anchors.centerIn: parent; anchors.horizontalCenterOffset: 0.5
-                            name: "chevron-right-16"; size: 16; color: theme.onFill(hcFill1, row.ink)
+                            name: "chevron-right-" + root.splitChevronSize; size: root.splitChevronSize; color: theme.onFill(hcFill1, row.ink)
                         }
                         HoverHandler {
                             id: splitHover; cursorShape: row.on ? Qt.PointingHandCursor : Qt.ArrowCursor

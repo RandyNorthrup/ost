@@ -66,6 +66,7 @@ Window {
         id: copilot
         open: chat.copilotOpen
         request: chat.copilotRequest
+        ask: chat.copilotAsk
         anchors { top: titleRow.bottom; right: history.left; bottom: parent.bottom }
         width: open ? 360 : 0
         onClosed: chat.copilotOpen = false

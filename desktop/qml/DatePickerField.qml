@@ -35,6 +35,8 @@ Item {
     /// No field of its own: the owner draws it and calls openPicker()
     /// (OneDrive's share dialog's expiration date).
     property bool bare: false
+    /// The month picker beside the days (Teams' custom reminder has none).
+    property bool monthPicker: true
     function openPicker() { popup.open() }
     implicitWidth: 277.3; implicitHeight: 32
 
@@ -68,7 +70,7 @@ Item {
         id: popup
         y: root.height + 0.67
         padding: 0
-        width: 441.3; height: 242.3
+        width: root.monthPicker ? 441.3 : 221.3; height: 242.3
         // What the pickers show (not the chosen date until a day is picked).
         property int year: root.date.getFullYear()
         property int month: root.date.getMonth()
@@ -123,10 +125,11 @@ Item {
                 }
             }
         }
-        Rectangle { x: 220.67; y: 0.67; width: 1; height: 241; color: theme.dividerSoft }
+        Rectangle { visible: root.monthPicker; x: 220.67; y: 0.67; width: 1; height: 241; color: theme.dividerSoft }
 
         // Month picker (or the years).
         Item {
+            visible: root.monthPicker
             x: 0.67; y: 0.67; width: 440; height: 241
             Rectangle {
                 id: hcFill2

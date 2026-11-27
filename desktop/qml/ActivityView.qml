@@ -223,6 +223,7 @@ Rectangle {
                     name: it.modelData.kind === "missedCall" ? "call-missed-16-filled"
                         : it.modelData.kind === "voicemail" ? "voicemail-16-filled"
                         : it.modelData.kind === "addedToTeam" ? "people-team-16-filled"
+                        : it.modelData.kind === "reminder" ? "clock-alarm-16"
                         : "chat-20"
                     color: it.modelData.kind === "missedCall" ? theme.hc("#D13438", "#FFFFFF")
                         : it.modelData.kind === "voicemail" ? theme.hc("#CA5010", "#FFFFFF") : theme.brand
