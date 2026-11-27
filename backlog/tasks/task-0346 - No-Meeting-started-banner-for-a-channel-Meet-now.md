@@ -1,11 +1,11 @@
 ---
 id: TASK-0346
 title: No 'Meeting started' banner for a channel Meet now
-status: In Progress
+status: Done
 assignee:
   - '@calls2'
 created_date: '2026-11-27T05:47:00Z'
-updated_date: '2026-11-27T07:56:00Z'
+updated_date: '2026-11-27T09:11:00Z'
 labels:
   - calls
   - bug
