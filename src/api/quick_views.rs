@@ -136,7 +136,17 @@ async fn read(client: &TeamsClient, conv: &str) -> Result<serde_json::Value> {
         "{}/v1/users/ME/conversations/{conv}/messages?view=msnp24Equivalent&pageSize=100",
         client.chat_service_url()
     );
-    Ok(client.chat_get(&url).await?.json().await?)
+    match client.chat_get(&url).await {
+        Ok(r) => Ok(r.json().await?),
+        // Someone who has never saved (or followed) anything has no such
+        // stream yet: the chat service answers 404, and the list is empty.
+        Err(e) if is_missing(&e) => Ok(serde_json::json!({ "messages": [] })),
+        Err(e) => Err(e),
+    }
+}
+
+fn is_missing(e: &anyhow::Error) -> bool {
+    format!("{e:#}").contains("HTTP 404")
 }
 
 /// Saved messages, newest first.
@@ -166,6 +176,15 @@ mod tests {
             "sourceUserImDisplayName": "Randy Northrup", "sourceUserId": "8:orgid:x", "messagePreview": preview,
             "sourceThreadTopic": "OST group test", "sourceThreadType": "chat",
             "activityContext": {"repliesCount": "3", "parentMessagePreview": "root"}}}})
+    }
+
+    #[test]
+    fn a_missing_stream_reads_as_empty() {
+        assert!(is_missing(&anyhow::anyhow!(
+            "HTTP 404 for https://amer.ng.msg.teams.microsoft.com/v1/users/ME/conversations/48:saved/messages: {{}}"
+        )));
+        assert!(!is_missing(&anyhow::anyhow!("HTTP 500 for https://x")));
+        assert!(saved_from(&serde_json::json!({ "messages": [] })).is_empty());
     }
 
     #[test]
