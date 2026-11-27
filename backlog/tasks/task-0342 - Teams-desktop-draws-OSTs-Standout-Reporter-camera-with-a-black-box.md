@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@meet'
 created_date: '2026-11-26T21:39:00Z'
-updated_date: '2026-11-27T07:00:00Z'
+updated_date: '2026-11-27T08:07:00Z'
 labels:
   - bug
   - calls
@@ -116,4 +116,18 @@ Teams desktop was in a scheduled test meeting, sharing a window, with its status
   - A PACSI variant was also tried: OST put its own PACSI NAL (type 30, RFC 6190 layout, carrying the SEI unescaped as MS-H264PF says) first in each frame. The processor then forwarded almost nothing: 19 frames in 39 s of Standout and 15 in 75 s of Reporter, all keyframes. Each had OST's PACSI as an extra 77-byte packet next to the processor's own. Teams desktop showed no camera in Standout and a frozen older frame in Reporter; video came back once the share stopped. That variant was removed.
 - Conclusion: the processor passes a bare SEI but builds the PACSI itself for an H.264 sender, so OST can't place the crop info where Teams desktop puts it (inside the PACSI). Teams desktop either reads it only from there, or the cut-out depends on more than the crop info (the PACSI or bitstream info differ in size too: the processor's PACSI for OST is 39 bytes of payload, Teams' own is 43). Either way, AC #1 isn't reachable on the H.264 path.
 - Native-format route: only a sender of X-H264UC builds its own PACSI. The processor has answered OST's receive offers with H.264 only (earlier note), and OST's send line was never offered X-H264UC. Next step if pursued: offer X-H264UC (`packetization-mode=1;mst-mode=NI-TC`) on OST's camera send line with OST_VIDEO_NATIVE. If the processor accepts, send MS-H264PF packets: a PACSI first in every frame, with a DONC, a bitstream info SEI and, in Standout/Reporter, the crop info SEI. If it answers 107 again, the route is closed to OST.
+
+- Native-format route (X-H264UC send), 2026-11-27 07:36–08:06 UTC. Scheduled test meeting "OST TEST 342 native" (organizer OST Test 2, lobby set to organizer only; deleted afterwards). testpc2's Teams desktop (OST Test 2, organizer) admitted OST Test 3 (linuxlt, test camera C with a synthetic StyleGAN face, virtual mic), with pktmon running. SDPs were dumped locally with OST_TROUTER_DUMP_DIR and deleted afterwards.
+  - OST_VIDEO_NATIVE_SEND=1 (new developer switch, off by default) offers `122 X-H264UC` (`packetization-mode=1;mst-mode=NI-TC`) before H.264 on OST's camera line.
+  - The processor's answer to OST's own offer: `m=video … 107` (H.264 only) on the camera line.
+  - After the lobby admission, the processor re-offers every video line itself: `114 122 107 123 …` (H265, X-H264UC, H.264, FEC). OST answered the camera line `122 107`, so X-H264UC was negotiated.
+  - OST then sent its camera as PT 122, built from MS-H264PF and RFC 6190:
+    - a PACSI first in every access unit (X, Y, T flags, TL0PICIDX, IDRPICID, DONC);
+    - a full stream layout SEI on each IDR (one layer, PRID 0, constrained baseline);
+    - a bitstream info SEI every frame, carrying the cropping info message in Standout/Reporter;
+    - an SVC prefix NAL before each slice.
+    - Unit tests check the layout against the spec's example bytes. A first try without the prefixes and Y fields behaved the same.
+  - Result: the processor forwarded none of it. testpc2 kept sending VSRs for OST's camera (PSFB FMT 15, 120 bytes, several a second), but no camera RTP arrived on 3480, only RTCP and STUN. Teams desktop showed "Loading content…" in Standout, the share without the presenter in the second run, and a blank OST Test 3 tile once sharing stopped (screens checked, pictures deleted).
+- Conclusion: the processor takes X-H264UC from OST only in its own move re-offer, and then drops OST's native stream. Teams' own PACSI is 43 bytes where OST's is shorter, so something the processor checks differs. Teams' native payloads are SRTP-encrypted end to end on the wire, so there's no clear-text reference to match. AC #1 is closed out as a Teams-side limitation: Teams desktop cuts a presenter out only from a native Teams sender, and OST can't produce a stream the processor forwards that way. OST keeps sending Teams' exact implicit-mask picture: OST viewers cut it out, and Teams desktop places it correctly with a black background.
+- Also found: after a lobby admission, OST's first camera toggle fails. UpdateMediaDescriptions answers 406, code 481 subCode 10021 "Call is ended", detail 10109 "Participant retarget was successful": it still uses the pre-move call leg's link. A later toggle (after the share's re-offer) worked. Filed as a follow-up task.
 <!-- SECTION:NOTES:END -->
