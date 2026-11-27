@@ -193,7 +193,7 @@ Item {
                 font.family: theme.font; font.pixelSize: 14
                 lineHeight: 20; lineHeightMode: Text.FixedHeight
                 color: theme.text
-                onLinkActivated: link => Qt.openUrlExternally(link)
+                onLinkActivated: link => backend.openExternal(link)
                 HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
             }
             FieldLabel { y: 148; text: qsTr("Name") }

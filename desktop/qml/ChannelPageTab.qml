@@ -72,7 +72,7 @@ Rectangle {
                 }
             }
             HoverHandler { id: titleHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: if (root.link) Qt.openUrlExternally(root.link) }
+            TapHandler { onTapped: if (root.link) backend.openExternal(root.link) }
             Accessible.role: Accessible.Button
             Accessible.name: root.pageName
         }

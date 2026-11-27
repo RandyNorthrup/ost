@@ -69,10 +69,10 @@ Popup {
                 color: "transparent"
                 Image { anchors.fill: parent; source: "../assets/dialogs/" + parent.modelData.image; fillMode: Image.PreserveAspectFit; smooth: true; mipmap: true }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: Qt.openUrlExternally(parent.modelData.url) }
+                TapHandler { onTapped: backend.openExternal(parent.modelData.url) }
                 Accessible.role: Accessible.Button
                 Accessible.name: modelData.label
-                Accessible.onPressAction: Qt.openUrlExternally(modelData.url)
+                Accessible.onPressAction: backend.openExternal(modelData.url)
             }
         }
     }

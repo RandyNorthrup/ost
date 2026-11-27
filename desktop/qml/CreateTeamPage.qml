@@ -87,7 +87,7 @@ Rectangle {
             font.family: theme.font; font.pixelSize: 13; font.underline: true
             color: theme.brandForeground1
             HoverHandler { cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2275168") }
+            TapHandler { onTapped: backend.openExternal("https://go.microsoft.com/fwlink/?linkid=2275168") }
             Accessible.role: Accessible.Link
             Accessible.name: text
         }
@@ -190,7 +190,7 @@ Rectangle {
                 text: qsTr("Learn more"); font.family: theme.font; font.pixelSize: 14; font.underline: true; lineHeight: 20; lineHeightMode: Text.FixedHeight
                 color: theme.brandForeground1
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2275168") }
+                TapHandler { onTapped: backend.openExternal("https://go.microsoft.com/fwlink/?linkid=2275168") }
                 Accessible.role: Accessible.Link; Accessible.name: qsTr("Learn more")
             }
         }

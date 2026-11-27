@@ -91,7 +91,7 @@ Rectangle {
             }
             HoverHandler { id: nameHover; cursorShape: Qt.PointingHandCursor }
             // Teams opens the component in Loop (the browser here).
-            TapHandler { onTapped: if (root.componentUrl) Qt.openUrlExternally(root.componentUrl) }
+            TapHandler { onTapped: if (root.componentUrl) backend.openExternal(root.componentUrl) }
             Accessible.role: Accessible.Button
             Accessible.name: root.name || qsTr("Loop paragraph")
         }

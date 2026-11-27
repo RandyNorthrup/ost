@@ -798,7 +798,7 @@ Item {
         onOpenApp: (id, name) => {
             const k = root.native_[name] || ""
             if (k) root.openApp(k)
-            else Qt.openUrlExternally("https://teams.microsoft.com/l/app/" + encodeURIComponent(id))
+            else backend.openExternal("https://teams.microsoft.com/l/app/" + encodeURIComponent(id))
         }
     }
     ShareForm { id: storeShare }

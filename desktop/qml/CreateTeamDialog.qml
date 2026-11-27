@@ -182,7 +182,7 @@ Popup {
         color: theme.brandForeground1
         HoverHandler { id: linkHover; cursorShape: Qt.PointingHandCursor }
         font.underline: linkHover.hovered
-        TapHandler { onTapped: Qt.openUrlExternally(link.url) }
+        TapHandler { onTapped: backend.openExternal(link.url) }
         Accessible.role: Accessible.Link
         Accessible.name: text
     }

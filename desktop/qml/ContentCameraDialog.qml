@@ -638,7 +638,7 @@ Popup {
             SettingsParts.Link {
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("Learn more")
-                onClicked: Qt.openUrlExternally("https://aka.ms/AAdu0p9")
+                onClicked: backend.openExternal("https://aka.ms/AAdu0p9")
             }
             Row {
                 anchors.right: parent.right

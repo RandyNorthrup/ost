@@ -48,6 +48,23 @@ Item {
     /// Text that already comes as HTML (the chat service stores a connector
     /// card's markdown converted: <p>, <strong>, <em>, <a>, <ul><li>).
     function isHtml(t) { return /<\/?(p|ul|ol|li|strong|em|b|i|a|br)\b[^>]*>/i.test(String(t || "")) }
+    /// That HTML reduced to those tags (issue #34: no images that load
+    /// when the card is only viewed, no other markup), each link's href
+    /// kept only when OST would open it.
+    function cleanHtml(h) {
+        const keep = ["p", "ul", "ol", "li", "strong", "em", "b", "i", "br"]
+        return String(h).replace(/<!--[\s\S]*?-->/g, "").replace(/<(\/?)([A-Za-z][A-Za-z0-9]*)\b([^>]*)>/g, (m, close, name, attrs) => {
+            const tag = name.toLowerCase()
+            if (keep.indexOf(tag) >= 0) return "<" + close + tag + ">"
+            if (tag !== "a") return ""
+            if (close) return "</a>"
+            const h = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i.exec(attrs)
+            const raw = h ? (h[1] !== undefined ? h[1] : h[2] !== undefined ? h[2] : h[3]) : ""
+            const url = raw.replace(/&quot;/g, "\"").replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").trim()
+            const href = url ? backend.linkHref(url) : ""
+            return href ? "<a href=\"" + href + "\">" : "<a>"
+        })
+    }
     function restyle(h) {
         const link = theme.brandLink
         return String(h).replace(/\s*\n\s*/g, " ")
@@ -78,7 +95,7 @@ Item {
     }
     /// [{para: html} | {list: [html]}]
     function blocks(t, md) {
-        if (isHtml(t)) return htmlBlocks(String(t))
+        if (isHtml(t)) return htmlBlocks(cleanHtml(t))
         const out = []
         let list = null
         for (const raw of String(t || "").split(/\r?\n/)) {
@@ -98,7 +115,7 @@ Item {
         for (const f of facts) { factMetrics.text = String(f.name || ""); w = Math.max(w, factMetrics.advanceWidth) }
         return w
     }
-    function open(link) { Qt.openUrlExternally(link) }
+    function open(link) { backend.openExternal(link) }
 
     // Markdown text: paragraphs (14/20) and lists.
     component Md: Column {

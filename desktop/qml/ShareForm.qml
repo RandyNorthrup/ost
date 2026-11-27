@@ -218,7 +218,7 @@ Popup {
                             font.family: theme.font; font.pixelSize: 14; color: theme.brandLink
                             font.underline: true
                             HoverHandler { cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: if (root.d) Qt.openUrlExternally(root.d.share_link) }
+                            TapHandler { onTapped: if (root.d) backend.openExternal(root.d.share_link) }
                         }
                         Item { width: 1; height: 11 }
                         // The app's card preview.

@@ -178,7 +178,7 @@ Rectangle {
                         .arg(qsTr("Microsoft Privacy Statement")).replace("<0>", "<a href=\"" + root.privacyUrl + "\">").replace("</0>", "</a>")
                     font.family: theme.font; font.pixelSize: 14
                     color: theme.onFill(root, theme.text)
-                    onLinkActivated: link => { if (link) Qt.openUrlExternally(link) }
+                    onLinkActivated: link => { if (link) backend.openExternal(link) }
                     HoverHandler { cursorShape: notice.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 }
                 Accessible.role: Accessible.StaticText

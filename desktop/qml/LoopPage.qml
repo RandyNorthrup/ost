@@ -208,14 +208,14 @@ Item {
             if (req.isMainFrame) {
                 if (root.hostLoading || u === "about:blank") return
                 req.reject()
-                if (u.indexOf("https://") === 0) Qt.openUrlExternally(u)
+                if (u.indexOf("https://") === 0) backend.openExternal(u)
                 return
             }
             if (!/^(https:|about:|blob:|data:)/.test(u)) req.reject()
         }
         onNewWindowRequested: req => {
             const u = req.requestedUrl.toString()
-            if (u.indexOf("https://") === 0) Qt.openUrlExternally(u)
+            if (u.indexOf("https://") === 0) backend.openExternal(u)
         }
         // The clipboard for Loop's own pages (Microsoft's hosts) only.
         onPermissionRequested: p => {

@@ -126,14 +126,14 @@ Popup {
             Text {
                 text: qsTr("Privacy"); font.family: theme.font; font.pixelSize: 12; color: theme.brandForeground1
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: Qt.openUrlExternally("https://unifiedcommunications.com/docs/teams-marketplace/en-us/privacy-policy") }
+                TapHandler { onTapped: backend.openExternal("https://unifiedcommunications.com/docs/teams-marketplace/en-us/privacy-policy") }
                 Accessible.role: Accessible.Link; Accessible.name: text
             }
             Text { text: "|"; font.family: theme.font; font.pixelSize: 12; color: theme.brandForeground1 }
             Text {
                 text: qsTr("Terms of service"); font.family: theme.font; font.pixelSize: 12; color: theme.brandForeground1
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: Qt.openUrlExternally("https://unifiedcommunications.com/docs/teams-marketplace/en-us/terms-of-service") }
+                TapHandler { onTapped: backend.openExternal("https://unifiedcommunications.com/docs/teams-marketplace/en-us/terms-of-service") }
                 Accessible.role: Accessible.Link; Accessible.name: text
             }
         }

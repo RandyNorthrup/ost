@@ -2692,7 +2692,7 @@ Item {
                 Text {
                     x: 24; width: 292; wrapMode: Text.Wrap; textFormat: Text.StyledText
                     text: qsTr("Teams Live Events is retiring. Please transition to Teams town hall to get the improved experience for large digital and hybrid events at scale. For more information, ") + "<a href=\"https://go.microsoft.com/fwlink/?linkid=2347480\">" + qsTr("Learn more") + "</a>."
-                    linkColor: theme.brand; onLinkActivated: l => Qt.openUrlExternally(l)
+                    linkColor: theme.brand; onLinkActivated: l => backend.openExternal(l)
                     font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
                 }
                 Item { width: 1; height: 16.7 }
@@ -2733,7 +2733,7 @@ Item {
         FluentIcon { x: (parent.width - 80) / 2; y: 278.4; name: "prohibited-20-regular"; size: 80; color: theme.textSecondary }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter; y: 366.4
-            textFormat: Text.StyledText; linkColor: theme.brand; onLinkActivated: l => Qt.openUrlExternally(l)
+            textFormat: Text.StyledText; linkColor: theme.brand; onLinkActivated: l => backend.openExternal(l)
             text: qsTr("Teams live events is retiring, please use ") + "<a href=\"https://adoption.microsoft.com/en-us/microsoft-teams/meetings-webinars-and-town-halls/town-halls/\"><span style=\"font-weight:400\">" + qsTr("Teams town halls") + "</span></a>" + qsTr(" for your large digital and hybrid events")
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; color: theme.text
         }

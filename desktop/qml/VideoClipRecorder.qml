@@ -1145,7 +1145,7 @@ Popup {
                 text: qsTr("Only people in this chat can view your clip. By creating a clip, you’re consenting to be recorded. ") + "<a href=\"https://go.microsoft.com/fwlink/p/?linkid=857875\">" + qsTr("Privacy statement") + "</a>"
                 textFormat: Text.StyledText; linkColor: theme.brandForeground1
                 font.family: theme.font; font.pixelSize: 12; color: theme.text
-                onLinkActivated: l => Qt.openUrlExternally(l)
+                onLinkActivated: l => backend.openExternal(l)
                 HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
             }
         }

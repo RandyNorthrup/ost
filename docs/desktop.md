@@ -78,6 +78,13 @@ Microsoft branding.
   conversation, and ··· ▸ More actions ▸ Immersive Reader Teams' reader;
   Word, Excel and PowerPoint files open in Office for the web inside OST
   with Settings ▸ Files and links ▸ Teams (the default).
+- **Links outside the app**: links in messages, cards, apps and web
+  views open outside OST only for `https:`, `http:` (in the browser
+  chosen in Settings ▸ Files and links), `mailto:` and `tel:`. Every
+  other scheme (`file:`, `smb:`, `sftp:`, `davs:`, other apps' custom
+  schemes) is refused and logged ("links: refused a smb: link"); a card
+  shows such a link as plain text. Teams' desktop client likewise
+  launches only the schemes on its `allowedExternalProtocols` list.
 - **Store**: your organization's Teams app catalog, as Teams' Store
   Home shows it: the "Do more in Teams" banner with Search agents and
   apps, Added by your org, Apps from Microsoft and All apps as cards,

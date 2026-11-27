@@ -138,7 +138,7 @@ Popup {
                             const n = root.card.displayName || ""
                             if (modelData.act === "chat") { root.close(); root.startChat(root.mri, n) }
                             else if (modelData.act === "org") root.tab = "organization"
-                            else if (modelData.act === "linkedin") Qt.openUrlExternally("https://www.linkedin.com/search/results/people/?keywords=" + encodeURIComponent(n))
+                            else if (modelData.act === "linkedin") backend.openExternal("https://www.linkedin.com/search/results/people/?keywords=" + encodeURIComponent(n))
                             else { root.close(); root.startCall(root.mri, n, modelData.act === "video") }
                         }
                     }
@@ -290,7 +290,7 @@ Popup {
                                 font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
                                 color: theme.brandForeground1
                                 HoverHandler { cursorShape: (modelData.url || modelData.chat) ? Qt.PointingHandCursor : Qt.ArrowCursor }
-                                TapHandler { onTapped: { if (modelData.chat) { root.close(); root.startChat(root.mri, root.card.displayName || "") } else if (modelData.url) Qt.openUrlExternally(modelData.url) } }
+                                TapHandler { onTapped: { if (modelData.chat) { root.close(); root.startChat(root.mri, root.card.displayName || "") } else if (modelData.url) backend.openExternal(modelData.url) } }
                             }
                             Accessible.role: Accessible.Button
                             Accessible.name: modelData.label + ": " + modelData.value
@@ -633,7 +633,7 @@ Popup {
                     text: qsTr("If your contact is based in the European Economic Area or Switzerland, they may need to change the LinkedIn Digital Markets Act %1 for you and others to see their LinkedIn profile here.").arg("<a href=\"https://aka.ms/LinkedInDMAVisibility\" style=\"color:" + link + ";text-decoration:none\">" + qsTr("privacy setting") + "</a>") + " <a href=\"https://aka.ms/LinkedInPrivacyHelp\" style=\"color:" + link + ";text-decoration:none\">" + qsTr("Learn more") + "</a>"
                     font.family: theme.font; font.pixelSize: 14; lineHeight: 18.67; lineHeightMode: Text.FixedHeight
                     color: theme.text
-                    onLinkActivated: l => Qt.openUrlExternally(l)
+                    onLinkActivated: l => backend.openExternal(l)
                     HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 }
                 Item { width: 1; height: 34.7 }
@@ -644,7 +644,7 @@ Popup {
                     color: setHover.pressed ? theme.pick("#444791", "#444791", "#1AEBFF") : setHover.hovered ? theme.brandHover : theme.brand
                     Text { id: settingsLabel; anchors.centerIn: parent; text: qsTr("Check your own settings"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "#FFFFFF") }
                     HoverHandler { id: setHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: Qt.openUrlExternally("https://aka.ms/LinkedInVisibility") }
+                    TapHandler { onTapped: backend.openExternal("https://aka.ms/LinkedInVisibility") }
                     Accessible.role: Accessible.Button
                     Accessible.name: settingsLabel.text
                 }
@@ -658,7 +658,7 @@ Popup {
                         font.underline: connectHover.hovered
                         color: theme.brandForeground1
                         HoverHandler { id: connectHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: Qt.openUrlExternally("https://www.linkedin.com/psettings/microsoft-accounts") }
+                        TapHandler { onTapped: backend.openExternal("https://www.linkedin.com/psettings/microsoft-accounts") }
                         Accessible.role: Accessible.Link
                         Accessible.name: text
                     }

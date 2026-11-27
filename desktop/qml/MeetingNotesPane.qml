@@ -98,7 +98,7 @@ Rectangle {
             if (!link) return
             const k = items[i].key
             if (k === "copy") backend.copyText(link)
-            else if (k === "loop") Qt.openUrlExternally(link)
+            else if (k === "loop") backend.openExternal(link)
             else if (k === "locations") locations.open()
             else if (k === "access") backend.callNotesRequest("item", "nmitem" + (++root.seq), JSON.stringify({ url: link }))
             else if (k === "workspace") backend.callNotesRequest("workspace", "nmws" + (++root.seq), JSON.stringify({ url: link }))
@@ -113,7 +113,7 @@ Rectangle {
                 if (v.error) { root.note("access error " + v.error); return }
                 notesShare.openManage({ site: v.site, list: v.list, item: v.item }, v.name, "loop")
                 root.note("access")
-            } else if (id.indexOf("nmws") === 0 && v.url) { Qt.openUrlExternally(v.url); root.note("workspace") }
+            } else if (id.indexOf("nmws") === 0 && v.url) { backend.openExternal(v.url); root.note("workspace") }
             else if (id.indexOf("nmtestws") === 0) root.note("workspace url " + (v.url || v.error))
         }
     }
@@ -130,7 +130,7 @@ Rectangle {
             spacing: 8
             Text { text: qsTr("Shared locations"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
             Text { width: 256; elide: Text.ElideRight; text: (root.title || root.meetingTitle || qsTr("Meeting notes")) + ".loop"; font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1
-                   TapHandler { onTapped: Qt.openUrlExternally(root.url || root.sharedUrl) } }
+                   TapHandler { onTapped: backend.openExternal(root.url || root.sharedUrl) } }
             Text { text: qsTr("Open component in"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
             Row { spacing: 8
                 FluentIcon { name: "chat-20"; size: 16; color: theme.textStrong }

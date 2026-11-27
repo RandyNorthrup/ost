@@ -215,7 +215,7 @@ FluentSurface {
             if (!req.isMainFrame || /^(about:|data:)/.test(req.url.toString()) || /ostchathost\.aspx$/.test(req.url.toString())) return
             req.reject()
         }
-        onNewWindowRequested: req => Qt.openUrlExternally(req.requestedUrl)
+        onNewWindowRequested: req => backend.openExternal(String(req.requestedUrl))
     }
     BusyIndicator { anchors.centerIn: parent; running: pane.open && (pane.state_ === "" || pane.state_ === "loading"); visible: running }
     Text {

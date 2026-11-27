@@ -197,7 +197,7 @@ Item {
     function act(label) {
         label = keyOf(label); const it = root.item
         if (!it) return
-        if (label === "Open in Text Editor" || label === "Open in browser" || label === "Open in OneDrive" || label === "Open in SharePoint") Qt.openUrlExternally(it.web_url)
+        if (label === "Open in Text Editor" || label === "Open in browser" || label === "Open in OneDrive" || label === "Open in SharePoint") backend.openExternal(it.web_url)
         else if (label === "Open in app") { notice("progress", qsTr("Opening %1").arg(it.name)); backend.driveAction(tag + "open_app", JSON.stringify(it), "{}") }
         else if (label === "Share") share.openFor(ref(it), it.name, it.kind)
         else if (label === "Manage access") share.openManage(ref(it), it.name, it.kind)
@@ -287,7 +287,7 @@ Item {
             }
             if (kind === "open_app") {
                 if (error) root.notice("error", qsTr("The file couldn't be opened"), error)
-                else { toast.visible = false; Qt.openUrlExternally("file://" + v.path) }
+                else { toast.visible = false; backend.openLocalPath(v.path) }
                 return
             }
             // OneDrive's strings: "Moved {0} item||Moved {0} items", "{0} item
@@ -343,7 +343,7 @@ Item {
                 text: toast.link
                 font.family: theme.font; font.pixelSize: 13; lineHeight: 17; lineHeightMode: Text.FixedHeight; color: theme.hc("#7F85F5", "#1AEBFF")
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: { if (toast.linkUrl) Qt.openUrlExternally(toast.linkUrl); toast.visible = false } }
+                TapHandler { onTapped: { if (toast.linkUrl) backend.openExternal(toast.linkUrl); toast.visible = false } }
                 Accessible.role: Accessible.Link
                 Accessible.name: text
             }
@@ -442,7 +442,7 @@ Item {
             load(); root.changed()
         }
         function run(ver, label) {
-            if (label === "Open File") Qt.openUrlExternally(ver.url)
+            if (label === "Open File") backend.openExternal(ver.url)
             else if (label === "Restore") backend.driveAction(root.tag + "restore_version", JSON.stringify(target), JSON.stringify({ label: ver.label }))
             else if (label === "Delete Version") backend.driveAction(root.tag + "delete_version", JSON.stringify(target), JSON.stringify({ label: ver.label }))
         }

@@ -360,7 +360,7 @@ Item {
         console.info("COPILOT post source", here ? "here" : "elsewhere", m ? m[2] : "")
         if (here) { win.showFound(id, []); return }
         if (typeof window !== "undefined" && window.openCopilotLink) window.openCopilotLink(url)
-        else Qt.openUrlExternally(url)
+        else backend.openExternal(url)
     }
 
     FindPane {

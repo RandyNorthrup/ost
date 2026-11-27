@@ -135,7 +135,7 @@ Popup {
             text: qsTr("This is the first-created channel in the team. It uses the team description, and it’s automatically shown for all members in their lists") + " <a href=\"https://go.microsoft.com/fwlink/?linkid=2275168\">" + qsTr("Learn about first-created channels") + "</a>"
             font.family: theme.font; font.pixelSize: 14; color: theme.text
             linkColor: theme.brandForeground1
-            onLinkActivated: link => Qt.openUrlExternally(link)
+            onLinkActivated: link => backend.openExternal(link)
         }
         Item { width: 1; height: 4 }
         Row {

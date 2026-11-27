@@ -47,7 +47,7 @@ Item {
                 font.underline: true
                 color: theme.brandForeground1
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: Qt.openUrlExternally("https://aka.ms/AvatarsUpdate") }
+                TapHandler { onTapped: backend.openExternal("https://aka.ms/AvatarsUpdate") }
                 Accessible.role: Accessible.Link
                 Accessible.name: qsTr("Learn more about the Avatars retirement update")
             }

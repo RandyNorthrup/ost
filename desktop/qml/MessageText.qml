@@ -21,7 +21,7 @@ Text {
     font.italic: !!message && message.deleted === true
     color: message && message.deleted ? theme.textSecondary : theme.text
     linkColor: theme.link
-    onLinkActivated: link => Qt.openUrlExternally(link)
+    onLinkActivated: link => backend.openExternal(link)
     HoverHandler { cursorShape: parent && parent.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor }
     Accessible.name: message ? message.text : ""
 }

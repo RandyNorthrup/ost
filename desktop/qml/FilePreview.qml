@@ -173,7 +173,7 @@ Item {
         if (m.label === qsTr("Embed")) { embed.open(); return }
         if (m.label === qsTr("Help")) {
             if (j === 0) backend.requestFeedback("problem", "Files", "Preview: " + (item ? item.name : ""))
-            else Qt.openUrlExternally("https://support.microsoft.com/office/preview-files-in-onedrive-for-work-or-school-d0b7cc7a-ba2d-4ae4-b0fc-bce2bdd2c3e2")
+            else backend.openExternal("https://support.microsoft.com/office/preview-files-in-onedrive-for-work-or-school-d0b7cc7a-ba2d-4ae4-b0fc-bce2bdd2c3e2")
             return
         }
         if (m.label === qsTr("Open") && j !== undefined) { actions.item = item; actions.act(m.submenu[j].label); return }

@@ -12,6 +12,7 @@ mod help_bundle;
 mod hfp_calls;
 mod key_typer;
 mod launcher_badge;
+mod link_gate;
 mod lock_watch;
 mod rich_text;
 mod room_ble;

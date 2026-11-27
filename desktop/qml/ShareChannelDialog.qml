@@ -89,7 +89,7 @@ Popup {
             text: qsTr("This person will accept the invite on behalf of their team. If the person is outside your org, type their email address.") + " <a href=\"https://go.microsoft.com/fwlink/?linkid=2201215\">" + qsTr("What’s shared with the invite?") + "</a>"
             linkColor: theme.brandForeground1
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
-            onLinkActivated: l => Qt.openUrlExternally(l)
+            onLinkActivated: l => backend.openExternal(l)
             HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
         }
         // The team owner: Teams' filled picker.

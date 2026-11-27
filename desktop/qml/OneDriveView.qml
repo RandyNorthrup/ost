@@ -1495,7 +1495,7 @@ Item {
             HoverHandler { id: fcbh; cursorShape: Qt.PointingHandCursor }
             TapHandler {
                 onTapped: {
-                    if (fc.modelData.nav_url) Qt.openUrlExternally(fc.modelData.nav_url)
+                    if (fc.modelData.nav_url) backend.openExternal(fc.modelData.nav_url)
                     else if (fcButton.sparkle) root.summarize(fc.modelData, fcButton.kind === "recap" ? "Recap this meeting" : "Summarize \"" + fc.modelData.file_name + "\"")
                     else root.openSharedFile(fc.it)
                 }

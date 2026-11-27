@@ -383,7 +383,7 @@ Popup {
                         text: root.previewText
                         font.family: theme.font; font.pixelSize: 14; color: theme.onFill(rightCol, theme.text)
                         selectionColor: theme.selectionFill
-                        onLinkActivated: link => { if (link.indexOf("https://") === 0) Qt.openUrlExternally(link) }
+                        onLinkActivated: link => { if (link.indexOf("https://") === 0) backend.openExternal(link) }
                         Accessible.role: Accessible.StaticText; Accessible.name: text
                     }
                 }

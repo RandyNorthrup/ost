@@ -55,7 +55,7 @@ Window {
     function act(key) {
         if (key === "conversation") win.conversationOpen = !win.conversationOpen
         else if (key === "reloadTab") win.reload()
-        else if (key === "goToWebsite") { if (tab.website_url) Qt.openUrlExternally(tab.website_url) }
+        else if (key === "goToWebsite") { if (tab.website_url) backend.openExternal(tab.website_url) }
         else if (key === "copyLink") backend.copyTabLink(win.teamId, win.channelId, JSON.stringify(win.tab))
         else if (key === "aboutTab") aboutDialog.start(win.tab)
         else if (key === "devicePermissions") appPermissions.show(win.tab.app_id)

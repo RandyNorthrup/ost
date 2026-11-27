@@ -633,7 +633,7 @@ Rectangle {
     // Teams opens it; any other becomes the open tab.
     function openTabAt(i) {
         const t = channelTabs.find(x => x.name === tabNames[i])
-        if (t && t.opens_in_browser) { if (t.website_url) Qt.openUrlExternally(t.website_url); return }
+        if (t && t.opens_in_browser) { if (t.website_url) backend.openExternal(t.website_url); return }
         manageApps = false
         tab = i === 0 ? "" : tabNames[i]
     }
@@ -705,7 +705,7 @@ Rectangle {
             window.launchSettings(sub || pg)
             return
         }
-        Qt.openUrlExternally(link)
+        backend.openExternal(link)
     }
     signal scheduleMeeting()
     /// A clip's "Reply with a video clip": record one for this chat (only
@@ -1473,7 +1473,7 @@ Rectangle {
                         onTapped: {
                             const t = tabItem.channelTab
                             // Teams opens website tabs in the browser; they never become the selected tab.
-                            if (t && t.opens_in_browser) { if (t.website_url) Qt.openUrlExternally(t.website_url); return }
+                            if (t && t.opens_in_browser) { if (t.website_url) backend.openExternal(t.website_url); return }
                             if (tabItem.menuable) { tabMenu.show(t, t.menu, tabItem, 0, tabItem.height); return }
                             root.manageApps = false; root.tab = tabItem.index === 0 ? "" : tabItem.modelData
                         }
@@ -2362,7 +2362,7 @@ Rectangle {
                     linkColor: theme.brandForeground1
                     // A saved recording's "Remove expiration" opens it (Teams
                     // opens its player's About panel, which is web content).
-                    onLinkActivated: link => { if (link === "ost:notes-tab") root.tab = "Notes"; else Qt.openUrlExternally(link) }
+                    onLinkActivated: link => { if (link === "ost:notes-tab") root.tab = "Notes"; else backend.openExternal(link) }
                     HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
                     text: {
                         if (msg.recordingRow) {
@@ -3807,10 +3807,10 @@ Rectangle {
             let r = {}
             try { r = JSON.parse(backend.smartReplyFeedbackUrl(JSON.stringify({ categories: categories, comment: comment, kinds: kinds,
                 attach: attach, suggestions: set.replies.map(r => r.title || r.value), last_message: m ? (m.html || m.text || "") : "" }))) } catch (e) {}
-            if (r.url) Qt.openUrlExternally(r.url)
+            if (r.url) backend.openExternal(r.url)
             // The details (and your message, when attached) stay on this
             // device in a file you review and drop in yourself.
-            if (r.folder) Qt.openUrlExternally("file://" + r.folder)
+            if (r.folder) backend.openLocalPath(r.folder)
             root.toastRequested({ text: qsTr("Finish on GitHub: review the details in the folder that opened, drop them in if you want, and select Create.") })
         }
     }
@@ -4216,7 +4216,7 @@ Rectangle {
                             Text { text: parent.parent.modelData.from + " · " + root.stamp(parent.parent.modelData.time); font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(hcFill10, theme.textSecondary) }
                         }
                         HoverHandler { id: slh; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: Qt.openUrlExternally(modelData.url) }
+                        TapHandler { onTapped: backend.openExternal(modelData.url) }
                     }
                 }
             }
@@ -4393,7 +4393,7 @@ Rectangle {
     }
     function tabAction(key, t) {
         if (key === "copyLink") backend.copyTabLink(root.teamId, root.chatId, JSON.stringify(t))
-        else if (key === "goToWebsite") { if (t.website_url) Qt.openUrlExternally(t.website_url) }
+        else if (key === "goToWebsite") { if (t.website_url) backend.openExternal(t.website_url) }
         else if (key === "renameTab") renameDialog.start(t)
         else if (key === "updateTab") root.updateTabRequested(t)
         else if (key === "removeTab") removeDialog.start(t)
@@ -5011,7 +5011,7 @@ Rectangle {
         backend.driveAction(root.cardTag + "card_favorite", "{}", JSON.stringify({ url: file.object_url, site: site, name: file.name, on: on }))
     }
     function fileCardAct(file, label) {
-        if (label === "Open in Browser") { Qt.openUrlExternally(file.share_url || file.object_url); return }
+        if (label === "Open in Browser") { backend.openExternal(file.share_url || file.object_url); return }
         if (label === "Download") { backend.downloadFile(JSON.stringify(file)); return }
         if (label === "Favorite" || label === "Unfavorite") { root.setCardFavorite(file, label === "Favorite"); return }
         // Share and Copy link need the file's SharePoint address.

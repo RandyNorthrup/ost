@@ -454,7 +454,7 @@ Item {
                                     else if (k === "speed") root.op("speedDial", c, { on: !c.speed_dial })
                                     else if (k === "chat") root.chatWith(c.mri, c.name)
                                     else if (k === "call") root.callPerson(c.mri, c.name)
-                                    else if (k === "mail") Qt.openUrlExternally("mailto:" + encodeURIComponent(c.email))
+                                    else if (k === "mail") backend.openExternal("mailto:" + encodeURIComponent(c.email))
                                     else if (k === "delete") { deleteDialog.contact = c; deleteDialog.open() }
                                 }
                                 onClosed: catFlyout.close()
@@ -475,7 +475,7 @@ Item {
                                 width: Math.min(implicitWidth, parent.width); elide: Text.ElideRight
                                 text: modelData; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(crow, table.link)
                                 HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                TapHandler { onTapped: Qt.openUrlExternally((modelData.indexOf("@") > 0 ? "mailto:" : "tel:") + encodeURIComponent(modelData)) }
+                                TapHandler { onTapped: backend.openExternal((modelData.indexOf("@") > 0 ? "mailto:" : "tel:") + encodeURIComponent(modelData)) }
                             }
                         }
                     }

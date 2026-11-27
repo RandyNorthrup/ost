@@ -77,7 +77,7 @@ Popup {
         onNavigationRequested: req => {
             if (!req.isMainFrame || root.pendingToken || /^(about:|data:)/.test(req.url.toString())) return
             req.reject()
-            if (/^https:\/\//.test(req.url.toString())) Qt.openUrlExternally(req.url)
+            if (/^https:\/\//.test(req.url.toString())) backend.openExternal(String(req.url))
         }
         onTitleChanged: {
             if (title === "ost-ir-exit") root.close()
@@ -85,6 +85,6 @@ Popup {
             else if (title === "ost-ir-failed") root.state_ = "failed"
         }
         // The reader's own links open in the browser, as elsewhere.
-        onNewWindowRequested: req => Qt.openUrlExternally(req.requestedUrl)
+        onNewWindowRequested: req => backend.openExternal(String(req.requestedUrl))
     }
 }

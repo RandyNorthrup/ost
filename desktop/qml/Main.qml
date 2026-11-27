@@ -9933,7 +9933,7 @@ Window {
             const log = (tag, x) => console.warn("FILESLINKS", tag, JSON.stringify(x))
             if (step === 0) { askBefore = backend.setting("askDownloadLocation"); browserBefore = backend.setting("linkBrowser"); log("browsers", JSON.parse(backend.webBrowsers())); rail.current = "settings"; settingsView.pageForTest("files") }
             else if (step === 1) cap("page")
-            else if (step === 2) { backend.setSetting("linkBrowser", "edge"); Qt.openUrlExternally("https://example.com/ost-link-test") }
+            else if (step === 2) { backend.setSetting("linkBrowser", "edge"); backend.openExternal("https://example.com/ost-link-test") }
             else if (step === 3) { backend.setSetting("askDownloadLocation", "true"); rail.current = "onedrive"; oneDrive.open("myfiles") }
             else if (step === 5 && !(oneDrive.driveData.items || []).some(i => i.name === "ost-share-test.txt")) return
             else if (step === 5) { const it = (oneDrive.driveData.items || []).find(i => i.name === "ost-share-test.txt"); log("download", !!it); backend.driveDownload(JSON.stringify(it)) }
@@ -15606,7 +15606,7 @@ Window {
         onOpenShortcuts: shortcutsDialog.open()
         onOpenHelp: window.openHelp()
         onOpenFeedback: kind => window.openFeedback(kind, "Settings and more", "")
-        onSuggestFeature: Qt.openUrlExternally(backend.feedbackLink("ideas"))
+        onSuggestFeature: backend.openExternal(backend.feedbackLink("ideas"))
         userMail: backend.userMail
         orgName: backend.orgName
         onSetStatus: st => backend.setMyStatus(st)
@@ -16196,7 +16196,7 @@ Window {
                 : appBanner.kind === "threads" ? qsTr("A channel owner set this channel to a threads layout.") + " <a href=\"https://go.microsoft.com/fwlink/?linkid=2311967\" style=\"text-decoration:none; color:" + theme.brandForeground1 + "\">" + qsTr("Learn how threads work") + "</a>"
                 : qsTr("Your status is set to do not disturb. You'll only get notifications for urgent messages and from your priority contacts.")
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: appBanner.kind === "live" ? theme.brandForeground1 : theme.text
-            onLinkActivated: url => { if (url === "wl:link") window.wlBannerLink(); else Qt.openUrlExternally(url) }
+            onLinkActivated: url => { if (url === "wl:link") window.wlBannerLink(); else backend.openExternal(url) }
             HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
         }
         // The work location banner's body as Teams' message bar lays it
@@ -16514,7 +16514,7 @@ Window {
         onJoinMeeting: (url, subject) => {
             // A meeting link, or a short link (/meet/<ID>?p=…): Join with
             // an ID while the lobby holds you joins by the meeting's ID.
-            if (url.indexOf("/l/meetup-join/") < 0 && !/^https:\/\/teams\.microsoft\.com\/meet\/\d+/.test(url)) { Qt.openUrlExternally(url); return }
+            if (url.indexOf("/l/meetup-join/") < 0 && !/^https:\/\/teams\.microsoft\.com\/meet\/\d+/.test(url)) { backend.openExternal(url); return }
             const ev = (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).find(e => e.join_url === url)
             preJoin.openFor(url, subject, ev ? ev.start_utc : "", ev ? ev.end_utc : "")
         }
@@ -17460,7 +17460,7 @@ Window {
         const links = backend.appLinksJson ? JSON.parse(backend.appLinksJson) : ({})
         const key = byId[id] || byName[name || (links[id] ? links[id].name : "")] || ""
         if (key) rail.openApp(key)
-        else Qt.openUrlExternally("https://teams.microsoft.com/l/app/" + encodeURIComponent(id))
+        else backend.openExternal("https://teams.microsoft.com/l/app/" + encodeURIComponent(id))
     }
     Conversation {
         id: conversation
@@ -17558,7 +17558,7 @@ Window {
             // app when the action doesn't carry it (SuggestedActionsParser):
             // here the message's own app.
             const action = Object.assign({}, action0, { mentions: (action0.mentions || []).map(x => Object.assign({}, x, { appId: x.appId || (x.mri === m.sender_mri ? (m.sender_app || "") : "") })) })
-            if (action.kind === "openUrl") { Qt.openUrlExternally(action.url); return }
+            if (action.kind === "openUrl") { backend.openExternal(action.url); return }
             if (action.kind === "invoke") {
                 backend.suggestedInvoke(m.id, JSON.stringify({ thread_id: backend.currentChatId, server_message_id: m.id, client_message_id: m.client_message_id || "", bot_mri: m.sender_mri, app_id: "", message_type: "Text" }), action.name, action.value)
                 return

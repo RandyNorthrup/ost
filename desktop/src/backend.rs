@@ -69,8 +69,10 @@ fn profile_socket(profile: &str) -> Option<std::os::unix::net::UnixStream> {
 unsafe extern "C" {
     /// Put text (and its HTML form) on the clipboard (src/native.cpp).
     fn ost_set_clipboard(text: *const core::ffi::c_char, html: *const core::ffi::c_char);
-    /// Route http(s) links through Backend::open_web_link (native.cpp).
-    fn ost_install_link_handler(backend: *mut core::ffi::c_void);
+    /// Route http(s) links through Backend::open_web_link, and the
+    /// newline-separated `refused` schemes to Backend::refuse_link
+    /// (native.cpp).
+    fn ost_install_link_handler(backend: *mut core::ffi::c_void, refused: *const core::ffi::c_char);
     /// Put the picture in a file on the clipboard (src/native.cpp).
     fn ost_set_clipboard_image(path: *const core::ffi::c_char) -> bool;
     /// Save the clipboard's picture as a PNG (src/native.cpp).
@@ -3041,14 +3043,40 @@ pub mod qobject {
         fn save_as_answer(self: Pin<&mut Backend>, id: i32, path: &QString);
 
         /// Open http(s) links in the browser chosen in Settings ▸ Files and
-        /// links (every Qt.openUrlExternally of a web link lands here once
-        /// install_link_handler has run).
+        /// links (Qt's handler for http and https once install_link_handler
+        /// has run, for what reaches QDesktopServices directly, such as a
+        /// web view's external link).
         #[qinvokable]
         fn open_web_link(self: &Backend, url: &QUrl);
 
-        /// Make open_web_link Qt's handler for http and https.
+        /// Qt's handler for every other scheme the desktop would start an
+        /// app for (file:, smb:, other apps' custom schemes): logs and
+        /// drops the link (issue #34; link_gate.rs).
+        #[qinvokable]
+        fn refuse_link(self: &Backend, url: &QUrl);
+
+        /// Make open_web_link Qt's handler for http and https, and
+        /// refuse_link for the desktop's other schemes.
         #[qinvokable]
         fn install_link_handler(self: Pin<&mut Backend>);
+
+        /// The one way QML opens a link outside the app (issue #34): web
+        /// links in the chosen browser, mailto: and tel: in the desktop's
+        /// app; every other scheme is refused and logged. True when opened.
+        #[qinvokable]
+        fn open_external(self: &Backend, url: &QString) -> bool;
+
+        /// A link from content as an escaped href value, or "" when
+        /// open_external would refuse it (cards then show the text without
+        /// a link).
+        #[qinvokable]
+        fn link_href(self: &Backend, url: &QString) -> QString;
+
+        /// Open a local file or folder OST saved itself (a download, a
+        /// printed page, feedback details), as a path or a file:// URL, in
+        /// the desktop's app for it. True when it exists and was opened.
+        #[qinvokable]
+        fn open_local_path(self: &Backend, path: &QString) -> bool;
 
         /// "Always open web links in:": Teams' choices this desktop has
         /// ("Default browser", and "Microsoft Edge" when it is installed).
@@ -28406,13 +28434,57 @@ impl qobject::Backend {
     }
 
     pub fn open_web_link(&self, url: &cxx_qt_lib::QUrl) {
-        open_web_address(&url.to_string());
+        let url = url.to_string();
+        match crate::link_gate::classify(&url) {
+            Some(crate::link_gate::LinkKind::Web) => open_web_address(&url),
+            _ => tracing::warn!("links: {}", crate::link_gate::refusal_note(&url)),
+        }
+    }
+
+    pub fn refuse_link(&self, url: &cxx_qt_lib::QUrl) {
+        tracing::warn!(
+            "links: {} (desktop handler)",
+            crate::link_gate::refusal_note(&url.to_string())
+        );
     }
 
     pub fn install_link_handler(mut self: Pin<&mut Self>) {
+        let refused = crate::link_gate::desktop_schemes().join("\n");
+        let refused = std::ffi::CString::new(refused).unwrap_or_default();
         let ptr =
             unsafe { self.as_mut().get_unchecked_mut() } as *mut Self as *mut core::ffi::c_void;
-        unsafe { ost_install_link_handler(ptr) };
+        unsafe { ost_install_link_handler(ptr, refused.as_ptr()) };
+    }
+
+    pub fn open_external(&self, url: &QString) -> bool {
+        let url = url.to_string();
+        let url = url.trim();
+        match crate::link_gate::classify(url) {
+            Some(crate::link_gate::LinkKind::Web) => open_web_address(url),
+            Some(crate::link_gate::LinkKind::System) => {
+                let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+            }
+            None => {
+                tracing::warn!("links: {}", crate::link_gate::refusal_note(url));
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn link_href(&self, url: &QString) -> QString {
+        QString::from(crate::link_gate::link_href(&url.to_string()).as_str())
+    }
+
+    pub fn open_local_path(&self, path: &QString) -> bool {
+        let Some(p) = crate::link_gate::local_path(&path.to_string()) else {
+            tracing::warn!("links: refused a local path that isn't there");
+            return false;
+        };
+        std::process::Command::new("xdg-open")
+            .arg(p)
+            .spawn()
+            .is_ok()
     }
 
     pub fn web_browsers(&self) -> QString {

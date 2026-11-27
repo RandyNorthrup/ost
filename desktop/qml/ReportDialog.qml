@@ -69,7 +69,7 @@ Popup {
         text: qsTr("Information about this message will be shared with your IT admin and Microsoft. Microsoft may use the information to improve the accuracy of detection. <0>%1</0>").arg(qsTr("Learn more")).replace("<0>", "<a href=\"https://learn.microsoft.com\">").replace("</0>", "</a>")
         linkColor: theme.brandForeground2
         font.family: theme.font; font.pixelSize: theme.base; color: theme.text
-        onLinkActivated: link => Qt.openUrlExternally(link)
+        onLinkActivated: link => backend.openExternal(link)
         HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
     }
     Row {

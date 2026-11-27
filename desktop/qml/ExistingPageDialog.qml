@@ -146,7 +146,7 @@ Popup {
             color: openHover.hovered ? theme.menuHover : "transparent"
             FluentIcon { anchors.centerIn: parent; name: "open-20"; size: 20; color: theme.onFill(openBtn, theme.textStrong) }
             HoverHandler { id: openHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: if (root.page && root.page.web_url) Qt.openUrlExternally(root.page.web_url) }
+            TapHandler { onTapped: if (root.page && root.page.web_url) backend.openExternal(root.page.web_url) }
             ToolTip.visible: openHover.hovered; ToolTip.text: qsTr("Open in Loop"); ToolTip.delay: 500
             Accessible.role: Accessible.Button; Accessible.name: qsTr("Open in Loop")
         }

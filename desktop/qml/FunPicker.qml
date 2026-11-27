@@ -586,7 +586,7 @@ Popup {
                 text: qsTr("When you search for images, your search terms are sent to GIPHY. To learn more, see GIPHY's <0>Privacy Policy</0> and <1>Terms of Service</1>.").replace("<0>", "<a href=\"https://support.giphy.com/hc/en-us/articles/360032872931-GIPHY-Privacy-Policy\">").replace("<1>", "<a href=\"https://support.giphy.com/hc/en-us/articles/360020027752-GIPHY-User-Terms-of-Service\">").replace(/<\/[01]>/g, "</a>")
                 linkColor: theme.link
                 font.family: theme.font; font.pixelSize: theme.small; color: theme.text
-                onLinkActivated: link => Qt.openUrlExternally(link)
+                onLinkActivated: link => backend.openExternal(link)
             }
         }
     }

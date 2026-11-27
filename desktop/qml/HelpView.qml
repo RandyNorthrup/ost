@@ -245,7 +245,7 @@ Rectangle {
                     text: "<a href=\"licence\">" + qsTr("Licence") + "</a> &nbsp;|&nbsp; <a href=\"privacy\">" + qsTr("Privacy") + "</a>"
                     linkColor: theme.brandLink
                     font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
-                    onLinkActivated: l => Qt.openUrlExternally(l === "privacy" ? backend.feedbackLink("privacy") : root.repoUrl + "/blob/main/LICENSE")
+                    onLinkActivated: l => backend.openExternal(l === "privacy" ? backend.feedbackLink("privacy") : root.repoUrl + "/blob/main/LICENSE")
                     HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 }
             }
@@ -312,7 +312,7 @@ Rectangle {
                     font.family: theme.font; font.pixelSize: 14; color: theme.text
                     linkColor: theme.brandLink
                     lineHeight: 1.2
-                    onLinkActivated: l => Qt.openUrlExternally(l)
+                    onLinkActivated: l => backend.openExternal(l)
                     HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 }
                 Item { width: 1; height: 32 }
@@ -343,7 +343,7 @@ Rectangle {
                     text: "<a href=\"edit\">" + qsTr("Edit on GitHub") + "</a>"
                     linkColor: theme.brandLink
                     font.family: theme.font; font.pixelSize: 14
-                    onLinkActivated: Qt.openUrlExternally(backend.feedbackLink("docs") + "/" + root.current.id + ".md")
+                    onLinkActivated: backend.openExternal(backend.feedbackLink("docs") + "/" + root.current.id + ".md")
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                 }
             }
@@ -367,7 +367,7 @@ Rectangle {
                 text: qsTr("Help articles for OST, built into the app so they work offline. They're written by the OST project; you can read and improve them on %1.")
                       .arg("<a href=\"docs\">GitHub</a>")
                 font.family: theme.font; font.pixelSize: 14; color: theme.text
-                onLinkActivated: Qt.openUrlExternally(backend.feedbackLink("docs"))
+                onLinkActivated: backend.openExternal(backend.feedbackLink("docs"))
             }
             Rectangle {
                 id: hcFill3

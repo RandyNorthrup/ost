@@ -173,15 +173,26 @@ extern "C" void ost_set_taskbar_badge(int count, const char *kind)
     }
 }
 
+#include <QtCore/QStringList>
 #include <QtGui/QDesktopServices>
 
 // Settings ▸ Files and links ▸ "Always open web links in:": every http(s)
-// link OST opens (Qt.openUrlExternally) goes to the backend's
-// openWebLink, which starts the chosen browser.
-extern "C" void ost_install_link_handler(QObject *backend)
+// link that reaches QDesktopServices (a web view's external link) goes to
+// the backend's openWebLink, which starts the chosen browser. QML opens
+// links through backend.openExternal, never QDesktopServices.
+//
+// Defense in depth for issue #34: Qt has no catch-all handler, so every
+// other scheme this desktop would start an app for (file:, network
+// shares, the custom schemes installed apps registered; newline-separated
+// in `refused`, link_gate.rs) gets the backend's refuseLink, which logs
+// and drops it instead of handing it to xdg-open.
+extern "C" void ost_install_link_handler(QObject *backend, const char *refused)
 {
     QDesktopServices::setUrlHandler(QStringLiteral("http"), backend, "openWebLink");
     QDesktopServices::setUrlHandler(QStringLiteral("https"), backend, "openWebLink");
+    const QStringList schemes = QString::fromUtf8(refused ? refused : "").split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    for (const QString &scheme : schemes)
+        QDesktopServices::setUrlHandler(scheme, backend, "refuseLink");
 }
 
 // A translation language ("de", "fr-ca", "sr-latn") as Teams lists it under
