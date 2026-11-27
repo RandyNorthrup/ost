@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-09T16:14:00Z'
-updated_date: '2026-11-22T18:26:00Z'
+updated_date: '2026-11-27T05:08:00Z'
 labels:
   - desktop
 dependencies: []
@@ -51,7 +51,7 @@ The rest of Teams desktop's profile flyout, measured on winpc: each item behaves
   - Teams (winpc, one account): the flyout ends with a footer row "Add another account" (me-control-menu-add-account: 65 tall under a 1.3 px #F5F5F5 rule on #F0F0F0, a 32 px round slot at 26 with a 16 px person-add glyph #616161, the text 14/600 at 76). Teams' MTMA strings (nova) for more accounts: "Switch to account {upn},  Status {availability}", "Activity in other accounts and orgs".
   - OST: each account lives in its own profile (OST_PROFILE: its own config folder, keyring entry, instance socket and windows). The device's accounts are kept in ~/.config/teams-cli/accounts.json (teams_cli::config::Account / accounts / record_account, recorded at sign-in, removed at sign-out, with each account's presence). The flyout lists your other accounts (picture, name, e-mail, presence; "Switch to account …" brings that account's window forward, or starts it) and ends with Teams' "Add another account" footer, which starts OST for a new profile (account2, account3, …), where OST's own sign-in runs.
   - Verified on linuxlt (OST Test 2, --seth-test --seth-accounts): the flyout listed OST Test 1 (the default profile) above Add another account (picture sh-flyout); Add another account started a new OST with OST_PROFILE=account2 (stopped by pid, nothing signed in; its window was still blank 20 s in, so the sign-in page wasn't seen loading).
-  - Open: Teams' layout with two accounts signed in (it needs a second account signed in to Teams on winpc, which takes a password at Microsoft's sign-in, so the user has to do it), and Teams' "Activity in other accounts and orgs" window.
+  - Open: Teams' layout with two accounts signed in (it needs a second account signed in to Teams on winpc, which an agent signs in with the password from creds.md), and Teams' "Activity in other accounts and orgs" window.
 
 - 2026-11-22 (agent setI) AC4 measured with two accounts in Teams on winpc (OST Test 2 signed in as a second account with its password typed from creds.md by VNC, "No, this app only"; measured; then signed out again - Teams back to ost-test1 alone, 1280x680, no call): Add another account dialog (440 x 540: the device's Windows accounts, "Create or use another account") -> Microsoft's sign-in -> "Sign in to all apps and websites on this device?" -> the window switches account. Title bar: the profile button becomes a 140 x 28 pill with the organisation's name (12/16 #424242, cut at 107.9) and the 28 px picture. Flyout: other accounts in 80.3 px rows on #F5F5F5 (48 px picture at 16, presence 12, name 14/600 at 76, 8, address 12/16), then the Add another account footer (#E6E6E6 32 px slot). App bar: "Activity in other accounts and orgs" (52 x 48, badge). Accounts and orgs: a card per account in the order added (788 x 121, 28 apart; another account: Manage only, organisation regular). Sign out dialog "Sign out of Teams" with the multiple-accounts tip. Spec: docs/spec/settings.md "More than one account".
   - Built (3f8b560): the pill, the flyout rows and slot, Accounts and orgs cards for the other accounts (order added, their organisation kept in accounts.json), one entry per account (a second profile of the same account isn't listed).
@@ -59,6 +59,8 @@ The rest of Teams desktop's profile flyout, measured on winpc: each item behaves
   - Open: the app bar's "Activity in other accounts and orgs" hub (its window not measured); OST shows each account in its own window instead of switching the window in place.
 
 - 2026-11-22 merged (dca6443). The 'Activity in other accounts and orgs' button moved to TASK-0244; OST's one-window-per-account is recorded on the Remaining Work page.
+
+- 2026-11-26 correction (user): agents may sign in to the test accounts themselves, typing the password (and TOTP) from ~/coding/.secrets/creds.md without printing it. "The assistant may not enter passwords" / "the user has to do it" was never a rule. How: backlog/docs "Signing in to test accounts".
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

@@ -4,7 +4,7 @@ title: Link cards from installed apps and apps that need sign-in, as Teams
 status: Done
 assignee: []
 created_date: '2026-11-16T11:48:00Z'
-updated_date: '2026-11-22T20:31:00Z'
+updated_date: '2026-11-27T05:08:00Z'
 labels:
   - desktop
 dependencies: []
@@ -76,13 +76,15 @@ TASK-0168 shows Teams' app card for links to sites whose Teams app allows anonym
   - Found: the org osttest200 had "Third-party application access via OAuth" Off (Azure DevOps' default for new orgs; the Azure Boards app for Teams needs it). Turned On in Organization settings > Policies as ost-test1 (goes away with the org).
   - New work item: Task 2 "OST TEST 200 item 2" (dev.azure.com/osttest200/OST/_workitems/edit/2), made in OST's web window.
 
-- 2026-11-22 (chatH), Teams on winpc (the user allowed typing ost-test1's password in Teams' own popup): Show Preview installed Azure Boards and Teams opened the sign-in window by itself (707715 shouldAutoPopup; it opened two at once). Sign in (password, no MFA asked) → Teams re-asked composeExtension/queryLink with value {url, state: a string of 86 characters} (StringAuthResult) and the app answered 200 with an Office 365 connector card: themeColor A4880A, one section with activityImage (Azure Boards' task icon), activityTitle "<p><a href=…>Task 2</a>: OST TEST 200 item 2</p>", activityText "<p>To Do | Unassigned</p>"; preview a thumbnail. Seen over CDP (read only; tokens and the state never printed). Teams draws it in the link card: 452 x 131.3, a 3 px themeColor bar (radius 4 4 0 0), the header (24 px icon, 12/16 semibold name, collapse and remove), the 52 px activity image 12 under it, the title 14/20 semibold with the link 400 #4F52B2, 62 in, the text 30 under, the frame 26.6 under the image.
+- 2026-11-22 (chatH), Teams on winpc (ost-test1's password typed from creds.md in Teams' own popup): Show Preview installed Azure Boards and Teams opened the sign-in window by itself (707715 shouldAutoPopup; it opened two at once). Sign in (password, no MFA asked) → Teams re-asked composeExtension/queryLink with value {url, state: a string of 86 characters} (StringAuthResult) and the app answered 200 with an Office 365 connector card: themeColor A4880A, one section with activityImage (Azure Boards' task icon), activityTitle "<p><a href=…>Task 2</a>: OST TEST 200 item 2</p>", activityText "<p>To Do | Unassigned</p>"; preview a thumbnail. Seen over CDP (read only; tokens and the state never printed). Teams draws it in the link card: 452 x 131.3, a 3 px themeColor bar (radius 4 4 0 0), the header (24 px icon, 12/16 semibold name, collapse and remove), the 52 px activity image 12 under it, the title 14/20 semibold with the link 400 #4F52B2, 62 in, the text 30 under, the frame 26.6 under the image.
 - The sign-in is kept per user by the app, so OST's first queryLink then got the same card at once (no sign-in card): OST's compose showed only the header (connector cards weren't drawn in link cards). AppLinkCard now draws connector cards (ConnectorCard embedded, the bar), and Show Preview opens the sign-in window by itself as Teams does.
 
 - 2026-11-22 (chatH), OST live (linuxlt, `--app-card-test=<item 2 link>`): Azure Boards answered OST's queryLink with the connector card (the app keeps the sign-in per user), and OST's compose now draws it as Teams: the gold bar, the header, the task icon, "Task 2: OST TEST 200 item 2" with its link, "To Do | Unassigned" (130 tall). OST's own sign-in window path (Show Preview → window → success → re-query with value.state) was checked live in chatG up to the re-query; its 502 then matches the org's OAuth policy being Off (Teams needs it On too). After the app kept the sign-in, a fresh OST sign-in could not be re-run (Azure Boards keeps no OAuth grant to revoke in the org, and ost-test1 has no Azure Boards bot chat to "signout" in).
 - Cleaned up: work item 2 deleted and destroyed (recycle bin 0), Azure Boards removed for ost-test1 (examples/add_app --remove-personal), the organization osttest200 deleted (dev.azure.com/osttest200 is 404), ost-test1's Contributor role on "Azure subscription 1" removed (IAM shows only Randy's two Owner rows). Wikipedia Search stays removed.
 
 - 2026-11-22 merged (a82d9af..4d91ea7); 908 lib + 29 desktop tests pass. OST's own sign-in → re-query path was verified live up to the re-query (chatG); after the fix the card came on the first request (sign-in kept per user), so the final re-query step is unit-tested.
+
+- 2026-11-26 correction (user): agents may sign in to the test accounts themselves, typing the password (and TOTP) from ~/coding/.secrets/creds.md without printing it. "The assistant may not enter passwords" / "the user has to do it" was never a rule. How: backlog/docs "Signing in to test accounts".
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-16T05:21:00Z'
-updated_date: '2026-11-16T14:45:00Z'
+updated_date: '2026-11-27T05:08:00Z'
 labels:
   - desktop
   - auth
@@ -45,12 +45,12 @@ OST signs in with Teams desktop's own client id through the device-code flow. Mi
   - Teams desktop on Windows signs in through WAM (no MSAL cache in its pages), which doesn't exist on Linux.
   - Teams on the web (teams.cloud.microsoft) uses MSAL.js with client 5e3ce6c0-2b1f-4285-8d4b-75ee78787346.
   - Embedded apps' tokens come from POST {tenant}/oauth2/v2.0/token?client_id=<app>&brk_client_id=5e3ce6c0…&brk_redirect_uri=https://teams.cloud.microsoft/v2/authv2.
-  - OST's web profile (linuxlt) has no ESTS session cookie, so each account needs one interactive sign-in by the user (passwords can't be typed by the assistant).
+  - OST's web profile (linuxlt) has no ESTS session cookie, so each account needs one interactive sign-in. An agent does it, typing the password (and TOTP) from ~/coding/.secrets/creds.md.
 
 - 2026-11-16: built and tested up to Microsoft's password step:
   - src/auth/spa.rs, AadClient Origin/code redemption, the config's auth_flow, the backend's sign_in_navigated/renew_sign_in, SignIn.qml's web view, and the hidden 12-hour renewer.
   - Microsoft's page loads in OST with Teams on the web's client.
-- Blocked: completing it needs ost-test1's password typed once in OST's web profile. The assistant may not enter passwords; the user declined to type it.
+- Completing it needs ost-test1's password typed once in OST's web profile. An agent types it from creds.md; see backlog/docs "Signing in to test accounts".
   - A work account's page offers no password-free "sign in from another device".
   - The single-page app's 24-hour refresh token also needs that web session to renew.
 - Shipped behind OST_BROWSER_SIGN_IN=1; device code stays the default.
@@ -91,6 +91,8 @@ OST signs in with Teams desktop's own client id through the device-code flow. Mi
 - Left: OST Test 2 (profile test2) and the app-side NAA bridge with TASK-0053.
 
 - Embedded apps get NAA tokens through OST's host (TASK-0053): OneNote's editor and its nested frames, Storyline and Whiteboard sign in with no separate sign-in.
+
+- 2026-11-26 correction (user): agents may sign in to the test accounts themselves, typing the password (and TOTP) from ~/coding/.secrets/creds.md without printing it. "The assistant may not enter passwords" / "the user has to do it" was never a rule. How: backlog/docs "Signing in to test accounts".
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-15T20:59:00Z'
-updated_date: '2026-11-19T07:00:00Z'
+updated_date: '2026-11-27T05:08:00Z'
 labels:
   - calls
   - devices
@@ -38,7 +38,7 @@ Built so far: Room audio's picker (search box, Connected room devices, Other Sug
 - Tenant: OST Test Room's account was already enabled; bought Microsoft Teams Rooms Basic (free, $0.00, 3-year term Nov 18 2026 - Nov 17 2029, renews at $0, billing profile Visa 9604) and assigned it to OST Test Room.
 - OST: api::rooms (findmeetinglocations, resolve, beacon parser), desktop room_ble (BlueZ LE scan), backend tenant_rooms / nearby_rooms / add_room_to_meeting, OutgoingCall::add_room, PreJoin picker sections (Nearby, Other Suggestions, search), Teams' hints, harness --rooms-test. Emulated Teams Rooms beacon: scratchpad hid/mtr-beacon.sh (bluetoothctl on this PC).
 - Live (linuxlt, ost-test1): search 'OST' -> OST Test Room (Offline), as Teams; Nearby -> OST Test Room from the emulated beacon (-35 dBm, adjacent); joining a Meet now in OST layout test with the room: invitation accepted by the conversation (202), then addParticipantFailure 'The user is unavailable at the moment' because no endpoint is signed in as the room.
-- Open: the room joining needs an endpoint signed in as ost-test-room (a Teams Rooms device, or OST signed in as the room: a password sign-in the user has to do); ultrasound room detection (Teams' native DSP) not implemented.
+- Open: the room joining needs an endpoint signed in as ost-test-room (a Teams Rooms device, or OST signed in as the room: a password sign-in an agent does with the room's password and TOTP from creds.md); ultrasound room detection (Teams' native DSP) not implemented.
 
 - 2026-11-18 (6845cd4): Room audio picker as Teams. Search and Other Suggestions come from Outlook findmeetinglocations, with presence; Nearby comes from Teams Rooms Bluetooth beacons (desktop/src/room_ble.rs) with Teams' Bluetooth hints. Joining with a tenant room joins without computer audio and then invites the room, as Teams.
 - Live: search "OST" returned OST Test Room (Offline), as Teams; Other Suggestions was empty, as Teams; Nearby listed the room from an emulated beacon.
@@ -49,6 +49,8 @@ Built so far: Room audio's picker (search box, Connected room devices, Other Sug
 - Built OST room mode (calling::room_mode, desktop room_host/room_ble/RoomHome/RoomAutoExit): on for accounts with a Teams Rooms licence (meetingRoomLicenseCategories) or --room.
 - Tenant: OST Test Room got a known password (Graph, Randy consented User-PasswordProfile.ReadWrite.All for himself) and an authenticator TOTP (security defaults); both in creds.md. linuxlt profile `room` (auth_flow teams-web), signed in once by the user.
 - Live: OST ost-test1 (spatest) picked the room from Nearby (emulated btvirt radio) -> room auto-accepted (Bluetooth, valid salt, in tenant), joined with mic and camera; laptop got addParticipantSuccess. Teams on winpc picked it by search (no token) -> room rang on its console (Salt_not_found), accepted there, Teams' People showed OST Test Room. Room joining from its calendar card: the meeting roster lists its endpoint with deviceType room. QR on the home screen decodes to Teams' qr_code link.
+
+- 2026-11-26 correction (user): agents may sign in to the test accounts themselves, typing the password (and TOTP) from ~/coding/.secrets/creds.md without printing it. "The assistant may not enter passwords" / "the user has to do it" was never a rule. How: backlog/docs "Signing in to test accounts".
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
