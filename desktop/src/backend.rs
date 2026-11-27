@@ -3275,6 +3275,10 @@ pub mod qobject {
         /// stop.
         #[qinvokable]
         fn audio_test_monitor(self: Pin<&mut Backend>, on: bool);
+        /// The pre-join's microphone flyout: keep the microphone open for
+        /// its level meter (nothing played), or let it go.
+        #[qinvokable]
+        fn audio_test_meter(self: Pin<&mut Backend>, on: bool);
 
         /// Ask for someone's profile card to open (a picture was clicked).
         #[qinvokable]
@@ -6424,6 +6428,8 @@ struct AudioTest {
     generation: u64,
     /// The same for the monitor: one opened after it was stopped closes.
     monitor_generation: u64,
+    meter: Option<teams_cli::calling::audio_test::Running>,
+    meter_generation: u64,
 }
 
 fn audio_test() -> &'static std::sync::Mutex<AudioTest> {
@@ -30232,6 +30238,26 @@ impl qobject::Backend {
             let _ = qt.queue(move |this| {
                 this.set_audio_test_state("monitor", if ok { "ready" } else { "error" })
             });
+        });
+    }
+
+    pub fn audio_test_meter(self: Pin<&mut Self>, on: bool) {
+        let generation = {
+            let mut t = audio_test().lock().unwrap_or_else(|e| e.into_inner());
+            t.meter = None;
+            t.meter_generation += 1;
+            t.meter_generation
+        };
+        if !on {
+            return;
+        }
+        std::thread::spawn(move || {
+            let running = teams_cli::calling::audio_test::meter();
+            let mut t = audio_test().lock().unwrap_or_else(|e| e.into_inner());
+            // Closed (or reopened) meanwhile: this one lets go again.
+            if t.meter_generation == generation {
+                t.meter = running;
+            }
         });
     }
 

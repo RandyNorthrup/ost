@@ -45,6 +45,9 @@ Popup {
     readonly property var state_: backend.audioTestJson ? JSON.parse(backend.audioTestJson) : ({})
     readonly property bool toneError: state_.tone === "error"
     readonly property bool monitorReady: state_.monitor === "ready"
+    /// The microphone (or the speaker for its playback) couldn't be opened:
+    /// no longer loading; another microphone can be tried.
+    readonly property bool monitorFailed: state_.monitor === "error"
     property int level: 0
 
     function start() {
@@ -98,10 +101,14 @@ Popup {
         const cur = kind === "speaker" ? speaker : mic
         const t = Object.assign({}, root[key]); t[cur] = ok; root[key] = t
         if (ok) return
-        // Teams: the next device after this one, if it isn't tested yet.
+        // Teams: on to the next untested device after this one (round the
+        // list, past any already tested).
         const list = kind === "speaker" ? devices.outputs : devices.inputs
-        const next = list[(list.indexOf(cur) + 1) % list.length]
-        if (next && next !== cur && t[next] === undefined) pick(kind, next)
+        const at = list.indexOf(cur)
+        for (let i = 1; i < list.length; i++) {
+            const next = list[(at + i) % list.length]
+            if (t[next] === undefined) { pick(kind, next); return }
+        }
     }
     function pick(kind, name) {
         if (kind === "speaker") {
@@ -180,7 +187,7 @@ Popup {
             topPadding: 24
             Item {
                 // Getting your microphone ready: Teams' progress bar.
-                visible: root.page === "mic" && !root.monitorReady && root.micLeft !== "error"
+                visible: root.page === "mic" && !root.monitorReady && !root.monitorFailed && root.micLeft !== "error"
                 width: parent.width; height: visible ? 2 : 0
                 Rectangle { width: parent.width; height: 2; color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF") }
                 Rectangle {
@@ -198,7 +205,7 @@ Popup {
                          : root.speakerUsable ? qsTr("Do you hear the test sound?") : qsTr("All of your speakers have been tested"))
                       : root.page === "mic"
                       ? (root.micLeft === "error" ? qsTr("No microphones could be found")
-                         : !root.monitorReady ? qsTr("Getting your microphone ready…")
+                         : !root.monitorReady && !root.monitorFailed ? qsTr("Getting your microphone ready…")
                          : root.micUsable ? qsTr("Speak and pause. Do you hear the playback?") : qsTr("All of your microphones have been tested"))
                       : root.allGood ? qsTr("Your audio is ready for the meeting") : qsTr("There was a problem with your audio")
                 font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
@@ -268,7 +275,7 @@ Popup {
                        : root.speakerLeft === "error" ? qsTr("Make sure you have speakers connected to your computer.")
                        : !root.speakerUsable ? qsTr("Try testing them again, or test your microphone.") : "")
                     : root.page === "mic"
-                    ? (root.micLeft === "error" ? qsTr("Make sure you have a microphone connected to your computer.")
+                    ? (root.micLeft === "error" || root.monitorFailed ? qsTr("Make sure you have a microphone connected to your computer.")
                        : !root.micUsable ? qsTr("Try testing them again.") : "")
                     : ""
                 visible: note !== ""

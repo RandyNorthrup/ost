@@ -65,6 +65,41 @@ pub fn parse_wav(bytes: &[u8]) -> Option<Vec<[i16; 2]>> {
     None
 }
 
+/// How far ahead of the speaker the steps queue audio: under the 200 ms
+/// the playback keeps (it drops anything older).
+const LEAD: Duration = Duration::from_millis(80);
+
+/// Paces 20 ms frames to real time: [`Pacer::frame`] waits until another
+/// frame may be queued without getting more than [`LEAD`] ahead.
+struct Pacer {
+    start: std::time::Instant,
+    sent: u32,
+}
+
+impl Pacer {
+    fn new() -> Self {
+        Pacer {
+            start: std::time::Instant::now(),
+            sent: 0,
+        }
+    }
+
+    /// When the audio queued so far will have played.
+    fn queued_until(&self) -> std::time::Instant {
+        self.start + Duration::from_millis(20) * self.sent
+    }
+
+    fn frame(&mut self) {
+        let ahead = self
+            .queued_until()
+            .saturating_duration_since(std::time::Instant::now());
+        if ahead > LEAD {
+            thread::sleep(ahead - LEAD);
+        }
+        self.sent += 1;
+    }
+}
+
 /// A running step; dropping it stops it.
 pub struct Running {
     stop: Arc<AtomicBool>,
@@ -88,10 +123,11 @@ pub fn play_loop(sound: Arc<Vec<[i16; 2]>>) -> Option<Running> {
     thread::spawn(move || {
         let _playback = playback;
         let mut at = 0;
+        let mut pace = Pacer::new();
         while !done.load(Ordering::SeqCst) {
             let frame: Vec<[i16; 2]> = (0..FRAME).map(|i| sound[(at + i) % sound.len()]).collect();
             at = (at + FRAME) % sound.len();
-            // The channel holds a second of audio: sending paces the loop.
+            pace.frame();
             if tx.send(frame).is_err() {
                 break;
             }
@@ -192,17 +228,43 @@ pub fn monitor(ready: Arc<AtomicBool>) -> Option<Running> {
                 continue;
             };
             if let Some(take) = gate.push(frame) {
+                let mut pace = Pacer::new();
                 for f in take {
-                    if done.load(Ordering::SeqCst) || speaker.send(f).is_err() {
+                    if done.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    pace.frame();
+                    if speaker.send(f).is_err() {
                         break;
                     }
                 }
-                // Drop what the microphone heard while it played (the
-                // playback itself).
+                // Wait for the take to finish playing (and its echo to die
+                // down), then drop what the microphone heard meanwhile: the
+                // playback itself.
+                let end = pace.queued_until() + Duration::from_millis(250);
+                while !done.load(Ordering::SeqCst) && std::time::Instant::now() < end {
+                    thread::sleep(Duration::from_millis(20));
+                }
                 while frames.try_recv().is_ok() {}
             }
         }
         ready.store(false, Ordering::SeqCst);
+    });
+    Some(Running { stop })
+}
+
+/// Keep the preferred microphone open (its level for a meter, nothing
+/// played): the pre-join's microphone flyout. None when it can't be
+/// opened.
+pub fn meter() -> Option<Running> {
+    let (capture, frames) = AudioCapture::start_at(RATE)?;
+    let stop = Arc::new(AtomicBool::new(false));
+    let done = stop.clone();
+    thread::spawn(move || {
+        let _capture = capture;
+        while !done.load(Ordering::SeqCst) {
+            let _ = frames.recv_timeout(Duration::from_millis(100));
+        }
     });
     Some(Running { stop })
 }
@@ -263,6 +325,18 @@ mod tests {
         let take = take.expect("played back after the pause");
         assert_eq!(take.len(), PREROLL_FRAMES + 20 + PAUSE_FRAMES);
         assert_eq!(g.state(), Monitor::Listening);
+    }
+
+    #[test]
+    fn paces_frames_to_real_time() {
+        // 25 frames (500 ms) take at least 500 ms less the lead.
+        let t = std::time::Instant::now();
+        let mut p = Pacer::new();
+        for _ in 0..25 {
+            p.frame();
+        }
+        assert!(t.elapsed() >= Duration::from_millis(500) - LEAD - Duration::from_millis(20));
+        assert!(p.queued_until() >= t + Duration::from_millis(500));
     }
 
     #[test]

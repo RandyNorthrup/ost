@@ -1231,6 +1231,8 @@ Window {
     // microphoneOnly mode, under the row.
     function openDeviceFlyout(trigger, mode) {
         deviceFlyout.mode = mode
+        // Its meter needs the microphone open (no call yet).
+        backend.audioTestMeter(mode === "mic")
         deviceFlyout.parent = trigger
         deviceFlyout.x = 0; deviceFlyout.y = trigger.height + 4
         deviceFlyout.open()
@@ -1240,7 +1242,7 @@ Window {
         muted: !win.micOn
         onToggleMute: win.micOn = !win.micOn
         onMoreAudioSettings: win.moreAudioSettings()
-        onClosed: win.devicesRev++
+        onClosed: { win.devicesRev++; backend.audioTestMeter(false) }
     }
     // The camera ⌄: "Camera" and your cameras (Teams' video flyout in its
     // pre-join mode).
@@ -1290,6 +1292,12 @@ Window {
                             if (camRow.chosen) return
                             cameraFlyout.current = camRow.modelData.path
                             backend.setCameraDevice(camRow.modelData.path)
+                            // The preview follows the new camera (off if it
+                            // can't open).
+                            if (win.cameraOn) {
+                                backend.setCameraPreview(false)
+                                if (!backend.setCameraPreview(true)) win.cameraOn = false
+                            }
                         }
                     }
                     Accessible.role: Accessible.RadioButton
