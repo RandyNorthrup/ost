@@ -15943,6 +15943,7 @@ Window {
             backend.selectChat(thread, c ? c.name : "")
             if (messageId) conversation.showFound(messageId, terms, channel && parentId && parentId !== messageId ? parentId : "")
         }
+        onSearchPerson: p => { rail.current = "search"; searchView.searchPerson(p) }
         onSearchFeedback: (kind, q) => backend.requestFeedback(kind, "Search", "Search suggestions: “" + q + "”")
         onSearchSubmitted: text => window.openSearch(text)
         copilotSearch: !!window.copilotState.search

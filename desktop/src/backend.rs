@@ -18776,6 +18776,18 @@ impl qobject::Backend {
             name: self.rust().user_name.to_string(),
         };
         let qt = self.qt_thread();
+        // Show what's in hand (a newer query since drops it).
+        let publish = move |qt: &cxx_qt::CxxQtThread<qobject::Backend>,
+                            q: String,
+                            groups: Vec<serde_json::Value>| {
+            let _ = qt.queue(move |mut this| {
+                if this.rust().suggest_generation == generation {
+                    let v = json!({ "query": q, "groups": groups });
+                    this.as_mut()
+                        .set_suggest_json(QString::from(v.to_string().as_str()));
+                }
+            });
+        };
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
@@ -18799,14 +18811,12 @@ impl qobject::Backend {
                     )
                 };
                 let mut groups = api::autosuggest::arrange(&reply, q.trim(), &me, people);
-                // And Viva Engage's communities, as Teams lists them last.
-                if !empty
-                    && let Ok(hits) = api::search::communities(q.trim()).await
-                    && let Some(g) = api::autosuggest::communities_group(&hits)
-                {
-                    groups.push(g);
+                // The service's groups at once; the pictures and Viva
+                // Engage's communities follow.
+                publish(&qt, q.clone(), groups.clone());
+                if empty {
+                    return anyhow::Ok(());
                 }
-                // Recent images: the pictures, cached as the chat caches them.
                 let ams = client
                     .ams_url()
                     .unwrap_or_else(|| "https://us-api.asm.skype.com".into());
@@ -18820,27 +18830,33 @@ impl qobject::Backend {
                             height: 0,
                             local_path: String::new(),
                         };
-                        if let Ok(path) = cached_image(&client, &img).await {
+                        if let Ok(Ok(path)) = tokio::time::timeout(
+                            std::time::Duration::from_secs(5),
+                            cached_image(&client, &img),
+                        )
+                        .await
+                        {
                             it["src"] = json!(format!("file://{}", path.display()));
                         }
                     }
                 }
-                anyhow::Ok(groups)
+                // Communities last, as Teams lists them.
+                if let Ok(Ok(hits)) = tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    api::search::communities(q.trim()),
+                )
+                .await
+                    && let Some(g) = api::autosuggest::communities_group(&hits)
+                {
+                    groups.push(g);
+                }
+                publish(&qt, q.clone(), groups);
+                anyhow::Ok(())
             }
             .await;
-            let _ = qt.queue(move |mut this| {
-                if this.rust().suggest_generation != generation {
-                    return;
-                }
-                match result {
-                    Ok(groups) => {
-                        let v = json!({ "query": q, "groups": groups });
-                        this.as_mut()
-                            .set_suggest_json(QString::from(v.to_string().as_str()));
-                    }
-                    Err(e) => tracing::warn!("search suggestions failed: {}", short_error(&e)),
-                }
-            });
+            if let Err(e) = result {
+                tracing::warn!("search suggestions failed: {}", short_error(&e));
+            }
         });
     }
 

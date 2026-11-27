@@ -77,6 +77,23 @@ FluentSurface {
         if (!options.length) return
         current = current < 0 ? (step > 0 ? 0 : options.length - 1) : (current + step + options.length) % options.length
     }
+    // Keep the keyboard's pick in view.
+    onCurrentChanged: if (current >= 0) Qt.callLater(root.showCurrent)
+    function findRow(item) {
+        for (const c of item.children) {
+            if (c.item && c.item.it && c.item.it._i === root.current) return c
+            const f = findRow(c)
+            if (f) return f
+        }
+        return null
+    }
+    function showCurrent() {
+        const row = findRow(groupCol)
+        if (!row) return
+        const y = row.mapToItem(groupCol, 0, 0).y
+        if (y < flick.contentY) flick.contentY = y
+        else if (y + row.height > flick.contentY + flick.height) flick.contentY = Math.min(y + row.height - flick.height, Math.max(0, flick.contentHeight - flick.height))
+    }
     onQueryChanged: current = -1
     onReplyChanged: current = -1
 
@@ -127,8 +144,18 @@ FluentSurface {
     Item {
         id: pillBand
         x: 1.7; y: 4.7; width: parent.width - 3.4; height: 44
-        clip: true
+        // Pills that don't fit scroll sideways (wheel, drag or the arrows
+        // on the focused pill).
+        Flickable {
+            id: pillFlick
+            anchors.fill: parent
+            clip: true
+            contentWidth: pillRow.width + 32; contentHeight: height
+            flickableDirection: Flickable.HorizontalFlick
+            boundsBehavior: Flickable.StopAtBounds
+            WheelHandler { onWheel: e => pillFlick.contentX = Math.max(0, Math.min(pillFlick.contentWidth - pillFlick.width, pillFlick.contentX - (e.angleDelta.y || e.angleDelta.x) / 2)) }
         Row {
+            id: pillRow
             x: 16; y: 8; spacing: 8
             Repeater {
                 model: root.scope ? root.pills.filter(p => p.key === root.scope) : root.pills
@@ -155,7 +182,9 @@ FluentSurface {
                 }
             }
         }
+        }
     }
+    function scrollPills(step) { pillFlick.contentX = Math.max(0, Math.min(pillFlick.contentWidth - pillFlick.width, pillFlick.contentX + step * 88)) }
     Rectangle { x: 1.7; y: 50.6; width: parent.width - 3.4; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D", "#FFFFFF") }
 
     Flickable {

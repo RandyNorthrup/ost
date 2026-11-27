@@ -41,6 +41,8 @@ Rectangle {
     signal openMeeting(string joinUrl, string uid, string start)
     /// A message (or image) suggestion: the chat or channel at it.
     signal openMessage(string thread, string messageId, string parentId, bool channel, var terms)
+    /// "<person> in all results": the results page for that person.
+    signal searchPerson(var person)
     /// Send feedback's thumbs under the suggestions.
     signal searchFeedback(string kind, string query)
     signal goBack()
@@ -171,6 +173,9 @@ Rectangle {
             // picked, else the results.
             Keys.onDownPressed: suggestions.move(1)
             Keys.onUpPressed: suggestions.move(-1)
+            // Alt+arrows scroll the scope pills that don't fit.
+            Keys.onLeftPressed: e => { if (e.modifiers & Qt.AltModifier) suggestions.scrollPills(-1); else e.accepted = false }
+            Keys.onRightPressed: e => { if (e.modifiers & Qt.AltModifier) suggestions.scrollPills(1); else e.accepted = false }
             Keys.onReturnPressed: {
                 if (suggestions.current >= 0 && suggestions.options[suggestions.current]) { root.pick(suggestions.options[suggestions.current]); return }
                 if (!root.searchWords) return
@@ -248,7 +253,12 @@ Rectangle {
         case "community": backend.openExternal("https://web.yammer.com/main/groups/" + encodeURIComponent(item.id)); break
         case "event": root.openMeeting(item.join || "", item.uid || "", item.start || ""); break
         case "message": case "image": root.openMessage(item.thread, item.id, item.parent || "", !!item.channel, terms); break
-        case "text": case "pcs": root.submit(item.query && item.kind === "text" ? item.query : item.title); return
+        case "text": root.submit(item.query || item.title); return
+        // "<person> in all results": the results with that person.
+        case "pcs":
+            root.keepSuggestionsOpen = false; field.text = item.title; field.focus = false
+            root.searchPerson({ name: item.title, mail: item.mail || "", mri: item.mri || "", from: false })
+            return
         case "seemore": root.submit(item.query + " is:Messages"); return
         case "enter": if (field.text.trim()) root.submit(field.text); return
         case "tip": root.gotoMode(); return
