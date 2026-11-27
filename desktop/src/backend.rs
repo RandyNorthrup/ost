@@ -2112,6 +2112,9 @@ pub mod qobject {
         /// A notification was clicked: bring the window forward.
         #[qsignal]
         fn activate_requested(self: Pin<&mut Backend>);
+        /// A Reminder due notification was clicked: open Chat ▸ Reminders.
+        #[qsignal]
+        fn reminders_requested(self: Pin<&mut Backend>);
 
         /// Another account's hub asked this window to open a chat.
         #[qsignal]
@@ -23711,7 +23714,7 @@ impl qobject::Backend {
             .collect();
         if !first && !fresh.is_empty() {
             let prefs = notify_prefs(&self.rust().settings_json.to_string(), &load_settings());
-            if prefs.reminder_banners && !prefs.mute_all && banners_available() {
+            if prefs.reminder_banners && !prefs.mute_all {
                 let one = fresh[0];
                 let (title, text) = if fresh.len() > 1 {
                     (
@@ -23738,7 +23741,7 @@ impl qobject::Backend {
                 let banner = serde_json::json!({
                     "id": format!("reminder:{}", one.stream_id),
                     "kind": "standard",
-                    "title": title, "subtitle": "", "text": text,
+                    "title": &title, "subtitle": "", "text": &text,
                     "view": "reminders",
                     "senderMri": if fresh.len() > 1 { "" } else { one.item.sender_mri.as_str() },
                     "senderName": if fresh.len() > 1 { "" } else { one.item.sender.as_str() },
@@ -23747,8 +23750,35 @@ impl qobject::Backend {
                     "silent": !prefs.sound,
                     "sound": prefs.sound_file,
                 });
-                self.as_mut()
-                    .banner_requested(QString::from(banner.to_string().as_str()));
+                if banners_available() {
+                    self.as_mut()
+                        .banner_requested(QString::from(banner.to_string().as_str()));
+                } else {
+                    // No banner window here (GNOME Wayland, or
+                    // OST_SYSTEM_NOTIFICATIONS=1): the desktop's notification,
+                    // whose click opens Chat ▸ Reminders.
+                    let qt = self.qt_thread();
+                    std::thread::spawn(move || {
+                        let shown = notify_rust::Notification::new()
+                            .appname("OST")
+                            .summary(&title)
+                            .body(&text)
+                            .icon("io.github.RandyNorthrup.ost")
+                            .action("default", &tr("Open"))
+                            .show();
+                        match shown {
+                            Ok(handle) => handle.wait_for_action(|action| {
+                                if action == "default" {
+                                    let _ = qt.queue(|mut this| {
+                                        this.as_mut().activate_requested();
+                                        this.as_mut().reminders_requested();
+                                    });
+                                }
+                            }),
+                            Err(e) => tracing::warn!("notification failed: {e}"),
+                        }
+                    });
+                }
             }
         }
         let seen: HashSet<String> = due.iter().map(|r| r.item.message_id.clone()).collect();
