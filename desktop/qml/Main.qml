@@ -2179,10 +2179,12 @@ Window {
         property var want: []
         property var link: null
         property int waited: 0
+        /// The link's people no one was found for.
+        property var missed: []
         function begin(l) {
             // A form already open starts over: only the link's people.
             newChat.reset()
-            link = l; want = l.users.slice(); waited = 0
+            link = l; want = l.users.slice(); waited = 0; missed = []
             if (l.message) newChat.setMessage(l.message)
             if (l.topic && l.users.length > 1) { newChat.naming = true; newChat.nameText = l.topic }
             if (want.length) { newChat.search(want[0]); restart() }
@@ -2193,10 +2195,18 @@ Window {
             const hit = s.query === u ? (s.items || []).find(p => [p.upn, p.sub, p.mail].some(m => m && String(m).toLowerCase() === u.toLowerCase())) : null
             if (!hit && ++waited < 25) return
             if (hit) newChat.pick(hit)
-            else console.warn("LINK new chat: no one found for a user in the link")
+            else missed = missed.concat([u])
             want = want.slice(1); waited = 0
             if (want.length) { newChat.search(want[0]); return }
             stop()
+            // Someone the link names wasn't found: the chat isn't the one
+            // the link meant, so its message isn't put anywhere, and the
+            // form says who is missing.
+            if (missed.length) {
+                newChat.setMessage("")
+                window.showToast({ text: qsTr("Couldn't find %1. Add them in To: before you send.").arg(missed.join(", ")), intent: "error", duration: 10000 })
+                return
+            }
             // One person you already chat with: Teams shows that chat, and
             // the message waits in its own compose box.
             if (link.message && newChat.visible && newChat.history) {
