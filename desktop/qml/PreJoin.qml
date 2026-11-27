@@ -234,8 +234,15 @@ Window {
     // Phone audio comes back once the meeting is known to offer it.
     onPhoneAvailableChanged: if (phoneAvailable && audio === "computer" && backend.setting("prejoinAudio") === "phone") audio = "phone"
     readonly property bool canJoin: !lobby && (audio !== "room" || !!room)
-    readonly property string mic: { const v = backend.setting("micDevice"); return v && v !== "default" ? v : qsTr("Default microphone") }
-    readonly property string speaker: { const v = backend.setting("speakerDevice"); return v && v !== "default" ? v : qsTr("Default speaker") }
+    // Teams names the devices in use (the system's default by its own
+    // name), as their pickers do.
+    property int devicesRev: 0
+    readonly property var audioDevices: { devicesRev; try { return JSON.parse(backend.audioDevices()) } catch (e) { return {} } }
+    readonly property string mic: { devicesRev; const v = backend.setting("micDevice"); return v && v !== "default" ? v : audioDevices.defaultInput || qsTr("Default microphone") }
+    readonly property string speaker: { devicesRev; const v = backend.setting("speakerDevice"); return v && v !== "default" ? v : audioDevices.defaultOutput || qsTr("Default speaker") }
+    onVisibleChanged: if (visible) devicesRev++
+    /// More audio settings (the device flyouts): Settings ▸ Devices.
+    signal moreAudioSettings()
 
     Shortcut { sequence: "Escape"; onActivated: win.cancel() }
     /// Join now.
@@ -378,7 +385,19 @@ Window {
             Row {
                 x: 16; y: 329 - 44; height: 44
                 spacing: 12
-                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: win.cameraOn ? "video-20-filled" : "video-off"; size: 20; color: theme.textStrong }
+                // The camera glyph and its ⌄ (Teams' camera picker).
+                Rectangle {
+                    id: camTrigger
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 44; height: 32; radius: 4
+                    color: camHover.hovered ? theme.rowHover : "transparent"
+                    FluentIcon { x: 2; anchors.verticalCenter: parent.verticalCenter; name: win.cameraOn ? "video-20-filled" : "video-off"; size: 20; color: theme.textStrong }
+                    FluentIcon { x: 28; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.textStrong }
+                    HoverHandler { id: camHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { cameraFlyout.parent = camTrigger; cameraFlyout.open() } }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("Open video options")
+                }
                 Toggle {
                     anchors.verticalCenter: parent.verticalCenter
                     on: win.cameraOn
@@ -641,7 +660,7 @@ Window {
                 Row {
                     x: 18; y: 74; spacing: 12
                     FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: win.micOn ? "mic-24" : "mic-off-24"; size: 20; color: theme.textStrong }
-                    Text { anchors.verticalCenter: parent.verticalCenter; width: 300; elide: Text.ElideRight; text: win.mic; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+                    DeviceTrigger { id: micTrigger; anchors.verticalCenter: parent.verticalCenter; maxWidth: 300; label: win.mic; mic: true; onClicked: win.openDeviceFlyout(micTrigger, "mic") }
                 }
                 Toggle {
                     anchors.right: parent.right; anchors.rightMargin: 18; y: 76
@@ -652,7 +671,21 @@ Window {
                 Row {
                     x: 18; y: 112; spacing: 12
                     FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "speaker"; size: 20; color: theme.textStrong }
-                    Text { anchors.verticalCenter: parent.verticalCenter; width: 260; elide: Text.ElideRight; text: win.speaker; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+                    DeviceTrigger { id: speakerTrigger; anchors.verticalCenter: parent.verticalCenter; maxWidth: 300; label: win.speaker; onClicked: win.openDeviceFlyout(speakerTrigger, "speaker") }
+                }
+                // Teams' "Test mic and speaker" (its audio test wizard; the
+                // link at the card's end, 17 in, 14 px brand).
+                Text {
+                    id: testLink
+                    anchors.right: parent.right; anchors.rightMargin: 17; y: 152
+                    text: qsTr("Test mic and speaker")
+                    font.family: theme.font; font.pixelSize: 14
+                    font.underline: testHover.hovered
+                    color: win.lobby ? theme.disabled : theme.brandForeground1
+                    HoverHandler { id: testHover; enabled: !win.lobby; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { enabled: !win.lobby; onTapped: audioTest.start() }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: text
                 }
             }
             // Teams' Phone audio (measured in Teams on the web, 2026-11-16):
@@ -1177,6 +1210,120 @@ Window {
             paneTitle: ""
             hideHeader: true
         }
+    }
+    // Teams' pre-join footer: "Need help?" (12 px, underlined, its
+    // needHelpLink), centred 16 from the bottom.
+    Text {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom; anchors.bottomMargin: 8
+        visible: !win.lobby
+        text: qsTr("Need help?")
+        font.family: theme.font; font.pixelSize: 12; font.underline: true
+        color: theme.brandForeground1
+        HoverHandler { cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: backend.openExternal("https://support.microsoft.com/en-us/office/join-a-teams-meeting-078e9868-f1aa-4414-8bb9-ee88e9236ee4") }
+        Accessible.role: Accessible.Link
+        Accessible.name: text
+    }
+    // The device rows' pickers: Teams' audio flyout in its speakerOnly /
+    // microphoneOnly mode, under the row.
+    function openDeviceFlyout(trigger, mode) {
+        deviceFlyout.mode = mode
+        deviceFlyout.parent = trigger
+        deviceFlyout.x = 0; deviceFlyout.y = trigger.height + 4
+        deviceFlyout.open()
+    }
+    AudioFlyout {
+        id: deviceFlyout
+        muted: !win.micOn
+        onToggleMute: win.micOn = !win.micOn
+        onMoreAudioSettings: win.moreAudioSettings()
+        onClosed: win.devicesRev++
+    }
+    // The camera ⌄: "Camera" and your cameras (Teams' video flyout in its
+    // pre-join mode).
+    QC.Popup {
+        id: cameraFlyout
+        x: 0; y: parent ? parent.height + 4 : 0
+        width: 359.3; padding: 0
+        height: camCol.implicitHeight + 27.4
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        property var cameras: []
+        property string current: ""
+        onOpened: { try { const d = JSON.parse(backend.videoDevices()); cameras = d.devices || []; current = d.current || "" } catch (e) { cameras = [] } }
+        Column {
+            id: camCol
+            x: 16.7; y: 13.7; width: 326
+            Text {
+                width: 326; height: 16; verticalAlignment: Text.AlignVCenter
+                text: qsTr("Camera")
+                font.family: theme.font; font.pixelSize: 12
+                color: theme.text
+            }
+            Text {
+                visible: cameraFlyout.cameras.length === 0
+                height: visible ? 34.3 : 0; verticalAlignment: Text.AlignVCenter
+                text: qsTr("No camera is connected")
+                font.family: theme.font; font.pixelSize: 14
+                color: theme.textSecondary
+            }
+            Repeater {
+                model: cameraFlyout.cameras
+                Item {
+                    id: camRow
+                    required property var modelData
+                    readonly property bool chosen: cameraFlyout.current === modelData.path
+                    width: 326; height: 34.3
+                    FluentIcon { x: 4; anchors.verticalCenter: parent.verticalCenter; name: camRow.chosen ? "radio-on-20" : "radio-off-20"; size: 20; color: camRow.chosen ? theme.brand : theme.textSecondary }
+                    Text {
+                        x: 26; anchors.verticalCenter: parent.verticalCenter; width: 300
+                        elide: Text.ElideRight
+                        text: camRow.modelData.name
+                        font.family: theme.font; font.pixelSize: 14
+                        color: camRow.chosen ? theme.text : theme.textSecondary
+                    }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler {
+                        onTapped: {
+                            if (camRow.chosen) return
+                            cameraFlyout.current = camRow.modelData.path
+                            backend.setCameraDevice(camRow.modelData.path)
+                        }
+                    }
+                    Accessible.role: Accessible.RadioButton
+                    Accessible.name: camRow.modelData.name
+                    Accessible.checked: camRow.chosen
+                }
+            }
+        }
+    }
+    AudioTestDialog {
+        id: audioTest
+        onClosed: win.devicesRev++
+    }
+    // A device row's picker trigger (Teams' transparent popover button:
+    // the device's name, then a 12 px ⌄ 6 after it).
+    component DeviceTrigger: Item {
+        id: dt
+        property string label
+        property real maxWidth: 300
+        property bool mic: false
+        signal clicked()
+        width: Math.min(dtText.implicitWidth, maxWidth - 18) + 18; height: 24
+        Text {
+            id: dtText
+            width: Math.min(implicitWidth, dt.maxWidth - 18)
+            anchors.verticalCenter: parent.verticalCenter
+            elide: Text.ElideRight
+            text: dt.label
+            font.family: theme.font; font.pixelSize: theme.base
+            color: dtHover.hovered ? theme.brandForeground1 : theme.text
+        }
+        FluentIcon { x: dtText.width + 6; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: dtHover.hovered ? theme.brandForeground1 : theme.textStrong }
+        HoverHandler { id: dtHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: dt.clicked() }
+        Accessible.role: Accessible.Button
+        Accessible.name: dt.mic ? qsTr("Selected microphone: %1, open microphone options").arg(dt.label) : qsTr("Selected speaker: %1, open speaker options").arg(dt.label)
     }
     RetryScreen {
         anchors.fill: parent

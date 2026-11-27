@@ -38,6 +38,13 @@ Popup {
     /// disabled there.
     property bool oneToOne: false
     property bool spatialCapable: false
+    /// Teams' flyout modes: "" (in a call: everything), "speaker" or "mic"
+    /// (the pre-join's device rows: speakerOnly / microphoneOnly, just that
+    /// section, a divider and More audio settings).
+    property string mode: ""
+    readonly property bool showSpeaker: mode !== "mic"
+    readonly property bool showMic: mode !== "speaker"
+    readonly property bool showEffects: mode === ""
     property bool spatialOn: false
     onOpened: {
         spatialCapable = backend.spatialAudioCapable()
@@ -76,10 +83,10 @@ Popup {
             id: col
             x: 16.7; y: 16.7; width: 268
 
-            Label12 { text: qsTr("Speaker", "calling:kp3u3qpn") }
+            Label12 { visible: root.showSpeaker; text: qsTr("Speaker", "calling:kp3u3qpn") }
             Repeater {
                 // Each speaker; with none chosen, the system's default is.
-                model: root.devices.outputs || []
+                model: root.showSpeaker ? root.devices.outputs || [] : []
                 DeviceRow {
                     required property var modelData
                     name: modelData
@@ -89,6 +96,7 @@ Popup {
             }
             // Volume: the speaker button, then a 233 px track with a 16 px thumb.
             Item {
+                visible: root.showSpeaker
                 width: 268; height: 31.3
                 Rectangle {
                     id: hcFill1
@@ -126,13 +134,13 @@ Popup {
                     Accessible.name: qsTr("Speaker Volume control")
                 }
             }
-            Item { width: 268; height: 10 }
-            Rectangle { width: 268; height: 1 / Screen.devicePixelRatio; color: theme.divider }
-            Item { width: 268; height: 14.7 }
+            Item { visible: root.showSpeaker; width: 268; height: 10 }
+            Rectangle { visible: root.showSpeaker; width: 268; height: 1 / Screen.devicePixelRatio; color: theme.divider }
+            Item { visible: root.mode === ""; width: 268; height: 14.7 }
 
-            Label12 { text: qsTr("Microphone") }
+            Label12 { visible: root.showMic; text: qsTr("Microphone") }
             Repeater {
-                model: root.devices.inputs || []
+                model: root.showMic ? root.devices.inputs || [] : []
                 DeviceRow {
                     required property var modelData
                     name: modelData
@@ -142,6 +150,7 @@ Popup {
             }
             // The mic button (mute) and Teams' 17-bar level meter.
             Item {
+                visible: root.showMic
                 width: 268; height: 31.3
                 Rectangle {
                     id: hcFill2
@@ -164,8 +173,8 @@ Popup {
                     }
                 }
             }
-            Item { width: 268; height: 10.7 }
-            Rectangle { id: micDivider; width: 268; height: 1 / Screen.devicePixelRatio; color: theme.divider }
+            Item { visible: root.showMic; width: 268; height: 10.7 }
+            Rectangle { id: micDivider; visible: root.showMic; width: 268; height: 1 / Screen.devicePixelRatio; color: theme.divider }
             // 10 from the microphone divider to the effects section
             // (measured on winpc 2026-11-19): Teams' flyout is a column
             // with a 10 px row gap (audioFlyoutFlex); the microphone
@@ -173,7 +182,7 @@ Popup {
             // the 14.7 under the speaker divider), the effects section none
             // (audio-flyout-effects-section, 693727; its visual-refresh
             // class is ECS enableUbarVisualRefresh only).
-            Item { width: 268; height: 10 }
+            Item { visible: root.showEffects; width: 268; height: 10 }
             // Teams' Spatial audio row, first in the flyout's effects
             // section (SpatialAudioContainer at FLYOUT: no description, no
             // info button; measured on winpc 2026-11-19): a 36 px row,
@@ -186,6 +195,7 @@ Popup {
             // switches at once (calling::spatial, x-much2 renegotiated).
             Item {
                 id: spatialItem
+                visible: root.showEffects
                 readonly property bool usable: root.spatialCapable && !root.oneToOne
                 readonly property bool shownOn: usable && root.spatialOn
                 width: 268; height: 36
@@ -222,6 +232,7 @@ Popup {
             }
             // Noise suppression (Fluent Switch with its label before it).
             Item {
+                visible: root.showEffects
                 width: 268; height: 36
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
@@ -255,6 +266,7 @@ Popup {
             }
             // Teams' choice under the switch (no info buttons in the flyout).
             NoiseSuppressionChoice {
+                visible: root.showEffects
                 width: 268
                 noiseOn: root.noiseSuppression
                 roomAudio: root.roomAudio
@@ -264,7 +276,7 @@ Popup {
             // its switch row, "Recommended for studio environment." 30
             // down, then 10 before the divider).
             Item {
-                visible: root.musicInFlyout
+                visible: root.musicInFlyout && root.showEffects
                 width: 268; height: 46
                 Text {
                     y: 8.67; height: 18.67
@@ -308,8 +320,8 @@ Popup {
             }
             // 10 before the divider (under the radios, measured on winpc
             // 2026-11-19; under the music mode row too).
-            Item { width: 268; height: 10 }
-            Rectangle { width: 268; height: 1 / Screen.devicePixelRatio; color: theme.divider }
+            Item { visible: root.showEffects; width: 268; height: 10 }
+            Rectangle { visible: root.showEffects; width: 268; height: 1 / Screen.devicePixelRatio; color: theme.divider }
             Item { width: 268; height: 13.3 }
             // More audio settings (a subtle button at the content's edge).
             Item {

@@ -329,6 +329,10 @@ pub mod qobject {
         /// The call is a channel's Meet now: a meeting, ad hoc (Teams shows
         /// it a meeting's controls but Notes).
         #[qproperty(bool, call_adhoc_meeting)]
+        /// The pre-join's "Test mic and speaker" (audio_test_tone /
+        /// audio_test_monitor): {tone: "" | "loading" | "playing" |
+        /// "error", monitor: "" | "starting" | "ready" | "error"}.
+        #[qproperty(QString, audio_test_json)]
         /// The call is a group call, not a meeting: a 1:1 call someone was
         /// invited into (Teams' People pane then says "Currently in this
         /// call" and lists "People added to the chat").
@@ -3259,6 +3263,14 @@ pub mod qobject {
         /// The microphone's current level, 0-100 (Teams' in-call meter).
         #[qinvokable]
         fn mic_level(self: Pin<&mut Backend>) -> i32;
+        /// "Test mic and speaker"'s speaker step: loop Teams' test sound on
+        /// the chosen speaker (fetched from Teams' CDN once), or stop it.
+        #[qinvokable]
+        fn audio_test_tone(self: Pin<&mut Backend>, on: bool);
+        /// Its microphone step: play back what you say once you pause, or
+        /// stop.
+        #[qinvokable]
+        fn audio_test_monitor(self: Pin<&mut Backend>, on: bool);
 
         /// Ask for someone's profile card to open (a picture was clicked).
         #[qinvokable]
@@ -3728,6 +3740,7 @@ pub struct BackendRust {
     call_network_strength: QString,
     call_scheduled: bool,
     call_adhoc_meeting: bool,
+    audio_test_json: QString,
     call_group: bool,
     call_invites_json: QString,
     call_lobby_presenter: bool,
@@ -6391,6 +6404,25 @@ type FaceSession = std::sync::Mutex<Vec<(Vec<u8>, serde_json::Value)>>;
 
 fn face_session() -> &'static FaceSession {
     static SLOT: OnceLock<FaceSession> = OnceLock::new();
+    SLOT.get_or_init(Default::default)
+}
+
+/// "Test mic and speaker": the looping test sound and the mic monitor
+/// running, and the test sound once fetched.
+#[derive(Default)]
+struct AudioTest {
+    tone: Option<teams_cli::calling::audio_test::Running>,
+    monitor: Option<teams_cli::calling::audio_test::Running>,
+    sound: Option<std::sync::Arc<Vec<[i16; 2]>>>,
+    /// Bumped by every start and stop, so a late fetch doesn't start a
+    /// stopped tone.
+    generation: u64,
+    /// The same for the monitor: one opened after it was stopped closes.
+    monitor_generation: u64,
+}
+
+fn audio_test() -> &'static std::sync::Mutex<AudioTest> {
+    static SLOT: OnceLock<std::sync::Mutex<AudioTest>> = OnceLock::new();
     SLOT.get_or_init(Default::default)
 }
 
@@ -30084,6 +30116,102 @@ impl qobject::Backend {
 
     pub fn mic_level(self: Pin<&mut Self>) -> i32 {
         teams_cli::calling::audio::mic_level() as i32
+    }
+
+    fn set_audio_test_state(mut self: Pin<&mut Self>, key: &str, value: &str) {
+        let mut v: serde_json::Value =
+            serde_json::from_str(&self.rust().audio_test_json.to_string()).unwrap_or(json!({}));
+        if !v.is_object() {
+            v = json!({});
+        }
+        v[key] = json!(value);
+        self.as_mut()
+            .set_audio_test_json(QString::from(v.to_string().as_str()));
+    }
+
+    pub fn audio_test_tone(mut self: Pin<&mut Self>, on: bool) {
+        use teams_cli::calling::audio_test;
+        let (generation, sound) = {
+            let mut t = audio_test().lock().unwrap_or_else(|e| e.into_inner());
+            t.tone = None;
+            t.generation += 1;
+            (t.generation, t.sound.clone())
+        };
+        if !on {
+            self.set_audio_test_state("tone", "");
+            return;
+        }
+        if let Some(sound) = sound {
+            let running = audio_test::play_loop(sound);
+            let ok = running.is_some();
+            audio_test().lock().unwrap_or_else(|e| e.into_inner()).tone = running;
+            self.set_audio_test_state("tone", if ok { "playing" } else { "error" });
+            return;
+        }
+        self.as_mut().set_audio_test_state("tone", "loading");
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let fetched = async {
+                let bytes = reqwest::get(audio_test::TONE_URL)
+                    .await?
+                    .error_for_status()?
+                    .bytes()
+                    .await?;
+                audio_test::parse_wav(&bytes)
+                    .ok_or_else(|| anyhow::anyhow!("the test sound isn't 16-bit 48 kHz PCM"))
+            }
+            .await;
+            let state = match fetched {
+                Ok(pcm) => {
+                    let sound = std::sync::Arc::new(pcm);
+                    let mut t = audio_test().lock().unwrap_or_else(|e| e.into_inner());
+                    t.sound = Some(sound.clone());
+                    if t.generation != generation {
+                        return;
+                    }
+                    t.tone = audio_test::play_loop(sound);
+                    if t.tone.is_some() { "playing" } else { "error" }
+                }
+                Err(e) => {
+                    tracing::warn!("test sound: {}", short_error(&e));
+                    "error"
+                }
+            };
+            let _ = qt.queue(move |this| this.set_audio_test_state("tone", state));
+        });
+    }
+
+    pub fn audio_test_monitor(mut self: Pin<&mut Self>, on: bool) {
+        use teams_cli::calling::audio_test;
+        let generation = {
+            let mut t = audio_test().lock().unwrap_or_else(|e| e.into_inner());
+            t.monitor = None;
+            t.monitor_generation += 1;
+            t.monitor_generation
+        };
+        if !on {
+            self.set_audio_test_state("monitor", "");
+            return;
+        }
+        self.as_mut().set_audio_test_state("monitor", "starting");
+        let qt = self.qt_thread();
+        // Opening the devices takes a moment: off the UI thread.
+        std::thread::spawn(move || {
+            let ready = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let running = audio_test::monitor(ready);
+            let ok = running.is_some();
+            {
+                let mut t = audio_test().lock().unwrap_or_else(|e| e.into_inner());
+                // Stopped (or restarted) meanwhile: this one closes again.
+                if t.monitor_generation != generation {
+                    return;
+                }
+                t.monitor = running;
+            }
+            let _ = qt.queue(move |this| {
+                this.set_audio_test_state("monitor", if ok { "ready" } else { "error" })
+            });
+        });
     }
 
     pub fn request_profile(self: Pin<&mut Self>, mri: &QString) {
