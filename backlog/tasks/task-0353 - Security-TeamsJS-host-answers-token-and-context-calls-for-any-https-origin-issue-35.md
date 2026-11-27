@@ -5,9 +5,9 @@ title: >-
   (issue #35)
 status: In Progress
 assignee:
-  - '@t353b'
+  - '@t353c'
 created_date: '2026-11-27T15:36:00Z'
-updated_date: '2026-11-27T22:19:00Z'
+updated_date: '2026-11-27T23:29:00Z'
 labels:
   - security
   - bug
@@ -25,8 +25,9 @@ GitHub issue #35 (Serph91P): desktop/src/app_host.js answers getContext, authent
 <!-- AC:BEGIN -->
 - [x] #1 The TeamsJS host only answers messages whose origin is the app's first origin or one of its validDomains (nestedAppAuth keeps its broker check), as Teams' isValidOriginForApp does
 - [x] #2 Native sso and ssrToken receive the caller's origin and refuse to mint a token for an origin outside the app's domains; full-trust resources are limited to an allowlist
-- [ ] #3 Tests cover the origin checks; existing apps (Planner, OneNote, SharePoint tabs, Copilot, Loop) still work live; issue #35 is answered and closed after the fix is merged
-- [x] #4 The app frame navigates as in Teams desktop (measured: it may go to another site in the frame); a page outside the app's valid domains gets no TeamsJS answers, events or tokens, and navigateCrossDomain only loads valid-domain addresses
+- [x] #3 The app frame navigates as in Teams desktop (measured: it may go to another site in the frame); a page outside the app's valid domains gets no TeamsJS answers, events or tokens, and navigateCrossDomain only loads valid-domain addresses
+- [x] #4 Tests cover the origin checks; existing apps (Planner, OneNote, SharePoint tabs, Copilot, Loop) still work live
+- [ ] #5 Issue #35 is answered and closed after the fix is merged
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -65,10 +66,19 @@ GitHub issue #35 (Serph91P): desktop/src/app_host.js answers getContext, authent
 - PR #59 (branch task-0353-teamsjs-origin-2). AC #3: tests and live app checks done; its last part (issue #35 answered and closed) is the coordinator's after merge, so it stays open; the PR says Refs #35, not Fixes.
 
 - PR #59: CI (build+test, both clippy runs, format, audit, release-harness check, CodeQL) all pass; Codex code and security review completed with no findings. testpc2's C: was full for a while during this work (WSL failed to start; later 125 GB free, fixed by someone else); this task's ~/b/task-0353b build folder there was removed afterwards.
+
+- t353c (2026-11-27): JS test for app_host.js's origin checks: desktop/tests/app_host.test.mjs (Node's built-in runner, no packages; CI job "JavaScript tests"). The repo had no JS unit tests, and its harness flags need a signed-in session and are not run in CI. The file runs the real app_host.js in a vm sandbox (fake ost web channel, app iframe, message listener). It has 10 tests: first origin answered; foreign page gets nothing and no sso/naa; events to the current origin only; a valid domain becomes current; look-alike/http/null refused; getAuthToken carries the asking origin; nested frames NAA only, with their own origin; deepNaa off; navigateCrossDomain valid domains only. A red check in the suite runs the host with appOrigin bypassed and shows a foreign page is then answered and minted for. Hand red drills on mutated app_host.js copies (gate removed, any https current, events to *, nested any func, navigateCrossDomain unchecked, naa/sso origin replaced) each fail at least one test.
+- Live (t353c, testpc2 WSLg, OST Test 3, main at 183e8732 + this branch, which changes no app code): no channel had a SharePoint tab, so one was added to OST layout test (SharePoint app, site page "Home", --add-tab-save --add-tab-nopost, nothing posted). A fresh run then opened it as an existing tab (--app-host-test=Home): framed, initialize, success; the site page draws (Activity cards). From scnetsolutions.sharepoint.com: getContext (49 keys, frameContext content) and getAuthToken for the site gave a token; navigateCrossDomain https://example.com gave [false, "Url is invalid"]. With the frame sent to example.com, getContext, getAuthToken and navigateCrossDomain got no answer (log: ignored … from a page outside the app's domains). The tab was removed afterwards (ok, tabs back to Conversation/Shared/Notes).
+- Loop: General › Page (--loop-test=page --loop-tab=Page) is ready: framed, code, icon, rendered, title, connected; "Loop paragraph" page text and insert row drawn.
+- wslbuild.sh fix (coordinator's script, not in the repo): touch ~/b/<name> created a file where the build folder goes, so every first build on a box failed (exit 74); now touch -c.
+
+- AC #3 split (t353c): its tests and live app part is now AC #4 (checked); the issue #35 part is AC #5, left for the coordinator after merge.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 The TeamsJS host now answers only the app's own pages, as Teams' iframe bridge does: the frame's current origin is the framed one or a valid-domain origin, other pages get no answers or events, and Teams' events go to that origin only. The native sso, naa and ssrToken calls carry the asking origin, and Rust mints tokens only for the app's domains. getAuthToken resources follow Teams' rules: the manifest resource must match the origin, and full-trust apps are limited to the ECS restrictedFullTrustOverrides list or FULL_TRUST_RESOURCES (Calendar to its list). navigateCrossDomain is limited to valid domains. Live checks on testpc2 (OST Test 3): Planner, OneNote, Copilot (SSR), Calendar's event form (token for Outlook, Graph refused) and SharePoint's tab configuration all work. A page the frame was sent to (example.com) got nothing. PR #59 (Refs #35). Left for the coordinator after merge: answer and close issue #35 (AC #3), then set the task to Done.
+
+Follow-up (PR #65): desktop/tests/app_host.test.mjs tests the JS origin checks under Node (CI job "JavaScript tests"), including a red check with the check taken out. Live on testpc2 (OST Test 3): an existing SharePoint channel tab (site page, added for the check and removed after) loads and is answered from its own origin, but not after the frame is sent to example.com. The General channel's Loop page tab loads. Left for the coordinator: AC #5 (answer and close issue #35), then Done.
 <!-- SECTION:FINAL_SUMMARY:END -->
