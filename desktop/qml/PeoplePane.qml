@@ -395,6 +395,7 @@ Rectangle {
     function typeForTest(t) { picker.forTest = true; field.forceActiveFocus(); field.text = t }
     function inviteOptionsForTest() { return picker.options.map(o => o.name) }
     function pickForTest(i) { picker.choose(picker.options[i]) }
+    function pickAllForTest() { const all = picker.options.slice(); all.forEach(o => root.invite(o.mri, o.name || "")); field.text = "" }
     /// The typed text in bold where the line starts with all of it (Teams:
     /// "OST Test 2" marks "OST Test 2", not "OST Test Room").
     function boldedPrefix(t, q) {
