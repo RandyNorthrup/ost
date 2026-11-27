@@ -2,23 +2,35 @@ import QtQuick
 import QtQuick.Controls
 
 // Teams' "Invite people to join you" (share-meeting-invite-dialog, measured
-// on winpc): 400 wide, padding 24, radius 8, no backdrop (a click outside
-// closes it). "Copy meeting link" copies the meeting's link and shows
-// "Copied to clipboard" for 2 s; "Share via default email" opens a mail with
-// Teams' subject and text.
+// on winpc): 400 wide, padding 24, radius 8; a click outside closes it.
+// "Copy meeting link" copies the meeting's link and shows "Copied to
+// clipboard" for 2 s; "Add participants" (only while People is closed:
+// Teams' useShareResources drops it when the roster is open) opens People;
+// "Share via default email" opens a mail with Teams' subject and text.
+// Opened on landing in your Meet now (Teams' ShareMeetingInviteDialog with
+// isOpeningOnLanding, measured on winpc 2026-11-27: 400 x 274 over the
+// v0 dialog backdrop, rgba(37, 36, 35, 0.75), the window dimmed).
 Popup {
     id: root
     property string link: ""
+    /// People is open (Teams' isRosterOpen).
+    property bool rosterOpen: false
+    signal addParticipants()
+    readonly property bool showAdd: !rosterOpen
     parent: Overlay.overlay
     anchors.centerIn: Overlay.overlay
-    width: 400; height: 218
+    width: 400; height: showAdd ? 274 : 218
     padding: 0
-    modal: false; focus: true
+    property bool dimmed: false
+    modal: dimmed; focus: true
+    Overlay.modal: Rectangle { color: Qt.rgba(37 / 255, 36 / 255, 35 / 255, 0.75) }
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     background: FluentSurface { depth: 4; radius: 8; color: theme.surface }
     property bool copied: false
     Timer { id: copiedTimer; interval: 2000; onTriggered: root.copied = false }
-    onClosed: copied = false
+    onClosed: { copied = false; dimmed = false }
+    /// Open as Teams does when you land in your Meet now alone.
+    function openOnLanding() { dimmed = true; open() }
 
     Text {
         x: 24; y: 24; height: 22; verticalAlignment: Text.AlignVCenter
@@ -55,6 +67,13 @@ Popup {
     }
     InviteButton {
         y: 146
+        visible: root.showAdd
+        icon: "person-add-16"
+        label: qsTr("Add participants")
+        onClicked: { root.close(); root.addParticipants() }
+    }
+    InviteButton {
+        y: root.showAdd ? 202 : 146
         icon: "invite-mail-16"
         label: qsTr("Share via default email")
         onClicked: backend.openExternal("mailto:?subject=" + encodeURIComponent(qsTr("Join Teams meeting in progress"))

@@ -893,6 +893,11 @@ impl Facts {
             // More ▸ Call me (the old controls' flat callingOverflow;
             // Join info ▸ Call me with the new ones).
             "PstnButton" => self.call_me && !self.p2p,
+            // Interpreter (Teams' AiInterpretationButtonForAll: on with
+            // enableAiInterpretation, off on a Teams Rooms appliance): More's
+            // grid with the new controls, Language and speech ▸ with the old
+            // ones. The call window shows it once the meeting offers it.
+            "AiInterpretationButtonForAll" => self.is_meeting() || self.group_call(),
             // More ▸ Facilitator ▸ Turn on / off Facilitator, Enable voice.
             "FacilitatorButton" => {
                 self.facilitator
@@ -1612,6 +1617,7 @@ mod tests {
             [
                 "RecordingButton",
                 "TranscriptButton",
+                "AiInterpretationButtonForAll",
                 "MeetingFacilitatorTimerButton",
                 "MeetingDetailsButton",
                 "ClosedCaptionsButton",
@@ -1964,5 +1970,44 @@ mod tests {
             .flat_map(|s| s.items.iter().map(|i| i.name.as_str()))
             .collect();
         assert_eq!(items, ["MeetingInfoButton", "PstnButton", "CallHealth"]);
+    }
+    #[test]
+    fn more_grid_has_facilitator_and_interpreter_as_teams() {
+        // Teams desktop's More grid in ost-test1's Meet now with the new
+        // controls (parity audit B-21, 2026-11-27): Record, Transcribe,
+        // Facilitator, Interpreter, Timer, Notes, Captions, Rooms, RTT, then
+        // Get more apps and agents.
+        let facts = Facts {
+            facilitator: true,
+            ..new_controls_meeting()
+        };
+        let a = arrange(&facts, &|_| 56.0, 17.0, 5000.0);
+        assert_eq!(
+            more_names(&a)[0],
+            [
+                "RecordingButton",
+                "TranscriptButton",
+                "FacilitatorButton",
+                "AiInterpretationButtonForAll",
+                "MeetingFacilitatorTimerButton",
+                "MeetingDetailsButton",
+                "ClosedCaptionsButton",
+                "StartBreakoutRoomButton",
+                "RealTimeTextButton",
+                "MeetingAppsAddButton"
+            ]
+        );
+        // Not in a 1:1 call; hidden when end-to-end encrypted.
+        let p2p = Facts {
+            p2p: true,
+            ..Default::default()
+        };
+        assert!(!p2p.shows("AiInterpretationButtonForAll"));
+        let e2ee = Facts {
+            e2ee: true,
+            ..facts
+        };
+        let flat: Vec<String> = more_names(&arrange(&e2ee, &|_| 56.0, 17.0, 5000.0)).concat();
+        assert!(!flat.contains(&"AiInterpretationButtonForAll".to_string()));
     }
 }

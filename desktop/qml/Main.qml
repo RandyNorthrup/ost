@@ -2185,9 +2185,13 @@ Window {
             // A tenant room (Teams' roomParticipantToAdd): added once in.
             window.tenantRoomOnJoin = audio === "room" && !!room && !!room.mri ? room : null
             window.phoneOnJoin = audio === "phone"
-            if (meetNow) backend.channelMeetNow(meetChannel, subject.trim() || "Meeting")
+            if (meetNow && !joinUrl) backend.channelMeetNow(meetChannel, subject.trim() || "Meeting")
             // Teams' Join now on the call its pre-join preheated.
-            else backend.joinMeetingFromPrejoin(joinUrl, subject, micOn, withAudio)
+            else {
+                // A Meet now renamed in its pre-join: named once joined.
+                window.meetNowTopic = meetNow && subject.trim() && subject.trim() !== createdSubject ? subject.trim() : ""
+                backend.joinMeetingFromPrejoin(joinUrl, subject, micOn, withAudio)
+            }
         }
         // Preview as Attendee: the town hall as its attendees see it.
         onJoinAsAttendee: { window.muteOnJoin = true; window.noAudioOnJoin = false; window.cameraOnJoin = false; backend.joinPrejoinAsAttendee(joinUrl, subject) }
@@ -2211,6 +2215,17 @@ Window {
     property var tenantRoomOnJoin: null
     // Joining with the mic off (pre-join switch): mute once connected.
     property bool muteOnJoin: false
+    // A Meet now's title edited in its pre-join: the meeting's chat is
+    // named with it once we're in (Teams: "<you> named the meeting …").
+    property string meetNowTopic: ""
+    Connections {
+        target: backend
+        enabled: window.meetNowTopic !== ""
+        function onCallStateChanged() {
+            if (backend.callState === "connected" && backend.callThreadId) { backend.setMeetingTopic(backend.callThreadId, window.meetNowTopic); window.meetNowTopic = "" }
+            else if (backend.callState === "" || backend.callState === "ended") window.meetNowTopic = ""
+        }
+    }
     // "Don't use audio": no sound either way once connected.
     property bool noAudioOnJoin: false
     // "Phone audio": once connected Teams offers Call me or the dial-in
@@ -2414,6 +2429,11 @@ Window {
         networkStrength: backend.callNetworkStrength || "Good"
         scheduled: backend.callScheduled
         adhocMeeting: backend.callAdhocMeeting
+        meetNow: backend.callMeetNow
+        threadId: backend.callThreadId
+        // The meeting chat pane's Open in new window (Teams' popoutContent
+        // for chats from the calling window).
+        onPopoutChat: (id, name) => window.openChatWindow(id, name, "", "")
         groupCall: backend.callGroup
         invites: backend.callInvitesJson ? JSON.parse(backend.callInvitesJson) : []
         onInvitePerson: (mri, name) => backend.inviteToCall(mri, name)
@@ -11829,6 +11849,88 @@ Window {
         }
     }
 
+    // --meetnow-parity-test (TASK-0356): Calendar's Meet now twice, alone,
+    // with the new meeting controls. Each round: the Meet now pre-join
+    // (Phone audio offered from the meeting's dial-in), joined with the mic
+    // and camera off; the stage text and the landing invite dialog; Chat
+    // opened (round 1) to show that round 2 opens without it and shows its
+    // own chat; More's grid. Captures meetnow-<round>-<tag>.png; lines
+    // MEETNOWPARITY. The setting is restored at the end.
+    Timer {
+        running: Qt.application.arguments.indexOf("--meetnow-parity-test") >= 0 && backend.signedIn
+        interval: 4000; repeat: true
+        property int step: 0
+        property int round: 1
+        property string controlsBefore: ""
+        // --meetnow-tab-wait: in round 1, wait for someone to join (up to
+        // 10 min), then open a private chat tab with them, send a test
+        // line there and capture the tab and its options.
+        readonly property bool tabWait: Qt.application.arguments.indexOf("--meetnow-tab-wait") >= 0
+        property int waited: 0
+        onTriggered: {
+            const log = (...a) => console.warn("MEETNOWPARITY", round, ...a)
+            const shot = (w, tag) => w.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-meetnow-" + round + "-" + tag + ".png")))
+            if (tabWait && round === 1 && step === 16 && waited >= 0) {
+                if (waited === 0) log("invite url", backend.callInviteUrl)
+                if (callWindow.others.length === 0 && waited < 150) { waited++; return }
+                const p = callWindow.others[0]
+                log("someone joined", p ? p.name : "nobody")
+                waited = -1
+                if (p) callWindow.startPrivateChat([{ id: p.id, name: p.name }])
+                step = 100
+                return
+            }
+            if (step === 103) { log("private tabs", JSON.stringify(callWindow.privateTabs.map(t => t.title)), "tab", callWindow.chatTab, "messages", callWindow.privatePaneForTest.messages.length, "tabsAllowed", callWindow.chatTabsAllowed); shot(callWindow, "private-tab") }
+            else if (step === 104 && callWindow.privateTab) backend.sendChatWindowMessage(callWindow.privateTab.threadId, "OST TEST 356 private tab", "[]", "")
+            else if (step === 107) { log("after send", callWindow.privatePaneForTest.messages.length); shot(callWindow, "private-sent"); callWindow.privatePaneForTest.paneActionForTest("options") }
+            else if (step === 108) shot(callWindow, "private-options")
+            else if (step === 109) { callWindow.privatePaneForTest.paneActionForTest("options"); callWindow.chatTab = "everyone"; step = 16; return }
+            if (step >= 100) { step++; return }
+            if (step === 0) {
+                controlsBefore = backend.setting("newMeetingControls")
+                backend.setSetting("newMeetingControls", "true"); callWindow.newControls = true
+                backend.calendarAction("meetNow", JSON.stringify({ subject: "OST TEST 356 meet now " + round, start: true }))
+            }
+            else if (step === 3) log("prejoin", preJoin.visible, "meetNow", preJoin.meetNow, "url", preJoin.joinUrl !== "", "phone", JSON.stringify(preJoin.phoneState))
+            else if (step === 4) { shot(preJoin, "prejoin"); preJoin.audio = "phone"; }
+            else if (step === 5) { shot(preJoin, "prejoin-phone"); preJoin.audio = "computer"; preJoin.micOn = false; preJoin.cameraOn = false }
+            else if (step === 6) preJoin.joinNow()
+            else if (step === 10) log("joined", backend.callState, "adhoc", callWindow.adhoc, "meetNow", callWindow.meetNow, "organizer", callWindow.organizer, "side", JSON.stringify(callWindow.side), "invite", callWindow.inviteDialogForTest().visible, "thread", backend.callThreadId.slice(0, 30))
+            else if (step === 11) shot(callWindow, "landing")
+            else if (step === 12) { callWindow.inviteDialogForTest().close(); callWindow.runControl("ChatButton") }
+            else if (step === 15) { log("chat", callWindow.side, "shows meeting chat", backend.currentChatId === backend.callThreadId, "title", callWindow.chatPane.paneTitle, "actions", JSON.stringify(callWindow.chatPane.paneActions.map(a => a.key)), "tabsAllowed", callWindow.chatTabsAllowed); shot(callWindow, "chat") }
+            else if (step === 16) { callWindow.chatPane.paneActionForTest("options"); Qt.callLater(() => shot(callWindow, "chat-options")) }
+            else if (step === 17) { const o = callWindow.chatOptionsForTest(); log("options", o.visible, o.opened, o.width, o.height, o.x, o.y, o.parent); shot(callWindow, "chat-options2"); callWindow.chatPane.paneActionForTest("options"); callWindow.chatPane.paneActionForTest("tab"); Qt.callLater(() => shot(callWindow, "chat-picker")) }
+            else if (step === 18) { callWindow.chatPane.paneActionForTest("tab"); callWindow.newMoreForTest() }
+            else if (step === 19) { log("grid", JSON.stringify(callWindow.newGridItems.map(e => e.label))); shot(callWindow, "more") }
+            // Pin Facilitator and Interpreter to the bar, then reset.
+            else if (step === 20) { callWindow.newMoreForTest().close(); callWindow.arrange("pin", "FacilitatorButton"); callWindow.arrange("pin", "AiInterpretationButtonForAll") }
+            else if (step === 21) { log("pinned bar", JSON.stringify(callWindow.ubar.bar), "rendered", !!callWindow.barItem("FacilitatorButton") && callWindow.barItem("FacilitatorButton") !== callWindow.barItem("MoreButton"), !!callWindow.barItem("AiInterpretationButtonForAll") && callWindow.barItem("AiInterpretationButtonForAll") !== callWindow.barItem("MoreButton")); shot(callWindow, "pinned"); callWindow.runControl("FacilitatorButton") }
+            else if (step === 22) { shot(callWindow, "pinned-menu") }
+            else if (step === 23) { callWindow.runControl("FacilitatorButton"); callWindow.arrange("reset", ""); backend.hangUp() }
+            else if (step === 27) {
+                log("left", backend.callState, "side", JSON.stringify(callWindow.side))
+                if (round === 1) { round = 2; step = -1 }
+            }
+            else if (step === 28) {
+                backend.setSetting("newMeetingControls", controlsBefore || "false")
+                Qt.quit()
+            }
+            step++
+        }
+    }
+    Connections {
+        target: backend
+        enabled: Qt.application.arguments.indexOf("--meetnow-parity-test") >= 0
+        function onCalendarActionDone(op, result, error) {
+            if (op !== "meetNow") return
+            let r = {}
+            try { r = JSON.parse(result) } catch (e) {}
+            console.warn("MEETNOWPARITY made", !!r.joinUrl, error)
+            if (r.joinUrl && !preJoin.visible) preJoin.openMeetNowLink(r.joinUrl, r.subject || "Meeting")
+        }
+    }
+
     // --call-notes-test: a solo Teams meeting of your own (a calendar
     // event "OST TEST 212 notes OST" with nobody invited, made now for 30
     // minutes; OST has no calendar Meet now), joined with camera, mic and
@@ -15783,6 +15885,7 @@ Window {
     property var castPending: null
     function startCast(spec) {
         castPending = spec
+        callWindow.castJoin = true
         window.muteOnJoin = true; window.noAudioOnJoin = true; window.cameraOnJoin = false
         if (spec.meeting && spec.meeting.joinUrl) backend.joinMeeting(spec.meeting.joinUrl, spec.room.name)
         else backend.calendarAction("castMeetNow", JSON.stringify({ subject: spec.room.name }))
@@ -16646,6 +16749,7 @@ Window {
             const ev = (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).find(e => e.join_url === url)
             preJoin.openFor(url, subject, ev ? ev.start_utc : "", ev ? ev.end_utc : "")
         }
+        onStartMeetNow: (url, subject) => preJoin.openMeetNowLink(url, subject)
     }
 
     // Apps not built yet: an honest placeholder instead of the chat.
