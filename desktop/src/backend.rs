@@ -29853,7 +29853,7 @@ impl qobject::Backend {
                     let cleared = message.trim().is_empty();
                     let note = json!({
                         "text": if cleared { String::new() } else { teams_cli::api::presence::note_plain(&message) },
-                        "html": if cleared { String::new() } else { teams_cli::api::messages::sanitize_html_marking(&teams_cli::api::presence::note_html_any(&message), &[]) },
+                        "html": if cleared { String::new() } else { teams_cli::api::messages::sanitize_note_html(&teams_cli::api::presence::note_html_any(&message)) },
                         "pinned": pinned && !cleared,
                         "expiry": if cleared { String::new() } else { until.map(|t| teams_cli::clock::iso_ms(t.timestamp())).unwrap_or_else(|| "9999-12-31T23:59:59.999Z".into()) },
                     })
@@ -29864,7 +29864,7 @@ impl qobject::Backend {
                     Ok(()) => json!({
                         "ok": true,
                         "message": teams_cli::api::presence::note_plain(&message),
-                        "html": if message.trim().is_empty() { String::new() } else { teams_cli::api::messages::sanitize_html_marking(&teams_cli::api::presence::note_html_any(&message), &[]) },
+                        "html": if message.trim().is_empty() { String::new() } else { teams_cli::api::messages::sanitize_note_html(&teams_cli::api::presence::note_html_any(&message)) },
                         "pinned": pinned,
                     }),
                     Err(e) => json!({ "ok": false, "error": short_error(e) }),

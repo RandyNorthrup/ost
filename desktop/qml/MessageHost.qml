@@ -440,6 +440,23 @@ Item {
         if (m.mine) return { color: theme.brand, icon: "", tip: "" }
         return null
     }
+    // Teams' grouping of a channel thread's replies (its worker's 92502
+    // `d`): a reply joins the one before it ("bottom" attached: no avatar,
+    // name or time) when the same person (and app) sent both under 5
+    // minutes apart, the one before isn't deleted, and both are ordinary
+    // messages. The first reply after the post never joins it. `list` is
+    // the thread's replies in order, `i` the reply's place in it.
+    function replyAttached(list, i) {
+        if (!list || i <= 0 || i >= list.length) return false
+        const a = list[i], e = list[i - 1]
+        if (!a || !e || e.deleted) return false
+        if ((a.sender_mri || a.sender || "") !== (e.sender_mri || e.sender || "")) return false
+        if ((a.sender_app || "") !== (e.sender_app || "")) return false
+        if ((a.kind || "message") !== "message" || (e.kind || "message") !== "message") return false
+        const ta = new Date(a.time).getTime(), te = new Date(e.time).getTime()
+        if (!ta || !te) return false
+        return ta - te <= 5 * 60 * 1000
+    }
     // Teams' relative dates, as in chats.
     function conversationStamp(t) {
         const d = new Date(t), now = new Date()

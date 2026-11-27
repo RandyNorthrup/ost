@@ -560,13 +560,19 @@ Item {
                         id: rep
                         readonly property var modelData: repSlot.modelData
                         readonly property bool editing: thost.editingId === modelData.id
-                        readonly property var mark: editing ? null : thost.highlight(modelData)
+                        // Teams groups a person's replies sent minutes apart
+                        // (MessageHost.replyAttached): the later ones drop
+                        // the avatar, the indicator bar and the name and
+                        // time lines; the text sits at the reply's top
+                        // padding. A day divider starts a new group.
+                        readonly property bool grouped: repSlot.divider === "" && thost.replyAttached(win.replies, repSlot.index)
+                        readonly property var mark: editing || grouped ? null : thost.highlight(modelData)
                         width: card.width
                         readonly property bool callRow: modelData.kind === "call"
                         // Teams' Attendance card under the end, at the text (54), 32 down.
                         readonly property bool attendanceCard: callRow && win.canSeeAttendance && modelData.call_state !== "missed" && modelData.call_state !== "started" && !!modelData.call_id
                         height: callRow ? (attendanceCard ? 32 + 49.3 + 12 : 52) : editing ? (repEdit.item ? repEdit.item.height : 0) + 8
-                            : 42.2 + repBody.height + ((modelData.reactions || []).length > 0 ? 8 + 26 : 0) + 8.1
+                            : (grouped ? 8 : 42.2) + repBody.height + ((modelData.reactions || []).length > 0 ? 8 + 26 : 0) + 8.1
                         // A call's end (Teams' call row).
                         FluentIcon {
                             visible: rep.callRow
@@ -598,12 +604,12 @@ Item {
                             color: rep.mark ? rep.mark.color : "transparent"
                         }
                         Avatar {
-                            visible: !rep.editing && !rep.callRow
+                            visible: !rep.editing && !rep.callRow && !rep.grouped
                             x: 18; y: 8; size: 20
                             name: rep.modelData.sender; photoId: rep.modelData.sender_mri
                         }
                         Text {
-                            visible: !rep.editing && !rep.callRow
+                            visible: !rep.editing && !rep.callRow && !rep.grouped
                             x: 50; y: 8
                             text: rep.modelData.sender
                             font.family: theme.font; font.pixelSize: 12
@@ -611,7 +617,7 @@ Item {
                             color: theme.text
                         }
                         Row {
-                            visible: !rep.editing && !rep.callRow
+                            visible: !rep.editing && !rep.callRow && !rep.grouped
                             x: 50; y: 25.1
                             spacing: 8
                             Text {
@@ -632,7 +638,7 @@ Item {
                         PostBody {
                             id: repBody
                             visible: !rep.editing && !rep.callRow
-                            x: 50; y: 42.2; width: card.width - 70
+                            x: 50; y: rep.grouped ? 8 : 42.2; width: card.width - 70
                             message: rep.modelData
                             mark: win.markFor(rep.modelData ? rep.modelData.id : "")
                         }

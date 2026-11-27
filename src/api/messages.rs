@@ -3106,7 +3106,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     let (marked, pic_tags) = if deleted {
         (String::new(), Vec::new())
     } else {
-        let (m, p) = sanitize_core(&content, &my_mentions, true);
+        let (m, p) = sanitize_core(&content, &my_mentions, true, false);
         (sized_lines(&m), p)
     };
     // Pictures stay where they were written (Teams keeps the order).
@@ -3356,7 +3356,10 @@ fn reactions_of(e: &serde_json::Value, me: &str) -> Vec<Reaction> {
 /// Reduce Teams message HTML to the subset Qt's rich text renders safely:
 /// paragraphs, line breaks, emphasis, lists, code, quotes and links. Emoji
 /// images become their alt text, other tags and all attributes except a
-/// link's href are dropped, and bare URLs become links.
+/// link's href are dropped. A web address that isn't in a link stays text,
+/// as Teams draws it: its message renderer only links `<a>` elements (its
+/// TextDeserializer, 721466, passes text through), and links come from the
+/// compose box's AutoLink when the message is written.
 pub fn sanitize_html(html: &str) -> String {
     sanitize_html_marking(html, &[])
 }
@@ -3436,7 +3439,13 @@ fn mention_kind(me_mentioned: bool, types: &[String], mine: bool) -> &'static st
 /// `<span class="mention">`, or `class="mention-me"` for the `itemid`s in
 /// `mine`, so the client can colour them as Teams does.
 pub fn sanitize_html_marking(html: &str, mine: &[String]) -> String {
-    sanitize_core(html, mine, false).0
+    sanitize_core(html, mine, false, false).0
+}
+
+/// A status note's HTML (the profile card and flyout), sanitised as a
+/// message is, with bare http(s) addresses made links.
+pub fn sanitize_note_html(html: &str) -> String {
+    sanitize_core(html, &[], false, true).0
 }
 
 /// Where the sanitised HTML had a picture (an AMS image, GIF or sticker):
@@ -3448,8 +3457,14 @@ fn pic_marker(n: usize) -> String {
 }
 
 /// The sanitiser; with `mark_pics`, pictures leave a marker (`PIC_SRC`)
-/// and their tags are returned in order.
-fn sanitize_core(html: &str, mine: &[String], mark_pics: bool) -> (String, Vec<String>) {
+/// and their tags are returned in order; with `link_bare`, bare http(s)
+/// addresses outside links become links (status notes only).
+fn sanitize_core(
+    html: &str,
+    mine: &[String],
+    mark_pics: bool,
+    link_bare: bool,
+) -> (String, Vec<String>) {
     let mut pics: Vec<String> = Vec::new();
     const KEEP: [&str; 24] = [
         "h1",
@@ -3483,7 +3498,7 @@ fn sanitize_core(html: &str, mine: &[String], mark_pics: bool) -> (String, Vec<S
     // Open spans, and whether each is a mention (others are dropped).
     let mut spans: Vec<bool> = Vec::new();
     while let Some(start) = rest.find('<') {
-        out.push_str(&linkify(&rest[..start], in_link > 0));
+        out.push_str(&linkify(&rest[..start], !link_bare || in_link > 0));
         let Some(end) = rest[start..].find('>') else {
             out.push_str(&escape(&rest[start..]));
             return (out, pics);
@@ -3717,7 +3732,7 @@ fn sanitize_core(html: &str, mine: &[String], mark_pics: bool) -> (String, Vec<S
         }
         out.push('>');
     }
-    out.push_str(&linkify(rest, in_link > 0));
+    out.push_str(&linkify(rest, !link_bare || in_link > 0));
     for open in spans {
         if open {
             out.push_str("</span>");
@@ -4593,9 +4608,10 @@ pub(crate) fn escape(t: &str) -> String {
         .replace('"', "&quot;")
 }
 
-/// Turn bare http(s) URLs in a text run into links.
-fn linkify(text: &str, inside_link: bool) -> String {
-    if inside_link {
+/// Turn bare http(s) URLs in a text run into links (`keep`: leave the
+/// run as it is).
+fn linkify(text: &str, keep: bool) -> String {
+    if keep {
         return text.to_string();
     }
     let mut out = String::new();
@@ -7643,14 +7659,25 @@ mod tests {
     }
 
     #[test]
-    fn bare_urls_become_links() {
+    fn bare_urls_stay_text_in_messages_as_teams_draws_them() {
+        // Teams' message renderer links only <a> elements (audit A-04: a
+        // message whose HTML has no anchor shows its URL as plain text).
         assert_eq!(
-            sanitize_html("<p>see https://example.com.</p>"),
+            sanitize_html("<p>Here's the guide: https://example.com/docs/install/fedora-45</p>"),
+            "<p>Here's the guide: https://example.com/docs/install/fedora-45</p>"
+        );
+        // A link the compose box made stays a link.
+        assert_eq!(
+            sanitize_html(r#"<p><a href="https://a.example">https://a.example</a></p>"#),
+            r#"<p><a href="https://a.example">https://a.example</a></p>"#
+        );
+        // Status notes still link bare addresses, outside existing links.
+        assert_eq!(
+            sanitize_note_html("<p>see https://example.com.</p>"),
             r#"<p>see <a href="https://example.com">https://example.com</a>.</p>"#
         );
-        // Not inside an existing link.
         assert_eq!(
-            sanitize_html(r#"<a href="https://a.example">https://a.example</a>"#),
+            sanitize_note_html(r#"<a href="https://a.example">https://a.example</a>"#),
             r#"<a href="https://a.example">https://a.example</a>"#
         );
     }
