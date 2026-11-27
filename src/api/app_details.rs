@@ -158,6 +158,9 @@ pub struct AppDetails {
     pub share_link: String,
     /// The manifest's accentColor (the quick-start dialog's gradient).
     pub accent_color: String,
+    /// Its configurable tab's configuration page (placeholders as
+    /// written), for Go in the quick-start dialog; empty without one.
+    pub config_url: String,
     /// Where it can be used, for the Store's quick-start dialog ("Let's
     /// go").
     pub places: Places,
@@ -1266,6 +1269,16 @@ pub fn details_from(
         reviews_count_text: compact(reviews_count),
         share_link: share_link(&id),
         accent_color: str_at(def, "accentColor").into(),
+        config_url: ["configurableTabs", "galleryTabs"]
+            .iter()
+            .find_map(|k| {
+                def.get(*k)?
+                    .as_array()?
+                    .iter()
+                    .find_map(|t| t.get("configurationUrl")?.as_str())
+                    .map(str::to_string)
+            })
+            .unwrap_or_default(),
         places: places(def),
         id,
     }
@@ -1769,6 +1782,17 @@ mod tests {
         let p = places(&pbi);
         assert!(p.personal && p.team && p.chat && p.meeting && p.team_tab && p.chat_tab);
         assert!(p.private_channels && !p.shared_channels);
+        let mut def = pbi.clone();
+        def["configurableTabs"][0]["configurationUrl"] =
+            "https://app.powerbi.com/groups/me/teams?ctx={teamId}".into();
+        let d = details_from(&def, &serde_json::Value::Null, 0, 0, "en-us", None);
+        assert_eq!(
+            (d.accent_color.as_str(), d.config_url.as_str()),
+            (
+                "#FFC312",
+                "https://app.powerbi.com/groups/me/teams?ctx={teamId}"
+            )
+        );
         // A personal-only bot: just Open (Teams' short dialog).
         let bot = serde_json::json!({ "bots": [{ "scopes": ["personal"] }] });
         let p = places(&bot);
