@@ -1,11 +1,11 @@
 ---
 id: TASK-0348
 title: Invite someone who isn't in a group chat into its call
-status: In Progress
+status: Done
 assignee:
   - '@calls3'
 created_date: '2026-11-27T07:35:00Z'
-updated_date: '2026-11-27T12:51:00Z'
+updated_date: '2026-11-27T13:10:00Z'
 labels:
   - calls
 dependencies: []
