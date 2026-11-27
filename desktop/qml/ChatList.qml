@@ -60,6 +60,7 @@ Rectangle {
     property bool quickCountsTeams: false
     onTeamsChanged: if (!quickCountsTeams && teams.length > 0) { quickCountsTeams = true; loadQuickCounts() }
     Timer { id: quickRetry; interval: 15000; onTriggered: root.loadQuickCounts() }
+    property int quickRetries: 0
     signal openQuick(string kind)
     signal openMentions()
     signal chatSelected(string id, string name)
@@ -309,7 +310,7 @@ Rectangle {
                 root.followedCount = items.length
                 root.followedUnread = items.filter(i => i.unread).length
             } else if ((r.op === "quick-followed" || r.op === "quick-saved") && !r.ok) {
-                quickRetry.restart()
+                if (root.quickRetries++ < 3) quickRetry.restart()
             } else if (r.op === "quick-saved" && r.ok) {
                 root.savedCount = (r.data || []).length
             } else if (r.op === "quick-unsave" || r.op === "quick-unfollow") {
