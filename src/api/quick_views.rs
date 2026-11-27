@@ -264,9 +264,12 @@ pub fn reminders_from(v: &serde_json::Value, now_ms: i64) -> Vec<ReminderItem> {
     out
 }
 
-/// Your reminders (Chat ▸ Reminders).
-pub async fn reminders(client: &TeamsClient, now_ms: i64) -> Result<Vec<ReminderItem>> {
-    Ok(reminders_from(&read(client, "48:reminders").await?, now_ms))
+/// Your reminders (Chat ▸ Reminders), and whether that was the whole
+/// stream (fewer records than a page).
+pub async fn reminders(client: &TeamsClient, now_ms: i64) -> Result<(Vec<ReminderItem>, bool)> {
+    let v = read(client, "48:reminders").await?;
+    let whole = v["messages"].as_array().map_or(0, |m| m.len()) < 100;
+    Ok((reminders_from(&v, now_ms), whole))
 }
 
 async fn read(client: &TeamsClient, conv: &str) -> Result<serde_json::Value> {

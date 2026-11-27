@@ -1049,6 +1049,7 @@ Rectangle {
         // (Teams closes a chat's Copilot when another chat opens.)
         copilotOpen = false; copilotHistoryOpen = false; copilotUnread = 0
         selecting = false; selectedIds = []
+        copilotAsk = null
         editingId = ""
         // A thread view keeps its reply's draft as Teams does (its post's
         // reply chain, "{channel};messageid={post}"), roamed with it.

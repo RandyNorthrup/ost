@@ -32,10 +32,10 @@ Popup {
     readonly property int maxMonths: 24
     property date day: new Date()
     property int slot: 0
+    // The next half hour strictly after now (at 10:00:20, 10:30).
     function nextHalfHour() {
         const d = new Date()
         d.setSeconds(0, 0)
-        if (d.getMinutes() === 0 || d.getMinutes() === 30) return d
         if (d.getMinutes() < 30) d.setMinutes(30)
         else d.setHours(d.getHours() + 1, 0)
         return d
@@ -63,7 +63,7 @@ Popup {
     function addForTest() { add() }
     function add() {
         let when = chosen
-        if (when.getTime() < Date.now()) when = nextHalfHour()
+        if (when.getTime() <= Date.now()) when = nextHalfHour()
         root.added(when)
         root.close()
     }
@@ -89,7 +89,7 @@ Popup {
         onPicked: d => {
             const t = root.chosen
             const when = new Date(d.getFullYear(), d.getMonth(), d.getDate(), t.getHours(), t.getMinutes())
-            root.choose(when.getTime() < Date.now() ? root.nextHalfHour() : when)
+            root.choose(when.getTime() <= Date.now() ? root.nextHalfHour() : when)
         }
         Accessible.name: qsTr("Set your custom due date")
     }
