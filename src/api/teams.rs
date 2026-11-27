@@ -231,6 +231,11 @@ pub struct ListTeam {
     /// teamGuestSettings for guests).
     pub member_apps: bool,
     pub guest_apps: bool,
+    /// Members and guests may delete channels (the team's
+    /// teamSettings.deleteTopic / teamGuestSettings.deleteTopic, Teams' deleteChannel;
+    /// Teams' channel menu offers them Delete channel).
+    pub member_delete_channels: bool,
+    pub guest_delete_channels: bool,
 }
 
 fn read_horizon(c: &serde_json::Value) -> bool {
@@ -390,6 +395,14 @@ pub fn list_teams_from(v: &serde_json::Value) -> Vec<ListTeam> {
                     .unwrap_or(true),
                 guest_apps: t
                     .pointer("/teamGuestSettings/installAndUninstallApps")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+                member_delete_channels: t
+                    .pointer("/teamSettings/deleteTopic")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+                guest_delete_channels: t
+                    .pointer("/teamGuestSettings/deleteTopic")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false),
             }
@@ -1153,6 +1166,13 @@ mod list_tests {
         let hidden = serde_json::json!([{"id": "t1", "displayName": "T", "isGeneralChannelFavorite": false, "channels": [
             {"id": "c1", "displayName": "General", "isFavorite": true, "isGeneral": true}]}]);
         assert!(!list_teams_from(&hidden)[0].channels[0].shown);
+        // Who may delete channels (CSA's teamSettings.deleteTopic, as read
+        // for OST Test Team on 2026-11-27).
+        let perms = serde_json::json!([{"id": "t1", "displayName": "T", "channels": [],
+            "teamSettings": {"deleteTopic": true, "createTopic": true}, "teamGuestSettings": {"deleteTopic": false}}]);
+        let p = &list_teams_from(&perms)[0];
+        assert!(p.member_delete_channels && !p.guest_delete_channels);
+        assert!(!t[0].member_delete_channels);
     }
 
     #[test]

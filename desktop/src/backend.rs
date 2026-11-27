@@ -26734,6 +26734,7 @@ impl qobject::Backend {
             icon: String::new(),
             config_url: String::new(),
             creator: String::new(),
+            lie: false,
         };
         let tenant = teams_cli::config::Config::load()
             .ok()
@@ -27166,6 +27167,48 @@ impl qobject::Backend {
                         Ok(serde_json::Value::Null)
                     }
                     "channel-members" => Ok(json!({ "members": api::channels::channel_members(&client, &team, &channel).await? })),
+                    // The channel header's View meetings (Teams' Meetings
+                    // pane): arg {from?, to? (UTC ms), organizer? (MRI)}.
+                    "channel-meetings" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let f = api::channel_meetings::Filters {
+                            from_ms: a["from"].as_i64(),
+                            to_ms: a["to"].as_i64(),
+                            organizer: a["organizer"].as_str().unwrap_or_default().to_string(),
+                        };
+                        let m = api::channel_meetings::channel_meetings(&client, &team, &channel, &f).await?;
+                        Ok(json!(m))
+                    }
+                    // The channel header's people button (Teams' channel
+                    // audience): the team's people (you first), its
+                    // agents and bots, and the team.
+                    "channel-audience" => {
+                        let (roster, apps) = tokio::join!(
+                            api::channels::team_roster(&client, &team_thread),
+                            api::store_content::team_apps(&client, &team_thread)
+                        );
+                        let me = client.self_mri().unwrap_or_default().to_lowercase();
+                        let mut people: Vec<serde_json::Value> = roster?
+                            .into_iter()
+                            .map(|m| json!({ "mri": m.mri, "name": m.name, "me": m.mri.to_lowercase() == me }))
+                            .collect();
+                        people.sort_by_key(|p| p["me"].as_bool() != Some(true));
+                        let mut bots = Vec::new();
+                        for mut a in apps.unwrap_or_default().into_iter().filter(|a| a.bot) {
+                            if a.icon.starts_with("https://")
+                                && let Ok(path) = public_image_file(&client, &a.icon).await
+                            {
+                                a.icon = format!("file://{}", path.display());
+                            }
+                            bots.push(json!({ "id": a.id, "name": a.name, "icon": a.icon }));
+                        }
+                        Ok(json!({ "people": people, "bots": bots }))
+                    }
+                    // The channel header's Mark as unread / Mark as read
+                    // (Teams' change read status: the bookmark at the
+                    // channel's latest message).
+                    "unread" => api::messages::mark_chat_unread_from_latest(&client, &channel).await.map(|_| serde_json::Value::Null),
+                    "read" => api::messages::mark_chat_read_to_latest(&client, &channel).await.map(|_| serde_json::Value::Null),
                     "shared-with" => Ok(json!({
                         "teams": api::channels::shared_with_teams(&client, &channel).await?,
                         "invitations": api::channels::channel_invitations(&client, &channel).await.unwrap_or_default(),
@@ -27654,7 +27697,7 @@ impl qobject::Backend {
                     }
                     return;
                 }
-                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "team-apps" | "team-app-remove" | "team-webhook" | "channel-add-members" | "analytics" | "cross-team-analytics" | "invitations" | "chat-apps" | "chat-app-remove" | "meeting-chat-report-info" | "notify-tagged" | "notify-on" | "notify-off" | "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find") {
+                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "team-apps" | "team-app-remove" | "team-webhook" | "channel-add-members" | "analytics" | "cross-team-analytics" | "invitations" | "chat-apps" | "chat-app-remove" | "meeting-chat-report-info" | "notify-tagged" | "notify-on" | "notify-off" | "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "channel-meetings" | "channel-audience") {
                     this.as_mut().load_teams();
                 }
             });
@@ -27692,6 +27735,13 @@ impl qobject::Backend {
                             .map(|_| String::new()),
                         _ => Err(anyhow::anyhow!("Unknown tab change")),
                     };
+                }
+                // Teams' stand-in Page isn't stored anywhere yet: moving it
+                // changes nothing.
+                if matches!(op.as_str(), "left" | "right" | "to")
+                    && api::tabs::is_lie_page(&channel, &tab)
+                {
+                    return Ok(String::new());
                 }
                 match op.as_str() {
                     "rename" => api::tabs::rename(&client, &channel, &tab, &arg)
@@ -28135,7 +28185,18 @@ impl qobject::Backend {
                     json!({ "name": r.unwrap_or_default() }).to_string()
                 }
                 "saveComponentUrl" => {
-                    let r = async { api::tab_add::set_page_component_url(&TeamsClient::new().await?, &s("channel"), &s("tab"), &s("url")).await }.await;
+                    // Teams' stand-in Page becomes a tab of its own; a New
+                    // page's tab gets its link.
+                    let lie = p.get("lie").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let r = async {
+                        let client = TeamsClient::new().await?;
+                        if lie {
+                            api::tab_add::provision_lie_page(&client, &s("channel"), &s("tab"), &s("url")).await
+                        } else {
+                            api::tab_add::set_page_component_url(&client, &s("channel"), &s("tab"), &s("url")).await
+                        }
+                    }
+                    .await;
                     if let Err(e) = &r {
                         tracing::warn!("saving the page's link to {} failed: {}", s("tab"), short_error(e));
                     }

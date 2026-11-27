@@ -14923,6 +14923,55 @@ Window {
         }
     }
 
+    // --channel-header-test with --open-chat=<channel id> --shots=<dir>
+    // (TASK-0364): the channel's tabs (logged), the header (hdr.png), the
+    // people popover (people.png), the meeting menu (meet.png), the ···
+    // menu (more.png), the Meetings pane (meetings.png); with
+    // --open-page also the Page tab (page.png); then quit.
+    Timer {
+        running: Qt.application.arguments.indexOf("--channel-header-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                if (ch) { rail.current = "chat"; backend.selectChat(ch.id, ch.name) }
+                return
+            }
+            const log = tag => console.warn("CHDR", tag, JSON.stringify(conversation.channelHeaderForTest("")))
+            if (step === 0) { if (!conversation.teamName || !conversation.channelTabs.length) return; console.warn("CHDR tabs", JSON.stringify(conversation.channelTabs.map(t => ({ id: t.id, name: t.name, kind: t.kind, lie: t.lie, order: t.order, menu: (t.context_menu || []).map(m => m.key + (m.enabled ? "" : "(off)")) })))) }
+            else if (step === 1) { log("header"); shot("hdr") }
+            else if (step === 2) conversation.channelHeaderForTest("people")
+            else if (step === 4) { log("people"); shot("people") }
+            else if (step === 5) { conversation.channelHeaderForTest("close"); conversation.channelHeaderForTest("meet") }
+            else if (step === 6) { log("meet"); shot("meet") }
+            else if (step === 7) { conversation.channelHeaderForTest("close"); conversation.channelHeaderForTest("more") }
+            else if (step === 8) { log("more"); shot("more") }
+            else if (step === 9) { conversation.channelHeaderForTest("close"); conversation.openMeetings() }
+            else if (step === 11) { console.warn("CHDR meetings", JSON.stringify(channelMeetings.meetings.map(m => [m.subject, m.start, m.organizer_name, m.is_organizer, m.location])), channelMeetings.pastCount, channelMeetings.failed); shot("meetings") }
+            else if (step === 12) { conversation.channelHeaderForTest("close"); conversation.channelHeaderForTest("more") }
+            else if (step === 13) { log("more-with-meetings"); shot("more2") }
+            else if (step === 14) { conversation.channelHeaderForTest("close"); conversation.meetingsOpen = false
+                // --remove-page: Remove the channel's real Page (as its
+                // tab menu's Remove does), then list the tabs again.
+                if (Qt.application.arguments.indexOf("--remove-page") >= 0) {
+                    const p = conversation.channelTabs.find(t => t.kind === "ChannelPage" && !t.lie)
+                    console.warn("CHDR removing", p ? p.id : "none")
+                    if (p) backend.channelTabChange("remove", conversation.teamId, conversation.chatId, p.id, "")
+                    step = 30; return
+                }
+                if (Qt.application.arguments.indexOf("--open-page") < 0) { Qt.quit(); return }
+                const p = conversation.channelTabs.find(t => t.kind === "ChannelPage"); if (p) conversation.tab = p.name }
+            else if (step === 19) { console.warn("CHDR page", JSON.stringify(conversation.channelTabs.filter(t => t.kind === "ChannelPage").map(t => ({ id: t.id, lie: t.lie, url: !!t.content_url })))); shot("page") }
+            else if (step === 34) { console.warn("CHDR after remove", JSON.stringify(conversation.channelTabs.map(t => ({ id: t.id, name: t.name, lie: t.lie })))); shot("removed"); Qt.quit() }
+            else if (step === 22) { console.warn("CHDR page after", JSON.stringify(conversation.channelTabs.filter(t => t.kind === "ChannelPage").map(t => ({ id: t.id, lie: t.lie, url: !!t.content_url })))); shot("page2"); Qt.quit() }
+            step++
+        }
+    }
+
     // --thread-window-view=<post id> with --open-chat=<channel id>
     // --shots=<dir>: open that post's window, capture it at the top
     // (view-top.png) and with the newest reply's hover bar up (view-bar.png).
@@ -18459,6 +18508,7 @@ Window {
         onOpenChannelWindow: id => window.openChannelWindow(id)
         onChannelWorkflows: id => window.openWorkflows(id)
         onManageChannel: id => window.openManageChannel(id)
+        onManageTeamMembers: id => window.openManageTeam(id, "members")
         myName: backend.userName
         visible: (rail.current === "chat" && !chatList.draftsOpen && !chatList.copilotOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0) && (!chatList.quickOpen || (quickView.selectedKey.length > 0 && !quickView.threadPick)) && !manageChannel.visible && !manageTeam.visible && !yourTeams.visible && !window.teamPage)
             || (rail.current === "activity" && activityView.selectedId.length > 0 && !window.activityCalls)
@@ -19421,7 +19471,7 @@ Window {
         id: findPane
         readonly property bool shown: conversation.visible && conversation.finding && conversation.tab === ""
         visible: shown
-        anchors { top: appBanner.bottom; bottom: statusBar.top; right: tabConversation.left }
+        anchors { top: appBanner.bottom; bottom: statusBar.top; right: channelMeetings.left }
         width: shown ? 360 : 0
         chatId: backend.currentChatId
         isChannel: conversation.isChannel
@@ -19430,6 +19480,28 @@ Window {
         onShownChanged: if (shown) focusField()
         onClosed: conversation.finding = false
         onJumpTo: (hit, terms) => conversation.showFound(hit.id, terms, conversation.isChannel && hit.parent_id ? hit.parent_id : "")
+    }
+    // A channel's Meetings (Teams' View meetings), where Find would be.
+    ChannelMeetingsPane {
+        id: channelMeetings
+        readonly property bool shown: conversation.visible && conversation.isChannel && conversation.meetingsOpen
+        visible: shown
+        anchors { top: appBanner.bottom; bottom: statusBar.top; right: tabConversation.left }
+        width: shown ? 360 : 0
+        teamId: conversation.isChannel ? conversation.teamId : ""
+        channelId: conversation.isChannel ? conversation.chatId : ""
+        onClosed: conversation.meetingsOpen = false
+        onOpenMeeting: m => { if (m.ical_uid || m.join_url) conversation.openMeetingDetails(m.join_url || "", m.ical_uid || "", m.start || "") }
+        // Chat with participants: the meeting's conversation (a channel
+        // meeting's is its post in the channel).
+        onOpenChat: m => {
+            const j = /meetup-join\/([^/?]+)(?:\/([0-9]+))?/.exec(m.join_url || "")
+            if (!j) return
+            const thread = decodeURIComponent(j[1])
+            if (thread === conversation.chatId && j[2]) { conversation.showFound(j[2], [], j[2]); return }
+            rail.current = "chat"
+            backend.selectChat(thread, m.subject || "")
+        }
     }
     TabConversationPane {
         id: tabConversation

@@ -87,6 +87,10 @@ pub struct Tab {
     /// Teams hides someone else's link-less Page tab and makes the page in
     /// yours.
     pub creator: String,
+    /// Teams' stand-in Page tab (isLieChannelPageTab): a channel with no
+    /// Page tab of its own shows "Page" after Shared until someone opens
+    /// it, which makes the page and a real tab with this id.
+    pub lie: bool,
 }
 
 /// What a tab's URLs may be told about where they are, as Teams fills
@@ -780,17 +784,22 @@ pub async fn channel_tabs(
         }
     }
     let mut tabs = tabs_from(&pinned, &ctx, can_update, &perms);
-    // A Page tab whose page isn't made yet: its maker is only in the
-    // channel's own tab property (settings.creatorUserMri), which the
-    // middle tier's list leaves out. Teams reads the property; so does OST
-    // (Teams hides such a tab when someone else made it).
+    // The channel's own tab properties, read once when needed: a Page tab
+    // whose page isn't made yet has its maker only there
+    // (settings.creatorUserMri, which the middle tier's list leaves out),
+    // and whether the stand-in Page is hidden is a property too.
+    let mut props: Option<serde_json::Value> = None;
     if tabs
         .iter()
         .any(|t| t.kind == Kind::ChannelPage && t.content_url.is_empty() && t.creator.is_empty())
-        && let Ok(props) = super::tab_add::thread_properties(client, channel_id).await
     {
+        props = super::tab_add::thread_properties(client, channel_id)
+            .await
+            .ok();
+    }
+    if let Some(props) = &props {
         let bare = |s: &str| s.trim_start_matches("tab::").to_ascii_lowercase();
-        let made: HashMap<String, String> = super::tab_add::property_tabs(&props)
+        let made: HashMap<String, String> = super::tab_add::property_tabs(props)
             .iter()
             .filter(|p| str_at(p, "/settings/componentUrl").is_empty())
             .map(|p| {
@@ -808,6 +817,20 @@ pub async fn channel_tabs(
             }
         }
     }
+    let me = client.self_mri().unwrap_or_default();
+    let leaves_page = tabs
+        .iter()
+        .all(|t| t.kind != Kind::ChannelPage || hidden_page(t, &me));
+    if leaves_page && props.is_none() {
+        // A failed read shows the stand-in, as Teams' does (no properties,
+        // nothing hidden).
+        props = super::tab_add::thread_properties(client, channel_id)
+            .await
+            .ok();
+    }
+    let hidden = props.as_ref().is_some_and(page_tab_hidden);
+    let mut tabs = settle_pages(tabs, &me, hidden, channel_id);
+    fill_menus(&mut tabs, can_update, &perms);
     for t in tabs.iter_mut() {
         let (icon, config) = icons.get(&t.app_id).cloned().unwrap_or_default();
         t.icon = icon;
@@ -843,6 +866,7 @@ fn tabs_from(
         icon: String::new(),
         config_url: String::new(),
         creator: String::new(),
+        lie: false,
     }];
     for t in pinned {
         let id = str_at(t, "/id");
@@ -880,24 +904,126 @@ fn tabs_from(
                 .map(|k| str_at(t, k))
                 .find(|c| !c.is_empty())
                 .unwrap_or_default(),
+            lie: false,
             id,
             app_id,
             kind,
             entity_id: if files { String::new() } else { entity_id },
         });
     }
+    fill_menus(&mut tabs, can_update, perms);
+    tabs
+}
+
+/// Sort the tabs and give each its menus. Moves: not for fixed tabs; the
+/// first movable tab can't go left, the last can't go right. Teams' stand-in
+/// Page keeps only Move left / Move right (every other item is for a real
+/// Page, module 542104).
+fn fill_menus(tabs: &mut [Tab], can_update: bool, perms: &HashMap<String, AppFlags>) {
     tabs.sort_by(|a, b| a.order.total_cmp(&b.order));
-    // Moves: not for fixed tabs; the first movable tab can't go left, the
-    // last can't go right.
     let movable: Vec<usize> = (0..tabs.len()).filter(|&i| tabs[i].draggable).collect();
     for (i, tab) in tabs.iter_mut().enumerate() {
         let pos = movable.iter().position(|&m| m == i);
         let can_left = pos.is_some_and(|p| p > 0);
         let can_right = pos.is_some_and(|p| p + 1 < movable.len());
         let app = perms.get(&tab.app_id).copied().unwrap_or_default();
-        let (menu, context) = menus(tab.kind, can_update, app, can_left, can_right);
+        let (mut menu, mut context) = menus(tab.kind, can_update, app, can_left, can_right);
+        if tab.lie {
+            let moves = |m: &MenuItem| m.key == "moveLeft" || m.key == "moveRight";
+            menu.retain(moves);
+            context.retain(moves);
+        }
         tab.menu = menu;
         tab.context_menu = context;
+    }
+}
+
+/// The thread property that keeps a channel's stand-in Page away (Teams'
+/// `defaultTabHiddenApps::ChannelPageTab`, set when someone removes the
+/// stand-in or the channel's last Page).
+pub const PAGE_HIDDEN_PROPERTY: &str = "defaultTabHiddenApps::ChannelPageTab";
+
+/// Whether a channel's thread properties hide its stand-in Page (Teams'
+/// getDefaultTabHiddenAppIds: any truthy `defaultTabHiddenApps::` value).
+pub fn page_tab_hidden(props: &serde_json::Value) -> bool {
+    match props.get(PAGE_HIDDEN_PROPERTY) {
+        None | Some(serde_json::Value::Null) => false,
+        Some(serde_json::Value::Bool(b)) => *b,
+        Some(serde_json::Value::String(s)) => !s.is_empty(),
+        Some(serde_json::Value::Number(n)) => n.as_f64().is_some_and(|n| n != 0.0),
+        Some(_) => true,
+    }
+}
+
+/// Teams hides a Page tab whose page isn't made yet when someone else made
+/// it (worker STt: no componentUrl and a creatorUserMri that isn't you).
+fn hidden_page(t: &Tab, me: &str) -> bool {
+    t.kind == Kind::ChannelPage
+        && t.content_url.is_empty()
+        && !t.creator.is_empty()
+        && t.creator != me
+}
+
+/// The stand-in Pages' ids by channel: Teams makes one `tab::{uuid}` per
+/// channel view and keeps it until the view goes; OST keeps it while it
+/// runs, so a reload of the tab list never starts a second page.
+static LIE_IDS: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
+
+fn lie_page_id(channel_id: &str) -> String {
+    let mut ids = LIE_IDS.lock().unwrap_or_else(|e| e.into_inner());
+    ids.get_or_insert_with(HashMap::new)
+        .entry(channel_id.to_string())
+        .or_insert_with(|| format!("tab::{}", uuid::Uuid::new_v4()))
+        .clone()
+}
+
+/// Teams' stand-in Page (Zm in the channel tab list, module 177792): "Page"
+/// right after the built-in tabs (Posts, Shared), with no page yet.
+fn lie_page(channel_id: &str) -> Tab {
+    Tab {
+        id: lie_page_id(channel_id),
+        name: crate::i18n::tr("Page"),
+        app_id: PAGES_APP.into(),
+        kind: Kind::ChannelPage,
+        entity_id: String::new(),
+        content_url: String::new(),
+        content_template: String::new(),
+        website_url: String::new(),
+        order: 2.5,
+        draggable: true,
+        opens_in_browser: false,
+        menu: Vec::new(),
+        context_menu: Vec::new(),
+        can_converse: false,
+        conversation: String::new(),
+        icon: String::new(),
+        config_url: String::new(),
+        creator: String::new(),
+        lie: true,
+    }
+}
+
+/// Whether `tab` is the channel's stand-in Page (no tab of its own yet).
+pub fn is_lie_page(channel_id: &str, tab: &str) -> bool {
+    let ids = LIE_IDS.lock().unwrap_or_else(|e| e.into_inner());
+    ids.as_ref()
+        .and_then(|m| m.get(channel_id))
+        .is_some_and(|id| id == tab)
+}
+
+/// Teams' tabs with the stand-in Page settled: others' link-less Pages
+/// left out, and "Page" added after Shared when no Page is left and the
+/// channel doesn't hide it. Once the channel has a Page of its own, the
+/// stand-in's id is let go (a later stand-in gets a new one).
+fn settle_pages(mut tabs: Vec<Tab>, me: &str, hidden: bool, channel_id: &str) -> Vec<Tab> {
+    tabs.retain(|t| !hidden_page(t, me));
+    if tabs.iter().any(|t| t.kind == Kind::ChannelPage) || hidden {
+        let mut ids = LIE_IDS.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(m) = ids.as_mut() {
+            m.remove(channel_id);
+        }
+    } else {
+        tabs.push(lie_page(channel_id));
     }
     tabs
 }
@@ -1032,9 +1158,35 @@ pub async fn rename(client: &TeamsClient, channel_id: &str, tab: &str, name: &st
 /// (captured on winpc 2026-11-16, removing a website tab from OST Test
 /// Team › General: `PUT {chatsvc}/v1/threads/{channel}/properties?name=tab::{id}`
 /// with `{"tab::{id}": null}`).
+///
+/// Removing the channel's last Page also hides its stand-in for good, as
+/// Teams' setAppDefaultTabHiddenPermanently does (thread property
+/// `defaultTabHiddenApps::ChannelPageTab` set to true).
 pub async fn remove(client: &TeamsClient, channel_id: &str, tab: &str) -> Result<()> {
     check_channel(channel_id)?;
-    super::tab_add::remove_property(client, channel_id, tab).await
+    let props = super::tab_add::thread_properties(client, channel_id)
+        .await
+        .ok();
+    super::tab_add::remove_property(client, channel_id, tab).await?;
+    if let Some(props) = props
+        && last_page(&props, tab)
+        && let Err(e) =
+            super::tab_add::put_thread_flag(client, channel_id, PAGE_HIDDEN_PROPERTY, true).await
+    {
+        tracing::warn!("hiding the channel's stand-in Page failed: {e:#}");
+    }
+    Ok(())
+}
+
+/// Whether `tab` is the channel's only Page tab (Teams counts the channel's
+/// tab properties by definitionId).
+fn last_page(props: &serde_json::Value, tab: &str) -> bool {
+    let pages: Vec<String> = super::tab_add::property_tabs(props)
+        .iter()
+        .filter(|t| str_at(t, "/definitionId") == PAGES_APP)
+        .map(|t| str_at(t, "/id"))
+        .collect();
+    pages.len() == 1 && pages[0] == tab
 }
 
 /// The post that starts a tab's conversation, as Teams sends it ("Start
@@ -1417,6 +1569,7 @@ mod tests {
             icon: String::new(),
             config_url: String::new(),
             creator: String::new(),
+            lie: false,
         };
         let v = conversation_post(
             "19:a@thread.tacv2",
@@ -1460,6 +1613,107 @@ mod tests {
     }
 
     #[test]
+    fn a_channel_without_a_page_shows_teams_stand_in() {
+        let files = serde_json::json!({"appId": FILES_APP, "id": FILES_APP, "name": "Files", "order": 0.0, "configuration": {}});
+        let notes = serde_json::json!({"appId": "0d820ecd-def2-4297-adad-78056cde7c78", "id": "tab::n", "name": "Notes", "order": 10000.0, "configuration": {"entityId": "NOTES"}});
+        let ctx = TabContext::default();
+        let me = "8:orgid:me";
+        let names = |t: &[Tab]| t.iter().map(|t| t.name.clone()).collect::<Vec<_>>();
+        // No Page: the stand-in comes right after Shared, Move left off.
+        let channel = "19:lie1@thread.tacv2";
+        let base = tabs_from(&[files.clone(), notes.clone()], &ctx, true, &HashMap::new());
+        let mut tabs = settle_pages(base.clone(), me, false, channel);
+        fill_menus(&mut tabs, true, &HashMap::new());
+        assert_eq!(names(&tabs), ["Posts", "Shared", "Page", "Notes"]);
+        let page = &tabs[2];
+        assert!(page.lie && page.content_url.is_empty() && page.id.starts_with("tab::"));
+        assert!(is_lie_page(channel, &page.id));
+        let keys: Vec<(&str, bool)> = page
+            .context_menu
+            .iter()
+            .map(|m| (m.key, m.enabled))
+            .collect();
+        assert_eq!(keys, [("moveLeft", false), ("moveRight", true)]);
+        // The same id on every reload, so opening it makes one page.
+        let again = settle_pages(base.clone(), me, false, channel);
+        assert_eq!(again.iter().find(|t| t.lie).unwrap().id, page.id);
+        // Hidden (someone removed it): no Page; the id is let go.
+        let hidden = settle_pages(base.clone(), me, true, channel);
+        assert_eq!(names(&hidden), ["Posts", "Shared", "Notes"]);
+        assert!(!is_lie_page(channel, &page.id));
+        // A real Page: no stand-in.
+        let real = serde_json::json!({"appId": PAGES_APP, "id": "tab::p", "name": "Page", "order": 10.0, "configuration": {"contentUrl": "https://contoso.sharepoint.com/x.loop"}});
+        let with_page = tabs_from(
+            &[files.clone(), real, notes.clone()],
+            &ctx,
+            true,
+            &HashMap::new(),
+        );
+        let tabs = settle_pages(with_page, me, false, "19:lie2@thread.tacv2");
+        assert_eq!(
+            tabs.iter().filter(|t| t.kind == Kind::ChannelPage).count(),
+            1
+        );
+        assert!(!tabs.iter().any(|t| t.lie));
+        // Someone else's link-less Page is hidden, so the stand-in shows;
+        // your own stays and makes its page.
+        let mut linkless = tabs_from(
+            &[
+                files.clone(),
+                serde_json::json!({"appId": PAGES_APP, "id": "tab::q", "name": "Untitled page", "order": 20.0, "configuration": {}}),
+                notes.clone(),
+            ],
+            &ctx,
+            true,
+            &HashMap::new(),
+        );
+        linkless.iter_mut().for_each(|t| {
+            if t.id == "tab::q" {
+                t.creator = "8:orgid:other".into();
+            }
+        });
+        let tabs = settle_pages(linkless.clone(), me, false, "19:lie3@thread.tacv2");
+        assert_eq!(
+            names(&tabs)
+                .iter()
+                .filter(|n| *n == "Untitled page")
+                .count(),
+            0
+        );
+        assert!(tabs.iter().any(|t| t.lie));
+        linkless.iter_mut().for_each(|t| {
+            if t.id == "tab::q" {
+                t.creator = me.into();
+            }
+        });
+        let tabs = settle_pages(linkless, me, false, "19:lie4@thread.tacv2");
+        assert!(names(&tabs).contains(&"Untitled page".to_string()) && !tabs.iter().any(|t| t.lie));
+    }
+
+    #[test]
+    fn removing_the_last_page_hides_the_stand_in() {
+        let page = |id: &str| {
+            serde_json::json!({"id": id, "definitionId": PAGES_APP, "name": "Page"}).to_string()
+        };
+        let notes = serde_json::json!({"id": "tab::n", "definitionId": "0d820ecd-def2-4297-adad-78056cde7c78"}).to_string();
+        let one = serde_json::json!({"tab::p": page("tab::p"), "tab::n": notes});
+        assert!(last_page(&one, "tab::p"));
+        assert!(!last_page(&one, "tab::n"));
+        let two = serde_json::json!({"tab::p": page("tab::p"), "tab::q": page("tab::q")});
+        assert!(!last_page(&two, "tab::p"));
+    }
+
+    #[test]
+    fn the_hidden_page_property_is_read_as_teams_reads_it() {
+        let p = |v: serde_json::Value| serde_json::json!({ PAGE_HIDDEN_PROPERTY: v, "topic": "x" });
+        assert!(page_tab_hidden(&p(serde_json::json!(true))));
+        assert!(page_tab_hidden(&p(serde_json::json!("true"))));
+        assert!(!page_tab_hidden(&p(serde_json::json!(false))));
+        assert!(!page_tab_hidden(&p(serde_json::Value::Null)));
+        assert!(!page_tab_hidden(&serde_json::json!({"topic": "x"})));
+    }
+
+    #[test]
     fn copy_link_is_teams_deep_link() {
         // djb2 as JS computes it (int32 shift, uint32 result).
         assert_eq!(djb2(""), 5381);
@@ -1483,6 +1737,7 @@ mod tests {
             icon: String::new(),
             config_url: String::new(),
             creator: String::new(),
+            lie: false,
         };
         let (link, html) = copy_link(&tab, "19:ab@thread.tacv2", "g-1", "t-1");
         assert_eq!(

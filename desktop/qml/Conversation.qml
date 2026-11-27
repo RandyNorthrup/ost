@@ -279,10 +279,11 @@ Rectangle {
         if ((r.kind === "channel") !== isChannel) return []
         if (!isChannel) return r.tabs
         // In the channel's own order (Graph's sortOrderIndex); a dropped
-        // tab shows in its new place until the list reloads.
-        // Teams hides a Page tab without a page that someone else made.
-        const tabs = r.tabs.filter(t => t.app !== "Files" && t.name !== "Files"
-            && !(t.kind === "ChannelPage" && !t.content_url && t.creator && t.creator !== backend.userMri))
+        // tab shows in its new place until the list reloads. (Teams hides a
+        // Page tab without a page that someone else made, and shows its
+        // stand-in Page when none is left: the list comes so from
+        // api::tabs.)
+        const tabs = r.tabs.filter(t => t.app !== "Files" && t.name !== "Files")
         const p = tabOrderPending
         if (p && p.channel === chatId) tabs.sort((a, b) => p.ids.indexOf(a.id) - p.ids.indexOf(b.id))
         return tabs
@@ -520,7 +521,7 @@ Rectangle {
     /// on Teams web 2026-11-16 at a 612 px header).
     readonly property bool narrowTitle: headerNarrow && (!isChannel || (!pane && !popout))
     /// Where the narrow title (and its dropdown) must end.
-    readonly property real narrowTitleEnd: isChannel ? (channelMeet.visible ? channelMeet.x - 4 : header.width - 160) : header.toolbarLeft
+    readonly property real narrowTitleEnd: isChannel ? (channelMeet.visible ? channelPeopleLeft - 4 : header.width - 160) : header.toolbarLeft
     readonly property bool rosterInMenu: width < 720 && isGroup && !isChannel && !isSelf
     // A Threads-layout channel's Open threads button sits before Find; under
     // 640 its channel details move to the ··· menu (Teams, measured).
@@ -553,7 +554,7 @@ Rectangle {
         if (copilotOpen) { finding = false; participants.visible = false; copilotUnread = unreadTime() }
         console.info("COPILOT chat pane", copilotOpen, isMeetingChat ? "meeting" : "chat")
     }
-    onFindingChanged: if (finding) { copilotOpen = false; copilotHistoryOpen = false }
+    onFindingChanged: if (finding) { copilotOpen = false; copilotHistoryOpen = false; meetingsOpen = false }
     // The chat's unread time when Copilot opened (Teams'
     // unreadMessageTime, only while the chat had unread messages): the
     // message before the first unread one.
@@ -1069,6 +1070,7 @@ Rectangle {
     onChatIdChanged: {
         requestPreview = false
         requestBusy = false
+        meetingsOpen = false
         smartReplies = null
         if (chatId && !isChannel) backend.loadSmartReplies(chatId)
         postViewRoot = ""
@@ -2136,48 +2138,74 @@ Rectangle {
             Accessible.role: Accessible.Button
             Accessible.name: qsTr("View and add participants") + ", " + qsTr("%1 participants").arg(count)
         }
-        Rectangle {
+        // The channel's people (Teams' channel audience,
+        // channel-audience-participant-count; Teams on the web, OST Test 2,
+        // 2026-11-27): 34 x 32 just before the meeting button, PeopleAdd
+        // (filled brand while open), "View people, agents and bots"; not
+        // in General. It opens the people, agents and bots popover.
+        HeaderAction {
+            id: channelPeople
+            visible: root.channelPeopleShown
+            x: root.channelPeopleLeft; width: 34
+            icon: audiencePop.opened ? "people-add-20-filled" : "people-add-20"
+            iconColor: audiencePop.opened ? theme.brand : root.hdrStrong
+            onClicked: audiencePop.opened ? audiencePop.close() : audiencePop.open()
+            ToolTip.visible: channelPeopleHover.hovered && !audiencePop.opened; ToolTip.delay: 500
+            ToolTip.text: qsTr("View people, agents and bots")
+            HoverHandler { id: channelPeopleHover }
+            Accessible.name: qsTr("View people, agents and bots")
+            ChannelAudiencePopover {
+                id: audiencePop
+                // Its right edge on the button's, 16 below it.
+                x: channelPeople.width - width; y: channelPeople.height + 16
+                teamId: root.teamId; teamName: root.teamName
+                channelId: root.chatId
+                teamPeople: { const t = JSON.parse(backend.teamsJson || "[]").find(t => t.id === root.teamId); return t ? (t.people || 0) : 0 }
+                onSeeAll: root.manageTeamMembers(root.teamId)
+                onAddAgents: root.openAgentStore(root.chatId, true)
+                onOpenBot: id => root.openAppDetails(id)
+            }
+        }
+        // Teams' channel meeting button with meetings discoverability on
+        // (channel-meet-header-main-btn, id meeting-button; Teams on the
+        // web, OST Test 2, 2026-11-27): 32 x 32, CalendarVideo (filled
+        // brand while its menu is open), "View meetings related options";
+        // its menu (288 wide, its end on the button's, just below it):
+        // Meet now, Schedule meeting, View meetings.
+        HeaderAction {
             id: channelMeet
             visible: root.isChannel && !root.pane
-            x: root.channelMeetLeft; anchors.verticalCenter: parent.verticalCenter
-            width: root.channelMeetWide ? 97.17 : 32; height: 32; radius: 4
             readonly property bool blocked: backend.callState !== ""
-            color: channelMeetHover.hovered && !blocked ? theme.hover : "transparent"
-            Row {
-                anchors.centerIn: parent; spacing: 6
-                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: channelMeetHover.hovered && !channelMeet.blocked ? "video-20-filled" : "video-20"; size: 20; color: theme.onFill(channelMeet, channelMeet.blocked ? theme.disabled : channelMeetHover.hovered ? theme.brand : root.hdrStrong) }
-                Text { visible: root.channelMeetWide; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Meet now"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(channelMeet, channelMeet.blocked ? theme.disabled : channelMeetHover.hovered ? theme.brand : root.hdrStrong) }
-            }
-            HoverHandler { id: channelMeetHover; cursorShape: channelMeet.blocked ? Qt.ArrowCursor : Qt.PointingHandCursor }
-            TapHandler { enabled: !channelMeet.blocked; onTapped: root.channelMeetNow() }
-            Accessible.role: Accessible.Button
-            Accessible.name: qsTr("Meet now")
-        }
-        HeaderAction {
-            id: channelMeetMore
-            visible: channelMeet.visible
-            x: channelMeet.x + channelMeet.width; width: 20; height: 32
-            icon: "chevron-down-16"; iconSize: 16
+            x: root.channelMeetLeft
+            icon: channelMeetMenu.opened ? "calendar-video-20-filled" : "calendar-video-20"
             iconColor: channelMeetMenu.opened ? theme.brand : root.hdrStrong
             onClicked: channelMeetMenu.open()
-            Accessible.name: qsTr("More channel meeting options")
-            // Meet now / Schedule a meeting (161.8 wide, its end 4.5 inside
-            // the chevron's, 4.5 below it).
+            ToolTip.visible: channelMeetHover.hovered && !channelMeetMenu.opened; ToolTip.delay: 500
+            ToolTip.text: qsTr("View meetings related options")
+            HoverHandler { id: channelMeetHover }
+            Accessible.name: qsTr("View meetings related options")
             MenuPopup {
                 id: channelMeetMenu
-                x: parent.width - 4.5 - width; y: parent.height + 4.5
+                x: parent.width - width; y: parent.height
+                minRowWidth: 278
                 items: [
                     { key: "meet", label: qsTr("Meet now"), icon: "video-20", enabled: !channelMeet.blocked },
-                    { key: "schedule", label: qsTr("Schedule a meeting"), icon: "calendar-add-20" }
+                    { key: "schedule", label: qsTr("Schedule meeting"), icon: "calendar-add-20" },
+                    { key: "view", label: qsTr("View meetings"), icon: "calendar-ltr-20" }
                 ]
-                onPicked: i => items[i].key === "meet" ? root.channelMeetNow() : root.scheduleMeeting()
+                onPicked: i => {
+                    const k = items[i].key
+                    if (k === "meet") root.channelMeetNow()
+                    else if (k === "schedule") root.scheduleMeeting()
+                    else root.openMeetings()
+                }
             }
         }
         HeaderAction {
             id: tabConvButton
             visible: !root.pane && !!root.currentTab && root.currentTab.can_converse === true
             readonly property bool open: !!root.tabConversationTab && root.tabConversationTab.id === (root.currentTab ? root.currentTab.id : "")
-            x: root.channelMeetLeft - 32; height: 31.3
+            x: root.channelPeopleLeft - 32; height: 31.3
             icon: open ? "chat-20-filled" : "chat-20"
             iconColor: open ? theme.brand : root.hdrStrong
             onClicked: root.tabConversationTab = open ? null : root.currentTab
@@ -2236,8 +2264,17 @@ Rectangle {
         }
         HeaderAction {
             visible: root.contextInline >= 2 && !(root.isChannel && root.tab !== "")
-            x: root.contextLeft + 32 * (1 + root.threadsButton + root.copilotButton); icon: root.isChannel ? "panel-right-expand-20" : "panel-left-20"; Accessible.name: root.isChannel ? qsTr("Open channel details") : qsTr("Open chat details")
-            onClicked: participants.visible = !participants.visible
+            // While a channel's Meetings pane is open its toggle takes this
+            // place (Teams' channel-meetings-toggle-button: the filled
+            // calendar in brand, "Close meetings").
+            readonly property bool meetings: root.isChannel && root.meetingsOpen
+            x: root.contextLeft + 32 * (1 + root.threadsButton + root.copilotButton)
+            icon: meetings ? "calendar-ltr-20-filled" : root.isChannel ? "panel-right-expand-20" : "panel-left-20"
+            iconColor: meetings ? theme.brand : root.hdrStrong
+            Accessible.name: meetings ? qsTr("Close meetings") : root.isChannel ? qsTr("Open channel details") : qsTr("Open chat details")
+            ToolTip.visible: detailsHover.hovered && meetings; ToolTip.delay: 500; ToolTip.text: qsTr("Close meetings")
+            HoverHandler { id: detailsHover }
+            onClicked: if (meetings) root.meetingsOpen = false; else participants.visible = !participants.visible
         }
         // More channel options (more-apps-button-tid, 32 x 31.3, ··· at the
         // end): the channel's menu (ChannelMenu), its end 6.3 past the
@@ -4281,10 +4318,18 @@ Rectangle {
     // winpc 2026-11-09): the video icon and "Meet now" (14 semibold), 97.2
     // wide from 834, else the icon alone (32); its chevron (20 x 32, a 16 px
     // glyph) ends 16 before Find on Posts, or before ··· on other tabs.
-    readonly property bool channelMeetWide: width >= 834
     readonly property real channelMeetRight: (isChannel && tab !== "" ? width - 43 : contextLeft) - 16
-    readonly property real channelMeetLeft: channelMeetRight - 20 - (channelMeetWide ? 97.17 : 32)
+    readonly property real channelMeetLeft: channelMeetRight - 32
+    readonly property bool channelPeopleShown: isChannel && !pane && !channelInfo.general
+    readonly property real channelPeopleLeft: channelMeetLeft - (channelPeopleShown ? 34 : 0)
     signal channelMeetNow()
+    /// See all in the people popover: Manage team ▸ Members.
+    signal manageTeamMembers(string teamId)
+    // The channel's Meetings pane (Teams' View meetings: the meeting menu's
+    // and ···'s), on the right where Find would be.
+    property bool meetingsOpen: false
+    function openMeetings() { finding = false; copilotOpen = false; participants.visible = false; meetingsOpen = true }
+
     // The open channel as the team list has it (its menu's state).
     readonly property var channelInfo: {
         if (!isChannel) return ({})
@@ -4306,8 +4351,22 @@ Rectangle {
         onOpenInNewWindow: root.openChannelWindow(root.chatId)
         onManageChannel: root.manageChannel(root.chatId)
         onWorkflows: root.channelWorkflows(root.chatId)
+        header: true
+        meetingsShown: !root.meetingsOpen
+        onViewMeetings: root.openMeetings()
     }
     function channelMenuForTest2() { return channelMenu }
+    // --channel-header-test: the header's people popover, meeting menu and
+    // ··· menu, opened as a click would.
+    function channelHeaderForTest(which) {
+        if (which === "people") audiencePop.open()
+        else if (which === "meet") channelMeetMenu.open()
+        else if (which === "more") channelMenu.show(channelMore, channelMore.width + 6.3 - channelMenu.menu.implicitWidth, channelMore.height + 4.9)
+        else if (which === "close") { audiencePop.close(); channelMeetMenu.close(); channelMenu.menu.close() }
+        return { people: channelPeople.visible ? [channelPeople.x, channelPeople.width] : null, meet: [channelMeet.x, channelMeet.width],
+                 audience: { people: audiencePop.people.map(p => p.name), bots: audiencePop.bots.map(b => b.name) },
+                 meetMenu: channelMeetMenu.items.map(i => i.label), more: channelMenu.menu.items.map(i => i.separator ? "-" : i.label) }
+    }
     function expandTab(t) {
         expandedTab = t
         expandedAbout = null
@@ -5620,7 +5679,7 @@ Rectangle {
         // The app card's settings button: Settings ▸ Privacy (Teams).
         onAppCardSettingsRequested: root.openPrivacySettings()
         onAppCardPermissionsRequested: id => root.openAppDetails(id)
-        visible: root.chatName.length > 0 && !root.chatRequest && (!root.isChannel || root.posting || root.threadsLayout) && ["Attendance", "Breakout Rooms", "Q&A", "Meeting Whiteboard", "Notes", "Recap", "Storyline"].indexOf(root.tab) < 0 && !root.channelTabs.some(t => t.name === root.tab && !root.isChannel) && !root.readOnly && !root.selecting
+        visible: root.chatName.length > 0 && !root.chatRequest && (!root.isChannel || ((root.posting || root.threadsLayout) && root.tab === "")) && ["Attendance", "Breakout Rooms", "Q&A", "Meeting Whiteboard", "Notes", "Recap", "Storyline"].indexOf(root.tab) < 0 && !root.channelTabs.some(t => t.name === root.tab && !root.isChannel) && !root.readOnly && !root.selecting
         // New posts at the top: in the list's top card, scrolling with it.
         readonly property bool atTop: post && channelPosts.newestAtTop
         anchors { left: parent.left; right: parent.right }

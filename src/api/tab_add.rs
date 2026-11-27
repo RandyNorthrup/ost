@@ -222,6 +222,41 @@ async fn put_property(
     Ok(())
 }
 
+/// Set a thread's `defaultTabHiddenApps::` flag (Teams' setThreadProperty
+/// with `true`), or clear it with `false` (null).
+pub async fn put_thread_flag(
+    client: &TeamsClient,
+    thread_id: &str,
+    name: &str,
+    on: bool,
+) -> Result<()> {
+    check_thread(thread_id)?;
+    anyhow::ensure!(
+        name.starts_with("defaultTabHiddenApps::")
+            && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b':'),
+        "Not a tab flag"
+    );
+    let url = format!(
+        "{}/v1/threads/{}/properties?name={}",
+        client.chat_service_url(),
+        tabs::encode_uri_component(thread_id),
+        tabs::encode_uri_component(name)
+    );
+    let value = if on {
+        serde_json::Value::Bool(true)
+    } else {
+        serde_json::Value::Null
+    };
+    client
+        .chat_request(
+            reqwest::Method::PUT,
+            &url,
+            &serde_json::json!({ name: value }),
+        )
+        .await?;
+    Ok(())
+}
+
 /// Remove a tab: its thread property set to null (Teams' Remove, in chats
 /// and channels alike).
 pub async fn remove_property(client: &TeamsClient, thread_id: &str, tab_id: &str) -> Result<()> {
@@ -815,6 +850,60 @@ pub async fn add_page_tab_without_link(
     Ok(id)
 }
 
+/// The stand-in Page's tab once someone opens it and Loop has made the
+/// page, as Teams' provisionFluidForPageTab writes it (worker eEt with a
+/// lieTabId): the stand-in's id, order 10, the page's link,
+/// `isTabNameSynced: false`, no maker, and the stand-in's name.
+pub fn lie_page_property(id: &str, component_url: &str, name: &str, date_added: &str) -> String {
+    let mut t: ordered::Json = serde_json::from_str(&page_property(
+        id,
+        LIE_PAGE_ORDER,
+        Some(component_url),
+        "",
+        name,
+        date_added,
+    ))
+    .unwrap_or(ordered::Json::Plain(serde_json::Value::Null));
+    if let Some(settings) = t.get_mut("settings") {
+        settings.set("isTabNameSynced", Some(false.into()));
+    }
+    serde_json::to_string(&t).unwrap_or_default()
+}
+
+/// Where Teams puts a provisioned stand-in Page (worker constant bvt).
+pub const LIE_PAGE_ORDER: f64 = 10.0;
+
+/// Make the channel's stand-in Page a real tab pointing at the page Loop
+/// made for it ([`lie_page_property`]); Teams checks first that no tab has
+/// that id yet.
+pub async fn provision_lie_page(
+    client: &TeamsClient,
+    channel_id: &str,
+    tab_id: &str,
+    component_url: &str,
+) -> Result<()> {
+    let u = url::Url::parse(component_url).context("Page link")?;
+    anyhow::ensure!(
+        u.scheme() == "https" && u.host_str().is_some_and(|h| h.ends_with(".sharepoint.com")),
+        "Page link"
+    );
+    let props = thread_properties(client, channel_id).await?;
+    anyhow::ensure!(
+        raw_property(&props, tab_id).is_none(),
+        "The tab is already there"
+    );
+    // Named as Teams names a new tab (stored encoded, a number added when
+    // the name is taken).
+    let names: Vec<String> = property_tabs(&props)
+        .iter()
+        .map(|t| display_name(&str_at(t, "/name")))
+        .collect();
+    let now = crate::clock::now_iso_ms();
+    let name = stored_name(&crate::i18n::tr("Page"), &names);
+    let property = lie_page_property(tab_id, component_url, &name, &now);
+    put_property(client, channel_id, tab_id, Some(&property)).await
+}
+
 /// A New page's tab once its page is made, as Teams rewrites it (seen in
 /// OST test channel, 2026-11-16): the keys kept in their order, the
 /// creator dropped and `componentUrl` (the page's link) added at the end of
@@ -1082,6 +1171,7 @@ pub fn tab_from_property(t: &serde_json::Value, ctx: &tabs::TabContext) -> Tab {
         icon: String::new(),
         config_url: String::new(),
         creator: String::new(),
+        lie: false,
         id,
         app_id,
         kind,
@@ -1549,6 +1639,19 @@ mod tests {
         assert_eq!(display_name("OST%20test%20list (1)"), "OST test list (1)");
         assert_eq!(display_name("100% done"), "100% done");
         assert_eq!(display_name("Website"), "Website");
+    }
+
+    #[test]
+    fn a_stand_in_page_is_provisioned_as_teams_writes_it() {
+        assert_eq!(
+            lie_page_property(
+                "tab::f628e5d0-3baf-44aa-9fc1-70a46fcba4c0",
+                "https://contoso.sharepoint.com/sites/t/Shared%20Documents/c/Loop.loop",
+                "Page",
+                "2026-11-27T19:20:21.123Z"
+            ),
+            r#"{"id":"tab::f628e5d0-3baf-44aa-9fc1-70a46fcba4c0","order":10,"definitionId":"5ae80e49-7ada-461a-a6bd-c5df2e0cdb06","directive":"channel-page-tab","type":"tab:","settings":{"componentUrl":"https://contoso.sharepoint.com/sites/t/Shared%20Documents/c/Loop.loop","isLieChannelPageTab":false,"isTabNameSynced":false,"dateAdded":"2026-11-27T19:20:21.123Z"},"name":"Page"}"#
+        );
     }
 
     #[test]

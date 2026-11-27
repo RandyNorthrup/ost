@@ -1563,6 +1563,9 @@ pub struct TeamApp {
     pub publisher: String,
     pub icon: String,
     pub state: String,
+    /// The app has a bot (its definition's `bots`): the channel header's
+    /// people button lists it under Agents and bots.
+    pub bot: bool,
 }
 
 /// The apps in a team's app-definitions reply (each entry either carries
@@ -1605,6 +1608,10 @@ pub fn team_apps_from(v: &serde_json::Value) -> Vec<TeamApp> {
                     .into_iter()
                     .find(|x| !x.is_empty())
                     .unwrap_or_default(),
+                bot: d
+                    .get("bots")
+                    .and_then(|b| b.as_array())
+                    .is_some_and(|b| !b.is_empty()),
             })
         })
         .collect();
@@ -1751,6 +1758,9 @@ pub fn team_apps_from_aggregated(v: &serde_json::Value, team_thread: &str) -> Ve
                     .find(|x| !x.is_empty())
                     .unwrap_or_default(),
                 state: e["state"].as_str().unwrap_or_default().to_string(),
+                bot: d
+                    .and_then(|d| d["bots"].as_array())
+                    .is_some_and(|b| !b.is_empty()),
                 id,
             })
         })

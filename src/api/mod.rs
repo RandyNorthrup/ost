@@ -16,6 +16,7 @@ pub mod breakout_rooms;
 pub mod calendar;
 pub mod call_delegation;
 pub mod call_forwarding;
+pub mod channel_meetings;
 pub mod channels;
 mod chat;
 pub mod chat_notes;
