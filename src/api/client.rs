@@ -786,8 +786,182 @@ async fn check_response(resp: reqwest::Response, url: &str) -> Result<reqwest::R
         );
     }
     if !status.is_success() {
+        let retry_after = retry_after(resp.headers());
         let body = resp.text().await.unwrap_or_default();
-        bail!("HTTP {} for {}: {}", status.as_u16(), url, body);
+        return Err(HttpError {
+            status: status.as_u16(),
+            url: url.to_string(),
+            body,
+            retry_after,
+        }
+        .into());
     }
     Ok(resp)
+}
+
+/// A service's error answer, worded "HTTP {status} for {url}: {body}",
+/// with the wait it asked for (`Retry-After`) when it throttled the
+/// request.
+#[derive(Debug)]
+pub struct HttpError {
+    pub status: u16,
+    pub url: String,
+    pub body: String,
+    pub retry_after: Option<std::time::Duration>,
+}
+
+impl std::fmt::Display for HttpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "HTTP {} for {}: {}", self.status, self.url, self.body)
+    }
+}
+
+impl std::error::Error for HttpError {}
+
+/// A `Retry-After` in seconds, as the Teams services send it. Zero (the
+/// chat service's throttle sends `Retry-After: 0`) says nothing, as for
+/// Teams' retry policy, which waits only for a positive one.
+fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<std::time::Duration> {
+    let secs: f64 = headers
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse()
+        .ok()?;
+    (secs.is_finite() && secs > 0.0).then(|| std::time::Duration::from_secs_f64(secs))
+}
+
+/// The longest `Retry-After` waited for before asking again; a longer one
+/// fails the request.
+const MAX_RETRY_AFTER: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// How long to wait before asking again after the error `e`: for a
+/// throttled request (HTTP 429), the `Retry-After` it gave, else
+/// `fallback`. `None` for any other error, or for a wait longer than
+/// [`MAX_RETRY_AFTER`].
+pub fn throttle_wait(
+    e: &anyhow::Error,
+    fallback: std::time::Duration,
+) -> Option<std::time::Duration> {
+    match e.chain().find_map(|c| c.downcast_ref::<HttpError>()) {
+        Some(h) if h.status == 429 => Some(h.retry_after.unwrap_or(fallback)),
+        Some(_) => None,
+        // An error that only quotes one in its text.
+        None => format!("{e:#}").contains("HTTP 429").then_some(fallback),
+    }
+    .filter(|w| *w <= MAX_RETRY_AFTER)
+}
+
+/// Teams' HTTP layer waits and asks again when a service throttles a
+/// request (HTTP 429): as long as its `Retry-After` says (Teams'
+/// HttpThrottleHandler), or 2, 4 and 8 s apart when it says nothing; up
+/// to three more times.
+pub async fn retry_throttled<T, F, Fut>(mut f: F) -> Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    let mut fallback = std::time::Duration::from_secs(2);
+    for _ in 0..3 {
+        match f().await {
+            Err(e) => match throttle_wait(&e, fallback) {
+                Some(wait) => {
+                    tracing::info!(
+                        wait_ms = wait.as_millis() as u64,
+                        "throttled (429): asking again"
+                    );
+                    tokio::time::sleep(wait).await;
+                    fallback *= 2;
+                }
+                None => return Err(e),
+            },
+            r => return r,
+        }
+    }
+    f().await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn throttled(retry_after: Option<Duration>) -> anyhow::Error {
+        anyhow::Error::new(HttpError {
+            status: 429,
+            url: "https://chat/v1/threads/19:x@thread.v2".into(),
+            body: "API calls quota exceeded! 20Per10Secs".into(),
+            retry_after,
+        })
+        .context("Group members unavailable")
+    }
+
+    #[test]
+    fn throttled_requests_wait_as_the_service_says() {
+        let fallback = Duration::from_secs(2);
+        let e = throttled(Some(Duration::from_secs(7)));
+        assert_eq!(throttle_wait(&e, fallback), Some(Duration::from_secs(7)));
+        // The error reads as it always has.
+        assert!(format!("{e:#}").contains("HTTP 429 for https://chat/"));
+        assert_eq!(throttle_wait(&throttled(None), fallback), Some(fallback));
+        // Longer than Teams would wait: fails now.
+        assert_eq!(
+            throttle_wait(&throttled(Some(Duration::from_secs(600))), fallback),
+            None
+        );
+        let other = anyhow::Error::new(HttpError {
+            status: 404,
+            url: String::new(),
+            body: String::new(),
+            retry_after: None,
+        });
+        assert_eq!(throttle_wait(&other, fallback), None);
+        assert_eq!(
+            throttle_wait(&anyhow::anyhow!("HTTP 429 for x: busy"), fallback),
+            Some(fallback)
+        );
+    }
+
+    #[test]
+    fn retry_after_is_read_in_seconds() {
+        let mut h = reqwest::header::HeaderMap::new();
+        assert_eq!(retry_after(&h), None);
+        h.insert(reqwest::header::RETRY_AFTER, "3".parse().unwrap());
+        assert_eq!(retry_after(&h), Some(Duration::from_secs(3)));
+        h.insert(reqwest::header::RETRY_AFTER, "0.5".parse().unwrap());
+        assert_eq!(retry_after(&h), Some(Duration::from_millis(500)));
+        h.insert(reqwest::header::RETRY_AFTER, "soon".parse().unwrap());
+        assert_eq!(retry_after(&h), None);
+        // The chat service's throttle: no wait given.
+        h.insert(reqwest::header::RETRY_AFTER, "0".parse().unwrap());
+        assert_eq!(retry_after(&h), None);
+    }
+
+    #[tokio::test]
+    async fn throttled_reads_are_asked_again() {
+        let tries = std::cell::Cell::new(0);
+        let r = retry_throttled(|| {
+            tries.set(tries.get() + 1);
+            let n = tries.get();
+            async move {
+                if n < 3 {
+                    Err(throttled(Some(Duration::ZERO)))
+                } else {
+                    Ok(n)
+                }
+            }
+        })
+        .await;
+        assert_eq!(r.unwrap(), 3);
+        // Other errors aren't.
+        tries.set(0);
+        let r: Result<()> = retry_throttled(|| {
+            tries.set(tries.get() + 1);
+            async { Err(anyhow::anyhow!("HTTP 403 for x: no")) }
+        })
+        .await;
+        assert!(r.is_err());
+        assert_eq!(tries.get(), 1);
+    }
 }

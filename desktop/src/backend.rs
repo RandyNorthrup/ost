@@ -14,7 +14,10 @@ use anyhow::Context;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
 use serde_json::json;
-use teams_cli::api::{self, client::TeamsClient};
+use teams_cli::api::{
+    self,
+    client::{TeamsClient, retry_throttled},
+};
 
 /// A folder from the user's XDG user dirs (`xdg-user-dir DESKTOP`).
 fn xdg_user_dir(name: &str) -> Option<std::path::PathBuf> {
@@ -7079,27 +7082,6 @@ fn compose_copilot() -> &'static api::compose_copilot::Copilot {
             },
         )
     })
-}
-
-/// Teams' HTTP layer waits and asks again when the service throttles a
-/// request (HTTP 429): up to three more times, 2, 4 and 8 s apart.
-async fn retry_throttled<T, F, Fut>(mut f: F) -> anyhow::Result<T>
-where
-    F: FnMut() -> Fut,
-    Fut: std::future::Future<Output = anyhow::Result<T>>,
-{
-    let mut wait = 2;
-    for _ in 0..3 {
-        match f().await {
-            Err(e) if format!("{e:#}").contains("HTTP 429") => {
-                tracing::info!(wait, "throttled (429): asking again");
-                tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
-                wait *= 2;
-            }
-            r => return r,
-        }
-    }
-    f().await
 }
 
 /// The signed-in user's tenant (for Copilot's request context).

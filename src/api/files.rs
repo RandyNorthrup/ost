@@ -418,11 +418,34 @@ pub async fn member_mris(client: &TeamsClient, chat_id: &str) -> Result<Vec<Stri
             .map(str::to_string)
             .collect()
     };
-    Ok(mris
-        .into_iter()
+    Ok(other_people(me.as_ref(), mris))
+}
+
+/// The people among `mris`, without the signed-in user.
+fn other_people(me: Option<&crate::identity::AccountIdentity>, mris: Vec<String>) -> Vec<String> {
+    mris.into_iter()
         .filter(|m| crate::identity::is_person_mri(m))
-        .filter(|m| !me.as_ref().is_some_and(|me| me.is_me(m)))
-        .collect())
+        .filter(|m| !me.is_some_and(|me| me.is_me(m)))
+        .collect()
+}
+
+/// The MRIs of a group chat's other members for its call. Teams names the
+/// chat's members from its own copy of the chat (module 300373: a group
+/// call's `participants` are the chat's `memberIds`), so a call placed
+/// while the chat service throttles reads (HTTP 429, right after sign-in)
+/// still rings them. OST does the same with the members it read last; a
+/// chat it hasn't read yet is read now, asking again when throttled.
+pub async fn call_member_mris(client: &TeamsClient, chat_id: &str) -> Result<Vec<String>> {
+    let known = super::chat::known_member_ids(chat_id);
+    tracing::info!(known = known.is_some(), "group call members: the chat's");
+    let mris = match known {
+        Some(m) => m,
+        None => {
+            super::client::retry_throttled(|| super::chat::thread_member_ids(client, chat_id))
+                .await?
+        }
+    };
+    Ok(other_people(client.identity(), mris))
 }
 
 /// The object ids of a chat's other work-account members (for Graph
@@ -598,6 +621,29 @@ pub fn save_unique(dir: &Path, name: &str, bytes: &[u8]) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn group_calls_name_the_chat_as_last_read() {
+        let me = "4287e791-1b98-4963-8b94-281c50472683";
+        let thread = "19:ost-test-350-call@thread.v2";
+        assert!(crate::api::chat::known_member_ids(thread).is_none());
+        // What opening the chat read: us, OST Test 2, a bot.
+        crate::api::chat::remember_members(
+            thread,
+            vec![
+                format!("8:orgid:{me}"),
+                "8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5".into(),
+                "28:bot".into(),
+            ],
+        );
+        let known = crate::api::chat::known_member_ids(thread).expect("the chat's copy");
+        let identity = crate::identity::AccountIdentity::work(me, None, None, None);
+        // The call names the other people, without asking the chat service.
+        assert_eq!(
+            other_people(Some(&identity), known),
+            vec!["8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5".to_string()]
+        );
+    }
 
     #[test]
     fn reads_teams_file_records() {
