@@ -51,7 +51,12 @@ Popup {
     /// Open the page for Settings and more's item: the offer, or (in or
     /// after a trial) Teams Premium's home.
     function openFor(kind) {
-        page = kind === "offer" ? "offer" : (st.mode === "trial" ? "home" : "licensed")
+        // Get Teams Premium after a trial: Teams' post-trial page (its
+        // TeamsPremiumModal when the trial isEnded) unless a Premium
+        // licence remains (then "You've got Teams Premium!").
+        page = kind === "offer" ? "offer"
+            : kind === "get" && !st.benefitsRow ? "ended"
+            : (st.mode === "trial" ? "home" : "licensed")
         open()
     }
     // Start trial's wait and outcome.
@@ -233,6 +238,43 @@ Popup {
         }
         DialogButton { x: 24; y: 544.67; kind: "subtle"; label: qsTr("View all benefits"); onClicked: backend.openExternal("https://go.microsoft.com/fwlink/?linkid=2227979") }
         DialogButton { x: 480; y: 544.67; kind: "primary"; label: root.st.error ? qsTr("Try again") : qsTr("Start trial"); onClicked: backend.startPremiumTrial() }
+    }
+
+    // ---- ended ----
+    // After a trial, without a Premium licence (Teams' post-trial modal,
+    // its "Ii" in components-teams-premium-dialog, MSTeams 26304): the
+    // header picture, its title and line, the three Premium features, then
+    // View all benefits and Buy now / Request a license (OST opens
+    // Microsoft 365's licence request app in the browser, as the trial's
+    // footer does; nothing is sent from here). Laid out as the offer page;
+    // Teams' own geometry for it is still to be measured (TASK-0361).
+    Item {
+        visible: root.page === "ended"
+        anchors.fill: parent
+        Hero {}
+        CloseButton { onPicture: true }
+        Title { y: 197; text: qsTr("Get more with Teams Premium") }
+        Line { x: 20; y: 241; width: 560; text: qsTr("Request a license anytime to use premium features like these;") }
+        Repeater {
+            model: [
+                { y: 285, image: "premium-protected.svg", title: qsTr("More protected"), text: qsTr("Expand security in meetings & calls with added controls and features.") },
+                { y: 352, image: "premium-engaging.svg", title: qsTr("More engaging"), text: qsTr("Build stronger connections with branded experiences in meetings and collaborative call handling in Queues app.") },
+                { y: 419, image: "premium-intelligent.svg", title: qsTr("More intelligent"), text: qsTr("Use AI to focus on what matters most in every meeting or call.") }
+            ]
+            Item {
+                required property var modelData
+                y: modelData.y; width: root.width; height: 52
+                Image { x: 110; width: 52; height: 52; source: "../assets/dialogs/" + parent.modelData.image; sourceSize: Qt.size(104, 104); smooth: true }
+                Text { x: 177; width: 313; text: parent.modelData.title; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Text { x: 177; y: 20; width: 313; text: parent.modelData.text; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+            }
+        }
+        DialogButton { x: 24; y: 544.67; kind: "subtle"; label: qsTr("View all benefits"); onClicked: backend.openExternal("https://go.microsoft.com/fwlink/?linkid=2227979") }
+        Row {
+            x: 576 - width; y: 544.67; spacing: 10
+            DialogButton { label: qsTr("Buy now"); icon: "open-20"; onClicked: backend.openExternal("https://signup.microsoft.com/get-started/signup?products=CFQ7TTC0RM8K%3a0007&fOfferId=a8a931ff-8672-48ce-b5db-8d70f738012c") }
+            DialogButton { kind: "primary"; label: qsTr("Request a license"); onClicked: backend.openExternal("https://admin.microsoft.com/centrohost?appname=LicenseRequest&feature=host-license-request-app") }
+        }
     }
 
     // ---- pending ----

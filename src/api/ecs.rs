@@ -117,6 +117,23 @@ pub fn setting(namespace: &str, key: &str) -> Option<serde_json::Value> {
         .and_then(|v| setting_in(v, namespace, key))
 }
 
+/// Whether any settings have loaded yet (the cached reply or ECS').
+pub fn loaded() -> bool {
+    SETTINGS.read().is_ok_and(|s| s.is_some())
+}
+
+/// Wait up to `limit` for the settings to load; whether they did.
+pub async fn wait_loaded(limit: std::time::Duration) -> bool {
+    let start = std::time::Instant::now();
+    while !loaded() {
+        if start.elapsed() >= limit {
+            return false;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+    true
+}
+
 /// A Segmentation value (TeamsRing, AudienceGroup, …).
 pub fn segment(key: &str) -> Option<String> {
     SETTINGS
