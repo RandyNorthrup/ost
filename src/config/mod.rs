@@ -119,11 +119,30 @@ fn keyring_disabled() -> bool {
     std::env::var_os("OST_NO_KEYRING").is_some()
 }
 
-fn keyring_entry() -> Option<keyring::Entry> {
-    if keyring_disabled() {
+/// This profile's keyring entry. With `OST_NO_KEYRING=1` there is one
+/// only while the profile's config file says its tokens are in the
+/// keyring: another run of the profile without the variable (OST,
+/// `teams-cli`) moved the file's tokens there, and this run must still
+/// find them, then put them back in the file it was asked to use
+/// (TASK-0368). Otherwise such a run never contacts the keyring.
+fn keyring_entry(tokens_in_keyring: impl FnOnce() -> bool) -> Option<keyring::Entry> {
+    if keyring_disabled() && !tokens_in_keyring() {
         return None;
     }
     keyring::Entry::new(KEYRING_SERVICE, &keyring_account()).ok()
+}
+
+/// Whether the config file at `path` says the tokens are in the keyring.
+fn on_disk_in_keyring(path: &std::path::Path) -> bool {
+    #[derive(Deserialize)]
+    struct Flag {
+        #[serde(default)]
+        tokens_in_keyring: bool,
+    }
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|t| toml::from_str::<Flag>(&t).ok())
+        .is_some_and(|f| f.tokens_in_keyring)
 }
 
 /// Where the signed-in account's tokens are kept.
@@ -295,7 +314,7 @@ impl Config {
     /// this run's memory, or the file when opted in).
     pub fn load() -> Result<Self> {
         let path = Self::config_path()?;
-        let entry = keyring_entry();
+        let entry = keyring_entry(|| on_disk_in_keyring(&path));
         let store = entry.as_ref().map(|e| e as &dyn SecretStore);
         Self::load_from(&path, store, keyring_disabled(), &keyring_account())
     }
@@ -317,18 +336,32 @@ impl Config {
         let content = fs::read_to_string(path).context("Failed to read config file")?;
         let mut config: Self = toml::from_str(&content).context("Failed to parse config file")?;
         if config.tokens_in_keyring {
+            // Wherever this run would keep them, the tokens are read from
+            // where the config says they are. With OST_NO_KEYRING=1 that is
+            // a keyring another run of this profile moved them to: they
+            // move back to the file at this run's next save.
             match store.map(|s| s.get()) {
                 Some(Ok(Some(json))) => {
                     config.apply_secrets(
                         serde_json::from_str(&json).context("Keyring entry is not valid")?,
                     );
+                    if no_keyring {
+                        tracing::info!(
+                            "OST_NO_KEYRING is set, but another run moved this sign-in to the keyring; it goes back to the config file at the next save"
+                        );
+                    }
                     note_storage(TokenStorage::Keyring);
                 }
                 Some(Ok(None)) => {
                     tracing::warn!("Tokens were in the keyring but are gone; sign in again");
                 }
+                Some(Err(e)) if no_keyring => {
+                    tracing::warn!(
+                        "The sign-in is in the keyring, which OST_NO_KEYRING=1 can't read ({e}); sign in again"
+                    );
+                }
                 Some(Err(e)) => return Err(anyhow::anyhow!("Could not read the keyring: {e}")),
-                None => tracing::warn!("Tokens are in the keyring, but the keyring is disabled"),
+                None => tracing::warn!("Tokens are in the keyring, but there is no keyring"),
             }
         } else if config.secrets().any() {
             if no_keyring {
@@ -378,14 +411,10 @@ impl Config {
     pub fn save(&self) -> Result<()> {
         let dir = Self::config_dir()?;
         create_private_dir(&dir)?;
-        let entry = keyring_entry();
+        let path = Self::config_path()?;
+        let entry = keyring_entry(|| on_disk_in_keyring(&path));
         let store = entry.as_ref().map(|e| e as &dyn SecretStore);
-        self.save_to(
-            &Self::config_path()?,
-            store,
-            keyring_disabled(),
-            &keyring_account(),
-        )
+        self.save_to(&path, store, keyring_disabled(), &keyring_account())
     }
 
     fn save_to(
@@ -402,6 +431,10 @@ impl Config {
             memory_set(account, None);
             note_storage(TokenStorage::File);
         };
+        // OST_NO_KEYRING=1 keeps the tokens in the file. A copy another run
+        // of this profile put in the keyring goes once the file is written,
+        // so they are in one place, the one the config names.
+        let drop_keyring_copy = no_keyring && on_disk_in_keyring(path);
         if no_keyring {
             to_file(&mut on_disk, secrets);
         } else {
@@ -432,7 +465,11 @@ impl Config {
             }
         }
         let content = toml::to_string_pretty(&on_disk).context("Failed to serialize config")?;
-        write_private(path, content.as_bytes())
+        write_private(path, content.as_bytes())?;
+        if drop_keyring_copy && let Some(Err(e)) = store.map(|s| s.delete()) {
+            tracing::warn!("Could not remove the keyring's copy of the sign-in: {e}");
+        }
+        Ok(())
     }
 
     fn secrets(&self) -> Secrets {
@@ -551,8 +588,11 @@ impl TokenStore for Config {
     }
 
     fn clear_tokens(&mut self) {
-        if let Some(entry) = keyring_entry()
-            && let Err(e) = SecretStore::delete(&entry)
+        // With OST_NO_KEYRING=1 the keyring is only touched when this
+        // profile's tokens are there (another run moved them).
+        if let Some(entry) = keyring_entry(|| {
+            self.tokens_in_keyring || Self::config_path().is_ok_and(|p| on_disk_in_keyring(&p))
+        }) && let Err(e) = SecretStore::delete(&entry)
         {
             tracing::warn!("Could not remove tokens from the keyring: {e}");
         }
@@ -1171,6 +1211,70 @@ mod storage_tests {
         assert_eq!(c.refresh_token.as_deref(), Some("refresh-secret"));
         assert!(!on_disk(&path).contains("secret"));
         memory_set(&account, None);
+    }
+
+    #[test]
+    fn no_keyring_runs_find_tokens_another_run_moved_to_the_keyring() {
+        // TASK-0368: OST signed in with OST_NO_KEYRING=1 keeps its tokens in
+        // the file; a run of the same profile without the variable (another
+        // OST, `teams-cli`) moves them to the keyring. The OST_NO_KEYRING run
+        // then found none ("Token expired and no refresh token").
+        let path = dir("mixed");
+        let account = format!("test-mixed-{}", uuid::Uuid::new_v4());
+        let keyring = FakeStore::new(true);
+        signed_in().save_to(&path, None, true, &account).unwrap();
+        assert!(on_disk(&path).contains("refresh-secret") && !on_disk_in_keyring(&path));
+        let other = Config::load_from(&path, Some(&keyring), false, &account).unwrap();
+        assert_eq!(other.refresh_token.as_deref(), Some("refresh-secret"));
+        assert!(!on_disk(&path).contains("secret") && on_disk_in_keyring(&path));
+
+        // The OST_NO_KEYRING run still has its sign-in, from the keyring
+        // the config names.
+        let mut c = Config::load_from(&path, Some(&keyring), true, &account).unwrap();
+        assert_eq!(c.refresh_token.as_deref(), Some("refresh-secret"));
+        assert_eq!(c.skype_token.as_ref().unwrap().token, "skype-secret");
+
+        // Its next refresh goes to the file it was asked to use, the
+        // keyring copy goes, and the config says where they are.
+        c.set_refresh_token("refresh-rotated".into());
+        c.save_to(&path, Some(&keyring), true, &account).unwrap();
+        let text = on_disk(&path);
+        assert!(text.contains("refresh-rotated") && !on_disk_in_keyring(&path));
+        assert!(
+            keyring.value.borrow().is_none(),
+            "a second copy in the keyring"
+        );
+
+        // Restarts: with the variable (no keyring handed over, as the
+        // config says file) and without it (back to the keyring).
+        let again = Config::load_from(&path, None, true, &account).unwrap();
+        assert_eq!(again.refresh_token.as_deref(), Some("refresh-rotated"));
+        let k = Config::load_from(&path, Some(&keyring), false, &account).unwrap();
+        assert_eq!(k.refresh_token.as_deref(), Some("refresh-rotated"));
+        assert!(on_disk_in_keyring(&path) && !on_disk(&path).contains("secret"));
+    }
+
+    #[test]
+    fn no_keyring_runs_sign_in_again_when_the_keyring_cant_be_read() {
+        // The config says keyring, but this OST_NO_KEYRING run can't reach
+        // one: signed out (not an error), and the next sign-in goes to the
+        // file with the flag gone.
+        let path = dir("mixed-nokeyring");
+        let account = format!("test-mixed-nokeyring-{}", uuid::Uuid::new_v4());
+        signed_in()
+            .save_to(&path, Some(&FakeStore::new(true)), false, &account)
+            .unwrap();
+        let broken = FakeStore::new(false);
+        let c = Config::load_from(&path, Some(&broken), true, &account).unwrap();
+        assert!(c.refresh_token.is_none() && c.access_token.is_none());
+        let c = Config::load_from(&path, None, true, &account).unwrap();
+        assert!(c.refresh_token.is_none());
+        signed_in()
+            .save_to(&path, Some(&broken), true, &account)
+            .unwrap();
+        assert!(on_disk(&path).contains("refresh-secret") && !on_disk_in_keyring(&path));
+        let back = Config::load_from(&path, None, true, &account).unwrap();
+        assert_eq!(back.refresh_token.as_deref(), Some("refresh-secret"));
     }
 
     #[test]
