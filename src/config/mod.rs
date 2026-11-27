@@ -343,6 +343,8 @@ impl Config {
         )
     }
 
+    /// `load_locked` with a given store (tests).
+    #[cfg(test)]
     fn load_from(
         path: &std::path::Path,
         store: Option<&dyn SecretStore>,
@@ -352,7 +354,7 @@ impl Config {
         Self::load_locked(path, &|| store, no_keyring, account, None)
     }
 
-    /// [`Config::load_from`]. Reading needs no lock; moving the tokens
+    /// Loads the config at `path`. Reading needs no lock; moving the tokens
     /// (and finding them gone from the keyring the file names, which a
     /// save in progress elsewhere can show) starts again under the
     /// profile's lock (`lock`), so the file is read again and nothing
@@ -467,6 +469,8 @@ impl Config {
         )
     }
 
+    /// `save_with` with a given store (tests).
+    #[cfg(test)]
     fn save_to(
         &self,
         path: &std::path::Path,
@@ -477,8 +481,8 @@ impl Config {
         self.save_with(path, &|| store, no_keyring, account)
     }
 
-    /// [`Config::save_to`], opening the keyring (`store`) only when this
-    /// save needs it.
+    /// Saves the config to `path`, opening the keyring (`store`) only
+    /// when this save needs it.
     fn save_with<'s>(
         &self,
         path: &std::path::Path,
