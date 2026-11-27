@@ -136,6 +136,10 @@ doesn't handle gets no answer.
   OST mints only for the app's own pages and limits full-trust apps
   without a list to the resources on those lists
   (`FULL_TRUST_RESOURCES`, src/api/app_host.rs).
+- Tests: the host's side (which pages are answered, where events go,
+  nested NAA, navigateCrossDomain, the origin passed for tokens) in
+  desktop/tests/app_host.test.mjs (`node --test`, run in CI); OST's token
+  checks in src/api/app_host.rs's unit tests.
 
 The runtime Teams answers (apiVersion 4):
 `{apiVersion: 4, hostVersionsInfo: {adaptiveCardSchemaVersion: {1, 5}},
