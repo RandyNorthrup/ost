@@ -1052,6 +1052,9 @@ pub struct ActiveCall {
     /// A meeting we were invited into (a Teams Room's): its call recorder
     /// (live captions), from the attach's join answer and the roster.
     recorder: super::recorder::Tracker,
+    /// People we invited from the People pane, by MRI, until the call says
+    /// they joined or couldn't be added.
+    invited: Vec<String>,
 }
 
 impl Drop for ActiveCall {
@@ -1207,6 +1210,59 @@ impl ActiveCall {
             links,
         )
         .await
+    }
+
+    /// Invite people into an answered call from the People pane, as Teams'
+    /// roster people picker does: the conversation's
+    /// addParticipantAndModality link (from the attach's join answer) with
+    /// [`super::outgoing::invite_body`] naming the call's group chat
+    /// `thread_id`.
+    pub async fn invite_people(
+        &mut self,
+        auth: &CallAuth,
+        thread_id: &str,
+        people: &[String],
+    ) -> Result<()> {
+        let link = self
+            .conversation_link("addParticipantAndModality")
+            .context("No addParticipantAndModality link")?;
+        let me = self.me.as_ref().context("Not in the call's conversation")?;
+        let mut from = me.json();
+        from["languageId"] = "en-us".into();
+        let to: Vec<(String, String)> = people
+            .iter()
+            .map(|m| (m.clone(), uuid::Uuid::new_v4().to_string()))
+            .collect();
+        let body = super::outgoing::invite_body(&from, thread_id, &to, |p| me.callback(p));
+        tracing::info!(people = people.len(), "inviting people into the call");
+        cc_request(
+            &auth.http,
+            &auth.skype_token,
+            reqwest::Method::POST,
+            &link,
+            &body,
+            "Invite into the call",
+        )
+        .await?;
+        for m in people {
+            if !self.invited.iter().any(|i| i.eq_ignore_ascii_case(m)) {
+                self.invited.push(m.clone());
+            }
+        }
+        Ok(())
+    }
+
+    /// The call's answer to someone we invited, if `event` is one (as
+    /// [`super::outgoing::OutgoingCall::invite_outcome`]).
+    pub fn invite_outcome(
+        &mut self,
+        event: &serde_json::Value,
+    ) -> Option<(String, std::result::Result<(), String>)> {
+        let (i, r) =
+            self.invited.iter().enumerate().find_map(|(i, m)| {
+                super::phone_audio::call_me_back_result(event, m).map(|r| (i, r))
+            })?;
+        Some((self.invited.remove(i), r))
     }
 
     /// Tell the meeting whether we want live captions (`PUT
@@ -2036,6 +2092,7 @@ pub async fn answer(
         media_descriptions: None,
         tags: Default::default(),
         recorder: Default::default(),
+        invited: Vec::new(),
     }
     .with_conversation())
 }
@@ -2118,6 +2175,7 @@ async fn answer_webrtc(
         media_descriptions: None,
         tags: Default::default(),
         recorder: Default::default(),
+        invited: Vec::new(),
     }
     .with_conversation())
 }
@@ -2226,6 +2284,7 @@ async fn answer_meeting_offer(
         media_descriptions: leg.media_descriptions.map(|l| (l, Default::default())),
         tags: Default::default(),
         recorder: Default::default(),
+        invited: Vec::new(),
     }
     .with_conversation())
 }
@@ -2528,6 +2587,25 @@ pub fn meeting_start(json: &str) -> Option<MeetingStart> {
     (!m.call_id.is_empty() && !m.thread_id.is_empty()).then_some(m)
 }
 
+/// The group chat a call's conversation now goes on in, if `event` is a
+/// conversationUpdate saying it turned multi-party (someone invited a
+/// third person into a 1:1 call: `state.isMultiParty` with
+/// `activeModalities.groupChat.threadId`, captured from Teams 2026-11-26).
+pub fn escalated_to(event: &serde_json::Value) -> Option<String> {
+    let path = event.get("callAgentPath")?.as_str()?;
+    if !path.starts_with("conversation/conversationUpdate") {
+        return None;
+    }
+    let body = event.get("body")?;
+    if body.pointer("/state/isMultiParty")?.as_bool() != Some(true) {
+        return None;
+    }
+    let thread = body
+        .pointer("/activeModalities/groupChat/threadId")?
+        .as_str()?;
+    (thread.starts_with("19:") && thread.ends_with("@thread.v2")).then(|| thread.to_string())
+}
+
 /// Whether a call event says the call is over (remote hang-up, cancel
 /// while ringing, or the conversation ending).
 pub fn is_call_end_event(json: &str) -> bool {
@@ -2661,6 +2739,33 @@ impl CallAuth {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_call_turning_multi_party_names_its_chat() {
+        // Teams' conversationUpdate once a third person was invited into a
+        // 1:1 call (trimmed).
+        let ev = serde_json::json!({
+            "callAgentPath": "conversation/conversationUpdate/",
+            "body": {
+                "activeModalities": { "groupChat": { "threadId": "19:04a491a10d8f4516b1a247d8b7c8c9d2@thread.v2", "messageId": "0" } },
+                "state": { "isMultiParty": true, "isHostless": true }
+            }
+        });
+        assert_eq!(
+            escalated_to(&ev).as_deref(),
+            Some("19:04a491a10d8f4516b1a247d8b7c8c9d2@thread.v2")
+        );
+        let mut one = ev.clone();
+        one["body"]["state"]["isMultiParty"] = false.into();
+        assert_eq!(escalated_to(&one), None);
+        let mut other = ev.clone();
+        other["callAgentPath"] = "subscription/conversationUpdate/".into();
+        assert_eq!(escalated_to(&other), None);
+        // A meeting's chat isn't a group call's.
+        let mut meeting = ev;
+        meeting["body"]["activeModalities"]["groupChat"]["threadId"] = "19:x@thread.tacv2".into();
+        assert_eq!(escalated_to(&meeting), None);
+    }
 
     #[test]
     fn replacement_events_carry_the_new_invitation() {

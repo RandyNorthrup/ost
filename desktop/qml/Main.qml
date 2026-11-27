@@ -2319,6 +2319,9 @@ Window {
         networkStrength: backend.callNetworkStrength || "Good"
         scheduled: backend.callScheduled
         adhocMeeting: backend.callAdhocMeeting
+        groupCall: backend.callGroup
+        invites: backend.callInvitesJson ? JSON.parse(backend.callInvitesJson) : []
+        onInvitePerson: (mri, name) => backend.inviteToCall(mri, name)
         attendeeRestrictions: backend.callAttendeeRestrictions
         aiIndicator: backend.callAiIndicator
         aiAvailable: backend.callAiAvailable
@@ -2413,7 +2416,7 @@ Window {
     property string favName: ""
     readonly property bool callPanes: Qt.application.arguments.indexOf("--call-panes") >= 0
     // --remote-hangup: stay in the call until the caller ends it.
-    readonly property bool remoteHangup: Qt.application.arguments.indexOf("--remote-hangup") >= 0 || Qt.application.arguments.indexOf("--hold-test") >= 0 || Qt.application.arguments.some(a => a.indexOf("--transfer-test=") === 0)
+    readonly property bool remoteHangup: Qt.application.arguments.indexOf("--remote-hangup") >= 0 || Qt.application.arguments.indexOf("--hold-test") >= 0 || Qt.application.arguments.some(a => a.indexOf("--transfer-test=") === 0) || window.inviteQuery.length > 0
     Connections {
         target: backend
         enabled: window.callTest
@@ -10379,6 +10382,49 @@ Window {
             else if (step === 9) { callWindow.dialPadForTest(); callWindow.pressForTest("123#") }
             else if (step === 10) { cap("dialpad"); callWindow.closeDialPadForTest(); console.warn("HOLD tones sent") }
             step++
+        }
+    }
+
+    // --invite-test=<name> (TASK-0345, with --call-person or --call-test):
+    // once the call connects, open People, type <name> in Teams' "Invite
+    // someone or dial a number", pick the suggestion named exactly <name>,
+    // and capture the pane and the stage while they're rung and after;
+    // stays until the call ends.
+    readonly property string inviteQuery: decodeURIComponent((Qt.application.arguments.find(a => a.startsWith("--invite-test=")) || "").slice(14))
+    Connections {
+        target: backend
+        enabled: window.inviteQuery.length > 0
+        function onCallStateChanged() {
+            console.warn("INVITE state", backend.callState)
+            if (backend.callState === "connected" && inviteTimer.step === 0) inviteTimer.start()
+            if (backend.callState === "ended") quitTimer.start()
+        }
+        function onCallInvitesJsonChanged() { console.warn("INVITE invites", backend.callInvitesJson) }
+        function onCallGroupChanged() { console.warn("INVITE group", backend.callGroup, "meeting", backend.callMeeting, "thread", backend.callThreadId, "peer", backend.callPeer) }
+        function onCallRosterJsonChanged() {
+            try { console.warn("INVITE roster", JSON.stringify(JSON.parse(backend.callRosterJson).map(p => p.name + (p.active === false ? "(gone)" : "")))) } catch (e) {}
+        }
+    }
+    Timer {
+        id: inviteTimer
+        interval: 4000
+        repeat: true
+        property int step: 0
+        onTriggered: {
+            const cap = tag => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            step++
+            if (step === 1) { callWindow.side = "people"; cap("people") }
+            else if (step === 2) { callWindow.inviteTypeForTest(window.inviteQuery) }
+            else if (step === 3) { console.warn("INVITE options", JSON.stringify(callWindow.inviteOptionsForTest())); cap("picker") }
+            else if (step === 4) {
+                const i = callWindow.inviteOptionsForTest().indexOf(window.inviteQuery)
+                if (i >= 0) callWindow.invitePickForTest(i)
+                else console.warn("INVITE no exact match")
+            }
+            // Captures while they're rung and after; then hang up
+            // (--invite-stay: stay until the call ends).
+            else if (step <= 16) cap("ring" + (step - 4))
+            else { stop(); if (Qt.application.arguments.indexOf("--invite-stay") < 0) backend.hangUp() }
         }
     }
 

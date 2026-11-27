@@ -146,6 +146,9 @@ pub struct OutgoingCall {
     call_me: Option<String>,
     /// The room being added (Teams' join with a room), until the meeting answers.
     room_pending: Option<String>,
+    /// People invited from the People pane (Teams' Invite someone), by
+    /// MRI, until the call says they joined or couldn't be added.
+    invited: Vec<String>,
     /// The meeting's message id in its chat ("0" for a scheduled
     /// meeting, the post for a channel meeting): Teams' teamsMessageId.
     group_message_id: Option<String>,
@@ -1375,6 +1378,92 @@ impl OutgoingCall {
         tracing::info!(%status, "room invitation accepted by the conversation");
         self.room_pending = Some(room_mri.to_string());
         Ok(())
+    }
+
+    /// Invite people into the call from the People pane, as Teams' roster
+    /// people picker does (its `addParticipantsAsync`): `POST` the
+    /// conversation's addParticipantAndModality link (`…/add`) with each
+    /// person and the call's group chat ([`invite_body`]). The service
+    /// rings them; a 1:1 call becomes a group call on `thread_id` (the
+    /// chat of everyone in it). The outcome comes back as
+    /// addParticipantSuccess / addParticipantFailure
+    /// ([`Self::invite_outcome`]).
+    pub async fn invite_people(&mut self, thread_id: &str, people: &[String]) -> Result<()> {
+        let link = self
+            .add_modality_link
+            .clone()
+            .context("No addParticipantAndModality link")?;
+        if !super::incoming::is_service_link(&link) {
+            bail!("addParticipantAndModality: not a Teams service link");
+        }
+        let config = Config::load()?;
+        let ic3 = config
+            .get_ic3_token()
+            .context("No calling (IC3) token")?
+            .token;
+        let (surl, epid) = &self.callbacks;
+        let mut from = self.me.0.clone();
+        if let Some(o) = from.as_object_mut() {
+            o.entry("languageId").or_insert_with(|| "en-us".into());
+        }
+        let to: Vec<(String, String)> = people
+            .iter()
+            .map(|m| (m.clone(), uuid::Uuid::new_v4().to_string()))
+            .collect();
+        let body = invite_body(&from, thread_id, &to, |p| {
+            signaling::trouter_callback(surl, epid, p)
+        });
+        tracing::info!(people = people.len(), "inviting people into the call");
+        let resp = self
+            .http
+            .post(&link)
+            .bearer_auth(ic3)
+            .header("x-microsoft-skype-chain-id", &self.call_id)
+            .header(
+                "x-microsoft-skype-message-id",
+                uuid::Uuid::new_v4().to_string(),
+            )
+            .header("x-microsoft-skype-client", signaling::SKYPE_CLIENT_HEADER)
+            .header("ms-teams-partition", signaling::TEAMS_PARTITION)
+            .header("ms-teams-region", signaling::TEAMS_REGION)
+            .header("ms-teams-ring", signaling::TEAMS_RING)
+            .header("x-ms-migration", "True")
+            .json(&body)
+            .send()
+            .await
+            .context("Invite into the call")?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            bail!(
+                "Inviting into the call failed ({status}): {}",
+                &text[..text.len().min(300)]
+            );
+        }
+        tracing::info!(%status, "invitation accepted by the conversation");
+        // A 1:1 call goes on as the group chat's call.
+        self.thread_id = thread_id.to_string();
+        for m in people {
+            if !self.invited.iter().any(|i| i.eq_ignore_ascii_case(m)) {
+                self.invited.push(m.clone());
+            }
+        }
+        Ok(())
+    }
+
+    /// The call's answer to someone we invited, if `event` is one: their
+    /// MRI, and Ok when they joined or Err(Teams' message) when they
+    /// couldn't be added (declined, no answer). Either way they stop being
+    /// pending.
+    pub fn invite_outcome(
+        &mut self,
+        event: &serde_json::Value,
+    ) -> Option<(String, std::result::Result<(), String>)> {
+        let (i, r) =
+            self.invited.iter().enumerate().find_map(|(i, m)| {
+                super::phone_audio::call_me_back_result(event, m).map(|r| (i, r))
+            })?;
+        Some((self.invited.remove(i), r))
     }
 
     /// The meeting's answer to adding the room, if `event` is it: Ok when
@@ -2941,6 +3030,37 @@ pub fn merge_body(
     serde_json::json!({
         "participants": { "from": from, "to": to },
         "participantInvitationData": {},
+        "groupContext": null,
+        "groupChat": { "threadId": thread_id, "messageId": null },
+        "links": {
+            "addParticipantSuccess": cb("conversation/addParticipantSuccess/"),
+            "addParticipantFailure": cb("conversation/addParticipantFailure/"),
+        },
+    })
+}
+
+/// Teams' roster invitation (its `addParticipantsAsync` from the people
+/// picker, captured from Teams on the web 2026-11-26): `{disableUnmute:
+/// false, participants: {from, to: [{id, participantId}]},
+/// participantInvitationData: {}, replacementDetails: null, groupContext:
+/// null, groupChat: {threadId, messageId: null}, links:
+/// {addParticipantSuccess, addParticipantFailure}}`. `to` pairs each MRI
+/// with a fresh participant id.
+pub fn invite_body(
+    from: &serde_json::Value,
+    thread_id: &str,
+    to: &[(String, String)],
+    cb: impl Fn(&str) -> String,
+) -> serde_json::Value {
+    let to: Vec<serde_json::Value> = to
+        .iter()
+        .map(|(id, pid)| serde_json::json!({ "id": id, "participantId": pid }))
+        .collect();
+    serde_json::json!({
+        "disableUnmute": false,
+        "participants": { "from": from, "to": to },
+        "participantInvitationData": {},
+        "replacementDetails": null,
         "groupContext": null,
         "groupChat": { "threadId": thread_id, "messageId": null },
         "links": {
@@ -5093,6 +5213,7 @@ async fn start_tagged(
         phone_audio,
         call_me: None,
         room_pending: None,
+        invited: Vec::new(),
         group_message_id,
         timers,
         notes,
@@ -5242,6 +5363,34 @@ mod tests {
         assert_eq!(
             leg_replacement(&serde_json::json!({ "endpointDetails": [{ "participantId": "x" }] })),
             None
+        );
+    }
+
+    #[test]
+    fn invitations_are_teams() {
+        // Teams on the web inviting OST Test 2 into a 1:1 call from the
+        // People pane (2026-11-26), less the ids.
+        let from = serde_json::json!({ "id": "8:orgid:a", "displayName": "A", "endpointId": "e", "participantId": "p", "languageId": "en-us" });
+        let b = invite_body(
+            &from,
+            "19:abc@thread.v2",
+            &[("8:orgid:b".into(), "pid-b".into())],
+            |p| format!("cb/{p}"),
+        );
+        assert_eq!(
+            b,
+            serde_json::json!({
+                "disableUnmute": false,
+                "participants": { "from": from, "to": [{ "id": "8:orgid:b", "participantId": "pid-b" }] },
+                "participantInvitationData": {},
+                "replacementDetails": null,
+                "groupContext": null,
+                "groupChat": { "threadId": "19:abc@thread.v2", "messageId": null },
+                "links": {
+                    "addParticipantSuccess": "cb/conversation/addParticipantSuccess/",
+                    "addParticipantFailure": "cb/conversation/addParticipantFailure/"
+                }
+            })
         );
     }
 

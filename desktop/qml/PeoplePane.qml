@@ -22,6 +22,14 @@ Rectangle {
     /// In the lobby: [{id, name, suspected}].
     property var lobby: []
     property bool meeting: true
+    /// A group call (a 1:1 call someone was invited into): Teams' roster
+    /// says "Currently in this call", as in a 1:1 call.
+    property bool groupCall: false
+    /// People can be invited into the call (a 1:1 or group call): the box
+    /// is Teams' people picker, "Invite someone or dial a number", and
+    /// picking someone rings them in.
+    property bool canInvite: false
+    signal invite(string mri, string name)
     /// The meeting's link to share; Teams' Share invite shows with it.
     property string inviteUrl: ""
     signal shareInvite()
@@ -157,7 +165,7 @@ Rectangle {
                 if (!collapsed.attendees) nested(attendees).forEach(r => out.push(r))
             }
         } else {
-            out.push({ kind: "section", key: "here", title: qsTr("%1 (%2)", "calling:k63z7tn13").arg(meeting ? qsTr("In this meeting", "calling:k7zs2oxna") : qsTr("Currently in this call")).arg(here.length), action: muteAll, level: 0 })
+            out.push({ kind: "section", key: "here", title: qsTr("%1 (%2)", "calling:k63z7tn13").arg(meeting && !groupCall ? qsTr("In this meeting", "calling:k7zs2oxna") : qsTr("Currently in this call")).arg(here.length), action: muteAll, level: 0 })
             if (!collapsed.here) nested(here).forEach(r => out.push(r))
         }
         const inCall = people.map(p => (p.id || "").toLowerCase())
@@ -212,31 +220,48 @@ Rectangle {
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
     }
 
-    // "Type a name"
+    // "Type a name" (a meeting's search box). In a 1:1 call Teams' people
+    // picker instead (people-picker-input, measured on testpc1
+    // 2026-11-26): the pane's whole width from just under the header
+    // divider (y 79, 33 tall), #F0F0F0, no edge or corners, the text 13.3
+    // in, the brand line under it while focused.
+    readonly property bool wideBox: root.canInvite && !root.meeting
     Rectangle {
         id: search
         visible: !root.display
-        x: 20.7; y: 77; width: 319.3; height: 32; radius: 4
-        color: theme.surface
+        x: root.wideBox ? 0.67 : 20.7; y: root.wideBox ? 79 : 77
+        width: root.wideBox ? parent.width - 0.67 : 319.3; height: root.wideBox ? 33 : 32
+        radius: root.wideBox ? 0 : 4
+        color: root.wideBox ? theme.pick("#F0F0F0", "#1F1F1F", "#000000") : theme.surface
         TextInput {
             id: field
-            x: 12.6; width: 274; anchors.verticalCenter: parent.verticalCenter
+            x: root.wideBox ? 13.3 : 12.6; width: root.wideBox ? parent.width - x - 45 : 274; anchors.verticalCenter: parent.verticalCenter
             font.family: theme.font; font.pixelSize: 14
             color: theme.text
             clip: true
             selectByMouse: true
-            onTextChanged: root.query = text.trim()
+            onTextChanged: {
+                root.query = text.trim()
+                picker.results = []
+                picker.highlighted = 0
+                if (root.canInvite && root.query.length > 0) pickDebounce.restart()
+            }
+            Keys.onDownPressed: picker.highlighted = Math.min(picker.options.length - 1, picker.highlighted + 1)
+            Keys.onUpPressed: picker.highlighted = Math.max(0, picker.highlighted - 1)
+            Keys.onReturnPressed: if (picker.shown) picker.choose(picker.options[picker.highlighted])
+            Keys.onEscapePressed: field.text = ""
             Accessible.role: Accessible.EditableText
-            Accessible.name: qsTr("Type a name")
+            Accessible.name: root.canInvite ? qsTr("Invite someone or dial a number") : qsTr("Type a name")
         }
         Text {
             visible: field.text.length === 0
             x: field.x; anchors.verticalCenter: parent.verticalCenter
-            text: qsTr("Type a name")
+            text: root.canInvite ? qsTr("Invite someone or dial a number") : qsTr("Type a name")
             font.family: theme.font; font.pixelSize: 14
-            color: theme.textTertiary
+            color: root.wideBox ? theme.textSecondary : theme.textTertiary
         }
-        FluentIcon { x: 288.6; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 20; color: theme.textSecondary }
+        // (The people picker shows its search glyph only once there's text.)
+        FluentIcon { visible: !root.wideBox || field.text.length > 0; x: parent.width - 30.7; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 20; color: theme.textSecondary }
         // Teams' focused input: a 2 px brand line along the bottom.
         Rectangle { visible: field.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
     }
@@ -264,7 +289,8 @@ Rectangle {
     Flickable {
         id: list
         // The roster starts 155.3 down below Share invite (measured).
-        y: root.display ? 77 : shareInvite.visible ? 155.3 : search.y + search.height + 10
+        // (Right under the 1:1 people picker, measured.)
+        y: root.display ? 77 : shareInvite.visible ? 155.3 : root.wideBox ? search.y + search.height : search.y + search.height + 10
         width: parent.width; height: parent.height - y
         contentHeight: column.height
         clip: true
@@ -283,6 +309,98 @@ Rectangle {
                 }
             }
         }
+    }
+
+    // Teams' roster people picker (people-picker-list): typing in the box
+    // lists the directory's people (searchV2) under it, the name with the
+    // typed words in bold and the address's name in capitals; whoever is
+    // already in the call (or being rung) and you are left out. Picking one
+    // (click, or arrows and Enter) rings them in.
+    Item {
+        id: picker
+        property var results: []
+        property int highlighted: 0
+        readonly property string tag: "callinvite" + Math.floor(Math.random() * 1e9).toString(36)
+        readonly property var options: {
+            const taken = root.people.map(p => (p.id || "").toLowerCase()).concat([root.selfKey.toLowerCase()])
+            return results.filter(r => taken.indexOf((r.mri || "").toLowerCase()) < 0)
+        }
+        /// The test harness types without the window focused.
+        property bool forTest: false
+        readonly property bool shown: root.canInvite && (field.activeFocus || forTest) && root.query.length > 0 && options.length > 0
+        function choose(o) {
+            if (!o) return
+            root.invite(o.mri, o.name || "")
+            field.text = ""
+        }
+        Timer { id: pickDebounce; interval: 300; onTriggered: backend.eventsRequest("contactsSearch", picker.tag, JSON.stringify({ q: root.query })) }
+        Connections {
+            target: backend
+            function onEventsReply(id, json) {
+                if (id !== picker.tag) return
+                let v = {}
+                try { v = JSON.parse(json) } catch (e) {}
+                if (v.q !== root.query) return
+                picker.results = v.people || []
+                picker.highlighted = 0
+            }
+        }
+        visible: shown
+        z: 10
+        // Measured on testpc1 (2026-11-26): 4 in from each side, flush
+        // under the box, 3 padding; rows 50 tall 2 apart, the highlighted
+        // one #F5F5F5 in a 2 px edge; the picture 32 at 12, the name (14,
+        // the typed text in bold where the name starts with it) and the
+        // address's name in capitals (12, #616161) at 60.
+        x: 4; y: search.y + search.height + 1
+        width: root.width - 8; height: Math.min(suggestions.contentHeight + 6, root.height - y - 8)
+        FluentSurface { anchors.fill: parent; depth: 8; radius: 4; color: theme.surface }
+        ListView {
+            id: suggestions
+            anchors.fill: parent; anchors.margins: 3
+            clip: true; model: picker.options
+            spacing: 2
+            boundsBehavior: Flickable.StopAtBounds
+            delegate: Rectangle {
+                id: opt
+                required property var modelData
+                required property int index
+                width: ListView.view.width; height: 50; radius: 4
+                color: picker.highlighted === index || optHover.hovered ? theme.menuHover : "transparent"
+                // Fluent's StrokeFocus2 around the highlighted one.
+                border.width: picker.highlighted === index && field.activeFocus ? 2 : 0
+                border.color: theme.pick("#000000", "#FFFFFF", "#FFFFFF")
+                Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32; name: opt.modelData.name || ""; photoId: opt.modelData.mri || "" }
+                Text {
+                    x: 60; y: 6; width: parent.width - 72; elide: Text.ElideRight
+                    textFormat: Text.StyledText
+                    text: root.boldedPrefix(opt.modelData.name || "", root.query)
+                    font.family: theme.font; font.pixelSize: 14; color: theme.textStrong
+                }
+                Text {
+                    x: 60; y: 27; width: parent.width - 72; elide: Text.ElideRight
+                    textFormat: Text.StyledText
+                    text: root.boldedPrefix(opt.modelData.detail || "", root.query)
+                    font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                }
+                HoverHandler { id: optHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: picker.choose(opt.modelData) }
+                Accessible.role: Accessible.ListItem
+                Accessible.name: (opt.modelData.name || "") + ", " + (opt.modelData.detail || "")
+            }
+        }
+    }
+    // The test harness (--invite-test): type in the box, read and pick
+    // the suggestions.
+    function typeForTest(t) { picker.forTest = true; field.forceActiveFocus(); field.text = t }
+    function inviteOptionsForTest() { return picker.options.map(o => o.name) }
+    function pickForTest(i) { picker.choose(picker.options[i]) }
+    /// The typed text in bold where the line starts with all of it (Teams:
+    /// "OST Test 2" marks "OST Test 2", not "OST Test Room").
+    function boldedPrefix(t, q) {
+        const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        const k = String(q || "").trim()
+        return k && String(t).toLowerCase().indexOf(k.toLowerCase()) === 0 ? "<b>" + esc(String(t).slice(0, k.length)) + "</b>" + esc(String(t).slice(k.length)) : esc(t)
     }
 
     // A section or subsection header: 38 tall, chevron and 12 px label,
@@ -465,8 +583,18 @@ Rectangle {
                 name: "pin-20"; size: 20; color: theme.textStrong
             }
             HoverHandler { id: rowHover }
+            // Someone invited and still being rung: Teams' "Calling..."
+            // where the mic would be, and no menu.
+            Text {
+                visible: !!p.calling
+                anchors.right: parent.right; anchors.rightMargin: 22
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("Calling...")
+                font.family: theme.font; font.pixelSize: 12
+                color: theme.textSecondary
+            }
             FluentIcon {
-                visible: !p.chatOnly && !(moreButton.visible)
+                visible: !p.chatOnly && !p.calling && !(moreButton.visible)
                 x: parent.width - 40; anchors.verticalCenter: parent.verticalCenter
                 name: p.mutedNow ? "mic-off-20" : "roster-mic-20"; size: 20
                 color: theme.text
@@ -475,7 +603,7 @@ Rectangle {
             // place opens their menu.
             Rectangle {
                 id: moreButton
-                visible: !p.chatOnly && !p.you && root.meeting && (rowHover.hovered || participantMenu.forId === (p.id || ""))
+                visible: !p.chatOnly && !p.calling && !p.you && root.meeting && (rowHover.hovered || participantMenu.forId === (p.id || ""))
                 x: parent.width - 42; anchors.verticalCenter: parent.verticalCenter
                 width: 24; height: 23.33; radius: 4
                 color: moreHover.hovered ? theme.hover : "transparent"

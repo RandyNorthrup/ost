@@ -2268,6 +2268,7 @@
 ["Invite people to attend (Optional)", "", "virtualEvents:k52whdube", []],
 ["Invite people to join you", "", "calling:k3r1o4ac2", []],
 ["Invite required attendees", "", "x.owacal:Nhvpve", []],
+["Invite someone or dial a number", "", "calling:kclk56wdc", []],
 ["Invited and registered attendees will be notified by email. They'll be able to play the recording on the event page.", "", "virtualEvents:ki74146z", []],
 ["Invited and registered attendees will be notified by email. They'll be able to view highlights and play recordings on the event page.", "", "virtualEvents:k4egq1t00", []],
 ["Invites and requests", "", "teamsAndChannels:kb09rcd64", []],
