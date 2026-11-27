@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@task-0362-agent'
 created_date: '2026-11-27T18:19:00Z'
-updated_date: '2026-11-27T20:02:00Z'
+updated_date: '2026-11-27T20:29:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -66,6 +66,8 @@ Codex 2nd round: Shift+Esc (Mark all as read) was taken as the menu's Esc; Teams
 
 Codex 3rd round: hovering straight from one submenu row to another reused the open submenu without moving the keys; fixed in e928e211 (first row + takeKeys), harness 49 ok / 0 FAIL. Codex then gave +1 on e928e211 (no findings); all 5 threads answered and resolved.
 One earlier harness run had 8 FAILs after another window took the activation on linuxlt's shared screen mid-run (keys then reach no item); reruns passed. Failed checks now log window.active and the focus item.
+
+Codex 4th round: Right/Enter on a row whose submenu is already open (pointer back on the row) didn't move the keys into it; Teams does (seen: hover Translation again, Right -> Translate). Fixed: reuse the open submenu with its first row and the keys when opened from the keyboard too. Harness 51 ok / 0 FAIL (run with another branch's test-harness binary loading this QML through OST_QML_DIR via --keys-test's loader); red drill without the fix: exactly that check FAILs.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
