@@ -2862,7 +2862,11 @@ Rectangle {
                     chatTitle: root.chatTopic || root.chatName
                     editTeamId: root.teamId; editTeamName: root.teamName
                     deliveryOptions: !msg.scheduledMsg
-                    canRecordClip: root.canRecordClips && !msg.scheduledMsg
+                    // (No files or clips in a chat with someone on Teams
+                    // free, as in the main box.)
+                    filesAllowed: !root.externalChat
+                    picturesAllowed: !root.externalChat || root.chatIsCreator
+                    canRecordClip: root.canRecordClips && !msg.scheduledMsg && !root.externalChat
                     onRecordClipRequested: { root.clipBox = editBox; clipRecorder.openFor(root.chatId) }
                     onClipRemoved: root.dropClip(editBox)
                     onClipRetry: root.retryClip(editBox)
@@ -5665,7 +5669,7 @@ Rectangle {
         onCloudLinkRequested: key => cloudAttach.openLink(key)
         onAttachRequested: a => root.openAttach(a)
         // Record video clip: in a chat's or channel's own compose box.
-        canRecordClip: root.canRecordClips
+        canRecordClip: root.canRecordClips && !root.externalChat
         onRecordClipRequested: { root.clipBox = compose; clipRecorder.openFor(root.chatId) }
         onClipRemoved: {
             if (compose.clip) {

@@ -405,7 +405,7 @@ Rectangle {
         onCloudRemoved: key => cloudAttach.remove(key)
         onCloudLinkRequested: key => cloudAttach.openLink(key)
         onAttachRequested: a => cloudAttach.openMenu(a || compose)
-        canRecordClip: true
+        canRecordClip: !root.externalPicked
         onRecordClipRequested: clipRecorder.openFor("")
         onClipRemoved: {
             if (compose.clip) {
