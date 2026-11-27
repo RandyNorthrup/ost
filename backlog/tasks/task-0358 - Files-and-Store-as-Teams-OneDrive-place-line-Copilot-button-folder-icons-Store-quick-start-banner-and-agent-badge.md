@@ -3,11 +3,11 @@ id: TASK-0358
 title: >-
   Files and Store as Teams: OneDrive place line, Copilot button, folder icons;
   Store quick start, banner and agent badge
-status: In Progress
+status: Done
 assignee:
   - '@claude-task-0358'
 created_date: '2026-11-27T17:32:00Z'
-updated_date: '2026-11-27T19:22:00Z'
+updated_date: '2026-11-27T20:19:00Z'
 labels: []
 dependencies: []
 priority: medium
@@ -53,6 +53,8 @@ From the 2026-11-27 parity audit (scope B), which compared Teams desktop on winp
   - B-24: My files shows Copilot ▾ (menu: Ask a question) and the subfolder bar has it after Copy link; Ask a question opens the Copilot pane with OneDrive's three prompts.
   - B-25: Meetings/Recordings carry the People glyph, OST Test Team - General the glyph plus the shortcut badge and ArrowSquareUpRight before Owner.
 - Differences left: Teams' chat places on testpc1 also leave out a few chats OST lists (Just me, OST TEST 348 *); the reason isn't in the resolver code I read (Teams' chat-list visibility filter `te.lb`). Teams' Home also lists a loop_loopThread item OST leaves out (separate from B-23). Tiles view folder marks not added. OneDrive's knowledge agent state for Ask a question is left out, as for Summarize.
+
+- PR #50. Codex review rounds fixed: channel meetings only for apps that work in channels and with their channel's checks; calendar meetings kept when their chat isn't listed yet (now shows Weekly team sync as Teams); Ask a question after Summarize drops the file's source; tab config Back returns to the quick start; Go clears chat subviews; config URL from the definition; tab places follow Add a tab's scope+context rules (meeting tabs: any meeting surface); messageExtensions count as personal. shared_files test fixture gained ContentClass.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
