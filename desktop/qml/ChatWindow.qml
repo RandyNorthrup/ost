@@ -90,7 +90,8 @@ Window {
         popout: true
         chatId: win.chatId
         chatName: win.chatName
-        isGroup: win.chatId.endsWith("@thread.v2") || win.chatId.indexOf("meeting_") >= 0
+        // (A 19:uni01_… one-on-one the chat list knows as such isn't.)
+        isGroup: (win.chatId.endsWith("@thread.v2") || win.chatId.indexOf("meeting_") >= 0) && ((JSON.parse(backend.chatsJson || "[]").find(c => c.id === win.chatId) || {}).isGroup !== false)
         chatPhotoId: win.photoId
         chatPresence: win.presence
         myName: backend.userName

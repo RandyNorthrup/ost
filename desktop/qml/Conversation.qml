@@ -534,7 +534,9 @@ Rectangle {
     // window's) shows `copilotRequest`, and it closes when another chat
     // opens or Find or the details pane take its place.
     readonly property var copilotState: { try { return JSON.parse(backend.composeCopilotJson || "{}") } catch (e) { return {} } }
-    readonly property int copilotButton: !pane && !isChannel && !readOnly && chatId !== "" && (isMeetingChat ? !!copilotState.meetingChat : !!copilotState.chat) ? 1 : 0
+    // (Not on a chat request: Teams' header there has none, seen for
+    // ost-test1 on teams.microsoft.com 2026-11-27.)
+    readonly property int copilotButton: !pane && !isChannel && !readOnly && chatId !== "" && !chatRequest && (isMeetingChat ? !!copilotState.meetingChat : !!copilotState.chat) ? 1 : 0
     property bool copilotOpen: false
     onCopilotButtonChanged: if (!copilotButton) { copilotOpen = false; copilotHistoryOpen = false }
     // More chat options ▸ View Copilot history (Teams' chat-app IC,
@@ -715,7 +717,7 @@ Rectangle {
     }
     readonly property bool composeFocused: input.activeFocus
     readonly property bool detailsOpen: participants.visible
-    function attachFile() { if (compose.visible) root.openAttach(compose.attachButton()) }
+    function attachFile() { if (compose.visible && compose.filesAllowed) root.openAttach(compose.attachButton()) }
     function replyForTest(text) { return channelPosts.replyToNewestForTest(text) }
     // Test hooks for the compose box.
     function setComposeText(t) { root.setPlain(t) }
@@ -849,7 +851,7 @@ Rectangle {
     signal reportConcern()
     readonly property bool chatShortcuts: visible && !isChannel && !pane && !popout && chatName.length > 0
     Shortcut { sequence: "Ctrl+O"; enabled: root.chatShortcuts; onActivated: root.openInNewWindow() }
-    Shortcut { sequence: "Ctrl+Shift+E"; enabled: root.chatShortcuts && !root.isSelf && !root.isMeetingChat; onActivated: root.shareScreen() }
+    Shortcut { sequence: "Ctrl+Shift+E"; enabled: root.chatShortcuts && !root.isSelf && !root.isMeetingChat && !root.externalChat; onActivated: root.shareScreen() }
     function chatMenuForTest() { return chatMenu }
     function removeHistoryForTest() { return removeHistoryAsk }
     // Teams' "Remove chat history?" (as the chat list's).
@@ -873,6 +875,25 @@ Rectangle {
     /// An event's or meeting's group chat (Teams' backroom chat): "event", "meeting" or "".
     readonly property string backroom: chatEntry && chatEntry.backroom ? chatEntry.backroom : ""
     readonly property bool chatIsCreator: !!(chatEntry && chatEntry.isCreator)
+    // Someone in the chat uses Teams free (an 8:live: member): Teams' work
+    // client shows them as External, says so in a banner and over the
+    // compose box, and turns off calls, screen sharing, tabs and files in
+    // the chat (live check on testpc2, 2026-11-27: "Calling isn't
+    // available in this chat.", no Attach; its chat-app file rule `w1`
+    // turns files off for chats with a TflConsumer member).
+    readonly property var consumerMembers: root.chatMembers.filter(m => Mri.isConsumer(m.mri) && !m.me)
+    readonly property bool externalChat: !root.isChannel && !root.isMeetingChat && !root.isSelf
+        && (root.consumerMembers.length > 0 || !!(chatEntry && chatEntry.external) || Mri.isConsumer(root.chatPhotoId))
+    readonly property bool externalOneOnOne: externalChat && !root.isGroup
+    /// A chat request you haven't answered (Teams: "… wants to chat with
+    /// you", Block and Accept; the chat's relationshipState.inQuarantine).
+    readonly property bool chatRequest: !!(chatEntry && chatEntry.request) && !root.requestAnswered[root.chatId]
+    /// Requests answered here, until the chat list catches up.
+    property var requestAnswered: ({})
+    /// The Teams free person a 1:1 request or chat is with.
+    readonly property var externalPerson: root.consumerMembers.length > 0 ? root.consumerMembers[0]
+        : ({ mri: root.chatPhotoId, name: root.chatName, mail: "" })
+    property var dismissedExternalNotes: ({})
     /// The chat's Recap (Teams' recap card: View recap, the transcript chip
     /// and the recording open the meeting's Recap view).
     signal openEventHighlights(string title, real startMs)
@@ -978,7 +999,10 @@ Rectangle {
     function seeDetailsForTest() { return channelPosts.seeDetailsForTest() }
     readonly property bool callGoing: !!root.liveCall || root.messages.some(m => m.kind === "call" && m.call_state === "started" && m.call_active)
     readonly property bool inThisCall: backend.callState !== "" && backend.callThreadId === root.chatId
-    readonly property bool callsDisabled: root.chatMembers.length > 20
+    readonly property bool callsDisabled: root.chatMembers.length > 20 || root.externalChat
+    /// Teams' tooltip on a disabled call control.
+    readonly property string callsOffTip: root.externalChat ? qsTr("Calling isn't available in this chat.", "calling:kq112yv9")
+        : qsTr("Calls aren't available in chats with more than %1 people").arg(20)
     // A member's name by MRI: call events name people only by MRI, and
     // Teams shows them by their roster name.
     function memberName(mri) {
@@ -1033,6 +1057,7 @@ Rectangle {
     function chatAppsForTest() { return chatApps }
     function insertTextForTest(t) { compose.insertText(t) }
     onChatIdChanged: {
+        requestPreview = false
         smartReplies = null
         if (chatId && !isChannel) backend.loadSmartReplies(chatId)
         postViewRoot = ""
@@ -1441,6 +1466,13 @@ Rectangle {
                 onHoveredChanged: if (theme.hoverCard) { if (hovered) theme.hoverCard.hoverEnter(root.chatPhotoId, title, root.chatName, root.chatPresence); else theme.hoverCard.hoverLeave() }
             }
         }
+        // Someone on Teams free: Teams' External badge 5 after the title
+        // (measured on testpc2, 2026-11-27).
+        ExternalBadge {
+            id: externalBadge
+            visible: root.externalOneOnOne
+            x: title.x + title.width + 5; anchors.verticalCenter: title.verticalCenter
+        }
         // Name group chat (chat-title-name-group-chat): group chats only,
         // 4 after the title.
         Rectangle {
@@ -1545,8 +1577,9 @@ Rectangle {
         }
         Row {
             id: tabs
-            visible: !root.narrowTitle && (!root.popout || root.windowTabs)
-            x: (renameButton.visible ? renameButton.x + renameButton.width : title.x + title.width) + 2
+            // (A chat with someone on Teams free has no tabs in Teams.)
+            visible: !root.narrowTitle && (!root.popout || root.windowTabs) && !root.externalOneOnOne
+            x: (renameButton.visible ? renameButton.x + renameButton.width : externalBadge.visible ? externalBadge.x + externalBadge.width : title.x + title.width) + 2
             y: 2; height: 56
             Repeater {
                 id: tabRepeater
@@ -1799,14 +1832,26 @@ Rectangle {
             id: ha
             property alias icon: haIcon.name
             property int iconSize: 20
+            /// Shown greyed with this tooltip instead of acting (Teams'
+            /// disabled call button in a chat with someone on Teams free).
+            property bool off: false
+            property string offTip: ""
             signal clicked()
             width: 32; height: 32; radius: theme.radius
             anchors.verticalCenter: parent.verticalCenter
-            color: haHover.hovered && !root.liveBand ? theme.hover : "transparent"
-            HoverHandler { id: haHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: ha.clicked() }
+            color: haHover.hovered && !root.liveBand && !ha.off ? theme.hover : "transparent"
+            HoverHandler { id: haHover; cursorShape: ha.off ? Qt.ArrowCursor : Qt.PointingHandCursor }
+            TapHandler { enabled: !ha.off; onTapped: ha.clicked() }
             property color iconColor: root.hdrStrong
-            FluentIcon { id: haIcon; anchors.centerIn: parent; size: ha.iconSize; color: theme.onFill(ha, ha.iconColor) }
+            FluentIcon { id: haIcon; anchors.centerIn: parent; size: ha.iconSize; color: theme.onFill(ha, ha.off ? theme.disabled : ha.iconColor) }
+            ToolTip {
+                visible: haHover.hovered && ha.off && !!ha.offTip; delay: 500
+                y: parent.height + 4; padding: 8
+                background: FluentSurface { depth: 16; radius: 4 }
+                contentItem: Text { text: ha.offTip; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+            }
+            Accessible.role: Accessible.Button
+            Accessible.description: ha.off ? ha.offTip : ""
         }
         // 1:1: Teams' sticky call button (default-chat-call-audio-button /
         // -video-button, 24 x 31.3): the last choice placed from here, audio
@@ -1818,13 +1863,15 @@ Rectangle {
             visible: !root.isSelf && !root.isChannel && !root.isGroup
             x: oneToOnePeople.x - 48; width: 24; height: 31.3
             icon: backend.headerCallVideo ? "video-20" : "call-20"
+            off: root.callsDisabled; offTip: root.callsOffTip
             onClicked: backend.headerCallVideo ? root.videoCall() : root.call()
-            Accessible.name: backend.headerCallVideo ? qsTr("Video call") : qsTr("Audio call")
+            Accessible.name: off ? offTip : backend.headerCallVideo ? qsTr("Video call") : qsTr("Audio call")
         }
         HeaderAction {
             visible: callPrimary.visible
             x: oneToOnePeople.x - 24; width: 24; height: 31.3
             icon: "chevron-down-16"; iconSize: 16
+            off: root.callsDisabled; offTip: root.callsOffTip
             Accessible.name: qsTr("More call options")
             onClicked: callMenu.open()
             MenuPopup {
@@ -1960,7 +2007,7 @@ Rectangle {
                 visible: meetHover.hovered && (!meetNow.wide || root.callsDisabled); delay: 500
                 y: parent.height + 4; padding: 8
                 background: FluentSurface { depth: 16; radius: 4 }
-                contentItem: Text { text: root.callsDisabled ? qsTr("Calls aren't available in chats with more than %1 people").arg(20) : qsTr("Meet now"); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                contentItem: Text { text: root.callsDisabled ? root.callsOffTip : qsTr("Meet now"); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
             }
             Accessible.role: Accessible.Button
             Accessible.name: qsTr("Meet now")
@@ -2226,7 +2273,9 @@ Rectangle {
                     root.popout ? null : { key: "window", label: qsTr("Open in new window"), icon: "open-window-20", keys: "Ctrl+O" },
                     root.popout ? null : { separator: true },
                     calls ? { key: "meeting", label: qsTr("Schedule meeting"), icon: "calendar-add-20" } : null,
-                    calls ? { key: "share", label: qsTr("Share screen"), icon: "share-screen-start-20", keys: "Ctrl+Shift+E" } : null,
+                    // (A chat with someone on Teams free has no Share screen in Teams:
+                    // testpc2, 2026-11-27.)
+                    calls && !root.externalChat ? { key: "share", label: qsTr("Share screen"), icon: "share-screen-start-20", keys: "Ctrl+Shift+E" } : null,
                     calls ? { separator: true } : null,
                     { key: "unread", label: qsTr("Mark as unread"), icon: "glasses-off-20" },
                     { key: "move", label: qsTr("Move to section"), icon: "star-20", submenu: root.moveTargets() },
@@ -2312,7 +2361,7 @@ Rectangle {
     property bool landing: false
     ListView {
         id: list
-        visible: root.tab === "" && (!root.isChannel || root.threadsLayout)
+        visible: root.tab === "" && (!root.isChannel || root.threadsLayout) && (!root.chatRequest || root.requestPreview)
         onCountChanged: if (root.landing && count > 0) {
             root.landing = false
             if (!root.landOnLastRead) return
@@ -2320,8 +2369,9 @@ Rectangle {
             if (i >= 0) Qt.callLater(() => list.positionViewAtIndex(i, ListView.End))
         }
         // Read-only (a lobby's view): the messages start at the top, as
-        // Teams' waiting-side Lobby pane lists them.
-        anchors { top: header.bottom; bottom: root.readOnly ? undefined : root.selecting ? selectBar.top : root.peerNoteShown ? peerNoteBar.top : compose.top; left: parent.left; right: parent.right }
+        // Teams' waiting-side Lobby pane lists them. A chat request's
+        // preview ends over its Block / Accept bar.
+        anchors { top: externalBanner.visible ? externalBanner.bottom : header.bottom; bottom: root.readOnly ? undefined : root.chatRequest ? requestView.top : root.selecting ? selectBar.top : root.peerNoteShown ? peerNoteBar.top : compose.top; left: parent.left; right: parent.right }
         height: Math.min(contentHeight + 12, root.height - header.height - 12)
         anchors.bottomMargin: 12
         clip: true
@@ -2649,7 +2699,10 @@ Rectangle {
                     // (An AI agent's name stands alone: its tag and the time
                     // follow as their own items.)
                     readonly property bool agentTag: !!msg.modelData.ai_agent && !root.compact && !msg.mine
-                    text: agentTag ? root.senderLabel(msg.modelData)
+                    // (Someone on Teams free: Teams' external glyph after the
+                    // name, then the time.)
+                    readonly property bool externalTag: !msg.modelData.ai_agent && !root.compact && !msg.mine && Mri.isConsumer(msg.modelData.sender_mri)
+                    text: agentTag || externalTag ? root.senderLabel(msg.modelData)
                         : root.compact
                         ? "<b><font color=\"" + theme.text + "\">" + root.senderLabel(msg.modelData).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</font></b>&nbsp;&nbsp;" + root.stamp(msg.modelData.time) + (msg.modelData.edited && !msg.sendFailed ? "&nbsp;&nbsp;&nbsp;" + qsTr("Edited") : "") + (root.cardUpdated(msg.modelData.id) ? "&nbsp;&nbsp;&nbsp;" + qsTr("Updated") : "")
                         : (msg.mine ? "" : root.senderLabel(msg.modelData) + "  ") + root.stamp(msg.modelData.time)
@@ -2693,8 +2746,19 @@ Rectangle {
                         Accessible.role: Accessible.StaticText; Accessible.name: agentTagText.text
                     }
                 }
+                // Teams' external glyph after a Teams free sender's name
+                // (people-error 16, NeutralForeground3, measured on testpc2
+                // 2026-11-27).
+                FluentIcon {
+                    visible: metaText.externalTag
+                    anchors.verticalCenter: metaText.verticalCenter
+                    name: "people-error-16-filled"; size: 16
+                    color: theme.textSecondary
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: qsTr("External")
+                }
                 Text {
-                    visible: metaText.agentTag
+                    visible: metaText.agentTag || metaText.externalTag
                     text: root.stamp(msg.modelData.time) + (msg.modelData.edited ? "   " + qsTr("Edited") : "") + (root.cardUpdated(msg.modelData.id) ? "   " + qsTr("Updated") : "")
                     font.family: theme.font; font.pixelSize: theme.small
                     color: theme.textSecondary
@@ -5412,6 +5476,74 @@ Rectangle {
             Accessible.name: text
         }
     }
+    // A chat with someone on Teams free (Teams' ExternalChatBanner, measured
+    // on testpc2 2026-11-27): under the header, its width, 40 tall, #F0F0F0
+    // between 0.67 #E0E0E0 lines; "{name} is outside your org. Some Teams
+    // features aren't available in this chat." 12 px 16 in, then "Learn
+    // more" (brand); a 16 px Close 16 from the right. A group chat with such
+    // people says "Some people in this group are outside your org. …".
+    Rectangle {
+        id: externalBanner
+        readonly property string text: root.isGroup
+            ? qsTr("Some people in this group are outside your org. Some Teams features aren't available in this chat.", "messaging:k1ovrh47z")
+            : qsTr("%1 is outside your org. Some Teams features aren't available in this chat.", "messaging:kdeds7kgh").arg(root.externalPerson.name || root.chatName)
+        visible: root.externalChat && !root.chatRequest && !root.pane && root.tab === "" && !root.dismissedExternalNotes["banner|" + root.chatId]
+        anchors { top: header.bottom; left: parent.left; right: parent.right }
+        height: visible ? 40 : 0
+        color: theme.pick("#F0F0F0", "#2E2E2E", "#000000")
+        Rectangle { width: parent.width; height: 0.67; color: theme.divider }
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
+        Text {
+            x: 16; width: parent.width - 16 - 44; anchors.verticalCenter: parent.verticalCenter
+            elide: Text.ElideRight
+            textFormat: Text.RichText
+            text: theme.linkCss(theme.brandForeground1, true) + externalBanner.text.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                + " <a href=\"https://go.microsoft.com/fwlink/?linkid=2167727\">" + qsTr("Learn more") + "</a>"
+            font.family: theme.font; font.pixelSize: 12
+            color: theme.text
+            onLinkActivated: link => backend.openExternal(link)
+            HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            Accessible.role: Accessible.StaticText
+            Accessible.name: externalBanner.text
+        }
+        Rectangle {
+            id: hcFillExt
+            x: parent.width - 30.5; anchors.verticalCenter: parent.verticalCenter; width: 28; height: 28; radius: 4
+            color: closeExtHover.hovered ? theme.menuHover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.onFill(hcFillExt, theme.textStrong) }
+            HoverHandler { id: closeExtHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: { const d = Object.assign({}, root.dismissedExternalNotes); d["banner|" + root.chatId] = true; root.dismissedExternalNotes = d } }
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("Close notification")
+        }
+    }
+    // A chat request: Teams' Block / Accept pane in place of the messages
+    // and the compose box (ChatRequestView); "preview their messages."
+    // shows the messages over its Block / Accept bar.
+    property bool requestPreview: false
+    property bool requestBusy: false
+    ChatRequestView {
+        id: requestView
+        visible: root.chatRequest && root.tab === "" && !root.pane
+        previewing: root.requestPreview
+        busy: root.requestBusy
+        person: root.externalPerson
+        anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+        height: root.requestPreview ? previewHeight : parent.height - header.height
+        onPreview: root.requestPreview = true
+        onAccept: { root.requestBusy = true; backend.answerChatRequest(root.chatId, root.externalPerson.mri || "", "accept") }
+        onBlock: { root.requestBusy = true; backend.answerChatRequest(root.chatId, root.externalPerson.mri || "", "block") }
+    }
+    Connections {
+        target: backend
+        function onChatRequestAnswered(chatId, action, ok) {
+            if (chatId !== root.chatId) return
+            root.requestBusy = false
+            if (!ok) return
+            const d = Object.assign({}, root.requestAnswered); d[chatId] = action; root.requestAnswered = d
+            root.requestPreview = false
+        }
+    }
     // The peer's status bar (Teams' compose notification, 29.33 tall over
     // the compose box at its width): #E6E6E6 with a #E0E0E0 edge, radius
     // 4, 16 in; the text 12/17.14 #424242; a 28 x 28 "Close notification"
@@ -5473,7 +5605,7 @@ Rectangle {
         // The app card's settings button: Settings ▸ Privacy (Teams).
         onAppCardSettingsRequested: root.openPrivacySettings()
         onAppCardPermissionsRequested: id => root.openAppDetails(id)
-        visible: root.chatName.length > 0 && (!root.isChannel || root.posting || root.threadsLayout) && ["Attendance", "Breakout Rooms", "Q&A", "Meeting Whiteboard", "Notes", "Recap", "Storyline"].indexOf(root.tab) < 0 && !root.channelTabs.some(t => t.name === root.tab && !root.isChannel) && !root.readOnly && !root.selecting
+        visible: root.chatName.length > 0 && !root.chatRequest && (!root.isChannel || root.posting || root.threadsLayout) && ["Attendance", "Breakout Rooms", "Q&A", "Meeting Whiteboard", "Notes", "Recap", "Storyline"].indexOf(root.tab) < 0 && !root.channelTabs.some(t => t.name === root.tab && !root.isChannel) && !root.readOnly && !root.selecting
         // New posts at the top: in the list's top card, scrolling with it.
         readonly property bool atTop: post && channelPosts.newestAtTop
         anchors { left: parent.left; right: parent.right }
@@ -5499,7 +5631,15 @@ Rectangle {
         // thread's reply box.
         scheduleAllowed: !root.isSelf && !root.threadRoot && !root.pane
         placeholder: root.composeDisabled ? root.composeDisabledText : root.threadRoot ? qsTr("Reply in thread") : root.threadsLayout ? qsTr("Message in %1").arg(root.chatName) : qsTr("Type a message")
-        noteText: root.composeNote
+        // Teams' "Replying to external participants." over the box of a
+        // chat with someone on Teams free (dismissible), and no files there.
+        noteText: root.composeNote || (root.externalChat && !root.dismissedExternalNotes["compose|" + root.chatId] ? qsTr("Replying to external participants.", "compose:k8shwagz1") : "")
+        noteDismissible: !root.composeNote && root.externalChat
+        onNoteDismissed: { const d = Object.assign({}, root.dismissedExternalNotes); d["compose|" + root.chatId] = true; root.dismissedExternalNotes = d }
+        filesAllowed: !root.externalChat
+        // ("Why are some features not available": no photos either way in a
+        // chat the Teams free user started.)
+        picturesAllowed: !root.externalChat || root.chatIsCreator
         textOnly: root.composeTextOnly
         noteMuted: root.composeNoteMuted
         enabled: !root.composeDisabled

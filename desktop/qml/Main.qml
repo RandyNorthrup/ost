@@ -288,7 +288,14 @@ Window {
         w.search.connect(q => backend.newChatPeople(q))
         // The message goes from the chat's compose box (the main window's
         // conversation, which opens the chat too), then the chat window opens.
-        w.chosen.connect((oid, name, message) => { window.popOutChatName = name; w.close(); backend.openChatWith(oid, name); if (message) conversation.adoptAndSend(JSON.parse(message)) })
+        w.chosen.connect((oid, name, message) => {
+            window.popOutChatName = name; w.close()
+            // (Someone on Teams free: their chat is made with the first message.)
+            const existing = Mri.isConsumer(oid) ? newChat.chatWith(oid) : ""
+            if (Mri.isConsumer(oid) && !existing) { if (message) { window.newGroupMessage = message; backend.startExternalChat(oid, name) }; return }
+            if (existing) backend.selectChat(existing, name); else backend.openChatWith(oid, name)
+            if (message) conversation.adoptAndSend(JSON.parse(message))
+        })
         w.group.connect((oids, topic, message) => { window.popOutChatName = topic || qsTr("Group chat"); window.newGroupMessage = message; w.close(); backend.createGroupChat(oids, topic, "") })
         w.scheduleMeetingWith.connect(attendees => { w.close(); rail.current = "calendar"; calendarView.newMeetingWith(attendees, "", "") })
         w.closing.connect(() => { window.newChatWin = null; w.destroy() })
@@ -481,8 +488,8 @@ Window {
         }
     }
     Shortcut { sequence: "Alt+N"; onActivated: { rail.current = "calendar"; calendarView.newMeeting() } }
-    Shortcut { sequence: "Alt+Shift+A"; onActivated: if (conversation.visible && !backend.callState) backend.startCall() }
-    Shortcut { sequence: "Alt+Shift+V"; onActivated: if (conversation.visible && !backend.callState) backend.startVideoCall() }
+    Shortcut { sequence: "Alt+Shift+A"; onActivated: if (conversation.visible && !backend.callState && !conversation.callsDisabled) backend.startCall() }
+    Shortcut { sequence: "Alt+Shift+V"; onActivated: if (conversation.visible && !backend.callState && !conversation.callsDisabled) backend.startVideoCall() }
     // Call keys work from the call window and the toast too.
     // (Without audio, Teams' Mic shortcut asks "Turn audio on?" as its button.)
     Shortcut { sequence: "Ctrl+Shift+M"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "connected") callWindow.pressMic(false) }
@@ -2652,7 +2659,7 @@ Window {
         chatPane.typingText: backend.typingText
         chatPane.typingAvatar: backend.typingAvatar
         chatPane.typingAvatarId: backend.typingAvatarId
-        chatPane.isGroup: backend.currentChatId.endsWith("@thread.v2") || backend.currentChatId.indexOf("meeting_") >= 0
+        chatPane.isGroup: window.chatIsGroup(backend.currentChatId)
         chatPane.onSend: text => backend.sendMessage(text)
         chatPane.onTyping: backend.userTyping()
         chatPane.onReact: (id, key, on) => backend.toggleReaction(id, key, on)
@@ -15025,6 +15032,102 @@ Window {
         }
     }
 
+    // --external-chat-test=<chat id> with --shots=<dir>: a chat with someone
+    // on Teams free (TASK-0289): the chat opened (EXTCHAT lines: the header
+    // flags, the banner, the compose note and tools, the call buttons;
+    // external-chat.png), then with --external-preview its "preview their
+    // messages." (external-preview.png), with --external-accept Accept
+    // (external-accepted.png), and with --external-send=<text> that text
+    // sent from its box (external-sent.png); then it waits for
+    // --external-wait=<text> to arrive (external-reply.png) for up to two
+    // minutes, and quits.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--external-chat-test=")) && backend.signedIn && chatList.chats.length > 1
+        interval: 2500; repeat: true
+        property int step: 0
+        property int waited: 0
+        onTriggered: {
+            const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
+            const has = k => Qt.application.arguments.indexOf(k) >= 0
+            const log = (...a) => console.warn("EXTCHAT", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const dir = (arg("--shots") || ".") + "/"
+            const shot = tag => window.contentItem.grabToImage(r => { r.saveToFile(dir + tag + ".png"); log("shot", tag) })
+            const id = decodeURIComponent(arg("--external-chat-test"))
+            const c = conversation
+            const state = () => ({ chat: c.chatId, name: c.chatName, isGroup: c.isGroup, external: c.externalChat, oneOnOne: c.externalOneOnOne,
+                request: c.chatRequest, person: c.externalPerson, photo: c.chatPhotoId, callsDisabled: c.callsDisabled, callsTip: c.callsOffTip,
+                tools: c.composeBox.toolModel.map(t => t.id), note: c.composeBox.noteText, members: c.chatMembers.map(m => m.name + " " + m.mri + " " + (m.mail || "")),
+                messages: c.messages.filter(m => m.kind === "message").slice(-3).map(m => (m.sender || "") + ": " + (m.text || "").slice(0, 60)) })
+            if (step === 0) { rail.current = "chat"; const e = chatList.chats.find(x => x.id === id); log("listed", e ? { name: e.name, isGroup: e.isGroup, peerMri: e.peerMri, request: e.request, external: e.external } : null); backend.selectChat(id, e ? e.name : "") }
+            else if (step === 3) { log("state", state()); shot("external-chat") }
+            else if (step === 4 && has("--external-preview") && c.chatRequest) { c.requestPreview = true }
+            else if (step === 6 && has("--external-preview") && c.chatRequest) { log("preview", state()); shot("external-preview") }
+            else if (step === 7 && has("--external-accept") && c.chatRequest) { log("accepting"); backend.answerChatRequest(c.chatId, c.externalPerson.mri, "accept") }
+            else if (step === 10 && has("--external-accept")) { log("after accept", state()); shot("external-accepted") }
+            else if (step === 11 && arg("--external-send")) { c.setComposeText(decodeURIComponent(arg("--external-send"))); c.sendForTest(); log("sent") }
+            else if (step === 14 && arg("--external-send")) { log("after send", state()); shot("external-sent") }
+            else if (step === 15) {
+                const want = decodeURIComponent(arg("--external-wait"))
+                if (want && !c.messages.some(m => (m.text || "").indexOf(want) >= 0) && waited++ < 48) return
+                if (want) { log("reply", waited, state()); shot("external-reply") }
+            }
+            else if (step === 17) Qt.quit()
+            step++
+        }
+    }
+
+    // --external-search-test=<address> with --shots=<dir>: the new chat
+    // form finds someone on Teams free by their address (EXTSEARCH lines,
+    // external-search.png); with --external-search-send=<text> the first
+    // external person is picked and <text> sent (the chat is made with it;
+    // external-search-sent.png). Then quits.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--external-search-test=")) && backend.signedIn && chatList.chats.length > 1
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
+            const log = (...a) => console.warn("EXTSEARCH", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const dir = (arg("--shots") || ".") + "/"
+            const q = decodeURIComponent(arg("--external-search-test"))
+            const text = decodeURIComponent(arg("--external-search-send"))
+            if (step === 0) { rail.current = "chat"; window.composing = true }
+            else if (step === 1) newChat.setFieldForTest(q)
+            else if (step === 5) { log("suggestions", newChat.suggestions.map(x => ({ id: x.id, name: x.name, sub: x.sub, external: !!x.external }))); window.contentItem.grabToImage(r => r.saveToFile(dir + "external-search.png")) }
+            else if (step === 6 && text) { const p = newChat.suggestions.find(x => x.external); log("pick", p || null); if (p) { newChat.pick(p); newChat.setMessage(text) } }
+            else if (step === 7 && text) { newChat.submit() }
+            else if (step === 12 && text) { log("after send", backend.currentChatId, conversation.chatName, conversation.externalOneOnOne, conversation.messages.filter(m => m.kind === "message").slice(-2).map(m => (m.sender || "") + ": " + (m.text || ""))); window.contentItem.grabToImage(r => r.saveToFile(dir + "external-search-sent.png")) }
+            else if (step === 13) Qt.quit()
+            step++
+        }
+    }
+
+    // --external-start=<8:live: MRI> --external-start-name=<name>
+    // --external-start-text=<text> with --shots=<dir>: start the 1:1 chat
+    // with someone on Teams free the way the new chat form does once it has
+    // found them (startExternalChat, the first message sent into the chat
+    // made; EXTSTART lines, external-start.png), then quits.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--external-start=")) && backend.signedIn && chatList.chats.length > 1
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
+            const log = (...a) => console.warn("EXTSTART", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const dir = (arg("--shots") || ".") + "/"
+            const mri = decodeURIComponent(arg("--external-start")), text = decodeURIComponent(arg("--external-start-text"))
+            if (step === 0) {
+                rail.current = "chat"
+                log("existing", newChat.chatWith(mri))
+                window.newGroupMessage = JSON.stringify({ text: text, html: "<p>" + text.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</p>", media: [], importance: "", files: [], cloud: [], clip: null })
+                backend.startExternalChat(mri, decodeURIComponent(arg("--external-start-name")))
+            }
+            else if (step === 6) { const c = conversation; log("chat", c.chatId, c.chatName, c.isGroup, c.externalOneOnOne, c.chatRequest, c.messages.filter(m => m.kind === "message").map(m => (m.sender || "") + ": " + m.text)); window.contentItem.grabToImage(r => r.saveToFile(dir + "external-start.png")) }
+            else if (step === 7) Qt.quit()
+            step++
+        }
+    }
+
     // --chat-notify-test=<group chat id> with --shots=<dir>: Teams' group
     // chat menu (Manage notifications in place of Mute), its flyout and
     // Customize's dialog (CHATNOTIFY lines, chat-notify-*.png); nothing is
@@ -16855,6 +16958,14 @@ Window {
         }
     }
 
+    /// Whether a chat is a group chat: a thread's (or a meeting's), unless
+    /// the chat list knows it as a one-on-one (a 19:uni01_…@thread.v2 chat
+    /// a Teams free user started: productThreadType OneToOneChat).
+    function chatIsGroup(id) {
+        if (!(id.endsWith("@thread.v2") || id.indexOf("meeting_") >= 0)) return false
+        const c = chatList.chats.find(c => c.id === id)
+        return !c || c.isGroup !== false
+    }
     property bool composing: Qt.application.arguments.indexOf("--new-chat") >= 0
     NewChat {
         id: newChat
@@ -16875,7 +16986,17 @@ Window {
         // (a new group chat: once it is made).
         onChosen: (oid, name, message) => {
             window.composing = false
-            backend.openChatWith(oid, name)
+            // Someone on Teams free you have no chat with yet: the chat is
+            // made with the first message (a thread, not a 1:1 id).
+            if (Mri.isConsumer(oid) && !newChat.chatWith(oid)) {
+                if (!message) return
+                window.newGroupMessage = message
+                backend.startExternalChat(oid, name)
+                return
+            }
+            const existing = Mri.isConsumer(oid) ? newChat.chatWith(oid) : ""
+            if (existing) backend.selectChat(existing, name)
+            else backend.openChatWith(oid, name)
             if (message) conversation.adoptAndSend(JSON.parse(message))
         }
         onGroup: (oids, topic, message) => { window.composing = false; window.newGroupMessage = message; backend.createGroupChat(oids, topic, "") }
@@ -18072,7 +18193,7 @@ Window {
         composeDisabledText: notMember ? qsTr("You can't send messages because you are not a member of the chat.") : ""
         isChannel: backend.currentChatId.endsWith("@thread.tacv2")
         isSelf: backend.currentChatId === "48:notes"
-        isGroup: backend.currentChatId.endsWith("@thread.v2") || backend.currentChatId.indexOf("meeting_") >= 0
+        isGroup: window.chatIsGroup(backend.currentChatId)
         teamName: {
             const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
             const t = teams.find(t => t.channels.some(c => c.id === backend.currentChatId))

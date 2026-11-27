@@ -1022,6 +1022,17 @@ mod tests {
     }
 
     #[test]
+    fn chat_requests_are_answered_as_teams_does() {
+        let mri = "8:live:.cid.ca2738c364862c6";
+        let (path, body) = request_list_call(RequestAnswer::Accept, mri);
+        assert_eq!(path, "/beta/userSettings/acceptlist/manage");
+        assert_eq!(body, serde_json::json!({ "add": [mri] }));
+        let (path, body) = request_list_call(RequestAnswer::Block, mri);
+        assert_eq!(path, "/beta/userSettings/blocklist/manage");
+        assert_eq!(body["add"][0], mri);
+    }
+
+    #[test]
     fn meeting_report_as_teams_sends_it() {
         let b = meeting_report_body(
             "19:meeting_x@thread.v2",
@@ -1176,6 +1187,62 @@ pub async fn set_chat_topic(client: &TeamsClient, chat_id: &str, topic: &str) ->
             &serde_json::json!({ "topic": topic }),
         )
         .await?;
+    Ok(())
+}
+
+/// How you answer a chat request (Teams' Block / Accept).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequestAnswer {
+    Accept,
+    Block,
+}
+
+/// The middle-tier list call and body behind an answer: Accept puts the
+/// person on your accept list (`POST {mt}/beta/userSettings/acceptlist/
+/// manage`, `{"add": [mri]}`, Teams' AcceptListService), Block on your
+/// block list (`…/blocklist/manage`, the same body, Teams' blockService).
+pub fn request_list_call(answer: RequestAnswer, mri: &str) -> (&'static str, serde_json::Value) {
+    let path = match answer {
+        RequestAnswer::Accept => "/beta/userSettings/acceptlist/manage",
+        RequestAnswer::Block => "/beta/userSettings/blocklist/manage",
+    };
+    (path, serde_json::json!({ "add": [mri] }))
+}
+
+/// Answer a one-on-one chat request from `mri` (someone on Teams free) as
+/// Teams' work client does (shared worker `acceptBlockUnblockChat`, Teams
+/// 26304): the person goes on your accept or block list in the middle
+/// tier; the chat service then lifts the chat's quarantine
+/// (`relationshipState.inQuarantine` false after Accept, live check
+/// 2026-11-27). Teams also records the chat's `interopconversationstatus`
+/// (Accepted / Blocked), but only in its own store: the chat service
+/// refuses that property (400 ThreadPropertyNotAllowed).
+pub async fn answer_chat_request(
+    client: &TeamsClient,
+    chat_id: &str,
+    mri: &str,
+    answer: RequestAnswer,
+) -> Result<()> {
+    anyhow::ensure!(
+        crate::identity::is_person_mri(mri) && !mri.contains(['/', '?', '#']),
+        "Not a person"
+    );
+    anyhow::ensure!(
+        chat_id.starts_with("19:") && !chat_id.contains(['/', '?', '#']),
+        "Not a chat id"
+    );
+    let (base, token) = super::tabs::middle_tier(client).await?;
+    let (path, body) = request_list_call(answer, mri);
+    client
+        .http()
+        .post(format!("{base}{path}"))
+        .bearer_auth(&token)
+        .header("x-ms-client-caller", "acceptBlockUnblockChat")
+        .json(&body)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Accept or block list")?;
     Ok(())
 }
 

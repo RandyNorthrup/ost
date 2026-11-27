@@ -16,4 +16,8 @@ QtObject {
     /// A resource account's (call queue, auto attendant) MRI from its
     /// object id.
     function appEndpoint(objectId) { return "28:orgid:" + objectId }
+
+    /// Someone on Teams free (a personal Microsoft account, 8:live:…, or
+    /// another of Teams free's consumer kinds; identity::is_consumer_mri).
+    function isConsumer(mri) { return /^8:(live|sip_profile|myspace|c2c|sms|facebook|fb):./.test(String(mri || "")) }
 }

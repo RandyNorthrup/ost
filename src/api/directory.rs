@@ -182,6 +182,10 @@ pub enum PhotoOwner {
     /// A person known by mail address (an event's organizer): their
     /// directory entry's picture, as Teams' calendar shows it.
     Mail,
+    /// Someone on Teams free, by their MRI's id (`live:.cid.…`): the work
+    /// client asks for their picture under its own user, as for a work
+    /// user (`{me}/profilepicturev2/8:live:.cid.…`, live check 2026-11-27).
+    Consumer,
 }
 
 /// A person's object id from their mail address (Graph: the address as
@@ -242,6 +246,22 @@ pub fn merged_picture_users(members: &[(String, String)]) -> String {
             .collect(),
     )
     .to_string()
+}
+
+/// Whether a Teams free MRI's id (`live:.cid.0ca2…`, `live:skypename`)
+/// is safe in a request path: its kind, a colon, then letters, digits and
+/// `.`, `_`, `-` only.
+pub fn consumer_id_ok(id: &str) -> bool {
+    id.split_once(':').is_some_and(|(kind, rest)| {
+        !kind.is_empty()
+            && kind.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
+            && !rest.is_empty()
+            && rest.len() <= 128
+            && rest
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+            && !rest.contains("..")
+    })
 }
 
 /// A middle-tier token (audience api.spaces.skype.com), reused until close
@@ -309,6 +329,14 @@ pub async fn photo(
         // Teams asks for a guest's picture by name (HR64 for its 32 px
         // avatars); 196 px keeps it sharp at every size OST draws.
         format!("{base}/beta/users/defaultProfilePictureV2?displayname={name}&size=HR196x196")
+    } else if owner == PhotoOwner::Consumer {
+        let mri = crate::identity::user_mri(id);
+        anyhow::ensure!(
+            crate::identity::is_consumer_mri(&mri) && consumer_id_ok(id),
+            "Not a Teams free id"
+        );
+        let me = client.object_id().context("No signed-in user")?;
+        format!("{base}/beta/users/{me}/profilepicturev2/{mri}?displayname={name}&size=HR196x196")
     } else {
         if id.len() != 36 || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
             anyhow::bail!("Not an object id");
@@ -349,6 +377,41 @@ mod group_picture_tests {
     use super::*;
 
     #[test]
+    fn teams_free_profiles_read_as_short_profiles() {
+        // fetchTflProfiles' answers for OST Personal 2 seen from ost-test1
+        // (2026-11-27): by MRI, and as the one who started a chat.
+        let plain = serde_json::json!({"skypeId":"live:.cid.ca2738c364862c6","isShortProfile":false,"userPrincipalName":"live:.cid.ca2738c364862c6","emailsInfo":[],"accountEnabled":true,"displayName":"OST Personal 2","type":"TflConsumer","mri":"8:live:.cid.ca2738c364862c6"});
+        let p = tfl_profile_record(&plain).unwrap();
+        assert_eq!(p["mri"], "8:live:.cid.ca2738c364862c6");
+        assert_eq!(p["displayName"], "OST Personal 2");
+        assert_eq!(p["email"], "");
+        assert_eq!(p["emailPrivate"], false);
+        let inviter = serde_json::json!({"skypeId":"live:.cid.ca2738c364862c6","emailsInfo":[{"address":"ost-personal2-0238@outlook.com","visibility":"Private"}],"displayName":"OST Personal 2","type":"TflConsumer","mri":"8:live:.cid.ca2738c364862c6"});
+        let p = tfl_profile_record(&inviter).unwrap();
+        assert_eq!(p["email"], "ost-personal2-0238@outlook.com");
+        assert_eq!(p["emailPrivate"], true);
+        // The MRI from the Skype id when it's left out; work users aren't
+        // Teams free people.
+        let p = tfl_profile_record(&serde_json::json!({"skypeId":"live:abc","displayName":"A"}))
+            .unwrap();
+        assert_eq!(p["mri"], "8:live:abc");
+        assert!(
+            tfl_profile_record(&serde_json::json!({"mri":"8:orgid:x","displayName":"W"})).is_none()
+        );
+    }
+
+    #[test]
+    fn teams_free_ids_are_safe_in_picture_paths() {
+        assert!(consumer_id_ok("live:.cid.ca2738c364862c6"));
+        assert!(consumer_id_ok("live:some_skype-name.1"));
+        assert!(!consumer_id_ok("live:"));
+        assert!(!consumer_id_ok("live:.cid/../me"));
+        assert!(!consumer_id_ok("live:x?y=1"));
+        assert!(!consumer_id_ok("live:a..b"));
+        assert!(!consumer_id_ok("Live:x") && !consumer_id_ok(":x"));
+    }
+
+    #[test]
     fn group_pictures_show_the_first_three_others_by_name() {
         let me = "8:orgid:4287e791-1b98-4963-8b94-281c50472683";
         let people = vec![
@@ -376,9 +439,23 @@ pub async fn short_profile_records(
     client: &TeamsClient,
     mris: &[String],
 ) -> Result<Vec<serde_json::Value>> {
-    let mris: Vec<&String> = mris.iter().filter(|m| m.starts_with("8:")).collect();
+    let (consumers, mris): (Vec<&String>, Vec<&String>) = mris
+        .iter()
+        .filter(|m| m.starts_with("8:"))
+        .partition(|m| crate::identity::is_consumer_mri(m));
+    // Teams free people (8:live:…): fetchShortProfile doesn't know them;
+    // Teams' work client asks fetchTflProfiles.
+    let mut out = if consumers.is_empty() {
+        Vec::new()
+    } else {
+        let consumers: Vec<String> = consumers.into_iter().cloned().collect();
+        tfl_profiles(client, &consumers).await.unwrap_or_else(|e| {
+            tracing::debug!("Teams free profiles unavailable: {e:#}");
+            Vec::new()
+        })
+    };
     if mris.is_empty() {
-        return Ok(Vec::new());
+        return Ok(out);
     }
     let (base, token) = super::tabs::middle_tier(client).await?;
     let v: serde_json::Value = client
@@ -392,7 +469,188 @@ pub async fn short_profile_records(
         .context("Short profiles")?
         .json()
         .await?;
-    Ok(v["value"].as_array().cloned().unwrap_or_default())
+    out.extend(v["value"].as_array().cloned().unwrap_or_default());
+    Ok(out)
+}
+
+/// Teams free people's profiles as a work account sees them, in
+/// fetchShortProfile's shape (`{mri, displayName, email, type}`): Teams'
+/// work client resolves `8:live:` members with `POST {mt}/beta/users/
+/// fetchTflProfiles?edEnabled=false&includeDisabledAccounts=true` and
+/// `{"mris": […]}`; the reply's `resolvedUsers` are `type` "TflConsumer"
+/// with their `displayName`, `skypeId` and `emailsInfo` (an address only
+/// when they share it). Remembered for an hour, so every chat, roster and
+/// name lookup doesn't ask again.
+pub async fn tfl_profiles(client: &TeamsClient, mris: &[String]) -> Result<Vec<serde_json::Value>> {
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+    type Cache = std::collections::HashMap<String, (Instant, serde_json::Value)>;
+    static CACHE: Mutex<Option<Cache>> = Mutex::new(None);
+    const TTL: Duration = Duration::from_secs(3600);
+    let mut out = Vec::new();
+    let mut want = Vec::new();
+    {
+        let cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        for m in mris {
+            let key = m.to_ascii_lowercase();
+            match cache
+                .as_ref()
+                .and_then(|c| c.get(&key))
+                .filter(|(at, _)| at.elapsed() < TTL)
+            {
+                Some((_, p)) => out.push(p.clone()),
+                None if !want.contains(m) => want.push(m.clone()),
+                None => {}
+            }
+        }
+    }
+    if want.is_empty() {
+        return Ok(out);
+    }
+    let (base, token) = super::tabs::middle_tier(client).await?;
+    let v: serde_json::Value = client
+        .http()
+        .post(format!(
+            "{base}/beta/users/fetchTflProfiles?edEnabled=false&includeDisabledAccounts=true"
+        ))
+        .bearer_auth(&token)
+        .header("x-ms-client-caller", "chatList")
+        .json(&serde_json::json!({ "mris": want }))
+        .send()
+        .await?
+        .error_for_status()
+        .context("Teams free profiles")?
+        .json()
+        .await?;
+    let found: Vec<serde_json::Value> = v["resolvedUsers"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(tfl_profile_record)
+        .collect();
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let cache = cache.get_or_insert_with(Default::default);
+    for p in &found {
+        if let Some(m) = p["mri"].as_str() {
+            cache.insert(m.to_ascii_lowercase(), (Instant::now(), p.clone()));
+        }
+    }
+    out.extend(found);
+    Ok(out)
+}
+
+/// The Teams free person who started chat `thread`, with the address
+/// Teams' work client gets for them there: `fetchTflProfiles` with
+/// `{"invitersToThreads": {mri: thread}}` (the plain `mris` form gives
+/// `emailsInfo: []` for someone who doesn't share their address; this one
+/// gives it, marked "Private"; live check 2026-11-27). Remembered for an
+/// hour per person and chat.
+pub async fn tfl_inviter(
+    client: &TeamsClient,
+    mri: &str,
+    thread: &str,
+) -> Option<serde_json::Value> {
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+    type Cache = std::collections::HashMap<String, (Instant, Option<serde_json::Value>)>;
+    static CACHE: Mutex<Option<Cache>> = Mutex::new(None);
+    if !crate::identity::is_consumer_mri(mri) || !thread.starts_with("19:") {
+        return None;
+    }
+    let key = format!("{}|{thread}", mri.to_ascii_lowercase());
+    if let Some((_, v)) = CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .and_then(|c| c.get(&key))
+        .filter(|(at, _)| at.elapsed() < Duration::from_secs(3600))
+    {
+        return v.clone();
+    }
+    let found =
+        async {
+            let (base, token) = super::tabs::middle_tier(client).await?;
+            let v: serde_json::Value = client
+            .http()
+            .post(format!(
+                "{base}/beta/users/fetchTflProfiles?edEnabled=false&includeDisabledAccounts=true"
+            ))
+            .bearer_auth(&token)
+            .header("x-ms-client-caller", "chatRequest")
+            .json(&{
+                let mut inviters = serde_json::Map::new();
+                inviters.insert(mri.to_string(), serde_json::Value::String(thread.to_string()));
+                serde_json::json!({ "invitersToThreads": inviters })
+            })
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+            anyhow::Ok(
+                v["resolvedUsers"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(tfl_profile_record)
+                    .find(|p| {
+                        p["mri"]
+                            .as_str()
+                            .is_some_and(|m| m.eq_ignore_ascii_case(mri))
+                    }),
+            )
+        }
+        .await
+        .unwrap_or_else(|e| {
+            tracing::debug!("Teams free inviter: {e:#}");
+            None
+        });
+    CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(Default::default)
+        .insert(key, (Instant::now(), found.clone()));
+    found
+}
+
+/// One of fetchTflProfiles' `resolvedUsers` in fetchShortProfile's shape
+/// (`{mri, displayName, email, emailPrivate, type}`). The address is the
+/// first one they share (`emailsInfo` `{address, visibility}`), else the
+/// first one given, then marked private (visibility "Private").
+pub fn tfl_profile_record(u: &serde_json::Value) -> Option<serde_json::Value> {
+    let s = |k: &str| u[k].as_str().unwrap_or_default().trim().to_string();
+    let mri = Some(s("mri"))
+        .filter(|m| crate::identity::is_consumer_mri(m))
+        .or_else(|| {
+            Some(s("skypeId"))
+                .filter(|id| !id.is_empty())
+                .map(|id| crate::identity::user_mri(&id))
+                .filter(|m| crate::identity::is_consumer_mri(m))
+        })?;
+    let emails: Vec<&serde_json::Value> = u["emailsInfo"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|e| e["address"].as_str().is_some_and(|a| a.contains('@')))
+        .collect();
+    let private = |e: &serde_json::Value| {
+        e["visibility"]
+            .as_str()
+            .is_some_and(|v| v.eq_ignore_ascii_case("private"))
+    };
+    let pick = emails.iter().find(|e| !private(e)).or(emails.first());
+    let email = pick
+        .and_then(|e| e["address"].as_str())
+        .unwrap_or_default()
+        .to_string();
+    Some(serde_json::json!({
+        "mri": mri,
+        "displayName": s("displayName"),
+        "email": email,
+        "emailPrivate": pick.is_some_and(|e| private(e)),
+        "type": "TflConsumer",
+        "userType": "TflConsumer",
+    }))
 }
 
 /// The short name Teams uses for someone in a group chat's notification

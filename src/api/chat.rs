@@ -72,6 +72,59 @@ fn left(thread: &std::collections::HashMap<String, serde_json::Value>) -> bool {
     }
 }
 
+/// Whether a chat is a request you haven't answered (Teams' chat request:
+/// someone outside your org, a Teams free user for one, started it and you
+/// haven't accepted or blocked it). Teams (shared worker `isInQuarantine`)
+/// reads your membership's `relationshipState.inQuarantine` (an object, or
+/// the same as a JSON string), else the conversation's `conversationstatus`
+/// "AcceptPendingRecipient".
+pub fn is_chat_request(conversation: &serde_json::Value) -> bool {
+    let state = &conversation["memberProperties"]["relationshipState"];
+    let parsed;
+    let state = match state.as_str() {
+        Some(s) => {
+            parsed = serde_json::from_str::<serde_json::Value>(s).unwrap_or_default();
+            &parsed
+        }
+        None => state,
+    };
+    let quarantined = &state["inQuarantine"];
+    if !quarantined.is_null() {
+        return quarantined.as_bool().unwrap_or(false)
+            || quarantined
+                .as_str()
+                .is_some_and(|q| q.eq_ignore_ascii_case("true"));
+    }
+    conversation["properties"]["conversationstatus"].as_str() == Some("AcceptPendingRecipient")
+}
+
+/// Whether a chat thread is a one-on-one chat although its id is a
+/// thread's (`19:uni01_…@thread.v2`, as every chat with a Teams free user
+/// is): its `productThreadType` "OneToOneChat" (a chat they started), or,
+/// as Teams' worker decides it, `uniquerosterthread` or `isStickyThread`
+/// "true" (a chat a work user started with them is a sticky thread).
+pub fn is_one_on_one_thread(thread: &std::collections::HashMap<String, serde_json::Value>) -> bool {
+    let s = |k: &str| thread.get(k).and_then(|v| v.as_str()).unwrap_or_default();
+    s("productThreadType").eq_ignore_ascii_case("OneToOneChat")
+        || s("uniquerosterthread").eq_ignore_ascii_case("true")
+        || s("isStickyThread").eq_ignore_ascii_case("true")
+}
+
+/// The one-on-one chats whose ids are a thread's (see
+/// `is_one_on_one_thread`), as the chat list last named them.
+static ONE_ON_ONE_THREADS: std::sync::RwLock<Option<std::collections::HashSet<String>>> =
+    std::sync::RwLock::new(None);
+
+/// Whether the chat list knows `chat_id` as a one-on-one chat with a
+/// thread's id (a chat with someone on Teams free).
+pub fn known_one_on_one_thread(chat_id: &str) -> bool {
+    ONE_ON_ONE_THREADS
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .is_some_and(|s| s.contains(chat_id))
+}
+
 /// Whether you muted the chat: its `alerts` property is "false".
 fn is_muted(conv: &Conversation) -> bool {
     conv.properties
@@ -788,6 +841,17 @@ async fn generated_titles(
         .collect()
 }
 
+/// A chat's members as they were last read for its generated name.
+fn known_title_members(id: &str) -> Vec<String> {
+    TITLE_MEMBERS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .and_then(|c| c.get(id))
+        .map(|(_, m)| m.clone())
+        .unwrap_or_default()
+}
+
 /// The other participant of a 1:1 chat, from its id
 /// `19:<oid>_<oid>@unq.gbl.spaces`. None if the id is not that shape or
 /// does not include `me`.
@@ -1001,6 +1065,11 @@ pub struct Member {
     pub mail: String,
     /// Whether this is us.
     pub me: bool,
+    /// Their address is one they don't let people find (a Teams free
+    /// user's `emailsInfo` visibility "Private": Teams' request says "This
+    /// person is not sharing their email in Teams.").
+    #[serde(default)]
+    pub mail_private: bool,
 }
 
 /// A chat's members with their names and e-mail addresses, us included and
@@ -1013,29 +1082,52 @@ pub async fn chat_members(client: &TeamsClient, thread: &str) -> Result<Vec<Memb
         .map(|m| m.to_ascii_lowercase())
         .unwrap_or_default();
     let ids = thread_member_ids(client, thread).await?;
-    let profiles: std::collections::HashMap<String, (String, String)> =
-        super::directory::short_profile_records(client, &ids)
-            .await
-            .unwrap_or_else(|e| {
-                tracing::warn!("short profiles unavailable: {e:#}");
-                Vec::new()
-            })
-            .iter()
-            .filter_map(|p| {
-                let mri = p["mri"].as_str()?.to_ascii_lowercase();
-                let name = p["displayName"]
-                    .as_str()
-                    .filter(|n| !n.is_empty())?
-                    .to_string();
-                let mail = p["email"]
-                    .as_str()
-                    .filter(|m| !m.is_empty())
-                    .or_else(|| p["userPrincipalName"].as_str())
-                    .unwrap_or_default()
-                    .to_string();
-                Some((mri, (name, mail)))
-            })
-            .collect();
+    let records = super::directory::short_profile_records(client, &ids)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("short profiles unavailable: {e:#}");
+            Vec::new()
+        });
+    // Teams free people's addresses: Teams' work client asks for the one
+    // who started a chat with the chat (`invitersToThreads`), which is how
+    // a request shows "{name} ({email}) wants to chat with you".
+    let mut private: std::collections::HashSet<String> = Default::default();
+    let mut inviter_mail: std::collections::HashMap<String, String> = Default::default();
+    for r in &records {
+        let mri = r["mri"].as_str().unwrap_or_default().to_ascii_lowercase();
+        if !crate::identity::is_consumer_mri(&mri) {
+            continue;
+        }
+        if r["email"].as_str().is_none_or(str::is_empty)
+            && let Some(p) = super::directory::tfl_inviter(client, &mri, thread).await
+        {
+            if let Some(m) = p["email"].as_str().filter(|m| !m.is_empty()) {
+                inviter_mail.insert(mri.clone(), m.to_string());
+            }
+            if p["emailPrivate"].as_bool() == Some(true) {
+                private.insert(mri.clone());
+            }
+        } else if r["emailPrivate"].as_bool() == Some(true) {
+            private.insert(mri.clone());
+        }
+    }
+    let profiles: std::collections::HashMap<String, (String, String)> = records
+        .iter()
+        .filter_map(|p| {
+            let mri = p["mri"].as_str()?.to_ascii_lowercase();
+            let name = p["displayName"]
+                .as_str()
+                .filter(|n| !n.is_empty())?
+                .to_string();
+            let mail = p["email"]
+                .as_str()
+                .filter(|m| !m.is_empty())
+                .or_else(|| p["userPrincipalName"].as_str())
+                .unwrap_or_default()
+                .to_string();
+            Some((mri, (name, mail)))
+        })
+        .collect();
     let mut out = Vec::new();
     for mri in ids {
         let mut m = Member {
@@ -1044,7 +1136,11 @@ pub async fn chat_members(client: &TeamsClient, thread: &str) -> Result<Vec<Memb
         };
         if let Some((name, mail)) = profiles.get(&mri) {
             m.name = name.clone();
-            m.mail = mail.clone();
+            m.mail = inviter_mail
+                .get(&mri)
+                .cloned()
+                .unwrap_or_else(|| mail.clone());
+            m.mail_private = private.contains(&mri);
         } else if let Some(oid) = crate::identity::work_object_id(&mri)
             && uuid::Uuid::parse_str(oid).is_ok()
             && let Ok(resp) = client
@@ -1150,6 +1246,51 @@ pub async fn ensure_unique_chat(
     Ok(thread_id_from_reply(location.as_deref(), &text).unwrap_or(id))
 }
 
+/// The body of a new 1:1 chat with someone on Teams free, as Teams' worker
+/// makes it (`createThread` with one other member who is a consumer):
+/// you and them, `fixedRoster` and `isStickyThread` (the chat service
+/// refuses `uniquerosterthread` for them: "Consumer users disallowed on
+/// uniquerosterthread"), and the chat's files index.
+pub fn external_chat_body(me: &str, other: &str) -> serde_json::Value {
+    serde_json::json!({
+        "members": [
+            { "id": me.to_ascii_lowercase(), "role": "Admin" },
+            { "id": other, "role": "Admin" },
+        ],
+        "properties": {
+            "threadType": "chat",
+            "chatFilesIndexId": "2",
+            "fixedRoster": "true",
+            "isStickyThread": "true",
+        },
+    })
+}
+
+/// Start (or find again) the 1:1 chat with `other`, someone on Teams free
+/// (`8:live:…`): the chat service makes it a thread (`19:uni01_…@thread.v2`)
+/// rather than a `…@unq.gbl.spaces` id, and for a sticky thread hands back
+/// the one you already have (live check 2026-11-27). Returns its id.
+pub async fn start_external_chat(client: &TeamsClient, me: &str, other: &str) -> Result<String> {
+    anyhow::ensure!(
+        crate::identity::is_consumer_mri(other),
+        "Not a Teams free user"
+    );
+    let resp = client
+        .chat_post(
+            &format!("{}/v1/threads", client.chat_service_url()),
+            &external_chat_body(me, other),
+        )
+        .await?;
+    let location = resp
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let text = resp.text().await.unwrap_or_default();
+    thread_id_from_reply(location.as_deref(), &text)
+        .context("The chat service didn't say which chat it made")
+}
+
 fn group_chat_body(members: &[String], topic: &str) -> Result<serde_json::Value> {
     let mut seen = std::collections::HashSet::new();
     let members: Vec<_> = members
@@ -1212,6 +1353,52 @@ mod group_chat_tests {
         assert_eq!(b["members"][1]["id"], "8:orgid:bbbb");
         assert_eq!(b["properties"]["topic"], "Team");
         assert_eq!(b["properties"]["threadType"], "chat");
+    }
+
+    #[test]
+    fn chat_requests_and_teams_free_one_on_ones_are_recognised() {
+        // ost-test1's request from OST Personal 2 and OST Test 2's
+        // accepted chat with them (the chat service's list, 2026-11-27).
+        let request = serde_json::json!({
+            "id": "19:uni01_dsnpahgaglgokpbmo7a77ouadegypeikx3eqrrbiiz7pek6idxha@thread.v2",
+            "memberProperties": {"isReader": false, "relationshipState": {"hasImpersonation": "null", "inQuarantine": true}, "role": "User"},
+            "properties": {"addedBy": "8:live:.cid.ca2738c364862c6"},
+            "threadProperties": {"productThreadType": "OneToOneChat", "threadType": "chat"}
+        });
+        assert!(is_chat_request(&request));
+        let mut accepted = request.clone();
+        accepted["memberProperties"]["relationshipState"]["inQuarantine"] = false.into();
+        assert!(!is_chat_request(&accepted));
+        // The same as a JSON string, and Teams' conversation status.
+        let s = serde_json::json!({"memberProperties": {"relationshipState": "{\"inQuarantine\":true}"}});
+        assert!(is_chat_request(&s));
+        let pending =
+            serde_json::json!({"properties": {"conversationstatus": "AcceptPendingRecipient"}});
+        assert!(is_chat_request(&pending));
+        assert!(!is_chat_request(
+            &serde_json::json!({"id": "19:x@thread.v2"})
+        ));
+        let thread: std::collections::HashMap<String, serde_json::Value> =
+            serde_json::from_value(request["threadProperties"].clone()).unwrap();
+        assert!(is_one_on_one_thread(&thread));
+        let group: std::collections::HashMap<String, serde_json::Value> =
+            serde_json::from_value(serde_json::json!({"threadType": "chat"})).unwrap();
+        assert!(!is_one_on_one_thread(&group));
+        let sticky: std::collections::HashMap<String, serde_json::Value> = serde_json::from_value(
+            serde_json::json!({"threadType": "chat", "isStickyThread": "true"}),
+        )
+        .unwrap();
+        assert!(is_one_on_one_thread(&sticky));
+    }
+
+    #[test]
+    fn teams_free_chats_are_made_as_sticky_threads() {
+        let b = external_chat_body("8:orgid:ABC", "8:live:.cid.ca2738c364862c6");
+        assert_eq!(b["members"][0]["id"], "8:orgid:abc");
+        assert_eq!(b["members"][1]["id"], "8:live:.cid.ca2738c364862c6");
+        assert_eq!(b["properties"]["isStickyThread"], "true");
+        assert_eq!(b["properties"]["fixedRoster"], "true");
+        assert!(b["properties"].get("uniquerosterthread").is_none());
     }
 
     #[test]
@@ -1428,6 +1615,15 @@ pub struct ChatInfo {
     /// Unread as Teams counts it: someone else's message newer than your
     /// read horizon, or marked unread (see `messages::is_unread`).
     pub unread: bool,
+    /// A chat request you haven't answered (see `is_chat_request`): Teams
+    /// shows "… wants to chat with you" with Block and Accept.
+    pub request: bool,
+    /// A one-on-one chat's other person, when its id doesn't name them
+    /// (a `19:uni01_…@thread.v2` chat with a Teams free user).
+    pub peer: Option<String>,
+    /// Someone in it uses Teams free (an `8:live:` member): Teams shows
+    /// them as External and turns off calls and files in the chat.
+    pub external: bool,
 }
 
 /// Teams' backroom chat kind from the thread's properties (its
@@ -1744,7 +1940,30 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
             .get(i)
             .is_some_and(|c| super::messages::is_unread(c, &me));
 
-        let is_group = id.contains("thread") || id.contains("meeting");
+        let one_on_one_thread = conv
+            .thread_properties
+            .as_ref()
+            .is_some_and(|p| is_one_on_one_thread(&p.extra));
+        let is_group = (id.contains("thread") || id.contains("meeting")) && !one_on_one_thread;
+        if one_on_one_thread {
+            ONE_ON_ONE_THREADS
+                .write()
+                .unwrap_or_else(|e| e.into_inner())
+                .get_or_insert_with(Default::default)
+                .insert(id.clone());
+        }
+        // Its members (when they were read for its name): its other person
+        // and whether anyone in it is on Teams free.
+        let members = known_title_members(&id);
+        let external = members.iter().any(|m| crate::identity::is_consumer_mri(m));
+        let peer = one_on_one_thread
+            .then(|| {
+                members
+                    .iter()
+                    .find(|m| !m.eq_ignore_ascii_case(&me) && crate::identity::is_person_mri(m))
+                    .cloned()
+            })
+            .flatten();
         let mut name = match titles.get(&id) {
             Some(t) => t.clone(),
             // (Its members unreadable: never the thread id.)
@@ -1872,6 +2091,9 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
                 .and_then(|c| c.as_bool())
                 .unwrap_or(false),
             unread,
+            request: raw_convs.get(i).is_some_and(is_chat_request),
+            peer,
+            external,
             activity_ms: {
                 let message = conv
                     .last_message
