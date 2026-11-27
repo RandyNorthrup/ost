@@ -366,12 +366,14 @@ Rectangle {
         if (tabDragCancelled || f < 0) { tabDragCancelled = false; return }
         tabDragAnimate = false
         if (o >= 0 && o !== f && tabIsDraggable(o) && tabIsDraggable(f)) {
-            const movable = tabNames.map((n, k) => k).filter(k => tabIsDraggable(k))
             const ids = channelTabs.map(t => t.id)
             const moved = ids.splice(f, 1)[0]
             ids.splice(o, 0, moved)
             tabOrderPending = { channel: chatId, ids: ids }
-            backend.channelTabChange("to", teamId, chatId, moved, String(movable.indexOf(o)))
+            // The place among the channel's stored movable tabs (Teams'
+            // stand-in Page isn't stored, so it doesn't count).
+            const stored = ids.filter(id => { const t = channelTabs.find(x => x.id === id); return !!t && !!t.draggable && !t.lie })
+            backend.channelTabChange("to", teamId, chatId, moved, String(stored.indexOf(moved)))
         }
         tabDragFrom = -1; tabDragOver = -1
         tabAnnounce(qsTr("Tab dropped"))

@@ -15,7 +15,9 @@ use super::client::TeamsClient;
 pub const TEAMS_PROPERTY: &str =
     "String {00020329-0000-0000-C000-000000000046} Name SkypeTeamsProperties";
 /// What Teams asks for of each event.
-const SELECT: [&str; 19] = [
+/// (lastModifiedDateTime is left out: group calendarView doesn't take it
+/// in $select.)
+const SELECT: [&str; 18] = [
     "id",
     "subject",
     "iCalUId",
@@ -33,7 +35,6 @@ const SELECT: [&str; 19] = [
     "organizer",
     "responseStatus",
     "onlineMeeting",
-    "lastModifiedDateTime",
     "singleValueExtendedProperties",
 ];
 /// Teams' contextualSearchChannelMeetingsConfig: 50 a page, three months
@@ -335,7 +336,7 @@ mod tests {
             true,
         );
         assert!(p.starts_with("/groups/0d0b1c43-9a3f-4d1b-8b5e-2d6c2a1b0f11/calendarView?startDateTime=2026-08-27T18%3A00%3A00.000Z&endDateTime=2026-11-27T18%3A00%3A00.000Z&$expand=singleValueExtendedProperties(%24filter%3Did%20eq%20'String%20%7B00020329-0000-0000-C000-000000000046%7D%20Name%20SkypeTeamsProperties')&$filter="));
-        assert!(p.ends_with("&$count=true&$select=id%2Csubject%2CiCalUId%2CseriesMasterId%2Ctype%2CisCancelled%2CisOrganizer%2CresponseRequested%2ChasAttachments%2CwebLink%2CbodyPreview%2Cstart%2Cend%2Clocation%2Corganizer%2CresponseStatus%2ConlineMeeting%2ClastModifiedDateTime%2CsingleValueExtendedProperties&$top=50&$skip=0&$orderby=start%2FdateTime%20desc"));
+        assert!(p.ends_with("&$count=true&$select=id%2Csubject%2CiCalUId%2CseriesMasterId%2Ctype%2CisCancelled%2CisOrganizer%2CresponseRequested%2ChasAttachments%2CwebLink%2CbodyPreview%2Cstart%2Cend%2Clocation%2Corganizer%2CresponseStatus%2ConlineMeeting%2CsingleValueExtendedProperties&$top=50&$skip=0&$orderby=start%2FdateTime%20desc"));
         assert_eq!(
             filter("19:ab@thread.tacv2", "8:orgid:o"),
             "singleValueExtendedProperties/any(ep: ep/id eq 'String {00020329-0000-0000-C000-000000000046} Name SkypeTeamsProperties' and contains(ep/value, '\"cid\":\"19:ab@thread.tacv2\"')) and singleValueExtendedProperties/any(ep: ep/id eq 'String {00020329-0000-0000-C000-000000000046} Name SkypeTeamsProperties' and contains(ep/value, '\"uid\":\"8:orgid:o\"'))"
