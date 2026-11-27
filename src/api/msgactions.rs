@@ -169,20 +169,79 @@ pub async fn set_reminder(
 
 /// Remove your reminder on a message (Teams' `deleteMessageReminder`:
 /// the same PUT with `{dr: true, mid}`).
+///
+/// A 404 (no metadata left for the thread) falls back to Teams' soft
+/// delete: `isReminderDeleted` on the message's `48:reminders` records.
 pub async fn remove_reminder(
     client: &TeamsClient,
     conv: &str,
     reply_chain: &str,
     message_id: &str,
 ) -> Result<()> {
-    put_rc_metadata(
+    let removed = put_rc_metadata(
         client,
         conv,
         reply_chain,
         message_id,
         |mid| serde_json::json!({ "dr": true, "mid": mid }),
     )
-    .await
+    .await;
+    match removed {
+        Err(e) if e.to_string().contains("HTTP 404") => {
+            soft_delete_reminder(client, conv, message_id).await
+        }
+        other => other,
+    }
+}
+
+/// The `48:reminders` records of one message (stream message ids).
+pub fn reminder_records_of(v: &serde_json::Value, conv: &str, message_id: &str) -> Vec<String> {
+    let text = |x: &serde_json::Value| {
+        x.as_str()
+            .map(str::to_string)
+            .or_else(|| x.as_i64().map(|n| n.to_string()))
+            .unwrap_or_default()
+    };
+    v["messages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|m| {
+            let a = &m["properties"]["activity"];
+            text(&a["sourceThreadId"]) == conv && text(&a["sourceMessageId"]) == message_id
+        })
+        .filter_map(|m| m["id"].as_str().map(str::to_string))
+        .collect()
+}
+
+/// Teams' markMessageReminderAsDeleted: `PUT …/48:reminders/messages/{id}
+/// /properties?name=isReminderDeleted` with `{"isReminderDeleted":"true"}`.
+async fn soft_delete_reminder(client: &TeamsClient, conv: &str, message_id: &str) -> Result<()> {
+    let base = format!(
+        "{}/v1/users/ME/conversations/48:reminders",
+        client.chat_service_url()
+    );
+    let v: serde_json::Value = client
+        .chat_get(&format!(
+            "{base}/messages?view=msnp24Equivalent&pageSize=100"
+        ))
+        .await?
+        .json()
+        .await?;
+    let ids = reminder_records_of(&v, conv, message_id);
+    if ids.is_empty() {
+        anyhow::bail!("no reminder to remove");
+    }
+    for id in ids {
+        client
+            .chat_request(
+                reqwest::Method::PUT,
+                &format!("{base}/messages/{id}/properties?name=isReminderDeleted"),
+                &serde_json::json!({ "isReminderDeleted": "true" }),
+            )
+            .await?;
+    }
+    Ok(())
 }
 
 async fn put_rc_metadata(
@@ -938,6 +997,18 @@ pub async fn translate_with(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_messages_reminder_records_are_found() {
+        let rec = |id: &str, conv: &str, msg: serde_json::Value| serde_json::json!({ "id": id, "properties": { "activity": { "sourceThreadId": conv, "sourceMessageId": msg } } });
+        let v = serde_json::json!({ "messages": [
+            rec("1", "19:a", serde_json::json!(5)),
+            rec("2", "19:a", serde_json::json!("5")),
+            rec("3", "19:a", serde_json::json!(6)),
+            rec("4", "19:b", serde_json::json!(5)),
+        ]});
+        assert_eq!(reminder_records_of(&v, "19:a", "5"), ["1", "2"]);
+    }
 
     #[test]
     fn reminders_come_from_r_and_rl2() {

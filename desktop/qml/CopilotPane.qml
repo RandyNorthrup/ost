@@ -39,7 +39,8 @@ Rectangle {
     property bool appReady: false
     function sendAsk() {
         const a = pane.ask
-        if (!a || !app.item || !pane.appReady || pane.askSent === a.id) return
+        // Only into the conversation it was asked in.
+        if (!a || !app.item || !pane.appReady || pane.askSent === a.id || !pane.request || pane.request.chat !== a.chatId) return
         pane.askSent = a.id
         const now = Date.now()
         const ref = "teams-msg-" + Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2) + "-" + now

@@ -23679,8 +23679,8 @@ impl qobject::Backend {
             }
             .await;
             match result {
-                Ok(items) => {
-                    let _ = qt.queue(move |mut this| this.as_mut().publish_reminders(items));
+                Ok((items, whole)) => {
+                    let _ = qt.queue(move |mut this| this.as_mut().publish_reminders(items, whole));
                 }
                 Err(e) => tracing::warn!("reminders unavailable: {}", short_error(&e)),
             }
@@ -23690,7 +23690,11 @@ impl qobject::Backend {
     /// Show the reminders, and Teams' "Reminder due" banner for each that
     /// came due since the last read (none on the first read, none for one
     /// set here in the last minute; several at once: "{n} reminders due").
-    fn publish_reminders(mut self: Pin<&mut Self>, items: Vec<api::quick_views::ReminderItem>) {
+    fn publish_reminders(
+        mut self: Pin<&mut Self>,
+        items: Vec<api::quick_views::ReminderItem>,
+        whole: bool,
+    ) {
         let now = teams_cli::clock::now_ms();
         let first = self.rust().reminders_json.is_empty();
         let due: Vec<&api::quick_views::ReminderItem> = items.iter().filter(|r| r.is_due).collect();
@@ -23750,8 +23754,7 @@ impl qobject::Backend {
         let seen: HashSet<String> = due.iter().map(|r| r.item.message_id.clone()).collect();
         self.as_mut().rust_mut().reminders_due_seen = seen;
         // The shown messages' markers follow the list (clearing only when
-        // the whole list was read: one page of 100).
-        let whole = items.len() < 100;
+        // the whole stream was read: under one page of 100 records).
         let dues: HashMap<String, i64> = items
             .iter()
             .filter(|r| r.completed == 0)
