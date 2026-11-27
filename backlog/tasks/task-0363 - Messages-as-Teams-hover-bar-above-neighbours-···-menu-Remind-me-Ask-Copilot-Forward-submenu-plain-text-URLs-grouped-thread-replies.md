@@ -3,11 +3,11 @@ id: TASK-0363
 title: >-
   Messages as Teams: hover bar above neighbours, ··· menu Remind me / Ask
   Copilot / Forward submenu, plain-text URLs, grouped thread replies
-status: In Progress
+status: Done
 assignee:
   - '@claude-0363'
 created_date: '2026-11-27T18:19:00Z'
-updated_date: '2026-11-27T21:42:00Z'
+updated_date: '2026-11-27T21:59:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -53,6 +53,8 @@ From the 2026-11-27 parity audit (scope A), which compared Teams (desktop for so
 - Live (linuxlt, OST Test 3, PR2 build, pointer-script harness): received message menu matches Teams' (Forward F | >, Copy link, Save, Remind me >, Pin | Mark as unread, Share to Outlook, Translation | Report | More actions); Remind me submenu Now / Later today 1:30 PM / Tomorrow Sat, 9:00 AM / Next week Mon, 9:00 AM / Custom; Now -> "A reminder has been set. View", alarm on the message, Reminders quick view with 1 due, row "Due 12:43 PM"; Edit reminder + Remove reminder; Later today -> upcoming chip "2:00 PM"; row ··· Remove -> "Reminder removed.", list empty; Custom dialog (Fri Nov 27 2026, 1:00 PM) Add -> at 13:30 the "Reminder due" banner (OST Test 2) showed; Forward ▸ Multiple messages -> checkboxes, "2 selected", Next -> Forward this message with both cards (cancelled, nothing sent).
 - Not verified live: Ask Copilot as a Copilot-licensed account (both ost-test1 profiles on linuxlt were in use by other agents; a fresh profile's sign-in didn't complete). Its menu item stays hidden for OST Test 3, as Teams hides it for OST Test 2.
 - Follow-up: TASK-0373 (channel posts multiselect, Discard and leave, Save in Reminders rows, icons in channel views, Ask Copilot in channel L2).
+
+- Live Ask Copilot (ost-test1, default profile, rebased build): menu = Teams' for ost-test1 (Ask Copilot after Pin); clicking it opened the chat's Copilot pane with the quoted message and "Search for more context and explain this in more detail", answered at once.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
