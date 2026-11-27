@@ -1,11 +1,11 @@
 ---
 id: TASK-0362
 title: 'Menus keyboard as Teams: Esc closes, arrow keys move (shared MenuPopup)'
-status: In Progress
+status: Done
 assignee:
   - '@task-0362-agent'
 created_date: '2026-11-27T18:19:00Z'
-updated_date: '2026-11-27T18:55:00Z'
+updated_date: '2026-11-27T19:39:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -19,7 +19,7 @@ From the 2026-11-27 parity audit (scope A), which compared Teams (desktop for so
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A-08: OST's menus ignore the keyboard: Esc doesn't close them, arrow keys don't move through items; fixed to match Teams desktop, checked side by side
+- [x] #1 A-08: OST's menus ignore the keyboard: Esc doesn't close them, arrow keys don't move through items; fixed to match Teams desktop, checked side by side
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -57,4 +57,26 @@ Implementation (MenuPopup.qml, once for all ~177 menus):
 - Harness --menu-keys-test (MenuKeysTest.qml) with real key events; docs/desktop.md row.
 
 PR #48 opened (live checks pending in its body).
+
+Codex review on #48 (3 findings, fixed in 528ef3fd, threads answered and resolved): row chords (Ctrl+C/Ctrl+A of the text menu) pick their row; focus goes to the accessible row item (wrapper for disabled rows); persistent split labels stay open on Enter.
+Live (linuxlt, OST Test 3, own test-harness build): --menu-keys-test 46 ok / 0 FAIL, incl. More list options (split + submenu) and a chat ··· menu (typeahead to Move to section, its submenu). Screens compared with Teams web shots (outline, split part, submenu row fill).
+Teams side effects of the research: on OST Test 3's web session, pressing s / u in a message menu saved/unsaved and marked unread one message in the 1:1 chat with OST Test 2 (Teams' accelerators); the menu shows "Save this message" again, so it ended unsaved.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+OST's menus now take the keyboard as Teams' Fluent menus do (PR #48).
+
+Cause: MenuPopup.qml (the one menu component, ~177 uses) never took the focus and had no key handling.
+
+Changes (MenuPopup.qml, so every menu gets them):
+- takes the focus on open, first row current (no outline after a click); Down/Up wrap; Home/PageUp, End/PageDown; typeahead; a row's own keys/chord picks it; Enter/Space pick or open a submenu; Right/Left for split parts and submenus; Esc closes (a submenu only), Tab/Shift+Tab close and move on; focus restored to what had it.
+- hover and keyboard share the row; the row's accessible item has the real focus; Fluent focus outline once a key is used, only in the menu holding the keys; an open submenu's row keeps its fill.
+- Keys.onShortcutOverride so window Escape shortcuts don't steal the menu's keys.
+- TitleBar dropdowns show the outline when opened by keys; the selected-text menu keeps the selection.
+
+Tests: --menu-keys-test (MenuKeysTest.qml, docs/desktop.md): 46 checks pass live on linuxlt (OST Test 3), including More list options and a chat's ··· menu with submenus.
+
+Unverified: physical keyboard on linuxlt (QtTest key events used); header strips (message reactions) not in the arrow order as in Teams; Teams' disabled-item focus taken from Fluent source; focus returns to the prior focus item rather than to non-focusable trigger buttons.
+<!-- SECTION:FINAL_SUMMARY:END -->
