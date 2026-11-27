@@ -422,6 +422,125 @@ pub fn frame_stats(
     s
 }
 
+/// MS-H264PF's cropping info SEI message (section 2.2.6): a
+/// user_data_unregistered SEI with this UUID, then the number of cropping
+/// windows, a type (0), and per window a confidence (0–100) and its
+/// left/right/top/bottom offsets from the frame's edges, in pixels.
+/// Teams desktop adds one window to each frame of a Standout or Reporter
+/// camera (TASK-0342: the frame-leading packet grows by exactly one
+/// message, 29 bytes, in those modes only).
+pub const CROP_INFO_UUID: [u8; 16] = [
+    0xbb, 0x7f, 0xc1, 0xa0, 0x69, 0x86, 0x40, 0x52, 0x90, 0xf0, 0x09, 0x29, 0x21, 0x75, 0x39, 0xcf,
+];
+
+/// A cropping window: its offsets from the frame's edges, in pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CropWindow {
+    pub left: u16,
+    pub right: u16,
+    pub top: u16,
+    pub bottom: u16,
+}
+
+/// The confidence we give a window from the person mask (the spec's
+/// scale is 0–100; the segmentation model's mask is the whole answer).
+pub const CROP_CONFIDENCE: u8 = 100;
+
+/// The cropping info message itself (payloadType, payloadSize, payload):
+/// 29 bytes for one window.
+fn crop_info_message(window: CropWindow, confidence: u8) -> Vec<u8> {
+    // payloadType 5 (user_data_unregistered), payloadSize 18 + 9 × 1.
+    let mut msg = vec![5, 18 + 9];
+    msg.extend_from_slice(&CROP_INFO_UUID);
+    // numOfCropData 1, crop_info_type 0, the window's confidence.
+    msg.extend_from_slice(&[1, 0, confidence]);
+    for v in [window.left, window.right, window.top, window.bottom] {
+        msg.extend_from_slice(&v.to_be_bytes());
+    }
+    msg
+}
+
+/// One SEI NAL unit carrying a cropping info message for `window`, for a
+/// plain H.264 stream (emulation prevention applied, RBSP trailing bits
+/// added).
+pub fn crop_info_sei(window: CropWindow, confidence: u8) -> Vec<u8> {
+    let mut msg = crop_info_message(window, confidence);
+    msg.push(0x80); // rbsp_trailing_bits
+    // NAL header: F 0, NRI 0, type 6 (SEI), as the spec's example.
+    let mut nal = vec![0x06];
+    let mut zeros = 0;
+    for &b in &msg {
+        if zeros >= 2 && b <= 3 {
+            nal.push(3);
+            zeros = 0;
+        }
+        nal.push(b);
+        zeros = if b == 0 { zeros + 1 } else { 0 };
+    }
+    nal
+}
+
+/// The person's box in a Standout/Reporter camera frame (the implicit
+/// mask: background below luma 23, the person at 59 and up), as offsets
+/// from the edges. `None` while the picture has no cut-out background or
+/// no person in it.
+pub fn person_window(i420: &[u8], width: u32, height: u32) -> Option<CropWindow> {
+    let (w, h) = (width as usize, height as usize);
+    if w < 4 || h < 4 || i420.len() < w * h {
+        return None;
+    }
+    const STEP: usize = 2;
+    let (mut x0, mut x1, mut y0, mut y1) = (usize::MAX, 0usize, usize::MAX, 0usize);
+    let (mut back, mut person, mut total) = (0usize, 0usize, 0usize);
+    for y in (0..h).step_by(STEP) {
+        let row = &i420[y * w..y * w + w];
+        for x in (0..w).step_by(STEP) {
+            total += 1;
+            let l = row[x];
+            if l < ost_vfx::implicit::THRESHOLD {
+                back += 1;
+            } else if l >= ost_vfx::implicit::LUMA_MIN {
+                person += 1;
+                x0 = x0.min(x);
+                x1 = x1.max(x);
+                y0 = y0.min(y);
+                y1 = y1.max(y);
+            }
+        }
+    }
+    // A cut-out picture: a real share of background, and someone in it.
+    if back * 20 < total || person * 200 < total {
+        return None;
+    }
+    let right = w.saturating_sub((x1 + STEP).min(w));
+    let bottom = h.saturating_sub((y1 + STEP).min(h));
+    Some(CropWindow {
+        left: x0 as u16,
+        right: right as u16,
+        top: y0 as u16,
+        bottom: bottom as u16,
+    })
+}
+
+/// OST_CROP_SEI=1 (TASK-0342 research, off by default): a Standout or
+/// Reporter camera carries Teams' cropping info SEI in each frame. The
+/// meeting's media processor forwards it to Teams desktop as its own NAL
+/// unit after the PACSI it builds; Teams desktop still draws the camera
+/// opaque, so this stays a developer switch.
+fn crop_sei_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("OST_CROP_SEI").is_some_and(|v| v == "1"))
+}
+
+/// Put `sei` before the access unit's first picture slice.
+fn insert_before_slice(nals: &mut Vec<Vec<u8>>, sei: Vec<u8>) {
+    let at = nals
+        .iter()
+        .position(|n| matches!(n.first().map(|b| b & 0x1f), Some(1 | 5)))
+        .unwrap_or(nals.len());
+    nals.insert(at, sei);
+}
+
 /// Largest RTP payload we send (leaves room for SRTP, UDP and TURN).
 pub const MTU: usize = 1100;
 
@@ -1125,13 +1244,21 @@ fn send_loop(
         if keyframe.swap(false, Ordering::Relaxed) {
             enc.force_keyframe();
         }
-        let nals = match enc.encode(&f.data) {
+        let mut nals = match enc.encode(&f.data) {
             Ok(n) => n,
             Err(e) => {
                 tracing::debug!("encode failed: {e:#}");
                 continue;
             }
         };
+        // Standout and Reporter: where the person is (Teams' cropping info).
+        if cfg.effects
+            && ost_vfx::presenter_mask()
+            && crop_sei_enabled()
+            && let Some(win) = person_window(&f.data, f.width, f.height)
+        {
+            insert_before_slice(&mut nals, crop_info_sei(win, CROP_CONFIDENCE));
+        }
         let ts = line.timestamp();
         for (payload, marker) in packetize(&nals, MTU) {
             if out
@@ -1195,6 +1322,81 @@ mod tests {
         assert!(s.contains("[0, 128, 128]:50.0%"), "{s}");
         assert!(s.contains("person box x 0.50..0.97 y 0.00..0.94"), "{s}");
         assert!(s.contains("corners (0,128,128) (200,128,128)"), "{s}");
+    }
+
+    #[test]
+    fn crop_info_sei_follows_ms_h264pf() {
+        // The spec's own example (section 4.2): one window, left and right
+        // 280, top and bottom 0, confidence 255.
+        let nal = crop_info_sei(
+            CropWindow {
+                left: 280,
+                right: 280,
+                top: 0,
+                bottom: 0,
+            },
+            255,
+        );
+        // The spec's bytes, with emulation prevention after 00 00 and
+        // the RBSP trailing bits.
+        let want: Vec<u8> = [
+            &[0x06, 0x05, 0x1b][..],
+            &CROP_INFO_UUID,
+            &[
+                0x01, 0x00, 0xff, 0x01, 0x18, 0x01, 0x18, 0x00, 0x00, 0x03, 0x00, 0x00, 0x80,
+            ],
+        ]
+        .concat();
+        assert_eq!(nal, want);
+        // The message itself is 29 bytes: Teams' frame-leading packet grows
+        // by exactly that in Standout and Reporter.
+        let plain = crop_info_sei(
+            CropWindow {
+                left: 100,
+                right: 120,
+                top: 10,
+                bottom: 30,
+            },
+            CROP_CONFIDENCE,
+        );
+        assert_eq!(plain.len(), 1 + 29 + 1);
+    }
+
+    #[test]
+    fn person_window_reads_the_implicit_mask() {
+        // 64 x 32: background black, a person (luma 150) at x 20..39,
+        // y 8..31.
+        let (w, h) = (64usize, 32usize);
+        let mut f = vec![0u8; w * h * 3 / 2];
+        for y in 8..32 {
+            f[y * w + 20..y * w + 40].fill(150);
+        }
+        let win = person_window(&f, w as u32, h as u32).unwrap();
+        assert_eq!(
+            win,
+            CropWindow {
+                left: 20,
+                right: 24,
+                top: 8,
+                bottom: 0
+            }
+        );
+        // An ordinary picture (no background cut out): no window.
+        let plain = vec![120u8; w * h * 3 / 2];
+        assert_eq!(person_window(&plain, w as u32, h as u32), None);
+        // All background: no one to crop to.
+        assert_eq!(
+            person_window(&vec![0u8; w * h * 3 / 2], w as u32, h as u32),
+            None
+        );
+    }
+
+    #[test]
+    fn the_sei_goes_before_the_first_slice() {
+        let mut nals = vec![vec![0x67, 1], vec![0x68, 2], vec![0x65, 3]];
+        insert_before_slice(&mut nals, vec![0x06, 9]);
+        assert_eq!(nals[2], vec![0x06, 9]);
+        assert_eq!(nals[3], vec![0x65, 3]);
     }
 
     #[test]
