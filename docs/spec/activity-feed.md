@@ -56,6 +56,30 @@ OST Test 2's feeds, compared item by item with Teams on winpc
 - teamMembershipChange / teamShareTeamOwnerNotify: "{name} shared a channel
   with your team".
 
+## The feed's header, filter and calls (Teams web as ost-test1, 2026-11-27)
+
+- **··· (More options)** opens below its end: Mark all as read (glasses
+  icon, its shortcut Shift+Esc at the end: Teams' MarkAllAsReadInActivity,
+  the same action with no confirmation) and Notification settings (gear;
+  Settings ▸ Notifications and activity).
+- **Filter** (magnifier; "Show filter text box (Ctrl+Shift+F)" / "Close
+  filter text box (Ctrl+Shift+F)", filled brand while open; Ctrl+Shift+F in
+  Activity is Teams' OpenLeftRailFilter and toggles it): a 32 px box 16 in
+  and 72 down over the pills, which stay and move down 47; Fluent's
+  filled-lighter shadow box, no icon, "Filter by name or group name" 13 in,
+  a 2 px brand line under it while focused, Clear filter text (24 px, 6
+  from its end) once there's text. It matches any line of a row
+  (headline, preview, where), case-insensitively, and marks each match
+  (`feeditem_search_highlight`: colorPaletteMarigoldBorder1 — #F9E2AE,
+  dark #EAA300 — in NeutralForeground1 at regular weight); none: "We
+  didn't find any matches."
+- **A missed call or voicemail** (activityType call, subtype missedCall /
+  voicemail; navigation target `calls`) opens the Calls app beside the
+  feed — its header and History without the dial pane — with History's
+  filter set to Missed (Voicemail for a voicemail): Teams' calls list
+  entity command with `defaultFilter` MissedCalls / Voicemail. Call and
+  Chat on the row still call back and open the chat.
+
 ## OST
 
 `src/api/activity.rs`: `parse_feed` words what it can and marks the rest;

@@ -339,7 +339,8 @@ Window {
     Shortcut { sequence: "Ctrl+Shift+T"; onActivated: window.pinned = !window.pinned }
     // The rest of Teams' shortcuts that OST supports (listed by Ctrl+.).
     Shortcut { sequence: "Ctrl+."; onActivated: if (window.slackShortcuts) { if (conversation.visible) conversation.toggleDetails() } else shortcutsDialog.open() }
-    Shortcut { sequence: "Ctrl+Shift+F"; onActivated: { rail.current = "chat"; chatList.openFilter() } }
+    // (In Activity, Teams' OpenLeftRailFilter opens or closes its filter.)
+    Shortcut { sequence: "Ctrl+Shift+F"; onActivated: { if (rail.current === "activity") { activityView.toggleFilter(); return } rail.current = "chat"; chatList.openFilter() } }
     Shortcut { sequence: "Ctrl+R"; onActivated: { rail.current = "chat"; conversation.focusCompose() } }
     Shortcut { sequence: "Ctrl+F"; onActivated: if (conversation.visible) conversation.openFind() }
     // Help (F1) and Feedback ▸ Report a problem (Ctrl+Alt+Shift+R), as Teams.
@@ -388,6 +389,9 @@ Window {
     // again" (clientPreferences simpleCollab.skipMarkAllAsReadConfirmDialog,
     // kept on this device).
     Shortcut { sequence: "Shift+Esc"; enabled: chatList.visible; onActivated: window.shiftEscMarkAll() }
+    // In Activity, Shift+Esc is the feed's Mark all as read (Teams'
+    // MarkAllAsReadInActivity: the menu's action, no confirmation).
+    Shortcut { sequence: "Shift+Esc"; enabled: activityView.visible; onActivated: activityView.markAllRead() }
     Shortcut { sequence: "Alt+Q"; enabled: chatList.visible && !window.zoomShortcuts; onActivated: chatList.collapseAll() }
     function shiftEscMarkAll() {
         if (backend.setting("skipMarkAllAsReadConfirmDialog") === "true") backend.markAllRead(chatList.markAllAppType)
@@ -2029,6 +2033,48 @@ Window {
                 console.warn("ACTIVITY open", activityView.selectedId === (r ? r.id : "?"), "chat", backend.currentChatId, "unread now", r ? r.unread : "?", "badge", backend.activityUnread)
                 window.contentItem.grabToImage(g => { g.saveToFile(window.shotPath.replace(".png", "-open.png")); Qt.quit() })
             }
+            step++
+        }
+    }
+
+    // --activity-calendar-test=<dir>: Activity's menu, filter and a missed
+    // call, then the calendar's scroll, pane (collapsed, two months, Show
+    // all) and a peek card (--peek=<subject>); --add-calendar opens
+    // Outlook's Add calendar and keeps it. Captures in <dir>, state on the
+    // log as T367.
+    Timer {
+        id: t367
+        readonly property var args: Qt.application.arguments
+        readonly property string dir: (args.find(a => a.startsWith("--activity-calendar-test=")) || "").slice(25)
+        running: dir.length > 0 && backend.signedIn && backend.activityJson.length > 2
+        interval: 2500
+        repeat: true
+        property int step: 0
+        function shot(name) { window.contentItem.grabToImage(g => g.saveToFile(dir + "/" + name + ".png")) }
+        function arg(n) { const a = args.find(x => x.startsWith("--" + n + "=")); return a ? a.slice(n.length + 3) : "" }
+        onTriggered: {
+            const items = JSON.parse(backend.activityJson)
+            const missed = items.find(i => i.kind === "missedCall")
+            const only = arg("t367-only")
+            if (only === "calendar" && step < 10) step = 10
+            if (step === 0) { rail.current = "activity"; activityView.selectedId = ""; activityView.selectedKind = "" }
+            else if (step === 1) { activityView.menuForTest().open(); console.warn("T367 menu", JSON.stringify(activityView.menuForTest().items)) }
+            else if (step === 2) { shot("act-menu"); activityView.menuForTest().close() }
+            else if (step === 3) { activityView.toggleFilter(); activityView.filterFieldForTest().text = arg("filter") || "test 3" }
+            else if (step === 4) { shot("act-filter"); console.warn("T367 filter", activityView.nameFilter, "shown", activityView.shown.length, "of", items.length) }
+            else if (step === 5) { activityView.toggleFilter(); if (missed) activityView.openItem(missed); console.warn("T367 missed", !!missed, missed ? missed.title : "") }
+            else if (step === 6) { console.warn("T367 calls", window.activityCalls, callsView.visible, callsView.filter, callsView.inActivity, "conversation", conversation.visible); shot("act-missed") }
+            else if (step === 10) { rail.current = "calendar" }
+            else if (step === 11) { console.warn("T367 scroll", JSON.stringify(calendarView.gridScrollForTest()), new Date().toTimeString()); shot("cal-open") }
+            else if (step === 12) { calendarView.monthOpen = false }
+            else if (step === 13) { shot("cal-collapsed"); calendarView.monthOpen = true; calendarView.miniMonths = 2 }
+            else if (step === 14) { shot("cal-two"); calendarView.miniMonths = 1; calendarView.showAllCalendars = true }
+            else if (step === 15) { shot("cal-all"); console.warn("T367 groups", JSON.stringify(calendarView.paneGroups.map(g => [g.kind, g.name, g.calendars.map(c => c.name)]))); calendarView.shift(1) }
+            else if (step === 16) { console.warn("T367 next week scroll", JSON.stringify(calendarView.gridScrollForTest())); shot("cal-next"); calendarView.shift(-1) }
+            else if (step === 17) { const p = arg("peek"); console.warn("T367 peek", p, calendarView.cardForTest(p)) }
+            else if (step === 19) { shot("cal-peek"); calendarView.detailsForTest.close(); if (args.indexOf("--add-calendar") >= 0) calendarView.openAddCalendar() }
+            else if (step === 25) { shot("cal-add"); if (args.indexOf("--add-calendar") < 0) Qt.quit() }
+            else if (step > 25 && args.indexOf("--add-calendar") >= 0) { if (step % 4 === 0) { console.warn("T367 calendars", JSON.stringify(calendarView.calendarList.map(c => c.name + "|" + c.section_kind))); shot("cal-add-" + step) } }
             step++
         }
     }
@@ -16778,10 +16824,14 @@ Window {
         }
     }
 
+    /// Activity's open item is a missed call or voicemail: Calls beside it.
+    readonly property bool activityCalls: rail.current === "activity" && activityView.selectedId.length > 0
+        && (activityView.selectedKind === "missedCall" || activityView.selectedKind === "voicemail")
     CallsView {
         id: callsView
-        visible: rail.current === "calls"
-        anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
+        visible: rail.current === "calls" || window.activityCalls
+        inActivity: window.activityCalls
+        anchors { top: appBanner.bottom; bottom: parent.bottom; left: window.activityCalls ? activityView.right : rail.right; right: parent.right }
         calls: backend.callsJson ? JSON.parse(backend.callsJson) : []
         people: backend.peopleJson ? JSON.parse(backend.peopleJson) : []
         myMri: backend.userMri
@@ -17750,10 +17800,20 @@ Window {
             for (const it of items) if (it.unread) backend.markActivityItemRead(it.id)
             backend.markActivityRead()
         }
-        // An item opens its chat or channel beside the feed.
+        onNotificationSettings: window.launchSettings("notifications")
+        // An item opens its chat or channel beside the feed; a missed call
+        // or voicemail opens Calls there, its History on Missed or Voicemail
+        // (Teams' activity navigation target "calls", defaultFilter
+        // MissedCalls / Voicemail).
         onOpenItem: item => {
             selectedId = item.id
+            selectedKind = item.kind || ""
             backend.markActivityItemRead(item.id)
+            if (item.kind === "missedCall" || item.kind === "voicemail") {
+                callsView.showFilter(item.kind === "voicemail" ? "voicemail" : "missed")
+                backend.loadCalls()
+                return
+            }
             if (item.thread_id) {
                 const c = chatList.chats.find(c => c.id === item.thread_id)
                 backend.selectChat(item.thread_id, c ? c.name : (item.actor_name || "Chat"))
@@ -17922,7 +17982,7 @@ Window {
         onManageChannel: id => window.openManageChannel(id)
         myName: backend.userName
         visible: (rail.current === "chat" && !chatList.draftsOpen && !chatList.copilotOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0) && (!chatList.quickOpen || (quickView.selectedKey.length > 0 && !quickView.threadPick)) && !manageChannel.visible && !manageTeam.visible && !yourTeams.visible && !window.teamPage)
-            || (rail.current === "activity" && activityView.selectedId.length > 0)
+            || (rail.current === "activity" && activityView.selectedId.length > 0 && !window.activityCalls)
         chatId: backend.currentChatId
         anchors { top: appBanner.bottom; bottom: statusBar.top; right: chatCopilot.left
             left: conversation.tabExpanded || conversation.channelAttendance ? rail.right : rail.current === "activity" ? activityView.right : chatList.right

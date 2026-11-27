@@ -62,6 +62,9 @@ pub struct CalendarEvent {
     /// Its charm (Outlook's event icon) as Outlook names it ("Plane"; empty
     /// for none), from Outlook's view.
     pub charm: String,
+    /// Someone else's calendar seen through their free/busy: no details,
+    /// only the time and how it's shown (Teams words the tile by `show_as`).
+    pub free_busy: bool,
 }
 
 /// One invitee and their answer.
@@ -109,26 +112,163 @@ pub async fn calendar_view(
     Ok(events)
 }
 
-/// One of your calendars as Teams' calendar pane lists it: your own
-/// (My calendars: Calendar, United States holidays, Birthdays, ones you
-/// made) and your Microsoft 365 groups' (Groups).
+/// One of your calendars as Teams' calendar pane lists it, in the groups
+/// Teams' hosted calendar (Outlook's GetCalendarFoldersV2) puts them in:
+/// My calendars (Calendar, United States holidays, Birthdays, ones you
+/// made), your teammates' (`Team: <manager>`), Other calendars (web
+/// subscriptions), People's calendars (ones added from the directory),
+/// then your Microsoft 365 groups' (Groups).
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct CalendarInfo {
-    /// Graph's calendar id, or `group:<group id>`.
+    /// Graph's calendar id, `group:<group id>`, or `linked:<address>` for
+    /// someone else's calendar (shown from their free/busy).
     pub id: String,
     pub name: String,
-    /// "My calendars" or "Groups".
+    /// The group's name as Outlook gives it (for a group of your own).
     pub section: String,
+    /// The group: "mine" (My calendars), "other" (Other calendars),
+    /// "people" (People's calendars), "groups" (Microsoft 365 groups), or
+    /// "custom" (any other group, e.g. teammates', named by `section`).
+    pub section_kind: String,
+    /// The group's id (Outlook's GroupId; "groups" for Microsoft 365 groups).
+    pub group_id: String,
     pub is_default: bool,
     /// Its colour (Graph's hexColor; empty for the default).
     pub color: String,
     /// Whether you can share it (Teams' "…" Share lists these).
     pub can_share: bool,
+    /// Graph's owner address (someone else's calendar you added).
+    #[serde(skip)]
+    owner: String,
+}
+
+/// Outlook's well-known calendar groups (GetCalendarFoldersV2 GroupType).
+fn section_kind(group_type: i64) -> &'static str {
+    match group_type {
+        0 => "mine",
+        1 => "other",
+        2 => "people",
+        _ => "custom",
+    }
+}
+
+/// A Graph (REST) id from Outlook's EWS id: the same bytes in URL-safe
+/// base64, compared without padding.
+fn rest_id(ews: &str) -> String {
+    ews.replace('/', "-").replace('+', "_")
+}
+
+fn same_id(a: &str, b: &str) -> bool {
+    !a.is_empty() && a.trim_end_matches('=') == b.trim_end_matches('=')
+}
+
+/// Teams' pane from Outlook's calendar groups and Graph's calendars: each
+/// group in Outlook's order, your calendars by their Graph id (matched by
+/// folder id, else by name), someone else's as `linked:<address>`.
+fn calendars_in_groups(
+    graph: &[CalendarInfo],
+    owa: &serde_json::Value,
+    my_address: &str,
+) -> Vec<CalendarInfo> {
+    let mut out: Vec<CalendarInfo> = Vec::new();
+    let mut used = vec![false; graph.len()];
+    for g in owa["CalendarGroups"].as_array().into_iter().flatten() {
+        let kind = section_kind(g["GroupType"].as_i64().unwrap_or(-1));
+        let group_id = g["GroupId"].as_str().unwrap_or_default();
+        let group_name = g["GroupName"].as_str().unwrap_or_default();
+        for c in g["Calendars"].as_array().into_iter().flatten() {
+            let name = c["CalendarName"].as_str().unwrap_or_default();
+            let linked = c["__type"]
+                .as_str()
+                .is_some_and(|t| t.starts_with("LinkedCalendarEntry"));
+            let owner = c["OwnerEmailAddress"].as_str().unwrap_or_default();
+            let color = c["HexColorString"]
+                .as_str()
+                .filter(|h| c["HexColor"].as_i64().unwrap_or(0) != 0 && h.starts_with('#'))
+                .unwrap_or_default()
+                .to_string();
+            let info = |id: String, base: Option<&CalendarInfo>| CalendarInfo {
+                id,
+                name: name.to_string(),
+                section: group_name.to_string(),
+                section_kind: kind.to_string(),
+                group_id: group_id.to_string(),
+                is_default: c["IsDefaultCalendar"].as_bool().unwrap_or(false),
+                color: if color.is_empty() {
+                    base.map(|b| b.color.clone()).unwrap_or_default()
+                } else {
+                    color.clone()
+                },
+                can_share: base.is_some_and(|b| b.can_share),
+                owner: String::new(),
+            };
+            if linked && !owner.is_empty() && !owner.eq_ignore_ascii_case(my_address) {
+                if !out
+                    .iter()
+                    .any(|o| o.id.eq_ignore_ascii_case(&format!("linked:{owner}")))
+                {
+                    out.push(info(format!("linked:{}", owner.to_ascii_lowercase()), None));
+                }
+                continue;
+            }
+            let folder = c
+                .pointer("/CalendarFolderId/Id")
+                .and_then(|i| i.as_str())
+                .map(rest_id)
+                .unwrap_or_default();
+            let hit = graph
+                .iter()
+                .enumerate()
+                .find(|(i, x)| !used[*i] && same_id(&x.id, &folder))
+                .or_else(|| {
+                    graph
+                        .iter()
+                        .enumerate()
+                        .find(|(i, x)| !used[*i] && x.name == name)
+                });
+            match hit {
+                Some((i, base)) => {
+                    used[i] = true;
+                    out.push(info(base.id.clone(), Some(base)));
+                }
+                None if !folder.is_empty() => out.push(info(folder, None)),
+                None => {}
+            }
+        }
+    }
+    // Graph's calendars Outlook didn't group (none expected): My calendars;
+    // someone else's are the linked entries above.
+    for (i, g) in graph.iter().enumerate() {
+        let theirs = !g.owner.is_empty()
+            && !my_address.is_empty()
+            && !g.owner.eq_ignore_ascii_case(my_address);
+        if !used[i] && !theirs && !out.iter().any(|o| o.id == g.id) {
+            out.push(g.clone());
+        }
+    }
+    out
+}
+
+/// Outlook's calendar groups (GetCalendarFoldersV2, as Teams' hosted
+/// calendar asks for them).
+async fn calendar_folders() -> Result<serde_json::Value> {
+    owa_action(
+        "GetCalendarFoldersV2",
+        &serde_json::json!({
+            "__type": "GetCalendarFoldersRequestV2:#Exchange",
+            "ShouldReturnLinkedCalendarEntryV2": false,
+            "IncludeOrganizationCalendars": true,
+            "Header": { "__type": "JsonRequestHeaders:#Exchange", "RequestServerVersion": "V2018_01_08" },
+        }),
+    )
+    .await
 }
 
 pub async fn calendars(client: &TeamsClient) -> Result<Vec<CalendarInfo>> {
     let v: serde_json::Value = client
-        .graph_get("/me/calendars?$select=id,name,hexColor,isDefaultCalendar,canShare&$top=100")
+        .graph_get(
+            "/me/calendars?$select=id,name,hexColor,isDefaultCalendar,canShare,owner&$top=100",
+        )
         .await?
         .json()
         .await?;
@@ -140,11 +280,27 @@ pub async fn calendars(client: &TeamsClient) -> Result<Vec<CalendarInfo>> {
             id: c["id"].as_str().unwrap_or_default().to_string(),
             name: c["name"].as_str().unwrap_or_default().to_string(),
             section: "My calendars".into(),
+            section_kind: "mine".into(),
+            group_id: String::new(),
             is_default: c["isDefaultCalendar"].as_bool().unwrap_or(false),
             color: c["hexColor"].as_str().unwrap_or_default().to_string(),
             can_share: c["canShare"].as_bool().unwrap_or(false),
+            owner: c["owner"]["address"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
         })
         .collect();
+    // Outlook's groups (with a browser sign-in): the pane as Teams shows it.
+    if crate::auth::oauth::browser_sign_in() {
+        match calendar_folders().await {
+            Ok(owa) => {
+                let me = client.user_principal_name().unwrap_or_default();
+                out = calendars_in_groups(&out, &owa, &me);
+            }
+            Err(e) => tracing::debug!("calendar groups: {e:#}"),
+        }
+    }
     if let Ok(r) = client
         .graph_get("/me/memberOf/microsoft.graph.group?$select=id,displayName,groupTypes&$top=100")
         .await
@@ -159,9 +315,12 @@ pub async fn calendars(client: &TeamsClient) -> Result<Vec<CalendarInfo>> {
                     id: format!("group:{}", x["id"].as_str().unwrap_or_default()),
                     name: x["displayName"].as_str().unwrap_or_default().to_string(),
                     section: "Groups".into(),
+                    section_kind: "groups".into(),
+                    group_id: "groups".into(),
                     is_default: false,
                     color: String::new(),
                     can_share: false,
+                    owner: String::new(),
                 });
             }
         }
@@ -176,6 +335,13 @@ pub async fn calendar_view_of(
     start: &str,
     end: &str,
 ) -> Result<Vec<CalendarEvent>> {
+    if let Some(address) = calendar.strip_prefix("linked:") {
+        let mut events = free_busy_of(client, address, start, end).await?;
+        for e in &mut events {
+            e.calendar_id = calendar.to_string();
+        }
+        return Ok(events);
+    }
     let base = match calendar.strip_prefix("group:") {
         Some(g) if !g.is_empty() && g.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') => {
             format!("/groups/{g}/calendarView")
@@ -198,6 +364,67 @@ pub async fn calendar_view_of(
         e.calendar_id = calendar.to_string();
     }
     Ok(events)
+}
+
+/// Someone else's calendar as Teams shows a person's calendar you added:
+/// their free/busy (Teams' hosted calendar asks Outlook's
+/// GetUserAvailabilityInternal; Graph's getSchedule gives the same), each
+/// block with its show-as and, where they share it, its subject and place.
+pub async fn free_busy_of(
+    client: &TeamsClient,
+    address: &str,
+    start: &str,
+    end: &str,
+) -> Result<Vec<CalendarEvent>> {
+    if address.is_empty() || !address.contains('@') || address.contains(['/', '?', '#', ' ']) {
+        bail!("Not an address");
+    }
+    let floating = |t: &str| t.trim_end_matches('Z').to_string();
+    let v: serde_json::Value = client
+        .graph_post(
+            "/me/calendar/getSchedule",
+            &serde_json::json!({
+                "schedules": [address],
+                "startTime": { "dateTime": floating(start), "timeZone": "UTC" },
+                "endTime": { "dateTime": floating(end), "timeZone": "UTC" },
+                "availabilityViewInterval": 30,
+            }),
+        )
+        .await?
+        .json()
+        .await?;
+    Ok(parse_schedule_items(&v))
+}
+
+fn parse_schedule_items(v: &serde_json::Value) -> Vec<CalendarEvent> {
+    let utc = |t: &str| {
+        let t = t.split('.').next().unwrap_or(t);
+        if t.is_empty() || t.ends_with('Z') {
+            t.to_string()
+        } else {
+            format!("{t}Z")
+        }
+    };
+    v["value"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|s| s["scheduleItems"].as_array().cloned().unwrap_or_default())
+        .map(|i| CalendarEvent {
+            subject: i["subject"].as_str().unwrap_or_default().to_string(),
+            location: i["location"].as_str().unwrap_or_default().to_string(),
+            start_utc: utc(i["start"]["dateTime"].as_str().unwrap_or_default()),
+            end_utc: utc(i["end"]["dateTime"].as_str().unwrap_or_default()),
+            show_as: i["status"].as_str().unwrap_or("busy").to_string(),
+            sensitivity: if i["isPrivate"].as_bool().unwrap_or(false) {
+                "private".into()
+            } else {
+                "normal".into()
+            },
+            free_busy: true,
+            ..Default::default()
+        })
+        .collect()
 }
 
 /// Make a calendar of your own (`POST /me/calendars`), and delete one.
@@ -1218,6 +1445,27 @@ pub async fn calendar_prefs(client: &TeamsClient) -> Result<serde_json::Value> {
     .map_err(|e| tracing::warn!("calendar filters: {e:#}"))
     .ok()
     .and_then(|v| cloud_setting_value(&v, "calendar_filters"));
+    // The mini month's month count (Teams' chevron under it: one or two).
+    let mini_months = ows(
+        reqwest::Method::GET,
+        "ows/v1/OutlookCloudSettings/settings/?settingname=calendar_minimonthcount",
+        None,
+    )
+    .await
+    .ok()
+    .and_then(|v| cloud_setting_value(&v, "calendar_minimonthcount"))
+    .and_then(|v| v.as_u64())
+    .filter(|n| *n == 1 || *n == 2)
+    .unwrap_or(1);
+    // Your working hours (where the calendar opens on a week without
+    // today: the first working day's start).
+    let working_hours = match client.graph_get("/me/mailboxSettings/workingHours").await {
+        Ok(r) => r.json::<serde_json::Value>().await.unwrap_or_default(),
+        Err(e) => {
+            tracing::debug!("working hours: {e:#}");
+            serde_json::Value::Null
+        }
+    };
     let views = ows(reqwest::Method::GET, "ows/v1/SaveCalendarView", None)
         .await
         .map_err(|e| tracing::warn!("saved views: {e:#}"))
@@ -1263,6 +1511,12 @@ pub async fn calendar_prefs(client: &TeamsClient) -> Result<serde_json::Value> {
         "filters": filters,
         "savedViews": views,
         "categories": categories,
+        "miniMonths": mini_months,
+        "workingHours": {
+            "days": working_hours["daysOfWeek"],
+            "start": working_hours["startTime"],
+            "end": working_hours["endTime"],
+        },
         "calendarId": calendar_id,
         "objectId": crate::config::Config::load().ok().and_then(|c| c.object_id()).unwrap_or_default(),
         "tenantId": crate::config::Config::load().ok().and_then(|c| c.tenant_id()).unwrap_or_default(),
@@ -1307,6 +1561,28 @@ pub async fn set_calendar_filters(filters: &serde_json::Value) -> Result<()> {
         "scope": "global",
         "type": "JSON",
         "value": filters.to_string(),
+    }]);
+    ows(
+        reqwest::Method::PATCH,
+        "ows/v1/OutlookCloudSettings/settings/global",
+        Some(&body),
+    )
+    .await?;
+    Ok(())
+}
+
+/// The mini month's month count, as Teams' chevron under it keeps it: the
+/// `calendar_minimonthcount` roaming setting (global scope, an Int).
+pub async fn set_mini_month_count(count: u8) -> Result<()> {
+    if !(1..=2).contains(&count) {
+        bail!("The mini month shows one or two months");
+    }
+    let body = serde_json::json!([{
+        "itemClass": "RoamingSetting",
+        "name": "calendar_minimonthcount",
+        "scope": "global",
+        "type": "Int",
+        "value": count.to_string(),
     }]);
     ows(
         reqwest::Method::PATCH,
@@ -2597,6 +2873,100 @@ fn cancel_event_request(ews: &str, scope: &str, note: &str, tz: &str) -> serde_j
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn calendars_sit_in_outlooks_groups_as_teams_shows_them() {
+        let graph = |id: &str, name: &str, owner: &str| super::CalendarInfo {
+            id: id.into(),
+            name: name.into(),
+            section: "My calendars".into(),
+            section_kind: "mine".into(),
+            is_default: name == "Calendar",
+            owner: owner.into(),
+            ..Default::default()
+        };
+        let mine = vec![
+            graph("AAMkAD-x_1=", "Calendar", "me@x.com"),
+            graph("AAMkAD-x_2=", "Project", "me@x.com"),
+            graph("AAMkAD-x_3=", "Holidays web", "me@x.com"),
+            // Someone else's calendar you added: Outlook's linked entry.
+            graph("AAMkAD-x_4=", "Ann", "ann@x.com"),
+        ];
+        let owa = serde_json::json!({ "CalendarGroups": [
+            { "GroupId": "0006f0b7", "GroupName": "My Calendars", "GroupType": 0, "Calendars": [
+                { "__type": "LocalCalendarEntry:#Exchange", "CalendarName": "Calendar", "IsDefaultCalendar": true,
+                  "CalendarFolderId": { "Id": "AAMkAD/x+1=" }, "HexColor": 0, "HexColorString": "#000000" },
+                { "__type": "LocalCalendarEntry:#Exchange", "CalendarName": "Project",
+                  "CalendarFolderId": { "Id": "AAMkAD/x+2=" }, "HexColor": -564468, "HexColorString": "#f7630c" } ] },
+            { "GroupId": "497aa60c", "GroupName": "Team: Bob", "GroupType": 4, "Calendars": [
+                { "__type": "LinkedCalendarEntry:#Exchange", "CalendarName": "Bob", "OwnerEmailAddress": "Bob@x.com" } ] },
+            { "GroupId": "0006f0b8", "GroupName": "Other Calendars", "GroupType": 1, "Calendars": [
+                { "__type": "LocalCalendarEntry:#Exchange", "CalendarName": "Holidays web",
+                  "CalendarFolderId": { "Id": "AAMkAD/x+3" }, "HexColor": 0 } ] },
+            { "GroupId": "0006f0b9", "GroupName": "People's Calendars", "GroupType": 2, "Calendars": [
+                { "__type": "LinkedCalendarEntry:#Exchange", "CalendarName": "Ann", "OwnerEmailAddress": "ann@x.com" } ] }
+        ]});
+        let out = super::calendars_in_groups(&mine, &owa, "me@x.com");
+        let got: Vec<(String, String, String)> = out
+            .iter()
+            .map(|c| (c.id.clone(), c.section_kind.clone(), c.section.clone()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("AAMkAD-x_1=".into(), "mine".into(), "My Calendars".into()),
+                ("AAMkAD-x_2=".into(), "mine".into(), "My Calendars".into()),
+                (
+                    "linked:bob@x.com".into(),
+                    "custom".into(),
+                    "Team: Bob".into()
+                ),
+                // (matched by folder id without its padding)
+                (
+                    "AAMkAD-x_3=".into(),
+                    "other".into(),
+                    "Other Calendars".into()
+                ),
+                (
+                    "linked:ann@x.com".into(),
+                    "people".into(),
+                    "People's Calendars".into()
+                ),
+            ]
+        );
+        // Outlook's colour, or Graph's for an automatic one.
+        assert_eq!(out[1].color, "#f7630c");
+        assert_eq!(out[0].color, "");
+        assert!(out[0].is_default);
+    }
+
+    #[test]
+    fn a_persons_calendar_is_their_free_busy() {
+        let v = serde_json::json!({ "value": [{ "scheduleId": "ann@x.com", "scheduleItems": [
+            { "isPrivate": false, "status": "tentative", "start": { "dateTime": "2026-11-27T19:00:00.0000000", "timeZone": "UTC" },
+              "end": { "dateTime": "2026-11-27T20:00:00.0000000", "timeZone": "UTC" } },
+            { "isPrivate": true, "status": "busy", "subject": "Planning", "location": "Room 1",
+              "start": { "dateTime": "2026-11-28T17:00:00.0000000", "timeZone": "UTC" },
+              "end": { "dateTime": "2026-11-28T17:30:00.0000000", "timeZone": "UTC" } } ] }] });
+        let e = super::parse_schedule_items(&v);
+        assert_eq!(e.len(), 2);
+        assert_eq!(
+            (
+                e[0].show_as.as_str(),
+                e[0].subject.as_str(),
+                e[0].start_utc.as_str()
+            ),
+            ("tentative", "", "2026-11-27T19:00:00Z")
+        );
+        assert!(e[0].free_busy);
+        assert_eq!(
+            (
+                e[1].subject.as_str(),
+                e[1].location.as_str(),
+                e[1].sensitivity.as_str()
+            ),
+            ("Planning", "Room 1", "private")
+        );
+    }
     #[test]
     fn cancel_event_request_as_outlook_sends_it() {
         // This event, with a message (captured on winpc 2026-11-23).

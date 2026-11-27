@@ -89,6 +89,9 @@ Item {
     // unchecked and saved.
     Settings { id: calendarLocal; location: StandardPaths.writableLocation(StandardPaths.AppConfigLocation) + "/calendar.ini"; category: "calendar"; property string unselectedReservationFilter: ""; property string selectedCalendars: "[]" }
     function applyPrefs(r) {
+        // (new working hours move the grid, as Outlook's hook follows them)
+        if (JSON.stringify(r.workingHours || {}) !== JSON.stringify(workingHours)) { workingHours = r.workingHours || {}; Qt.callLater(scrollToWorkingHours) }
+        miniMonths = r.miniMonths === 2 ? 2 : 1
         timeScale = [60, 30, 15, 10, 6, 5].indexOf(r.timeScale) >= 0 ? r.timeScale : 30
         numDays = Math.max(1, Math.min(7, r.numDays || 1))
         categories = r.categories || []
@@ -216,6 +219,14 @@ Item {
     // The Filter menu (Teams' FilterMenu): Clear filters; Appointments,
     // Meetings ▸, Poll holds ▸, Reservations ▸; Categories ▸, Show as ▸,
     // Recurrence ▸, In-person ▸. Checkboxes keep the menu open.
+    /// An event's title on its tile and card; someone's calendar seen
+    /// through their free/busy shows how the time is shown (as Outlook's
+    /// availability items are titled).
+    function evTitle(e) {
+        if (e && e.free_busy && !e.subject)
+            return ({ free: qsTr("Free"), tentative: qsTr("Tentative"), oof: qsTr("Away"), workingElsewhere: qsTr("Working elsewhere") })[e.show_as] || qsTr("Busy")
+        return (e && e.subject) || qsTr("(No title)")
+    }
     function cbIcon(st) { return st === 2 ? "checkbox-checked-20-filled" : st === 1 ? "checkbox-indeterminate-20" : "checkbox-unchecked-20" }
     function fLeaf(type, v, label) { return { label: label, icon: cbIcon(isExcluded(type, v) ? 0 : 2), iconColor: theme.brand, persist: true, act: ["toggle", type, v] } }
     function fUnselect(type) { return { label: qsTr("Unselect all"), persist: true, enabled: groupState(type) !== 0, act: ["none", type] } }
@@ -506,7 +517,18 @@ Item {
             if (op === "newCategory" && !error) loadPrefs()
         }
         else if (op === "prefs" && !error) applyPrefs(r)
-        else if (op === "calendars" && !error) { calendarList = r.calendars || []; otherSelected = otherSelected.filter(id => calendarList.some(c => c.id === id)); loadExtraEvents() }
+        else if (op === "calendars" && !error) {
+            calendarList = r.calendars || []
+            let sel = otherSelected.filter(id => calendarList.some(c => c.id === id))
+            // Calendars just added in Outlook's Add calendar come in ticked.
+            if (addingCalendar) {
+                addingCalendar = false
+                sel = sel.concat(calendarList.filter(c => !c.is_default && calendarIdsBefore.indexOf(c.id) < 0).map(c => c.id))
+                calendarLocal.selectedCalendars = JSON.stringify(sel)
+            }
+            otherSelected = sel
+            loadExtraEvents()
+        }
         else if (op === "calendarEvents" && !error) { if (r.start === rangeStartIso) extraEvents = r.events || [] }
         else if (op === "saveView" && !error && r.view) {
             const v = r.view, list = savedViews.filter(x => x.id !== v.id)
@@ -572,7 +594,36 @@ Item {
         rangeChanged(iso(start), iso(end))
         loadExtraEvents()
     }
-    onStartChanged: emitRange()
+    onStartChanged: { emitRange(); scrollToWorkingHours() }
+    // ── where the grid opens (Outlook's useScrollToWorkingHours, read from
+    // Teams' hosted calendar 2026-11-27) ─────────────────────────────────
+    /// Your working hours (Graph mailboxSettings.workingHours: days, and
+    /// the start and end as "HH:MM:SS").
+    property var workingHours: ({})
+    /// The minute of the day the grid opens at: now when today is shown,
+    /// else the start of the first shown day's working hours, else 9 AM
+    /// (Outlook's default).
+    function scrollMinutes() {
+        const n = new Date()
+        for (let i = 0; i < spanDays(); i++) if (sameDay(dayAt(i), n)) return n.getHours() * 60 + n.getMinutes()
+        const names = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+        const wh = workingHours || {}
+        const at = (wh.start || "").split(":").map(Number)
+        if ((wh.days || []).length && at.length >= 2 && !isNaN(at[0]))
+            for (let i = 0; i < spanDays(); i++) if (wh.days.indexOf(names[dayAt(i).getDay()]) >= 0) return at[0] * 60 + at[1]
+        return 540
+    }
+    /// Teams scrolls the grid there, 10 minutes up (scrollTopAdjustment),
+    /// whenever the calendar opens, the dates change or Today is pressed.
+    property bool scrolledOnce: false
+    function scrollToWorkingHours() {
+        if (monthView || !grid || grid.height <= 0) return
+        const y = Math.floor((scrollMinutes() - 10) / 1440 * grid.contentHeight)
+        grid.contentY = Math.max(0, Math.min(grid.contentHeight - grid.height, y))
+        scrolledOnce = true
+    }
+    onVisibleChanged: if (visible) Qt.callLater(scrollToWorkingHours)
+    function gridScrollForTest() { return { contentY: grid.contentY, hourHeight: hourHeight, minutes: scrollMinutes(), height: grid.height } }
     // Leaving Month: the week of today when it's in the month shown, else
     // of the month's first day.
     property string prevView: view
@@ -585,7 +636,9 @@ Item {
             : view === "day" && todayIndex >= 0 ? n : start
         start = startFor(anchor)
         emitRange()
+        Qt.callLater(scrollToWorkingHours)
     }
+    onNumDaysChanged: Qt.callLater(scrollToWorkingHours)
     Component.onCompleted: { emitRange(); loadPrefs() }
     function loadPrefs() {
         calendarAction("prefs", "{}"); calendarAction("calendars", "{}")
@@ -853,133 +906,343 @@ Item {
     Rectangle { anchors.fill: parent; color: root.calDay }
 
     // ── side pane: title, month, calendars ──────────────────────────────
+    // Teams' calendar pane (its hosted calendar's left pane, measured on
+    // Teams web as ost-test1 2026-11-27 at 1x): it all scrolls; the mini
+    // month (header 75 down: the Date selector chevron 9 in, the month
+    // 14/600 at 47, previous/next arrows at 157 and 185; day names at 107,
+    // 28 px days from 17 in at 127), and under it a chevron between two
+    // lines that shows one or two months (calendar_minimonthcount); Add
+    // calendar (36 tall, its icon 16 in, the text at 52, themeDark); then
+    // each group (36 px header: its chevron 17 in, a group checkbox at 37,
+    // the name at 63 in 14/600) with its calendars (36 px rows 37 apart:
+    // the checkbox in the calendar's colour at 41, the name at 69), 12
+    // more between groups; Show all / Show selected.
+    // Outlook's Teams palette for the pane: neutralDark text, neutralPrimary
+    // and neutralSecondary lines, themeDark links.
+    readonly property color paneText: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
+    readonly property color paneLine: theme.pick("#616161", "#ADADAD", "#FFFFFF")
+    readonly property color paneLineSoft: theme.pick("#8A8A8A", "#8A8A8A", "#FFFFFF")
+    readonly property color paneLink: theme.pick("#444791", "#AAB1FA", "#1AEBFF")
+    /// The mini month: open (the Date selector chevron) and how many months.
+    property bool monthOpen: true
+    property int miniMonths: 1
+    function setMiniMonths(n) {
+        miniMonths = n
+        calendarAction("setMiniMonths", JSON.stringify({ count: n }))
+    }
+    /// The pane's groups in Outlook's order, each with its calendars (yours
+    /// first: Calendar is the default one).
+    readonly property var paneGroups: {
+        const out = [], byId = {}
+        const add = (key, kind, name) => { if (!byId[key]) { byId[key] = { key: key, kind: kind, name: name, calendars: [] }; out.push(byId[key]) } return byId[key] }
+        add("mine", "mine", "")
+        // (Calendar is there before the list has loaded.)
+        if (!calendarList.some(c => c.is_default)) byId.mine.calendars.push({ id: "", name: "", is_default: true })
+        for (const c of calendarList) {
+            const kind = c.section_kind || (c.section === "Groups" ? "groups" : "mine")
+            const g = kind === "mine" ? byId.mine : add(c.group_id || kind, kind, c.section || "")
+            g.calendars.push(c)
+        }
+        return out
+    }
+    function groupLabel(g) {
+        return g.kind === "mine" ? qsTr("My calendars") : g.kind === "other" ? qsTr("Other calendars")
+            : g.kind === "people" ? qsTr("People's calendars") : g.kind === "groups" ? qsTr("Groups") : g.name
+    }
+    /// A calendar's tick: the default one is Calendar (showCalendar).
+    function calendarOn(c) { return c.is_default ? showCalendar : otherSelected.indexOf(c.id) >= 0 }
+    function toggleOne(c) { if (c.is_default) showCalendar = !showCalendar; else toggleCalendar(c.id) }
+    /// A group's checkbox: 2 all ticked, 1 some, 0 none.
+    function groupState(g) {
+        const n = g.calendars.filter(c => calendarOn(c)).length
+        return n === 0 ? 0 : n === g.calendars.length ? 2 : 1
+    }
+    /// Teams' group checkbox: all ticked unticks them, otherwise ticks all.
+    function toggleGroup(g) {
+        const on = groupState(g) !== 2
+        const l = otherSelected.slice()
+        for (const c of g.calendars) {
+            if (c.is_default) { showCalendar = on; continue }
+            const i = l.indexOf(c.id)
+            if (on && i < 0) l.push(c.id)
+            else if (!on && i >= 0) l.splice(i, 1)
+        }
+        otherSelected = l
+        calendarLocal.selectedCalendars = JSON.stringify(l)
+        loadExtraEvents()
+    }
+    property var closedGroups: ({})
+    function toggleGroupOpen(key) { const m = Object.assign({}, closedGroups); m[key] = !m[key]; closedGroups = m }
     Rectangle {
         id: pane
         visible: root.paneShown
         width: visible ? 235 : 0; height: parent.height
         color: root.calPane
-        Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: root.calLine }
-        Text { x: 16; y: 19; text: qsTr("Calendar"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
-        Item {
-            id: month
-            x: 8; y: 78; width: 219; height: 230
-            property date shown: new Date(root.start.getFullYear(), root.start.getMonth(), 1)
-            readonly property date first: { const d = new Date(shown); d.setDate(1 - d.getDay()); return d }
-            readonly property int weeks: {
-                const last = new Date(shown.getFullYear(), shown.getMonth() + 1, 0)
-                return Math.ceil((first.getDay() + (last - first) / 86400000 + 1) / 7)
-            }
-            Text { x: 24; y: 0; text: theme.fmtDate(month.shown, "MMMM yyyy"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
-            Row {
-                anchors.right: parent.right; anchors.rightMargin: 12; y: -4
-                Repeater {
-                    model: [{ icon: "chevron-left-20", d: -1, l: qsTr("Previous month") }, { icon: "chevron-right-20", d: 1, l: qsTr("Next month") }]
-                    Rectangle {
-                        id: mFill
-                        required property var modelData
-                        width: 28; height: 28; radius: theme.radius
-                        color: mh.hovered ? theme.rowHover : "transparent"
-                        FluentIcon { anchors.centerIn: parent; name: parent.modelData.icon; size: 16; color: theme.onFill(mFill, theme.textStrong); rotation: 90 }
-                        HoverHandler { id: mh; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: { const d = new Date(month.shown); d.setMonth(d.getMonth() + parent.modelData.d); month.shown = d } }
-                        Accessible.role: Accessible.Button
-                        Accessible.name: modelData.l
-                    }
-                }
-            }
-            Row {
-                y: 28
-                Repeater {
-                    model: [0, 1, 2, 3, 4, 5, 6].map(i => Qt.locale().dayName(i, Locale.NarrowFormat))
-                    Text { required property string modelData; width: 28; horizontalAlignment: Text.AlignHCenter; text: modelData; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
-                }
-            }
-            Grid {
-                y: 48
-                columns: 7
-                Repeater {
-                    model: month.weeks * 7
-                    Item {
-                        required property int index
-                        readonly property date day: { const d = new Date(month.first); d.setDate(d.getDate() + index); return d }
-                        readonly property bool today: root.sameDay(day, root.now)
-                        readonly property bool inRange: root.monthView ? false : root.view === "day" ? root.sameDay(day, root.start)
-                            : day >= root.sundayOf(root.start) && day < root.dayAt(root.days + (root.view === "workweek" ? 1 : 0))
-                        width: 28; height: 28
-                        Rectangle { id: rFill; visible: parent.inRange; anchors.fill: parent; color: root.calRange }
-                        Rectangle { id: tFill; visible: parent.today; anchors.centerIn: parent; width: 22; height: 22; radius: 11; color: theme.hc(theme.brandFill, "#4F52B2") }
-                        Text {
-                            anchors.centerIn: parent
-                            text: parent.day.getDate()
-                            font.family: theme.font; font.pixelSize: theme.small
-                            font.weight: parent.today ? Font.DemiBold : Font.Normal
-                            // Every date in the text colour, the next month's too (Teams).
-                            color: theme.onFill([tFill, rFill], parent.today ? "white" : theme.text)
-                        }
-                        HoverHandler { cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: root.start = root.startFor(parent.day) }
-                        Accessible.role: Accessible.Button
-                        Accessible.name: theme.longDateNoYear(day)
-                    }
-                }
-            }
-        }
-        // Your calendars, as Teams' pane lists them: My calendars, then
-        // Groups; collapsed it shows the ticked ones, "Show all" the rest.
+        Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: root.calLine; z: 2 }
         Flickable {
-            x: 16; y: 340; width: parent.width - 32; height: parent.height - 340
-            contentHeight: calCol.implicitHeight; clip: true
+            id: paneFlick
+            anchors.fill: parent; anchors.rightMargin: 1
+            contentHeight: paneCol.y + paneCol.height + 16
+            clip: true
             boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            Text { x: 16; y: 19; text: qsTr("Calendar"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
+            Item {
+                id: month
+                x: 0; y: 63; width: 216
+                height: !root.monthOpen ? 44 : toggleRow.y + toggleRow.height
+                property date shown: new Date(root.start.getFullYear(), root.start.getMonth(), 1)
+                readonly property date second: new Date(shown.getFullYear(), shown.getMonth() + 1, 1)
+                // Date selector: the month's chevron (collapses the grid).
+                PaneButton {
+                    id: dateSelector
+                    x: 9; y: 12; width: 32; height: 28
+                    icon: root.monthOpen ? "chevron-down-16" : "chevron-right-16"; iconSize: 14
+                    onClicked: root.monthOpen = !root.monthOpen
+                    Accessible.name: qsTr("Date selector")
+                    Accessible.description: root.monthOpen ? qsTr("Expanded") : qsTr("Collapsed")
+                }
+                Text {
+                    x: 47; y: 12; height: 28; verticalAlignment: Text.AlignVCenter
+                    text: theme.fmtDate(month.shown, "MMMM yyyy")
+                    font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: root.paneText
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: qsTr("%1, select to change the month").arg(text)
+                }
+                PaneButton {
+                    x: 157; y: 12; width: 28; height: 28
+                    icon: "arrow-up-12"; iconSize: 12
+                    onClicked: { const d = new Date(month.shown); d.setMonth(d.getMonth() - 1); month.shown = d }
+                    Accessible.name: qsTr("Go to previous month %1").arg(theme.fmtDate(new Date(month.shown.getFullYear(), month.shown.getMonth() - 1, 1), "MMMM"))
+                }
+                PaneButton {
+                    x: 185; y: 12; width: 28; height: 28
+                    icon: "arrow-down-12"; iconSize: 12
+                    onClicked: { const d = new Date(month.shown); d.setMonth(d.getMonth() + 1); month.shown = d }
+                    Accessible.name: qsTr("Go to next month %1").arg(theme.fmtDate(new Date(month.shown.getFullYear(), month.shown.getMonth() + 1, 1), "MMMM"))
+                }
+                // Collapsed: a neutralSecondary line under the header.
+                Rectangle { visible: !root.monthOpen; x: 16; y: 43; width: 184; height: 1; color: root.paneLineSoft }
+                MonthGrid {
+                    id: firstMonth
+                    visible: root.monthOpen
+                    y: 44; monthStart: month.shown
+                    // Two months: the first ends with its own last day.
+                    trailing: root.miniMonths === 1
+                }
+                Text {
+                    id: secondTitle
+                    visible: root.monthOpen && root.miniMonths === 2
+                    x: 27; y: firstMonth.y + firstMonth.height + 4; height: 28; verticalAlignment: Text.AlignVCenter
+                    text: theme.fmtDate(month.second, "MMMM yyyy")
+                    font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: root.paneText
+                }
+                MonthGrid {
+                    id: secondMonth
+                    visible: secondTitle.visible
+                    y: secondTitle.y + 32; monthStart: month.second
+                    leading: false
+                }
+                // One or two months: a chevron between two neutralPrimary lines.
+                Item {
+                    id: toggleRow
+                    visible: root.monthOpen
+                    y: (secondMonth.visible ? secondMonth.y + secondMonth.height : firstMonth.y + firstMonth.height) + 6
+                    width: 216; height: 20
+                    Rectangle { y: 10; width: 92; height: 1; color: root.paneLine }
+                    Rectangle { x: 124; y: 10; width: 92; height: 1; color: root.paneLine }
+                    PaneButton {
+                        x: 92; width: 32; height: 20
+                        icon: root.miniMonths === 2 ? "chevron-up-16" : "chevron-down-16"; iconSize: 14
+                        iconColor: root.paneLine
+                        onClicked: root.setMiniMonths(root.miniMonths === 2 ? 1 : 2)
+                        Accessible.name: root.miniMonths === 2 ? qsTr("Collapse mini-month Calendar") : qsTr("Expand mini-month Calendar")
+                    }
+                }
+            }
             Column {
-                id: calCol
-                width: parent.width
-                spacing: 6
-                Text { text: qsTr("My calendars"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
-                CalRow { label: qsTr("Calendar"); on: root.showCalendar; onToggled: root.showCalendar = !root.showCalendar }
-                Repeater {
-                    model: root.otherCalendars.filter(c => c.section === "My calendars" && (root.showAllCalendars || root.otherSelected.indexOf(c.id) >= 0))
-                    CalRow { required property var modelData; label: modelData.name; on: root.otherSelected.indexOf(modelData.id) >= 0; tick: modelData.color || theme.brandFill; onToggled: root.toggleCalendar(modelData.id) }
-                }
-                Text {
-                    visible: root.otherCalendars.some(c => c.section === "Groups" && (root.showAllCalendars || root.otherSelected.indexOf(c.id) >= 0))
-                    topPadding: 8; text: qsTr("Groups"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text
+                id: paneCol
+                x: 0; y: month.y + month.height
+                width: 216
+                // Add calendar: Outlook's own Add calendar page, as Teams opens it.
+                PaneRow {
+                    icon: "calendar-add-20"; iconX: 16; labelX: 52
+                    label: qsTr("Add calendar"); textColor: root.paneLink; iconColor: root.paneLink
+                    onClicked: root.openAddCalendar()
                 }
                 Repeater {
-                    model: root.otherCalendars.filter(c => c.section === "Groups" && (root.showAllCalendars || root.otherSelected.indexOf(c.id) >= 0))
-                    CalRow { required property var modelData; label: modelData.name; on: root.otherSelected.indexOf(modelData.id) >= 0; onToggled: root.toggleCalendar(modelData.id) }
+                    model: root.paneGroups.filter(g => g.calendars.some(c => root.showAllCalendars || root.calendarOn(c)))
+                    Column {
+                        id: grp
+                        required property var modelData
+                        width: 216
+                        topPadding: 13
+                        readonly property bool open: !root.closedGroups[modelData.key]
+                        Item {
+                            width: 216; height: 36
+                            Rectangle { anchors.fill: parent; radius: 2; color: gh.hovered ? theme.rowHover : "transparent" }
+                            FluentIcon { x: 17; y: 11; size: 14; name: grp.open ? "chevron-down-16" : "chevron-right-16"; color: root.paneText }
+                            TapHandler { onTapped: root.toggleGroupOpen(grp.modelData.key) }
+                            HoverHandler { id: gh; cursorShape: Qt.PointingHandCursor }
+                            // The group's own checkbox (all, some, none).
+                            Item {
+                                x: 37; y: 8; width: 20; height: 20
+                                readonly property int st: root.groupState(grp.modelData)
+                                FluentIcon {
+                                    anchors.fill: parent; size: 20
+                                    name: parent.st === 2 ? "checkbox-checked-20-filled" : parent.st === 1 ? "checkbox-indeterminate-20" : "checkbox-unchecked-20"
+                                    color: root.calPrimary
+                                }
+                                TapHandler { onTapped: root.toggleGroup(grp.modelData) }
+                                Accessible.role: Accessible.CheckBox
+                                Accessible.name: qsTr("Select all calendars")
+                                Accessible.checked: st === 2
+                            }
+                            Text {
+                                x: 63; width: 216 - 63 - 19; anchors.verticalCenter: parent.verticalCenter
+                                text: root.groupLabel(grp.modelData); elide: Text.ElideRight
+                                font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: root.paneText
+                            }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: root.groupLabel(grp.modelData)
+                            Accessible.description: grp.open ? qsTr("Expanded") : qsTr("Collapsed")
+                        }
+                        Repeater {
+                            model: grp.open ? grp.modelData.calendars.filter(c => root.showAllCalendars || root.calendarOn(c)) : []
+                            CalRow {
+                                required property var modelData
+                                topPadding: 1
+                                label: modelData.is_default ? qsTr("Calendar") : modelData.name
+                                on: root.calendarOn(modelData)
+                                tick: modelData.is_default ? root.calPrimary : (modelData.color || root.calPrimary)
+                                onToggled: root.toggleOne(modelData)
+                            }
+                        }
+                    }
                 }
-                Text {
+                Item { width: 1; height: 12 }
+                PaneRow {
                     visible: root.otherCalendars.length > 0
-                    topPadding: 8; leftPadding: 32
-                    text: root.showAllCalendars ? qsTr("Show selected") : qsTr("Show all")
-                    font.family: theme.font; font.pixelSize: theme.base; color: theme.brand
-                    HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: root.showAllCalendars = !root.showAllCalendars }
-                    Accessible.role: Accessible.Link; Accessible.name: text
+                    labelX: 16
+                    label: root.showAllCalendars ? qsTr("Show selected") : qsTr("Show all")
+                    textColor: root.paneLink
+                    onClicked: root.showAllCalendars = !root.showAllCalendars
+                    Accessible.role: Accessible.Link
                 }
             }
         }
     }
+    function paneLayoutForTest() { return layoutForTest(paneFlick.contentItem, paneFlick.contentItem) }
 
-    // A calendar's tick box in the pane.
+    // One month of the mini month: day names (12 px, 28 wide from 17 in),
+    // then 28 px days (today in a 22 px brand circle, the range shown on
+    // colorBrandBackground2Hover). `leading`/`trailing`: the other months'
+    // days before the 1st and after the last (two months show neither
+    // between them).
+    component MonthGrid: Item {
+        id: mg
+        property date monthStart: new Date()
+        property bool leading: true
+        property bool trailing: true
+        readonly property date first: { const d = new Date(monthStart); d.setDate(1 - d.getDay()); return d }
+        readonly property int weeks: {
+            const last = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0)
+            return Math.ceil((first.getDay() + (last - first) / 86400000 + 1) / 7)
+        }
+        width: 216; height: 20 + weeks * 28
+        Row {
+            x: 17
+            Repeater {
+                model: [0, 1, 2, 3, 4, 5, 6].map(i => Qt.locale().dayName(i, Locale.NarrowFormat))
+                Text { required property string modelData; width: 28; height: 20; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; text: modelData; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+            }
+        }
+        Grid {
+            x: 17; y: 20
+            columns: 7
+            Repeater {
+                model: mg.weeks * 7
+                Item {
+                    required property int index
+                    readonly property date day: { const d = new Date(mg.first); d.setDate(d.getDate() + index); return d }
+                    readonly property bool other: day.getMonth() !== mg.monthStart.getMonth()
+                    readonly property bool shown_: !other || (day < mg.monthStart ? mg.leading : mg.trailing)
+                    readonly property bool today: root.sameDay(day, root.now)
+                    readonly property bool inRange: root.monthView ? false : root.view === "day" ? root.sameDay(day, root.start)
+                        : day >= root.sundayOf(root.start) && day < root.dayAt(root.days + (root.view === "workweek" ? 1 : 0))
+                    width: 28; height: 28
+                    Rectangle { id: rFill; visible: parent.shown_ && parent.inRange; anchors.fill: parent; color: root.calRange }
+                    Rectangle { id: tFill; visible: parent.shown_ && parent.today; anchors.centerIn: parent; width: 22; height: 22; radius: 11; color: theme.hc(theme.brandFill, "#4F52B2") }
+                    Text {
+                        visible: parent.shown_
+                        anchors.centerIn: parent
+                        text: parent.day.getDate()
+                        font.family: theme.font; font.pixelSize: theme.small
+                        font.weight: parent.today ? Font.DemiBold : Font.Normal
+                        // Every date in the text colour, the next month's too (Teams).
+                        color: theme.onFill([tFill, rFill], parent.today ? "white" : theme.text)
+                    }
+                    HoverHandler { enabled: parent.shown_; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { enabled: parent.shown_; onTapped: root.start = root.startFor(parent.day) }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: theme.longDateNoYear(day)
+                }
+            }
+        }
+    }
+    // A pane button: an icon on the hover fill (neutralLight, radius 2).
+    component PaneButton: Rectangle {
+        id: pb
+        property string icon
+        property int iconSize: 14
+        property color iconColor: root.paneText
+        signal clicked()
+        radius: 2
+        color: pbh.hovered ? theme.rowHover : "transparent"
+        FluentIcon { anchors.centerIn: parent; name: pb.icon; size: pb.iconSize; color: theme.onFill(pb, pb.iconColor) }
+        HoverHandler { id: pbh; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: pb.clicked() }
+        Accessible.role: Accessible.Button
+    }
+    // A 36 px pane row: an optional icon and its label (Add calendar,
+    // Show all).
+    component PaneRow: Item {
+        id: prow
+        property string icon
+        property string label
+        property real iconX: 16
+        property real labelX: 52
+        property color textColor: root.paneText
+        property color iconColor: root.paneText
+        signal clicked()
+        width: 216; height: 36
+        Rectangle { id: prFill; anchors.fill: parent; radius: 2; color: prh.hovered ? theme.rowHover : "transparent" }
+        FluentIcon { visible: !!prow.icon; x: prow.iconX; y: 8; size: 20; name: prow.icon; color: theme.onFill(prFill, prow.iconColor) }
+        Text { x: prow.labelX; width: parent.width - x - 19; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; text: prow.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(prFill, prow.textColor) }
+        HoverHandler { id: prh; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: prow.clicked() }
+        Accessible.role: Accessible.Button
+        Accessible.name: label
+    }
+    // A calendar's row in the pane: its checkbox in the calendar's colour
+    // (unticked: neutralDark), then its name.
     component CalRow: Item {
         id: cr
         property string label
         property bool on: false
-        property color tick: theme.brandFill
+        property color tick: root.calPrimary
+        property real topPadding: 0
         signal toggled()
-        width: parent ? parent.width : 0; height: 28
-        Rectangle {
-            id: crBox
-            x: 6; anchors.verticalCenter: parent.verticalCenter
-            width: 16; height: 16; radius: 2
-            color: cr.on ? cr.tick : "transparent"
-            border.color: cr.on ? "transparent" : theme.textStrong
-            FluentIcon { visible: cr.on; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(crBox, "white") }
+        width: 216; height: 36 + topPadding
+        Rectangle { id: crFill; y: cr.topPadding; width: parent.width; height: 36; radius: 2; color: crh.hovered ? theme.rowHover : "transparent" }
+        FluentIcon {
+            x: 41; y: cr.topPadding + 9.5; size: 20
+            name: cr.on ? "checkbox-checked-20-filled" : "checkbox-unchecked-20"
+            color: theme.onFill(crFill, cr.on ? cr.tick : root.paneText)
         }
-        Text { x: 32; width: parent.width - 32; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter; text: cr.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+        Text { x: 69; y: cr.topPadding; height: 36; width: parent.width - 69 - 19; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; text: cr.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(crFill, root.paneText) }
         TapHandler { onTapped: cr.toggled() }
-        HoverHandler { cursorShape: Qt.PointingHandCursor }
+        HoverHandler { id: crh; cursorShape: Qt.PointingHandCursor }
         Accessible.role: Accessible.CheckBox
         Accessible.name: cr.label
         Accessible.checked: cr.on
@@ -1085,7 +1348,7 @@ Item {
             readonly property bool narrow: root.copilotOpen
             NavButton { icon: "panel-left-20"; tip: root.paneShown ? qsTr("Hide navigation pane") : qsTr("Show navigation pane"); onClicked: root.paneShown = !root.paneShown }
             Rectangle { visible: !leftRow.narrow; width: 1; height: 20; anchors.verticalCenter: parent.verticalCenter; color: theme.dividerSoft }
-            BarButton2 { visible: !leftRow.narrow; icon: "calendar-ltr-20"; label: qsTr("Today"); onClicked: root.start = root.startFor(new Date()); Accessible.name: qsTr("Go to today") }
+            BarButton2 { visible: !leftRow.narrow; icon: "calendar-ltr-20"; label: qsTr("Today"); onClicked: { root.start = root.startFor(new Date()); root.scrollToWorkingHours() } Accessible.name: qsTr("Go to today") }
             NavButton { visible: !leftRow.narrow; icon: root.monthView ? "chevron-up-20" : "chevron-left-20"; iconSize: 16; onClicked: root.shift(-1); tip: root.monthView ? qsTr("Go to previous month") : root.view === "day" ? qsTr("Go to previous day") : qsTr("Go to previous week") }
             NavButton { visible: !leftRow.narrow; icon: root.monthView ? "chevron-down-20" : "chevron-right-20"; iconSize: 16; onClicked: root.shift(1); tip: root.monthView ? qsTr("Go to next month") : root.view === "day" ? qsTr("Go to next day") : qsTr("Go to next week") }
             BarButton2 {
@@ -1267,7 +1530,7 @@ Item {
                     ShowAsBar { ev: sb.ev; height: parent.height }
                     Text {
                         anchors.centerIn: parent; width: Math.min(implicitWidth, parent.width - 18)
-                        text: sb.ev.subject || qsTr("(No title)"); elide: Text.ElideRight
+                        text: root.evTitle(sb.ev); elide: Text.ElideRight
                         font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; color: root.textOf(sb.ev)
                     }
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -1289,10 +1552,11 @@ Item {
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
             ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
-            Component.onCompleted: contentY = Math.max(0, Math.min(contentHeight - height, (new Date().getHours() - 1) * root.hourHeight))
+            Component.onCompleted: root.scrollToWorkingHours()
+            onHeightChanged: if (!root.scrolledOnce) root.scrollToWorkingHours()
             Connections {
                 target: root
-                function onTimeScaleChanged() { grid.contentY = Math.max(0, Math.min(grid.contentHeight - grid.height, (new Date().getHours() - 1) * root.hourHeight)) }
+                function onTimeScaleChanged() { root.scrollToWorkingHours() }
             }
             // Day backgrounds: past days, hours outside 8–17 and busy days.
             Repeater {
@@ -1371,13 +1635,13 @@ Item {
                         visible: evTile.shortOne
                         x: 12; y: 4; width: parent.width - 16 - (joinTile.visible ? joinTile.width + 6 : 0) - (seriesIcon.visible ? 20 : 0)
                         elide: Text.ElideRight; textFormat: Text.StyledText
-                        text: "<b>" + (evTile.ev.subject || qsTr("(No title)")).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b> " + [evTile.ev.location, evTile.ev.is_organizer ? "" : evTile.ev.organizer].filter(x => x).join(" ").replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                        text: "<b>" + root.evTitle(evTile.ev).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b> " + [evTile.ev.location, evTile.ev.is_organizer ? "" : evTile.ev.organizer].filter(x => x).join(" ").replace(/&/g, "&amp;").replace(/</g, "&lt;")
                         font.family: theme.font; font.pixelSize: 12; color: root.textOf(evTile.ev)
                     }
                     Column {
                         visible: !evTile.shortOne
                         x: 12; y: 4; width: parent.width - 16
-                        Text { width: parent.width; elide: Text.ElideRight; text: evTile.ev.subject || qsTr("(No title)"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: root.textOf(evTile.ev) }
+                        Text { width: parent.width; elide: Text.ElideRight; text: root.evTitle(evTile.ev); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: root.textOf(evTile.ev) }
                         Text { width: parent.width; wrapMode: Text.Wrap; maximumLineCount: Math.max(1, Math.floor((evTile.height - 24) / 16)); elide: Text.ElideRight; visible: !!text; text: [evTile.ev.location, evTile.ev.is_organizer ? "" : evTile.ev.organizer].filter(x => x).join(" "); font.family: theme.font; font.pixelSize: 12; color: root.textOf(evTile.ev) }
                     }
                     FluentIcon {
@@ -1632,7 +1896,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.min(implicitWidth, parent.width - 11 - (mbSeries.visible ? 26 : 9))
                     elide: Text.ElideRight; textFormat: Text.StyledText
-                    text: (mb.allDay ? "" : theme.time(root.evStart(mb.ev)).replace(":00", "") + " ") + "<b>" + (mb.ev.subject || qsTr("(No title)")).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b>"
+                    text: (mb.allDay ? "" : theme.time(root.evStart(mb.ev)).replace(":00", "") + " ") + "<b>" + root.evTitle(mb.ev).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b>"
                     font.family: theme.font; font.pixelSize: 12; color: root.textOf(mb.ev, true)
                 }
                 FluentIcon {
@@ -1783,7 +2047,7 @@ Item {
                     id: titleText
                     x: parent.charm ? 39 : 0
                     width: parent.width - 32 - x; wrapMode: Text.Wrap
-                    text: details.ev.subject || qsTr("(No title)")
+                    text: root.evTitle(details.ev)
                     font.family: theme.font; font.pixelSize: 21; font.weight: Font.DemiBold; color: theme.pick(theme.text, "#ADADAD", "#FFFFFF")
                 }
                 NavButton {
@@ -1905,7 +2169,7 @@ Item {
                 visible: !!details.ev.id && !details.ev.is_organizer
                 width: 358; height: visible ? 52 : 0
                 Rectangle { y: 0; x: 34; width: 324; height: 1; color: root.cardLine }
-                Avatar { x: 0; y: 14; size: 24; name: (details.ev.channel_id ? (root.withTeam(details.ev).team_name || details.ev.organizer) : details.ev.organizer) || ""; photoId: details.ev.channel_id && root.withTeam(details.ev).team_id ? "team:" + root.withTeam(details.ev).team_id : "" }
+                Avatar { x: 0; y: 14; size: 24; name: (details.ev.channel_id ? (root.withTeam(details.ev).team_name || details.ev.organizer) : details.ev.organizer) || ""; photoId: details.ev.channel_id ? (root.withTeam(details.ev).team_id ? "team:" + root.withTeam(details.ev).team_id : "") : details.ev.organizer_address ? "mail:" + details.ev.organizer_address : "" }
                 Text {
                     x: 36; y: 14; width: 322; elide: Text.ElideRight
                     text: details.ev.channel_id ? qsTr("%1 in the channel %2").arg(root.withTeam(details.ev).team_name || details.ev.organizer).arg(root.withTeam(details.ev).channel_name || "") : qsTr("%1 invited you.").arg(details.ev.organizer || qsTr("Someone"))
@@ -2270,6 +2534,8 @@ Item {
         id: tileMenu
         property var ev: ({})
         function openFor(e, item, px, py) {
+            // (someone's free/busy has nothing to act on)
+            if (e && e.free_busy) return
             ev = e; parent = item; x = px; y = py
             items = build(e)
             open()
@@ -2440,6 +2706,19 @@ Item {
     /// closes with the dialog.
     function surfaceUrl() { return "https://outlook.office.com/hosted/calendar/'OID:" + objectId + "@" + tenantId + "'" }
     function openOutlookCommand(steps) { openOutlook(surfaceUrl(), "", ["More options"].concat(steps), true) }
+    /// The pane's Add calendar: Outlook's own Add calendar page over the
+    /// calendar (Teams' hosted calendar routes to hosted/calendar/addcalendar:
+    /// Recommended, Edit my calendars, Create blank calendar, Add from
+    /// directory, Subscribe from web, Upload from file, Holidays,
+    /// Birthdays). It closes when Outlook leaves the page; the pane then
+    /// reads the calendars again and ticks the new ones, as Outlook does.
+    property bool addingCalendar: false
+    property var calendarIdsBefore: []
+    function openAddCalendar() {
+        addingCalendar = true
+        calendarIdsBefore = calendarList.map(c => c.id)
+        openOutlook(surfaceUrl(), "/hosted/calendar/addcalendar", [], false)
+    }
     function openOutlook(url, route, steps, autoClose) {
         details.close()
         owaItemLayer.url = url; owaItemLayer.route = route; owaItemLayer.steps = steps; owaItemLayer.autoClose = autoClose
@@ -2465,7 +2744,7 @@ Item {
             + " const t = setInterval(() => { n++;"
             + "  const all = [...document.querySelectorAll('button,[role=button],[role=menuitem],[role=menuitemcheckbox],[role=menuitemradio],[role=tab],[role=treeitem],[role=link],a')].filter(b => b.offsetParent);"
             + "  if (!routed) { if (all.length < 5) return; routed = true; history.pushState({}, '', route); dispatchEvent(new PopStateEvent('popstate', { state: {} })); n = 0; return; }"
-            + "  if (route) { const here = location.pathname.startsWith('/hosted/calendar/item/') || location.pathname.startsWith('/hosted/calendar/deeplink/');"
+            + "  if (route) { const here = location.pathname.startsWith('/hosted/calendar/item/') || location.pathname.startsWith('/hosted/calendar/deeplink/') || location.pathname.startsWith('/hosted/calendar/addcalendar');"
             + "   if (here) onRoute = true; else if (onRoute) { clearInterval(t); close(); return; } }"
             + "  if (k >= steps.length) { if (!autoClose) return;"
             + "   const d = document.querySelector('[role=dialog],[role=alertdialog]');"
@@ -2513,7 +2792,10 @@ Item {
         }
     }
     property bool printQuietlyForTest: false
-    function closeOwaItem() { owaItemLayer.visible = false; owaItemHost.active = false; emitRange() }
+    function closeOwaItem() {
+        owaItemLayer.visible = false; owaItemHost.active = false; emitRange()
+        if (addingCalendar) calendarAction("calendars", "{}")
+    }
     function owaItemForTest() { return owaItemHost.item }
     function proposeForTest(e, response, start, minutes, note) {
         details.close(); proposeDialog.openFor(e, response)

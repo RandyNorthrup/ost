@@ -66,6 +66,15 @@ Item {
         }
         return true
     })
+    /// Shown beside Activity for a missed call or voicemail (Teams' calls
+    /// list entity: History, without the dial pane).
+    property bool inActivity: false
+    /// Open with History on a filter (Teams' defaultFilter: MissedCalls for
+    /// a missed call's activity, Voicemail for a voicemail's).
+    function showFilter(f) {
+        historyOpen = true
+        if (root.filterLabels[f] !== undefined) root.filter = f
+    }
     property bool historyOpen: true
     property bool speedDialShown: true
     // Speed dial: people you call often (kept on this device).
@@ -262,8 +271,9 @@ Item {
     // Dial: find someone, then call.
     Item {
         id: dial
+        visible: !root.inActivity
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left }
-        width: 380
+        width: root.inActivity ? 0 : 380
         Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: theme.dividerSoft }
         property var chosen: null
         Rectangle {
