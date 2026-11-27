@@ -120,9 +120,14 @@ Window {
                     for (const it of items) if (it.unread) backend.markActivityItemRead(it.id)
                     backend.markActivityRead()
                 }
+                onNotificationSettings: win.openInMain("notificationSettings", {})
                 onOpenItem: item => {
                     selectedId = item.id
                     backend.markActivityItemRead(item.id)
+                    if (item.kind === "missedCall" || item.kind === "voicemail") {
+                        win.openInMain("callsHistory", { filter: item.kind === "voicemail" ? "voicemail" : "missed" })
+                        return
+                    }
                     if (item.thread_id) {
                         const c = win.chats.find(c => c.id === item.thread_id)
                         win.showChat(item.thread_id, c ? c.name : (item.actor_name || ""))

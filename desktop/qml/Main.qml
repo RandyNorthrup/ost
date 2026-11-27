@@ -2057,24 +2057,32 @@ Window {
             const missed = items.find(i => i.kind === "missedCall")
             const only = arg("t367-only")
             if (only === "calendar" && step < 10) step = 10
+            // (a capture lands a frame later: each state gets a step of its own)
             if (step === 0) { rail.current = "activity"; activityView.selectedId = ""; activityView.selectedKind = "" }
             else if (step === 1) { activityView.menuForTest().open(); console.warn("T367 menu", JSON.stringify(activityView.menuForTest().items)) }
-            else if (step === 2) { shot("act-menu"); activityView.menuForTest().close() }
-            else if (step === 3) { activityView.toggleFilter(); activityView.filterFieldForTest().text = arg("filter") || "test 3" }
-            else if (step === 4) { shot("act-filter"); console.warn("T367 filter", activityView.nameFilter, "shown", activityView.shown.length, "of", items.length) }
-            else if (step === 5) { activityView.toggleFilter(); if (missed) activityView.openItem(missed); console.warn("T367 missed", !!missed, missed ? missed.title : "") }
-            else if (step === 6) { console.warn("T367 calls", window.activityCalls, callsView.visible, callsView.filter, callsView.inActivity, "conversation", conversation.visible); shot("act-missed") }
+            else if (step === 2) shot("act-menu")
+            else if (step === 3) { activityView.menuForTest().close(); activityView.toggleFilter() }
+            else if (step === 4) shot("act-filter-empty")
+            else if (step === 5) activityView.filterFieldForTest().text = arg("filter") || "test 3"
+            else if (step === 6) { shot("act-filter"); console.warn("T367 filter", activityView.nameFilter, "shown", activityView.shown.length, "of", items.length) }
+            else if (step === 7) { activityView.toggleFilter(); if (missed) activityView.openItem(missed); console.warn("T367 missed", !!missed, missed ? missed.title : "") }
+            else if (step === 8) { console.warn("T367 calls", window.activityCalls, callsView.visible, callsView.filter, callsView.inActivity, "conversation", conversation.visible); shot("act-missed") }
             else if (step === 10) { rail.current = "calendar" }
             else if (step === 11) { console.warn("T367 scroll", JSON.stringify(calendarView.gridScrollForTest()), new Date().toTimeString()); shot("cal-open") }
-            else if (step === 12) { calendarView.monthOpen = false }
-            else if (step === 13) { shot("cal-collapsed"); calendarView.monthOpen = true; calendarView.miniMonths = 2 }
-            else if (step === 14) { shot("cal-two"); calendarView.miniMonths = 1; calendarView.showAllCalendars = true }
-            else if (step === 15) { shot("cal-all"); console.warn("T367 groups", JSON.stringify(calendarView.paneGroups.map(g => [g.kind, g.name, g.calendars.map(c => c.name)]))); calendarView.shift(1) }
-            else if (step === 16) { console.warn("T367 next week scroll", JSON.stringify(calendarView.gridScrollForTest())); shot("cal-next"); calendarView.shift(-1) }
-            else if (step === 17) { const p = arg("peek"); console.warn("T367 peek", p, calendarView.cardForTest(p)) }
-            else if (step === 19) { shot("cal-peek"); calendarView.detailsForTest.close(); if (args.indexOf("--add-calendar") >= 0) calendarView.openAddCalendar() }
-            else if (step === 25) { shot("cal-add"); if (args.indexOf("--add-calendar") < 0) Qt.quit() }
-            else if (step > 25 && args.indexOf("--add-calendar") >= 0) { if (step % 4 === 0) { console.warn("T367 calendars", JSON.stringify(calendarView.calendarList.map(c => c.name + "|" + c.section_kind))); shot("cal-add-" + step) } }
+            else if (step === 12) calendarView.monthOpen = false
+            else if (step === 13) shot("cal-collapsed")
+            else if (step === 14) { calendarView.monthOpen = true; calendarView.miniMonths = 2 }
+            else if (step === 15) shot("cal-two")
+            else if (step === 16) { calendarView.miniMonths = 1; calendarView.showAllCalendars = true }
+            else if (step === 17) { shot("cal-all"); console.warn("T367 groups", JSON.stringify(calendarView.paneGroups.map(g => [g.kind, g.name, g.calendars.map(c => c.name)]))) }
+            else if (step === 18) calendarView.shift(1)
+            else if (step === 19) { console.warn("T367 next week scroll", JSON.stringify(calendarView.gridScrollForTest())); shot("cal-next") }
+            else if (step === 20) calendarView.shift(-1)
+            else if (step === 21) { const p = arg("peek"); console.warn("T367 peek", p, calendarView.cardForTest(p)) }
+            else if (step === 22) shot("cal-peek")
+            else if (step === 23) { calendarView.detailsForTest.close(); if (args.indexOf("--add-calendar") >= 0) calendarView.openAddCalendar() }
+            else if (step === 30) { shot("cal-add"); if (args.indexOf("--add-calendar") < 0) Qt.quit() }
+            else if (step > 30 && args.indexOf("--add-calendar") >= 0) { if (step % 4 === 0) { console.warn("T367 calendars", JSON.stringify(calendarView.calendarList.map(c => c.name + "|" + c.section_kind))); shot("cal-add-" + step) } }
             step++
         }
     }
@@ -17015,6 +17023,10 @@ Window {
             window.raise(); window.requestActivate()
             if (kind === "toast") { window.showToast(d); return }
             if (kind === "calendar") { rail.current = "calendar"; return }
+            if (kind === "notificationSettings") { window.launchSettings("notifications"); return }
+            // A missed call or voicemail from the Activity window: Calls,
+            // its History on Missed / Voicemail.
+            if (kind === "callsHistory") { rail.current = "calls"; callsView.showFilter(d.filter); return }
             if (kind === "joinEvent") { preJoin.openFor(d.url, d.title, d.start, d.end); return }
             if (kind === "chatWindow") { window.openChatWindow(d.id, d.name, d.photo, d.presence); return }
             if (kind === "tabPicker") { tabPicker.showTabs(d.id, d.kind, d.team); return }

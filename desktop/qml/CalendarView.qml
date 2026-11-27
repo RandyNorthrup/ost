@@ -529,6 +529,7 @@ Item {
             otherSelected = sel
             loadExtraEvents()
         }
+        else if (op === "calendars") addingCalendar = false
         else if (op === "calendarEvents" && !error) { if (r.start === rangeStartIso) extraEvents = r.events || [] }
         else if (op === "saveView" && !error && r.view) {
             const v = r.view, list = savedViews.filter(x => x.id !== v.id)
@@ -906,17 +907,19 @@ Item {
     Rectangle { anchors.fill: parent; color: root.calDay }
 
     // ── side pane: title, month, calendars ──────────────────────────────
-    // Teams' calendar pane (its hosted calendar's left pane, measured on
-    // Teams web as ost-test1 2026-11-27 at 1x): it all scrolls; the mini
-    // month (header 75 down: the Date selector chevron 9 in, the month
-    // 14/600 at 47, previous/next arrows at 157 and 185; day names at 107,
-    // 28 px days from 17 in at 127), and under it a chevron between two
-    // lines that shows one or two months (calendar_minimonthcount); Add
-    // calendar (36 tall, its icon 16 in, the text at 52, themeDark); then
+    // Teams' calendar pane (its hosted calendar's left pane, measured in
+    // Teams desktop on winpc and Teams web as ost-test1 2026-11-27, at 1x;
+    // desktop's pane is 234 wide with no scrollbar gutter): it all
+    // scrolls; the mini month (header 75 down: the Date selector chevron
+    // 16 in, the month 14/600 at 54, previous/next arrows at 164 and 192;
+    // day names at 107, 28 px days from 24 in at 127), and under it a
+    // chevron between two lines that shows one or two months
+    // (calendar_minimonthcount); Add calendar (36 tall, its icon 16 in,
+    // the text at 52, themeDark); then
     // each group (36 px header: its chevron 17 in, a group checkbox at 37,
     // the name at 63 in 14/600) with its calendars (36 px rows 37 apart:
     // the checkbox in the calendar's colour at 41, the name at 69), 12
-    // more between groups; Show all / Show selected.
+    // more between groups; Show all / Show selected (its text at 48).
     // Outlook's Teams palette for the pane: neutralDark text, neutralPrimary
     // and neutralSecondary lines, themeDark links.
     readonly property color paneText: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
@@ -953,13 +956,13 @@ Item {
     function calendarOn(c) { return c.is_default ? showCalendar : otherSelected.indexOf(c.id) >= 0 }
     function toggleOne(c) { if (c.is_default) showCalendar = !showCalendar; else toggleCalendar(c.id) }
     /// A group's checkbox: 2 all ticked, 1 some, 0 none.
-    function groupState(g) {
+    function paneGroupState(g) {
         const n = g.calendars.filter(c => calendarOn(c)).length
         return n === 0 ? 0 : n === g.calendars.length ? 2 : 1
     }
     /// Teams' group checkbox: all ticked unticks them, otherwise ticks all.
-    function toggleGroup(g) {
-        const on = groupState(g) !== 2
+    function togglePaneGroup(g) {
+        const on = paneGroupState(g) !== 2
         const l = otherSelected.slice()
         for (const c of g.calendars) {
             if (c.is_default) { showCalendar = on; continue }
@@ -989,40 +992,40 @@ Item {
             Text { x: 16; y: 19; text: qsTr("Calendar"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
             Item {
                 id: month
-                x: 0; y: 63; width: 216
+                x: 0; y: 63; width: 234
                 height: !root.monthOpen ? 44 : toggleRow.y + toggleRow.height
                 property date shown: new Date(root.start.getFullYear(), root.start.getMonth(), 1)
                 readonly property date second: new Date(shown.getFullYear(), shown.getMonth() + 1, 1)
                 // Date selector: the month's chevron (collapses the grid).
                 PaneButton {
                     id: dateSelector
-                    x: 9; y: 12; width: 32; height: 28
+                    x: 16; y: 12; width: 32; height: 28
                     icon: root.monthOpen ? "chevron-down-16" : "chevron-right-16"; iconSize: 14
                     onClicked: root.monthOpen = !root.monthOpen
                     Accessible.name: qsTr("Date selector")
                     Accessible.description: root.monthOpen ? qsTr("Expanded") : qsTr("Collapsed")
                 }
                 Text {
-                    x: 47; y: 12; height: 28; verticalAlignment: Text.AlignVCenter
+                    x: 54; y: 12; height: 28; verticalAlignment: Text.AlignVCenter
                     text: theme.fmtDate(month.shown, "MMMM yyyy")
                     font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: root.paneText
                     Accessible.role: Accessible.StaticText
                     Accessible.name: qsTr("%1, select to change the month").arg(text)
                 }
                 PaneButton {
-                    x: 157; y: 12; width: 28; height: 28
+                    x: 164; y: 12; width: 28; height: 28
                     icon: "arrow-up-12"; iconSize: 12
                     onClicked: { const d = new Date(month.shown); d.setMonth(d.getMonth() - 1); month.shown = d }
                     Accessible.name: qsTr("Go to previous month %1").arg(theme.fmtDate(new Date(month.shown.getFullYear(), month.shown.getMonth() - 1, 1), "MMMM"))
                 }
                 PaneButton {
-                    x: 185; y: 12; width: 28; height: 28
+                    x: 192; y: 12; width: 28; height: 28
                     icon: "arrow-down-12"; iconSize: 12
                     onClicked: { const d = new Date(month.shown); d.setMonth(d.getMonth() + 1); month.shown = d }
                     Accessible.name: qsTr("Go to next month %1").arg(theme.fmtDate(new Date(month.shown.getFullYear(), month.shown.getMonth() + 1, 1), "MMMM"))
                 }
                 // Collapsed: a neutralSecondary line under the header.
-                Rectangle { visible: !root.monthOpen; x: 16; y: 43; width: 184; height: 1; color: root.paneLineSoft }
+                Rectangle { visible: !root.monthOpen; x: 16; y: 43; width: 202; height: 1; color: root.paneLineSoft }
                 MonthGrid {
                     id: firstMonth
                     visible: root.monthOpen
@@ -1033,7 +1036,7 @@ Item {
                 Text {
                     id: secondTitle
                     visible: root.monthOpen && root.miniMonths === 2
-                    x: 27; y: firstMonth.y + firstMonth.height + 4; height: 28; verticalAlignment: Text.AlignVCenter
+                    x: 34; y: firstMonth.y + firstMonth.height + 4; height: 28; verticalAlignment: Text.AlignVCenter
                     text: theme.fmtDate(month.second, "MMMM yyyy")
                     font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: root.paneText
                 }
@@ -1048,11 +1051,11 @@ Item {
                     id: toggleRow
                     visible: root.monthOpen
                     y: (secondMonth.visible ? secondMonth.y + secondMonth.height : firstMonth.y + firstMonth.height) + 6
-                    width: 216; height: 20
-                    Rectangle { y: 10; width: 92; height: 1; color: root.paneLine }
-                    Rectangle { x: 124; y: 10; width: 92; height: 1; color: root.paneLine }
+                    width: 234; height: 20
+                    Rectangle { y: 10; width: 101; height: 1; color: root.paneLine }
+                    Rectangle { x: 133; y: 10; width: 101; height: 1; color: root.paneLine }
                     PaneButton {
-                        x: 92; width: 32; height: 20
+                        x: 101; width: 32; height: 20
                         icon: root.miniMonths === 2 ? "chevron-up-16" : "chevron-down-16"; iconSize: 14
                         iconColor: root.paneLine
                         onClicked: root.setMiniMonths(root.miniMonths === 2 ? 1 : 2)
@@ -1063,7 +1066,7 @@ Item {
             Column {
                 id: paneCol
                 x: 0; y: month.y + month.height
-                width: 216
+                width: 234
                 // Add calendar: Outlook's own Add calendar page, as Teams opens it.
                 PaneRow {
                     icon: "calendar-add-20"; iconX: 16; labelX: 52
@@ -1075,11 +1078,11 @@ Item {
                     Column {
                         id: grp
                         required property var modelData
-                        width: 216
+                        width: 234
                         topPadding: 13
                         readonly property bool open: !root.closedGroups[modelData.key]
                         Item {
-                            width: 216; height: 36
+                            width: 234; height: 36
                             Rectangle { anchors.fill: parent; radius: 2; color: gh.hovered ? theme.rowHover : "transparent" }
                             FluentIcon { x: 17; y: 11; size: 14; name: grp.open ? "chevron-down-16" : "chevron-right-16"; color: root.paneText }
                             TapHandler { onTapped: root.toggleGroupOpen(grp.modelData.key) }
@@ -1087,19 +1090,19 @@ Item {
                             // The group's own checkbox (all, some, none).
                             Item {
                                 x: 37; y: 8; width: 20; height: 20
-                                readonly property int st: root.groupState(grp.modelData)
+                                readonly property int st: root.paneGroupState(grp.modelData)
                                 FluentIcon {
                                     anchors.fill: parent; size: 20
                                     name: parent.st === 2 ? "checkbox-checked-20-filled" : parent.st === 1 ? "checkbox-indeterminate-20" : "checkbox-unchecked-20"
                                     color: root.calPrimary
                                 }
-                                TapHandler { onTapped: root.toggleGroup(grp.modelData) }
+                                TapHandler { onTapped: root.togglePaneGroup(grp.modelData) }
                                 Accessible.role: Accessible.CheckBox
                                 Accessible.name: qsTr("Select all calendars")
                                 Accessible.checked: st === 2
                             }
                             Text {
-                                x: 63; width: 216 - 63 - 19; anchors.verticalCenter: parent.verticalCenter
+                                x: 63; width: 234 - 63 - 19; anchors.verticalCenter: parent.verticalCenter
                                 text: root.groupLabel(grp.modelData); elide: Text.ElideRight
                                 font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: root.paneText
                             }
@@ -1123,7 +1126,7 @@ Item {
                 Item { width: 1; height: 12 }
                 PaneRow {
                     visible: root.otherCalendars.length > 0
-                    labelX: 16
+                    labelX: 48
                     label: root.showAllCalendars ? qsTr("Show selected") : qsTr("Show all")
                     textColor: root.paneLink
                     onClicked: root.showAllCalendars = !root.showAllCalendars
@@ -1134,7 +1137,7 @@ Item {
     }
     function paneLayoutForTest() { return layoutForTest(paneFlick.contentItem, paneFlick.contentItem) }
 
-    // One month of the mini month: day names (12 px, 28 wide from 17 in),
+    // One month of the mini month: day names (12 px, 28 wide from 24 in),
     // then 28 px days (today in a 22 px brand circle, the range shown on
     // colorBrandBackground2Hover). `leading`/`trailing`: the other months'
     // days before the 1st and after the last (two months show neither
@@ -1149,16 +1152,16 @@ Item {
             const last = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0)
             return Math.ceil((first.getDay() + (last - first) / 86400000 + 1) / 7)
         }
-        width: 216; height: 20 + weeks * 28
+        width: 234; height: 20 + weeks * 28
         Row {
-            x: 17
+            x: 24
             Repeater {
                 model: [0, 1, 2, 3, 4, 5, 6].map(i => Qt.locale().dayName(i, Locale.NarrowFormat))
                 Text { required property string modelData; width: 28; height: 20; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; text: modelData; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
             }
         }
         Grid {
-            x: 17; y: 20
+            x: 24; y: 20
             columns: 7
             Repeater {
                 model: mg.weeks * 7
@@ -1215,7 +1218,7 @@ Item {
         property color textColor: root.paneText
         property color iconColor: root.paneText
         signal clicked()
-        width: 216; height: 36
+        width: 234; height: 36
         Rectangle { id: prFill; anchors.fill: parent; radius: 2; color: prh.hovered ? theme.rowHover : "transparent" }
         FluentIcon { visible: !!prow.icon; x: prow.iconX; y: 8; size: 20; name: prow.icon; color: theme.onFill(prFill, prow.iconColor) }
         Text { x: prow.labelX; width: parent.width - x - 19; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; text: prow.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(prFill, prow.textColor) }
@@ -1233,7 +1236,7 @@ Item {
         property color tick: root.calPrimary
         property real topPadding: 0
         signal toggled()
-        width: 216; height: 36 + topPadding
+        width: 234; height: 36 + topPadding
         Rectangle { id: crFill; y: cr.topPadding; width: parent.width; height: 36; radius: 2; color: crh.hovered ? theme.rowHover : "transparent" }
         FluentIcon {
             x: 41; y: cr.topPadding + 9.5; size: 20
