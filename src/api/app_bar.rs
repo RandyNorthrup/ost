@@ -81,7 +81,7 @@ const BAR_CORE: [&str; 9] = [
     "981bbfd0-5eb8-4393-8158-bfff69d2d6b5", // Meeting Recaps
 ];
 /// The Microsoft 365 calendar Teams' Calendar stands for.
-const CALENDAR_M365: &str = "5966c135-e05f-4ce0-81e0-e138fe8e9583";
+pub const CALENDAR_M365: &str = "5966c135-e05f-4ce0-81e0-e138fe8e9583";
 /// Teams' burnt-in ECS extensibility.appIdList (config-prod): global apps it
 /// leaves out of the bar and its flyout.
 const APP_ID_LIST: [&str; 22] = [
