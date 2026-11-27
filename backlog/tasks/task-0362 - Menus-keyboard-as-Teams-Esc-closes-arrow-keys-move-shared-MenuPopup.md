@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@task-0362-agent'
 created_date: '2026-11-27T18:19:00Z'
-updated_date: '2026-11-27T19:45:00Z'
+updated_date: '2026-11-27T20:02:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -63,6 +63,9 @@ Live (linuxlt, OST Test 3, own test-harness build): --menu-keys-test 46 ok / 0 F
 Teams side effects of the research: on OST Test 3's web session, pressing s / u in a message menu saved/unsaved and marked unread one message in the 1:1 chat with OST Test 2 (Teams' accelerators); the menu shows "Save this message" again, so it ended unsaved.
 
 Codex 2nd round: Shift+Esc (Mark all as read) was taken as the menu's Esc; Teams closes the menu and still asks (checked). Fixed in c6f0fc80 (modified Escape closes the menu and passes to its shortcut); harness 47 ok / 0 FAIL.
+
+Codex 3rd round: hovering straight from one submenu row to another reused the open submenu without moving the keys; fixed in e928e211 (first row + takeKeys), harness 49 ok / 0 FAIL. Codex then gave +1 on e928e211 (no findings); all 5 threads answered and resolved.
+One earlier harness run had 8 FAILs after another window took the activation on linuxlt's shared screen mid-run (keys then reach no item); reruns passed. Failed checks now log window.active and the focus item.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
