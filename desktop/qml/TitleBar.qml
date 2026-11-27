@@ -37,6 +37,12 @@ Rectangle {
     function chooseForTest(i) { suggestions.choose(suggestions.items[i]) }
     signal openChat(string id, string name)
     signal openPerson(string oid, string name)
+    /// A meeting suggestion: its details (join link, iCal uid, start).
+    signal openMeeting(string joinUrl, string uid, string start)
+    /// A message (or image) suggestion: the chat or channel at it.
+    signal openMessage(string thread, string messageId, string parentId, bool channel, var terms)
+    /// Send feedback's thumbs under the suggestions.
+    signal searchFeedback(string kind, string query)
     signal goBack()
     signal goForward()
     signal toggleRail()
@@ -161,11 +167,14 @@ Rectangle {
             onTextEdited: peopleDebounce.restart()
             Keys.onEscapePressed: { text = ""; focus = false; root.searchOpen = false }
             onActiveFocusChanged: if (!activeFocus && text.length === 0) root.searchOpen = false
+            // The arrows move through the suggestions; Enter opens the one
+            // picked, else the results.
+            Keys.onDownPressed: suggestions.move(1)
+            Keys.onUpPressed: suggestions.move(-1)
             Keys.onReturnPressed: {
-                if (!field.text.trim()) return
-                root.keepSuggestionsOpen = false
-                field.focus = false
-                root.searchSubmitted(field.text)
+                if (suggestions.current >= 0 && suggestions.options[suggestions.current]) { root.pick(suggestions.options[suggestions.current]); return }
+                if (!root.searchWords) return
+                root.submit(field.text)
             }
             Text {
                 visible: !field.text
@@ -179,90 +188,75 @@ Rectangle {
         }
     }
 
-    Timer { id: peopleDebounce; interval: 300; onTriggered: root.searchPeople(field.text) }
-
-    // Search suggestions: matching chats, then people, as Teams lists them.
-    Rectangle {
-        id: suggestions
-        readonly property string q: field.text.trim().toLowerCase()
-        readonly property var items: {
-            if (q.length === 0) return []
-            const chats = root.chats.filter(c => (c.name || "").toLowerCase().indexOf(q) >= 0)
-                .slice(0, 5).map(c => ({ kind: "chat", id: c.id, name: c.name, sub: qsTr("Chat") }))
-            const chatNames = chats.map(c => c.name)
-            const people = root.people.filter(p => chatNames.indexOf(p.name) < 0 || p.mail)
-                .slice(0, 6).map(p => ({ kind: "person", id: p.id, name: p.name, sub: p.mail || p.job_title }))
-            // Teams (shared worker's serp catalyst entry): first among the
-            // top hits for a query of more than one word.
-            const ask = root.copilotSearch && field.text.trim().split(/\s+/).length > 1 ? [{ kind: "copilot", name: field.text.trim() }] : []
-            return ask.concat(chats).concat(people)
-        }
-        function choose(item) {
-            if (item.kind === "copilot") { root.keepSuggestionsOpen = false; field.focus = false; root.askCopilot(item.name); return }
-            if (item.kind === "chat") root.openChat(item.id, item.name)
-            else root.openPerson(item.id, item.name)
-            field.text = ""; field.focus = false
-        }
-        visible: (field.activeFocus || root.keepSuggestionsOpen) && q.length > 0
-        z: 100
-        x: search.x; y: search.y + search.height + 4
-        width: search.width; height: Math.max(48, col.implicitHeight + 8)
-        radius: 8
-        color: theme.menu
-        border.color: theme.dividerSoft
-        Column {
-            id: col
-            x: 0; y: 4; width: parent.width
-            Repeater {
-                model: suggestions.items
-                Rectangle {
-                    id: item
-                    required property var modelData
-                    readonly property bool ask: modelData.kind === "copilot"
-                    width: col.width; height: ask ? 50 : 44
-                    radius: ask ? 4 : 0
-                    color: itemHover.hovered ? theme.hc(theme.pane, theme.hcHighlight) : "transparent"
-                    // Teams' "Ask Copilot about <query>" (measured on winpc
-                    // 2026-11-20): 50 tall, a 32 px #F0F0F0 circle at 16
-                    // with Copilot's 16 px glyph (#424242), the text (14/20)
-                    // at 58 with the query bold.
-                    Rectangle {
-                        visible: item.ask
-                        x: 16; anchors.verticalCenter: parent.verticalCenter
-                        width: 32; height: 32; radius: 16
-                        color: theme.pick("#F0F0F0", "#333333", "#000000")
-                        border.color: theme.hc("transparent", "#FFFFFF"); border.width: theme.highContrast ? 0.67 : 0
-                        FluentIcon { anchors.centerIn: parent; name: "mo-copilot"; size: 16; color: theme.onFill(parent, theme.textStrong) }
-                    }
-                    Text {
-                        visible: item.ask
-                        x: 58; width: parent.width - 74; anchors.verticalCenter: parent.verticalCenter
-                        textFormat: Text.StyledText; elide: Text.ElideRight
-                        text: qsTr("Ask Copilot about") + " <b>" + item.modelData.name.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b>"
-                        font.family: theme.font; font.pixelSize: 14; color: theme.onFill(item, theme.text)
-                    }
-                    Accessible.role: Accessible.ListItem
-                    Accessible.name: ask ? qsTr("Ask Copilot about") + " " + modelData.name : modelData.name
-                    Avatar { visible: !item.ask; x: 16; anchors.verticalCenter: parent.verticalCenter; size: 28; name: item.modelData.name }
-                    Column {
-                        visible: !item.ask
-                        x: 56; anchors.verticalCenter: parent.verticalCenter
-                        Text { text: item.modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(item, theme.text) }
-                        Text { text: item.modelData.sub || ""; font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(item, theme.textSecondary) }
-                    }
-                    HoverHandler { id: itemHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: suggestions.choose(item.modelData) }
-                }
-            }
-        }
-        Text {
-            visible: suggestions.items.length === 0
-            anchors.centerIn: parent
-            text: qsTr("No matches yet")
-            font.family: theme.font; font.pixelSize: theme.small
-            color: theme.textSecondary
-        }
+    // What's typed, without an "is:<Tab>" scope (a scope pill puts one
+    // in the box, as Teams does).
+    readonly property var scopeKeys: ({ messages: "Messages", files: "Files", channels: "Channels", groupchats: "Group chats", meetings: "Meetings", images: "Images" })
+    readonly property string searchScope: {
+        const m = field.text.match(/\bis:(messages|files|channels|groupchats|group chats|meetings|images)\b/i)
+        return m ? m[1].toLowerCase().replace(" ", "") : ""
     }
+    readonly property string searchWords: field.text.replace(/\bis:(messages|files|channels|groupchats|group chats|meetings|images)\b/i, "").trim()
+    function askSuggestions() { backend.searchSuggest(root.searchWords) }
+    Timer { id: peopleDebounce; interval: 150; onTriggered: root.askSuggestions() }
+
+    // Search suggestions (Teams' powerbar, SearchSuggest.qml): asked as the
+    // box gets focus with nothing typed, and as you type.
+    SearchSuggest {
+        id: suggestions
+        visible: field.activeFocus || root.keepSuggestionsOpen
+        z: 100
+        x: search.x; y: search.y + search.height + 2
+        width: search.width
+        maxHeight: Math.round((root.Window.window ? root.Window.window.height : 680) * 0.7)
+        query: root.searchWords
+        scope: root.searchScope
+        reply: backend.suggestJson ? JSON.parse(backend.suggestJson) : ({})
+        chats: root.chats
+        copilot: root.copilotSearch
+        readonly property var items: options
+        onVisibleChanged: if (visible && !root.searchWords) root.askSuggestions()
+        function choose(item) { root.pick(item) }
+        onActivate: item => root.pick(item)
+        onPickScope: key => {
+            // With words typed, the pill opens that tab of the results;
+            // with none, the box keeps the scope ("is:Files") for them.
+            if (key && root.searchWords) { root.submit(root.searchWords + " is:" + root.scopeKeys[key]); return }
+            field.text = key ? "is:" + root.scopeKeys[key] + " " : root.searchWords
+            field.forceActiveFocus()
+        }
+        onFeedback: kind => root.searchFeedback(kind, root.searchWords)
+    }
+    function submit(text) {
+        root.keepSuggestionsOpen = false
+        field.text = text
+        field.focus = false
+        root.searchSubmitted(text)
+    }
+    // A suggestion picked (Teams' hostAppActions): people and chats open
+    // their chat, teams and channels the channel, files the file, meetings
+    // their details, messages the chat at the message; a recent or
+    // suggested search, "See more messages" and Enter run the search.
+    function pick(item) {
+        const done = () => { root.keepSuggestionsOpen = false; field.text = ""; field.focus = false }
+        const terms = root.searchWords.split(/\s+/).filter(w => !!w)
+        switch (item.kind) {
+        case "copilot": root.keepSuggestionsOpen = false; field.focus = false; root.askCopilot(item.title); return
+        case "person": root.openPerson(item.oid, item.plain_name || item.name); break
+        case "chat": root.openChat(item.thread, suggestions.chatName(item)); break
+        case "team": case "channel": root.openChat(item.thread, item.title); break
+        case "file": backend.openFile(item.url, item.title, ""); break
+        case "event": root.openMeeting(item.join || "", item.uid || "", item.start || ""); break
+        case "message": case "image": root.openMessage(item.thread, item.id, item.parent || "", !!item.channel, terms); break
+        case "text": case "pcs": root.submit(item.query && item.kind === "text" ? item.query : item.title); return
+        case "seemore": root.submit(item.query + " is:Messages"); return
+        case "enter": if (field.text.trim()) root.submit(field.text); return
+        case "tip": root.gotoMode(); return
+        default: return
+        }
+        done()
+    }
+    // The tip's Ctrl+G: the box, focused for a chat or channel's name.
+    function gotoMode() { field.forceActiveFocus() }
 
     BarButton {
         id: moreButton

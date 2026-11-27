@@ -642,6 +642,9 @@ pub mod qobject {
         /// them: {query, items: [{id, name, sub, guest, upn}]} (Teams' top-N
         /// people before anything is typed, else its search).
         #[qproperty(QString, new_chat_people_json)]
+        /// The title bar search's suggestions (Teams' powerbar): {query,
+        /// groups: [{id, title, items}]} (teams_cli::api::autosuggest).
+        #[qproperty(QString, suggest_json)]
         /// The open chat's members (Teams' roster): [{mri, name, mail, me}].
         #[qproperty(QString, chat_members_json)]
         /// The call's chat members, with presence (People pane: "People
@@ -1766,6 +1769,10 @@ pub mod qobject {
         /// Search the directory for the new-chat picker.
         #[qinvokable]
         fn search_people(self: Pin<&mut Backend>, query: &QString);
+        /// The title bar search's suggestions for `query` ("" when the box
+        /// is focused with nothing typed) into suggest_json.
+        #[qinvokable]
+        fn search_suggest(self: Pin<&mut Backend>, query: &QString);
         /// As search_people, with you among the results (the status
         /// message picker).
         #[qinvokable]
@@ -4041,6 +4048,8 @@ pub struct BackendRust {
     people_json: QString,
     new_chat_people_json: QString,
     new_chat_people_generation: u64,
+    suggest_json: QString,
+    suggest_generation: u64,
     chat_members_json: QString,
     call_chat_members_json: QString,
     chat_meeting_json: QString,
@@ -18832,6 +18841,78 @@ impl qobject::Backend {
                 }
                 Err(e) => tracing::warn!("calendar failed: {}", short_error(&e)),
             }
+        });
+    }
+
+    pub fn search_suggest(mut self: Pin<&mut Self>, query: &QString) {
+        let q = query.to_string();
+        let generation = self.rust().suggest_generation + 1;
+        self.as_mut().rust_mut().suggest_generation = generation;
+        let me = api::autosuggest::Me {
+            oid: String::new(),
+            mri: self.rust().user_mri.to_string(),
+            mail: self.rust().user_mail.to_string(),
+            name: self.rust().user_name.to_string(),
+        };
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let me = api::autosuggest::Me {
+                    oid: client.object_id().unwrap_or_default(),
+                    ..me
+                };
+                let tenant = client.tenant_id().unwrap_or_default();
+                let empty = q.trim().is_empty();
+                // Nothing typed: the People row is Teams' top-N people.
+                let (reply, people) = if empty {
+                    let (r, p) = tokio::join!(
+                        api::autosuggest::fetch("", &me, &tenant),
+                        api::search::zero_state_people(&me.oid, &me.mail, &me.name)
+                    );
+                    (r?, p.unwrap_or_default())
+                } else {
+                    (
+                        api::autosuggest::fetch(q.trim(), &me, &tenant).await?,
+                        Vec::new(),
+                    )
+                };
+                let mut groups = api::autosuggest::arrange(&reply, q.trim(), &me, people);
+                // Recent images: the pictures, cached as the chat caches them.
+                let ams = client
+                    .ams_url()
+                    .unwrap_or_else(|| "https://us-api.asm.skype.com".into());
+                for g in groups.iter_mut().filter(|g| g["id"] == "IMAGES") {
+                    for it in g["items"].as_array_mut().into_iter().flatten() {
+                        let id = it["ams"].as_str().unwrap_or_default().to_string();
+                        let img = api::messages::InlineImage {
+                            url: format!("{ams}/v1/objects/{id}/views/imgo"),
+                            id,
+                            width: 0,
+                            height: 0,
+                            local_path: String::new(),
+                        };
+                        if let Ok(path) = cached_image(&client, &img).await {
+                            it["src"] = json!(format!("file://{}", path.display()));
+                        }
+                    }
+                }
+                anyhow::Ok(groups)
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                if this.rust().suggest_generation != generation {
+                    return;
+                }
+                match result {
+                    Ok(groups) => {
+                        let v = json!({ "query": q, "groups": groups });
+                        this.as_mut()
+                            .set_suggest_json(QString::from(v.to_string().as_str()));
+                    }
+                    Err(e) => tracing::warn!("search suggestions failed: {}", short_error(&e)),
+                }
+            });
         });
     }
 

@@ -7,6 +7,7 @@ pub mod app_host;
 pub mod app_notifications;
 pub mod app_places;
 pub mod attendance;
+pub mod autosuggest;
 pub mod better_together;
 pub mod biometric;
 pub mod blurhash;
