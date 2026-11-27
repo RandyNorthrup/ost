@@ -1764,6 +1764,12 @@ pub mod qobject {
         #[qinvokable]
         fn mark_call_read(self: Pin<&mut Backend>, activity_id: &QString);
 
+        /// Send a quick message (a call's Details, a profile card) to a
+        /// person (MRI) or a chat (thread id), leaving the compose box and
+        /// its draft alone.
+        #[qinvokable]
+        fn send_quick_message(self: Pin<&mut Backend>, target: &QString, text: &QString);
+
         /// Add or remove our reaction on a message in the open chat.
         #[qinvokable]
         fn toggle_reaction(self: Pin<&mut Backend>, message_id: &QString, key: &QString, on: bool);
@@ -6261,24 +6267,55 @@ async fn enrich_calls(client: &TeamsClient, calls: &mut [api::CallRecord]) {
             }
         }
     }
-    for mri in wanted {
-        let Some(oid) = teams_cli::identity::work_object_id(&mri)
-            .filter(|o| o.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-'))
-        else {
-            continue;
-        };
-        let Ok(r) = client
+    // (each person once per session, four at a time)
+    static PEOPLE: std::sync::Mutex<Option<HashMap<String, (String, String)>>> =
+        std::sync::Mutex::new(None);
+    let cached = |m: &str| {
+        PEOPLE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .and_then(|p| p.get(m).cloned())
+    };
+    use futures::StreamExt;
+    let looked_up: Vec<(String, (String, String))> = futures::stream::iter(
+        wanted
+            .iter()
+            .filter(|m| cached(m).is_none())
+            .cloned()
+            .collect::<Vec<_>>(),
+    )
+    .filter_map(|mri| async move {
+        let oid = teams_cli::identity::work_object_id(&mri)
+            .filter(|o| o.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-'))?
+            .to_string();
+        Some((mri, oid))
+    })
+    .map(|(mri, oid)| async move {
+        let r = client
             .graph_get(&format!("/users/{oid}?$select=displayName,givenName"))
             .await
-        else {
-            continue;
-        };
+            .ok()?;
         let v: serde_json::Value = r.json().await.unwrap_or_default();
-        if let Some(n) = v["displayName"].as_str().filter(|n| !n.is_empty()) {
-            names.entry(mri.clone()).or_insert_with(|| n.to_string());
-        }
-        if let Some(g) = v["givenName"].as_str().filter(|g| !g.is_empty()) {
-            givens.insert(mri.clone(), g.to_string());
+        let text = |k: &str| v[k].as_str().unwrap_or_default().to_string();
+        Some((mri, (text("displayName"), text("givenName"))))
+    })
+    .buffer_unordered(4)
+    .filter_map(|x| async move { x })
+    .collect()
+    .await;
+    {
+        let mut p = PEOPLE.lock().unwrap_or_else(|e| e.into_inner());
+        p.get_or_insert_with(HashMap::new).extend(looked_up);
+    }
+    for mri in &wanted {
+        if let Some((name, given)) = cached(mri) {
+            if !name.is_empty() {
+                names.entry(mri.clone()).or_insert(name);
+            }
+            if !given.is_empty() {
+                givens.insert(mri.clone(), given);
+            }
         }
     }
     let name_of = |m: &str, n: &mut String| {
@@ -6301,39 +6338,59 @@ async fn enrich_calls(client: &TeamsClient, calls: &mut [api::CallRecord]) {
     }
     // A group call's chat: its topic names it (Teams' groupCall, asked for
     // multi-party calls in a chat).
-    // Whether you're still in it is its roster (Teams' isUserMember).
+    // Whether you're still in it is its roster (Teams' isUserMember). Each
+    // chat is asked once per session (four at a time: the chat service
+    // throttles a burst), so reopening Calls is immediate.
+    static CHATS: std::sync::Mutex<Option<HashMap<String, (String, bool)>>> =
+        std::sync::Mutex::new(None);
     let me = client.self_mri().unwrap_or_default().to_ascii_lowercase();
-    let mut chats: HashMap<String, (String, bool)> = HashMap::new();
-    for c in calls.iter() {
-        if c.call_type.eq_ignore_ascii_case("multiParty")
-            && !c.thread_id.is_empty()
-            && !chats.contains_key(&c.thread_id)
-        {
-            let topic = api::activity::thread_facts(client, &c.thread_id)
-                .await
-                .map(|f| f.topic)
-                .unwrap_or_default();
-            // (asked again once when throttled; unknown counts as in it, as
-            // Teams treats a chat it couldn't load)
-            let mut roster = api::thread_member_ids(client, &c.thread_id).await;
-            if roster.is_err() {
-                tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-                roster = api::thread_member_ids(client, &c.thread_id).await;
+    let known = |id: &str| {
+        CHATS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .and_then(|m| m.get(id).cloned())
+    };
+    let mut todo: Vec<String> = calls
+        .iter()
+        .filter(|c| c.call_type.eq_ignore_ascii_case("multiParty") && !c.thread_id.is_empty())
+        .map(|c| c.thread_id.clone())
+        .filter(|t| known(t).is_none())
+        .collect();
+    todo.sort();
+    todo.dedup();
+    let found: Vec<(String, (String, bool))> = futures::stream::iter(todo)
+        .map(|thread| {
+            let me = me.clone();
+            async move {
+                let topic = api::activity::thread_facts(client, &thread)
+                    .await
+                    .map(|f| f.topic)
+                    .unwrap_or_default();
+                // (unknown counts as in it, as Teams treats a chat it
+                // couldn't load)
+                let member = match api::thread_member_ids(client, &thread).await {
+                    Ok(ids) => ids.iter().any(|i| i.to_ascii_lowercase() == me),
+                    Err(e) => {
+                        tracing::info!("call history: chat roster not read: {}", short_error(&e));
+                        true
+                    }
+                };
+                (thread, (topic, member))
             }
-            let member = match roster {
-                Ok(ids) => ids.iter().any(|i| i.to_ascii_lowercase() == me),
-                Err(e) => {
-                    tracing::info!("call history: chat roster not read: {}", short_error(&e));
-                    true
-                }
-            };
-            chats.insert(c.thread_id.clone(), (topic, member));
-        }
+        })
+        .buffer_unordered(4)
+        .collect()
+        .await;
+    {
+        let mut m = CHATS.lock().unwrap_or_else(|e| e.into_inner());
+        let m = m.get_or_insert_with(HashMap::new);
+        m.extend(found);
     }
     for c in calls.iter_mut() {
-        if let Some((topic, member)) = chats.get(&c.thread_id) {
-            c.title = topic.clone();
-            c.member = *member;
+        if let Some((topic, member)) = known(&c.thread_id) {
+            c.title = topic;
+            c.member = member;
         }
     }
     // Unread missed calls.
@@ -18914,6 +18971,45 @@ impl qobject::Backend {
             if let Err(e) = result {
                 tracing::warn!("missed call read failed: {}", short_error(&e));
             }
+        });
+    }
+
+    pub fn send_quick_message(self: Pin<&mut Self>, target: &QString, text: &QString) {
+        let (target, text) = (target.to_string(), text.to_string().trim().to_string());
+        if text.is_empty() || target.is_empty() {
+            return;
+        }
+        let current = self.rust().current_chat_id.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let chat = if target.starts_with("19:") {
+                    target.clone()
+                } else {
+                    let me = client
+                        .self_mri()
+                        .ok_or_else(|| anyhow::anyhow!("not signed in"))?;
+                    api::ensure_one_on_one_chat(&client, &me, &target).await?
+                };
+                api::send_message_with_client(&client, &chat, &text).await?;
+                anyhow::Ok(chat)
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(chat) => {
+                    // The open chat shows it (the compose box is untouched).
+                    if chat == current && this.rust().current_chat_id.to_string() == chat {
+                        this.as_mut().reload_messages();
+                    }
+                    this.as_mut().call_action_done(QString::from("quick"), true);
+                }
+                Err(e) => {
+                    tracing::warn!("quick message failed: {}", short_error(&e));
+                    this.as_mut()
+                        .call_action_done(QString::from("quick"), false);
+                }
+            });
         });
     }
 

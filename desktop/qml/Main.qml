@@ -732,7 +732,12 @@ Window {
         onTriggered: {
             const c = chatList.chats.find(x => x.name === who && !!x.peerMri)
             if (step === 0) { if (!c) { console.warn("CALLS quick no chat", who); Qt.quit(); return } backend.selectChat(c.id, c.name) }
-            else if (step === 1) { console.warn("CALLS quick open", backend.currentChatId === c.id); rail.current = "calls" }
+            else if (step === 1) {
+                console.warn("CALLS quick open", backend.currentChatId === c.id)
+                // A draft in the chat's compose box stays put.
+                conversation.composeForTest().clear(); conversation.composeForTest().insertText("OST TASK-0355 draft kept")
+                rail.current = "calls"
+            }
             else if (step === 2) {
                 const i = callsView.findForTest("^" + who + " \\| (Incoming|Outgoing)$")
                 callsView.detailsForTest(i)
@@ -740,7 +745,11 @@ Window {
                 callsView.sendQuickForTest()
                 console.warn("CALLS quick sent from row", i, "now on", rail.current, backend.currentChatId === c.id)
             }
-            else if (step === 4) { console.warn("CALLS quick pending left", JSON.stringify(window.pendingQuickMessage)); Qt.quit() }
+            else if (step === 4) {
+                console.warn("CALLS quick pending left", JSON.stringify(window.pendingQuickMessage), "rail", rail.current, "draft", JSON.stringify(conversation.composeForTest().plainText()))
+                conversation.composeForTest().clear(); backend.setDraft(c.id, "")
+                Qt.quit()
+            }
             step++
         }
     }
@@ -16194,7 +16203,7 @@ Window {
             window.pendingCall = video ? "video" : "audio"; backend.openChatWith(mri.replace("8:orgid:", ""), name)
         }
         onQuickMessage: (mri, name, text) => {
-            if (window.isOpenChatWith(mri)) { backend.sendMessage(text); return }
+            if (window.isOpenChatWith(mri)) { backend.sendQuickMessage(mri, text); return }
             window.pendingQuickMessage = text; backend.openChatWith(mri.replace("8:orgid:", ""), name)
         }
     }
@@ -16697,13 +16706,9 @@ Window {
             window.pendingCall = video ? "video" : "audio"
             backend.selectChat(thread, name)
         }
-        onQuickMessage: (mri, name, thread, text) => {
-            if (!thread) { profileCard.quickMessage(mri, name, text); return }
-            rail.current = "chat"; window.composing = false
-            if (backend.currentChatId === thread) { backend.sendMessage(text); return }
-            window.pendingQuickMessage = text
-            backend.selectChat(thread, name)
-        }
+        // Teams sends it from Details and stays in Calls; the chat's compose
+        // box and draft are left alone.
+        onQuickMessage: (mri, name, thread, text) => backend.sendQuickMessage(thread || mri, text)
         onOpenChatWith: (mri, name) => {
             const c = chatList.chats.find(c => c.peerMri === mri)
             rail.current = "chat"
