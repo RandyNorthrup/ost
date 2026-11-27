@@ -93,12 +93,13 @@ content is personal:
 
 | Where | What |
 | --- | --- |
-| `~/.config/teams-cli/` | `config.toml` (your tenant, name, sign-in address, service endpoints and licenses; the tokens only without a keyring), `accounts.json` (your signed-in accounts), `hub.json` and `hub-pins.json` (each account's unread counts and recent chats, for the account switcher), `calling-endpoint-id` (a random ID for this device's calls). Other accounts are in `profiles/<name>/`. |
+| `~/.config/teams-cli/` | `config.toml` (your tenant, name, sign-in address, service endpoints and licenses; the tokens only if you chose **Stay signed in without a keyring**), `accounts.json` (your signed-in accounts), `hub.json` and `hub-pins.json` (each account's unread counts and recent chats, for the account switcher), `calling-endpoint-id` (a random ID for this device's calls). Other accounts are in `profiles/<name>/`. |
 | `~/.config/ost/` | `desktop.json` (OST's settings), `ddv.json` (Diagnostic Data Viewer). |
 | `~/.config/autostart/ost-desktop.desktop` | Only while **Auto-start OST** is on. |
 | `~/.local/state/ost/` | The log (`ost-desktop.log`), unsent drafts and messages (`drafts.json`, `outbox.json`), and the list of files you downloaded with OST (`downloads.json`). |
-| `~/.cache/ost/` | Message images, profile pictures, video clips, recordings, file thumbnails and previews, emoji, Teams' translated strings and feature settings, call backgrounds, downloaded models, and feedback screenshots. Safe to delete; OST fetches what it needs again. |
+| `~/.cache/ost/` | Message images, profile pictures, video clips, recordings, file thumbnails and previews, emoji, Teams' translated strings and feature settings, call backgrounds, downloaded models, and feedback reports. Safe to delete; OST fetches what it needs again. |
 | `~/.local/share/ost/backgrounds/uploads/` | Call backgrounds you added. |
+| `~/.local/share/ost/hfp-calls/` | Only after the Bluetooth headset setup: what it changed, for `--uninstall`. |
 | `~/.local/share/OST/QtWebEngine/ost-apps[-<profile>]`, `~/.cache/OST/QtWebEngine/ost-apps[-<profile>]` | The web profile: cookies, site storage and cache of the sign-in and the embedded Microsoft 365 apps. Removed when you sign out. |
 | Your Downloads folder | Files you download (Settings can change the folder). |
 
@@ -111,7 +112,7 @@ states, the services it called, errors). It's written to keep to shapes
 and states, not message text, and it never holds tokens: tokens, cookies
 and signed-address parameters are taken out of every line before it is
 written. It is rewritten each time OST starts (with **Extended
-diagnostics** on, it keeps up to 64 MB across starts). Help ▸ **Collect
+diagnostics data** on, it keeps up to 64 MB across starts). Help ▸ **Collect
 Support Files** copies it to a folder on your Desktop as it is; feedback
 that shares log lines also masks names, addresses, ids and message text
 (see below). Look through the log before you send it to anyone.
@@ -126,7 +127,8 @@ The Flatpak asks only for what OST uses; each permission is explained in
 its manifest (`desktop/packaging/flatpak/io.github.RandyNorthrup.ost.yml`):
 
 - **Network**: Teams' services, calls and the embedded web apps.
-- **Wayland, or X11** where there's no Wayland session.
+- **Wayland, or X11** where there's no Wayland session (with X11's shared
+  memory, which X11 rendering needs).
 - **The GPU** only. Cameras come through the desktop's camera portal,
   which asks you once and then shows OST only the cameras (PipeWire's);
   no other devices are visible. Headsets' call buttons, lights and ring
@@ -142,7 +144,7 @@ its manifest (`desktop/packaging/flatpak/io.github.RandyNorthrup.ost.yml`):
 - **System bus names**, to read: logind (away when the screen locks),
   NetworkManager (work location from the Wi-Fi network's name), BlueZ (a
   Bluetooth scan for nearby Teams Rooms while the pre-join screen looks for
-  them).
+  them; nothing is paired or changed).
 
 Screen sharing, opening links and picking files go through the desktop
 portals, which ask you each time.
