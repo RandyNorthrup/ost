@@ -3,9 +3,11 @@ id: TASK-0354
 title: >-
   Calls app controls as Teams: dial pad, parked calls, forwarding, audio device,
   call delegation, speed dial
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude-task-0354'
 created_date: '2026-11-27T17:31:00Z'
+updated_date: '2026-11-27T17:33:00Z'
 labels: []
 dependencies: []
 priority: medium

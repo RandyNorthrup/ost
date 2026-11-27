@@ -3,9 +3,11 @@ id: TASK-0355
 title: >-
   Calls history as Teams: details pane, row menu, filters, row text, meeting
   names, durations
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-27T17:32:00Z'
+updated_date: '2026-11-27T17:33:00Z'
 labels: []
 dependencies: []
 priority: medium
