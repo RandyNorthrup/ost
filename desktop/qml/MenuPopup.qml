@@ -31,8 +31,8 @@ import QtQuick.Window
 // 2026-11-27): the menu takes the focus when it opens, on its first row
 // (no outline after a click). Down / Up move and wrap; Home / PageUp and
 // End / PageDown go to the first and last row; a letter goes to the next
-// row whose label starts with it (a row whose `keys` is a single letter,
-// or Del, is picked by it: the message menu's Q, E, F, S). Enter / Space pick (or open a row's
+// row whose label starts with it (a row is picked by its own `keys`: the
+// message menu's Q, E, F, S, Del, the text menu's Ctrl+C). Enter / Space pick (or open a row's
 // submenu); Right opens a submenu on its first row (on a split row it
 // first moves to the chevron part) and Left or Esc closes it again. Esc
 // closes the menu and Tab / Shift+Tab close it too; the focus goes back to
@@ -182,6 +182,9 @@ Popup {
         return false
     }
     function owns(item) { return ownsDirectly(item) || (!!subMenu && subMenu.owns(item)) }
+    // The keys are in this menu (not in its submenu): only then its row
+    // shows the outline.
+    readonly property bool keysHere: opened && !!contentItem && ownsDirectly(contentItem.Window.activeFocusItem)
     // The keyboard's row has the real focus (a screen reader follows it),
     // while the menu has the keyboard; the menu's Keys get the keys from it.
     function focusCurrent() {
@@ -190,7 +193,7 @@ Popup {
         const a = w ? w.activeFocusItem : null
         if (!a || !ownsDirectly(a)) return
         const r = rowAt(current)
-        const target = !r ? contentItem : currentPart === "chevron" && r.chevronItem ? r.chevronItem : r
+        const target = !r ? contentItem : currentPart === "chevron" && r.chevronItem ? r.chevronItem : r.focusItem
         if (target !== a) target.forceActiveFocus()
     }
     // Take the keyboard back (from a submenu, or as a row is hovered).
@@ -214,24 +217,40 @@ Popup {
     function activate(i, part) {
         const it = items[i]
         if (!isStop(it) || it.enabled === false) return
-        if (it.split) {
-            if (part === "chevron") { if (it.submenu) hoverRow(i, rowAt(i), "chevron", true) }
-            else { close(); picked(i) }
-            return
-        }
-        if (it.submenu || it.flyout) { hoverRow(i, rowAt(i), "", true); return }
+        if (it.split && part === "chevron") { if (it.submenu) hoverRow(i, rowAt(i), "chevron", true); return }
+        if ((it.submenu || it.flyout) && !it.split) { hoverRow(i, rowAt(i), "", true); return }
         if (it.toggle || it.persist) { picked(i); return }
         close(); picked(i)
     }
+    // A key press, and a row's `keys` text, as "ctrl+shift+c".
+    function chordOf(e) {
+        const m = []
+        if (e.modifiers & Qt.ControlModifier) m.push("ctrl")
+        if (e.modifiers & Qt.AltModifier) m.push("alt")
+        if (e.modifiers & Qt.ShiftModifier) m.push("shift")
+        if (e.modifiers & Qt.MetaModifier) m.push("meta")
+        const k = (e.key >= Qt.Key_A && e.key <= Qt.Key_Z) || (e.key >= Qt.Key_0 && e.key <= Qt.Key_9) ? String.fromCharCode(e.key).toLowerCase()
+            : e.key >= Qt.Key_F1 && e.key <= Qt.Key_F35 ? "f" + (e.key - Qt.Key_F1 + 1)
+            : e.key === Qt.Key_Delete ? "del" : (e.text || "").toLowerCase()
+        return m.sort().concat([k]).join("+")
+    }
+    function chordOfKeys(text) {
+        const p = text.toLowerCase().split("+").map(x => x.trim())
+        const k = p.pop()
+        return p.map(x => x === "control" ? "ctrl" : x).sort().concat([k === "delete" ? "del" : k]).join("+")
+    }
+    function ownRow(e) {
+        const c = chordOf(e)
+        return items.findIndex(t => isStop(t) && t.enabled !== false && typeof t.keys === "string" && t.keys.length > 0 && chordOfKeys(t.keys) === c)
+    }
     function handlesKey(e) {
+        if (e.key !== Qt.Key_Escape && ownRow(e) >= 0) return true
         if (e.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return false
         switch (e.key) {
         case Qt.Key_Escape: case Qt.Key_Up: case Qt.Key_Down: case Qt.Key_Left: case Qt.Key_Right:
         case Qt.Key_Home: case Qt.Key_End: case Qt.Key_PageUp: case Qt.Key_PageDown:
         case Qt.Key_Return: case Qt.Key_Enter: case Qt.Key_Space: case Qt.Key_Tab: case Qt.Key_Backtab:
             return true
-        case Qt.Key_Delete:
-            return items.some(t => t && t.keys === "Del")
         }
         return e.text.length === 1 && e.text.trim().length === 1
     }
@@ -239,10 +258,9 @@ Popup {
         const rtl = Qt.application.layoutDirection === Qt.RightToLeft
         const forward = rtl ? Qt.Key_Left : Qt.Key_Right, back = rtl ? Qt.Key_Right : Qt.Key_Left
         if (e.key === Qt.Key_Escape) { close(); return }
-        // A row's own key (the message menu's Q, E, F, S, P, U and Del):
-        // Teams picks that row.
-        const own = items.findIndex(t => isStop(t) && t.enabled !== false && t.keys
-            && (e.key === Qt.Key_Delete ? t.keys === "Del" : t.keys.length === 1 && t.keys.toLowerCase() === e.text.toLowerCase()))
+        // A row's own key (the message menu's Q, E, F, S, P, U and Del, the
+        // text menu's Ctrl+C): that row is picked.
+        const own = ownRow(e)
         if (own >= 0) { current = own; currentPart = ""; activate(own, ""); return }
         if (e.key === Qt.Key_Tab || e.key === Qt.Key_Backtab) {
             let top = root
@@ -452,8 +470,14 @@ Popup {
                 id: row
                 required property var modelData
                 required property int index
-                // A split row's chevron part, for the keyboard's focus.
+                // What the keyboard focuses: the row's accessible item, or
+                // a split row's chevron part. A disabled row can't take the
+                // focus there, so the row itself does, named for it.
                 readonly property Item chevronItem: splitPart
+                readonly property Item focusItem: row.on ? hcFill1 : row
+                Accessible.role: Accessible.MenuItem
+                Accessible.name: row.modelData.label || ""
+                Accessible.ignored: row.on || !root.isStop(row.modelData)
                 readonly property bool on: modelData.enabled !== false && !modelData.heading && !modelData.group
                 readonly property color ink: !on ? theme.disabled : modelData.danger ? theme.redForeground1 : root.darkCallout ? theme.hc("#F3F2F1", "#FFFFFF") : mh.hovered ? theme.text : theme.textStrong
                 width: root.width - 2 * root.padding
@@ -528,7 +552,7 @@ Popup {
                     // strokeFocus2, 2 px outside the row or the split part).
                     Rectangle {
                         readonly property bool chevronPart: !!row.modelData.split && root.currentPart === "chevron"
-                        visible: root.focusRing && root.current === row.index
+                        visible: root.focusRing && root.keysHere && root.current === row.index
                         x: (chevronPart ? parent.width - 31 : 0) - 2; y: -2
                         width: (chevronPart ? 31 : row.modelData.split ? parent.width - 31 : parent.width) + 4
                         height: parent.height + 4

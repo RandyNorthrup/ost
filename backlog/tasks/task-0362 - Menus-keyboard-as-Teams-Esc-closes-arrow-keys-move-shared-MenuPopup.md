@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@task-0362-agent'
 created_date: '2026-11-27T18:19:00Z'
-updated_date: '2026-11-27T18:49:00Z'
+updated_date: '2026-11-27T18:55:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -55,4 +55,6 @@ Implementation (MenuPopup.qml, once for all ~177 menus):
 - Right on a `chevron` row (OST's message menu Translation / More actions, separate menus today) picks it like Enter.
 - Keyboard-opened menus: TitleBar's status/duration dropdowns set focusRing after open(); Conversation's selected-text menu keeps the body's selection (persistentSelection while open) since the menu now takes the focus.
 - Harness --menu-keys-test (MenuKeysTest.qml) with real key events; docs/desktop.md row.
+
+PR #48 opened (live checks pending in its body).
 <!-- SECTION:NOTES:END -->
