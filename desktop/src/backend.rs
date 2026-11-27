@@ -1764,6 +1764,24 @@ pub mod qobject {
         #[qinvokable]
         fn load_calls(self: Pin<&mut Backend>);
 
+        /// Remove a call from the Calls history (Teams' Remove from view).
+        #[qinvokable]
+        fn remove_call(self: Pin<&mut Backend>, message_id: &QString);
+
+        /// Report a call to Microsoft (Teams' Report a concern); `reported`
+        /// is the other person's MRI, empty for a group call.
+        #[qinvokable]
+        fn report_call(
+            self: Pin<&mut Backend>,
+            message_id: &QString,
+            reported: &QString,
+            comment: &QString,
+        );
+
+        /// A missed call was opened: its activity is read.
+        #[qinvokable]
+        fn mark_call_read(self: Pin<&mut Backend>, activity_id: &QString);
+
         /// Add or remove our reaction on a message in the open chat.
         #[qinvokable]
         fn toggle_reaction(self: Pin<&mut Backend>, message_id: &QString, key: &QString, on: bool);
@@ -2110,6 +2128,10 @@ pub mod qobject {
         /// Another account's hub asked this window to open a chat.
         #[qsignal]
         fn open_chat_requested(self: Pin<&mut Backend>, thread_id: QString, name: QString);
+
+        /// A Calls history action finished ("remove", "report").
+        #[qsignal]
+        fn call_action_done(self: Pin<&mut Backend>, op: QString, ok: bool);
 
         /// The Wi-Fi check-in raised one of Teams' work location banners
         /// (TASK-0249): `firstRun` {building, placeId} or `deviceHome`
@@ -6222,7 +6244,152 @@ fn health_sampler() -> &'static std::sync::Mutex<teams_cli::calling::call_health
 }
 
 /// How many calls the Calls history shows.
-const CALL_HISTORY_LIMIT: usize = 100;
+/// How many call log messages the Calls history reads (Teams lists the
+/// whole history; the service keeps it for a limited time).
+const CALL_HISTORY_LIMIT: usize = 1000;
+
+/// What the Calls history needs beyond the logs, as Teams resolves it:
+/// people's names (and given names, for group calls), each call's chat
+/// topic, and which missed calls are still unread (their missedCall
+/// activity not yet opened; Teams matches the two by start time).
+async fn enrich_calls(client: &TeamsClient, calls: &mut [api::CallRecord]) {
+    // Names the logs already have.
+    let mut names: HashMap<String, String> = HashMap::new();
+    let mut givens: HashMap<String, String> = HashMap::new();
+    for c in calls.iter() {
+        let known = [
+            (&c.peer_mri, &c.peer_name),
+            (&c.originator_mri, &c.originator_name),
+            (&c.transferor_mri, &c.transferor_name),
+        ];
+        for (m, n) in known
+            .into_iter()
+            .chain(c.participants.iter().map(|p| (&p.mri, &p.name)))
+        {
+            if !n.is_empty() {
+                names.entry(m.clone()).or_insert_with(|| n.clone());
+            }
+        }
+    }
+    // Everyone else, and group calls' given names, from the directory
+    // (once each).
+    let mut wanted: Vec<String> = Vec::new();
+    for c in calls.iter() {
+        for m in [&c.peer_mri, &c.originator_mri, &c.transferor_mri] {
+            if !m.is_empty() && !names.contains_key(m) && !wanted.contains(m) {
+                wanted.push(m.clone());
+            }
+        }
+        if c.is_group {
+            for p in &c.participants {
+                if !wanted.contains(&p.mri) {
+                    wanted.push(p.mri.clone());
+                }
+            }
+        }
+    }
+    for mri in wanted {
+        let Some(oid) = teams_cli::identity::work_object_id(&mri)
+            .filter(|o| o.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-'))
+        else {
+            continue;
+        };
+        let Ok(r) = client
+            .graph_get(&format!("/users/{oid}?$select=displayName,givenName"))
+            .await
+        else {
+            continue;
+        };
+        let v: serde_json::Value = r.json().await.unwrap_or_default();
+        if let Some(n) = v["displayName"].as_str().filter(|n| !n.is_empty()) {
+            names.entry(mri.clone()).or_insert_with(|| n.to_string());
+        }
+        if let Some(g) = v["givenName"].as_str().filter(|g| !g.is_empty()) {
+            givens.insert(mri.clone(), g.to_string());
+        }
+    }
+    let name_of = |m: &str, n: &mut String| {
+        if n.is_empty()
+            && let Some(k) = names.get(m)
+        {
+            *n = k.clone();
+        }
+    };
+    for c in calls.iter_mut() {
+        name_of(&c.peer_mri.clone(), &mut c.peer_name);
+        name_of(&c.originator_mri.clone(), &mut c.originator_name);
+        name_of(&c.transferor_mri.clone(), &mut c.transferor_name);
+        for p in c.participants.iter_mut() {
+            name_of(&p.mri.clone(), &mut p.name);
+            if let Some(g) = givens.get(&p.mri) {
+                p.given = g.clone();
+            }
+        }
+    }
+    // A group call's chat: its topic names it (Teams' groupCall, asked for
+    // multi-party calls in a chat).
+    // Whether you're still in it is its roster (Teams' isUserMember).
+    let me = client.self_mri().unwrap_or_default().to_ascii_lowercase();
+    let mut chats: HashMap<String, (String, bool)> = HashMap::new();
+    for c in calls.iter() {
+        if c.call_type.eq_ignore_ascii_case("multiParty")
+            && !c.thread_id.is_empty()
+            && !chats.contains_key(&c.thread_id)
+        {
+            let topic = api::activity::thread_facts(client, &c.thread_id)
+                .await
+                .map(|f| f.topic)
+                .unwrap_or_default();
+            // (asked again once when throttled; unknown counts as in it, as
+            // Teams treats a chat it couldn't load)
+            let mut roster = api::thread_member_ids(client, &c.thread_id).await;
+            if roster.is_err() {
+                tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+                roster = api::thread_member_ids(client, &c.thread_id).await;
+            }
+            let member = match roster {
+                Ok(ids) => ids.iter().any(|i| i.to_ascii_lowercase() == me),
+                Err(e) => {
+                    tracing::info!("call history: chat roster not read: {}", short_error(&e));
+                    true
+                }
+            };
+            chats.insert(c.thread_id.clone(), (topic, member));
+        }
+    }
+    for c in calls.iter_mut() {
+        if let Some((topic, member)) = chats.get(&c.thread_id) {
+            c.title = topic.clone();
+            c.member = *member;
+        }
+    }
+    // Unread missed calls.
+    let url = format!(
+        "{}/v1/users/ME/conversations/48:notifications/messages?pageSize=200&view=msnp24Equivalent",
+        client.chat_service_url()
+    );
+    let feed = match client.chat_get(&url).await {
+        Ok(r) => r.text().await.unwrap_or_default(),
+        Err(e) => {
+            tracing::info!("call history: activity not read: {}", short_error(&e));
+            return;
+        }
+    };
+    let unread: HashMap<i64, String> = api::activity::parse_feed(&feed)
+        .into_iter()
+        .filter(|i| i.kind == "missedCall" && i.unread)
+        .filter_map(|i| Some((api::call_time_ms(&i.time)?, i.id)))
+        .collect();
+    for c in calls
+        .iter_mut()
+        .filter(|c| c.direction == "incoming" && c.state.eq_ignore_ascii_case("missed"))
+    {
+        if let Some(id) = api::call_time_ms(&c.start_time).and_then(|t| unread.get(&t)) {
+            c.unread = true;
+            c.activity_id = id.clone();
+        }
+    }
+}
 
 /// What the recorder's Download recording saves.
 const RECORDING_DOWNLOAD_NAME: &str = "Recording.mp4";
@@ -18708,35 +18875,7 @@ impl qobject::Backend {
             let result = async {
                 let client = TeamsClient::new().await?;
                 let mut calls = api::call_history(&client, CALL_HISTORY_LIMIT).await?;
-                // Calls OST placed carry no display name for the other
-                // side; look those people up once each.
-                let mut names: HashMap<String, String> = HashMap::new();
-                for c in calls.iter().filter(|c| !c.peer_name.is_empty()) {
-                    names
-                        .entry(c.peer_mri.clone())
-                        .or_insert_with(|| c.peer_name.clone());
-                }
-                for c in calls.iter_mut().filter(|c| c.peer_name.is_empty()) {
-                    if let Some(n) = names.get(&c.peer_mri) {
-                        c.peer_name = n.clone();
-                        continue;
-                    }
-                    let Some(oid) = teams_cli::identity::work_object_id(&c.peer_mri)
-                        .filter(|o| o.chars().all(|ch| ch.is_ascii_hexdigit() || ch == '-'))
-                    else {
-                        continue;
-                    };
-                    if let Ok(r) = client
-                        .graph_get(&format!("/users/{oid}?$select=displayName"))
-                        .await
-                    {
-                        let v: serde_json::Value = r.json().await.unwrap_or_default();
-                        if let Some(n) = v["displayName"].as_str() {
-                            names.insert(c.peer_mri.clone(), n.to_string());
-                            c.peer_name = n.to_string();
-                        }
-                    }
-                }
+                enrich_calls(&client, &mut calls).await;
                 anyhow::Ok(calls)
             }
             .await;
@@ -18748,6 +18887,105 @@ impl qobject::Backend {
                     });
                 }
                 Err(e) => tracing::warn!("call history failed: {}", short_error(&e)),
+            }
+        });
+    }
+
+    pub fn remove_call(self: Pin<&mut Self>, message_id: &QString) {
+        let id = message_id.to_string();
+        // Gone from the list at once, as Teams does.
+        let json = self.rust().calls_json.to_string();
+        let mut calls: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
+        calls.retain(|c| c["message_id"].as_str() != Some(id.as_str()));
+        let text = serde_json::to_string(&calls).unwrap_or_else(|_| "[]".into());
+        let mut this = self;
+        this.as_mut().set_calls_json(QString::from(text.as_str()));
+        let qt = this.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::remove_call(&client, &id).await
+            }
+            .await;
+            if let Err(e) = &result {
+                tracing::warn!("remove call failed: {}", short_error(e));
+            }
+            let ok = result.is_ok();
+            let _ = qt.queue(move |mut this| {
+                if !ok {
+                    this.as_mut().load_calls();
+                }
+                this.as_mut().call_action_done(QString::from("remove"), ok);
+            });
+        });
+    }
+
+    pub fn report_call(
+        self: Pin<&mut Self>,
+        message_id: &QString,
+        reported: &QString,
+        comment: &QString,
+    ) {
+        let (id, who, comment) = (
+            message_id.to_string(),
+            reported.to_string(),
+            comment.to_string(),
+        );
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let who = (!who.is_empty()).then_some(who.as_str());
+                api::report_call(&client, &id, who, &comment).await
+            }
+            .await;
+            if let Err(e) = &result {
+                tracing::warn!("report call failed: {}", short_error(e));
+            }
+            let ok = result.is_ok();
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().call_action_done(QString::from("report"), ok);
+            });
+        });
+    }
+
+    pub fn mark_call_read(mut self: Pin<&mut Self>, activity_id: &QString) {
+        let id = activity_id.to_string();
+        if id.is_empty() {
+            return;
+        }
+        // The row is read at once.
+        let json = self.rust().calls_json.to_string();
+        let mut calls: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap_or_default();
+        for c in calls
+            .iter_mut()
+            .filter(|c| c["activity_id"].as_str() == Some(id.as_str()))
+        {
+            c["unread"] = serde_json::Value::Bool(false);
+        }
+        let text = serde_json::to_string(&calls).unwrap_or_else(|_| "[]".into());
+        self.as_mut().set_calls_json(QString::from(text.as_str()));
+        // The Activity feed's copy too, when it is loaded (that marks it on
+        // the service); else mark it here.
+        let in_feed =
+            serde_json::from_str::<Vec<serde_json::Value>>(&self.rust().activity_json.to_string())
+                .unwrap_or_default()
+                .iter()
+                .any(|i| {
+                    i["id"].as_str() == Some(id.as_str()) && i["unread"] == serde_json::json!(true)
+                });
+        if in_feed {
+            self.mark_activity_item_read(activity_id);
+            return;
+        }
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::activity::mark_item_read(&client, &id).await
+            }
+            .await;
+            if let Err(e) = result {
+                tracing::warn!("missed call read failed: {}", short_error(&e));
             }
         });
     }
