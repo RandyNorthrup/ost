@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude-0363'
 created_date: '2026-11-27T18:19:00Z'
-updated_date: '2026-11-27T20:38:00Z'
+updated_date: '2026-11-27T21:42:00Z'
 labels: []
 dependencies: []
 priority: high
@@ -22,7 +22,7 @@ From the 2026-11-27 parity audit (scope A), which compared Teams (desktop for so
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 A-09: Message hover bar is drawn underneath the message above it; fixed to match Teams desktop, checked side by side
-- [ ] #2 A-10: Message ··· menu lacks "Remind me", "Ask Copilot" and Forward's split submenu; fixed to match Teams desktop, checked side by side
+- [x] #2 A-10: Message ··· menu lacks "Remind me", "Ask Copilot" and Forward's split submenu; fixed to match Teams desktop, checked side by side
 - [x] #3 A-04: OST turns plain-text URLs in received/sent messages into links; Teams shows them as text; fixed to match Teams desktop, checked side by side
 - [x] #4 A-20: Consecutive replies by the same person in a channel thread aren't grouped; fixed to match Teams desktop, checked side by side
 <!-- AC:END -->
@@ -48,4 +48,21 @@ From the 2026-11-27 parity audit (scope A), which compared Teams (desktop for so
 - Live (linuxlt, OST Test 3, PR1 build, --pointer-script harness in OST's own window): hovering "One more thing" draws its bar over "The slides…"; moving up onto it keeps it (More reactions tooltip); a received message's bar sits over the "Today" divider and stays while moving up; the ··· of the short "Also, lunch…" opens its menu (Reply with quote … Delete). Teams on the web (OST Test 2) side by side.
 - Live A-04: "OST TEST 363 plain URL check: https://example.com/… is the guide" sent from Teams on the web (no anchor in its HTML; Teams shows text) shows as plain text in OST. The audit's Fedora message in OST Test 1 ↔ OST Test 2 also has no anchor in Teams.
 - Live A-20: OST test channel 2 — OST Test 2's two replies under one header, the second text 36 px under the first (Teams on the web: 36).
+
+- A-10 research (Teams 26304 + Teams on the web as OST Test 2): Remind me = rcmetadata {r, mid} / {dr:true} / {r:0}; 48:reminders stream (newReminder, then reminderDue without preview/name; removal rewrites the newest record as deleteReminder); Activity dueReminderInChat; Ask Copilot = BizChat side pane with updatePromptInputData; Forward split in chats (This message / Multiple messages), selection mode measured (checkbox 16 at avatar+4, bubbles +24, footer padding 32 64 24).
+- Live (linuxlt, OST Test 3, PR2 build, pointer-script harness): received message menu matches Teams' (Forward F | >, Copy link, Save, Remind me >, Pin | Mark as unread, Share to Outlook, Translation | Report | More actions); Remind me submenu Now / Later today 1:30 PM / Tomorrow Sat, 9:00 AM / Next week Mon, 9:00 AM / Custom; Now -> "A reminder has been set. View", alarm on the message, Reminders quick view with 1 due, row "Due 12:43 PM"; Edit reminder + Remove reminder; Later today -> upcoming chip "2:00 PM"; row ··· Remove -> "Reminder removed.", list empty; Custom dialog (Fri Nov 27 2026, 1:00 PM) Add -> at 13:30 the "Reminder due" banner (OST Test 2) showed; Forward ▸ Multiple messages -> checkboxes, "2 selected", Next -> Forward this message with both cards (cancelled, nothing sent).
+- Not verified live: Ask Copilot as a Copilot-licensed account (both ost-test1 profiles on linuxlt were in use by other agents; a fresh profile's sign-in didn't complete). Its menu item stays hidden for OST Test 3, as Teams hides it for OST Test 2.
+- Follow-up: TASK-0373 (channel posts multiselect, Discard and leave, Save in Reminders rows, icons in channel views, Ask Copilot in channel L2).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Messages as Teams (audit A items 9, 10, 4, 20), in two PRs.
+
+PR #55 (merged): the hover bar is raised above the message above and its hover blocks the message under it (a short message's ··· was unreachable); bare URLs stay text as Teams renders them (only <a> links; notes still link); channel replies group as Teams' worker does (same sender/app, <=5 min, not after a deleted one, first reply never), keeping "Edited"; a --pointer-script harness that drives OST's own window.
+
+PR 2: the ··· menu's Remind me (presets, Custom, Edit/Remove; rcmetadata), the message alarm, "A reminder has been set." with View, Chat ▸ Quick views ▸ Reminders over 48:reminders (Due/Upcoming/Completed, Mark as completed, Edit/Remove/Go to conversation, due count, New), Activity's Reminder due and the Reminder due banner; Ask Copilot (the chat's Copilot pane with Teams' prompt and the message as annotation); Forward as Teams' split item with Multiple messages (selection, bar, multi-card dialog, one forward call).
+
+Tests: msgactions reminders_come_from_r_and_rl2, quick_views reminders_read_like_teams, activity due_reminders_read_reminder_due, messages bare_urls_stay_text...; live checks listed in the notes. Not verified: Ask Copilot with a licensed account; the Edited line on a grouped reply and PostThread grouping against Teams. Follow-up TASK-0373.
+<!-- SECTION:FINAL_SUMMARY:END -->
