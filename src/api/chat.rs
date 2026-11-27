@@ -947,6 +947,41 @@ pub(crate) fn remember_members(thread: &str, ids: Vec<String>) {
 static KNOWN_MEMBERS: std::sync::Mutex<Option<std::collections::HashMap<String, Vec<String>>>> =
     std::sync::Mutex::new(None);
 
+/// Chats' roster versions as the chat list last gave them.
+static ROSTER_VERSIONS: std::sync::Mutex<Option<std::collections::HashMap<String, String>>> =
+    std::sync::Mutex::new(None);
+
+/// The chat list's roster versions (chat id, version): the members kept for
+/// a chat whose roster changed since are dropped (Teams' store takes the
+/// chat's new `memberIds` the same way), so its call reads them again.
+pub(crate) fn note_roster_versions<'a>(chats: impl IntoIterator<Item = (&'a str, String)>) {
+    let mut changed = Vec::new();
+    {
+        let mut versions = ROSTER_VERSIONS.lock().unwrap_or_else(|e| e.into_inner());
+        let versions = versions.get_or_insert_with(Default::default);
+        for (id, version) in chats {
+            if versions
+                .insert(id.to_string(), version.clone())
+                .is_some_and(|old| old != version)
+            {
+                changed.push(id);
+            }
+        }
+    }
+    if changed.is_empty() {
+        return;
+    }
+    if let Some(known) = KNOWN_MEMBERS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_mut()
+    {
+        for id in changed {
+            known.remove(id);
+        }
+    }
+}
+
 /// A chat's members as last read (opening the chat, naming it, its call),
 /// without asking the chat service.
 pub fn known_member_ids(thread: &str) -> Option<Vec<String>> {
@@ -1726,6 +1761,17 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
     }
     let backrooms: std::collections::HashMap<String, String> =
         meeting_ids.into_iter().zip(kinds).collect();
+    // Each chat's roster version: a chat whose members changed since OST
+    // last read them is read again when it's called.
+    note_roster_versions(conversations.iter().filter_map(|c| {
+        let id = c.id.as_deref()?;
+        let p = c.thread_properties.as_ref()?;
+        let v = p
+            .extra
+            .get("rosterVersion")
+            .or_else(|| p.extra.get("version"))?;
+        Some((id, v.to_string()))
+    }));
     // Group chats without a name of their own are named after their
     // members, as Teams names them (never their thread id).
     let untitled: Vec<(String, String)> = conversations

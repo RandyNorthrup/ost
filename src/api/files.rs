@@ -643,6 +643,14 @@ mod tests {
             other_people(Some(&identity), known),
             vec!["8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5".to_string()]
         );
+        // The chat list gives the chat's roster version; while it stays,
+        // the copy stays.
+        crate::api::chat::note_roster_versions([(thread, "1795700000000".to_string())]);
+        crate::api::chat::note_roster_versions([(thread, "1795700000000".to_string())]);
+        assert!(crate::api::chat::known_member_ids(thread).is_some());
+        // Someone joined or left: the call reads the members again.
+        crate::api::chat::note_roster_versions([(thread, "1795700099999".to_string())]);
+        assert!(crate::api::chat::known_member_ids(thread).is_none());
     }
 
     #[test]
