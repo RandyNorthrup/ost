@@ -1021,9 +1021,12 @@ Item {
     Popup {
         id: reportDialog
         property var call: null
+        // One report at a time: while one is on its way (even with the
+        // dialog closed) Report waits, so its answer is that report's.
         property bool sending: false
+        property string sentFor: ""
         property bool failed: false
-        function start(c) { call = c; sending = false; failed = false; why.text = ""; open(); why.forceActiveFocus() }
+        function start(c) { call = c; failed = false; why.text = ""; open(); why.forceActiveFocus() }
         modal: true; focus: true
         parent: Overlay.overlay
         anchors.centerIn: Overlay.overlay
@@ -1036,9 +1039,14 @@ Item {
             target: backend
             function onCallActionDone(op, ok) {
                 if (op !== "report" || !reportDialog.sending) return
+                const mine = reportDialog.opened && !!reportDialog.call && reportDialog.call.message_id === reportDialog.sentFor
                 reportDialog.sending = false
-                if (!ok) { reportDialog.failed = true; return }
-                reportDialog.close()
+                if (!ok) {
+                    if (mine) reportDialog.failed = true
+                    else root.toastError(qsTr("Failed to submit report. Please try again.", "calling:k8r0elqd8"))
+                    return
+                }
+                if (mine) reportDialog.close()
                 root.toast(qsTr("Report was sent", "calling:k8i8e9itj"))
             }
         }
@@ -1142,7 +1150,7 @@ Item {
                         enabled: !reportDialog.sending && !!reportDialog.call
                         onTapped: {
                             const c = reportDialog.call
-                            reportDialog.sending = true; reportDialog.failed = false
+                            reportDialog.sending = true; reportDialog.failed = false; reportDialog.sentFor = c.message_id
                             // Teams names the other person, none on a group call.
                             backend.reportCall(c.message_id, c.is_group ? "" : (c.peer_mri || ""), why.text)
                         }
