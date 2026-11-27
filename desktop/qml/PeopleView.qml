@@ -993,6 +993,9 @@ Item {
     }
 
     // Test harness hooks
+    /// Add contact for someone picked elsewhere (the Calls history's
+    /// Add contact): Teams' Add contact form with what's known of them.
+    function addContactFor(p) { formDialog.start(p) }
     function addForTest(person) { root.change("add", JSON.stringify({ form: { person: person, first: person.given || "", last: person.surname || "", email: person.mail || "" } })) }
     function find(name) { return root.all.find(c => c.name === name) }
     function stateForTest() { return { sort: sortField + " " + sortDirection, keyword: keyword, shown: shown.map(c => c.name), columns: columns.map(c => c.id + "@" + Math.round(c.x) + "+" + Math.round(c.w)) } }

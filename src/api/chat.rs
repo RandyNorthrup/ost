@@ -2185,107 +2185,575 @@ mod strip_html_tests {
     }
 }
 
-/// One entry of the Calls history (from the `48:calllogs` stream).
-#[derive(Debug, Clone, serde::Serialize)]
+/// The conversation that holds your Calls history.
+pub const CALL_LOGS: &str = "48:calllogs";
+
+/// Someone else in a call, as its log names them.
+#[derive(Debug, Clone, Default, serde::Serialize, PartialEq, Eq)]
+pub struct CallParticipant {
+    pub mri: String,
+    /// The log's display name (often empty: the app looks people up).
+    pub name: String,
+    /// Their given name, which Teams puts in a group call's name (filled
+    /// in by the app).
+    pub given: String,
+}
+
+/// One row of the Calls history (from the `48:calllogs` stream), with what
+/// Teams' call log model (CallLogDbRow / CallLogItem) works out of it.
+#[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct CallRecord {
+    /// The log message's id (what Remove from view and Report call name).
+    pub message_id: String,
     pub call_id: String,
     /// "incoming" or "outgoing".
     pub direction: String,
     /// "accepted", "missed", "declined", … as the service reports it.
     pub state: String,
+    /// "twoParty" or "multiParty".
+    pub call_type: String,
     pub start_time: String,
     pub connect_time: Option<String>,
     pub end_time: Option<String>,
-    /// The other person.
-    pub peer_name: String,
+    /// How long it was connected, in whole milliseconds (Teams'
+    /// durationInMs: end minus connect, none for a voicemail).
+    pub duration_ms: i64,
+    /// The chat the call was in (a group chat's or meeting's), if any.
+    pub thread_id: String,
+    /// Teams' isGroupCall: a multi-party call in a chat, or with more than
+    /// one other person.
+    pub is_group: bool,
+    /// The person Teams resolves the call to (its `person` and
+    /// resolvedDisplayName): whoever you called, or who called you. Your
+    /// own id when the log names you as the target of a call you placed.
     pub peer_mri: String,
+    pub peer_name: String,
+    /// Who placed the call.
+    pub originator_mri: String,
+    pub originator_name: String,
+    /// The others in the call, without you and bots.
+    pub participants: Vec<CallParticipant>,
+    /// Who transferred the call to you, when Teams says so ("Transferred
+    /// by …": a transferor, no transfer target, neither you nor the call's
+    /// person; none on a parked call).
+    pub transferor_mri: String,
+    pub transferor_name: String,
+    /// The call's chat topic (Teams' groupCall.title; filled in by the
+    /// app), which names a group call.
+    pub title: String,
+    /// Whether you can still read the call's chat (Teams' isUserMember).
+    pub member: bool,
+    /// An unread missed call (its activity not yet opened; filled in by the
+    /// app), and that activity's id.
+    pub unread: bool,
+    pub activity_id: String,
 }
 
-/// Recent calls, newest first.
+/// Recent calls, newest first, as Teams lists them: `limit` log messages
+/// at most, read 100 at a time as far back as the service keeps them
+/// (Teams lists the whole history).
 pub async fn call_history(client: &TeamsClient, limit: usize) -> Result<Vec<CallRecord>> {
-    let url = format!(
-        "{}/v1/users/ME/conversations/48:calllogs/messages?pageSize={}&view=msnp24Equivalent",
-        client.chat_service_url(),
-        limit.min(200)
+    let base = client.chat_service_url();
+    let mut url = format!(
+        "{base}/v1/users/ME/conversations/{CALL_LOGS}/messages?pageSize=100&view=msnp24Equivalent"
     );
-    let v: serde_json::Value = client
-        .chat_get(&url)
+    let mut messages: Vec<serde_json::Value> = Vec::new();
+    loop {
+        let v: serde_json::Value = client
+            .chat_get(&url)
+            .await?
+            .json()
+            .await
+            .context("Call history reply")?;
+        let page = v
+            .get("messages")
+            .and_then(|m| m.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let empty = page.is_empty();
+        messages.extend(page);
+        // The next (older) page, on the chat service only.
+        let next = v
+            .pointer("/_metadata/backwardLink")
+            .and_then(|l| l.as_str())
+            .filter(|l| l.starts_with(&base) && !l.contains(['#', ' ']));
+        match next {
+            Some(n) if !empty && messages.len() < limit => url = n.to_string(),
+            _ => break,
+        }
+    }
+    let me = client.self_mri().unwrap_or_default();
+    Ok(call_records(
+        &serde_json::json!({ "messages": messages }),
+        &me,
+    ))
+}
+
+/// Remove a call from your history (Teams' Remove from view): its log
+/// message gets `isDeleted`, which every client then leaves out.
+pub async fn remove_call(client: &TeamsClient, message_id: &str) -> Result<()> {
+    if message_id.is_empty() || !message_id.chars().all(|c| c.is_ascii_digit()) {
+        anyhow::bail!("Not a call log message id");
+    }
+    let base = format!(
+        "{}/v1/users/ME/conversations/{CALL_LOGS}/messages/{message_id}",
+        client.chat_service_url()
+    );
+    let m: serde_json::Value = client
+        .chat_get(&base)
         .await?
         .json()
         .await
-        .context("Call history reply")?;
-    let me = client.self_mri().unwrap_or_default();
-    Ok(v.get("messages")
+        .context("Call log message")?;
+    let log = m
+        .pointer("/properties/call-log")
+        .context("No call log in that message")?;
+    let mut log: serde_json::Value = match log {
+        serde_json::Value::String(s) => serde_json::from_str(s).context("Call log")?,
+        v => v.clone(),
+    };
+    let obj = log.as_object_mut().context("Call log isn't an object")?;
+    obj.insert("isDeleted".into(), serde_json::Value::Bool(true));
+    client
+        .chat_request(
+            reqwest::Method::PUT,
+            &format!("{base}/properties?name=call-log"),
+            &serde_json::json!({ "call-log": log.to_string() }),
+        )
+        .await?;
+    Ok(())
+}
+
+/// Report a call to Microsoft (Teams' Report a concern: middle tier
+/// `beta/reports`). `reported` is the other person, none for a group call.
+pub async fn report_call(
+    client: &TeamsClient,
+    message_id: &str,
+    reported: Option<&str>,
+    comment: &str,
+) -> Result<()> {
+    let (base, token) = super::tabs::middle_tier(client).await?;
+    let body = serde_json::json!({
+        "reportType": "Call",
+        "reportTimestamp": jiff::Timestamp::now().to_string(),
+        "reportedUsers": reported.into_iter().collect::<Vec<_>>(),
+        "messageId": message_id,
+        "category": "Security",
+        "comment": comment,
+    });
+    let r = client
+        .http()
+        .post(format!("{base}/beta/reports"))
+        .bearer_auth(&token)
+        .header("x-ms-client-caller", "Mutation:reportCall")
+        .json(&body)
+        .send()
+        .await
+        .context("Report call")?;
+    if !r.status().is_success() {
+        anyhow::bail!("Report call: HTTP {}", r.status().as_u16());
+    }
+    Ok(())
+}
+
+/// A call log's time in milliseconds since 1970 (as a browser's Date reads
+/// it: the fraction past milliseconds dropped).
+pub fn call_time_ms(iso: &str) -> Option<i64> {
+    iso.parse::<jiff::Timestamp>()
+        .ok()
+        .map(|t| t.as_millisecond())
+}
+
+/// The rows of a `48:calllogs` reply, as Teams' reduceCallHistoryMessages
+/// keeps them: only call logs (a personal attendant's log belongs to its
+/// call), none removed from view, no screen sharing sessions, no call park
+/// pickups, and no outgoing call that reached nobody (a Meet now you were
+/// alone in); one row per call and leg.
+pub fn call_records(reply: &serde_json::Value, me: &str) -> Vec<CallRecord> {
+    let logs: Vec<(String, serde_json::Value)> = reply
+        .get("messages")
         .and_then(|m| m.as_array())
         .into_iter()
         .flatten()
-        .filter_map(|m| parse_call_log(m.pointer("/properties/call-log")?.as_str()?, &me))
-        .collect())
+        .filter(|m| {
+            // Text (and HTML) messages are the calls; the rest are a
+            // call's transcript, recording or attendant log.
+            matches!(
+                m.get("messagetype").and_then(|t| t.as_str()),
+                Some("Text" | "RichText/Html" | "RichText")
+            )
+        })
+        .filter_map(|m| {
+            let log = m.pointer("/properties/call-log")?;
+            let log = match log {
+                serde_json::Value::String(s) => serde_json::from_str(s).ok()?,
+                v => v.clone(),
+            };
+            let id = m.get("id").and_then(|i| i.as_str()).unwrap_or_default();
+            Some((id.to_string(), log))
+        })
+        .collect();
+    let deleted: std::collections::HashSet<String> = logs
+        .iter()
+        .filter(|(_, l)| l.get("isDeleted").and_then(|d| d.as_bool()) == Some(true))
+        .filter_map(|(_, l)| l.get("callId").and_then(|c| c.as_str()).map(String::from))
+        .collect();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    logs.iter()
+        .filter_map(|(id, l)| parse_call_log(id, l, me))
+        .filter(|r| !deleted.contains(&r.record.call_id))
+        .filter(|r| seen.insert(format!("{}-{}", r.record.call_id, r.leg)))
+        .map(|r| r.record)
+        .collect()
 }
 
-fn parse_call_log(json: &str, me: &str) -> Option<CallRecord> {
-    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+/// A parsed log and its leg (Teams keys a row by call and leg).
+struct ParsedLog {
+    record: CallRecord,
+    leg: String,
+}
+
+fn parse_call_log(message_id: &str, v: &serde_json::Value, me: &str) -> Option<ParsedLog> {
     let s = |k: &str| v.get(k).and_then(|x| x.as_str()).map(str::to_string);
-    let direction = s("callDirection").unwrap_or_default();
-    // The other side is the originator of incoming calls and the target of
-    // outgoing ones; fall back to whichever is not us.
-    let (peer_key, peer_part) = if direction == "incoming" {
-        ("originator", "originatorParticipant")
-    } else {
-        ("target", "targetParticipant")
-    };
-    let mut peer_mri = s(peer_key).unwrap_or_default();
-    let mut peer_name = v
-        .pointer(&format!("/{peer_part}/displayName"))
-        .and_then(|x| x.as_str())
-        .unwrap_or_default()
-        .to_string();
-    if peer_mri == me {
-        let (k, p) = if peer_key == "originator" {
-            ("target", "targetParticipant")
-        } else {
-            ("originator", "originatorParticipant")
-        };
-        peer_mri = s(k).unwrap_or_default();
-        peer_name = v
-            .pointer(&format!("/{p}/displayName"))
-            .and_then(|x| x.as_str())
+    let direction = s("callDirection")?;
+    let start_time = s("startTime")?;
+    let participant = |k: &str, id_key: &str| -> Option<(String, String, String)> {
+        let p = v.get(k).filter(|p| p.is_object());
+        let id = p
+            .and_then(|p| p.get("id"))
+            .and_then(|i| i.as_str())
+            .map(str::to_string)
+            .or_else(|| s(id_key))?;
+        let name = p
+            .and_then(|p| p.get("displayName"))
+            .and_then(|n| n.as_str())
             .unwrap_or_default()
             .to_string();
+        let kind = p
+            .and_then(|p| p.get("type"))
+            .and_then(|n| n.as_str())
+            .unwrap_or_default()
+            .to_string();
+        Some((id, name, kind))
+    };
+    let originator = participant("originatorParticipant", "originator");
+    let target = participant("targetParticipant", "target");
+    let outgoing = direction.eq_ignore_ascii_case("outgoing");
+    let state = s("callState").unwrap_or_default();
+    let missed = !outgoing && state.eq_ignore_ascii_case("missed");
+    let session = s("sessionType").unwrap_or_default();
+    if session.eq_ignore_ascii_case("screenSharing") {
+        return None;
     }
-    Some(CallRecord {
-        call_id: s("callId").unwrap_or_default(),
-        direction,
-        state: s("callState").unwrap_or_default(),
-        start_time: s("startTime")?,
-        connect_time: s("connectTime"),
-        end_time: s("endTime"),
-        peer_name,
-        peer_mri,
+    if target
+        .as_ref()
+        .is_some_and(|t| t.2.eq_ignore_ascii_case("callParkService"))
+    {
+        return None;
+    }
+    // The others: participantList without you and bots, a personal
+    // attendant first (Teams' participantList getter).
+    let list = v.get("participantList").and_then(|p| p.as_array());
+    let is_attendant = |p: &serde_json::Value| {
+        p.get("type")
+            .and_then(|t| t.as_str())
+            .is_some_and(|t| t.eq_ignore_ascii_case("personalattendant"))
+    };
+    let mut people: Vec<(bool, CallParticipant)> = list
+        .into_iter()
+        .flatten()
+        .filter_map(|p| {
+            let mri = p.get("id")?.as_str()?.to_string();
+            let name = p
+                .get("displayName")
+                .and_then(|n| n.as_str())
+                .unwrap_or_default()
+                .to_string();
+            Some((
+                is_attendant(p),
+                CallParticipant {
+                    mri,
+                    name,
+                    given: String::new(),
+                },
+            ))
+        })
+        .filter(|(_, p)| p.mri != me && !p.mri.starts_with("28:"))
+        .collect();
+    // (a stable sort: the attendant first, the rest in the log's order)
+    people.sort_by_key(|(attendant, _)| !attendant);
+    let participants: Vec<CallParticipant> = people.into_iter().map(|(_, p)| p).collect();
+    // isOutgoingCallWithNoTarget: a call you placed that reached nobody.
+    if outgoing && target.is_none() && participants.is_empty() {
+        return None;
+    }
+    let thread_id = s("threadId").unwrap_or_default();
+    let call_type = s("callType").unwrap_or_default();
+    let multi = call_type.eq_ignore_ascii_case("multiParty");
+    let is_group = multi && (participants.len() > 1 || !thread_id.is_empty());
+    // The person (Teams' yT): with both ends, the target when you placed
+    // it, else whoever placed it; a call to one other person in a chat,
+    // them; a missed call, its caller.
+    let person = match (&originator, &target) {
+        (Some(o), Some(t)) => Some(if o.0.contains(me) && !me.is_empty() {
+            t.clone()
+        } else {
+            o.clone()
+        }),
+        (_, None) if outgoing && participants.len() == 1 => Some((
+            participants[0].mri.clone(),
+            participants[0].name.clone(),
+            String::new(),
+        )),
+        (Some(o), _) if missed => Some(o.clone()),
+        _ => None,
+    };
+    let (peer_mri, peer_name) = person.map(|p| (p.0, p.1)).unwrap_or_default();
+    let connect_time = s("connectTime");
+    let end_time = s("endTime");
+    let voicemail = target
+        .as_ref()
+        .is_some_and(|t| t.2.eq_ignore_ascii_case("voicemail"));
+    let duration_ms = match v.get("durationInSeconds").and_then(|d| {
+        d.as_f64()
+            .or_else(|| d.as_str().and_then(|s| s.parse::<f64>().ok()))
+    }) {
+        Some(secs) => (secs * 1000.0) as i64,
+        None => match (&connect_time, &end_time) {
+            (Some(c), Some(e)) if !voicemail => match (call_time_ms(c), call_time_ms(e)) {
+                (Some(c), Some(e)) => e - c,
+                _ => 0,
+            },
+            _ => 0,
+        },
+    };
+    // Teams' isParkedCall, transferorParticipant, transferTargetParticipant
+    // and showTransferorAsCallHistoryDescription.
+    let kind_of = |p: Option<&serde_json::Value>| {
+        p.and_then(|p| p.get("type"))
+            .and_then(|t| t.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
+    let park = v
+        .pointer("/transferInfo/parkType")
+        .and_then(|t| t.as_str())
+        .unwrap_or_default();
+    let parked = (!park.is_empty() && park != "none" && park != "Unknown")
+        || [
+            target.as_ref().map(|t| t.2.clone()).unwrap_or_default(),
+            originator.as_ref().map(|o| o.2.clone()).unwrap_or_default(),
+            kind_of(v.pointer("/callAttributes/transferor")),
+        ]
+        .iter()
+        .any(|k| k == "callParkService");
+    let transferor = v
+        .pointer("/callAttributes/transferor")
+        .filter(|t| t.is_object())
+        .or_else(|| {
+            v.pointer("/transferInfo/transferor")
+                .filter(|t| t.is_object())
+        })
+        .filter(|_| !parked);
+    let transfer_target = !parked
+        && v.pointer("/transferInfo/transferTarget")
+            .is_some_and(|t| t.is_object());
+    let (transferor_mri, transferor_name) = match transferor {
+        Some(t) if !transfer_target => {
+            let id = t.get("id").and_then(|i| i.as_str()).unwrap_or_default();
+            if id.is_empty() || id == me || id == peer_mri || id.starts_with("28:") {
+                (String::new(), String::new())
+            } else {
+                let name = t.get("displayName").and_then(|n| n.as_str());
+                (id.to_string(), name.unwrap_or_default().to_string())
+            }
+        }
+        _ => (String::new(), String::new()),
+    };
+    let (originator_mri, originator_name) = originator.map(|o| (o.0, o.1)).unwrap_or_default();
+    let call_id = s("callId").unwrap_or_default();
+    Some(ParsedLog {
+        leg: s("userParticipantId").unwrap_or_default(),
+        record: CallRecord {
+            message_id: message_id.to_string(),
+            call_id,
+            direction: direction.to_ascii_lowercase(),
+            state,
+            call_type,
+            start_time,
+            connect_time,
+            end_time,
+            duration_ms,
+            thread_id,
+            is_group,
+            peer_mri,
+            peer_name,
+            originator_mri,
+            originator_name,
+            participants,
+            transferor_mri,
+            transferor_name,
+            ..CallRecord::default()
+        },
     })
 }
 
 #[cfg(test)]
 mod call_log_tests {
-    use super::parse_call_log;
+    use super::{call_records, call_time_ms};
+
+    const ME: &str = "8:orgid:4287e791-1b98-4963-8b94-281c50472683";
+    const T3: &str = "8:orgid:01c4860d-5776-4b16-8736-6a739fcc8b34";
+    const T2: &str = "8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5";
+
+    fn reply(logs: &[(&str, &str, serde_json::Value)]) -> serde_json::Value {
+        serde_json::json!({ "messages": logs.iter().map(|(id, kind, log)| serde_json::json!({
+            "id": id, "messagetype": kind, "properties": { "call-log": log.to_string() }
+        })).collect::<Vec<_>>() })
+    }
+
+    fn p(id: &str, name: Option<&str>) -> serde_json::Value {
+        serde_json::json!({"id": id, "type": "default", "displayName": name})
+    }
 
     #[test]
-    fn parses_incoming_and_outgoing_logs() {
-        let inc = r#"{"startTime":"2026-11-05T05:59:53Z","connectTime":"2026-11-05T05:59:59Z","endTime":"2026-11-05T06:00:08Z",
-            "callDirection":"incoming","callState":"accepted","originator":"8:orgid:them","target":"8:orgid:me",
-            "originatorParticipant":{"displayName":"Randy Northrup"},"targetParticipant":{"displayName":null},"callId":"c1"}"#;
-        let r = parse_call_log(inc, "8:orgid:me").unwrap();
-        assert_eq!(r.peer_name, "Randy Northrup");
-        assert_eq!(r.peer_mri, "8:orgid:them");
-        assert_eq!(r.state, "accepted");
-        assert_eq!(r.connect_time.as_deref(), Some("2026-11-05T05:59:59Z"));
-        let out = inc
-            .replace("\"incoming\"", "\"outgoing\"")
-            .replace("\"missed\"", "x");
-        let r = parse_call_log(&out, "8:orgid:me").unwrap();
-        // Target is us here, so the peer falls back to the originator.
-        assert_eq!(r.peer_mri, "8:orgid:them");
-        assert!(parse_call_log("{}", "x").is_none());
+    fn rows_as_teams_lists_them() {
+        // ost-test1's history of 2026-11-27, as the service holds it
+        // (trimmed): a Meet now alone (no target, nobody else), a call in
+        // "OST TEST 348 ost" (target: you), a missed one there, a group
+        // call in a chat without a topic, a 1:1 call and a personal
+        // attendant's log.
+        let alone = serde_json::json!({"startTime": "2026-11-27T14:30:24.2567883Z", "connectTime": "2026-11-27T14:30:24.7715567Z", "endTime": "2026-11-27T14:31:23.092523Z",
+            "callDirection": "outgoing", "callType": "multiParty", "callState": "accepted", "userParticipantId": "d6e3", "originator": ME, "target": null,
+            "originatorParticipant": p(ME, Some("OST Test 1")), "targetParticipant": null, "callId": "ebe3",
+            "participants": [ME], "participantList": [p(ME, None)], "threadId": "19:6b5a@thread.v2", "sessionType": "default"});
+        let meeting = serde_json::json!({"startTime": "2026-11-27T12:46:29.6005548Z", "connectTime": "2026-11-27T12:46:34.3217729Z", "endTime": "2026-11-27T12:49:42.5531783Z",
+            "callDirection": "outgoing", "callType": "multiParty", "callState": "accepted", "userParticipantId": "663a", "originator": ME, "target": ME,
+            "originatorParticipant": p(ME, Some("OST Test 1")), "targetParticipant": p(ME, None), "callId": "f935",
+            "participantList": [p(T3, None), p(ME, None), p(T2, None)], "threadId": "19:68dc@thread.v2", "sessionType": "default"});
+        let missed = serde_json::json!({"startTime": "2026-11-27T12:31:39.3252979Z", "connectTime": null, "endTime": "2026-11-27T12:32:35.3393575Z",
+            "callDirection": "incoming", "callType": "multiParty", "callState": "missed", "userParticipantId": "b41f", "originator": T3, "target": ME,
+            "originatorParticipant": p(T3, Some("OST Test 3")), "targetParticipant": p(ME, None), "callId": "0287",
+            "participantList": [p(T3, None)], "threadId": "19:7e81@thread.v2", "sessionType": "default"});
+        let group = serde_json::json!({"startTime": "2026-11-27T08:10:06.474375Z", "connectTime": "2026-11-27T08:10:09.294559Z", "endTime": "2026-11-27T08:11:18.8290945Z",
+            "callDirection": "outgoing", "callType": "multiParty", "callState": "accepted", "userParticipantId": "e4a5", "originator": ME, "target": T3,
+            "originatorParticipant": p(ME, Some("OST Test 1")), "targetParticipant": p(T3, None), "callId": "5490",
+            "participantList": [p(ME, None), p(T3, None), p(T2, None), p("28:bot", None)], "threadId": "19:b160@thread.v2", "sessionType": "default"});
+        let one = serde_json::json!({"startTime": "2026-11-27T07:09:11Z", "connectTime": "2026-11-27T07:09:15.100Z", "endTime": "2026-11-27T07:11:48.900Z",
+            "callDirection": "incoming", "callType": "twoParty", "callState": "accepted", "originator": T3, "target": ME,
+            "originatorParticipant": p(T3, Some("OST Test 3")), "targetParticipant": p(ME, None), "callId": "c1"});
+        let attendant = serde_json::json!({"attendantName": "PersonalAttendant", "startTime": "2026-11-22T16:06:10Z"});
+        let r = reply(&[
+            ("10", "Text", alone),
+            ("9", "Text", meeting),
+            ("8", "Text", missed),
+            ("7", "Text", group),
+            ("6", "Text", one),
+            ("5", "RichText/CallLogPersonalAttendant", attendant),
+        ]);
+        let rows = call_records(&r, ME);
+        // The Meet now alone and the attendant's log aren't rows.
+        assert_eq!(
+            rows.iter()
+                .map(|r| r.message_id.as_str())
+                .collect::<Vec<_>>(),
+            ["9", "8", "7", "6"]
+        );
+        // A call in a chat is a group call, named by its chat; Teams
+        // resolves its person to the log's target: you.
+        assert!(rows[0].is_group);
+        assert_eq!(rows[0].thread_id, "19:68dc@thread.v2");
+        assert_eq!(rows[0].peer_mri, ME);
+        assert_eq!(
+            rows[0]
+                .participants
+                .iter()
+                .map(|p| p.mri.as_str())
+                .collect::<Vec<_>>(),
+            [T3, T2]
+        );
+        // 3m 8.232s connected.
+        assert_eq!(rows[0].duration_ms, 188_232);
+        // A missed call in a chat (one other person, but a chat): a group
+        // call; its person is the caller.
+        assert!(rows[1].is_group);
+        assert_eq!(
+            (rows[1].peer_mri.as_str(), rows[1].peer_name.as_str()),
+            (T3, "OST Test 3")
+        );
+        assert_eq!(rows[1].duration_ms, 0);
+        // Bots aren't among the others; the person is whoever you called.
+        assert_eq!(rows[2].participants.len(), 2);
+        assert_eq!(rows[2].peer_mri, T3);
+        // 1m 9.535s: Teams shows 1m 9s.
+        assert_eq!(rows[2].duration_ms, 69_535);
+        // A 1:1 call: its caller.
+        assert!(!rows[3].is_group);
+        assert_eq!(rows[3].peer_mri, T3);
+        assert_eq!(rows[3].direction, "incoming");
+    }
+
+    #[test]
+    fn removed_and_repeated_calls_are_dropped() {
+        let log = |id: &str, deleted: bool| {
+            serde_json::json!({"startTime": "2026-11-05T05:59:53Z", "callDirection": "incoming", "callType": "twoParty", "callState": "missed",
+                "originator": T2, "target": ME, "originatorParticipant": p(T2, Some("OST Test 2")), "callId": id, "isDeleted": deleted})
+        };
+        let r = reply(&[
+            ("3", "Text", log("a", true)),
+            ("2", "Text", log("a", false)),
+            ("1", "Text", log("b", false)),
+            ("0", "Text", log("b", false)),
+        ]);
+        let rows = call_records(&r, ME);
+        assert_eq!(
+            rows.iter()
+                .map(|r| r.message_id.as_str())
+                .collect::<Vec<_>>(),
+            ["1"]
+        );
+        // Screen sharing and call park pickups aren't calls in the list.
+        let share = serde_json::json!({"startTime": "2026-11-05T05:59:53Z", "callDirection": "outgoing", "callType": "twoParty", "callState": "accepted",
+            "originator": ME, "target": T2, "callId": "s", "sessionType": "ScreenSharing"});
+        let park = serde_json::json!({"startTime": "2026-11-05T05:59:53Z", "callDirection": "outgoing", "callType": "twoParty", "callState": "accepted",
+            "originator": ME, "target": "28:park", "targetParticipant": {"id": "28:park", "type": "callParkService"}, "callId": "p"});
+        assert!(call_records(&reply(&[("1", "Text", share), ("2", "Text", park)]), ME).is_empty());
+    }
+
+    #[test]
+    fn transferred_calls_name_who_transferred_them() {
+        // OST Test 2 transferred OST Test 3's call to you (2026-11-17):
+        // "Transferred by OST Test 2".
+        let to_you = serde_json::json!({"startTime": "2026-11-17T21:05:00Z", "callDirection": "incoming", "callType": "twoParty", "callState": "accepted",
+            "originator": T3, "target": ME, "originatorParticipant": p(T3, Some("OST Test 3")), "callId": "t1",
+            "callAttributes": {"transferor": p(T2, None)}});
+        // You transferred a call on (a transfer target): no transferor line.
+        let by_you = serde_json::json!({"startTime": "2026-11-17T22:00:23Z", "callDirection": "outgoing", "callType": "multiParty", "callState": "accepted",
+            "originator": ME, "target": T2, "callId": "t2",
+            "transferInfo": {"transferor": p(ME, None), "transferTarget": p(T3, None), "parkType": "none"}});
+        // A parked call: no transferor.
+        let parked = serde_json::json!({"startTime": "2026-11-17T22:08:16Z", "callDirection": "outgoing", "callType": "twoParty", "callState": "accepted",
+            "originator": ME, "target": T2, "callId": "t3", "transferInfo": {"transferor": p(T3, None), "parkType": "teamPark"}});
+        let rows = call_records(
+            &reply(&[
+                ("3", "Text", to_you),
+                ("2", "Text", by_you),
+                ("1", "Text", parked),
+            ]),
+            ME,
+        );
+        assert_eq!(rows[0].transferor_mri, T2);
+        assert!(rows[1].transferor_mri.is_empty());
+        assert!(rows[2].transferor_mri.is_empty());
+    }
+
+    #[test]
+    fn times_read_as_a_browser_does() {
+        assert_eq!(
+            call_time_ms("2026-11-27T12:31:39.3252979Z"),
+            call_time_ms("2026-11-27T12:31:39.325Z")
+        );
+        assert!(call_time_ms("soon").is_none());
     }
 }
 
