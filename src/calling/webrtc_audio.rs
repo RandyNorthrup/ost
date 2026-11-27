@@ -1451,6 +1451,9 @@ impl LocalAudio {
     /// is set and it offered H.264 we decode (bundled with the audio, so
     /// one socket and one DTLS handshake carry both).
     pub fn answer_sdp_with(&self, offer: &WebRtcOffer, video: bool) -> String {
+        // A call answered this way negotiates H.264 only.
+        #[cfg(feature = "video")]
+        super::webrtc_video::set_native_camera(false);
         let port = self.socket.local_addr().map(|a| a.port()).unwrap_or(9);
         let addr = self.public_address();
         let session_id = u64::from(self.ssrc) << 16 | 1;
@@ -1662,6 +1665,9 @@ impl Drop for WebRtcAudioSession {
         if last {
             super::send_bwe::reset();
             super::twcc::set_extension_id(super::twcc::EXTENSION_ID);
+            // X-H264UC was this call's; the next one starts in H.264.
+            #[cfg(feature = "video")]
+            super::webrtc_video::set_native_camera(false);
         }
         for t in &self.tasks {
             t.abort();

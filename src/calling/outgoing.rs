@@ -4913,19 +4913,21 @@ async fn start_tagged(
 
     super::incoming::debug_dump("sdp-call-offer", &offer);
     super::incoming::debug_dump("sdp-call-answer", &acceptance.sdp);
+    // TASK-0342 research: the processor's choice for our camera
+    // (X-H264UC is 122) when a meeting offer puts it first. Any other call
+    // sends H.264.
     #[cfg(feature = "video")]
-    if meeting_media {
-        // TASK-0342 research: the processor's choice for our camera
-        // (X-H264UC is 122) when we offer it first.
-        let pt =
-            super::webrtc_audio::answered_pt(&acceptance.sdp, super::meeting_media::CAMERA_MID);
-        let native = super::webrtc_audio::native_send();
+    {
+        let native = meeting_media && super::webrtc_audio::native_send();
+        let pt = native
+            .then(|| {
+                super::webrtc_audio::answered_pt(&acceptance.sdp, super::meeting_media::CAMERA_MID)
+            })
+            .flatten();
         if native {
             tracing::info!(camera_pt = ?pt, "native send: the processor's answer");
         }
-        super::webrtc_video::set_native_camera(
-            native && pt == Some(super::webrtc_audio::PT_X_H264UC),
-        );
+        super::webrtc_video::set_native_camera(pt == Some(super::webrtc_audio::PT_X_H264UC));
     }
     let parsed = if acceptance.streaming {
         None
