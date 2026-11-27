@@ -245,6 +245,7 @@ Rectangle {
         case "chat": root.openChat(item.thread, suggestions.chatName(item)); break
         case "team": case "channel": root.openChat(item.thread, item.title); break
         case "file": backend.openFile(item.url, item.title, ""); break
+        case "community": backend.openExternal("https://web.yammer.com/main/groups/" + encodeURIComponent(item.id)); break
         case "event": root.openMeeting(item.join || "", item.uid || "", item.start || ""); break
         case "message": case "image": root.openMessage(item.thread, item.id, item.parent || "", !!item.channel, terms); break
         case "text": case "pcs": root.submit(item.query && item.kind === "text" ? item.query : item.title); return
