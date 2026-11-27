@@ -157,11 +157,15 @@ fn encode(s: &str) -> String {
     url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
 }
 
-/// The headers Teams' discover calls carry besides the token.
+/// The headers Teams' discover calls carry besides the token (its `r1`;
+/// preferences answer 400 without the client type, application, version
+/// and ring).
 fn headers(rb: reqwest::RequestBuilder, scenario: &str) -> reqwest::RequestBuilder {
     rb.header("Accept", "application/json")
         .header("x-ms-client-type", "Web")
         .header("x-ms-application", "TeamsActivity_Web")
+        .header("x-ms-client-version", "1416/1.0.0.2024050301")
+        .header("x-ms-application-ring", super::ecs::ring())
         .header("x-ms-application-feed-source", "unknown")
         .header("x-ms-client-scenario", scenario)
         .header("x-ms-request-id", uuid::Uuid::new_v4().to_string())

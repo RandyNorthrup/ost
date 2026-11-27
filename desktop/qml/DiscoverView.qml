@@ -93,9 +93,23 @@ Rectangle {
                 root.traceId = page.trace_id || root.traceId
                 root.logicalId = page.logical_id || root.logicalId
                 root.loaded = true
+                // (A post already open elsewhere, a thread window or the post
+                // view, stays that view's: Discover neither opens nor closes it.)
                 const o = root.opened.slice()
-                for (const i of fresh) { backend.openThreadWindow(i.channel_id, i.post_id); o.push({ channel: i.channel_id, post: i.post_id }) }
+                const live = root.threads
+                for (const i of fresh) {
+                    if ((i.channel_id + ";messageid=" + i.post_id) in live) continue
+                    backend.openThreadWindow(i.channel_id, i.post_id); o.push({ channel: i.channel_id, post: i.post_id })
+                }
                 root.opened = o
+            } else if (r.op === "discover-exclude" || r.op === "discover-include") {
+                // Changes answer in order: a failed one is put back.
+                const p = root.pendingPrefs.length ? root.pendingPrefs[0] : null
+                root.pendingPrefs = root.pendingPrefs.slice(1)
+                if (!r.ok && p) {
+                    p.undo()
+                    backend.toast(qsTr("Something went wrong on our end. Please try again."), "error")
+                }
             } else if (r.op === "discover-excluded") {
                 settings.loading = false
                 settings.failed = !r.ok
@@ -107,17 +121,28 @@ Rectangle {
         const f = Object.assign({}, feedback); f[item.feedback_id] = useful ? "yes" : "no"; feedback = f
         backend.channelAction("discover-feedback", "", "", JSON.stringify({ item: item, trace_id: traceId, logical_id: logicalId, useful: useful, position: items.indexOf(item) }))
     }
+    /// Preference changes sent and not yet answered, oldest first, each
+    /// with how to put the screen back if it fails.
+    property var pendingPrefs: []
+    function sendPref(op, args, undo) {
+        pendingPrefs = pendingPrefs.concat([{ undo: undo }])
+        backend.channelAction(op, "", "", JSON.stringify(args))
+    }
+    function setHidden(item, h) {
+        const n = Object.assign({}, hidden)
+        if (h) n[item.feedback_id] = h; else delete n[item.feedback_id]
+        hidden = n
+    }
     function hide(item, kind) {
-        const h = Object.assign({}, hidden)
-        h[item.feedback_id] = { kind: kind, name: kind === "AUTHOR" ? item.author_name : kind === "CHANNEL" ? channelName(item) : "" }
-        hidden = h
-        backend.channelAction("discover-exclude", "", "", JSON.stringify(excludeArgs(item, kind)))
+        const h = { kind: kind, name: kind === "AUTHOR" ? item.author_name : kind === "CHANNEL" ? channelName(item) : "" }
+        setHidden(item, h)
+        sendPref("discover-exclude", excludeArgs(item, kind), () => setHidden(item, null))
     }
     function undoHide(item) {
         const h = hidden[item.feedback_id]
         if (!h) return
-        const n = Object.assign({}, hidden); delete n[item.feedback_id]; hidden = n
-        backend.channelAction("discover-include", "", "", JSON.stringify(excludeArgs(item, h.kind)))
+        setHidden(item, null)
+        sendPref("discover-include", excludeArgs(item, h.kind), () => setHidden(item, h))
     }
     function excludeArgs(item, kind) {
         return kind === "AUTHOR" ? { kind: kind, id: "8:orgid:" + item.author_id, name: item.author_name }
@@ -138,11 +163,13 @@ Rectangle {
         }
     }
     function itemsForTest() { return items }
+    function scrollToTopForTest() { flick.contentY = 0 }
     function scrollToEndForTest() { flick.contentY = Math.max(0, flick.contentHeight - flick.height) }
     function openFirstMenuForTest() {
         const c = cardsRepeater.itemAt(0)
         if (c && c.post) c.openMenuForTest()
     }
+    function firstMenuForTest() { const c = cardsRepeater.itemAt(0); return c ? c.menuItemsForTest() : [] }
     function closeMenusForTest() { const c = cardsRepeater.itemAt(0); if (c) c.closeMenuForTest() }
     function settingsForTest() { return settings }
 
@@ -245,14 +272,29 @@ Rectangle {
         readonly property string key: item.channel_id + ";messageid=" + item.post_id
         readonly property var thread: root.threads[key] || []
         readonly property var post: thread.find(m => m.id === item.post_id) || null
-        readonly property var replies: thread.filter(m => m.id !== item.post_id && !m.deleted && m.kind !== "system")
+        // (A send retried under one client message id shows once, as the
+        // later copy: Teams keys messages by clientmessageid.)
+        readonly property var replies: {
+            const out = [], at = {}
+            for (const m of thread) {
+                if (m.id === item.post_id || m.deleted || m.kind === "system") continue
+                const k = m.client_message_id || m.id
+                if (k in at) out[at[k]] = m
+                else { at[k] = out.length; out.push(m) }
+            }
+            return out
+        }
         readonly property var shownReplies: replies.length <= 3 ? replies : replies.slice(replies.length - 3)
         readonly property var hiddenAs: root.hidden[item.feedback_id] || null
         readonly property string fb: root.feedback[item.feedback_id] || ""
         property bool replying: false
+        /// Reply with quote's message ({message_id, sender_mri, sender_name, preview}).
+        property var quote: null
+        onReplyingChanged: if (!replying) quote = null
         height: hiddenAs ? hiddenCard.height : surface.height
         function openMenuForTest() { cardHost.openMessageMenu(post, card, false, 0, 50, "discover") }
         function closeMenuForTest() { cardHost.messageMenu.close() }
+        function menuItemsForTest() { return cardHost.messageMenu.items.map(i => i.separator ? "|" : i.label) }
         MessageHost {
             id: cardHost
             messages: card.thread
@@ -264,7 +306,7 @@ Rectangle {
             onDiscoverHide: kind => root.hide(card.item, kind)
             onReactRequested: (id, key, on) => backend.toggleReaction(id, key, on)
             onDeleteRequested: id => backend.deleteMessage(id)
-            onQuoteRequested: m => { card.replying = true; replyInput.forceActiveFocus() }
+            onQuoteRequested: m => { card.quote = { message_id: m.id, sender_mri: m.sender_mri || "", sender_name: m.sender || "", preview: m.quote_text || m.text || "" }; card.replying = true; replyInput.forceActiveFocus() }
         }
         // Hidden: Teams' blocked item (Teams web 2026-11-27): 57 tall,
         // padding 8 12 8 16; "This post has been hidden" (14/20 bold) over
@@ -522,7 +564,7 @@ Rectangle {
                 // Reply in thread, and the reply box.
                 Item {
                     width: parent.width
-                    height: card.replying ? Math.max(44, replyInput.contentHeight + 22) + 12 : 48
+                    height: card.replying ? Math.max(44, replyInput.contentHeight + 22) + 12 + (card.quote ? 32 : 0) : 48
                     Rectangle { width: parent.width; height: 1; color: theme.dividerSoft }
                     Avatar {
                         x: 18; y: card.replying ? (parent.height - height) / 2 : 17.5
@@ -546,9 +588,34 @@ Rectangle {
                         Accessible.name: qsTr("Reply in thread")
                     }
                     HoverHandler { id: replyHover }
+                    // Reply with quote: the quoted message over the box, with
+                    // its dismiss.
+                    Rectangle {
+                        id: quoteStrip
+                        visible: card.replying && !!card.quote
+                        x: 48; y: 6; width: card.width - 48 - 18; height: 28; radius: 4
+                        color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
+                        Rectangle { width: 3; height: parent.height; radius: 1.5; color: theme.textTertiary }
+                        Text {
+                            x: 12; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 12 - 32
+                            elide: Text.ElideRight
+                            text: card.quote ? (card.quote.sender_name ? card.quote.sender_name + ": " : "") + String(card.quote.preview || "").replace(/\s+/g, " ") : ""
+                            font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                        }
+                        Rectangle {
+                            id: quoteClose
+                            anchors.right: parent.right; anchors.rightMargin: 4; anchors.verticalCenter: parent.verticalCenter
+                            width: 24; height: 24; radius: 4
+                            color: qch.hovered ? theme.hover : "transparent"
+                            FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.onFill(quoteClose, theme.textStrong) }
+                            HoverHandler { id: qch; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: card.quote = null }
+                            Accessible.role: Accessible.Button; Accessible.name: qsTr("Remove quote")
+                        }
+                    }
                     Rectangle {
                         visible: card.replying
-                        x: 48; anchors.verticalCenter: parent.verticalCenter
+                        x: 48; anchors.verticalCenter: parent.verticalCenter; anchors.verticalCenterOffset: card.quote ? 16 : 0
                         width: card.width - 48 - 18; height: Math.max(44, replyInput.contentHeight + 22)
                         radius: theme.radius
                         color: theme.input
@@ -570,7 +637,7 @@ Rectangle {
                                 const t = getText(0, length).trim()
                                 if (!t) return
                                 const esc = t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")
-                                backend.sendThreadReply(card.item.channel_id, card.item.post_id, "<p>" + esc + "</p>", "[]", "", false)
+                                backend.sendThreadReply(card.item.channel_id, card.item.post_id, "<p>" + esc + "</p>", "[]", card.quote ? JSON.stringify(card.quote) : "", false)
                                 text = ""
                                 card.replying = false
                             }
@@ -662,55 +729,70 @@ Rectangle {
                 text: qsTr("You haven't specified anything. Go to post options to specify if you are not interested in a post.")
                 font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
             }
-            Repeater {
-                model: [{ title: qsTr("Channels"), rows: settings.channels }, { title: qsTr("People"), rows: settings.people }]
+            // The lists scroll inside the window's height.
+            Flickable {
+                width: parent.width
+                height: Math.min(groups.height, Math.max(120, (Overlay.overlay ? Overlay.overlay.height : 600) - 64 - 32 - 23 - 48))
+                contentHeight: groups.height
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
                 Column {
-                    id: group
-                    required property var modelData
-                    visible: modelData.rows.length > 0
+                    id: groups
                     width: parent.width
-                    Text {
-                        text: group.modelData.title
-                        topPadding: 8; bottomPadding: 8
-                        font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
-                    }
                     Repeater {
-                        model: group.modelData.rows
-                        Item {
-                            id: pref
+                        model: [{ title: qsTr("Channels"), rows: settings.channels }, { title: qsTr("People"), rows: settings.people }]
+                        Column {
+                            id: group
                             required property var modelData
-                            readonly property string label: modelData.kind === "AUTHOR" ? modelData.name : settings.channelLabel(modelData)
-                            readonly property bool gone: !!settings.removed[modelData.id]
-                            width: group.width; height: 40
+                            visible: modelData.rows.length > 0
+                            width: parent.width
                             Text {
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: parent.width - prefButton.width - 16; elide: Text.ElideRight
-                                text: pref.label
-                                font.family: theme.font; font.pixelSize: 14; color: theme.text
+                                text: group.modelData.title
+                                topPadding: 8; bottomPadding: 8
+                                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
                             }
-                            Rectangle {
-                                id: prefButton
-                                anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                                width: prefText.implicitWidth + 24; height: 32; radius: 4
-                                color: pref.gone ? "transparent" : prefHover.hovered ? theme.rowHover : theme.surface
-                                border.color: pref.gone ? "transparent" : theme.stroke; border.width: 1
-                                Text {
-                                    id: prefText
-                                    anchors.centerIn: parent
-                                    text: pref.gone ? qsTr("Removed") : qsTr("Remove")
-                                    font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                                    color: theme.onFill(prefButton, pref.gone ? theme.textSecondary : theme.text)
-                                }
-                                HoverHandler { id: prefHover; cursorShape: pref.gone ? Qt.ArrowCursor : Qt.PointingHandCursor }
-                                TapHandler {
-                                    enabled: !pref.gone
-                                    onTapped: {
-                                        const r = Object.assign({}, settings.removed); r[pref.modelData.id] = true; settings.removed = r
-                                        backend.channelAction("discover-include", "", "", JSON.stringify({ kind: pref.modelData.kind, id: pref.modelData.id, name: pref.modelData.name || "" }))
+                            Repeater {
+                                model: group.modelData.rows
+                                Item {
+                                    id: pref
+                                    required property var modelData
+                                    readonly property string label: modelData.kind === "AUTHOR" ? modelData.name : settings.channelLabel(modelData)
+                                    readonly property bool gone: !!settings.removed[modelData.id]
+                                    width: group.width; height: 40
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: parent.width - prefButton.width - 16; elide: Text.ElideRight
+                                        text: pref.label
+                                        font.family: theme.font; font.pixelSize: 14; color: theme.text
+                                    }
+                                    Rectangle {
+                                        id: prefButton
+                                        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                                        width: prefText.implicitWidth + 24; height: 32; radius: 4
+                                        color: pref.gone ? "transparent" : prefHover.hovered ? theme.rowHover : theme.surface
+                                        border.color: pref.gone ? "transparent" : theme.stroke; border.width: 1
+                                        Text {
+                                            id: prefText
+                                            anchors.centerIn: parent
+                                            text: pref.gone ? qsTr("Removed") : qsTr("Remove")
+                                            font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                                            color: theme.onFill(prefButton, pref.gone ? theme.textSecondary : theme.text)
+                                        }
+                                        HoverHandler { id: prefHover; cursorShape: pref.gone ? Qt.ArrowCursor : Qt.PointingHandCursor }
+                                        TapHandler {
+                                            enabled: !pref.gone
+                                            onTapped: {
+                                                const id = pref.modelData.id
+                                                const r = Object.assign({}, settings.removed); r[id] = true; settings.removed = r
+                                                root.sendPref("discover-include", { kind: pref.modelData.kind, id: id, name: pref.modelData.name || "" },
+                                                              () => { const b = Object.assign({}, settings.removed); delete b[id]; settings.removed = b })
+                                            }
+                                        }
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: pref.gone ? qsTr("%1 Removed").arg(pref.label) : qsTr("Remove %1").arg(pref.label)
                                     }
                                 }
-                                Accessible.role: Accessible.Button
-                                Accessible.name: pref.gone ? qsTr("%1 Removed").arg(pref.label) : qsTr("Remove %1").arg(pref.label)
                             }
                         }
                     }

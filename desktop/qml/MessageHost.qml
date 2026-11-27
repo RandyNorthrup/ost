@@ -263,7 +263,7 @@ Item {
             else if (it.key === "delete-scheduled") backend.cancelScheduled(m.draft_id)
             else if (it.key === "forward") { forwardDialog.message = m; forwardDialog.open() }
             else if (it.key === "report") { backend.reportResult = ""; reportDialog.message = m; reportDialog.open() }
-            else if (it.key === "copy-link") backend.copyMessageLink(JSON.stringify({ id: m.id, sender: m.sender || "", text: m.text || "", root_id: m.root_id || "" }), JSON.stringify({ team_id: root.teamId, team_name: root.teamName, channel_name: root.isChannel ? root.chatName : "" }))
+            else if (it.key === "copy-link") backend.copyMessageLink(JSON.stringify({ id: m.id, sender: m.sender || "", text: m.text || "", root_id: m.root_id || "" }), JSON.stringify({ team_id: root.teamId, team_name: root.teamName, channel_name: root.isChannel ? root.chatName : "", conversation: root.discoverActions ? root.chatId : "" }))
             else if (it.key === "save" || it.key === "unsave") backend.setMessageSaved(m.id, it.key === "save")
             else if (it.key === "pin" || it.key === "unpin") backend.setMessagePinned(m.id, it.key === "pin")
             else if (it.key === "unread") backend.markMessageUnread(m.id, m.client_message_id || "")
