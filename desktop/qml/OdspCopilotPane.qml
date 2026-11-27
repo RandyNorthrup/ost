@@ -49,10 +49,20 @@ FluentSurface {
     /// page (or, already open, tell it the new file and prompt).
     function ask(driveId, itemId, name, text) {
         // (A new file: nothing is asked until its own source arrives.)
-        fileName = name; prompt = text; open = true; source = null; promptSent = false
+        fileName = name; prompt = text; question = false; open = true; source = null; promptSent = false
         askTag = tag + "-" + (++asks)
         backend.eventsRequest("odspChatSource", askTag, JSON.stringify({ drive_id: driveId, item_id: itemId }))
         console.info("ODSPCHAT ask")
+    }
+    /// Copilot ▾ ▸ Ask a question (a folder's header): the chat about your
+    /// files with none picked, as OneDrive opens it (captured on testpc1
+    /// 2026-11-27): an empty input, its zero-query prompts, nothing asked.
+    property bool question: false
+    function askQuestion() {
+        fileName = ""; prompt = ""; question = true; open = true; source = null; promptSent = false
+        askTag = tag + "-" + (++asks)
+        backend.eventsRequest("odspChatSource", askTag, JSON.stringify({ drive_id: "", item_id: "" }))
+        console.info("ODSPCHAT ask a question")
     }
     function close() { open = false; closed() }
 
@@ -73,7 +83,20 @@ FluentSurface {
                                                    "What does this file say about [roles and responsibilities?]"])] } }
         }
     }
+    // OneDrive's zero-query prompts for Ask a question (no file picked).
+    function questionPrompts() {
+        const p = prompts()
+        const s = (t, input, icon, extra) => Object.assign({ suggestionText: t, inputAreaText: input, iconRegular: { name: icon, style: "Regular" }, iconHover: { name: icon, style: "Regular" } }, extra || {})
+        p.zeroQueryPrompts = { headerText: "I can help you get info from files, find files on a topic, or summarize files. Try one of the examples below or enter your own prompt.",
+                               promptSuggestionList: [s("Summarize (file)", "Summarize ", "Notepad", { inputAreaTextWithFileShortcut: "Summarize #", shouldLaunchCIQOnSelection: true }),
+                                                      s("Tell me about [a topic from my files]", "Tell me about ", "ChatBubblesQuestion"),
+                                                      s("Find recent files on [a project]", "Find recent files on ", "Search")] }
+        return p
+    }
     function telemetry() {
+        if (question)
+            return { ChatODSPLaunchOrigin: "askQuestion", ChatODSPScenarios: "UserInputPrompt", ChatODSPUserClickTimestamp: Date.now(),
+                     ChatODSPCurrentView: "Files", ChatODSPLaunchOriginScenario: "UserInputPrompt", ChatODSPChatType: "AppChat" }
         return { ChatODSPLaunchOrigin: "summarize", ChatODSPScenarios: "SummarizeAction", ChatODSPUserClickTimestamp: Date.now(),
                  ChatODSPCurrentView: "Home", ChatODSPLaunchOriginScenario: "SummarizeAction", ChatODSPChatType: "AppChat" }
     }
@@ -127,8 +150,16 @@ FluentSurface {
     }
     property bool promptSent: false
     function sendPrompt() {
-        if (promptSent || !source || state_ === "" || state_ === "loading") return
+        if (promptSent || (!source && !question) || state_ === "" || state_ === "loading") return
         promptSent = true
+        if (question) {
+            send({ command: "updateChatInput" })
+            send({ command: "updateCustomPrompts", customPrompts: questionPrompts() })
+            send({ command: "clearInputAreaText", force: true })
+            state_ = "asked"
+            console.info("ODSPCHAT question ready")
+            return
+        }
         send({ command: "updateDataSources", dataSources: [source] })
         send({ command: "updateChatInput", chatInput: { placeholder: "Ask a question about \"" + fileName + "\"", isDisabled: false } })
         send({ command: "updateCustomPrompts", customPrompts: prompts() })
@@ -145,7 +176,7 @@ FluentSurface {
             if (id !== pane.askTag) return
             let v = {}
             try { v = JSON.parse(json) } catch (e) { v = { error: "bad reply" } }
-            if (v.error || !v.source || !v.my_site) { pane.state_ = "failed"; console.warn("ODSPCHAT source: " + (v.error || "none")); return }
+            if (v.error || (!v.source && !pane.question) || !v.my_site) { pane.state_ = "failed"; console.warn("ODSPCHAT source: " + (v.error || "none")); return }
             pane.source = v.source
             pane.promptSent = false
             // Already up: the new file and prompt go to the same chat.

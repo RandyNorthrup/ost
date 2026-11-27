@@ -5,6 +5,7 @@ pub mod app_bar;
 pub mod app_details;
 pub mod app_host;
 pub mod app_notifications;
+pub mod app_places;
 pub mod attendance;
 pub mod better_together;
 pub mod biometric;

@@ -186,6 +186,9 @@ pub struct ListChannel {
     /// Recommended for everyone's list (Teams' isFavoriteByDefault;
     /// Manage team shows "Recommended").
     pub recommended: bool,
+    /// When you last read it (its consumption horizon's timeStamp, ms; 0
+    /// never): Teams' app place picker lists recently read channels first.
+    pub read_ms: i64,
 }
 
 /// A team as the chat list shows it.
@@ -222,6 +225,12 @@ pub struct ListTeam {
     pub team_type: u64,
     /// The team picture's ETag (it changes with the picture).
     pub picture_etag: String,
+    /// Pinned to the top of your list (Teams' isFavorite).
+    pub favorite: bool,
+    /// Members may add and remove apps (teamSettings, and
+    /// teamGuestSettings for guests).
+    pub member_apps: bool,
+    pub guest_apps: bool,
 }
 
 fn read_horizon(c: &serde_json::Value) -> bool {
@@ -315,6 +324,16 @@ pub fn list_teams_from(v: &serde_json::Value) -> Vec<ListTeam> {
                     && !s(c, "parentTeamId").is_empty()
                     && s(c, "parentTeamId") != thread,
                 recommended: b(c, "isFavoriteByDefault") && !b(c, "isGeneral"),
+                read_ms: [
+                    "/consumptionHorizon/timeStamp",
+                    "/consumptionHorizon/originalArrivalTime",
+                ]
+                .iter()
+                .find_map(|k| {
+                    c.pointer(k)
+                        .and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse().ok()))
+                })
+                .unwrap_or(0),
             };
             let mut list: Vec<ListChannel> = channels.iter().map(channel_of).collect();
             let deleted: Vec<ListChannel> = all
@@ -364,6 +383,15 @@ pub fn list_teams_from(v: &serde_json::Value) -> Vec<ListTeam> {
                 ),
                 team_type: t.get("teamType").and_then(|v| v.as_u64()).unwrap_or(0),
                 picture_etag: s(t, "pictureETag"),
+                favorite: b(t, "isFavorite"),
+                member_apps: t
+                    .pointer("/teamSettings/installAndUninstallApps")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true),
+                guest_apps: t
+                    .pointer("/teamGuestSettings/installAndUninstallApps")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
             }
         })
         .collect()

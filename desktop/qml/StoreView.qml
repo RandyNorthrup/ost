@@ -116,6 +116,10 @@ Item {
     readonly property string query: search.text.trim()
     readonly property var found: { const r = backend.storeSearchJson ? JSON.parse(backend.storeSearchJson) : null; return r && r.query === query ? r : null }
     property string tab: "home"
+    /// Teams' Platform staticsPath (its public evergreen assets).
+    readonly property string statics: "https://teams.public.onecdn.static.microsoft"
+    /// Go in the quick-start dialog: use the app there (Main sets it up).
+    signal useAppIn(var app, var place)
 
     onVisibleChanged: if (visible && !feedCols.length && !busy) load()
     // Teams marks the header tab whose menu lists the collection (Popular
@@ -281,7 +285,28 @@ Item {
                 Accessible.role: Accessible.Graphic; Accessible.name: qsTr("Added")
             }
         }
-        Text { x: 84; y: 21; width: card.width - 84 - 16; height: 20; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; text: card.app.name; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
+        // The name, then Teams' marks after it (store item `Gt`): Microsoft
+        // 365 certified (ShieldCheckmark) and "Includes an agent and uses
+        // AI" (Sparkle), each a 16 px glyph in a 26 x 20 box (6 in, 3 down).
+        Row {
+            id: nameRow
+            x: 84; y: 21; height: 20
+            readonly property var marks: (card.app.features || []).indexOf("Certified") >= 0
+                ? [{ icon: "shield-checkmark-20", tip: qsTr("Microsoft 365 certified") }].concat(card.app.agent ? [{ icon: "sparkle-20", tip: qsTr("Includes an agent and uses AI") }] : [])
+                : card.app.agent ? [{ icon: "sparkle-20", tip: qsTr("Includes an agent and uses AI") }] : []
+            Text { width: Math.min(implicitWidth, card.width - 84 - 16 - nameRow.marks.length * 26); height: 20; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; text: card.app.name; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
+            Repeater {
+                model: nameRow.marks
+                Item {
+                    required property var modelData
+                    width: 26; height: 20
+                    FluentIcon { x: 6; y: 3; name: parent.modelData.icon; size: 16; color: theme.onFill(hcFill1, theme.text) }
+                    HoverHandler { id: markHover }
+                    ToolTip.visible: markHover.hovered; ToolTip.text: modelData.tip; ToolTip.delay: 500
+                    Accessible.role: Accessible.Graphic; Accessible.name: modelData.tip
+                }
+            }
+        }
         Text { visible: card.full; x: 84; y: 42; width: card.width - 100; height: 16; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; text: card.app.developer || ""; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill1, theme.text) }
         Text {
             x: 84; y: card.full ? 70 : 45; width: card.width - 100
@@ -297,7 +322,9 @@ Item {
             Text { height: 16; verticalAlignment: Text.AlignVCenter; textFormat: Text.StyledText; text: "<b>" + (card.app.average_text || "") + "</b> (" + (card.app.count_text || "") + " ratings)"; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill1, theme.text) }
         }
         HoverHandler { id: cardHover; cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: details.show(card.app.id) }
+        // Teams (store item click, enableStoreTileDesignWithoutCta): an app
+        // you have opens the quick-start dialog; others their details.
+        TapHandler { onTapped: card.app.installed ? quickStart.show(card.app) : details.show(card.app.id) }
         Accessible.role: Accessible.ListItem
         Accessible.name: card.app.name + ". " + (card.app.short || "")
     }
@@ -335,22 +362,43 @@ Item {
         Column {
             id: feedCol
             width: parent.width
-            Rectangle {
+            // The banner (Teams' store header): 276 tall, its artwork 300
+            // tall behind the feed's start: #E8EBFA to 80% then the page
+            // colour, with Teams' ribbon pictures (345 and 356 x 300, its
+            // evergreen assets, the dark ones in dark and high contrast) at
+            // both ends from 720 wide.
+            Item {
                 width: parent.width; height: 276
-                gradient: Gradient {
-                    orientation: Gradient.Horizontal
-                    GradientStop { position: 0.0; color: theme.dark ? theme.hc("#2B2B40", "#000000") : theme.hc("#E8EBFA", "#000000") }
-                    GradientStop { position: 0.5; color: theme.dark ? theme.hc("#262636", "#000000") : theme.hc("#F3F2FA", "#000000") }
-                    GradientStop { position: 1.0; color: theme.dark ? theme.hc("#2B2B40", "#000000") : theme.hc("#E8EBFA", "#000000") }
+                Rectangle {
+                    width: parent.width; height: 300
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: theme.pick("#E8EBFA", "#2B2B40", "#000000") }
+                        GradientStop { position: 0.8; color: theme.pick("#E8EBFA", "#2B2B40", "#000000") }
+                        GradientStop { position: 1.0; color: theme.surface }
+                    }
+                    Image {
+                        visible: root.width >= 720
+                        width: 345; height: 300
+                        source: visible ? (backend.emoticonsVersion, backend.cardImage(root.statics + "/evergreen-assets/apps/store/header_ribbon_left" + (theme.dark || theme.highContrast ? "_dark" : "") + ".png")) : ""
+                        asynchronous: true; smooth: true
+                    }
+                    Image {
+                        visible: root.width >= 720
+                        anchors.right: parent.right
+                        width: 356; height: 300
+                        source: visible ? (backend.emoticonsVersion, backend.cardImage(root.statics + "/evergreen-assets/apps/store/header_ribbon_right" + (theme.dark || theme.highContrast ? "_dark" : "") + ".png")) : ""
+                        asynchronous: true; smooth: true
+                    }
                 }
                 Text { anchors.horizontalCenter: parent.horizontalCenter; y: 60; height: 56; verticalAlignment: Text.AlignVCenter; text: qsTr("Do more in Teams"); font.family: theme.font; font.pixelSize: 40; font.weight: Font.DemiBold; color: theme.text }
                 Text { anchors.horizontalCenter: parent.horizontalCenter; y: 116; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Discover agents and apps that can help you tackle any task."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                Rectangle {
+                // The search: a 580 x 48 white pill with a soft shadow and
+                // a 2 px brand line 12 in from each end at its foot.
+                FluentSurface {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    y: 168; width: Math.min(530, root.width - 80); height: 48; radius: 24
+                    y: 168; width: Math.min(580, root.width - 80); height: 48; radius: 24; depth: 2
                     color: theme.surface
-                    border.width: search.activeFocus ? 0 : 0.67; border.color: theme.stroke
-                    Rectangle { visible: search.activeFocus; anchors.bottom: parent.bottom; anchors.horizontalCenter: parent.horizontalCenter; width: parent.width - 40; height: 2; color: theme.brand }
+                    Rectangle { anchors.bottom: parent.bottom; x: 12; width: parent.width - 24; height: 2; color: theme.brand }
                     FluentIcon { x: 18; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 20; color: theme.textSecondary }
                     TextField {
                         id: search
@@ -802,9 +850,19 @@ Item {
         }
     }
     ShareForm { id: storeShare }
+    // Teams' quick-start dialog ("Let's go") for an app you have.
+    ContextlessDialog {
+        id: quickStart
+        onOpenApp: (id, name) => details.openApp(id, name)
+        onUseIn: (app, place) => root.useAppIn(app, place)
+    }
 
     // Test harness hooks
     function searchForTest(q) { search.text = q }
+    function quickStartForTest(name) {
+        for (const c of root.feedCols) for (const a of c.apps) if (a.name === name) { quickStart.show(a); return quickStart }
+        return null
+    }
     function detailsForTest(name) {
         for (const c of root.feedCols) for (const a of c.apps) if (a.name === name) { details.show(a.id); return true }
         return false

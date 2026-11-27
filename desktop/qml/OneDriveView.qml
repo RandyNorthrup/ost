@@ -39,6 +39,8 @@ Item {
     property string nameFilter: ""
     /// OneDrive's own list (Home, Shared, a person's files): Name with the
     /// place line under it, OneDrive's responsive columns, 56 tall rows.
+    /// In your OneDrive (My files or one of its folders).
+    readonly property bool inMyFiles: view === "folder" && trail.length > 0 && trail[0].name === qsTr("My files")
     readonly property bool spartan: view === "recent" || view === "shared" || (view === "people" && !!person)
     readonly property bool byYou: view === "shared" && sharedTab === "by"
     /// Folders opened from My files or a library: [{name, drive_id, item_id}].
@@ -505,18 +507,27 @@ Item {
                 if (!it) return L
                 if (it.sp_item) L.push({ label: qsTr("Share"), icon: "share-16" })
                 if (it.sp_item || it.web_url) L.push({ label: qsTr("Copy link"), icon: "link-16" })
+                if (root.inMyFiles) L.push({ copilot: true })
                 if (it.sp_item) L.push({ label: qsTr("Download"), icon: "arrow-download-16" })
                 if (it.web_url) L.push({ label: /-my\.sharepoint\.com/.test(it.sp_site || it.web_url) ? qsTr("Open in OneDrive") : qsTr("Open in SharePoint"), icon: "cloud-16" })
                 return L
             }
             Repeater {
                 model: folderBar.commands
-                BarCommand {
+                Item {
+                    id: fbCmd
                     required property var modelData
-                    label: modelData.label; icon: modelData.icon; tip: modelData.label
-                    onClicked: actions.actMany([root.hereItem], modelData.label)
+                    width: fbCmd.modelData.copilot ? fbCopilot.width : fbBar.width; height: 32
+                    BarCommand { id: fbBar; visible: !fbCmd.modelData.copilot; label: fbCmd.modelData.label || ""; icon: fbCmd.modelData.icon || ""; tip: fbCmd.modelData.label || ""; onClicked: actions.actMany([root.hereItem], fbCmd.modelData.label) }
+                    CopilotCommand { id: fbCopilot; visible: !!fbCmd.modelData.copilot }
                 }
             }
+        }
+        // My files' own header (no folder picked): Copilot ▾ 206 from the
+        // title, as OneDrive's command bar starts there.
+        CopilotCommand {
+            visible: root.selection.length === 0 && root.view === "folder" && !root.hereItem && root.inMyFiles
+            x: 210; y: 26
         }
         // Sort ▾, the view switch and Details at the title's right.
         Row {
@@ -1026,12 +1037,14 @@ Item {
                             Accessible.checked: frow.sel
                         }
                         FluentIcon {
+                            id: rowIcon
                             x: frow.compact ? 66 : 62; y: frow.compact ? 7 : 8; size: frow.compact ? 20 : 32
                             // OneDrive's Shortcuts folder has its own icon
                             // (Fabric's companyfolder).
                             name: frow.modelData.special === "shortcuts" ? (frow.compact ? "ft-companyfolder-20" : "ft-companyfolder-32")
                                 : frow.modelData.is_folder ? "ft-folder-32" : root.fileIcon(frow.modelData.kind)
                             swaps: frow.modelData.is_folder && frow.modelData.special !== "shortcuts" ? root.folderSwaps(frow.modelData.folder_color) : ({})
+                            IconOverlays { item: frow.modelData; size: rowIcon.size }
                         }
                         // Name: OneDrive's "New" mark, the name, then ···, Share and the star.
                         Item {
@@ -1093,6 +1106,8 @@ Item {
                                 Row {
                                     x: 12; y: frow.ty + 0.67; spacing: 4
                                     FluentIcon { visible: frow.modelData.sharing === "Shared"; y: 2.5; name: "people-16"; size: 14; color: theme.onFill([hcFill6, card], root.strong) }
+                                    // A shortcut's "Owner: …" (OneDrive's ArrowSquareUpRight).
+                                    FluentIcon { visible: frow.modelData.special === "shortcut"; y: 2.5; name: "arrow-square-up-right-20"; size: 14; color: theme.onFill([hcFill6, card], root.strong) }
                                     Text { text: frow.modelData.sharing; font.family: theme.font; font.pixelSize: 14; color: theme.onFill([hcFill6, card], root.ink) }
                                 }
                             }
@@ -1821,6 +1836,63 @@ Item {
         }
     }
 
+    // OneDrive's marks on a list icon (its colored-folder icon, measured on
+    // testpc1 2026-11-27): a shared folder (anyone besides you, or a
+    // shortcut) carries the People glyph in the folder colour's overlay
+    // shade (12 px, 5 from the right, 8 from the foot at 32; 7 px bold, 3
+    // and 6 at 20); a shortcut carries OneDrive's 12 px shortcut badge (its
+    // odsp-media picture) at the corner (4 past it at 20).
+    component IconOverlays: Item {
+        id: ov
+        property var item
+        property int size: 32
+        anchors.fill: parent
+        readonly property bool shortcut: !!item && item.special === "shortcut"
+        readonly property bool shared: !!item && item.is_folder && item.special !== "shortcuts" && (shortcut || item.sharing === "Shared")
+        FluentIcon {
+            visible: ov.shared
+            readonly property int glyph: ov.size <= 20 ? 7 : 12
+            x: ov.size - (ov.size <= 20 ? 3 : 5) - glyph; y: ov.size - (ov.size <= 20 ? 6 : 8) - glyph
+            size: glyph; name: "people-12"
+            color: theme.highContrast ? "#000000" : (theme.folderColors.find(c => c.code === String(ov.item && ov.item.folder_color ? ov.item.folder_color : "0")) || theme.folderColors[0]).shades[5]
+        }
+        Image {
+            visible: ov.shortcut
+            x: ov.size <= 20 ? ov.size - 8 : ov.size - 12; y: x; width: 12; height: 12
+            sourceSize: Qt.size(24, 24); smooth: true
+            source: visible ? (backend.emoticonsVersion, backend.cardImage("https://res.public.onecdn.static.microsoft/files/sp-client/odsp-media-5cc1cecc/images/addtoonedrive/shortcutbadge_12" + (theme.dark || theme.highContrast ? "_dark" : "") + ".svg")) : ""
+        }
+    }
+    // OneDrive's Copilot ▾ (measured on testpc1 2026-11-27): 102.8 x 32,
+    // radius 4; its Copilot glyph (16, 4 in) in the text colour, Copilot's
+    // own colours on hover (OneDrive's odsp-media picture), "Copilot" 14 px
+    // #616161 at 30 and a 12 px chevron at 78.8. Its menu (Fabric, 232
+    // wide) has Ask a question (ChatSparkle), which opens the Copilot pane
+    // for your files.
+    component CopilotCommand: Rectangle {
+        id: cc
+        width: 102.8; height: 32; radius: 4
+        color: menu.opened ? theme.pick("#EBEBEB", "#3D3D3D", "#1AEBFF") : cch.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : "transparent"
+        FluentIcon { visible: !cch.hovered || theme.highContrast || !coloured.ready; x: 4; y: 8; name: "copilot-16"; size: 16; color: theme.onFill(cc, theme.pick("#616161", "#D6D6D6", "#FFFFFF")) }
+        Image {
+            id: coloured
+            readonly property bool ready: status === Image.Ready
+            visible: cch.hovered && !theme.highContrast && ready
+            x: 4; y: 8; width: 16; height: 16; sourceSize: Qt.size(32, 32); smooth: true
+            source: (backend.emoticonsVersion, backend.cardImage("https://res.public.onecdn.static.microsoft/files/sp-client/odsp-media-5cc1cecc/images/copilot/svg/copilot_v2/ic_fluent_copilot_v2_16_color.svg"))
+        }
+        Text { x: 30; y: 9; text: qsTr("Copilot"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(cc, theme.pick("#616161", "#D6D6D6", "#FFFFFF")) }
+        FluentIcon { x: 80.8; y: 10; name: "chevron-down-12"; size: 12; color: theme.onFill(cc, theme.pick("#616161", "#D6D6D6", "#FFFFFF")) }
+        HoverHandler { id: cch; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: menu.open() }
+        MenuPopup {
+            id: menu; fabric: true; fabricWidth: 232; x: 4; y: cc.height + 10
+            items: [{ label: qsTr("Ask a question"), icon: "chat-sparkle-20" }]
+            onPicked: i => odspCopilot.askQuestion()
+        }
+        Accessible.role: Accessible.ButtonMenu
+        Accessible.name: qsTr("Copilot")
+    }
     // The view switch and Details (and, on the title line, Sort ▾ first).
     component ViewControls: Row {
         property bool inBar: false

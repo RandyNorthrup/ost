@@ -16825,6 +16825,7 @@ Window {
         onLoad: backend.storeLoad()
         onOpenApp: key => rail.openApp(key)
         onToast: d => window.showToast(d)
+        onUseAppIn: (app, place) => window.useAppIn(app, place)
     }
     PeopleView {
         id: peopleApp
@@ -17449,6 +17450,36 @@ Window {
         onSaved: tabId => { if (eventApp && eventsView.item) eventsView.item.townhallAppAdded() }
     }
     TabAboutDialog { id: tabConfigAbout }
+    /// The Store's quick-start dialog's Go (Teams' contextless install):
+    /// open the place, then set the app's tab up there, or add the app
+    /// (its bot or connector) and, for a bot, start an @mention.
+    property var pendingUse: null
+    function useAppIn(app, place) {
+        const channel = place.kind === "channel" || !!place.channelMeeting
+        rail.current = "chat"
+        backend.selectChat(place.id, place.name)
+        if (channel ? app.team_tab : app.chat_tab) {
+            pendingUse = null
+            tabConfig.start({ id: app.id, name: app.name, icon: app.icon || "", config_url: app.config_url || "" }, place.id, channel ? place.teamId : "", channel)
+        } else {
+            pendingUse = { app: app.id, conversation: place.id, name: app.name }
+            backend.addApp(app.id, place.id, channel)
+        }
+    }
+    Connections {
+        target: backend
+        function onAppAddedJsonChanged() {
+            const u = window.pendingUse
+            if (!u) return
+            let a = null
+            try { a = JSON.parse(backend.appAddedJson || "null") } catch (e) { a = null }
+            if (!a || a.app !== u.app || a.conversation !== u.conversation || a.busy) return
+            window.pendingUse = null
+            if (!a.ok) { window.showToast({ text: qsTr("Something went wrong and we couldn't add %1.").arg(u.name), intent: "error" }); return }
+            if (a.notificationOnly) aboutBot.open()
+            else if (a.bot && backend.currentChatId === a.conversation) conversation.mentionBot(a.name, "28:" + a.bot)
+        }
+    }
     // Teams' "About this bot" after adding a bot that only notifies; other
     // bots start an @mention in the compose box, as Teams does.
     AboutBotDialog { id: aboutBot }

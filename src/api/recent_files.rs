@@ -37,8 +37,9 @@ pub struct Recent {
     pub web_url: String,
     /// Where OneDrive opens it (Doc.aspx, Loop), else `web_url`.
     pub open_url: String,
-    /// Its place: the site's title ("OST Test Team"), "My Files", or
-    /// "OST Test 3's Files" for someone else's OneDrive.
+    /// Its place: the site's title ("OST Test Team"), "My Files" (or "My
+    /// Whiteboards", "My Lists"), or "OST Test 3's Files" (or
+    /// "…'s Whiteboards", "…'s Lists") for someone else's OneDrive.
     pub location: String,
     /// When you last opened it (ISO).
     pub opened: String,
@@ -265,18 +266,54 @@ fn activity(entry: &Value) -> Option<Activity> {
     })
 }
 
-/// OneDrive's place line: a OneDrive's files are "My Files" (yours) or
-/// "{0}'s Files"; a site's, its title.
+/// OneDrive's place line (its `getContainerTitle.odb`, file browser
+/// bundle of 2026-11-13): a classic attachment's mail subject; on your
+/// OneDrive "My Whiteboards", "My Lists" or "My Files" by the item's type;
+/// on someone else's OneDrive "{owner}'s Whiteboards", "{owner}'s Lists"
+/// or "{owner}'s Files" the same way; anywhere else the container's title.
 fn location(x: &Value, personal: &str) -> String {
-    let title = s(&x["Visualization"]["ContainerTitle"]);
+    let kind = s(&x["Visualization"]["Type"]);
+    let list = matches!(kind.as_str(), "GenericList" | "Playlist" | "Lists");
+    // ClassicAttachment (2) and ClassicAttachmentInCalendar (7).
+    if matches!(x["StorageProviderContext"].as_u64(), Some(2 | 7)) {
+        return s(&x["ItemProperties"]["Shared"]["SubjectProperty"]);
+    }
     let site = s(&x["SharePointItem"]["SitePath"]);
     let trim = |u: &str| u.trim_end_matches('/').to_ascii_lowercase();
     if !personal.is_empty() && trim(&site) == trim(personal) {
-        "My Files".into()
-    } else if site.contains("/personal/") && !title.is_empty() {
-        format!("{title}'s Files")
-    } else {
+        return if kind == "Whiteboard" {
+            "My Whiteboards"
+        } else if list {
+            "My Lists"
+        } else {
+            "My Files"
+        }
+        .into();
+    }
+    let title = first(&[
+        &x["Visualization"]["ContainerTitle"],
+        &x["ItemProperties"]["SemanticProperties"]["ContainerName"],
+    ]);
+    if title.is_empty() {
+        return title;
+    }
+    let class = s(&x["SharePointItem"]["ContentClass"]).to_ascii_lowercase();
+    let onedrive = match x["Source"].as_str().filter(|v| !v.is_empty()) {
+        Some(source) => source == "OneDriveForBusiness",
+        None => {
+            class == "sts_listitem_mysitedocumentlibrary"
+                || class == "sts_list_genericlist"
+                    && s(&x["Visualization"]["AccessUrl"]).contains("/personal/")
+        }
+    };
+    if !onedrive {
         title
+    } else if list {
+        format!("{title}'s Lists")
+    } else if kind == "Whiteboard" {
+        format!("{title}'s Whiteboards")
+    } else {
+        format!("{title}'s Files")
     }
 }
 
@@ -534,7 +571,8 @@ mod tests {
             json!({
             "SiteId": "86beb970-8c88-4ae2-acce-d51c851ec061", "WebId": "a3305c60-5edd-4721-8f56-1352f4b64bcf",
             "ListId": "c300f6d2-5ee5-4f38-a11c-6a78cbe2bf1d", "UniqueId": id, "ListItemId": "20",
-            "SitePath": site, "FileUrl": format!("{site}/Documents/f"), "ModifiedByDisplayName": "OST Test 3" })
+            "SitePath": site, "FileUrl": format!("{site}/Documents/f"), "ModifiedByDisplayName": "OST Test 3",
+            "ContentClass": "STS_ListItem_MySiteDocumentLibrary" })
         };
         let me = "https://scnetsolutions-my.sharepoint.com/personal/ost-test1_scnetsolutions_com";
         let files = json!({ "files": [
@@ -646,6 +684,56 @@ mod tests {
             graph_path(nb).unwrap(),
             "/sites/scnetsolutions-my.sharepoint.com,86beb970-8c88-4ae2-acce-d51c851ec061,a3305c60-5edd-4721-8f56-1352f4b64bcf/lists/c300f6d2-5ee5-4f38-a11c-6a78cbe2bf1d/items/20/driveItem"
         );
+    }
+
+    /// The place line as OneDrive words it (DeltaSync entries captured on
+    /// testpc1 2026-11-27).
+    #[test]
+    fn place_line_as_onedrive() {
+        let me = ME;
+        let theirs =
+            "https://scnetsolutions-my.sharepoint.com/personal/ost-test3_scnetsolutions_com";
+        let entry = |site: &str, kind: &str, class: &str, title: &str| {
+            json!({ "Visualization": { "Type": kind, "ContainerTitle": title },
+                    "SharePointItem": { "SitePath": site, "ContentClass": class } })
+        };
+        let odb = "STS_ListItem_MySiteDocumentLibrary";
+        assert_eq!(
+            location(&entry(theirs, "Whiteboard", odb, "OST Test 3"), me),
+            "OST Test 3's Whiteboards"
+        );
+        assert_eq!(
+            location(&entry(theirs, "Fluid", odb, "OST Test 3"), me),
+            "OST Test 3's Files"
+        );
+        assert_eq!(
+            location(&entry(theirs, "GenericList", odb, "OST Test 3"), me),
+            "OST Test 3's Lists"
+        );
+        assert_eq!(
+            location(&entry(me, "Whiteboard", odb, "OST Test 1"), me),
+            "My Whiteboards"
+        );
+        assert_eq!(
+            location(&entry(me, "Word", odb, "OST Test 1"), me),
+            "My Files"
+        );
+        let site = "https://scnetsolutions.sharepoint.com/sites/OSTTestTeam";
+        assert_eq!(
+            location(
+                &entry(
+                    site,
+                    "Folder",
+                    "STS_ListItem_DocumentLibrary",
+                    "OST Test Team"
+                ),
+                me
+            ),
+            "OST Test Team"
+        );
+        // A classic mail attachment: its message's subject.
+        let mail = json!({ "StorageProviderContext": 2, "ItemProperties": { "Shared": { "SubjectProperty": "Re: plan" } } });
+        assert_eq!(location(&mail, me), "Re: plan");
     }
 
     #[test]

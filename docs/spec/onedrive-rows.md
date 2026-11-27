@@ -423,6 +423,12 @@ newer ("Spartan") list, not the files table. Measured on winpc on
   updateCustomPrompts and setPrompt 'Summarize "<file>"' with autoSubmit;
   the page asks the host for tokens (fetchAuthToken {type, resource}).
 
+## Folder icon marks and Copilot ▾ (TASK-0358, measured on testpc1 2026-11-27)
+
+- OneDrive's colored folder icon (module 4852) carries the People glyph when the folder is shared (`PrincipalCount` > 0) or is a shortcut: 12 px, 5 from the right and 8 from the foot of a 32 px icon (7 px bold, 3 and 6, at 20), in the folder colour's `countOverlay` shade (#8F3900 for yellow).
+- A shortcut (Add shortcut to My files, ProgId `AddToOneDrive.MountPoint`) also carries OneDrive's shortcut badge, its odsp-media `images/addtoonedrive/shortcutbadge_12.svg` (`_dark` in dark), 12 px at the icon's corner (4 px past it at 20). OST loads it at run time. Its Sharing cell starts with ArrowSquareUpRight before "Owner: …".
+- My files' header (and a My files subfolder's bar, after Copy link) has "Copilot ▾" (102.8 x 32, 206 from the title's start): the Copilot glyph (the colored odsp-media picture on hover), "Copilot" 14 px #616161, a 12 px chevron. Its menu has "Ask a question" (ChatSparkle 20), which opens the Copilot pane with no file: OneDrive sends updateChatInput (empty), the zero-query prompts "Summarize (file)", "Tell me about [a topic from my files]", "Find recent files on [a project]" and clearInputAreaText. (OneDrive also sends its knowledge agent state, which OST leaves out, as for Summarize.)
+
 ## Not yet in OST
 
 - Add shortcut ▸, Version history and a folder's Request files: TASK-0115 and

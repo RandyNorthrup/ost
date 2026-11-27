@@ -43,6 +43,7 @@ fn main() {
         "qml/ManageAppsView.qml",
         "qml/WebApp.qml",
         "qml/AppDetailsDialog.qml",
+        "qml/ContextlessDialog.qml",
         "qml/AgentStore.qml",
         "qml/AboutBotDialog.qml",
         "qml/AppPermissionsDialog.qml",
