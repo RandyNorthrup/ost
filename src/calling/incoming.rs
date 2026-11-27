@@ -1233,8 +1233,31 @@ impl ActiveCall {
             .iter()
             .map(|m| (m.clone(), uuid::Uuid::new_v4().to_string()))
             .collect();
-        let body = super::outgoing::invite_body(&from, thread_id, &to, |p| me.callback(p));
-        tracing::info!(people = people.len(), "inviting people into the call");
+        // The call's meetingInfo: the attach's join answer's, else the
+        // invitation's (a group call's inviter names it).
+        let organizer = self
+            .notification
+            .conversation
+            .as_ref()
+            .and_then(super::outgoing::meeting_organizer)
+            .or_else(|| {
+                let data = self
+                    .notification
+                    .call_invitation
+                    .as_ref()?
+                    .invitation_data
+                    .as_ref()?;
+                super::outgoing::meeting_organizer(&serde_json::json!({
+                    "meetingInfo": data.get("meetingInfo")?
+                }))
+            });
+        let meeting = organizer.as_deref().and_then(|o| o.split_once('@'));
+        let body = super::outgoing::invite_body(&from, thread_id, &to, meeting, |p| me.callback(p));
+        tracing::info!(
+            people = people.len(),
+            meeting_info = meeting.is_some(),
+            "inviting people into the call"
+        );
         cc_request(
             &auth.http,
             &auth.skype_token,

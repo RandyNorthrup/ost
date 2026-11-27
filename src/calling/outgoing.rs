@@ -1428,10 +1428,16 @@ impl OutgoingCall {
             .iter()
             .map(|m| (m.clone(), uuid::Uuid::new_v4().to_string()))
             .collect();
-        let body = invite_body(&from, thread_id, &to, |p| {
+        // The call's meetingInfo (its join or create answer's).
+        let meeting = self.notes_organizer.split_once('@');
+        let body = invite_body(&from, thread_id, &to, meeting, |p| {
             signaling::trouter_callback(surl, epid, p)
         });
-        tracing::info!(people = people.len(), "inviting people into the call");
+        tracing::info!(
+            people = people.len(),
+            meeting_info = meeting.is_some(),
+            "inviting people into the call"
+        );
         let resp = self
             .http
             .post(&link)
@@ -3076,27 +3082,50 @@ pub fn merge_body(
     })
 }
 
+/// A call's `meetingInfo` organizer and tenant as `oid@tid`, from a join
+/// or create answer (`meetingInfo` or `conversationResponse.meetingInfo`).
+pub fn meeting_organizer(v: &serde_json::Value) -> Option<String> {
+    let mi = ["/meetingInfo", "/conversationResponse/meetingInfo"]
+        .iter()
+        .find_map(|p| v.pointer(p))?;
+    let o = mi.get("organizerId")?.as_str()?;
+    let t = mi.get("tenantId")?.as_str()?;
+    (!o.is_empty() && !t.is_empty()).then(|| format!("{o}@{t}"))
+}
+
 /// Teams' roster invitation (its `addParticipantsAsync` from the people
 /// picker, captured from Teams on the web 2026-11-26): `{disableUnmute:
 /// false, participants: {from, to: [{id, participantId}]},
 /// participantInvitationData: {}, replacementDetails: null, groupContext:
 /// null, groupChat: {threadId, messageId: null}, links:
 /// {addParticipantSuccess, addParticipantFailure}}`. `to` pairs each MRI
-/// with a fresh participant id.
+/// with a fresh participant id. A call with a `meetingInfo` (a group
+/// chat's call, a meeting) names it, as Teams'
+/// `extendParticipantPayloadToAddMeetingInfo` does:
+/// `participantInvitationData: {invitationData: {meetingInfo:
+/// {organizerId, tenantId}}}` (captured from a group chat's call
+/// 2026-11-27); a 1:1 call has none.
 pub fn invite_body(
     from: &serde_json::Value,
     thread_id: &str,
     to: &[(String, String)],
+    meeting_info: Option<(&str, &str)>,
     cb: impl Fn(&str) -> String,
 ) -> serde_json::Value {
     let to: Vec<serde_json::Value> = to
         .iter()
         .map(|(id, pid)| serde_json::json!({ "id": id, "participantId": pid }))
         .collect();
+    let invitation = match meeting_info {
+        Some((organizer, tenant)) => serde_json::json!({
+            "invitationData": { "meetingInfo": { "organizerId": organizer, "tenantId": tenant } }
+        }),
+        None => serde_json::json!({}),
+    };
     serde_json::json!({
         "disableUnmute": false,
         "participants": { "from": from, "to": to },
-        "participantInvitationData": {},
+        "participantInvitationData": invitation,
         "replacementDetails": null,
         "groupContext": null,
         "groupChat": { "threadId": thread_id, "messageId": null },
@@ -4925,14 +4954,7 @@ async fn start_tagged(
         .unwrap_or_default();
     let notes_organizer = serde_json::from_str::<serde_json::Value>(&created.response_body)
         .ok()
-        .and_then(|v| {
-            let mi = ["/meetingInfo", "/conversationResponse/meetingInfo"]
-                .iter()
-                .find_map(|p| v.pointer(p).cloned())?;
-            let o = mi.get("organizerId")?.as_str()?.to_string();
-            let t = mi.get("tenantId")?.as_str()?.to_string();
-            (!o.is_empty() && !t.is_empty()).then(|| format!("{o}@{t}"))
-        })
+        .and_then(|v| meeting_organizer(&v))
         .unwrap_or_default();
     let notes = {
         let mut n = super::meeting_notes::Notes::default();
@@ -5455,6 +5477,7 @@ mod tests {
             &from,
             "19:abc@thread.v2",
             &[("8:orgid:b".into(), "pid-b".into())],
+            None,
             |p| format!("cb/{p}"),
         );
         assert_eq!(
@@ -5471,6 +5494,19 @@ mod tests {
                     "addParticipantFailure": "cb/conversation/addParticipantFailure/"
                 }
             })
+        );
+        // A group chat's call (Teams on the web inviting OST Test 2 into
+        // OST Test 3's call in "OST TEST 348 invite", 2026-11-27).
+        let b = invite_body(
+            &from,
+            "19:abc@thread.v2",
+            &[("8:orgid:b".into(), "pid-b".into())],
+            Some(("01c4860d", "2716d134")),
+            |p| format!("cb/{p}"),
+        );
+        assert_eq!(
+            b["participantInvitationData"],
+            serde_json::json!({ "invitationData": { "meetingInfo": { "organizerId": "01c4860d", "tenantId": "2716d134" } } })
         );
     }
 

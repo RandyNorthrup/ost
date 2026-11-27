@@ -1097,6 +1097,11 @@ Held state on the stage (98585):
   - No results: "We didn't find any matches."
   - Error: "Search failed." [Try again]
 - Invite field (815275), placeholder "Invite someone or dial a number". Picking someone calls `addParticipant1`. Hidden in breakout rooms, for guests and in VTC calls.
+- **Inviting someone who isn't in the group chat** (TASK-0348; Teams on the web as OST Test 3 in an Audio call of "OST TEST 348 invite" with OST Test 1 and OST Test Room, inviting OST Test 2 with the picker's row ▸ "Request to join", 2026-11-27; `CallingAddParticipantService.handleAddParticipant`):
+  - Teams rings them and adds them to the chat at the same time, neither waiting for the other: `POST` the call's `…/add` (as above) and, 60 ms later, `PUT {chatsvc}/v1/threads/{chat}/members` with `{"members": [{"id": "8:orgid:…", "role": "Admin"}]}` (`addMembersToConversation`, no `shareHistoryTime`), 200. The service then lists them with `shareHistoryTime` = the time of the add (the chat has `historydisclosed: false`), so they see the chat from then on, not its history. Teams shows no "Include chat history" choice.
+  - Only when they aren't a member, and not in a channel or a meeting's own chat (ECS `addNudgedUserToThread`, false: rung only). A 1:1 call escalates into a chat of everyone instead. When the chat service refuses them under a chat-permissions policy, Teams shows its chat-permissions alert.
+  - The ring itself is the same `/add`. In a call with a `meetingInfo` (a group chat's call, a meeting) it carries `participantInvitationData: {invitationData: {meetingInfo: {organizerId, tenantId}}}` (the call's organizer, here OST Test 3, who started it; `extendParticipantPayloadToAddMeetingInfo`); in a 1:1 call it's `{}`.
+  - OST (`msgactions::add_call_invitee_to_chat`, `adds_call_invitee`, `call_invitee_body`; `outgoing::invite_body`'s `meeting_info`; backend `start_invite`) does the same.
 - "Share invite":
   - Shown only in meetings, and not in broadcasts or breakout rooms, unless `disableParticipantsToShareInvite`.
   - Disabled at E2EE capacity: "This end-to-end encrypted meeting is at capacity".
