@@ -1,9 +1,11 @@
 ---
 id: TASK-0368
 title: Profiles signed in with OST_NO_KEYRING=1 lose their refresh token
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-27T18:19:00Z'
+updated_date: '2026-11-27T18:35:00Z'
 labels:
   - security
 dependencies: []
@@ -20,3 +22,21 @@ Found by the 2026-11-27 parity audit (side finding): after signing in a new prof
 <!-- AC:BEGIN -->
 - [ ] #1 A profile signed in with OST_NO_KEYRING=1 keeps working across token expiry and restarts (tokens stored and read where the config says they are), with a regression test
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Reproduce on linuxlt with a throwaway profile (OST_NO_KEYRING=1, OST Test 3) and find what writes tokens_in_keyring = true.
+2. Fix src/config so every process reads the tokens from where the config says they are and every write sets the flag to where it put them; an OST_NO_KEYRING process touches the keyring only when the profile's own config says its tokens are there (read, then move back to the file on its next save, and delete on sign-out).
+3. Regression tests in storage_tests for the mixed-mode sequence (opt-in file -> keyring process migrates -> no-keyring process still reads, refreshes, restarts) and for sign-out.
+4. Live check on linuxlt: both modes, forced expiry + refresh, restart, and the mixed sequence; remove the profile and its keyring entry.
+5. PR, CI/CodeQL/Codex to green.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Cause found (2026-11-27):
+- Reproduced the audit's sequence from the transcripts: auditA OST ran with OST_NO_KEYRING=1 and kept its tokens in config.toml (as designed). At 17:57:02 UTC another agent ran a teams-cli example (mt_post) with OST_PROFILE=auditA but without OST_NO_KEYRING. Its Config::load took the opt-in file's tokens for 0.2.1 plaintext and migrated them: keyring set, tokens_in_keyring = true, tokens stripped from the file (auditA config.toml mtime 17:57). Six seconds later the OST_NO_KEYRING instance's next Config::load hit tokens_in_keyring && keyring disabled -> "Tokens are in the keyring, but the keyring is disabled" -> no tokens -> "Token expired and no refresh token" for every service. A restart with the variable read the same file (no tokens); a restart without it read the keyring, so it "fixed" it.
+- Code: src/config/mod.rs load_from returns no tokens when the flag says keyring but keyring_entry() is None (OST_NO_KEYRING), and clear_tokens under OST_NO_KEYRING never deletes a keyring copy. A fresh OST_NO_KEYRING sign-in by itself is fine (checked live with profile t368nk: file holds the tokens, flag absent, services work).
+<!-- SECTION:NOTES:END -->

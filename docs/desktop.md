@@ -250,7 +250,7 @@ Files OST keeps:
 | Variable | Effect |
 | --- | --- |
 | `OST_SYSTEM_FRAME=1` | Use the desktop's own window frame instead of Teams' title bar buttons. |
-| `OST_NO_KEYRING=1` | Don't use the system keyring: keep tokens in the config file (0600) instead (headless machines, CI). This is an explicit opt-in and weaker than the keyring; without it and without a keyring, tokens stay in memory only. |
+| `OST_NO_KEYRING=1` | Don't use the system keyring: keep tokens in the config file (0600) instead (headless machines, CI). This is an explicit opt-in and weaker than the keyring; without it and without a keyring, tokens stay in memory only. A run of the same profile without the variable moves the file's tokens into the keyring; a run with it then reads them from there and puts them back in the file at its next save, so the profile stays signed in either way. |
 | `OST_DUMP_RTP=<file>` | Append every decrypted RTP packet of payload type `OST_DUMP_RTP_PT` (default 113, x-much2) to the file, length-prefixed (protocol research). `OST_OFFER_MUCH=1` offers x-much2 in meetings even with spatial audio off. |
 | `OST_TROUTER_DUMP_DIR=<dir>` | Write every push frame (and call SDP) there, owner-only. Frames contain message text and call links: for protocol work only. |
 | `OST_VOICE_PROFILE_WAV=<file>` | Test-harness builds only: use that WAV as your voice profile's recording for Voice isolation instead of the Recognition service's (tests; e.g. `vfx/testdata/a_profile.wav`). Voice isolation's model is downloaded to `~/.cache/ost/models/` on first need and checked against its pinned SHA-256; until it's loaded, calls get standard noise suppression. |
