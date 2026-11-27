@@ -41,6 +41,7 @@ The C++ parts are heavy; on machines with little memory use `-j 2`.
 cargo test --features audio,video --lib   # engine
 cargo test -p ost-desktop                 # desktop backend
 cargo test -p ost-vfx                     # video effects
+node --test desktop/tests/*.test.mjs      # the desktop app's page scripts (Node 20+, no packages)
 ```
 
 `just e2e` runs the terminal client's end-to-end tests, and the desktop app

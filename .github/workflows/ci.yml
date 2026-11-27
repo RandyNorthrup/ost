@@ -72,6 +72,19 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends cargo rustfmt
       - run: cargo fmt --all --check
 
+  # The desktop app's own scripts that run in its web pages (desktop/src/*.js),
+  # under Node's built-in test runner with no packages: the TeamsJS host's
+  # origin checks (desktop/tests/app_host.test.mjs).
+  js-test:
+    name: JavaScript tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: node --version
+      - run: node --test desktop/tests/*.test.mjs
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
