@@ -18,6 +18,7 @@ mod rich_text;
 mod room_ble;
 mod room_host;
 mod room_remote;
+mod teams_link;
 mod tray;
 mod video_effects;
 mod video_item;
@@ -65,22 +66,29 @@ pub fn previous_log_path() -> std::path::PathBuf {
 /// The socket a running OST listens on, so launching it again brings that
 /// window back (Teams keeps a single instance).
 fn instance_socket() -> Option<std::path::PathBuf> {
-    std::env::var_os("XDG_RUNTIME_DIR").map(|d| match teams_cli::config::profile() {
-        Some(p) => std::path::PathBuf::from(d).join(format!("ost-desktop-{p}.sock")),
-        None => std::path::PathBuf::from(d).join("ost-desktop.sock"),
-    })
+    backend::instance_socket_for(&teams_cli::config::profile().unwrap_or_default())
 }
 
-/// When OST is already running: ask it to show its window, and return true.
-/// Otherwise listen for later launches and return false.
-fn hand_over_to_running_instance() -> bool {
+/// When OST is already running: ask it to show its window (and open
+/// `link`, a Teams link), and return true. Otherwise listen for later
+/// launches and return false.
+///
+/// The protocol is one line per connection: `activate`, `open\t<thread>\t<name>`
+/// (another account's hub) or `link\t<Teams link>` (TASK-0369). Only this
+/// user can reach the socket (XDG_RUNTIME_DIR is theirs alone), and a link
+/// is read again here (teams_link::parse) before anything uses it.
+fn hand_over_to_running_instance(link: Option<&str>) -> bool {
     use std::io::{BufRead, Write};
     use std::os::unix::net::{UnixListener, UnixStream};
     let Some(path) = instance_socket() else {
         return false;
     };
     if let Ok(mut s) = UnixStream::connect(&path) {
-        let _ = s.write_all(b"activate\n");
+        let line = match link {
+            Some(l) => format!("link\t{l}\n"),
+            None => "activate\n".to_string(),
+        };
+        let _ = s.write_all(line.as_bytes());
         return true;
     }
     // Nothing answers: a socket left by a crash is stale.
@@ -103,6 +111,16 @@ fn hand_over_to_running_instance() -> bool {
                     let (thread, name) = rest.split_once('\t').unwrap_or((rest, ""));
                     tracing::info!("another account's hub opened a chat here");
                     backend::request_open_chat(thread.to_string(), name.to_string());
+                } else if let Some(l) = line.trim_end_matches(['\n', '\r']).strip_prefix("link\t") {
+                    match teams_link::parse(l) {
+                        Some(_) => {
+                            tracing::info!("another launch passed a Teams link");
+                            backend::request_open_link(l.to_string());
+                        }
+                        None => tracing::warn!(
+                            "links: another launch passed a link that isn't Teams'; ignored"
+                        ),
+                    }
                 }
             }
         }
@@ -112,10 +130,14 @@ fn hand_over_to_running_instance() -> bool {
 
 /// What `ost-desktop --help` prints.
 const USAGE: &str = "\
-Usage: ost-desktop [OPTION]
+Usage: ost-desktop [OPTION] [TEAMS-LINK]
 
 OST, a desktop client for Microsoft Teams. Started without options, it
 opens its window (or brings back the one already running).
+
+A Teams link (a meeting's join link, msteams:/l/..., or another
+https://teams.microsoft.com/l/... link) opens in OST: a meeting's link
+shows its pre-join screen. Only Teams links are taken.
 
 Options:
   -h, --help       Show this help and exit
@@ -147,16 +169,19 @@ const QT_OPTIONS: &[(&str, bool)] = &[
 ];
 
 /// Why a build without the test harness won't start with these arguments
-/// (None: it will). Only OST's own options (--help, --version, --room) and
-/// Qt's are taken; the harness's flags and positional capture paths are
-/// refused, so nothing a launch passes can drive the app or run script.
+/// (None: it will). Only OST's own options (--help, --version, --room),
+/// Qt's and one Teams link are taken; the harness's flags and positional
+/// capture paths are refused, so nothing a launch passes can drive the app
+/// or run script, and a link that isn't Teams' is refused too.
 #[cfg_attr(feature = "test-harness", allow(dead_code))]
 fn release_argument_error(args: &[String]) -> Option<String> {
     let mut i = 0;
+    let mut links = 0;
     while i < args.len() {
         let a = args[i].as_str();
         match a {
             "-h" | "--help" | "-V" | "--version" | "--room" => {}
+            _ if teams_link::parse(a).is_some() && links == 0 => links += 1,
             _ => match QT_OPTIONS.iter().find(|(o, _)| *o == a) {
                 Some((_, true)) if i + 1 < args.len() => i += 1,
                 Some((_, false)) => {}
@@ -178,21 +203,49 @@ fn print_and_exit_for(arg: Option<&str>) -> bool {
     true
 }
 
+/// The Teams link among the arguments (the desktop entry's `%u`).
+fn link_argument(args: &[String]) -> Option<&str> {
+    args.iter()
+        .map(String::as_str)
+        .find(|a| teams_link::parse(a).is_some())
+}
+
+/// Whether this launch keeps OST to one instance (and owns its socket): a
+/// plain launch, or one with just a Teams link. Test runs (harness flags,
+/// capture paths) start their own.
+fn single_instance(args: &[String]) -> bool {
+    args.is_empty() || (args.len() == 1 && link_argument(args).is_some())
+}
+
 fn main() {
     if print_and_exit_for(std::env::args().nth(1).as_deref()) {
         return;
     }
+    let args: Vec<String> = std::env::args().skip(1).collect();
     // Release builds: the test harness's flags aren't there to take.
     #[cfg(not(feature = "test-harness"))]
-    if let Some(arg) = release_argument_error(&std::env::args().skip(1).collect::<Vec<_>>()) {
-        eprintln!(
-            "ost-desktop: unrecognized option '{arg}' (test-harness flags need a build with the test-harness feature)\nTry 'ost-desktop --help' for more information."
-        );
+    if let Some(arg) = release_argument_error(&args) {
+        if teams_link::looks_like_link(&arg) {
+            eprintln!(
+                "ost-desktop: refused '{arg}': only Teams links (msteams:, https://teams.microsoft.com/..., https://teams.live.com/...) are opened"
+            );
+        } else {
+            eprintln!(
+                "ost-desktop: unrecognized option '{arg}' (test-harness flags need a build with the test-harness feature)\nTry 'ost-desktop --help' for more information."
+            );
+        }
         std::process::exit(2);
     }
-    // A plain launch (no test arguments) keeps one instance.
-    if std::env::args().len() <= 1 && hand_over_to_running_instance() {
+    let link = link_argument(&args).map(str::to_string);
+    let single = single_instance(&args);
+    // A plain launch (no test arguments) keeps one instance; a link goes
+    // to the window already running.
+    if single && hand_over_to_running_instance(link.as_deref()) {
         return;
+    }
+    // Opened once the window is up and signed in.
+    if let Some(l) = link.clone() {
+        backend::request_open_link(l);
     }
     let log = log_path();
     let file = log
@@ -324,13 +377,12 @@ fn main() {
         && let Ok(exe) = std::env::current_exe()
     {
         use std::os::unix::process::CommandExt;
-        if std::env::args().len() <= 1
-            && let Some(path) = instance_socket()
-        {
+        if single && let Some(path) = instance_socket() {
             let _ = std::fs::remove_file(path);
         }
+        // The same arguments, but not the link: it was opened already.
         let err = std::process::Command::new(exe)
-            .args(std::env::args_os().skip(1))
+            .args(args.iter().filter(|a| Some(a.as_str()) != link.as_deref()))
             .exec();
         tracing::warn!("restart failed: {err}");
     }
@@ -339,9 +391,7 @@ fn main() {
     drop(engine);
     drop(app);
     // Quit: later launches start afresh.
-    if std::env::args().len() <= 1
-        && let Some(path) = instance_socket()
-    {
+    if single && let Some(path) = instance_socket() {
         let _ = std::fs::remove_file(path);
     }
     exit_without_static_teardown();
@@ -387,6 +437,12 @@ mod tests {
             &["-V"],
             &["-platform", "xcb"],
             &["-session", "1234_5678", "-reverse"],
+            &["msteams:/l/meetup-join/19%3ameeting_abc%40thread.v2/0"],
+            &["https://teams.microsoft.com/meet/2873487134553?p=abc"],
+            &[
+                "--room",
+                "https://teams.microsoft.com/l/chat/19:a@thread.v2/conversations",
+            ],
         ] {
             assert_eq!(release_argument_error(&args(ok)), None, "{ok:?}");
         }
@@ -399,6 +455,20 @@ mod tests {
             (&["--tray"], "--tray"),
             (&["-platform"], "-platform"),
             (&["--size=800x600"], "--size=800x600"),
+            (&["https://example.com/"], "https://example.com/"),
+            (
+                &["msteams://evil.example/l/chat/19:a@thread.v2/x"],
+                "msteams://evil.example/l/chat/19:a@thread.v2/x",
+            ),
+            (&["file:///etc/passwd"], "file:///etc/passwd"),
+            // One link at a time.
+            (
+                &[
+                    "msteams:/l/chat/19:a@thread.v2/x",
+                    "msteams:/l/chat/19:b@thread.v2/x",
+                ],
+                "msteams:/l/chat/19:b@thread.v2/x",
+            ),
         ] {
             assert_eq!(
                 release_argument_error(&args(bad)).as_deref(),
@@ -406,5 +476,22 @@ mod tests {
                 "{bad:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_link_launch_keeps_one_instance() {
+        assert!(single_instance(&args(&[])));
+        assert!(single_instance(&args(&[
+            "msteams:/l/meetup-join/19%3ameeting_abc%40thread.v2/0"
+        ])));
+        assert!(!single_instance(&args(&["https://example.com/"])));
+        assert!(!single_instance(&args(&[
+            "--nav-test",
+            "msteams:/l/chat/19:a@thread.v2/x"
+        ])));
+        assert_eq!(
+            link_argument(&args(&["--room", "msteams:/l/chat/19:a@thread.v2/x"])),
+            Some("msteams:/l/chat/19:a@thread.v2/x")
+        );
     }
 }

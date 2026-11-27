@@ -757,6 +757,11 @@ Rectangle {
             window.launchSettings(sub || pg)
             return
         }
+        // Teams' own links open where Teams desktop opens them (a meeting's
+        // pre-join, a chat, a channel, a message, a file: TASK-0369); the
+        // rest go to the browser.
+        const t = backend.teamsLinkJson(link)
+        if (t && ["meeting", "meetingId", "chat", "channel", "message", "newChat", "file"].indexOf(JSON.parse(t).kind) >= 0 && window.openTeamsLink(t)) return
         backend.openExternal(link)
     }
     signal scheduleMeeting()

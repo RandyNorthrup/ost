@@ -211,16 +211,21 @@ fn exec_value(exe: &Path) -> Option<String> {
     Some(arg.replace('\\', "\\\\"))
 }
 
+/// The link schemes OST takes (TASK-0369), as the packaged entry's
+/// `MimeType` line has them: Teams' own msteams: and web+msteams:.
+const MIME_TYPES: &str = "MimeType=x-scheme-handler/msteams;x-scheme-handler/web+msteams;";
+
 /// The desktop entry OST writes for itself: the packaged entry's fields,
-/// started with the binary (or AppImage) now running.
+/// started with the binary (or AppImage) now running, with `%u` for the
+/// Teams link the desktop passes.
 fn entry_text(exe: &Path) -> Option<String> {
     let exec = exec_value(exe)?;
     Some(format!(
         "[Desktop Entry]\nType=Application\nName=OST\nGenericName=Team chat and calls\n\
          Comment=Native client for Microsoft Teams chats, calls and meetings\n\
-         Exec={exec}\nIcon={APP_ID}\nTerminal=false\n\
+         Exec={exec} %u\nIcon={APP_ID}\nTerminal=false\n\
          Categories=Network;InstantMessaging;Chat;VideoConference;\n\
-         StartupWMClass=ost-desktop\n{GENERATED_KEY}\n"
+         {MIME_TYPES}\nStartupWMClass=ost-desktop\n{GENERATED_KEY}\n"
     ))
 }
 
@@ -236,12 +241,14 @@ enum EntryPlan {
 /// `installed`: the first entry with OST's id in the data directories,
 /// with its text. OST writes its own only where there is none, or where
 /// the one there is OST's own and its binary is gone (a moved AppImage,
-/// a deleted build).
+/// a deleted build) or it is from before OST took Teams links.
 fn plan(installed: Option<&str>, exe_exists: impl Fn(&Path) -> bool) -> EntryPlan {
     match installed {
         None => EntryPlan::Write,
         Some(text) if text.lines().any(|l| l.trim() == GENERATED_KEY) => match entry_exec(text) {
-            Some(p) if exe_exists(&p) => EntryPlan::Keep,
+            Some(p) if exe_exists(&p) && text.lines().any(|l| l.trim() == MIME_TYPES) => {
+                EntryPlan::Keep
+            }
             _ => EntryPlan::Write,
         },
         Some(_) => EntryPlan::Keep,
@@ -318,6 +325,16 @@ pub fn register_desktop_entry() {
     match write(&target, text.as_bytes()) {
         Ok(()) => {
             tracing::info!("desktop entry: wrote {}", target.display());
+            // The desktop's list of which app takes which link (its
+            // msteams: handler); desktops that scan entries themselves
+            // don't need it.
+            if let Some(dir) = target.parent() {
+                let _ = std::process::Command::new("update-desktop-database")
+                    .arg(dir)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn();
+            }
             crate::backend::runtime().spawn(resend_later());
         }
         Err(e) => tracing::warn!("desktop entry: not written: {e}"),
@@ -351,6 +368,11 @@ mod tests {
         // OST's own: kept while its binary is there, rewritten once gone.
         assert_eq!(plan(Some(&ours), |_| true), EntryPlan::Keep);
         assert_eq!(plan(Some(&ours), |_| false), EntryPlan::Write);
+        // One from before OST took Teams links is brought up to date.
+        let older = ours
+            .replace(&format!("{MIME_TYPES}\n"), "")
+            .replace(" %u", "");
+        assert_eq!(plan(Some(&older), |_| true), EntryPlan::Write);
     }
 
     #[test]
@@ -359,7 +381,8 @@ mod tests {
         // escapes (every backslash doubled). The same paths were launched
         // through GLib's loader (Gio.DesktopAppInfo) to check them.
         let text = entry_text(Path::new("/tmp/a \"b\"/done/$x`y\\z")).unwrap();
-        assert!(text.contains("Exec=\"/tmp/a \\\\\"b\\\\\"/done/\\\\$x\\\\`y\\\\\\\\z\"\n"));
+        assert!(text.contains("Exec=\"/tmp/a \\\\\"b\\\\\"/done/\\\\$x\\\\`y\\\\\\\\z\" %u\n"));
+        assert!(text.contains("MimeType=x-scheme-handler/msteams;"));
         assert!(text.contains(&format!("Icon={APP_ID}\n")));
         assert!(text.lines().any(|l| l == GENERATED_KEY));
         for p in [

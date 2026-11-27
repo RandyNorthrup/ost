@@ -245,6 +245,69 @@ Files OST keeps:
 | `$XDG_DOWNLOAD_DIR` (else `~/Downloads`) | Downloaded attachments |
 | `$XDG_CONFIG_HOME/autostart/ost-desktop.desktop` | Only with "Start with the computer" on |
 
+## Teams links and the browser's "Join on the Teams app"
+
+OST takes Teams' own links, as Teams desktop does. Its desktop entry
+registers it for `x-scheme-handler/msteams` and `x-scheme-handler/web+msteams`
+(the schemes Teams' web launcher hands the desktop), and `ost-desktop`
+accepts one link as its argument:
+
+```bash
+ost-desktop 'https://teams.microsoft.com/l/meetup-join/19%3ameeting_...%40thread.v2/0?context=...'
+ost-desktop 'https://teams.microsoft.com/meet/2873487134553?p=AbCdEf'
+xdg-open 'msteams:/l/meetup-join/19%3ameeting_...%40thread.v2/0?context=...'
+```
+
+When OST is already running, the link goes to its window (over the same
+single-instance socket a second launch uses); otherwise OST starts and
+opens it once you're signed in.
+
+| Link | Opens |
+| --- | --- |
+| `…/l/meetup-join/…` (msteams:, https on teams.microsoft.com or teams.cloud.microsoft, the launcher page `…/dl/launcher/launcher.html?url=…`) | The meeting's pre-join screen, with its title and times (the lobby for a meeting that holds you there) |
+| `…/meet/<ID>?p=<passcode>` | Join with an ID, then the pre-join screen |
+| `…/l/chat/<chat id>/…` | The chat |
+| `…/l/chat/0/0?users=…&topicName=…&message=…` | A new chat with those people, its name and first message filled in |
+| `…/l/channel/<id>/<name>?…`, `…/l/team/<id>/…` | The channel (a team's link: its General channel) |
+| `…/l/message/<id>/<message id>?…` | The chat or channel at that message (a reply in its post) |
+| `…/l/file/<id>?objectUrl=…` | The file in OST's viewer (SharePoint files only) |
+| `…/l/app/<id>`, `…/l/settings/<page>` | The app's details, the Settings page |
+| `https://teams.live.com/meet/…` (Teams free) | A message: personal accounts aren't supported yet, with "Open in browser" |
+| Any other Teams link (`/l/call/…`, `/l/meeting/new`, …) | A message that OST can't open it yet, with "Open in browser" |
+
+Only Teams' links are taken: the `msteams:` and `web+msteams:` schemes and
+https on `teams.microsoft.com`, `teams.cloud.microsoft` and `teams.live.com`.
+Anything else (another host, `http:`, credentials or a port in the link,
+another scheme) is refused before OST reads it (`ost-desktop` exits with an
+error), and OST never fetches a link it's given; a file link's document must
+be on SharePoint. Teams links in messages open the same way.
+
+The packages (deb, rpm, AUR, Flatpak, the tarball's `install-user.sh`)
+install the entry. An AppImage, tarball or build folder writes its own
+entry in `~/.local/share/applications` on first start. To make OST the
+handler (needed when another app claims these links, and on desktops that
+don't pick a handler by themselves):
+
+```bash
+xdg-mime default io.github.RandyNorthrup.ost.desktop x-scheme-handler/msteams
+xdg-mime default io.github.RandyNorthrup.ost.desktop x-scheme-handler/web+msteams
+xdg-mime query default x-scheme-handler/web+msteams    # io.github.RandyNorthrup.ost.desktop
+```
+
+From the browser: Teams' launcher page (what a meeting link opens) offers
+"Join on the Teams app" only where Teams has a desktop app. On Linux it goes
+straight to "Continue on this browser" (its `ContinueToWebAsOnlyOption`,
+captured 2026-11-27), so there copy the link and pass it to `ost-desktop`,
+or open it as `msteams:` (replace `https://teams.microsoft.com` with
+`msteams:`) with `xdg-open`. A browser that reports Windows or macOS (a
+user-agent switcher) gets the button: it hands the desktop
+`web+msteams:/l/meetup-join/…&fqdn=teams.microsoft.com`, which reaches OST
+through xdg-open or the desktop portal (KDE asks which app to use the first
+time). Links in other apps that open `msteams:` go to OST the same way.
+
+A link always goes to the default profile's OST; `OST_PROFILE=<name>
+ost-desktop '<link>'` opens it in another account's.
+
 ## Environment variables
 
 | Variable | Effect |
