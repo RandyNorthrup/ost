@@ -696,8 +696,9 @@ Item {
         readonly property bool self_: !!c && root.isSelf(c)
         readonly property bool canChat: !!c && (c.is_group ? (c.participants || []).length > 0 : !!c.peer_mri)
         // (a group call outside a chat has no conversation to call or write
-        // into from here: its Chat starts a new chat with its people)
-        readonly property bool canCall: !!c && !self_ && (c.is_group ? (c.participants || []).length > 0 && !!c.thread_id : !!c.peer_mri)
+        // into from here: its Chat starts a new chat with its people; a
+        // meeting's chat is joined from the meeting, not rung)
+        readonly property bool canCall: !!c && !self_ && (c.is_group ? (c.participants || []).length > 0 && !!c.thread_id && !String(c.thread_id).startsWith("19:meeting_") : !!c.peer_mri)
         // Teams' quick message: hidden on a call to yourself and in a chat
         // you're no longer in.
         readonly property bool canMessage: canChat && !self_ && (!c.is_group || (!!c.thread_id && !!c.member))
