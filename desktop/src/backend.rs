@@ -26692,6 +26692,11 @@ impl qobject::Backend {
                     }
                     "overview" => api::events::overview(&client, &s("id")).await,
                     // A town hall's Manage apps card and its Uninstall.
+                    // The Store's quick-start dialog: your Teams meetings as
+                    // places to use an app.
+                    "appPlaceMeetings" => {
+                        Ok(json!({ "meetings": api::app_places::meetings(&client).await? }))
+                    }
                     "townhallApps" => api::events::townhall_apps(&client, &s("thread")).await,
                     "townhallAppInstall" => api::events::townhall_app_install(&client, &s("thread"), &s("app")).await,
                     "townhallAppRemove" => api::events::townhall_app_remove(&client, &s("thread"), &s("app")).await,
@@ -27364,7 +27369,13 @@ impl qobject::Backend {
                     "odspChatSource" => {
                         let site = api::app_host::sharepoint_host(&client).await;
                         let my_site = site.strip_suffix(".sharepoint.com").map(|t| format!("{t}-my.sharepoint.com")).unwrap_or_default();
-                        let source = api::drive::copilot_source(&client, &s("drive_id"), &s("item_id")).await?;
+                        // (No item: the folder header's Copilot ▸ Ask a
+                        // question, a chat about your files with none picked.)
+                        let source = if s("item_id").is_empty() {
+                            serde_json::Value::Null
+                        } else {
+                            api::drive::copilot_source(&client, &s("drive_id"), &s("item_id")).await?
+                        };
                         let web_url = api::drive::personal_web_url(&client).await.unwrap_or_default();
                         // Teams' OneDrive's configure options for the page
                         // (its chat settings and Fluent theme, captured on

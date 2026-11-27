@@ -112,10 +112,16 @@ Measured on winpc on 2026-11-09. OST: `StoreView.qml`, plus `store_home`, `store
 - Menu icons come from `storeGroupCollectionIconMap`, by "app:co:{id}" or by title key: Guest, Agents, StarEmphasis, ArrowTrending, Building, ChatMultiple, DataPie, Code, Map, Briefcase, Headset.
 
 ### Banner
-276 tall, lavender:
+276 tall:
 - "Do more in Teams" (40/56 semibold);
 - "Discover agents and apps that can help you tackle any task." (14/20);
-- a 530 × 48 pill search, "Search agents and apps".
+- a 580 x 48 pill search, "Search agents and apps": white, radius 24, a `0 2px 4px rgba(0,0,0,.06)` shadow and a 2 px brand line 12 in from each end at its foot (always shown).
+- Behind it (and 24 px into the feed) a 300 tall layer: `linear-gradient(#E8EBFA 80%, #FFFFFF 100%)` with Teams' ribbon pictures at both ends, 345 x 300 and 356 x 300, from Teams' public evergreen assets (`{staticsPath}/evergreen-assets/apps/store/header_ribbon_left.png` / `_right.png`; `_dark` in dark and high contrast; `staticsPath` is `https://teams.public.onecdn.static.microsoft`). They are left out below 720 px. OST loads them at run time (TASK-0358, measured on testpc1 2026-11-27).
+
+### Marks after an app's name (store item `Gt`)
+- "Microsoft 365 certified" (ShieldCheckmark 20, drawn at 16) when the item is Certified;
+- "Includes an agent and uses AI" (Sparkle 20, drawn at 16) for a Copilot extension (and, with ECS `enableRebrandBotsAsAgents`, any bot; off for ost-test1);
+- each in a 26 x 20 box after the name, the glyph 6 in and 3 down, with its words as the tooltip.
 
 ### Feed
 - The collections with `isInFeed`, by `feedOrder`. The content doc overrides the burnt-in placement and description.
@@ -346,3 +352,14 @@ app names' switch (its focus outline drawn).
 in and 13 down, rows 269 x 40 on a 42 px pitch from 55 (eight in view, the rest
 scroll): a platform app's colour icon (24), a core app's glyph in a bordered
 28 px tile, the name at 42.
+
+## 9. Quick start ("Let's go", TASK-0358; measured on testpc1 2026-11-27)
+
+Teams' store item click (module 320414, with `enableStoreTileDesignWithoutCta`): an app you have personally opens the app details dialog straight in its ContextlessConfigPicker view; apps you don't have open their details. The view is short (620 tall) when the app has no team, group chat or meeting place (worker features, module 389117).
+
+- **Layout** (520 x 720, radius 8): an accent band 486 x 136 at (16, 0) (`accentColor` 0 → 20% alpha, `#242424` for white; a white-clear-white veil over it); the app's 96 px picture at (211, 56); the name 16/22.86 semibold at 164; "Let's go" 28/40 semibold at 232.8; the line 15/21.43 at 280.8; Open (173 x 32 brand) at 334.3; "Or choose a place to use the app" at 390.3; the search (456 x 40, #F5F5F5) at (32, 435.7).
+- **Wording:** Open and places: "How would you like to use this app today?"; Open only: "Let's head straight to the app ..."; places only: "Choose a place to use the app."; the search names the places ("Search for a channel, chat or meeting", "… or …", one alone).
+- **Places** (worker resolver `appInstallOptions`): channels of your teams ordered by your last read (consumption horizon), favourite team, General, the teams' order and name, with Teams' reasons a channel can't take the app (archived, owners only, guests, private or shared channels the app doesn't support); chats (no bots, hidden, meeting or system threads; muted last); your calendar's Teams meetings, upcoming (soonest end first) then past (latest end first), each place once, then other meeting chats.
+- **Sections:** "Select a channel" / "Select a chat" / "Select a meeting" with "View more" (the whole list under a header naming it, Back in the footer); three 56 px rows each (radio at 52, 32 px picture at 88, name 14/20 at 132, a channel's team 12/16 under it); the picked row #EBEBEB.
+- **Scrolling** past 240 (220 without Open) shows a 486 x 88 header: the 48 px picture (radius 6) at (32, 20) and "Choose where to get started" 16/22 semibold at (96, 33).
+- **Go** (96 x 40 brand in a 72 tall footer): the app is used there — its tab is set up (the Add a tab configuration) when it has one for that scope, else it is added to the conversation (bots get an @mention, notification-only bots "About this bot").

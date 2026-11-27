@@ -156,6 +156,89 @@ pub struct AppDetails {
     pub reviews_count_text: String,
     /// `https://teams.microsoft.com/l/app/{id}?source=app-header-share-entrypoint`.
     pub share_link: String,
+    /// The manifest's accentColor (the quick-start dialog's gradient).
+    pub accent_color: String,
+    /// Where it can be used, for the Store's quick-start dialog ("Let's
+    /// go").
+    pub places: Places,
+}
+
+/// Where an app can be used (Teams' install scopes, as its contextless
+/// config picker offers them).
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct Places {
+    /// On your own (Open): a personal tab or bot, or a message extension.
+    pub personal: bool,
+    /// In a channel, a chat or a meeting.
+    pub team: bool,
+    pub chat: bool,
+    pub meeting: bool,
+    /// A configurable tab for that scope (Go then sets the tab up), as
+    /// against a bot or connector the app is added for.
+    pub team_tab: bool,
+    pub chat_tab: bool,
+    /// The channel kinds it supports besides standard ones.
+    pub private_channels: bool,
+    pub shared_channels: bool,
+}
+
+/// Teams' install scopes from a definition (worker `KDr` features and the
+/// picker's `w` check: bots and configurable tabs by scope, connectors in
+/// teams, meeting contexts for meetings).
+pub fn places(def: &serde_json::Value) -> Places {
+    let list = |k: &str| {
+        def.get(k)
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default()
+    };
+    let has = |v: &serde_json::Value, key: &str, want: &str| {
+        v.get(key).and_then(|x| x.as_array()).is_some_and(|l| {
+            l.iter()
+                .any(|x| x.as_str().is_some_and(|x| x.eq_ignore_ascii_case(want)))
+        })
+    };
+    let meeting_context = |t: &serde_json::Value| {
+        t.get("context")
+            .and_then(|c| c.as_array())
+            .is_some_and(|c| {
+                c.iter().any(|x| {
+                    x.as_str()
+                        .is_some_and(|x| x.to_ascii_lowercase().starts_with("meeting"))
+                })
+            })
+    };
+    let bots = list("bots");
+    let tabs: Vec<serde_json::Value> = ["configurableTabs", "galleryTabs"]
+        .iter()
+        .flat_map(|k| list(k))
+        .collect();
+    let bot = |scope: &str| bots.iter().any(|b| has(b, "scopes", scope));
+    let tab = |scope: &str| tabs.iter().any(|t| has(t, "scopes", scope));
+    let team_tab = tab("team");
+    let chat_tab = tab("groupChat");
+    let channels: Vec<String> = list("supportedChannelTypes")
+        .iter()
+        .filter_map(|v| v.as_str().map(str::to_lowercase))
+        .collect();
+    Places {
+        personal: list("staticTabs")
+            .iter()
+            .any(|t| has(t, "scopes", "personal"))
+            || bot("personal")
+            || !list("composeExtensions").is_empty()
+            || !list("inputExtensions").is_empty(),
+        team: team_tab || bot("team") || !list("connectors").is_empty(),
+        chat: chat_tab || bot("groupChat"),
+        meeting: bot("groupChat")
+            || tabs
+                .iter()
+                .any(|t| has(t, "scopes", "groupChat") && meeting_context(t)),
+        team_tab,
+        chat_tab,
+        private_channels: channels.iter().any(|c| c == "privatechannels"),
+        shared_channels: channels.iter().any(|c| c == "sharedchannels"),
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -1182,6 +1265,8 @@ pub fn details_from(
         reviews_count,
         reviews_count_text: compact(reviews_count),
         share_link: share_link(&id),
+        accent_color: str_at(def, "accentColor").into(),
+        places: places(def),
         id,
     }
 }
@@ -1670,6 +1755,29 @@ pub async fn report_review(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Teams' install scopes for the quick-start dialog.
+    #[test]
+    fn places_as_teams_picker() {
+        // Power BI: personal tabs, tabs for channels and (meeting) chats.
+        let pbi = serde_json::json!({
+            "accentColor": "#FFC312",
+            "staticTabs": [{ "scopes": ["personal"] }],
+            "configurableTabs": [{ "scopes": ["team", "groupChat"], "context": ["channelTab", "privateChatTab", "meetingSidePanel"] }],
+            "supportedChannelTypes": ["privateChannels"]
+        });
+        let p = places(&pbi);
+        assert!(p.personal && p.team && p.chat && p.meeting && p.team_tab && p.chat_tab);
+        assert!(p.private_channels && !p.shared_channels);
+        // A personal-only bot: just Open (Teams' short dialog).
+        let bot = serde_json::json!({ "bots": [{ "scopes": ["personal"] }] });
+        let p = places(&bot);
+        assert!(p.personal && !p.team && !p.chat && !p.meeting);
+        // A team and group chat bot works in meetings too, with no tab.
+        let bot = serde_json::json!({ "bots": [{ "scopes": ["team", "groupChat"] }] });
+        let p = places(&bot);
+        assert!(!p.personal && p.team && p.chat && p.meeting && !p.team_tab && !p.chat_tab);
+    }
 
     /// Help's definition as the middle tier returned it (2026-11-09),
     /// trimmed to what the dialog reads.
