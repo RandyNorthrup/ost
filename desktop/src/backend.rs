@@ -11126,6 +11126,15 @@ fn photo_target(id: &str, my_oid: Option<&str>) -> Option<(api::directory::Photo
             && !thread.contains(['/', '?', '#', ' ']);
         return valid.then(|| (PhotoOwner::Chat, thread.to_string()));
     }
+    // Someone known by mail (an event's organizer): looked up when fetched.
+    if let Some(mail) = id.strip_prefix("mail:") {
+        let valid = mail.contains('@')
+            && mail.len() < 256
+            && mail
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"@._-+'".contains(&b));
+        return valid.then(|| (PhotoOwner::Mail, mail.to_ascii_lowercase()));
+    }
     let (owner, oid) = if id == "me" {
         (PhotoOwner::User, my_oid?.to_string())
     } else if let Some(g) = id.strip_prefix("team:") {
@@ -23400,7 +23409,10 @@ impl qobject::Backend {
             && let Some(dir) = photo_dir()
             && let Ok(entries) = std::fs::read_dir(&dir)
         {
-            let oid_key = if owner == api::directory::PhotoOwner::Chat {
+            let oid_key = if matches!(
+                owner,
+                api::directory::PhotoOwner::Chat | api::directory::PhotoOwner::Mail
+            ) {
                 format!(
                     "{:08x}",
                     oid.bytes().fold(0x811c9dc5u32, |h, b| (h ^ b as u32)
@@ -23416,6 +23428,7 @@ impl qobject::Backend {
                     api::directory::PhotoOwner::Named => "named",
                     api::directory::PhotoOwner::User => "user",
                     api::directory::PhotoOwner::Chat => "chat",
+                    api::directory::PhotoOwner::Mail => "mail",
                 }
             );
             for e in entries.flatten() {
@@ -23511,7 +23524,10 @@ impl qobject::Backend {
             (h ^ b as u32).wrapping_mul(0x01000193)
         });
         // Thread ids aren't file names: chats are keyed by their hash.
-        let oid_key = if owner == api::directory::PhotoOwner::Chat {
+        let oid_key = if matches!(
+            owner,
+            api::directory::PhotoOwner::Chat | api::directory::PhotoOwner::Mail
+        ) {
             format!(
                 "{:08x}",
                 oid.bytes().fold(0x811c9dc5u32, |h, b| (h ^ b as u32)
@@ -23527,6 +23543,7 @@ impl qobject::Backend {
                 api::directory::PhotoOwner::Named => "named",
                 api::directory::PhotoOwner::User => "user",
                 api::directory::PhotoOwner::Chat => "chat",
+                api::directory::PhotoOwner::Mail => "mail",
             }
         );
         let (cached, fresh) = photo_from_disk(&key);
@@ -30459,6 +30476,11 @@ impl qobject::Backend {
                     // Your other calendars (the pane's My calendars and
                     // Groups) and their events, for Split view.
                     "calendars" => Ok(json!({ "calendars": api::calendar::calendars(&client).await? })),
+                    // The mini month's chevron: one or two months (roaming).
+                    "setMiniMonths" => {
+                        api::calendar::set_mini_month_count(args["count"].as_u64().unwrap_or(1).min(2) as u8).await?;
+                        Ok(json!({}))
+                    }
                     // The tile's menu: Charm, Show as, Categorize, Private.
                     "charm" => {
                         api::calendar::set_charm(&s("id"), args["charm"].as_i64().unwrap_or(0)).await?;
@@ -33407,6 +33429,13 @@ mod tests {
             Some((PhotoOwner::User, OID.to_string()))
         );
         assert_eq!(photo_target("me", None), None);
+        // An organizer known by mail; nothing that isn't one.
+        assert_eq!(
+            photo_target("mail:Ann.Lee@Contoso.com", None),
+            Some((PhotoOwner::Mail, "ann.lee@contoso.com".to_string()))
+        );
+        assert_eq!(photo_target("mail:a/b@x.com", None), None);
+        assert_eq!(photo_target("mail:nobody", None), None);
         // A guest is drawn by name, as Teams asks for their picture.
         assert_eq!(
             photo_target("8:teamsvisitor:43cf0b1e5a8d4c2f9e7f0a1b2c3d4e5f", None),

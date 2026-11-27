@@ -9,16 +9,46 @@ Rectangle {
     /// ActivityItem list, newest first.
     property var items: []
     property string selectedId: ""
+    /// The open item's kind (a missed call or voicemail shows Calls beside
+    /// the feed instead of a chat).
+    property string selectedKind: ""
     // Chips and the filter box.
     property string chip: ""
     property string nameFilter: ""
     property bool filtering: false
     signal markAllRead()
+    /// The ··· menu's Notification settings (Settings ▸ Notifications and
+    /// activity).
+    signal notificationSettings()
+    /// What a row shows, as Teams' filter matches it: every line of the
+    /// item (headline, preview, where), case-insensitively.
+    function rowText(it) {
+        return [it.title, (it.preview || "").replace(/\s+/g, " ").trim(), theme.activityPlace(it.context), it.channel || ""].join("\n").toLowerCase()
+    }
     readonly property var shown: items.filter(it =>
         (chip !== "unread" || it.unread)
         && (chip !== "mentions" || it.kind === "mention")
         && (chip !== "tags" || it.kind === "tagMention")
-        && (!nameFilter || (it.title + " " + it.preview).toLowerCase().indexOf(nameFilter) >= 0))
+        && (!nameFilter || rowText(it).indexOf(nameFilter) >= 0))
+    /// Teams' filter marks (feeditem_search_highlight): each match on a
+    /// colorPaletteMarigoldBorder1 fill in NeutralForeground1 at regular
+    /// weight, as rich text; plain text (with its elision) otherwise.
+    readonly property color markFill: theme.pick("#F9E2AE", "#EAA300", "#000000")
+    function escaped(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
+    function marked(t) {
+        if (!nameFilter) return t
+        const low = t.toLowerCase()
+        let out = "", from = 0, i = low.indexOf(nameFilter)
+        while (i >= 0) {
+            out += escaped(t.substring(from, i))
+                + "<span style=\"background-color:" + markFill + ";color:" + theme.text + ";font-weight:400\">"
+                + escaped(t.substring(i, i + nameFilter.length)) + "</span>"
+            from = i + nameFilter.length
+            i = low.indexOf(nameFilter, from)
+        }
+        return out + escaped(t.substring(from))
+    }
+    function hasMark(t) { return !!nameFilter && (t || "").toLowerCase().indexOf(nameFilter) >= 0 }
     signal openItem(var item)
     signal callBack(var item)
     signal chatWith(var item)
@@ -46,40 +76,62 @@ Rectangle {
         font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
         color: theme.text
     }
+    // ··· (More options) and Filter, Teams' feed header buttons.
     Row {
         anchors.right: parent.right; anchors.rightMargin: 16
         y: 14
         spacing: 0
-        Repeater {
-            model: [{ icon: "more-20", label: qsTr("More options") }, { icon: "search-20", label: qsTr("Filter") }]
-            Rectangle {
-                id: hcFill1
-                required property var modelData
-                required property int index
-                width: 32; height: 32; radius: theme.radius
-                color: hh.hovered ? theme.hover : "transparent"
-                HoverHandler { id: hh; cursorShape: Qt.PointingHandCursor }
-                TapHandler {
-                    onTapped: {
-                        if (parent.index === 0) actMenu.open()
-                        else { root.filtering = !root.filtering; if (!root.filtering) actFilter.text = ""; else actFilter.forceActiveFocus() }
-                    }
-                }
-                FluentIcon { anchors.centerIn: parent; name: parent.modelData.icon; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
-                Accessible.role: Accessible.Button
-                Accessible.name: modelData.label
-                MenuPopup {
-                    id: actMenu
-                    x: -200; y: parent.height + 4
-                    items: [{ label: qsTr("Mark all as read"), icon: "checkmark-12" }]
-                    onPicked: root.markAllRead()
-                }
+        Rectangle {
+            id: moreButton
+            width: 32; height: 32; radius: theme.radius
+            color: moreHover.hovered || actMenu.opened ? theme.hover : "transparent"
+            HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: actMenu.opened ? actMenu.close() : actMenu.open() }
+            FluentIcon { anchors.centerIn: parent; name: "more-20"; size: 20; color: theme.onFill(moreButton, theme.textStrong) }
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("More options")
+            // Teams' activity menu (generalMenuConfig): Mark all as read
+            // with its shortcut, Notification settings; below the button,
+            // its end level with the button's.
+            MenuPopup {
+                id: actMenu
+                x: parent.width - width; y: parent.height + 1
+                items: [{ label: qsTr("Mark all as read"), icon: "glasses-20", keys: "Shift+Esc" },
+                        { label: qsTr("Notification settings"), icon: "settings-20" }]
+                onPicked: i => { if (i === 0) root.markAllRead(); else root.notificationSettings() }
             }
         }
+        Rectangle {
+            id: filterButton
+            width: 32; height: 32; radius: theme.radius
+            color: filterHover.hovered ? theme.hover : "transparent"
+            HoverHandler { id: filterHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.toggleFilter() }
+            // On while the box is open: Teams' filled icon in brand.
+            FluentIcon {
+                anchors.centerIn: parent; size: 20
+                name: root.filtering ? "search-20-filled" : "search-20"
+                color: theme.onFill(filterButton, root.filtering ? theme.brand : theme.textStrong)
+            }
+            ToolTip.visible: filterHover.hovered
+            ToolTip.delay: 600
+            // (Teams' open/close_feeds_filter_button_tooltip_with_shortcut)
+            ToolTip.text: root.filtering ? qsTr("Close filter text box") + " (Ctrl+Shift+F)" : qsTr("Show filter text box") + " (Ctrl+Shift+F)"
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("Filter")
+        }
     }
+    function toggleFilter() {
+        filtering = !filtering
+        if (!filtering) actFilter.text = ""
+        else actFilter.forceActiveFocus()
+    }
+    function menuForTest() { return actMenu }
+    function filterFieldForTest() { return actFilter }
+    // The pills; under the filter box while it's open (Teams keeps them).
+    readonly property real filterBoxH: filtering ? 47 : 0
     Row {
-        visible: !root.filtering
-        x: 16; y: 78
+        x: 16; y: 78 + root.filterBoxH
         spacing: 8
         Repeater {
             model: [{ l: qsTr("Unread"), k: "unread" }, { l: qsTr("@Mentions"), k: "mentions" }, { l: qsTr("Tag mentions"), k: "tags" }]
@@ -106,23 +158,47 @@ Rectangle {
             }
         }
     }
-    Rectangle {
+    // Teams' activity filter box (measured on Teams web 2026-11-27 as
+    // ost-test1): over the pills, 16 in and 72 down, 32 tall, white with
+    // Fluent's shadow 2 and radius 4, no icon; "Filter by name or group
+    // name" 13 in (14/20, NeutralForeground4); a 2 px brand line along its
+    // bottom while it has the focus; with text, Clear filter text (24 px, a
+    // 20 px dismiss, 6 from its end).
+    Item {
+        id: filterBox
         visible: root.filtering
-        x: 16; y: 74; width: parent.width - 32; height: 32; radius: theme.radius
-        color: theme.input
-        border.color: actFilter.activeFocus ? theme.brand : theme.stroke
-        FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 16; color: theme.textSecondary }
+        x: 16; y: 72; width: parent.width - 32; height: 32
+        FluentSurface { anchors.fill: parent; depth: 2; radius: 4; color: theme.input }
+        Rectangle {
+            visible: actFilter.activeFocus
+            anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1
+            color: theme.brand
+        }
         TextInput {
             id: actFilter
-            x: 32; width: parent.width - 40
+            x: 13; width: parent.width - x - (clearFilter.visible ? 36 : 12)
             anchors.verticalCenter: parent.verticalCenter
             font.family: theme.font; font.pixelSize: theme.base
             color: theme.text
+            selectionColor: theme.brand; selectedTextColor: "white"
             clip: true
             onTextChanged: root.nameFilter = text.trim().toLowerCase()
-            Keys.onEscapePressed: { text = ""; root.filtering = false }
-            Text { visible: !actFilter.text; text: qsTr("Filter"); color: theme.textTertiary; font: actFilter.font }
-            Accessible.name: qsTr("Type to filter")
+            Keys.onEscapePressed: { text = ""; root.filtering = false; root.forceActiveFocus() }
+            Text { visible: !actFilter.text; width: actFilter.width; elide: Text.ElideRight; text: qsTr("Filter by name or group name"); color: theme.textTertiary; font: actFilter.font }
+            Accessible.role: Accessible.EditableText
+            Accessible.name: qsTr("Filter by name or group name")
+        }
+        Rectangle {
+            id: clearFilter
+            visible: actFilter.text.length > 0
+            x: parent.width - 6 - width; anchors.verticalCenter: parent.verticalCenter
+            width: 24; height: 24; radius: 4
+            color: clh.hovered ? theme.hover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: clh.hovered ? "dismiss-20-filled" : "dismiss-20"; size: 20; color: theme.onFill(clearFilter, theme.textStrong) }
+            HoverHandler { id: clh; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: { actFilter.text = ""; actFilter.forceActiveFocus() } }
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("Clear filter text")
         }
     }
 
@@ -135,7 +211,7 @@ Rectangle {
 
     ListView {
         id: list
-        y: 111
+        y: 111 + root.filterBoxH
         width: parent.width - 1; height: parent.height - y
         clip: true
         spacing: 0
@@ -235,7 +311,9 @@ Rectangle {
                 width: 273
                 Text {
                     width: 201
-                    text: it.modelData.title
+                    readonly property bool marks: root.hasMark(it.modelData.title)
+                    textFormat: marks ? Text.RichText : Text.PlainText
+                    text: marks ? root.marked(it.modelData.title) : it.modelData.title
                     wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight
                     lineHeight: 20; lineHeightMode: Text.FixedHeight
                     font.family: theme.font; font.pixelSize: theme.base
@@ -246,7 +324,11 @@ Rectangle {
                     visible: text.length > 0
                     width: parent.width
                     // (one line, as Teams: a multi-line message runs on)
-                    text: (it.modelData.preview || "").replace(/\s+/g, " ").trim()
+                    readonly property string plain: (it.modelData.preview || "").replace(/\s+/g, " ").trim()
+                    readonly property bool marks: root.hasMark(plain)
+                    textFormat: marks ? Text.RichText : Text.PlainText
+                    text: marks ? root.marked(plain) : plain
+                    maximumLineCount: 1; clip: marks
                     elide: Text.ElideRight
                     lineHeight: 20; lineHeightMode: Text.FixedHeight
                     font.family: theme.font; font.pixelSize: theme.base
@@ -261,7 +343,11 @@ Rectangle {
                     Text {
                         id: placeText
                         width: Math.min(implicitWidth, parent.width - (channelText.visible ? Math.min(channelText.implicitWidth, parent.width / 2) + 20 : 0))
-                        text: theme.activityPlace(it.modelData.context)
+                        readonly property string plain: theme.activityPlace(it.modelData.context)
+                        readonly property bool marks: root.hasMark(plain)
+                        textFormat: marks ? Text.RichText : Text.PlainText
+                        text: marks ? root.marked(plain) : plain
+                        clip: marks
                         elide: Text.ElideRight
                         font.family: theme.font; font.pixelSize: theme.small
                         color: theme.textStrong
@@ -275,7 +361,10 @@ Rectangle {
                         id: channelText
                         visible: !!it.modelData.channel
                         width: Math.max(0, Math.min(implicitWidth, parent.width - placeText.width - 20))
-                        text: it.modelData.channel || ""
+                        readonly property bool marks: root.hasMark(it.modelData.channel)
+                        textFormat: marks ? Text.RichText : Text.PlainText
+                        text: marks ? root.marked(it.modelData.channel || "") : (it.modelData.channel || "")
+                        clip: marks
                         elide: Text.ElideRight
                         font.family: theme.font; font.pixelSize: theme.small
                         color: theme.textStrong

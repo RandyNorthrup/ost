@@ -179,6 +179,42 @@ pub enum PhotoOwner {
     /// A group chat without its own picture, by thread id: Teams' picture
     /// of its members in a split circle (`mergedProfilePicturev2`).
     Chat,
+    /// A person known by mail address (an event's organizer): their
+    /// directory entry's picture, as Teams' calendar shows it.
+    Mail,
+}
+
+/// A person's object id from their mail address (Graph: the address as
+/// their sign-in name, else their mail).
+pub async fn user_id_by_mail(client: &TeamsClient, address: &str) -> Result<String> {
+    anyhow::ensure!(
+        address.contains('@')
+            && address.len() < 256
+            && address
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"@._-+'".contains(&b)),
+        "Not a mail address"
+    );
+    let enc: String = url::form_urlencoded::byte_serialize(address.as_bytes()).collect();
+    if let Ok(r) = client.graph_get(&format!("/users/{enc}?$select=id")).await
+        && let Ok(v) = r.json::<serde_json::Value>().await
+        && let Some(id) = v["id"].as_str()
+    {
+        return Ok(id.to_string());
+    }
+    let q: String = url::form_urlencoded::byte_serialize(
+        format!("mail eq '{}'", address.replace('\'', "''")).as_bytes(),
+    )
+    .collect();
+    let v: serde_json::Value = client
+        .graph_get(&format!("/users?$filter={q}&$select=id&$top=1"))
+        .await?
+        .json()
+        .await?;
+    v["value"][0]["id"]
+        .as_str()
+        .map(str::to_string)
+        .context("No such person in the directory")
 }
 
 /// The members a group chat's picture shows (Teams' chat list, measured on
@@ -238,6 +274,14 @@ pub async fn photo(
         .middle_tier_url()
         .context("No Teams middle-tier endpoint")?;
     let name: String = url::form_urlencoded::byte_serialize(display_name.as_bytes()).collect();
+    // By mail: the person's directory id, then their picture.
+    let resolved;
+    let (owner, id) = if owner == PhotoOwner::Mail {
+        resolved = user_id_by_mail(client, id).await?;
+        (PhotoOwner::User, resolved.as_str())
+    } else {
+        (owner, id)
+    };
     let url = if owner == PhotoOwner::Chat {
         // A group chat: its members (the chat service) and their names
         // (one short-profile request), then the merged picture (64 px, as
