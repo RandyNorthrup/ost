@@ -154,7 +154,7 @@ fn section_kind(group_type: i64) -> &'static str {
 
 /// A Graph (REST) id from Outlook's EWS id: the same bytes in URL-safe
 /// base64, compared without padding.
-fn rest_id(ews: &str) -> String {
+fn rest_folder_id(ews: &str) -> String {
     ews.replace('/', "-").replace('+', "_")
 }
 
@@ -214,7 +214,7 @@ fn calendars_in_groups(
             let folder = c
                 .pointer("/CalendarFolderId/Id")
                 .and_then(|i| i.as_str())
-                .map(rest_id)
+                .map(rest_folder_id)
                 .unwrap_or_default();
             let hit = graph
                 .iter()
