@@ -1,9 +1,11 @@
 ---
 id: TASK-0357
 title: 'Settings and title bar as Teams: Denoising, About date, ended Premium trial'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-27T17:32:00Z'
+updated_date: '2026-11-27T18:07:00Z'
 labels: []
 dependencies: []
 priority: medium
@@ -21,3 +23,26 @@ From the 2026-11-27 parity audit (scope B), which compared Teams desktop on winp
 - [ ] #2 B-14: Settings > About: "last checked" date uses a two-digit year, as Teams desktop does it, checked side by side
 - [ ] #3 B-15: Title bar: Teams Premium pill and menu rows for an ended (canceled) Premium trial, as Teams desktop does it, checked side by side
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. B-12: research Teams Denoising in its bundles (setting key, storage, pipeline), add ost_vfx Denoiser + videoDenoising setting, Settings and in-call pane rows.
+2. B-14: Teams formats About's date with Intl toLocaleString(undefined,{year,month,day numeric}); add regional::numeric_date (ICU yMd table for every Teams culture, Persian/Buddhist calendars, native digits) and use it.
+3. B-15: reverse Teams' TeamsPremiumTitleBar / MoreOptionsMenuItem rule (LFT trial, licence flags, ECS premiumTitleBarConfig, per-device localStorage marks); implement api::premium::entry with tests; rewire backend/TitleBar.
+4. Build/test on a build box, live-check on linuxlt as ost-test1 against Teams on testpc1/winpc, PR, CI/Codex green.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Research (MSTeams 26304.1207.5384.858 bundles on testpc1, local storage read-only on winpc/testpc1):
+
+B-12 Denoising: ECS calling.enableVideoDenoising (true for ost-test1) + slimcore isVideoDenoisingCapable gate the row (Settings Devices after Super resolution; in-call pane Advanced settings with Super resolution, before Mirror). Strings calling:kcznlaild "Denoising", calling:k36c8ufd5 (Teams spells "availlable"). Device setting videoDenoisingEnabled (localStorage + app device settings cmd_settings.json, shared by accounts on the device, not roamed); default ON ("Initializing Video Denoising to ON (FF enabled, no stored preference)"). Applied as the camera video filter (slimcore VideoEffectType.Denoising 1048576 via setVideoFilterState), re-applied on camera change, so preview and sent video both carry it.
+
+B-14: Teams About uses lastUpdated.toLocaleString(undefined,{year:"numeric",month:"numeric",day:"numeric"}) (settings-app bundle), i.e. ICU yMd in the app language: en-US 11/27/2026.
+
+B-15: Teams' rule (async-entry dnt/cnt/lnt/rnt, oat/iat/sat/Pst; LFT service): trial = eligibility (403 body: numeric ineligibilityReason -> EXPIRED_LFT/COMMERCE_HARD_BLOCK, entity state -> Pending/Active/Inactive) or entity when licensed; isEnded = EXPIRED_LFT or Inactive with endDate. Menu: ONE row: Get Teams Premium when ended (or local end date passed), Teams Premium benefits in an active trial, Unlock otherwise when eligible; a separate benefits row only with a Premium licence (isTPManagement) not in an active trial. Pill: N days left in a trial (stores TeamsPremiumUserTrialEndDateGlobalEntryPoint); Get Premium after a trial only while post-trial promo active (14 days, ECS premiumTitleBarConfig.postTrialPromoDurationInDays, from first view TeamsPremiumUserFirstViewPostTrialGlobalEntryPoint) and the trial is fetched, which Teams skips when the end date was stored -> so pill only after that date. Verified: winpc localStorage has TrialEndDate ~2027-01-15 (no pill, one row); testpc1 (fresh device, ost-test1) has FirstViewPostTrial 2026-11-27 and SHOWS the Get Premium pill. Licence details for ost-test1 now: isTPManagement false, isTeamsPremiumSelfAssigned false.
+
+Not clicked: Get Teams Premium / Request a license anywhere.
+<!-- SECTION:NOTES:END -->

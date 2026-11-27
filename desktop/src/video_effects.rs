@@ -535,6 +535,8 @@ pub fn apply(map: &serde_json::Map<String, serde_json::Value>) {
     let mut s = Settings {
         brightness: flag(map, "adjustBrightness"),
         soft_focus: flag(map, "softFocus"),
+        // Teams' Denoising is on until you turn it off.
+        denoise: map.get("videoDenoising").and_then(|v| v.as_str()) != Some("false"),
         green_screen: flag(map, "greenScreen").then(|| ost_vfx::GreenScreen {
             color: map
                 .get("greenScreenColor")

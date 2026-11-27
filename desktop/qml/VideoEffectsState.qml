@@ -2,7 +2,7 @@ import QtQuick
 
 // Your video effects as every view shows them (Camera ▾, the pre-join
 // picker, the Video effects and settings pane): the background, the blur
-// kind, Adjust brightness, Soft focus and Mirror my video. They are
+// kind, Adjust brightness, Soft focus, Denoising and Mirror my video. They are
 // settings, so they persist; backend applies them to the camera as they
 // change (src/video_effects.rs). Teams' catalog is loaded on first use.
 QtObject {
@@ -12,6 +12,9 @@ QtObject {
     property string blurKind: backend.setting("videoBlur") === "portrait" ? "portrait" : "standard"
     property bool brightness: backend.setting("adjustBrightness") === "true"
     property bool softFocus: backend.setting("softFocus") === "true"
+    /// Teams' Denoising: on unless you turn it off. Like Teams' (a device
+    /// setting, its videoDenoisingEnabled) it stays on this device.
+    property bool denoising: backend.setting("videoDenoising") !== "false"
     /// Teams mirrors your own preview unless you turn it off.
     property bool mirror: backend.setting("mirrorMyVideo") !== "false"
     property var catalog: []
@@ -56,6 +59,7 @@ QtObject {
     }
     function setBrightness(on) { brightness = on; backend.setSetting("adjustBrightness", on ? "true" : "false") }
     function setSoftFocus(on) { softFocus = on; backend.setSetting("softFocus", on ? "true" : "false") }
+    function setDenoising(on) { denoising = on; backend.setSetting("videoDenoising", on ? "true" : "false") }
     /// Teams' Green Screen (Settings ▸ Devices) and your backdrop colour
     /// ("#RRGGBB", "" until you pick one: then the detected one is used).
     property bool greenScreen: backend.setting("greenScreen") === "true"

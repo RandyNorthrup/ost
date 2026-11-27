@@ -281,8 +281,11 @@ Rectangle {
         Accessible.name: qsTr("Settings and more")
         onClicked: moreMenu.visible = !moreMenu.visible
     }
-    // With a Teams Premium trial (or after it, while Premium lasts) Teams
-    // turns Settings and more into a bordered button (measured on winpc
+    // With Teams Premium's pill (api::premium::entry: a trial's "N days
+    // left"; "Get Premium" during a promo, or for 14 days from when it
+    // first shows after a trial ended — on a device that showed the trial,
+    // only once its end date has passed) Teams turns Settings and more
+    // into a bordered button (measured on winpc
     // 2026-11-15): 31.33 tall, white, 0.67 #D1D1D1, radius 4; the premium
     // glyph (16) 8.67 in, "60 days left" / "Get Premium" (14 semibold) 6
     // after it, then ··· (20) 6 after that, 8.67 from the right edge, which
@@ -293,8 +296,8 @@ Rectangle {
     // dnt(), Teams 26304).
     Rectangle {
         id: premiumPill
-        visible: root.premiumMode === "trial" || root.premiumMode === "canceled"
-        readonly property string label: root.premiumMode === "trial" ? qsTr("%1 days left").arg(root.premiumDaysLeft) : qsTr("Get Premium")
+        visible: root.premiumPill !== ""
+        readonly property string label: root.premiumPill === "days" ? qsTr("%1 days left").arg(root.premiumDaysLeft) : qsTr("Get Premium")
         anchors.right: moreButton.right
         anchors.verticalCenter: parent.verticalCenter
         width: pillRow.implicitWidth + 17.33; height: 31.33; radius: 4
@@ -312,7 +315,7 @@ Rectangle {
         TapHandler { onTapped: moreMenu.visible = !moreMenu.visible }
         Accessible.role: Accessible.Button
         Accessible.name: qsTr("Settings and more")
-        Accessible.description: root.premiumMode === "trial" ? qsTr("There are %1 days left in your premium trial").arg(root.premiumDaysLeft) : qsTr("Start your free 60 day Teams Premium trial")
+        Accessible.description: root.premiumPill === "days" ? qsTr("There are %1 days left in your premium trial").arg(root.premiumDaysLeft) : qsTr("Start your free 60 day Teams Premium trial")
         Accessible.onPressAction: moreMenu.visible = !moreMenu.visible
     }
     // "Settings and more", as Teams' (measured on winpc 2026-11-15): a
@@ -325,8 +328,16 @@ Rectangle {
     // mobile app ends with Teams' "New" pill. Unlock Teams Premium shows
     // while you can start Teams' Premium trial.
     property int zoomPercent: 100
-    /// Teams Premium: "offer", "trial", "canceled" or "" (none).
-    property string premiumMode: ""
+    /// Teams Premium's pill: "days" (N days left), "get" (Get Premium) or
+    /// "" (the plain ···).
+    property string premiumPill: ""
+    /// Its ··· menu row: "unlock" (Unlock Teams Premium), "benefits"
+    /// (Teams Premium benefits, in a trial), "get" (Get Teams Premium,
+    /// after one) or "" (none).
+    property string premiumMenu: ""
+    /// Teams' separate Teams Premium benefits row (a Premium licence not
+    /// in an active trial).
+    property bool premiumBenefitsRow: false
     /// Days left in the trial (the button's "N days left").
     property int premiumDaysLeft: 0
     signal zoomOut()
@@ -399,11 +410,13 @@ Rectangle {
             id: moreCol
             x: 4.67; y: 4.67; width: parent.width - 9.33
             spacing: 2
-            // Teams Premium (its modes: offer, trial, canceled).
-            MenuRow { visible: root.premiumMode === "offer"; icon: "premium-20"; label: qsTr("Unlock Teams Premium"); onPicked: root.openPremium("offer") }
-            MenuRow { visible: root.premiumMode === "canceled"; icon: "premium-20"; label: qsTr("Get Teams Premium"); onPicked: root.openPremium("home") }
-            MenuRow { visible: root.premiumMode === "trial" || root.premiumMode === "canceled"; icon: "premium-20"; label: qsTr("Teams Premium benefits"); onPicked: root.openPremium("home") }
-            MenuDivider { visible: root.premiumMode === "offer" || root.premiumMode === "trial" || root.premiumMode === "canceled" }
+            // Teams Premium: one row (Teams' "promo" item), then Teams
+            // Premium benefits for a Premium licence outside a trial.
+            MenuRow { visible: root.premiumMenu === "unlock"; icon: "premium-20"; label: qsTr("Unlock Teams Premium"); onPicked: root.openPremium("offer") }
+            MenuRow { visible: root.premiumMenu === "get"; icon: "premium-20"; label: qsTr("Get Teams Premium"); onPicked: root.openPremium("get") }
+            MenuRow { visible: root.premiumMenu === "benefits"; icon: "premium-20"; label: qsTr("Teams Premium benefits"); onPicked: root.openPremium("home") }
+            MenuRow { visible: root.premiumBenefitsRow; icon: "premium-20"; label: qsTr("Teams Premium benefits"); onPicked: root.openPremium("home") }
+            MenuDivider { visible: root.premiumMenu !== "" || root.premiumBenefitsRow }
             MenuRow { icon: "pin-20"; label: root.pinned ? qsTr("Unpin window") : qsTr("Pin window on top"); keys: "Ctrl+Shift+T"; checked: root.pinned; onPicked: root.togglePin() }
             MenuRow { icon: "settings-20"; label: qsTr("Settings"); keys: "Ctrl+,"; onPicked: root.openSettings() }
             MenuRow { icon: "cast-20"; label: qsTr("Cast"); onPicked: root.openCast() }
