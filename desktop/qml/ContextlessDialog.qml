@@ -162,7 +162,7 @@ Popup {
         if (!picked || !app) return
         // (Cards from Your agents and apps carry no configuration page:
         // the definition's is used.)
-        const a = Object.assign({}, app, { team_tab: !!places.team_tab, chat_tab: !!places.chat_tab, icon: app.icon || (d ? d.icon : ""),
+        const a = Object.assign({}, app, { team_tab: !!places.team_tab, chat_tab: !!places.chat_tab, meeting_tab: !!places.meeting_tab, icon: app.icon || (d ? d.icon : ""),
                                            config_url: app.config_url || (d ? d.config_url || "" : "") })
         const p = picked
         close()
