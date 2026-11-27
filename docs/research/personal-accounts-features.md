@@ -374,8 +374,15 @@ Screenshots are kept outside the repo (coordinator PC,
    that is signed in to teams.live.com goes to the pre-join screen of the
    web client. How a pasted `teams.live.com/meet/…` link opens in the
    desktop app was not tried.
-8. **60-minute limit. See the result below.** The authz response carries
-   `maxMeetingDurationMinutes: 60` and `maxMeetingParticipants: 100`. The
+8. **60-minute limit. Partly verified.** The authz response carries
+   `maxMeetingDurationMinutes: 60` and `maxMeetingParticipants: 100`, and
+   the New meeting form and Plans and upgrades state the 60-minute limit.
+   A personal meeting (started 09:58 from a meeting link) showed **no
+   warning and did not end** at 50, 55, 59 or 60 minutes and was still
+   running at 1:04; by then only the organizer was left, because the
+   second participant (OST Personal 1 on the web) dropped out after about
+   35 minutes when its headless browser stalled. So the warning and the
+   end of a meeting with two or more people present were not observed. The
    20-participant limit for calls from a chat can't be tested with two
    accounts.
 9. **Chat request UI. Partly verified.** Checked the request a work user
