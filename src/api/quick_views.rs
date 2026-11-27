@@ -264,11 +264,11 @@ pub fn reminders_from(v: &serde_json::Value, now_ms: i64) -> Vec<ReminderItem> {
     out
 }
 
-/// Your reminders (Chat ▸ Reminders), and whether that was the whole
-/// stream. Each set, edit and due event is a record, so the stream is read
-/// page by page (its `_metadata.backwardLink`), up to 10 pages: room for
-/// Teams' 200 open reminders and their changes.
-pub async fn reminders(client: &TeamsClient, now_ms: i64) -> Result<(Vec<ReminderItem>, bool)> {
+/// Every record of your `48:reminders` stream, newest first, and whether
+/// that was the whole stream. Each set, edit and due event is a record, so
+/// it is read page by page (its `_metadata.backwardLink`), up to 10 pages
+/// of 100: room for Teams' 200 open reminders and their changes.
+pub async fn reminder_records(client: &TeamsClient) -> Result<(Vec<serde_json::Value>, bool)> {
     let mut v = read(client, "48:reminders").await?;
     let mut all: Vec<serde_json::Value> = v["messages"].as_array().cloned().unwrap_or_default();
     let mut whole = false;
@@ -291,6 +291,13 @@ pub async fn reminders(client: &TeamsClient, now_ms: i64) -> Result<(Vec<Reminde
         v = client.chat_get(&url).await?.json().await?;
         all.extend(v["messages"].as_array().cloned().unwrap_or_default());
     }
+    Ok((all, whole))
+}
+
+/// Your reminders (Chat ▸ Reminders), and whether the whole stream was
+/// read.
+pub async fn reminders(client: &TeamsClient, now_ms: i64) -> Result<(Vec<ReminderItem>, bool)> {
+    let (all, whole) = reminder_records(client).await?;
     Ok((
         reminders_from(&serde_json::json!({ "messages": all }), now_ms),
         whole,

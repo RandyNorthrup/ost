@@ -221,14 +221,12 @@ async fn soft_delete_reminder(client: &TeamsClient, conv: &str, message_id: &str
         "{}/v1/users/ME/conversations/48:reminders",
         client.chat_service_url()
     );
-    let v: serde_json::Value = client
-        .chat_get(&format!(
-            "{base}/messages?view=msnp24Equivalent&pageSize=100"
-        ))
-        .await?
-        .json()
-        .await?;
-    let ids = reminder_records_of(&v, conv, message_id);
+    let (records, _) = super::quick_views::reminder_records(client).await?;
+    let ids = reminder_records_of(
+        &serde_json::json!({ "messages": records }),
+        conv,
+        message_id,
+    );
     if ids.is_empty() {
         anyhow::bail!("no reminder to remove");
     }
