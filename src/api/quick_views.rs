@@ -265,11 +265,36 @@ pub fn reminders_from(v: &serde_json::Value, now_ms: i64) -> Vec<ReminderItem> {
 }
 
 /// Your reminders (Chat ▸ Reminders), and whether that was the whole
-/// stream (fewer records than a page).
+/// stream. Each set, edit and due event is a record, so the stream is read
+/// page by page (its `_metadata.backwardLink`), up to 10 pages: room for
+/// Teams' 200 open reminders and their changes.
 pub async fn reminders(client: &TeamsClient, now_ms: i64) -> Result<(Vec<ReminderItem>, bool)> {
-    let v = read(client, "48:reminders").await?;
-    let whole = v["messages"].as_array().map_or(0, |m| m.len()) < 100;
-    Ok((reminders_from(&v, now_ms), whole))
+    let mut v = read(client, "48:reminders").await?;
+    let mut all: Vec<serde_json::Value> = v["messages"].as_array().cloned().unwrap_or_default();
+    let mut whole = false;
+    for _ in 0..10 {
+        let back = v
+            .pointer("/_metadata/backwardLink")
+            .and_then(|l| l.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let page = v["messages"].as_array().map_or(0, |m| m.len());
+        if back.is_empty() || page < 100 {
+            whole = true;
+            break;
+        }
+        let url = if back.contains("pageSize=") {
+            back
+        } else {
+            format!("{back}&pageSize=100")
+        };
+        v = client.chat_get(&url).await?.json().await?;
+        all.extend(v["messages"].as_array().cloned().unwrap_or_default());
+    }
+    Ok((
+        reminders_from(&serde_json::json!({ "messages": all }), now_ms),
+        whole,
+    ))
 }
 
 async fn read(client: &TeamsClient, conv: &str) -> Result<serde_json::Value> {

@@ -2062,6 +2062,7 @@ Window {
         onWindowActiveChanged: if (windowActive) markCurrentRead()
         Component.onCompleted: start()
         onActivateRequested: { window.show(); window.raise(); window.requestActivate() }
+        onRemindersRequested: { rail.current = "chat"; chatList.openQuick("reminders") }
     }
 
     // OST_SCREENSHOT=<file.png>: render, optionally open a chat, save, quit.
