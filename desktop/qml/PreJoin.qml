@@ -132,6 +132,21 @@ Window {
     /// with "Join as Organizer" / "Join as Presenter" and "Preview as
     /// Attendee" (measured in Teams desktop 2026-11-18).
     readonly property var eventJoin: backend.prejoinEventJson ? JSON.parse(backend.prejoinEventJson) : null
+    /// Opened from a link (TASK-0369) with no calendar event: the title
+    /// and times come from the meeting once its call is preheated, as
+    /// Teams' pre-join shows them.
+    property bool titleFromDetails: false
+    onTitleFromDetailsChanged: takeDetails()
+    function takeDetails() {
+        if (!backend.prejoinInfoJson || !win.visible) return
+        const i = JSON.parse(backend.prejoinInfoJson)
+        if (win.titleFromDetails && i.title) win.subject = i.title
+        if (!win.timesKnown) win.setTimes(i.start, i.end)
+    }
+    Connections {
+        target: backend
+        function onPrejoinInfoJsonChanged() { win.takeDetails() }
+    }
     /// Leave the lobby (Cancel, Escape).
     signal leaveLobby()
     /// The service ended the join (denied from the lobby, or nobody let us
@@ -229,7 +244,7 @@ Window {
         titleField.forceActiveFocus(); titleField.cursorPosition = titleField.text.length
     }
     function openFor(url, subj, start, end) {
-        meetNow = false; meetChannel = ""
+        meetNow = false; meetChannel = ""; titleFromDetails = false
         joinUrl = url; subject = subj
         startTime = start ? new Date(start) : new Date()
         endTime = end ? new Date(end) : new Date()

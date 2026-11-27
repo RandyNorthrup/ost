@@ -2167,6 +2167,124 @@ Window {
         Component.onCompleted: start()
         onActivateRequested: { window.show(); window.raise(); window.requestActivate() }
         onRemindersRequested: { rail.current = "chat"; chatList.openQuick("reminders") }
+        // A Teams link from the command line, the browser's "Join on the
+        // Teams app" or another launch (TASK-0369): opened once signed in.
+        onTeamsLinkRequested: if (signedIn) window.openTeamsLink(takeTeamsLink())
+        onSignedInChanged: if (signedIn) deliverTeamsLink()
+    }
+
+    // ── Teams links (TASK-0369; teams_link.rs reads them) ──────────────
+    /// Open a Teams link read by backend.takeTeamsLink / teamsLinkJson
+    /// (`{kind, …}` JSON) where Teams desktop opens it: a meeting's
+    /// pre-join, a chat, a channel, a message, a file in the viewer. A
+    /// link OST can't open says so, with the link one click from the
+    /// browser. Returns whether it was handled.
+    function openTeamsLink(json) {
+        if (!json) return false
+        let l
+        try { l = JSON.parse(json) } catch (e) { return false }
+        const chats = chatList.chats || []
+        const channels = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat((t.channels || []).map(c => Object.assign({ team: t.name }, c))), [])
+        const nameOf = id => { const c = chats.find(c => c.id === id) || channels.find(c => c.id === id); return c ? c.name : "" }
+        const toChat = (id, name) => { rail.current = "chat"; window.composing = false; backend.selectChat(id, name || nameOf(id)) }
+        const cant = (text, url) => window.showToast({ text: text, intent: "error", duration: 10000, action: url ? qsTr("Open in browser") : "", onAction: url ? () => backend.openExternal(url) : null })
+        switch (l.kind) {
+        case "open": return true
+        case "meeting": {
+            // The meeting's own title and times when the calendar has it;
+            // else the pre-join learns them from the meeting (preheat).
+            const thread = (decodeURIComponent(l.url).match(/19:meeting_[^/@]+@thread\.v2|19:[^/@]+@thread\.tacv2/) || [""])[0]
+            const ev = (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).find(e => e.join_url && thread && decodeURIComponent(e.join_url).indexOf(thread) >= 0)
+            preJoin.openFor(l.url, ev ? ev.subject : (nameOf(thread) || qsTr("Microsoft Teams meeting")), ev ? ev.start_utc : "", ev ? ev.end_utc : "")
+            preJoin.titleFromDetails = !ev
+            return true
+        }
+        case "meetingId":
+            // Join with an ID, as Teams resolves a short link.
+            window.linkJoinById = true
+            calendarView.joinWithId(l.id, l.passcode)
+            return true
+        case "personalMeeting":
+            // Teams free's meetings need a personal account (TASK-0298).
+            cant(qsTr("OST can't join Teams (free) meetings yet."), l.url)
+            return true
+        case "chat": toChat(l.thread, ""); return true
+        case "channel": {
+            const ch = channels.find(c => c.id === l.thread)
+            toChat(l.thread, ch ? ch.name : (l.name || qsTr("General")))
+            return true
+        }
+        case "message":
+            // Shown once the chat's messages are in (they load afresh).
+            window.linkJump = { thread: l.thread, message: l.message, parent: l.parent || "" }
+            toChat(l.thread, "")
+            return true
+        case "newChat":
+            rail.current = "chat"; window.composing = true
+            newChatLink.begin(l)
+            return true
+        case "file":
+            rail.current = "chat"
+            fileViewer.show({ name: l.name, file_type: l.fileType, object_url: l.objectUrl, location: "", site_url: "" })
+            return true
+        case "inApp": rail.current = "chat"; conversation.openLink(l.url); return true
+        case "unsupported": cant(qsTr("OST can't open this kind of Teams link yet."), l.url); return true
+        }
+        return false
+    }
+    /// A message link's message, shown once its chat's messages load.
+    property var linkJump: null
+    Connections {
+        target: backend
+        function onMessagesJsonChanged() {
+            const j = window.linkJump
+            if (!j || backend.currentChatId !== j.thread || !backend.messagesJson || backend.messagesJson === "[]") return
+            window.linkJump = null
+            conversation.showFound(j.message, [], j.parent)
+        }
+    }
+    /// A Join with an ID started by a short link: its failure is told (the
+    /// Join with an ID dialog isn't open to tell it).
+    property bool linkJoinById: false
+    Connections {
+        target: backend
+        function onCalendarActionDone(op, result, error) {
+            if (op !== "joinById" || !window.linkJoinById) return
+            window.linkJoinById = false
+            if (error) window.showToast({ text: error, intent: "error", duration: 8000 })
+            // Its pre-join (opened by the calendar's handler) takes the
+            // meeting's title and times from the meeting, as for a link.
+            else Qt.callLater(() => { if (preJoin.visible) preJoin.titleFromDetails = true })
+        }
+    }
+    /// A new-chat link's people (e-mail addresses / UPNs), found one by one
+    /// in the To: line's search, then its name and message.
+    Timer {
+        id: newChatLink
+        interval: 400; repeat: true
+        property var want: []
+        property var link: null
+        property int waited: 0
+        function begin(l) {
+            link = l; want = l.users.slice(); waited = 0
+            if (l.message) newChat.setMessage(l.message)
+            if (l.topic && l.users.length > 1) { newChat.naming = true; newChat.nameText = l.topic }
+            if (want.length) { newChat.search(want[0]); restart() }
+        }
+        onTriggered: {
+            const u = want[0]
+            const s = newChat.suggested || {}
+            const hit = s.query === u ? (s.items || []).find(p => [p.upn, p.sub, p.mail].some(m => m && String(m).toLowerCase() === u.toLowerCase())) : null
+            if (!hit && ++waited < 25) return
+            if (hit) newChat.pick(hit)
+            else console.warn("LINK new chat: no one found for a user in the link")
+            want = want.slice(1); waited = 0
+            if (want.length) { newChat.search(want[0]); return }
+            stop()
+            // One person you already chat with: Teams shows that chat, and
+            // the message waits in its own compose box.
+            if (link.message && newChat.history) Qt.callLater(() => conversation.setComposeText(link.message))
+        }
     }
 
     // OST_SCREENSHOT=<file.png>: render, optionally open a chat, save, quit.
@@ -2175,7 +2293,8 @@ Window {
     property bool jumped: false
     property bool signInShot: false
     // Positional arguments (never flags): <shot.png> [send text] [awaited text].
-    readonly property var positional: Qt.application.arguments.slice(1).filter(a => !a.startsWith("--"))
+    // (A Teams link, the desktop entry's %u, is not one: TASK-0369.)
+    readonly property var positional: Qt.application.arguments.slice(1).filter(a => !a.startsWith("--") && !/^(web\+)?msteams:|^https?:\/\//i.test(a))
     readonly property string shotPath: positional.length > 0 ? positional[0] : ""
     Timer {
         id: shotTimer

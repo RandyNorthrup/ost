@@ -55,15 +55,47 @@ pub fn request_open_chat(thread_id: String, name: String) {
     }
 }
 
+/// How long a waiting Teams link waits for the push channel (in 250 ms
+/// steps): 20 s, then it opens anyway (and says what failed).
+const TEAMS_LINK_PUSH_WAIT_STEPS: u32 = 80;
+
+/// A Teams link waiting for the window (TASK-0369): from the command line
+/// or another launch (main.rs), taken once signed in (take_teams_link).
+static TEAMS_LINK: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// A Teams link to open (an `msteams:` or https Teams link, read again by
+/// teams_link::parse when taken): the window comes forward and QML takes it
+/// once signed in. Before the window exists it waits.
+pub fn request_open_link(link: String) {
+    if let Ok(mut pending) = TEAMS_LINK.lock() {
+        *pending = Some(link);
+    }
+    if let Some(qt) = QT_THREAD.get() {
+        let _ = qt.queue(|mut this| {
+            this.as_mut().activate_requested();
+            this.as_mut().deliver_teams_link();
+        });
+    }
+}
+
+/// Where a profile's instance socket lives (main.rs listens on it), ""
+/// for the default profile. Inside Flatpak, in the app's own runtime
+/// folder, the one every instance of the app shares.
+pub fn instance_socket_for(profile: &str) -> Option<std::path::PathBuf> {
+    let mut dir = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR")?);
+    if let Some(id) = std::env::var_os("FLATPAK_ID").filter(|i| !i.is_empty()) {
+        dir = dir.join("app").join(id);
+    }
+    Some(if profile.is_empty() {
+        dir.join("ost-desktop.sock")
+    } else {
+        dir.join(format!("ost-desktop-{profile}.sock"))
+    })
+}
+
 /// A running profile's instance socket (main.rs's), if one answers.
 fn profile_socket(profile: &str) -> Option<std::os::unix::net::UnixStream> {
-    let dir = std::env::var_os("XDG_RUNTIME_DIR")?;
-    let name = if profile.is_empty() {
-        "ost-desktop.sock".to_string()
-    } else {
-        format!("ost-desktop-{profile}.sock")
-    };
-    std::os::unix::net::UnixStream::connect(std::path::PathBuf::from(dir).join(name)).ok()
+    std::os::unix::net::UnixStream::connect(instance_socket_for(profile)?).ok()
 }
 
 unsafe extern "C" {
@@ -424,6 +456,10 @@ pub mod qobject {
         /// split Join now ("Join as Organizer" / "Preview as Attendee") for
         /// a town hall's organizers and presenters.
         #[qproperty(QString, prejoin_event_json)]
+        /// The meeting the pre-join's preheated call joined, from its
+        /// details ({title, start, end}; "" until known): what Teams'
+        /// pre-join shows for a meeting opened from a link.
+        #[qproperty(QString, prejoin_info_json)]
         /// The meeting's notes link the call shares (its
         /// collabResources.notes meeting state), "" until someone made them.
         #[qproperty(QString, call_notes_url)]
@@ -2199,6 +2235,11 @@ pub mod qobject {
         #[qsignal]
         fn call_action_done(self: Pin<&mut Backend>, op: QString, ok: bool);
 
+        /// A Teams link is waiting (take_teams_link): from the command
+        /// line, the browser's "Join on the Teams app", or another launch.
+        #[qsignal]
+        fn teams_link_requested(self: Pin<&mut Backend>);
+
         /// The Wi-Fi check-in raised one of Teams' work location banners
         /// (TASK-0249): `firstRun` {building, placeId} or `deviceHome`
         /// {placeId}.
@@ -3205,6 +3246,22 @@ pub mod qobject {
         #[qinvokable]
         fn open_web_link(self: &Backend, url: &QUrl);
 
+        /// The Teams link waiting to be opened (TASK-0369; teams_link.rs),
+        /// once: `{kind, …}` as JSON, "" when there's none.
+        #[qinvokable]
+        fn take_teams_link(self: &Backend) -> QString;
+
+        /// Signal teams_link_requested for a waiting Teams link once the
+        /// push channel is up (a meeting's preheat and Join with an ID
+        /// need it; right after a start it can still be connecting).
+        #[qinvokable]
+        fn deliver_teams_link(self: Pin<&mut Backend>);
+
+        /// Where a Teams link leads in OST (teams_link.rs): `{kind, …}`,
+        /// "" for anything that isn't a Teams link.
+        #[qinvokable]
+        fn teams_link_json(self: &Backend, url: &QString) -> QString;
+
         /// Qt's handler for every other scheme the desktop would start an
         /// app for (file:, smb:, other apps' custom schemes): logs and
         /// drops the link (issue #34; link_gate.rs).
@@ -3939,6 +3996,7 @@ pub struct BackendRust {
     call_stream_json: QString,
     prejoin_phone_json: QString,
     prejoin_event_json: QString,
+    prejoin_info_json: QString,
     /// The phone "Call me" put in the meeting (for Disconnect).
     phone_mri: String,
     call_notes_url: QString,
@@ -5458,6 +5516,17 @@ async fn preheat_for_prejoin(
                         tracing::info!(in_lobby = call.in_lobby(), "pre-join: the call is preheated");
                         if let Some(d) = call.joined_details() {
                             latest = Some(d.clone());
+                            // Its title and times, for a pre-join opened
+                            // from a link (Teams' pre-join shows them).
+                            if let Some(i) = teams_cli::calling::meeting_info::from_join_response(d) {
+                                let info = serde_json::json!({
+                                    "title": i.title,
+                                    "start": i.start.map(|t| t.to_string()).unwrap_or_default(),
+                                    "end": i.end.map(|t| t.to_string()).unwrap_or_default(),
+                                })
+                                .to_string();
+                                let _ = qt.queue(move |mut this| this.as_mut().set_prejoin_info_json(QString::from(info.as_str())));
+                            }
                         }
                         // A town hall we present in: Teams' split Join now.
                         let e = call.event();
@@ -16288,6 +16357,7 @@ impl qobject::Backend {
         self.as_mut()
             .set_prejoin_phone_json(QString::from(r#"{"checked":false,"available":false}"#));
         self.as_mut().set_prejoin_event_json(QString::default());
+        self.as_mut().set_prejoin_info_json(QString::default());
         // A meeting started now (Meet now) has nothing to preheat yet.
         if url.is_empty() {
             self.as_mut()
@@ -29932,6 +30002,46 @@ impl qobject::Backend {
             Some(crate::link_gate::LinkKind::Web) => open_web_address(&url),
             _ => tracing::warn!("links: {}", crate::link_gate::refusal_note(&url)),
         }
+    }
+
+    pub fn take_teams_link(&self) -> QString {
+        let link = TEAMS_LINK.lock().ok().and_then(|mut p| p.take());
+        let Some(link) = link else {
+            return QString::default();
+        };
+        match crate::teams_link::parse(&link) {
+            Some(l) => {
+                let json = l.to_json();
+                tracing::info!(kind = %json["kind"], "links: opening a Teams link");
+                QString::from(json.to_string().as_str())
+            }
+            None => {
+                tracing::warn!("links: {}", crate::link_gate::refusal_note(&link));
+                QString::default()
+            }
+        }
+    }
+
+    pub fn deliver_teams_link(self: Pin<&mut Self>) {
+        if TEAMS_LINK.lock().map(|p| p.is_none()).unwrap_or(true) {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            for _ in 0..TEAMS_LINK_PUSH_WAIT_STEPS {
+                if teams_cli::trouter::current_endpoint().is_some() {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
+            let _ = qt.queue(|mut this| this.as_mut().teams_link_requested());
+        });
+    }
+
+    pub fn teams_link_json(&self, url: &QString) -> QString {
+        crate::teams_link::parse(&url.to_string())
+            .map(|l| QString::from(l.to_json().to_string().as_str()))
+            .unwrap_or_default()
     }
 
     pub fn refuse_link(&self, url: &cxx_qt_lib::QUrl) {

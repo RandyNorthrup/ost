@@ -66,7 +66,10 @@ tabs.
 
 Video calls and meetings with background effects, screen sharing, raised
 hands, reactions, live captions, recording, breakout rooms, town halls and
-webinars, plus call transfer, park and voicemail.
+webinars, plus call transfer, park and voicemail. Meeting links open
+straight in OST: `ost-desktop '<meeting link>'` shows the meeting's
+pre-join screen, and OST is the desktop's `msteams:` handler
+([Teams links](docs/desktop.md#teams-links-and-the-browsers-join-on-the-teams-app)).
 
 <p align="center"><img src="docs/screenshots/meeting.png" alt="A meeting in OST with video and a raised hand" width="100%"></p>
 
