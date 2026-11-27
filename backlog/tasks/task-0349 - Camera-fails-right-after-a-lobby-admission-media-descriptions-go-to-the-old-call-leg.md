@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@lobbycam'
 created_date: '2026-11-27T08:07:00Z'
-updated_date: '2026-11-27T10:32:00Z'
+updated_date: '2026-11-27T10:55:00Z'
 labels:
   - bug
   - calls
@@ -46,4 +46,26 @@ Found in TASK-0342's native-format test (2026-11-27). After a meeting's organize
 - Verified live 2026-11-27 (OST Test 3 by link into "OST TEST 349", admitted by OST Test 2, virtual mic ost_lobbycam_mic, test camera C /dev/video22):
   - 1.8 s: the old leg answered 406 "Call is ended.", the description waited, the retarget came 2 ms later, the new leg answered 200; camera on, no "Your camera failed"; the organizer received OST Test 3's camera (MCP source result ok, frames decoded).
   - At once, 1.1 s and 2.4 s: 200 on the old leg (before the move) or the new leg (after it), and each time the new leg was described again after the retarget (200).
+
+- Codex review: a share the moved leg isn't told about stops as well, with "Couldn't share your content" (a3fd3b6f), as offer_capture's failure path. Codex is clean on a3fd3b6f.
+- Cleanup: lobby bypass restored to EveryoneInCompany and read back, "OST TEST 349" deleted, test camera feed, mic watcher and virtual mic removed. The watcher never saw a stream on the built-in mic.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The camera now turns on the first time right after a lobby admission, as it does in Teams desktop.
+
+Cause: when the lobby admits you, the service moves your call leg to the meeting's call (participant retarget). The old leg ends when the move answer is taken, but the new leg's links only arrive with the retarget acknowledgement a few ms to about 1 s later. A camera turned on in that window posted UpdateMediaDescriptions to the old leg and got 406 "Call is ended." (481/10021), so OST showed "Your camera failed".
+
+Changes:
+- `OutgoingCall` tracks the leg move (`LegMove`) from admission to retarget. If the old leg refuses a media description during the move, the description is held for the new leg and the camera stays on.
+- `retarget()` moves every leg link OST uses: call leg, hold, transfer, re-offers, media descriptions, and now `replacement`. It reports when the new leg must be told: a description is owed, or the camera or screen is sending (the processor's mids change with the move). The backend then posts the description. If that post fails, the camera or share stops with Teams' messages.
+- Harness `--join-lobby-camera[=<ms>]` (with `--join-lobby-wait`). Spec notes in call-and-meeting-window.md.
+
+Tests:
+- Unit tests: `descriptions_refused_while_the_leg_moves_go_to_the_new_leg`, plus the extended `a_retarget_gives_the_new_leg` (with the replacement link).
+- Live on linuxlt: OST Test 3 admitted by OST Test 2. The bug reproduced before the fix. After the fix, a 406 during the move was held and posted to the new leg (200), with no error, and the organizer received the camera. Turning the camera on at once, at 1.1 s and at 2.4 s also worked.
+
+PR #39.
+<!-- SECTION:FINAL_SUMMARY:END -->
