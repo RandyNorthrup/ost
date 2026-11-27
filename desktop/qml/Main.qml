@@ -2186,16 +2186,27 @@ Window {
         const chats = chatList.chats || []
         const channels = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat((t.channels || []).map(c => Object.assign({ team: t.name }, c))), [])
         const nameOf = id => { const c = chats.find(c => c.id === id) || channels.find(c => c.id === id); return c ? c.name : "" }
-        // As picking it in the chat list: Drafts, Copilot and the like close.
-        const toChat = (id, name) => { rail.current = "chat"; chatList.chatSelected(id, name || nameOf(id)) }
+        // As picking it in the chat list: Drafts, Copilot and the like
+        // close, and the chat shows its messages (not a tab left open). A
+        // chat the lists don't have yet still gets a name, or the view
+        // stays on "Select a chat".
+        const toChat = (id, name) => {
+            rail.current = "chat"
+            chatList.chatSelected(id, name || nameOf(id) || (id.indexOf("19:meeting_") === 0 ? qsTr("Meeting chat") : qsTr("Chat")))
+            conversation.tab = ""
+        }
         const cant = (text, url) => window.showToast({ text: text, intent: "error", duration: 10000, action: url ? qsTr("Open in browser") : "", onAction: url ? () => backend.openExternal(url) : null })
         switch (l.kind) {
         case "open": return true
         case "meeting": {
             // The meeting's own title and times when the calendar has it;
             // else the pre-join learns them from the meeting (preheat).
-            const thread = (decodeURIComponent(l.url).match(/19:meeting_[^/@]+@thread\.v2|19:[^/@]+@thread\.tacv2/) || [""])[0]
-            const ev = (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).find(e => e.join_url && thread && decodeURIComponent(e.join_url).indexOf(thread) >= 0)
+            // The event with this meeting's thread and message id (a
+            // channel's meetings share its thread).
+            const key = u => { try { const m = /\/meetup-join\/([^/?#]+)\/([^/?#]+)/.exec(u); return m ? decodeURIComponent(m[1]) + "/" + m[2] : "" } catch (e) { return "" } }
+            const want = key(l.url)
+            const thread = want.split("/")[0]
+            const ev = (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).find(e => e.join_url && want && key(e.join_url) === want)
             preJoin.openFor(l.url, ev ? ev.subject : (nameOf(thread) || qsTr("Microsoft Teams meeting")), ev ? ev.start_utc : "", ev ? ev.end_utc : "")
             preJoin.titleFromDetails = !ev
             return true
@@ -2261,6 +2272,9 @@ Window {
             else Qt.callLater(() => { if (preJoin.visible) preJoin.titleFromDetails = true })
         }
     }
+    // The form went away (cancelled, another chat opened): the link's
+    // lookup stops with it.
+    Connections { target: newChat; function onVisibleChanged() { if (!newChat.visible) newChatLink.stop() } }
     /// A new-chat link's people (e-mail addresses / UPNs), found one by one
     /// in the To: line's search, then its name and message.
     Timer {
@@ -2289,7 +2303,10 @@ Window {
             stop()
             // One person you already chat with: Teams shows that chat, and
             // the message waits in its own compose box.
-            if (link.message && newChat.history) Qt.callLater(() => conversation.setComposeText(link.message))
+            if (link.message && newChat.visible && newChat.history) {
+                const chat = newChat.existingChat
+                Qt.callLater(() => { if (newChat.visible && backend.currentChatId === chat) conversation.setComposeText(link.message) })
+            }
         }
     }
 
