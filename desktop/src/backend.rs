@@ -1032,6 +1032,11 @@ pub mod qobject {
         /// when it can't be read, or "" when there's no picture to paste.
         #[qinvokable]
         fn paste_compose_picture(self: &Backend) -> QString;
+        /// A picture picked with Teams free's Attach media, copied where
+        /// pasted pictures go (the upload removes its copy, never the
+        /// picked file): `{path}`, or "" when it can't be read.
+        #[qinvokable]
+        fn compose_picture_copy(self: &Backend, path: &QString) -> QString;
         /// Save an edited scheduled message (its text, media and time).
         #[qinvokable]
         fn edit_scheduled(
@@ -7308,6 +7313,16 @@ pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
             .build()
             .expect("failed to start the engine runtime")
     })
+}
+
+/// Where pasted (and Attach media) pictures wait for their upload.
+fn pasted_dir() -> std::path::PathBuf {
+    std::env::var_os("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+        .unwrap_or_else(std::env::temp_dir)
+        .join("ost")
+        .join("pasted")
 }
 
 /// A short, single-line error for the status bar. Never includes tokens:
@@ -21364,6 +21379,30 @@ impl qobject::Backend {
 
     pub fn feedback_dir(&self) -> QString {
         QString::from(new_feedback_dir().display().to_string().as_str())
+    }
+
+    pub fn compose_picture_copy(&self, path: &QString) -> QString {
+        let src = std::path::PathBuf::from(path.to_string());
+        let ext = src
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase)
+            .filter(|e| ["png", "jpg", "jpeg", "gif", "bmp", "webp"].contains(&e.as_str()));
+        let (Some(ext), true) = (ext, src.is_file()) else {
+            return QString::default();
+        };
+        let dir = pasted_dir();
+        let _ = std::fs::create_dir_all(&dir);
+        let dest = dir.join(format!("{}.{ext}", uuid::Uuid::new_v4()));
+        if let Err(e) = std::fs::copy(&src, &dest) {
+            tracing::warn!("attach media: {e}");
+            return QString::default();
+        }
+        QString::from(
+            json!({ "path": dest.display().to_string() })
+                .to_string()
+                .as_str(),
+        )
     }
 
     pub fn paste_compose_picture(&self) -> QString {

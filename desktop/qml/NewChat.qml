@@ -65,6 +65,11 @@ Rectangle {
         // (Someone on Teams free is picked by their MRI.)
         // (A personal account's picker gives everyone by MRI.)
         const mri = Mri.isConsumer(oid) || String(oid).indexOf("8:") === 0 ? oid : Mri.work(oid)
+        // You (Teams free lists "{you} (You)"): your notes chat.
+        if (root.myMri && mri.toLowerCase() === String(root.myMri).toLowerCase()) {
+            const self = root.chats.find(c => c.isSelf)
+            return self ? self.id : "48:notes"
+        }
         const c = root.chats.find(c => c.peerMri === mri && !c.isGroup && !c.isSelf && !c.meeting)
         return c ? c.id : ""
     }

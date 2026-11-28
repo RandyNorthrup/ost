@@ -1947,10 +1947,13 @@ Item {
         fileMode: FileDialog.OpenFiles
         nameFilters: [qsTr("Images") + " (*.png *.jpg *.jpeg *.gif *.bmp *.webp)"]
         onAccepted: {
+            // (A copy: the upload removes the pasted picture it sends.)
             for (const u of selectedFiles) {
-                const path = decodeURIComponent(u.toString().replace(/^file:\/\//, ""))
-                mediaProbe.source = u
-                root.insertMedia({ kind: "pasted", src: path, path: path, title: "image", width: mediaProbe.implicitWidth, height: mediaProbe.implicitHeight })
+                const copied = backend.composePictureCopy(decodeURIComponent(u.toString().replace(/^file:\/\//, "")))
+                if (!copied) continue
+                const path = JSON.parse(copied).path
+                mediaProbe.source = "file://" + path
+                root.insertMedia({ kind: "pasted", src: "file://" + path, path: "file://" + path, title: "image", width: mediaProbe.implicitWidth, height: mediaProbe.implicitHeight })
                 mediaProbe.source = ""
             }
         }
