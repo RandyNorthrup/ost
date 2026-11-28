@@ -7544,6 +7544,12 @@ fn emoticon_files() -> &'static std::sync::Mutex<HashMap<String, String>> {
     M.get_or_init(Default::default)
 }
 
+/// The state files each account keeps (`state_file` stems): a removed
+/// profile's go with it.
+const OUTBOX_STEM: &str = "outbox";
+const DRAFTS_STEM: &str = "drafts";
+const PROFILE_STATE_STEMS: [&str; 2] = [OUTBOX_STEM, DRAFTS_STEM];
+
 /// An account's own state file: `$XDG_STATE_HOME/ost/<stem>.json` for the
 /// first account, `<stem>-<profile>.json` for another account's profile
 /// (`OST_PROFILE`), as its log is. Accounts share chats (both sides of a
@@ -7575,7 +7581,7 @@ fn profile_state_path(
 /// survive a restart.
 fn outbox() -> &'static std::sync::Arc<api::outbox::Outbox> {
     static OUTBOX: OnceLock<std::sync::Arc<api::outbox::Outbox>> = OnceLock::new();
-    OUTBOX.get_or_init(|| api::outbox::Outbox::open(Some(state_file("outbox"))))
+    OUTBOX.get_or_init(|| api::outbox::Outbox::open(Some(state_file(OUTBOX_STEM))))
 }
 
 /// Each chat's last timeline from the service, so the messages being sent
@@ -8044,10 +8050,13 @@ static RESTART: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::n
 /// once the app has quit: its account signed out, or was never added.
 static REMOVE_PROFILE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// When an app definition last failed to load: its "ready" signal makes
-/// the page ask again, so a failure waits a minute before the next try.
+/// the page ask again, so a failure waits a minute before the next try (and
+/// "ready" comes again then, so the page does try).
 struct AppLoadBackoff(std::sync::Mutex<Option<std::time::Instant>>);
 
 impl AppLoadBackoff {
+    /// How long a failed load waits before the next try.
+    const WAIT: std::time::Duration = std::time::Duration::from_secs(60);
     const fn new() -> Self {
         Self(std::sync::Mutex::new(None))
     }
@@ -8055,7 +8064,7 @@ impl AppLoadBackoff {
         self.0
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(60))
+            .is_none_or(|t| t.elapsed() >= Self::WAIT)
     }
     fn note_failure(&self) {
         *self.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
@@ -8274,17 +8283,10 @@ pub fn remove_profile_if_requested() {
             Err(e) => tracing::warn!("couldn't remove {}: {e}", dir.display()),
         }
     }
-    // Its state files ("<stem>-<profile>.json", as state_file names them).
-    let state = state_file("x");
-    if let Some(dir) = state.parent()
-        && let Ok(rd) = std::fs::read_dir(dir)
-    {
-        let suffix = format!("-{p}.json");
-        for e in rd.flatten() {
-            if e.file_name().to_string_lossy().ends_with(&suffix) {
-                let _ = std::fs::remove_file(e.path());
-            }
-        }
+    // Its state files, by their exact names (another profile's name may
+    // end in "-<this profile>").
+    for stem in PROFILE_STATE_STEMS {
+        let _ = std::fs::remove_file(state_file(stem));
     }
 }
 
@@ -10992,7 +10994,7 @@ async fn cached_image(
 /// roams them to the chat service only where `enableRoamMessageDraft` is
 /// on (api::drafts).
 fn drafts_path() -> Option<std::path::PathBuf> {
-    Some(state_file("drafts"))
+    Some(state_file(DRAFTS_STEM))
 }
 
 /// A chat's unsent draft, as Teams keeps it: with its formatting.
@@ -13423,7 +13425,13 @@ impl qobject::Backend {
                     }
                     Err(e) => {
                         FAILED.note_failure();
-                        tracing::warn!("filters app: {}", short_error(&e))
+                        tracing::warn!("filters app: {}", short_error(&e));
+                        // Ask again once the wait is over (the page asks on "ready").
+                        let later = qt.clone();
+                        runtime().spawn(async move {
+                            tokio::time::sleep(AppLoadBackoff::WAIT).await;
+                            let _ = later.queue(|this| this.video_filters_ready());
+                        });
                     }
                 }
                 LOADING.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -13464,7 +13472,13 @@ impl qobject::Backend {
                     }
                     Err(e) => {
                         FAILED.note_failure();
-                        tracing::warn!("Avatars app: {}", short_error(&e))
+                        tracing::warn!("Avatars app: {}", short_error(&e));
+                        // Ask again once the wait is over (the page asks on "ready").
+                        let later = qt.clone();
+                        runtime().spawn(async move {
+                            tokio::time::sleep(AppLoadBackoff::WAIT).await;
+                            let _ = later.queue(|this| this.avatars_app_ready());
+                        });
                     }
                 }
                 LOADING.store(false, std::sync::atomic::Ordering::SeqCst);

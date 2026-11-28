@@ -874,7 +874,9 @@ pub fn new_profile_name(list: &[Account], taken: &[String]) -> String {
 /// Remove this profile's keyring entry for good (an added account's
 /// profile being removed: signing out leaves an empty entry behind).
 pub fn delete_profile_secrets() {
-    if let Some(entry) = keyring_entry()
+    // (with OST_NO_KEYRING=1, only when another run put the tokens there)
+    if let Some(entry) =
+        keyring_entry(|| Config::config_path().is_ok_and(|p| on_disk_in_keyring(&p)))
         && let Err(e) = SecretStore::delete(&entry)
     {
         tracing::warn!("Could not remove the keyring entry: {e}");
