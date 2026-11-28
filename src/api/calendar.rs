@@ -260,6 +260,18 @@ async fn personal_event_update(client: &TeamsClient, id: &str, form: &MeetingFor
         id = master;
     }
     let id = id.as_str();
+    // A series edit opened from an occurrence carries that occurrence's
+    // dates: the form's time of day and length go onto the series' own
+    // first date (as the work path's update does).
+    let rebased;
+    let form = if form.scope == "series"
+        && let Some(f) = on_series_date(form, &cur)
+    {
+        rebased = f;
+        &rebased
+    } else {
+        form
+    };
     let config = crate::config::Config::load()?;
     let me = Me {
         name: config.display_name().unwrap_or_default(),
@@ -290,6 +302,21 @@ async fn personal_event_update(client: &TeamsClient, id: &str, form: &MeetingFor
         bail!("The event wasn't updated ({status})");
     }
     Ok(())
+}
+
+/// `form` with its start and end moved onto the date the series `master`
+/// starts on, keeping the form's time of day and length.
+fn on_series_date(form: &MeetingForm, master: &serde_json::Value) -> Option<MeetingForm> {
+    let fs = crate::clock::parse_rfc3339(&form.start).ok()?;
+    let fe = crate::clock::parse_rfc3339(&form.end).ok()?;
+    let ms = crate::clock::parse_rfc3339(master.get("startTime")?.as_str()?).ok()?;
+    let ms = ms.with_time_zone(fs.time_zone().clone());
+    let start = crate::clock::single(fs.time_zone(), ms.date().to_datetime(fs.time()))?;
+    let end = start.checked_add(fe.duration_since(&fs)).ok()?;
+    let mut f = form.clone();
+    f.start = crate::clock::rfc3339_in(&start);
+    f.end = crate::clock::rfc3339_in(&end);
+    Some(f)
 }
 
 fn personal_update_body(
@@ -3401,7 +3428,27 @@ pub async fn cancel_meeting(
     // meeting deletes it through its middle tier (`DELETE
     // {mt}/v2.0/me/calendars/events/{objectId}`, 204; captured 2026-11-28).
     if client.is_personal() {
-        return personal_event_delete(client, &s("id")).await;
+        return match scope {
+            "following" => {
+                bail!("Cancelling this and all following events isn't available for this account")
+            }
+            // All events in the series: the series' own event (an
+            // occurrence names it).
+            "series" => {
+                let mut master = s("series_master_id");
+                if master.is_empty() {
+                    master = personal_event(client, &s("id"))
+                        .await?
+                        .get("seriesMasterId")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or_default()
+                        .to_string();
+                }
+                let target = if master.is_empty() { s("id") } else { master };
+                personal_event_delete(client, &target).await
+            }
+            _ => personal_event_delete(client, &s("id")).await,
+        };
     }
     if !s("channel_id").is_empty() {
         let (base, token) = crate::api::tabs::middle_tier(client).await?;
@@ -3539,6 +3586,20 @@ fn cancel_event_request(ews: &str, scope: &str, note: &str, tz: &str) -> serde_j
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn personal_series_edits_stay_on_the_series_date() {
+        let form = super::MeetingForm {
+            start: "2026-12-10T09:30:00-08:00".into(),
+            end: "2026-12-10T10:15:00-08:00".into(),
+            scope: "series".into(),
+            ..Default::default()
+        };
+        let master = serde_json::json!({"startTime": "2026-12-03T17:00:00+00:00"});
+        let f = super::on_series_date(&form, &master).unwrap();
+        assert_eq!(f.start, "2026-12-03T09:30:00-08:00");
+        assert_eq!(f.end, "2026-12-03T10:15:00-08:00");
+    }
+
     #[test]
     fn personal_event_page_from_the_middle_tier() {
         // Teams free's event (OST Personal 1, 2026-11-28), its page fields.
