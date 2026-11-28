@@ -89,6 +89,7 @@ Rectangle {
     signal openImageViewer(var images, int index, var message)
     /// The harness: the posts list's picture cut ({id, limit, full, ranges}).
     function postImagesForTest() { return channelPosts.imagesForTest() }
+    function postRepliesForTest(rootId) { return channelPosts.repliesForTest(rootId) }
     /// An agent's meeting (createMeeting): "schedule" or "edit".
     signal agentMeeting(string op, var message, var entry, var command)
     function scheduleAgentMeeting(m, e, c) { root.agentMeeting("schedule", m, e, c) }
@@ -1177,6 +1178,7 @@ Rectangle {
         onDeleteRequested: id => root.deleteMessage(id)
         onOpenChatSettings: root.openChatSettings()
         canPopOut: root.isChannel && !root.pane
+        stoBodyType: root.isChannel && !root.postsLayout ? "SingleMessage" : ""
         onThreadWindowRequested: m => root.openThreadWindow(m)
         canRecordClip: root.canRecordClips
         onRecordClipRequestedFor: box => { root.clipBox = box; clipRecorder.openFor(root.chatId) }
@@ -2413,6 +2415,7 @@ Rectangle {
         members: root.chatMembers
         onJoinMeeting: (url, title) => root.joinMeetingRequested(url, title)
         onSeeDetails: rootId => root.openPostView(rootId)
+        onOpenReplies: rootId => root.openPostView(rootId)
         onOpenMeetingDetails: (url, start) => root.openMeetingPage(url, start)
         busy: root.busy
         onReply: (id, text) => root.sendReply(id, text)

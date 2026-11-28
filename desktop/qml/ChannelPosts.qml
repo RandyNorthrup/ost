@@ -86,8 +86,32 @@ Item {
         const two = n => (n < 10 ? "0" : "") + n
         return (h > 0 ? h + ":" + two(m) : two(m)) + ":" + two(sec)
     }
-    /// Posts whose earlier replies are shown.
-    property var expanded: ({})
+    /// A post's "Open N replies from …": its conversation in the post view.
+    signal openReplies(string rootId)
+    // Teams' replies line (733522 `Fs`, channels:response_summary_{1..3}_
+    // users_mf; seen on Teams web 2026-11-27): every reply counted, the
+    // repliers newest first (each once, you as "you"), up to three named
+    // and the rest counted; Teams says "replies" even for one.
+    function repliesSummary(replies) {
+        const seen = [], names = []
+        for (let i = replies.length - 1; i >= 0; i--) {
+            const r = replies[i], k = r.sender_mri || r.sender || ""
+            if (!k || seen.indexOf(k) >= 0) continue
+            seen.push(k)
+            if (names.length < 3) names.push(r.mine ? qsTr("you") : r.sender || qsTr("Unknown"))
+        }
+        const n = replies.length, others = seen.length - names.length
+        if (!names.length) return ""
+        if (names.length === 1) return others === 0 ? qsTr("Open %1 replies from %2").arg(n).arg(names[0])
+            : others === 1 ? qsTr("Open %1 replies from %2, and 1 other").arg(n).arg(names[0])
+            : qsTr("Open %1 replies from %2, and %3 others").arg(n).arg(names[0]).arg(others)
+        if (names.length === 2) return others === 0 ? qsTr("Open %1 replies from %2 and %3").arg(n).arg(names[0]).arg(names[1])
+            : others === 1 ? qsTr("Open %1 replies from %2, %3, and 1 other").arg(n).arg(names[0]).arg(names[1])
+            : qsTr("Open %1 replies from %2, %3, and %4 others").arg(n).arg(names[0]).arg(names[1]).arg(others)
+        return others === 0 ? qsTr("Open %1 replies from %2, %3 and %4").arg(n).arg(names[0]).arg(names[1]).arg(names[2])
+            : others === 1 ? qsTr("Open %1 replies from %2, %3, %4, and 1 other").arg(n).arg(names[0]).arg(names[1]).arg(names[2])
+            : qsTr("Open %1 replies from %2, %3, %4, and %5 others").arg(n).arg(names[0]).arg(names[1]).arg(names[2]).arg(others)
+    }
     /// Long posts and replies opened with "see more" (by message id).
     property var seeMoreOpen: ({})
     readonly property SeeMoreRules seeMore: SeeMoreRules {}
@@ -165,6 +189,15 @@ Item {
         if (!p) return ""
         root.seeDetails(p.id)
         return p.id
+    }
+    // Test hook (--channel-rows-test): a post's replies line as shown (""
+    // when all its replies show), its replies, and the list scrolled to it.
+    function repliesForTest(rootId) {
+        const i = root.posts.findIndex(g => g.id === rootId)
+        if (i < 0) return null
+        list.positionViewAtIndex(i, ListView.Beginning)
+        const g = root.posts[i]
+        return { line: g.replies.length > 3 ? root.repliesSummary(g.replies) : "", post: g.post, replies: g.replies }
     }
     // Test hook: Join the newest live meeting's post.
     function joinLiveForTest() {
@@ -247,8 +280,8 @@ Item {
             readonly property var post: modelData.post
             readonly property var replies: modelData.replies
             readonly property bool open: root.replying === modelData.id
-            readonly property bool showAll: root.expanded[modelData.id] === true
-            readonly property var shown: showAll || replies.length <= 3 ? replies : replies.slice(replies.length - 3)
+            // Teams shows the newest three replies under the post.
+            readonly property var shown: replies.length <= 3 ? replies : replies.slice(replies.length - 3)
             // A channel meeting's post: live while a start (its own or a
             // rejoin's) has no end; then its subject says "ended".
             readonly property bool meeting: !!post && post.kind === "call"
@@ -603,23 +636,21 @@ Item {
                         Accessible.name: text
                     }
                 }
-                // Earlier replies, collapsed.
+                // More replies than shown: Teams' response summary (a 41 px
+                // row, the 12/16 brand text 18 in and 12 down; measured on
+                // Teams web 2026-11-27), which opens the post's conversation.
                 Item {
+                    objectName: "repliesSummary"
                     visible: card.replies.length > card.shown.length && !root.selecting
-                    width: parent.width; height: visible ? 40 : 0
+                    width: parent.width; height: visible ? 41 : 0
                     Rectangle { width: parent.width; height: 1; color: theme.dividerSoft }
                     Text {
-                        x: 18; anchors.verticalCenter: parent.verticalCenter
-                        text: (card.replies.length - card.shown.length) + " earlier "
-                            + (card.replies.length - card.shown.length === 1 ? "reply" : "replies")
-                        font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
+                        x: 18; y: 12
+                        text: parent.visible ? root.repliesSummary(card.replies) : ""
+                        font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
                         color: theme.brand
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
-                        TapHandler {
-                            onTapped: {
-                                const e = Object.assign({}, root.expanded); e[card.modelData.id] = true; root.expanded = e
-                            }
-                        }
+                        TapHandler { onTapped: root.openReplies(card.modelData.id) }
                         Accessible.role: Accessible.Button
                         Accessible.name: text
                     }

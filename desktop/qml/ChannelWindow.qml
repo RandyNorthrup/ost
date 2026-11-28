@@ -65,6 +65,8 @@ Window {
         id: host
         messages: win.messages
         isChannel: true
+        // (Share to Outlook names the channel the window shows.)
+        chatId: win.channelId
         teamId: win.teamId; teamName: win.teamName; chatName: win.channelName
         defaultBox: compose
         canPopOut: true
@@ -253,6 +255,9 @@ Window {
         newestAtTop: backend.channelPostsAtTop
         composerHeight: compose.boxHeight + compose.bannerShownH
         onStartAnnouncement: { win.posting = true; compose.announcement = true; compose.focusSubject() }
+        // "Open N replies from …": this window has no post view, so the
+        // post's conversation opens in a window of its own.
+        onOpenReplies: rootId => win.openThread({ id: rootId, root_id: rootId })
     }
 
     // A new post.

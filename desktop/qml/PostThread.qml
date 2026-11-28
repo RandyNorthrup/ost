@@ -194,6 +194,8 @@ Item {
         id: thost
         messages: win.thread
         isChannel: true
+        // (Share to Outlook names the conversation the view shows.)
+        chatId: win.channelId
         teamId: win.teamId; teamName: win.teamName; chatName: win.channelName
         defaultBox: compose
         onQuoteRequested: m => { compose.quote = { message_id: m.id, sender_mri: m.sender_mri || "", sender_name: m.sender || "", preview: m.quote_text || m.text || "" }; compose.focusEditor() }

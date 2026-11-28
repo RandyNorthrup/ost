@@ -3,10 +3,11 @@ id: TASK-0380
 title: >-
   Channels as Teams: Reminders rows for channel messages, the posts list's
   replies line, the post menu's missing items
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@t380'
 created_date: '2026-11-28T02:55:00Z'
-updated_date: '2026-11-28T04:00:00Z'
+updated_date: '2026-11-28T06:16:00Z'
 labels: []
 dependencies: []
 priority: medium
@@ -29,6 +30,16 @@ Differences seen beside Teams desktop 26304 (testpc2 as OST Test 2, testpc1 as o
 - [ ] #3 Channel post and reply menus include Share to Outlook, Immersive Reader and Report this message where Teams shows them
 - [x] #4 A channel meeting's post shows no calendar card with an empty date
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Research Teams 26304 (bundles + Teams web as OST Test 2): reminders slice rows, response summary, channel menu registry.
+2. Reminders: parse parentMessageSubject/Preview for channel replies; channel rows as Followed threads rows; chip styles per state; two-line chat text.
+3. Posts list: Teams' response summary text (response_summary_N_users_mf), 12/16 brand, opens the post view.
+4. Channel post/reply menus: secondary items in registry order (first 3 on the menu, rest under More actions), Report this message for others' messages; Share to Outlook on the channel id (bodyType SingleMessage in Threads channels).
+5. Harness --channel-rows-test; unit test; live check beside Teams.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

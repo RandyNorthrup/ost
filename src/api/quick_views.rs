@@ -153,6 +153,29 @@ pub struct ReminderItem {
     pub saved: bool,
 }
 
+impl QuickItem {
+    /// The item is a channel post itself (or a chat message): its message
+    /// is its reply chain's root.
+    pub fn root_post(&self) -> bool {
+        self.reply_chain.is_empty() || self.reply_chain == self.message_id
+    }
+}
+
+/// A text field of a stream record's activityContext (an object, or the
+/// JSON text of one).
+fn ctx_text(activity: &serde_json::Value, key: &str) -> String {
+    let ctx = &activity["activityContext"];
+    let parsed;
+    let ctx = match ctx.as_str() {
+        Some(s) => {
+            parsed = serde_json::from_str::<serde_json::Value>(s).unwrap_or_default();
+            &parsed
+        }
+        None => ctx,
+    };
+    ctx[key].as_str().unwrap_or_default().to_string()
+}
+
 /// Your reminders from `48:reminders` (Teams' nF.isMessageValid and
 /// cF.toMetadata): `duedate` must be a number; `isReminderDeleted` (true
 /// or "true") drops the item; `completeddate` ends it. The service posts a
@@ -212,6 +235,16 @@ pub fn reminders_from(v: &serde_json::Value, now_ms: i64) -> Vec<ReminderItem> {
                 fill(&mut r.item.sender_mri, text("sourceUserId"));
                 fill(&mut r.item.preview, text("messagePreview"));
                 fill(&mut r.item.topic, text("sourceThreadTopic"));
+                if !r.item.root_post() {
+                    fill(
+                        &mut r.item.parent_subject,
+                        ctx_text(&a, "parentMessageSubject"),
+                    );
+                    fill(
+                        &mut r.item.parent_preview,
+                        ctx_text(&a, "parentMessagePreview"),
+                    );
+                }
             }
             continue;
         }
@@ -234,7 +267,7 @@ pub fn reminders_from(v: &serde_json::Value, now_ms: i64) -> Vec<ReminderItem> {
         }
         let due = due.unwrap_or_default();
         seen.insert(key, Some(out.len()));
-        let item = QuickItem {
+        let mut item = QuickItem {
             channel: thread.ends_with("@thread.tacv2") || text("sourceThreadType") == "space",
             thread_id: thread,
             message_id: text("sourceMessageId"),
@@ -250,6 +283,13 @@ pub fn reminders_from(v: &serde_json::Value, now_ms: i64) -> Vec<ReminderItem> {
             unread: !truthy(&p["isRead"]) && p["isRead"].as_bool() == Some(false),
             ..Default::default()
         };
+        // A reply's row names its post (Teams' slice item rootMessage: the
+        // record's parentMessageSubject, else parentMessagePreview); a post's
+        // own row has no such line.
+        if !item.root_post() {
+            item.parent_subject = ctx_text(&a, "parentMessageSubject");
+            item.parent_preview = ctx_text(&a, "parentMessagePreview");
+        }
         out.push(ReminderItem {
             item,
             stream_id: m["id"].as_str().unwrap_or_default().to_string(),
@@ -442,6 +482,59 @@ mod tests {
             serde_json::json!({ "duedate": now - 1 }),
         );
         assert!(reminders_from(&serde_json::json!({ "messages": [set, gone] }), now).is_empty());
+    }
+
+    #[test]
+    fn channel_reminders_name_the_post_of_a_reply() {
+        let now = 1_000_000_000_000i64;
+        let rec = |id: &str, t: &str, msg: i64, chain: i64, ctx: serde_json::Value| {
+            serde_json::json!({ "id": id, "originalarrivaltime": t, "properties": {
+                "duedate": now + 60_000,
+                "activity": {
+                    "sourceThreadId": "19:c@thread.tacv2", "sourceMessageId": msg,
+                    "sourceReplyChainId": chain, "sourceUserImDisplayName": "OST Test 1",
+                    "sourceUserId": "8:orgid:1", "messagePreview": format!("m{msg}"),
+                    "sourceThreadTopic": "OST Test Team", "activityContext": ctx
+                }
+            }})
+        };
+        let v = serde_json::json!({ "messages": [
+            // A post: no line for its post.
+            rec("1", "2026-11-27T10:00:00Z", 100, 100, serde_json::json!({ "parentMessageSubject": "x" })),
+            // A reply, its post's subject (activityContext may be JSON text).
+            rec("2", "2026-11-27T10:00:01Z", 101, 100, serde_json::json!(
+                r#"{"parentMessageSubject":"0.3 release checklist","parentMessagePreview":"Here's what's left"}"#)),
+            // A reply under a post with no subject: its preview.
+            rec("3", "2026-11-27T10:00:02Z", 201, 200, serde_json::json!({ "parentMessagePreview": "a post" })),
+        ]});
+        let r = reminders_from(&v, now);
+        let by = |id: &str| r.iter().find(|x| x.item.message_id == id).unwrap();
+        assert!(by("100").item.channel && by("100").item.root_post());
+        assert_eq!(by("100").item.parent_subject, "");
+        assert_eq!(by("101").item.parent_subject, "0.3 release checklist");
+        assert_eq!(by("101").item.parent_preview, "Here's what's left");
+        assert_eq!(by("201").item.parent_subject, "");
+        assert_eq!(by("201").item.parent_preview, "a post");
+
+        // The due record leaves the post out; the older one has it.
+        let mut due = rec(
+            "5",
+            "2026-11-27T12:00:00Z",
+            101,
+            100,
+            serde_json::Value::Null,
+        );
+        due["properties"]["isdue"] = serde_json::json!(true);
+        let set = rec(
+            "4",
+            "2026-11-27T11:00:00Z",
+            101,
+            100,
+            serde_json::json!({ "parentMessageSubject": "s" }),
+        );
+        let r = reminders_from(&serde_json::json!({ "messages": [set, due] }), now);
+        assert_eq!(r[0].stream_id, "5");
+        assert_eq!(r[0].item.parent_subject, "s");
     }
 
     fn rec(
