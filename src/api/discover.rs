@@ -173,16 +173,44 @@ fn headers(rb: reqwest::RequestBuilder, scenario: &str) -> reqwest::RequestBuild
 
 /// A page of suggested posts: the first (`continuation` empty) or the next.
 pub async fn feed(client: &TeamsClient, continuation: &str) -> Result<DiscoverPage> {
-    let url = format!(
-        "{}?pageSize={PAGE_SIZE}&continuationToken={}",
-        base(client),
-        encode(continuation)
-    );
     let scenario = if continuation.is_empty() {
         "TeamsFeed_Switch"
     } else {
         "TeamsFeed_Scroll"
     };
+    feed_page(
+        client,
+        &feed_url(&base(client), continuation, PAGE_SIZE),
+        scenario,
+    )
+    .await
+}
+
+/// Teams' poll for new posts while Discover is open (every
+/// discoverPollingInterval; measured on Teams web as OST Test 2,
+/// 2026-11-28): the first page, discoverSurfaceTopItemsCount (7) long, with
+/// the literal "null" continuation token.
+pub const POLL_PAGE_SIZE: u32 = 7;
+
+pub async fn feed_poll(client: &TeamsClient) -> Result<DiscoverPage> {
+    feed_page(client, &poll_url(&base(client)), POLL_SCENARIO).await
+}
+
+fn poll_url(base: &str) -> String {
+    format!("{base}?pageSize={POLL_PAGE_SIZE}&continuationToken=null")
+}
+
+/// The poll's x-ms-client-scenario.
+pub const POLL_SCENARIO: &str = "TeamsFeed_Reload";
+
+fn feed_url(base: &str, continuation: &str, page_size: u32) -> String {
+    format!(
+        "{base}?pageSize={page_size}&continuationToken={}",
+        encode(continuation)
+    )
+}
+
+async fn feed_page(client: &TeamsClient, url: &str, scenario: &str) -> Result<DiscoverPage> {
     let v: serde_json::Value = headers(client.http().get(url), scenario)
         .bearer_auth(token().await?)
         .send()
@@ -325,6 +353,23 @@ pub async fn set_excluded(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn poll_asks_for_teams_first_seven() {
+        let b = "https://teams.microsoft.com/api/csa/amer/api/v1/teams/users/me/discover";
+        assert_eq!(
+            poll_url(b),
+            format!("{b}?pageSize=7&continuationToken=null")
+        );
+        assert_eq!(
+            feed_url(b, "", PAGE_SIZE),
+            format!("{b}?pageSize=10&continuationToken=")
+        );
+        assert_eq!(
+            feed_url(b, "a b", PAGE_SIZE),
+            format!("{b}?pageSize=10&continuationToken=a+b")
+        );
+    }
 
     #[test]
     fn reads_a_page_as_csa_answers_it() {

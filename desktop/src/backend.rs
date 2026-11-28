@@ -27317,10 +27317,15 @@ impl qobject::Backend {
                     // CSA): a page of suggested posts (arg: the next page's
                     // token), "Is this useful?", and what's left out.
                     // (arg: {continuation, req}; the answer echoes req so the
-                    // view can tell its own load from an older one.)
+                    // view can tell its own load from an older one. Channel
+                    // "poll": Teams' New updates poll of the first page.)
                     "discover-feed" => {
                         let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
-                        let page = api::discover::feed(&client, a["continuation"].as_str().unwrap_or_default()).await?;
+                        let page = if channel == "poll" {
+                            api::discover::feed_poll(&client).await?
+                        } else {
+                            api::discover::feed(&client, a["continuation"].as_str().unwrap_or_default()).await?
+                        };
                         let mut v = serde_json::to_value(page)?;
                         v["req"] = a["req"].clone();
                         Ok(v)

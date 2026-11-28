@@ -1433,6 +1433,84 @@ OST Guest accounts; all were removed afterwards.
   preferences`), the rest in the service's order (Teams' stable sortBy),
   not by name.
 
+#### 5.6.13 Quick views ▸ Discover: New updates, themes, replying (TASK-0377)
+
+Read from Teams 26304's discover-surface bundles and worker
+(`DiscoverSurfaceManager`, `DiscoverSurfaceSyncStrategy`, the feed's
+`startPolling` resolver) and measured on Teams web as OST Test 2 on
+2026-11-28 (a headless Chrome over CDP, the worker's requests captured).
+
+**When Teams looks for new posts**
+- While Discover is open the feed's `startPolling` query runs every
+  `discoverSurface.discoverPollingInterval` (burnt-in 300000 ms; not in
+  this tenant's ECS), the first time one interval after Discover opened.
+  Measured: Discover opened 17:16:31, `GET {csa}/api/v1/teams/users/me/
+  discover?pageSize=7&continuationToken=null` at 17:21:31 and 17:26:31
+  (`x-ms-client-scenario: TeamsFeed_Reload`), nothing in between.
+  pageSize is `discoverSurfaceTopItemsCount` (7).
+- Each poll (`syncForLatestUpdate`) is skipped while the "new updates"
+  flag is set, or within 60 s of the last sync. A non-empty answer is
+  compared with the first page Teams last stored: when its first post
+  (`chatMessageInfo.id`) differs, the flag is set
+  (`discoverFeedHasUpdatedItems`); the answer becomes the stored page
+  either way.
+- Besides that, a background sync strategy runs every
+  `dataSyncIntervalTime` (burnt-in 32400000 ms, 9 h) and once at start-up
+  (`prepopulateDiscoverFeed`, which sets the flag for any non-empty feed).
+  Opening Discover clears the flag (unless it opens to a given post), so
+  these only show when Discover is already open: e.g. Teams restarting on
+  Discover shows New updates at once (seen in light, dark and High
+  contrast).
+- `enableSimpleCollabBoldingForDiscover` is false: the Discover row is not
+  bolded by the flag.
+
+**The New updates button** (`DiscoverSurfaceNewUpdatesButton`)
+- Fluent's primary button, medium: 143.7 × 32 for "New updates" (5 12
+  padding, 1 px transparent border, radius 4, at least 96 wide), the 20 px
+  ArrowSync glyph (Regular; Filled on hover; mirrored in RTL) 6 before the
+  label (14/20 semibold). Position absolute, z 1, centred on the pane under
+  the header, 10 below it (live; 26304's class says 1rem), over the cards.
+  It fades in over 400 ms (opacity 0 to 1, linear).
+- Colours: light #5B5FC7 (hover #4F52B2, pressed #383966), white text and
+  glyph; dark #4F52B2 (hover #5B5FC7, pressed #383966); High contrast white
+  with black text and glyph, hover and pressed #1AEBFF.
+- Shown while the flag is set and the feed isn't loading. Clicking it
+  scrolls to the top, refetches the first page (the cards stay until it
+  answers), clears the flag and announces "Discover Feed has been updated
+  with new posts".
+
+**Themes** (each value light / dark / High contrast)
+- Page and header #FFFFFF / #1F1F1F / #000000; the header's 1 px line
+  #E0E0E0 / #0A0A0A / #FFFFFF.
+- Card: NeutralBackground1 #FFFFFF / #292929 / #000000 with shadow 2
+  (0.12 + 0.14, dark 0.24 + 0.28) and a white 1 px outline in High
+  contrast. The line under its header #F0F0F0 / #141414 / #3FF23F
+  (NeutralBackground4 in light and dark); over the replies and Reply in
+  thread #F0F0F0 / #141414 / #FFFFFF.
+- Reason #616161 / #ADADAD / white; Is this useful? #242424 / white /
+  white; Yes and No #5B5FC7 / #7F85F5 / #FFFF00, unchanged on hover (High
+  contrast: #1AEBFF fill, black text). Author and body #242424 / white /
+  white, time #616161 / #ADADAD / white, team › channel #424242 / #D6D6D6
+  / white. The add-reaction button's border #E0E0E0 / #525252 / white.
+- Reply in thread #616161 / #ADADAD / white, hovered #5B5FC7 / #7F85F5 /
+  black on a #1AEBFF 22 px button across the card. Undo and Try again are
+  Fluent secondary buttons (NeutralBackground1, hover #F5F5F5 / #3D3D3D /
+  #1AEBFF, border #D1D1D1 / #666666 / white).
+
+**Replying from a card**
+- Reply in thread opens the reply box in the card: 46 tall at 48 (card
+  width less 48 and 18), radius 6, #FFFFFF / #292929 / #000000 with a 1 px
+  #E0E0E0 / #525252 / white border, placeholder "Reply in thread". Teams'
+  box carries the full composer toolbar (Format, Emoji, Attach, Loop, +,
+  Send); OST's has Send only.
+- Enter sends: the reply joins the card's replies at once, the box closes
+  back to Reply in thread and focus goes to that button (live, OST Test 2
+  in OST Test Team › OST threads test).
+- Deleting it (··· ▸ Delete) leaves "This message has been deleted."
+  (14/20 italic #242424) with Undo 4 after it (14/20 semibold, underlined,
+  #4F52B2), with no picture or name, also after a reload. (OST, as in
+  its channels, keeps the tombstone for a reply deleted in this session.)
+
 ### 5.7 Communities, Copilot and quick views
 
 - Community menu (`Wo`) has these items: **Hide**, **Delete**
