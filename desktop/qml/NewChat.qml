@@ -63,7 +63,8 @@ Rectangle {
 
     function chatWith(oid) {
         // (Someone on Teams free is picked by their MRI.)
-        const mri = Mri.isConsumer(oid) ? oid : Mri.work(oid)
+        // (A personal account's picker gives everyone by MRI.)
+        const mri = Mri.isConsumer(oid) || String(oid).indexOf("8:") === 0 ? oid : Mri.work(oid)
         const c = root.chats.find(c => c.peerMri === mri && !c.isGroup && !c.isSelf && !c.meeting)
         return c ? c.id : ""
     }
@@ -371,7 +372,9 @@ Rectangle {
     /// Someone on Teams free is among the people picked: Teams turns files
     /// off in chats with them (no Attach; attachments already added aren't
     /// sent). Pictures stay: in a chat you start, photos are allowed.
-    readonly property bool externalPicked: picked.some(p => p.external === true || Mri.isConsumer(p.id))
+    // (For a personal account, Teams free people are its own kind, and a
+    // chat it starts with a work user can carry files.)
+    readonly property bool externalPicked: !backend.personalAccount && picked.some(p => p.external === true || Mri.isConsumer(p.id))
     onExternalPickedChanged: if (externalPicked) clearAttachments()
     ComposeBox {
         id: compose
@@ -505,7 +508,7 @@ Rectangle {
                     // Someone on Teams free found by their address: Teams'
                     // External tag 4 after the name, as the guest tag sits.
                     ExternalBadge {
-                        visible: person.modelData.external === true
+                        visible: person.modelData.external === true && !backend.personalAccount
                         x: personName.x + personName.implicitWidth + 4; y: 6
                     }
                     Text {

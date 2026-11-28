@@ -220,13 +220,17 @@ Item {
             out.push({ key: "more", label: qsTr("More actions"), chevron: true })
             return out
         }
-        // Core items, in Teams' registry order.
-        if (rightClick || own) out.push({ key: "reply", label: qsTr("Reply with quote"), icon: "quote-reply-20", keys: "Q" })
+        // Core items, in Teams' registry order. A personal account's
+        // (Teams free, teams.live.com 2026-11-28): Reply, Edit, Forward,
+        // Copy link, Delete, Pin for everyone, Mark as unread, Translation;
+        // no Save, Remind me, Share to Outlook or More actions.
+        const personal = backend.personalAccount
+        if (rightClick || own) out.push({ key: "reply", label: personal ? qsTr("Reply") : qsTr("Reply with quote"), icon: personal ? "arrow-reply-20" : "quote-reply-20", keys: "Q" })
         if (rightClick && own) out.push({ key: "edit", label: qsTr("Edit"), icon: "edit-20", keys: "E" })
         out.push(root.forwardItem(m, "chat"))
         out.push({ key: "copy-link", label: qsTr("Copy link"), icon: "link-20" })
-        out.push(save)
-        const remind = root.reminderItem(m)
+        if (!personal) out.push(save)
+        const remind = personal ? null : root.reminderItem(m)
         if (remind) out.push(remind)
         if (own) out.push({ key: "delete", label: qsTr("Delete"), icon: "delete-menu-20", keys: "Del" })
         out.push(m.pinned
@@ -245,7 +249,7 @@ Item {
         out.push({ key: "unread", label: qsTr("Mark as unread"), icon: "mail-unread-20", keys: "U" })
         // Share to Outlook (measured on Teams on the web: after Mark as
         // unread; not in your notes-to-self chat, where Teams cancels it).
-        if (!root.isSelfChat) out.push({ key: "share-outlook", label: qsTr("Share to Outlook"), icon: "mail-20" })
+        if (!root.isSelfChat && !personal) out.push({ key: "share-outlook", label: qsTr("Share to Outlook"), icon: "mail-20" })
         // Chats: the Translation submenu.
         out.push({ key: "translation", label: qsTr("Translation"), icon: "translate-20", chevron: true })
         // Report this message: someone else's, with its own divider.
@@ -254,6 +258,7 @@ Item {
             out.push({ key: "report", label: qsTr("Report this message"), icon: "report-message-20" })
         }
         // More actions ▸: Immersive Reader (then apps' actions, not built).
+        if (personal) return out
         out.push({ separator: true })
         out.push({ key: "more", label: qsTr("More actions"), chevron: true })
         return out

@@ -27,6 +27,17 @@ Rectangle {
     property bool mentionsOpen: false
     /// Quick views ▸ Followed threads / Saved ("followed", "saved" or "").
     property string quickOpen: ""
+    // ---- A personal account's list (Teams free on testpc2, 2026-11-28):
+    // no Quick views, Teams and channels or Communities; the pills Unread,
+    // Meeting chats and Unmuted; chat requests (chats from people you
+    // haven't talked to) not in the list but behind one "Requests" row
+    // above Favorites (Teams' mail icon, bold with a count while any is
+    // unread), which opens them beside the list (RequestsView).
+    readonly property bool personal: backend.personalAccount
+    property bool requestsOpen: false
+    signal openRequests()
+    readonly property var requests: personal ? chats.filter(c => c.request && !c.isSelf) : []
+    readonly property int requestsUnread: requests.filter(c => c.unread).length
     // ---- Quick views' rows (Teams' slice providers, read from Teams
     // 26304's worker; docs/spec/chat-list-and-header.md §3) ----
     // Teams hides a slice whose activityCount is 0: Mentions and Followed
@@ -411,11 +422,12 @@ Rectangle {
 
     // ---- Server sections ----
     readonly property var folderData: backend.foldersJson ? JSON.parse(backend.foldersJson) : null
-    readonly property var folders: folderData && folderData.folders && folderData.folders.length ? folderData.folders
+    readonly property var folders: (folderData && folderData.folders && folderData.folders.length ? folderData.folders
         : [{ id: "", kind: "QuickViews", title: qsTr("Quick views"), expanded: true, items: [] },
            { id: "", kind: "Favorites", title: qsTr("Favorites"), expanded: true, items: [] },
            { id: "", kind: "RecentChats", title: qsTr("Chats"), expanded: true, items: [] },
-           { id: "", kind: "TeamsAndChannels", title: qsTr("Teams and channels"), expanded: true, items: [] }]
+           { id: "", kind: "TeamsAndChannels", title: qsTr("Teams and channels"), expanded: true, items: [] }])
+        .filter(f => !root.personal || ["QuickViews", "TeamsAndChannels", "EngageCommunities"].indexOf(f.kind) < 0)
     readonly property bool hasCommunities: folders.some(f => f.kind === "EngageCommunities")
     /// Conversations in Favorites or your own sections (not listed in Chats).
     readonly property var sectioned: {
@@ -447,6 +459,7 @@ Rectangle {
         // empty one-on-ones and chats you hid, unless open (api::chat's
         // unlisted); chats nothing has been said in are listed.
         if ((c.unlisted || c.hidden) && c.id !== root.currentId) return false
+        if (root.personal && c.request) return false
         if (category === "channels" || category === "communities") return false
         if (category === "chats" && isMeeting(c)) return false
         if (category === "meetings" && !isMeeting(c)) return false
@@ -802,7 +815,9 @@ Rectangle {
         { key: "unmuted", label: qsTr("Unmuted"), keys: "Ctrl+Alt+Q" },
         { key: "meetings", label: qsTr("Meeting chats"), keys: "Ctrl+Alt+B" }
     ].concat(hasCommunities ? [{ key: "communities", label: qsTr("Communities"), keys: "" }] : [])
-     .filter(p => pane === "chats" ? ["unread", "chats", "unmuted", "meetings"].indexOf(p.key) >= 0
+     .sort((a, b) => !personal ? 0 : ["unread", "meetings", "unmuted"].indexOf(a.key) - ["unread", "meetings", "unmuted"].indexOf(b.key))
+     .filter(p => personal ? ["unread", "meetings", "unmuted"].indexOf(p.key) >= 0
+                : pane === "chats" ? ["unread", "chats", "unmuted", "meetings"].indexOf(p.key) >= 0
                 : p.key === "unmuted" ? false
                 : pane === "teams" ? ["unread", "channels", "communities"].indexOf(p.key) >= 0 : true)
     onPaneChanged: { category = ""; unreadOn = false; updateJump() }
@@ -940,6 +955,18 @@ Rectangle {
                 onClicked: root.openCopilot()
             }
             Item { width: 1; height: root.showCopilot && root.pane !== "teams" ? 4 : 0 }
+            // Teams free's chat requests.
+            ListRow {
+                visible: root.personal && root.requests.length > 0 && !root.filtered
+                height: visible ? 32 : 0
+                label: qsTr("Requests"); icon: "mail-20"
+                selected: root.requestsOpen
+                unread: root.requestsUnread > 0
+                badge: root.requestsUnread
+                plainBadge: true
+                onClicked: root.openRequests()
+            }
+            Item { width: 1; height: root.personal && root.requests.length > 0 && !root.filtered ? 10 : 0 }
             // Sections and their rows are keyed models kept in step with
             // the data (syncKeys, syncRows): an update (a chat hidden or
             // shown, a new message, presence) changes only the rows it
@@ -1911,6 +1938,8 @@ Rectangle {
         /// some due), and Teams' "New" badge 4 after the label.
         property bool strong: false
         property bool isNew: false
+        /// Teams free's Requests count: an outlined circle, not a brand pill.
+        property bool plainBadge: false
         signal clicked()
         width: list.width; height: 32
         Rectangle {
@@ -1937,13 +1966,14 @@ Rectangle {
             height: 16; radius: 8
             width: Math.max(16, lrBadgeText.implicitWidth + 8)
             x: parent.width - 16 - 12 - width; y: 8
-            color: theme.brandFill
+            color: lr.plainBadge ? "transparent" : theme.brandFill
+            border.width: lr.plainBadge ? 1 : 0; border.color: theme.stroke
             Text {
                 id: lrBadgeText
                 anchors.centerIn: parent
                 text: lr.badge > 99 ? "99+" : String(lr.badge)
                 font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold
-                color: theme.onFill(lrBadge, "white")
+                color: lr.plainBadge ? theme.onFill(lrFill, theme.text) : theme.onFill(lrBadge, "white")
             }
         }
         HoverHandler { id: lrHover }

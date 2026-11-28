@@ -4,6 +4,7 @@ title: 'Personal accounts: app shell, settings and plans'
 status: To Do
 assignee: []
 created_date: '2026-11-25T15:26:00Z'
+updated_date: '2026-11-28T03:34:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -27,3 +28,9 @@ For a personal account Teams' left rail is Chat, Meet, People, Calendar and Acti
 - [ ] #3 Plans and upgrades shows what Teams shows; buying opens Microsoft's page in the browser
 - [ ] #4 Feature flags come from ECS with the personal-account (TflNorthstar) configuration
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- 2026-11-28 (TASK-0293): with Teams free's middle tier answering (bearer + Skype token, TASK-0293), a personal window's rail now lists Teams free's own app definitions, but their icons draw as black squares; the rail itself (Chat, Meet, People, Copilot, Communities, Calendar, Activity) is this task's.
+<!-- SECTION:NOTES:END -->

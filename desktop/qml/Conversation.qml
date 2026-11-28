@@ -402,6 +402,9 @@ Rectangle {
         // notes chat, which has Notes but no Recap; Teams on the web,
         // 2026-11-16). Then the chat's own tabs (its thread properties),
         // in their order.
+        // A personal account's chats (Teams free): Chat and Files (its
+        // Photos tab is TASK-0300's); none with a work user.
+        : personal && !isMeetingChat ? (externalOneOnOne ? [] : ["Chat", "Files"])
         : (isSelf ? ["Chat", "Shared", "Notes", "Storyline"] : isMeetingChat ? meetingTabNames : isGroup ? ["Chat", "Shared", "Notes", "Recap"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"])
             .concat(channelTabs.map(t => t.name))
     readonly property bool isMeetingChat: chatId.indexOf("19:meeting_") === 0
@@ -674,7 +677,7 @@ Rectangle {
     readonly property string chatTabsKey: !isChannel && !isSelf && !pane && !popout && chatId.indexOf("19:") === 0 ? chatId : ""
     onChatTabsKeyChanged: if (chatTabsKey) backend.chatTabsLoad(chatId)
     /// Teams' "+" (Add a tab): chats, meeting chats and channels.
-    readonly property bool canAddTab: !pane && (!popout || windowTabs) && !isSelf && chatId.indexOf("19:") === 0
+    readonly property bool canAddTab: !backend.personalAccount && !pane && (!popout || windowTabs) && !isSelf && chatId.indexOf("19:") === 0
     /// The channel's team thread (its General channel), for the picker.
     property string teamThread: ""
     // The tab picker and the Website configuration (Main.qml's).
@@ -899,9 +902,16 @@ Rectangle {
     // the chat (live check on testpc2, 2026-11-27: "Calling isn't
     // available in this chat.", no Attach; its chat-app file rule `w1`
     // turns files off for chats with a TflConsumer member).
-    readonly property var consumerMembers: root.chatMembers.filter(m => Mri.isConsumer(m.mri) && !m.me)
+    // For a personal account it is the other way round: the work users in
+    // a chat are the outside people (Teams free on testpc2, 2026-11-28: a
+    // chat with OST Test 3 shows their address under the name, "OST Test 3
+    // is part of an external organization. …", calls off, and no files
+    // or pictures in a chat they started).
+    readonly property bool personal: backend.personalAccount
+    function outsider(mri) { return root.personal ? String(mri || "").indexOf("8:orgid:") === 0 : Mri.isConsumer(mri) }
+    readonly property var consumerMembers: root.chatMembers.filter(m => root.outsider(m.mri) && !m.me)
     readonly property bool externalChat: !root.isChannel && !root.isMeetingChat && !root.isSelf
-        && (root.consumerMembers.length > 0 || !!(chatEntry && chatEntry.external) || Mri.isConsumer(root.chatPhotoId))
+        && (root.consumerMembers.length > 0 || !!(chatEntry && chatEntry.external) || root.outsider(root.chatPhotoId))
     readonly property bool externalOneOnOne: externalChat && !root.isGroup
     /// A chat request you haven't answered (Teams: "… wants to chat with
     /// you", Block and Accept; the chat's relationshipState.inQuarantine).
@@ -914,6 +924,8 @@ Rectangle {
     readonly property var externalPerson: root.consumerMembers.length > 0 ? root.consumerMembers[0]
         : ({ mri: root.chatPhotoId, name: root.chatName, mail: "" })
     property var dismissedExternalNotes: ({})
+    /// The address Teams free shows under a work user's name in a 1:1.
+    readonly property string titleMail: root.personal && root.externalOneOnOne && !root.narrowTitle && !root.chatRequest ? (root.externalPerson.mail || "") : ""
     /// The chat's Recap (Teams' recap card: View recap, the transcript chip
     /// and the recording open the meeting's Recap view).
     signal openEventHighlights(string title, real startMs)
@@ -1487,7 +1499,7 @@ Rectangle {
             x: 61
             // Below 640 Teams sets the title 14/700 (line 20) at 10, the
             // tab dropdown under it.
-            y: root.narrowTitle ? 10 : (parent.height - height) / 2
+            y: root.narrowTitle ? 10 : root.titleMail ? 9 : (parent.height - height) / 2
             height: root.narrowTitle ? 20 : implicitHeight
             lineHeight: root.narrowTitle ? 20 : 1; lineHeightMode: root.narrowTitle ? Text.FixedHeight : Text.ProportionalHeight
             // Long names elide so the tabs and actions keep their place.
@@ -1507,9 +1519,29 @@ Rectangle {
         }
         // Someone on Teams free: Teams' External badge 5 after the title
         // (measured on testpc2, 2026-11-27).
+        // Teams free: a work user's address under their name (12/16,
+        // NeutralForeground2), no badge.
+        Text {
+            visible: !!root.titleMail
+            x: title.x; y: title.y + title.height
+            width: title.width + 120; elide: Text.ElideRight
+            text: root.titleMail
+            font.family: theme.font; font.pixelSize: theme.small
+            color: theme.textSecondary
+        }
+        // Teams free's chat request: only the picture and the name in the
+        // header (testpc2, 2026-11-28); its tabs and actions wait for an
+        // answer.
+        Rectangle {
+            visible: root.personal && root.chatRequest
+            z: 50
+            x: title.x + title.width + 2; width: parent.width - x; height: parent.height - 1
+            color: theme.surface
+            MouseArea { anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.AllButtons }
+        }
         ExternalBadge {
             id: externalBadge
-            visible: root.externalOneOnOne
+            visible: root.externalOneOnOne && !root.personal
             x: title.x + title.width + 5; anchors.verticalCenter: title.verticalCenter
         }
         // Name group chat (chat-title-name-group-chat): group chats only,
@@ -1617,7 +1649,7 @@ Rectangle {
         Row {
             id: tabs
             // (A chat with someone on Teams free has no tabs in Teams.)
-            visible: !root.narrowTitle && (!root.popout || root.windowTabs) && !root.externalOneOnOne
+            visible: !root.narrowTitle && (!root.popout || root.windowTabs) && !root.externalOneOnOne && !(root.personal && root.chatRequest)
             x: (renameButton.visible ? renameButton.x + renameButton.width : externalBadge.visible ? externalBadge.x + externalBadge.width : title.x + title.width) + 2
             y: 2; height: 56
             Repeater {
@@ -2452,6 +2484,44 @@ Rectangle {
         clip: true
         spacing: 0
         verticalLayoutDirection: ListView.BottomToTop
+        // Teams free's start of a 1:1 you started (teams.live.com,
+        // 2026-11-28): over the first message, their 96 px picture,
+        // "Now chatting with {first name}" (20/28 bold) 12 under it and
+        // "{name} is in your contacts" (14/20) under that; starting the
+        // chat put them in your contacts. Shown until they answer the
+        // request, and after.
+        footer: Item {
+            readonly property bool shown: root.personal && !root.isGroup && !root.isSelf && !root.isMeetingChat
+                && root.chatIsCreator && !backend.messagesHasOlder && root.chatName.length > 0
+            width: list.width
+            height: shown ? startCol.height + 64 : 0
+            visible: shown
+            Column {
+                id: startCol
+                y: 40; width: parent.width
+                spacing: 0
+                Avatar {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    size: 96; name: root.chatName; photoId: root.chatPhotoId
+                }
+                Item { width: 1; height: 12 }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: qsTr("Now chatting with %1").arg(root.chatName.split(/\s+/)[0])
+                    font.family: theme.font; font.pixelSize: 20; font.weight: Font.Bold
+                    lineHeight: 28; lineHeightMode: Text.FixedHeight
+                    color: theme.text
+                }
+                Item { width: 1; height: 8 }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: qsTr("%1 is in your contacts").arg(root.chatName)
+                    font.family: theme.font; font.pixelSize: 14
+                    lineHeight: 20; lineHeightMode: Text.FixedHeight
+                    color: theme.text
+                }
+            }
+        }
         model: root.annotate((root.threadsLayout ? root.threadStarters(root.messages) : root.messages).concat(root.scheduledItems))
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
@@ -2776,7 +2846,7 @@ Rectangle {
                     readonly property bool agentTag: !!msg.modelData.ai_agent && !root.compact && !msg.mine
                     // (Someone on Teams free: Teams' external glyph after the
                     // name, then the time.)
-                    readonly property bool externalTag: !msg.modelData.ai_agent && !root.compact && !msg.mine && Mri.isConsumer(msg.modelData.sender_mri)
+                    readonly property bool externalTag: !msg.modelData.ai_agent && !root.compact && !msg.mine && !root.personal && Mri.isConsumer(msg.modelData.sender_mri)
                     text: agentTag || externalTag ? root.senderLabel(msg.modelData)
                         : root.compact
                         ? "<b><font color=\"" + theme.text + "\">" + root.senderLabel(msg.modelData).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</font></b>&nbsp;&nbsp;" + root.stamp(msg.modelData.time) + (msg.modelData.edited && !msg.sendFailed ? "&nbsp;&nbsp;&nbsp;" + qsTr("Edited") : "") + (root.cardUpdated(msg.modelData.id) ? "&nbsp;&nbsp;&nbsp;" + qsTr("Updated") : "")
@@ -2934,7 +3004,7 @@ Rectangle {
                     deliveryOptions: !msg.scheduledMsg
                     // (No files or clips in a chat with someone on Teams
                     // free, as in the main box.)
-                    filesAllowed: !root.externalChat
+                    filesAllowed: !root.externalChat || (root.personal && root.chatIsCreator)
                     picturesAllowed: !root.externalChat || root.chatIsCreator
                     canRecordClip: root.canRecordClips && !msg.scheduledMsg && !root.externalChat
                     onRecordClipRequested: { root.clipBox = editBox; clipRecorder.openFor(root.chatId) }
@@ -5586,18 +5656,24 @@ Rectangle {
     // people says "Some people in this group are outside your org. …".
     Rectangle {
         id: externalBanner
-        readonly property string text: root.isGroup
+        readonly property string text: root.personal
+            ? (root.isGroup ? qsTr("Some people in this chat are part of an organization. It's possible they have message-related policies that will apply to the chat.")
+                : qsTr("%1 is part of an external organization. It's possible they have message-related policies that will apply to the chat.").arg(root.externalPerson.name || root.chatName))
+            : root.isGroup
             ? qsTr("Some people in this group are outside your org. Some Teams features aren't available in this chat.", "messaging:k1ovrh47z")
             : qsTr("%1 is outside your org. Some Teams features aren't available in this chat.", "messaging:kdeds7kgh").arg(root.externalPerson.name || root.chatName)
-        visible: root.externalChat && !root.chatRequest && !root.pane && root.tab === "" && !root.dismissedExternalNotes["banner|" + root.chatId]
+        visible: root.externalChat && (!root.chatRequest || root.personal) && !root.pane && root.tab === "" && !root.dismissedExternalNotes["banner|" + root.chatId]
         anchors { top: header.bottom; left: parent.left; right: parent.right }
-        height: visible ? 40 : 0
+        // (Teams free's longer text wraps onto a second line.)
+        height: visible ? Math.max(40, extText.implicitHeight + 16) : 0
         color: theme.pick("#F0F0F0", "#2E2E2E", "#000000")
         Rectangle { width: parent.width; height: 0.67; color: theme.divider }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
         Text {
+            id: extText
             x: 16; width: parent.width - 16 - 44; anchors.verticalCenter: parent.verticalCenter
-            elide: Text.ElideRight
+            wrapMode: root.personal ? Text.Wrap : Text.NoWrap
+            elide: root.personal ? Text.ElideNone : Text.ElideRight
             textFormat: Text.RichText
             text: theme.linkCss(theme.brandForeground1, true) + externalBanner.text.replace(/&/g, "&amp;").replace(/</g, "&lt;")
                 + " <a href=\"https://go.microsoft.com/fwlink/?linkid=2167727\">" + qsTr("Learn more") + "</a>"
@@ -5629,12 +5705,19 @@ Rectangle {
         visible: root.chatRequest && root.tab === "" && !root.pane
         previewing: root.requestPreview
         busy: root.requestBusy
-        person: root.externalPerson
+        personal: root.personal
+        groupRequest: root.personal && root.isGroup
+        // (Teams free: whoever asked, a Teams free person or a work user;
+        // a group's request is from whoever added you.)
+        person: root.personal ? (root.chatMembers.find(m => !m.me && root.chatEntry && root.chatEntry.inviter && m.mri === root.chatEntry.inviter)
+                                 || (root.chatEntry && root.chatEntry.inviter ? { mri: root.chatEntry.inviter, name: root.chatEntry.inviterName || root.chatName, mail: "" } : null)
+                                 || root.chatMembers.find(m => !m.me) || root.externalPerson)
+            : root.externalPerson
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
         height: root.requestPreview ? previewHeight : parent.height - header.height
         onPreview: root.requestPreview = true
-        onAccept: { root.requestBusy = true; backend.answerChatRequest(root.chatId, root.externalPerson.mri || "", "accept") }
-        onBlock: { root.requestBusy = true; backend.answerChatRequest(root.chatId, root.externalPerson.mri || "", "block") }
+        onAccept: { root.requestBusy = true; backend.answerChatRequest(root.chatId, requestView.person.mri || "", "accept") }
+        onBlock: { root.requestBusy = true; backend.answerChatRequest(root.chatId, requestView.person.mri || "", "block") }
     }
     Connections {
         target: backend
@@ -5735,10 +5818,10 @@ Rectangle {
         placeholder: root.composeDisabled ? root.composeDisabledText : root.threadRoot ? qsTr("Reply in thread") : root.threadsLayout ? qsTr("Message in %1").arg(root.chatName) : qsTr("Type a message")
         // Teams' "Replying to external participants." over the box of a
         // chat with someone on Teams free (dismissible), and no files there.
-        noteText: root.composeNote || (root.externalChat && !root.dismissedExternalNotes["compose|" + root.chatId] ? qsTr("Replying to external participants.", "compose:k8shwagz1") : "")
-        noteDismissible: !root.composeNote && root.externalChat
+        noteText: root.composeNote || (root.externalChat && !root.personal && !root.dismissedExternalNotes["compose|" + root.chatId] ? qsTr("Replying to external participants.", "compose:k8shwagz1") : "")
+        noteDismissible: !root.composeNote && root.externalChat && !root.personal
         onNoteDismissed: { const d = Object.assign({}, root.dismissedExternalNotes); d["compose|" + root.chatId] = true; root.dismissedExternalNotes = d }
-        filesAllowed: !root.externalChat
+        filesAllowed: !root.externalChat || (root.personal && root.chatIsCreator)
         // ("Why are some features not available": no photos either way in a
         // chat the Teams free user started.)
         picturesAllowed: !root.externalChat || root.chatIsCreator

@@ -136,6 +136,11 @@ pub fn folders_from(v: &serde_json::Value) -> Folders {
 }
 
 fn base(client: &TeamsClient) -> String {
+    // Teams free's CSA (teams.live.com/api/csa, no region), as its web
+    // client reads the folders (captured 2026-11-28).
+    if client.is_personal() {
+        return "https://teams.live.com/api/csa/api/v1/teams/users/me/conversationFolders".into();
+    }
     // Teams' CSA through the AFD front door, by region.
     let region = client
         .chat_service_url()
@@ -153,12 +158,24 @@ async fn token() -> Result<String> {
     crate::auth::oauth::access_token_for(CSA_SCOPE).await
 }
 
+/// A folders request's credentials: a work account's chatsvcagg token;
+/// a personal account's Skype token (`x-skypetoken`, all Teams free's CSA
+/// takes; its tokens can't have the chatsvcagg audience).
+async fn authorized(
+    client: &TeamsClient,
+    req: reqwest::RequestBuilder,
+) -> Result<reqwest::RequestBuilder> {
+    if client.is_personal() {
+        return Ok(req.header("x-skypetoken", client.skype_token_value()?));
+    }
+    Ok(req.bearer_auth(token().await?))
+}
+
 /// Your sections.
 pub async fn folders(client: &TeamsClient) -> Result<Folders> {
-    let v: serde_json::Value = client
-        .http()
-        .get(format!("{}?{QUERY}", base(client)))
-        .bearer_auth(token().await?)
+    let req = client.http().get(format!("{}?{QUERY}", base(client)));
+    let v: serde_json::Value = authorized(client, req)
+        .await?
         .send()
         .await?
         .error_for_status()
@@ -175,10 +192,9 @@ async fn send(
     body: serde_json::Value,
 ) -> Result<()> {
     let url = format!("{}{path}?{QUERY}", base(client));
-    client
-        .http()
-        .request(method, url)
-        .bearer_auth(token().await?)
+    let req = client.http().request(method, url);
+    authorized(client, req)
+        .await?
         .json(&body)
         .send()
         .await?

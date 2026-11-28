@@ -269,6 +269,15 @@ pub fn consumer_id_ok(id: &str) -> bool {
 pub(crate) async fn middle_tier_token() -> Result<String> {
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
+    // A personal account's middle-tier token (Teams free's `mtsvc.fl`
+    // audience) is its primary token, kept fresh with the others.
+    let config = crate::config::Config::load()?;
+    if config.identity().is_some_and(|i| i.is_personal()) {
+        return crate::auth::TokenStore::get_access_token(&config)
+            .filter(|t| !t.is_expired())
+            .map(|t| t.token)
+            .context("The personal account's middle-tier token has expired");
+    }
     static CACHE: Mutex<Option<(String, Instant)>> = Mutex::new(None);
     if let Some((t, at)) = CACHE.lock().unwrap().as_ref()
         && at.elapsed() < Duration::from_secs(45 * 60)
@@ -329,6 +338,18 @@ pub async fn photo(
         // Teams asks for a guest's picture by name (HR64 for its 32 px
         // avatars); 196 px keeps it sharp at every size OST draws.
         format!("{base}/beta/users/defaultProfilePictureV2?displayname={name}&size=HR196x196")
+    } else if client.is_personal() && matches!(owner, PhotoOwner::Consumer | PhotoOwner::User) {
+        // Teams free's client: `users/{mri}/profilepicturev2` on its own
+        // middle tier, for Teams free people and work users alike.
+        let mri = crate::identity::user_mri(id);
+        let id = crate::identity::mri_id(&mri);
+        let ok = if crate::identity::is_consumer_mri(&mri) {
+            consumer_id_ok(id) || crate::identity::is_skype_name(id)
+        } else {
+            crate::identity::work_object_id(&mri).is_some_and(|o| uuid::Uuid::parse_str(o).is_ok())
+        };
+        anyhow::ensure!(ok, "Not a person's id");
+        format!("{base}/beta/users/{mri}/profilepicturev2?displayname={name}&size=HR196x196")
     } else if owner == PhotoOwner::Consumer {
         let mri = crate::identity::user_mri(id);
         anyhow::ensure!(
@@ -354,13 +375,18 @@ pub async fn photo(
         format!("{base}/beta/users/{me}/profilepicturev2/{path}")
     };
     let token = middle_tier_token().await?;
-    let resp = client
-        .http()
-        .get(&url)
-        .bearer_auth(token)
-        .send()
-        .await
-        .context("Picture request")?;
+    let req = client.http().get(&url);
+    // Teams free's pictures are read with the cookie its middle tier sets
+    // (`POST {mt}/beta/imageauth/cookie`); a bearer alone gets 401.
+    let req = if client.is_personal() {
+        req.header(
+            reqwest::header::COOKIE,
+            picture_cookie(client, &base, &token).await?,
+        )
+    } else {
+        req.bearer_auth(token)
+    };
+    let resp = req.send().await.context("Picture request")?;
     let status = resp.status();
     if status == reqwest::StatusCode::NOT_FOUND || status == reqwest::StatusCode::NO_CONTENT {
         return Ok(None);
@@ -370,6 +396,49 @@ pub async fn photo(
     }
     let bytes = resp.bytes().await.context("Picture download")?;
     Ok((!bytes.is_empty()).then(|| bytes.to_vec()))
+}
+
+/// The cookie Teams free's middle tier wants on picture requests, from
+/// `POST {mt}/beta/imageauth/cookie` (bearer plus Skype token, empty body,
+/// as Teams free's web client asks for it); kept for half an hour.
+async fn picture_cookie(client: &TeamsClient, base: &str, token: &str) -> Result<String> {
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+    static CACHE: Mutex<Option<(String, Instant)>> = Mutex::new(None);
+    if let Some((c, at)) = CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
+        && at.elapsed() < Duration::from_secs(30 * 60)
+    {
+        return Ok(c.clone());
+    }
+    let req = client
+        .http()
+        .post(format!("{base}/beta/imageauth/cookie"))
+        .header("x-ms-client-type", "web")
+        .header(reqwest::header::CONTENT_LENGTH, "0");
+    let resp = client
+        .middle_tier_auth(req, token)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Picture cookie")?;
+    let cookie = cookie_pairs(
+        resp.headers()
+            .get_all(reqwest::header::SET_COOKIE)
+            .iter()
+            .filter_map(|v| v.to_str().ok()),
+    );
+    anyhow::ensure!(!cookie.is_empty(), "No picture cookie");
+    *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = Some((cookie.clone(), Instant::now()));
+    Ok(cookie)
+}
+
+/// `Set-Cookie` values as one `Cookie` header (their `name=value` parts).
+fn cookie_pairs<'a>(set: impl Iterator<Item = &'a str>) -> String {
+    set.filter_map(|c| c.split(';').next())
+        .map(str::trim)
+        .filter(|c| c.contains('=') && !c.starts_with('='))
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 #[cfg(test)]
@@ -398,6 +467,35 @@ mod group_picture_tests {
         assert!(
             tfl_profile_record(&serde_json::json!({"mri":"8:orgid:x","displayName":"W"})).is_none()
         );
+    }
+
+    #[test]
+    fn picture_cookies_and_listed_emails() {
+        assert_eq!(
+            cookie_pairs(
+                [
+                    "authtoken=abc; Path=/; Secure; HttpOnly",
+                    "skypetoken_asm=x=y; Path=/",
+                    "bad"
+                ]
+                .into_iter()
+            ),
+            "authtoken=abc; skypetoken_asm=x=y"
+        );
+        // fetchShortProfile on Teams free's middle tier (2026-11-28).
+        let p = with_listed_email(
+            serde_json::json!({"mri":"8:live:.cid.77ac230600c33285","userPrincipalName":"live:.cid.77ac230600c33285","emailsInfo":[{"address":"ost-personal1-5135@outlook.com"}],"displayName":"OST Personal 1","type":"TFLUser"}),
+        );
+        assert_eq!(p["email"], "ost-personal1-5135@outlook.com");
+        assert_eq!(p["emailPrivate"], false);
+        let p = with_listed_email(
+            serde_json::json!({"emailsInfo":[{"address":"a@b.com","visibility":"Private"}]}),
+        );
+        assert_eq!(p["emailPrivate"], true);
+        let p = with_listed_email(
+            serde_json::json!({"email":"w@x.com","emailsInfo":[{"address":"a@b.com"}]}),
+        );
+        assert_eq!(p["email"], "w@x.com");
     }
 
     #[test]
@@ -439,6 +537,9 @@ pub async fn short_profile_records(
     client: &TeamsClient,
     mris: &[String],
 ) -> Result<Vec<serde_json::Value>> {
+    if client.is_personal() {
+        return personal_profile_records(client, mris).await;
+    }
     let (consumers, mris): (Vec<&String>, Vec<&String>) = mris
         .iter()
         .filter(|m| m.starts_with("8:"))
@@ -458,10 +559,11 @@ pub async fn short_profile_records(
         return Ok(out);
     }
     let (base, token) = super::tabs::middle_tier(client).await?;
-    let v: serde_json::Value = client
+    let req = client
         .http()
-        .post(format!("{base}/beta/users/fetchShortProfile?isMailAddress=false&enableGuest=true&skypeTeamsInfo=true"))
-        .bearer_auth(&token)
+        .post(format!("{base}/beta/users/fetchShortProfile?isMailAddress=false&enableGuest=true&skypeTeamsInfo=true"));
+    let v: serde_json::Value = client
+        .middle_tier_auth(req, &token)
         .json(&mris)
         .send()
         .await?
@@ -469,8 +571,94 @@ pub async fn short_profile_records(
         .context("Short profiles")?
         .json()
         .await?;
-    out.extend(v["value"].as_array().cloned().unwrap_or_default());
+    out.extend(
+        v["value"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .cloned()
+            .map(with_listed_email),
+    );
     Ok(out)
+}
+
+/// People's short profiles as a personal account's client (Teams free)
+/// reads them from its own middle tier: Teams free people with `POST
+/// {mt}/beta/users/fetchShortProfile?…&ggEnabled=true` (`type` "TFLUser"; it answers an
+/// empty name for a work user), and work users (`8:orgid:`) with `POST
+/// {mt}/beta/users/fetchFederated` (`type` "Federated", with their
+/// `email` and `tenantName`). Both with the bearer and Skype token
+/// (captured 2026-11-28). Records without a name are left out.
+async fn personal_profile_records(
+    client: &TeamsClient,
+    mris: &[String],
+) -> Result<Vec<serde_json::Value>> {
+    let (work, consumers): (Vec<&String>, Vec<&String>) = mris
+        .iter()
+        .filter(|m| crate::identity::is_person_mri(m))
+        .partition(|m| crate::identity::work_object_id(m).is_some());
+    let (base, token) = super::tabs::middle_tier(client).await?;
+    let mut out = Vec::new();
+    for (path, list) in [
+        (
+            // (Teams free's whole query: without ggEnabled the middle
+            // tier leaves out people who aren't your contacts yet, such as
+            // whoever sent you a request; live check 2026-11-28.)
+            "fetchShortProfile?isMailAddress=false&enableGuest=true&skypeTeamsInfo=true&canBeSmtpAddress=false&includeIBBarredUsers=false&includeDisabledAccounts=false&ggEnabled=true",
+            consumers,
+        ),
+        ("fetchFederated", work),
+    ] {
+        if list.is_empty() {
+            continue;
+        }
+        let req = client
+            .http()
+            .post(format!("{base}/beta/users/{path}"))
+            .header("x-ms-client-type", "cdlworker");
+        let v: serde_json::Value = client
+            .middle_tier_auth(req, &token)
+            .json(&list)
+            .send()
+            .await?
+            .error_for_status()
+            .context("Short profiles")?
+            .json()
+            .await?;
+        out.extend(
+            v["value"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|p| {
+                    p["displayName"]
+                        .as_str()
+                        .is_some_and(|n| !n.trim().is_empty())
+                })
+                .cloned()
+                .map(with_listed_email),
+        );
+    }
+    Ok(out)
+}
+
+/// A short profile with its `email` from `emailsInfo` when it has none:
+/// Teams free's middle tier lists a person's addresses only there
+/// (`"emailsInfo":[{"address":…}]`, and `"visibility":"Private"` for one
+/// they don't share), and its `userPrincipalName` is their Skype ID, not
+/// an address.
+pub fn with_listed_email(mut p: serde_json::Value) -> serde_json::Value {
+    if p["email"].as_str().is_none_or(str::is_empty)
+        && let Some(e) = p["emailsInfo"].as_array().and_then(|l| l.first()).cloned()
+        && let Some(a) = e["address"].as_str().filter(|a| a.contains('@'))
+    {
+        p["email"] = a.into();
+        p["emailPrivate"] = e["visibility"]
+            .as_str()
+            .is_some_and(|v| v.eq_ignore_ascii_case("Private"))
+            .into();
+    }
+    p
 }
 
 /// Teams free people's profiles as a work account sees them, in

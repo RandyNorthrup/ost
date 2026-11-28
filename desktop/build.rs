@@ -289,6 +289,7 @@ fn main() {
         "qml/VoicemailTransferPicker.qml",
         "qml/ExternalBadge.qml",
         "qml/ChatRequestView.qml",
+        "qml/RequestsView.qml",
         "qml/UnparkDialog.qml",
         "qml/ChatNotesTab.qml",
         "qml/LoopPage.qml",

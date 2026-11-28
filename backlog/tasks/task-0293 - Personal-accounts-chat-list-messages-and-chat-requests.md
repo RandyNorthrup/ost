@@ -1,9 +1,11 @@
 ---
 id: TASK-0293
 title: 'Personal accounts: chat list, messages and chat requests'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@tperB'
 created_date: '2026-11-25T15:26:00Z'
+updated_date: '2026-11-28T04:19:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -27,3 +29,21 @@ Personal accounts use the consumer chat service (msgapi.teams.live.com) with con
 - [ ] #3 Chat requests show with Preview, Accept and Block as on Teams desktop, and the sender sees the pending state
 - [ ] #4 Features Microsoft retired for personal accounts (polls, tasks, location sharing, SMS) are not shown
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Capture Teams free (teams.live.com web client as OST Personal 1, CDP network log; Teams 26304 desktop as OST Personal 2 on testpc2) for the chat list, new chat, requests and compose.
+2. Engine: consumer chat service front door and product headers, middle-tier bearer + Skype token, personal short profiles (fetchShortProfile / fetchFederated), pictures with the imageauth cookie, consumer CSA folders, searchUsers people search, chat creation through the groups service, accept/block with the Skype token.
+3. UI: Teams free chat list (no Quick views / Teams and channels, pills Unread / Meeting chats / Unmuted, Requests row and pane), request view variant, work-user header/banner, compose toolbar and + menu, tabs.
+4. Live-check in OST Personal 2 on testpc2 beside Teams desktop; Personal 1 on the web as the other side.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- 2026-11-28 (tperB) Captured Teams free: teams.live.com web client as OST Personal 1 (headless Chrome on linuxlt, CDP network log, tokens redacted) and Teams 26304 desktop as OST Personal 2 on testpc2 (UI screenshots, window restored and minimized again each time).
+- Protocol found: chat list = consumer chat service front door (teams.live.com/api/chatsvc/consumer) with ms-ic3-product tfl / Sfl; folders = teams.live.com/api/csa/api/v1/.../conversationFolders with x-skypetoken only; names = MT fetchShortProfile (Teams free people) and fetchFederated (work users), bearer + Skype token; pictures = MT users/{mri}/profilepicturev2 with the imageauth/cookie cookie; people search = MT searchUsers (emails:[...] for an address, searchKeyWord for a name or phone); new chats = POST teams.live.com/api/groups/v1/threads (groupssvc token + Skype token; 1:1 role User + isStickyThread, group role Admin), then contacts managebuddies add; a non-contact's chat arrives with relationshipState.inQuarantine (personal-to-personal, groups too).
+- Accept/Block: Teams free has no accept list (acceptlist/manage answers 405). Its worker (acceptBlockUnblockChat, life build): 1:1 Accept adds the inviter to contacts (managebuddies), group Accept sets your member property relationshipState=Accepted (PUT chatsvc v1/threads/{id}/members/{you}), Block posts blocklist/manage?ggEnabled=true {add:[mri]}.
+- Teams free UI (testpc2): chat list with Unread / Meeting chats / Unmuted, a Requests row (mail icon, count) above Favorites, no Quick views or Teams and channels; Requests pane (380 wide, rows by the person who asked, group requests with the group picture) and "Select a chat request item to accept or block."; request view without the "outside your organization" line or disclaimer, its preview bar with the warning at the left; "{name} added you to a group chat" for groups; work users show their address under the name and "X is part of an external organization. ..." banner; compose Emoji, Attach files, Attach media, Loop, + (Show Formatting options, Set delivery options); message menu Reply, Edit, Forward, Copy link, Delete, Pin, Mark as unread, Translation.
+<!-- SECTION:NOTES:END -->

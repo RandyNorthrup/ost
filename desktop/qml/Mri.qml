@@ -19,5 +19,9 @@ QtObject {
 
     /// Someone on Teams free (a personal Microsoft account, 8:live:…, or
     /// another of Teams free's consumer kinds; identity::is_consumer_mri).
-    function isConsumer(mri) { return /^8:(live|sip_profile|myspace|c2c|sms|facebook|fb):./.test(String(mri || "")) }
+    /// An old Skype account keeps its Skype name (8:bart.ost1).
+    function isConsumer(mri) {
+        const m = String(mri || "")
+        return /^8:(live|sip_profile|myspace|c2c|sms|facebook|fb):./.test(m) || /^8:[A-Za-z][A-Za-z0-9.,_-]{5,31}$/.test(m)
+    }
 }

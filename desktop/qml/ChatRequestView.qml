@@ -21,6 +21,11 @@ import QtQuick.Controls.Basic
 //   and Learn more.
 // "preview their messages." shows the chat's messages with Block and Accept
 // kept under them (`previewing`).
+// A personal account's request (`personal`; Teams free on testpc2,
+// 2026-11-28, OST Personal 2 asked by OST Personal 1) has no "from outside
+// your organization" line and no disclaimer; its preview bar holds "{name}
+// wants to chat with you" (14/20 semibold) and the spam warning (14/20) at
+// the left, Block and Accept at the right, 16 from the bottom.
 Rectangle {
     id: root
     color: theme.surface
@@ -30,9 +35,13 @@ Rectangle {
     property bool previewing: false
     /// Asking the service (Accept or Block pressed).
     property bool busy: false
+    /// Teams free's request (see above).
+    property bool personal: false
+    /// Teams free's group request: "{name} added you to a group chat".
+    property bool groupRequest: false
     /// How tall the bar under a preview is (Block / Accept and the
     /// disclaimer).
-    readonly property real previewHeight: 32 + 16 + disclaimer.height + 12
+    readonly property real previewHeight: personal ? personalBar.height + 32 : 32 + 16 + disclaimer.height + 12
     signal accept()
     signal block()
     signal preview()
@@ -48,7 +57,7 @@ Rectangle {
         id: scroller
         anchors.fill: parent
         contentWidth: width
-        contentHeight: root.previewing ? height : Math.max(height, disclaimer.y + disclaimer.height + 12)
+        contentHeight: root.previewing ? height : Math.max(height, root.personal ? content.y + content.height + 24 : disclaimer.y + disclaimer.height + 12)
         boundsBehavior: Flickable.StopAtBounds
         clip: true
         interactive: !root.previewing && contentHeight > height
@@ -69,7 +78,8 @@ Rectangle {
             Text {
                 width: Math.min(parent.width - 48, 800); anchors.horizontalCenter: parent.horizontalCenter
                 horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-                text: root.personMail
+                text: root.groupRequest ? qsTr("%1 added you to a group chat").arg(root.personName)
+                    : root.personMail
                     ? qsTr("%1 (%2) wants to chat with you", "messaging:k8i85rtfs").arg(root.personName).arg(root.personMail)
                     : qsTr("%1 wants to chat with you", "messaging:k8zm4zvb2").arg(root.personName)
                 font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
@@ -91,6 +101,7 @@ Rectangle {
                     x: 32; y: 24; width: parent.width - 64
                     spacing: 20
                     Row {
+                        visible: !root.personal
                         anchors.horizontalCenter: parent.horizontalCenter
                         spacing: 6
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "warning-20"; size: 16; color: theme.text }
@@ -148,6 +159,7 @@ Rectangle {
         }
         Text {
             id: disclaimer
+            visible: !root.personal
             anchors.horizontalCenter: parent.horizontalCenter
             // At the bottom, but never over Block and Accept: in a short window
             // (the 588 x 493 chat pop-out) the pane scrolls instead.
@@ -167,8 +179,41 @@ Rectangle {
 
     }
     // The Block / Accept bar under a preview.
+    // Teams free's preview bar.
+    Item {
+        id: personalBar
+        visible: root.previewing && root.personal
+        x: 64; width: parent.width - 128
+        y: parent.height - 16 - height
+        height: Math.max(barText.height, 32)
+        Column {
+            id: barText
+            width: parent.width - barButtons.width - 16
+            Text {
+                width: parent.width; wrapMode: Text.Wrap
+                text: root.groupRequest ? qsTr("%1 added you to a group chat").arg(root.personName) : qsTr("%1 wants to chat with you", "messaging:k8zm4zvb2").arg(root.personName)
+                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                lineHeight: 20; lineHeightMode: Text.FixedHeight
+                color: theme.text
+            }
+            Text {
+                width: parent.width; wrapMode: Text.Wrap
+                text: qsTr("Messages from unknown or unexpected people could be spam or phishing attempts. Never share your account information or authorize sign-in requests over chat.", "messaging:karvikcmc")
+                font.family: theme.font; font.pixelSize: 14
+                lineHeight: 20; lineHeightMode: Text.FixedHeight
+                color: theme.textStrong
+            }
+        }
+        Row {
+            id: barButtons
+            anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+            spacing: 10
+            RequestButton { text: qsTr("Block"); onClicked: root.block() }
+            RequestButton { text: qsTr("Accept"); onClicked: root.accept() }
+        }
+    }
     Rectangle {
-        visible: root.previewing
+        visible: root.previewing && !root.personal
         // (16 over the disclaimer; the pane doesn't scroll while previewing.)
         anchors { left: parent.left; right: parent.right }
         y: disclaimer.y - 16 - height
