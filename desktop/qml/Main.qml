@@ -622,21 +622,28 @@ Window {
     // Settings ▸ Files and links ▸ "Always ask where to save downloaded
     // file": a download asks for its place (the download folder and the
     // file's name suggested).
+    // Several downloads at once (a selection) ask one after another.
     FileDialog {
         id: saveAsDialog
         property int pending: 0
+        property var queue: []
         title: qsTr("Save as")
         fileMode: FileDialog.SaveFile
-        onAccepted: backend.saveAsAnswer(pending, decodeURIComponent(String(selectedFile)))
-        onRejected: backend.saveAsAnswer(pending, "")
+        onAccepted: { backend.saveAsAnswer(pending, decodeURIComponent(String(selectedFile))); Qt.callLater(next) }
+        onRejected: { backend.saveAsAnswer(pending, ""); Qt.callLater(next) }
+        function ask(r) {
+            pending = r.id
+            currentFolder = "file://" + r.folder
+            selectedFile = "file://" + r.folder + "/" + r.name
+            open()
+        }
+        function next() { if (visible || !queue.length) return; const r = queue[0]; queue = queue.slice(1); ask(r) }
     }
     Connections {
         target: backend
         function onSaveAsRequested(id, name, folder) {
-            saveAsDialog.pending = id
-            saveAsDialog.currentFolder = "file://" + folder
-            saveAsDialog.selectedFile = "file://" + folder + "/" + name
-            saveAsDialog.open()
+            saveAsDialog.queue = saveAsDialog.queue.concat([{ id: id, name: name, folder: folder }])
+            saveAsDialog.next()
         }
     }
     onTrayShownChanged: refreshTray()

@@ -38,9 +38,13 @@ Item {
     }
     onChatIdChanged: { files = []; selected = ({}); loaded = false; load() }
     Component.onCompleted: load()
+    /// An upload from this tab failed: the sender's OneDrive is full
+    /// (Teams free's storage banner, here since the tab has no compose box).
+    property bool storageFull: false
     Connections {
         target: backend
         function onDriveActionDone(op, result, error) {
+            if (op === "personal-storage-full") { if (JSON.parse(result || "{}").chat === root.chatId) root.storageFull = true; return }
             if (op !== root.tag + "personal_files") return
             root.loading = false
             root.loaded = true
@@ -83,7 +87,7 @@ Item {
     }
     // To this tab's own chat (a chat window's tab too, not the main
     // window's open chat).
-    function upload(paths) { backend.sendChatWindowFiles(root.chatId, paths.join("\n"), ""); reloadSoon.restart() }
+    function upload(paths) { root.storageFull = false; backend.sendChatWindowFiles(root.chatId, paths.join("\n"), ""); reloadSoon.restart() }
     function uploadForTest(paths) { root.upload(paths) }
     function stateForTest() { return { loaded: loaded, files: files.map(f => f.name), selected: selectedFiles.map(f => f.name) } }
 
@@ -255,6 +259,44 @@ Item {
         onPicked: i => { if (file) root.act(file, items[i].act) }
     }
     BusyIndicator { anchors.centerIn: parent; running: root.loading && !root.loaded; visible: running }
+
+    // "Attachment storage is full", with Manage and Get more storage, as
+    // the compose box shows it.
+    Rectangle {
+        id: storageBanner
+        visible: root.storageFull
+        z: 5
+        anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 16 }
+        height: 44; radius: 6
+        color: theme.pick("#FDF3F4", "#3E1F25", "#000000")
+        border.color: theme.pick("#EEACB2", "#6E0811", "#FFFFFF"); border.width: 0.67
+        Row {
+            x: 12; height: parent.height; spacing: 8
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 20; name: "error-circle-20-filled"; color: theme.pick("#C4314B", "#E73550", "#FFFFFF") }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Attachment storage is full"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+        }
+        Row {
+            anchors.right: parent.right; anchors.rightMargin: 12; height: parent.height; spacing: 8
+            Repeater {
+                model: [{ key: "manage", label: qsTr("Manage") }, { key: "more", label: qsTr("Get more storage") }]
+                Rectangle {
+                    id: sb
+                    required property var modelData
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: sbl.implicitWidth + 16; height: 24; radius: 4
+                    color: sbh.hovered ? theme.menuHover : "transparent"
+                    border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
+                    Text { id: sbl; anchors.centerIn: parent; text: sb.modelData.label; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
+                    HoverHandler { id: sbh; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: backend.openExternal(sb.modelData.key === "manage" ? "https://onedrive.live.com/?gologin=true" : "https://aka.ms/GetMoreStorage") }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: sb.modelData.label
+                }
+            }
+        }
+        Accessible.role: Accessible.AlertMessage
+        Accessible.name: qsTr("Attachment storage is full")
+    }
 
     component BarAction: Rectangle {
         id: ba
