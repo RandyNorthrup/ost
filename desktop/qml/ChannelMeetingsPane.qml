@@ -62,10 +62,12 @@ Rectangle {
         const arg = { organizer: organizer ? organizer.mri : "", gen: generation }
         if (r) { arg.from = r[0].getTime(); arg.to = r[1].getTime() }
         backend.channelAction("channel-meetings", teamId, channelId, JSON.stringify(arg))
-        backend.channelAction("channel-audience", teamId, channelId, "")
+        // The team's people once per channel (organizer names and the
+        // Organizer filter), not again on every filter change.
+        if (!people.length) backend.channelAction("channel-audience", teamId, channelId, "")
     }
     onVisibleChanged: if (visible) load()
-    onChannelIdChanged: { dateKey = ""; organizer = null; meetings = []; if (visible) load() }
+    onChannelIdChanged: { dateKey = ""; organizer = null; meetings = []; people = []; if (visible) load() }
     onDateKeyChanged: if (visible) load()
     onOrganizerChanged: if (visible) load()
     Connections {

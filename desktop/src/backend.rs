@@ -27188,13 +27188,13 @@ impl qobject::Backend {
                     // agents and bots, and the team.
                     "channel-audience" => {
                         let (roster, apps) = tokio::join!(
-                            api::channels::team_roster(&client, &team_thread),
+                            api::channels::team_people(&client, &team_thread),
                             api::store_content::team_apps(&client, &team_thread)
                         );
                         let me = client.self_mri().unwrap_or_default().to_lowercase();
                         let mut people: Vec<serde_json::Value> = roster?
                             .into_iter()
-                            .map(|m| json!({ "mri": m.mri, "name": m.name, "me": m.mri.to_lowercase() == me }))
+                            .map(|(mri, name)| json!({ "me": mri.to_lowercase() == me, "mri": mri, "name": name }))
                             .collect();
                         people.sort_by_key(|p| p["me"].as_bool() != Some(true));
                         let mut bots = Vec::new();
