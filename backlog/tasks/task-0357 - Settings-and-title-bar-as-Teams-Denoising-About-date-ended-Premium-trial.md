@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-27T17:32:00Z'
-updated_date: '2026-11-27T22:47:00Z'
+updated_date: '2026-11-28T00:07:00Z'
 labels: []
 dependencies: []
 priority: medium
@@ -19,9 +19,9 @@ From the 2026-11-27 parity audit (scope B), which compared Teams desktop on winp
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 B-12: Settings > Devices > Video: "Denoising" switch missing, as Teams desktop does it, checked side by side
-- [ ] #2 B-14: Settings > About: "last checked" date uses a two-digit year, as Teams desktop does it, checked side by side
-- [ ] #3 B-15: Title bar: Teams Premium pill and menu rows for an ended (canceled) Premium trial, as Teams desktop does it, checked side by side
+- [x] #1 B-12: Settings > Devices > Video: "Denoising" switch missing, as Teams desktop does it, checked side by side
+- [x] #2 B-14: Settings > About: "last checked" date uses a two-digit year, as Teams desktop does it, checked side by side
+- [x] #3 B-15: Title bar: Teams Premium pill and menu rows for an ended (canceled) Premium trial, as Teams desktop does it, checked side by side
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -47,4 +47,12 @@ B-15: Teams' rule (async-entry dnt/cnt/lnt/rnt, oat/iat/sat/Pst; LFT service): t
 Not clicked: Get Teams Premium / Request a license anywhere.
 
 PR #67 opened 2026-11-27 (branch task-0357-settings-titlebar). Live on linuxlt (ost-test1): --premium-test pill get/menu get/benefitsRow false = Teams on testpc1 (fresh device); --about-test 11/27/2026 (en-US) and 27.11.2026 (de_DE); --cards-test Devices rows in Teams' order with Denoising On; --denoise-test on a virtual noisy camera /dev/video23 (no real camera frames saved). Unverified: kept-end-date path (unit tests only), other languages vs Teams, in-call pane row live, quantitative parity with Teams' AI denoiser. Follow-up TASK-0361 (licence-request dialog, pill at narrow widths). Note: testpc1 C: had 307 MB free (WSL I/O errors); cleared its Windows Update download cache and old temp files (3.6 GB free). testpc2 C: was at 0 bytes (vhdx 129.6 GB), only 359 MB could be freed safely; the MacBook VM disk is full.
+
+Final live checks (linuxlt, build 834dc20a+QML 5f92731f): B-15 both device paths (no kept end date: Get Premium pill + one Get Teams Premium row = testpc1; kept end date: plain ··· + one row = winpc) and the new post-trial page; B-14 11/27/2026 en-US, 27.11.2026 de_DE; B-12 rows in Teams' order, denoise on the sent frame (virtual noisy camera) grain 5.29->4.41 / 11.83->8.11 / 20.19->13.38 and frame change 6.08->4.81 / 13.94->8.59 / 21.31->14.71 at ffmpeg noise 6/12/20. Codex P2s fixed (post-trial page; wait for ECS). Clippy example fix. Build boxes were corrected by the coordinator (they now prune to keep 40 GB free).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Denoising (B-12): Teams' Settings/pane switch, on by default and device-local like Teams' videoDenoisingEnabled, applied first on the camera by ost_vfx::Denoiser (adaptive temporal filter). About date (B-14): Teams' Intl yMd format via regional::numeric_date (ICU table for every Teams culture). Premium (B-15): Teams' TeamsPremiumTitleBar/MoreOptionsMenuItem rule in api::premium::entry with per-account device marks; one Get Teams Premium row after a trial, the pill only while the post-trial promo runs and no trial end date was kept; Get Teams Premium opens a post-trial page. PR #67. Follow-up TASK-0361 (post-trial page geometry/strings, pill at narrow widths).
+<!-- SECTION:FINAL_SUMMARY:END -->
