@@ -5877,7 +5877,7 @@ Rectangle {
         // The app card's settings button: Settings ▸ Privacy (Teams).
         onAppCardSettingsRequested: root.openPrivacySettings()
         onAppCardPermissionsRequested: id => root.openAppDetails(id)
-        visible: root.chatName.length > 0 && !root.chatRequest && (!root.isChannel || ((root.posting || root.threadsLayout) && root.tab === "")) && ["Attendance", "Breakout Rooms", "Q&A", "Meeting Whiteboard", "Notes", "Recap", "Storyline"].indexOf(root.tab) < 0 && !root.channelTabs.some(t => t.name === root.tab && !root.isChannel) && !root.readOnly && !root.selecting
+        visible: root.chatName.length > 0 && !root.chatRequest && (!root.isChannel || ((root.posting || root.threadsLayout) && root.tab === "")) && ["Attendance", "Breakout Rooms", "Q&A", "Meeting Whiteboard", "Notes", "Recap", "Storyline"].indexOf(root.tab) < 0 && !(root.personal && (root.tab === "Files" || root.tab === "Photos")) && !root.channelTabs.some(t => t.name === root.tab && !root.isChannel) && !root.readOnly && !root.selecting
         // New posts at the top: in the list's top card, scrolling with it.
         readonly property bool atTop: post && channelPosts.newestAtTop
         anchors { left: parent.left; right: parent.right }

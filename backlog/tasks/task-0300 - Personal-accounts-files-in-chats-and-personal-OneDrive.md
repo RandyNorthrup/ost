@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@tperF'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T10:39:00Z'
+updated_date: '2026-11-28T11:01:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -53,6 +53,8 @@ Files sent in personal-account chats go to the Microsoft Teams Chat Files folder
 - Rebased again: the research section is now §12 of docs/research/personal-accounts-protocol.md (§11 is People, from TASK-0295).
 
 - Rebased onto main after #84, #88 and #89: the research section is now §13 of docs/research/personal-accounts-protocol.md (§12 is the personal shell).
+
+- After the rebase onto #88's personal shell (Teams free's rail: Chat, Meet, People, Copilot, Communities, Calendar, Activity): live on testpc2, the Chat / Files / Photos tabs sit in the chat header as before; the compose box now hides on the Files and Photos tabs, as Teams free's do.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
