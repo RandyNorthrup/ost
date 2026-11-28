@@ -16,9 +16,11 @@ Item {
         : (p === "donotdisturb" || p === "presenting" || p === "focusing" || p === "urgentinterruptionsonly") ? "dnd"
         : p === "outofoffice" ? "oof"
         : p === "offline" ? "offline"
+        // (Someone you blocked: Teams free's red blocked badge.)
+        : p === "blocked" ? "blocked"
         : "unknown"
     readonly property color ink: kind === "available" ? theme.hc("#13A10E", "#FFFFFF") : kind === "away" ? theme.hc("#EAA300", "#FFFFFF")
-        : (kind === "busy" || kind === "dnd") ? theme.hc("#D13438", "#FFFFFF") : kind === "oof" ? theme.hc("#C239B3", "#FFFFFF") : theme.textSecondary
+        : (kind === "busy" || kind === "dnd" || kind === "blocked") ? theme.hc("#D13438", "#FFFFFF") : kind === "oof" ? theme.hc("#C239B3", "#FFFFFF") : theme.textSecondary
     visible: presence.length > 0
     width: total; height: total
     Rectangle {

@@ -38,6 +38,7 @@ fn main() {
         "qml/RoomAutoExit.qml",
         "qml/OneDriveView.qml",
         "qml/PeopleView.qml",
+        "qml/PersonalPeopleView.qml",
         "qml/ChannelFiles.qml",
         "qml/StoreView.qml",
         "qml/StoreButton.qml",

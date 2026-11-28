@@ -28,7 +28,14 @@ Popup {
     signal startCall(string mri, string name, bool video)
     signal quickMessage(string mri, string name, string text)
     readonly property var card: backend.profileCardJson ? JSON.parse(backend.profileCardJson) : ({})
-    readonly property string mri: card.id ? Mri.work(card.id) : who
+    /// Someone on Teams free (8:live:…): Teams for personal use's card
+    /// (measured on teams.live.com 2026-11-28): the header's Chat, Video
+    /// call, Audio call, LinkedIn and More options (Block contact, for a
+    /// personal account); Overview, Contact and LinkedIn; the availability
+    /// box, then "Contact information" with what they share, or "<name>'s
+    /// contact details are hidden in Teams.".
+    readonly property bool tfl: Mri.isConsumer(who) || !!card.tfl
+    readonly property string mri: tfl ? (card.mri || who) : card.id ? Mri.work(card.id) : who
     readonly property var p: card.presence || ({})
     function show(id) { who = id; tab = "overview"; moreContact = false; quick.text = ""; history = [id]; historyAt = 0; backend.loadProfileCard(id); open() }
     // The org chart's people: Home, Back to previous profile and Next
@@ -114,7 +121,12 @@ Popup {
         Row {
             x: 144.7; y: 74.7; spacing: 8
             Repeater {
-                model: [
+                model: root.tfl ? [
+                    { icon: "chat-20", label: qsTr("Start a chat with %1"), act: "chat" },
+                    { icon: "video-20", label: qsTr("Start a video call with %1"), act: "video" },
+                    { icon: "call-20", label: qsTr("Start an audio call with %1"), act: "call" },
+                    { icon: "linkedin-logo", label: qsTr("Find LinkedIn profile for %1"), act: "linkedin" }
+                ].concat(backend.personalAccount ? [{ icon: "more-horizontal-20", label: qsTr("More options"), act: "more" }] : []) : [
                     { icon: "chat-20", label: qsTr("Start a chat with %1"), act: "chat" },
                     { icon: "org-20", label: qsTr("Navigate to %1's org chart"), act: "org" },
                     { icon: "video-20", label: qsTr("Start a video call with %1"), act: "video" },
@@ -125,8 +137,8 @@ Popup {
                 Rectangle {
                     id: hcFill1
                     required property var modelData
-                    width: 44; height: 32; radius: 4
-                    color: ah.hovered ? theme.menuHover : "transparent"
+                    width: modelData.act === "more" ? 32 : 44; height: 32; radius: 4
+                    color: ah.hovered || (modelData.act === "more" && tflMenu.opened) ? theme.menuHover : "transparent"
                     FluentIcon {
                         anchors.centerIn: parent; name: modelData.icon
                         size: modelData.act === "linkedin" ? 16 : 20
@@ -138,6 +150,7 @@ Popup {
                             const n = root.card.displayName || ""
                             if (modelData.act === "chat") { root.close(); root.startChat(root.mri, n) }
                             else if (modelData.act === "org") root.tab = "organization"
+                            else if (modelData.act === "more") { tflMenu.parent = hcFill1; tflMenu.x = 0; tflMenu.y = hcFill1.height; tflMenu.open() }
                             else if (modelData.act === "linkedin") backend.openExternal("https://www.linkedin.com/search/results/people/?keywords=" + encodeURIComponent(n))
                             else { root.close(); root.startCall(root.mri, n, modelData.act === "video") }
                         }
@@ -162,7 +175,8 @@ Popup {
         Row {
             x: 20.7; y: 148.7
             Repeater {
-                model: [{ key: "overview", label: qsTr("Overview") }, { key: "profile", label: qsTr("Profile") }, { key: "organization", label: qsTr("Organization") }, { key: "linkedin", label: qsTr("LinkedIn") }]
+                model: root.tfl ? [{ key: "overview", label: qsTr("Overview") }, { key: "contact", label: qsTr("Contact") }, { key: "linkedin", label: qsTr("LinkedIn") }]
+                    : [{ key: "overview", label: qsTr("Overview") }, { key: "profile", label: qsTr("Profile") }, { key: "organization", label: qsTr("Organization") }, { key: "linkedin", label: qsTr("LinkedIn") }]
                 Item {
                     required property var modelData
                     readonly property bool on: root.tab === modelData.key
@@ -182,15 +196,79 @@ Popup {
         Flickable {
             id: body
             y: 194; width: parent.width; height: parent.height - y
-            contentHeight: (root.tab === "overview" ? overview.height : root.tab === "profile" ? profileTab.height : root.tab === "linkedin" ? linkedInTab.height : (orgChart.visible ? orgChart.y + orgChart.height : orgTab.y + orgTab.height)) + 32
+            contentHeight: (root.tfl && root.tab !== "linkedin" ? tflOverview.height : root.tab === "overview" ? overview.height : root.tab === "profile" ? profileTab.height : root.tab === "linkedin" ? linkedInTab.height : (orgChart.visible ? orgChart.y + orgChart.height : orgTab.y + orgTab.height)) + 32
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
             // ---- Overview ----
+            // ---- Overview and Contact (someone on Teams free) ----
+            Column {
+                id: tflOverview
+                visible: root.tfl && root.tab !== "linkedin"
+                x: 29.3; y: 16; width: 773
+                spacing: 0
+                Rectangle {
+                    width: 773; height: tflAvail.height + 20; radius: 4
+                    color: "transparent"; border.color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF"); border.width: 0.67
+                    Column {
+                        id: tflAvail
+                        y: 10; width: parent.width
+                        Item {
+                            width: parent.width; height: 20
+                            PresenceBadge { x: 12; total: 20; presence: root.p.availability || "Offline" }
+                            Text { x: 43; anchors.verticalCenter: parent.verticalCenter; text: root.availability; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        }
+                        Item {
+                            visible: !!root.p.note
+                            width: parent.width; height: tflNote.height + 10
+                            FluentIcon { x: 12; y: 8; name: "status-20"; size: 20; color: theme.textStrong }
+                            Text { id: tflNote; x: 43; y: 10; width: parent.width - 60; wrapMode: Text.Wrap; textFormat: Text.PlainText; text: root.p.note || ""; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
+                        }
+                    }
+                }
+                Item { width: 1; height: 20 }
+                Heading { text: qsTr("Contact information") }
+                Item { width: 1; height: 14 }
+                readonly property var items: {
+                    const c = root.card, out = []
+                    if (c.mail) out.push({ icon: "mail-20", label: qsTr("Email"), value: c.mail, url: "mailto:" + c.mail })
+                    if (c.phone) out.push({ icon: "call-20", label: qsTr("Phone"), value: c.phone, url: "tel:" + c.phone })
+                    return out
+                }
+                Text {
+                    visible: !root.card.loading && tflOverview.items.length === 0
+                    text: qsTr("%1's contact details are hidden in Teams.").arg(root.card.displayName || "")
+                    font.family: theme.font; font.pixelSize: 12; color: theme.text
+                }
+                Flow {
+                    visible: tflOverview.items.length > 0
+                    width: 773; spacing: 20
+                    Repeater {
+                        model: tflOverview.items
+                        Item {
+                            required property var modelData
+                            width: 237.3; height: 36
+                            FluentIcon { x: 0; y: 6; name: modelData.icon; size: 20; color: theme.textStrong }
+                            Text { x: 35; text: modelData.label; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textStrong }
+                            Text {
+                                x: 35; y: 16; width: parent.width - 35; elide: Text.ElideRight
+                                text: modelData.value
+                                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                                color: theme.brandForeground1
+                                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: backend.openExternal(modelData.url) }
+                            }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: modelData.label + ": " + modelData.value
+                        }
+                    }
+                }
+            }
+
             Column {
                 id: overview
-                visible: root.tab === "overview"
+                visible: root.tab === "overview" && !root.tfl
                 x: 26.3; y: 16; width: 773
                 spacing: 0
                 Row {
@@ -677,6 +755,28 @@ Popup {
             text: root.card.error ? qsTr("Couldn't load this profile.") : ""
             font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
         }
+    }
+
+    // More options (a personal account looking at someone on Teams free):
+    // Block contact, or Unblock contact once they're blocked.
+    MenuPopup {
+        id: tflMenu
+        minRowWidth: 178
+        items: [{ label: root.card.blocked ? qsTr("Unblock contact") : qsTr("Block contact"), icon: "prohibited-20" }]
+        onPicked: i => {
+            if (root.card.blocked) { backend.contactsOp("tflBlock", JSON.stringify({ mri: root.mri, on: false })); reloadSoon.restart() }
+            else blockConfirm.open()
+        }
+    }
+    Timer { id: reloadSoon; interval: 1500; onTriggered: if (root.opened && root.who) backend.loadProfileCard(root.who) }
+    // Teams free's "Block this person?" (its contacts strings).
+    ConfirmDialog {
+        id: blockConfirm
+        dialogWidth: 600
+        title: qsTr("Block this person?")
+        body: qsTr("When you block someone, they can't see your status and you won't receive any Teams communications from them. They'll still be able to see your messages in group chats.") + "\n\n" + qsTr("To delete this person, go to Settings > People > Blocked users.")
+        confirmText: qsTr("Block")
+        onConfirmed: { backend.contactsOp("tflBlock", JSON.stringify({ mri: root.mri, on: true })); reloadSoon.restart() }
     }
 
     component Heading: Text {

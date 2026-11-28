@@ -1,11 +1,11 @@
 ---
 id: TASK-0296
 title: 'Personal accounts: presence and status message'
-status: To Do
+status: In Progress
 assignee:
-  - '@tperA'
+  - '@tperD'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T05:37:00Z'
+updated_date: '2026-11-28T07:52:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -30,9 +30,9 @@ Personal accounts get presence from the consumer presence service, not Graph or 
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-1. Presence requests for a personal account go to Teams free's unified presence (regionGtms presenceUPS, default teams.live.com/ups/global) with the middle tier bearer + x-skypetoken + x-ms-client-consumer-type: teams4life; same paths as work (endpoints, forceavailability, publishnote, getpresence, reportmyactivity).
-2. Capture the web client's set-status and status-message calls to confirm paths and bodies.
-3. Live: set availability and a status message from OST as OST Personal 1 and read them as OST Personal 2.
+1. (Built: own presence, AC #1.)
+2. Contacts' presence: chat list 1:1 peers (peer MRIs from the thread members since PR #81), the chat header, Teams free profile cards (short profile + UPS) and the People app (UPS for the buddy list).
+3. Live as OST Personal 1 with OST Personal 2's presence.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

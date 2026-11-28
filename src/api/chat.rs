@@ -139,6 +139,21 @@ pub fn is_one_on_one_thread(thread: &std::collections::HashMap<String, serde_jso
         || s("isStickyThread").eq_ignore_ascii_case("true")
 }
 
+/// Whether a conversation is one of Teams free's system streams rather
+/// than a chat: its call logs (`19:stream01_…@thread.v2`, threadType
+/// "streamofcalllogs", streamType "calllogs"; Teams for personal use
+/// doesn't list it, seen 2026-11-28).
+pub fn is_system_stream(
+    id: &str,
+    thread: Option<&std::collections::HashMap<String, serde_json::Value>>,
+) -> bool {
+    let kind = thread
+        .and_then(|t| t.get("threadType"))
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    kind.to_ascii_lowercase().starts_with("streamof") || id.starts_with("19:stream01_")
+}
+
 /// The one-on-one chats whose ids are a thread's (see
 /// `is_one_on_one_thread`), as the chat list last named them.
 static ONE_ON_ONE_THREADS: std::sync::RwLock<Option<std::collections::HashSet<String>>> =
@@ -1590,6 +1605,17 @@ mod group_chat_tests {
     use super::*;
 
     #[test]
+    fn teams_free_call_logs_are_not_chats() {
+        let calllogs: std::collections::HashMap<String, serde_json::Value> =
+            serde_json::from_value(serde_json::json!({"threadType": "streamofcalllogs"})).unwrap();
+        assert!(is_system_stream("19:x@thread.v2", Some(&calllogs)));
+        assert!(is_system_stream("19:stream01_detyhk@thread.v2", None));
+        let chat: std::collections::HashMap<String, serde_json::Value> =
+            serde_json::from_value(serde_json::json!({"threadType": "chat"})).unwrap();
+        assert!(!is_system_stream("19:uni01_abc@thread.v2", Some(&chat)));
+    }
+
+    #[test]
     fn group_chats_need_two_distinct_members() {
         let me = "8:orgid:aaaa".to_string();
         assert!(group_chat_body(&[me.clone(), me.clone()], "").is_err());
@@ -2257,6 +2283,10 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
     for (i, conv) in conversations.iter().enumerate() {
         let id = conv.id.as_deref().unwrap_or("").to_string();
         if id.is_empty() {
+            continue;
+        }
+        // Teams free's call log stream is a system stream, not a chat.
+        if is_system_stream(&id, conv.thread_properties.as_ref().map(|p| &p.extra)) {
             continue;
         }
         let unread = raw_convs
