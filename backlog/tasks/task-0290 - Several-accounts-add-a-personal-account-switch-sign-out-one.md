@@ -1,11 +1,11 @@
 ---
 id: TASK-0290
 title: 'Several accounts: add a personal account, switch, sign out one'
-status: In Progress
+status: Done
 assignee:
   - '@t290'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T00:56:00Z'
+updated_date: '2026-11-28T01:56:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -52,4 +52,26 @@ Reuse the work multi-account machinery (profiles, switch_account, add_account, M
 - Live on linuxlt (isolated XDG dirs, profiles t290w=ost-test2, t290x=ost-test3, t290p=OST Personal 1, t290q=OST Personal 2): AC1 flyouts and Accounts and orgs match Teams 26304 on testpc2 (ac2-02/ac2-11/ac2-set-04); AC2 switch raises the running window with no sign-in, the personal account survives a restart; AC3 Personal 2 gets Teams' dialog after its sign-in, Cancel closes the window and removes profile/web storage/keyring entry; AC4 signing out of t290x and then t290p closed each window and removed its profile while the others stayed signed in.
 - The AC says side by side on winpc; the Teams reference used is testpc2 (Teams 26304, OST Test 2 + OST Personal 2, the primary reference), since winpc's Teams has no personal account and other agents use it.
 - Not live: Open Teams on the web (opens a browser); the first profile's sign-out with others left (it shares the real default keyring entry on linuxlt). Email codes for the personal accounts were read with ~/ost-coord/graph_beta_get (ost-test1 / OST_PROFILE=test2).
+
+- Review rounds (Codex on PR #69): exact state-file names on profile removal; a failed app-definition load signals ready again after its 60 s wait; personal accounts now renew their 24 h browser session silently too (auth::browser_session, BrowserSignIn::personal(hint, prompt=none)) - not run live yet; a legacy Skype name becomes 8:<name>, not 8:orgid:.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+OST can now add one personal Microsoft account next to its work accounts, as Teams desktop does. Each account keeps its own profile and window.
+
+Changes:
+- Sign-in: when Microsoft's work page hands a personal address to login.live.com (Azure AD's Microsoft-account federation), or refuses it, OST continues with Teams on the web for personal use's sign-in for that address. Without this, a personal account that is a guest in a work tenant was signed in as that guest.
+- Personal tokens: identity from the id_token (8:live:.cid MRI), consumer authz v2 Skype token, regionGtms and skypeid, MT and Graph tokens, refresh and silent renewal. AuthConfig::personal() is replaced by teams_live().
+- Account kind in accounts.json. A second personal account gets Teams' "Multiple personal accounts aren't supported in Teams yet." dialog after its sign-in, and its profile is removed.
+- Teams' personal profile menu (Personal, My Microsoft account, no Pause notifications or work location). The org pill shows only next to another work account. Window titles name the account. Accounts and orgs lists the account under "Personal".
+- Signing out of one account closes its window and removes its profile (config, keyring entry, web storage, state files); the others stay signed in.
+- Quit uses exit(): Qt 6 quit() was swallowed by keep-running's hide, so sign-out, Save and restart and Refresh license and restart never quit in a plain launch.
+- A failed app-definition load backs off for a minute (the Avatars app looped on a refused token).
+- Harness --accounts-cmd / OST_ACCOUNTS_CMD. Docs: help sign-in page, desktop.md.
+
+Verified live on linuxlt (ost-test2, ost-test3, OST Personal 1 and 2; Teams 26304 reference on testpc2): all four ACs, see notes. Tests: spa, identity, skype, config units; CI green.
+
+Not verified live: Open Teams on the web; the first profile's sign-out with other accounts left; the personal silent renewal (added in review). The personal window's content and work-only calls are TASK-0293..0297, and teams-cli sign-in is TASK-0292.
+<!-- SECTION:FINAL_SUMMARY:END -->
