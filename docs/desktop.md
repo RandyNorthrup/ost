@@ -434,6 +434,7 @@ account.
 | `--picker-person-test` | With `--shots=<dir>`: Copy to's picker search for "OST" (`--picker-person-query=<text>`) in My files, the Person pill's menu (people, then `--picker-person=<name>`, default OST Test 2, typed), that person picked and the narrowed results, then Clear; `--picker-person-all` searches All files and logs Location pictures. PICKERPERSON lines; `picker-person-*.png`. |
 | `--group-test` | Start a named group chat with a first message. |
 | `--channel-test` | Post in OST Test Team > General. |
+| `--channel-rows-test=<post id>` | With `--open-chat=<channel id> --shots=<dir>` (TASK-0380): the post's replies line ("Open N replies from …", CHROWS line, `cr-posts.png`); the post's ··· menu and its newest replies' (someone else's and yours; CHROWS menu lines, `cr-*menu.png`); Report this message on that reply, cancelled, so nothing is sent (`cr-report.png`); Share to Outlook on the post, closed without sending, which discards the draft (`cr-sto.png`); Immersive Reader on the reply (`cr-ir.png`); then Chat ▸ Reminders (CHROWS reminders, `cr-reminders.png`). Quits. |
 | `--reply-test` | With `--open-chat=<channel>`, reply in the newest post's thread. |
 | `--mentions-test` | Open Quick views > Mentions and a mention. |
 | `--activity-test`, `--activity-watch` | Open an activity item; log live feed changes. |

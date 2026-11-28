@@ -28,6 +28,9 @@ Item {
     /// notes-to-self chat.
     property string chatId: backend.currentChatId
     property bool isSelfChat: chatId.indexOf("48:notes") === 0
+    /// Share to Outlook's draft body: "SingleMessage" in a Threads-layout
+    /// channel (Teams' `kn`: ConvUX), else Teams leaves it out.
+    property string stoBodyType: ""
     /// The compose box the fun picker inserts into by default.
     property var defaultBox: null
     /// Test hook: keep the ··· menu's hover bar of this message up.
@@ -184,7 +187,7 @@ Item {
             out.push({ separator: true })
             out.push({ key: "share-outlook", label: qsTr("Share to Outlook"), icon: "mail-20" })
             out.push(translate)
-            out.push({ key: "immersive-reader", label: qsTr("Immersive Reader"), icon: "immersive-reader-20" })
+            out.push({ key: "immersive-reader", label: qsTr("Immersive Reader"), icon: "read-aloud-20" })
             if (!own) {
                 out.push({ separator: true })
                 out.push({ key: "report", label: qsTr("Report this message"), icon: "report-message-20" })
@@ -194,8 +197,7 @@ Item {
             return out
         }
         // Channel posts and replies (measured in a classic channel; Edit and
-        // Reply with quote are on the hover bar). Share to Outlook and
-        // Immersive Reader are not built yet.
+        // Reply with quote are on the hover bar).
         if (context === "post" || context === "reply") {
             if (rightClick && own) out.push({ key: "edit", label: qsTr("Edit"), icon: "edit-20", keys: "E" })
             if (rightClick && !own) out.push({ key: "reply", label: qsTr("Reply with quote"), icon: "quote-reply-20", keys: "Q" })
@@ -214,10 +216,27 @@ Item {
             if (root.canAskCopilot && root.askableText(m)) out.push({ key: "ask-copilot", label: qsTr("Ask Copilot"), icon: "ai-copilot" })
             if (context === "post" && root.canPopOut) out.push({ key: "popout", label: qsTr("Open conversation in new window"), icon: "window-new-20" })
             out.push({ separator: true })
-            if (context === "post") out.push({ key: "unread", label: qsTr("Mark as unread"), icon: "mail-unread-20", keys: "U" })
-            out.push(translate)
+            // The secondary items in Teams' registry order (Mark as unread
+            // for a post only, Share to Outlook, Translate, Immersive
+            // Reader): the first three here, the rest under More actions
+            // (seen on Teams web 2026-11-27 as OST Test 2: a post's Immersive
+            // Reader is under More actions, a reply's on the menu).
+            const secondary = []
+            if (context === "post") secondary.push({ key: "unread", label: qsTr("Mark as unread"), icon: "mail-unread-20", keys: "U" })
+            secondary.push({ key: "share-outlook", label: qsTr("Share to Outlook"), icon: "mail-20" })
+            secondary.push(translate)
+            secondary.push({ key: "immersive-reader", label: qsTr("Immersive Reader"), icon: "read-aloud-20" })
+            for (const it of secondary.slice(0, 3)) out.push(it)
+            // Report this message: someone else's, with its own divider.
+            if (!own) {
+                out.push({ separator: true })
+                out.push({ key: "report", label: qsTr("Report this message"), icon: "report-message-20" })
+            }
+            // More actions ▸: the rest (apps' actions aren't listed yet), off
+            // when there is none, as Teams has it with an empty list.
+            const more = secondary.slice(3)
             out.push({ separator: true })
-            out.push({ key: "more", label: qsTr("More actions"), chevron: true })
+            out.push({ key: "more", label: qsTr("More actions"), chevron: true, enabled: more.length > 0, more: more })
             return out
         }
         // Core items, in Teams' registry order. A personal account's
@@ -332,7 +351,7 @@ Item {
             else if (it.key === "discover-channel") root.discoverHide("CHANNEL")
             else if (it.key === "more") {
                 moreActionsMenu.message = m
-                moreActionsMenu.items = [{ key: "immersive-reader", label: qsTr("Immersive Reader"), icon: "immersive-reader-20" }]
+                moreActionsMenu.items = it.more || [{ key: "immersive-reader", label: qsTr("Immersive Reader"), icon: "read-aloud-20" }]
                 moreActionsMenu.parent = messageMenu.parent; moreActionsMenu.x = messageMenu.x - moreActionsMenu.implicitWidth; moreActionsMenu.y = messageMenu.y + messageMenu.height - 40; moreActionsMenu.open()
             }
             else if (it.key === "read") { readersMenu.items = root.readersFor(m.id).readers.map(x => ({ key: x.mri, label: x.name })); readersMenu.parent = messageMenu.parent; readersMenu.x = messageMenu.x + messageMenu.width; readersMenu.y = messageMenu.y; readersMenu.open() }
@@ -421,7 +440,7 @@ Item {
     readonly property alias shareToOutlookForTest: shareToOutlook
     // Share to Outlook: Teams' Outlook dialog (task module) on a draft the
     // middle tier makes of the conversation; closing it discards the draft.
-    ShareToOutlookDialog { id: shareToOutlook; threadId: root.chatId }
+    ShareToOutlookDialog { id: shareToOutlook; threadId: root.chatId; bodyType: root.stoBodyType }
     // Translation ▸: Translate, or See original message.
     MenuPopup {
         id: translationMenu

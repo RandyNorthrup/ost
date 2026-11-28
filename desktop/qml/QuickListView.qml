@@ -33,11 +33,19 @@ import QtQuick.Controls.Basic
 // under the header (4 in, 60 down).
 // Reminders (Teams' REMINDERS slice over 48:reminders; measured on Teams
 // on the web 2026-11-27): the pills Due / Upcoming / Completed (any
-// together; none picked shows all), rows 93 tall: the sender's picture
-// (36, round) at 32, 14 down; their name (14/20) 12 down and the message
-// (14/20, one line) 34 down at 80; 58 down the due chip (20 tall, radius
-// 4, 6 in, brandBackground2 with the 16 px alarm and 12/600 brand text:
-// the time today or month/day else, "Due …" once due, "Completed");
+// together; none picked shows all). A chat message's row: the sender's
+// picture (36, round) at 32, 14 down; their name (14/20) 12 down and the
+// message (14/20, up to two lines) 34 down at 80; 4 under it the due chip.
+// A channel message's row is a Followed threads row (TASK-0380, Teams web
+// 2026-11-27): the team's picture (36, radius 4) and the channel (14/20,
+// 12 down); a reply's post (its subject, else its preview; 12/16 #424242)
+// 33 down; then the sender's 20 px picture and "Name: text" (up to two
+// lines) 34 down, 56 under a post line; 5.3 under it the chip. The chip
+// (20 tall, radius 4, the 16 px icon 4 in, 12/600 text 24 in: the time
+// today or month/day else, "Due …" once due, "Completed"): due in brand
+// tint (brandBackground2, brandStroke2 edge), upcoming in a neutral
+// outline (#E0E0E0 edge, #616161), completed in green with a checkmark;
+// rows end 15 under the chip;
 // on hover Mark as completed (a circle check) and More options (Edit
 // reminder ▸, Remove reminder, Save / Unsave this message, Go to
 // conversation, Open in new window, each with its icon; Teams desktop
@@ -196,11 +204,21 @@ Rectangle {
                 readonly property var ch: modelData.channel ? root.channelOf(modelData.thread_id) : null
                 readonly property real bodyY: root.followed ? 52.7 : 30.7
                 readonly property bool rem: root.reminders
+                // A channel message's reminder: laid out as a Followed
+                // threads row (the channel, a reply's post, the sender line).
+                readonly property bool remCh: rem && !!modelData.channel
+                readonly property bool remPost: remCh && !!modelData.reply_chain && modelData.reply_chain !== modelData.message_id
+                    && !!(modelData.parent_subject || modelData.parent_preview)
+                // The message text's top, and the due chip's under it (Teams
+                // web 2026-11-27: 4 under a chat's text, 5.3 under a channel
+                // message's line, which the 20 px picture makes taller).
+                readonly property real remTextY: remPost ? 56 : 34
+                readonly property real chipY: remTextY + (remCh ? body.lineCount * 20 + 5.3 : Math.max(1, remText.lineCount) * 20 + 4)
                 function toggle() {
                     if (root.followed) backend.channelAction("quick-unfollow", "", "", JSON.stringify({ thread: row.modelData.thread_id, chain: row.modelData.reply_chain }))
                     else backend.channelAction("quick-unsave", "", "", JSON.stringify({ thread: row.modelData.thread_id, chain: row.modelData.reply_chain, message: row.modelData.message_id }))
                 }
-                width: list.width; height: rem ? 93 + 4 : bodyY + body.height + 14.6
+                width: list.width; height: rem ? chipY + 20 + 15 + 4 : bodyY + body.height + 14.6
                 Rectangle {
                     id: hcFill1
                     x: 8; width: parent.width - 16; height: parent.height - 4; radius: theme.radius
@@ -221,7 +239,7 @@ Rectangle {
                     color: theme.onFill(hcFill1, theme.text)
                 }
                 Avatar {
-                    visible: !row.rem
+                    visible: !row.rem || row.remCh
                     x: 32; y: 12; size: 36; square: !!row.modelData.channel; squareRadius: 4
                     name: row.ch ? row.ch.team.name : (row.modelData.topic || "?")
                     initialsText: row.ch ? (row.ch.team.name || "").split(/\s+/).filter(w => w).slice(0, 2).map(w => w[0]).join("").toUpperCase() : ""
@@ -229,8 +247,8 @@ Rectangle {
                     group: !row.modelData.channel
                 }
                 Row {
-                    visible: !row.rem
-                    x: 80; y: 10; spacing: 6
+                    visible: !row.rem || row.remCh
+                    x: 80; y: row.rem ? 12 : 10; spacing: 6
                     Text { text: root.titleOf(row.modelData); font.weight: root.followed && row.modelData.unread ? Font.Bold : Font.Normal; width: Math.min(implicitWidth, root.paneWidth - 190, root.paneWidth - 80 - 32 - 64 - (repliesLabel.visible ? repliesLabel.implicitWidth + 6 : 0)); elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(hcFill1, theme.text) }
                     Text {
                         id: repliesLabel
@@ -251,12 +269,12 @@ Rectangle {
                 Item {
                     id: parentLine
                     objectName: "followedParentLine"
-                    visible: root.followed
+                    visible: root.followed || row.remPost
                     readonly property string iconName: row.modelData.parent_icon === "meeting" ? "calendar-20" : row.modelData.parent_icon === "deleted" ? "delete-20" : ""
                     readonly property string lineText: row.modelData.parent_subject || row.modelData.parent_preview || ""
                     readonly property Item iconItem: parentIcon
                     readonly property Item textItem: parentText
-                    x: 80; y: 32; width: parent.width - 80 - 32; height: 16
+                    x: 80; y: row.rem ? 33 : 32; width: parent.width - 80 - 32; height: 16
                     FluentIcon {
                         id: parentIcon
                         visible: parentLine.iconName !== ""
@@ -272,32 +290,48 @@ Rectangle {
                         font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.onFill(hcFill1, theme.textStrong)
                     }
                 }
-                Avatar { visible: !row.rem; x: 80; y: row.bodyY + 1.8; size: 20; name: row.modelData.sender || "?"; photoId: row.modelData.sender_mri || "" }
-                // A reminder: who wrote it, the message and the due chip.
-                Avatar { visible: row.rem; x: 32; y: 14; size: 36; name: row.modelData.sender || "?"; photoId: row.modelData.sender_mri || "" }
+                Avatar { visible: !row.rem || row.remCh; x: 80; y: row.rem ? row.remTextY - 0.7 : row.bodyY + 1.8; size: 20; name: row.modelData.sender || "?"; photoId: row.modelData.sender_mri || "" }
+                // A chat message's reminder: who wrote it, the message (up to
+                // two lines) and the due chip.
+                Avatar { visible: row.rem && !row.remCh; x: 32; y: 14; size: 36; name: row.modelData.sender || "?"; photoId: row.modelData.sender_mri || "" }
                 Text {
-                    visible: row.rem
+                    visible: row.rem && !row.remCh
                     x: 80; y: 12; width: parent.width - 80 - 100
                     text: row.modelData.sender || ""
                     elide: Text.ElideRight
                     font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(hcFill1, theme.text)
                 }
                 Text {
-                    visible: row.rem
-                    x: 80; y: 34; width: parent.width - 80 - 32
+                    id: remText
+                    visible: row.rem && !row.remCh
+                    x: 80; y: 34; width: parent.width - 80 - 36
                     text: row.modelData.preview || ""
-                    elide: Text.ElideRight; maximumLineCount: 1
+                    wrapMode: Text.Wrap; elide: Text.ElideRight; maximumLineCount: 2
                     font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(hcFill1, theme.text)
                 }
+                // The due chip (Teams' Fluent badge): a due reminder's brand tint,
+                // an upcoming one's neutral outline, a completed one's green
+                // tint with a checkmark (Teams web 2026-11-27); icon 4 in,
+                // text 24 in, 6 after it.
                 Rectangle {
                     id: dueChip
+                    readonly property string remState: row.rem ? root.reminderState(row.modelData) : ""
                     visible: row.rem
-                    x: 80; y: 58; height: 20; radius: 4
-                    width: 6 + 16 + 4 + dueText.implicitWidth + 6
-                    color: theme.pick("#E8EBFA", "#3D3E78", "#000000")
-                    border.width: theme.highContrast ? 1 : 0; border.color: theme.text
-                    FluentIcon { x: 4; anchors.verticalCenter: parent.verticalCenter; name: "clock-alarm-16"; size: 16; color: theme.onFill(dueChip, theme.brandLink) }
-                    Text { id: dueText; x: 6 + 16 + 4; anchors.verticalCenter: parent.verticalCenter; text: row.rem ? root.dueLabel(row.modelData) : ""; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(dueChip, theme.brandLink) }
+                    x: 80; y: row.chipY; height: 20; radius: 4
+                    width: 24 + dueText.implicitWidth + 6
+                    color: remState === "due" ? theme.pick("#E8EBFA", "#3D3E78", "#000000")
+                        : remState === "completed" ? theme.pick("#F1FAF1", "#052505", "#000000")
+                        : theme.pick("#FFFFFF", "#292929", "#000000")
+                    border.width: 1
+                    border.color: theme.highContrast ? theme.text
+                        : remState === "due" ? theme.pick("#C5CBFA", "#444791", "#FFFFFF")
+                        : remState === "completed" ? theme.pick("#9FD89F", "#107C10", "#FFFFFF")
+                        : theme.divider
+                    readonly property color ink: remState === "due" ? theme.brandLink
+                        : remState === "completed" ? theme.pick("#0E700E", "#54B054", "#FFFFFF")
+                        : theme.textSecondary
+                    FluentIcon { x: 4; anchors.verticalCenter: parent.verticalCenter; name: dueChip.remState === "completed" ? "checkmark-16" : "clock-alarm-16"; size: 16; color: theme.onFill(dueChip, dueChip.ink) }
+                    Text { id: dueText; x: 24; anchors.verticalCenter: parent.verticalCenter; text: row.rem ? root.dueLabel(row.modelData) : ""; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(dueChip, dueChip.ink) }
                 }
                 Row {
                     visible: row.rem && rh.hovered
@@ -365,10 +399,11 @@ Rectangle {
                 }
                 Text {
                     id: body
-                    visible: !row.rem
-                    x: 80; y: row.bodyY + 2; width: parent.width - 80 - 52
-                    // The writer's picture sits at the start of the first line.
-                    text: "<span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>" + root.esc(row.modelData.sender) + ": " + root.esc(row.modelData.preview)
+                    visible: !row.rem || row.remCh
+                    x: 80; y: row.rem ? row.remTextY : row.bodyY + 2; width: parent.width - 80 - (row.rem ? 36 : 52)
+                    // The writer's picture sits at the start of the first line
+                    // (the name 28 in, as in Teams web 2026-11-27).
+                    text: "<span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>" + root.esc(row.modelData.sender) + ": " + root.esc(row.modelData.preview)
                     textFormat: Text.StyledText
                     wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight
                     font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight

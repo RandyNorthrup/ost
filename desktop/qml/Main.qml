@@ -15242,6 +15242,75 @@ Window {
         }
     }
 
+    // --channel-rows-test=<post id> with --open-chat=<channel id>
+    // --shots=<dir> (TASK-0380): that post's replies line (CHROWS line,
+    // cr-posts.png); the post's ··· menu and its newest reply's from someone
+    // else and from you (CHROWS menu lines, cr-*menu.png); Report this
+    // message on that reply, cancelled (cr-report.png: nothing is sent);
+    // Share to Outlook on the post, closed without sending, which discards
+    // its draft (cr-sto.png); Immersive Reader on the reply (cr-ir.png);
+    // then Chat ▸ Reminders (CHROWS reminders, cr-reminders.png), and quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--channel-rows-test=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        property var post: null
+        property var theirs: null
+        property var mine: null
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const rootId = (Qt.application.arguments.find(a => a.startsWith("--channel-rows-test=")) || "").slice(20)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            const h = conversation.messageHostForTest()
+            const labels = () => JSON.stringify(h.messageMenu.items.map(i => i.separator ? "----" : i.label + (i.enabled === false ? " (off)" : "") + (i.more ? " > " + i.more.map(x => x.label).join(", ") : "")))
+            if (step === 0) {
+                if (backend.currentChatId !== id) {
+                    const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                    if (ch) backend.selectChat(ch.id, ch.name)
+                    return
+                }
+                if (!conversation.teamName || !conversation.postRepliesForTest(rootId)) return
+            }
+            if (step === 2) {
+                const r = conversation.postRepliesForTest(rootId)
+                post = r.post
+                theirs = r.replies.filter(m => !m.mine && !m.deleted).pop() || null
+                mine = r.replies.filter(m => m.mine && !m.deleted).pop() || null
+                console.warn("CHROWS line", JSON.stringify(r.line), "replies", r.replies.length, JSON.stringify(r.replies.map(m => (m.mine ? "you" : m.sender) + "@" + m.id)))
+            }
+            else if (step === 3) shot("cr-posts")
+            else if (step === 4 && post) conversation.openMessageMenu(post, conversation, false, conversation.width - 400, 150, "post")
+            else if (step === 5) { console.warn("CHROWS menu post", post && post.mine ? "mine" : "theirs", labels()); shot("cr-postmenu") }
+            else if (step === 6) { h.messageMenu.close(); if (theirs) conversation.openMessageMenu(theirs, conversation, false, conversation.width - 400, 150, "reply") }
+            else if (step === 7 && theirs) { console.warn("CHROWS menu reply theirs", labels()); shot("cr-replymenu") }
+            else if (step === 8) { h.messageMenu.close(); if (mine) conversation.openMessageMenu(mine, conversation, false, conversation.width - 400, 150, "reply") }
+            else if (step === 9 && mine) { console.warn("CHROWS menu reply mine", labels()); shot("cr-myreplymenu") }
+            else if (step === 10) { h.messageMenu.close(); if (theirs) { backend.reportResult = ""; h.reportDialog.message = theirs; h.reportDialog.open() } }
+            else if (step === 11) { console.warn("CHROWS report open", h.reportDialog.opened); shot("cr-report") }
+            // Cancel: the report is never sent.
+            else if (step === 12) { h.reportDialog.close(); console.warn("CHROWS report cancelled", JSON.stringify(backend.reportResult)) }
+            else if (step === 13 && post) h.shareToOutlookForTest.start(post)
+            else if (step === 19) {
+                const d = h.shareToOutlookForTest.dialog
+                console.warn("CHROWS sto", JSON.stringify({ thread: h.chatId, events: h.shareToOutlookForTest.events, dialog: d ? JSON.parse(d.stateForTest()).events : null }))
+                shot("cr-sto")
+            }
+            else if (step === 20) h.shareToOutlookForTest.close()
+            else if (step === 22) { console.warn("CHROWS sto closed", JSON.stringify(h.shareToOutlookForTest.events)); if (theirs || post) h.openImmersiveReader(theirs || post) }
+            else if (step === 27) { console.warn("CHROWS ir", h.immersiveReaderForTest.stateForTest()); shot("cr-ir") }
+            else if (step === 28) h.immersiveReaderForTest.close()
+            else if (step === 29) { rail.current = "chat"; chatList.openQuick("reminders") }
+            else if (step === 32) {
+                const items = JSON.parse(backend.remindersJson || "[]")
+                console.warn("CHROWS reminders", JSON.stringify(items.map(r => ({ channel: r.channel, topic: r.topic, chain: r.reply_chain === r.message_id ? "post" : "reply", subject: r.parent_subject, sender: r.sender, preview: (r.preview || "").slice(0, 40), due: r.is_due, completed: r.completed > 0 }))))
+                shot("cr-reminders")
+            }
+            else if (step === 33) Qt.quit()
+            step++
+        }
+    }
+
     // --thread-window-test=<post id> with --open-chat=<channel id>
     // --shots=<dir>: open that post's conversation in a new window
     // (thread.png), its More channel options (thread-menu.png); move the
