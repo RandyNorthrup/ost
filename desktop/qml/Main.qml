@@ -296,8 +296,8 @@ Window {
         w.chosen.connect((oid, name, message) => {
             window.popOutChatName = name; w.close()
             // (Someone on Teams free: their chat is made with the first message.)
-            const existing = Mri.isConsumer(oid) ? newChat.chatWith(oid) : ""
-            if (Mri.isConsumer(oid) && !existing) { if (message) { window.newGroupMessage = message; backend.startExternalChat(oid, name) }; return }
+            const existing = Mri.isConsumer(oid) || backend.personalAccount ? newChat.chatWith(oid) : ""
+            if ((Mri.isConsumer(oid) || backend.personalAccount) && !existing) { if (message) { window.newGroupMessage = message; backend.startExternalChat(oid, name) }; return }
             if (existing) backend.selectChat(existing, name); else backend.openChatWith(oid, name)
             if (message) conversation.adoptAndSend(JSON.parse(message))
         })
@@ -17581,13 +17581,14 @@ Window {
             window.composing = false
             // Someone on Teams free you have no chat with yet: the chat is
             // made with the first message (a thread, not a 1:1 id).
-            if (Mri.isConsumer(oid) && !newChat.chatWith(oid)) {
+            // (A personal account's chats are all made this way.)
+            if ((Mri.isConsumer(oid) || backend.personalAccount) && !newChat.chatWith(oid)) {
                 if (!message) return
                 window.newGroupMessage = message
                 backend.startExternalChat(oid, name)
                 return
             }
-            const existing = Mri.isConsumer(oid) ? newChat.chatWith(oid) : ""
+            const existing = Mri.isConsumer(oid) || backend.personalAccount ? newChat.chatWith(oid) : ""
             if (existing) backend.selectChat(existing, name)
             else backend.openChatWith(oid, name)
             if (message) conversation.adoptAndSend(JSON.parse(message))
@@ -18401,8 +18402,11 @@ Window {
         teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
         // The new chat form selects nothing but its own row.
         currentId: window.composing ? "" : backend.currentChatId
-        onChatSelected: (id, name) => window.leaving(() => { window.composing = false; copilotOpen = false; draftsOpen = false; mentionsOpen = false; quickOpen = ""; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; backend.selectChat(id, name) })
-        onNewChat: window.leaving(() => { copilotOpen = false; draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; window.startNewChat() })
+        onChatSelected: (id, name) => window.leaving(() => { window.composing = false; copilotOpen = false; draftsOpen = false; mentionsOpen = false; quickOpen = ""; requestsOpen = false; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; backend.selectChat(id, name) })
+        onNewChat: window.leaving(() => { copilotOpen = false; draftsOpen = false; mentionsOpen = false; requestsOpen = false; yourTeamsOpen = false; window.startNewChat() })
+        // Teams free's Requests: the requests beside the list, none open.
+        onOpenRequests: window.leaving(() => { window.composing = false; copilotOpen = false; draftsOpen = false; mentionsOpen = false; quickOpen = ""; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; requestsOpen = true; requestsView.selectedId = "" })
+        onRequestsChanged: if (requestsOpen && requests.length === 0) requestsOpen = false
         // New items ▸ (Teams' Nb): the pop-out compose, a storyline post
         // (your own chat on its Storyline tab, Teams' clickStorylineCreation),
         // Join team and New team.
@@ -18427,10 +18431,10 @@ Window {
         composing: window.composing
         onOpenComposing: window.composing = true
         draftIds: (backend.draftsJson ? JSON.parse(backend.draftsJson) : []).map(d => d.id)
-        onOpenDrafts: window.leaving(() => { window.composing = false; copilotOpen = false; mentionsOpen = false; yourTeamsOpen = false; quickOpen = ""; draftsOpen = true })
+        onOpenDrafts: window.leaving(() => { window.composing = false; copilotOpen = false; mentionsOpen = false; yourTeamsOpen = false; quickOpen = ""; requestsOpen = false; draftsOpen = true })
         hasMentions: mentionsView.mentions.length > 0
-        onOpenMentions: window.leaving(() => { window.composing = false; copilotOpen = false; draftsOpen = false; yourTeamsOpen = false; quickOpen = ""; mentionsOpen = true; mentionsView.selectedId = "" })
-        onOpenQuick: kind => window.leaving(() => { window.composing = false; copilotOpen = false; draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; window.manage = null; window.manageTeamId = ""; quickOpen = kind; quickView.selectedKey = "" })
+        onOpenMentions: window.leaving(() => { window.composing = false; copilotOpen = false; draftsOpen = false; yourTeamsOpen = false; quickOpen = ""; requestsOpen = false; mentionsOpen = true; mentionsView.selectedId = "" })
+        onOpenQuick: kind => window.leaving(() => { window.composing = false; copilotOpen = false; draftsOpen = false; mentionsOpen = false; requestsOpen = false; yourTeamsOpen = false; window.manage = null; window.manageTeamId = ""; quickOpen = kind; quickView.selectedKey = "" })
         onOpenCommunities: rail.openApp("communities")
     }
     // Copilot from the chat list's top row, as Teams hosts it (docs/spec/
@@ -18476,6 +18480,13 @@ Window {
     }
     // Quick views ▸ Followed threads / Saved: the list, and the picked
     // item's chat or channel beside it.
+    RequestsView {
+        id: requestsView
+        visible: rail.current === "chat" && chatList.requestsOpen
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
+        requests: chatList.requests
+        onOpenRequest: (id, name) => { requestsView.selectedId = id; backend.selectChat(id, name) }
+    }
     QuickListView {
         id: quickView
         // (Discover has a view of its own; TASK-0365's change left Reminders
@@ -18827,12 +18838,12 @@ Window {
         onManageChannel: id => window.openManageChannel(id)
         onManageTeamMembers: id => window.openManageTeam(id, "members")
         myName: backend.userName
-        visible: (rail.current === "chat" && !chatList.draftsOpen && !chatList.copilotOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0) && (!chatList.quickOpen || (quickView.selectedKey.length > 0 && !quickView.threadPick)) && !manageChannel.visible && !manageTeam.visible && !yourTeams.visible && !window.teamPage)
+        visible: (rail.current === "chat" && !chatList.draftsOpen && !chatList.copilotOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0) && (!chatList.quickOpen || (quickView.selectedKey.length > 0 && !quickView.threadPick)) && (!chatList.requestsOpen || requestsView.selectedId.length > 0) && !manageChannel.visible && !manageTeam.visible && !yourTeams.visible && !window.teamPage)
             || (rail.current === "activity" && activityView.selectedId.length > 0 && !window.activityCalls)
         chatId: backend.currentChatId
         anchors { top: appBanner.bottom; bottom: statusBar.top; right: chatCopilot.left
             left: conversation.tabExpanded || conversation.channelAttendance ? rail.right : rail.current === "activity" ? activityView.right : chatList.right
-            leftMargin: rail.current === "chat" && (chatList.mentionsOpen || !!chatList.quickOpen) ? mentionsView.paneWidth : 0 }
+            leftMargin: rail.current === "chat" && (chatList.mentionsOpen || !!chatList.quickOpen) ? mentionsView.paneWidth : rail.current === "chat" && chatList.requestsOpen ? requestsView.paneWidth + 1 : 0 }
         chatName: backend.currentChatName
         // A group chat you left (Teams keeps it listed): its roster without
         // you, the box disabled with Teams' words.

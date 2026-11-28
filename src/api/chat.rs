@@ -874,6 +874,38 @@ async fn generated_titles(
 }
 
 /// A chat's members as they were last read for its generated name.
+/// The last message's sender name (`imdisplayname`) when someone other
+/// than `me` sent it (its `from` is a contact link ending in their MRI).
+fn sender_name_unless(conv: &serde_json::Value, me: &str) -> Option<String> {
+    let from = conv["lastMessage"]["from"].as_str()?.to_ascii_lowercase();
+    (!me.is_empty() && !from.ends_with(&me.to_ascii_lowercase()))
+        .then(|| conv["lastMessage"]["imdisplayname"].as_str())
+        .flatten()
+        .filter(|n| !n.trim().is_empty())
+        .map(str::to_string)
+}
+
+/// The last message's sender name when `mri` sent it.
+fn sender_name_if(conv: &serde_json::Value, mri: &str) -> Option<String> {
+    let from = conv["lastMessage"]["from"].as_str()?.to_ascii_lowercase();
+    from.ends_with(&mri.to_ascii_lowercase())
+        .then(|| conv["lastMessage"]["imdisplayname"].as_str())
+        .flatten()
+        .filter(|n| !n.trim().is_empty())
+        .map(str::to_string)
+}
+
+/// A person's name from the chat names' profiles, if read lately.
+fn known_person_name(mri: &str) -> Option<String> {
+    TITLE_PROFILES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .and_then(|c| c.get(&mri.to_ascii_lowercase()))
+        .map(|(_, p)| p.display.clone())
+        .filter(|n| !n.is_empty())
+}
+
 fn known_title_members(id: &str) -> Vec<String> {
     TITLE_MEMBERS
         .lock()
@@ -1187,6 +1219,14 @@ pub async fn chat_members(client: &TeamsClient, thread: &str) -> Result<Vec<Memb
         if !crate::identity::is_consumer_mri(&mri) {
             continue;
         }
+        // (fetchTflProfiles is the work client's; a personal account's
+        // short profiles carry the address already.)
+        if client.is_personal() {
+            if r["emailPrivate"].as_bool() == Some(true) {
+                private.insert(mri.clone());
+            }
+            continue;
+        }
         if r["email"].as_str().is_none_or(str::is_empty)
             && let Some(p) = super::directory::tfl_inviter(client, &mri, thread).await
         {
@@ -1263,6 +1303,15 @@ pub async fn create_group_chat(
     members: &[String],
     topic: &str,
 ) -> Result<String> {
+    if client.is_personal() {
+        let me = client.self_mri().unwrap_or_default();
+        let others: Vec<String> = members
+            .iter()
+            .filter(|m| !m.trim().eq_ignore_ascii_case(&me))
+            .cloned()
+            .collect();
+        return start_personal_chat(client, &others, topic, true).await;
+    }
     let body = group_chat_body(members, topic)?;
     let url = format!("{}/v1/threads", client.chat_service_url());
     let resp = client.chat_post(&url, &body).await?;
@@ -1280,6 +1329,11 @@ pub async fn create_group_chat(
 /// it as Teams does (`createThread` with a fixed, unique roster) when it
 /// doesn't; returns its id.
 pub async fn ensure_one_on_one_chat(client: &TeamsClient, me: &str, other: &str) -> Result<String> {
+    // Teams free's 1:1 chats are sticky threads; asking for one again
+    // hands back the one you have.
+    if client.is_personal() {
+        return start_personal_chat(client, &[other.to_string()], "", false).await;
+    }
     // Work users by object ID; anyone else (a personal account, a bot)
     // by MRI, as the chat service names them.
     let id_of = |m: &str| crate::identity::work_object_id(m).unwrap_or(m).to_string();
@@ -1360,6 +1414,12 @@ pub fn external_chat_body(me: &str, other: &str) -> serde_json::Value {
 /// rather than a `…@unq.gbl.spaces` id, and for a sticky thread hands back
 /// the one you already have (live check 2026-11-27). Returns its id.
 pub async fn start_external_chat(client: &TeamsClient, me: &str, other: &str) -> Result<String> {
+    // A personal account starts every chat through Teams free's groups
+    // service, with Teams free people and work users alike.
+    if client.is_personal() {
+        anyhow::ensure!(crate::identity::is_person_mri(other), "Not a person");
+        return start_personal_chat(client, &[other.to_string()], "", false).await;
+    }
     anyhow::ensure!(
         crate::identity::is_consumer_mri(other),
         "Not a Teams free user"
@@ -1378,6 +1438,114 @@ pub async fn start_external_chat(client: &TeamsClient, me: &str, other: &str) ->
     let text = resp.text().await.unwrap_or_default();
     thread_id_from_reply(location.as_deref(), &text)
         .context("The chat service didn't say which chat it made")
+}
+
+/// Teams free's groups service token audience.
+const PERSONAL_GROUPS_SCOPE: &str = "https://groupssvc.fl.teams.microsoft.com/teams.readwrite";
+
+/// A new chat's body for Teams free's groups service, as its web client
+/// sends it (captured 2026-11-28): you and the others; a 1:1 chat as
+/// `"User"` members of a sticky thread, a group chat as `"Admin"` members
+/// with its name, if any, as the topic (`group`: a group chat even with
+/// one other person, as the group chat form makes it).
+pub fn personal_chat_body(
+    me: &str,
+    others: &[String],
+    topic: &str,
+    group: bool,
+) -> Result<serde_json::Value> {
+    let mut seen = std::collections::HashSet::new();
+    let members: Vec<String> = std::iter::once(me.to_string())
+        .chain(others.iter().cloned())
+        .map(|m| m.trim().to_string())
+        .filter(|m| crate::identity::is_person_mri(m) && seen.insert(m.to_ascii_lowercase()))
+        .collect();
+    anyhow::ensure!(members.len() >= 2, "A chat needs someone else in it");
+    let one_on_one = !group && members.len() == 2 && topic.trim().is_empty();
+    let role = if one_on_one { "User" } else { "Admin" };
+    let mut properties = serde_json::json!({ "threadType": "chat" });
+    if one_on_one {
+        properties["isStickyThread"] = "true".into();
+    } else if !topic.trim().is_empty() {
+        properties["topic"] = topic.trim().into();
+    }
+    Ok(serde_json::json!({
+        "members": members.iter().map(|m| serde_json::json!({ "id": m, "role": role })).collect::<Vec<_>>(),
+        "properties": properties,
+    }))
+}
+
+/// Start a chat as Teams free's client does: `POST {groupsServiceV2}/v1/
+/// threads` (teams.live.com/api/groups) with the groups service token and
+/// the Skype token; its answer is `{"value": {"threadId": …, "membersStatus":
+/// […]}}`. A 1:1 chat with someone you already have one with gives that
+/// chat back. The person is then added to your contacts, as Teams does
+/// (`{mt}/beta/contacts/buddylist/TflContacts/managebuddies`).
+pub async fn start_personal_chat(
+    client: &TeamsClient,
+    others: &[String],
+    topic: &str,
+    group: bool,
+) -> Result<String> {
+    let me = client.self_mri().context("No signed-in user")?;
+    let body = personal_chat_body(&me, others, topic, group)?;
+    let base = client
+        .region_endpoint("groupsServiceV2")
+        .unwrap_or_else(|| "https://teams.live.com/api/groups".to_string());
+    let url = format!("{base}/v1/threads");
+    crate::auth::token_hosts::ensure(&url, crate::auth::token_hosts::Audience::Teams)?;
+    let token = crate::auth::oauth::access_token_for(PERSONAL_GROUPS_SCOPE).await?;
+    let req = client
+        .http()
+        .post(&url)
+        .header("x-ms-client-type", "cdlworker");
+    let v: serde_json::Value = client
+        .middle_tier_auth(req, &token)
+        .json(&body)
+        .send()
+        .await?
+        .error_for_status()
+        .context("New chat")?
+        .json()
+        .await?;
+    let id = v
+        .pointer("/value/threadId")
+        .and_then(|i| i.as_str())
+        .filter(|i| i.starts_with("19:") && i.ends_with("@thread.v2"))
+        .context("The groups service didn't say which chat it made")?
+        .to_string();
+    if let [other] = others
+        && body["properties"]["isStickyThread"] == "true"
+        && let Err(e) = add_contact(client, other).await
+    {
+        tracing::debug!("contact not added: {e:#}");
+    }
+    Ok(id)
+}
+
+/// Add someone to a personal account's contacts (Teams free's
+/// managebuddies, as it does when you start a chat with them).
+pub(crate) async fn add_contact(client: &TeamsClient, mri: &str) -> Result<()> {
+    let (base, token) = super::tabs::middle_tier(client).await?;
+    let name = super::directory::short_profile_records(client, &[mri.to_string()])
+        .await
+        .ok()
+        .and_then(|r| {
+            r.first()
+                .and_then(|p| p["displayName"].as_str().map(str::to_string))
+        })
+        .unwrap_or_default();
+    let req = client.http().post(format!(
+        "{base}/beta/contacts/buddylist/TflContacts/managebuddies?migrationRequested=true&federatedContactsSupported=true&ggEnabled=true&skipBuddylistFetch=true"
+    ));
+    client
+        .middle_tier_auth(req, &token)
+        .json(&serde_json::json!({ "add": [{ "mri": mri, "displayName": name }] }))
+        .send()
+        .await?
+        .error_for_status()
+        .context("Contacts")?;
+    Ok(())
 }
 
 fn group_chat_body(members: &[String], topic: &str) -> Result<serde_json::Value> {
@@ -1478,6 +1646,44 @@ mod group_chat_tests {
         )
         .unwrap();
         assert!(is_one_on_one_thread(&sticky));
+    }
+
+    #[test]
+    fn a_request_is_named_after_its_sender() {
+        // OST Personal 2's request from OST Personal 1 (2026-11-28).
+        let c = serde_json::json!({"lastMessage": {"from": "https://msgapi.teams.live.com/v1/users/ME/contacts/8:live:.cid.77ac230600c33285", "imdisplayname": "OST Personal 1"}});
+        assert_eq!(
+            sender_name_unless(&c, "8:live:.cid.ca2738c364862c6").as_deref(),
+            Some("OST Personal 1")
+        );
+        assert_eq!(sender_name_unless(&c, "8:live:.cid.77ac230600c33285"), None);
+        assert_eq!(
+            sender_name_if(&c, "8:live:.cid.77ac230600c33285").as_deref(),
+            Some("OST Personal 1")
+        );
+        assert_eq!(sender_name_if(&c, "8:live:.cid.ca2738c364862c6"), None);
+    }
+
+    #[test]
+    fn personal_chats_are_made_as_teams_free_makes_them() {
+        let me = "8:live:.cid.77ac230600c33285";
+        let p2 = "8:live:.cid.ca2738c364862c6".to_string();
+        let t3 = "8:orgid:01c4860d-5776-4b16-8736-6a739fcc8b34".to_string();
+        let one = personal_chat_body(me, std::slice::from_ref(&p2), "", false).unwrap();
+        assert_eq!(
+            one,
+            serde_json::json!({"members":[{"id":me,"role":"User"},{"id":p2,"role":"User"}],"properties":{"threadType":"chat","isStickyThread":"true"}})
+        );
+        let group =
+            personal_chat_body(me, &[p2.clone(), t3.clone(), p2.clone()], "", true).unwrap();
+        assert_eq!(
+            group,
+            serde_json::json!({"members":[{"id":me,"role":"Admin"},{"id":p2,"role":"Admin"},{"id":t3,"role":"Admin"}],"properties":{"threadType":"chat"}})
+        );
+        let named = personal_chat_body(me, std::slice::from_ref(&p2), " Plans ", false).unwrap();
+        assert_eq!(named["properties"]["topic"], "Plans");
+        assert_eq!(named["members"][1]["role"], "Admin");
+        assert!(personal_chat_body(me, &[me.to_string()], "", false).is_err());
     }
 
     #[test]
@@ -1717,6 +1923,11 @@ pub struct ChatInfo {
     /// A chat request you haven't answered (see `is_chat_request`): Teams
     /// shows "… wants to chat with you" with Block and Accept.
     pub request: bool,
+    /// Who asked, for a request: the person who added you (`addedBy`),
+    /// and their name as the chat names read it. Teams free's Requests
+    /// list shows a request under that person's name, a group's too.
+    pub inviter: Option<String>,
+    pub inviter_name: Option<String>,
     /// A one-on-one chat's other person, when its id doesn't name them
     /// (a `19:uni01_…@thread.v2` chat with a Teams free user).
     pub peer: Option<String>,
@@ -1849,7 +2060,19 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
         limit
     );
     tracing::debug!("Trying CSA endpoint: {}", csa_url);
-    let resp = match client.csa_get(&csa_url).await {
+    // A personal account's chats are on Teams free's chat service (its
+    // front door); the work CSA and aggregator don't know the account.
+    let first = if client.is_personal() {
+        let url = format!(
+            "{}/v1/users/ME/conversations?view=mychats&pageSize={}",
+            client.chat_service_url(),
+            limit
+        );
+        Ok(client.chat_get(&url).await?)
+    } else {
+        client.csa_get(&csa_url).await
+    };
+    let resp = match first {
         Ok(r) => r,
         Err(e) => {
             tracing::debug!("CSA endpoint failed: {:#}, trying chatsvcagg", e);
@@ -1967,6 +2190,7 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
 
     let own_oid = client.object_id();
     let me = client.self_mri().unwrap_or_default();
+    let personal = client.is_personal();
     let now_secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -2054,7 +2278,15 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
         // Its members (when they were read for its name): its other person
         // and whether anyone in it is on Teams free.
         let members = known_title_members(&id);
-        let external = members.iter().any(|m| crate::identity::is_consumer_mri(m));
+        // (For a personal account, the people outside Teams free are
+        // the work users.)
+        let external = if personal {
+            members
+                .iter()
+                .any(|m| crate::identity::work_object_id(m).is_some())
+        } else {
+            members.iter().any(|m| crate::identity::is_consumer_mri(m))
+        };
         let peer = one_on_one_thread
             .then(|| {
                 members
@@ -2066,9 +2298,12 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
         let mut name = match titles.get(&id) {
             Some(t) => t.clone(),
             // (Its members unreadable: never the thread id.)
-            None if untitled.iter().any(|(u, _)| u == &id) => {
-                crate::i18n::tr_id("Unknown", "messaging:k7k6gmhup")
-            }
+            // (A 1:1 with someone whose profile isn't yours to read yet,
+            // such as a Teams free request: the name they sent with.)
+            None if untitled.iter().any(|(u, _)| u == &id) => one_on_one_thread
+                .then(|| raw_convs.get(i).and_then(|c| sender_name_unless(c, &me)))
+                .flatten()
+                .unwrap_or_else(|| crate::i18n::tr_id("Unknown", "messaging:k7k6gmhup")),
             None => conversation_name(conv),
         };
         let mut backroom = conv
@@ -2204,6 +2439,19 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
                 .unwrap_or(false),
             unread,
             request: raw_convs.get(i).is_some_and(is_chat_request),
+            inviter: raw_convs
+                .get(i)
+                .filter(|c| is_chat_request(c))
+                .and_then(|c| c["properties"]["addedBy"].as_str())
+                .filter(|m| crate::identity::is_person_mri(m))
+                .map(str::to_string),
+            inviter_name: raw_convs
+                .get(i)
+                .filter(|c| is_chat_request(c))
+                .and_then(|c| {
+                    let by = c["properties"]["addedBy"].as_str()?;
+                    known_person_name(by).or_else(|| sender_name_if(c, by))
+                }),
             peer,
             external,
             activity_ms: {

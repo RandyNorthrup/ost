@@ -59,6 +59,42 @@ impl TeamsClient {
         self.config.self_mri()
     }
 
+    /// Whether a personal Microsoft account (Teams free) is signed in.
+    pub fn is_personal(&self) -> bool {
+        self.identity().is_some_and(|i| i.is_personal())
+    }
+
+    /// Teams free's product headers on a chat-service request, as its web
+    /// worker sends them (`ms-ic3-product: tfl`, `ms-ic3-additional-product:
+    /// Sfl`, captured 2026-11-27); a work account's requests are unchanged.
+    fn chat_product(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        if self.is_personal() {
+            req.header("ms-ic3-product", "tfl")
+                .header("ms-ic3-additional-product", "Sfl")
+        } else {
+            req
+        }
+    }
+
+    /// A middle-tier request's credentials: the bearer `token`, and for a
+    /// personal account its Skype token too (Teams free's middle tier
+    /// refuses either alone with 401; live check 2026-11-27).
+    pub fn middle_tier_auth(
+        &self,
+        req: reqwest::RequestBuilder,
+        token: &str,
+    ) -> reqwest::RequestBuilder {
+        let req = req.bearer_auth(token);
+        match self
+            .is_personal()
+            .then(|| self.skype_token().ok())
+            .flatten()
+        {
+            Some(skype) => req.header("x-skypetoken", skype),
+            None => req,
+        }
+    }
+
     /// Load config and build client. Renews the tokens that are missing or
     /// about to expire first: the access and Graph tokens, and the Skype
     /// token on its own expiry (a personal account's lasts 8 hours, less
@@ -399,8 +435,16 @@ impl TeamsClient {
         check_response(resp, url).await
     }
 
-    /// Chat service base URL from region_gtms, falling back to default.
+    /// Chat service base URL from region_gtms, falling back to default. A
+    /// personal account's is Teams free's front door (`chatServiceAfd`,
+    /// `https://teams.live.com/api/chatsvc/consumer`), which its web client
+    /// uses.
     pub fn chat_service_url(&self) -> String {
+        if self.is_personal()
+            && let Some(afd) = self.region_endpoint("chatServiceAfd")
+        {
+            return afd;
+        }
         self.config
             .get_region_gtms()
             .and_then(|v| {
@@ -523,7 +567,9 @@ impl TeamsClient {
         let resp = self
             .http
             .get(url)
-            .header("Authentication", format!("skypetoken={}", token))
+            .header("Authentication", format!("skypetoken={}", token));
+        let resp = self
+            .chat_product(resp)
             .send()
             .await
             .with_context(|| format!("Chat GET {} failed", url))?;
@@ -545,7 +591,9 @@ impl TeamsClient {
             .http
             .post(url)
             .header("Authentication", format!("skypetoken={}", token))
-            .json(body)
+            .json(body);
+        let resp = self
+            .chat_product(resp)
             .send()
             .await
             .with_context(|| format!("Chat POST {} failed", url))?;
@@ -564,7 +612,9 @@ impl TeamsClient {
             .post(url)
             .header("Authentication", format!("skypetoken={}", token))
             .header("Content-Type", "application/json")
-            .body(body.to_string())
+            .body(body.to_string());
+        let resp = self
+            .chat_product(resp)
             .send()
             .await
             .with_context(|| format!("Chat POST {} failed", url))?;
@@ -588,6 +638,7 @@ impl TeamsClient {
             .post(url)
             .header("Authentication", format!("skypetoken={}", token))
             .json(body);
+        req = self.chat_product(req);
         for (k, v) in headers {
             req = req.header(*k, *v);
         }
@@ -758,6 +809,7 @@ impl TeamsClient {
             .http
             .request(method.clone(), url)
             .header("Authentication", format!("skypetoken={}", token));
+        let req = self.chat_product(req);
         let resp = headers
             .iter()
             .fold(req, |r, (k, v)| r.header(*k, *v))
@@ -782,7 +834,9 @@ impl TeamsClient {
             .http
             .request(method.clone(), url)
             .header("Authentication", format!("skypetoken={}", token))
-            .json(body)
+            .json(body);
+        let resp = self
+            .chat_product(resp)
             .send()
             .await
             .with_context(|| format!("Chat {} {} failed", method, url))?;

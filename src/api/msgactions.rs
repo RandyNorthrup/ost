@@ -1231,12 +1231,14 @@ pub async fn answer_chat_request(
         chat_id.starts_with("19:") && !chat_id.contains(['/', '?', '#']),
         "Not a chat id"
     );
+    if client.is_personal() {
+        return answer_personal_request(client, chat_id, mri, answer).await;
+    }
     let (base, token) = super::tabs::middle_tier(client).await?;
     let (path, body) = request_list_call(answer, mri);
+    let req = client.http().post(format!("{base}{path}"));
     client
-        .http()
-        .post(format!("{base}{path}"))
-        .bearer_auth(&token)
+        .middle_tier_auth(req, &token)
         .header("x-ms-client-caller", "acceptBlockUnblockChat")
         .json(&body)
         .send()
@@ -1244,6 +1246,65 @@ pub async fn answer_chat_request(
         .error_for_status()
         .context("Accept or block list")?;
     Ok(())
+}
+
+/// A personal account's answer, as Teams free's worker gives it
+/// (`acceptBlockUnblockChat` in its life build, read 2026-11-28; Teams
+/// free's middle tier has no accept list: 405):
+/// - Accept a 1:1 request: the person goes in your contacts (`POST
+///   {mt}/beta/contacts/buddylist/TflContacts/managebuddies`), which lifts
+///   the chat's quarantine;
+/// - Accept a group request: your membership's `relationshipState` becomes
+///   "Accepted" (`PUT {chat}/v1/threads/{id}/members/{you}`);
+/// - Block: the person goes on your block list (`POST {mt}/beta/
+///   userSettings/blocklist/manage?ggEnabled=true`, `{"add": [mri]}`).
+async fn answer_personal_request(
+    client: &TeamsClient,
+    chat_id: &str,
+    mri: &str,
+    answer: RequestAnswer,
+) -> Result<()> {
+    match answer {
+        RequestAnswer::Accept if super::chat::known_one_on_one_thread(chat_id) => {
+            super::chat::add_contact(client, mri).await
+        }
+        RequestAnswer::Accept => {
+            let me = client.self_mri().context("No signed-in user")?;
+            let url = crate::auth::token_hosts::service_url(
+                &client.chat_service_url(),
+                crate::auth::token_hosts::Audience::Teams,
+                &["v1", "threads", chat_id, "members", &me],
+                &[],
+            )?;
+            client
+                .chat_request(
+                    reqwest::Method::PUT,
+                    url.as_str(),
+                    &serde_json::json!({ "relationshipState": "Accepted" }),
+                )
+                .await
+                .context("Group chat request")?;
+            Ok(())
+        }
+        RequestAnswer::Block => {
+            let (base, token) = super::tabs::middle_tier(client).await?;
+            let req = client
+                .http()
+                .post(format!(
+                    "{base}/beta/userSettings/blocklist/manage?ggEnabled=true"
+                ))
+                .header("x-ms-client-caller", "acceptBlockUnblockChat")
+                .header("x-ms-counter", "postBlockedContacts");
+            client
+                .middle_tier_auth(req, &token)
+                .json(&serde_json::json!({ "add": [mri] }))
+                .send()
+                .await?
+                .error_for_status()
+                .context("Block list")?;
+            Ok(())
+        }
+    }
 }
 
 /// Mute or unmute a chat as Teams does: the conversation property

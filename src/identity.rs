@@ -211,6 +211,11 @@ pub fn is_consumer_mri(mri: &str) -> bool {
     let Some(rest) = mri.strip_prefix("8:") else {
         return false;
     };
+    // An old Skype account keeps its Skype name as its MRI (`8:bart.ost1`,
+    // `8:csd_111`; Teams free's people search, 2026-11-28).
+    if is_skype_name(rest) {
+        return true;
+    }
     [
         "live",
         "sip_profile",
@@ -226,6 +231,15 @@ pub fn is_consumer_mri(mri: &str) -> bool {
             .and_then(|r| r.strip_prefix(':'))
             .is_some_and(|r| !r.is_empty())
     })
+}
+
+/// A Skype name (`bart.ost1`, `csd_111`): a letter, then letters, digits
+/// and `.`, `,`, `_`, `-`, 6 to 32 characters in all, no colon.
+pub fn is_skype_name(s: &str) -> bool {
+    (6..=32).contains(&s.len())
+        && s.starts_with(|c: char| c.is_ascii_alphabetic())
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b".,_-".contains(&b))
 }
 
 /// `{digits}:` at the start, as every MRI has (`8:`, `28:`, `4:`, `19:`).
@@ -378,6 +392,9 @@ mod tests {
         ));
         assert!(!is_consumer_mri("8:live:") && !is_consumer_mri("8:liveabc:x"));
         assert!(!is_consumer_mri("28:live:x") && !is_consumer_mri("8:teamsvisitor:x"));
+        // Old Skype names.
+        assert!(is_consumer_mri("8:bart.ost1") && is_consumer_mri("8:csd_111"));
+        assert!(!is_consumer_mri("8:abc") && !is_consumer_mri("8:orgid:"));
         assert!(!is_person_mri("28:x") && !is_person_mri("8:"));
     }
 

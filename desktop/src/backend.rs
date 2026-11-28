@@ -7421,6 +7421,8 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
                 // A chat request (Teams' "… wants to chat with you"), and
                 // a chat with someone on Teams free (External).
                 "request": c.request,
+                "inviter": c.inviter,
+                "inviterName": c.inviter_name,
                 "external": c.external,
                 "favorite": fav_rank(&c.id).is_some(),
                 "favoriteRank": fav_rank(&c.id),
@@ -19755,7 +19757,24 @@ impl qobject::Backend {
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
-                let me = TeamsClient::new().await.ok().and_then(|c| c.object_id()).unwrap_or_default();
+                let client = TeamsClient::new().await.ok();
+                // A personal account's picker: Teams free's people search
+                // and your named group chats (Teams free has no
+                // directory, channels or teams).
+                if let Some(c) = client.as_ref().filter(|c| c.is_personal()) {
+                    let mut items = api::search::personal_people(c, &q).await?;
+                    let needle = q.to_lowercase();
+                    if !needle.is_empty() {
+                        items.extend(
+                            local
+                                .iter()
+                                .filter(|l| l.group && !l.meeting && l.channel_team.is_empty() && l.topic.to_lowercase().contains(&needle))
+                                .map(|l| json!({ "kind": "chat", "id": l.id, "name": l.topic, "group": true })),
+                        );
+                    }
+                    return anyhow::Ok(items);
+                }
+                let me = client.and_then(|c| c.object_id()).unwrap_or_default();
                 let items: Vec<serde_json::Value> = if q.is_empty() {
                     api::search::zero_state_people(&me, &my_mail, &my_name).await?
                         .into_iter()
@@ -19800,7 +19819,12 @@ impl qobject::Backend {
         else {
             return;
         };
-        if !teams_cli::identity::is_consumer_mri(&mri) {
+        // (A personal account starts every chat this way, with work users
+        // too.)
+        let personal = self.rust().personal_account;
+        if !teams_cli::identity::is_consumer_mri(&mri)
+            && !(personal && teams_cli::identity::is_person_mri(&mri))
+        {
             return;
         }
         self.as_mut().set_busy(true);

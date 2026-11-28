@@ -1670,13 +1670,20 @@ Item {
     // apps are not built yet.
     /// Only Format and Send (Teams' lobby chat compose).
     property bool textOnly: false
+    // A personal account's box (Teams free, teams.live.com and testpc2,
+    // 2026-11-28): Emoji, Attach files, Attach media (Alt+Shift+O), Loop
+    // components and Actions and apps, whose menu holds only Show
+    // Formatting options and Set delivery options; no Write with Copilot
+    // (a paid feature) and no apps.
+    readonly property bool personal: backend.personalAccount
     readonly property var toolModel: [
-        { id: "expand-compose", icon: "format-20", label: root.formatting ? qsTr("Hide Formatting options") : qsTr("Show Formatting options"), pressed: root.formatting },
+        { id: "expand-compose", icon: "format-20", label: root.formatting ? qsTr("Hide Formatting options") : qsTr("Show Formatting options"), pressed: root.formatting, hidden: root.personal && !root.textOnly },
         { id: "UnifiedFunPicker", icon: "emoji-20", label: qsTr("Emoji, GIFs and Stickers"), hidden: root.textOnly },
-        { id: "FilePicker", icon: "attach-20", label: qsTr("Attach files") + " (Alt+Shift+O)", hidden: root.textOnly || !root.filesAllowed },
+        { id: "FilePicker", icon: "attach-20", label: root.personal ? qsTr("Attach files") : qsTr("Attach files") + " (Alt+Shift+O)", hidden: root.textOnly || !root.filesAllowed },
+        { id: "AttachMedia", icon: "image-20", label: qsTr("Attach media") + " (Alt+Shift+O)", hidden: !root.personal || root.textOnly || root.editing || !root.picturesAllowed },
         // (Also while editing a sent message: Teams' edit box keeps Write
         // with Copilot, its popover over the edit box, measured 2026-11-23.)
-        { id: "open-compose-copilot", icon: "pen-sparkle-20", label: qsTr("Write with Copilot") + " (Alt+A)", hidden: root.textOnly || !root.copilotAllowed, pressed: copilotPopover.opened },
+        { id: "open-compose-copilot", icon: "pen-sparkle-20", label: qsTr("Write with Copilot") + " (Alt+A)", hidden: root.textOnly || !root.copilotAllowed || root.personal, pressed: copilotPopover.opened },
         { id: "popup-semo", icon: "loop-page-20", label: qsTr("Loop components"), hidden: root.editing || root.textOnly || !root.loopAllowed, pressed: !!root.loop },
         { id: "message-extension-flyout-command", icon: "add-20", label: qsTr("Actions and apps"), hidden: root.textOnly }
     ].filter(t => !t.hidden)
@@ -1925,12 +1932,30 @@ Item {
         if (id === "expand-compose") { formatting = !formatting; input.forceActiveFocus() }
         else if (id === "UnifiedFunPicker") root.emojiRequested(item)
         else if (id === "FilePicker") { if (root.editing) root.openEditAttach(item); else root.attachRequested(item) }
+        else if (id === "AttachMedia") mediaDialog.open()
         else if (id === "open-compose-copilot") root.openCopilot(item)
         else if (id === "popup-semo") root.insertLoop()
         else if (id === "message-extension-flyout-command") { plusFlyout.anchorItem = item; plusFlyout.open() }
         else if (id === "discard-draft") root.requestCancel()
         else if (id === "send") root.trySubmit()
     }
+    // Teams free's Attach media: pictures from this device, inline in the
+    // message as a pasted one is.
+    FileDialog {
+        id: mediaDialog
+        title: qsTr("Attach media")
+        fileMode: FileDialog.OpenFiles
+        nameFilters: [qsTr("Images") + " (*.png *.jpg *.jpeg *.gif *.bmp *.webp)"]
+        onAccepted: {
+            for (const u of selectedFiles) {
+                const path = decodeURIComponent(u.toString().replace(/^file:\/\//, ""))
+                mediaProbe.source = u
+                root.insertMedia({ kind: "pasted", src: path, path: path, title: "image", width: mediaProbe.implicitWidth, height: mediaProbe.implicitHeight })
+                mediaProbe.source = ""
+            }
+        }
+    }
+    Image { id: mediaProbe; visible: false; asynchronous: false }
     // The edit's own Attach (the conversation's popover and picker, its
     // files kept for this edit).
     Loader {
@@ -2193,7 +2218,7 @@ Item {
     Popup {
         id: plusFlyout
         property Item anchorItem: null
-        readonly property bool plain: root.newConversation || root.editing
+        readonly property bool plain: root.newConversation || root.editing || root.personal
         parent: Overlay.overlay
         width: plain ? 234.3 : 341.3; padding: 0
         readonly property real listH: itemsCol.height + (appsCol.visible ? 10.7 + appsCol.height : 0) + (newApps.visible ? newApps.height : 0)
@@ -2211,7 +2236,10 @@ Item {
         readonly property var apps: root.composeApps.filter(a => String(a.name || "").toLowerCase().indexOf(search.text.trim().toLowerCase()) >= 0)
         // (Editing: Collaborate with Loop, Set delivery options and Record
         // video clip, measured 2026-11-23.)
-        readonly property var items: [
+        readonly property var items: root.personal && !root.editing ? [
+            { key: "format", label: root.formatting ? qsTr("Hide Formatting options") : qsTr("Show Formatting options"), icon: "format-20" },
+            { key: "delivery", label: qsTr("Set delivery options"), icon: "important-20" }
+        ] : [
             { key: "loop", label: qsTr("Collaborate with Loop"), icon: "loop-page-20", hidden: !root.editing || !root.loopAllowed || !!root.loop || !!root.editLoop },
             { key: "schedule", label: qsTr("Schedule message"), icon: "send-clock-20", hidden: !root.scheduleAllowed || root.editing },
             { key: "delivery", label: qsTr("Set delivery options"), icon: "important-20", hidden: !root.deliveryOptions },
@@ -2264,6 +2292,7 @@ Item {
                             plusFlyout.close()
                             if (parent.modelData.key === "delivery") { deliveryPopup.anchorItem = plusFlyout.anchorItem; deliveryPopup.open() }
                             else if (parent.modelData.key === "loop") root.insertLoop()
+                            else if (parent.modelData.key === "format") { root.formatting = !root.formatting; input.forceActiveFocus() }
                             else if (parent.modelData.key === "schedule") schedulePopup.openFor(plusFlyout.anchorItem, false)
                             else if (parent.modelData.key === "clip") root.recordClipRequested()
                             else if (parent.modelData.key === "permissions") root.openPostMenu(permissionMenu, plusFlyout.anchorItem)

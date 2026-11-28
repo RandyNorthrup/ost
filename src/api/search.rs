@@ -4,7 +4,7 @@
 //! `{QUERY}` and `{TZ}` filled in); the filters change their query strings
 //! as Teams' do.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use super::find::{self, Found, Hit};
 
@@ -1890,5 +1890,126 @@ mod tests {
         assert_eq!(p.channels[0].team, "OST Test Team");
         assert_eq!(p.events[0].join_url, "https://teams/l/meetup-join/x");
         assert!(p.events[0].is_organizer);
+    }
+}
+
+/// Teams free's people search, as its new chat picker asks (captured on
+/// teams.live.com 2026-11-28): `POST {mt}/beta/users/searchUsers` with
+/// the bearer and Skype token and `x-ms-client-caller: people-picker`. A
+/// whole email address is looked up as one (`{"emails": [it]}`), anything
+/// else (a name, a phone number) as a keyword
+/// (`{"emails": [], "phones": [], "searchKeyWord": …}`, `resultCount=20`).
+/// The answer is keyed by the query: `{<q>: {"userProfiles": […], "status":
+/// "Success"|"NotFound"}}`.
+pub async fn personal_people(
+    client: &super::client::TeamsClient,
+    keyword: &str,
+) -> Result<Vec<serde_json::Value>> {
+    let q = keyword.trim();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+    let (base, token) = super::tabs::middle_tier(client).await?;
+    let email = is_email_query(q);
+    let (path, body) = if email {
+        (
+            "searchUsers?ggEnabled=true",
+            serde_json::json!({ "emails": [q], "phones": [] }),
+        )
+    } else {
+        (
+            "searchUsers?ggEnabled=true&resultCount=20",
+            serde_json::json!({ "emails": [], "phones": [], "searchKeyWord": q }),
+        )
+    };
+    let req = client
+        .http()
+        .post(format!("{base}/beta/users/{path}"))
+        .header("x-ms-client-caller", "people-picker")
+        .header("x-ms-client-type", "cdlworker");
+    let v: serde_json::Value = client
+        .middle_tier_auth(req, &token)
+        .json(&body)
+        .send()
+        .await?
+        .error_for_status()
+        .context("People search")?
+        .json()
+        .await?;
+    Ok(personal_candidates(
+        &v,
+        client.self_mri().as_deref().unwrap_or_default(),
+    ))
+}
+
+/// searchUsers' answer as picker rows (`{kind: "person", id: <MRI>, name,
+/// sub, external}`): Teams free people, and work users (`"Federated"`,
+/// External, with their address); you as "{name} (You)", first, as Teams
+/// lists you.
+pub fn personal_candidates(v: &serde_json::Value, me: &str) -> Vec<serde_json::Value> {
+    let mut out: Vec<serde_json::Value> = v
+        .as_object()
+        .into_iter()
+        .flat_map(|o| o.values())
+        .flat_map(|r| r["userProfiles"].as_array().cloned().unwrap_or_default())
+        .filter_map(|p| {
+            let p = super::directory::with_listed_email(p);
+            let mri = p["mri"]
+                .as_str()
+                .filter(|m| crate::identity::is_person_mri(m))?;
+            let name = p["displayName"].as_str().filter(|n| !n.trim().is_empty())?;
+            let mail = p["email"].as_str().unwrap_or_default();
+            let external = p["type"].as_str() == Some("Federated");
+            let mine = mri.eq_ignore_ascii_case(me);
+            // (A work user's second line is their organization, as Teams
+            // free lists them.)
+            let org = p["tenantName"].as_str().unwrap_or_default();
+            Some(serde_json::json!({
+                "kind": "person",
+                "id": mri,
+                "name": if mine { format!("{name} (You)") } else { name.to_string() },
+                "plain_name": name,
+                "sub": if external { org } else { "" },
+                "upn": mail,
+                "external": external,
+                "me": mine,
+            }))
+        })
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|p| seen.insert(p["id"].as_str().unwrap_or_default().to_ascii_lowercase()));
+    out.sort_by_key(|p| p["me"].as_bool() != Some(true));
+    out
+}
+
+#[cfg(test)]
+mod personal_people_tests {
+    use super::*;
+
+    #[test]
+    fn teams_free_search_answers_as_picker_rows() {
+        // searchUsers for "OST" and for a work address, from OST Personal 1
+        // (2026-11-28; trimmed).
+        let v = serde_json::json!({"ost":{"userProfiles":[
+            {"displayName":"OST Personal 2","type":"TFLUser","mri":"8:live:.cid.ca2738c364862c6","emailsInfo":[]},
+            {"displayName":"RND_OST 111","type":"TFLUser","mri":"8:csd_111"},
+            {"displayName":"OST Personal 1","type":"TFLUser","mri":"8:live:.cid.77ac230600c33285"},
+            {"displayName":"","type":"TFLUser","mri":"8:live:x"}
+        ],"status":"Success"}});
+        let rows = personal_candidates(&v, "8:live:.cid.77ac230600c33285");
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0]["name"], "OST Personal 1 (You)");
+        assert_eq!(rows[1]["id"], "8:live:.cid.ca2738c364862c6");
+        assert_eq!(rows[2]["id"], "8:csd_111");
+        assert_eq!(rows[1]["external"], false);
+        let w = serde_json::json!({"ost-test3@scnetsolutions.com":{"userProfiles":[
+            {"displayName":"OST Test 3","type":"Federated","mri":"8:orgid:01c4860d-5776-4b16-8736-6a739fcc8b34","email":"ost-test3@scnetsolutions.com","tenantName":"Secure Coast Network Solutions"}
+        ],"status":"Success"}});
+        let rows = personal_candidates(&w, "8:live:.cid.77ac230600c33285");
+        assert_eq!(rows[0]["external"], true);
+        assert_eq!(rows[0]["sub"], "Secure Coast Network Solutions");
+        assert_eq!(rows[0]["upn"], "ost-test3@scnetsolutions.com");
+        let none = serde_json::json!({"a@b.com":{"userProfiles":[],"status":"NotFound"}});
+        assert!(personal_candidates(&none, "").is_empty());
     }
 }
