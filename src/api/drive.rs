@@ -212,7 +212,8 @@ async fn get_items(client: &TeamsClient, path: &str) -> Result<Vec<DriveItem>> {
 /// retired), with Graph's items for the rows' actions.
 pub async fn recent(client: &TeamsClient) -> Result<Vec<(super::recent_files::Recent, DriveItem)>> {
     use super::recent_files;
-    let files = recent_files::fetch(client).await?;
+    let (reply, personal) = recent_files::fetch_home_reply(client).await?;
+    let files = recent_files::listed(&reply, &personal);
     let items = recent_files::graph_items(client, &files).await;
     Ok(files
         .into_iter()
@@ -284,26 +285,98 @@ pub async fn libraries(client: &TeamsClient) -> Result<Vec<Library>> {
     Ok(out)
 }
 
-/// Favorites: the files and folders you follow.
+/// Favorites: the files and folders you favorited, as Teams' OneDrive app
+/// lists them (OneDrive's `getFavoritedItems`): your OneDrive's
+/// `sp.FavoriteItemCollection.GetFavoriteItems?top=500`, in its order,
+/// with Graph's items for the rows' actions (Teams doesn't read Graph's
+/// `/me/drive/following`).
 pub async fn favorites(client: &TeamsClient) -> Result<Vec<DriveItem>> {
-    get_items(client, &format!("/me/drive/following?{SELECT}")).await
+    use super::recent_files;
+    let personal = super::quick_access::personal_site(client).await?;
+    let reply = super::sharing::get_with(
+        &format!("{personal}/_api/sp.FavoriteItemCollection.GetFavoriteItems?top=500"),
+        &[("accept", "application/json")],
+    )
+    .await
+    .context("Favorites")?;
+    let files: Vec<recent_files::Recent> = favorite_entries(&reply)
+        .iter()
+        .map(|e| recent_files::parse(e, &personal))
+        .collect();
+    let items = recent_files::graph_items(client, &files).await;
+    Ok(files
+        .iter()
+        .zip(items)
+        .map(|(r, g)| recent_files::drive_item(r, g))
+        .collect())
 }
 
-/// Add an item to (or take it off) your favorites.
+/// The entries of a GetFavoriteItems reply (its JSON text, under `value`
+/// or OData-verbose's `d.GetFavoriteItems`, holds an array or `{files}`).
+pub fn favorite_entries(reply: &serde_json::Value) -> Vec<serde_json::Value> {
+    let inner = match reply["d"]["GetFavoriteItems"].as_str() {
+        Some(text) => serde_json::json!({ "value": text }),
+        None => reply.clone(),
+    };
+    super::recent_files::top_entries(&inner)
+}
+
+/// Add a file or folder to (or take it off) your favorites, as Teams'
+/// OneDrive app does (OneDrive's `favoriteItems` / `unfavoriteItems`):
+/// `favorites/followedListItems/oneDrive.add` (or `.remove`) on your
+/// OneDrive's host with the item's SharePoint ids, or its site and address
+/// when Graph doesn't give all four.
 pub async fn set_favorite(
     client: &TeamsClient,
     drive_id: &str,
     item_id: &str,
     on: bool,
 ) -> Result<()> {
-    let action = if on { "follow" } else { "unfollow" };
-    client
-        .graph_post(
-            &format!("{}/{action}", item_path(drive_id, item_id)?),
-            &serde_json::json!({}),
-        )
+    let v: serde_json::Value = client
+        .graph_get(&format!(
+            "{}?$select=id,webUrl,sharepointIds",
+            item_path(drive_id, item_id)?
+        ))
+        .await?
+        .json()
         .await?;
+    let site = v["sharepointIds"]["siteUrl"].as_str().unwrap_or_default();
+    let host =
+        favorites_host(site).ok_or_else(|| anyhow::anyhow!("Not a SharePoint item: {item_id}"))?;
+    let action = if on { "add" } else { "remove" };
+    let json = [
+        ("accept", "application/json"),
+        ("content-type", "application/json"),
+    ];
+    super::sharing::post_with(
+        &format!("{host}/_api/v2.1/favorites/followedListItems/oneDrive.{action}"),
+        &favorite_body(&v),
+        &json,
+    )
+    .await?;
     Ok(())
+}
+
+/// OneDrive's favorites body for an item (Graph's driveItem with its
+/// `sharepointIds`): its four SharePoint ids when they are all real GUIDs,
+/// else its site and address.
+pub fn favorite_body(item: &serde_json::Value) -> serde_json::Value {
+    let ids = &item["sharepointIds"];
+    let g = |k: &str| ids[k].as_str().unwrap_or_default().to_string();
+    let guid = |s: &str| {
+        s.len() == 36
+            && s != "00000000-0000-0000-0000-000000000000"
+            && s.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
+    };
+    let (site, web, list, unique) = (g("siteId"), g("webId"), g("listId"), g("listItemUniqueId"));
+    if [&site, &web, &list, &unique].iter().all(|s| guid(s)) {
+        serde_json::json!({ "value": [{ "siteId": site, "webId": web, "listId": list, "listItemUniqueId": unique }] })
+    } else {
+        serde_json::json!({ "value": [{
+            "siteUrl": format!("{}/", g("siteUrl").trim_end_matches('/')),
+            "url": item["webUrl"].as_str().unwrap_or_default(),
+        }] })
+    }
 }
 
 /// Where OneDrive keeps your favorites for a file on `site_url`: your
@@ -1345,6 +1418,41 @@ mod tests {
         assert_eq!(
             copilot_source_of(&v).to_string(),
             r#"{"metadata":{"extension":"loop","fileCreated":"2026-11-23T15:10:12.000Z","fileSize":1354},"type":"File","value":{"fileName":"0.2.0 release checklist.loop","listId":"c300f6d2","siteId":"86beb970","uniqueId":"d9840407","webId":"a3305c60"}}"#
+        );
+    }
+
+    #[test]
+    fn favorites_send_onedrive_ids_else_the_address() {
+        let ids = serde_json::json!({ "webUrl": "https://x-my.sharepoint.com/personal/a/Documents/Plans",
+            "sharepointIds": { "siteId": "0a1b2c3d-0000-4000-8000-000000000001", "webId": "0a1b2c3d-0000-4000-8000-000000000002",
+                               "listId": "0a1b2c3d-0000-4000-8000-000000000003", "listItemUniqueId": "0a1b2c3d-0000-4000-8000-000000000004",
+                               "siteUrl": "https://x-my.sharepoint.com/personal/a" } });
+        assert_eq!(
+            favorite_body(&ids)["value"][0],
+            serde_json::json!({ "siteId": "0a1b2c3d-0000-4000-8000-000000000001", "webId": "0a1b2c3d-0000-4000-8000-000000000002",
+                                "listId": "0a1b2c3d-0000-4000-8000-000000000003", "listItemUniqueId": "0a1b2c3d-0000-4000-8000-000000000004" })
+        );
+        let mut partial = ids.clone();
+        partial["sharepointIds"]["webId"] =
+            serde_json::json!("00000000-0000-0000-0000-000000000000");
+        assert_eq!(
+            favorite_body(&partial)["value"][0],
+            serde_json::json!({ "siteUrl": "https://x-my.sharepoint.com/personal/a/", "url": "https://x-my.sharepoint.com/personal/a/Documents/Plans" })
+        );
+    }
+
+    #[test]
+    fn favorites_read_both_reply_shapes() {
+        let entry = serde_json::json!([{ "file": { "FileName": "Plans", "Visualization": { "Type": "Folder" } } }]);
+        let verbose = serde_json::json!({ "d": { "GetFavoriteItems": entry.to_string() } });
+        let plain = serde_json::json!({ "value": entry.to_string() });
+        assert_eq!(
+            favorite_entries(&verbose),
+            entry.as_array().unwrap().clone()
+        );
+        assert_eq!(favorite_entries(&plain), entry.as_array().unwrap().clone());
+        assert!(
+            favorite_entries(&serde_json::json!({ "d": { "GetFavoriteItems": "[]" } })).is_empty()
         );
     }
 

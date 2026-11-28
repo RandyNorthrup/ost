@@ -404,10 +404,29 @@ to and Copy to act on the shortcut), opening goes to the target,
 and Sharing reads "Owner: {team}". Harness: `--channel-files-test
 --channel-files-shortcut`, then `--channel-files-unshortcut`.
 
+## Favorites (files and folders; TASK-0359, OneDrive bundle 2026-11-13)
+
+- **Who offers it:** OneDrive's `canFavoriteItem` (FavoriteAction, module
+  7142): any item of a document library that isn't a favorite yet, except
+  a shortcut (mount point) or a `.url` link; folders too. `canUnfavoriteItem`
+  offers Remove from favorites for a favorite. The ··· and right-click
+  menus, the selection bar's ··· and the row's hover star (the name cell's
+  hero commands use the same two checks) follow them. The selection bar's
+  Add to favorites takes 1 to 20 items, each a favorite or one it can add.
+- **The call** (OneDrive's `favoriteItems` / `unfavoriteItems`, data source
+  4177): `POST {your OneDrive's host}/_api/v2.1/favorites/followedListItems/
+  oneDrive.add` (or `.remove`), header `Caller: ODBWeb`, body
+  `{"value": [{siteId, webId, listId, listItemUniqueId}]}`, or
+  `{siteUrl, url}` when the four ids aren't all real GUIDs. OST takes the
+  ids from Graph's `sharepointIds` (`api::drive::set_favorite`, the same
+  call for files and folders; it used Graph's legacy `follow` before).
+- **Where they show:** Teams' Favorites view lists OneDrive's
+  `sp.FavoriteItemCollection.GetFavoriteItems?top=500` on your OneDrive's
+  site; OST's Favorites view reads the same list.
+
 ## Not yet in OST
 
 - Preview, Version history and Details are in `docs/spec/file-preview.md`, `docs/spec/version-history.md` and `docs/spec/details-pane.md`.
-- Favorites on folders: Graph's followed items hold files only.
 - A team site's file shows "Open in SharePoint" in OST. Teams' wording in channel Files hasn't been captured yet.
 
 ## Add to playlist (a video's)

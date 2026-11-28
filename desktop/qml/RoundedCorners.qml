@@ -11,6 +11,10 @@ Canvas {
     /// superellipse(2) with a 50% radius: |x|^4 + |y|^4 = 1), as Teams
     /// draws app tiles.
     property bool squircle: false
+    /// The background as a top-to-bottom gradient instead ([{at, color}],
+    /// `at` from 0 to 1), for corners over a shaded band.
+    property var stops: []
+    onStopsChanged: requestPaint()
     onSquircleChanged: requestPaint()
     onRadiusChanged: requestPaint()
     onBackgroundChanged: requestPaint()
@@ -20,7 +24,11 @@ Canvas {
         const ctx = getContext("2d")
         ctx.reset()
         const r = Math.min(radius, width / 2, height / 2)
-        ctx.fillStyle = background
+        if (stops && stops.length) {
+            const g = ctx.createLinearGradient(0, 0, 0, height)
+            for (const s of stops) g.addColorStop(s.at, s.color)
+            ctx.fillStyle = g
+        } else ctx.fillStyle = background
         ctx.beginPath()
         // The whole box, minus the rounded rectangle (even-odd fill).
         ctx.rect(0, 0, width, height)

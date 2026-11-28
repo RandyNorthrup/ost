@@ -214,6 +214,16 @@ selected") are **Sort ▾**, the view switch and **Details**.
       app's badge, and the name.
     - Hover gives a white card (radius 12, shadow) with the selection circle
       at the top right.
+    - OneDrive's FolderCover signal (its tiles' bundle; measured on
+      testpc1 2026-11-27): a shared folder or a shortcut carries the 16 px
+      People glyph in the count's shade 7 in from the folder drawing's
+      bottom right corner. A shortcut also carries the shortcut badge
+      (odsp-media `shortcutbadge_20.svg`, `_dark` in dark), 20 px, 10 past
+      that corner. (OST's drawing, the 32 px folder icon at 112, spans 7 to
+      105 across and ends 78.5 down, so the glyph sits at (82, 56) and the
+      badge at (95, 68.5).) The Shortcuts folder
+      is the blue company folder with its building glyph in that place and
+      the count in #032F54.
 - **Details** with nothing selected opens the current folder's pane
   (`docs/spec/details-pane.md`). The button shows pressed while the pane is
   open.
@@ -340,6 +350,18 @@ newer ("Spartan") list, not the files table. Measured on winpc on
   - The picture box is 113.33 square at the right (#FAFAFA, #EBEBEB rim,
     radius 4). It shows the file's picture, or its 40 px icon for Loop,
     OneNote and Whiteboard.
+- Recent's rows (OneDrive's RecentDataManager, file browser bundle
+  2026-11-13): the recent service's top files
+  (`sp.RecentFileCollection.GetRecentFiles?top=40`, `prefer: useSmartCache,
+  filetypes="Word,Excel,PowerPoint,OneNote,Pdf,Video,Visio,Fluid,Playlist,
+  Whiteboard,Lists"`), then DeltaSync's (`DeltaSync?top=500`), each file once
+  by its `Id`, through the same `isInvalidOdbRecentItem` and newest opened
+  first. The top files hold some DeltaSync leaves out: a chat's Loop notes
+  (`loop_loopThread`, in its chat's container: Location
+  `IC3_TeamsContainerType_…`, Owner SharePoint App) and a recap's
+  Highlights pages (Location Meeting Artifacts). Checked as ost-test1 on
+  2026-11-27: Teams' Home on testpc1 shows both loop_loopThread rows and
+  both Highlights rows; OST's now does too (`recent_files::merge_home`).
 - "Recent" (16, 600) at 8,310. Then the pills, from 67: All, Word, Excel,
   PowerPoint, PDF and More, 8.33 apart. They are 32 tall and round, with a
   0.67 #D1D1D1 rim; a picked pill is #E9EAF6 with a #5B5FC7 rim. All is
@@ -427,7 +449,8 @@ newer ("Spartan") list, not the files table. Measured on winpc on
 
 - OneDrive's colored folder icon (module 4852) carries the People glyph when the folder is shared (`PrincipalCount` > 0) or is a shortcut: 12 px, 5 from the right and 8 from the foot of a 32 px icon (7 px bold, 3 and 6, at 20), in the folder colour's `countOverlay` shade (#8F3900 for yellow).
 - A shortcut (Add shortcut to My files, ProgId `AddToOneDrive.MountPoint`) also carries OneDrive's shortcut badge, its odsp-media `images/addtoonedrive/shortcutbadge_12.svg` (`_dark` in dark), 12 px at the icon's corner (4 px past it at 20). OST loads it at run time. Its Sharing cell starts with ArrowSquareUpRight before "Owner: …".
-- My files' header (and a My files subfolder's bar, after Copy link) has "Copilot ▾" (102.8 x 32, 206 from the title's start): the Copilot glyph (the colored odsp-media picture on hover), "Copilot" 14 px #616161, a 12 px chevron. Its menu has "Ask a question" (ChatSparkle 20), which opens the Copilot pane with no file: OneDrive sends updateChatInput (empty), the zero-query prompts "Summarize (file)", "Tell me about [a topic from my files]", "Find recent files on [a project]" and clearInputAreaText. (OneDrive also sends its knowledge agent state, which OST leaves out, as for Summarize.)
+- My files' header (and a My files subfolder's bar, after Copy link) has "Copilot ▾" (102.8 x 32, 206 from the title's start): the Copilot glyph (the colored odsp-media picture on hover), "Copilot" 14 px #616161, a 12 px chevron. Its menu has "Ask a question" (ChatSparkle 20), which opens the Copilot pane with no file: OneDrive sends updateChatInput (empty), the zero-query prompts "Summarize (file)", "Tell me about [a topic from my files]", "Find recent files on [a project]" and clearInputAreaText. (OneDrive also sends its knowledge agent state, which OST leaves out, as for Summarize; see below.)
+- **The knowledge agent** (TASK-0372): with your OneDrive's page context saying `isKnowledgeAgentEnabled` (true for ost-test1), Teams' OneDrive answers the page's `request-tool-registration` with `registerRemoteTools` (the tool schemas its knowledge agent runtime, loaded from `kaToolsUrls`, defines) and then sends `updateKnowledgeAgentState` {scenario "OneDriveForBusiness", kaToolsUrls, kaToolsDevMode, webUrl, webTitle, listTitle, sharePointIds {siteId, webId, listId}, eligibleCodeModePrimitives (about a hundred: files.read, email.send, automation.*, …), currentPivot}. Copilot then answers with `request-tool-invocation` of `execute_plan`: JavaScript it wrote, which the host runs in a sandbox against those primitives (`toolCallBatch` / `result`), reporting `codeModePrimitiveProgress` and `completeToolInvocation` (captured on winpc 2026-11-26). OST doesn't host that runtime, so it doesn't announce the state: without the tools behind it, the page would plan tool calls nobody runs. OST answers `request-tool-registration` as unsupported, and Copilot answers from the chat's own grounding, as it does in OST today.
 
 ## Not yet in OST
 
