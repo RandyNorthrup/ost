@@ -523,7 +523,7 @@ mod tests {
                 "iiiiiiiiii",
                 "M.C540",
             ] {
-                assert!(!s.contains(marker), "{marker} left in line {i}: {s}");
+                assert!(!s.contains(marker), "{marker} left in line {i}");
             }
         }
         // The account's Skype ID isn't a secret and stays readable.
