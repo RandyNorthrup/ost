@@ -3,11 +3,11 @@ id: TASK-0372
 title: >-
   Files and Store leftovers as Teams: quick-start chat rule, Open-only dialog,
   Tiles folder marks, Ask a question setup, Home loop rows
-status: In Progress
+status: To Do
 assignee:
   - '@t372'
 created_date: '2026-11-27T21:01:00Z'
-updated_date: '2026-11-28T04:04:00Z'
+updated_date: '2026-11-28T04:28:00Z'
 labels:
   - desktop
   - files
@@ -57,4 +57,6 @@ Follow-up from TASK-0358 (PR #50). Left different or unverified: the Store quick
 
 - Codex review: cfet marks are now read for every group chat the quick start may list (appPlaceChats → api::cfet_threads), not only for untitled chats; live: only "Just me" marked. Favorites: unplaced favorites resolve by address and unfavorite by their listed SharePoint ids.
 - Agent build (GitHub Actions) of 46bff52: api:: tests 590 passed.
+
+Built so far: PR #78 (merged 2026-11-27) built AC #2 (Open-only quick-start dialog, verified against Teams with Avatars), AC #3 (Tiles view people/shortcut marks), AC #5 (Home merges Teams' second recent-files request, so loop_loopThread and recap rows match Teams). Open: AC #1 (Store quick-start chat list: Teams' rule applied, but OST still shows 'OST large chat test' that Teams leaves out; likely Teams' local chat cache) and AC #4 (Copilot Ask a question knowledge-agent setup needs OneDrive's agent tools first, TASK-0379).
 <!-- SECTION:NOTES:END -->
