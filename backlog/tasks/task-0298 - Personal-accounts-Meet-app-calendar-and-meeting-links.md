@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@tperC'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T06:21:00Z'
+updated_date: '2026-11-28T07:26:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -45,4 +45,8 @@ The Meet app creates meeting links, schedules meetings, joins with an ID and lis
 - TASK-0369 (2026-11-27): OST now takes teams.live.com links (https://teams.live.com/meet/<ID>?p=…, teams.live.com/l/meetup-join/…, and msteams: links with fqdn=teams.live.com) from the command line, the msteams:/web+msteams: handler and messages, read as TeamsLink::PersonalMeeting (desktop/src/teams_link.rs). Until personal accounts can join, Main.qml openTeamsLink shows "OST can't join Teams (free) meetings yet." with Open in browser. AC #3 here: route PersonalMeeting to the personal account's profile (its instance socket, as open_in_account does) and join it there.
 
 Built so far: OST takes teams.live.com/meet, meetup-join and fqdn=teams.live.com msteams: links (TASK-0369, PR #57; desktop/src/teams_link.rs TeamsLink::PersonalMeeting) but only offers Open in browser (Main.qml); routing them to the personal account and joining are left.
+
+- 2026-11-28 (tperC): captured the Meet app, Calendar, Meet now and New meeting on teams.live.com (docs/research/personal-accounts-protocol.md §10.3): meeting links are Meet now chats (privateMeeting/schedulingService/create {meetingType: MeetNow}, then the chat's topic and meeting property); the calendar is the middle tier's v2.0/me/calendars/default/calendarView; event pages read and save v2.0/me/calendars/events/{objectId}.
+- Built: MeetView.qml (Meeting links from api::calendar::meeting_links, Create a meeting link, Join with a meeting ID, Schedule a meeting, Calls) on a personal account's rail (Chat, Meet, Calendar, Activity); the calendar, event page and edits through the middle tier with the Skype token; the personal toolbar (Join with an ID, Meet now, New meeting); teams.live.com links joined in a personal account and handed over from a work account (Backend::open_link_in_account, personal_account_profile).
+- Live: the Meet app listed Personal 1's link made on the web ("Meeting with OST Personal 1"); Create a meeting link's popup matches Teams; the calendar week loaded from the middle tier (1 event); OST Test 3's window, started with a teams.live.com/meet link, started Personal 1's window with it and the meeting resolved. That run opened the link in the browser too: the calendar's join handler only took teams.microsoft.com short links (fixed).
 <!-- SECTION:NOTES:END -->
