@@ -26,12 +26,42 @@ env:
   QMAKE: /usr/lib/qt6/bin/qmake6
 
 jobs:
+  # A push to a PR that only touches the backlog, docs or Markdown (an agent
+  # recording a task's status after its code passed) skips the jobs below:
+  # the code is the same commit range that already ran. GitHub counts skipped
+  # required checks as passing; the coordinator's merge gate also requires the
+  # PR's last code commit to have passed. Pushes to main, new PRs and
+  # force-pushes (rebases) always run everything.
+  changes:
+    name: Changed files
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: diff
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.pull_request.head.sha }}
+          ACTION: ${{ github.event.action }}
+        run: |
+          code=true
+          if [ "$GITHUB_EVENT_NAME" = pull_request ] && [ "$ACTION" = synchronize ] \
+             && git cat-file -e "$BEFORE^{commit}" 2>/dev/null && git merge-base --is-ancestor "$BEFORE" "$AFTER"; then
+            if ! git diff --name-only "$BEFORE" "$AFTER" | grep -qvE '^(backlog|docs)/|\.md$'; then code=false; fi
+          fi
+          echo "code=$code" | tee -a "$GITHUB_OUTPUT"
   audit:
     # Every crate in Cargo.lock against the RustSec advisory database
     # (vulnerabilities, unmaintained, unsound and yanked crates), its license
     # and its source. The exceptions, each with its reason and review date,
     # are in deny.toml and .cargo/audit.toml.
     name: Dependency audit
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     env:
       # Both pinned to an exact release and checked against its SHA-256.
@@ -60,6 +90,8 @@ jobs:
 
   fmt:
     name: Format
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     container: ubuntu:26.04
     steps:
@@ -77,6 +109,8 @@ jobs:
   # origin checks (desktop/tests/app_host.test.mjs).
   js-test:
     name: JavaScript tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -87,6 +121,8 @@ jobs:
 
   clippy:
     name: Clippy
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     container: ubuntu:26.04
     timeout-minutes: 120
@@ -107,6 +143,8 @@ jobs:
 
   build-test:
     name: Build and test
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     container: ubuntu:26.04
     timeout-minutes: 120
@@ -134,6 +172,8 @@ jobs:
   # caller-supplied script.
   release-harness-off:
     name: Release build refuses test-harness flags
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     container: ubuntu:26.04
     timeout-minutes: 120
