@@ -3650,16 +3650,39 @@ pub async fn cancel_meeting(
     if !s("channel_id").is_empty() {
         let (base, token) = crate::api::tabs::middle_tier(client).await?;
         let mail = group_mail(client, team_id).await?;
-        let uid = s("ical_uid").to_lowercase();
+        // Teams' team events cancel one occurrence or the series; the
+        // series is cancelled by its master (iCalUId and start), read from
+        // the calendar the event came from.
+        anyhow::ensure!(
+            scope != "following",
+            "A channel meeting's series is cancelled as a whole or one event at a time"
+        );
+        let (mut ical, mut start, mut event_type) =
+            (s("ical_uid"), s("start_utc"), s("event_type"));
+        let master = s("series_master_id");
+        if scope == "series" && !master.is_empty() {
+            let m: serde_json::Value = client
+                .graph_get(&format!(
+                    "{}?$select=iCalUId,start",
+                    event_path_in(&s("calendar_id"), &master)?
+                ))
+                .await?
+                .json()
+                .await
+                .context("The series")?;
+            ical = m["iCalUId"].as_str().unwrap_or_default().to_string();
+            start = m
+                .pointer("/start/dateTime")
+                .and_then(|t| t.as_str())
+                .map(|t| format!("{}Z", t.split('.').next().unwrap_or(t)))
+                .unwrap_or_default();
+            event_type = "seriesMaster".into();
+        }
+        let uid = ical.to_lowercase();
         if uid.is_empty() || !uid.bytes().all(|b| b.is_ascii_hexdigit()) {
             bail!("Not an iCalUId");
         }
-        let kind = match s("event_type").as_str() {
-            "occurrence" => "Occurrence",
-            "exception" => "Exception",
-            "seriesMaster" => "RecurringMaster",
-            _ => "Single",
-        };
+        let kind = team_event_kind(&event_type);
         let body = serde_json::json!({
             "conversationId": s("channel_id"),
             "messageId": s("channel_message_id"),
@@ -3668,7 +3691,7 @@ pub async fn cancel_meeting(
             "fetchEventContract": {
                 "eventType": kind,
                 "eventTimeZone": "UTC",
-                "startTime": mt_start(&s("start_utc"))?,
+                "startTime": mt_start(&start)?,
             }
         });
         let group = format!("smtp:{mail}");

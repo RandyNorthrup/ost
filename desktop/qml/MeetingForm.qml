@@ -3102,7 +3102,8 @@ Item {
             NoteBox { id: cancelNote; width: 336; height: 96; placeholder: qsTr("Add a cancellation note (optional)") }
             Row {
                 anchors.right: parent.right
-                FormButton { primary: true; wide: true; label: qsTr("Cancel meeting"); onClicked: { root.cancelMeeting(cancelNote.text.trim(), ""); cancelDialog.close() } }
+                // (A series' page: the event or the series it's editing.)
+                FormButton { primary: true; wide: true; label: qsTr("Cancel meeting"); onClicked: { root.cancelMeeting(cancelNote.text.trim(), root.seriesScoped ? root.scope : ""); cancelDialog.close() } }
             }
         }
     }
