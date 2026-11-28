@@ -12,6 +12,8 @@ import QtQuick.Controls.Basic
 Item {
     id: root
     property string threadId: ""
+    /// The draft's bodyType ("SingleMessage" in a Threads-layout channel).
+    property string bodyType: ""
     property string emailId: ""
     readonly property string requestId: "sto" + Math.floor(Math.random() * 1e9).toString(36)
     property var dialog: null
@@ -22,7 +24,7 @@ Item {
         if (busy || !threadId || !m) return
         busy = true
         events = events.concat(["start"])
-        backend.appHostRequest("", root.threadId, "", "", "stoCreate", root.requestId + ":create", JSON.stringify({ messageId: m.id }))
+        backend.appHostRequest("", root.threadId, "", "", "stoCreate", root.requestId + ":create", JSON.stringify({ messageId: m.id, bodyType: root.bodyType }))
     }
     function close() { if (dialog) dialog.close() }
     Connections {

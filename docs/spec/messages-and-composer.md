@@ -581,6 +581,7 @@ where `{{otherTargets}}` = "# other" / "# others" and n = targets − 1.
 - **Classic channel post, ···**:
   - Core: Forward, Follow thread, Copy link, Save this message, Delete (own post or admin), Pin for everyone, Open conversation in new window. "Reply in thread" never appears (threading is ConvUX-only in channels); Edit (own post) and Reply are on the hover bar.
   - Then the L1 secondary items, Report this message, More actions ▸.
+  - Seen on Teams web as OST Test 2 (2026-11-27, TASK-0380): someone else's post shows Mark as unread, Share to Outlook, Translate | Report this message | More actions ▸ (Immersive Reader, then apps' actions). A reply has no Mark as unread, so its L1 is Share to Outlook, Translate, Immersive Reader, and More actions ▸ holds only apps' actions. Your own post or reply has Delete in the core items and no Report this message.
 - **Right-click**: the same menus with the reaction strip on top, and Edit / Reply with quote / Reply in thread kept in their registry slots.
 
 ## 14. Reactions under a message (226455, 1975, 21117, 573742, 217146, 833469)
