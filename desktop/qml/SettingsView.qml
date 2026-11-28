@@ -53,7 +53,7 @@ Rectangle {
         { key: "devices", label: qsTr("Devices"), icon: "headset-20" },
         { key: "people", label: qsTr("People"), icon: "contact-card-20" },
         { key: "files", label: qsTr("Files and links"), icon: "document-20" },
-        { key: "plans", label: qsTr("Plans and upgrades"), icon: "diamond-24" },
+        { key: "plans", label: qsTr("Plans and upgrades"), icon: "premium-24" },
         { key: "insider", label: qsTr("Teams Insider"), icon: "person-heart-20" }
     ]
     readonly property var pages: personal ? personalPages : workPages
@@ -1290,9 +1290,11 @@ Rectangle {
                     SettingsParts.ImageRadio { label: qsTr("Comfy"); image: "../assets/settings/chat-density-comfy-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.mode !== "COMPACT"; onPicked: root.setProp("messageDensity", "", "COMFY") }
                     SettingsParts.ImageRadio { label: qsTr("Compact"); image: "../assets/settings/chat-density-compact-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.mode === "COMPACT"; onPicked: root.setProp("messageDensity", "", "COMPACT") }
                 }
-                SettingsParts.SubHeading { text: qsTr("When I open a chat, take me to"); gapAbove: 15 }
-                SettingsParts.Gap { size: 12 }
+                // (Teams free's Chat card has Message density only.)
+                SettingsParts.SubHeading { visible: !root.personal; text: qsTr("When I open a chat, take me to"); gapAbove: 15 }
+                SettingsParts.Gap { visible: !root.personal; size: 12 }
                 Row {
+                    visible: !root.personal
                     spacing: 12.7
                     readonly property bool lastRead: root.prop("userPersonalSettings", ["messagingSettings", "navigateToLastReadMessage"], true) !== false
                     SettingsParts.ImageRadio { label: qsTr("Last read message"); image: "../assets/settings/chat-landing-unread-" + theme.pick("light", "dark", "contrast") + ".svg"; checked: parent.lastRead; onPicked: root.setProp("userPersonalSettings", "messagingSettings.navigateToLastReadMessage", true) }
@@ -1352,6 +1354,7 @@ Rectangle {
                 readonly property bool muted: notif.ts("muteGenericNotifications", "Off") === "On"
                 trailing: Component { SettingsParts.Toggle { on: notif.ts("muteGenericNotifications", "Off") === "On"; accessibleName: qsTr("Mute all notifications (except for calls and meetings)"); onToggled: v => notif.setTs("muteGenericNotifications", v ? "On" : "Off") } }
                 SettingsParts.CheckRow {
+                    visible: !root.personal
                     label: qsTr("Always allow urgent and priority contact notifications")
                     usable: parent.parent.muted
                     checked: root.local("allowUrgentWhenMuted", "false") === "true"
@@ -1373,6 +1376,7 @@ Rectangle {
                     SoundPicker { y: 2.6; setting: "alertSoundType"; dflt: "Default"; keys: ["Default", "Vibe", "Nudge", "Tap", "Flick", "Pluck", "Summon", "Ping"]; accessibleName: soundRow.label }
                 }
                 Item {
+                    visible: !root.personal
                     width: parent.width; height: urgentRow.height
                     SettingsParts.CheckRow { id: urgentRow; rowHeight: 44; labelWidth: 332.3; label: qsTr("Play sounds with urgent and priority contact notifications"); checked: notif.ts("PlayNotificationSoundsForUrgentAndPriority", "On") !== "Off"; onToggled: v => notif.setTs("PlayNotificationSoundsForUrgentAndPriority", v ? "On" : "Off") }
                     SoundPicker { y: 2.6; setting: "alertUrgentSoundType"; dflt: "DefaultUrgent"; keys: ["DefaultUrgent", "Prioritize", "Escalate", "Alarm"]; accessibleName: urgentRow.label }
@@ -1577,11 +1581,13 @@ Rectangle {
                 // Teams' meeting chat notifications by your RSVP (chatSettings:
                 // Mute / Unmute / Mute until I join or send a message).
                 // Teams free has one row, "Meeting chat notifications"
-                // (Mute until I join or send a message unless changed),
+                // (Mute until I join or send a message unless changed; OST
+                // Personal 2's Teams 26304 shows that while its accepted
+                // meetings' value is Unmute, so it reads the other one),
                 // kept for both kinds of meeting.
                 Repeater {
                     model: root.personal
-                        ? [{ key: "meetingChatNotificationForAcceptedMeetings", also: "meetingChatNotificationForTentativeMeetings", label: qsTr("Meeting chat notifications"), dflt: "MeetingsUserParticipatesIn" }]
+                        ? [{ key: "meetingChatNotificationForTentativeMeetings", also: "meetingChatNotificationForAcceptedMeetings", label: qsTr("Meeting chat notifications"), dflt: "MeetingsUserParticipatesIn" }]
                         : [{ key: "meetingChatNotificationForAcceptedMeetings", label: qsTr("Meeting chat notifications for meetings I've accepted"), dflt: "MeetingsUserIsInvitedTo" },
                             { key: "meetingChatNotificationForTentativeMeetings", label: qsTr("Meeting chat notifications for meetings marked as tentative or no response"), dflt: "MeetingsUserParticipatesIn" }]
                     Item {
@@ -1590,11 +1596,11 @@ Rectangle {
                         readonly property var values: ["MeetingsManuallyUnmuted", "MeetingsUserIsInvitedTo", "MeetingsUserParticipatesIn"]
                         // Teams: the label 5 under the dropdown's top; rows 68.7
                         // apart, the two-line one 80.3.
-                        width: parent.width; height: mcRow.modelData.key.indexOf("Tentative") > 0 ? 80.3 : 68.7
+                        width: parent.width; height: mcRow.modelData.key.indexOf("Tentative") > 0 && !mcRow.modelData.also ? 80.3 : 68.7
                         Text { id: mcLabel; y: 5; width: parent.width - 249.3 - 40; wrapMode: Text.Wrap; text: mcRow.modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
                         OutlineDropdown {
                             anchors.right: parent.right; anchors.rightMargin: 28; y: 0
-                            width: 249.3; height: mcRow.modelData.key.indexOf("Tentative") > 0 ? 50 : 30
+                            width: 249.3; height: mcRow.modelData.key.indexOf("Tentative") > 0 && !mcRow.modelData.also ? 50 : 30
                             options: [{ label: qsTr("Mute") }, { label: qsTr("Unmute") }, { label: qsTr("Mute until I join or send a message") }]
                             current: Math.max(0, mcRow.values.indexOf(root.prop("userPersonalSettings", ["chatSettings", mcRow.modelData.key], mcRow.modelData.dflt)))
                             accessibleName: mcRow.modelData.label
@@ -2769,7 +2775,7 @@ Rectangle {
                     FluentIcon { x: 20; anchors.verticalCenter: parent.verticalCenter; name: "mail-20"; size: 20; color: theme.text }
                     Text { x: 54; anchors.verticalCenter: parent.verticalCenter; text: modelData.address; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                     OutlineDropdown {
-                        x: 502; anchors.verticalCenter: parent.verticalCenter
+                        x: Math.max(300, Math.min(502, parent.width - width - 8)); anchors.verticalCenter: parent.verticalCenter
                         width: 172; height: 32; filled: true
                         options: [{ label: qsTr("Show") }, { label: qsTr("Hide") }]
                         current: modelData.visible ? 0 : 1
@@ -5290,9 +5296,11 @@ Rectangle {
                     backend.setSetting("fileOpenIn", v); choice = v
                     if (v === "web" || v === "teams") root.setProp("userPersonalSettings", "filesSettings.fileOpenPreference", v === "web" ? "web" : "teamsV2")
                 }
-                SettingsParts.RadioRow { label: qsTr("Teams"); checked: openIn.choice === "teams"; onPicked: openIn.pick("teams") }
+                // Teams free offers no Teams choice (Teams desktop 26304 with
+                // OST Personal 2: Browser, and the desktop app when there).
+                SettingsParts.RadioRow { visible: !root.personal; label: qsTr("Teams"); checked: openIn.choice === "teams"; onPicked: openIn.pick("teams") }
                 SettingsParts.RadioRow { visible: !!openIn.app; label: qsTr("Desktop app"); checked: openIn.choice === "desktop" && !!openIn.app; onPicked: openIn.pick("desktop") }
-                SettingsParts.RadioRow { label: qsTr("Browser"); checked: openIn.choice === "web" || (openIn.choice === "desktop" && !openIn.app); onPicked: openIn.pick("web") }
+                SettingsParts.RadioRow { label: qsTr("Browser"); checked: openIn.choice === "web" || (openIn.choice === "desktop" && !openIn.app) || (root.personal && openIn.choice === "teams"); onPicked: openIn.pick("web") }
             }
             // Teams' "Links open preference": web links open in the default
             // browser or Microsoft Edge (when installed; Teams' default).

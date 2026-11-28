@@ -91,6 +91,10 @@ Rectangle {
             x: Math.max(420, parent.width - w - 24)
             anchors.verticalCenter: parent.verticalCenter
             fillMode: VideoOutput.PreserveAspectFit
+            // The animation's transparent parts decode as black: keyed out
+            // again (shaders/black_key.frag).
+            layer.enabled: true
+            layer.effect: ShaderEffect { fragmentShader: "../shaders/black_key.frag.qsb" }
         }
         Column {
             x: 40

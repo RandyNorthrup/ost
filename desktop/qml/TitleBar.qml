@@ -925,7 +925,7 @@ Rectangle {
             spacing: 2
             // Teams Premium: one row (Teams' "promo" item), then Teams
             // Premium benefits for a Premium licence outside a trial.
-            MenuRow { visible: backend.personalAccount; icon: "diamond-24"; label: qsTr("Upgrade"); onPicked: root.openUpgrade() }
+            MenuRow { visible: backend.personalAccount; icon: "premium-24"; label: qsTr("Upgrade"); onPicked: root.openUpgrade() }
             MenuDivider { visible: backend.personalAccount }
             MenuRow { visible: root.premiumMenu === "unlock" && !backend.personalAccount; icon: "premium-20"; label: qsTr("Unlock Teams Premium"); onPicked: root.openPremium("offer") }
             MenuRow { visible: root.premiumMenu === "get" && !backend.personalAccount; icon: "premium-20"; label: qsTr("Get Teams Premium"); onPicked: root.openPremium("get") }

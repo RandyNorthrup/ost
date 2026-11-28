@@ -14220,7 +14220,8 @@ Window {
         running: Qt.application.arguments.indexOf("--settings-pages-test") >= 0 && backend.signedIn
         interval: 2500; repeat: true
         property int step: 0
-        readonly property var pages: ["general", "appearance", "chats", "notifications", "accounts", "privacy", "accessibility", "devices", "calls", "files", "apppermissions", "about"]
+        // (A personal account's own pages, Teams free's.)
+        readonly property var pages: settingsView.pages.map(p => p.key).concat(["about"])
         onTriggered: {
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
@@ -14237,6 +14238,43 @@ Window {
             } else if (step === 1 + pages.length * 3) { console.warn("ST settings", backend.settingsJson.slice(0, 1500)); settingsView.pageForTest("general", "oof") }
             else if (step === 2 + pages.length * 3) shot("st-oof")
             else if (step === 3 + pages.length * 3) Qt.quit()
+            step++
+        }
+    }
+
+    // --personal-shell-test --shots=<dir> (TASK-0297): a personal account's
+    // shell: each app on Teams free's bar (ps-<key>), the other-accounts
+    // flyout (ps-hub), Settings and more (ps-more), Upgrade's Plans and
+    // upgrades (ps-plans; the browser isn't opened), the Privacy, People
+    // sub-pages (ps-sub-<name>) and Communities' Create a group chat
+    // (ps-comm-create). Changes nothing; logs what it saw.
+    Timer {
+        running: Qt.application.arguments.indexOf("--personal-shell-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        readonly property var subs: [["privacy", "findMe"], ["privacy", "profile"], ["people", "tflBlocked"], ["people", "tflSync"]]
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            const apps = rail.barEntries.map(e => e.key)
+            const n = apps.length
+            if (step === 0) console.warn("PS bar", JSON.stringify(rail.apps.map(a => a.key)), "upgrade", rail.upgradeForTest().visible, "personal", backend.personalAccount)
+            if (step < 2 * n) {
+                if (step % 2 === 0) rail.current = apps[step / 2]
+                else shot("ps-" + apps[(step - 1) / 2])
+            } else if (step === 2 * n) { rail.current = "chat"; mtmaHub.show() }
+            else if (step === 2 * n + 1) { console.warn("PS hub", JSON.stringify(mtmaHub.simpleStateForTest())); shot("ps-hub") }
+            else if (step === 2 * n + 2) { mtmaHub.hide(); titleBar.moreMenuForTest(true) }
+            else if (step === 2 * n + 3) shot("ps-more")
+            else if (step === 2 * n + 4) { titleBar.moreMenuForTest(false); rail.current = "settings"; settingsView.launchSection("plans") }
+            else if (step === 2 * n + 5) { console.warn("PS pages", JSON.stringify(settingsView.pages.map(p => p.label)), "plans", settingsView.page); shot("ps-plans") }
+            else if (step < 2 * n + 6 + 2 * subs.length) {
+                const j = step - (2 * n + 6), i = Math.floor(j / 2)
+                if (j % 2 === 0) settingsView.pageForTest(subs[i][0], subs[i][1])
+                else shot("ps-sub-" + subs[i][1])
+            } else if (step === 2 * n + 6 + 2 * subs.length) { console.warn("PS personal", JSON.stringify(JSON.parse(backend.settingsJson || "{}").personal || null).slice(0, 1500)); rail.current = "tfl-communities" }
+            else if (step === 2 * n + 7 + 2 * subs.length) { if (tflCommunities.item) tflCommunities.item.openCreateForTest() }
+            else if (step === 2 * n + 8 + 2 * subs.length) shot("ps-comm-create")
             step++
         }
     }
@@ -17998,7 +18036,7 @@ Window {
 
     // Apps not built yet: an honest placeholder instead of the chat.
     Rectangle {
-        visible: ["chat", "calls", "calendar", "meet", "activity", "settings", "onedrive", "planner", "people", "onenote", "add", "whiteboard", "clipchamp", "shifts", "avatars", "office", "help", "communities", "search", "events"].indexOf(rail.current) < 0
+        visible: ["chat", "calls", "calendar", "meet", "activity", "settings", "onedrive", "planner", "people", "onenote", "add", "whiteboard", "clipchamp", "shifts", "avatars", "office", "help", "communities", "search", "events", "tfl-copilot", "tfl-communities"].indexOf(rail.current) < 0
         anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
         color: theme.surface
         Text {

@@ -469,7 +469,7 @@ Rectangle {
         FluentIcon {
             anchors.centerIn: parent
             size: 24
-            name: uh.hovered ? "diamond-24-filled" : "diamond-24"
+            name: uh.hovered ? "premium-24-filled" : "premium-24"
             color: uh.hovered ? theme.brand : theme.icon
         }
         HoverHandler { id: uh; cursorShape: Qt.PointingHandCursor }
