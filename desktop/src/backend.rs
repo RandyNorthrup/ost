@@ -32048,6 +32048,8 @@ impl qobject::Backend {
                                     start_utc: s("startUtc"),
                                     event_type: s("eventType"),
                                 };
+                                // (Teams' team events edit one event or the series.)
+                                anyhow::ensure!(form.scope != "following", "A channel meeting's series is edited as a whole or one event at a time");
                                 // Edit series: the series master (its iCalUId and start; in its
                                 // team's calendar for a page read from there).
                                 if form.scope == "series"

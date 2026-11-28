@@ -2898,8 +2898,11 @@ Item {
         // right under the button.)
         function openFor(item) { parent = item; x = 0; y = item.height; open() }
         fabric: true; fabricWidth: 194.33; labelInset: 8
-        items: [{ label: qsTr("This event") }, { label: qsTr("This and all following events") }, { label: qsTr("All events in the series") }]
-        onPicked: i => { const e = details.ev; details.close(); root.openPage(e, ["occurrence", "following", "series"][i]) }
+        // (A channel meeting's: this event or the series, as Teams' team
+        // events offer.)
+        readonly property var scopes: details.ev && details.ev.channel_id ? ["occurrence", "series"] : ["occurrence", "following", "series"]
+        items: scopes.map(k => ({ label: ({ occurrence: qsTr("This event"), following: qsTr("This and all following events"), series: qsTr("All events in the series") })[k] }))
+        onPicked: i => { const e = details.ev; details.close(); root.openPage(e, scopes[i]) }
     }
     function editScopeItemsForTest() { return editScopeMenu.items.map(x => x.label) }
     // The card's Join ▾ (Teams desktop, winpc 2026-11-23).
@@ -2917,8 +2920,11 @@ Item {
         // right under the button.)
         function openFor(item) { parent = item; x = 0; y = item.height; open() }
         fabric: true; fabricWidth: 194.33; labelInset: 8
-        items: [{ label: qsTr("This event") }, { label: qsTr("This and all following events") }, { label: qsTr("All events in the series") }]
-        onPicked: i => details.beginCancel(["occurrence", "following", "series"][i])
+        // (A channel meeting's: this event or the series, as Teams' team
+        // events offer.)
+        readonly property var scopes: details.ev && details.ev.channel_id ? ["occurrence", "series"] : ["occurrence", "following", "series"]
+        items: scopes.map(k => ({ label: ({ occurrence: qsTr("This event"), following: qsTr("This and all following events"), series: qsTr("All events in the series") })[k] }))
+        onPicked: i => details.beginCancel(scopes[i])
     }
     function cancelScopeItemsForTest() { return cancelScopeMenu.items.map(x => x.label) }
     function cancelForTest(scope, msg) { details.beginCancel(scope); Qt.callLater(() => { cancelNote.text = msg || "" }) }

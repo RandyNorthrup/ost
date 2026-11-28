@@ -1145,7 +1145,9 @@ Item {
                             font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
                         }
                         LinkButton { visible: root.scope === "occurrence" && !root.outlookPage; label: qsTr("Edit series"); onClicked: root.setScope("series") }
-                        LinkButton { visible: root.scope === "occurrence" && !root.outlookPage; label: qsTr("Edit this and all following events"); onClicked: root.setScope("following") }
+                        // (A channel meeting's series edits as a whole or one event, as Teams'
+                        // team events do: no "this and all following".)
+                        LinkButton { visible: root.scope === "occurrence" && !root.outlookPage && !root.channel; label: qsTr("Edit this and all following events"); onClicked: root.setScope("following") }
                         // (Outlook: 23 tall outlined buttons, 12 px, 11 apart.)
                         Row {
                             visible: root.scope === "occurrence" && root.outlookPage
