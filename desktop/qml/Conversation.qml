@@ -3778,7 +3778,13 @@ Rectangle {
                                 }
                                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                                 TapHandler {
-                                    onTapped: if (fc.modelData.preview_local) root.openImageViewer([{ local_path: fc.modelData.preview_local, width: photoBox.pw, height: photoBox.ph }], 0, msg.modelData)
+                                    // The message's pictures, from the clicked one.
+                                    onTapped: {
+                                        if (!fc.modelData.preview_local) return
+                                        const pics = bubble.files.filter(f => !!f.preview_url && !!f.preview_local)
+                                        root.openImageViewer(pics.map(f => ({ local_path: f.preview_local, width: f.preview_width, height: f.preview_height })),
+                                                             Math.max(0, pics.findIndex(f => f.preview_url === fc.modelData.preview_url)), msg.modelData)
+                                    }
                                 }
                                 Accessible.role: Accessible.Button
                                 Accessible.name: fc.modelData.name || qsTr("Image")
