@@ -8,6 +8,12 @@
 //! setting from TeamsNorthstarUserOverrides first, then TeamsNorthstar
 //! (namespace, then key). The reply is kept with its ETag and asked again
 //! with If-None-Match.
+//!
+//! A personal account (Teams for personal use) asks as Teams desktop does
+//! for it (the same app id, captured 2026-11-28): `environment=life`, the
+//! personal-account tenant, its own object id, no licence filters and the
+//! agents TflNorthstar, TeamsBuilds and Segmentation. Its settings are read
+//! from TflNorthstar.
 
 use std::path::Path;
 use std::sync::RwLock;
@@ -22,6 +28,14 @@ const ENDPOINT: &str = "https://config.teams.microsoft.com/config/v1/MicrosoftTe
 const EXPERIENCE_BUILD: &str = "26101515220";
 const DESKTOP_VERSION: &str = "26276.513.5241.9675";
 const AGENTS: &str = "TeamsNorthstar,TeamsBuilds,Segmentation,TeamsNorthstarUserOverrides";
+/// The agents Teams asks for a personal account (Teams free's
+/// `ecsNamespaces`, critical namespace TflNorthstar).
+const AGENTS_PERSONAL: &str = "TflNorthstar,TeamsBuilds,Segmentation";
+/// The tenant ECS is told for a personal Microsoft account.
+const MSA_TENANT: &str = "9188040d-6c67-4c5b-b112-36a304b66dad";
+/// Teams desktop 26304's host version (testpc2, as it signs in a personal
+/// account next to a work one).
+const DESKTOP_VERSION_PERSONAL: &str = "26304.1207.5384.858";
 
 static SETTINGS: RwLock<Option<serde_json::Value>> = RwLock::new(None);
 
@@ -99,12 +113,50 @@ pub fn query(
     q
 }
 
+/// The query Teams desktop sends for a personal account: the life
+/// environment, the personal-account tenant and the user's own id, with no
+/// licence or region filters (captured 2026-11-28; Teams free's web client
+/// sends the same with its web app id).
+pub fn query_personal(
+    user_id: &str,
+    session_id: &str,
+    client_id: &str,
+    account_count: usize,
+) -> Vec<(&'static str, String)> {
+    vec![
+        ("environment", "life".to_string()),
+        ("experience", "react-web-client".to_string()),
+        ("buildType", "production".to_string()),
+        ("virtualization", String::new()),
+        ("browser", "edge".to_string()),
+        ("browserVersion", "157.0.4341.42".to_string()),
+        ("osPlatform", "windows".to_string()),
+        ("isOcdi", "false".to_string()),
+        ("isPwa", "false".to_string()),
+        ("id", user_id.to_string()),
+        ("aaduserid", user_id.to_string()),
+        ("tenantId", MSA_TENANT.to_string()),
+        ("experienceBuild", EXPERIENCE_BUILD.to_string()),
+        ("desktopVersion", DESKTOP_VERSION_PERSONAL.to_string()),
+        ("teamsLocale", "en-us".to_string()),
+        ("mtmaCount", account_count.max(1).to_string()),
+        ("sessionId", session_id.to_string()),
+        ("clientId", client_id.to_string()),
+        ("agents", AGENTS_PERSONAL.to_string()),
+        ("ECSCanary", "1".to_string()),
+    ]
+}
+
 /// A setting as Teams reads it: the user overrides first, then
-/// TeamsNorthstar.
+/// TeamsNorthstar; a personal account's reply has TflNorthstar instead.
 pub fn setting_in(v: &serde_json::Value, namespace: &str, key: &str) -> Option<serde_json::Value> {
-    ["TeamsNorthstarUserOverrides", "TeamsNorthstar"]
-        .iter()
-        .find_map(|agent| v.get(agent)?.get(namespace)?.get(key).cloned())
+    [
+        "TeamsNorthstarUserOverrides",
+        "TeamsNorthstar",
+        "TflNorthstar",
+    ]
+    .iter()
+    .find_map(|agent| v.get(agent)?.get(namespace)?.get(key).cloned())
 }
 
 /// A setting from the settings loaded so far (None before they load, or
@@ -163,6 +215,11 @@ pub async fn license(client: &TeamsClient) -> Option<serde_json::Value> {
     if let Some(l) = FETCHED.lock().ok()?.clone() {
         return Some(l);
     }
+    if client.is_personal() {
+        // (A personal account's come with each Skype token, kept in the
+        // config; none means none yet.)
+        return None;
+    }
     let token = crate::auth::oauth::access_token_for("https://api.spaces.skype.com/.default")
         .await
         .ok()?;
@@ -180,7 +237,17 @@ pub async fn license(client: &TeamsClient) -> Option<serde_json::Value> {
 
 /// Fetch the licence details again (a fresh authz exchange, kept in the
 /// config), as Teams does after a licence changes (Teams Premium's trial).
+/// A personal account's (Teams free's `consumerLicenseDetails`, Plans and
+/// upgrades' Verify subscription) come with a new Skype token.
 pub async fn refresh_license() -> Option<serde_json::Value> {
+    if crate::config::Config::load()
+        .ok()?
+        .identity()
+        .is_some_and(|i| i.is_personal())
+    {
+        crate::auth::oauth::refresh().await.ok()?;
+        return crate::config::Config::load().ok()?.get_license_details();
+    }
     let token = crate::auth::oauth::access_token_for("https://api.spaces.skype.com/.default")
         .await
         .ok()?;
@@ -196,9 +263,12 @@ pub async fn refresh_license() -> Option<serde_json::Value> {
 }
 
 /// Load the settings: the cached reply at once, then ECS (If-None-Match).
-/// `cache_dir` keeps `ecs.json` (the reply) between runs.
+/// `cache_dir` keeps the reply between runs ([`cache_name`]).
 pub async fn load(client: &TeamsClient, cache_dir: &Path) -> Result<()> {
-    let file = cache_dir.join("ecs.json");
+    let file = cache_dir.join(cache_name(
+        crate::config::profile().as_deref(),
+        client.is_personal(),
+    ));
     let cached: Option<serde_json::Value> = std::fs::read(&file)
         .ok()
         .and_then(|b| serde_json::from_slice(&b).ok());
@@ -206,18 +276,14 @@ pub async fn load(client: &TeamsClient, cache_dir: &Path) -> Result<()> {
         install(c.clone());
     }
     let user = client.object_id().context("not signed in")?;
-    let tenant = client.tenant_id().unwrap_or_default();
-    let region = client
-        .chat_service_url()
-        .split("//")
-        .nth(1)
-        .and_then(|h| h.split('.').next())
-        .unwrap_or_default()
-        .to_string();
-    let license = license(client).await;
     let session = uuid::Uuid::new_v4().to_string();
     let device = uuid::Uuid::new_v4().to_string();
-    let q = query(&user, &tenant, &region, license.as_ref(), &session, &device);
+    let q = if client.is_personal() {
+        let accounts = teams_cli_accounts();
+        query_personal(&user, &session, &device, accounts)
+    } else {
+        work_query(client, &user, &session, &device).await
+    };
     let mut req = client.http().get(ENDPOINT).query(&q);
     if let Some(tag) = cached
         .as_ref()
@@ -235,6 +301,39 @@ pub async fn load(client: &TeamsClient, cache_dir: &Path) -> Result<()> {
     std::fs::write(&file, serde_json::to_vec(&v)?)?;
     install(v);
     Ok(())
+}
+
+/// The cached reply's file: each profile keeps its own, and a personal
+/// account's (TflNorthstar) is kept apart from a work account's.
+pub fn cache_name(profile: Option<&str>, personal: bool) -> String {
+    let kind = if personal { "-life" } else { "" };
+    match profile {
+        Some(p) => format!("ecs-{p}{kind}.json"),
+        None => format!("ecs{kind}.json"),
+    }
+}
+
+/// How many accounts are signed in on this device (Teams' mtmaCount).
+fn teams_cli_accounts() -> usize {
+    crate::config::accounts().len()
+}
+
+async fn work_query(
+    client: &TeamsClient,
+    user: &str,
+    session: &str,
+    device: &str,
+) -> Vec<(&'static str, String)> {
+    let tenant = client.tenant_id().unwrap_or_default();
+    let region = client
+        .chat_service_url()
+        .split("//")
+        .nth(1)
+        .and_then(|h| h.split('.').next())
+        .unwrap_or_default()
+        .to_string();
+    let license = license(client).await;
+    query(user, &tenant, &region, license.as_ref(), session, device)
 }
 
 /// About's ring line (settings-app `by` / `wy` / `Ty`): shown when the
@@ -344,6 +443,31 @@ mod tests {
             Some(serde_json::json!(true))
         );
         assert_eq!(setting_in(&v, "extensibility", "b"), None);
+    }
+
+    #[test]
+    fn personal_accounts_ask_for_tfl_northstar() {
+        let q = query_personal("00000000-0000-0000-0ca2-738c364862c6", "s", "c", 2);
+        let get = |k: &str| q.iter().find(|(a, _)| *a == k).map(|(_, v)| v.as_str());
+        assert_eq!(get("environment"), Some("life"));
+        assert_eq!(get("agents"), Some("TflNorthstar,TeamsBuilds,Segmentation"));
+        assert_eq!(get("tenantId"), Some(MSA_TENANT));
+        assert_eq!(get("id"), get("aaduserid"));
+        assert_eq!(get("mtmaCount"), Some("2"));
+        // No licence or region filters, as Teams sends for Teams free.
+        assert_eq!(get("teamsLicenseCategory"), None);
+        assert_eq!(get("Region"), None);
+        assert_eq!(q.last().unwrap(), &("ECSCanary", "1".to_string()));
+        // Shaped as the reply for OST Personal 2 on 2026-11-28.
+        let v = serde_json::json!({ "TflNorthstar": { "core": { "isPremiumButtonInAppBarEnabled": true },
+            "monetization": { "enableRefreshPlansAndUpgrades": true } } });
+        assert_eq!(
+            setting_in(&v, "core", "isPremiumButtonInAppBarEnabled"),
+            Some(serde_json::json!(true))
+        );
+        assert_eq!(setting_in(&v, "core", "missing"), None);
+        assert_eq!(cache_name(None, false), "ecs.json");
+        assert_eq!(cache_name(Some("p2"), true), "ecs-p2-life.json");
     }
 
     #[test]

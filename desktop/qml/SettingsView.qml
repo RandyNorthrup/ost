@@ -33,7 +33,31 @@ Rectangle {
     onSubPageChanged: if (subPage === "attendantHours") backend.changeSetting("mt", "bookings", JSON.stringify({ op: "load" }))
     color: theme.surface
 
-    readonly property var pages: [
+    /// A personal account (Teams for personal use): its own pages
+    /// (Teams desktop 26304 with OST Personal 2, 2026-11-28): General,
+    /// Appearance, Chats, Notifications and activity, Accounts and orgs,
+    /// Privacy, Accessibility, Devices, People, Files and links, Plans and
+    /// upgrades, Teams Insider (About Teams at the bottom); no Calls, App
+    /// permissions or Recognition, and its own Privacy options.
+    readonly property bool personal: backend.personalAccount
+    /// Its pages' data (api::personal_settings via Backend.loadSettings).
+    readonly property var pers: synced.personal || ({})
+    readonly property var personalPages: [
+        { key: "general", label: qsTr("General"), icon: "settings-20" },
+        { key: "appearance", label: qsTr("Appearance"), icon: "wand-20" },
+        { key: "chats", label: qsTr("Chats"), icon: "chat-20" },
+        { key: "notifications", label: qsTr("Notifications and activity"), icon: "alert-20" },
+        { key: "accounts", label: qsTr("Accounts and orgs"), icon: "contact-card-20" },
+        { key: "privacy", label: qsTr("Privacy"), icon: "lock-closed-20" },
+        { key: "accessibility", label: qsTr("Accessibility"), icon: "accessibility-20" },
+        { key: "devices", label: qsTr("Devices"), icon: "headset-20" },
+        { key: "people", label: qsTr("People"), icon: "contact-card-20" },
+        { key: "files", label: qsTr("Files and links"), icon: "document-20" },
+        { key: "plans", label: qsTr("Plans and upgrades"), icon: "diamond-24" },
+        { key: "insider", label: qsTr("Teams Insider"), icon: "person-heart-20" }
+    ]
+    readonly property var pages: personal ? personalPages : workPages
+    readonly property var workPages: [
         { key: "general", label: qsTr("General"), icon: "settings-20" },
         { key: "appearance", label: qsTr("Appearance"), icon: "wand-20" },
         { key: "chats", label: qsTr("Chats and channels"), icon: "chat-20" },
@@ -442,7 +466,7 @@ Rectangle {
             }
             FluentIcon { visible: root.attendantSub; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-16"; size: 16; color: theme.textStrong }
             Text {
-                text: root.subPage === "attendantGreeting" ? qsTr("Voice and greeting") : root.subPage === "attendantInstructions" ? qsTr("Custom instructions") : root.subPage === "attendantHours" ? qsTr("Follow-ups") : root.subPage === "channelNotifs" ? qsTr("Manage") : root.subPage === "attendant" ? qsTr("Intelligent call delegation") : root.subPage === "callGroup" ? qsTr("Call group") : root.subPage === "delegates" ? qsTr("Manage delegates") : root.subPage === "oof" ? qsTr("Out of office") : root.subPage === "priority" ? qsTr("Manage priority access") : root.subPage === "blocked" ? qsTr("Manage blocked people") : root.subPage === "spellcheck" ? qsTr("Manage spellcheck languages") : root.subPage === "status" ? qsTr("Manage status notifications") : root.subPage === "connected" ? qsTr("Manage devices") : root.subPage === "stationary" ? qsTr("Stationary device location") : root.subPage === "ddv" ? qsTr("Diagnostic data viewer") : root.subPage === "interpreters" ? qsTr("Manage interpreters") : root.page === "about" ? qsTr("About OST") : (root.pages.find(p => p.key === root.page) || {}).label || ""
+                text: root.subPage === "attendantGreeting" ? qsTr("Voice and greeting") : root.subPage === "attendantInstructions" ? qsTr("Custom instructions") : root.subPage === "attendantHours" ? qsTr("Follow-ups") : root.subPage === "channelNotifs" ? qsTr("Manage") : root.subPage === "attendant" ? qsTr("Intelligent call delegation") : root.subPage === "callGroup" ? qsTr("Call group") : root.subPage === "delegates" ? qsTr("Manage delegates") : root.subPage === "oof" ? qsTr("Out of office") : root.subPage === "priority" ? qsTr("Manage priority access") : root.subPage === "blocked" ? qsTr("Manage blocked people") : root.subPage === "spellcheck" ? qsTr("Manage spellcheck languages") : root.subPage === "status" ? qsTr("Manage status notifications") : root.subPage === "connected" ? qsTr("Manage devices") : root.subPage === "stationary" ? qsTr("Stationary device location") : root.subPage === "ddv" ? qsTr("Diagnostic data viewer") : root.subPage === "interpreters" ? qsTr("Manage interpreters") : root.subPage === "findMe" ? qsTr("Manage how people can find you") : root.subPage === "profile" ? qsTr("Your profile") : root.subPage === "tflBlocked" ? qsTr("Blocked users") : root.subPage === "tflSync" ? qsTr("Synced contacts") : root.page === "about" ? qsTr("About OST") : (root.pages.find(p => p.key === root.page) || {}).label || ""
                 font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight
                 color: theme.text
                 Accessible.role: Accessible.Heading
@@ -919,7 +943,7 @@ Rectangle {
                 }
             }
             SettingsParts.Card {
-                visible: root.page === "general" && !root.subPage
+                visible: root.page === "general" && !root.subPage && !root.personal
                 icon: "calendar-arrow-right-20"; title: qsTr("Out of office")
                 subtitle: qsTr("Schedule out of office and set automatic replies")
                 trailing: Component { SettingsParts.Button { label: qsTr("Schedule"); onClicked: root.subPage = "oof" } }
@@ -964,11 +988,38 @@ Rectangle {
                     }
                 }
             }
+            // Teams free's General ▸ Microsoft cloud storage: your OneDrive
+            // used of its total ("<0.1 GB of 5 GB (2%)"), Learn more and
+            // Manage (OneDrive's storage page).
+            SettingsParts.Card {
+                id: storageCard
+                visible: root.page === "general" && !root.subPage && root.personal
+                readonly property var st: root.pers.storage || ({})
+                readonly property real gb: 1024 * 1024 * 1024
+                readonly property string used: !st.total ? "" : st.used < 0.1 * gb ? "<0.1 GB" : (st.used / gb).toFixed(1) + " GB"
+                icon: "cloud-20"; title: qsTr("Microsoft cloud storage")
+                Row {
+                    visible: !!storageCard.st.total
+                    spacing: 4; height: 33
+                    Text { anchors.baseline: ofText.baseline; text: storageCard.used; font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold; color: theme.text }
+                    Text { id: ofText; anchors.bottom: parent.bottom; anchors.bottomMargin: 4; text: qsTr("of %1 GB (%2%)").arg(Math.round(storageCard.st.total / storageCard.gb)).arg(Math.max(storageCard.st.used > 0 ? 1 : 0, Math.round(100 * storageCard.st.used / storageCard.st.total))); font.family: theme.font; font.pixelSize: 16; color: theme.text }
+                }
+                Rectangle {
+                    visible: !!storageCard.st.total
+                    width: parent.width - 28; height: 4; radius: 2
+                    color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF")
+                    Rectangle { height: parent.height; radius: 2; color: theme.brand; width: storageCard.st.total ? Math.max(4, parent.width * storageCard.st.used / storageCard.st.total) : 0 }
+                }
+                SettingsParts.Gap { size: 12 }
+                SettingsParts.Link { text: qsTr("Learn more about cloud storage"); onClicked: backend.openExternal("https://go.microsoft.com/fwlink/?linkid=2236870") }
+                SettingsParts.Gap { size: 12 }
+                SettingsParts.Button { label: qsTr("Manage"); onClicked: backend.openExternal("https://account.microsoft.com/") }
+            }
             // Teams' Efficiency mode card (measured on winpc 2026-11-14):
             // three radios with second lines; "auto" is Teams' default.
             SettingsParts.Card {
                 id: efficiencyCard
-                visible: root.page === "general" && !root.subPage
+                visible: root.page === "general" && !root.subPage && !root.personal
                 icon: "top-speed-20"; title: qsTr("Efficiency mode")
                 bodyGap: 26
                 subtitle: qsTr("This mode reduces processor, memory and network usage and is ideal for lower performance devices or those under heavy load. Turning this on may affect some functionality such as camera resolution.")
@@ -1138,7 +1189,7 @@ Rectangle {
             // or Separate (Teams in its own app), the synced
             // simpleCollabUserSettings.
             SettingsParts.Card {
-                visible: root.page === "chats"
+                visible: root.page === "chats" && !root.personal
                 icon: "window-layout-20"; title: qsTr("Viewing chats, teams, and channels")
                 bodyGap: 28
                 subtitle: qsTr("See all conversations in a combined view, or keep chats separate from teams and channels.")
@@ -1153,9 +1204,9 @@ Rectangle {
             }
             SettingsParts.Card {
                 visible: root.page === "chats"
-                icon: "apps-list-20"; title: qsTr("Chats and channels list")
+                icon: "apps-list-20"; title: root.personal ? qsTr("Chats list") : qsTr("Chats and channels list")
                 SettingsParts.SwitchRow {
-                    label: qsTr("Show message previews for chats and team names for channels")
+                    label: root.personal ? qsTr("Show message previews for chats") : qsTr("Show message previews for chats and team names for channels")
                     // Separate view has its own (on unless turned off).
                     on: window.splitView ? root.prop("simpleCollabUserSettings", ["hasUserEnabledMessagePreviewsForSplitApp"], true) !== false : root.prop("simpleCollabUserSettings", ["hasUserEnabledMessagePreviews"], false) === true
                     onToggled: v => root.setProp("simpleCollabUserSettings", window.splitView ? "hasUserEnabledMessagePreviewsForSplitApp" : "hasUserEnabledMessagePreviews", v)
@@ -1172,6 +1223,7 @@ Rectangle {
                 // on unless turned off): a meeting's chat keeps its private
                 // chat tabs beside Everyone.
                 SettingsParts.SwitchRow {
+                    visible: !root.personal
                     label: qsTr("Show private chats in meetings")
                     on: root.prop("simpleCollabUserSettings", ["hasUserEnabledNewPrivateChatInMeetingChat"], true) !== false
                     onToggled: v => root.setProp("simpleCollabUserSettings", "hasUserEnabledNewPrivateChatInMeetingChat", v)
@@ -1184,7 +1236,7 @@ Rectangle {
                 // Teams offers Copilot's switch to licensed users with the
                 // Copilot app installed (ECS enableMetaOSCopilotToggleInSettings).
                 SettingsParts.SwitchRow {
-                    visible: !!window.copilotState.settingsToggle && window.copilotInstalled
+                    visible: !!window.copilotState.settingsToggle && window.copilotInstalled && !root.personal
                     label: qsTr("Copilot")
                     on: root.prop("userPersonalSettings", ["messagingSettings", "shouldShowMetaOSCopilotApp"], true) !== false
                     onToggled: v => root.setProp("userPersonalSettings", "messagingSettings.shouldShowMetaOSCopilotApp", v)
@@ -1192,7 +1244,7 @@ Rectangle {
             }
             SettingsParts.Card {
                 id: autoFollowCard
-                visible: root.page === "chats"
+                visible: root.page === "chats" && !root.personal
                 icon: "chat-bubbles-question-20"; title: qsTr("Automatically follow threads in channels")
                 subtitle: qsTr("To choose how you get notified, go to <0>Replies to followed threads and posts</0>").replace("<0>", "<a href=\"followed\">").replace("</0>", "</a>")
                 // Teams' link: Notifications, at Replies to followed threads
@@ -1218,7 +1270,7 @@ Rectangle {
             // with its note (12/16) under the header, the radios 10 under.
             SettingsParts.Card {
                 id: enterCard
-                visible: root.page === "chats"
+                visible: root.page === "chats" && !root.personal
                 icon: "keyboard-20"; title: qsTr("Compose")
                 property string enterKey: root.local("enterKey", "send")
                 SettingsParts.SubHeading { text: qsTr("When writing a message, press Enter to") }
@@ -1254,14 +1306,14 @@ Rectangle {
                 trailing: Component { SettingsParts.Toggle { on: backend.readReceipts; accessibleName: qsTr("Read receipts"); onToggled: v => backend.changeReadReceipts(v) } }
             }
             SettingsParts.Card {
-                visible: root.page === "chats"
+                visible: root.page === "chats" && !root.personal
                 icon: "arrow-sort-20"; title: qsTr("In post channels, show recent activity")
                 bodyGap: 26
                 SettingsParts.RadioRow { label: qsTr("At the top"); checked: backend.channelPostsAtTop; onPicked: backend.channelAction("posts-at-top", "", "", "") }
                 SettingsParts.RadioRow { label: qsTr("At the bottom"); checked: !backend.channelPostsAtTop; onPicked: backend.channelAction("posts-at-bottom", "", "", "") }
             }
             SettingsParts.Card {
-                visible: root.page === "chats"
+                visible: root.page === "chats" && !root.personal
                 icon: "chat-sparkle-20"; title: qsTr("Suggested replies"); subtitle: qsTr("Show suggested replies in chat")
                 trailing: Component { SettingsParts.Toggle { on: root.prop("suggestedRepliesSettings", ["suggestionsEnabled"], true) !== false; accessibleName: qsTr("Suggested replies"); onToggled: v => root.setProp("suggestedRepliesSettings", "suggestionsEnabled", v) } }
             }
@@ -1404,7 +1456,7 @@ Rectangle {
                     }
                 }
             }
-            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: qsTr("Chats and channels") }
+            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: root.personal ? qsTr("Chat") : qsTr("Chats and channels") }
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
                 icon: "chat-20"; title: qsTr("Chat message notifications")
@@ -1419,8 +1471,24 @@ Rectangle {
                     }
                 }
             }
+            // Teams free's @Mentions: one choice (Teams desktop 26304 with
+            // OST Personal 2: Show in Activity and banner).
             SettingsParts.Card {
-                visible: root.page === "notifications" && !root.subPage
+                visible: root.page === "notifications" && !root.subPage && root.personal
+                icon: "mention-20"; title: qsTr("@Mentions")
+                pad: 16.3; bottomPad: 16.4; minHeader: 0; iconX: 16.7; titleX: 61.7
+                trailing: Component {
+                    OutlineDropdown {
+                        width: 249.3; height: 30
+                        options: notif.levels.slice(0, 2)
+                        current: notif.level(["Mention_Person", "MentionInChat_Person_v2"], 0)
+                        accessibleName: qsTr("@Mentions")
+                        onPicked: i => notif.setLevel(["Mention_Person", "MentionInChat_Person_v2"], i)
+                    }
+                }
+            }
+            SettingsParts.Card {
+                visible: root.page === "notifications" && !root.subPage && !root.personal
                 icon: "mention-20"; title: qsTr("@Mentions")
                 id: mentionsCard
                 pad: 14.7; bodyGap: 33.3; bottomPad: 34.9
@@ -1473,7 +1541,8 @@ Rectangle {
                 ]
                 SettingsParts.Card {
                     required property var modelData
-                    visible: root.page === "notifications" && !root.subPage
+                    // (Teams free: Likes and reactions only.)
+                    visible: root.page === "notifications" && !root.subPage && (!root.personal || modelData.keys[0] === "Like")
                     icon: modelData.icon; title: modelData.title
                     pad: 16.3; bottomPad: 16.4; minHeader: 0; iconX: 16.7; titleX: 61.7
                     trailing: Component {
@@ -1492,7 +1561,7 @@ Rectangle {
             // Manage opens Notifications and activity › Manage, every
             // channel's notification choice.
             SettingsParts.Card {
-                visible: root.page === "notifications" && !root.subPage
+                visible: root.page === "notifications" && !root.subPage && !root.personal
                 icon: "people-team-20"; title: qsTr("Channel Notifications")
                 subtitle: qsTr("Choose where to see notifications for each channel, or turn them off. By default, all new channel notifications are set to '@Mentions & replies' unless changed individually.")
                 trailing: Component { SettingsParts.Button { label: qsTr("Manage"); onClicked: root.subPage = "channelNotifs" } }
@@ -1507,8 +1576,13 @@ Rectangle {
                 SettingsParts.SwitchRow { rowHeight: 59.3; label: qsTr("Show meeting join bar"); on: notif.ts("liveMeetingStatusBanner", true) !== false; onToggled: v => notif.setTs("liveMeetingStatusBanner", v) }
                 // Teams' meeting chat notifications by your RSVP (chatSettings:
                 // Mute / Unmute / Mute until I join or send a message).
+                // Teams free has one row, "Meeting chat notifications"
+                // (Mute until I join or send a message unless changed),
+                // kept for both kinds of meeting.
                 Repeater {
-                    model: [{ key: "meetingChatNotificationForAcceptedMeetings", label: qsTr("Meeting chat notifications for meetings I've accepted"), dflt: "MeetingsUserIsInvitedTo" },
+                    model: root.personal
+                        ? [{ key: "meetingChatNotificationForAcceptedMeetings", also: "meetingChatNotificationForTentativeMeetings", label: qsTr("Meeting chat notifications"), dflt: "MeetingsUserParticipatesIn" }]
+                        : [{ key: "meetingChatNotificationForAcceptedMeetings", label: qsTr("Meeting chat notifications for meetings I've accepted"), dflt: "MeetingsUserIsInvitedTo" },
                             { key: "meetingChatNotificationForTentativeMeetings", label: qsTr("Meeting chat notifications for meetings marked as tentative or no response"), dflt: "MeetingsUserParticipatesIn" }]
                     Item {
                         id: mcRow
@@ -1524,7 +1598,12 @@ Rectangle {
                             options: [{ label: qsTr("Mute") }, { label: qsTr("Unmute") }, { label: qsTr("Mute until I join or send a message") }]
                             current: Math.max(0, mcRow.values.indexOf(root.prop("userPersonalSettings", ["chatSettings", mcRow.modelData.key], mcRow.modelData.dflt)))
                             accessibleName: mcRow.modelData.label
-                            onPicked: i => root.setProp("userPersonalSettings", "chatSettings." + mcRow.modelData.key, mcRow.values[i])
+                            onPicked: i => {
+                                const cs = {}
+                                cs[mcRow.modelData.key] = mcRow.values[i]
+                                if (mcRow.modelData.also) cs[mcRow.modelData.also] = mcRow.values[i]
+                                root.setProp("userPersonalSettings", "", { chatSettings: cs })
+                            }
                         }
                     }
                 }
@@ -1533,9 +1612,9 @@ Rectangle {
 
             // Teams' Presence: Manage notifications opens Manage status
             // notifications (Notify when available, contacts v3 "Tagged").
-            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: qsTr("Presence") }
+            SectionTitle { visible: root.page === "notifications" && !root.subPage && !root.personal; text: qsTr("Presence") }
             SettingsParts.Card {
-                visible: root.page === "notifications" && !root.subPage
+                visible: root.page === "notifications" && !root.subPage && !root.personal
                 icon: "person-available-20"; title: qsTr("Presence")
                 subtitle: qsTr("Keep track of someone's status and get notified when they appear available or offline.")
                 pad: 15.7; bottomPad: 15.6; minHeader: 0; iconX: 16.7; titleX: 58.7; textWidth: 494.2; subtitleSize: 14
@@ -1551,7 +1630,7 @@ Rectangle {
             // A choice is saved as the channel menu's Manage notifications
             // does; Customize opens the channel's notification dialog.
             SettingsParts.Card {
-                visible: root.page === "notifications" && root.subPage === "channelNotifs"
+                visible: root.page === "notifications" && root.subPage === "channelNotifs" && !root.personal
                 icon: "people-team-20"; title: qsTr("Channel Notifications")
                 subtitle: qsTr("Choose where to see notifications for each channel, or turn them off. By default, all new channel notifications are set to '@Mentions & replies' unless changed individually.")
                 pad: 15.7; bottomPad: 16.3; minHeader: 0; iconX: 24.7; titleX: 59.7
@@ -1708,10 +1787,10 @@ Rectangle {
             // Teams' Calendar notifications: the Calendar app's Graph
             // notification settings (userGraphSettings), each choice setting its
             // group of meeting notification kinds.
-            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: qsTr("Calendar") }
+            SectionTitle { visible: root.page === "notifications" && !root.subPage && !root.personal; text: qsTr("Calendar") }
             SettingsParts.Card {
                 id: calNotif
-                visible: root.page === "notifications" && !root.subPage
+                visible: root.page === "notifications" && !root.subPage && !root.personal
                 icon: "calendar-20"; title: qsTr("Calendar")
                 pad: 22.7; minHeader: 20; bodyGap: 19.3; bottomPad: 46; iconX: 17.7; titleX: 55.7
                 readonly property string app: "ef56c0de-36fc-4ef8-b417-3d82ba9d073c"
@@ -1754,12 +1833,12 @@ Rectangle {
             // its switch and the "Notification panel" chevron (24 px, 13.3
             // from the end); open, its activity types as 68.7 tall rows
             // with Teams' three choices. Kept in userGraphSettings.
-            SectionTitle { visible: root.page === "notifications" && !root.subPage && appNotif.apps.length > 0; text: qsTr("Apps") }
+            SectionTitle { visible: root.page === "notifications" && !root.subPage && appNotif.apps.length > 0 && !root.personal; text: qsTr("Apps") }
             Rectangle {
                 id: appNotif
                 readonly property var apps: root.mt.appNotifications || []
                 property var open: ({})
-                visible: root.page === "notifications" && !root.subPage && apps.length > 0
+                visible: root.page === "notifications" && !root.subPage && apps.length > 0 && !root.personal
                 width: parent.width; height: appCol.height + 1.4
                 radius: 8; color: "transparent"
                 border.color: theme.pick("#D1D1D1", "#3D3D3D", "#FFFFFF"); border.width: 0.67
@@ -2099,7 +2178,7 @@ Rectangle {
                     return flag("places", "adlSettingDefaultEnabled", false) || flag("places", "tpp", false)
                 }
                 function setAuto(on) { root.setProp("placesSettings", "", { autoUpdateLocationPreference: on ? "Enabled" : "Disabled", autoLocationFirstEngagement: "SETTING_TOGGLE" }) }
-                visible: shown
+                visible: shown && !root.personal
                 icon: "building-home-20"; title: qsTr("Manage my work location")
                 subtitleLineHeight: 17.14
                 subtitleFormat: Text.RichText
@@ -2370,8 +2449,45 @@ Rectangle {
                     }
                 }
             }
+            // ---- Privacy for a personal account (Teams desktop 26304 and
+            // teams.live.com, 2026-11-28): how people can find you, who can
+            // add you to groups (user property disableNonContactAddToGroup)
+            // and who can call you (disableNonContactCall), each synced
+            // with the account as Teams free saves them.
             SettingsParts.Card {
-                visible: root.page === "privacy" && !root.subPage
+                visible: root.page === "privacy" && !root.subPage && root.personal
+                icon: "person-search-20"; title: qsTr("Manage how people can find you")
+                subtitle: qsTr("Manage how people can find your profile on Teams by choosing which email addresses and phone numbers show up in search.")
+                trailing: Component { SettingsParts.Button { label: qsTr("Manage contact information"); onClicked: root.subPage = "findMe" } }
+            }
+            Repeater {
+                model: [{ prop: "disableNonContactAddToGroup", icon: "people-add-20", title: qsTr("Manage who can add you to groups"),
+                          subtitle: qsTr("Choose whether anyone on Teams or only your contacts can add you to group chats. People may notice this if they try adding you to a group chat."),
+                          dflt: "false" },
+                        { prop: "disableNonContactCall", icon: "person-call-20", title: qsTr("Manage who can call you"),
+                          subtitle: qsTr("When \"Your contacts on Teams\" is selected, non contacts will not be able to call you on Teams."),
+                          dflt: "true" }]
+                SettingsParts.Card {
+                    id: whoCard
+                    required property var modelData
+                    visible: root.page === "privacy" && !root.subPage && root.personal
+                    icon: modelData.icon; title: modelData.title
+                    subtitle: modelData.subtitle + " <a href=\"https://aka.ms/AAw0cm7\">" + qsTr("Learn more") + "</a>"
+                    onLinkActivated: l => backend.openExternal(l)
+                    bodyGap: 10.6
+                    OutlineDropdown {
+                        readonly property real trailingGap: 0
+                        width: 248; height: 30
+                        options: [{ label: qsTr("Anyone") }, { label: qsTr("Your contacts") }]
+                        // "true": only your contacts.
+                        current: String(root.prop(whoCard.modelData.prop, [], whoCard.modelData.dflt)) === "true" ? 1 : 0
+                        accessibleName: whoCard.modelData.title
+                        onPicked: i => root.setProp(whoCard.modelData.prop, "", i === 1 ? "true" : "false")
+                    }
+                }
+            }
+            SettingsParts.Card {
+                visible: root.page === "privacy" && !root.subPage && !root.personal
                 icon: "presence-dnd-20"; title: qsTr("Do not disturb")
                 subtitle: qsTr("You can still receive notifications from people who have priority access when your status is set to Do not disturb.")
                 trailing: Component { SettingsParts.Button { label: qsTr("Manage priority contacts"); onClicked: root.subPage = "priority" } }
@@ -2383,7 +2499,7 @@ Rectangle {
                 }
             }
             SettingsParts.Card {
-                visible: root.page === "privacy" && !root.subPage
+                visible: root.page === "privacy" && !root.subPage && !root.personal
                 icon: "person-prohibited-20"; title: qsTr("Blocked contacts")
                 subtitle: qsTr("Blocked contacts will be unable to call you, message you, or see your presence.")
                 trailing: Component { SettingsParts.Button { label: qsTr("Manage blocked contacts"); onClicked: root.subPage = "blocked" } }
@@ -2402,7 +2518,7 @@ Rectangle {
             // privacy page and Microsoft's article).
             SettingsParts.Card {
                 id: copilotHistory
-                visible: root.page === "privacy" && !root.subPage && !!window.copilotState.deleteHistory
+                visible: root.page === "privacy" && !root.subPage && !!window.copilotState.deleteHistory && !root.personal
                 icon: "mo-copilot"; title: qsTr("Delete Copilot activity history")
                 textWidth: 433.4
                 subtitleFormat: Text.RichText
@@ -2417,7 +2533,7 @@ Rectangle {
                 }
             }
             SettingsParts.Card {
-                visible: root.page === "privacy" && !root.subPage
+                visible: root.page === "privacy" && !root.subPage && !root.personal
                 icon: "clipboard-task-list-20"; title: qsTr("Surveys"); subtitle: qsTr("Participate in surveys from OST.")
                 trailing: Component { SettingsParts.Toggle { on: root.prop("userEnableSurveysNotification", [], "true") !== "false"; accessibleName: qsTr("Surveys"); onToggled: v => root.setProp("userEnableSurveysNotification", "", v ? "true" : "false") } }
                 // OST's opt-in for Teams' post-call "How was the call
@@ -2445,7 +2561,7 @@ Rectangle {
             // winpc 2026-11-19): Manage opens Privacy › Diagnostic data
             // viewer.
             SettingsParts.Card {
-                visible: root.page === "privacy" && !root.subPage
+                visible: root.page === "privacy" && !root.subPage && !root.personal
                 icon: "data-area-20"; title: qsTr("View Diagnostic Data")
                 trailing: Component { SettingsParts.Button { label: qsTr("Manage"); onClicked: root.subPage = "ddv" } }
             }
@@ -2484,8 +2600,7 @@ Rectangle {
                     width: parent.width; height: 36
                     SettingsParts.Toggle {
                         x: 8; anchors.verticalCenter: parent.verticalCenter
-                        stateLabel: false
-                        on: ddvPage.st.enabled === true
+                            on: ddvPage.st.enabled === true
                         accessibleName: qsTr("Enable data viewing")
                         onToggled: v => backend.setDdvEnabled(v)
                     }
@@ -2547,7 +2662,7 @@ Rectangle {
                 trailing: Component { SettingsParts.Toggle { on: backend.setting("shouldPersistLogsIntoIDB") === "true"; accessibleName: qsTr("Extended diagnostics data"); onToggled: v => { backend.setSetting("shouldPersistLogsIntoIDB", v ? "true" : "false"); on = v } } }
             }
             SettingsParts.Card {
-                visible: root.page === "privacy" && !root.subPage
+                visible: root.page === "privacy" && !root.subPage && !root.personal
                 icon: "people-list-20"; title: qsTr("Identify me in attendance reports"); subtitle: qsTr("Let meeting or event organizer know your attendance information.")
                 trailing: Component { SettingsParts.Toggle { on: root.prop("showInMeetingReport", [], "true") !== "false"; accessibleName: qsTr("Identify me in attendance reports"); onToggled: v => root.setProp("showInMeetingReport", "", v ? "true" : "false") } }
             }
@@ -2556,11 +2671,19 @@ Rectangle {
             // users choose (callingEndtoEndEncryptionEnabledType Disabled);
             // the choice is kept in the middle tier (useEndToEndEncryption).
             SettingsParts.Card {
-                visible: root.page === "privacy" && !root.subPage
+                visible: root.page === "privacy" && !root.subPage && !root.personal
                 icon: "call-20"; title: qsTr("End-to-end encrypted calls")
                 subtitle: qsTr("One-on-one OST calls are end-to-end encrypted if both participants turn on this setting. Some features won't be available, including recording and transcription. %1").arg("<a href=\"https://go.microsoft.com/fwlink/?linkid=2174740\">" + qsTr("Learn more") + "</a>")
                 onLinkActivated: l => backend.openExternal(l)
                 trailing: Component { SettingsParts.Toggle { on: root.mt.useEndToEndEncryption === true; usable: root.mt.e2eeAllowedByAdmin === true; accessibleName: qsTr("End-to-end encrypted calls"); onToggled: v => root.setMt("useEndToEndEncryption", v) } }
+            }
+            // Teams free's "Your profile": which of your addresses your
+            // profile card shows (Manage profile).
+            SettingsParts.Card {
+                visible: root.page === "privacy" && !root.subPage && root.personal
+                icon: "contact-card-20"; title: qsTr("Your profile")
+                subtitle: qsTr("Manage what contact information people can see when they view your profile card.")
+                trailing: Component { SettingsParts.Button { label: qsTr("Manage profile"); onClicked: root.subPage = "profile" } }
             }
             SettingsParts.Card {
                 visible: root.page === "privacy" && !root.subPage
@@ -2570,9 +2693,234 @@ Rectangle {
                 trailing: Component { SettingsParts.Toggle { on: root.prop("controllerConnectedServicesEnabled", [], "true") !== "false"; accessibleName: qsTr("Optional connected experiences"); onToggled: v => root.setProp("controllerConnectedServicesEnabled", "", v ? "true" : "false") } }
             }
             SettingsParts.Card {
-                visible: root.page === "privacy" && !root.subPage
+                visible: root.page === "privacy" && !root.subPage && !root.personal
                 icon: "mic-20"; title: qsTr("Keyboard shortcut to unmute"); subtitle: qsTr("Press and hold Ctrl + Spacebar to temporarily unmute your mic during a meeting.")
                 trailing: Component { SettingsParts.Toggle { on: root.prop("enablePushToTalk", [], "true") !== "false"; accessibleName: qsTr("Keyboard shortcut to unmute"); onToggled: v => root.setProp("enablePushToTalk", "", v ? "true" : "false") } }
+            }
+            // Teams free's "Experiences that analyze your content" (the
+            // middle tier's analyzecontentsettings; on unless turned off).
+            SettingsParts.Card {
+                visible: root.page === "privacy" && !root.subPage && root.personal
+                icon: "document-search-20"; title: qsTr("Experiences that analyze your content")
+                subtitle: qsTr("Allow Teams to analyze your content to help you create, communicate, and collaborate more effectively.") + " <a href=\"https://go.microsoft.com/fwlink/?LinkId=2379710\">" + qsTr("Learn More") + "</a>"
+                onLinkActivated: l => backend.openExternal(l)
+                trailing: Component { SettingsParts.Toggle { on: root.pers.analyzeContent !== false; accessibleName: qsTr("Experiences that analyze your content"); onToggled: v => backend.changeSetting("personal", "analyzeContent", JSON.stringify({ on: v })) } }
+            }
+            // Privacy › Manage how people can find you: your name and each
+            // address, searchable or not (turning one off asks first, as
+            // Teams does: "Hide from search").
+            Text {
+                visible: root.page === "privacy" && root.subPage === "findMe"
+                width: parent.width; wrapMode: Text.Wrap
+                text: qsTr("Adjust your discoverability settings to control who can find you in Teams, and which contact details can be used.")
+                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
+            }
+            SettingsParts.Card {
+                id: findMeCard
+                visible: root.page === "privacy" && root.subPage === "findMe"
+                readonly property var me: root.pers.me || ({})
+                icon: "person-search-20"; title: qsTr("Your contact details")
+                SettingsParts.SwitchRow {
+                    label: findMeCard.me.displayName || backend.userName
+                    on: findMeCard.me.searchableByProfile !== false
+                    onToggled: v => { if (v) backend.changeSetting("personal", "nameSearchable", JSON.stringify({ on: true })); else hideAsk.ask(qsTr("Are you sure you want to hide your name and contact details from search? This means people you haven't chatted with won't be able to find or message you in Teams."), "nameSearchable", {}) }
+                }
+                Repeater {
+                    model: findMeCard.me.emails || []
+                    SettingsParts.SwitchRow {
+                        required property var modelData
+                        label: modelData.address
+                            on: !!modelData.searchable
+                        onToggled: v => { if (v) backend.changeSetting("personal", "emailSearchable", JSON.stringify({ address: modelData.address, on: true })); else hideAsk.ask(qsTr("People will not be able to find you on Teams using %1").arg(modelData.address), "emailSearchable", { address: modelData.address }) }
+                    }
+                }
+            }
+            Text {
+                visible: root.page === "privacy" && root.subPage === "findMe"
+                text: qsTr("Discover more ways for people to find you and get in touch.") + " <a href=\"https://aka.ms/AAw0cm7\">" + qsTr("Learn more") + "</a>"
+                textFormat: Text.StyledText; linkColor: theme.brandForeground1
+                onLinkActivated: l => backend.openExternal(l)
+                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
+                HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            }
+            ConfirmDialog {
+                id: hideAsk
+                property string what: ""
+                property var extra: ({})
+                function ask(text, kind, more) { body = text; what = kind; extra = more; open() }
+                title: qsTr("Hide from search"); confirmText: qsTr("Confirm")
+                onConfirmed: backend.changeSetting("personal", what, JSON.stringify(Object.assign({ on: false }, extra)))
+                // (the switch shows the saved state again on Cancel)
+                onCancelled: root.settingsChanged()
+            }
+            // Privacy › Your profile: each address Shown or Hidden on your
+            // profile card (hiding asks first: "Hiding your email").
+            Text {
+                visible: root.page === "privacy" && root.subPage === "profile"
+                width: parent.width; wrapMode: Text.Wrap
+                text: qsTr("Your profile card shows other ways people can get in contact with you. To receive calendar invites, your email must be shown on your profile card.")
+                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
+            }
+            Repeater {
+                model: root.page === "privacy" && root.subPage === "profile" ? ((root.pers.me || {}).emails || []) : []
+                Item {
+                    required property var modelData
+                    width: parent.width; height: 40
+                    FluentIcon { x: 20; anchors.verticalCenter: parent.verticalCenter; name: "mail-20"; size: 20; color: theme.text }
+                    Text { x: 54; anchors.verticalCenter: parent.verticalCenter; text: modelData.address; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    OutlineDropdown {
+                        x: 502; anchors.verticalCenter: parent.verticalCenter
+                        width: 172; height: 32; filled: true
+                        options: [{ label: qsTr("Show") }, { label: qsTr("Hide") }]
+                        current: modelData.visible ? 0 : 1
+                        accessibleName: modelData.address
+                        onPicked: i => {
+                            if (i === 0) backend.changeSetting("personal", "emailVisible", JSON.stringify({ address: modelData.address, on: true }))
+                            else if (modelData.visible) hideEmailAsk.ask(modelData.address)
+                        }
+                    }
+                }
+            }
+            Text {
+                visible: root.page === "privacy" && root.subPage === "profile"
+                width: parent.width; wrapMode: Text.Wrap
+                text: qsTr("You may receive emails from Teams regardless of visibility settings.") + " <a href=\"https://aka.ms/AAw0cm7\">" + qsTr("Learn more") + "</a>"
+                    + "<br><br>" + qsTr("Need to add, edit, or delete your contact details?") + " <a href=\"https://account.microsoft.com/profile\">" + qsTr("Visit your Microsoft account") + "</a>"
+                textFormat: Text.StyledText; linkColor: theme.brandForeground1
+                onLinkActivated: l => backend.openExternal(l)
+                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
+                HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            }
+            ConfirmDialog {
+                id: hideEmailAsk
+                property string address: ""
+                function ask(a) { address = a; open() }
+                title: qsTr("Hiding your email"); confirmText: qsTr("Hide my email")
+                body: qsTr("Are you sure you want to hide your email? You won't be able to receive calendar invites without an email address on your profile card.")
+                onConfirmed: backend.changeSetting("personal", "emailVisible", JSON.stringify({ address: address, on: false }))
+                onCancelled: root.settingsChanged()
+            }
+
+            // ---- People (a personal account; Teams desktop 26304):
+            // Sync contacts and Blocked users, each with Manage ----
+            SettingsParts.Card {
+                visible: root.page === "people" && !root.subPage
+                icon: "people-sync-20"; title: qsTr("Sync contacts"); subtitle: qsTr("Manage contact sync settings.")
+                trailing: Component { SettingsParts.Button { label: qsTr("Manage"); onClicked: root.subPage = "tflSync" } }
+            }
+            SettingsParts.Card {
+                visible: root.page === "people" && !root.subPage
+                icon: "prohibited-20"; title: qsTr("Blocked users"); subtitle: qsTr("Blocked users won't be able to call you, message you, or see your presence in Teams.")
+                trailing: Component { SettingsParts.Button { label: qsTr("Manage"); onClicked: root.subPage = "tflBlocked" } }
+            }
+            // People › Blocked users: the people you blocked, each with
+            // Unblock (blocklist/manage remove).
+            Text {
+                visible: root.page === "people" && root.subPage === "tflBlocked"
+                width: Math.min(parent.width, 700); wrapMode: Text.Wrap
+                text: qsTr("Blocking a user prevents you from seeing their messages. They will still be able to see any content you send in a group with them, including messages, files.")
+                    + "<br><br>" + ((root.pers.blocked || []).length ? "" : qsTr("When you block people, you'll see them listed below."))
+                textFormat: Text.StyledText
+                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
+            }
+            Repeater {
+                model: root.page === "people" && root.subPage === "tflBlocked" ? (root.pers.blocked || []) : []
+                Item {
+                    required property var modelData
+                    width: parent.width; height: 48
+                    Avatar { x: 0; anchors.verticalCenter: parent.verticalCenter; size: 32; name: modelData.name || modelData.mri }
+                    Text { x: 44; anchors.verticalCenter: parent.verticalCenter; text: modelData.name || modelData.mri; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    SettingsParts.Button {
+                        x: Math.min(parent.width, 700) - width; anchors.verticalCenter: parent.verticalCenter
+                        label: qsTr("Unblock")
+                        onClicked: backend.changeSetting("personal", "unblock", JSON.stringify({ mri: modelData.mri }))
+                    }
+                }
+            }
+            // People › Synced contacts: the Outlook.com accounts your
+            // contacts come from (managing them is TASK-0295's).
+            Text {
+                visible: root.page === "people" && root.subPage === "tflSync"
+                text: "<b>" + qsTr("Choose where you'd like to sync your contacts from.") + "</b> <a href=\"https://go.microsoft.com/fwlink/?linkid=2171816\">" + qsTr("Learn more") + "</a>"
+                textFormat: Text.StyledText; linkColor: theme.brandForeground1
+                onLinkActivated: l => backend.openExternal(l)
+                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
+            }
+            Text {
+                visible: root.page === "people" && root.subPage === "tflSync" && (root.pers.contactSyncs || []).length > 0
+                text: qsTr("Already synced"); font.family: theme.font; font.pixelSize: 14; font.bold: true; color: theme.text
+            }
+            Repeater {
+                model: root.page === "people" && root.subPage === "tflSync" ? (root.pers.contactSyncs || []) : []
+                Rectangle {
+                    required property var modelData
+                    width: Math.min(parent.width, 700); height: 70; radius: 4
+                    color: "transparent"; border.color: theme.pick("#D1D1D1", "#3D3D3D", "#FFFFFF"); border.width: 1
+                    FluentIcon { x: 20; anchors.verticalCenter: parent.verticalCenter; name: "mail-20"; size: 24; color: theme.brand }
+                    Column {
+                        x: 72; anchors.verticalCenter: parent.verticalCenter
+                        Text { text: qsTr("From Outlook"); font.family: theme.font; font.pixelSize: 14; font.bold: true; color: theme.text }
+                        Text { text: modelData.account || ""; font.family: theme.font; font.pixelSize: 12; font.bold: true; color: theme.text }
+                    }
+                }
+            }
+            Text {
+                visible: root.page === "people" && root.subPage === "tflSync"
+                width: Math.min(parent.width, 700); wrapMode: Text.Wrap
+                text: qsTr("Contact sync from Google Contacts and Skype is no longer supported.") + " <a href=\"https://aka.ms/ContactSyncTeamsForLife\">" + qsTr("Learn more.") + "</a>"
+                textFormat: Text.StyledText; linkColor: theme.brandForeground1
+                onLinkActivated: l => backend.openExternal(l)
+                font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text
+            }
+
+            // ---- Plans and upgrades (a personal account; Teams desktop
+            // 26304 and teams.live.com, 2026-11-28) ----
+            PlansPage {
+                visible: root.page === "plans"
+                width: parent.width
+                license: root.pers.license || ({})
+                onUpgrade: backend.openExternal(window.plansUrl)
+                onVerify: backend.changeSetting("personal", "verify", "{}")
+            }
+
+            // ---- Teams Insider (a personal account): Join or Leave ----
+            Item {
+                id: insiderPage
+                visible: root.page === "insider"
+                width: parent.width; height: insiderCol.height + 40
+                readonly property bool joined: root.pers.insider === true
+                Column {
+                    id: insiderCol
+                    width: parent.width; y: 20
+                    spacing: 0
+                    Image { anchors.horizontalCenter: parent.horizontalCenter; width: 256; height: 256; sourceSize: Qt.size(256, 256); asynchronous: true
+                        source: "https://tflteams.public.onecdn.static.microsoft/evergreen-assets/illustrations/webp/256/eye-dev-l-standard-256x256.webp" }
+                    Item { width: 1; height: 14 }
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: insiderPage.joined ? qsTr("You're a Teams Insider") : qsTr("Get access to updates before everyone else"); font.family: theme.font; font.pixelSize: 18; font.bold: true; lineHeight: 24; lineHeightMode: Text.FixedHeight; color: theme.text }
+                    Item { width: 1; height: 13 }
+                    Text {
+                        width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                        text: qsTr("Join the Teams Insider program to get exclusive access to new features and updates before they reach the general public. You'll have the opportunity to give feedback and help shape the future of Teams.") + " <a href=\"https://go.microsoft.com/fwlink/?linkid=2249448\">" + qsTr("Learn more about Teams Insider") + "</a>"
+                        textFormat: Text.StyledText; linkColor: theme.brandForeground1
+                        onLinkActivated: l => backend.openExternal(l)
+                        font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
+                    }
+                    Item { width: 1; height: 13 }
+                    SettingsParts.Button {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: 136; primary: !insiderPage.joined
+                        label: insiderPage.joined ? qsTr("Leave") : qsTr("Join")
+                        onClicked: backend.changeSetting("personal", "insider", JSON.stringify({ on: !insiderPage.joined }))
+                    }
+                    Item { width: 1; height: 54 }
+                    Text {
+                        width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                        text: qsTr("You can leave the Insider program at any time. Previews are provided \"as is\" , \"with all faults\" and \"as available\". Your use of this preview version is subject to the Microsoft Teams Insider Program") + " <a href=\"https://go.microsoft.com/fwlink/?linkid=2187514\">" + qsTr("Terms and Conditions.") + "</a>"
+                        textFormat: Text.StyledText; linkColor: theme.brandForeground1
+                        onLinkActivated: l => backend.openExternal(l)
+                        font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text
+                    }
+                }
             }
 
             // ---- Accessibility ----
@@ -2677,7 +3025,7 @@ Rectangle {
                 }
             }
             SettingsParts.Card {
-                visible: root.page === "accessibility" && !root.subPage
+                visible: root.page === "accessibility" && !root.subPage && !root.personal
                 icon: "closed-caption-20"; title: qsTr("Captions and transcripts")
                 SettingsParts.SwitchRow {
                     label: qsTr("Always show captions in my calls and meetings")
@@ -2724,7 +3072,7 @@ Rectangle {
             // info glyph under the header (and announces it).
             SettingsParts.Card {
                 id: ttyCard
-                visible: root.page === "accessibility" && !root.subPage
+                visible: root.page === "accessibility" && !root.subPage && !root.personal
                 property bool changed: false
                 icon: "accessibility-20"; title: qsTr("Teletypewriter (TTY) mode")
                 subtitle: qsTr("Use the TTY mode to communicate using text over the phone. For this to work, you’ll need to connect a TTY device.")
@@ -3223,7 +3571,7 @@ Rectangle {
             // with its explanation and Learn More (Teams' clientPreferences
             // byod.pushToRoomAudio, on unless turned off, kept on the device).
             SettingsParts.Card {
-                visible: root.page === "devices" && !root.subPage
+                visible: root.page === "devices" && !root.subPage && !root.personal
                 icon: "laptop-20"; title: qsTr("Connected devices")
                 bottomPad: 16.3
                 SettingsParts.ButtonRow {
@@ -4617,8 +4965,7 @@ Rectangle {
                                     Text { anchors.verticalCenter: parent.verticalCenter; text: dayCol.modelData.enabled ? qsTr("Available") : qsTr("Unavailable"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                                     SettingsParts.Toggle {
                                         anchors.verticalCenter: parent.verticalCenter
-                                        stateLabel: false
-                                        on: dayCol.modelData.enabled
+                                                            on: dayCol.modelData.enabled
                                         accessibleName: qsTr("%1 availability").arg(dayCol.modelData.day)
                                         onToggled: v => { const l = JSON.parse(JSON.stringify(fuCard.hours)); l[dayCol.index].enabled = v; if (v && !l[dayCol.index].timeSlots.length) l[dayCol.index].timeSlots = [{ start: 540, end: 1020 }]; fuCard.saveHours(l) }
                                     }
@@ -4864,8 +5211,7 @@ Rectangle {
                                         Text { visible: !!permRow.modelData.subtitle; x: 70.7; y: 22.5; text: permRow.modelData.subtitle; font.family: theme.font; font.pixelSize: 12; font.weight: Font.ExtraLight; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
                                         SettingsParts.Toggle {
                                             x: 640.1; y: 9.3
-                                            stateLabel: false
-                                            on: { appPerms.rev; return backend.appPermission(appRow.modelData.id, permRow.modelData.kind) }
+                                                                    on: { appPerms.rev; return backend.appPermission(appRow.modelData.id, permRow.modelData.kind) }
                                             accessibleName: qsTr("%1 for %2").arg(permRow.modelData.title).arg(appRow.modelData.name)
                                             onToggled: v => { backend.setAppPermission(appRow.modelData.id, permRow.modelData.kind, v); appPerms.rev++ }
                                         }
@@ -4968,7 +5314,7 @@ Rectangle {
                 
             }
             SettingsParts.Card {
-                visible: root.page === "files"
+                visible: root.page === "files" && !root.personal
                 icon: "image-20"; title: qsTr("File previews")
                 subtitle: qsTr("Show preview cards for files shared in chats, channels, and groups, including files you share.")
                 trailing: Component { SettingsParts.Toggle { on: root.prop("userPersonalSettings", ["filesSettings", "enableThumbnailPreview"], true) !== false; accessibleName: qsTr("File previews"); onToggled: v => root.setProp("userPersonalSettings", "filesSettings.enableThumbnailPreview", v) } }
@@ -5061,7 +5407,7 @@ Rectangle {
             // follows its pre-releases (the update check above).
             SettingsParts.Card {
                 readonly property var u: backend.updateJson ? JSON.parse(backend.updateJson) : ({})
-                visible: root.page === "about" && !root.subPage && !!u.previewAllowed
+                visible: root.page === "about" && !root.subPage && !!u.previewAllowed && !root.personal
                 icon: "rocket-20"; title: qsTr("Early access")
                 SettingsParts.CheckRow {
                     rowHeight: 32
@@ -5367,7 +5713,7 @@ Rectangle {
     // 26304, settings-app Ar/LV): no id is General; a category with a
     // setting id opens that page with the setting brought into view; a
     // sub-page's id opens "Page › Sub-page"; any other id is a page.
-    readonly property var teamsPages: ({ general: "general", appearance: "appearance", chats_and_channels: "chats", notifications: "notifications", accounts: "accounts", privacy: "privacy", accessibility: "accessibility", devices: "devices", calls: "calls", files_and_links: "files", app_permissions: "apppermissions", recognition: "recognition", about: "about" })
+    readonly property var teamsPages: ({ plans: "plans", plans_and_upgrades: "plans", teams_insider: "insider", people: "people", general: "general", appearance: "appearance", chats_and_channels: "chats", notifications: "notifications", accounts: "accounts", privacy: "privacy", accessibility: "accessibility", devices: "devices", calls: "calls", files_and_links: "files", app_permissions: "apppermissions", recognition: "recognition", about: "about" })
     readonly property var teamsSubPages: ({
         general_settings_oof_settings_page_title: ["general", "oof"],
         general_settings_editor_sdk_manage_spellcheck_languages_page_title: ["general", "spellcheck"],

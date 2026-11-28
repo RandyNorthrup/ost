@@ -33,7 +33,7 @@ Item {
     /// The accounts the hub itself lists (pinned orgs have their own tile).
     readonly property var hubAccounts: accounts.filter(a => !a.pinned)
     readonly property int missed: hubAccounts.reduce((n, a) => n + (a.missed || 0), 0)
-    readonly property bool open: flyout.opened && !flyout.tenant
+    readonly property bool open: (flyout.opened && !flyout.tenant) || simpleFlyout.opened
     property string pill: ""        // "unread" | "channels" | "chats"
     property string filter: ""      // "mention" | "tagMention" | "followed"
     property var hiddenOrgs: []     // the Orgs filter's unticked ones (profiles)
@@ -48,9 +48,9 @@ Item {
             else flyout.close()
         }
     }
-    function show() { refresh(); flyout.tenant = null; flyout.openBeside() }
+    function show() { if (simple) { simpleFlyout.openBeside(); return } refresh(); flyout.tenant = null; flyout.openBeside() }
     function showOrg(account) { refresh(); flyout.tenant = account; flyout.openBeside() }
-    function hide() { flyout.close() }
+    function hide() { flyout.close(); simpleFlyout.close() }
     function pinOrg(account, on) {
         backend.setOrgPinned(account.upn, on)
         refresh()
@@ -176,7 +176,7 @@ Item {
             Text { id: countText; anchors.centerIn: parent; text: root.missed; font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; color: theme.onFill(countBadge, "#FFFFFF") }
         }
         HoverHandler { id: tileHover; cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: root.open ? flyout.close() : root.show() }
+        TapHandler { onTapped: root.open ? (flyout.close(), simpleFlyout.close()) : root.show() }
         Accessible.role: Accessible.Button
         Accessible.name: qsTr("Activity in other accounts and orgs") + (root.missed > 0 ? " " + root.missed : "")
         activeFocusOnTab: true
@@ -193,6 +193,118 @@ Item {
         width: tipText.implicitWidth + 22; height: 26; radius: 4
         color: theme.menu; border.color: theme.divider; border.width: 0.67
         Text { id: tipText; anchors.centerIn: parent; text: qsTr("Activity in other accounts and orgs"); color: theme.text; font.family: theme.font; font.pixelSize: 12 }
+    }
+
+
+    // ---- a personal account's flyout (Teams for personal use, Teams
+    // desktop 26304 with OST Personal 2, 2026-11-27/28): simpler than a
+    // work account's: 340 wide, its bottom on the tile's; the title
+    // (14/600, 16 in) over a rule; each other account as one row (the
+    // org's 32 px square initial with its count, the org's name 14/600 and
+    // the address 12, Switch and Pin), then a line per kind of activity
+    // waiting there ("Unread chat messages", with its glyph in a 24 px
+    // circle). Switch, or a line, opens that account's window. ----
+    readonly property bool simple: backend.personalAccount
+    /// The kinds of activity an account has waiting, as Teams words them.
+    function kinds(a) {
+        const items = (a.items || []).filter(i => i.unread)
+        const out = []
+        if (items.some(i => i.kind === "chat")) out.push({ icon: "chat-20", label: qsTr("Unread chat messages") })
+        if (items.some(i => i.kind === "activity" && i.activity === "mention")) out.push({ icon: "mention-20", label: qsTr("Mentions") })
+        if (items.some(i => i.kind === "call" || i.activity === "missedCall")) out.push({ icon: "call-missed-20", label: qsTr("Missed calls") })
+        if (!out.length && (a.missed || 0) > 0) out.push({ icon: "alert-20", label: qsTr("New activity") })
+        return out
+    }
+    function simpleStateForTest() { return { open: simpleFlyout.opened, w: Math.round(simpleFlyout.width), h: Math.round(simpleFlyout.height), rows: hubAccounts.map(a => ({ upn: a.upn, org: a.org, kinds: kinds(a).map(k => k.label) })) } }
+    Popup {
+        id: simpleFlyout
+        parent: root.Window.contentItem
+        width: 340; padding: 0
+        height: simpleCol.height
+        modal: false; focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+        function openBeside() {
+            root.refresh()
+            const p = root.mapToItem(root.Window.contentItem, 0, 0)
+            x = p.x + root.width + 2
+            open()
+            y = Math.max(0, p.y + root.height - height)
+        }
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        contentItem: Column {
+            id: simpleCol
+            width: 340
+            Item {
+                width: parent.width; height: 54
+                Text { x: 16.67; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Activity in other accounts and orgs"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
+            }
+            Rectangle { width: parent.width; height: 0.67; color: theme.divider }
+            Repeater {
+                model: root.hubAccounts
+                Column {
+                    id: sa
+                    required property var modelData
+                    readonly property string orgName: modelData.personal ? qsTr("Personal") : (modelData.org || modelData.upn || "")
+                    width: simpleCol.width
+                    Item {
+                        width: parent.width; height: 64
+                        Avatar {
+                            x: 16; y: 20; size: 32
+                            name: sa.orgName
+                            initialsText: sa.orgName.charAt(0).toUpperCase()
+                            colorful: true; square: true; squareRadius: 4
+                        }
+                        Rectangle {
+                            id: saBadge
+                            visible: (sa.modelData.missed || 0) > 0
+                            x: 36; y: 14
+                            width: Math.max(16, saCount.implicitWidth + 8); height: 16; radius: 8
+                            color: theme.hc("#D13438", "#FFFFFF")
+                            Text { id: saCount; anchors.centerIn: parent; text: sa.modelData.missed || 0; font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; color: theme.onFill(saBadge, "#FFFFFF") }
+                        }
+                        Text { x: 64; y: 17; width: 150; elide: Text.ElideRight; text: sa.orgName; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        Text { x: 64; y: 35; width: 150; elide: Text.ElideRight; text: sa.modelData.upn || ""; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                        Rectangle {
+                            id: switchBtn
+                            x: 222; y: 21; width: 56; height: 30; radius: 4
+                            color: swh.hovered ? theme.rowHover : theme.surface
+                            border.color: theme.pick("#D1D1D1", "#5C5C5C", "#FFFFFF"); border.width: 1
+                            Text { anchors.centerIn: parent; text: qsTr("Switch"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(switchBtn, theme.text) }
+                            HoverHandler { id: swh; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: { simpleFlyout.close(); backend.switchAccount(sa.modelData.profile) } }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: qsTr("Switch to %1").arg(sa.orgName)
+                        }
+                        HubIconButton {
+                            x: 287; y: 20
+                            icon: "pin-20"; label: qsTr("Pin this org")
+                            onClicked: root.pinOrg(sa.modelData, true)
+                        }
+                    }
+                    Repeater {
+                        model: root.kinds(sa.modelData)
+                        Rectangle {
+                            id: kindRow
+                            required property var modelData
+                            x: 9; width: sa.width - 18; height: 42; radius: 4
+                            color: krh.hovered ? theme.rowHover : "transparent"
+                            Rectangle {
+                                x: 11; anchors.verticalCenter: parent.verticalCenter
+                                width: 24; height: 24; radius: 12
+                                color: theme.pick("#EBEBFF", "#2F2F4A", "#000000")
+                                FluentIcon { anchors.centerIn: parent; name: kindRow.modelData.icon; size: 14; color: theme.brand }
+                            }
+                            Text { x: 47; anchors.verticalCenter: parent.verticalCenter; text: kindRow.modelData.label; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(kindRow, theme.text) }
+                            HoverHandler { id: krh; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: { simpleFlyout.close(); backend.switchAccount(sa.modelData.profile) } }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: kindRow.modelData.label
+                        }
+                    }
+                    Item { width: 1; height: 6 }
+                }
+            }
+        }
     }
 
     // ---- the flyout ----
