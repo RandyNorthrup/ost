@@ -135,7 +135,7 @@ pub async fn add_recorder_bot(
 
     let resp = http
         .post(params.add_participant_url)
-        .header("Authorization", format!("Bearer {}", params.ic3_token))
+        .headers(super::consumer::auth_headers(params.ic3_token))
         .header("Content-Type", "application/json")
         .header("x-microsoft-skype-chain-id", params.chain_id)
         .header("x-microsoft-skype-message-id", &recorder_message_id)

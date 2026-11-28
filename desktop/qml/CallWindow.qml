@@ -1196,7 +1196,8 @@ Window {
         e2ee: e2ee, canPark: canPark, voicemail: voicemail, attendantTest: attendantTest,
         whiteboardSharing: !!contentState.mine && !!contentState.mine.content && ["whiteboard", "extensible_app"].indexOf(contentState.mine.content.type) >= 0,
         pptSharing: pptPresenting,
-        pptViewing: pptViewed && myRole !== "attendee"
+        pptViewing: pptViewed && myRole !== "attendee",
+        personal: backend.personalAccount
     })
     /// We present PowerPoint Live.
     readonly property bool pptPresenting: !!contentState.mine && !!contentState.mine.content && contentState.mine.content.type === "ppt"
@@ -2063,6 +2064,12 @@ Window {
             contentItem.Accessible.announce(notificationsMuted ? qsTr("Notifications allowed") : qsTr("Notifications muted"))
         }
         else if (name === "TranscriptPanelButton") toggleTranscript()
+        else if (name === "RecordingButton" && backend.personalAccount && !recording) {
+            // Teams for personal use: recording needs Microsoft 365; its
+            // Record offers the plans ("Record meetings, extend your calls,
+            // and more").
+            backend.openExternal("https://www.microsoft.com/microsoft-365/buy/compare-all-microsoft-365-products")
+        }
         else if (name === "RecordingButton") {
             if (recording) stopRecordingAsk.open()
             else recordStart.ask(transcribing ? "recording" : "recordingAndTranscription")

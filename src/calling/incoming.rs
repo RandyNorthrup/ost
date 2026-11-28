@@ -943,6 +943,10 @@ async fn attach(
     if let Some(input) = body.pointer_mut("/additionalActions/0/input") {
         super::room_mode::mark_device(input);
     }
+    super::consumer::mark_application(&mut body);
+    if let Some(input) = body.pointer_mut("/additionalActions/0/input") {
+        super::consumer::mark_application(input);
+    }
     if let Some(etag) = str_at(forked, "/debugContent/ecsEtag") {
         body["debugContent"] = serde_json::json!({ "ecsEtag": etag });
     }
@@ -1361,13 +1365,10 @@ impl ActiveCall {
         }
         let body = cs::join_body(&me.json(), &|p| me.callback(p));
         let config = crate::config::Config::load()?;
-        let ic3 = config
-            .get_ic3_token()
-            .context("No calling (IC3) token")?
-            .token;
+        let ic3 = super::consumer::calling_token(&config).context("No calling (IC3) token")?;
         let resp = reqwest::Client::new()
             .post(&link)
-            .bearer_auth(ic3)
+            .headers(super::consumer::auth_headers(&ic3))
             .header(cs::CHAIN_ID_HEADER, &session.correlation_id)
             .header(
                 "x-microsoft-skype-chain-id",
@@ -2504,6 +2505,11 @@ async fn accept_v2(
             },
         },
     });
+    // (Teams for personal use names its application in the acceptance too.)
+    let mut body = body;
+    if super::consumer::is_personal() {
+        body["callAcceptance"]["applicationType"] = super::consumer::APPLICATION_TYPE.into();
+    }
     let reply = cc_request(
         http,
         skype_token,

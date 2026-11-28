@@ -89,16 +89,14 @@ impl LiveRoster {
             anyhow::bail!("Not a Teams conversation link");
         }
         let mut config = Config::load()?;
-        if config.get_ic3_token().is_none_or(|t| t.is_expired()) {
+        if super::consumer::calling_token_stale(&config) {
             crate::auth::oauth::refresh()
                 .await
                 .context("Token refresh failed")?;
             config = Config::load()?;
         }
-        let ic3_token = config
-            .get_ic3_token()
-            .context("No calling (IC3) token")?
-            .token;
+        let ic3_token =
+            super::consumer::calling_token(&config).context("No calling (IC3) token")?;
         let me = config
             .identity()
             .context("Signed-in user has no identity")?

@@ -155,7 +155,14 @@ Rectangle {
     /// Apps pinned to the bar before your apps load (Events' Pin app).
     property var pinned: backend.setting("eventsAppPinned") === "true" ? ["events"] : []
     // Teams' default bar until your apps load.
-    readonly property var defaultApps: (split ? [
+    readonly property var defaultApps: (backend.personalAccount ? [
+        // Teams for personal use's bar (Chat, Meet, People, Copilot,
+        // Communities, Calendar, Activity), with the apps OST has.
+        { key: "chat", icon: "chat", label: qsTr("Chat") },
+        { key: "meet", icon: "video", label: qsTr("Meet") },
+        { key: "calendar", icon: "calendar", label: qsTr("Calendar") },
+        { key: "activity", icon: "alert", label: qsTr("Activity") },
+    ] : split ? [
         { key: "activity", icon: "alert", label: qsTr("Activity") },
         { key: "chat", icon: "chat", label: qsTr("Chat") },
         { key: "teams", icon: "people-team", label: qsTr("Teams") },

@@ -193,6 +193,7 @@ pub async fn create_conversation(
         }
     });
     super::room_mode::mark_device(&mut payload);
+    super::consumer::mark_application(&mut payload);
 
     tracing::info!("Phase 1: POST {} (create conversation)", epconv_url);
     tracing::debug!(
@@ -202,7 +203,7 @@ pub async fn create_conversation(
 
     let resp = http
         .post(epconv_url)
-        .header("Authorization", format!("Bearer {}", params.ic3_token))
+        .headers(super::consumer::auth_headers(params.ic3_token))
         .header("Content-Type", "application/json")
         .header("x-microsoft-skype-chain-id", params.chain_id)
         .header("x-microsoft-skype-message-id", params.message_id)
@@ -381,6 +382,7 @@ pub async fn join_conversation_with_sdp(
         }
     });
     super::room_mode::mark_device(&mut payload);
+    super::consumer::mark_application(&mut payload);
 
     tracing::info!("Phase 2: POST {} (join with SDP)", conversation_controller);
     tracing::debug!(
@@ -390,7 +392,7 @@ pub async fn join_conversation_with_sdp(
 
     let resp = http
         .post(conversation_controller)
-        .header("Authorization", format!("Bearer {}", params.ic3_token))
+        .headers(super::consumer::auth_headers(params.ic3_token))
         .header("Content-Type", "application/json")
         .header("x-microsoft-skype-chain-id", params.chain_id)
         .header("x-microsoft-skype-message-id", params.message_id)
@@ -612,7 +614,7 @@ pub async fn acknowledge_call_acceptance(
 
     let resp = http
         .post(acknowledgement_url)
-        .header("Authorization", format!("Bearer {}", params.ic3_token))
+        .headers(super::consumer::auth_headers(params.ic3_token))
         .header("Content-Type", "application/json")
         .header("x-microsoft-skype-chain-id", params.chain_id)
         .header("x-microsoft-skype-message-id", params.message_id)
@@ -673,7 +675,7 @@ pub async fn register_cc_callbacks(
 
     let resp = http
         .post(call_leg_url)
-        .header("Authorization", format!("Bearer {}", params.ic3_token))
+        .headers(super::consumer::auth_headers(params.ic3_token))
         .header("Content-Type", "application/json")
         .header("x-microsoft-skype-chain-id", params.chain_id)
         .header("x-microsoft-skype-message-id", params.message_id)
@@ -806,7 +808,7 @@ pub async fn invite_echo_bot(
 
     let resp = http
         .post(&add_url)
-        .header("Authorization", format!("Bearer {}", params.ic3_token))
+        .headers(super::consumer::auth_headers(params.ic3_token))
         .header("Content-Type", "application/json")
         .header("x-microsoft-skype-chain-id", params.chain_id)
         .header("x-microsoft-skype-message-id", &echo_bot_msg_id)
@@ -1398,14 +1400,20 @@ async fn join_conversation_with(
         "debugContent": { "ecsEtag": "\"0\"", "causeId": &params.message_id[..8.min(params.message_id.len())] }
     });
     super::room_mode::mark_device(&mut payload);
+    super::consumer::mark_application(&mut payload);
     if let Some(md) = meeting_data {
         payload["groupChat"] = serde_json::Value::Null;
         payload["meetingInfo"] = serde_json::Value::Null;
         payload["meetingData"] = md.clone();
+        // A personal meeting link stays usable after its meeting ended:
+        // Teams for personal use asks the service to bring it back.
+        if super::consumer::is_personal() {
+            payload["meetingPreferences"] = serde_json::json!({ "shouldResurrect": "resurrect" });
+        }
     }
     let resp = http
         .post(epconv_url)
-        .header("Authorization", format!("Bearer {}", params.ic3_token))
+        .headers(super::consumer::auth_headers(params.ic3_token))
         .header("x-microsoft-skype-chain-id", params.chain_id)
         .header(
             "x-microsoft-skype-message-id",
@@ -1509,7 +1517,7 @@ pub async fn resolve_meeting_code(
     if let Some(leave) = leave {
         let _ = http
             .delete(&leave)
-            .header("Authorization", format!("Bearer {}", params.ic3_token))
+            .headers(super::consumer::auth_headers(params.ic3_token))
             .header("x-microsoft-skype-client", SKYPE_CLIENT_HEADER)
             .send()
             .await;
@@ -1683,6 +1691,7 @@ async fn create_call_with(
 
     let mut payload = payload;
     super::room_mode::mark_device(&mut payload);
+    super::consumer::mark_application(&mut payload);
     if let Some(scenario) = opts.scenario {
         payload["scenario"] = scenario.into();
     }
@@ -1774,7 +1783,7 @@ async fn create_call_with(
 
     let resp = http
         .post(&target_url)
-        .header("Authorization", format!("Bearer {}", params.ic3_token))
+        .headers(super::consumer::auth_headers(params.ic3_token))
         .header("Content-Type", "application/json")
         .header("x-microsoft-skype-chain-id", params.chain_id)
         .header("x-microsoft-skype-message-id", params.message_id)
@@ -1937,7 +1946,7 @@ pub async fn invite_user(
 
     let resp = http
         .post(&add_url)
-        .header("Authorization", format!("Bearer {}", params.ic3_token))
+        .headers(super::consumer::auth_headers(params.ic3_token))
         .header("Content-Type", "application/json")
         .header("x-microsoft-skype-chain-id", params.chain_id)
         .header("x-microsoft-skype-message-id", &invite_msg_id)
@@ -2022,7 +2031,7 @@ pub async fn subscribe_conversation(
     });
     let resp = http
         .post(conversation_url)
-        .header("Authorization", format!("Bearer {}", params.ic3_token))
+        .headers(super::consumer::auth_headers(params.ic3_token))
         .header("Content-Type", "application/json")
         .header("x-microsoft-skype-chain-id", params.chain_id)
         .header("x-microsoft-skype-message-id", params.message_id)
@@ -2061,7 +2070,7 @@ pub async fn leave_conversation(
     let payload = leave_payload(params, code);
     let resp = http
         .post(leave_url)
-        .header("Authorization", format!("Bearer {}", params.ic3_token))
+        .headers(super::consumer::auth_headers(params.ic3_token))
         .header("Content-Type", "application/json")
         .header("x-microsoft-skype-chain-id", params.chain_id)
         .header(

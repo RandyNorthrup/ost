@@ -28,6 +28,7 @@ pub mod camera_pw;
 #[cfg(feature = "video")]
 pub mod codec;
 pub mod consult;
+pub mod consumer;
 #[cfg(feature = "video")]
 pub mod content_camera;
 pub mod content_sharing;

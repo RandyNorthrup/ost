@@ -1,10 +1,11 @@
 ---
 id: TASK-0298
 title: 'Personal accounts: Meet app, calendar and meeting links'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@tperC'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T01:04:00Z'
+updated_date: '2026-11-28T06:21:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -27,6 +28,16 @@ The Meet app creates meeting links, schedules meetings, joins with an ID and lis
 - [ ] #2 The Calendar shows what Teams shows for a personal account (Outlook.com events or Teams meetings, as verified) with Meet now and New meeting
 - [ ] #3 teams.live.com/meet links open in OST, from any account
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Capture the Meet app, Calendar and New meeting on teams.live.com.
+2. Meet app view (Meeting links, Create a meeting link, Join with a meeting ID, Schedule a meeting, Calls) on a personal account's rail.
+3. Calendar through the consumer middle tier (v2.0 calendarView), MT auth with the Skype token for Meet now / New meeting.
+4. teams.live.com links: join in a personal account, hand over from a work account to the personal profile.
+5. Live-check.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

@@ -104,7 +104,9 @@ pub mod zip_download;
 use anyhow::Result;
 
 // Re-export data types for TUI integration
-pub use chat::{ChatInfo, MessageInfo, bot_chat, cfet_threads, set_messaging_disabled};
+pub use chat::{
+    ChatInfo, MessageInfo, bot_chat, cfet_threads, known_one_on_one_thread, set_messaging_disabled,
+};
 pub use me::UserInfo;
 pub use presence::PresenceInfo;
 pub use teams::TeamInfo;

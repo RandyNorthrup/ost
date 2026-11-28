@@ -83,10 +83,30 @@ where
     S: Fn() -> F,
     F: std::future::Future<Output = ()>,
 {
+    // A personal account runs a second socket for its calls, as Teams for
+    // personal use does.
+    let personal = Config::load()
+        .ok()
+        .is_some_and(|c| crate::auth::is_personal_flow(c.auth_flow.as_deref()));
+    if personal {
+        let (chat, calls) = tokio::join!(
+            listen_chat(opts, &shutdown),
+            listen_calling(opts, &shutdown)
+        );
+        return chat.and(calls);
+    }
+    listen_chat(opts, &shutdown).await
+}
+
+async fn listen_chat<S, F>(opts: ListenOptions, shutdown: &S) -> Result<()>
+where
+    S: Fn() -> F,
+    F: std::future::Future<Output = ()>,
+{
     let mut backoff = 1u64;
 
     loop {
-        match connect_and_run_inner(opts, &shutdown).await {
+        match connect_and_run_inner(opts, shutdown).await {
             Ok(DisconnectReason::Shutdown) => {
                 return Ok(());
             }
@@ -125,6 +145,119 @@ where
             }
         }
     }
+}
+
+/// A personal account's calling socket, reconnecting with backoff like the
+/// chat one.
+async fn listen_calling<S, F>(opts: ListenOptions, shutdown: &S) -> Result<()>
+where
+    S: Fn() -> F,
+    F: std::future::Future<Output = ()>,
+{
+    let mut backoff = 1u64;
+    loop {
+        let started = Instant::now();
+        let result = calling_session(opts, shutdown).await;
+        // Calls can't reach a socket that's gone.
+        *CURRENT_ENDPOINT.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        match result {
+            Ok(DisconnectReason::Shutdown) => return Ok(()),
+            Ok(DisconnectReason::Error(e)) | Err(e) => {
+                if started.elapsed() >= Duration::from_secs(60) {
+                    backoff = 1;
+                }
+                tracing::warn!(
+                    "Calling Trouter disconnected: {:#}. Reconnecting in {}s...",
+                    e,
+                    backoff
+                );
+                tokio::select! {
+                    _ = time::sleep(Duration::from_secs(backoff)) => {}
+                    _ = shutdown() => return Ok(()),
+                }
+                backoff = (backoff * 2).min(64);
+            }
+        }
+    }
+}
+
+/// One session of a personal account's calling socket, as Teams for
+/// personal use keeps it (2026-11-28 capture): a socket on
+/// `go.trouter.teams.microsoft.com` authenticated with the Skype token
+/// alone and registered at Teams' calling registrar as `SkypeSpacesWeb` /
+/// `TFLSkypeSpacesWeb_2.0` (transport context `TFL`, ttl 3600) under its
+/// endpoint id. Incoming calls and every call callback come here; it
+/// reports no activity and publishes no presence (the chat socket does).
+async fn calling_session<S, F>(opts: ListenOptions, shutdown: &S) -> Result<DisconnectReason>
+where
+    S: Fn() -> F,
+    F: std::future::Future<Output = ()>,
+{
+    let mut config = Config::load().context("Failed to load config")?;
+    if config.get_skype_token().is_some_and(|t| t.is_expired())
+        && config.get_refresh_token().is_some()
+    {
+        crate::auth::oauth::refresh_expired()
+            .await
+            .context("Token refresh failed")?;
+        config = Config::load().context("Failed to load config")?;
+    }
+    let token = config
+        .get_skype_token()
+        .filter(|t| !t.is_expired())
+        .context("No usable Skype token for the calling socket")?
+        .token;
+    let http = reqwest::Client::new();
+    let (session, epid) = session::negotiate_at(&http, &token, session::WORK_HOST).await?;
+    let session_id = session::get_session_id(&session, &token, &epid).await?;
+    let mut ws = websocket::TrouterSocket::connect(&session, &session_id, &epid).await?;
+    let frame = ws
+        .recv_frame()
+        .await?
+        .context("Connection closed before handshake")?;
+    if !frame.starts_with("1::") {
+        tracing::warn!("Calling socket: expected 1:: handshake");
+    }
+    registrar::register_personal_calling(&http, &token, &session.surl, &epid)
+        .await
+        .context("Calling registration failed")?;
+    *CURRENT_ENDPOINT.lock().unwrap_or_else(|e| e.into_inner()) =
+        Some((session.surl.clone(), epid.clone()));
+    tracing::info!("Calling Trouter connected (personal)");
+
+    let mut heartbeat = time::interval(Duration::from_secs(30));
+    heartbeat.tick().await;
+    let re_register = Duration::from_secs(registrar::PERSONAL_TTL_SECS.saturating_sub(30));
+    let mut re_register_deadline = Box::pin(time::sleep(re_register));
+    let mut session_deadline = Box::pin(time::sleep(Duration::from_secs(3600)));
+    let reason = loop {
+        tokio::select! {
+            frame = ws.recv_frame() => match frame {
+                Ok(Some(text)) => handle_frame(&text, &http, &token, opts).await,
+                Ok(None) => break DisconnectReason::Error(anyhow::anyhow!("WebSocket closed by server")),
+                Err(e) => break DisconnectReason::Error(e.context("WebSocket recv error")),
+            },
+            _ = heartbeat.tick() => {
+                if let Err(e) = ws.send_text("2::").await {
+                    break DisconnectReason::Error(e.context("Heartbeat send failed"));
+                }
+            }
+            _ = &mut re_register_deadline => {
+                let (h, tok, surl, ep) = (http.clone(), token.clone(), session.surl.clone(), epid.clone());
+                tokio::spawn(async move {
+                    if let Err(e) = registrar::register_personal_calling(&h, &tok, &surl, &ep).await {
+                        tracing::warn!("Calling re-registration failed: {:#}", e);
+                    }
+                });
+                re_register_deadline = Box::pin(time::sleep(re_register));
+            }
+            _ = &mut session_deadline => {
+                break DisconnectReason::Error(anyhow::anyhow!("Session max age reached"));
+            }
+            _ = shutdown() => break DisconnectReason::Shutdown,
+        }
+    };
+    Ok(reason)
 }
 
 /// Run one full Trouter session: negotiate, connect, event loop.
@@ -176,8 +309,12 @@ where
         session::WORK_HOST
     };
     let (session, epid) = session::negotiate_at(&http, skype_token_str, host).await?;
-    *CURRENT_ENDPOINT.lock().unwrap_or_else(|e| e.into_inner()) =
-        Some((session.surl.clone(), epid.clone()));
+    // A personal account's calls come to its calling socket
+    // ([`calling_session`]), whose endpoint call signalling names.
+    if !personal {
+        *CURRENT_ENDPOINT.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some((session.surl.clone(), epid.clone()));
+    }
 
     // 2. Get socket.io session ID (authenticated via X-Skypetoken header)
     let session_id = session::get_session_id(&session, skype_token_str, &epid).await?;
@@ -638,8 +775,22 @@ pub fn data_frame_call(payload: &str) -> Option<String> {
         }
         return Some(v.to_string());
     }
-    let is_call = url.contains("NGCallManagerWin") || body.contains("\"callInvitation\"");
+    let is_call = url.contains("NGCallManagerWin")
+        || body.contains("\"callInvitation\"")
+        || is_call_controller_event(&body);
     is_call.then_some(body)
+}
+
+/// A call controller's wrapped notification (`{evt, gp}` or `{evt, cp}`):
+/// how an incoming call reaches a personal account's calling socket (posted
+/// to the socket's own path, `…/v4/f/<id>/`, for its `SkypeSpacesWeb`
+/// registration; captured from Teams for personal use 2026-11-28).
+fn is_call_controller_event(body: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(body).is_ok_and(|v| {
+        v.get("evt").is_some_and(|e| e.is_u64())
+            && (v.get("gp").is_some_and(|p| p.is_string())
+                || v.get("cp").is_some_and(|p| p.is_string()))
+    })
 }
 
 /// Call-controller events wrap the notification as `{callId, callerId,

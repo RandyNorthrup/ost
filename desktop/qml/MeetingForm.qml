@@ -1076,6 +1076,28 @@ Item {
                 }
             }
 
+            // A free personal account's limits (Teams for personal use's
+            // New meeting form, measured on teams.live.com 2026-11-28):
+            // "With your current Teams plan, you get up to 60 minutes per
+            // meeting with up to 100 participants. Learn more".
+            Item {
+                visible: backend.personalAccount
+                x: 32; width: scroller.fieldW + 42; height: visible ? 36 : 0
+                Rectangle {
+                    height: 36; width: parent.width
+                    radius: 4; color: theme.inputFilled
+                    FluentIcon { x: 13; anchors.verticalCenter: parent.verticalCenter; name: "info-20"; size: 20; color: theme.textSecondary }
+                    Row {
+                        x: 41; anchors.verticalCenter: parent.verticalCenter; spacing: 4
+                        Text {
+                            text: qsTr("With your current Teams plan, you get up to %1 minutes per meeting with up to %2 participants.").arg(backend.meetingMinutesLimit).arg(backend.meetingPeopleLimit)
+                            font.family: theme.font; font.pixelSize: 14; color: theme.text
+                        }
+                        LinkButton { label: qsTr("Learn more"); onClicked: backend.openExternal("https://support.microsoft.com/office/do-i-need-a-subscription-to-use-teams-472099be-81c0-46a0-ae29-59ab4536dd05") }
+                    }
+                }
+            }
+
             // Your series: which events the page edits (Outlook's info bar
             // on Teams' event page, measured on winpc 2026-11-23: 36 tall,
             // the info glyph 13 in, 14 px #616161 text 41 in).

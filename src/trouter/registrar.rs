@@ -311,9 +311,117 @@ pub async fn register_personal(
     Ok(())
 }
 
+/// The registrations Teams on the web for personal use makes for its
+/// calling socket: `SkypeSpacesWeb` with the `TFLSkypeSpacesWeb_2.0`
+/// template and transport context `TFL`, under the endpoint id and again
+/// under `<id>-gg` (the path without its trailing slash, no language).
+pub fn personal_calling_registrations(
+    surl: &str,
+    registration_id: &str,
+    ttl: u64,
+) -> Vec<serde_json::Value> {
+    let ui = crate::auth::skype::PERSONAL_CLIENT_VERSION;
+    vec![
+        serde_json::json!({
+            "clientDescription": {
+                "appId": "SkypeSpacesWeb",
+                "aesKey": "",
+                "languageId": "en-US",
+                "platform": "chrome",
+                "templateKey": "TFLSkypeSpacesWeb_2.0",
+                "platformUIVersion": ui
+            },
+            "registrationId": registration_id,
+            "nodeId": "",
+            "transports": {"TROUTER": [{"context": crate::calling::consumer::APPLICATION_TYPE, "path": surl, "ttl": ttl}]}
+        }),
+        serde_json::json!({
+            "clientDescription": {
+                "appId": "SkypeSpacesWeb",
+                "templateKey": "TFLSkypeSpacesWeb_2.0",
+                "platform": "chrome",
+                "platformUIVersion": ui,
+                "languageId": "",
+                "aesKey": "",
+                "productContext": ""
+            },
+            "registrationId": format!("{registration_id}-gg"),
+            "nodeId": "",
+            "transports": {"TROUTER": [{
+                "context": crate::calling::consumer::APPLICATION_TYPE,
+                "path": surl.trim_end_matches('/'),
+                "ttl": ttl
+            }]}
+        }),
+    ]
+}
+
+/// Teams for personal use's calling registrar (its `registrarServiceUrl`).
+pub const PERSONAL_CALLING_REGISTRAR: &str =
+    "https://teams.microsoft.com/registrar/prod/v2/registrations";
+
+/// Register a personal account's calling socket as Teams for personal use
+/// does ([`personal_calling_registrations`]): incoming calls ring there.
+pub async fn register_personal_calling(
+    http: &reqwest::Client,
+    skype_token: &str,
+    trouter_surl: &str,
+    registration_id: &str,
+) -> Result<()> {
+    for payload in personal_calling_registrations(trouter_surl, registration_id, PERSONAL_TTL_SECS)
+    {
+        let resp = http
+            .post(PERSONAL_CALLING_REGISTRAR)
+            .header("X-Skypetoken", skype_token)
+            .header("X-MS-Migration", "True")
+            .json(&payload)
+            .send()
+            .await
+            .context("Registrar POST failed")?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Registrar TFLSkypeSpacesWeb_2.0 returned {status}: {}",
+                crate::feedback::scrub_secrets(&body)
+            );
+        }
+    }
+    tracing::info!("Registrar TFLSkypeSpacesWeb_2.0 registration succeeded (personal calling)");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn personal_calling_socket_registrations_match_teams_free() {
+        let r = personal_calling_registrations(
+            "https://pub-ent-x-f.trouter.teams.microsoft.com:3443/v4/f/abc/",
+            "id1",
+            3600,
+        );
+        assert_eq!(r.len(), 2);
+        assert_eq!(
+            r[0]["clientDescription"]["templateKey"],
+            "TFLSkypeSpacesWeb_2.0"
+        );
+        assert_eq!(r[0]["transports"]["TROUTER"][0]["context"], "TFL");
+        assert!(
+            r[0]["transports"]["TROUTER"][0]["path"]
+                .as_str()
+                .unwrap()
+                .ends_with('/')
+        );
+        assert_eq!(r[1]["registrationId"], "id1-gg");
+        assert!(
+            !r[1]["transports"]["TROUTER"][0]["path"]
+                .as_str()
+                .unwrap()
+                .ends_with('/')
+        );
+    }
 
     #[test]
     fn a_personal_socket_registers_as_teams_free() {

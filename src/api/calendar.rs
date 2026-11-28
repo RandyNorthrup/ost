@@ -90,6 +90,12 @@ pub async fn calendar_view(
     start: &str,
     end: &str,
 ) -> Result<Vec<CalendarEvent>> {
+    // A personal account's Graph token reaches only its OneDrive: Teams
+    // for personal use reads the Outlook.com calendar through its middle
+    // tier.
+    if client.is_personal() {
+        return personal_calendar_view(client, start, end).await;
+    }
     let path = format!(
         "/me/calendarView?startDateTime={start}&endDateTime={end}&$top=250&$orderby=start/dateTime\
          &$select=id,subject,start,end,isAllDay,location,organizer,isOnlineMeeting,onlineMeeting,showAs,bodyPreview,isOrganizer,\
@@ -110,6 +116,124 @@ pub async fn calendar_view(
         }
     }
     Ok(events)
+}
+
+/// A middle-tier request's credentials as headers: the bearer token, and
+/// for a personal account its Skype token too (Teams free's middle tier
+/// refuses either alone).
+fn mt_headers(client: &TeamsClient, token: &str) -> reqwest::header::HeaderMap {
+    let mut h = reqwest::header::HeaderMap::new();
+    if let Ok(mut v) = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}")) {
+        v.set_sensitive(true);
+        h.insert(reqwest::header::AUTHORIZATION, v);
+    }
+    if client.is_personal()
+        && let Ok(skype) = client.skype_token_value()
+        && let Ok(mut v) = reqwest::header::HeaderValue::from_str(&skype)
+    {
+        v.set_sensitive(true);
+        h.insert("x-skypetoken", v);
+    }
+    h
+}
+
+/// A personal account's events overlapping `[start, end)`, as Teams for
+/// personal use reads them: `GET {mt}/v2.0/me/calendars/default/calendarView
+/// ?StartDate=…&EndDate=…&shouldDecryptData=false` (its Outlook.com
+/// calendar; captured 2026-11-28).
+async fn personal_calendar_view(
+    client: &TeamsClient,
+    start: &str,
+    end: &str,
+) -> Result<Vec<CalendarEvent>> {
+    let (base, token) = crate::api::tabs::middle_tier(client).await?;
+    let url = crate::auth::token_hosts::service_url(
+        &format!("{base}/v2.0/me/calendars/default/calendarView"),
+        crate::auth::token_hosts::Audience::Teams,
+        &[],
+        &[
+            ("StartDate", start),
+            ("EndDate", end),
+            ("shouldDecryptData", "false"),
+        ],
+    )?;
+    let req = client.http().get(url);
+    let v: serde_json::Value = client
+        .middle_tier_auth(req, &token)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Calendar")?
+        .json()
+        .await
+        .context("Calendar reply")?;
+    Ok(parse_mt_events(&v))
+}
+
+/// The middle tier's calendar events (Teams free's calendarView).
+fn parse_mt_events(v: &serde_json::Value) -> Vec<CalendarEvent> {
+    let s = |e: &serde_json::Value, k: &str| {
+        e.get(k)
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
+    // "2026-11-27T19:00:00+00:00" -> "2026-11-27T19:00:00Z".
+    let utc = |t: String| {
+        crate::clock::parse_instant(&t)
+            .map(|i| crate::clock::format(i, "%Y-%m-%dT%H:%M:%SZ"))
+            .unwrap_or(t)
+    };
+    let lower_first = |t: String| -> String {
+        let mut c = t.chars();
+        c.next()
+            .map(|f| f.to_lowercase().chain(c).collect())
+            .unwrap_or_default()
+    };
+    v.get("value")
+        .and_then(|x| x.as_array())
+        .into_iter()
+        .flatten()
+        .map(|e| {
+            let flag = |k: &str| e.get(k).and_then(|b| b.as_bool()).unwrap_or(false);
+            let response = match s(e, "myResponseType").as_str() {
+                "Organizer" => "organizer",
+                "Accept" | "Accepted" => "accepted",
+                "Tentative" | "TentativelyAccepted" => "tentativelyAccepted",
+                "Decline" | "Declined" => "declined",
+                "NotResponded" => "notResponded",
+                _ => "none",
+            };
+            CalendarEvent {
+                id: s(e, "objectId"),
+                subject: s(e, "subject"),
+                start_utc: utc(s(e, "startTime")),
+                end_utc: utc(s(e, "endTime")),
+                is_all_day: flag("isAllDay"),
+                location: s(e, "location"),
+                organizer: s(e, "organizerName"),
+                organizer_address: s(e, "organizerAddress"),
+                is_online_meeting: flag("isOnlineMeeting"),
+                join_url: Some(s(e, "skypeTeamsMeetingUrl")).filter(|u| !u.is_empty()),
+                show_as: lower_first(s(e, "showAs")),
+                preview: s(e, "bodyPreview"),
+                is_organizer: flag("isOrganizer"),
+                ical_uid: s(e, "iCalUID"),
+                event_type: "singleInstance".into(),
+                response: response.into(),
+                response_requested: flag("isResponseRequested"),
+                is_cancelled: flag("isCancelled"),
+                categories: e
+                    .get("categories")
+                    .and_then(|c| c.as_array())
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|c| c.as_str().map(str::to_string))
+                    .collect(),
+                ..Default::default()
+            }
+        })
+        .collect()
 }
 
 /// One of your calendars as Teams' calendar pane lists it, in the groups
@@ -1324,7 +1448,7 @@ async fn respond_mt(
     let r = client
         .http()
         .put(url)
-        .bearer_auth(&token)
+        .headers(mt_headers(client, &token))
         .json(&serde_json::json!({ "responseType": kind, "sendResponse": send_response, "comment": note.trim(), "attendance": attendance }))
         .send()
         .await?;
@@ -1932,7 +2056,7 @@ pub async fn availability(
     let v: serde_json::Value = client
         .http()
         .put(format!("{base}/v2.0/me/calendars/schedules"))
-        .bearer_auth(&token)
+        .headers(mt_headers(client, &token))
         .json(&body)
         .send()
         .await?
@@ -2230,7 +2354,7 @@ pub async fn schedule(
             let r = client
                 .http()
                 .post(&url)
-                .bearer_auth(&token)
+                .headers(mt_headers(client, &token))
                 .json(&body)
                 .send()
                 .await?;
@@ -2309,10 +2433,13 @@ pub fn cast_meetings(events: &[CalendarEvent], now: jiff::Timestamp) -> Vec<&Cal
 /// meetingType "MeetNow"). Answers its join link.
 pub async fn meet_now(client: &TeamsClient, subject: &str) -> Result<String> {
     let (base, token) = crate::api::tabs::middle_tier(client).await?;
+    // (A personal account's: Teams free's middle tier, which wants its
+    // Skype token too; its link is `https://teams.live.com/meet/<ID>?p=…`.)
+    let req = client.http().post(format!(
+        "{base}/beta/me/calendarEvents/privateMeeting/schedulingService/create"
+    ));
     let v: serde_json::Value = client
-        .http()
-        .post(format!("{base}/beta/me/calendarEvents/privateMeeting/schedulingService/create"))
-        .bearer_auth(&token)
+        .middle_tier_auth(req, &token)
         .json(&serde_json::json!({"meetingType": "MeetNow", "isStreamEnabled": false, "subject": subject, "unhideChatThread": true}))
         .send()
         .await?
@@ -2320,10 +2447,133 @@ pub async fn meet_now(client: &TeamsClient, subject: &str) -> Result<String> {
         .context("Meet now")?
         .json()
         .await?;
-    v.pointer("/value/links/join")
+    let link = v
+        .pointer("/value/links/join")
         .and_then(|j| j.as_str())
         .map(str::to_string)
-        .context("Meet now gave no join link")
+        .context("Meet now gave no join link")?;
+    // A personal meeting's link (`teams.live.com/meet/<ID>?p=…`) doesn't
+    // name its chat: the answer's groupContext does.
+    if let Some(thread) = v
+        .pointer("/value/groupContext/threadId")
+        .and_then(|t| t.as_str())
+        .filter(|t| t.starts_with("19:meeting_"))
+    {
+        MEET_NOW_THREADS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(link.clone(), thread.to_string());
+    }
+    Ok(link)
+}
+
+/// The chats of the Meet nows made here, by their join links.
+static MEET_NOW_THREADS: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, String>>,
+> = std::sync::LazyLock::new(Default::default);
+
+/// A meeting link's chat: from a meetup-join link, or for a Meet now made
+/// here, from its answer.
+pub fn meeting_thread_of(join_url: &str) -> Option<String> {
+    crate::calling::breakout::thread_of_join_url(join_url).or_else(|| {
+        MEET_NOW_THREADS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(join_url)
+            .cloned()
+    })
+}
+
+/// One of your meeting links, as Teams for personal use's Meet app lists
+/// them (Meet ▸ Meeting links): a Meet now chat of yours that has its
+/// link.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct MeetingLinkItem {
+    pub thread_id: String,
+    pub title: String,
+    pub join_url: String,
+    /// When it was made (UTC, RFC 3339).
+    pub created: String,
+}
+
+/// Your meeting links among `thread_ids` (meeting chats you created): their
+/// threads' `meeting` property (`GET {chatsvc}/v1/threads?threadIds=…`, as
+/// Teams for personal use reads them), keeping Meet nows with a join link,
+/// newest first.
+pub async fn meeting_links(
+    client: &TeamsClient,
+    thread_ids: &[String],
+) -> Result<Vec<MeetingLinkItem>> {
+    let mut out = Vec::new();
+    for chunk in thread_ids
+        .iter()
+        .filter(|t| t.starts_with("19:meeting_") && t.ends_with("@thread.v2"))
+        .collect::<Vec<_>>()
+        .chunks(20)
+    {
+        let ids: Vec<&str> = chunk.iter().map(|t| t.as_str()).collect();
+        let url = crate::auth::token_hosts::service_url(
+            &format!("{}/v1/threads", client.chat_service_url()),
+            crate::auth::token_hosts::Audience::Teams,
+            &[],
+            &[("view", "msnp24Equivalent"), ("threadIds", &ids.join(","))],
+        )?;
+        let v: serde_json::Value = client
+            .chat_get(url.as_str())
+            .await?
+            .json()
+            .await
+            .context("Threads reply")?;
+        out.extend(parse_meeting_links(&v));
+    }
+    out.sort_by(|a, b| b.created.cmp(&a.created));
+    Ok(out)
+}
+
+fn parse_meeting_links(v: &serde_json::Value) -> Vec<MeetingLinkItem> {
+    let threads = v
+        .get("threads")
+        .or_else(|| v.get("value"))
+        .and_then(|t| t.as_array())
+        .cloned()
+        .unwrap_or_else(|| v.as_array().cloned().unwrap_or_default());
+    threads
+        .iter()
+        .filter_map(|t| {
+            let props = t.get("properties")?;
+            let meeting: serde_json::Value = match props.get("meeting")? {
+                serde_json::Value::String(s) => serde_json::from_str(s).ok()?,
+                o => o.clone(),
+            };
+            if meeting.get("meetingType").and_then(|m| m.as_str()) != Some("MeetNow")
+                || meeting.get("isCancelled").and_then(|c| c.as_bool()) == Some(true)
+            {
+                return None;
+            }
+            let join_url = meeting.get("meetingJoinUrl")?.as_str()?.to_string();
+            let s = |o: &serde_json::Value, k: &str| {
+                o.get(k)
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default()
+                    .to_string()
+            };
+            let title = Some(s(props, "topic"))
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| s(&meeting, "subject"));
+            Some(MeetingLinkItem {
+                thread_id: s(t, "id"),
+                title,
+                join_url,
+                // (epoch milliseconds, as the chat service writes it)
+                created: s(props, "createdat")
+                    .parse::<i64>()
+                    .ok()
+                    .and_then(|ms| jiff::Timestamp::from_millisecond(ms).ok())
+                    .map(crate::clock::iso_secs)
+                    .unwrap_or_else(|| s(&meeting, "startTime")),
+            })
+        })
+        .collect()
 }
 
 /// The meeting chat's `meeting` property after Teams'
@@ -2361,8 +2611,7 @@ pub async fn update_instant_meeting(
     title: &str,
     started: bool,
 ) -> Result<()> {
-    let thread =
-        crate::calling::breakout::thread_of_join_url(join_url).context("Not a meeting link")?;
+    let thread = meeting_thread_of(join_url).context("Not a meeting link")?;
     let url = format!(
         "{}/v1/threads/{}?view=msnp24Equivalent",
         client.chat_service_url(),
@@ -2473,7 +2722,7 @@ pub async fn update_meeting(
             "{base}/v2.0/me/calendars/events/{object_id}?isOnlineMeeting={}",
             form.online
         ))
-        .bearer_auth(&token)
+        .headers(mt_headers(client, &token))
         .json(&serde_json::json!({ "updatedCalendarEvent": ev }))
         .send()
         .await?;
@@ -2933,7 +3182,7 @@ pub async fn cancel_meeting(
         client
             .http()
             .put(url)
-            .bearer_auth(&token)
+            .headers(mt_headers(client, &token))
             .json(&body)
             .send()
             .await?
@@ -3027,6 +3276,54 @@ fn cancel_event_request(ews: &str, scope: &str, note: &str, tz: &str) -> serde_j
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn personal_meeting_links_are_the_meet_now_chats() {
+        // The thread of a link made in Teams for personal use's Meet app
+        // (its `meeting` property as the web client wrote it, 2026-11-28).
+        let meeting = serde_json::json!({"subject": "Meeting with OST Personal 1", "startTime": "2026-11-28T06:01:42.1211948Z",
+            "meetingType": "MeetNow", "isCancelled": false, "meetingJoinUrl": "https://teams.live.com/meet/93194873289377?p=GLn4NHpXwgCCraKdCm"});
+        let v = serde_json::json!({"threads": [
+            {"id": "19:meeting_A@thread.v2", "properties": {"topic": "Planning", "createdat": "1795845702168", "meeting": meeting.to_string()}},
+            {"id": "19:meeting_B@thread.v2", "properties": {"meeting": serde_json::json!({"meetingType": "Scheduled", "meetingJoinUrl": "https://teams.live.com/meet/1"}).to_string()}}
+        ]});
+        let l = super::parse_meeting_links(&v);
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].title, "Planning");
+        assert_eq!(
+            l[0].join_url,
+            "https://teams.live.com/meet/93194873289377?p=GLn4NHpXwgCCraKdCm"
+        );
+        assert_eq!(l[0].thread_id, "19:meeting_A@thread.v2");
+        assert!(l[0].created.starts_with("2026-11-28T06:01:42"));
+        // The service's answer is a bare array.
+        let bare = serde_json::json!([{"id": "19:meeting_A@thread.v2", "properties": {"meeting": meeting.to_string()}}]);
+        assert_eq!(super::parse_meeting_links(&bare).len(), 1);
+    }
+
+    #[test]
+    fn personal_calendar_events_from_the_middle_tier() {
+        // Teams free's calendarView answer (OST Personal 2, 2026-11-28).
+        let v = serde_json::json!({"value": [
+            {"objectId": "AQMk1", "startTime": "2026-11-27T19:00:00+00:00", "endTime": "2026-11-27T19:30:00+00:00",
+             "subject": "OST TEST 287 teams meeting", "location": "Microsoft Teams Meeting", "isOnlineMeeting": true,
+             "myResponseType": "Organizer", "organizerName": "OST Personal 2", "showAs": "Busy", "isOrganizer": true,
+             "isAppointment": true, "skypeTeamsMeetingUrl": "https://teams.live.com/meet/9335314708143?p=arSpdLQzqts8ae8uZL"},
+            {"objectId": "AQMk2", "startTime": "2026-11-27T19:00:00+00:00", "endTime": "2026-11-27T19:30:00+00:00",
+             "subject": "OST TEST 287 outlook event", "isOnlineMeeting": false, "myResponseType": "Organizer", "showAs": "Busy"}
+        ]});
+        let e = super::parse_mt_events(&v);
+        assert_eq!(e.len(), 2);
+        assert_eq!(e[0].start_utc, "2026-11-27T19:00:00Z");
+        assert_eq!(
+            e[0].join_url.as_deref(),
+            Some("https://teams.live.com/meet/9335314708143?p=arSpdLQzqts8ae8uZL")
+        );
+        assert_eq!(e[0].show_as, "busy");
+        assert_eq!(e[0].response, "organizer");
+        assert!(e[0].is_online_meeting && e[0].is_organizer);
+        assert!(e[1].join_url.is_none());
+    }
+
     /// Outlook's GetUserUnifiedGroups answer as it came for ost-test1
     /// (2026-11-27, ids shortened; one favourite added): favourites first,
     /// then the rest; one without a mailbox is left out, as Teams' hosted
