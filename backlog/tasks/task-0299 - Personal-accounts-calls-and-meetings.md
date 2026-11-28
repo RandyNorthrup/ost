@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@tperC'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T07:42:00Z'
+updated_date: '2026-11-28T07:51:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -41,3 +41,10 @@ Personal-account calls go through the consumer conversation service with the Sky
 4. Free-plan limits note, Record upsell, hide breakout rooms/Copilot/apps/Whiteboard/avatars/transcripts.
 5. Live-check OST <-> Teams web between OST Personal 1 and 2.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Meet now from the calendar (--call-notes-test --call-notes-meetnow, live): made through Teams free's middle tier (teams.live.com/meet link), its chat named (from the create answer's groupContext), joined (connected). Meeting bar in a personal meeting: Chat, People, Raise, React, View, More, Camera, Mic, Share, Leave (no Controls, Rooms, Apps or Notes); 1:1 call bar: Hold, Chat, People, View, More, Camera, Mic, Share, Leave (dial pad now hidden; Record in More ▸ Record and transcribe, where Teams free has it on the bar).
+- Not done / not verified: video calls; group calls from a chat (no personal-only group chat exists: there are two personal test accounts and their group chats include work users, where Teams turns calls off); calls with Teams desktop for personal use answering (testpc2's Teams desktop is signed in as Personal 2, but its windows are left alone; Teams on the web was the reference, and the "Teams on winpc" half of AC #1 can't apply: winpc is ost-test1, a work account, and Teams doesn't allow calls between personal and work accounts); a scheduled personal meeting joined from its calendar entry (same teams.live.com/meet path as the links); the free meeting's meeting options (Bypass lobby, Share screen) and the work options pane still shown in the form; the 60-minute end and any warning before it (not observed in Teams; OST shows the plan's limits on the form and offers the plans from Record, but doesn't end or warn); the Share tray's hidden Whiteboard row and the avatars (seen in code only).
+<!-- SECTION:NOTES:END -->
