@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@t372'
 created_date: '2026-11-27T21:01:00Z'
-updated_date: '2026-11-28T02:56:00Z'
+updated_date: '2026-11-28T04:04:00Z'
 labels:
   - desktop
   - files
@@ -54,4 +54,7 @@ Follow-up from TASK-0358 (PR #50). Left different or unverified: the Store quick
 - Live re-check with the final build (linuxlt, ost-test1, 2026-11-27): Power BI's quick start lists Teams' twelve chats in Teams' order plus "OST large chat test", which Teams leaves out for a reason not found (54 members of the tenant, last message 11-15, shown in Teams' chat list; likely Teams' local store). AC#1 stays open for it.
 - AC#4 left open: TASK-0379 holds the knowledge agent tools runtime it needs.
 - Tests: recent_files, drive::tests, chat::bot_chat_tests, app_places (19 passed, on linuxlt).
+
+- Codex review: cfet marks are now read for every group chat the quick start may list (appPlaceChats → api::cfet_threads), not only for untitled chats; live: only "Just me" marked. Favorites: unplaced favorites resolve by address and unfavorite by their listed SharePoint ids.
+- Agent build (GitHub Actions) of 46bff52: api:: tests 590 passed.
 <!-- SECTION:NOTES:END -->
