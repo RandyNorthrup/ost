@@ -28,8 +28,8 @@ env:
 jobs:
   # A push to a PR that only touches the backlog, docs or Markdown (an agent
   # recording a task's status after its code passed) skips the jobs below,
-  # but only when the previous head's Format, Clippy and Build and test
-  # completed successfully: the code is what already passed. GitHub counts skipped
+  # but only when every job it would skip
+  # completed successfully on the previous head: the code is what already passed. GitHub counts skipped
   # required checks as passing; the coordinator's merge gate also requires the
   # PR's last code commit to have passed. Pushes to main, new PRs and
   # force-pushes (rebases) always run everything.
@@ -61,9 +61,9 @@ jobs:
             # Only skip when the previous head's required checks finished and succeeded (a run
             # still going, failed or cancelled by this push's concurrency group runs everything).
             ok=$(gh api "repos/$REPO/commits/$BEFORE/check-runs?per_page=100" \
-                   --jq '[.check_runs[]|select(.name=="Format" or .name=="Clippy" or .name=="Build and test")
+                   --jq '[.check_runs[]|select(.name as $n|["Dependency audit","Format","JavaScript tests","Clippy","Build and test","Release build refuses test-harness flags"]|index($n))
                           |select(.status=="completed" and .conclusion=="success")|.name]|unique|length')
-            if [ "$ok" = 3 ]; then code=false; else echo "previous head ${BEFORE:0:8} hasn't passed Format, Clippy and Build and test ($ok/3), running everything"; fi
+            if [ "$ok" = 6 ]; then code=false; else echo "previous head ${BEFORE:0:8} hasn't passed every job this would skip ($ok/6), running everything"; fi
           fi
           echo "code=$code" | tee -a "$GITHUB_OUTPUT"
   audit:
