@@ -1237,6 +1237,16 @@ pub fn wants_backfill(spec: &Value, arranged: &Value) -> bool {
     {
         return false;
     }
+    // An in:<person> is your one-on-one with them: without its thread the
+    // search service would look everywhere.
+    let unplaced = spec["picks"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|p| p["kw"] == "in" && p["kind"] == "person" && s(&p["thread"]).is_empty());
+    if unplaced {
+        return false;
+    }
     let shown = arranged["groups"]
         .as_array()
         .into_iter()
@@ -1260,6 +1270,11 @@ pub fn backfill_filters(spec: &Value) -> super::search::Filters {
             ("from", "person") => {
                 f.person_mail = s(&p["mail"]);
                 f.person_oid = s(&p["oid"]);
+            }
+            // (Your one-on-one with an in: person, as the results page.)
+            ("in", "person") => {
+                f.in_kind = "chat".into();
+                f.in_thread = s(&p["thread"]);
             }
             ("in", kind @ ("chat" | "channel" | "team")) => {
                 f.in_kind = kind.to_string();
@@ -1979,6 +1994,17 @@ mod tests {
             backfill_body(&inch, "o", "t", "UTC", "c", "l")["entityRequests"][0]["query"]["queryString"],
             "clientthreadid:19:7826@thread.tacv2 AND NOT (isClientSoftDeleted:TRUE) test"
         );
+        // in:<person>: their one-on-one; unknown, no backfill.
+        let inp = json!({ "scope": "messages", "words": "", "picks": [{ "kw": "in", "kind": "person", "mri": "8:orgid:9edc", "thread": "19:a_b@unq.gbl.spaces" }] });
+        assert!(wants_backfill(&inp, &json!({ "groups": [] })));
+        assert!(
+            backfill_body(&inp, "o", "t", "UTC", "c", "l")["entityRequests"][0]["query"]["queryString"]
+                .as_str()
+                .unwrap()
+                .starts_with("clientthreadid:19:a_b@unq.gbl.spaces AND ")
+        );
+        let unknown = json!({ "scope": "messages", "picks": [{ "kw": "in", "kind": "person", "mri": "8:orgid:9edc" }] });
+        assert!(!wants_backfill(&unknown, &json!({ "groups": [] })));
         let from = json!({ "scope": "messages", "words": "release", "picks": [{ "kw": "from", "kind": "person", "mail": "ost-test2@x.com", "oid": "9edc" }] });
         let q =
             backfill_body(&from, "o", "t", "UTC", "c", "l")["entityRequests"][0]["query"].clone();

@@ -360,7 +360,10 @@ Rectangle {
         // service reads words after a has: as part of it.)
         const canonical = [b.scopeToken, b.words].concat(b.active.map(k => k.token)).filter(x => !!x).join(" ") + " "
         return { key: suggestKey, text: b.picker ? field.text : canonical, words: b.words, scope: b.scope,
-                 picks: b.active.filter(k => k.kw === "from" || k.kw === "in").map(k => k.data),
+                 // (An in:<person> is your one-on-one with them, as the
+                 // results page reads it; the message backfill searches it.)
+                 picks: b.active.filter(k => k.kw === "from" || k.kw === "in").map(k => k.kw === "in" && k.data && k.data.kind === "person"
+                     ? Object.assign({}, k.data, { thread: root.oneOnOneThread(k.data.mri || ("8:orgid:" + k.data.oid)) || "" }) : k.data),
                  filetype: ft ? ft.value : "", mentions: b.active.some(k => k.token === "has:@Mentions"), attachments: b.active.some(k => k.token === "has:Attachments"),
                  picker: b.picker ? b.picker.kw : "", picker_query: b.picker ? b.picker.q : "" }
     }
