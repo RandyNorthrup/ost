@@ -438,12 +438,17 @@ Rectangle {
         return null
     }
 
-    // Go-to mode (Ctrl+G, the tip): Teams' local list of the people,
-    // chats and channels you have (two of your top people, then 1:1
-    // chats as people — five people at most once something is typed —
-    // then group and meeting chats and channels by when they were last
-    // active), ten in all; a name matches when each typed word starts one
-    // of its words (or a team's, or an address's).
+    // Go-to mode (Ctrl+G, the tip): Teams' local go-to list (its
+    // search-suggestions resolver, Teams 26304): your top people that match
+    // (two), then your conversations — group and meeting chats, channels
+    // and teams (as their General channel), your own chat and, once
+    // something is typed, one-on-one chats as their people — ranked by
+    // Teams' weighted relevance (how well the name matches, how recently you
+    // read it, your affinity with it; your own chat counts as full
+    // affinity), more of your top people after every three of them, ten in
+    // all. A name matches when each typed word starts one of its words;
+    // group chats match their members' names too, and a named one shows its
+    // members under its topic.
     property bool gotoOn: false
     property var teams: []
     property var topPeople: []
@@ -456,43 +461,85 @@ Rectangle {
             if (g) root.topPeople = g.items
         }
     }
+    readonly property var gotoAffinity: { try { return JSON.parse(backend.gotoAffinityJson || "{}") } catch (e) { return {} } }
     readonly property var gotoLocal: {
         if (!gotoOn) return []
-        const words = field.text.toLowerCase().split(/\s+/).filter(w => !!w)
-        const match = function () {
-            if (!words.length) return true
-            const parts = [].slice.call(arguments).join(" ").toLowerCase().split(/[\s@._\-]+/).filter(x => !!x)
-            return words.every(w => parts.some(x => x.startsWith(w)))
+        const q = field.text.toLowerCase().replace(/\s+/g, " ").trim()
+        const words = q ? q.split(" ") : []
+        const parts = t => String(t || "").toLowerCase().split(/[\s@._\-]+/).filter(x => !!x)
+        const fits = t => { const p = parts(t); return words.every(w => p.some(x => x.startsWith(w))) }
+        const match = function () { return !words.length || fits([].slice.call(arguments).join(" ")) }
+        // Teams' match buckets (its RANK values: 2 the name holds the words
+        // as typed, 4 they only start its words), by the first title that
+        // fits; -1 none does.
+        const bucket = titles => {
+            if (!words.length) return 1
+            for (const t of titles) if (t && fits(t)) return String(t).toLowerCase().indexOf(q) >= 0 ? 2 : 4
+            return -1
         }
-        const people = [], seen = {}
-        const most = words.length ? 5 : 3
-        const addPerson = p => {
-            const k = String(p.mri || "").toLowerCase()
-            if (!k || seen[k] || people.length >= most) return
-            seen[k] = true
-            people.push(p)
-        }
-        // (A person with a chat opens that chat: your own is the notes one.)
-        const chatOf = mri => chats.find(c => !c.isGroup && !c.meeting && String(c.peerMri || "").toLowerCase() === String(mri || "").toLowerCase())
-        for (const p of topPeople.slice(0, 2)) {
-            if (!match(p.plain_name || p.name, p.sub, p.mail || p.upn)) continue
-            const c = chatOf(p.mri)
-            addPerson(Object.assign({}, p, { kind: "person" }, c ? { chat: c.id } : {}))
-        }
+        const key = m => String(m || "").toLowerCase()
+        const topOf = mri => topPeople.find(p => key(p.mri) === key(mri))
+        // Your top people that match, the first two.
+        const tops = topPeople.filter(p => match(p.plain_name || p.name, p.sub, p.mail || p.upn))
+        const chatOf = mri => chats.find(c => !c.isGroup && !c.meeting && key(c.peerMri) === key(mri))
+        const asPerson = p => { const c = chatOf(p.mri); return Object.assign({}, p, { kind: "person" }, c ? { chat: c.id } : {}) }
+        const people = tops.slice(0, 2).map(asPerson)
+        const shown = {}
+        for (const p of people) shown[key(p.mri)] = true
+        // The conversations, with what Teams ranks them by.
+        const cands = []
+        const scores = gotoAffinity.scores || {}, means = gotoAffinity.means || {}
+        const week = 7 * 24 * 3600 * 1000, now = Date.now()
+        const affinity = (id, mean, created) => scores[id] !== undefined ? scores[id] : (created && now - created < week ? (means[mean] || 0) : 0)
         for (const c of chats) {
-            if (c.isGroup || c.meeting || !c.peerMri) continue
-            if (!words.length && !c.isSelf) continue
-            if (!match(c.plain_name || c.name)) continue
-            addPerson({ kind: "person", oid: String(c.peerMri).split(":").pop(), mri: c.peerMri, name: c.name, plain_name: c.plain_name || c.name, you: !!c.isSelf, sub: "", chat: c.id })
+            if (c.isSelf) {
+                const b = bucket([c.plain_name || c.name])
+                if (b < 0) continue
+                cands.push({ b: b, horizon: c.horizon || 0, aff: 1, row: { kind: "person", oid: String(c.peerMri).split(":").pop(), mri: c.peerMri, name: c.name, plain_name: c.plain_name || c.name, you: true, sub: backend.userMail || "", chat: c.id } })
+            } else if (!c.isGroup && !c.meeting && c.peerMri) {
+                if (!words.length || shown[key(c.peerMri)] || c.unlisted) continue
+                const b = bucket([c.plain_name || c.name])
+                if (b < 0) continue
+                const t = topOf(c.peerMri)
+                cands.push({ b: b, horizon: c.horizon || 0, aff: 0, row: { kind: "person", oid: String(c.peerMri).split(":").pop(), mri: c.peerMri, name: c.name, plain_name: c.plain_name || c.name, you: false, sub: t ? (t.mail || t.upn || "") : "", chat: c.id } })
+            } else if ((c.isGroup || c.meeting) && !c.left && !(c.unlisted && !c.meeting) && !(c.alone && !c.named)) {
+                const members = (c.memberNames || []).join(" ")
+                const b = bucket(members ? [c.name, c.name + " " + members] : [c.name])
+                if (b < 0) continue
+                cands.push({ b: b, horizon: c.horizon || 0, aff: affinity(c.id, "UGCMean", c.created), row: { kind: "chat", thread: c.id, title: c.name, meeting: !!c.meeting, named: !!c.named, time: c.time || "", sub: c.named && !c.meeting ? (c.memberTitle || "") : "" } })
+            }
         }
-        const convs = []
-        for (const c of chats) if ((c.isGroup || c.meeting) && !c.hidden && match(c.name)) convs.push({ kind: "chat", thread: c.id, title: c.name, meeting: !!c.meeting, named: !!c.named, time: c.time || "" })
-        for (const t of teams) for (const ch of (t.channels || [])) if (ch.shown !== false && !ch.archived && match(ch.name, t.name))
-            convs.push({ kind: "channel", thread: ch.id, group: t.id, title: ch.name, sub: t.name, time: ch.last_active || "" })
-        convs.sort((a, b) => (Date.parse(b.time) || 0) - (Date.parse(a.time) || 0))
-        return people.concat(convs).slice(0, 10)
+        for (const t of teams) for (const ch of (t.channels || [])) {
+            if (ch.shown === false || ch.archived) continue
+            const b = bucket([ch.name, t.name, t.name + " " + ch.name])
+            if (b < 0) continue
+            cands.push({ b: b, horizon: ch.horizon_ms || 0, aff: ch.general ? affinity(t.thread_id || ch.id, "UTMean", 0) : affinity(ch.id, "UCMean", 0), row: { kind: "channel", thread: ch.id, group: t.id, title: ch.name, sub: t.name, time: ch.last_active || "" } })
+        }
+        // Teams' weighted relevance (gotoRelevanceWeights 33/33/34): the
+        // match rank scaled over the candidates, recency 0.97 per hour since
+        // you read it, affinity.
+        const ranks = cands.map(x => 7 - x.b)
+        const lo = Math.min.apply(null, ranks), hi = Math.max.apply(null, ranks)
+        cands.forEach((x, i) => {
+            const m = hi > lo ? (ranks[i] - lo) / (hi - lo) : 0
+            const r = x.horizon > 0 ? Math.pow(0.97, (now - x.horizon) / 3600000) : 0
+            x.score = (33 * m + 33 * r + 34 * x.aff) / 100
+            x.i = i
+        })
+        cands.sort((a, b) => b.score - a.score || a.i - b.i)
+        const convs = cands.slice(0, 10).map(x => x.row)
+        for (const r of convs) if (r.kind === "person") shown[key(r.mri)] = true
+        // More of your top people for the places left, two after every
+        // three conversations (enableReorderGotoSuggestions).
+        const more = tops.slice(2).filter(p => !shown[key(p.mri)]).slice(0, Math.max(0, 8 - convs.length)).map(asPerson)
+        const out = people.slice()
+        for (let i = 0, j = 0; i < convs.length || j < more.length; i += 3, j += 2)
+            out.push.apply(out, convs.slice(i, i + 3).concat(more.slice(j, j + 2)))
+        const seen = {}
+        return out.filter(r => { const k = r.kind === "person" ? key(r.mri) : r.thread; if (seen[k]) return false; seen[k] = true; return true }).slice(0, 10)
     }
     function gotoMode() {
+        backend.loadGotoAffinity()
         root.gotoOn = true
         field.text = ""; root.kqlPicks = []
         root.searchOpen = true
@@ -516,7 +563,8 @@ Rectangle {
         key: root.suggestKey
         pillList: root.suggestMode === "plain" && !root.pcsPerson ? [] : root.pillList
         local: root.localGroups
-        enterShown: !!root.searchWords || root.box.active.some(k => k.kw === "from" || k.kw === "in" || k.kw === "filetype")
+        // (Teams' Messages pill with only an in: place shows no Press Enter.)
+        enterShown: !!root.searchWords || root.box.active.some(k => k.kw === "from" || (k.kw === "in" && root.searchScope !== "messages") || k.kw === "filetype")
         reply: root.reply
         chats: root.chats
         copilot: root.copilotSearch

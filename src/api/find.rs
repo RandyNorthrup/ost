@@ -556,6 +556,20 @@ const FLIGHTS: &str = "DisableTeamsSharedFilesFilter,QueryMicroservice,KeepAlive
 /// Send a query (with Teams' headers; `anchor` is "OID:{oid}@{tenant}");
 /// the service's reply.
 pub async fn search_raw(body: &serde_json::Value, anchor: &str) -> Result<serde_json::Value> {
+    search_raw_flights(body, anchor, FLIGHTS).await
+}
+
+/// The flights Teams' search box sends with its message backfill (its
+/// worker's, winpc 2026-11-28; the search page's add three, which change
+/// what has:Attachments finds).
+pub const POWERBAR_FLIGHTS: &str = "DisableTeamsSharedFilesFilter,QueryMicroservice,KeepAliveEnabledFlight,RequestFileMetaDataExtension,EnableCAForTeamsFlight,SearchV2Flight,SubstrateSearchFanoutFlight,lutmsearchmsg,TMSParseRefiningQueries";
+
+/// [`search_raw`] with Teams' `x-client-flights` for the caller.
+pub async fn search_raw_flights(
+    body: &serde_json::Value,
+    anchor: &str,
+    flights: &str,
+) -> Result<serde_json::Value> {
     let token = crate::auth::oauth::access_token_for(SCOPE)
         .await
         .context("Search token")?;
@@ -563,7 +577,7 @@ pub async fn search_raw(body: &serde_json::Value, anchor: &str) -> Result<serde_
     let mut req = reqwest::Client::new()
         .post(SEARCH_URL)
         .bearer_auth(token)
-        .header("x-client-flights", FLIGHTS)
+        .header("x-client-flights", flights)
         .header("x-client-version", "T2.1")
         .header("x-client-ui-language", "userLocale")
         .header("client-request-id", &request_id)

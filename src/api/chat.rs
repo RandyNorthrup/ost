@@ -873,6 +873,35 @@ async fn generated_titles(
         .collect()
 }
 
+/// A consumption horizon's arrival time ("<arrival>;<client time>;<id>",
+/// Teams' `OV`: 0 unless all three parts are there).
+pub fn horizon_arrival(h: &str) -> i64 {
+    let parts: Vec<&str> = h.split(';').collect();
+    if parts.len() != 3 || parts.iter().any(|p| p.is_empty()) {
+        return 0;
+    }
+    match (parts[0].parse::<i64>(), parts[1].parse::<f64>()) {
+        (Ok(a), Ok(_)) => a,
+        _ => 0,
+    }
+}
+
+/// The full names of a chat's other members, as last read for its names.
+fn title_member_names(members: &[String], me: &str) -> Vec<String> {
+    let cache = TITLE_PROFILES.lock().unwrap_or_else(|e| e.into_inner());
+    members
+        .iter()
+        .filter(|m| !m.eq_ignore_ascii_case(me))
+        .filter_map(|m| {
+            cache
+                .as_ref()
+                .and_then(|c| c.get(&m.to_ascii_lowercase()))
+                .map(|(_, p)| p.display.clone())
+        })
+        .filter(|n| !n.is_empty())
+        .collect()
+}
+
 /// A chat's members as they were last read for its generated name.
 /// The last message's sender name (`imdisplayname`) when someone other
 /// than `me` sent it (its `from` is a contact link ending in their MRI).
@@ -1904,6 +1933,21 @@ pub struct ChatInfo {
     /// A group chat with a name of its own (its thread's topic), not one
     /// named after its members.
     pub named: bool,
+    /// Where you last read it (its consumption horizon's arrival time, ms;
+    /// 0 never): Teams' go-to ranking weighs how recently you read a chat.
+    pub horizon_ms: i64,
+    /// When it was made (threadProperties.createdat, ms).
+    pub created_ms: i64,
+    /// A group chat's members as Teams names a chat after them (its
+    /// chatTitle.shortTitle; go-to shows it under a named chat's topic),
+    /// and their full names (go-to matches a chat's members too).
+    pub member_title: String,
+    pub member_names: Vec<String>,
+    /// A group chat with nobody in it but you.
+    pub alone: bool,
+    /// You left it (Teams' go-to leaves those out but lists the meeting
+    /// chats its chat list doesn't).
+    pub left: bool,
     /// A bot's 1:1 chat you blocked (Teams' Block bot conversation sets
     /// the thread's `messagingdisabled` to "true").
     pub messaging_disabled: bool,
@@ -2252,7 +2296,38 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
             })
         })
         .collect();
-    let titles = generated_titles(client, &untitled, &me).await;
+    // Named group chats' member names too (Teams' go-to shows a named
+    // chat's members under its topic and matches them).
+    let named_groups: Vec<(String, String)> = conversations
+        .iter()
+        .filter(|c| has_topic(c))
+        .filter_map(|c| {
+            let id = c.id.as_deref()?;
+            let p = c.thread_properties.as_ref()?;
+            let chat = p.extra.get("threadType").and_then(|t| t.as_str()) == Some("chat");
+            (chat
+                && id.starts_with("19:")
+                && id.ends_with("@thread.v2")
+                && !id.starts_with("19:meeting_"))
+            .then(|| {
+                let roster = p
+                    .extra
+                    .get("rosterVersion")
+                    .or_else(|| p.extra.get("version"))
+                    .map(|v| v.to_string())
+                    .unwrap_or_default();
+                (id.to_string(), roster)
+            })
+        })
+        .collect();
+    let untitled_ids: std::collections::HashSet<&str> =
+        untitled.iter().map(|(u, _)| u.as_str()).collect();
+    let titles = generated_titles(
+        client,
+        &[untitled.as_slice(), named_groups.as_slice()].concat(),
+        &me,
+    )
+    .await;
     let mut chats = Vec::new();
     for (i, conv) in conversations.iter().enumerate() {
         let id = conv.id.as_deref().unwrap_or("").to_string();
@@ -2295,16 +2370,22 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
                     .cloned()
             })
             .flatten();
-        let mut name = match titles.get(&id) {
-            Some(t) => t.clone(),
+        let untitled_chat = untitled_ids.contains(id.as_str());
+        let member_title = titles.get(&id).cloned().unwrap_or_default();
+        let mut name = if untitled_chat {
             // (Its members unreadable: never the thread id.)
             // (A 1:1 with someone whose profile isn't yours to read yet,
             // such as a Teams free request: the name they sent with.)
-            None if untitled.iter().any(|(u, _)| u == &id) => one_on_one_thread
-                .then(|| raw_convs.get(i).and_then(|c| sender_name_unless(c, &me)))
-                .flatten()
-                .unwrap_or_else(|| crate::i18n::tr_id("Unknown", "messaging:k7k6gmhup")),
-            None => conversation_name(conv),
+            if member_title.is_empty() {
+                one_on_one_thread
+                    .then(|| raw_convs.get(i).and_then(|c| sender_name_unless(c, &me)))
+                    .flatten()
+                    .unwrap_or_else(|| crate::i18n::tr_id("Unknown", "messaging:k7k6gmhup"))
+            } else {
+                member_title.clone()
+            }
+        } else {
+            conversation_name(conv)
         };
         // A 1:1 thread is named after the other person in full (the
         // generated names use given names, as a group's do).
@@ -2387,7 +2468,44 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
                         v.as_str().is_some_and(|s| s.eq_ignore_ascii_case("true"))
                     })
                 });
+        let thread_ms = |k: &str| {
+            conv.thread_properties
+                .as_ref()
+                .and_then(|p| p.extra.get(k))
+                .and_then(|j| {
+                    j.as_str()
+                        .and_then(|s| s.parse().ok())
+                        .or_else(|| j.as_i64())
+                })
+                .unwrap_or(0)
+        };
+        let group_chat = is_group && !id.starts_with("19:meeting_") && id.ends_with("@thread.v2");
+        let member_names = if group_chat {
+            title_member_names(&members, &me)
+        } else {
+            Vec::new()
+        };
+        let alone = group_chat && members.len() == 1 && members[0].eq_ignore_ascii_case(&me);
         chats.push(ChatInfo {
+            horizon_ms: conv
+                .properties
+                .as_ref()
+                .and_then(|p| p.get("consumptionhorizon"))
+                .and_then(|h| h.as_str())
+                .map(horizon_arrival)
+                .unwrap_or(0),
+            created_ms: thread_ms("createdat"),
+            member_title: if named && group_chat {
+                member_title
+            } else {
+                String::new()
+            },
+            member_names,
+            alone,
+            left: conv
+                .thread_properties
+                .as_ref()
+                .is_some_and(|p| left(&p.extra)),
             id,
             name,
             is_group,
@@ -3486,6 +3604,17 @@ mod list_preview_tests {
             list_preview("", "RichText/Html", Some(&fwd)).0,
             "Forwarded a message"
         );
+    }
+
+    #[test]
+    fn horizon_arrival_as_teams_reads_it() {
+        assert_eq!(
+            super::horizon_arrival("1795646436569;1795646436695;4248595710370111517"),
+            1795646436569
+        );
+        assert_eq!(super::horizon_arrival("0;0;0"), 0);
+        assert_eq!(super::horizon_arrival(" "), 0);
+        assert_eq!(super::horizon_arrival("12;;3"), 0);
     }
 
     #[test]

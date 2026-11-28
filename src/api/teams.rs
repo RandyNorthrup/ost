@@ -189,6 +189,9 @@ pub struct ListChannel {
     /// When you last read it (its consumption horizon's timeStamp, ms; 0
     /// never): Teams' app place picker lists recently read channels first.
     pub read_ms: i64,
+    /// Where you last read it (its consumption horizon's arrival time, ms;
+    /// 0 never): Teams' go-to ranking weighs it.
+    pub horizon_ms: i64,
 }
 
 /// A team as the chat list shows it.
@@ -339,6 +342,10 @@ pub fn list_teams_from(v: &serde_json::Value) -> Vec<ListTeam> {
                         .and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse().ok()))
                 })
                 .unwrap_or(0),
+                horizon_ms: c
+                    .pointer("/consumptionHorizon/originalArrivalTime")
+                    .and_then(|v| v.as_i64().or_else(|| v.as_str()?.parse().ok()))
+                    .unwrap_or(0),
             };
             let mut list: Vec<ListChannel> = channels.iter().map(channel_of).collect();
             let deleted: Vec<ListChannel> = all

@@ -1219,6 +1219,336 @@ pub fn arrange_kql(reply: &Value, spec: &Value, me: &Me, names: &Names) -> Value
     json!({ "groups": groups, "pcs": pcs })
 }
 
+/// How many messages the Messages pill asks the suggestions service for
+/// (ECS autosuggest.domainScopingConfig); fewer back and Teams backfills.
+const MESSAGE_DOMAIN_SIZE: usize = 10;
+
+/// Teams' message backfill (captured on winpc, Teams 26304, 2026-11-28):
+/// with the Messages pill, when the suggestions bring back fewer messages
+/// than the 10 asked for, Teams also asks the search service
+/// (searchservice/api/v2/query, PowerbarTypeAheadMsg, 25) with the box's
+/// filters, and lists the messages the suggestions don't have after theirs.
+/// That's where its hits come from when the suggestions service has none
+/// (has:@Mentions with words, in:<channel>). Not for a picker or go-to.
+pub fn wants_backfill(spec: &Value, arranged: &Value) -> bool {
+    if s(&spec["scope"]) != "messages"
+        || !s(&spec["picker"]).is_empty()
+        || spec["goto"].as_bool() == Some(true)
+    {
+        return false;
+    }
+    let shown = arranged["groups"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|g| g["id"] == "MESSAGES")
+        .map(|g| g["items"].as_array().map_or(0, Vec::len))
+        .sum::<usize>();
+    shown < MESSAGE_DOMAIN_SIZE
+}
+
+/// The box's filters as the search service's (a picked from: person, an
+/// in: chat, channel or team, @Mentions, Has attachments).
+pub fn backfill_filters(spec: &Value) -> super::search::Filters {
+    let mut f = super::search::Filters {
+        mentions: spec["mentions"].as_bool() == Some(true),
+        attachment: spec["attachments"].as_bool() == Some(true),
+        ..Default::default()
+    };
+    for p in spec["picks"].as_array().into_iter().flatten() {
+        match (s(&p["kw"]).as_str(), s(&p["kind"]).as_str()) {
+            ("from", "person") => {
+                f.person_mail = s(&p["mail"]);
+                f.person_oid = s(&p["oid"]);
+            }
+            ("in", kind @ ("chat" | "channel" | "team")) => {
+                f.in_kind = kind.to_string();
+                f.in_thread = s(&p["thread"]);
+                f.in_group = s(&p["group"]);
+            }
+            _ => {}
+        }
+    }
+    f
+}
+
+/// The fields Teams' powerbar asks the search service for.
+const BACKFILL_FIELDS: [&str; 12] = [
+    "Extension_SkypeSpaces_ConversationPost_Extension_FromSkypeInternalId_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_FileData_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_ThreadType_String",
+    "GroupId",
+    "Extension_SkypeSpaces_ConversationPost_Extension_SenderTenantId_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_ParentMessageId_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_ConversationType_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_Topic_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_ImageSrc_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_AmsReferences_StringArray",
+    "Extension_SkypeSpaces_ConversationPost_Extension_ParentMessageId_String",
+    "Extension_SkypeSpaces_ConversationPost_Extension_MessageSubType_String",
+];
+
+/// The backfill's request, as Teams sends it: the search page's query
+/// string for the filters ("mentions:<oid> AND NOT (isClientSoftDeleted:TRUE)
+/// release"; "*" with no words), the person as a query annotation.
+pub fn backfill_body(
+    spec: &Value,
+    my_oid: &str,
+    tenant: &str,
+    timezone: &str,
+    cvid: &str,
+    logical: &str,
+) -> Value {
+    let words = s(&spec["words"]).trim().to_string();
+    let words = if words.is_empty() {
+        "*".to_string()
+    } else {
+        words
+    };
+    let f = backfill_filters(spec);
+    let mut query = json!({
+        "queryString": super::search::message_query(&words, &f, my_oid, false),
+        "displayQueryString": words,
+    });
+    if !f.person_mail.is_empty() {
+        query["queryAnnotations"] = json!([{
+            "type": "People", "text": f.person_mail, "userId": f.person_oid, "tenantId": tenant,
+        }]);
+    }
+    json!({
+        "entityRequests": [{
+            "entityType": "Message", "contentSources": ["Teams"], "fields": BACKFILL_FIELDS,
+            "query": query, "propertySet": "Optimized", "topResultsCount": 10, "from": 0, "size": 25,
+        }],
+        "cvid": cvid,
+        "logicalId": logical,
+        "QueryAlterationOptions": { "EnableAlteration": true, "EnableSuggestion": true, "SupportedRecourseDisplayTypes": ["Suggestion"] },
+        "scenario": {
+            "Dimensions": [
+                { "DimensionName": "QueryType", "DimensionValue": "PowerbarTypeAheadMsg" },
+                { "DimensionName": "FormFactor", "DimensionValue": "general.cdlworker.reactSearch" }
+            ],
+            "Name": "powerbar",
+        },
+        "timezone": timezone,
+    })
+}
+
+/// A search service result as a suggestion (Teams' converter `el`): its
+/// sender, where it was said (a channel's team and channel, a chat's topic
+/// and the people it went to), its date, its summary without the
+/// highlighting, its identifiers.
+fn backfill_suggestion(r: &Value) -> Value {
+    let src = &r["Source"];
+    let ext = &src["Extensions"];
+    let e = |k: &str| s(&ext[format!("SkypeSpaces_ConversationPost_Extension_{k}")]);
+    let thread_type = match e("ThreadType").to_ascii_lowercase().as_str() {
+        "chat" | "streamofnotes" | "sfbinteropchat" => "Chat",
+        "meeting" => "Meeting",
+        _ => "Channel",
+    };
+    let conversation_type = e("ConversationType");
+    let sub_type = match conversation_type.as_str() {
+        "P2PChat" => "OneOnOneChat",
+        "PersonalStream" => "SelfChat",
+        t @ ("NamedGroupChat" | "UnnamedGroupChat" | "MeetingChat" | "SharedChannel"
+        | "StandardChannel") => t,
+        _ => "",
+    };
+    let to: Vec<Value> = s(&src["DisplayTo"])
+        .split(';')
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(|n| json!({ "DisplayName": n, "MRI": "" }))
+        .collect();
+    let mut metadata = Vec::new();
+    match s(&src["Importance"]).as_str() {
+        "High" => metadata.push("Important"),
+        "Urgent" => metadata.push("Urgent"),
+        _ => {}
+    }
+    if src["MentionsPreview"]["IsMentioned"].as_bool() == Some(true) {
+        metadata.push("IsMentioned");
+    }
+    if src["HasAttachments"].as_bool() == Some(true) {
+        metadata.push("HasAttachments");
+    }
+    let summary = if r["HitHighlightedSummary"].is_string() {
+        s(&r["HitHighlightedSummary"])
+    } else {
+        s(&src["Preview"])
+    };
+    json!({
+        "From": { "MRI": e("FromSkypeInternalId"), "EmailAddress": src["Sender"]["EmailAddress"].clone() },
+        "ThreadType": thread_type, "ThreadSubType": sub_type,
+        "Topic": e("Topic"), "Team": s(&src["TeamName"]), "Channel": s(&src["ChannelName"]),
+        "GroupId": s(&src["GroupId"]), "ClientThreadId": s(&src["ClientThreadId"]),
+        "DateTimeSent": s(&src["DateTimeSent"]), "InternetMessageId": s(&src["InternetMessageId"]),
+        "ParentMessageId": e("ParentMessageId"), "Preview": strip_tags(&summary),
+        "Metadata": metadata, "RecipientsCount": to.len(), "ToPreview": to,
+        "AMSReferences": ext["SkypeSpaces_ConversationPost_Extension_AmsReferences"].clone(),
+    })
+}
+
+/// Text without its tags (Teams' `zF`), entities read, spaces as one.
+fn strip_tags(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut in_tag = false;
+    for c in html.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' if in_tag => in_tag = false,
+            _ if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    let out = out
+        .replace("&nbsp;", " ")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&");
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The backfill reply's messages as suggestion rows.
+pub fn backfill_messages(reply: &Value, me: &Me, names: &Names) -> Vec<Value> {
+    reply["EntitySets"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|set| set["ResultSets"].as_array().into_iter().flatten())
+        .flat_map(|rs| rs["Results"].as_array().into_iter().flatten())
+        .filter(|r| r["Type"] == "Message" || r["Source"]["InternetMessageId"].is_string())
+        .map(|r| message(&backfill_suggestion(r), me, names))
+        .collect()
+}
+
+/// The backfilled messages after the suggestions' own (those the
+/// suggestions already list are left out, as Teams dedupes by message id).
+pub fn merge_backfill(arranged: &mut Value, extra: Vec<Value>) {
+    if extra.is_empty() {
+        return;
+    }
+    let groups = arranged["groups"].as_array_mut();
+    let Some(groups) = groups else { return };
+    let i = match groups.iter().position(|g| g["id"] == "MESSAGES") {
+        Some(i) => i,
+        // (Only the backfill's: Teams shows them under no heading.)
+        None => {
+            groups.insert(0, group("MESSAGES", String::new(), Vec::new()));
+            0
+        }
+    };
+    let Some(items) = groups[i]["items"].as_array_mut() else {
+        return;
+    };
+    let mut seen: std::collections::HashSet<String> = items.iter().map(|m| s(&m["id"])).collect();
+    for m in extra {
+        let id = s(&m["id"]);
+        if id.is_empty() || seen.insert(id) {
+            items.push(m);
+        }
+    }
+}
+
+/// Ask the search service for the backfill (see [`wants_backfill`]).
+pub async fn fetch_backfill(
+    spec: &Value,
+    my_oid: &str,
+    tenant: &str,
+    timezone: &str,
+) -> Result<Value> {
+    let body = backfill_body(
+        spec,
+        my_oid,
+        tenant,
+        timezone,
+        &uuid::Uuid::new_v4().to_string(),
+        &uuid::Uuid::new_v4().to_string(),
+    );
+    let anchor = if my_oid.is_empty() || tenant.is_empty() {
+        String::new()
+    } else {
+        format!("OID:{my_oid}@{tenant}")
+    };
+    super::find::search_raw_flights(&body, &anchor, super::find::POWERBAR_FLIGHTS).await
+}
+
+/// Your affinity with your chats, channels and teams, as Teams' go-to
+/// ranking reads it (Substrate's user knowledge base,
+/// `GET /userknowledgebase/v1.0/{upn}/teams/affinityscore`): each kind's
+/// scores (ScoreV2, else Score; below 0 counts as 0) as z-scores scaled to
+/// 0…1, by thread id, plus each kind's mean (`means`: UCMean, UGCMean,
+/// UTMean) for chats too new to have a score of their own.
+pub fn affinity_scores(reply: &Value) -> Value {
+    let v = &reply["value"][0];
+    let mut out = serde_json::Map::new();
+    let mut means = serde_json::Map::new();
+    for (key, id_key, mean) in [
+        ("UCScore", "ThreadId", "UCMean"),
+        ("UGCScore", "ThreadId", "UGCMean"),
+        ("UTScore", "TeamId", "UTMean"),
+    ] {
+        let rows: Vec<(String, f64)> = v[key]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|r| r["Score"].as_f64() != Some(-1.0))
+            .map(|r| {
+                let score = r["ScoreV2"]
+                    .as_f64()
+                    .or_else(|| r["Score"].as_f64())
+                    .unwrap_or(0.0)
+                    .max(0.0);
+                (s(&r[id_key]), score)
+            })
+            .collect();
+        let scaled = normalised(&rows.iter().map(|(_, x)| *x).collect::<Vec<_>>());
+        let n = scaled.len().max(1) as f64;
+        means.insert(mean.into(), json!(scaled.iter().sum::<f64>() / n));
+        for ((id, _), x) in rows.into_iter().zip(scaled) {
+            if !id.is_empty() && x > 0.0 {
+                out.insert(id, json!(x));
+            }
+        }
+    }
+    json!({ "scores": out, "means": means })
+}
+
+/// Teams' z-scores scaled to 0…1 (`dcs` then `ucs`): equal scores give
+/// NaN there, which its ranking reads as 0.
+fn normalised(xs: &[f64]) -> Vec<f64> {
+    if xs.is_empty() {
+        return Vec::new();
+    }
+    let n = xs.len() as f64;
+    let mean = xs.iter().sum::<f64>() / n;
+    let sd = (xs.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n).sqrt();
+    let z: Vec<f64> = xs.iter().map(|x| (x - mean) / sd).collect();
+    let (lo, hi) = z
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &x| {
+            (a.min(x), b.max(x))
+        });
+    z.iter()
+        .map(|x| {
+            let v = (x - lo) / (hi - lo);
+            if v.is_finite() { v } else { 0.0 }
+        })
+        .collect()
+}
+
+/// Ask for your affinity scores (see [`affinity_scores`]).
+pub async fn fetch_affinity(upn: &str, me: &Me, tenant: &str) -> Result<Value> {
+    let url = format!(
+        "https://substrate.office.com/userknowledgebase/v1.0/{}/teams/affinityscore",
+        url::form_urlencoded::byte_serialize(upn.as_bytes()).collect::<String>()
+    );
+    send(&url, None, me, tenant).await
+}
+
 /// Teams' Communities group (Viva Engage's communities matching the
 /// query), after the others; at most three.
 pub fn communities_group(hits: &[super::search::CommunityHit]) -> Option<Value> {
@@ -1602,5 +1932,124 @@ mod tests {
         // Not found: the id stays, as Teams shows it.
         let g = arrange(&r, "hi", &me(), vec![], &Names::new());
         assert_eq!(g[0]["items"][0]["place"], "8:live:.cid.abc");
+    }
+
+    #[test]
+    fn messages_backfill_as_teams() {
+        // Captured on winpc 2026-11-28: is:Messages has:@Mentions with one
+        // suggestion back, so Teams asks the search service too.
+        let spec = json!({ "scope": "messages", "words": "", "mentions": true, "picks": [] });
+        let arranged = json!({ "groups": [{ "id": "MESSAGES", "items": [{ "kind": "message", "id": "1795640822153" }] }] });
+        assert!(wants_backfill(&spec, &arranged));
+        let ten: Vec<Value> = (0..10).map(|i| json!({ "id": i.to_string() })).collect();
+        assert!(!wants_backfill(
+            &spec,
+            &json!({ "groups": [{ "id": "MESSAGES", "items": ten }] })
+        ));
+        assert!(!wants_backfill(
+            &json!({ "scope": "files" }),
+            &json!({ "groups": [] })
+        ));
+        assert!(!wants_backfill(
+            &json!({ "scope": "messages", "picker": "from" }),
+            &json!({ "groups": [] })
+        ));
+        let body = backfill_body(
+            &spec,
+            "4287e791-1b98-4963-8b94-281c50472683",
+            "t",
+            "America/Los_Angeles",
+            "c",
+            "l",
+        );
+        let q = &body["entityRequests"][0]["query"];
+        assert_eq!(
+            q["queryString"],
+            "mentions:4287e7911b9849638b94281c50472683 AND NOT (isClientSoftDeleted:TRUE) *"
+        );
+        assert_eq!(q["displayQueryString"], "*");
+        assert_eq!(body["entityRequests"][0]["size"], 25);
+        assert_eq!(
+            body["scenario"]["Dimensions"][0]["DimensionValue"],
+            "PowerbarTypeAheadMsg"
+        );
+        // in:<channel> with words; from:<person> as Teams annotates it.
+        let inch = json!({ "scope": "messages", "words": "test", "picks": [{ "kw": "in", "kind": "channel", "thread": "19:7826@thread.tacv2", "group": "g" }] });
+        assert_eq!(
+            backfill_body(&inch, "o", "t", "UTC", "c", "l")["entityRequests"][0]["query"]["queryString"],
+            "clientthreadid:19:7826@thread.tacv2 AND NOT (isClientSoftDeleted:TRUE) test"
+        );
+        let from = json!({ "scope": "messages", "words": "release", "picks": [{ "kw": "from", "kind": "person", "mail": "ost-test2@x.com", "oid": "9edc" }] });
+        let q =
+            backfill_body(&from, "o", "t", "UTC", "c", "l")["entityRequests"][0]["query"].clone();
+        assert_eq!(
+            q["queryString"],
+            "NOT (isClientSoftDeleted:TRUE) ost-test2@x.com release"
+        );
+        assert_eq!(
+            q["queryAnnotations"][0],
+            json!({ "type": "People", "text": "ost-test2@x.com", "userId": "9edc", "tenantId": "t" })
+        );
+
+        // The reply's messages as rows, after the suggestions' (one already
+        // listed is left out).
+        let reply = json!({ "EntitySets": [{ "ResultSets": [{ "Results": [
+            { "Type": "Message", "HitHighlightedSummary": "OST Test 1 can you confirm the <c0>Ubuntu</c0> package?",
+              "Source": { "InternetMessageId": "1795640822153", "ClientThreadId": "19:5c15@thread.v2", "DateTimeSent": "2026-11-25T21:07:02.153Z",
+                "DisplayTo": "OST Test 1; OST Test 3", "Sender": { "EmailAddress": { "Name": "OST Test 2" } }, "MentionsPreview": { "IsMentioned": true },
+                "Extensions": { "SkypeSpaces_ConversationPost_Extension_ThreadType": "chat", "SkypeSpaces_ConversationPost_Extension_Topic": "Release planning",
+                  "SkypeSpaces_ConversationPost_Extension_FromSkypeInternalId": "8:orgid:9edc", "SkypeSpaces_ConversationPost_Extension_ConversationType": "GroupChat" } } },
+            { "Type": "Message", "HitHighlightedSummary": "The meeting &quot;OST CAL&quot; is cancelled",
+              "Source": { "InternetMessageId": "1794919274462", "ClientThreadId": "19:7826@thread.tacv2", "DateTimeSent": "2026-11-17T12:41:14.462Z",
+                "DisplayTo": "OST Test Team", "TeamName": "OST Test Team", "ChannelName": "OST test channel", "GroupId": "g",
+                "Sender": { "EmailAddress": { "Name": "OST Test 1" } },
+                "Extensions": { "SkypeSpaces_ConversationPost_Extension_ThreadType": "topic", "SkypeSpaces_ConversationPost_Extension_FromSkypeInternalId": "8:orgid:me",
+                  "SkypeSpaces_ConversationPost_Extension_ParentMessageId": "1794919204110" } } }
+        ]}]}]});
+        let rows = backfill_messages(&reply, &me(), &Names::new());
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0]["title"],
+            "OST Test 1 can you confirm the Ubuntu package?"
+        );
+        assert_eq!(rows[0]["topic"], "Release planning");
+        assert_eq!(rows[0]["prefix"], "OST: ");
+        assert_eq!(rows[0]["icons"], json!(["mention"]));
+        assert_eq!(rows[1]["place"], "OST Test Team > OST test channel");
+        assert_eq!(rows[1]["title"], "The meeting \"OST CAL\" is cancelled");
+        assert_eq!(rows[1]["parent"], "1794919204110");
+        assert_eq!(rows[1]["channel"], true);
+        let mut arranged = arranged.clone();
+        merge_backfill(&mut arranged, rows);
+        let ids: Vec<&str> = arranged["groups"][0]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, ["1795640822153", "1794919274462"]);
+        // Nothing from the suggestions: the backfill's alone, no heading.
+        let mut none = json!({ "groups": [] });
+        merge_backfill(&mut none, backfill_messages(&reply, &me(), &Names::new()));
+        assert_eq!(none["groups"][0]["id"], "MESSAGES");
+        assert_eq!(none["groups"][0]["title"], "");
+    }
+
+    #[test]
+    fn affinity_scaled_as_teams() {
+        let r = json!({ "value": [{
+            "UGCScore": [{ "ThreadId": "19:a@thread.v2", "Score": 4.0 }, { "ThreadId": "19:b@thread.v2", "Score": 2.0 }, { "ThreadId": "19:c@thread.v2", "Score": -1 }],
+            "UCScore": [{ "ThreadId": "19:ch@thread.tacv2", "Score": 1.0, "ScoreV2": 3.0 }],
+            "UTScore": []
+        }]});
+        let a = affinity_scores(&r);
+        assert_eq!(a["scores"]["19:a@thread.v2"], 1.0);
+        // The lowest scales to 0 (and counts as none); -1 is no score.
+        assert!(a["scores"].get("19:b@thread.v2").is_none());
+        assert!(a["scores"].get("19:c@thread.v2").is_none());
+        assert_eq!(a["means"]["UGCMean"], 0.5);
+        // One score alone: Teams' z-score is NaN, read as 0.
+        assert!(a["scores"].get("19:ch@thread.tacv2").is_none());
+        assert_eq!(a["means"]["UTMean"], 0.0);
     }
 }
