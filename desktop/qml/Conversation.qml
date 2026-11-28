@@ -4681,6 +4681,7 @@ Rectangle {
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
         sourceComponent: PersonalFilesTab {
             chatId: root.chatId
+            messageCount: root.messages.length
             stamp: t => root.stamp(t)
             onToastRequested: d => root.toastRequested(d)
         }

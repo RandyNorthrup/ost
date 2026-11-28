@@ -50,8 +50,11 @@ Item {
             root.files = v.files || []
         }
     }
-    // The search finds a message a moment after it is sent.
+    // The search finds a message a moment after it is sent: read the list
+    // again after the chat's messages change (a sent or arrived file).
     Timer { id: reloadSoon; interval: 4000; onTriggered: root.load() }
+    property int messageCount: 0
+    onMessageCountChanged: if (loaded) reloadSoon.restart()
 
     function attachment(f) {
         return { name: f.name, file_type: f.file_type, object_url: f.object_url, share_url: f.share_url, item_id: "", location: "", site_url: f.site_url || "" }
