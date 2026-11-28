@@ -263,7 +263,9 @@ Item {
         return r && r.message_id === id ? r : null
     }
     // Whether the ··· menu is open for this message (keeps its hover bar up).
-    function menuOpenFor(id, context) { return forceChannelBarId === id || messageMenu.opened && !messageMenu.rightClick && !!messageMenu.message && messageMenu.message.id === id && messageMenu.context === context }
+    // (Closing too: Esc puts the focus back on its ···, which keeps the bar
+    // up from then on.)
+    function menuOpenFor(id, context) { return forceChannelBarId === id || (messageMenu.opened || messageMenu.closing) && !messageMenu.rightClick && !!messageMenu.message && messageMenu.message.id === id && messageMenu.context === context }
     function openMessageMenu(m, anchor, rightClick, px, py, context) {
         if (m.mine && root.isGroup) backend.loadMessageReaders(m.id)
         messageMenu.message = m
@@ -430,18 +432,41 @@ Item {
         onPicked: i => backend.openChatWith(items[i].key.replace(/^8:orgid:/, ""), items[i].label)
     }
     // The right-click menu's reaction strip: the quick reactions and More
-    // reactions, 31.3 tall.
+    // reactions, 31.3 tall. They are the menu's first keyboard stops (Teams
+    // desktop: the menu opens on Like, Down goes through them to Reply with
+    // quote, Enter / Space react).
     Component {
         id: reactionStrip
         Row {
+            id: strip
             height: 31.3
             x: 2
+            readonly property var keyItems: {
+                const a = []
+                for (let i = 0; i < stripRepeater.count; i++) a.push(stripRepeater.itemAt(i))
+                return a.concat([stripMore])
+            }
             Repeater {
+                id: stripRepeater
                 model: root.quickReactions
                 Item {
                     id: stripBtn
                     required property string modelData
                     width: 32; height: 31
+                    // Fluent's keyboard outline (strokeFocus2, 2 px), once a
+                    // key was used (none on the first stop after a click).
+                    Rectangle {
+                        visible: stripBtn.activeFocus && messageMenu.focusRing
+                        anchors.fill: parent; radius: 4; color: "transparent"
+                        border.width: 2; border.color: theme.pick("#000000", "#FFFFFF", "#FFFFFF")
+                    }
+                    function activate() {
+                        const m = messageMenu.message
+                        const mine = (m.reactions || []).filter(r => r.mine).length
+                        const on = !stripBtn.pressedNow
+                        if (on && mine >= root.reactionLimit) return
+                        messageMenu.close(); root.react(m.id, stripBtn.modelData, on)
+                    }
                     Emoticon {
                         anchors.centerIn: parent; key: stripBtn.modelData; named: "medium"; size: 20
                         scale: stripHover.hovered ? 1.2 : 1
@@ -450,20 +475,12 @@ Item {
                     readonly property bool pressedNow: messageMenu.message ? (messageMenu.message.reactions || []).some(r => r.mine && r.my_key === stripBtn.modelData) : false
                     PressedLine { visible: stripBtn.pressedNow }
                     HoverHandler { id: stripHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler {
-                        onTapped: {
-                            const m = messageMenu.message
-                            const mine = (m.reactions || []).filter(r => r.mine).length
-                            const on = !stripBtn.pressedNow
-                            if (on && mine >= root.reactionLimit) return
-                            messageMenu.close(); root.react(m.id, stripBtn.modelData, on)
-                        }
-                    }
+                    TapHandler { onTapped: stripBtn.activate() }
                     Accessible.role: Accessible.Button
                     Accessible.name: backend.emoticonName(modelData)
                 }
             }
-            BarButton { icon: "emoji-add-20"; tip: qsTr("More reactions"); onClicked: { const m = messageMenu.message; const a = messageMenu.parent; messageMenu.close(); root.openReactionPicker(m.id, a) } }
+            BarButton { id: stripMore; focusRingShown: activeFocus && messageMenu.focusRing; icon: "emoji-add-20"; tip: qsTr("More reactions"); onClicked: { const m = messageMenu.message; const a = messageMenu.parent; messageMenu.close(); root.openReactionPicker(m.id, a) } }
         }
     }
     // Teams' reaction picker, opened from the hover bar or a message's

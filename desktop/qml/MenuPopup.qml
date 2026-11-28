@@ -35,8 +35,16 @@ import QtQuick.Window
 // message menu's Q, E, F, S, Del, the text menu's Ctrl+C). Enter / Space pick (or open a row's
 // submenu); Right opens a submenu on its first row (on a split row it
 // first moves to the chevron part) and Left or Esc closes it again. Esc
-// closes the menu and Tab / Shift+Tab close it too; the focus goes back to
-// where it was. Hovering a row moves the keyboard there as well. The
+// closes the menu and Tab / Shift+Tab close it too: Esc and Shift+Tab put
+// the focus on the button that opened it (Teams desktop, 2026-11-27: the
+// chat list's ··· More list options, a message's ··· More options) and Tab
+// goes on past it; a pick, or a menu not opened from a button, gives the
+// focus back to where it was.
+// A header's buttons come first in the Down / Up order (Teams' right-click
+// message menu, measured on Teams desktop 2026-11-27: it opens on Like;
+// Down goes Like, Heart, Laugh, Surprised, More reactions, Reply with
+// quote...; Up from Like wraps to More actions; Home / End are Like and
+// More actions; Left / Right don't move). Hovering a row moves the keyboard there as well. The
 // outline (2 px strokeFocus2, 2 px outside the row) shows once a key was
 // used. Separators, headings and group labels are skipped; disabled rows
 // are stops but can't be picked (Fluent's disabledFocusable).
@@ -79,8 +87,21 @@ Popup {
     property real chevronMargin: viewStyle ? 6 : 8
     property real keysMargin: 6
     // An optional strip above the items (the right-click reactions), with a
-    // divider under it.
+    // divider under it. Its `keyItems` (a list of Items, if it has one) are
+    // the keyboard's first stops: each takes the focus in turn, shows its
+    // outline while `focusRing` is set, and Enter / Space call its
+    // activate() (or emit its clicked()).
     property Component header: null
+    /// The button that opened the menu: Esc and Shift+Tab put the focus on
+    /// it, and Tab goes on from it (Teams' Fluent menus: clicking a trigger
+    /// focuses it). Unset, it is the menu's parent when
+    /// that is a button (an item with a `clicked` signal, as BarButton or
+    /// ChatList's HeaderButton), so a menu inside its button needs nothing.
+    property Item opener: null
+    /// Closing, until the focus is back (aboutToHide to closed): a host
+    /// that shows the opener only while the menu is open (the message
+    /// hover bar's ···) keeps it up meanwhile, so the focus can land on it.
+    property bool closing: false
     readonly property real labelX: labelInset >= 0 ? labelInset : fabric ? 32 : hasIcons ? 30 : 6
     /// Fluent menus without hasIcons: only rows with an icon leave room
     /// for it (Teams' Pause notifications: "10 minutes" at 6,
@@ -161,12 +182,29 @@ Popup {
     property bool focusRing: false
     /// The menu a submenu belongs to (null for a menu of its own).
     property var ownerMenu: null
-    // The item that had the focus before the menu took it.
+    // The item that had the focus before the menu took it, and the opener
+    // (see `opener`) as the menu opened; toOpener: Esc or Shift+Tab closed it.
     property var restoreFocusItem: null
+    property var openerFocusItem: null
+    property bool toOpener: false
     function isStop(it) { return !!it && !it.separator && !it.heading && !it.group }
-    /// The keyboard's stops in order: [{ i, part }].
+    /// The header's keyboard stops (see `header`).
+    function headerKeys() {
+        const h = headerLoader.item
+        return h && h.keyItems ? Array.from(h.keyItems).filter(x => !!x) : []
+    }
+    // The opener: `opener`, or the parent when it is a button.
+    function openerItem() {
+        if (opener) return opener
+        const p = root.parent
+        return p && typeof p.clicked === "function" && p.visible ? p : null
+    }
+    /// The keyboard's stops in order: [{ i, part }] (part "header": the
+    /// header's i-th key item).
     function stops() {
         const s = []
+        const hk = headerKeys()
+        for (let k = 0; k < hk.length; k++) s.push({ i: k, part: "header" })
         for (let i = 0; i < items.length; i++) {
             const it = items[i]
             if (!isStop(it)) continue
@@ -194,6 +232,12 @@ Popup {
         const w = contentItem.Window.window
         const a = w ? w.activeFocusItem : null
         if (!a || !ownsDirectly(a)) return
+        if (currentPart === "header") {
+            const h = headerKeys()[current]
+            const ht = h || contentItem
+            if (ht !== a) ht.forceActiveFocus()
+            return
+        }
         const r = rowAt(current)
         const target = !r ? contentItem : currentPart === "chevron" && r.chevronItem ? r.chevronItem : r.focusItem
         if (target !== a) target.forceActiveFocus()
@@ -210,13 +254,20 @@ Popup {
     onOpened: focusCurrent()
     function goTo(stop) {
         if (!stop) return
-        if (subMenu && subMenu.opened && stop.i !== subIndex) { subMenu.close(); subIndex = -1 }
+        if (subMenu && subMenu.opened && (stop.part === "header" || stop.i !== subIndex)) { subMenu.close(); subIndex = -1 }
         if (hasFlyout) root.flyoutRequested(-1, null)
         current = stop.i
         currentPart = stop.part
     }
     // Enter / Space (and Right on a submenu row): the row's tap.
     function activate(i, part) {
+        if (part === "header") {
+            const h = headerKeys()[i]
+            if (!h || h.enabled === false) return
+            if (typeof h.activate === "function") h.activate()
+            else if (typeof h.clicked === "function") h.clicked()
+            return
+        }
         const it = items[i]
         if (!isStop(it) || it.enabled === false) return
         if (it.split && part === "chevron") { if (it.submenu) hoverRow(i, rowAt(i), "chevron", true); return }
@@ -261,7 +312,7 @@ Popup {
     function keyPressed(e) {
         const rtl = Qt.application.layoutDirection === Qt.RightToLeft
         const forward = rtl ? Qt.Key_Left : Qt.Key_Right, back = rtl ? Qt.Key_Right : Qt.Key_Left
-        if (e.key === Qt.Key_Escape) { close(); return }
+        if (e.key === Qt.Key_Escape) { toOpener = true; close(); return }
         // A row's own key (the message menu's Q, E, F, S, P, U and Del, the
         // text menu's Ctrl+C): that row is picked.
         const own = ownRow(e)
@@ -270,7 +321,9 @@ Popup {
             let top = root
             while (top.ownerMenu) top = top.ownerMenu
             const backwards = e.key === Qt.Key_Backtab || (e.modifiers & Qt.ShiftModifier)
-            const prev = top.restoreFocusItem
+            const prev = top.openerFocusItem || top.restoreFocusItem
+            // Shift+Tab: on the opener (or back where the focus was).
+            top.toOpener = backwards
             top.close()
             // Teams: Tab goes on to what follows the trigger.
             if (!backwards && prev && prev.Window.window) {
@@ -283,7 +336,7 @@ Popup {
         const s = stops()
         if (!s.length) return
         const k = s.findIndex(t => t.i === current && t.part === currentPart)
-        const it = items[current]
+        const it = currentPart === "header" ? null : items[current]
         switch (e.key) {
         case Qt.Key_Down: goTo(s[k < 0 ? 0 : (k + 1) % s.length]); return
         case Qt.Key_Up: goTo(s[k < 0 ? s.length - 1 : (k - 1 + s.length) % s.length]); return
@@ -306,21 +359,26 @@ Popup {
         // starts with the letter.
         const ch = e.text.toLowerCase()
         const rows = s.filter(t => t.part === "")
-        const from = rows.findIndex(t => t.i === current)
+        const from = currentPart === "header" ? -1 : rows.findIndex(t => t.i === current)
         for (let n = 1; n <= rows.length; n++) {
             const t = rows[(from + n) % rows.length]
             if ((items[t.i].label || "").charAt(0).toLowerCase() === ch) { goTo(t); return }
         }
     }
     function restoreFocus() {
-        const p = restoreFocusItem
+        const back = toOpener && !!openerFocusItem
+        const p = back ? openerFocusItem : restoreFocusItem
         restoreFocusItem = null
+        openerFocusItem = null
+        toOpener = false
         if (!p || !keyboardNavigation) return
         const w = p.Window.window
         if (!w) return
-        // A pick that moved the focus on purpose keeps it.
+        // A pick that moved the focus on purpose keeps it (Esc and
+        // Shift+Tab pick nothing: Qt's own Popup may have put the focus
+        // back on the item that had it, which isn't the opener).
         const a = w.activeFocusItem
-        if (a && a !== w.contentItem && a.visible && !owns(a)) return
+        if (!back && a && a !== w.contentItem && a.visible && !owns(a)) return
         if (p.visible && p.enabled) p.forceActiveFocus()
     }
     function toFirstStop() {
@@ -336,6 +394,8 @@ Popup {
             const w = (root.parent && root.parent.Window.window) || (contentItem && contentItem.Window.window)
             const a = w ? w.activeFocusItem : null
             restoreFocusItem = a && !owns(a) ? a : null
+            openerFocusItem = openerItem()
+            toOpener = false
         }
     }
     /// Open submenus to the left of the list (Teams' More menu).
@@ -438,9 +498,11 @@ Popup {
             if (top + sub.height > win.height) sub.y = Math.max(-top + sub.y + 8, sub.y - (top + sub.height - win.height) - 8)
         })
     }
+    onAboutToHide: closing = true
     onClosed: {
         if (subMenu) subMenu.close()
         if (!ownerMenu) restoreFocus()
+        closing = false
     }
     // A persistent pick changes the rows (a checkbox): an open submenu
     // shows its row's new list.
@@ -472,6 +534,7 @@ Popup {
         }
         Keys.onPressed: e => { if (root.keyboardNavigation && root.handlesKey(e)) { e.accepted = true; root.keyPressed(e) } }
         Loader {
+            id: headerLoader
             active: !!root.header
             visible: active
             width: root.width - 2 * root.padding
@@ -571,7 +634,7 @@ Popup {
                     // strokeFocus2, 2 px outside the row or the split part).
                     Rectangle {
                         readonly property bool chevronPart: !!row.modelData.split && root.currentPart === "chevron"
-                        visible: root.focusRing && root.keysHere && root.current === row.index
+                        visible: root.focusRing && root.keysHere && root.current === row.index && root.currentPart !== "header"
                         x: (chevronPart ? parent.width - 31 : 0) - 2; y: -2
                         width: (chevronPart ? 31 : row.modelData.split ? parent.width - 31 : parent.width) + 4
                         height: parent.height + 4
