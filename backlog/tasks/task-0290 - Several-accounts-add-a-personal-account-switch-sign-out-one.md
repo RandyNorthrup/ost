@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@t290'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T01:56:00Z'
+updated_date: '2026-11-28T02:31:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -54,6 +54,8 @@ Reuse the work multi-account machinery (profiles, switch_account, add_account, M
 - Not live: Open Teams on the web (opens a browser); the first profile's sign-out with others left (it shares the real default keyring entry on linuxlt). Email codes for the personal accounts were read with ~/ost-coord/graph_beta_get (ost-test1 / OST_PROFILE=test2).
 
 - Review rounds (Codex on PR #69): exact state-file names on profile removal; a failed app-definition load signals ready again after its 60 s wait; personal accounts now renew their 24 h browser session silently too (auth::browser_session, BrowserSignIn::personal(hint, prompt=none)) - not run live yet; a legacy Skype name becomes 8:<name>, not 8:orgid:.
+
+- 2026-11-27 later (b6a5335b): live, login.live.com answers Teams free's prompt=none sign-in with interaction_required ("Silent authentication was denied"), so the silent personal renewal from the Codex round is reverted: a personal account renews from its refresh token, and once that is refused (invalid_grant/login_required/interaction_required) OST opens Microsoft's sign-in page. Verified live: restart signs in from the refresh token; with the keyring's refresh token made unusable, start showed the sign-in page ("personal account's session ended"), and signing in again on the same profile worked (not refused as a second personal account).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -73,5 +75,5 @@ Changes:
 
 Verified live on linuxlt (ost-test2, ost-test3, OST Personal 1 and 2; Teams 26304 reference on testpc2): all four ACs, see notes. Tests: spa, identity, skype, config units; CI green.
 
-Not verified live: Open Teams on the web; the first profile's sign-out with other accounts left; the personal silent renewal (added in review). The personal window's content and work-only calls are TASK-0293..0297, and teams-cli sign-in is TASK-0292.
+Not verified live: Open Teams on the web, and the first profile's sign-out with other accounts left. A personal account has no silent renewal (login.live.com refuses prompt=none for Teams free's client): an ended 24-hour session goes back to the sign-in page, verified live with a refused refresh token. The personal window's content and work-only calls are TASK-0293..0297, and teams-cli sign-in is TASK-0292.
 <!-- SECTION:FINAL_SUMMARY:END -->
