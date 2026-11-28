@@ -38,8 +38,12 @@ Item {
     onMessageCountChanged: if (loaded) refreshSoon.restart()
     Timer {
         id: refreshSoon; interval: 4000
-        onTriggered: backend.driveAction(root.tag + "personal_photos_new", "{}", JSON.stringify({ chat: root.chatId, base: 0 }))
+        onTriggered: { root.incoming = []; root.askNew(0) }
     }
+    // The new pictures found so far, page by page, until a page reaches
+    // pictures already shown.
+    property var incoming: []
+    function askNew(base) { backend.driveAction(root.tag + "personal_photos_new", "{}", JSON.stringify({ chat: root.chatId, base: base })) }
     function reset() { photos = []; more = true; loaded = false; pageBase = 0; thumbs = ({}); loadMore() }
     onChatIdChanged: reset()
     Component.onCompleted: loadMore()
@@ -83,13 +87,20 @@ Item {
                 const v = JSON.parse(result)
                 if (v.chat !== root.chatId) return
                 const seen = {}
-                for (const p of root.photos) seen[p.preview_url] = true
-                const fresh = (v.photos || []).filter(p => !seen[p.preview_url])
-                if (!fresh.length) return
-                root.photos = fresh.concat(root.photos)
+                for (const p of root.photos.concat(root.incoming)) seen[p.preview_url] = true
+                const page = v.photos || []
+                const fresh = page.filter(p => !seen[p.preview_url])
+                root.incoming = root.incoming.concat(fresh)
+                // A whole page of new ones: there may be more before the
+                // pictures shown; ask for the next page first.
+                if (fresh.length && fresh.length === page.length && v.more) { root.askNew(v.base + 5); return }
+                const got = root.incoming
+                root.incoming = []
+                if (!got.length) return
+                root.photos = got.concat(root.photos)
                 // (The older pages moved down by as many messages.)
-                root.pageBase += new Set(fresh.map(p => p.message_id)).size
-                root.askThumbs(fresh)
+                root.pageBase += new Set(got.map(p => p.message_id)).size
+                root.askThumbs(got)
             } else if (kind === "personal_thumb") {
                 if (error || !result) return
                 const v = JSON.parse(result)
