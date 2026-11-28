@@ -1302,6 +1302,53 @@ Window {
         }
     }
 
+    // --discover-poll-test [--shots=dir] (TASK-0377): Discover's New updates.
+    // With the feed loaded, the first page it last had is made stale and
+    // Discover polls as its 5-minute timer does: the prompt shows (shot, and
+    // hovered); used, the feed loads again and it goes. With
+    // --discover-reply=TEXT, Reply in thread on the first card sends TEXT,
+    // then the reply is deleted again. Quits.
+    Timer {
+        readonly property string replyText: (Qt.application.arguments.find(a => a.startsWith("--discover-reply=")) || "").slice(17)
+        running: (Qt.application.arguments.indexOf("--discover-poll-test") >= 0 || replyText.length > 0) && backend.signedIn && chatList.chats.length > 0 && chatList.teams.length > 0
+        interval: 3000; repeat: true
+        property int step: 0
+        property string replyId: ""
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=/tmp").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "discover-" + n + ".png"))
+            const poll = Qt.application.arguments.indexOf("--discover-poll-test") >= 0
+            const st = step++
+            const i0 = () => discoverView.itemsForTest()[0]
+            const replies = () => { const i = i0(); return i ? (discoverView.threads[i.channel_id + ";messageid=" + i.post_id] || []).filter(m => m.id !== i.post_id) : [] }
+            if (st === 0) { rail.current = "chat"; chatList.openQuick("discover") }
+            else if (st === 5) {
+                console.warn("DISCOVER poll interval", discoverView.pollInterval, "state", JSON.stringify(discoverView.newUpdatesForTest()))
+                if (!poll) { step = 11; return }
+                discoverView.setTopPostForTest("stale"); discoverView.pollForTest()
+            }
+            else if (st === 7) { console.warn("DISCOVER polled", JSON.stringify(discoverView.newUpdatesForTest())); shot("new-updates") }
+            else if (st === 8) { const b = discoverView.hoverNewUpdatesForTest(); const p = b.mapToItem(window.contentItem, b.width / 2, b.height / 2); console.warn("DISCOVER button centre", p.x, p.y) }
+            else if (st === 9) discoverView.showNewUpdates()
+            else if (st === 10) { console.warn("DISCOVER refreshed", discoverView.itemsForTest().length, JSON.stringify(discoverView.newUpdatesForTest())); shot("refreshed") }
+            else if (st === 11 && !replyText) Qt.quit()
+            else if (st === 12) { console.warn("DISCOVER reply on", JSON.stringify([i0().team_name, i0().channel_name, i0().post_id]), "replies before", replies().length); discoverView.scrollToTopForTest(); discoverView.replyFirstForTest(replyText) }
+            else if (st === 16) {
+                const mine = replies().filter(m => m.mine && (m.text || "").indexOf(replyText) >= 0)
+                console.warn("DISCOVER replied", mine.length, JSON.stringify(mine.map(m => [m.id, m.sender, m.text, !!m.pending])))
+                shot("replied")
+                replyId = mine.length ? mine[mine.length - 1].id : ""
+            }
+            else if (st === 17 && replyId) backend.deleteMessage(replyId)
+            else if (st === 21) {
+                const left = replies().filter(m => m.id === replyId)
+                console.warn("DISCOVER reply deleted", JSON.stringify(left.map(m => [m.id, !!m.deleted])))
+                shot("reply-deleted")
+            }
+            else if (st === 22) Qt.quit()
+        }
+    }
+
     // --filter-test: try each chip and a name filter, logging what shows.
     Timer {
         running: Qt.application.arguments.indexOf("--filter-test") >= 0 && chatList.chats.length > 0 && chatList.teams.length > 0

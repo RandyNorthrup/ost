@@ -36,6 +36,16 @@ import QtQuick.Controls.Basic
 Rectangle {
     id: root
     color: theme.surface
+    // Colours measured on Teams web as OST Test 2 in light, dark and High
+    // contrast (2026-11-28): the page and header on #FFFFFF / #1F1F1F /
+    // #000000 with the header's line #E0E0E0 / #0A0A0A / white; a card on
+    // NeutralBackground1 (#FFFFFF / #292929 / #000000; white outline in High
+    // contrast), the line under its header #F0F0F0 / #141414 / #3FF23F and
+    // over its replies and Reply in thread #F0F0F0 / #141414 / white.
+    readonly property color headerLine: theme.pick("#E0E0E0", "#0A0A0A", "#FFFFFF")
+    readonly property color cardFill: theme.pick("#FFFFFF", "#292929", "#000000")
+    readonly property color cardHeaderLine: theme.pick("#F0F0F0", "#141414", "#3FF23F")
+    readonly property color cardLine: theme.pick("#F0F0F0", "#141414", "#FFFFFF")
     property string myName: ""
     /// Open a channel (the team › channel link).
     signal openChannel(string channelId, string name)
@@ -57,13 +67,55 @@ Rectangle {
     /// Hidden cards, by feedbackId: {kind: "POST"|"AUTHOR"|"CHANNEL", name}.
     property var hidden: ({})
     readonly property bool ended: loaded && !loading && !failed && !continuation
-    function load(more) {
+    /// A first page asked for over the cards shown (New updates): they
+    /// stay until it answers, as Teams' refetch keeps its list.
+    property bool refreshing: false
+    function load(more, keep) {
         if (loading || (more && !continuation)) return
         loading = true; failed = false
-        if (!more) { closeThreads(); items = []; cardModel.clear(); continuation = ""; feedback = ({}); hidden = ({}) }
+        refreshing = !more && !!keep && items.length > 0
+        if (!more && !refreshing) clearFeed()
         feedReq++
         backend.channelAction("discover-feed", "", "", JSON.stringify({ continuation: more ? continuation : "", req: feedReq }))
     }
+    function clearFeed() { closeThreads(); items = []; cardModel.clear(); continuation = ""; feedback = ({}); hidden = ({}) }
+
+    // ---- New updates (Teams 26304's discover surface: its feed's
+    // startPolling query and the worker's syncForLatestUpdate) ----
+    // While Discover is open Teams asks for the feed's first page every
+    // discoverPollingInterval (ECS; 5 minutes), the first time 5 minutes
+    // after it opened. When the newest post differs from the first page it
+    // last had, it shows "New updates" and stops asking until that's used.
+    // (Its 9-hour background sync, dataSyncIntervalTime, only sets the
+    // same flag, which opening Discover clears.)
+    property bool hasNewUpdates: false
+    /// The newest post of the last first page (Teams' stored feed).
+    property string topPostId: ""
+    property int pollReq: 0
+    readonly property int pollInterval: Number(backend.ecsSetting("discoverSurface", "discoverPollingInterval")) || 300000
+    Timer {
+        id: pollTimer
+        interval: root.pollInterval
+        repeat: true
+        running: root.visible
+        onTriggered: root.poll()
+    }
+    function poll() {
+        if (hasNewUpdates || loading) return
+        pollReq++
+        // (Channel "poll" marks the answer, a failed one too.)
+        backend.channelAction("discover-feed", "", "poll", JSON.stringify({ continuation: "", req: pollReq }))
+    }
+    /// New updates used: back to the top and the feed again (Teams' refresh,
+    /// announced "Discover Feed has been updated with new posts").
+    function showNewUpdates() {
+        hasNewUpdates = false
+        flick.contentY = 0
+        load(false, true)
+        root.Accessible.announce(qsTr("Discover Feed has been updated with new posts"))
+    }
+    function pollForTest() { poll() }
+    function setTopPostForTest(id) { topPostId = id }
     ListModel { id: cardModel }
     /// A picture clicked: Teams' viewer on the message's pictures.
     signal openImage(var images, int index, var message)
@@ -73,7 +125,7 @@ Rectangle {
         for (const k of opened) backend.closeThreadWindow(k.channel, k.post)
         opened = []
     }
-    onVisibleChanged: if (visible) load(false); else { closeThreads(); loading = false }
+    onVisibleChanged: if (visible) { hasNewUpdates = false; load(false) } else { closeThreads(); loading = false }
     Component.onDestruction: closeThreads()
     readonly property var threads: backend.threadWindowsJson ? JSON.parse(backend.threadWindowsJson) : ({})
     readonly property var teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
@@ -87,14 +139,40 @@ Rectangle {
         target: backend
         function onChannelActionResultChanged() {
             const r = JSON.parse(backend.channelActionResult || "{}")
-            if (r.op === "discover-feed") {
+            if (r.op === "discover-feed" && r.channel === "poll") {
+                // A poll: only a non-empty first page counts, its newest
+                // post against the last one's (Teams' hasFirstItemUpdated).
+                const page = r.data || {}
+                if (!r.ok || !root.visible || page.req !== root.pollReq || root.hasNewUpdates) return
+                const first = (page.items || [])[0]
+                if (!first) return
+                if (first.post_id !== root.topPostId) root.hasNewUpdates = true
+                root.topPostId = first.post_id
+            } else if (r.op === "discover-feed") {
                 // Only the latest load's answer counts (an older visit's, or
                 // one after Discover closed, changes nothing).
                 const page = r.data || {}
                 if (r.ok && page.req !== root.feedReq) return
                 if (!root.visible || !root.loading) return
                 root.loading = false
-                if (!r.ok) { root.failed = true; return }
+                const wasRefresh = root.refreshing
+                root.refreshing = false
+                if (!r.ok) { if (!wasRefresh) root.failed = true; return }
+                const firstPage = wasRefresh || !root.loaded || root.items.length === 0
+                if (wasRefresh) {
+                    // The new first page takes the cards' place; posts still
+                    // in it keep their open threads.
+                    const keep = {}
+                    for (const i of page.items || []) keep[i.channel_id + ";messageid=" + i.post_id] = true
+                    const still = []
+                    for (const k of root.opened) {
+                        if (keep[k.channel + ";messageid=" + k.post]) still.push(k)
+                        else backend.closeThreadWindow(k.channel, k.post)
+                    }
+                    root.opened = still
+                    root.items = []; cardModel.clear(); root.continuation = ""; root.feedback = ({}); root.hidden = ({})
+                }
+                if (firstPage && (page.items || []).length) root.topPostId = page.items[0].post_id
                 const seen = {}
                 for (const i of root.items) seen[i.feedback_id] = true
                 const fresh = (page.items || []).filter(i => !seen[i.feedback_id])
@@ -213,6 +291,9 @@ Rectangle {
     function firstMenuForTest() { const c = cardsRepeater.itemAt(0); return c ? c.menuItemsForTest() : [] }
     function closeMenusForTest() { const c = cardsRepeater.itemAt(0); if (c) c.closeMenuForTest() }
     function settingsForTest() { return settings }
+    function replyFirstForTest(t) { const c = cardsRepeater.itemAt(0); if (c) c.replyForTest(t) }
+    function newUpdatesForTest() { return { has: hasNewUpdates, shown: newUpdates.shown, x: newUpdates.x, y: newUpdates.y, w: newUpdates.width, h: newUpdates.height, top: topPostId } }
+    function hoverNewUpdatesForTest() { return newUpdates }
 
     // ---- Header ----
     Item {
@@ -237,7 +318,7 @@ Rectangle {
             Accessible.role: Accessible.Button
             Accessible.name: qsTr("Settings")
         }
-        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.divider }
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: root.headerLine }
     }
 
     // ---- The feed ----
@@ -282,6 +363,47 @@ Rectangle {
             }
         }
     }
+    // "New updates" (Teams' DiscoverSurfaceNewUpdatesButton): a Fluent
+    // primary button (medium: 32 tall, 5 12 padding, at least 96 wide, the
+    // 20 px ArrowSync 6 before "New updates" 14/20 semibold; the filled
+    // glyph on hover) centred over the top of the feed, 10 down, fading in
+    // over 400 ms. Shown while the feed isn't loading.
+    Rectangle {
+        id: newUpdates
+        readonly property bool shown: root.hasNewUpdates && !root.loading && root.items.length > 0
+        visible: shown || fadeIn.running
+        onShownChanged: if (shown) fadeIn.restart()
+        NumberAnimation { id: fadeIn; target: newUpdates; property: "opacity"; from: 0; to: 1; duration: 400 }
+        anchors.horizontalCenter: flick.horizontalCenter
+        y: flick.y + 10; z: 3
+        // (12 padding inside a 1 px transparent border.)
+        width: Math.max(96, nuRow.implicitWidth + 26); height: 32; radius: 4
+        color: nuTap.pressed ? theme.pick("#383966", "#383966", "#1AEBFF")
+             : nuHover.hovered ? theme.pick("#4F52B2", "#5B5FC7", "#1AEBFF")
+             : theme.brandFill
+        Row {
+            id: nuRow
+            anchors.centerIn: parent
+            spacing: 6
+            FluentIcon {
+                anchors.verticalCenter: parent.verticalCenter
+                name: nuHover.hovered ? "arrow-sync-20-filled" : "arrow-sync-20"; size: 20
+                color: theme.onFill(newUpdates, theme.textOnBrand)
+            }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("New updates")
+                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                lineHeight: 20; lineHeightMode: Text.FixedHeight
+                color: theme.onFill(newUpdates, theme.textOnBrand)
+            }
+        }
+        HoverHandler { id: nuHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { id: nuTap; onTapped: root.showNewUpdates() }
+        Accessible.role: Accessible.Button
+        Accessible.name: qsTr("New updates")
+        Accessible.onPressAction: root.showNewUpdates()
+    }
     Column {
         visible: (root.loaded && root.items.length === 0 && !root.loading) || (root.failed && root.items.length === 0)
         anchors.centerIn: flick
@@ -297,8 +419,8 @@ Rectangle {
             visible: root.failed
             anchors.horizontalCenter: parent.horizontalCenter
             width: retryText.implicitWidth + 24; height: 32; radius: 4
-            color: retryHover.hovered ? theme.rowHover : theme.surface
-            border.color: theme.stroke; border.width: 1
+            color: retryHover.hovered ? theme.menuHover : root.cardFill
+            border.color: retryHover.hovered ? theme.strokeHover : theme.stroke; border.width: 1
             Text { id: retryText; anchors.centerIn: parent; text: qsTr("Try again"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(retry, theme.text) }
             HoverHandler { id: retryHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.load(false) }
@@ -320,7 +442,8 @@ Rectangle {
         readonly property var replies: {
             const out = [], at = {}
             for (const m of thread) {
-                if (m.id === item.post_id || m.deleted || m.kind === "system") continue
+                // (A reply you deleted here stays as Teams' tombstone.)
+                if (m.id === item.post_id || m.kind === "system") continue
                 const k = m.client_message_id || m.id
                 if (k in at) out[at[k]] = m
                 else { at[k] = out.length; out.push(m) }
@@ -337,6 +460,8 @@ Rectangle {
         height: hiddenAs ? hiddenCard.height : surface.height
         function openMenuForTest() { cardHost.openMessageMenu(post, card, false, 0, 50, "discover") }
         function closeMenuForTest() { cardHost.messageMenu.close() }
+        /// Reply in thread, typed and sent as a person would.
+        function replyForTest(t) { replying = true; replyInput.forceActiveFocus(); replyInput.text = t; replyInput.submit() }
         function menuItemsForTest() { return cardHost.messageMenu.items.map(i => i.separator ? "|" : i.label) }
         MessageHost {
             id: cardHost
@@ -358,7 +483,7 @@ Rectangle {
             id: hiddenCard
             visible: !!card.hiddenAs
             width: parent.width; height: 57
-            depth: 2; radius: 4; color: theme.surface
+            depth: 2; radius: 4; color: root.cardFill
             Column {
                 x: 16; y: 9.9
                 width: parent.width - 16 - undo.width - 24
@@ -384,8 +509,8 @@ Rectangle {
                 id: undo
                 anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
                 width: 96; height: 32; radius: 4
-                color: undoHover.hovered ? theme.rowHover : theme.surface
-                border.color: theme.stroke; border.width: 1
+                color: undoHover.hovered ? theme.menuHover : root.cardFill
+                border.color: undoHover.hovered ? theme.strokeHover : theme.stroke; border.width: 1
                 Text { anchors.centerIn: parent; text: qsTr("Undo"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(undo, theme.text) }
                 HoverHandler { id: undoHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.undoHide(card.item) }
@@ -396,7 +521,7 @@ Rectangle {
             id: surface
             visible: !card.hiddenAs
             width: parent.width; height: col.height
-            depth: 2; radius: 4; color: theme.surface
+            depth: 2; radius: 4; color: root.cardFill
             Column {
                 id: col
                 width: parent.width
@@ -422,14 +547,17 @@ Rectangle {
                         Repeater {
                             model: card.fb === "" ? [{ key: "yes", label: qsTr("Yes") }, { key: "no", label: qsTr("No") }]
                                 : card.fb === "no" ? [{ key: "tell", label: qsTr("Tell us why") }] : []
+                            // (Teams: #5B5FC7 / #7F85F5 / yellow, the same on
+                            // hover; in High contrast hover fills it #1AEBFF.)
                             Text {
+                                id: fbButton
                                 required property var modelData
                                 anchors.verticalCenter: parent ? parent.verticalCenter : undefined
                                 leftPadding: 4; rightPadding: 4
                                 text: modelData.label
                                 font.family: theme.font; font.pixelSize: 12; lineHeight: 18; lineHeightMode: Text.FixedHeight
-                                font.underline: fbHover.hovered
-                                color: fbHover.hovered ? theme.brandHover : theme.brandForeground1
+                                color: theme.highContrast && fbHover.hovered ? "#000000" : theme.pick("#5B5FC7", "#7F85F5", "#FFFF00")
+                                Rectangle { z: -1; anchors.fill: parent; visible: theme.highContrast && fbHover.hovered; color: theme.hcHighlight; radius: 2 }
                                 HoverHandler { id: fbHover; cursorShape: Qt.PointingHandCursor }
                                 TapHandler {
                                     onTapped: {
@@ -442,7 +570,7 @@ Rectangle {
                             }
                         }
                     }
-                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.dividerSoft }
+                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: root.cardHeaderLine }
                 }
                 // The post.
                 Item {
@@ -552,7 +680,7 @@ Rectangle {
                     visible: card.shownReplies.length > 0
                     width: parent.width
                     height: visible ? replyCol.height + 8 : 0
-                    Rectangle { width: parent.width; height: 1; color: theme.dividerSoft }
+                    Rectangle { width: parent.width; height: 1; color: root.cardLine }
                     Column {
                         id: replyCol
                         y: 1 + 8
@@ -565,7 +693,8 @@ Rectangle {
                                 required property int index
                                 // Teams groups a run of replies from one person (no
                                 // second picture and name).
-                                readonly property bool cont: index > 0 && card.shownReplies[index - 1].sender_mri === modelData.sender_mri
+                                // A tombstone has neither either (Teams).
+                                readonly property bool cont: modelData.deleted === true || (index > 0 && card.shownReplies[index - 1].sender_mri === modelData.sender_mri)
                                 width: card.width
                                 height: (cont ? 0 : 20) + repBody.height + ((modelData.reactions || []).length > 0 ? 8 + 26 : 0) + (cont ? 8 : 12)
                                 Avatar {
@@ -587,6 +716,21 @@ Rectangle {
                                     onOpenImage: (list, i) => root.openImage(list, i, rep.modelData)
                                     x: 50; y: rep.cont ? 0 : 20; width: card.width - 70
                                     message: rep.modelData
+                                }
+                                // Your reply deleted here: Undo 4 after the tombstone
+                                // (Teams: 14/20 semibold, underlined, #4F52B2).
+                                TextMetrics { id: tombMetrics; font.family: theme.font; font.pixelSize: theme.base; font.italic: true; text: qsTr("This message has been deleted.") }
+                                Text {
+                                    visible: rep.modelData.deleted === true && rep.modelData.mine === true
+                                    x: repBody.x + tombMetrics.advanceWidth + 4; y: repBody.y
+                                    text: qsTr("Undo")
+                                    font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; font.underline: true
+                                    lineHeight: 20; lineHeightMode: Text.FixedHeight
+                                    color: theme.brandLink
+                                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                    TapHandler { onTapped: backend.undoDeleteMessage(rep.modelData.id) }
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: qsTr("Undo")
                                 }
                                 ReactionSummary {
                                     visible: (rep.modelData.reactions || []).length > 0
@@ -612,18 +756,25 @@ Rectangle {
                 // Reply in thread, and the reply box.
                 Item {
                     width: parent.width
-                    height: card.replying ? Math.max(44, replyInput.contentHeight + 22) + 12 + (card.quote ? 32 : 0) : 48
-                    Rectangle { width: parent.width; height: 1; color: theme.dividerSoft }
+                    height: card.replying ? Math.max(46, replyInput.contentHeight + 22) + 12 + (card.quote ? 32 : 0) : 48
+                    Rectangle { width: parent.width; height: 1; color: root.cardLine }
                     Avatar {
                         x: 18; y: card.replying ? (parent.height - height) / 2 : 17.5
                         size: 20; name: root.myName || qsTr("You"); photoId: "me"
+                    }
+                    // (Hovered: brand; in High contrast its 22 px button
+                    // across the card fills #1AEBFF under black text.)
+                    Rectangle {
+                        visible: !card.replying && theme.highContrast && replyHover.hovered
+                        x: 48; y: 15.6; width: card.width - 48 - 20; height: 22; radius: 2
+                        color: theme.hcHighlight
                     }
                     Text {
                         visible: !card.replying
                         x: 48; y: 16.6
                         text: qsTr("Reply in thread")
                         font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 20; lineHeightMode: Text.FixedHeight
-                        color: replyHover.hovered ? theme.brand : theme.textSecondary
+                        color: !replyHover.hovered ? theme.textSecondary : theme.highContrast ? "#000000" : theme.brand
                     }
                     MouseArea {
                         id: replyHoverArea
@@ -664,10 +815,10 @@ Rectangle {
                     Rectangle {
                         visible: card.replying
                         x: 48; anchors.verticalCenter: parent.verticalCenter; anchors.verticalCenterOffset: card.quote ? 16 : 0
-                        width: card.width - 48 - 18; height: Math.max(44, replyInput.contentHeight + 22)
-                        radius: theme.radius
+                        width: card.width - 48 - 18; height: Math.max(46, replyInput.contentHeight + 22)
+                        radius: 6
                         color: theme.input
-                        border.color: theme.stroke
+                        border.color: theme.divider
                         Rectangle {
                             anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: 2; radius: 1
                             color: replyInput.activeFocus ? theme.brand : "transparent"
@@ -693,6 +844,8 @@ Rectangle {
                                 backend.sendThreadReply(card.item.channel_id, card.item.post_id, "<p>" + esc + "</p>", "[]", card.quote ? JSON.stringify(card.quote) : "", false)
                                 text = ""
                                 card.replying = false
+                                // (Teams then focuses Reply in thread.)
+                                replyHoverArea.forceActiveFocus()
                             }
                             Keys.onReturnPressed: e => { if (e.modifiers & Qt.ShiftModifier) e.accepted = false; else submit() }
                             Keys.onEscapePressed: { text = ""; card.replying = false }

@@ -19,7 +19,9 @@ Text {
     wrapMode: Text.Wrap
     font.family: theme.font; font.pixelSize: theme.base
     font.italic: !!message && message.deleted === true
-    color: message && message.deleted ? theme.textSecondary : theme.text
+    // (Teams' tombstone is italic in the normal text colour: a channel
+    // reply's on Discover, measured 2026-11-28, as a chat's.)
+    color: theme.text
     linkColor: theme.link
     onLinkActivated: link => backend.openExternal(link)
     HoverHandler { cursorShape: parent && parent.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor }
