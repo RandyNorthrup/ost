@@ -921,8 +921,13 @@ fn tabs_from(
 /// Page, module 542104).
 fn fill_menus(tabs: &mut [Tab], can_update: bool, perms: &HashMap<String, AppFlags>) {
     tabs.sort_by(|a, b| a.order.total_cmp(&b.order));
+    // The stand-in's own Move items are Teams' (among all the movable
+    // tabs); a stored tab's are among the stored ones, the only ones
+    // move_tab can reorder.
     let movable: Vec<usize> = (0..tabs.len()).filter(|&i| tabs[i].draggable).collect();
+    let stored: Vec<usize> = movable.iter().copied().filter(|&i| !tabs[i].lie).collect();
     for (i, tab) in tabs.iter_mut().enumerate() {
+        let movable = if tab.lie { &movable } else { &stored };
         let pos = movable.iter().position(|&m| m == i);
         let can_left = pos.is_some_and(|p| p > 0);
         let can_right = pos.is_some_and(|p| p + 1 < movable.len());
@@ -1640,6 +1645,14 @@ mod tests {
             .map(|m| (m.key, m.enabled))
             .collect();
         assert_eq!(keys, [("moveLeft", false), ("moveRight", true)]);
+        // Notes, the only stored movable tab, moves neither way.
+        let notes_moves: Vec<(&str, bool)> = tabs[3]
+            .context_menu
+            .iter()
+            .filter(|m| m.key.starts_with("move"))
+            .map(|m| (m.key, m.enabled))
+            .collect();
+        assert_eq!(notes_moves, [("moveLeft", false), ("moveRight", false)]);
         // The same id on every reload, so opening it makes one page.
         let again = settle_pages(base.clone(), me, false, channel);
         assert_eq!(again.iter().find(|t| t.lie).unwrap().id, page.id);
