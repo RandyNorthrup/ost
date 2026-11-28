@@ -27,14 +27,18 @@ env:
 
 jobs:
   # A push to a PR that only touches the backlog, docs or Markdown (an agent
-  # recording a task's status after its code passed) skips the jobs below:
-  # the code is the same commit range that already ran. GitHub counts skipped
+  # recording a task's status after its code passed) skips the jobs below,
+  # but only when the previous head's Format, Clippy and Build and test
+  # completed successfully: the code is what already passed. GitHub counts skipped
   # required checks as passing; the coordinator's merge gate also requires the
   # PR's last code commit to have passed. Pushes to main, new PRs and
   # force-pushes (rebases) always run everything.
   changes:
     name: Changed files
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: read
     outputs:
       code: ${{ steps.diff.outputs.code }}
     steps:
@@ -47,11 +51,19 @@ jobs:
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.event.pull_request.head.sha }}
           ACTION: ${{ github.event.action }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         run: |
           code=true
           if [ "$GITHUB_EVENT_NAME" = pull_request ] && [ "$ACTION" = synchronize ] \
-             && git cat-file -e "$BEFORE^{commit}" 2>/dev/null && git merge-base --is-ancestor "$BEFORE" "$AFTER"; then
-            if ! git diff --name-only "$BEFORE" "$AFTER" | grep -qvE '^(backlog|docs)/|\.md$'; then code=false; fi
+             && git cat-file -e "$BEFORE^{commit}" 2>/dev/null && git merge-base --is-ancestor "$BEFORE" "$AFTER" \
+             && ! git diff --name-only "$BEFORE" "$AFTER" | grep -qvE '^(backlog|docs)/|\.md$'; then
+            # Only skip when the previous head's required checks finished and succeeded (a run
+            # still going, failed or cancelled by this push's concurrency group runs everything).
+            ok=$(gh api "repos/$REPO/commits/$BEFORE/check-runs?per_page=100" \
+                   --jq '[.check_runs[]|select(.name=="Format" or .name=="Clippy" or .name=="Build and test")
+                          |select(.status=="completed" and .conclusion=="success")|.name]|unique|length')
+            if [ "$ok" = 3 ]; then code=false; else echo "previous head ${BEFORE:0:8} hasn't passed Format, Clippy and Build and test ($ok/3), running everything"; fi
           fi
           echo "code=$code" | tee -a "$GITHUB_OUTPUT"
   audit:
