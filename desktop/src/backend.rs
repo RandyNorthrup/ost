@@ -866,9 +866,9 @@ pub mod qobject {
         #[qinvokable]
         fn open_link_in_account(self: Pin<&mut Backend>, profile: &QString, link: &QString);
 
-        /// The profile of the personal account signed in next to this one
-        /// ("" when there's none, or this is it): where Teams free meeting
-        /// links open.
+        /// The personal account signed in next to this one, where Teams
+        /// free meeting links open: JSON `{"found", "profile"}` (the first
+        /// account's profile is "").
         #[qinvokable]
         fn personal_account_profile(self: Pin<&mut Backend>) -> QString;
 
@@ -12259,9 +12259,12 @@ impl qobject::Backend {
         let profile = teams_cli::config::accounts()
             .into_iter()
             .find(|a| a.profile != me && a.kind == teams_cli::identity::AccountKind::Personal)
-            .map(|a| a.profile)
-            .unwrap_or_default();
-        QString::from(profile.as_str())
+            .map(|a| a.profile);
+        QString::from(
+            json!({ "found": profile.is_some(), "profile": profile.unwrap_or_default() })
+                .to_string()
+                .as_str(),
+        )
     }
 
     pub fn add_account(self: Pin<&mut Self>) {

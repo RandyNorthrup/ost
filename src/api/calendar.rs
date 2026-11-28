@@ -137,6 +137,149 @@ fn mt_headers(client: &TeamsClient, token: &str) -> reqwest::header::HeaderMap {
     h
 }
 
+/// A personal account's event (Teams free's middle tier, as its event
+/// page reads it: `GET {mt}/v2.0/me/calendars/events/{objectId}`).
+async fn personal_event(client: &TeamsClient, id: &str) -> Result<serde_json::Value> {
+    let (base, token) = crate::api::tabs::middle_tier(client).await?;
+    let url = crate::auth::token_hosts::service_url(
+        &format!("{base}/v2.0/me/calendars/events"),
+        crate::auth::token_hosts::Audience::Teams,
+        &[id],
+        &[],
+    )?;
+    let v: serde_json::Value = client
+        .http()
+        .get(url)
+        .headers(mt_headers(client, &token))
+        .send()
+        .await?
+        .error_for_status()
+        .context("Event")?
+        .json()
+        .await
+        .context("Failed to read the event")?;
+    Ok(v.get("value").cloned().unwrap_or(v))
+}
+
+/// [`event_detail`] for a personal account, from its middle-tier event.
+async fn personal_event_detail(client: &TeamsClient, id: &str) -> Result<serde_json::Value> {
+    Ok(personal_detail_json(id, &personal_event(client, id).await?))
+}
+
+fn personal_detail_json(id: &str, v: &serde_json::Value) -> serde_json::Value {
+    let s = |o: &serde_json::Value, k: &str| {
+        o.get(k)
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
+    let attendees: Vec<Attendee> = v
+        .get("attendees")
+        .and_then(|a| a.as_array())
+        .into_iter()
+        .flatten()
+        .filter(|a| s(a, "type") != "Organizer")
+        .map(|a| Attendee {
+            name: s(a, "name"),
+            address: s(a, "address"),
+            kind: s(a, "type").to_ascii_lowercase(),
+            response: match s(a, "response").as_str() {
+                "Accept" | "Accepted" => "accepted".into(),
+                "Tentative" | "TentativelyAccepted" => "tentativelyAccepted".into(),
+                "Decline" | "Declined" => "declined".into(),
+                _ => "none".into(),
+            },
+            ..Default::default()
+        })
+        .collect();
+    serde_json::json!({
+        "id": id,
+        "body_html": s(v, "bodyContent"),
+        "attendees": attendees,
+        "recurrence": serde_json::Value::Null,
+        "conference_id": s(v, "teamsVtcConferenceId"),
+        "created": "",
+        "reminder": if v.get("isReminderSet").and_then(|r| r.as_bool()).unwrap_or(true) {
+            v.get("reminderMinutesBeforeStart").and_then(|m| m.as_i64()).unwrap_or(15)
+        } else {
+            -1
+        },
+        "response_requested": v.get("isResponseRequested").and_then(|r| r.as_bool()).unwrap_or(true),
+        "hide_attendees": false,
+    })
+}
+
+/// [`send_event_update`] for a personal account, as Teams for personal
+/// use saves its event page (captured 2026-11-28): `PUT
+/// {mt}/v2.0/me/calendars/events/{objectId}?isOnlineMeeting=false` with
+/// `{"updatedCalendarEvent": …}`, the form's event plus the event's own
+/// ids and meeting links (204).
+async fn personal_event_update(client: &TeamsClient, id: &str, form: &MeetingForm) -> Result<()> {
+    let cur = personal_event(client, id).await?;
+    let config = crate::config::Config::load()?;
+    let me = Me {
+        name: config.display_name().unwrap_or_default(),
+        mail: cur
+            .get("organizerAddress")
+            .and_then(|a| a.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        mri: config.self_mri().unwrap_or_default(),
+    };
+    let body = personal_update_body(form, &me, &cur)?;
+    let (base, token) = crate::api::tabs::middle_tier(client).await?;
+    let url = crate::auth::token_hosts::service_url(
+        &format!("{base}/v2.0/me/calendars/events"),
+        crate::auth::token_hosts::Audience::Teams,
+        &[id],
+        &[("isOnlineMeeting", "false")],
+    )?;
+    let r = client
+        .http()
+        .put(url)
+        .headers(mt_headers(client, &token))
+        .json(&body)
+        .send()
+        .await?;
+    let status = r.status();
+    if !status.is_success() {
+        bail!("The event wasn't updated ({status})");
+    }
+    Ok(())
+}
+
+fn personal_update_body(
+    form: &MeetingForm,
+    me: &Me,
+    cur: &serde_json::Value,
+) -> Result<serde_json::Value> {
+    let mut ev = mt_event(form, me, None)?;
+    if let Some(o) = ev.as_object_mut() {
+        o.remove("clientOptimisticEventId");
+        o.remove("meetingTemplateId");
+        o.remove("sensitivityLabelId");
+        // The details as they were unless the form changed them (the join
+        // block lives in them).
+        if !form.body_changed
+            && let Some(b) = cur.get("bodyContent")
+        {
+            o.insert("bodyContent".into(), b.clone());
+        }
+        for k in [
+            "objectId",
+            "iCalUID",
+            "schedulingServiceUpdateUrl",
+            "skypeTeamsData",
+            "isAppointment",
+        ] {
+            if let Some(v) = cur.get(k) {
+                o.insert(k.into(), v.clone());
+            }
+        }
+    }
+    Ok(serde_json::json!({ "updatedCalendarEvent": ev }))
+}
+
 /// A personal account's events overlapping `[start, end)`, as Teams for
 /// personal use reads them: `GET {mt}/v2.0/me/calendars/default/calendarView
 /// ?StartDate=…&EndDate=…&shouldDecryptData=false` (its Outlook.com
@@ -1204,6 +1347,9 @@ pub async fn event_detail(
     calendar: &str,
     id: &str,
 ) -> Result<serde_json::Value> {
+    if client.is_personal() {
+        return personal_event_detail(client, id).await;
+    }
     let group = calendar.starts_with("group:");
     let path = format!(
         "{}?$select=body,attendees,recurrence,onlineMeeting,type,seriesMasterId,createdDateTime,isReminderOn,reminderMinutesBeforeStart,responseRequested,hideAttendees",
@@ -2751,6 +2897,9 @@ pub async fn update_meeting(
 /// and all following events" goes to the occurrence with `EventScope` 2:
 /// Exchange ends the series before it and starts a new series from it.
 pub async fn send_event_update(client: &TeamsClient, id: &str, form: &MeetingForm) -> Result<()> {
+    if client.is_personal() {
+        return personal_event_update(client, id, form).await;
+    }
     let select = "$select=subject,start,end,isAllDay,location,showAs,attendees,type,seriesMasterId,recurrence";
     let get = |path_id: String| async move {
         client
@@ -3276,6 +3425,43 @@ fn cancel_event_request(ews: &str, scope: &str, note: &str, tz: &str) -> serde_j
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn personal_event_page_from_the_middle_tier() {
+        // Teams free's event (OST Personal 1, 2026-11-28), its page fields.
+        let v = serde_json::json!({"objectId": "AQMk1", "bodyContent": "<p>Join</p>", "isReminderSet": true,
+            "reminderMinutesBeforeStart": 15, "isResponseRequested": true, "teamsVtcConferenceId": "933",
+            "attendees": [{"type": "Organizer", "name": "OST Personal 1", "mri": "8:live:.cid.1"},
+                          {"type": "Required", "name": "OST Personal 2", "address": "p2@outlook.com", "response": "Accepted"}]});
+        let d = super::personal_detail_json("AQMk1", &v);
+        assert_eq!(d["body_html"], "<p>Join</p>");
+        assert_eq!(d["reminder"], 15);
+        assert_eq!(d["attendees"].as_array().unwrap().len(), 1);
+        assert_eq!(d["attendees"][0]["response"], "accepted");
+        // Saving keeps the event's ids and links, and its details unless
+        // they were edited.
+        let form = super::MeetingForm {
+            subject: "Renamed".into(),
+            start: "2026-11-27T22:30:00-08:00".into(),
+            end: "2026-11-27T23:00:00-08:00".into(),
+            time_zone: "PacificSt".into(),
+            ..Default::default()
+        };
+        let cur = serde_json::json!({"objectId": "AQMk1", "iCalUID": "040", "bodyContent": "<p>Join</p>",
+            "schedulingServiceUpdateUrl": "https://api.scheduler.teams.microsoft.com/teamsforlife/933"});
+        let me = super::Me {
+            name: "OST Personal 1".into(),
+            mail: "p1@outlook.com".into(),
+            mri: "8:live:.cid.1".into(),
+        };
+        let b = super::personal_update_body(&form, &me, &cur).unwrap();
+        let e = &b["updatedCalendarEvent"];
+        assert_eq!(e["subject"], "Renamed");
+        assert_eq!(e["objectId"], "AQMk1");
+        assert_eq!(e["bodyContent"], "<p>Join</p>");
+        assert_eq!(e["attendees"][0]["type"], "Organizer");
+        assert!(e.get("clientOptimisticEventId").is_none());
+    }
+
     #[test]
     fn personal_meeting_links_are_the_meet_now_chats() {
         // The thread of a link made in Teams for personal use's Meet app
