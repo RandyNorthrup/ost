@@ -224,4 +224,21 @@ Window {
     function conversationForTest() { return chat }
     function tabPickerForTest() { return tabPicker }
     function eventsForTest() { return eventsLoader.item }
+
+    // Teams' picture viewer for this window's chat (its messages' pictures
+    // and a personal chat's Photos tab), as the main window's.
+    ImageLightbox {
+        id: lightbox
+        z: 50
+        anchors.fill: parent
+        onShowMessage: id => { if (chat.tab === "Photos") chat.tab = ""; chat.showFound(id, []) }
+    }
+    Connections {
+        target: chat
+        function onOpenImageViewer(list, i, m) {
+            const d = new Date(m.time)
+            const at = chat.daysAgo(d) === 0 ? qsTr("Today %1").arg(theme.time(d)) : chat.stamp(m.time)
+            lightbox.show(list, i, m.sender || "", at, m.id)
+        }
+    }
 }

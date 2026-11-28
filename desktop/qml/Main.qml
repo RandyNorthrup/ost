@@ -19418,7 +19418,8 @@ Window {
         z: 50
         y: titleBar.height; width: parent.width; height: parent.height - titleBar.height
         // (From a personal chat's Photos tab: back to the chat first.)
-        onShowMessage: id => { if (conversation.tab === "Photos") conversation.tab = ""; conversation.jumpToMessage(id) }
+        // (Older pages load until the message is there.)
+        onShowMessage: id => { if (conversation.tab === "Photos") conversation.tab = ""; conversation.showFound(id, []) }
     }
     Connections {
         target: conversation
