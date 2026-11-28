@@ -62,6 +62,10 @@ pub struct ChannelMeeting {
     pub join_url: String,
     pub web_link: String,
     pub ical_uid: String,
+    /// Graph's `type` (singleInstance, occurrence, exception,
+    /// seriesMaster) and an occurrence's series, for its page.
+    pub event_type: String,
+    pub series_master_id: String,
 }
 
 /// The meetings, oldest first, and where "now" falls among them.
@@ -184,12 +188,14 @@ pub fn meetings_from(v: &serde_json::Value) -> Vec<ChannelMeeting> {
                 .filter(|u| u.starts_with("https://"))
                 .unwrap_or_default(),
             ical_uid: s(e, "/iCalUId"),
+            event_type: s(e, "/type"),
+            series_master_id: s(e, "/seriesMasterId"),
         })
         .collect()
 }
 
 /// The organizer's MRI from an event's SkypeTeamsProperties (`uid`).
-fn teams_uid(e: &serde_json::Value) -> String {
+pub(crate) fn teams_uid(e: &serde_json::Value) -> String {
     let props: serde_json::Value = e
         .pointer("/singleValueExtendedProperties/0/value")
         .and_then(|v| v.as_str())
@@ -411,7 +417,7 @@ mod tests {
     fn events_read_as_teams_reads_them() {
         let v = serde_json::json!({"value": [{
             "id": "AAMk", "subject": "Design review", "iCalUId": "040000",
-            "isOrganizer": false, "isCancelled": false,
+            "isOrganizer": false, "isCancelled": false, "type": "occurrence", "seriesMasterId": "AAMkM",
             "start": {"dateTime": "2026-12-01T22:00:00.0000000", "timeZone": "UTC"},
             "end": {"dateTime": "2026-12-01T22:30:00.0000000", "timeZone": "UTC"},
             "location": {"displayName": "Microsoft Teams Meeting"},
@@ -432,5 +438,9 @@ mod tests {
         );
         assert!(m.join_url.starts_with("https://") && m.web_link.is_empty());
         assert_eq!(m.organizer_mri, "8:orgid:o1");
+        assert_eq!(
+            (m.event_type.as_str(), m.series_master_id.as_str()),
+            ("occurrence", "AAMkM")
+        );
     }
 }

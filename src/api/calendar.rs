@@ -69,6 +69,10 @@ pub struct CalendarEvent {
     /// `teams.live.com/meet` link doesn't name it.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub chat_id: String,
+    /// A channel meeting you set up: its team's address (Graph names the
+    /// team as its organizer; Teams' page shows you and edits it).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub group_address: String,
 }
 
 /// One invitee and their answer.
@@ -103,7 +107,12 @@ pub async fn calendar_view(
     let path = format!(
         "/me/calendarView?startDateTime={start}&endDateTime={end}&$top=250&$orderby=start/dateTime\
          &$select=id,subject,start,end,isAllDay,location,organizer,isOnlineMeeting,onlineMeeting,showAs,bodyPreview,isOrganizer,\
-         iCalUId,type,seriesMasterId,responseStatus,responseRequested,attendees,isCancelled,categories,sensitivity,allowNewTimeProposals,isDraft"
+         iCalUId,type,seriesMasterId,responseStatus,responseRequested,attendees,isCancelled,categories,sensitivity,allowNewTimeProposals,isDraft\
+         &$expand={}",
+        super::tabs::encode_uri_component(&format!(
+            "singleValueExtendedProperties($filter=id eq '{}')",
+            super::channel_meetings::TEAMS_PROPERTY
+        ))
     );
     // Immutable ids, as Teams' calendar (Outlook on the web) asks for them.
     let v: serde_json::Value = client
@@ -113,6 +122,7 @@ pub async fn calendar_view(
         .await
         .context("Calendar reply")?;
     let mut events = parse_events(&v);
+    mark_channel_organizer(&mut events, &v, client);
     if crate::auth::oauth::browser_sign_in() {
         match outlook_items(start, end).await {
             Ok(items) => merge_outlook_items(&mut events, &items),
@@ -630,6 +640,67 @@ fn parse_mt_events(v: &serde_json::Value) -> Vec<CalendarEvent> {
             }
         })
         .collect()
+}
+
+/// A channel meeting you set up, as Teams' calendar treats it: Graph's
+/// copy in your calendar names the team as its organizer (isOrganizer
+/// false), and the meeting's SkypeTeamsProperties name you (`uid`). Teams
+/// shows you as the organizer and opens its editable page; the team's
+/// address is kept as `group_address`.
+fn mark_channel_organizer(
+    events: &mut [CalendarEvent],
+    v: &serde_json::Value,
+    client: &TeamsClient,
+) {
+    let Some(mri) = client.self_mri().filter(|m| !m.is_empty()) else {
+        return;
+    };
+    let raw = v
+        .get("value")
+        .and_then(|x| x.as_array())
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    set_channel_organizer(
+        events,
+        raw,
+        &mri,
+        &client.display_name().unwrap_or_default(),
+        &client.user_principal_name().unwrap_or_default(),
+    );
+}
+
+fn set_channel_organizer(
+    events: &mut [CalendarEvent],
+    raw: &[serde_json::Value],
+    mri: &str,
+    name: &str,
+    mail: &str,
+) {
+    for (e, r) in events.iter_mut().zip(raw) {
+        // (A cancelled copy stays the cancellation it is.)
+        if e.is_organizer
+            || e.is_cancelled
+            || e.channel_id.is_empty()
+            || !super::channel_meetings::teams_uid(r).eq_ignore_ascii_case(mri)
+        {
+            continue;
+        }
+        e.is_organizer = true;
+        e.group_address = std::mem::take(&mut e.organizer_address);
+        let me = e
+            .attendees
+            .iter()
+            .find(|a| !mail.is_empty() && a.address.eq_ignore_ascii_case(mail));
+        e.organizer = me
+            .map(|a| a.name.clone())
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| name.to_string());
+        e.organizer_address = me
+            .map(|a| a.address.clone())
+            .unwrap_or_else(|| mail.to_string());
+        let team = e.group_address.to_lowercase();
+        e.attendees.retain(|a| a.address.to_lowercase() != team);
+    }
 }
 
 /// One of your calendars as Teams' calendar pane lists it, in the groups
@@ -1611,7 +1682,7 @@ pub async fn event_detail(
     }
     let group = calendar.starts_with("group:");
     let path = format!(
-        "{}?$select=body,attendees,recurrence,onlineMeeting,type,seriesMasterId,createdDateTime,isReminderOn,reminderMinutesBeforeStart,responseRequested,hideAttendees",
+        "{}?$select=body,attendees,recurrence,onlineMeeting,type,seriesMasterId,createdDateTime,isReminderOn,reminderMinutesBeforeStart,responseRequested,hideAttendees,isAllDay",
         event_path_in(calendar, id)?
     );
     // (A group calendar's ids are the ones its calendarView gave, not
@@ -1659,6 +1730,8 @@ pub async fn event_detail(
         "reminder": if v.get("isReminderOn").and_then(|r| r.as_bool()).unwrap_or(true) { v.get("reminderMinutesBeforeStart").and_then(|m| m.as_i64()).unwrap_or(15) } else { -1 },
         "response_requested": v.get("responseRequested").and_then(|r| r.as_bool()).unwrap_or(true),
         "hide_attendees": v.get("hideAttendees").and_then(|r| r.as_bool()).unwrap_or(false),
+        // (A team calendar's meeting is listed without it.)
+        "is_all_day": v.get("isAllDay").and_then(|r| r.as_bool()).unwrap_or(false),
     }))
 }
 
@@ -3577,16 +3650,39 @@ pub async fn cancel_meeting(
     if !s("channel_id").is_empty() {
         let (base, token) = crate::api::tabs::middle_tier(client).await?;
         let mail = group_mail(client, team_id).await?;
-        let uid = s("ical_uid").to_lowercase();
+        // Teams' team events cancel one occurrence or the series; the
+        // series is cancelled by its master (iCalUId and start), read from
+        // the calendar the event came from.
+        anyhow::ensure!(
+            scope != "following",
+            "A channel meeting's series is cancelled as a whole or one event at a time"
+        );
+        let (mut ical, mut start, mut event_type) =
+            (s("ical_uid"), s("start_utc"), s("event_type"));
+        let master = s("series_master_id");
+        if scope == "series" && !master.is_empty() {
+            let m: serde_json::Value = client
+                .graph_get(&format!(
+                    "{}?$select=iCalUId,start",
+                    event_path_in(&s("calendar_id"), &master)?
+                ))
+                .await?
+                .json()
+                .await
+                .context("The series")?;
+            ical = m["iCalUId"].as_str().unwrap_or_default().to_string();
+            start = m
+                .pointer("/start/dateTime")
+                .and_then(|t| t.as_str())
+                .map(|t| format!("{}Z", t.split('.').next().unwrap_or(t)))
+                .unwrap_or_default();
+            event_type = "seriesMaster".into();
+        }
+        let uid = ical.to_lowercase();
         if uid.is_empty() || !uid.bytes().all(|b| b.is_ascii_hexdigit()) {
             bail!("Not an iCalUId");
         }
-        let kind = match s("event_type").as_str() {
-            "occurrence" => "Occurrence",
-            "exception" => "Exception",
-            "seriesMaster" => "RecurringMaster",
-            _ => "Single",
-        };
+        let kind = team_event_kind(&event_type);
         let body = serde_json::json!({
             "conversationId": s("channel_id"),
             "messageId": s("channel_message_id"),
@@ -3595,7 +3691,7 @@ pub async fn cancel_meeting(
             "fetchEventContract": {
                 "eventType": kind,
                 "eventTimeZone": "UTC",
-                "startTime": s("start_utc").replace('Z', ".000Z"),
+                "startTime": mt_start(&start)?,
             }
         });
         let group = format!("smtp:{mail}");
@@ -3627,6 +3723,416 @@ pub async fn cancel_meeting(
     // Every other event you organise is cancelled through Outlook, as
     // Teams' card and event page do.
     cancel_event(ev, scope, note).await
+}
+
+/// Someone a meeting is forwarded to (Forward meeting's people).
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct ForwardTo {
+    pub address: String,
+    #[serde(default)]
+    pub name: String,
+}
+
+/// The forwarded people as the middle tier takes them (Teams'
+/// `forwardAttendees`: AttendeeInput, required attendees).
+fn forward_attendees(people: &[ForwardTo]) -> Result<Vec<serde_json::Value>> {
+    let people: Vec<serde_json::Value> = people
+        .iter()
+        .filter(|p| p.address.contains('@'))
+        .map(|p| {
+            serde_json::json!({
+                "address": p.address,
+                "name": if p.name.is_empty() { &p.address } else { &p.name },
+                "type": "Required",
+            })
+        })
+        .collect();
+    anyhow::ensure!(!people.is_empty(), "At least one recipient is needed.");
+    Ok(people)
+}
+
+/// Forward a channel meeting, as Teams' Forward on its page does
+/// (`forwardTeamEvent` / `forwardCalendarEvent`, Teams' calendar service):
+/// read from its team's calendar (`team_id`), `POST {mt}/v2.0/groups/smtp:<team
+/// mail>/calendars/events/<id>/forward?useICalUId=false&isBackedBySubstrateGroup=false`;
+/// from your calendar (`team_id` empty), `POST {mt}/v2.0/me/calendars/events/<REST
+/// id>/forward?useICalUId=false`; both with `{forwardAttendees,
+/// messageBodyPrefix}` (204). The service sends them the invitation and
+/// tells the organizer.
+pub async fn forward_meeting(
+    client: &TeamsClient,
+    team_id: &str,
+    event_id: &str,
+    people: &[ForwardTo],
+    note: &str,
+) -> Result<()> {
+    let attendees = forward_attendees(people)?;
+    anyhow::ensure!(
+        !event_id.is_empty() && !event_id.contains(['/', '?', '#']),
+        "Not an event"
+    );
+    let (base, token) = crate::api::tabs::middle_tier(client).await?;
+    let url = if team_id.is_empty() {
+        let id = rest_id(client, event_id).await?;
+        crate::auth::token_hosts::service_url(
+            &base,
+            crate::auth::token_hosts::Audience::Teams,
+            &["v2.0", "me", "calendars", "events", &id, "forward"],
+            &[("useICalUId", "false")],
+        )?
+    } else {
+        let group = format!("smtp:{}", group_mail(client, team_id).await?);
+        crate::auth::token_hosts::service_url(
+            &base,
+            crate::auth::token_hosts::Audience::Teams,
+            &[
+                "v2.0",
+                "groups",
+                &group,
+                "calendars",
+                "events",
+                event_id,
+                "forward",
+            ],
+            &[
+                ("useICalUId", "false"),
+                ("isBackedBySubstrateGroup", "false"),
+            ],
+        )?
+    };
+    let r = client
+        .http()
+        .post(url)
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "forwardAttendees": attendees, "messageBodyPrefix": note }))
+        .send()
+        .await?;
+    let status = r.status();
+    if !status.is_success() {
+        bail!(
+            "Couldn't forward the meeting ({status}): {}",
+            r.text()
+                .await
+                .unwrap_or_default()
+                .chars()
+                .take(300)
+                .collect::<String>()
+        );
+    }
+    Ok(())
+}
+
+/// Send an update for a channel meeting you set up, as Teams' form does
+/// for a team's event (`updateTeamEvent`): `PUT {mt}/v2.0/groups/smtp:<team
+/// mail>/calendars/events/<iCalUId>?isOnlineMeeting=…` with
+/// `{updateMessageFormat, updatedCalendarEvent, fetchEventContract}` (204);
+/// the service updates the team's calendar, the attendees' copies and the
+/// channel's post.
+pub async fn update_team_meeting(
+    client: &TeamsClient,
+    team_event: &TeamEventRef,
+    form: &MeetingForm,
+    me: &Me,
+) -> Result<()> {
+    let TeamEventRef {
+        team_id,
+        ical_uid,
+        start_utc,
+        event_type,
+    } = team_event;
+    let uid = ical_uid.to_lowercase();
+    anyhow::ensure!(
+        !uid.is_empty() && uid.bytes().all(|b| b.is_ascii_hexdigit()),
+        "Not an iCalUId"
+    );
+    let mail = group_mail(client, team_id).await?;
+    let me = &organizer(client, me).await;
+    let (base, token) = crate::api::tabs::middle_tier(client).await?;
+    let group = format!("smtp:{mail}");
+    // Teams sends the event as its form loaded it (GET_CHANNEL_EVENT_WITH_ICALUID)
+    // with the form's changes on it; the service refuses one that doesn't
+    // carry the meeting it already is ("Offline to Online conversion not
+    // supported yet").
+    // (Milliseconds, as Teams sends it; the team calendar's start carries
+    // Graph's seven-digit fractions.)
+    let start = mt_start(start_utc)?;
+    let get = crate::auth::token_hosts::service_url(
+        &base,
+        crate::auth::token_hosts::Audience::Teams,
+        &[
+            "v2.0",
+            "groups",
+            &group,
+            "calendars",
+            "events",
+            "iCalUId",
+            ical_uid,
+        ],
+        &[
+            ("eventStartDateTime", start.as_str()),
+            ("shouldDecryptData", "false"),
+        ],
+    )?;
+    let loaded: serde_json::Value = client
+        .http()
+        .get(get)
+        .bearer_auth(&token)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Read the channel meeting")?
+        .json()
+        .await
+        .context("Channel meeting")?;
+    let mut ev = loaded
+        .get("value")
+        .filter(|v| v.is_object())
+        .cloned()
+        .unwrap_or(loaded);
+    anyhow::ensure!(ev.is_object(), "Not a channel meeting");
+    // Edit series from an occurrence: the form's times on the series' own
+    // first date, as Outlook's Edit series sends them.
+    let on_master;
+    let form = if event_type == "seriesMaster" {
+        on_master = on_date_of(form, ev["startTime"].as_str().unwrap_or_default());
+        &on_master
+    } else {
+        form
+    };
+    let changes = mt_event(form, me, Some(&mail))?;
+    team_event_changes(&mut ev, &changes, form, &mail);
+    let kind = team_event_kind(event_type);
+    let online = if form.online { "true" } else { "false" };
+    let url = crate::auth::token_hosts::service_url(
+        &base,
+        crate::auth::token_hosts::Audience::Teams,
+        &["v2.0", "groups", &group, "calendars", "events", ical_uid],
+        &[("isOnlineMeeting", online)],
+    )?;
+    let body = serde_json::json!({
+        "updateMessageFormat": "The meeting has been updated",
+        "updatedCalendarEvent": ev,
+        "fetchEventContract": {
+            "eventType": kind,
+            "startTime": start,
+            "eventTimeZone": "UTC",
+        }
+    });
+    let r = client
+        .http()
+        .put(url)
+        .bearer_auth(&token)
+        .json(&body)
+        .send()
+        .await?;
+    let status = r.status();
+    if !status.is_success() {
+        bail!(
+            "{status}: {}",
+            r.text()
+                .await
+                .unwrap_or_default()
+                .chars()
+                .take(300)
+                .collect::<String>()
+        );
+    }
+    Ok(())
+}
+
+/// A channel meeting in its team's calendar, for its update: the team,
+/// the meeting's iCalUId, start (UTC ISO) and Graph `type`.
+#[derive(Debug, Clone, Default)]
+pub struct TeamEventRef {
+    pub team_id: String,
+    pub ical_uid: String,
+    pub start_utc: String,
+    pub event_type: String,
+}
+
+/// The form's changes on a team event as the middle tier loaded it: the
+/// title, times (in the form's zone) and all day; the repeat and the
+/// details when they changed; the place; and the people (the loaded ones
+/// the form kept, with their answers and kinds as the form has them, then
+/// the ones it added; you, the team and rooms stay). Show as stays as
+/// loaded: Teams greys it on a team event's page.
+fn team_event_changes(
+    ev: &mut serde_json::Value,
+    changes: &serde_json::Value,
+    form: &MeetingForm,
+    team_mail: &str,
+) {
+    for k in [
+        "endTime",
+        "eventTimeZone",
+        "isAllDayEvent",
+        "startTime",
+        "subject",
+        "utcOffset",
+    ] {
+        if let Some(v) = changes.get(k) {
+            ev[k] = v.clone();
+        }
+    }
+    if form.body_changed {
+        ev["bodyContent"] = changes["bodyContent"].clone();
+    }
+    // The repeat as loaded unless the form changed it (the form reads a
+    // relative or numbered repeat lossily).
+    if form.recurrence_changed {
+        for k in ["eventRecurrencePattern", "eventRecurrenceRange"] {
+            if let Some(v) = changes.get(k) {
+                ev[k] = v.clone();
+            }
+        }
+    }
+    // (The form hides an online meeting's own "Microsoft Teams Meeting";
+    // emptied, the place goes back to it.)
+    let place = if form.location.is_empty() && form.online {
+        "Microsoft Teams Meeting"
+    } else {
+        form.location.as_str()
+    };
+    if ev["location"].as_str() != Some(place) {
+        ev["location"] = serde_json::json!(place);
+        ev["meetingLocations"] = if place.is_empty() {
+            serde_json::json!([])
+        } else {
+            serde_json::json!([{ "locationType": "Default", "displayName": place }])
+        };
+    }
+    let wanted: Vec<&FormAttendee> = form
+        .attendees
+        .iter()
+        .filter(|a| a.address.contains('@'))
+        .collect();
+    let kind = |a: &FormAttendee| {
+        if a.kind == "Optional" {
+            "Optional"
+        } else {
+            "Required"
+        }
+    };
+    // You, as Teams' form sends its organizer (the middle tier's copy leaves
+    // you out; an update without you takes you off the meeting and Exchange
+    // cancels your copy).
+    let mut people: Vec<serde_json::Value> = changes["attendees"]
+        .as_array()
+        .and_then(|a| a.first())
+        .filter(|a| a["type"].as_str() == Some("Organizer"))
+        .cloned()
+        .into_iter()
+        .collect();
+    let you = people
+        .first()
+        .and_then(|p| p["address"].as_str())
+        .unwrap_or_default()
+        .to_lowercase();
+    for a in ev["attendees"].as_array().cloned().unwrap_or_default() {
+        if !you.is_empty()
+            && a["address"]
+                .as_str()
+                .is_some_and(|x| x.eq_ignore_ascii_case(&you))
+        {
+            continue;
+        }
+        let address = a["address"].as_str().unwrap_or_default();
+        // (The form doesn't list rooms; they stay booked.)
+        let organizer = matches!(a["type"].as_str(), Some("Organizer" | "Resource"))
+            || address.eq_ignore_ascii_case(team_mail);
+        if organizer {
+            people.push(a);
+        } else if let Some(f) = wanted
+            .iter()
+            .find(|f| f.address.eq_ignore_ascii_case(address))
+        {
+            let mut a = a.clone();
+            a["type"] = serde_json::json!(kind(f));
+            people.push(a);
+        }
+    }
+    for f in &wanted {
+        if !people.iter().any(|p| {
+            p["address"]
+                .as_str()
+                .is_some_and(|x| x.eq_ignore_ascii_case(&f.address))
+        }) {
+            people.push(serde_json::json!({
+                "address": f.address,
+                "name": if f.name.is_empty() { &f.address } else { &f.name },
+                "role": "User",
+                "type": kind(f),
+            }));
+        }
+    }
+    ev["attendees"] = serde_json::Value::Array(people);
+}
+
+/// An event's start as the middle tier's `fetchEventContract` takes it
+/// (UTC with milliseconds, as Teams sends it): from Graph's UTC start (seven
+/// fraction digits or none), or an all-day event's floating local midnight
+/// (no offset, as `parse_events` keeps it) in your zone.
+fn mt_start(start: &str) -> Result<String> {
+    let t = start
+        .parse::<jiff::Timestamp>()
+        .ok()
+        .or_else(|| {
+            crate::clock::parse_naive(start, "%Y-%m-%dT%H:%M:%S%.f")
+                .or_else(|| crate::clock::parse_naive(start, "%Y-%m-%dT%H:%M:%S"))
+                .and_then(crate::clock::local_earliest)
+                .map(|z| z.timestamp())
+        })
+        .with_context(|| format!("Not a time: {start}"))?;
+    Ok(crate::clock::iso_ms(t))
+}
+
+/// The form with its start moved to `date_of`'s date (an ISO time), at
+/// the same wall-clock time in the form's offset, and its end the same
+/// length after; unchanged when either doesn't read.
+fn on_date_of(form: &MeetingForm, date_of: &str) -> MeetingForm {
+    let mut f = form.clone();
+    let (Ok(start), Ok(end), Some(day)) = (
+        crate::clock::parse_rfc3339(&form.start),
+        crate::clock::parse_rfc3339(&form.end),
+        crate::clock::parse_instant(date_of),
+    ) else {
+        return f;
+    };
+    let offset = start.offset();
+    let day = day
+        .to_zoned_datetime(jiff::tz::TimeZone::fixed(offset))
+        .date();
+    let Ok(moved) = offset.to_timestamp(day.to_datetime(start.time())) else {
+        return f;
+    };
+    let Ok(moved_end) = moved.checked_add(end.timestamp().duration_since(start.timestamp())) else {
+        return f;
+    };
+    f.start = rfc3339_at(moved, offset);
+    f.end = rfc3339_at(moved_end, offset);
+    f
+}
+
+/// `t` as RFC 3339 at `offset` ("2026-12-01T14:00:00-08:00").
+fn rfc3339_at(t: jiff::Timestamp, offset: jiff::tz::Offset) -> String {
+    let secs = offset.seconds();
+    let (sign, a) = if secs < 0 { ('-', -secs) } else { ('+', secs) };
+    format!(
+        "{}{sign}{:02}:{:02}",
+        crate::clock::format(offset.to_datetime(t), "%Y-%m-%dT%H:%M:%S"),
+        a / 3600,
+        a % 3600 / 60
+    )
+}
+
+/// A team event's kind as the middle tier names it (Graph's `type`).
+fn team_event_kind(event_type: &str) -> &'static str {
+    match event_type {
+        "occurrence" => "Occurrence",
+        "exception" => "Exception",
+        "seriesMaster" => "RecurringMaster",
+        _ => "Single",
+    }
 }
 
 /// Which events a cancel takes, as Outlook's `CancelCalendarEvent` names
@@ -4570,6 +5076,225 @@ mod tests {
 
 #[cfg(test)]
 mod older_tests {
+
+    /// ost-test1's copy of "Design review" in OST Test Team ▸ General as
+    /// Graph gave it (2026-11-27): the team as organizer, isOrganizer
+    /// false, the SkypeTeamsProperties naming ost-test1 (`uid`). Teams
+    /// shows ost-test1 as its organizer with the editable page.
+    #[test]
+    fn a_channel_meeting_you_set_up_is_yours() {
+        let props = r#"{"cid":"19:ekCPvoD9glVOIeBqbQQXdfV-vTnBPkGFtas97c_IYnA1@thread.tacv2","private":false,"type":0,"mid":0,"rid":0,"uid":"4287e791-1b98-4963-8b94-281c50472683"}"#;
+        let v = serde_json::json!({"value": [{
+            "id": "AAMk1", "subject": "Design review", "isOrganizer": false,
+            "start": {"dateTime": "2026-12-01T22:00:00.0000000", "timeZone": "UTC"},
+            "end": {"dateTime": "2026-12-01T22:30:00.0000000", "timeZone": "UTC"},
+            "organizer": {"emailAddress": {"name": "OST Test Team", "address": "OSTTestTeam@scnetsolutions.com"}},
+            "onlineMeeting": {"joinUrl": "https://teams.microsoft.com/l/meetup-join/19%3aekCPvoD9glVOIeBqbQQXdfV-vTnBPkGFtas97c_IYnA1%40thread.tacv2/1795643454739?context=%7b%7d"},
+            "attendees": [
+                {"emailAddress": {"name": "OST Test Team", "address": "OSTTestTeam@scnetsolutions.com"}, "type": "required", "status": {"response": "none"}},
+                {"emailAddress": {"name": "OST Test 1", "address": "ost-test1@scnetsolutions.com"}, "type": "required", "status": {"response": "accepted"}},
+                {"emailAddress": {"name": "OST Test 2", "address": "ost-test2@scnetsolutions.com"}, "type": "optional", "status": {"response": "accepted"}}
+            ],
+            "singleValueExtendedProperties": [{"id": "String {00020329-0000-0000-C000-000000000046} Name SkypeTeamsProperties", "value": props}]
+        }]});
+        let raw = v["value"].as_array().unwrap().clone();
+        let mine = "8:orgid:4287e791-1b98-4963-8b94-281c50472683";
+        let mut events = super::parse_events(&v);
+        assert!(!events[0].channel_id.is_empty());
+        super::set_channel_organizer(
+            &mut events,
+            &raw,
+            mine,
+            "OST Test 1",
+            "ost-test1@scnetsolutions.com",
+        );
+        let e = &events[0];
+        assert!(e.is_organizer);
+        assert_eq!(e.organizer, "OST Test 1");
+        assert_eq!(e.organizer_address, "ost-test1@scnetsolutions.com");
+        assert_eq!(e.group_address, "OSTTestTeam@scnetsolutions.com");
+        assert_eq!(
+            e.attendees
+                .iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>(),
+            ["OST Test 1", "OST Test 2"]
+        );
+        // Someone else's channel meeting stays theirs.
+        let mut events = super::parse_events(&v);
+        super::set_channel_organizer(
+            &mut events,
+            &raw,
+            "8:orgid:01c4860d-5776-4b16-8736-6a739fcc8b34",
+            "OST Test 3",
+            "ost-test3@scnetsolutions.com",
+        );
+        assert!(!events[0].is_organizer);
+        assert_eq!(events[0].organizer, "OST Test Team");
+    }
+
+    /// The form's changes go on the event as the middle tier loaded it
+    /// (Design review, GET_CHANNEL_EVENT_WITH_ICALUID, 2026-11-28): its
+    /// meeting stays (location, the team, the answers), the title changes,
+    /// the people follow the form.
+    #[test]
+    fn a_team_update_keeps_the_loaded_meeting() {
+        let mut ev = serde_json::json!({
+            "subject": "Design review", "location": "Microsoft Teams Meeting", "isOnlineMeeting": true,
+            "skypeTeamsMeetingUrl": "https://teams.microsoft.com/l/meetup-join/x", "bodyContent": "<p>old</p>",
+            "eventRecurrencePattern": {"patternType": 4, "relativeMonthly": {"interval": 1}},
+            "attendees": [
+                {"address": "OSTTestTeam@scnetsolutions.com", "type": "Required", "role": "User"},
+                {"address": "ost-test2@scnetsolutions.com", "type": "Optional", "role": "User", "status": {"response": "Accepted"}},
+                {"address": "ost-test-room@scnetsolutions.com", "type": "Resource", "role": "User"}
+            ]
+        });
+        let form = super::MeetingForm {
+            subject: "Design review (moved)".into(),
+            start: "2026-12-01T14:00:00-08:00".into(),
+            end: "2026-12-01T14:30:00-08:00".into(),
+            online: true,
+            attendees: vec![
+                super::FormAttendee {
+                    address: "ost-test2@scnetsolutions.com".into(),
+                    name: "OST Test 2".into(),
+                    kind: "Required".into(),
+                },
+                super::FormAttendee {
+                    address: "ost-test3@scnetsolutions.com".into(),
+                    name: "OST Test 3".into(),
+                    kind: "Optional".into(),
+                },
+            ],
+            time_zone: "PacificSt".into(),
+            recurrence: Some(serde_json::json!({"pattern": {"patternType": 3}, "range": {}})),
+
+            ..Default::default()
+        };
+        let me = super::Me {
+            name: "OST Test 1".into(),
+            mail: "ost-test1@scnetsolutions.com".into(),
+            mri: "8:orgid:4287e791-1b98-4963-8b94-281c50472683".into(),
+        };
+        let changes = super::mt_event(&form, &me, Some("OSTTestTeam@scnetsolutions.com")).unwrap();
+        super::team_event_changes(&mut ev, &changes, &form, "OSTTestTeam@scnetsolutions.com");
+        assert_eq!(ev["subject"], "Design review (moved)");
+        assert_eq!(ev["location"], "Microsoft Teams Meeting");
+        assert_eq!(ev["eventRecurrencePattern"]["patternType"], 4);
+        assert_eq!(ev["bodyContent"], "<p>old</p>");
+        assert_eq!(ev["isOnlineMeeting"], true);
+        let people: Vec<(String, String)> = ev["attendees"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| {
+                (
+                    a["address"].as_str().unwrap().to_string(),
+                    a["type"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            people,
+            [
+                (
+                    "ost-test1@scnetsolutions.com".to_string(),
+                    "Organizer".to_string()
+                ),
+                (
+                    "OSTTestTeam@scnetsolutions.com".to_string(),
+                    "Required".to_string()
+                ),
+                (
+                    "ost-test2@scnetsolutions.com".to_string(),
+                    "Required".to_string()
+                ),
+                (
+                    "ost-test-room@scnetsolutions.com".to_string(),
+                    "Resource".to_string()
+                ),
+                (
+                    "ost-test3@scnetsolutions.com".to_string(),
+                    "Optional".to_string()
+                ),
+            ]
+        );
+        assert_eq!(ev["attendees"][2]["status"]["response"], "Accepted");
+    }
+
+    #[test]
+    fn a_team_start_goes_in_milliseconds() {
+        let t = |s: &str| super::mt_start(s).unwrap();
+        assert_eq!(
+            t("2026-12-01T22:00:00.0000000Z"),
+            "2026-12-01T22:00:00.000Z"
+        );
+        assert_eq!(t("2026-12-01T22:00:00Z"), "2026-12-01T22:00:00.000Z");
+        // An all-day event's floating midnight, in your zone.
+        let local = crate::clock::local_earliest(
+            crate::clock::parse_naive("2026-12-01T00:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(),
+        )
+        .unwrap()
+        .timestamp();
+        assert_eq!(t("2026-12-01T00:00:00"), crate::clock::iso_ms(local));
+        assert!(super::mt_start("soon").is_err());
+    }
+
+    #[test]
+    fn a_team_update_clears_a_removed_place() {
+        let mut ev = serde_json::json!({"location": "Room 4", "meetingLocations": [{"displayName": "Room 4"}], "attendees": []});
+        let form = super::MeetingForm {
+            subject: "Design review".into(),
+            start: "2026-12-01T14:00:00-08:00".into(),
+            end: "2026-12-01T14:30:00-08:00".into(),
+            online: true,
+            ..Default::default()
+        };
+        let me = super::Me {
+            name: "OST Test 1".into(),
+            mail: "ost-test1@scnetsolutions.com".into(),
+            mri: "8:orgid:4287e791-1b98-4963-8b94-281c50472683".into(),
+        };
+        let changes = super::mt_event(&form, &me, Some("OSTTestTeam@scnetsolutions.com")).unwrap();
+        super::team_event_changes(&mut ev, &changes, &form, "OSTTestTeam@scnetsolutions.com");
+        assert_eq!(ev["location"], "Microsoft Teams Meeting");
+        assert_eq!(
+            ev["meetingLocations"][0]["displayName"],
+            "Microsoft Teams Meeting"
+        );
+    }
+
+    /// Edit series from a later occurrence: the form's times on the
+    /// series' first date.
+    #[test]
+    fn edit_series_keeps_the_series_date() {
+        let form = super::MeetingForm {
+            start: "2026-12-08T15:00:00-08:00".into(),
+            end: "2026-12-08T15:45:00-08:00".into(),
+            ..Default::default()
+        };
+        let f = super::on_date_of(&form, "2026-12-01T22:00:00+00:00");
+        assert_eq!(f.start, "2026-12-01T15:00:00-08:00");
+        assert_eq!(f.end, "2026-12-01T15:45:00-08:00");
+        let f = super::on_date_of(&form, "garbled");
+        assert_eq!(f.start, form.start);
+    }
+
+    #[test]
+    fn forwarding_needs_someone() {
+        assert!(super::forward_attendees(&[]).is_err());
+        let p = super::forward_attendees(&[super::ForwardTo {
+            address: "ost-test3@scnetsolutions.com".into(),
+            name: "OST Test 3".into(),
+        }])
+        .unwrap();
+        assert_eq!(
+            p,
+            [
+                serde_json::json!({"address": "ost-test3@scnetsolutions.com", "name": "OST Test 3", "type": "Required"})
+            ]
+        );
+    }
     #[test]
     fn a_team_calendar_event_is_read_from_its_group() {
         let g = "0f8b0c54-3b5d-4e8f-9a2e-1c2d3e4f5a6b";

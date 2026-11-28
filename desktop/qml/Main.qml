@@ -15339,6 +15339,59 @@ Window {
         }
     }
 
+    // --channel-meeting-page-test with --open-chat=<channel id>
+    // --shots=<dir> (TASK-0381): the channel's Meetings pane; the first
+    // meeting's ··· Copy link (the clipboard's text logged); its page as
+    // Edit opens it (cmp-page.png: an organizer's editable page, else the
+    // read-only one with Forward); on a read-only page, Forward meeting
+    // (cmp-forward.png), a search ("ost test", cmp-forward-search.png) and
+    // --forward-to=<mail> picked (cmp-forward-chip.png), sent with
+    // --forward-send; on your own, --edit-title=<title> sent as an update.
+    // Logged as CMPAGE; then quit.
+    Timer {
+        running: Qt.application.arguments.indexOf("--channel-meeting-page-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const args = Qt.application.arguments
+            const arg = k => ((args.find(a => a.startsWith("--" + k + "=")) || "").split("=").slice(1).join("="))
+            const id = arg("open-chat")
+            const dir = (arg("shots") || ".") + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            const log = (tag, v) => console.warn("CMPAGE", tag, JSON.stringify(v === undefined ? "" : v))
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                if (ch) { rail.current = "chat"; backend.selectChat(ch.id, ch.name) }
+                return
+            }
+            const form = calendarView.pageFormForTest()
+            const m = channelMeetings.meetings[0]
+            if (step === 0) { if (!conversation.teamName) return; conversation.openMeetings() }
+            else if (step === 3) {
+                if (!m) { log("no meetings"); Qt.quit(); return }
+                log("pane", channelMeetings.meetings.map(x => [x.subject, x.organizer_mri, channelMeetings.isMine(x)]))
+                shot("cmp-pane")
+                channelMeetings.copyLink(m)
+            }
+            else if (step === 4) { clipProbe.text = ""; clipProbe.paste(); log("copied", clipProbe.text); log("join url", m.join_url) }
+            else if (step === 5) window.openChannelMeeting(channelMeetings.withOrganizer(m), conversation.teamId)
+            else if (step === 9) { log("page", calendarView.openPageForTest()); shot("cmp-page") }
+            else if (step === 10) {
+                if (form.readOnly && form.forwardable) form.openForwardForTest()
+                else if (!form.readOnly && arg("edit-title")) { form.typeTitleForTest(arg("edit-title")); form.submitForTest(); log("update sent", arg("edit-title")) }
+            }
+            else if (step === 11 && form.readOnly) { log("forward", form.forwardForTest); shot("cmp-forward"); form.typeForwardForTest("ost test") }
+            else if (step === 13 && form.readOnly) { log("forward search", form.forwardForTest); shot("cmp-forward-search") }
+            else if (step === 14 && form.readOnly && arg("forward-to")) form.addForwardForTest(arg("forward-to"), arg("forward-name") || arg("forward-to"))
+            else if (step === 15 && form.readOnly) { log("forward picked", form.forwardForTest); shot("cmp-forward-chip") }
+            else if (step === 16 && form.readOnly && args.indexOf("--forward-send") >= 0) { form.sendForwardForTest(arg("forward-note")); log("forward sent", arg("forward-to")) }
+            else if (step === 22) { log("status", backend.statusText); shot("cmp-after") }
+            else if (step === 23) Qt.quit()
+            step++
+        }
+    }
+    TextInput { id: clipProbe; visible: false }
+
     // --thread-window-view=<post id> with --open-chat=<channel id>
     // --shots=<dir>: open that post's window, capture it at the top
     // (view-top.png) and with the newest reply's hover bar up (view-bar.png).

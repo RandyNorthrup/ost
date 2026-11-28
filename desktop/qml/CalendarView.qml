@@ -516,6 +516,15 @@ Item {
             const team = String(form.event.group_address || "").toLowerCase()
             if (team) r.attendees = (r.attendees || []).filter(a => String(a.address || "").toLowerCase() !== team)
             form.detail = r
+            // (A team calendar's meeting is listed without its all-day flag:
+            // an all-day one becomes one, on its own dates.)
+            if (form.mode === "edit" && r.is_all_day && !form.event.is_all_day) {
+                const floating = t => String(t || "").replace(/(\.\d+)?Z$/, "")
+                form.markAllDay(floating(form.event.start_utc), floating(form.event.end_utc))
+            }
+            // (Your channel meeting from its team's calendar opened without
+            // its people: the detail's, so Send update keeps them.)
+            if (!(form.event.attendees || []).length) form.takeAttendees(r.attendees)
         }
         else if (op === "outlookEvent") { if (!error && form.event && r.id === form.event.id) form.outlookInfo = r }
         else if (["findTimes", "attachFile", "deleteAttachment", "attachmentFile", "eventOptions", "setEventOptions", "eventFacilitator",
@@ -1951,7 +1960,9 @@ Item {
     /// calendar card). False when the calendar doesn't have it.
     /// Test hook (--meetings-pane-test): the event page's event.
     function addToCalendarForTest() { form.addToCalendar() }
-    function openPageForTest() { return { open: formLayer.visible, subject: form.event.subject || "", calendar: form.event.calendar_id || "", readOnly: form.readOnly, team: form.teamCalendarEvent, body: (form.detail.body_html || "").length } }
+    function openPageForTest() { return { open: formLayer.visible, subject: form.event.subject || "", calendar: form.event.calendar_id || "", readOnly: form.readOnly, mode: form.mode, team: form.teamCalendarEvent,
+                                          organizer: form.event.organizer || "", forwardable: form.forwardable, required: form.required.map(p => p.name), optional: form.optional.map(p => p.name), body: (form.detail.body_html || "").length } }
+    function pageFormForTest() { return form }
     /// A meeting from a channel's Meetings pane (the team's group
     /// calendar's): its page from your calendar when it is in yours (asked
     /// by iCalUId), else the team calendar's.
@@ -1974,7 +1985,9 @@ Item {
             id: m.id, subject: m.subject || "", start_utc: m.start, end_utc: m.end, is_all_day: false,
             location: m.location || "", organizer: m.organizer_name || "", organizer_address: m.organizer_address || "",
             is_online_meeting: !!m.join_url, join_url: m.join_url || null, show_as: "busy", preview: "",
-            is_organizer: false, ical_uid: m.ical_uid || "", event_type: "singleInstance", series_master_id: "",
+            // (You set it up: its editable page, as Teams opens yours.)
+            is_organizer: !!m.organizer_mri && String(m.organizer_mri).toLowerCase() === String(backend.userMri || "").toLowerCase(),
+            ical_uid: m.ical_uid || "", event_type: m.event_type || "singleInstance", series_master_id: m.series_master_id || "",
             response: "none", response_requested: false, attendees: [], is_cancelled: !!m.cancelled,
             categories: [], sensitivity: "normal", channel_id: j ? decodeURIComponent(j[1]) : "",
             channel_message_id: j && j[2] ? j[2] : "", calendar_id: "group:" + groupId,
@@ -2884,8 +2897,11 @@ Item {
         // right under the button.)
         function openFor(item) { parent = item; x = 0; y = item.height; open() }
         fabric: true; fabricWidth: 194.33; labelInset: 8
-        items: [{ label: qsTr("This event") }, { label: qsTr("This and all following events") }, { label: qsTr("All events in the series") }]
-        onPicked: i => { const e = details.ev; details.close(); root.openPage(e, ["occurrence", "following", "series"][i]) }
+        // (A channel meeting's: this event or the series, as Teams' team
+        // events offer.)
+        readonly property var scopes: details.ev && details.ev.channel_id ? ["occurrence", "series"] : ["occurrence", "following", "series"]
+        items: scopes.map(k => ({ label: ({ occurrence: qsTr("This event"), following: qsTr("This and all following events"), series: qsTr("All events in the series") })[k] }))
+        onPicked: i => { const e = details.ev; details.close(); root.openPage(e, scopes[i]) }
     }
     function editScopeItemsForTest() { return editScopeMenu.items.map(x => x.label) }
     // The card's Join ▾ (Teams desktop, winpc 2026-11-23).
@@ -2903,8 +2919,11 @@ Item {
         // right under the button.)
         function openFor(item) { parent = item; x = 0; y = item.height; open() }
         fabric: true; fabricWidth: 194.33; labelInset: 8
-        items: [{ label: qsTr("This event") }, { label: qsTr("This and all following events") }, { label: qsTr("All events in the series") }]
-        onPicked: i => details.beginCancel(["occurrence", "following", "series"][i])
+        // (A channel meeting's: this event or the series, as Teams' team
+        // events offer.)
+        readonly property var scopes: details.ev && details.ev.channel_id ? ["occurrence", "series"] : ["occurrence", "following", "series"]
+        items: scopes.map(k => ({ label: ({ occurrence: qsTr("This event"), following: qsTr("This and all following events"), series: qsTr("All events in the series") })[k] }))
+        onPicked: i => details.beginCancel(scopes[i])
     }
     function cancelScopeItemsForTest() { return cancelScopeMenu.items.map(x => x.label) }
     function cancelForTest(scope, msg) { details.beginCancel(scope); Qt.callLater(() => { cancelNote.text = msg || "" }) }
@@ -3512,7 +3531,10 @@ Item {
                     if (r.range && r.range.endDate) range.endDate = root.isoLocal(root.midnight(r.range.endDate))
                     out.recurrence = { pattern: pattern, range: range }
                 }
-                if (out.editingId) root.calendarAction("update", JSON.stringify({ id: out.editingId, form: out, joinUrl: form.event.join_url || "", eventType: form.event.event_type || "" }))
+                // (A channel meeting's update goes to its team's calendar by
+                // its iCalUId and start, as Teams' form sends a team event's.)
+                if (out.editingId) root.calendarAction("update", JSON.stringify({ id: out.editingId, form: out, joinUrl: form.event.join_url || "", eventType: form.event.event_type || "",
+                                                                                  icalUid: out.channel ? form.event.ical_uid || "" : "", startUtc: form.event.start_utc || "", seriesMasterId: form.event.series_master_id || "", calendar: form.event.calendar_id || "" }))
                 else root.calendarAction("schedule", JSON.stringify({ form: out }))
             }
             onCancelMeeting: (note, scope) => {
@@ -3528,6 +3550,12 @@ Item {
             onJoin: root.joinMeeting(form.event.join_url, form.event.subject || qsTr("Meeting"))
             onOpenChat: root.openMeetingChat(form.event.join_url, form.event.subject || qsTr("Meeting"))
             onCopyLink: { textCopy.text = form.event.join_url || ""; textCopy.selectAll(); textCopy.copy() }
+            // Forward: a team calendar's event by its id there, your
+            // invitation by yours.
+            onForwardMeeting: (people, note) => {
+                const team = String(form.event.calendar_id || "").startsWith("group:") ? String(form.event.calendar_id).replace(/^group:/, "") : ""
+                root.calendarAction("forward", JSON.stringify({ team: team, id: form.event.id || "", people: people, note: note }))
+            }
             onAddToCalendar: root.calendarAction("addToMyCalendar", JSON.stringify({ group: String(form.event.calendar_id || "").replace(/^group:/, ""), id: form.event.id }))
         }
     }

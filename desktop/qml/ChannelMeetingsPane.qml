@@ -146,12 +146,12 @@ Rectangle {
         const name = p ? p.name : (!mri && !m.is_organizer ? m.organizer_name : "")
         return name ? qsTr("%1 invited you").arg(name) : ""
     }
-    /// Copy link (Teams' copyMeetingLink): the join link, and for pasting
-    /// into a message the rich link "{subject} | Meeting | Microsoft Teams".
+    /// Copy link: the meeting's join link as plain text, as Teams desktop
+    /// copies it (clicked on testpc2 as OST Test 2, 2026-11-27: the
+    /// clipboard held only the meetup-join URL, no HTML).
     function copyLink(m) {
         if (!m || !m.join_url) return
-        const subject = m.subject || qsTr("Untitled event")
-        backend.copyHtml("<a href=\"" + escaped(m.join_url) + "\" target=\"_blank\">" + escaped(subject) + " | " + qsTr("Meeting") + " | " + qsTr("Microsoft Teams") + "</a>", m.join_url)
+        backend.copyHtml("", m.join_url)
     }
     function timeText(m) {
         const s = new Date(m.start), e = new Date(m.end)
