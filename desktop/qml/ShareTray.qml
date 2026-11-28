@@ -41,6 +41,8 @@ Popup {
     signal pickMode(string mode)
     signal pickBackground(var background)
     signal whiteboard()
+    /// The Whiteboard row's room, left out for a personal account.
+    readonly property real whiteboardGap: backend.personalAccount ? 60 : 0
     /// Content from camera ▸ Whiteboard, Document or Video.
     signal contentCamera(string type)
     signal officeFile(string kind, var file)
@@ -132,7 +134,7 @@ Popup {
                 id: body
                 width: flick.width
                 // Teams' content: 622 (the last row ends at 621.7).
-                implicitHeight: 622
+                implicitHeight: 622 - tray.whiteboardGap
                 Text {
                     x: 23.7; y: 10; height: 20; verticalAlignment: Text.AlignVCenter
                     text: qsTr("Presenter mode")
@@ -220,9 +222,12 @@ Popup {
                     }
                 }
                 // Microsoft Whiteboard (ms-whiteboard): its logo tile
-                // (#0027B4, radius 2) and two lines.
+                // (#0027B4, radius 2) and two lines. Not on any plan of
+                // Teams for personal use, so a personal account's tray
+                // leaves it out and the rows below move up.
                 RowButton {
                     x: 23.7; y: 238.3; height: 36
+                    visible: !backend.personalAccount
                     accessibleName: qsTr("Share %1").arg(qsTr("Microsoft Whiteboard")) + " " + qsTr("Start Whiteboard")
                     title: qsTr("Microsoft Whiteboard")
                     subtitle: qsTr("Start Whiteboard")
@@ -236,7 +241,7 @@ Popup {
                 }
                 // Content from camera (content-camera-button).
                 RowButton {
-                    x: 23.7; y: 298.3; height: 37.3
+                    x: 23.7; y: 298.3 - tray.whiteboardGap; height: 37.3
                     accessibleName: qsTr("Content from camera") + " " + qsTr("Share a document, a whiteboard, and more")
                     title: qsTr("Content from camera")
                     subtitle: qsTr("Share a document, a whiteboard, and more")
@@ -251,21 +256,21 @@ Popup {
                 }
                 // PowerPoint Live and Excel Live.
                 OfficeSection {
-                    y: 359.7
+                    y: 359.7 - tray.whiteboardGap
                     title: qsTr("PowerPoint Live")
                     subtitle: qsTr("See your notes, slides, and audience while you present.")
                     files: tray.pptFiles
                     onPicked: f => tray.officeFile("ppt", f)
                 }
                 OfficeSection {
-                    y: 451.7
+                    y: 451.7 - tray.whiteboardGap
                     title: qsTr("Excel Live")
                     subtitle: qsTr("Share a workbook for everyone to work on together.")
                     files: tray.excelFiles
                     onPicked: f => tray.officeFile("excel", f)
                 }
                 Column {
-                    x: 23.7; y: 555.7
+                    x: 23.7; y: 555.7 - tray.whiteboardGap
                     spacing: 2
                     BrowseRow { icon: "onedrive-color"; colour: true; label: qsTr("Browse OneDrive"); onPicked: tray.browse("onedrive") }
                     BrowseRow { icon: "share-browse-computer"; label: qsTr("Browse my computer"); onPicked: tray.browse("computer") }

@@ -87,7 +87,7 @@ const AUTHZ_URL_PERSONAL: &str = "https://teams.live.com/api/auth/v2.0/authz/con
 pub const PERSONAL_AUTHZ_SCOPE: &str = "https://auth.fl.teams.microsoft.com/teams.auth.readwrite";
 /// Teams on the web for personal use's client type and version, as its
 /// authz requests name them.
-const PERSONAL_CLIENT_VERSION: &str = "1415/26101516645";
+pub(crate) const PERSONAL_CLIENT_VERSION: &str = "1415/26101516645";
 
 /// Why a personal account asks the consumer authz for a Skype token, as
 /// Teams on the web for personal use names it (`ms-teams-authz-type`).

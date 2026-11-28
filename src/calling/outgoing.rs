@@ -1026,10 +1026,7 @@ impl OutgoingCall {
             bail!("addParticipant: not a Teams service link");
         }
         let config = Config::load()?;
-        let ic3 = config
-            .get_ic3_token()
-            .context("No calling (IC3) token")?
-            .token;
+        let ic3 = super::consumer::calling_token(&config).context("No calling (IC3) token")?;
         let (surl, epid) = &self.callbacks;
         let mut from = self.me.0.clone();
         if let Some(o) = from.as_object_mut() {
@@ -1042,7 +1039,7 @@ impl OutgoingCall {
         let resp = self
             .http
             .post(&link)
-            .bearer_auth(ic3)
+            .headers(super::consumer::auth_headers(&ic3))
             .header("x-microsoft-skype-chain-id", &self.call_id)
             .header(
                 "x-microsoft-skype-message-id",
@@ -1254,10 +1251,7 @@ impl OutgoingCall {
             bail!("addParticipantAndModality: not a Teams service link");
         }
         let config = Config::load()?;
-        let ic3 = config
-            .get_ic3_token()
-            .context("No calling (IC3) token")?
-            .token;
+        let ic3 = super::consumer::calling_token(&config).context("No calling (IC3) token")?;
         let (surl, epid) = &self.callbacks;
         let tc = |p: &str| signaling::trouter_callback(surl, epid, p);
         let links = serde_json::json!({
@@ -1279,7 +1273,7 @@ impl OutgoingCall {
         let resp = self
             .http
             .post(&link)
-            .bearer_auth(ic3)
+            .headers(super::consumer::auth_headers(&ic3))
             .header("x-microsoft-skype-chain-id", &self.call_id)
             .header(
                 "x-microsoft-skype-message-id",
@@ -1334,10 +1328,7 @@ impl OutgoingCall {
             bail!("addParticipantAndModality: not a Teams service link");
         }
         let config = Config::load()?;
-        let ic3 = config
-            .get_ic3_token()
-            .context("No calling (IC3) token")?
-            .token;
+        let ic3 = super::consumer::calling_token(&config).context("No calling (IC3) token")?;
         let (surl, epid) = &self.callbacks;
         let tc = |p: &str| signaling::trouter_callback(surl, epid, p);
         let links = serde_json::json!({
@@ -1371,7 +1362,7 @@ impl OutgoingCall {
         let resp = self
             .http
             .post(&link)
-            .bearer_auth(ic3)
+            .headers(super::consumer::auth_headers(&ic3))
             .header("x-microsoft-skype-chain-id", &self.call_id)
             .header(
                 "x-microsoft-skype-message-id",
@@ -1415,10 +1406,7 @@ impl OutgoingCall {
             bail!("addParticipantAndModality: not a Teams service link");
         }
         let config = Config::load()?;
-        let ic3 = config
-            .get_ic3_token()
-            .context("No calling (IC3) token")?
-            .token;
+        let ic3 = super::consumer::calling_token(&config).context("No calling (IC3) token")?;
         let (surl, epid) = &self.callbacks;
         let mut from = self.me.0.clone();
         if let Some(o) = from.as_object_mut() {
@@ -1441,7 +1429,7 @@ impl OutgoingCall {
         let resp = self
             .http
             .post(&link)
-            .bearer_auth(ic3)
+            .headers(super::consumer::auth_headers(&ic3))
             .header("x-microsoft-skype-chain-id", &self.call_id)
             .header(
                 "x-microsoft-skype-message-id",
@@ -1512,14 +1500,11 @@ impl OutgoingCall {
             bail!("content sharing: not a Teams service link");
         }
         let config = Config::load()?;
-        let ic3 = config
-            .get_ic3_token()
-            .context("No calling (IC3) token")?
-            .token;
+        let ic3 = super::consumer::calling_token(&config).context("No calling (IC3) token")?;
         let resp = self
             .http
             .request(method.clone(), link)
-            .bearer_auth(ic3)
+            .headers(super::consumer::auth_headers(&ic3))
             .header(super::content_sharing::CHAIN_ID_HEADER, chain)
             .header("x-microsoft-skype-chain-id", &self.call_id)
             .header(
@@ -3208,9 +3193,14 @@ async fn cc_post(
 /// committed to the collab service on their behalf, which a Skype-token
 /// request fails (updateMeetingStates 500, subCode 6176, CollabCommitError
 /// CrossTenantRequest; TASK-0212).
+/// A personal account has no IC3 token: its requests carry the Skype token
+/// (None here), as Teams for personal use's do.
 async fn cc_bearer() -> Option<String> {
     let mut config = Config::load().ok()?;
-    if config.get_ic3_token().is_none_or(|t| t.is_expired()) {
+    if super::consumer::is_personal_config(&config) {
+        return None;
+    }
+    if super::consumer::calling_token_stale(&config) {
         crate::auth::oauth::refresh().await.ok()?;
         config = Config::load().ok()?;
     }
@@ -4034,7 +4024,27 @@ pub async fn place_call(
     video: bool,
     cancel: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<OutgoingCall> {
+    // A one-on-one chat with a thread's id (`19:uni01_…@thread.v2`, every
+    // personal account's 1:1 chat) doesn't name its other person: the
+    // chat's members do.
+    let resolved;
+    let callee_mri = if callee_mri.is_empty() {
+        resolved = thread_callee(thread_id).await?;
+        resolved.as_str()
+    } else {
+        callee_mri
+    };
     start(thread_id, Target::Person(callee_mri, video), cancel).await
+}
+
+/// The other person in a one-on-one chat whose id is a thread's.
+pub async fn thread_callee(thread_id: &str) -> Result<String> {
+    let client = crate::api::client::TeamsClient::new().await?;
+    let others = crate::api::files::call_member_mris(&client, thread_id).await?;
+    match others.as_slice() {
+        [one] => Ok(one.clone()),
+        _ => bail!("Not a one-on-one chat"),
+    }
 }
 
 /// The call a transfer asks us to make (Teams' `onTransferRequested`: our
@@ -4147,8 +4157,17 @@ impl MeetingLink {
     /// A meeting by its short link (`https://teams.microsoft.com/meet/
     /// <ID>?p=<passcode>`), joined as Teams' Join with an ID does: by
     /// `meetingData`, its thread unknown until it's named.
+    ///
+    /// Personal meetings' links are `https://teams.live.com/meet/<ID>?p=…`
+    /// (Teams for personal use joins them the same way, by `meetingData`
+    /// naming the link it was given).
     pub fn parse_short(url: &str) -> Option<Self> {
-        let rest = url.strip_prefix("https://teams.microsoft.com/meet/")?;
+        let (base, rest) = [
+            "https://teams.microsoft.com/meet/",
+            super::consumer::MEET_LINK_BASE,
+        ]
+        .into_iter()
+        .find_map(|b| url.strip_prefix(b).map(|r| (b, r)))?;
         let (code, query) = rest.split_once('?').unwrap_or((rest, ""));
         let code = code.trim_end_matches('/');
         if code.is_empty() || !code.bytes().all(|b| b.is_ascii_digit()) {
@@ -4159,11 +4178,21 @@ impl MeetingLink {
             .find_map(|kv| kv.strip_prefix("p="))
             .and_then(percent_decode)
             .unwrap_or_default();
-        Some(Self::by_code(code, &pass))
+        Some(Self::by_code_at(base, code, &pass))
     }
 
-    /// A meeting by its ID and passcode (see [`Self::parse_short`]).
+    /// A meeting by its ID and passcode (see [`Self::parse_short`]): a
+    /// personal account's on teams.live.com, as its Join with a meeting ID.
     pub fn by_code(code: &str, pass: &str) -> Self {
+        let base = if super::consumer::is_personal() {
+            super::consumer::MEET_LINK_BASE
+        } else {
+            "https://teams.microsoft.com/meet/"
+        };
+        Self::by_code_at(base, code, pass)
+    }
+
+    fn by_code_at(base: &str, code: &str, pass: &str) -> Self {
         Self {
             thread_id: String::new(),
             message_id: "0".into(),
@@ -4172,7 +4201,7 @@ impl MeetingLink {
             meeting_data: Some(serde_json::json!({
                 "meetingCode": code,
                 "passcode": if pass.is_empty() { serde_json::Value::Null } else { pass.into() },
-                "meetingUrl": format!("https://teams.microsoft.com/meet/{code}?p={pass}"),
+                "meetingUrl": format!("{base}{code}?p={pass}"),
             })),
         }
     }
@@ -4384,15 +4413,12 @@ pub async fn keep_conversation(
     conversation_url: &str,
 ) -> Result<KeptConversation> {
     let config = Config::load()?;
-    let ic3_token = config
-        .get_ic3_token()
-        .context("No calling (IC3) token")?
-        .token;
+    let ic3_token = super::consumer::calling_token(&config).context("No calling (IC3) token")?;
     let skype_token = config.get_skype_token().context("Not signed in")?.token;
     let oid = config
         .object_id()
         .context("Signed-in user has no object id")?;
-    let tenant_id = config.tenant_id().context("No tenant id")?;
+    let tenant_id = super::consumer::tenant_or_none(&config)?;
     let display_name = config.display_name().unwrap_or_default();
     let (surl, endpoint_id) =
         crate::trouter::current_endpoint().context("Push channel is not connected")?;
@@ -4500,24 +4526,21 @@ pub async fn resolve_meeting_id(meeting_id: &str, passcode: &str) -> Result<(Mee
         bail!("Not a meeting ID");
     }
     let mut config = Config::load()?;
-    if config.get_ic3_token().is_none_or(|t| t.is_expired()) {
+    if super::consumer::calling_token_stale(&config) {
         crate::auth::oauth::refresh()
             .await
             .context("Token refresh failed")?;
         config = Config::load()?;
     }
-    let ic3_token = config
-        .get_ic3_token()
-        .context("No calling (IC3) token")?
-        .token;
+    let ic3_token = super::consumer::calling_token(&config).context("No calling (IC3) token")?;
     let oid = config
         .object_id()
         .context("Signed-in user has no object id")?;
-    let tenant_id = config.tenant_id().context("No tenant id")?;
+    let tenant_id = super::consumer::tenant_or_none(&config)?;
     let display_name = config.display_name().unwrap_or_default();
-    let region = config.get_region_gtms().context("No region endpoints")?;
     let epconv_url =
-        call_test::derive_epconv_url(&region).context("No conversation service URL")?;
+        super::consumer::conversation_service_url(&config, config.get_region_gtms().as_ref())
+            .context("No conversation service URL")?;
     let (surl, endpoint_id) =
         crate::trouter::current_endpoint().context("Push channel is not connected")?;
     let surl = format!("{}/x{}/", surl.trim_end_matches('/'), new_call_tag());
@@ -4694,7 +4717,7 @@ async fn start_tagged(
 ) -> Result<OutgoingCall> {
     let mut config = Config::load()?;
     if config.get_skype_token().is_none_or(|t| t.is_expired())
-        || config.get_ic3_token().is_none_or(|t| t.is_expired())
+        || super::consumer::calling_token_stale(&config)
     {
         crate::auth::oauth::refresh()
             .await
@@ -4702,18 +4725,15 @@ async fn start_tagged(
         config = Config::load()?;
     }
     let skype_token = config.get_skype_token().context("Not signed in")?.token;
-    let ic3_token = config
-        .get_ic3_token()
-        .context("No calling (IC3) token")?
-        .token;
+    let ic3_token = super::consumer::calling_token(&config).context("No calling (IC3) token")?;
     let oid = config
         .object_id()
         .context("Signed-in user has no object id")?;
-    let tenant_id = config.tenant_id().context("No tenant id")?;
+    let tenant_id = super::consumer::tenant_or_none(&config)?;
     let display_name = config.display_name().unwrap_or_default();
-    let region = config.get_region_gtms().context("No region endpoints")?;
     let epconv_url =
-        call_test::derive_epconv_url(&region).context("No conversation service URL")?;
+        super::consumer::conversation_service_url(&config, config.get_region_gtms().as_ref())
+            .context("No conversation service URL")?;
     let (surl, endpoint_id) =
         crate::trouter::current_endpoint().context("Push channel is not connected")?;
     // This call's own callback base (`…/x<tag>/callAgent/…`): its events

@@ -1435,9 +1435,20 @@ Item {
                 }
             }
             Rectangle { width: 1; height: 20; anchors.verticalCenter: parent.verticalCenter; color: theme.dividerSoft }
+            // Teams for personal use's calendar (teams.live.com, measured
+            // 2026-11-28): Join with an ID, Meet now and New meeting.
+            Row {
+                visible: backend.personalAccount && !root.copilotOpen
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 8
+                BarButton2 { icon: "number-symbol-20"; label: qsTr("Join with an ID"); onClicked: joinId.openFresh() }
+                BarButton2 { icon: "video-20"; label: qsTr("Meet now"); onClicked: meetNowDialog.openFresh(); Accessible.name: qsTr("Start an instant Teams meeting.") }
+                BarButton2 { primary: true; icon: "add-20"; label: qsTr("New meeting"); onClicked: root.openForm(null, [], null) }
+            }
             // Meet now ▾: Start a meeting now; the chevron: Join with an ID.
             Row {
                 id: meetRow
+                visible: !backend.personalAccount
                 anchors.verticalCenter: parent.verticalCenter
                 BarButton2 { icon: "video-20"; label: qsTr("Meet now"); onClicked: meetNowDialog.openFresh(); Accessible.name: qsTr("Start an instant Teams meeting.") }
                 BarButton2 {
@@ -1459,7 +1470,7 @@ Item {
             // with that template.
             Row {
                 id: newRow
-                visible: !root.copilotOpen
+                visible: !root.copilotOpen && !backend.personalAccount
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 1
                 BarButton2 { primary: true; icon: "calendar-add-20"; label: qsTr("New"); onClicked: root.openForm(null, [], null); Accessible.name: qsTr("Create a new event.") }

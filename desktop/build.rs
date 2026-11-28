@@ -18,6 +18,7 @@ fn main() {
         "qml/CallWindow.qml",
         "qml/CallsView.qml",
         "qml/CalendarView.qml",
+        "qml/MeetView.qml",
         "qml/MeetingForm.qml",
         "qml/OutlookFormPane.qml",
         "qml/OutlookUploadTo.qml",

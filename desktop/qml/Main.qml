@@ -2282,10 +2282,27 @@ Window {
             window.linkJoinById = true
             calendarView.joinWithId(l.id, l.passcode)
             return true
-        case "personalMeeting":
-            // Teams free's meetings need a personal account (TASK-0298).
-            cant(qsTr("OST can't join Teams (free) meetings yet."), l.url)
+        case "personalMeeting": {
+            // A Teams (free) meeting (TASK-0298): a personal account joins
+            // it as Teams for personal use does, a /meet/ link by its ID
+            // and passcode; a work account hands it to the personal
+            // account signed in next to it.
+            if (backend.personalAccount) {
+                const m = /\/meet\/(\d+)(?:\?(?:.*&)?p=([^&#]*))?/.exec(l.url)
+                if (m) {
+                    window.linkJoinById = true
+                    calendarView.joinWithId(m[1], m[2] ? decodeURIComponent(m[2]) : "")
+                } else {
+                    preJoin.openFor(l.url, qsTr("Microsoft Teams meeting"), "", "")
+                    preJoin.titleFromDetails = true
+                }
+                return true
+            }
+            const personal = backend.personalAccountProfile()
+            if (personal !== "") { backend.openLinkInAccount(personal, l.url); return true }
+            cant(qsTr("Add a personal account to join this Teams (free) meeting."), l.url)
             return true
+        }
         case "chat": toChat(l.thread); return true
         case "channel": toChat(l.thread); return true
         case "message":
@@ -17750,8 +17767,27 @@ Window {
                 }
                 return
             }
+            if (op === "meetingLinks" || op === "meetLink") { meetView.actionDone(op, result, error); return }
             calendarView.actionDone(op, result, error)
         }
+    }
+    // Teams for personal use's Meet app (TASK-0298).
+    MeetView {
+        id: meetView
+        visible: rail.current === "meet"
+        anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
+        myName: backend.userName
+        meetingChats: chatList.chats.filter(c => c.meeting && c.isCreator).map(c => c.id)
+        onCalendarAction: (op, args) => backend.calendarAction(op, args)
+        onJoinLink: (url, title) => {
+            const m = /\/meet\/(\d+)(?:\?(?:.*&)?p=([^&#]*))?/.exec(url)
+            if (m) { window.linkJoinById = true; calendarView.joinWithId(m[1], m[2] ? decodeURIComponent(m[2]) : "") }
+            else calendarView.joinMeeting(url, title)
+        }
+        onJoinWithId: (id, pass) => calendarView.joinWithId(id, pass)
+        onScheduleMeeting: { rail.current = "calendar"; calendarView.newMeeting() }
+        onOpenCalls: rail.current = "calls"
+        onToast: text => window.showToast({ text: text, intent: "success" })
     }
     /// An agent's meeting being scheduled ({m, e}).
     property var agentMeetingPending: null
@@ -17783,7 +17819,8 @@ Window {
         onJoinMeeting: (url, subject) => {
             // A meeting link, or a short link (/meet/<ID>?p=…): Join with
             // an ID while the lobby holds you joins by the meeting's ID.
-            if (url.indexOf("/l/meetup-join/") < 0 && !/^https:\/\/teams\.microsoft\.com\/meet\/\d+/.test(url)) { backend.openExternal(url); return }
+            // (A personal meeting's is teams.live.com/meet/<ID>?p=….)
+            if (url.indexOf("/l/meetup-join/") < 0 && !/^https:\/\/teams\.(microsoft|live)\.com\/meet\/\d+/.test(url)) { backend.openExternal(url); return }
             const ev = (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).find(e => e.join_url === url)
             preJoin.openFor(url, subject, ev ? ev.start_utc : "", ev ? ev.end_utc : "")
         }
@@ -17792,7 +17829,7 @@ Window {
 
     // Apps not built yet: an honest placeholder instead of the chat.
     Rectangle {
-        visible: ["chat", "calls", "calendar", "activity", "settings", "onedrive", "planner", "people", "onenote", "add", "whiteboard", "clipchamp", "shifts", "avatars", "office", "help", "communities", "search", "events"].indexOf(rail.current) < 0
+        visible: ["chat", "calls", "calendar", "meet", "activity", "settings", "onedrive", "planner", "people", "onenote", "add", "whiteboard", "clipchamp", "shifts", "avatars", "office", "help", "communities", "search", "events"].indexOf(rail.current) < 0
         anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
         color: theme.surface
         Text {

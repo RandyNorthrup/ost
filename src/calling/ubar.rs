@@ -758,6 +758,8 @@ pub struct Facts {
     /// (PptControlsSection's viewer controls, Take control: any meeting
     /// role but Attendee).
     pub ppt_viewing: bool,
+    /// A personal account's call (Teams for personal use).
+    pub personal: bool,
 }
 
 impl Facts {
@@ -809,6 +811,9 @@ impl Facts {
                 _ => false,
             };
         }
+        if self.personal && personal_hidden(control) {
+            return false;
+        }
         match control {
             "PopoutContentButton" => self.can_pop_out,
             "ScreensharingControlButton" => self.can_take_control,
@@ -858,7 +863,11 @@ impl Facts {
             "RecordingMenuControl"
             | "RecordingButton"
             | "TranscriptButton"
-            | "TranscriptPanelButton" => self.is_meeting() || self.group_call(),
+            | "TranscriptPanelButton" => {
+                // Teams for personal use offers Record in 1:1 calls too
+                // (a Microsoft 365 feature; free accounts see the plans).
+                self.is_meeting() || self.group_call() || self.personal && self.p2p
+            }
             // More ▸ Timer (the meeting's shared timer; the call window
             // hides it where Teams' timer can't be seen).
             // Group calls too (supportStructuredMeetingsTimerInGroupCalls:
@@ -918,6 +927,40 @@ impl Facts {
             _ => false,
         }
     }
+}
+
+/// What Teams for personal use leaves out of its call and meeting
+/// controls (measured on teams.live.com 2026-11-28 in a personal meeting
+/// and a 1:1 call: Mic, Camera, Share, React, Chat, People, Record, More,
+/// Leave; More holds Timer, Captions, RTT, View, Join info and Settings):
+/// no Controls, breakout rooms, Copilot, apps (Whiteboard among them), Notes,
+/// Facilitator, Interpreter, transcripts, Q&A, phone audio, park or
+/// transfer, dial pad, help or reports. Recording stays, in 1:1 calls too:
+/// free accounts are offered Microsoft 365 there.
+pub fn personal_hidden(control: &str) -> bool {
+    matches!(
+        control,
+        "StartBreakoutRoomButton"
+            | "OrganizerControlButton"
+            | "ReturnToBreakoutRoomButton"
+            | "BreakoutRoomReturnToMainButton"
+            | "MeetingCollabButton"
+            | "MeetingAppsAddButton"
+            | "MeetingDetailsButton"
+            | "FacilitatorButton"
+            | "AiInterpretationButtonForAll"
+            | "TranscriptButton"
+            | "TranscriptPanelButton"
+            | "YammerQnaButton"
+            | "PstnButton"
+            | "CallParkButton"
+            | "CallTransferButtonV2"
+            | "CallConsultativeTransferButtonV2"
+            | "MeetingHelpButton"
+            | "ReportMeetingButton"
+            | "ByodMeetingRoomModeButton"
+            | "DialpadButton"
+    )
 }
 
 /// The bar laid out for a width, as the call window draws it.
@@ -985,6 +1028,41 @@ pub fn arrange(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn personal_meetings_have_no_breakout_rooms_copilot_or_apps() {
+        let f = Facts {
+            scheduled: true,
+            organizer: true,
+            copilot: true,
+            personal: true,
+            reactions: true,
+            ..Default::default()
+        };
+        for gone in [
+            "StartBreakoutRoomButton",
+            "MeetingCollabButton",
+            "MeetingAppsAddButton",
+            "MeetingDetailsButton",
+            "TranscriptButton",
+        ] {
+            assert!(!f.shows(gone), "{gone}");
+        }
+        for kept in [
+            "RecordingButton",
+            "ChatButton",
+            "RosterButton",
+            "ReactionButton",
+            "MeetingFacilitatorTimerButton",
+        ] {
+            assert!(f.shows(kept), "{kept}");
+        }
+        let work = Facts {
+            personal: false,
+            ..f
+        };
+        assert!(work.shows("StartBreakoutRoomButton"));
+    }
+
     use super::*;
 
     fn names(l: &Layout) -> Vec<String> {

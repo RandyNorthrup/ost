@@ -458,6 +458,40 @@ pub fn is_stun_request(data: &[u8]) -> bool {
     msg_type == BINDING_REQUEST && magic == MAGIC_COOKIE
 }
 
+/// A STUN request's USERNAME (ICE: `<receiver ufrag>:<sender ufrag>`).
+pub fn username(data: &[u8]) -> Option<String> {
+    if !is_stun_message(data) {
+        return None;
+    }
+    let msg_len = u16::from_be_bytes([data[2], data[3]]) as usize;
+    let end = std::cmp::min(STUN_HEADER_SIZE + msg_len, data.len());
+    let mut pos = STUN_HEADER_SIZE;
+    while pos + 4 <= end {
+        let attr_type = u16::from_be_bytes([data[pos], data[pos + 1]]);
+        let attr_len = u16::from_be_bytes([data[pos + 2], data[pos + 3]]) as usize;
+        let start = pos + 4;
+        if start + attr_len > end {
+            break;
+        }
+        if attr_type == ATTR_USERNAME {
+            return String::from_utf8(data[start..start + attr_len].to_vec()).ok();
+        }
+        pos = start + ((attr_len + 3) & !3);
+    }
+    None
+}
+
+/// Whether an ICE check came from the peer whose ufrag is `remote_ufrag`
+/// (its USERNAME's sender part). A call that rang several devices gets
+/// checks from each one that sent an early answer; only the one that
+/// accepted is the call's peer. An empty `remote_ufrag` takes any check.
+pub fn check_is_from(data: &[u8], remote_ufrag: &str) -> bool {
+    remote_ufrag.is_empty()
+        || username(data)
+            .and_then(|u| u.split_once(':').map(|(_, from)| from == remote_ufrag))
+            .unwrap_or(false)
+}
+
 /// Extract the transaction ID from a STUN message.
 pub fn get_transaction_id(data: &[u8]) -> Option<[u8; 12]> {
     if data.len() < STUN_HEADER_SIZE {
@@ -1077,6 +1111,16 @@ async fn stun_responder_loop(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn checks_from_another_fork_are_not_the_peer() {
+        let txn = generate_transaction_id();
+        let req = build_ice_binding_request(&txn, "ours:web1", b"pwd", 1, false, 7);
+        assert_eq!(username(&req).as_deref(), Some("ours:web1"));
+        assert!(check_is_from(&req, "web1"));
+        assert!(!check_is_from(&req, "desk"));
+        assert!(check_is_from(&req, ""));
+    }
+
     use super::*;
 
     #[test]
