@@ -52,10 +52,12 @@ Popup {
         target: backend
         function onDriveActionDone(op, result, error) {
             if (op !== root.tag + "personal_picker") return
-            root.loading = false
-            if (error) { console.warn("personal picker:", error); return }
+            if (error) { root.loading = false; console.warn("personal picker:", error); return }
             const v = JSON.parse(result)
-            if (v.place !== root.place) return
+            // (Only the folder shown now: a late answer for another is dropped.)
+            const here = root.path.length ? root.path[root.path.length - 1].id : ""
+            if (v.place !== root.place || (v.folder || "") !== here) return
+            root.loading = false
             root.items = v.items || []
         }
     }
