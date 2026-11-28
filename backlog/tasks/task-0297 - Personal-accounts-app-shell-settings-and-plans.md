@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@tperE'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T09:17:00Z'
+updated_date: '2026-11-28T09:59:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -65,6 +65,8 @@ For a personal account Teams' left rail is Chat, Meet, People, Calendar and Acti
 - PR #88. Codex review: Teams Insider menu row opened General (now teams_insider), the personal hub flyout could outgrow the window (now capped at 0.7 and scrolling), and a personal account's unset file-opening choice still opened Office in OST (now Browser, matching Files and links). Fixed in b25235ef, checked live (Insider page, hub with 3 accounts); threads answered and resolved.
 
 - Rebased on main after #84 (TASK-0298/0299): its personal default bar (Chat, Meet, Calendar, Activity) gave way to this task's Teams free bar, and personalReady now has Meet and Calendar on (their views exist); the not-available page knows meet, tfl-copilot and tfl-communities; the protocol doc keeps #84's §10 and this task's section as §11. People stays off until TASK-0295.
+
+- Rebased again after #89 (TASK-0295): People is on the personal bar too (personalReady.people), opening #89's PersonalPeopleView; the protocol doc section is now §12.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
