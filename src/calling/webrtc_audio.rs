@@ -2409,6 +2409,7 @@ impl WebRtcAudioSession {
         tasks.push(tokio::spawn(recv_loop(RecvCtx {
             socket: socket.clone(),
             local_pwd: local.pwd.clone(),
+            remote_ufrag: offer.ice_ufrag.clone(),
             dtls_tx,
             peer_tx: peer_tx.clone(),
             srtp: srtp_ctx.clone(),
@@ -2804,6 +2805,9 @@ fn in_range(range: &std::sync::atomic::AtomicU64, ssrc: u32) -> bool {
 struct RecvCtx {
     socket: Arc<UdpSocket>,
     local_pwd: String,
+    /// The peer's ICE ufrag: only its checks name the peer (a call that
+    /// rang several devices hears from each that answered early).
+    remote_ufrag: String,
     dtls_tx: std::sync::mpsc::Sender<Vec<u8>>,
     peer_tx: mpsc::Sender<SocketAddr>,
     srtp: Arc<Mutex<Option<srtp::SrtpStreams>>>,
@@ -2882,7 +2886,8 @@ async fn recv_loop(ctx: RecvCtx) {
                 // Either their check reached us or ours was answered: this
                 // address works.
                 // Every working address is reported once (ICE picks the best).
-                if (ice::is_stun_request(data) || ice::is_stun_response(data))
+                if ((ice::is_stun_request(data) && ice::check_is_from(data, &ctx.remote_ufrag))
+                    || ice::is_stun_response(data))
                     && announced.len() < 8
                     && announced.insert(from)
                 {

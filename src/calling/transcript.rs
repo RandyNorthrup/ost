@@ -333,20 +333,17 @@ pub async fn history(
     use anyhow::Context;
     crate::auth::token_hosts::ensure(link, crate::auth::token_hosts::Audience::Teams)?;
     let mut config = crate::config::Config::load()?;
-    if config.get_ic3_token().is_none_or(|t| t.is_expired()) {
+    if super::consumer::calling_token_stale(&config) {
         crate::auth::oauth::refresh()
             .await
             .context("Token refresh failed")?;
         config = crate::config::Config::load()?;
     }
-    let token = config
-        .get_ic3_token()
-        .context("No calling (IC3) token")?
-        .token;
+    let token = super::consumer::calling_token(&config).context("No calling (IC3) token")?;
     let session = uuid::Uuid::new_v4().to_string();
     let resp = http
         .post(link)
-        .bearer_auth(token)
+        .headers(super::consumer::auth_headers(&token))
         .header("x-ms-session-id", &session)
         .header("x-ms-correlation-id", &session)
         .header("x-microsoft-skype-chain-id", chain_id)

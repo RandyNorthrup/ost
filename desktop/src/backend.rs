@@ -192,6 +192,10 @@ pub mod qobject {
         /// for personal use): its profile menu and shell are Teams'
         /// personal ones.
         #[qproperty(bool, personal_account)]
+        /// A personal account's meeting limits (minutes, people) from its
+        /// authz licence: 60 and 100 on the free plan.
+        #[qproperty(i32, meeting_minutes_limit)]
+        #[qproperty(i32, meeting_people_limit)]
         /// A second personal account that just signed in, which Teams
         /// refuses ("Multiple personal accounts aren't supported in Teams
         /// yet."): {name, upn} as JSON, "" when none.
@@ -855,6 +859,18 @@ pub mod qobject {
             thread_id: &QString,
             name: &QString,
         );
+
+        /// Open a Teams link in another account's window (a Teams free
+        /// meeting link in the personal account's): that window comes
+        /// forward and opens it, or the account starts with it.
+        #[qinvokable]
+        fn open_link_in_account(self: Pin<&mut Backend>, profile: &QString, link: &QString);
+
+        /// The profile of the personal account signed in next to this one
+        /// ("" when there's none, or this is it): where Teams free meeting
+        /// links open.
+        #[qinvokable]
+        fn personal_account_profile(self: Pin<&mut Backend>) -> QString;
 
         /// A sign-in web view is about to load `url` (`silent`: the hidden
         /// renewal's view). True when it's the browser sign-in's return
@@ -3903,6 +3919,8 @@ pub struct BackendRust {
     sign_in_page: QString,
     renew_page: QString,
     personal_account: bool,
+    meeting_minutes_limit: i32,
+    meeting_people_limit: i32,
     personal_refused: QString,
     /// The visible browser sign-in waiting for its return address.
     browser_sign_in: Option<teams_cli::auth::spa::BrowserSignIn>,
@@ -7894,10 +7912,18 @@ fn forwarding_change(
 /// a plain launch: a running window of that account comes forward (its
 /// instance socket), else it starts, signing in first if it must.
 fn launch_profile(profile: &str) {
+    launch_profile_with(profile, None)
+}
+
+/// [`launch_profile`], opening a Teams link once signed in.
+fn launch_profile_with(profile: &str, link: Option<&str>) {
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
     let mut cmd = std::process::Command::new(exe);
+    if let Some(l) = link {
+        cmd.arg(l);
+    }
     // (the test harness's command file is this window's, not the other's)
     cmd.env_remove("OST_ACCOUNTS_CMD");
     if profile.is_empty() {
@@ -11777,6 +11803,7 @@ impl qobject::Backend {
                 .and_then(|c| c.identity().map(|i| i.is_personal()))
                 .unwrap_or(false),
         );
+        self.as_mut().load_meeting_limits();
         // The first account signed out while others stayed signed in (as
         // Teams, its window closed): a plain start opens another
         // account's window instead of the sign-in.
@@ -12194,6 +12221,47 @@ impl qobject::Backend {
             }
             None => launch_profile(&profile),
         }
+    }
+
+    pub fn open_link_in_account(self: Pin<&mut Self>, profile: &QString, link: &QString) {
+        use std::io::Write;
+        let profile = profile.to_string();
+        let link = link.to_string().replace(['\t', '\n', '\r'], "");
+        if crate::teams_link::parse(&link).is_none() {
+            tracing::warn!("links: not a Teams link; not passed on");
+            return;
+        }
+        match profile_socket(&profile) {
+            Some(mut s) => {
+                if let Err(e) = s.write_all(format!("link\t{link}\n").as_bytes()) {
+                    tracing::warn!("couldn't reach the other account's window: {e}");
+                }
+            }
+            None => launch_profile_with(&profile, Some(&link)),
+        }
+    }
+
+    /// The account's meeting limits for the call window and the meeting
+    /// form ([`teams_cli::calling::consumer::meeting_limits`]).
+    fn load_meeting_limits(mut self: Pin<&mut Self>) {
+        let license = teams_cli::config::Config::load()
+            .ok()
+            .and_then(|c| c.get_license_details());
+        let (minutes, people) = teams_cli::calling::consumer::meeting_limits(license.as_ref());
+        self.as_mut()
+            .set_meeting_minutes_limit(i32::try_from(minutes).unwrap_or(i32::MAX));
+        self.as_mut()
+            .set_meeting_people_limit(i32::try_from(people).unwrap_or(i32::MAX));
+    }
+
+    pub fn personal_account_profile(self: Pin<&mut Self>) -> QString {
+        let me = teams_cli::config::profile().unwrap_or_default();
+        let profile = teams_cli::config::accounts()
+            .into_iter()
+            .find(|a| a.profile != me && a.kind == teams_cli::identity::AccountKind::Personal)
+            .map(|a| a.profile)
+            .unwrap_or_default();
+        QString::from(profile.as_str())
     }
 
     pub fn add_account(self: Pin<&mut Self>) {
@@ -12725,7 +12793,10 @@ impl qobject::Backend {
         // In a group chat this is the chevron's Audio or Video call:
         // members are rung (a video call turns the camera on once
         // connected, as Teams' outgoingVideo).
-        if outgoing::is_group_chat(&chat_id) {
+        // (A one-on-one chat with a thread's id, as every personal
+        // account's: a 1:1 call to its other person, found when placed.)
+        let thread_one_on_one = teams_cli::api::known_one_on_one_thread(&chat_id);
+        if outgoing::is_group_chat(&chat_id) && !thread_one_on_one {
             self.start_group_call_as(
                 chat_id,
                 peer,
@@ -12735,7 +12806,12 @@ impl qobject::Backend {
             );
             return;
         }
-        let Some(callee) = outgoing::callee_mri_for_chat(&chat_id, &my_oid) else {
+        let callee = if thread_one_on_one {
+            Some(String::new())
+        } else {
+            outgoing::callee_mri_for_chat(&chat_id, &my_oid)
+        };
+        let Some(callee) = callee else {
             self.as_mut()
                 .set_status_text(QString::from(tr("Calls are available in 1:1 chats")));
             return;
@@ -13572,6 +13648,10 @@ impl qobject::Backend {
         static CACHE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
         static LOADING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         static FAILED: AppLoadBackoff = AppLoadBackoff::new();
+        // Avatars aren't on any plan of Teams for personal use.
+        if teams_cli::calling::consumer::is_personal() {
+            return QString::from("{}");
+        }
         if let Some(json) = CACHE.lock().unwrap().clone() {
             return QString::from(json.as_str());
         }
@@ -20760,6 +20840,7 @@ impl qobject::Backend {
                             .and_then(|c| c.identity().map(|i| i.is_personal()))
                             .unwrap_or(false);
                         this.as_mut().set_personal_account(personal);
+                        this.as_mut().load_meeting_limits();
                         this.as_mut().set_user_name(QString::from(name.as_str()));
                         this.as_mut().load_profile();
                         this.as_mut().load_engagement();
@@ -31858,6 +31939,25 @@ impl qobject::Backend {
                         let link = api::calendar::meet_now(&client, &s("subject")).await?;
                         update_instant_meeting(link.clone(), s("subject"), args["start"].as_bool().unwrap_or(true));
                         Ok(json!({ "joinUrl": link, "subject": s("subject") }))
+                    }
+                    // Meet ▸ Create a meeting link (Teams for personal use):
+                    // a Meet now to share, its chat named.
+                    "meetLink" => {
+                        let link = api::calendar::meet_now(&client, &s("subject")).await?;
+                        update_instant_meeting(link.clone(), s("subject"), false);
+                        Ok(json!({ "joinUrl": link, "subject": s("subject") }))
+                    }
+                    // Meet ▸ Meeting links (Teams for personal use): your
+                    // Meet now chats with their links.
+                    "meetingLinks" => {
+                        let threads: Vec<String> = args["threads"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|t| t.as_str().map(str::to_string))
+                            .collect();
+                        let links = api::calendar::meeting_links(&client, &threads).await?;
+                        Ok(json!({ "links": links }))
                     }
                     // Cast's meetings step: your Teams meetings from an hour
                     // ago to an hour ahead (Teams' cast wizard).

@@ -820,3 +820,117 @@ redirectAs404`, `x-ms-correlation-id`, `x-ms-session-id`.
   Microsoft.Skype.Presence.App/1.0) as `{"presence":[{mri,etag,source,presence{…}}],"isSnapshot":…}`,
   echoing `forcedAvailability` and `note`; the client answers each with
   status 200.
+
+## 10. Calls, meetings, the Meet app and the calendar (verified 2026-11-28)
+
+Checked live for TASK-0298 and TASK-0299 with OST Personal 1 and 2 in two
+isolated headless Chrome profiles on linuxlt (teams.live.com, web client
+`1415/26101516645`, Chrome's fake camera and microphone), with a network
+and WebSocket capture that kept only token shapes. A 1:1 audio call from
+Personal 1 to Personal 2, a meeting link made in Meet and joined by both
+(Personal 2 by opening the link), and a meeting saved from the calendar's
+New meeting form.
+
+### 10.1 The calling socket
+
+Next to the chat socket on `go.trouter.skype.com` (§9.3) the web client
+opens a second Trouter socket for calls:
+`GET https://go.trouter.teams.microsoft.com/?check=…&epid=<uuid>&tc={"cv":"2026.40.01.1","ua":"SkypeSpaces",…}`,
+then `wss://go.trouter.teams.microsoft.com/v4/c?…&epid=<uuid>&dom=teams.live.com`,
+and `user.authenticate` with `X-Skypetoken` only. `trouter.connected`
+names an enterprise socket (`pub-ent-<region>-f.trouter.teams.microsoft.com`)
+and the `communications.svc.cloud.microsoft` registrar, but the client
+registers at `https://teams.microsoft.com/registrar/prod/v2/registrations`
+(`X-Skypetoken`, `X-MS-Migration: True`; 202), twice:
+
+```json
+{"clientDescription":{"appId":"SkypeSpacesWeb","aesKey":"","languageId":"en-US","platform":"chrome","templateKey":"TFLSkypeSpacesWeb_2.0","platformUIVersion":"1415/26101516645"},"registrationId":"<epid>","nodeId":"","transports":{"TROUTER":[{"context":"TFL","path":"<surl>","ttl":3600}]}}
+```
+
+and the same as `<epid>-gg` with `languageId` and `productContext` empty
+and the path without its trailing slash. OST's `v4/a` negotiate on the same
+host with the consumer Skype token works too and gives the same kind of
+socket.
+
+### 10.2 A 1:1 call
+
+- **Placing it:** `POST https://api.flightproxy.skype.com/api/v2/cpconv`
+  with `X-Skypetoken`, `X-Microsoft-Skype-Chain-ID`, `-Message-ID`,
+  `X-Microsoft-Skype-Client: SkypeSpaces/1415/<build>/…/TsCallingVersion=2026.40.01.8/…`
+  and `MS-Teams-Ring: general` (no partition or region headers, no IC3
+  bearer). The body is work Teams' single-shot call request with
+  `conversationRequest.applicationType: "TFL"`, `groupChat: null` and
+  `meetingInfo: null` (the chat is `19:uni01_…@thread.v2` but isn't named),
+  `participants.to: [{id: "8:live:.cid.<callee>", participantId}]`,
+  `callModalities: ["Audio"]`, every callback on the calling socket's
+  `surl` (`…/callAgent/<endpoint id>/<hash>/call/…`), and a browser offer:
+  `application/sdp-ngc-1.0`, BUNDLE of audio, two video lines and `x-data`
+  (SCTP), DTLS (`a=setup:actpass`, a fingerprint), Opus first, ICE with a
+  TURN relay candidate, `requiredFeatures: "nonByPass"`. The answer (201)
+  is the conversation with links on
+  `api.flightproxy.skype.com/api/v2/cp/conv-<region>-prod-aks.conv.skype.com/conv/<id>`.
+- **Ringing:** the callee's calling socket gets a data frame at its own
+  path (`/v4/f/<id>/`, from Skype-NotificationHub) with the body
+  `{"evt":107,"gp":"<base64 JSON>"}`: a work-shaped `callNotification`
+  (`from`, `to`, `links.attach|progress|reject` on
+  `api.flightproxy.skype.com/api/v2/cp/cc-<region>-prod-aks.cc.skype.com/cc/v1/forked/…`,
+  the caller's SDP, `fromApplicationType: "TFL"`) plus
+  `conversationInvitation.conversationController`.
+- **Answering:** `POST …/attach` (`attach.applicationType: "TFL"`, its
+  `additionalActions` join with `conversationRequest.applicationType: "TFL"`),
+  `POST …/incoming/…/progress` (`ringing`), then `POST …/accept` with
+  `callAcceptance` and the browser answer: all with `X-Skypetoken`.
+- **TURN:** `GET https://edge.skype.com/trap/tokens` (`X-Skypetoken`,
+  `api-version: 2`) answers `{"tokens":[{"realm":"\"rtcmedia\"","username":…,"password":…}],"expires":604800}`.
+- **Hanging up:** `POST …/conv/<id>/leave`; the other side gets `call/end`
+  (`CallEndReasonLocalUserInitiated`) and `conversationEnd` (subCode 5002).
+
+### 10.3 Meetings
+
+- **Meet ▸ Create a meeting link** (title, "Create and copy link"):
+  `POST https://teams.live.com/api/mt/beta/me/calendarEvents/privateMeeting/schedulingService/create`
+  (`mtsvc.fl` bearer plus `x-skypetoken`) with
+  `{"meetingType":"MeetNow","isStreamEnabled":false,"subject":…,"unhideChatThread":true}`
+  → `value.links.join` = `https://teams.live.com/meet/<14 digits>?p=<18 chars>`,
+  `groupContext.threadId` (`19:meeting_…@thread.v2`), `expiryTime` (60
+  days), `meetingUrl` on `api.scheduler.teams.microsoft.com/teamsforlife/<id>`.
+  The client then sets the meeting chat's `topic` and its `meeting`
+  property (`{"subject",…,"meetingType":"MeetNow","meetingData":{"meetingCode","passcode"},"meetingJoinUrl","organizerId":"<cid hex>","tenantId":null,…}`)
+  with `PUT {chatsvc}/v1/threads/<id>/properties?name=…`, as work Teams'
+  Meet now does. The Meeting links list is those meeting chats (title,
+  "Created just now", Join, Share link, More options, Edit meeting name).
+- **Joining by link** (also opening `teams.live.com/meet/…` in a signed-in
+  browser): no resolution call; `POST …/cpconv` with `meetingData`
+  `{meetingCode, passcode, meetingUrl}`, `groupChat: null`,
+  `meetingInfo: null`, `meetingPreferences: {"shouldResurrect":"resurrect"}`
+  and no call, then the call to the conversation's controller. Others wait
+  in the lobby until the organizer admits them.
+- **In the meeting (free plan):** the bar is Mic, Camera, Share, React,
+  Chat, People, Record, More and Leave; More has Timer, Captions, RTT,
+  View, Join info and Settings (Accessibility settings, Hide me, Video
+  effects and settings, Audio settings). No breakout rooms, Copilot, apps
+  (Whiteboard), Notes or transcripts. **Record** opens Settings ▸ Plans and
+  upgrades with a Microsoft 365 purchase dialog ("Record meetings, extend
+  your calls, and more": Personal, Family, Premium).
+- **Calendar ▸ Meet now** is work Teams' flyout ("Start a meeting now",
+  Meeting name, Get a link to share, Start meeting). **New meeting** shows
+  "With your current Teams plan, you get up to 60 minutes per meeting with
+  up to 100 participants. Learn more", Title, attendees ("For non-Teams
+  contacts, they will receive an email invite to the meeting with a join
+  link."), date and times, All day, time zone, repeat, location, Meeting
+  options and details. Save: `privateMeeting/schedulingService/create`
+  with `{"isStreamEnabled":false,"meetingType":"Scheduled"}`, then
+  `POST {mt}/v2.0/me/calendars/default/events?isOnlineMeeting=true&shouldDecryptData=false`
+  with `{calendarEvent, schedulingServiceEvent}` (work Teams' body; the
+  organizer attendee by `mri` only), then "Share meeting invite" with Copy.
+- **Calendar view:** `GET {mt}/v2.0/me/calendars/default/calendarView?StartDate=…&EndDate=…&shouldDecryptData=false`
+  → `{"value":[{objectId, startTime, endTime (with offset), subject,
+  location, isOnlineMeeting, myResponseType, organizerName, showAs,
+  bodyPreview, isOrganizer, isAppointment, skypeTeamsMeetingUrl
+  (teams.live.com/meet/…), skypeTeamsDataObject.cid, iCalUID, …}]}`.
+
+### 10.4 Not seen
+
+The 60-minute end of a free meeting and any warning before it (a meeting
+with two people was not kept running for an hour), a group call from a
+chat, video calls, and the Windows desktop client's calling dialect.
