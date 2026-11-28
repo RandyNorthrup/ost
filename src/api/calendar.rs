@@ -605,6 +605,14 @@ fn parse_mt_events(v: &serde_json::Value) -> Vec<CalendarEvent> {
                 response: response.into(),
                 response_requested: flag("isResponseRequested"),
                 is_cancelled: flag("isCancelled"),
+                // (Graph's names for the middle tier's isPrivate, so the form
+                // and the menu can show and clear it.)
+                sensitivity: if flag("isPrivate") {
+                    "private"
+                } else {
+                    "normal"
+                }
+                .into(),
                 chat_id: e
                     .pointer("/skypeTeamsDataObject/cid")
                     .and_then(|c| c.as_str())
@@ -3714,6 +3722,9 @@ mod tests {
         assert_eq!(e["subject"], "S");
         let ev = super::parse_mt_events(&serde_json::json!({"value": [cur]}));
         assert_eq!(ev[0].chat_id, "19:meeting_x@thread.v2");
+        assert_eq!(ev[0].sensitivity, "normal");
+        let private = super::parse_mt_events(&serde_json::json!({"value": [{"isPrivate": true}]}));
+        assert_eq!(private[0].sensitivity, "private");
     }
 
     #[test]
