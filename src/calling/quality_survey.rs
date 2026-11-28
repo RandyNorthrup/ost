@@ -151,6 +151,53 @@ pub fn sampled(kind: CallKind, roll: f64) -> bool {
     roll < kind.sampling_rate()
 }
 
+/// Teams' network indicator (local-nsi) asks "Was this accurate?" in its
+/// popover when ECS `renderLocalNSIFeedbackForm` is on: always outside
+/// the general ring, else for 1 % of the indicator's appearances (one
+/// draw each time it shows; calling bundle 119108 `vt`, Teams 26304).
+pub const NSI_FEEDBACK_RATE: f64 = 0.01;
+
+/// Whether this appearance of the network indicator asks for feedback:
+/// `form_on` is ECS renderLocalNSIFeedbackForm, `ring` Teams' ring id
+/// and `roll` a uniform draw in [0, 1).
+pub fn nsi_feedback_sampled(form_on: bool, ring: &str, roll: f64) -> bool {
+    form_on && (ring != "general" || roll < NSI_FEEDBACK_RATE)
+}
+
+/// Report a problem's details for the network indicator's "This was not
+/// accurate": what the popover showed and the call's media now (English,
+/// no one's name).
+pub fn nsi_report_details(state: &serde_json::Value, metrics: &[(String, String)]) -> String {
+    let b = |k: &str| state.get(k).and_then(|v| v.as_bool()).unwrap_or(false);
+    let n = |k: &str| state.get(k).and_then(|v| v.as_i64()).unwrap_or(0);
+    let strength = state
+        .get("networkStrength")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Good");
+    let heading = match strength {
+        "Bad" => "Connection is weak",
+        "Poor" => "Connection is unstable",
+        _ => "Connection is good",
+    };
+    let on = |v: bool| if v { "on" } else { "off" };
+    let mut s = format!(
+        "Network indicator feedback: This was not accurate\nShown: {heading} ({strength})\nYour video: {}; incoming video: {}; connection: {}\nParticipants: {}\n",
+        on(b("isVideoOn")),
+        on(b("isIncomingVideoOn")),
+        if b("wired") { "wired" } else { "not wired" },
+        n("participantsCount"),
+    );
+    let shown: Vec<&(String, String)> = metrics.iter().filter(|(_, v)| !v.is_empty()).collect();
+    if !shown.is_empty() {
+        s.push_str("Media (Call health when answered):\n");
+        for (k, v) in shown {
+            s.push_str(&format!("- {k}: {v}\n"));
+        }
+    }
+    s
+}
+
 /// The categories as Teams builds them for the call (`CreateCQFItems`):
 /// PSTN asks about audio only, a share from chat about the share only,
 /// and Video goes when the call can't carry video.
@@ -346,6 +393,33 @@ pub fn report_details(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nsi_feedback_as_teams() {
+        // Off in ECS: never.
+        assert!(!nsi_feedback_sampled(false, "ring3_6", 0.0));
+        // Outside the general ring: every time.
+        assert!(nsi_feedback_sampled(true, "ring3_6", 0.99));
+        // General ring: 1 %.
+        assert!(nsi_feedback_sampled(true, "general", 0.005));
+        assert!(!nsi_feedback_sampled(true, "general", 0.01));
+    }
+
+    #[test]
+    fn nsi_details_say_what_was_shown() {
+        let d = nsi_report_details(
+            &serde_json::json!({"networkStrength": "Bad", "isVideoOn": true, "participantsCount": 2}),
+            &[
+                ("Sent packets".into(), "120".into()),
+                ("Empty".into(), String::new()),
+            ],
+        );
+        assert!(d.contains("Shown: Connection is weak (Bad)"));
+        assert!(d.contains("Your video: on; incoming video: off; connection: not wired"));
+        assert!(d.contains("Participants: 2"));
+        assert!(d.contains("- Sent packets: 120"));
+        assert!(!d.contains("Empty"));
+    }
 
     #[test]
     fn sampling_as_teams_desktop() {

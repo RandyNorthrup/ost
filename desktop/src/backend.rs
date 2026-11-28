@@ -997,6 +997,23 @@ pub mod qobject {
         /// it), else "". Keeps the call's Call health values for the report.
         #[qinvokable]
         fn call_quality_survey(self: Pin<&mut Backend>, kind: &QString, video: bool) -> QString;
+        /// Whether this appearance of your network indicator asks "Was
+        /// this accurate?" (Teams' rule: ECS renderLocalNSIFeedbackForm,
+        /// always outside the general ring, else 1 %), for those who opted
+        /// in to the call quality survey (it opens Report a problem too).
+        #[qinvokable]
+        fn nsi_feedback_prompt(self: &Backend) -> bool;
+        /// Teams' ECS alwaysRenderLocalNetworkStrengthIndicator: your
+        /// network indicator shows for the whole call, not only while the
+        /// connection isn't good.
+        #[qinvokable]
+        fn nsi_always_shown(self: &Backend) -> bool;
+        /// Report a problem's details for the network indicator's "This
+        /// was not accurate" (`state_json`: networkStrength, isVideoOn,
+        /// isIncomingVideoOn, wired, participantsCount), with the call's
+        /// media now; no one's name.
+        #[qinvokable]
+        fn nsi_feedback_details(self: &Backend, state_json: &QString) -> QString;
         /// Report a problem's details for the survey's "Had issues"
         /// (`reasons_json`: the ticked item ids): the reasons and the
         /// call's technical details, no one's name.
@@ -3666,6 +3683,10 @@ pub mod qobject {
         /// Cancel Teams Premium's trial (Teams' Cancel trial).
         #[qinvokable]
         fn cancel_premium_trial(self: Pin<&mut Backend>);
+        /// The title bar's Premium pill showed: keep the device's marks
+        /// for it (Teams writes them only once the pill renders).
+        #[qinvokable]
+        fn premium_pill_shown(self: Pin<&mut Backend>);
         /// Downloads: "load", "open" (path), "folder" (path: its folder;
         /// empty: the Downloads folder), "delete" (path: the file) or
         /// "clear" (the history).
@@ -4147,6 +4168,9 @@ pub struct BackendRust {
     work_location_policy_json: QString,
     buildings_json: QString,
     premium_json: QString,
+    /// The account and the device's Premium marks to keep once the
+    /// title bar's pill shows (premium_pill_shown).
+    premium_pending_marks: Option<(String, api::premium::EntryMarks)>,
     downloads_json: QString,
     update_json: QString,
     typing_avatar: QString,
@@ -6719,6 +6743,14 @@ fn save_premium_marks(user: &str, marks: &api::premium::EntryMarks) {
     }
 }
 
+/// A premium ECS switch that is on unless ECS turns it off (Teams'
+/// defaults for the post-trial page's buttons).
+fn premium_flag(key: &str) -> bool {
+    api::ecs::setting("premium", key)
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true)
+}
+
 /// Teams Premium as Teams' title bar and ··· menu show it, for QML: the
 /// pill ("days" with daysLeft, "get" for Get Premium, or ""), the menu
 /// row ("unlock", "benefits", "get" or ""), benefitsRow (Teams' separate
@@ -6821,6 +6853,16 @@ async fn premium_view(
         "inTrial": in_trial,
         "policy": policy,
         "endDate": trial.as_ref().and_then(|t| t.end_date.clone()),
+        // The post-trial page's buttons (Teams: Request a license with ECS
+        // enableTeamsPremiumLicenseRequest; Buy now with
+        // enableTeamsPremiumDTBSelfPurchase and a policy that allows
+        // buying, opening teamsPremiumCenterSelfPurchaseLink).
+        "licenseRequest": premium_flag("enableTeamsPremiumLicenseRequest"),
+        "selfPurchase": premium_flag("enableTeamsPremiumDTBSelfPurchase")
+            && api::premium::self_purchase_allowed(&policy),
+        "selfPurchaseLink": api::ecs::setting("premium", "teamsPremiumCenterSelfPurchaseLink")
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_else(|| api::premium::SELF_PURCHASE_LINK.to_string()),
     });
     (v, user, e.marks)
 }
@@ -21010,23 +21052,21 @@ impl qobject::Backend {
         QString::from(url.as_str())
     }
 
-    pub fn call_quality_survey(mut self: Pin<&mut Self>, kind: &QString, video: bool) -> QString {
-        use teams_cli::calling::quality_survey as cqf;
-        let kind = cqf::CallKind::parse(&kind.to_string());
-        // Teams asks only while Settings ▸ Privacy ▸ Surveys is on (its
-        // synced userEnableSurveysNotification, on unless "false").
-        let surveys_on =
-            serde_json::from_str::<serde_json::Value>(&self.rust().settings_json.to_string())
-                .ok()
-                .and_then(|v| {
-                    v.pointer("/props/userEnableSurveysNotification")
-                        .and_then(|x| x.as_str())
-                        .map(|x| x != "false")
-                })
-                .unwrap_or(true);
-        // --cqf-always (harness) or OST_CQF_ALWAYS=1: opted in and asked
-        // after every call instead of Teams' sample (tests on a machine
-        // whose settings file other instances share).
+    /// The call quality survey's opt-in (Settings ▸ Privacy: Surveys on,
+    /// as Teams asks only then, and OST's "Ask me about call quality"),
+    /// and whether the harness asks every time (--cqf-always or
+    /// OST_CQF_ALWAYS=1, for tests on a machine whose settings file other
+    /// instances share; it opts in too).
+    fn cqf_opt_in(&self) -> (bool, bool) {
+        // Teams' synced userEnableSurveysNotification, on unless "false".
+        let surveys_on = serde_json::from_str::<serde_json::Value>(&self.settings_json.to_string())
+            .ok()
+            .and_then(|v| {
+                v.pointer("/props/userEnableSurveysNotification")
+                    .and_then(|x| x.as_str())
+                    .map(|x| x != "false")
+            })
+            .unwrap_or(true);
         let always = cfg!(feature = "test-harness")
             && (std::env::args().any(|a| a == "--cqf-always")
                 || std::env::var("OST_CQF_ALWAYS").as_deref() == Ok("1"));
@@ -21036,22 +21076,18 @@ impl qobject::Backend {
                     .get("callQualitySurvey")
                     .and_then(|v| v.as_str())
                     == Some("true"));
-        let rand = |n: usize| (uuid::Uuid::new_v4().as_u128() % n.max(1) as u128) as usize;
-        let roll = rand(1_000_000) as f64 / 1_000_000.0;
-        let asked =
-            opted_in && (cqf::sampled(kind, roll) || (always && kind.sampling_rate() > 0.0));
-        tracing::info!(opted_in, asked, ?kind, "call quality survey");
-        if !asked {
-            return QString::default();
-        }
-        // The call's media as Call health last showed it.
+        (opted_in, always)
+    }
+
+    /// The call's media as Call health shows it now (English: the values
+    /// go into the report sent to GitHub).
+    fn call_health_metrics() -> Vec<(String, String)> {
         let state = teams_cli::calling::call_health::MediaState {
             microphone: true,
             camera: true,
             sharing: true,
             watching_share: true,
         };
-        // In English: the values go into the report sent to GitHub.
         let report = teams_cli::i18n::in_english(|| {
             health_sampler()
                 .lock()
@@ -21064,7 +21100,55 @@ impl qobject::Backend {
             .map(|(k, v)| (k, v.value))
             .collect();
         metrics.sort();
-        self.as_mut().rust_mut().cqf_metrics = metrics;
+        metrics
+    }
+
+    pub fn nsi_feedback_prompt(&self) -> bool {
+        use teams_cli::calling::quality_survey as cqf;
+        let (opted_in, always) = self.cqf_opt_in();
+        let form_on = api::ecs::setting("calling", "renderLocalNSIFeedbackForm")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let ring = api::ecs::ring();
+        let roll = (uuid::Uuid::new_v4().as_u128() % 1_000_000) as f64 / 1_000_000.0;
+        // The harness asks every time, as it does for the survey.
+        let asked = opted_in && (always || cqf::nsi_feedback_sampled(form_on, &ring, roll));
+        tracing::info!(opted_in, form_on, ring, asked, "network indicator feedback");
+        asked
+    }
+
+    pub fn nsi_always_shown(&self) -> bool {
+        api::ecs::setting("calling", "alwaysRenderLocalNetworkStrengthIndicator")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    }
+
+    pub fn nsi_feedback_details(&self, state_json: &QString) -> QString {
+        let state: serde_json::Value =
+            serde_json::from_str(&state_json.to_string()).unwrap_or_default();
+        QString::from(
+            teams_cli::calling::quality_survey::nsi_report_details(
+                &state,
+                &Self::call_health_metrics(),
+            )
+            .as_str(),
+        )
+    }
+
+    pub fn call_quality_survey(mut self: Pin<&mut Self>, kind: &QString, video: bool) -> QString {
+        use teams_cli::calling::quality_survey as cqf;
+        let kind = cqf::CallKind::parse(&kind.to_string());
+        let (opted_in, always) = self.cqf_opt_in();
+        let rand = |n: usize| (uuid::Uuid::new_v4().as_u128() % n.max(1) as u128) as usize;
+        let roll = rand(1_000_000) as f64 / 1_000_000.0;
+        let asked =
+            opted_in && (cqf::sampled(kind, roll) || (always && kind.sampling_rate() > 0.0));
+        tracing::info!(opted_in, asked, ?kind, "call quality survey");
+        if !asked {
+            return QString::default();
+        }
+        // The call's media as Call health last showed it.
+        self.as_mut().rust_mut().cqf_metrics = Self::call_health_metrics();
         QString::from(cqf::questionnaire(kind, video, rand).to_string().as_str())
     }
 
@@ -32830,13 +32914,26 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let (v, user, marks) = premium_view(&reqwest::Client::new()).await;
             let _ = qt.queue(move |mut this| {
-                if !user.is_empty() && marks != premium_marks(&user) {
-                    save_premium_marks(&user, &marks);
-                }
+                this.as_mut().keep_premium_marks(user, marks);
                 this.as_mut()
                     .set_premium_json(QString::from(v.to_string().as_str()))
             });
         });
+    }
+
+    /// The marks Teams would write for the pill now computed: kept once
+    /// QML shows the pill (Teams' TeamsPremiumTitleBar writes them when it
+    /// renders, which it doesn't in a narrow window or in its first two
+    /// minutes).
+    fn keep_premium_marks(mut self: Pin<&mut Self>, user: String, marks: api::premium::EntryMarks) {
+        let pending = (!user.is_empty() && marks != premium_marks(&user)).then_some((user, marks));
+        self.as_mut().rust_mut().premium_pending_marks = pending;
+    }
+
+    pub fn premium_pill_shown(mut self: Pin<&mut Self>) {
+        if let Some((user, marks)) = self.as_mut().rust_mut().premium_pending_marks.take() {
+            save_premium_marks(&user, &marks);
+        }
     }
 
     pub fn start_premium_trial(mut self: Pin<&mut Self>) {
@@ -32882,9 +32979,7 @@ impl qobject::Backend {
                 v["starting"] = json!(false);
                 match result {
                     Ok((view, user, marks)) => {
-                        if !user.is_empty() && marks != premium_marks(&user) {
-                            save_premium_marks(&user, &marks);
-                        }
+                        this.as_mut().keep_premium_marks(user, marks);
                         v = view;
                         v["started"] = json!(true);
                     }
@@ -32921,9 +33016,7 @@ impl qobject::Backend {
                 v["canceling"] = json!(false);
                 match result {
                     Ok((view, user, marks)) => {
-                        if !user.is_empty() && marks != premium_marks(&user) {
-                            save_premium_marks(&user, &marks);
-                        }
+                        this.as_mut().keep_premium_marks(user, marks);
                         v = view;
                         v["canceled"] = json!(true);
                     }

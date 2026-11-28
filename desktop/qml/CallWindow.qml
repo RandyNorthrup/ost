@@ -456,6 +456,14 @@ Window {
         if (networkStrength === "Poor" || networkStrength === "Bad") { nsiShown = true; nsiHide.stop() }
         else if (nsiShown && !nsiHide.running) nsiHide.start()
     }
+    // Teams' ECS alwaysRenderLocalNetworkStrengthIndicator: the bars show
+    // for the whole connected call (on for ost-test1, seen on winpc).
+    property bool nsiAlways: false
+    readonly property bool nsiVisible: state === "connected" && (nsiShown || nsiAlways)
+    // Whether this appearance of the bars asks "Was this accurate?" (Teams
+    // draws once each time they show: backend.nsiFeedbackPrompt).
+    property bool nsiFeedback: false
+    onNsiVisibleChanged: if (nsiVisible) nsiFeedback = backend.nsiFeedbackPrompt()
     /// Turned off by "Turn off all video" (Teams then offers to turn it on).
     property bool nsiVideoOff: false
     readonly property string networkHeading: networkStrength === "Bad" ? qsTr("Connection is weak")
@@ -1076,6 +1084,7 @@ Window {
         onTriggered: win.seconds = Math.floor((Date.now() - win.connectedAt) / 1000)
     }
     onStateChanged: {
+        if (state === "connected") nsiAlways = backend.nsiAlwaysShown()
         // Resuming a held meeting carries on its time (nextConnectedAt); a
         // call that replaced the one we were in (a transfer, a merge, a
         // retrieved park) keeps the running clock too, since the window
@@ -4848,7 +4857,11 @@ Window {
         id: networkPopover
         call: win
         onLeft: networkPopoverClose.restart()
+        // "This was not accurate": Report a problem, as the survey's Had
+        // issues (Main opens it for the feedback repo).
+        onFeedbackReport: (text, details) => win.qualityFeedback(text, details)
     }
+    function networkPopoverItemForTest() { return networkPopover }
     VideoFlyout {
         id: videoFlyout
         cameraOn: win.cameraOn

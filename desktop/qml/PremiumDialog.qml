@@ -46,6 +46,8 @@ Popup {
     readonly property var st: backend.premiumJson ? JSON.parse(backend.premiumJson) : ({})
     property string page: "offer"
     property string backTo: "home"
+    /// Buy now's page (ECS teamsPremiumCenterSelfPurchaseLink).
+    readonly property string buyNowLink: st.selfPurchaseLink || "https://signup.microsoft.com/get-started/signup?products=CFQ7TTC0RM8K%3a0007&fOfferId=a8a931ff-8672-48ce-b5db-8d70f738012c"
     signal feedbackRequested()
     signal helpRequested()
     /// Open the page for Settings and more's item: the offer, or (in or
@@ -192,7 +194,7 @@ Popup {
         DialogButton { x: 24; kind: "subtle"; size: 12; label: qsTr("Cancel trial"); onClicked: { root.backTo = root.page; root.page = "cancel" } }
         Row {
             x: 576 - width; spacing: 10
-            DialogButton { label: qsTr("Buy now"); icon: "open-20"; onClicked: backend.openExternal("https://signup.microsoft.com/get-started/signup?products=CFQ7TTC0RM8K%3a0007&fOfferId=a8a931ff-8672-48ce-b5db-8d70f738012c") }
+            DialogButton { label: qsTr("Buy now"); icon: "open-20"; onClicked: backend.openExternal(root.buyNowLink) }
             DialogButton { kind: "primary"; label: qsTr("Request a license"); onClicked: backend.openExternal("https://admin.microsoft.com/centrohost?appname=LicenseRequest&feature=host-license-request-app") }
         }
     }
@@ -241,25 +243,34 @@ Popup {
     }
 
     // ---- ended ----
-    // After a trial, without a Premium licence (Teams' post-trial modal,
-    // its "Ii" in components-teams-premium-dialog, MSTeams 26304): the
-    // header picture, its title and line, the three Premium features, then
-    // View all benefits and Buy now / Request a license (OST opens
-    // Microsoft 365's licence request app in the browser, as the trial's
-    // footer does; nothing is sent from here). Laid out as the offer page;
-    // Teams' own geometry for it is still to be measured (TASK-0361).
+    // After a trial, without a Premium licence: Teams' post-trial modal
+    // (its "Ii" in components-teams-premium-dialog, MSTeams 26304; measured
+    // on winpc 2026-11-27 for ost-test1): the header picture; "Get more
+    // with Teams Premium" (premiumBenefits trial_post_trial_dialog_tpc_title)
+    // at 26, 197, 548 wide; "Request a license anytime to use premium
+    // features like these;" (…_description, 14/20 #424242) centred at 244;
+    // the three features at 287, 354 and 421; then the footer (24 padding,
+    // reversed): View all benefits (subtle) at 24, 497, stretched to the
+    // 79.33 of the button group beside it, and that group, padded 24 again,
+    // with Buy now and Request a license (10 apart, ending at 552) at 521.
+    // Request a license shows with ECS enableTeamsPremiumLicenseRequest and
+    // opens Microsoft 365's licence request app in the browser, as the
+    // trial's footer does (nothing is sent from here); Buy now with
+    // enableTeamsPremiumDTBSelfPurchase and a policy that allows buying.
+    // View all benefits opens the benefits page in the dialog, whose Back
+    // returns here.
     Item {
         visible: root.page === "ended"
         anchors.fill: parent
         Hero {}
         CloseButton { onPicture: true }
-        Title { y: 197; text: qsTr("Get more with Teams Premium") }
-        Line { x: 20; y: 241; width: 560; text: qsTr("Request a license anytime to use premium features like these;") }
+        Title { x: 26; y: 197; width: 548; text: qsTr("Get more with Teams Premium") }
+        Line { x: 26; y: 244; width: 548; text: qsTr("Request a license anytime to use premium features like these;") }
         Repeater {
             model: [
-                { y: 285, image: "premium-protected.svg", title: qsTr("More protected"), text: qsTr("Expand security in meetings & calls with added controls and features.") },
-                { y: 352, image: "premium-engaging.svg", title: qsTr("More engaging"), text: qsTr("Build stronger connections with branded experiences in meetings and collaborative call handling in Queues app.") },
-                { y: 419, image: "premium-intelligent.svg", title: qsTr("More intelligent"), text: qsTr("Use AI to focus on what matters most in every meeting or call.") }
+                { y: 287, image: "premium-protected.svg", title: qsTr("More protected"), text: qsTr("Expand security in meetings & calls with added controls and features.") },
+                { y: 354, image: "premium-engaging.svg", title: qsTr("More engaging"), text: qsTr("Build stronger connections with branded experiences in meetings and collaborative call handling in Queues app.") },
+                { y: 421, image: "premium-intelligent.svg", title: qsTr("More intelligent"), text: qsTr("Use AI to focus on what matters most in every meeting or call.") }
             ]
             Item {
                 required property var modelData
@@ -269,12 +280,15 @@ Popup {
                 Text { x: 177; y: 20; width: 313; text: parent.modelData.text; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
             }
         }
-        DialogButton { x: 24; y: 544.67; kind: "subtle"; label: qsTr("View all benefits"); onClicked: backend.openExternal("https://go.microsoft.com/fwlink/?linkid=2227979") }
-        Row {
-            x: 576 - width; y: 544.67; spacing: 10
-            DialogButton { label: qsTr("Buy now"); icon: "open-20"; onClicked: backend.openExternal("https://signup.microsoft.com/get-started/signup?products=CFQ7TTC0RM8K%3a0007&fOfferId=a8a931ff-8672-48ce-b5db-8d70f738012c") }
-            DialogButton { kind: "primary"; label: qsTr("Request a license"); onClicked: backend.openExternal("https://admin.microsoft.com/centrohost?appname=LicenseRequest&feature=host-license-request-app") }
-        }
+        DialogButton { x: 24; y: 497; height: 79.33; kind: "subtle"; label: qsTr("View all benefits", "premiumBenefits:k4upc109m"); onClicked: { root.backTo = "ended"; root.page = "benefits" } }
+        EndedButtons { y: 521 }
+    }
+    // The post-trial page's Buy now and Request a license (also under its
+    // benefits).
+    component EndedButtons: Row {
+        x: 552 - width; spacing: 10
+        DialogButton { visible: !!root.st.selfPurchase; label: qsTr("Buy now", "premiumBenefits:k2kmwurg3"); icon: "open-20"; onClicked: backend.openExternal(root.buyNowLink) }
+        DialogButton { visible: root.st.licenseRequest !== false; kind: "primary"; label: qsTr("Request a license", "premiumBenefits:k4ks7frn5"); onClicked: backend.openExternal("https://admin.microsoft.com/centrohost?appname=LicenseRequest&feature=host-license-request-app") }
     }
 
     // ---- pending ----
@@ -397,7 +411,9 @@ Popup {
         CloseButton {}
         Flickable {
             id: benefitsScroll
-            x: 0; y: 63.33; width: 600; height: 457
+            // After a trial Teams' benefits view ends at 472.67, above its
+            // padded footer (measured on winpc).
+            x: 0; y: 63.33; width: 600; height: root.backTo === "ended" ? 472.67 - 63.33 : 457
             clip: true
             contentHeight: 1007.3 - 63.33
             boundsBehavior: Flickable.StopAtBounds
@@ -475,6 +491,9 @@ Popup {
             }
         }
         TrialFooter { y: 544.67; visible: root.st.mode === "trial" }
+        // After a trial (Teams, measured on winpc): Buy now and Request a
+        // license at 520.67, and no View all benefits.
+        EndedButtons { y: 520.67; visible: root.backTo === "ended" }
     }
 
     // ---- cancel ----

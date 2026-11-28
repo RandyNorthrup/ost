@@ -130,6 +130,25 @@ the reasons' ids and the Call health values at the end (network, audio,
 video and sharing: round trip, loss, jitter, bit rates, codecs,
 resolutions); never anyone's name. The reporter submits it on GitHub.
 
+The network indicator asks too (TASK-0360; Teams' calling bundle 119108,
+`vt`/`Ke`, MSTeams 26304): with ECS calling.renderLocalNSIFeedbackForm on,
+your bars' popover ends with "Was this accurate?" (calling
+user_feedback_network_strength) and a thumbs up / down ("This was
+accurate" / "This was not accurate"). Teams draws once each time the bars
+appear: always outside the general ring, else 1 % of the time
+(`Math.random() < 0.01`); either answer sends NsiUserFeedback to Microsoft
+and hides the prompt until the popover opens again. ost-test1 is on ring3_6
+with the form on (and alwaysRenderLocalNetworkStrengthIndicator, so the
+bars show all call). Measured on winpc 2026-11-27 in a test meeting: the
+popover 173 wide (border-box, padding 10 10 6, radius 4, shadow 16, right
+above the bars), the heading 12/16 bold; the prompt 10 below in 10/14
+#707070, the two 32 x 25.33 transparent buttons at the right (20 px thumbs
+6 in, filled and #5B5FC7 on hover). OST asks under the same rule for those
+who opted in above (Surveys on and "Ask me about call quality"); "This was
+accurate" sends nothing, "This was not accurate" opens Report a problem
+(area "Call quality") with what the popover showed (strength, your video,
+incoming video, wired, participants) and the Call health values now.
+
 ## 6. The repo (needs the owner's go-ahead)
 
 - **Issues on RandyNorthrup/ost:** currently **disabled**. Enable them.
