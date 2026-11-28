@@ -19422,6 +19422,25 @@ Window {
                     log("left", (conversation.messages || []).filter(m => !m.deleted && (m.id === target.id || m.root_id === target.id)).map(m => m.id))
                     Qt.quit(); return
                 }
+            } else if (phase === "ended") {
+                // TASK-0378: a Meet now's post in the channel ("Meeting in
+                // … ended") has no calendar card, as in Teams.
+                if (step === 0) { rail.current = "chat"; backend.selectChat(channel.id, channel.name) }
+                else if (step === 2) {
+                    const calls = (conversation.messages || []).filter(m => !m.deleted && m.kind === "call")
+                    target = calls.length ? calls[calls.length - 1] : null
+                    if (!target && waited++ < 15) return
+                    waited = 0
+                    if (!target) { log("no call post"); Qt.quit(); return }
+                    log("call posts", calls.map(m => ({ id: m.id, meeting_title: m.meeting_title, scheduled: m.scheduled_meeting || null })))
+                    conversation.jumpToMessage(target.id)
+                } else if (step === 4) {
+                    log("channel cards", cards(conversation).map(c => ({ geo: geo(c), title: c.title, when: c.when })))
+                    log("subjects", findAll(conversation, c => c.visible && typeof c.text === "string" && /^Meeting in /.test(c.text), []).map(c => [c.text, geo(c)]))
+                    shot("ended")
+                } else if (step === 5) {
+                    Qt.quit(); return
+                }
             }
             step++
         }

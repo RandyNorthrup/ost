@@ -941,23 +941,23 @@ fn meeting_title_of(meeting: &serde_json::Value) -> String {
 }
 
 /// A time as the service writes it (RFC 3339, or a bare UTC date-time, or
-/// milliseconds) in RFC 3339 UTC.
-fn utc_time(v: Option<&serde_json::Value>) -> String {
+/// milliseconds).
+fn utc_instant(v: Option<&serde_json::Value>) -> Option<jiff::Timestamp> {
     match v {
-        Some(serde_json::Value::Number(n)) => n
-            .as_i64()
-            .and_then(crate::clock::from_ms)
-            .map(crate::clock::rfc3339)
-            .unwrap_or_default(),
-        Some(serde_json::Value::String(s)) => crate::clock::parse_instant(s)
-            .or_else(|| {
-                crate::clock::parse_naive(s.trim_end_matches('Z'), "%Y-%m-%dT%H:%M:%S%.f")
-                    .and_then(crate::clock::as_utc)
-            })
-            .map(crate::clock::rfc3339)
-            .unwrap_or_default(),
-        _ => String::new(),
+        Some(serde_json::Value::Number(n)) => n.as_i64().and_then(crate::clock::from_ms),
+        Some(serde_json::Value::String(s)) => crate::clock::parse_instant(s).or_else(|| {
+            crate::clock::parse_naive(s.trim_end_matches('Z'), "%Y-%m-%dT%H:%M:%S%.f")
+                .and_then(crate::clock::as_utc)
+        }),
+        _ => None,
     }
+}
+
+/// `utc_instant` in RFC 3339 UTC ("" when there is none).
+fn utc_time(v: Option<&serde_json::Value>) -> String {
+    utc_instant(v)
+        .map(crate::clock::rfc3339)
+        .unwrap_or_default()
 }
 
 fn scheduled_meeting(meeting: &serde_json::Value) -> Option<ScheduledMeeting> {
@@ -971,6 +971,14 @@ fn scheduled_meeting(meeting: &serde_json::Value) -> Option<ScheduledMeeting> {
         v => v.clone(),
     };
     if !info.is_object() {
+        return None;
+    }
+    // Teams shows the card only for a real start (554704 `H`:
+    // `new Date(startTime).getTime() > 1`). A Meet now in a channel
+    // (TASK-0378) carries the meeting with no title and the .NET zero date
+    // ("0001-01-01T00:00:00"): its post is the call's "Meeting in … ended",
+    // without a card.
+    if !utc_instant(info.get("startTime")).is_some_and(|t| crate::clock::millis(t) > 1) {
         return None;
     }
     let flag = |k: &str| {
@@ -8272,6 +8280,48 @@ mod channel_meeting_tests {
         )
         .unwrap();
         assert!(plain.scheduled_meeting.is_none() && plain.meeting_title.is_empty());
+    }
+
+    /// A Meet now in a channel (as the chat service sent it in OST test
+    /// channel, 2026-11-27, ids shortened): the call's root carries
+    /// `properties.meeting` as ScheduledMeetingCreated with no title and
+    /// the .NET zero date. Teams shows "Meeting in … ended" and no calendar
+    /// card (its card needs a start after 1970), so OST has no card either
+    /// (it showed "No title, Sunday, December 31, -0001").
+    #[test]
+    fn a_meet_now_posts_zero_date_has_no_meeting_card() {
+        let meeting = serde_json::json!({
+            "itemid": "1795757836944", "@type": "http://schema.skype.com/ScheduledMeetingCreated", "meetingtitle": null,
+            "scheduledmeetinginfo": {"startTime": "0001-01-01T00:00:00", "endTime": "0001-01-01T00:00:00", "meetingType": 0,
+                                     "isCopyRestrictionEnforced": false, "templateDetails": null},
+            "tenantId": "t", "organizerId": "01c4860d",
+            "meetingJoinUrl": "https://teams.microsoft.com/l/meetup-join/19%3ax%40thread.tacv2/1795757834064?context=x",
+            "mcoIdentifier": null
+        });
+        let m = serde_json::json!({"id": "1795757834064", "messagetype": "Event/Call", "contenttype": "application/user+xml",
+                                   "content": "<partlist alt =\"\"></partlist><callEventType>callStarted</callEventType>\n<callId>d407bb5e</callId>\n",
+                                   "properties": {"meeting": meeting.to_string()}});
+        let v = super::message_view(&m, "8:orgid:me", "Me").unwrap();
+        assert!(v.scheduled_meeting.is_none(), "{:?}", v.scheduled_meeting);
+        assert!(v.meeting_title.is_empty());
+        // The epoch itself, a start Teams can't read, or none: no card.
+        for start in [
+            serde_json::json!("1970-01-01T00:00:00Z"),
+            serde_json::json!("not a date"),
+            serde_json::Value::Null,
+        ] {
+            let mut x = meeting.clone();
+            x["scheduledmeetinginfo"]["startTime"] = start;
+            assert!(super::scheduled_meeting(&x).is_none());
+        }
+        // A real start keeps it.
+        let mut x = meeting.clone();
+        x["scheduledmeetinginfo"]["startTime"] = serde_json::json!("2026-11-27T05:37:10");
+        let s = super::scheduled_meeting(&x).unwrap();
+        assert_eq!(
+            (s.title.as_str(), s.start.as_str()),
+            ("", "2026-11-27T05:37:10+00:00")
+        );
     }
 }
 
