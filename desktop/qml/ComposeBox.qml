@@ -174,7 +174,13 @@ Item {
     // "Please type a message to continue.") has no Close and is 28 tall,
     // its text 4 down; the dismissible kind is 29.3.
     readonly property real noticeH: bannerDismissible && !draftConflict ? 29.3 : 28
-    readonly property real bannerShownH: (bannerText || draftConflict ? noticeH : 0) + noteH
+    readonly property real bannerShownH: (bannerText || draftConflict ? noticeH : 0) + noteH + storageH
+    /// Teams free's ComposeBoxOneDriveStorageErrorBanner (an upload failed
+    /// because the sender's OneDrive is full; strings and links from its
+    /// web client, 2026-11-28): an error glyph, "Attachment storage is
+    /// full", Manage (OneDrive) and Get more storage.
+    property bool storageFull: false
+    readonly property real storageH: storageFull ? 44 : 0
     /// Another device's different draft for this chat (Teams' roamed-draft
     /// conflict): the banner offers "View draft" until it is resolved.
     property bool draftConflict: false
@@ -422,6 +428,9 @@ Item {
     signal cancelled()
     signal quoteDismissed()
     signal fileRemoved(string path)
+    /// Attach media's pictures in a personal account's chat (Teams free
+    /// sends them as files).
+    signal mediaPicked(var urls)
     signal emojiRequested(Item anchor)
     signal attachRequested(Item anchor)
     /// A cloud file's card closed (Remove attachment).
@@ -734,6 +743,49 @@ Item {
         Accessible.role: Accessible.AlertMessage
         Accessible.name: root.bannerText || qsTr("There's a draft saved from another platform")
     }
+    Rectangle {
+        id: storageBanner
+        visible: root.storageFull
+        y: (root.bannerText || root.draftConflict ? root.noticeH : 0) + root.noteH
+        width: parent.width; height: root.storageH + 6; radius: 6
+        color: theme.pick("#FDF3F4", "#3E1F25", "#000000")
+        border.color: theme.pick("#EEACB2", "#6E0811", "#FFFFFF"); border.width: 0.67
+        Row {
+            x: 12; y: 0; height: root.storageH
+            spacing: 8
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 20; name: "error-circle-20-filled"; color: theme.pick("#C4314B", "#E73550", "#FFFFFF") }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("Attachment storage is full")
+                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                color: theme.text
+            }
+        }
+        Row {
+            anchors.right: parent.right; anchors.rightMargin: 12
+            y: 0; height: root.storageH
+            spacing: 8
+            Repeater {
+                model: [{ key: "manage", label: qsTr("Manage") }, { key: "more", label: qsTr("Get more storage") }]
+                Rectangle {
+                    id: sbBtn
+                    required property var modelData
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: sbLabel.implicitWidth + 16; height: 24; radius: 4
+                    color: sbHover.hovered ? theme.menuHover : "transparent"
+                    border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
+                    Text { id: sbLabel; anchors.centerIn: parent; text: sbBtn.modelData.label; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
+                    HoverHandler { id: sbHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: backend.openExternal(sbBtn.modelData.key === "manage" ? "https://onedrive.live.com/?gologin=true" : "https://aka.ms/GetMoreStorage") }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: sbBtn.modelData.label
+                }
+            }
+        }
+        Accessible.role: Accessible.AlertMessage
+        Accessible.name: qsTr("Attachment storage is full")
+    }
+    function storageBannerForTest() { return storageBanner }
     Rectangle {
         visible: !!root.noteText
         y: root.bannerText || root.draftConflict ? root.noticeH : 0
@@ -1258,21 +1310,35 @@ Item {
                 spacing: 8
                 Repeater {
                     model: root.files
+                    // Teams free's chip (teams.live.com, 2026-11-28): 365 x
+                    // 48, white, the name over "Anyone with the link can
+                    // edit" (12 #616161), the link its upload makes.
                     Rectangle {
                         required property string modelData
-                        height: 40; width: Math.min(300, chipName.implicitWidth + 80)
-                        radius: 8
-                        color: theme.searchFill
+                        height: root.personal ? 48 : 40; width: root.personal ? Math.min(365, parent.width) : Math.min(300, chipName.implicitWidth + 80)
+                        radius: root.personal ? 4 : 8
+                        color: root.personal ? theme.surface : theme.searchFill
                         border.color: theme.divider
-                        FluentIcon { x: 10; anchors.verticalCenter: parent.verticalCenter; name: "file-32"; size: 24; color: theme.textSecondary }
-                        Text {
-                            id: chipName
-                            x: 40; anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - 76
-                            text: parent.modelData.split("/").pop()
-                            elide: Text.ElideMiddle
-                            font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
-                            color: theme.text
+                        FluentIcon { x: root.personal ? 14 : 10; anchors.verticalCenter: parent.verticalCenter; name: root.personal ? (/\.(png|jpe?g|gif|bmp|webp|heic|jfif|tif)$/i.test(parent.modelData) ? "image-20" : "document-20") : "file-32"; size: 24; color: theme.textSecondary }
+                        Column {
+                            x: root.personal ? 52 : 40; anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - x - 36
+                            Text {
+                                id: chipName
+                                width: parent.width
+                                text: parent.parent.modelData.split("/").pop()
+                                elide: Text.ElideMiddle
+                                font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
+                                color: theme.text
+                            }
+                            Text {
+                                visible: root.personal
+                                width: parent.width
+                                text: qsTr("Anyone with the link can edit")
+                                elide: Text.ElideRight
+                                font.family: theme.font; font.pixelSize: 12
+                                color: theme.textSecondary
+                            }
                         }
                         ToolButton32 {
                             anchors.right: parent.right; anchors.rightMargin: 4; anchors.verticalCenter: parent.verticalCenter
@@ -1391,17 +1457,20 @@ Item {
                     Rectangle {
                         id: cc
                         required property var modelData
-                        width: 320; height: 237.3; radius: 6
+                        // Teams free's is its file chip (no preview).
+                        width: root.personal ? Math.min(365, cloudCards.width) : 320; height: root.personal ? 48 : 237.3; radius: root.personal ? 4 : 6
                         color: theme.surface
                         border.color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF"); border.width: 0.67
                         FluentSurface { z: -1; anchors.fill: parent; depth: 2; radius: 6 }
                         Rectangle {
-                            x: 0.67; y: 0.67; width: parent.width - 1.33; height: 56.7
-                            topLeftRadius: 6; topRightRadius: 6
-                            color: theme.pick("#FAFAFA", "#292929", "#000000")
-                            FluentIcon { x: 16; y: 12; size: 32; name: root.cloudTypeIcon(cc.modelData.kind) }
+                            x: 0.67; y: 0.67; width: parent.width - 1.33; height: root.personal ? 46.7 : 56.7
+                            topLeftRadius: root.personal ? 4 : 6; topRightRadius: root.personal ? 4 : 6
+                            bottomLeftRadius: root.personal ? 4 : 0; bottomRightRadius: root.personal ? 4 : 0
+                            color: root.personal ? theme.surface : theme.pick("#FAFAFA", "#292929", "#000000")
+                            FluentIcon { visible: !root.personal; x: 16; y: 12; size: 32; name: root.cloudTypeIcon(cc.modelData.kind) }
+                            FluentIcon { visible: root.personal; x: 14; anchors.verticalCenter: parent.verticalCenter; size: 24; name: /^(png|jpe?g|gif|bmp|webp|heic)$/i.test(cc.modelData.kind || "") ? "image-20" : "document-20"; color: theme.textSecondary }
                             Text {
-                                x: 60; y: 10.3; width: 206.4 - 4 - 60 + 12
+                                x: root.personal ? 52 : 60; y: root.personal ? 5 : 10.3; width: root.personal ? parent.width - 52 - 44 : 206.4 - 4 - 60 + 12
                                 elide: Text.ElideMiddle
                                 text: cc.modelData.name
                                 lineHeight: 16; lineHeightMode: Text.FixedHeight
@@ -1412,20 +1481,20 @@ Item {
                             // #4F52B2 and underlined on hover).
                             Text {
                                 id: ccLink
-                                x: 60; y: 25; width: Math.min(implicitWidth, 206.4)
+                                x: root.personal ? 52 : 60; y: root.personal ? 21 : 25; width: Math.min(implicitWidth, root.personal ? parent.width - 52 - 44 : 206.4)
                                 elide: Text.ElideRight
                                 text: cc.modelData.linking ? qsTr("Updating link settings...") : cc.modelData.file ? cc.modelData.file.link_description : ""
                                 lineHeight: 20; lineHeightMode: Text.FixedHeight
                                 font.family: theme.font; font.pixelSize: 12; font.underline: ccLinkHover.hovered
                                 color: ccLinkHover.hovered ? theme.pick("#4F52B2", "#7F85F5", "#FFFF00") : theme.pick("#424242", "#D6D6D6", "#FFFFFF")
-                                HoverHandler { id: ccLinkHover; enabled: !!cc.modelData.file && !cc.modelData.linking; cursorShape: Qt.PointingHandCursor }
-                                TapHandler { enabled: !!cc.modelData.file && !cc.modelData.linking; onTapped: root.cloudLinkRequested(cc.modelData.key) }
+                                HoverHandler { id: ccLinkHover; enabled: !root.personal && !!cc.modelData.file && !cc.modelData.linking; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { enabled: !root.personal && !!cc.modelData.file && !cc.modelData.linking; onTapped: root.cloudLinkRequested(cc.modelData.key) }
                                 Accessible.role: Accessible.Button
                                 Accessible.name: text
                             }
                             Rectangle {
                                 id: hcFill7
-                                x: 274.7 - 0.67; y: 13 - 0.67; width: 32; height: 30; radius: 4
+                                x: root.personal ? parent.width - 40 : 274.7 - 0.67; y: root.personal ? 8.3 : 13 - 0.67; width: 32; height: 30; radius: 4
                                 color: ccRemove.hovered ? theme.menuHover : "transparent"
                                 FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill7, theme.pick("#424242", "#D6D6D6", "#FFFFFF")) }
                                 HoverHandler { id: ccRemove; cursorShape: Qt.PointingHandCursor }
@@ -1435,6 +1504,7 @@ Item {
                             }
                         }
                         Rectangle {
+                            visible: !root.personal
                             x: 0.67; y: 57.4; width: parent.width - 1.33; height: 179.3
                             bottomLeftRadius: 6; bottomRightRadius: 6
                             color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
@@ -1945,8 +2015,10 @@ Item {
         id: mediaDialog
         title: qsTr("Attach media")
         fileMode: FileDialog.OpenFiles
-        nameFilters: [qsTr("Images") + " (*.png *.jpg *.jpeg *.gif *.bmp *.webp)"]
+        // Teams free's list (pictures and videos).
+        nameFilters: [qsTr("Images") + " (*.webp *.jpg *.png *.jpeg *.heic *.tif *.jfif *.bmp *.gif *.3g2 *.3gp *.3gpp *.asf *.avi *.m2ts *.m4v *.mkv *.mp4v *.mts *.ts *.mp4 *.mov *.wmv *.webm)"]
         onAccepted: {
+            if (root.personal) { root.mediaPicked(selectedFiles.map(u => u.toString())); return }
             // (A copy: the upload removes the pasted picture it sends.)
             for (const u of selectedFiles) {
                 const copied = backend.composePictureCopy(decodeURIComponent(u.toString().replace(/^file:\/\//, "")))

@@ -39,6 +39,20 @@ pub struct FileAttachment {
     /// Its SharePoint site ("https://…/personal/…"), for Favorite.
     #[serde(default)]
     pub site_url: String,
+    /// A picture's preview in the media store (Teams free records its
+    /// `imgo` view in `filePreview`), and its size; empty otherwise.
+    #[serde(default)]
+    pub preview_url: String,
+    #[serde(default)]
+    pub preview_width: u32,
+    #[serde(default)]
+    pub preview_height: u32,
+    /// The preview, cached on this device (a file URL), once loaded.
+    #[serde(default)]
+    pub preview_local: String,
+    /// Graph's id for the sharing link (`u!…`), when the record has one.
+    #[serde(default)]
+    pub share_id: String,
 }
 
 /// Teams' location line under a file's name (FileChicletBreadcrumbs):
@@ -115,6 +129,22 @@ pub fn parse_files(files: &serde_json::Value) -> Vec<FileAttachment> {
             .unwrap_or_default()
             .trim_end_matches('/')
             .to_string();
+            let preview_url = f
+                .pointer("/filePreview/previewUrl")
+                .and_then(|u| u.as_str())
+                .filter(|u| super::messages::is_ams_url(u))
+                .unwrap_or_default()
+                .to_string();
+            let dim = |k: &str| {
+                f.pointer(&format!("/filePreview/{k}"))
+                    .and_then(|v| v.as_u64().or_else(|| v.as_str()?.parse().ok()))
+                    .unwrap_or(0) as u32
+            };
+            let share_id = f
+                .pointer("/fileInfo/shareId")
+                .and_then(|u| u.as_str())
+                .unwrap_or_default()
+                .to_string();
             Some(FileAttachment {
                 name,
                 file_type,
@@ -123,6 +153,19 @@ pub fn parse_files(files: &serde_json::Value) -> Vec<FileAttachment> {
                 item_id,
                 location,
                 site_url,
+                preview_width: if preview_url.is_empty() {
+                    0
+                } else {
+                    dim("previewWidth")
+                },
+                preview_height: if preview_url.is_empty() {
+                    0
+                } else {
+                    dim("previewHeight")
+                },
+                preview_url,
+                preview_local: String::new(),
+                share_id,
             })
         })
         .collect()
@@ -150,6 +193,11 @@ pub async fn upload_for_chat(
     chat_id: &str,
     path: &Path,
 ) -> Result<serde_json::Value> {
+    // A personal account's chats share through an anyone link, as Teams
+    // free does.
+    if client.is_personal() {
+        return super::personal_files::upload(client, chat_id, path).await;
+    }
     let name = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -517,6 +565,15 @@ pub async fn send_html_with_files_as(
         client.chat_service_url(),
         chat_id
     );
+    // Pictures' media store previews go in amsreferences (Teams free).
+    let refs: Vec<String> = files
+        .iter()
+        .filter_map(|f| {
+            f.pointer("/filePreview/previewUrl")
+                .and_then(|u| u.as_str())
+        })
+        .filter_map(super::personal_files::ams_object_id)
+        .collect();
     let mut body = serde_json::json!({
         "content": content,
         "messagetype": "RichText/Html",
@@ -536,6 +593,9 @@ pub async fn send_html_with_files_as(
     if let Some(name) = client.display_name() {
         body["imdisplayname"] = serde_json::Value::String(name);
     }
+    if !refs.is_empty() {
+        body["amsreferences"] = serde_json::json!(refs);
+    }
     client.chat_post(&url, &body).await?;
     Ok(())
 }
@@ -548,6 +608,11 @@ fn rand_id() -> u64 {
 /// Download an attachment into `dir`, keeping its name (adding " (1)" etc.
 /// when that name is taken). Returns the saved path.
 pub async fn download(client: &TeamsClient, file: &FileAttachment, dir: &Path) -> Result<PathBuf> {
+    // A personal account's file: redeem its link, as Teams free does.
+    if client.is_personal() && !file.share_url.is_empty() {
+        let bytes = super::personal_files::download_shared(client, &file.share_url).await?;
+        return save_unique(dir, &file.name, &bytes);
+    }
     let source = if file.object_url.is_empty() {
         &file.share_url
     } else {

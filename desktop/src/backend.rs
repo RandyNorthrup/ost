@@ -9019,6 +9019,7 @@ async fn load_thread(thread: &str) -> anyhow::Result<()> {
         localize_custom_emoji(&client, m).await;
         localize_emoticons(m).await;
         localize_edit_images(m);
+        localize_file_previews(&client, m).await;
     }
     server_timelines()
         .lock()
@@ -9139,6 +9140,7 @@ async fn load_messages(
         localize_custom_emoji(&client, m).await;
         localize_emoticons(m).await;
         localize_edit_images(m);
+        localize_file_previews(&client, m).await;
     }
     let last_id = timeline
         .iter()
@@ -10922,6 +10924,27 @@ fn swap_src(m: &mut api::messages::MessageView, from: &str, to: &str) {
 
 /// An announcement's banner picture, cached like the message's pictures.
 /// A message's video clips with their posters cached (`thumb_local`).
+/// A picture file's preview (Teams free records the picture's media store
+/// view in the file's record): cached here, for its card.
+async fn localize_file_previews(client: &TeamsClient, m: &mut api::messages::MessageView) {
+    for f in m.files.iter_mut().filter(|f| !f.preview_url.is_empty()) {
+        let Some(id) = api::personal_files::ams_object_id(&f.preview_url) else {
+            continue;
+        };
+        let img = api::messages::InlineImage {
+            id,
+            url: f.preview_url.clone(),
+            width: f.preview_width,
+            height: f.preview_height,
+            local_path: String::new(),
+        };
+        match cached_image(client, &img).await {
+            Ok(path) => f.preview_local = format!("file://{}", path.display()),
+            Err(e) => tracing::warn!("file preview download failed: {}", short_error(&e)),
+        }
+    }
+}
+
 async fn localize_videos(client: &TeamsClient, m: &mut api::messages::MessageView) {
     for v in m.videos.iter_mut() {
         let img = api::messages::InlineImage {
@@ -31852,6 +31875,30 @@ impl qobject::Backend {
                     // A message's file card: the file as a Files item (for
                     // Share, Copy link and Download) and whether it is a
                     // favorite; then Favorite / Unfavorite as Teams does.
+                    // A personal account's chat tabs (Teams free): Files
+                    // and a page of Photos from the message search, a
+                    // photo's tile (the media store's small thumbnail,
+                    // cached here) and the OneDrive picker's places.
+                    "personal_files" => json!({ "chat": s("chat"), "files": api::personal_files::chat_files(&client, &s("chat")).await? }),
+                    "personal_photos" => {
+                        let base = args["base"].as_u64().unwrap_or(0) as u32;
+                        let (photos, more) = api::personal_files::chat_photos(&client, &s("chat"), base, 5).await?;
+                        json!({ "chat": s("chat"), "base": base, "photos": photos, "more": more })
+                    }
+                    "personal_thumb" => {
+                        let url = s("url");
+                        let thumb = s("thumb") == "1";
+                        let id = api::personal_files::ams_object_id(&url).context("Not a media store picture")?;
+                        let img = api::messages::InlineImage {
+                            id: if thumb { format!("{id}-thumb") } else { id },
+                            url: if thumb { api::personal_files::thumb_url(&url) } else { url.clone() },
+                            width: 0, height: 0, local_path: String::new(),
+                        };
+                        let path = cached_image(&client, &img).await?;
+                        json!({ "url": url, "thumb": thumb, "path": format!("file://{}", path.display()) })
+                    }
+                    "personal_picker" => json!({ "place": s("place"), "folder": s("folder"),
+                        "items": api::personal_files::picker_list(&client, &s("place"), &s("folder")).await? }),
                     "card_item" => {
                         let found = api::drive::item_by_url(&client, &s("url")).await?;
                         let same = |i: &api::drive::DriveItem| i.id == found.id || i.web_url.eq_ignore_ascii_case(&found.web_url);
@@ -31881,6 +31928,10 @@ impl qobject::Backend {
                     }
                     "attach_prepare" => {
                         let f = api::cloud_attach::prepare(&client, &item).await?;
+                        // Teams free's chip has no preview.
+                        if client.is_personal() {
+                            return Ok(json!({ "file": f, "thumbnail": "" }));
+                        }
                         let pic = api::drive::DriveItem { id: f.item_id.clone(), drive_id: f.drive_id.clone(), ..Default::default() };
                         let thumb = api::drive::thumbnail_sized(&client, &pic, "c960x540").await.ok().flatten();
                         json!({ "file": f, "thumbnail": thumb.map(|p| format!("file://{}", p.display())).unwrap_or_default() })
@@ -34822,6 +34873,15 @@ impl qobject::Backend {
                             this.as_mut()
                                 .toast(&tr("You've shared %1").replace("%1", name), "success");
                         }
+                    }
+                    // A full OneDrive: Teams free's compose banner.
+                    Err(e) if api::personal_files::is_storage_full(&e) => {
+                        this.as_mut().set_status_text(QString::default());
+                        this.as_mut().drive_action_done(
+                            QString::from("personal-storage-full"),
+                            QString::from(json!({ "chat": sent_to }).to_string().as_str()),
+                            QString::default(),
+                        );
                     }
                     Err(e) => this
                         .as_mut()

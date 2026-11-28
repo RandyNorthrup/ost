@@ -4482,6 +4482,12 @@ fn message_media(html: &str) -> Vec<MessageMedia> {
     out
 }
 
+/// A message's inline pictures (as [`inline_images`]), for other views of
+/// its HTML (the message search's answers).
+pub(crate) fn inline_images_of(html: &str) -> Vec<InlineImage> {
+    inline_images(html)
+}
+
 /// Teams inline images: `<img itemtype="…/AMSImage" src="https://*.asm.skype.com/…">`.
 /// Only AMS hosts are accepted, since fetching them sends our token.
 fn inline_images(html: &str) -> Vec<InlineImage> {

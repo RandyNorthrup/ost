@@ -26,14 +26,19 @@ Item {
     signal openRequested()
     signal shareRequested()
     signal menuRequested(Item anchor)
-    readonly property bool hasPreview: thumbnail !== "" && pic.status !== Image.Error
+    /// Teams free's file chip (a personal account's chats, seen on
+    /// teams.live.com 2026-11-28): 48 tall, white, radius 4, a 24 px
+    /// outline document glyph 18 in, the name (14/20 semibold) at 54 and
+    /// More actions (···) at the end; no place line, Share or preview.
+    property bool compact: false
+    readonly property bool hasPreview: !compact && thumbnail !== "" && pic.status !== Image.Error
     readonly property real hair: Math.max(0.67, 1 / Screen.devicePixelRatio)
     width: 320
-    height: hasPreview ? 229.33 : 50
+    height: compact ? 48 : hasPreview ? 229.33 : 50
     Accessible.role: Accessible.Grouping
     Accessible.name: file.name || ""
 
-    function moreButtonForTest() { return moreButton }
+    function moreButtonForTest() { return compact ? chipMore : moreButton }
     function typeIcon(kind) {
         const t = String(kind || "").toLowerCase()
         const k = t === "doc" || t === "docx" ? "docx" : t === "xls" || t === "xlsx" ? "xlsx" : t === "ppt" || t === "pptx" ? "pptx"
@@ -43,8 +48,47 @@ Item {
         return "ft-" + k + "-32"
     }
 
-    FluentSurface { anchors.fill: parent; depth: 2; radius: 6; color: theme.surface }
+    FluentSurface { visible: !root.compact; anchors.fill: parent; depth: 2; radius: 6; color: theme.surface }
     Rectangle {
+        id: chip
+        visible: root.compact
+        anchors.fill: parent
+        radius: 4
+        color: chipHover.hovered || root.hoverForTest ? theme.hc(theme.pick("#F5F5F5", "#333333", "#000000"), theme.hcHighlight) : theme.surface
+        border.width: root.hair
+        border.color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF")
+        FluentSurface { z: -1; anchors.fill: parent; depth: 2; radius: 4; color: "transparent" }
+        FluentIcon { x: 18; anchors.verticalCenter: parent.verticalCenter; size: 24; name: root.file.file_type && ["png", "jpg", "jpeg", "gif", "bmp", "webp", "heic"].indexOf(String(root.file.file_type).toLowerCase()) >= 0 ? "image-20" : "document-20"; color: theme.onFill(chip, theme.textSecondary) }
+        Text {
+            x: 54; anchors.verticalCenter: parent.verticalCenter
+            width: parent.width - 54 - 44
+            text: root.file.name || ""
+            elide: Text.ElideMiddle
+            font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+            lineHeight: 20; lineHeightMode: Text.FixedHeight
+            color: theme.onFill(chip, theme.text)
+        }
+        HoverHandler { id: chipHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: root.openRequested() }
+        Accessible.role: Accessible.Link
+        Accessible.name: root.file.name || ""
+        Rectangle {
+            id: chipMore
+            x: parent.width - 40; anchors.verticalCenter: parent.verticalCenter
+            width: 32; height: 32; radius: 4
+            color: chipMoreHover.hovered ? theme.menuHover : "transparent"
+            FluentIcon { anchors.centerIn: parent; size: 20; name: "more-horizontal-20"; color: theme.onFill(chipMore, chipMoreHover.hovered ? theme.textStrong : theme.textSecondary) }
+            HoverHandler { id: chipMoreHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.menuRequested(chipMore) }
+            ToolTip.visible: chipMoreHover.hovered
+            ToolTip.delay: 500
+            ToolTip.text: qsTr("More options")
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("More options")
+        }
+    }
+    Rectangle {
+        visible: !root.compact
         anchors.fill: parent
         radius: 6
         color: "transparent"
@@ -54,6 +98,7 @@ Item {
     }
     Item {
         id: inner
+        visible: !root.compact
         x: 0.67; y: 0.67
         width: parent.width - 1.33; height: parent.height - 1.33
         clip: true

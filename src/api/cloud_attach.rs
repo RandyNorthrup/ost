@@ -156,6 +156,21 @@ pub fn parse(item: &DriveItem, shares: &Value, commands: &Value) -> CloudFile {
 /// Read a picked file as Teams does when it lands in the compose box (a
 /// Home or search pick carries only its address: Graph finds its drive).
 pub async fn prepare(client: &TeamsClient, item: &DriveItem) -> Result<CloudFile> {
+    // A personal OneDrive's file (Teams free's picker): its link is made
+    // on send, an anyone link.
+    if client.is_personal() {
+        return Ok(CloudFile {
+            name: item.name.clone(),
+            kind: item.kind.clone(),
+            object_url: item.web_url.clone(),
+            item_id: item.id.clone(),
+            drive_id: item.drive_id.clone(),
+            link_description: super::personal_files::LINK_DESCRIPTION.into(),
+            scope: "Anyone".into(),
+            role: "write".into(),
+            ..Default::default()
+        });
+    }
     let found;
     let item = if item.drive_id.is_empty() {
         let mut f = super::drive::item_by_url(client, &item.web_url)
@@ -279,6 +294,9 @@ pub fn record(f: &CloudFile, share: (&str, &str), channel: bool) -> Value {
 /// On send: in a chat, share the file with the other members as Teams
 /// does and return the record; in a channel, the record alone.
 pub async fn send_record(client: &TeamsClient, chat_id: &str, f: &CloudFile) -> Result<Value> {
+    if client.is_personal() {
+        return super::personal_files::cloud_record(client, &f.drive_id, &f.item_id).await;
+    }
     let channel = chat_id.contains("@thread.tacv2");
     // A link chosen in Link settings goes as it is: no invite (Teams,
     // OST TEST 172).
