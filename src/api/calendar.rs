@@ -265,15 +265,52 @@ fn personal_update_body(
         {
             o.insert("bodyContent".into(), b.clone());
         }
+        // The event's own ids and links, and the settings the form doesn't
+        // edit (reminder, privacy, response requests): as they were.
         for k in [
             "objectId",
             "iCalUID",
             "schedulingServiceUpdateUrl",
             "skypeTeamsData",
             "isAppointment",
+            "isPrivate",
+            "isReminderSet",
+            "reminderMinutesBeforeStart",
+            "isResponseRequested",
+            "doNotForward",
         ] {
             if let Some(v) = cur.get(k) {
                 o.insert(k.into(), v.clone());
+            }
+        }
+        // The invitees: the form's once it holds the event's own (it was
+        // filled from them); else the event's are kept beside any added,
+        // so a save that never loaded them doesn't drop them.
+        let address = |a: &serde_json::Value| {
+            a.get("address")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_ascii_lowercase()
+        };
+        let current: Vec<serde_json::Value> = cur
+            .get("attendees")
+            .and_then(|a| a.as_array())
+            .into_iter()
+            .flatten()
+            .filter(|a| a.get("type").and_then(|t| t.as_str()) != Some("Organizer"))
+            .cloned()
+            .collect();
+        let in_form: Vec<String> = form
+            .attendees
+            .iter()
+            .map(|a| a.address.to_ascii_lowercase())
+            .collect();
+        let loaded = current.iter().any(|a| in_form.contains(&address(a)));
+        if !loaded && let Some(list) = o.get_mut("attendees").and_then(|a| a.as_array_mut()) {
+            for a in current {
+                if !in_form.contains(&address(&a)) {
+                    list.push(a);
+                }
             }
         }
     }
@@ -3447,7 +3484,10 @@ mod tests {
             ..Default::default()
         };
         let cur = serde_json::json!({"objectId": "AQMk1", "iCalUID": "040", "bodyContent": "<p>Join</p>",
-            "schedulingServiceUpdateUrl": "https://api.scheduler.teams.microsoft.com/teamsforlife/933"});
+            "schedulingServiceUpdateUrl": "https://api.scheduler.teams.microsoft.com/teamsforlife/933",
+            "isReminderSet": false, "isPrivate": true,
+            "attendees": [{"type": "Organizer", "name": "OST Personal 1"},
+                          {"type": "Required", "name": "OST Personal 2", "address": "p2@outlook.com"}]});
         let me = super::Me {
             name: "OST Personal 1".into(),
             mail: "p1@outlook.com".into(),
@@ -3460,6 +3500,26 @@ mod tests {
         assert_eq!(e["bodyContent"], "<p>Join</p>");
         assert_eq!(e["attendees"][0]["type"], "Organizer");
         assert!(e.get("clientOptimisticEventId").is_none());
+        // Settings the form doesn't edit, and invitees it never loaded, stay.
+        assert_eq!(e["isReminderSet"], false);
+        assert_eq!(e["isPrivate"], true);
+        let people = e["attendees"].as_array().unwrap();
+        assert!(people.iter().any(|a| a["address"] == "p2@outlook.com"));
+        // A form that holds the invitees decides: one removed stays removed.
+        let mut loaded = form.clone();
+        loaded.attendees = vec![super::FormAttendee {
+            address: "p2@outlook.com".into(),
+            name: "OST Personal 2".into(),
+            ..Default::default()
+        }];
+        let b = super::personal_update_body(&loaded, &me, &cur).unwrap();
+        assert_eq!(
+            b["updatedCalendarEvent"]["attendees"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]

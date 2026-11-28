@@ -1114,7 +1114,8 @@ mod tests {
     #[test]
     fn checks_from_another_fork_are_not_the_peer() {
         let txn = generate_transaction_id();
-        let req = build_ice_binding_request(&txn, "ours:web1", b"pwd", 1, false, 7);
+        let pwd = uuid::Uuid::new_v4().to_string();
+        let req = build_ice_binding_request(&txn, "ours:web1", pwd.as_bytes(), 1, false, 7);
         assert_eq!(username(&req).as_deref(), Some("ours:web1"));
         assert!(check_is_from(&req, "web1"));
         assert!(!check_is_from(&req, "desk"));
