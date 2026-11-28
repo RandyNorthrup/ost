@@ -7644,6 +7644,37 @@ fn read_at_open() -> &'static std::sync::Mutex<HashMap<String, Option<u64>>> {
     MAP.get_or_init(Default::default)
 }
 
+/// A personal account's setting change, shown before it's saved
+/// (Backend::change_setting's "personal" kind).
+fn personal_setting_shown(p: &mut serde_json::Value, name: &str, value: &serde_json::Value) {
+    let on = value["on"].as_bool().unwrap_or(false);
+    let address = value["address"].as_str().unwrap_or_default();
+    let email = |p: &mut serde_json::Value, key: &str| {
+        if let Some(list) = p["me"]["emails"].as_array_mut() {
+            for e in list
+                .iter_mut()
+                .filter(|e| e["address"].as_str() == Some(address))
+            {
+                e[key] = json!(on);
+            }
+        }
+    };
+    match name {
+        "nameSearchable" => p["me"]["searchableByProfile"] = json!(on),
+        "emailSearchable" => email(p, "searchable"),
+        "emailVisible" => email(p, "visible"),
+        "analyzeContent" => p["analyzeContent"] = json!(on),
+        "insider" => p["insider"] = json!(on),
+        "unblock" => {
+            let mri = value["mri"].as_str().unwrap_or_default();
+            if let Some(list) = p["blocked"].as_array_mut() {
+                list.retain(|b| b["mri"].as_str() != Some(mri));
+            }
+        }
+        _ => {}
+    }
+}
+
 pub(crate) fn cache_base() -> std::path::PathBuf {
     std::env::var_os("XDG_CACHE_HOME")
         .map(std::path::PathBuf::from)
@@ -34205,6 +34236,14 @@ impl qobject::Backend {
             let result = async {
                 let client = TeamsClient::new().await?;
                 let props = api::preferences::all_properties(&client).await?;
+                if client.is_personal() {
+                    // Teams for personal use has none of the work
+                    // account's middle-tier settings (calling, out of
+                    // office, delegation, apps); its own pages read these.
+                    let mut personal = api::personal_settings::load_all(&client).await;
+                    personal["license"] = client.license_details().unwrap_or_default();
+                    return anyhow::Ok(json!({ "props": props, "mt": {}, "personal": personal, "loaded": true }));
+                }
                 let mut mt = api::preferences::middle_tier_settings(&client).await.unwrap_or_else(|_| json!({}));
                 if let Ok(oof) = api::preferences::automatic_replies(&client).await {
                     mt["oof"] = oof;
@@ -34278,7 +34317,11 @@ impl qobject::Backend {
         let before = self.rust().settings_json.to_string();
         let mut all: serde_json::Value =
             serde_json::from_str(&before).unwrap_or_else(|_| json!({ "props": {}, "mt": {} }));
-        if kind == "mt" && name == "ringtone" {
+        if kind == "personal" {
+            // A personal account's own settings (api::personal_settings),
+            // shown at once.
+            personal_setting_shown(&mut all["personal"], &name, &value);
+        } else if kind == "mt" && name == "ringtone" {
             // Kept with the rest of the calling settings, as Teams reads it.
             let (kind, rname) = ringtone_choice(&value);
             let body = api::preferences::ringtone_body_for(
@@ -34342,7 +34385,30 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
-                if kind == "mt" && name == "oof" {
+                if kind == "personal" {
+                    use api::personal_settings as ps;
+                    let address = value["address"].as_str().unwrap_or_default();
+                    let on = value["on"].as_bool().unwrap_or(false);
+                    match name.as_str() {
+                        "nameSearchable" => ps::set_name_searchable(&client, on).await?,
+                        "emailSearchable" => ps::set_email_searchable(&client, address, on).await?,
+                        "emailVisible" => ps::set_email_visible(&client, address, on).await?,
+                        "analyzeContent" => ps::set_analyze_content(&client, on).await?,
+                        "unblock" => {
+                            ps::unblock(&client, value["mri"].as_str().unwrap_or_default()).await?
+                        }
+                        "insider" => ps::set_insider(&client, on).await?,
+                        // Plans and upgrades' Verify subscription: the
+                        // licence again (with a new Skype token).
+                        "verify" => {
+                            api::ecs::refresh_license()
+                                .await
+                                .context("licence not refreshed")?;
+                        }
+                        _ => anyhow::bail!("Not a setting: {name}"),
+                    }
+                    anyhow::Ok(None)
+                } else if kind == "mt" && name == "oof" {
                     api::preferences::set_automatic_replies(&client, &value).await?;
                     anyhow::Ok(None)
                 } else if kind == "mt" && name == "redirection" {
@@ -34540,7 +34606,11 @@ impl qobject::Backend {
                     this.as_mut()
                         .set_settings_json(QString::from(all.to_string().as_str()));
                 }
-                Ok(None) => {}
+                Ok(None) => {
+                    if kind == "personal" && name == "verify" {
+                        this.as_mut().load_settings();
+                    }
+                }
                 Err(e) => {
                     tracing::warn!("setting {name} not saved: {}", short_error(&e));
                     this.as_mut()

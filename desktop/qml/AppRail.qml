@@ -21,6 +21,35 @@ Rectangle {
     property bool split: false
     property string collabPane: "chats"
     signal collabPicked(string pane)
+    /// A personal account (Teams for personal use): Teams free's own bar
+    /// (personalApps), no app menus, no Store or View more apps, and its
+    /// Upgrade button at the bottom.
+    property bool personal: false
+    /// What Upgrade shows (ECS core.isPremiumButtonInAppBarEnabled).
+    property bool upgradeShown: true
+    /// The room the other-accounts hub takes at the bottom.
+    property real bottomReserve: 0
+    signal upgradeRequested()
+    /// Teams free's app bar (Teams desktop 26304 and teams.live.com,
+    /// 2026-11-28; its app ids): Chat, Meet, People, Copilot, Communities,
+    /// Calendar and Activity, fixed (no app menu, no Store). OST shows the
+    /// ones it can open: Copilot is Teams' upsell page for an account
+    /// without a Microsoft 365 plan and Communities its retirement page;
+    /// Meet and Calendar (TASK-0298) and People (TASK-0295) join once
+    /// their personal-account views are built (personalReady).
+    readonly property var personalApps: [
+        { key: "chat", icon: "chat", label: qsTr("Chat"), appId: "86fcd49b-61a2-4701-b771-54728cd291fb" },
+        { key: "meet", icon: "video-24", label: qsTr("Meet"), appId: "40472f6e-248f-4599-842c-ff3ed8f0ae34" },
+        { key: "people", icon: "contact-card-24", label: qsTr("People"), appId: "40472f6e-248f-4599-842c-ff3ed8f0ae35" },
+        // Teams draws Copilot's colour mark, not a glyph.
+        { key: "tfl-copilot", image: "https://tflteams.public.onecdn.static.microsoft/evergreen-assets/fre/monetization/copilot.png", label: qsTr("Copilot"), appId: "43a6e7fb-bd10-4c0a-b02e-6a9c86ba272a" },
+        { key: "tfl-communities", icon: "people-community-24", label: qsTr("Communities"), appId: "3b95919f-59d8-4441-a975-2a8c2643c852" },
+        { key: "calendar", icon: "calendar", label: qsTr("Calendar"), appId: "ef56c0de-36fc-4ef8-b417-3d82ba9d073c" },
+        { key: "activity", icon: "alert", label: qsTr("Activity"), appId: "14d6962d-6eeb-4f48-8890-de55454bb136" }
+    ]
+    /// The personal apps OST has a view for (false: left off the bar).
+    property var personalReady: ({ meet: false, people: false, calendar: false })
+    readonly property var personalEntries: personalApps.filter(a => personalReady[a.key] !== false)
     /// The app bar menu's Pin / Unpin (Events).
     signal pinRequested(string key, bool on)
     /// The app bar menu of an app Teams hosts (measured on winpc
@@ -177,7 +206,7 @@ Rectangle {
         { key: "onedrive", icon: "onedrive", label: qsTr("OneDrive") },
     ]).concat(extraApps.filter(a => pinned.indexOf(a.key) >= 0))
     // Teams' shortcuts: Ctrl+1 … the bar's apps in order.
-    readonly property var barEntries: (barApps.length ? pinnedEntries : defaultApps)
+    readonly property var barEntries: (personal ? personalEntries : barApps.length ? pinnedEntries : defaultApps)
         .map((a, i) => Object.assign({}, a, { keys: i < 9 ? "Ctrl+" + (i + 1) : "" }))
     /// The app opened from View more apps takes the one extra slot.
     readonly property var openedEntries: opened.concat(current !== "add" && current !== "more" ? [current] : [])
@@ -188,7 +217,7 @@ Rectangle {
     /// on this device): Store then sits at the end of View more apps.
     property bool storeUnpinned: backend.setting("appBarStoreUnpinned") === "true"
     function setStoreUnpinned(on) { backend.setSetting("appBarStoreUnpinned", on ? "true" : "false"); storeUnpinned = on }
-    readonly property var apps: barEntries.concat(openedEntries).concat(storeUnpinned ? [] : [
+    readonly property var apps: personal ? barEntries : barEntries.concat(openedEntries).concat(storeUnpinned ? [] : [
         { key: "add", icon: "add-app", label: qsTr("Store"), keys: "", store: true }]).concat([
         { key: "more", icon: "more", label: qsTr("View more apps"), keys: "" },
     ])
@@ -212,7 +241,8 @@ Rectangle {
     function menuFor(entry, inBar) {
         const a = entry.app || barApp(entry.key)
         const groups = []
-        if (entry.key === "more") return []
+        // (Teams free's app bar has no app menu.)
+        if (entry.key === "more" || personal) return []
         if (entry.store) return inBar
             ? [[{ key: "unpinStore", label: qsTr("Unpin"), icon: "nmc-unpin" }], [{ key: "customize", label: qsTr("Customize app bar"), icon: "nmc-settings" }]]
             : [[{ key: "pinStore", label: qsTr("Pin"), icon: "nmc-pin" }]]
@@ -316,12 +346,21 @@ Rectangle {
                     width: 40; height: 40; radius: theme.radius
                     color: hover.hovered && !parent.selected ? theme.hover : "transparent"
                 }
+                // A colour app mark (Teams free's Copilot), 24 px.
+                Image {
+                    visible: !!modelData.image
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    y: root.showNames ? 8 : (parent.height - height) / 2
+                    width: 24; height: 24; sourceSize: Qt.size(48, 48)
+                    source: modelData.image || ""
+                    asynchronous: true; smooth: true
+                }
                 FluentIcon {
-                    visible: !modelData.iconUrl
+                    visible: !modelData.iconUrl && !modelData.image
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: root.showNames ? 8 : (parent.height - height) / 2
                     size: 24
-                    name: modelData.iconUrl ? "" : parent.selected ? modelData.icon + "-filled" : modelData.icon
+                    name: modelData.iconUrl || modelData.image ? "" : parent.selected ? modelData.icon + "-filled" : modelData.icon
                     color: theme.onFill([hcFill1, hcFill2], parent.selected ? theme.brand : theme.icon)
                 }
                 Image {
@@ -412,6 +451,35 @@ Rectangle {
             }
         }
     }
+
+    // Teams free's Upgrade (data-testid premium-upgrade-button; Teams
+    // desktop 26304, 2026-11-28): the diamond at the bottom of the bar,
+    // over the other-accounts hub, 68 x 44 like the apps; it opens
+    // Settings ▸ Plans and upgrades and Teams' purchase offer.
+    Item {
+        id: upgrade
+        visible: root.personal && root.upgradeShown
+        width: root.width; height: 44
+        y: root.height - root.bottomReserve - height - 4
+        Rectangle {
+            anchors.centerIn: parent
+            width: 40; height: 40; radius: theme.radius
+            color: uh.hovered ? theme.hover : "transparent"
+        }
+        FluentIcon {
+            anchors.centerIn: parent
+            size: 24
+            name: uh.hovered ? "diamond-24-filled" : "diamond-24"
+            color: uh.hovered ? theme.brand : theme.icon
+        }
+        HoverHandler { id: uh; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: root.upgradeRequested() }
+        ToolTipLabel { text: qsTr("Upgrade"); shown: uh.hovered }
+        Accessible.role: Accessible.Button
+        Accessible.name: qsTr("Upgrade")
+        Accessible.onPressAction: root.upgradeRequested()
+    }
+    function upgradeForTest() { return upgrade }
 
     // View more apps: Teams' flyout (measured on winpc 2026-11-20): 300
     // wide, centred on the button and kept in the window; a 268 x 32 search

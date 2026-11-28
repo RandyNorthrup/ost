@@ -16917,6 +16917,10 @@ Window {
         onOpenCast: castWindow.start()
         onOpenDownloads: downloadsFlyout.open()
         onOpenMobileApp: mobileAppDialog.open()
+        // A personal account's Upgrade, Teams Insider and What's new.
+        onOpenUpgrade: window.openPlans(true)
+        onOpenInsider: { rail.current = "settings"; settingsView.launchSection("insider") }
+        onOpenWhatsNew: backend.openExternal("https://support.microsoft.com/en-us/teams/personal/get-started/what-s-new-in-microsoft-teams-personal")
     }
     // Settings and more's dialogs and windows.
     PremiumDialog { id: premiumDialog; onFeedbackRequested: window.openFeedback("problem", "Teams Premium", ""); onHelpRequested: window.openHelp() }
@@ -17632,9 +17636,15 @@ Window {
     AppRail {
         id: rail
         anchors { top: appBanner.bottom; bottom: parent.bottom; left: parent.left }
+        // Teams for personal use's own bar (Chat, Copilot, Communities,
+        // Activity …) and its Upgrade button over the other-accounts hub.
+        personal: backend.personalAccount
+        upgradeShown: backend.ecsSetting("core", "isPremiumButtonInAppBarEnabled") !== "false"
+        bottomReserve: mtmaHub.visible ? mtmaHub.height : 0
+        onUpgradeRequested: window.openPlans(true)
         showNames: window.appBarNames
         autoCollapse: window.appBarAutoCollapse
-        split: window.splitView
+        split: window.splitView && !backend.personalAccount
         collabPane: window.collabPane
         onCollabPicked: pane => window.openCollab(pane)
         leaveGuard: go => window.leaving(go)
@@ -17670,6 +17680,46 @@ Window {
             window.navRecord()
             if (current === "calls") backend.loadCalls()
             if (current === "activity") backend.markActivityRead()
+        }
+    }
+
+    /// Microsoft's Microsoft 365 plans page ("See all Microsoft 365
+    /// plans" in Teams free's purchase dialog, fwlink 2360700 → the
+    /// compare-all page View all benefits opens): where OST sends a
+    /// personal account to buy, since it never buys in the app.
+    readonly property string plansUrl: "https://go.microsoft.com/fwlink/?LinkId=2360700"
+    /// Teams free's Upgrade: Settings ▸ Plans and upgrades, and (`buy`)
+    /// the purchase offer Teams opens with it, in the browser.
+    function openPlans(buy) {
+        rail.current = "settings"
+        settingsView.launchSection("plans")
+        if (buy) backend.openExternal(window.plansUrl)
+    }
+    // Teams free's Copilot without a Microsoft 365 plan: its upsell page.
+    Loader {
+        id: tflCopilot
+        property bool opened: false
+        visible: rail.current === "tfl-copilot"
+        onVisibleChanged: if (visible) opened = true
+        active: opened
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+        sourceComponent: CopilotUpsellView {
+            onExplorePlans: backend.openExternal(window.plansUrl)
+            onViewBenefits: backend.openExternal("https://www.microsoft.com/en-us/microsoft-365/buy/compare-all-microsoft-365-products")
+            onRefreshRequested: backend.changeSetting("personal", "verify", "{}")
+        }
+    }
+    // Teams free's Communities while it's retiring: its retirement page.
+    Loader {
+        id: tflCommunities
+        property bool opened: false
+        visible: rail.current === "tfl-communities"
+        onVisibleChanged: if (visible) opened = true
+        active: opened
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+        sourceComponent: CommunitiesView {
+            onLearnMore: backend.openExternal("https://go.microsoft.com/fwlink/?LinkId=2375512")
+            onStartGroupChat: { rail.current = "chat"; window.startNewChat(false) }
         }
     }
 

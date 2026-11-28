@@ -853,6 +853,13 @@ Rectangle {
     signal openCast()
     signal openDownloads()
     signal openMobileApp()
+    /// A personal account's Settings and more (Teams desktop 26304 with
+    /// OST Personal 2): Upgrade first, then Pin window on top, Settings,
+    /// Zoom, Help, Feedback, Keyboard shortcuts, Get the mobile app, Teams
+    /// Insider and What's new; no Cast, Downloads or Teams Premium.
+    signal openUpgrade()
+    signal openInsider()
+    signal openWhatsNew()
     FluentSurface {
         id: moreMenu
         visible: false
@@ -918,15 +925,17 @@ Rectangle {
             spacing: 2
             // Teams Premium: one row (Teams' "promo" item), then Teams
             // Premium benefits for a Premium licence outside a trial.
-            MenuRow { visible: root.premiumMenu === "unlock"; icon: "premium-20"; label: qsTr("Unlock Teams Premium"); onPicked: root.openPremium("offer") }
-            MenuRow { visible: root.premiumMenu === "get"; icon: "premium-20"; label: qsTr("Get Teams Premium"); onPicked: root.openPremium("get") }
-            MenuRow { visible: root.premiumMenu === "benefits"; icon: "premium-20"; label: qsTr("Teams Premium benefits"); onPicked: root.openPremium("home") }
-            MenuRow { visible: root.premiumBenefitsRow; icon: "premium-20"; label: qsTr("Teams Premium benefits"); onPicked: root.openPremium("home") }
-            MenuDivider { visible: root.premiumMenu !== "" || root.premiumBenefitsRow }
+            MenuRow { visible: backend.personalAccount; icon: "diamond-24"; label: qsTr("Upgrade"); onPicked: root.openUpgrade() }
+            MenuDivider { visible: backend.personalAccount }
+            MenuRow { visible: root.premiumMenu === "unlock" && !backend.personalAccount; icon: "premium-20"; label: qsTr("Unlock Teams Premium"); onPicked: root.openPremium("offer") }
+            MenuRow { visible: root.premiumMenu === "get" && !backend.personalAccount; icon: "premium-20"; label: qsTr("Get Teams Premium"); onPicked: root.openPremium("get") }
+            MenuRow { visible: root.premiumMenu === "benefits" && !backend.personalAccount; icon: "premium-20"; label: qsTr("Teams Premium benefits"); onPicked: root.openPremium("home") }
+            MenuRow { visible: root.premiumBenefitsRow && !backend.personalAccount; icon: "premium-20"; label: qsTr("Teams Premium benefits"); onPicked: root.openPremium("home") }
+            MenuDivider { visible: (root.premiumMenu !== "" || root.premiumBenefitsRow) && !backend.personalAccount }
             MenuRow { icon: "pin-20"; label: root.pinned ? qsTr("Unpin window") : qsTr("Pin window on top"); keys: "Ctrl+Shift+T"; checked: root.pinned; onPicked: root.togglePin() }
             MenuRow { icon: "settings-20"; label: qsTr("Settings"); keys: "Ctrl+,"; onPicked: root.openSettings() }
-            MenuRow { icon: "cast-20"; label: qsTr("Cast"); onPicked: root.openCast() }
-            MenuRow { icon: "arrow-download-20"; label: qsTr("Downloads"); onPicked: root.openDownloads() }
+            MenuRow { visible: !backend.personalAccount; icon: "cast-20"; label: qsTr("Cast"); onPicked: root.openCast() }
+            MenuRow { visible: !backend.personalAccount; icon: "arrow-download-20"; label: qsTr("Downloads"); onPicked: root.openDownloads() }
             MenuDivider {}
             Item {
                 width: moreCol.width; height: 27.33
@@ -951,6 +960,10 @@ Rectangle {
             MenuRow { id: feedbackRow; icon: "person-feedback-20"; label: qsTr("Feedback"); submenu: true }
             MenuRow { icon: "keyboard-20"; label: qsTr("Keyboard shortcuts"); keys: "Ctrl+."; onPicked: root.openShortcuts() }
             MenuRow { icon: "phone-20"; label: qsTr("Get the mobile app"); labelX: 32; pill: true; onPicked: root.openMobileApp() }
+            MenuDivider { visible: backend.personalAccount }
+            MenuRow { visible: backend.personalAccount; icon: "person-heart-20"; label: qsTr("Teams Insider"); pill: true; onPicked: root.openInsider() }
+            MenuDivider { visible: backend.personalAccount }
+            MenuRow { visible: backend.personalAccount; icon: "sparkle-20"; label: qsTr("What's new"); onPicked: root.openWhatsNew() }
         }
         onVisibleChanged: if (!visible) feedbackMenu.visible = false
     }

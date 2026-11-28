@@ -327,6 +327,9 @@ fn main() {
         "qml/ControlAlert.qml",
         "qml/ContentCameraDialog.qml",
         "qml/MtmaHub.qml",
+        "qml/CopilotUpsellView.qml",
+        "qml/CommunitiesView.qml",
+        "qml/PlansPage.qml",
         "qml/VideoTileMenu.qml",
     ];
     let mut resources: Vec<String> = Vec::new();

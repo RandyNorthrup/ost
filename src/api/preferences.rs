@@ -165,7 +165,7 @@ pub const JSON_PROPERTIES: [&str; 7] = [
 
 /// Settings kept as plain string user properties ("true", "COMFY", …),
 /// written as Teams' Settings writes them.
-pub const PLAIN_PROPERTIES: [&str; 9] = [
+pub const PLAIN_PROPERTIES: [&str; 11] = [
     "messageDensity",
     // Settings ▸ Calls ▸ Viewing incoming calls: "immersive" (Large
     // window, the default) or "minimized" (Small window).
@@ -179,6 +179,11 @@ pub const PLAIN_PROPERTIES: [&str; 9] = [
     // Settings ▸ Privacy ▸ Optional connected experiences ("true"/"false",
     // on unless "false").
     "controllerConnectedServicesEnabled",
+    // A personal account's Settings ▸ Privacy ▸ Manage who can add you to
+    // groups / Manage who can call you: "true" is Your contacts, "false"
+    // Anyone (Teams free's web client, captured 2026-11-28).
+    "disableNonContactAddToGroup",
+    "disableNonContactCall",
 ];
 
 /// All your user properties, the JSON-string ones parsed (Settings reads

@@ -999,3 +999,56 @@ plus `x-skypetoken` (§7.7) and go through Teams free's web worker
   the shared email and phone, or "<name>'s contact details are hidden in
   Teams." (`emailsInfo[].visibility` "Private"). People's compact card
   (clicking a contact's picture) has the same content without tabs.
+
+## 12. App shell, Settings and plans (verified 2026-11-28, TASK-0297)
+
+Captured on teams.live.com (web client `1415/26101516645`, OST Personal 1,
+the web worker's requests logged with tokens redacted) and checked against
+Teams desktop `26304.1207.5384.858` on testpc2 (OST Personal 2, UIA).
+Every setting changed for the capture was put back.
+
+- **App bar.** Fixed: Chat `86fcd49b-…`, Meet `40472f6e-248f-4599-842c-ff3ed8f0ae34`,
+  People `40472f6e-248f-4599-842c-ff3ed8f0ae35`, Copilot `43a6e7fb-bd10-4c0a-b02e-6a9c86ba272a`
+  (a colour mark), Communities `3b95919f-59d8-4441-a975-2a8c2643c852`,
+  Calendar `ef56c0de-…`, Activity `14d6962d-…`. No app menu on right-click,
+  no Store or View more apps. At the bottom Upgrade
+  (`data-testid=premium-upgrade-button`, ECS `core.isPremiumButtonInAppBarEnabled`)
+  over the other-accounts hub.
+- **Upgrade / purchase.** Upgrade opens Settings ▸ Plans and upgrades and
+  auto-launches the in-app purchase dialog ("DIME Purchase",
+  `https://offer.m365.cloud.microsoft/launchpad/v1/launchpad.metaos.html?partnerId=teamsmetaoswebconsumer&experienceId=persistent&…`)
+  with Personal, Family and Premium offers; its "See all Microsoft 365
+  plans" is `https://go.microsoft.com/fwlink/?LinkId=2360700` →
+  `https://www.microsoft.com/microsoft-365/buy/compare-all-microsoft-365-products`.
+  Nothing was bought.
+- **Copilot (no plan).** Upsell page: `evergreen-assets/m365-subscription-upsell/upsell-{1,2,3}.png`,
+  View all benefits opens the compare-all page in a new tab, Explore plans
+  now opens the purchase dialog, Start using Copilot re-checks eligibility.
+- **Communities.** Retirement banner (Learn more `fwlink 2375512`, Start
+  chat), animation `evergreen-assets/communities/communities-empty-state-animation-new.webm`;
+  Create your own and the templates open "Create a group chat"
+  (`illustrations/webp/192/chat-people-l-standard-192x192.webp`).
+- **Privacy.** Who can add you to groups / who can call you are chat-service
+  user properties: `PUT {chatsvc}/v1/users/ME/properties?name=disableNonContactAddToGroup`
+  `{"disableNonContactAddToGroup":"true"|"false"}` and the same for
+  `disableNonContactCall` ("true" = Your contacts). Manage how people can
+  find you reads `GET {mt}/beta/users/me/?skypeTeamsInfo=true&forceRefresh=true&ephemeralMeProfile=false&ggEnabled=true`
+  (`searchableByProfile`, `emailsInfo[] {address, searchable, visibility}`);
+  an address: `POST {mt}/beta/scd/searchability?ggEnabled=true`
+  `{"msaEmails":[{"address":…,"searchable":bool}],"msaPhones":[]}` (turning
+  off asks "Hide from search"); the name: `POST {mt}/beta/users/updateNameAndSkypeAvatar`
+  `{"searchableByProfile":bool}` (from the worker bundle). Your profile:
+  `PATCH {mt}/beta/users/me` `{"msaEmails":[{"address":…,"visibility":"Public"|"Private"}],"msaPhones":[]}`
+  (hiding asks "Hiding your email"). Experiences that analyze your content:
+  `GET/POST {mt}/beta/users/me/analyzecontentsettings {"isAnalyzeContentSettingsEnabled":bool}`.
+- **People.** Blocked users `GET {mt}/beta/userSettings/blocklist?ggEnabled=true`,
+  unblock `POST …/blocklist/manage?ggEnabled=true {"remove":[mri]}` (bundle);
+  Synced contacts `GET {mt}/beta/contacts/syncSettings` (Outlook and the
+  retired Skype source).
+- **Teams Insider.** `GET {mt}/beta/users/insiders/status` (`isInsider`),
+  Join `POST {mt}/beta/users/insiders`, Leave `DELETE` (bundle; not joined).
+- **ECS.** Teams desktop's app id works for a personal account:
+  `GET config.teams.microsoft.com/config/v1/MicrosoftTeams/49_1.0.0.0?environment=life&…&id=<oid>&aaduserid=<oid>&tenantId=9188040d-6c67-4c5b-b112-36a304b66dad&…&agents=TflNorthstar,TeamsBuilds,Segmentation&ECSCanary=1`
+  (no auth, no licence filters) answers a desktop-flavoured `TflNorthstar`
+  (for example `monetization.enableRefreshPlansAndUpgrades`,
+  `communities.disableCommunitiesCreation`, `ai.enableCopilotChatConsumerApp`).
