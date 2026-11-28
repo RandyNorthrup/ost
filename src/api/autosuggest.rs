@@ -1146,7 +1146,8 @@ pub fn arrange_kql(reply: &Value, spec: &Value, me: &Me, names: &Names) -> Value
         }
     } else {
         // From a person, no scope: them, their messages (and "See more
-        // messages from …"), files and group chats.
+        // messages from …"), files and group chats; a place alone: its
+        // messages, files and group chats.
         let from = spec["picks"]
             .as_array()
             .into_iter()
@@ -1172,6 +1173,27 @@ pub fn arrange_kql(reply: &Value, spec: &Value, me: &Me, names: &Names) -> Value
             let mut messages: Vec<Value> = items("Message").into_iter().take(MESSAGES).collect();
             if !messages.is_empty() {
                 messages.push(json!({ "kind": "seemore", "query": words, "from": s(&p["name"]) }));
+            }
+            groups.push(group(
+                "MESSAGES",
+                crate::i18n::tr_id("Recent messages", "autosuggest:kbwxzlnau"),
+                messages,
+            ));
+            groups.push(group(
+                "FILES",
+                crate::i18n::tr_id("Files", "autosuggest:kckk9oukc"),
+                items("File"),
+            ));
+            groups.push(group(
+                "GROUPCHATS",
+                crate::i18n::tr_id("Group Chats", "autosuggest:k3xy694dn"),
+                items("Chat"),
+            ));
+        } else {
+            // Only a place (in:) with no scope: what's said and shared there.
+            let mut messages: Vec<Value> = items("Message").into_iter().take(MESSAGES).collect();
+            if !messages.is_empty() && !words.is_empty() {
+                messages.push(json!({ "kind": "seemore", "query": words }));
             }
             groups.push(group(
                 "MESSAGES",
@@ -1550,6 +1572,20 @@ mod tests {
                 .unwrap()["from"],
             "Bob Smith"
         );
+        // Only an in: place, no scope: its messages, files and chats.
+        let place = arrange_kql(
+            &reply(),
+            &json!({ "words": "release", "picks": [{ "kw": "in", "kind": "chat", "name": "Release planning", "thread": "19:a@thread.v2" }] }),
+            &me(),
+            &Names::new(),
+        );
+        let ids: Vec<&str> = place["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|g| g["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, ["MESSAGES", "FILES", "GROUPCHATS"]);
     }
 
     #[test]
