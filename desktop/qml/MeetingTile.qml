@@ -245,7 +245,7 @@ Item {
                 // at 4/8/12 in an 18 px glyph, unlit ones at 30 %, then 3 px.
                 Item {
                     id: nsi
-                    visible: mt.self && !!mt.call && mt.call.nsiShown
+                    visible: mt.self && !!mt.call && mt.call.nsiVisible
                     width: 21; height: 18
                     anchors.verticalCenter: parent.verticalCenter
                     readonly property int lit: !mt.call ? 3 : mt.call.networkStrength === "Bad" ? 1 : mt.call.networkStrength === "Poor" ? 2 : 3

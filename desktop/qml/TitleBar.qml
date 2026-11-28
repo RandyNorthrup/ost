@@ -294,9 +294,20 @@ Rectangle {
     // days left"), which has no singular: Teams fills it with {days}, not an
     // i18next count, so its last day reads "1 days left" too (async-entry's
     // dnt(), Teams 26304).
+    // Teams renders the pill only in a window at least 1280 px wide (its
+    // more-options button's Bnt: 947 where Teams draws its own window
+    // controls, which Teams desktop on Windows doesn't) and not in its
+    // first 120 s (Ose(12e4)); otherwise it's the plain ···, and the pill's
+    // device marks wait until it shows (async-entry Wse/Dse, Teams 26304;
+    // seen on testpc1: plain ··· at 1024 px).
+    property bool premiumPillDue: false
+    Timer { interval: 120000; running: true; onTriggered: root.premiumPillDue = true }
+    readonly property bool premiumPillShown: premiumPill.visible
+    signal premiumPillShowed()
     Rectangle {
         id: premiumPill
-        visible: root.premiumPill !== ""
+        visible: root.premiumPill !== "" && root.premiumPillDue && root.width >= 1280
+        onVisibleChanged: if (visible) root.premiumPillShowed()
         readonly property string label: root.premiumPill === "days" ? qsTr("%1 days left").arg(root.premiumDaysLeft) : qsTr("Get Premium")
         anchors.right: moreButton.right
         anchors.verticalCenter: parent.verticalCenter

@@ -2418,14 +2418,15 @@ Rectangle {
                 icon: "clipboard-task-list-20"; title: qsTr("Surveys"); subtitle: qsTr("Participate in surveys from OST.")
                 trailing: Component { SettingsParts.Toggle { on: root.prop("userEnableSurveysNotification", [], "true") !== "false"; accessibleName: qsTr("Surveys"); onToggled: v => root.setProp("userEnableSurveysNotification", "", v ? "true" : "false") } }
                 // OST's opt-in for Teams' post-call "How was the call
-                // quality?" (off by default; kept on this device). Teams asks
-                // only while Surveys is on, so this does too.
+                // quality?" and its network indicator's "Was this accurate?"
+                // (off by default; kept on this device). Teams asks only
+                // while Surveys is on, so this does too.
                 SettingsParts.CheckRow {
                     id: cqfRow
                     readonly property bool surveysOn: root.prop("userEnableSurveysNotification", [], "true") !== "false"
                     property bool optedIn: backend.setting("callQualitySurvey") === "true"
                     label: qsTr("Ask me about call quality after calls")
-                    sublabel: qsTr("OST asks after some calls. If a call had issues, Report a problem opens with its technical details (no one's name) for you to post as a public issue on GitHub.")
+                    sublabel: qsTr("OST asks after some calls, and the network indicator asks whether it was accurate. If a call had issues, or the indicator was wrong, Report a problem opens with the technical details (no one's name) for you to post as a public issue on GitHub.")
                     usable: surveysOn
                     checked: optedIn && surveysOn
                     onToggled: on => { backend.setSetting("callQualitySurvey", on ? "true" : "false"); optedIn = on }

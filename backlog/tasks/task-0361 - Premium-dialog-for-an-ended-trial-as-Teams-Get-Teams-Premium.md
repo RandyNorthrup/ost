@@ -1,10 +1,11 @@
 ---
 id: TASK-0361
 title: Premium dialog for an ended trial as Teams (Get Teams Premium)
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@t361'
 created_date: '2026-11-27T18:15:00Z'
-updated_date: '2026-11-28T01:04:00Z'
+updated_date: '2026-11-28T01:36:00Z'
 labels:
   - parity
 dependencies: []
@@ -21,6 +22,15 @@ Found during TASK-0357 (PR #67, which creates this task). After a Teams Premium 
 - [ ] #1 Title-bar Premium pill shows or hides at the same window widths as Teams desktop
 - [ ] #2 Get Teams Premium after an ended trial shows Teams' post-trial page with Teams' strings and geometry, checked side by side without sending a licence request
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Read Teams 26304 post-trial modal (Ii) and title bar pill (Wse/Dse/Bnt) code; resolve string keys
+2. Measure the post-trial page and its benefits view live on winpc (CDP, never Request a license)
+3. Match geometry, strings, button gates (ECS + policy) and the pill width/120 s rule, marks only once shown
+4. Live check OST side by side; harness --premium-test / --premium-pill-test
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
