@@ -154,7 +154,7 @@ Rectangle {
     function run() {
         preview = null
         generation++
-        if (query) backend.searchPage(key, tab, personKeywords || query, JSON.stringify(filters()), 0)
+        if (query || hasFilters) backend.searchPage(key, tab, personKeywords || query, JSON.stringify(filters()), 0)
         list.contentY = 0
     }
     function more() {
@@ -162,10 +162,20 @@ Rectangle {
         const set = tab === "files" ? page.files : tab === "images" ? page.images : page.messages
         if (set && set.more) backend.searchPage(key, tab, personKeywords || query, JSON.stringify(filters()), set.hits.length)
     }
-    function search(q, t) {
+    // `f`: the search box's KQL filters (TitleBar.resultFilters: person,
+    // inPlace, fileType, mentions, attachment), which replace the tab's.
+    function search(q, t, f) {
         query = q
         personKeywords = ""
         if (t && t !== tab) { tab = t; clearFilters(false) }
+        if (f) {
+            clearFilters(false)
+            if (f.person) person = f.person
+            if (f.inPlace) inPlace = f.inPlace
+            if (f.fileType) fileType = f.fileType
+            mentions = !!f.mentions
+            attachment = !!f.attachment
+        }
         run()
     }
     // The search box's "<person> in all results" (Teams' people-centric

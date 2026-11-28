@@ -1869,6 +1869,11 @@ pub mod qobject {
         /// is focused with nothing typed) into suggest_json.
         #[qinvokable]
         fn search_suggest(self: Pin<&mut Backend>, query: &QString);
+        /// The suggestions for a scoped or KQL box, or go-to mode
+        /// (api::autosuggest::kql_request's spec as JSON, with `key`, the
+        /// answer's `query`) into suggest_json.
+        #[qinvokable]
+        fn search_suggest_kql(self: Pin<&mut Backend>, spec: &QString);
         /// As search_people, with you among the results (the status
         /// message picker).
         #[qinvokable]
@@ -11011,6 +11016,33 @@ async fn public_image_file(client: &TeamsClient, url: &str) -> anyhow::Result<st
     Ok(path)
 }
 
+/// Names for the personal (Teams free) people a suggestions reply names
+/// only by their id, as Teams' work client finds them (fetchTflProfiles;
+/// TASK-0376). Quick or not at all: the suggestions don't wait long.
+async fn suggest_names(client: &TeamsClient, reply: &serde_json::Value) -> api::autosuggest::Names {
+    let mris = api::autosuggest::unnamed_people(reply);
+    let mut names = api::autosuggest::Names::new();
+    if mris.is_empty() {
+        return names;
+    }
+    if let Ok(Ok(found)) = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        api::directory::tfl_profiles(client, &mris),
+    )
+    .await
+    {
+        for p in found {
+            let (Some(m), Some(n)) = (p["mri"].as_str(), p["displayName"].as_str()) else {
+                continue;
+            };
+            if !n.trim().is_empty() {
+                names.insert(m.to_ascii_lowercase(), n.trim().to_string());
+            }
+        }
+    }
+    names
+}
+
 /// Keep inline images in a private cache (~/.cache/ost/images, 0700/0600)
 /// so they are fetched once.
 async fn cached_image(
@@ -19489,7 +19521,8 @@ impl qobject::Backend {
                         Vec::new(),
                     )
                 };
-                let mut groups = api::autosuggest::arrange(&reply, q.trim(), &me, people);
+                let names = suggest_names(&client, &reply).await;
+                let mut groups = api::autosuggest::arrange(&reply, q.trim(), &me, people, &names);
                 // The service's groups at once; the pictures and Viva
                 // Engage's communities follow.
                 publish(&qt, q.clone(), groups.clone());
@@ -19535,6 +19568,76 @@ impl qobject::Backend {
             .await;
             if let Err(e) = result {
                 tracing::warn!("search suggestions failed: {}", short_error(&e));
+            }
+        });
+    }
+
+    pub fn search_suggest_kql(mut self: Pin<&mut Self>, spec: &QString) {
+        let spec: serde_json::Value = serde_json::from_str(&spec.to_string()).unwrap_or_default();
+        let key = spec["key"].as_str().unwrap_or_default().to_string();
+        let generation = self.rust().suggest_generation + 1;
+        self.as_mut().rust_mut().suggest_generation = generation;
+        let me = api::autosuggest::Me {
+            oid: String::new(),
+            mri: self.rust().user_mri.to_string(),
+            mail: self.rust().user_mail.to_string(),
+            name: self.rust().user_name.to_string(),
+        };
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let me = api::autosuggest::Me {
+                    oid: client.object_id().unwrap_or_default(),
+                    ..me
+                };
+                let tenant = client.tenant_id().unwrap_or_default();
+                let reply = api::autosuggest::fetch_kql(&spec, &me, &tenant).await?;
+                let names = suggest_names(&client, &reply).await;
+                let mut v = api::autosuggest::arrange_kql(&reply, &spec, &me, &names);
+                // A scoped Images answer's pictures, as Recent images'.
+                if spec["scope"] == "images" {
+                    let ams = client
+                        .ams_url()
+                        .unwrap_or_else(|| "https://us-api.asm.skype.com".into());
+                    for g in v["groups"].as_array_mut().into_iter().flatten() {
+                        for it in g["items"].as_array_mut().into_iter().flatten() {
+                            let id = it["ams"].as_str().unwrap_or_default().to_string();
+                            if id.is_empty() {
+                                continue;
+                            }
+                            let img = api::messages::InlineImage {
+                                url: format!("{ams}/v1/objects/{id}/views/imgo"),
+                                id,
+                                width: 0,
+                                height: 0,
+                                local_path: String::new(),
+                            };
+                            if let Ok(Ok(path)) = tokio::time::timeout(
+                                std::time::Duration::from_secs(5),
+                                cached_image(&client, &img),
+                            )
+                            .await
+                            {
+                                it["src"] = json!(format!("file://{}", path.display()));
+                            }
+                        }
+                    }
+                }
+                v["query"] = json!(key);
+                anyhow::Ok(v)
+            }
+            .await;
+            match result {
+                Ok(v) => {
+                    let _ = qt.queue(move |mut this| {
+                        if this.rust().suggest_generation == generation {
+                            this.as_mut()
+                                .set_suggest_json(QString::from(v.to_string().as_str()));
+                        }
+                    });
+                }
+                Err(e) => tracing::warn!("search suggestions failed: {}", short_error(&e)),
             }
         });
     }
@@ -21281,7 +21384,14 @@ impl qobject::Backend {
         self.as_mut().rust_mut().search_page_key = key.clone();
         self.as_mut()
             .set_search_page_json(QString::from(shown.to_string().as_str()));
-        if keywords.is_empty() {
+        // Nothing typed but the search box's filters (Press Enter to view
+        // all files after a from: or filetype: pill): the filters alone.
+        let filtered = !filters.person_mail.is_empty()
+            || !filters.in_thread.is_empty()
+            || !filters.file_type.is_empty()
+            || filters.mentions
+            || filters.attachment;
+        if keywords.is_empty() && !filtered {
             shown["loading"] = false.into();
             self.as_mut()
                 .set_search_page_json(QString::from(shown.to_string().as_str()));

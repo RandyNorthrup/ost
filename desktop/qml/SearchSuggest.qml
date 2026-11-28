@@ -18,12 +18,39 @@ import QtQuick.Controls.Basic
 // with nothing typed, else "Press Enter to view all results" (32, brand
 // semibold, Enter in a key box); then "Send feedback" with the thumbs
 // (12/20 #616161, 21.3 px buttons, 32 tall).
+//
+// A scope pill (TASK-0371, Teams 26304 on winpc 2026-11-27) puts
+// "is:<Domain>" in the box: the flyout shows the chosen pill (filled, ×),
+// that domain's nested filter pills (Files from:, in:, filetype:; Messages
+// from:, in:, @Mentions, Has attachments; ECS autosuggest.
+// nestedFiltersConfig) and the domain's suggestions ("Suggested files" and
+// so on with nothing typed). A from:/in:/filetype: pill opens Teams' picker
+// in place of the pills (people; chats, channels, teams and people; "Select
+// a file type"), the first row picked; a picked filter becomes a filled
+// pill. Typing a person's name offers a from:<person> pill first. Rows
+// show Teams' secondary actions on hover or the keyboard's pick (32 px
+// buttons 4 apart, 12 from the right): people Open in new window, Show
+// Contact Card, All results from; group chats Open in new window; channels
+// Copy link, Open in new window; files Copy link; meetings Chat with
+// participants, then Join (on now or within 15 minutes) or Meeting Recap
+// (over). Go-to mode (Ctrl+G) lists chats, channels and people, no pills
+// and no footer.
 FluentSurface {
     id: root
-    /// What's typed (without an "is:" scope).
+    /// What's typed (without an "is:" scope or filters; a picker's words).
     property string query: ""
     /// The chosen scope pill's key ("" for none).
     property string scope: ""
+    /// "plain" (Teams' powerbar), "scoped" (a scope pill or filter),
+    /// "picker" (from:, in:, filetype:) or "goto".
+    property string mode: "plain"
+    /// What the answer must be for (its `query`).
+    property string key: query
+    /// The pills to show (TitleBar's: {kind, label, chosen, …}); empty for
+    /// the plain mode's own.
+    property var pillList: []
+    /// Groups worked out here (the file types, go-to's own list), or null.
+    property var local: null
     /// The service's answer: {query, groups: [{id, title, items}]}.
     property var reply: ({})
     /// The chat list, for chats the service names only by thread.
@@ -35,10 +62,16 @@ FluentSurface {
     property int current: -1
     signal activate(var item)
     signal pickScope(string key)
+    signal pickPill(var pill)
+    /// A row's secondary action ("popout", "card", "pcs", "copylink",
+    /// "meetingchat", "join", "recap").
+    signal action(var item, string act)
     signal feedback(string kind)
 
     depth: 16; radius: 4; color: theme.menu
-    height: Math.min(maxHeight, 51.3 + groupCol.height + 2 + footer.height + 4)
+    readonly property bool showPills: mode === "plain" || mode === "scoped"
+    readonly property real listTop: showPills ? 51.3 : 4
+    height: Math.min(maxHeight, listTop + groupCol.height + 2 + footer.height + 4)
 
     // Teams' domainPillsOrder (ECS autosuggest), outside an app.
     readonly property var pills: [
@@ -47,19 +80,21 @@ FluentSurface {
         { key: "meetings", label: qsTr("Meetings") }, { key: "images", label: qsTr("Images") }
     ]
     readonly property bool typed: query.trim().length > 0
+    // The zero-query People row is a row of cells.
+    readonly property bool cells: mode === "plain" && !typed
     // The service's groups for what's in the box now (an older answer
     // waits for the new one).
     readonly property var groups: {
         const r = root.reply || {}
-        if (String(r.query || "").trim() !== root.query.trim()) return []
-        const gs = (r.groups || []).map(g => ({ id: g.id, title: g.title, items: g.items.slice() }))
-        if (root.copilot && root.typed && root.query.trim().split(/\s+/).length > 1) {
+        if (!root.local && String(r.query || "").trim() !== root.key.trim()) return []
+        const gs = (root.local || r.groups || []).map(g => ({ id: g.id, title: g.title, items: g.items.slice() }))
+        if (root.mode === "plain" && root.copilot && root.typed && root.query.trim().split(/\s+/).length > 1) {
             const ask = { kind: "copilot", title: root.query.trim() }
             const top = gs.find(g => g.id === "TOPHITS")
             if (top) top.items.push(ask); else gs.unshift({ id: "TOPHITS", title: "", items: [ask] })
         }
         // The People row shows as many as fit.
-        const row = gs.find(g => g.id === "PEOPLE" && !root.typed)
+        const row = gs.find(g => g.id === "PEOPLE" && root.cells)
         if (row) row.items = row.items.slice(0, Math.max(1, Math.floor((root.width - 32) / 88)))
         // Each item's place among the options (the arrows' order).
         let i = 0
@@ -97,10 +132,13 @@ FluentSurface {
     // A new query drops the pick; the same query's later answer (pictures,
     // communities added) keeps it.
     property string answered: ""
-    onQueryChanged: current = -1
+    // (A picker and go-to mode pick their first row, as Teams.)
+    readonly property bool pickFirst: mode === "picker" || mode === "goto"
+    onKeyChanged: current = pickFirst ? 0 : -1
+    onModeChanged: current = pickFirst ? 0 : -1
     onReplyChanged: {
         const q = String((reply || {}).query || "")
-        if (q !== answered) current = -1
+        if (q !== answered) current = pickFirst ? 0 : -1
         else if (current >= options.length) current = options.length - 1
         answered = q
     }
@@ -148,9 +186,11 @@ FluentSurface {
     }
     readonly property var metaIcons: ({ attach: "attach-20", image: "image-20", link: "link-16", important: "important-20", mention: "mention-16", urgent: "important-20-filled" })
 
-    // Scope pills; with one chosen, just it, filled, with ×.
+    // Scope pills; with one chosen, it (filled, with ×), its filters and
+    // the from:<person> pill (TitleBar's pillList).
     Item {
         id: pillBand
+        visible: root.showPills
         x: 1.7; y: 4.7; width: parent.width - 3.4; height: 44
         // Pills that don't fit scroll sideways (wheel, drag or the arrows
         // on the focused pill).
@@ -166,25 +206,39 @@ FluentSurface {
             id: pillRow
             x: 16; y: 8; spacing: 8
             Repeater {
-                model: root.scope ? root.pills.filter(p => p.key === root.scope) : root.pills
+                model: root.pillList.length ? root.pillList : root.scope ? root.pills.filter(p => p.key === root.scope).map(p => Object.assign({ kind: "scope", chosen: true }, p)) : root.pills.map(p => Object.assign({ kind: "scope" }, p))
                 Rectangle {
                     id: pill
                     required property var modelData
-                    readonly property bool chosen: root.scope === modelData.key
+                    readonly property bool chosen: !!modelData.chosen
+                    readonly property bool pic: !!modelData.photo || !!modelData.icon
                     height: 24; radius: 12
-                    width: pillText.implicitWidth + (chosen ? 38 : 21.3)
+                    width: pillText.implicitWidth + (pic ? 24 : 0) + (chosen ? 38 : 21.3)
                     color: chosen ? theme.brandFill : pillHover.hovered ? theme.pick("#DCE0FA", "#3D3E66", "#1AEBFF") : theme.pick("#E8EBFA", "#2B2B40", "#000000")
                     border.width: theme.highContrast ? 1 : 0; border.color: theme.text
+                    // A person's picture, a place's or a file type's icon.
+                    Avatar {
+                        visible: !!pill.modelData.photo
+                        x: 2; anchors.verticalCenter: parent.verticalCenter; size: 20
+                        name: pill.modelData.name || ""; photoId: pill.modelData.photo || ""
+                        square: !!pill.modelData.square; squareRadius: 2
+                    }
+                    FluentIcon { visible: !pill.modelData.photo && !!pill.modelData.icon; x: 4; anchors.verticalCenter: parent.verticalCenter; name: pill.modelData.icon || ""; size: 16 }
                     Text {
                         id: pillText
-                        x: 10.7; anchors.verticalCenter: parent.verticalCenter
+                        x: pill.pic ? 26 : 10.7; anchors.verticalCenter: parent.verticalCenter
                         text: pill.modelData.label
                         font.family: theme.font; font.pixelSize: 12; font.weight: pill.chosen ? Font.DemiBold : Font.Normal
                         color: pill.chosen ? theme.textOnBrand : theme.onFill(pill, theme.text)
                     }
                     FluentIcon { visible: pill.chosen; x: parent.width - 24; anchors.verticalCenter: parent.verticalCenter; name: "dismiss-12"; size: 12; color: theme.textOnBrand }
                     HoverHandler { id: pillHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: root.pickScope(pill.chosen ? "" : pill.modelData.key) }
+                    TapHandler {
+                        onTapped: {
+                            if (root.pillList.length) root.pickPill(pill.modelData)
+                            else root.pickScope(pill.chosen ? "" : pill.modelData.key)
+                        }
+                    }
                     Accessible.role: Accessible.Button
                     Accessible.name: modelData.label
                 }
@@ -193,11 +247,11 @@ FluentSurface {
         }
     }
     function scrollPills(step) { pillFlick.contentX = Math.max(0, Math.min(pillFlick.contentWidth - pillFlick.width, pillFlick.contentX + step * 88)) }
-    Rectangle { x: 1.7; y: 50.6; width: parent.width - 3.4; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D", "#FFFFFF") }
+    Rectangle { visible: root.showPills; x: 1.7; y: 50.6; width: parent.width - 3.4; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D", "#FFFFFF") }
 
     Flickable {
         id: flick
-        x: 1.7; y: 51.3; width: parent.width - 3.4
+        x: 1.7; y: root.listTop; width: parent.width - 3.4
         height: root.height - y - footer.height - 4
         contentHeight: groupCol.height
         clip: true
@@ -221,7 +275,7 @@ FluentSurface {
                     // of cells; images that don't fit wrap to the next line.
                     Flow {
                         readonly property bool images: grp.modelData.id === "IMAGES"
-                        visible: (grp.modelData.id === "PEOPLE" && !root.typed) || images
+                        visible: (grp.modelData.id === "PEOPLE" && root.cells) || images
                         x: 16; width: groupCol.width - 32
                         spacing: images ? 11.3 : 8
                         topPadding: images ? 8 : 0; bottomPadding: images ? 8 : 0
@@ -236,7 +290,7 @@ FluentSurface {
                         }
                     }
                     Repeater {
-                        model: (grp.modelData.id === "PEOPLE" && !root.typed) || grp.modelData.id === "IMAGES" ? [] : grp.modelData.items
+                        model: (grp.modelData.id === "PEOPLE" && root.cells) || grp.modelData.id === "IMAGES" ? [] : grp.modelData.items
                         Loader {
                             required property var modelData
                             width: groupCol.width
@@ -249,14 +303,71 @@ FluentSurface {
         }
     }
 
-    // A row's hover and keyboard fill.
+    // A row's hover and keyboard fill (go-to mode's pick has Teams' focus
+    // ring).
     component RowFill: Rectangle {
         property var it
         anchors.fill: parent
         readonly property bool on: rowHover.hovered || root.picked(it)
+        radius: root.mode === "goto" && root.picked(it) ? 4 : 0
         color: on ? theme.menuHover : "transparent"
+        border.width: root.mode === "goto" && root.picked(it) ? 2 : 0; border.color: theme.text
         HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.activate(it) }
+    }
+    // Teams' secondary actions for a row (see the top).
+    function eventState(e) {
+        const s = new Date(e.start), en = new Date(e.end), now = new Date()
+        if (isNaN(s) || isNaN(en)) return ""
+        if (en < now) return "past"
+        if (s <= now) return "now"
+        return s - now <= 15 * 60000 ? "soon" : "future"
+    }
+    function actionsFor(it) {
+        if (!it || root.mode === "picker" || root.mode === "goto" || it.kql) return []
+        const pop = { act: "popout", icon: "open-window-20", label: qsTr("Open in new window") }
+        const link = { act: "copylink", icon: "link-20", label: qsTr("Copy link") }
+        switch (it.kind) {
+        case "person":
+            return [pop, { act: "card", icon: "contact-card-20", label: qsTr("Show Contact Card") },
+                    { act: "pcs", icon: "search-20", label: qsTr("All results from %1").arg(it.plain_name || it.name || "") }]
+        case "chat": return [pop]
+        case "channel": return [link, pop]
+        case "file": return it.url ? [link] : []
+        case "event": {
+            if (!it.thread) return []
+            const out = [{ act: "meetingchat", icon: "chat-20", label: qsTr("Chat with participants") }]
+            const st = root.eventState(it)
+            if (it.join && (st === "now" || st === "soon")) out.push({ act: "join", icon: "video-20", label: qsTr("Join Meeting") })
+            else if (st === "past") out.push({ act: "recap", icon: "sparkle-20", label: qsTr("Meeting Recap") })
+            return out
+        }
+        }
+        return []
+    }
+    component RowActions: Row {
+        id: ra
+        property var it
+        property bool on
+        readonly property var acts: root.actionsFor(it)
+        anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
+        spacing: 4
+        visible: on && acts.length > 0
+        Repeater {
+            model: ra.acts
+            Rectangle {
+                id: ab
+                required property var modelData
+                width: 32; height: 32; radius: 4
+                color: abh.hovered ? theme.pick("#E0E0E0", "#3D3D3D", "#1AEBFF") : "transparent"
+                FluentIcon { anchors.centerIn: parent; name: ab.modelData.icon; size: 20; color: abh.hovered ? theme.brand : theme.onFill(ab, theme.textStrong) }
+                HoverHandler { id: abh; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.action(ra.it, ab.modelData.act) }
+                ToolTip.visible: abh.hovered; ToolTip.delay: 500; ToolTip.text: ab.modelData.label
+                Accessible.role: Accessible.Button
+                Accessible.name: ab.modelData.label
+            }
+        }
     }
     // A 32 px #F0F0F0 circle with a 16 px glyph.
     component GlyphCircle: Rectangle {
@@ -275,12 +386,15 @@ FluentSurface {
             property var it: ({})
             readonly property string kind: it.kind || ""
             readonly property bool glyph: kind === "text" || kind === "pcs" || kind === "seemore"
-            readonly property string sub: kind === "person" ? (it.sub || "") : kind === "channel" ? (it.sub || "") : (it.sub || "")
+            // A picker's row: one line, "from:"/"in:" before the name.
+            readonly property string kql: it.kql ? it.kql + ":" : ""
+            readonly property string sub: kql || kind === "filetype" ? "" : (it.sub || "")
             width: parent ? parent.width : 0
             height: glyph ? 44 : kind === "person" || kind === "channel" || kind === "team" ? 48 : 50
-            RowFill { it: pr.it }
+            RowFill { id: prf; it: pr.it }
+            RowActions { id: pra; it: pr.it; on: prf.on }
             Avatar {
-                visible: !pr.glyph && pr.kind !== "file" && !(pr.kind === "community" && !!pr.it.avatar)
+                visible: !pr.glyph && pr.kind !== "file" && pr.kind !== "filetype" && !(pr.kind === "community" && !!pr.it.avatar)
                 x: 16; anchors.verticalCenter: parent.verticalCenter; size: 32
                 colorful: pr.kind === "community"; squareRadius: 4
                 name: pr.kind === "chat" ? root.chatName(pr.it) : pr.kind === "channel" ? (pr.it.sub || pr.it.title || "") : (pr.it.plain_name || pr.it.title || pr.it.name || "")
@@ -289,7 +403,7 @@ FluentSurface {
                 group: pr.kind === "chat" && !pr.it.meeting
                 meeting: pr.kind === "chat" && !!pr.it.meeting
             }
-            FluentIcon { visible: pr.kind === "file"; x: 16; anchors.verticalCenter: parent.verticalCenter; size: 32; name: root.fileIcon(pr.it.ext) }
+            FluentIcon { visible: pr.kind === "file" || pr.kind === "filetype"; x: 16; anchors.verticalCenter: parent.verticalCenter; size: 32; name: root.fileIcon(pr.it.ext) }
             Image {
                 visible: pr.kind === "community" && !!pr.it.avatar
                 x: 16; anchors.verticalCenter: parent.verticalCenter; width: 32; height: 32
@@ -303,14 +417,16 @@ FluentSurface {
                 icon: pr.kind === "text" && pr.it.history ? "history-16" : "search-16"
             }
             Column {
-                x: 58; width: parent.width - 74; anchors.verticalCenter: parent.verticalCenter
+                x: 58; width: parent.width - 74 - (pra.visible ? pra.width + 8 : 0); anchors.verticalCenter: parent.verticalCenter
                 Text {
                     width: parent.width; elide: Text.ElideRight; textFormat: Text.StyledText
                     lineHeight: 20; lineHeightMode: Text.FixedHeight
                     text: pr.kind === "pcs" ? qsTr("%1 in all results").arg("<b>" + root.esc(pr.it.title) + "</b>")
+                        : pr.kind === "seemore" && pr.it.from ? (pr.it.query ? qsTr("See more messages for %1 from %2").arg("<b>" + root.esc(pr.it.query) + "</b>").arg("<b>" + root.esc(pr.it.from) + "</b>")
+                                                                          : qsTr("See more messages from %1").arg("<b>" + root.esc(pr.it.from) + "</b>"))
                         : pr.kind === "seemore" ? root.esc(qsTr("See more messages for")) + " <b>" + root.esc(pr.it.query) + "</b>"
-                        : pr.kind === "chat" ? root.bold(root.chatName(pr.it))
-                        : root.bold(pr.it.name || pr.it.title || "")
+                        : pr.kind === "chat" ? root.esc(pr.kql) + root.bold(root.chatName(pr.it))
+                        : root.esc(pr.kql) + root.bold(pr.it.plain_name && pr.kql ? pr.it.plain_name : (pr.it.name || pr.it.title || ""))
                     font.family: theme.font; font.pixelSize: 14; color: theme.onFill(pr, theme.text)
                 }
                 Text {
@@ -333,7 +449,8 @@ FluentSurface {
             id: er
             property var it: ({})
             width: parent ? parent.width : 0; height: 50
-            RowFill { it: er.it }
+            RowFill { id: erf; it: er.it }
+            RowActions { id: era; it: er.it; on: erf.on }
             Rectangle {
                 x: 16; anchors.verticalCenter: parent.verticalCenter
                 width: 32; height: 32; radius: 4; color: "transparent"
@@ -345,7 +462,8 @@ FluentSurface {
                 }
             }
             Column {
-                x: 58; width: parent.width - 74; anchors.verticalCenter: parent.verticalCenter
+                x: 58; width: parent.width - 74 - (era.visible ? era.width + 8 : 0); anchors.verticalCenter: parent.verticalCenter
+                clip: true
                 Row {
                     spacing: 4
                     Text { textFormat: Text.StyledText; text: root.bold(er.it.title); lineHeight: 20; lineHeightMode: Text.FixedHeight; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(er, theme.text) }
@@ -484,14 +602,22 @@ FluentSurface {
         }
     }
 
-    // The bottom: the tip or "Press Enter", then Send feedback.
+    /// Scoped: "Press Enter to view all …" shows (words, or a person,
+    /// place or type picked).
+    property bool enterShown: false
+    readonly property bool showEnter: mode === "plain" ? typed : mode === "scoped" ? enterShown : mode === "goto" ? typed && !options.length : false
+    readonly property string enterLabel: mode !== "scoped" || !scope ? qsTr("Press %1 to view all results")
+        : ({ files: qsTr("Press %1 to view all files"), messages: qsTr("Press %1 to view all messages"), channels: qsTr("Press %1 to view all channels"),
+             groupchats: qsTr("Press %1 to view all group chats"), meetings: qsTr("Press %1 to view all meetings"), images: qsTr("Press %1 to view all images") })[scope] || qsTr("Press %1 to view all results")
+    // The bottom: the tip or "Press Enter", then Send feedback (neither in
+    // a picker or go-to mode).
     Column {
         id: footer
         x: 1.7; y: root.height - height - 4; width: parent.width - 3.4
-        Rectangle { width: parent.width; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D", "#FFFFFF") }
+        Rectangle { visible: root.showPills || root.showEnter; width: parent.width; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D", "#FFFFFF") }
         Item {
             id: tip
-            visible: !root.typed && !root.scope
+            visible: root.mode === "plain" && !root.typed
             width: parent.width; height: visible ? 44 : 0
             RowFill { it: ({ kind: "tip" }) }
             GlyphCircle { x: 16; anchors.verticalCenter: parent.verticalCenter; icon: "lightbulb-20" }
@@ -504,12 +630,12 @@ FluentSurface {
             Accessible.name: qsTr("Tip: Go right to a chat or channel (%1)").arg("Ctrl+G")
         }
         Item {
-            visible: root.typed
+            visible: root.showEnter
             width: parent.width; height: visible ? 32 : 0
             Rectangle { anchors.fill: parent; color: enterHover.hovered ? theme.menuHover : "transparent" }
             Row {
                 anchors.centerIn: parent; spacing: 4
-                readonly property var parts: qsTr("Press %1 to view all results").split("%1")
+                readonly property var parts: root.enterLabel.split("%1")
                 Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parts[0].trim(); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.brand }
                 Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
@@ -522,10 +648,11 @@ FluentSurface {
             HoverHandler { id: enterHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.activate({ kind: "enter" }) }
             Accessible.role: Accessible.Button
-            Accessible.name: qsTr("Press enter to view all results")
+            Accessible.name: root.enterLabel.arg(qsTr("Enter"))
         }
         Item {
-            width: parent.width; height: 32
+            visible: root.showPills
+            width: parent.width; height: visible ? 32 : 0
             Row {
                 anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
                 spacing: 2
