@@ -35,7 +35,15 @@ Rectangle {
         onenote: "0d820ecd-def2-4297-adad-78056cde7c78", clipchamp: "com.microsoftstream.embed.skypeteamstab",
         shifts: "42f6c1da-a241-483a-a3cc-4f5be9185951", avatars: "96a116ab-6847-4d22-90f3-f4dd6af74938"
     })
+    /// Asked before an app is picked (Main's leaving: the multiselect
+    /// speedbump while messages are being picked to forward); it calls
+    /// back to go on.
+    property var leaveGuard: null
     function pick(key) {
+        if (leaveGuard && key !== current) { leaveGuard(() => pickNow(key)); return }
+        pickNow(key)
+    }
+    function pickNow(key) {
         if (split && (key === "chat" || key === "teams")) collabPicked(key === "teams" ? "teams" : "chats")
         else current = key
         if (autoCollapse) collapsed = true
@@ -182,6 +190,10 @@ Rectangle {
     // Teams keeps one slot for an app opened from View more apps: the
     // newest replaces the last.
     function openApp(key) {
+        if (leaveGuard && key !== current) { leaveGuard(() => openAppNow(key)); return }
+        openAppNow(key)
+    }
+    function openAppNow(key) {
         opened = barEntries.some(a => a.key === key) ? opened : [key]
         current = key
     }

@@ -148,6 +148,9 @@ pub struct ReminderItem {
     pub is_due: bool,
     /// Its due record asks for a banner (activityContext.displayBanner).
     pub banner: bool,
+    /// You saved its message (the row's More options offers Unsave this
+    /// message): read from the conversation's reply-chain metadata.
+    pub saved: bool,
 }
 
 /// Your reminders from `48:reminders` (Teams' nF.isMessageValid and
@@ -254,6 +257,7 @@ pub fn reminders_from(v: &serde_json::Value, now_ms: i64) -> Vec<ReminderItem> {
             completed,
             is_due: completed == 0 && (truthy(&p["isdue"]) || due <= now_ms),
             banner: a["activityContext"]["displayBanner"].as_str() != Some("false"),
+            saved: false,
         });
     }
     out.sort_by(|a, b| match (a.completed > 0, b.completed > 0) {
@@ -295,13 +299,40 @@ pub async fn reminder_records(client: &TeamsClient) -> Result<(Vec<serde_json::V
 }
 
 /// Your reminders (Chat ▸ Reminders), and whether the whole stream was
-/// read.
+/// read. Each item says whether you saved its message (Teams' row menu
+/// reads the message's userHasSaved): one reply-chain metadata read per
+/// conversation; one that fails leaves its items unsaved.
 pub async fn reminders(client: &TeamsClient, now_ms: i64) -> Result<(Vec<ReminderItem>, bool)> {
     let (all, whole) = reminder_records(client).await?;
-    Ok((
-        reminders_from(&serde_json::json!({ "messages": all }), now_ms),
-        whole,
-    ))
+    let mut items = reminders_from(&serde_json::json!({ "messages": all }), now_ms);
+    let mut threads: Vec<String> = items.iter().map(|r| r.item.thread_id.clone()).collect();
+    threads.sort();
+    threads.dedup();
+    let reads = futures::future::join_all(
+        threads
+            .iter()
+            .map(|t| super::msgactions::rc_metadata(client, t)),
+    )
+    .await;
+    let saved: std::collections::HashMap<&str, std::collections::HashSet<String>> = threads
+        .iter()
+        .zip(reads)
+        .filter_map(|(t, r)| r.ok().map(|(s, ..)| (t.as_str(), s)))
+        .collect();
+    mark_saved(&mut items, &saved);
+    Ok((items, whole))
+}
+
+/// Mark the reminders whose message is among its conversation's saved ids.
+pub fn mark_saved(
+    items: &mut [ReminderItem],
+    saved: &std::collections::HashMap<&str, std::collections::HashSet<String>>,
+) {
+    for r in items.iter_mut() {
+        r.saved = saved
+            .get(r.item.thread_id.as_str())
+            .is_some_and(|s| s.contains(&r.item.message_id));
+    }
 }
 
 async fn read(client: &TeamsClient, conv: &str) -> Result<serde_json::Value> {
@@ -553,6 +584,35 @@ mod tests {
         assert_eq!(
             f.iter().map(|i| i.preview.as_str()).collect::<Vec<_>>(),
             vec!["kept"]
+        );
+    }
+
+    #[test]
+    fn reminders_marked_saved_by_their_conversation() {
+        let item = |thread: &str, id: &str| ReminderItem {
+            item: QuickItem {
+                thread_id: thread.into(),
+                message_id: id.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut items = vec![
+            item("19:a@thread.v2", "1"),
+            item("19:a@thread.v2", "2"),
+            item("19:b@thread.tacv2", "1"),
+        ];
+        let mut saved = std::collections::HashMap::new();
+        saved.insert(
+            "19:a@thread.v2",
+            ["1".to_string()]
+                .into_iter()
+                .collect::<std::collections::HashSet<_>>(),
+        );
+        mark_saved(&mut items, &saved);
+        assert_eq!(
+            items.iter().map(|r| r.saved).collect::<Vec<_>>(),
+            vec![true, false, false]
         );
     }
 }

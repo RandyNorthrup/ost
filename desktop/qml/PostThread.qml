@@ -101,7 +101,7 @@ Item {
     readonly property var scheduledMeeting: post ? post.scheduled_meeting || null : null
     readonly property bool copilotAvailable: { try { return !!JSON.parse(backend.composeCopilotJson || "{}").channelPost } catch (e) { return false } }
     property bool copilotOpen: false
-    onRootIdChanged: copilotOpen = false
+    onRootIdChanged: { copilotOpen = false; psel.stop() }
     onCopilotAvailableChanged: if (!copilotAvailable) copilotOpen = false
     onCopilotOpenChanged: if (copilotOpen) { finding = false; viewingFound = false; historyOpen = false }
     /// View Copilot history's pane (in Copilot's place).
@@ -199,6 +199,54 @@ Item {
         onQuoteRequested: m => { compose.quote = { message_id: m.id, sender_mri: m.sender_mri || "", sender_name: m.sender || "", preview: m.quote_text || m.text || "" }; compose.focusEditor() }
         onReactRequested: (id, key, on) => backend.toggleReaction(id, key, on)
         onDeleteRequested: id => backend.deleteMessage(id)
+        // Forward ▸ Multiple messages: the post and its replies (Teams'
+        // channel L2, enableForwardMultiselectChannelPane).
+        multiselectContexts: win.chatThread ? [] : ["post", "reply"]
+        onMultiselectRequested: (m, context) => win.startSelecting(m)
+        onForwarded: if (win.selecting) win.stopSelecting()
+        // Ask Copilot (Teams' canAskCopilot in a channel's L2 view, where
+        // its Copilot is: CopilotFromChannelsL2Header): the post view's
+        // Copilot pane, asked about the message.
+        canAskCopilot: win.copilotAvailable && !win.chatThread && !!win.rootId
+        onAskCopilotRequested: m => win.askCopilot(m)
+    }
+    // Ask Copilot (629737 `da` for a channel: the post's Copilot pane gets
+    // Teams' prompt and the message as a Channel annotation).
+    property var copilotAsk: null
+    function askCopilot(m) {
+        const text = thost.askableText(m)
+        if (!text || !copilotAvailable) return
+        const prompt = qsTr("Search for more context and explain this in more detail")
+        const brief = text.split(/\s+/).filter(w => w).length <= 3 && text.length <= 40
+        const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+        const t = teams.find(t => t.id === win.teamId) || teams.find(t => (t.channels || []).some(c => c.id === win.channelId)) || {}
+        copilotAsk = { id: Date.now(), promptText: brief ? prompt + " \"" + text + "\"" : prompt, text: text, chatId: win.channelId,
+                       channel: { channelId: win.channelId, teamId: t.thread_id || "", groupId: t.id || win.teamId, replyChainId: win.rootId, tenantId: backend.tenantId() } }
+        if (!copilotOpen) toggleCopilot()
+        console.info("COPILOT ask on post-view message", m.id)
+    }
+
+    // Forward ▸ Multiple messages in the post view (seen on Teams desktop
+    // 26304 as OST Test 2, 2026-11-27): the post and each reply become
+    // cards of their own, 12 apart (shadow 2, radius 4), with no pictures,
+    // reactions or day lines; the checkbox 13 in, centred; the content 52
+    // in (a reply: its name and time 7 down on one line, the text 24 down;
+    // a grouped one's text 5 down); the compose gives way to the selection
+    // bar. Leaving (Go to channel, Open in new window) asks Discard and
+    // leave first.
+    ForwardSelection { id: psel; messages: win.thread; channel: true }
+    property alias selecting: psel.selecting
+    readonly property var forwardSelection: psel
+    function startSelecting(m) { thost.editingId = ""; psel.start(m) }
+    function stopSelecting() { psel.stop() }
+    function guardLeave(go) {
+        if (!psel.selecting) { go(); return }
+        leaveDialog.go = go
+        leaveDialog.open()
+    }
+    LeaveSelectionDialog {
+        id: leaveDialog
+        onConfirmed: { psel.stop(); const g = go; go = null; if (g) g() }
     }
 
 
@@ -245,7 +293,7 @@ Item {
                 color: goHover.hovered ? theme.hover : "transparent"
                 Text { id: goText; anchors.centerIn: parent; text: qsTr("Go to channel"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, theme.textStrong) }
                 HoverHandler { id: goHover; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: win.goToChannel() }
+                TapHandler { onTapped: win.guardLeave(() => win.goToChannel()) }
                 Accessible.role: Accessible.Button; Accessible.name: qsTr("Go to channel")
             }
             Rectangle {
@@ -255,7 +303,7 @@ Item {
                 color: popHover.hovered ? theme.hover : "transparent"
                 FluentIcon { anchors.centerIn: parent; name: "open-window-20"; size: 20; color: theme.onFill(hcFill2, theme.textStrong) }
                 HoverHandler { id: popHover; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: win.popOut() }
+                TapHandler { onTapped: win.guardLeave(() => win.popOut()) }
                 ToolTip.visible: popHover.hovered; ToolTip.delay: 500; ToolTip.text: qsTr("Open in new window")
                 Accessible.role: Accessible.Button; Accessible.name: qsTr("Open in new window")
             }
@@ -335,6 +383,7 @@ Item {
         z: 6
         open: win.copilotOpen && !!win.rootId
         request: win.copilotRequest
+        ask: win.copilotAsk
         x: win.copilotCovers ? 0 : win.width - width; y: 0
         width: !open ? 0 : win.copilotCovers ? win.width : 360
         height: win.height
@@ -383,7 +432,7 @@ Item {
     Flickable {
         id: flick
         visible: !win.chatThread
-        anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: compose.top; bottomMargin: 38.8; rightMargin: win.paneW }
+        anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: win.selecting ? selectBar.top : compose.top; bottomMargin: win.selecting ? 12 : 38.8; rightMargin: win.paneW }
         clip: true
         contentHeight: card.height + 7 + 3
         boundsBehavior: Flickable.StopAtBounds
@@ -395,11 +444,14 @@ Item {
             x: win.cardX; y: 7
             width: win.cardW
             height: col.height
-            depth: 4; radius: 8
-            color: theme.surface
+            // (Picking: each item draws its own card.)
+            depth: win.selecting ? 0 : 4; radius: 8
+            borderColor: win.selecting ? "transparent" : theme.transparentStroke
+            color: win.selecting ? "transparent" : theme.surface
             Column {
                 id: col
                 width: parent.width
+                spacing: win.selecting ? 12 : 0
                 // The post
                 Item {
                     id: postItem
@@ -407,9 +459,13 @@ Item {
                     readonly property var m: win.post
                     readonly property bool editing: !!m && thost.editingId === m.id
                     readonly property var mark: editing ? null : thost.highlight(m)
-                    height: !m ? 64 : editing ? (postEdit.item ? postEdit.item.height : 0) + 8 : postBody.y + postBody.height + 17 + 26 + 8.7
+                    height: !m ? 64 : editing ? (postEdit.item ? postEdit.item.height : 0) + 8 : win.selecting ? postBody.y + postBody.height + 20 : postBody.y + postBody.height + 17 + 26 + 8.7
+                    // Picking: the content 52 in, no picture.
+                    readonly property real cx: win.selecting ? 52 : 18
+                    FluentSurface { visible: win.selecting; anchors.fill: parent; z: -1; depth: 2; radius: 4; color: theme.surface }
+                    SelectCheck { anchors.fill: parent; selection: psel; message: postItem.m }
                     Rectangle {
-                        visible: !!postItem.mark
+                        visible: !!postItem.mark && !win.selecting
                         x: 4; y: 16; width: 4; height: 32; radius: 2
                         color: postItem.mark ? postItem.mark.color : "transparent"
                     }
@@ -424,14 +480,14 @@ Item {
                         Accessible.name: postItem.mark ? postItem.mark.tip : ""
                     }
                     Avatar {
-                        visible: !!postItem.m && !postItem.editing
+                        visible: !!postItem.m && !postItem.editing && !win.selecting
                         x: 18; y: 16; size: 32
                         name: postItem.m ? win.senderOf(postItem.m) : ""
                         photoId: postItem.m ? postItem.m.sender_mri : ""
                     }
                     Text {
                         visible: !postItem.editing
-                        x: 60; y: 13.4
+                        x: win.selecting ? postItem.cx : 60; y: 13.4
                         text: postItem.m ? win.senderOf(postItem.m) : (win.thread.length ? "" : qsTr("Loading…"))
                         font.family: theme.font; font.pixelSize: 14
                         lineHeight: 20; lineHeightMode: Text.FixedHeight
@@ -439,7 +495,7 @@ Item {
                     }
                     Row {
                         visible: !!postItem.m && !postItem.editing
-                        x: 60; y: 33.4
+                        x: win.selecting ? postItem.cx : 60; y: 33.4
                         spacing: 8
                         Text {
                             text: postItem.m ? thost.conversationStamp(postItem.m.time) : ""
@@ -455,12 +511,15 @@ Item {
                             lineHeight: 16; lineHeightMode: Text.FixedHeight
                             color: theme.textSecondary
                         }
+                        // Saved by you and your reminder (Teams' channel
+                        // status bar, after Edited).
+                        MessageStatusIcons { y: 0.5; message: postItem.m || ({}) }
                     }
                     // The post's subject (as in the channel: 18/600, 16 under).
                     Text {
                         id: postSubject
                         visible: !!postItem.m && !postItem.editing && !!win.postSubject
-                        x: 18; y: 64; width: card.width - 36
+                        x: postItem.cx; y: 64; width: card.width - 18 - postItem.cx
                         wrapMode: Text.Wrap; bottomPadding: 16
                         textFormat: Text.RichText
                         text: win.postSubject ? theme.markTerms(win.postSubject.replace(/&/g, "&amp;").replace(/</g, "&lt;"), win.markFor(postItem.m ? postItem.m.id : "")) : ""
@@ -473,9 +532,9 @@ Item {
                     // 4 wider, 12 above it).
                     ScheduledMeetingCard {
                         id: meetingCard
-                        visible: !!win.scheduledMeeting && !postItem.editing
-                        x: 16; y: 64 + (postSubject.visible ? postSubject.height : 0)
-                        width: card.width - 32; height: visible ? implicitHeight : 0
+                        visible: !!win.scheduledMeeting && !postItem.editing && !win.selecting
+                        x: postItem.cx - 2; y: 64 + (postSubject.visible ? postSubject.height : 0)
+                        width: card.width - 16 - postItem.cx; height: visible ? implicitHeight : 0
                         meeting: win.scheduledMeeting
                         organizer: !!win.scheduledMeeting && !!win.scheduledMeeting.organizer_id && (backend.userMri || "").toLowerCase().indexOf(win.scheduledMeeting.organizer_id.toLowerCase()) >= 0
                         onJoin: win.joinMeeting(win.scheduledMeeting.join_url, win.scheduledMeeting.title)
@@ -485,12 +544,12 @@ Item {
                         id: postBody
                         visible: !!postItem.m && !postItem.editing && !win.meetingPost
                         height: win.meetingPost ? 0 : implicitHeight
-                        x: 18; y: 64 + (postSubject.visible ? postSubject.height : 0) + (meetingCard.visible ? meetingCard.height + 12 : 0); width: card.width - 36
+                        x: postItem.cx; y: 64 + (postSubject.visible ? postSubject.height : 0) + (meetingCard.visible ? meetingCard.height + 12 : 0); width: card.width - 18 - postItem.cx
                         message: postItem.m
                         mark: win.markFor(postItem.m ? postItem.m.id : "")
                     }
                     ReactionSummary {
-                        visible: !!postItem.m && !postItem.editing
+                        visible: !!postItem.m && !postItem.editing && !win.selecting
                         x: 18; y: postBody.y + postBody.height + 17
                         host: thost
                         messageId: postItem.m ? postItem.m.id : ""
@@ -507,7 +566,7 @@ Item {
                     HoverHandler { id: postHover }
                     HoverBar {
                         id: postBar
-                        visible: !!postItem.m && !postItem.m.deleted && !postItem.editing
+                        visible: !!postItem.m && !postItem.m.deleted && !postItem.editing && !win.selecting
                             && (postHover.hovered || postBar.hovered || thost.menuOpenFor(postItem.m.id, "post"))
                         host: thost
                         message: postItem.m || ({})
@@ -519,12 +578,12 @@ Item {
                     }
                     TapHandler {
                         acceptedButtons: Qt.RightButton
-                        enabled: !!postItem.m
+                        enabled: !!postItem.m && !win.selecting
                         onTapped: point => thost.openMessageMenu(postItem.m, postItem, true, point.position.x, point.position.y, "post")
                     }
                 }
                 Rectangle {
-                    visible: win.replies.length > 0
+                    visible: win.replies.length > 0 && !win.selecting
                     width: parent.width; height: 0.67
                     color: theme.pick("#F0F0F0", "#3D3D3D", "#000000")
                 }
@@ -544,7 +603,7 @@ Item {
                         width: card.width
                         z: rep.z
                         Item {
-                            visible: repSlot.divider !== ""
+                            visible: repSlot.divider !== "" && !win.selecting
                             width: card.width; height: visible ? 16 : 0
                             Text {
                                 anchors.centerIn: parent
@@ -569,14 +628,27 @@ Item {
                         // A grouped reply keeps its status bar: "Edited"
                         // on the name's line, the text under it.
                         readonly property bool groupedEdited: grouped && modelData.edited === true && !modelData.deleted
-                        readonly property real bodyY: grouped ? (groupedEdited ? 25.1 : 8) : 42.2
+                        // (And its Saved and reminder icons.)
+                        readonly property bool groupedStatus: grouped && !modelData.deleted && (modelData.edited === true || modelData.saved === true || (modelData.reminder_due || 0) > 0)
+                        readonly property real bodyY: win.selecting ? (grouped ? 5 : 24) : grouped ? (groupedStatus ? 25.1 : 8) : 42.2
                         readonly property var mark: editing || grouped ? null : thost.highlight(modelData)
                         width: card.width
                         readonly property bool callRow: modelData.kind === "call"
                         // Teams' Attendance card under the end, at the text (54), 32 down.
                         readonly property bool attendanceCard: callRow && win.canSeeAttendance && modelData.call_state !== "missed" && modelData.call_state !== "started" && !!modelData.call_id
                         height: callRow ? (attendanceCard ? 32 + 49.3 + 12 : 52) : editing ? (repEdit.item ? repEdit.item.height : 0) + 8
+                            : win.selecting ? bodyY + repBody.height + (grouped ? 5 : 6)
                             : bodyY + repBody.height + ((modelData.reactions || []).length > 0 ? 8 + 26 : 0) + 8.1
+                        FluentSurface { visible: win.selecting; anchors.fill: parent; z: -1; depth: 2; radius: 4; color: theme.surface }
+                        SelectCheck { anchors.fill: parent; selection: psel; message: rep.modelData }
+                        // Picking: the name and time on one line, 52 in.
+                        Row {
+                            visible: win.selecting && !rep.grouped && !rep.callRow
+                            x: 52; y: 7; spacing: 8
+                            Text { text: rep.modelData.sender; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
+                            Text { text: thost.conversationStamp(rep.modelData.time); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+                            Text { visible: rep.modelData.edited === true; text: qsTr("Edited"); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+                        }
                         // A call's end (Teams' call row).
                         FluentIcon {
                             visible: rep.callRow
@@ -603,33 +675,37 @@ Item {
                         }
                         z: repHover.hovered || repBar.hovered ? 2 : 1
                         Rectangle {
-                            visible: !!rep.mark
+                            visible: !!rep.mark && !win.selecting
                             x: 4; y: 8; width: 4; height: 20; radius: 2
                             color: rep.mark ? rep.mark.color : "transparent"
                         }
                         Avatar {
-                            visible: !rep.editing && !rep.callRow && !rep.grouped
+                            visible: !rep.editing && !rep.callRow && !rep.grouped && !win.selecting
                             x: 18; y: 8; size: 20
                             name: rep.modelData.sender; photoId: rep.modelData.sender_mri
                         }
                         Text {
-                            visible: !rep.editing && !rep.callRow && !rep.grouped
+                            visible: !rep.editing && !rep.callRow && !rep.grouped && !win.selecting
                             x: 50; y: 8
                             text: rep.modelData.sender
                             font.family: theme.font; font.pixelSize: 12
                             lineHeight: 17.14; lineHeightMode: Text.FixedHeight
                             color: theme.text
                         }
-                        Text {
-                            visible: rep.groupedEdited && !rep.editing && !rep.callRow
-                            x: 50; y: 8
-                            text: qsTr("Edited")
-                            font.family: theme.font; font.pixelSize: 12
-                            lineHeight: 17.14; lineHeightMode: Text.FixedHeight
-                            color: theme.textSecondary
+                        Row {
+                            visible: rep.groupedStatus && !rep.editing && !rep.callRow && !win.selecting
+                            x: 50; y: 8; spacing: 8
+                            Text {
+                                visible: rep.groupedEdited
+                                text: qsTr("Edited")
+                                font.family: theme.font; font.pixelSize: 12
+                                lineHeight: 17.14; lineHeightMode: Text.FixedHeight
+                                color: theme.textSecondary
+                            }
+                            MessageStatusIcons { y: 0.5; message: rep.modelData }
                         }
                         Row {
-                            visible: !rep.editing && !rep.callRow && !rep.grouped
+                            visible: !rep.editing && !rep.callRow && !rep.grouped && !win.selecting
                             x: 50; y: 25.1
                             spacing: 8
                             Text {
@@ -646,16 +722,17 @@ Item {
                                 lineHeight: 16; lineHeightMode: Text.FixedHeight
                                 color: theme.textSecondary
                             }
+                            MessageStatusIcons { y: 0.5; message: rep.modelData }
                         }
                         PostBody {
                             id: repBody
                             visible: !rep.editing && !rep.callRow
-                            x: 50; y: rep.bodyY; width: card.width - 70
+                            x: win.selecting ? 52 : 50; y: rep.bodyY; width: card.width - 20 - x
                             message: rep.modelData
                             mark: win.markFor(rep.modelData ? rep.modelData.id : "")
                         }
                         ReactionSummary {
-                            visible: !rep.editing && (rep.modelData.reactions || []).length > 0
+                            visible: !rep.editing && (rep.modelData.reactions || []).length > 0 && !win.selecting
                             x: 50; y: repBody.y + repBody.height + 8
                             host: thost
                             messageId: rep.modelData.id
@@ -671,7 +748,7 @@ Item {
                         HoverHandler { id: repHover }
                         HoverBar {
                             id: repBar
-                            visible: !rep.modelData.deleted && !rep.editing && !rep.callRow
+                            visible: !rep.modelData.deleted && !rep.editing && !rep.callRow && !win.selecting
                                 && (repHover.hovered || repBar.hovered || thost.menuOpenFor(rep.modelData.id, "reply"))
                             host: thost
                             message: rep.modelData
@@ -685,6 +762,7 @@ Item {
                         }
                         TapHandler {
                             acceptedButtons: Qt.RightButton
+                            enabled: !win.selecting
                             onTapped: point => thost.openMessageMenu(rep.modelData, rep, true, point.position.x, point.position.y, "reply")
                         }
                     }
@@ -743,9 +821,17 @@ Item {
     }
 
     // Reply in thread
+    ForwardSelectBar {
+        id: selectBar
+        visible: win.selecting && !win.chatThread
+        anchors { left: parent.left; right: parent.right; bottom: parent.bottom; rightMargin: win.paneW }
+        count: psel.selectedIds.length
+        onCancelled: win.stopSelecting()
+        onNext: thost.forwardMany(psel.picked())
+    }
     ComposeBox {
         id: compose
-        visible: !win.chatThread
+        visible: !win.chatThread && !win.selecting
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
         anchors.leftMargin: win.inPane ? Math.max(28, win.cardX - 12) : 28; anchors.rightMargin: win.paneW + (win.inPane ? Math.max(30, win.cardX - 12) : 30)
         anchors.bottomMargin: 8.7 // its box 26.7 above the bottom (the hint row is 18)

@@ -462,29 +462,36 @@ Rectangle {
     // to the selection bar ("{n} selected", Cancel, Next). Deleted, system,
     // unsent and scheduled messages can't be picked, and at most
     // forwardMultiselectSelectionLimit (5) at once.
-    property bool selecting: false
-    property var selectedIds: []
-    readonly property int selectLimit: 5
-    function selectableReason(m) {
-        if (!m || m.kind !== "message" || m.deleted) return "none"
-        if (m.scheduled_at) return qsTr("Scheduled messages can't be forwarded until they're sent.")
-        if (m.send_state) return qsTr("Undelivered messages can't be forwarded.")
-        if (selectedIds.indexOf(m.id) < 0 && selectedIds.length >= selectLimit) return qsTr("You can only forward up to %1 messages at a time.").arg(selectLimit)
-        return ""
+    // (ForwardSelection holds the picks; a classic channel's posts list
+    // picks posts the same way, as Teams' enableForwardMultiselectChannelPane.)
+    ForwardSelection { id: fsel; messages: root.messages; channel: root.isChannel }
+    property alias selecting: fsel.selecting
+    property alias selectedIds: fsel.selectedIds
+    readonly property var forwardSelection: fsel
+    readonly property int selectLimit: fsel.limit
+    function selectableReason(m) { return fsel.reason(m) }
+    function toggleSelected(m) { fsel.toggle(m) }
+    function startSelecting(m) { editingId = ""; fsel.start(m) }
+    function stopSelecting() { fsel.stop(); focusCompose() }
+    function forwardSelected() { msgHost.forwardMany(fsel.picked()) }
+    // Leaving mid-selection (Teams' multiselect speedbump, chat-app
+    // `j_`: a blocking extension on the window's next state change): "Discard
+    // and leave", Cancel keeps picking, Discard drops the picks and goes on.
+    // The post view's picks count too.
+    readonly property bool anySelecting: selecting || (!!postViewLoader.item && postViewLoader.item.selecting)
+    function guardLeave(go) {
+        if (!anySelecting) { go(); return }
+        leaveDialog.go = go
+        leaveDialog.open()
     }
-    function toggleSelected(m) {
-        if (selectableReason(m) !== "" && selectedIds.indexOf(m.id) < 0) return
-        const i = selectedIds.indexOf(m.id)
-        const next = selectedIds.slice()
-        if (i >= 0) next.splice(i, 1); else next.push(m.id)
-        selectedIds = next
-    }
-    function startSelecting(m) { editingId = ""; selectedIds = m ? [m.id] : []; selecting = true }
-    function stopSelecting() { selecting = false; selectedIds = []; focusCompose() }
-    function forwardSelected() {
-        const ids = selectedIds.slice().sort((a, b) => Number(a) - Number(b))
-        const list = ids.map(id => (root.messages || []).find(m => m.id === id)).filter(m => !!m)
-        msgHost.forwardMany(list)
+    LeaveSelectionDialog {
+        id: leaveDialog
+        onConfirmed: {
+            if (root.selecting) root.stopSelecting()
+            if (postViewLoader.item && postViewLoader.item.selecting) postViewLoader.item.stopSelecting()
+            const g = go; go = null
+            if (g) g()
+        }
     }
     readonly property real gutR: width < 480 ? 28 : width < 720 ? 32 : 72
     readonly property real composeGut: width < 480 ? 14 : width < 720 ? 32 : 72
@@ -1166,12 +1173,15 @@ Rectangle {
         onRecordClipRequestedFor: box => { root.clipBox = box; clipRecorder.openFor(root.chatId) }
         // Forward ▸ Multiple messages in chats (Teams'
         // enableForwardMultiselectChatPane); not in a lobby's read-only view.
-        multiselectContexts: !root.isChannel && !root.readOnly && !root.threadPane ? ["chat"] : []
+        // A classic channel's posts list picks posts (its replies there
+        // can't be: canForwardMultiselect is off for an L1 ChannelReply).
+        multiselectContexts: root.readOnly || root.threadPane ? [] : !root.isChannel ? ["chat"] : root.postsLayout && !root.pane ? ["post"] : []
         onMultiselectRequested: (m, context) => root.startSelecting(m)
         onForwarded: if (root.selecting) root.stopSelecting()
-        // Ask Copilot: the chat's Copilot pane, asked about the message.
-        canAskCopilot: root.copilotButton > 0
-        onAskCopilotRequested: m => root.askCopilot(m)
+        // Ask Copilot: the chat's Copilot pane, asked about the message; in
+        // a Threads channel's thread pane, the pane's own (askCopilotHere).
+        canAskCopilot: root.copilotButton > 0 || root.askCopilotHere
+        onAskCopilotRequested: m => root.copilotButton > 0 ? root.askCopilot(m) : root.askCopilotElsewhere(m)
     }
     // Ask Copilot (629737 `da`): Copilot's side pane opens (or stays) on
     // this chat and gets Teams' prompt, "Search for more context and
@@ -1179,6 +1189,11 @@ Rectangle {
     // the message as its annotation; a message of up to 3 words and 40
     // characters goes in the prompt itself (740386 `m`). It runs at once.
     property var copilotAsk: null
+    /// A thread pane whose host has a Copilot pane (Teams' channel L2:
+    /// openThreadsCopilot with the prompt); askCopilotElsewhere hands it on.
+    property bool askCopilotHere: false
+    signal askCopilotElsewhere(var message)
+    function askableTextFor(m) { return msgHost.askableText(m) }
     function askCopilot(m) {
         const text = msgHost.askableText(m)
         if (!text || !copilotButton) return
@@ -2374,8 +2389,9 @@ Rectangle {
         id: channelPosts
         visible: root.postsLayout && root.tab === ""
         findMark: root.findMark
-        anchors { top: header.bottom; bottom: root.posting && !newestAtTop ? compose.top : parent.bottom; left: parent.left; right: parent.right }
-        anchors.bottomMargin: root.posting && !newestAtTop ? 12 : 0
+        anchors { top: header.bottom; bottom: root.selecting ? selectBar.top : root.posting && !newestAtTop ? compose.top : parent.bottom; left: parent.left; right: parent.right }
+        anchors.bottomMargin: root.posting && !newestAtTop && !root.selecting ? 12 : 0
+        selection: fsel
         // See new posts at top: the composer opens in the list's top card.
         newestAtTop: backend.channelPostsAtTop
         composerHeight: compose.boxHeight + compose.bannerShownH

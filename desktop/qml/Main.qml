@@ -674,8 +674,17 @@ Window {
         if (e.view === "chat" && e.chatId && e.chatId !== backend.currentChatId) backend.selectChat(e.chatId, e.chatName)
         navApplying = false
     }
-    function goBack() { if (conversation.channelAttendance) { conversation.channelAttendance = null; return } if (navIndex > 0) navApply(navIndex - 1) }
-    function goForward() { if (navIndex < navStack.length - 1) navApply(navIndex + 1) }
+    function goBack() { if (conversation.channelAttendance) { conversation.channelAttendance = null; return } if (navIndex > 0) leaving(() => navApply(navIndex - 1)) }
+    function goForward() { if (navIndex < navStack.length - 1) leaving(() => navApply(navIndex + 1)) }
+    // Leaving the shown chat or channel while picking messages to forward
+    // (Teams' multiselect speedbump, a blocking extension on the window's
+    // next state change): it asks "Discard and leave" first; `go` runs on
+    // Discard, or at once when nothing is being picked.
+    function leaving(go) {
+        if (conversation.visible && conversation.anySelecting) conversation.guardLeave(go)
+        else if (followedPost.visible && followedPost.selecting) followedPost.guardLeave(go)
+        else go()
+    }
     Connections {
         target: backend
         function onCurrentChatIdChanged() { window.navRecord() }
@@ -17246,6 +17255,7 @@ Window {
         split: window.splitView
         collabPane: window.collabPane
         onCollabPicked: pane => window.openCollab(pane)
+        leaveGuard: go => window.leaving(go)
         // The app bar menu (TileContextMenu).
         onPopOutRequested: key => window.popOutApp(key)
         onAboutRequested: key => appDetails.show(rail.idOf(key))
@@ -18164,8 +18174,8 @@ Window {
         teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
         // The new chat form selects nothing but its own row.
         currentId: window.composing ? "" : backend.currentChatId
-        onChatSelected: (id, name) => { window.composing = false; copilotOpen = false; draftsOpen = false; mentionsOpen = false; quickOpen = ""; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; backend.selectChat(id, name) }
-        onNewChat: { copilotOpen = false; draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; window.startNewChat() }
+        onChatSelected: (id, name) => window.leaving(() => { window.composing = false; copilotOpen = false; draftsOpen = false; mentionsOpen = false; quickOpen = ""; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; backend.selectChat(id, name) })
+        onNewChat: window.leaving(() => { copilotOpen = false; draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; window.startNewChat() })
         // New items ▸ (Teams' Nb): the pop-out compose, a storyline post
         // (your own chat on its Storyline tab, Teams' clickStorylineCreation),
         // Join team and New team.
@@ -18179,8 +18189,8 @@ Window {
         onJoinTeam: window.openTeamPage("join")
         onNewTeam: createTeamDialog.startScratch()
         mentionsUnread: mentionsView.mentions.filter(m => m.unread).length
-        onOpenCopilot: { window.composing = false; draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; quickOpen = ""; window.manage = null; window.manageTeamId = ""; copilotOpen = true }
-        onOpenYourTeams: window.openYourTeams("teams")
+        onOpenCopilot: window.leaving(() => { window.composing = false; draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; quickOpen = ""; window.manage = null; window.manageTeamId = ""; copilotOpen = true })
+        onOpenYourTeams: window.leaving(() => window.openYourTeams("teams"))
         onOpenChatWindow: (id, name, photo, presence) => window.openChatWindow(id, name, photo, presence)
         onManageChatApps: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; if (backend.currentChatId !== id) backend.selectChat(id, name); conversation.manageApps = true }
         onChatWorkflows: (id, name) => workflowsDialog.startChat(id, name)
@@ -18190,10 +18200,10 @@ Window {
         composing: window.composing
         onOpenComposing: window.composing = true
         draftIds: (backend.draftsJson ? JSON.parse(backend.draftsJson) : []).map(d => d.id)
-        onOpenDrafts: { window.composing = false; copilotOpen = false; mentionsOpen = false; yourTeamsOpen = false; quickOpen = ""; draftsOpen = true }
+        onOpenDrafts: window.leaving(() => { window.composing = false; copilotOpen = false; mentionsOpen = false; yourTeamsOpen = false; quickOpen = ""; draftsOpen = true })
         hasMentions: mentionsView.mentions.length > 0
-        onOpenMentions: { window.composing = false; copilotOpen = false; draftsOpen = false; yourTeamsOpen = false; quickOpen = ""; mentionsOpen = true; mentionsView.selectedId = "" }
-        onOpenQuick: kind => { window.composing = false; copilotOpen = false; draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; window.manage = null; window.manageTeamId = ""; quickOpen = kind; quickView.selectedKey = "" }
+        onOpenMentions: window.leaving(() => { window.composing = false; copilotOpen = false; draftsOpen = false; yourTeamsOpen = false; quickOpen = ""; mentionsOpen = true; mentionsView.selectedId = "" })
+        onOpenQuick: kind => window.leaving(() => { window.composing = false; copilotOpen = false; draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; window.manage = null; window.manageTeamId = ""; quickOpen = kind; quickView.selectedKey = "" })
         onOpenCommunities: rail.openApp("communities")
     }
     // Copilot from the chat list's top row, as Teams hosts it (docs/spec/
@@ -18241,7 +18251,9 @@ Window {
     // item's chat or channel beside it.
     QuickListView {
         id: quickView
-        kind: chatList.quickOpen === "saved" ? "saved" : "followed"
+        // (Discover has a view of its own; TASK-0365's change left Reminders
+        // showing Followed threads.)
+        kind: chatList.quickOpen === "saved" || chatList.quickOpen === "reminders" ? chatList.quickOpen : "followed"
         visible: rail.current === "chat" && !!chatList.quickOpen && chatList.quickOpen !== "discover"
         enterToOpen: window.enterToShow
         // (With the thread view's Copilot open the list takes the chat
@@ -18254,7 +18266,23 @@ Window {
         onVisibleChanged: if (!visible) threadPick = null
         onKindChanged: threadPick = null
         onBackRequested: followedPost.copilotOpen = false
-        onOpenItem: item => {
+        onOpenItem: item => window.leaving(() => quickView.openPicked(item))
+        // A reminder's Open in new window: a channel post's conversation in
+        // a thread window, a chat in a chat window.
+        onOpenInWindow: item => {
+            const c = item.channel ? quickView.channelOf(item.thread_id) : null
+            if (c) {
+                const w = followedWindowComponent.createObject(null, { channelId: item.thread_id, rootId: item.reply_chain || item.message_id, teamId: c.team.id, teamName: c.team.name, channelName: c.name, myName: backend.userName })
+                w.closing.connect(() => w.destroy())
+                w.joinMeeting.connect((url, title) => preJoin.openFor(url, title, "", ""))
+                w.openMeetingDetails.connect((url, start) => { rail.current = "calendar"; calendarView.showMeeting(url, "", start, true) })
+                w.show()
+                return
+            }
+            const chat = chatList.chats.find(x => x.id === item.thread_id)
+            window.openChatWindow(item.thread_id, chat ? chat.name : quickView.titleOf(item), chat ? chat.peerMri || "" : "", chat ? chat.presence || "" : "")
+        }
+        function openPicked(item) {
             // A channel's thread: Teams' post view in the list's right
             // (TASK-0265, measured on winpc 2026-11-24); a Threads
             // channel's thread shows under the same header as a chat.
@@ -18339,6 +18367,9 @@ Window {
         onDeleteMessage: id => backend.deleteMessage(id)
         onEditMessage: (id, text) => backend.editMessage(id, text)
         onJoinMeetingRequested: (url, title) => preJoin.openFor(url, title, "", "")
+        // Ask Copilot: the post view's Copilot pane beside it.
+        askCopilotHere: followedPost.copilotAvailable && visible
+        onAskCopilotElsewhere: m => followedPost.askCopilot(m)
     }
     Component { id: followedWindowComponent; ThreadWindow {} }
     // Quick views ▸ Discover: Teams' suggested channel posts.

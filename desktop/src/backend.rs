@@ -2698,6 +2698,17 @@ pub mod qobject {
             message_id: &QString,
             reply_chain: &QString,
         );
+        /// A Reminders row's Save / Unsave this message (by its message,
+        /// which need not be loaded): the row and any shown copy flip at
+        /// once and go back if the save fails.
+        #[qinvokable]
+        fn set_saved_at(
+            self: Pin<&mut Backend>,
+            thread_id: &QString,
+            message_id: &QString,
+            reply_chain: &QString,
+            save: bool,
+        );
 
         /// The Activity view is showing: mark the feed read, as Teams does.
         #[qinvokable]
@@ -25106,10 +25117,81 @@ impl qobject::Backend {
                 }
             }
         }
+        // A shown copy of the message knows best whether it is saved (a
+        // save made here a moment ago).
+        let mut items = items;
+        {
+            let timelines = server_timelines().lock().unwrap();
+            for r in items.iter_mut() {
+                if let Some(m) = timelines
+                    .values()
+                    .flat_map(|t| t.iter())
+                    .find(|m| m.id == r.item.message_id)
+                {
+                    r.saved = m.saved;
+                }
+            }
+        }
         self.as_mut().refresh_lies();
         let json = serde_json::to_string(&items).unwrap_or_else(|_| "[]".into());
         self.as_mut()
             .set_reminders_json(QString::from(json.as_str()));
+    }
+
+    /// Flip a Reminders row's saved mark (remindersJson) by its message.
+    fn mark_reminder_saved(mut self: Pin<&mut Self>, thread: &str, id: &str, save: bool) {
+        let mut v: serde_json::Value =
+            serde_json::from_str(&self.rust().reminders_json.to_string()).unwrap_or_default();
+        let mut changed = false;
+        for r in v.as_array_mut().into_iter().flatten() {
+            if r["thread_id"].as_str() == Some(thread) && r["message_id"].as_str() == Some(id) {
+                r["saved"] = serde_json::Value::Bool(save);
+                changed = true;
+            }
+        }
+        if changed {
+            self.as_mut()
+                .set_reminders_json(QString::from(v.to_string().as_str()));
+        }
+    }
+
+    pub fn set_saved_at(
+        mut self: Pin<&mut Self>,
+        thread_id: &QString,
+        message_id: &QString,
+        reply_chain: &QString,
+        save: bool,
+    ) {
+        let (conv, id, chain) = (
+            thread_id.to_string(),
+            message_id.to_string(),
+            reply_chain.to_string(),
+        );
+        // A chat's message is its own reply chain.
+        let chain = if chain == id { String::new() } else { chain };
+        self.as_mut().mark_reminder_saved(&conv, &id, save);
+        self.as_mut().update_shown(&id, |m| m.saved = save);
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::msgactions::set_saved(&client, &conv, &chain, &id, save).await
+            }
+            .await;
+            if let Err(e) = result {
+                tracing::warn!("save failed: {}", short_error(&e));
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut().mark_reminder_saved(&conv, &id, !save);
+                    this.as_mut().update_shown(&id, |m| m.saved = !save);
+                    let msg = if save {
+                        tr("Your item couldn't be saved")
+                    } else {
+                        tr("Your item couldn't be unsaved")
+                    };
+                    this.as_mut().set_status_text(QString::from(msg));
+                });
+            }
+        });
     }
 
     pub fn set_reminder_at(
