@@ -1017,21 +1017,41 @@ fn attendees_of(e: &serde_json::Value) -> Vec<Attendee> {
         .collect()
 }
 
+/// The path of an event in `calendar`: yours (`""` or one of your
+/// calendars' ids, as `/me/events`), or a team's group calendar
+/// (`group:<id>`, the Meetings pane's channel meetings).
+pub fn event_path_in(calendar: &str, id: &str) -> Result<String> {
+    match calendar.strip_prefix("group:") {
+        Some(g) if !g.is_empty() && g.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') => {
+            Ok(format!("/groups/{g}/events/{}", event_path_id(id)?))
+        }
+        Some(_) => bail!("Not a group id"),
+        None => Ok(format!("/me/events/{}", event_path_id(id)?)),
+    }
+}
+
 /// An event as its page needs it: the body (HTML), the invitees with
-/// their answers and, for a series, its recurrence.
-pub async fn event_detail(client: &TeamsClient, id: &str) -> Result<serde_json::Value> {
-    let v: serde_json::Value = client
-        .graph_get_with(
-            &format!(
-                "/me/events/{}?$select=body,attendees,recurrence,onlineMeeting,type,seriesMasterId,createdDateTime,isReminderOn,reminderMinutesBeforeStart,responseRequested,hideAttendees",
-                event_path_id(id)?
-            ),
-            &[("Prefer", "IdType=\"ImmutableId\"")],
-        )
-        .await?
-        .json()
-        .await
-        .context("Failed to read the event")?;
+/// their answers and, for a series, its recurrence; `calendar` as
+/// [`event_path_in`] takes it.
+pub async fn event_detail(
+    client: &TeamsClient,
+    calendar: &str,
+    id: &str,
+) -> Result<serde_json::Value> {
+    let group = calendar.starts_with("group:");
+    let path = format!(
+        "{}?$select=body,attendees,recurrence,onlineMeeting,type,seriesMasterId,createdDateTime,isReminderOn,reminderMinutesBeforeStart,responseRequested,hideAttendees",
+        event_path_in(calendar, id)?
+    );
+    // (A group calendar's ids are the ones its calendarView gave, not
+    // immutable ones.)
+    let prefer: &[(&str, &str)] = if group {
+        &[]
+    } else {
+        &[("Prefer", "IdType=\"ImmutableId\"")]
+    };
+    let resp = client.graph_get_with(&path, prefer).await?;
+    let v: serde_json::Value = resp.json().await.context("Failed to read the event")?;
     // An occurrence has no recurrence of its own: its series' (what
     // Outlook's form shows on Edit series).
     let mut recurrence = v
@@ -1045,8 +1065,8 @@ pub async fn event_detail(client: &TeamsClient, id: &str) -> Result<serde_json::
             .filter(|m| !m.is_empty())
         && let Ok(r) = client
             .graph_get_with(
-                &format!("/me/events/{}?$select=recurrence", event_path_id(master)?),
-                &[("Prefer", "IdType=\"ImmutableId\"")],
+                &format!("{}?$select=recurrence", event_path_in(calendar, master)?),
+                prefer,
             )
             .await
     {
@@ -3673,6 +3693,20 @@ mod tests {
 
 #[cfg(test)]
 mod older_tests {
+    #[test]
+    fn a_team_calendar_event_is_read_from_its_group() {
+        let g = "0f8b0c54-3b5d-4e8f-9a2e-1c2d3e4f5a6b";
+        assert_eq!(
+            super::event_path_in(&format!("group:{g}"), "AAMkAG=").unwrap(),
+            format!("/groups/{g}/events/AAMkAG=")
+        );
+        assert_eq!(
+            super::event_path_in("", "AAMkAG=").unwrap(),
+            "/me/events/AAMkAG="
+        );
+        assert!(super::event_path_in("group:../x", "AAMkAG=").is_err());
+        assert!(super::event_path_in(&format!("group:{g}"), "../x").is_err());
+    }
     #[test]
     fn event_ids_are_checked_before_use_in_paths() {
         assert!(super::event_path_id("AAMkADg0ODhl_-=").is_ok());

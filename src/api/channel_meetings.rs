@@ -202,6 +202,47 @@ fn teams_uid(e: &serde_json::Value) -> String {
     }
 }
 
+/// Add to calendar (a channel meeting read from its team's calendar, not
+/// in yours), as Teams' calendar service does (AddToMyCalendar,
+/// worker `executeAddToMyCalendar`): `POST {mt}/beta/teams/{team
+/// address}/addtomycalendar/{eventId}?useICalUId=false` (204), the team's
+/// group mail as the address and the event id the group calendar gave.
+pub async fn add_to_my_calendar(
+    client: &TeamsClient,
+    group_id: &str,
+    event_id: &str,
+) -> Result<()> {
+    anyhow::ensure!(uuid::Uuid::parse_str(group_id).is_ok(), "Not a team");
+    anyhow::ensure!(
+        !event_id.is_empty() && !event_id.contains(['/', '?', '#']),
+        "Not an event"
+    );
+    let g: serde_json::Value = client
+        .graph_get(&format!("/groups/{group_id}?$select=mail"))
+        .await?
+        .json()
+        .await
+        .context("Team")?;
+    let mail = g["mail"].as_str().unwrap_or_default();
+    anyhow::ensure!(mail.contains('@'), "The team has no address");
+    let (base, token) = super::tabs::middle_tier(client).await?;
+    let enc = super::tabs::encode_uri_component;
+    client
+        .http()
+        .post(format!(
+            "{base}/beta/teams/{}/addtomycalendar/{}?useICalUId=false",
+            enc(mail),
+            enc(event_id)
+        ))
+        .bearer_auth(&token)
+        .header("Content-Length", "0")
+        .send()
+        .await?
+        .error_for_status()
+        .context("Add to calendar")?;
+    Ok(())
+}
+
 fn iso(t: jiff::Timestamp) -> String {
     crate::clock::iso_ms(t)
 }

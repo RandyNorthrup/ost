@@ -27184,21 +27184,23 @@ impl qobject::Backend {
                         Ok(out)
                     }
                     // The channel header's people button (Teams' channel
-                    // audience): the team's people (you first), its
-                    // agents and bots, and the team.
+                    // audience): the channel's recent contributors (then
+                    // its members) as People, the team's agents and bots
+                    // as Teams lists them, and the team. arg {own: a
+                    // private or shared channel, whose roster is its own}.
                     "channel-audience" => {
-                        let (roster, apps) = tokio::join!(
-                            api::channels::team_people(&client, &team_thread),
+                        let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                        let own = a["own"].as_bool().unwrap_or(false);
+                        let (people, apps) = tokio::join!(
+                            api::channels::channel_people(&client, &team_thread, &channel, own),
                             api::store_content::team_apps(&client, &team_thread)
                         );
-                        let me = client.self_mri().unwrap_or_default().to_lowercase();
-                        let mut people: Vec<serde_json::Value> = roster?
+                        let people: Vec<serde_json::Value> = people?
                             .into_iter()
-                            .map(|(mri, name)| json!({ "me": mri.to_lowercase() == me, "mri": mri, "name": name }))
+                            .map(|(mri, name)| json!({ "mri": mri, "name": name }))
                             .collect();
-                        people.sort_by_key(|p| p["me"].as_bool() != Some(true));
                         let mut bots = Vec::new();
-                        for mut a in apps.unwrap_or_default().into_iter().filter(|a| a.bot) {
+                        for mut a in api::store_content::channel_agents(apps.unwrap_or_default()) {
                             if a.icon.starts_with("https://")
                                 && let Ok(path) = public_image_file(&client, &a.icon).await
                             {
@@ -27207,6 +27209,23 @@ impl qobject::Backend {
                             bots.push(json!({ "id": a.id, "name": a.name, "icon": a.icon }));
                         }
                         Ok(json!({ "people": people, "bots": bots }))
+                    }
+                    // The Meetings pane's Organizer: the team's members in
+                    // the roster's order (Teams reads 50), named, with
+                    // their addresses.
+                    "channel-organizers" => {
+                        let mris = api::channels::thread_members_in_order(&client, &team_thread, 50).await?;
+                        let records = api::directory::short_profile_records(&client, &mris).await.unwrap_or_default();
+                        let people: Vec<serde_json::Value> = mris
+                            .iter()
+                            .map(|m| {
+                                let r = records.iter().find(|r| r["mri"].as_str().is_some_and(|x| x.eq_ignore_ascii_case(m)));
+                                let s = |k: &str| r.and_then(|r| r[k].as_str()).unwrap_or_default().to_string();
+                                let mail = Some(s("email")).filter(|x| !x.is_empty()).unwrap_or_else(|| s("userPrincipalName"));
+                                json!({ "mri": m, "name": s("displayName"), "mail": mail })
+                            })
+                            .collect();
+                        Ok(json!({ "people": people }))
                     }
                     // The channel header's Mark as unread / Mark as read
                     // (Teams' change read status: the bookmark at the
@@ -27701,7 +27720,7 @@ impl qobject::Backend {
                     }
                     return;
                 }
-                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "team-apps" | "team-app-remove" | "team-webhook" | "channel-add-members" | "analytics" | "cross-team-analytics" | "invitations" | "chat-apps" | "chat-app-remove" | "meeting-chat-report-info" | "notify-tagged" | "notify-on" | "notify-off" | "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "channel-meetings" | "channel-audience") {
+                if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "team-apps" | "team-app-remove" | "team-webhook" | "channel-add-members" | "analytics" | "cross-team-analytics" | "invitations" | "chat-apps" | "chat-app-remove" | "meeting-chat-report-info" | "notify-tagged" | "notify-on" | "notify-off" | "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "channel-meetings" | "channel-audience" | "channel-organizers") {
                     this.as_mut().load_teams();
                 }
             });
@@ -30921,6 +30940,7 @@ impl qobject::Backend {
         };
         let busy = match op.as_str() {
             "respond" => tr("Sending your response…"),
+            "addToMyCalendar" => tr("Adding to your calendar…"),
             "schedule" => tr("Scheduling..."),
             "update" => tr("Sending update…"),
             "cancel" => tr("Cancelling…"),
@@ -30937,7 +30957,9 @@ impl qobject::Backend {
             let result: anyhow::Result<serde_json::Value> = async {
                 let client = TeamsClient::new().await?;
                 match op.as_str() {
-                    "detail" => api::calendar::event_detail(&client, &s("id")).await,
+                    "detail" => api::calendar::event_detail(&client, &s("calendar"), &s("id")).await,
+                    // A team calendar's meeting into yours: {group, id}.
+                    "addToMyCalendar" => api::channel_meetings::add_to_my_calendar(&client, &s("group"), &s("id")).await.map(|_| json!({ "id": s("id") })),
                     // Outlook's event form: what it reads of the event
                     // beyond Graph, its time suggestions, and what it saves
                     // at once (email reminders, a new category,
@@ -31231,7 +31253,7 @@ impl qobject::Backend {
                         (String::new(), short_error(&e))
                     }
                 };
-                if ["respond", "schedule", "update", "cancel", "propose", "charm", "patchEvent", "emailReminders", "newCategory"].contains(&op2.as_str()) {
+                if ["respond", "addToMyCalendar", "schedule", "update", "cancel", "propose", "charm", "patchEvent", "emailReminders", "newCategory"].contains(&op2.as_str()) {
                     this.as_mut().set_status_text(QString::from(error.as_str()));
                     if error.is_empty() {
                         this.as_mut().refresh_calendar();

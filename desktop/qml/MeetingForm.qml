@@ -47,6 +47,8 @@ Item {
     /// or "series".
     signal cancelMeeting(string note, string scope)
     signal respond(string response, bool sendResponse, string note, bool series)
+    /// Add to calendar (a team calendar's meeting, Teams' AddToMyCalendar).
+    signal addToCalendar()
     signal join()
     signal openChat()
     signal copyLink()
@@ -118,6 +120,10 @@ Item {
     /// "<subject> - Meeting - Calendar", the answers in the command bar,
     /// the fields read-only.
     readonly property bool outlookPage: existing && !channel
+    /// A channel meeting read from its team's calendar (not in yours: the
+    /// Meetings pane's): Teams' channel event page, Add to calendar and
+    /// Copy link in place of the answers.
+    readonly property bool teamCalendarEvent: String(event.calendar_id || "").startsWith("group:")
     readonly property bool outlookRead: outlookPage && readOnly
     readonly property bool outlookEdit: outlookPage && !readOnly
     readonly property bool readOnly: mode === "view"
@@ -929,11 +935,19 @@ Item {
                     onPicked: i => root.openCancel(["occurrence", "following", "series"][i])
                 }
             }
-            BarButton2 { visible: root.mode === "edit" && !!root.event.join_url; icon: "link-20"; label: qsTr("Copy link"); onClicked: root.copyLink() }
+            // A team calendar's meeting (Teams' channel event page: Add to
+            // calendar, a line, Copy link, Show as greyed).
+            BarButton2 {
+                visible: root.readOnly && root.teamCalendarEvent
+                icon: "add-20"; iconColor: theme.brand; label: qsTr("Add to calendar"); strong: true
+                onClicked: root.addToCalendar()
+            }
+            Rectangle { visible: root.readOnly && root.teamCalendarEvent; width: 1; height: 20; y: 10; color: theme.divider }
+            BarButton2 { visible: (root.mode === "edit" || root.teamCalendarEvent) && !!root.event.join_url; icon: "link-20"; label: qsTr("Copy link"); onClicked: root.copyLink() }
             Rectangle { visible: root.mode === "edit"; width: 1; height: 20; y: 10; color: theme.divider }
             // An invitation.
             Repeater {
-                model: root.readOnly ? [
+                model: root.readOnly && !root.teamCalendarEvent ? [
                     { r: "Accept", t: qsTr("Accept"), icon: "checkmark-20", c: theme.hc("#498205", "#3FF23F"), on: root.event.response === "accepted" },
                     { r: "Tentative", t: qsTr("Tentative"), icon: "question-circle-20", c: theme.hc("#881798", "#FFFFFF"), on: root.event.response === "tentativelyAccepted" },
                     { r: "Decline", t: qsTr("Decline"), icon: "dismiss-20", c: theme.hc("#A4262C", "#FFFFFF"), on: root.event.response === "declined" },
@@ -949,8 +963,8 @@ Item {
                     }
                 }
             }
-            BarButton2 { visible: root.readOnly; icon: "note-edit-20"; label: qsTr("RSVP with note"); onClicked: rsvpDialog.openFor() }
-            Rectangle { visible: root.readOnly; width: 1; height: 20; y: 10; color: theme.divider }
+            BarButton2 { visible: root.readOnly && !root.teamCalendarEvent; icon: "note-edit-20"; label: qsTr("RSVP with note"); onClicked: rsvpDialog.openFor() }
+            Rectangle { visible: root.readOnly && !root.teamCalendarEvent; width: 1; height: 20; y: 10; color: theme.divider }
             BarButton2 {
                 id: showAsBtn
                 label: qsTr("Show as: %1").arg(root.showAsLabels[root.showAs] || qsTr("Busy")); chevron: true

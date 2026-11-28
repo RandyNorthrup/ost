@@ -1563,9 +1563,32 @@ pub struct TeamApp {
     pub publisher: String,
     pub icon: String,
     pub state: String,
-    /// The app has a bot (its definition's `bots`): the channel header's
-    /// people button lists it under Agents and bots.
+    /// The app has a bot (its definition's `bots`).
     pub bot: bool,
+    /// Its bot only sends notifications (`bots[0].isNotificationOnly`):
+    /// Teams leaves it out of the channel's Agents and bots.
+    pub notification_only: bool,
+}
+
+/// Teams' outgoing webhook app (its Messaging setting
+/// `outgoingWebhookAppId`): installed into teams as an app with a bot, but
+/// not an agent.
+pub const OUTGOING_WEBHOOK_APP: &str = "aa39b2f8-3c8d-4ce1-8b8b-7fe02c59ae3e";
+
+/// A team's apps as the channel header's Agents and bots lists them
+/// (Teams' useInstalledAgents): the ones with a bot, less the outgoing
+/// webhook app and notification-only bots, by name. (Polls, Updates and
+/// Power BI are notification-only: OST Test Team lists only Forms, as
+/// Teams does.)
+pub fn channel_agents(apps: Vec<TeamApp>) -> Vec<TeamApp> {
+    let mut out: Vec<TeamApp> = apps
+        .into_iter()
+        .filter(|a| {
+            a.bot && !a.notification_only && !a.id.eq_ignore_ascii_case(OUTGOING_WEBHOOK_APP)
+        })
+        .collect();
+    out.sort_by_key(|a| a.name.to_lowercase());
+    out
 }
 
 /// The apps in a team's app-definitions reply (each entry either carries
@@ -1612,6 +1635,10 @@ pub fn team_apps_from(v: &serde_json::Value) -> Vec<TeamApp> {
                     .get("bots")
                     .and_then(|b| b.as_array())
                     .is_some_and(|b| !b.is_empty()),
+                notification_only: d
+                    .pointer("/bots/0/isNotificationOnly")
+                    .and_then(|n| n.as_bool())
+                    .unwrap_or(false),
             })
         })
         .collect();
@@ -1761,6 +1788,10 @@ pub fn team_apps_from_aggregated(v: &serde_json::Value, team_thread: &str) -> Ve
                 bot: d
                     .and_then(|d| d["bots"].as_array())
                     .is_some_and(|b| !b.is_empty()),
+                notification_only: d
+                    .and_then(|d| d.pointer("/bots/0/isNotificationOnly"))
+                    .and_then(|n| n.as_bool())
+                    .unwrap_or(false),
                 id,
             })
         })
@@ -1891,6 +1922,32 @@ pub fn entitlements_from(v: &serde_json::Value) -> Vec<(String, String)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn channel_agents_are_teams_installed_bots_less_notification_only_and_webhooks() {
+        // OST Test Team's entitlements (2026-11-27): Teams lists Forms only.
+        let v = serde_json::json!({ "value": {
+            "teamsEntitlements": { "19:t@thread.tacv2": [
+                { "id": OUTGOING_WEBHOOK_APP, "state": "InstalledAndPermanent" },
+                { "id": "polls", "state": "Installed" },
+                { "id": "forms", "state": "Installed" },
+                { "id": "jira", "state": "NotInstalled" },
+                { "id": "files", "state": "Installed" }
+            ] },
+            "definitions": {
+                OUTGOING_WEBHOOK_APP: { "name": "Outgoing Webhook", "bots": [{ "id": "w" }] },
+                "polls": { "name": "Polls", "bots": [{ "id": "p", "isNotificationOnly": true }] },
+                "forms": { "name": "Forms for Microsoft Teams", "bots": [{ "id": "f", "isNotificationOnly": false }] },
+                "jira": { "name": "Jira", "bots": [{ "id": "j" }] },
+                "files": { "name": "Files" }
+            }
+        } });
+        let names: Vec<String> = channel_agents(team_apps_from_aggregated(&v, "19:t@thread.tacv2"))
+            .into_iter()
+            .map(|a| a.name)
+            .collect();
+        assert_eq!(names, vec!["Forms for Microsoft Teams"]);
+    }
+
     use super::*;
 
     #[test]

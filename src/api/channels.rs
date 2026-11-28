@@ -895,12 +895,105 @@ pub fn roster_from(v: &serde_json::Value) -> Vec<RosterMember> {
         .collect()
 }
 
-/// A team's people for the channel header's people popover and the
-/// Meetings pane's Organizer filter: the thread's members (two roster
-/// reads) named by one batched fetchShortProfile, kept for five minutes per
-/// team (Manage team's [`team_roster`] looks each person up in Graph,
-/// which a popover can't wait for).
-pub async fn team_people(client: &TeamsClient, team_thread: &str) -> Result<Vec<(String, String)>> {
+/// How many people the channel header's people popover shows (Teams'
+/// ChannelInfoPaneManager `sV`).
+pub const RECENT_CONTRIBUTORS: usize = 6;
+
+/// Whether an MRI is a person's (Teams' recent contributors take users
+/// only: `8:` ids, not bots `28:` or apps).
+fn is_person_mri(mri: &str) -> bool {
+    mri.starts_with("8:")
+}
+
+/// The channel's recent contributors as Teams' people popover finds them
+/// (ChannelInfoPaneGetDataHelper `M$n`): its reply chains newest activity
+/// first, each chain's messages newest first, the people who wrote them,
+/// each once, up to [`RECENT_CONTRIBUTORS`]. `messages` is the channel's
+/// newest page (any order); a reply belongs to its post's chain.
+pub fn recent_contributors(messages: &[super::messages::MessageView]) -> Vec<String> {
+    use std::collections::HashMap;
+    let mut chains: HashMap<&str, Vec<&super::messages::MessageView>> = HashMap::new();
+    for m in messages
+        .iter()
+        .filter(|m| m.kind == "message" && !m.deleted)
+    {
+        let root = if m.root_id.is_empty() {
+            m.id.as_str()
+        } else {
+            m.root_id.as_str()
+        };
+        chains.entry(root).or_default().push(m);
+    }
+    let mut chains: Vec<Vec<&super::messages::MessageView>> = chains
+        .into_values()
+        .map(|mut c| {
+            c.sort_by(|a, b| b.time.cmp(&a.time));
+            c
+        })
+        .collect();
+    // latestDeliveryTime: the chain's newest message.
+    chains.sort_by(|a, b| b[0].time.cmp(&a[0].time));
+    let mut out: Vec<String> = Vec::new();
+    for m in chains.iter().flatten() {
+        if out.len() >= RECENT_CONTRIBUTORS {
+            break;
+        }
+        if is_person_mri(&m.sender_mri)
+            && !out.iter().any(|x| x.eq_ignore_ascii_case(&m.sender_mri))
+        {
+            out.push(m.sender_mri.clone());
+        }
+    }
+    out
+}
+
+/// Fewer than six contributors: the thread's members after them, in the
+/// roster's order, until there are six (Teams' `w$n`).
+pub fn fill_contributors(out: &mut Vec<String>, members: &[String]) {
+    for m in members {
+        if out.len() >= RECENT_CONTRIBUTORS {
+            break;
+        }
+        if is_person_mri(m) && !out.iter().any(|x| x.eq_ignore_ascii_case(m)) {
+            out.push(m.clone());
+        }
+    }
+}
+
+/// A thread's members in the chat service's own order (one read,
+/// `selectMemberRoles=User|Admin|Guest`, as Teams' members sync and the
+/// Meetings pane's Organizer suggestions ask), bots left out.
+pub async fn thread_members_in_order(
+    client: &TeamsClient,
+    thread: &str,
+    page_size: usize,
+) -> Result<Vec<String>> {
+    let url = format!(
+        "{}/v1/threads/{}/members?view=msnp24Equivalent&selectMemberRoles=User%7CAdmin%7CGuest&pageSize={page_size}",
+        client.chat_service_url(),
+        enc(thread)
+    );
+    let v: serde_json::Value = client
+        .chat_get(&url)
+        .await?
+        .json()
+        .await
+        .context("Members")?;
+    Ok(roster_from(&v).into_iter().map(|m| m.mri).collect())
+}
+
+/// The channel header popover's People (Teams' membersConnection
+/// RECENT_CONTRIBUTORS): the channel's recent contributors, then its
+/// members (the team's for a standard channel, the channel's own for a
+/// private or shared one; 20 of them, Teams' `KFe`) until there are six,
+/// named by one batched profile read; kept five minutes per channel
+/// (Teams' channelInfoPaneRecentContributorsRequestDebounceTime).
+pub async fn channel_people(
+    client: &TeamsClient,
+    team_thread: &str,
+    channel: &str,
+    own_roster: bool,
+) -> Result<Vec<(String, String)>> {
     use std::collections::HashMap;
     use std::sync::Mutex;
     type Entry = (std::time::Instant, Vec<(String, String)>);
@@ -908,28 +1001,44 @@ pub async fn team_people(client: &TeamsClient, team_thread: &str) -> Result<Vec<
     if let Some((at, v)) = CACHE
         .lock()
         .ok()
-        .and_then(|c| c.as_ref()?.get(team_thread).cloned())
+        .and_then(|c| c.as_ref()?.get(channel).cloned())
         && at.elapsed() < std::time::Duration::from_secs(300)
     {
         return Ok(v);
     }
-    let mut members = Vec::new();
-    for roles in ["Admin", "User%7CGuest"] {
-        let url = format!(
-            "{}/v1/threads/{}/members?view=msnp24Equivalent&pageSize=100&selectMemberRoles={roles}",
-            client.chat_service_url(),
-            enc(team_thread)
-        );
-        let v: serde_json::Value = client
-            .chat_get(&url)
-            .await?
-            .json()
-            .await
-            .context("Members")?;
-        members.extend(roster_from(&v));
+    let page = super::messages::read_timeline(client, channel, super::messages::PAGE_SIZE)
+        .await
+        .unwrap_or_default();
+    let mut mris = recent_contributors(&page);
+    if mris.len() < RECENT_CONTRIBUTORS {
+        let thread = if own_roster { channel } else { team_thread };
+        let members = thread_members_in_order(client, thread, 20).await?;
+        fill_contributors(&mut mris, &members);
     }
-    let mris: Vec<String> = members.iter().map(|m| m.mri.clone()).collect();
-    let names: HashMap<String, String> = super::directory::short_profile_records(client, &mris)
+    let names = people_names(client, &mris).await;
+    let out: Vec<(String, String)> = mris
+        .into_iter()
+        .map(|m| {
+            let n = names.get(&m.to_lowercase()).cloned().unwrap_or_default();
+            (m, n)
+        })
+        .collect();
+    if let Ok(mut c) = CACHE.lock() {
+        c.get_or_insert_with(HashMap::new).insert(
+            channel.to_string(),
+            (std::time::Instant::now(), out.clone()),
+        );
+    }
+    Ok(out)
+}
+
+/// Display names for MRIs (lower-cased keys), from one batched short
+/// profile read.
+pub async fn people_names(
+    client: &TeamsClient,
+    mris: &[String],
+) -> std::collections::HashMap<String, String> {
+    super::directory::short_profile_records(client, mris)
         .await
         .unwrap_or_default()
         .iter()
@@ -939,25 +1048,7 @@ pub async fn team_people(client: &TeamsClient, team_thread: &str) -> Result<Vec<
                 r["displayName"].as_str()?.to_string(),
             ))
         })
-        .collect();
-    let out: Vec<(String, String)> = members
-        .into_iter()
-        .map(|m| {
-            let name = names
-                .get(&m.mri.to_lowercase())
-                .cloned()
-                .filter(|n| !n.is_empty())
-                .unwrap_or(m.name);
-            (m.mri, name)
-        })
-        .collect();
-    if let Ok(mut c) = CACHE.lock() {
-        c.get_or_insert_with(HashMap::new).insert(
-            team_thread.to_string(),
-            (std::time::Instant::now(), out.clone()),
-        );
-    }
-    Ok(out)
+        .collect()
 }
 
 /// Manage team ▸ Members: owners and members and guests as Teams reads them
@@ -2923,6 +3014,67 @@ pub async fn invitations(client: &TeamsClient) -> Result<Vec<ChannelInvitation>>
 
 #[cfg(test)]
 mod tests {
+    use super::super::messages::MessageView;
+
+    fn msg(id: &str, root: &str, who: &str, time: &str) -> MessageView {
+        MessageView {
+            id: id.into(),
+            root_id: root.into(),
+            sender_mri: who.into(),
+            time: time.into(),
+            kind: "message".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn recent_contributors_take_chains_by_latest_activity_then_newest_first() {
+        // Post 1 (A) got a reply from B just now; post 2 (C) is newer than
+        // post 1 but quiet; a bot and a deleted message don't count.
+        let mut deleted = msg("5", "2", "8:orgid:e", "2026-11-27T10:05:00Z");
+        deleted.deleted = true;
+        let page = vec![
+            msg("1", "1", "8:orgid:a", "2026-11-27T09:00:00Z"),
+            msg("2", "2", "8:orgid:c", "2026-11-27T10:00:00Z"),
+            msg("3", "1", "8:orgid:b", "2026-11-27T11:00:00Z"),
+            msg("4", "1", "28:bot", "2026-11-27T10:30:00Z"),
+            deleted,
+            msg("6", "1", "8:orgid:A", "2026-11-27T10:40:00Z"),
+        ];
+        assert_eq!(
+            recent_contributors(&page),
+            vec!["8:orgid:b", "8:orgid:A", "8:orgid:c"]
+        );
+    }
+
+    #[test]
+    fn recent_contributors_stop_at_six_and_members_fill_the_rest() {
+        let page: Vec<MessageView> = (0..9)
+            .map(|i| {
+                msg(
+                    &i.to_string(),
+                    &i.to_string(),
+                    &format!("8:orgid:{i}"),
+                    &format!("2026-11-27T10:0{i}:00Z"),
+                )
+            })
+            .collect();
+        let six = recent_contributors(&page);
+        assert_eq!(six.len(), RECENT_CONTRIBUTORS);
+        assert_eq!(six[0], "8:orgid:8");
+        let mut few = vec!["8:orgid:b".to_string()];
+        fill_contributors(
+            &mut few,
+            &[
+                "8:orgid:a".into(),
+                "8:orgid:B".into(),
+                "28:bot".into(),
+                "8:orgid:c".into(),
+            ],
+        );
+        assert_eq!(few, vec!["8:orgid:b", "8:orgid:a", "8:orgid:c"]);
+    }
+
     use super::*;
 
     #[test]

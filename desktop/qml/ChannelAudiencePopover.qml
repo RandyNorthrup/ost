@@ -5,11 +5,13 @@ import QtQuick.Controls.Basic
 // audience, data-tid channel-agents-list; measured in Teams on the web as
 // OST Test 2, OST Test Team ▸ OST test channel 2, 2026-11-27): 255 wide,
 // white, radius 4, padding 16.
-// - "People" (12/16 semibold #616161) 14 down, 19 in; the first six
-//   people's 28 px pictures with presence, 9.5 apart, 46 down; "See all"
-//   (14/20 brand) under them, which opens Manage team ▸ Members.
-// - "Agents and bots (n)" and a 45 tall row per bot (its 32 px icon at 19,
-//   the name 14/20 at 61).
+// - "People" (12/16 semibold #616161) 14 down, 19 in; six people's 28 px
+//   pictures with presence, 9.5 apart, 46 down: the channel's recent
+//   contributors, then its members (api::channels::channel_people); "See
+//   all" (14/20 brand) under them, which opens Manage team ▸ Members.
+// - "Agents and bots (n)" and a 45 tall row per agent (its 32 px icon at
+//   19, the name 14/20 at 61): the team's installed apps with a bot that
+//   isn't notification-only, or agents (api::store_content::channel_agents).
 // - "Teams (1)": the team's picture, name (14/20), "{n} members" (10/14
 //   #616161), a 1 x 10 line and the home glyph (12).
 // - A line (17 in, 221 wide), then Add agents (32 tall, the bot-add glyph
@@ -34,9 +36,18 @@ Popup {
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
     background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
 
+    /// A private or shared channel lists its own roster after its
+    /// contributors (a standard one the team's).
+    readonly property bool ownRoster: {
+        for (const t of JSON.parse(backend.teamsJson || "[]")) {
+            const c = (t.channels || []).find(c => c.id === root.channelId)
+            if (c) return (c.channel_type || 0) > 0
+        }
+        return false
+    }
     function load() {
         loaded = false
-        backend.channelAction("channel-audience", teamId, channelId, "")
+        backend.channelAction("channel-audience", teamId, channelId, JSON.stringify({ own: ownRoster }))
     }
     onOpened: load()
     Connections {

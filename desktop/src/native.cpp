@@ -504,7 +504,16 @@ extern "C" void ost_window_input_region(const char *title, int x, int y, int w, 
 
 // For development: with OST_QML_DIR set (a checkout's desktop/qml), QML
 // files load from there instead of the compiled-in module, so a QML change
-// can be tried without rebuilding. Assets and shaders resolve beside them.
+// can be tried without rebuilding. Assets and shaders resolve beside them,
+// falling back to the compiled-in ones when the checkout has no such file.
+//
+// Every one of the module's QML files must come from the same place: a
+// file loaded from qrc runs its ahead-of-time compiled code against objects
+// made from the disk copy (another type with the same name), which crashed
+// at startup (TASK-0364/0374). The module's own type loads name its files
+// as qrc:///qt/qml/… as well as qrc:/qt/qml/…, so the match is on the
+// scheme and path, not the URL's spelling.
+#include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtQml/QQmlAbstractUrlInterceptor>
 #include <QtQml/QQmlEngine>
@@ -513,21 +522,40 @@ namespace {
 class QmlDirInterceptor : public QQmlAbstractUrlInterceptor
 {
 public:
-    explicit QmlDirInterceptor(const QString &dir) : m_dir(dir) {}
+    explicit QmlDirInterceptor(const QString &dir)
+        : m_qml(QDir(dir).absolutePath()), m_root(QDir(m_qml + QStringLiteral("/..")).absolutePath())
+    {
+    }
     QUrl intercept(const QUrl &url, DataType type) override
     {
-        if (type != QmlFile && type != JavaScriptFile)
-            return url;
-        static const QString prefix = QStringLiteral("qrc:/qt/qml/com/ost/desktop/qml/");
-        const QString s = url.toString();
-        if (!s.startsWith(prefix))
-            return url;
-        const QString file = m_dir + QLatin1Char('/') + s.mid(prefix.size());
-        return QFile::exists(file) ? QUrl::fromLocalFile(file) : url;
+        static const QString module = QStringLiteral("/qt/qml/com/ost/desktop/");
+        if (type == QmlFile || type == JavaScriptFile) {
+            if (url.scheme() != QLatin1String("qrc"))
+                return url;
+            const QString path = url.path();
+            if (!path.startsWith(module + QStringLiteral("qml/")))
+                return url;
+            const QString file = m_qml + QLatin1Char('/') + path.mid(module.size() + 4);
+            return QFile::exists(file) ? QUrl::fromLocalFile(file) : url;
+        }
+        // A file the disk QML names beside it (../assets/…, ../shaders/…)
+        // that the checkout doesn't have: the compiled-in one.
+        if (type == UrlString && url.isLocalFile()) {
+            const QString file = QDir::cleanPath(url.toLocalFile());
+            if (file.startsWith(m_root + QLatin1Char('/')) && !file.startsWith(m_qml + QLatin1Char('/')) && !QFile::exists(file)) {
+                QUrl q;
+                q.setScheme(QStringLiteral("qrc"));
+                q.setPath(module + file.mid(m_root.size() + 1));
+                if (QFile::exists(QLatin1Char(':') + q.path()))
+                    return q;
+            }
+        }
+        return url;
     }
 
 private:
-    QString m_dir;
+    QString m_qml;
+    QString m_root;
 };
 } // namespace
 

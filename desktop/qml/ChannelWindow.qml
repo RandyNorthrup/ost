@@ -7,9 +7,9 @@ import QtQuick.Dialogs
 // channel's menu (measured on winpc, 2026-11-09).
 // - 588 x 493, titled "<team> | <channel>", Teams' child-window title row.
 // - Header (61, #FAFAFA, a #E0E0E0 line under it): the team's picture (32,
-//   radius 2) at 20; the channel (18/25.7 bold) at 62; at the right Meet
-//   now (its icon alone, 27.3 wide) and its chevron (20), Find in channel
-//   and More channel options (32 each).
+//   radius 2) at 20; the channel (18/25.7 bold) at 62; at the right the
+//   people and meeting buttons as the main window's channel header has
+//   them, Find in channel and More channel options (32 each).
 // - The posts as in the channel, compact (cards 30 in, names over times),
 //   "Post in channel" under them.
 // It shows that channel whatever the main window shows (the backend keeps
@@ -35,6 +35,15 @@ Window {
     signal meetNow(string channelId, string channelName)
     signal scheduleMeeting()
     signal manageChannel(string channelId)
+    signal manageTeamMembers(string teamId)
+    signal openAgentStore(string channelId)
+    signal openAppDetails(string appId)
+    /// A meeting from the window's Meetings pane: its page in Calendar.
+    signal openMeeting(var meeting)
+    /// Chat with participants from the Meetings pane.
+    signal openMeetingChat(var meeting)
+    /// View meetings: the channel's Meetings pane at the window's right.
+    property bool meetingsOpen: false
     title: teamName + " | " + channelName
     width: 588; height: 493
     color: theme.channelPage
@@ -110,36 +119,61 @@ Window {
         }
         Text {
             x: 62; y: 16.3
-            width: meetButton.x - x - 8; elide: Text.ElideRight
+            width: (peopleButton.visible ? peopleButton.x : meetButton.x) - x - 8; elide: Text.ElideRight
             text: win.channelName
             font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
             lineHeight: 25.7; lineHeightMode: Text.FixedHeight
             color: theme.text
         }
+        // The channel header's people and meeting buttons as in the main
+        // window (Teams' pop-out shows the same ChannelHeaderLayout, with
+        // meetings discoverability): people (34, not in General), then the
+        // CalendarVideo meeting button with Meet now / Schedule meeting /
+        // View meetings, 16 before Find, a line 8 before it.
         Action {
-            id: meetButton
-            x: parent.width - 138.3; y: 14.2; width: 27.3
-            icon: "video-20"; tip: qsTr("Meet now")
-            enabled: backend.callState === ""
-            ink: enabled ? theme.textStrong : theme.disabled
-            onClicked: win.meetNow(win.channelId, win.channelName)
+            id: peopleButton
+            visible: !win.channelInfo.general
+            x: meetButton.x - width; y: 14.2; width: 34
+            icon: audiencePop.opened ? "people-add-20-filled" : "people-add-20"
+            ink: audiencePop.opened ? theme.brand : theme.textStrong
+            tip: audiencePop.opened ? "" : qsTr("View people, agents and bots")
+            onClicked: audiencePop.opened ? audiencePop.close() : audiencePop.open()
+            ChannelAudiencePopover {
+                id: audiencePop
+                x: peopleButton.width - width; y: peopleButton.height + 16
+                teamId: win.teamId; teamName: win.teamName
+                channelId: win.channelId
+                teamPeople: { const t = JSON.parse(backend.teamsJson || "[]").find(t => t.id === win.teamId); return t ? (t.people || 0) : 0 }
+                onSeeAll: win.manageTeamMembers(win.teamId)
+                onAddAgents: win.openAgentStore(win.channelId)
+                onOpenBot: id => win.openAppDetails(id)
+            }
         }
         Action {
-            id: meetMore
-            x: parent.width - 111; y: 14.2; width: 20
-            icon: "chevron-down-16"; iconSize: 16; tip: qsTr("More channel meeting options")
+            id: meetButton
+            x: parent.width - 75 - 16 - width; y: 14.2
+            icon: meetMenu.opened ? "calendar-video-20-filled" : "calendar-video-20"
             ink: meetMenu.opened ? theme.brand : theme.textStrong
+            tip: meetMenu.opened ? "" : qsTr("View meetings related options")
             onClicked: meetMenu.open()
             MenuPopup {
                 id: meetMenu
-                x: parent.width - 4.5 - width; y: parent.height + 4.5
+                x: parent.width - width; y: parent.height
+                minRowWidth: 278
                 items: [
                     { key: "meet", label: qsTr("Meet now"), icon: "video-20", enabled: backend.callState === "" },
-                    { key: "schedule", label: qsTr("Schedule a meeting"), icon: "calendar-add-20" }
+                    { key: "schedule", label: qsTr("Schedule meeting"), icon: "calendar-add-20" },
+                    { key: "view", label: qsTr("View meetings"), icon: "calendar-ltr-20" }
                 ]
-                onPicked: i => items[i].key === "meet" ? win.meetNow(win.channelId, win.channelName) : win.scheduleMeeting()
+                onPicked: i => {
+                    const k = items[i].key
+                    if (k === "meet") win.meetNow(win.channelId, win.channelName)
+                    else if (k === "schedule") win.scheduleMeeting()
+                    else win.meetingsOpen = true
+                }
             }
         }
+        Rectangle { x: parent.width - 75 - 8; anchors.verticalCenter: meetButton.verticalCenter; width: 1; height: 20; color: theme.divider }
         Action {
             x: parent.width - 75; y: 14.2
             icon: "search-20"; tip: qsTr("Find in channel")
@@ -168,6 +202,22 @@ Window {
     }
     WorkflowsDialog { id: workflows }
 
+    // View meetings: Teams' Meetings pane in the window's end slot (its
+    // width by the window's, the posts keeping 320).
+    ChannelMeetingsPane {
+        id: meetingsPane
+        z: 4
+        visible: win.meetingsOpen
+        anchors { top: titleRow.bottom; right: parent.right; bottom: parent.bottom }
+        width: visible ? theme.endSlotWidth(win.width, 0) : 0
+        teamId: win.teamId
+        channelId: win.channelId
+        onClosed: win.meetingsOpen = false
+        onOpenMeeting: m => win.openMeeting(m)
+        onEditMeeting: m => win.openMeeting(m)
+        onOpenChat: m => win.openMeetingChat(m)
+    }
+
     FindPane {
         id: findPane
         z: 5
@@ -189,7 +239,7 @@ Window {
     ChannelPosts {
         id: posts
         findMark: host.findMark
-        anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: win.posting && !backend.channelPostsAtTop ? compose.top : parent.bottom }
+        anchors { top: header.bottom; left: parent.left; right: meetingsPane.left; bottom: win.posting && !backend.channelPostsAtTop ? compose.top : parent.bottom }
         anchors.bottomMargin: win.posting && !backend.channelPostsAtTop ? 12 : 0
         compact: true
         messages: win.messages
@@ -239,8 +289,23 @@ Window {
         onCancelled: { quote = null; compose.resetPost(); win.posting = false }
     }
 
+    /// Show a post (Chat with participants on one of its meetings).
+    function showPost(id) { posts.showPost(id) }
+
     // Test hooks.
+    /// --channel-window-test: open the meeting menu, the people popover,
+    /// View meetings, or close them; what the header shows.
+    function headerForTest(what) {
+        if (what === "meet") meetMenu.open()
+        else if (what === "people") audiencePop.open()
+        else if (what === "view") { meetMenu.close(); meetingsOpen = true }
+        else if (what === "close") { meetMenu.close(); audiencePop.close() }
+        return { people: peopleButton.visible ? [peopleButton.x, peopleButton.width] : null, meet: [meetButton.x, meetButton.width],
+                 meetMenu: meetMenu.items.map(i => i.label), audience: audiencePop.people.map(p => p.name), bots: audiencePop.bots.map(b => b.name),
+                 meetings: meetingsOpen ? meetingsPane.width : 0 }
+    }
     function postsForTest() { return posts }
     function composeForTest() { return compose }
     function channelMenuForTest() { return channelMenu }
+    function grabForTest(path) { contentItem.grabToImage(r => r.saveToFile(path)) }
 }
