@@ -31898,7 +31898,7 @@ impl qobject::Backend {
                         json!({ "url": url, "thumb": thumb, "path": format!("file://{}", path.display()) })
                     }
                     "personal_picker" => json!({ "place": s("place"), "folder": s("folder"),
-                        "items": api::personal_files::picker_list(&client, &s("place"), &s("folder")).await? }),
+                        "items": api::personal_files::picker_list(&client, &s("place"), &s("folder"), &s("drive")).await? }),
                     "card_item" => {
                         let found = api::drive::item_by_url(&client, &s("url")).await?;
                         let same = |i: &api::drive::DriveItem| i.id == found.id || i.web_url.eq_ignore_ascii_case(&found.web_url);

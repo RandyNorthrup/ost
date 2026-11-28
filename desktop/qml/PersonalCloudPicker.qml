@@ -45,7 +45,7 @@ Popup {
     function load() {
         loading = true
         items = []
-        backend.driveAction(tag + "personal_picker", "{}", JSON.stringify({ place: place, folder: path.length ? path[path.length - 1].id : "" }))
+        backend.driveAction(tag + "personal_picker", "{}", JSON.stringify({ place: place, folder: path.length ? path[path.length - 1].id : "", drive: path.length ? path[path.length - 1].drive : "" }))
     }
     onOpened: { picked = ({}); go("recent") }
     Connections {
@@ -60,7 +60,7 @@ Popup {
         }
     }
     function tap(it) {
-        if (it.is_folder) { path = path.concat([{ id: it.id, name: it.name }]); load(); return }
+        if (it.is_folder) { path = path.concat([{ id: it.id, name: it.name, drive: it.drive_id || "" }]); load(); return }
         const m = Object.assign({}, picked)
         if (m[it.id]) delete m[it.id]; else m[it.id] = true
         picked = m

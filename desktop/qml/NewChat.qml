@@ -412,6 +412,8 @@ Rectangle {
         files: root.pendingFiles
         cloudFiles: cloudAttach.pending
         onFileRemoved: path => root.pendingFiles = root.pendingFiles.filter(p => p !== path)
+        // Teams free's Attach media: the pictures go as files.
+        onMediaPicked: urls => root.addFiles(urls)
         onCloudRemoved: key => cloudAttach.remove(key)
         onCloudLinkRequested: key => cloudAttach.openLink(key)
         onAttachRequested: a => cloudAttach.openMenu(a || compose)
