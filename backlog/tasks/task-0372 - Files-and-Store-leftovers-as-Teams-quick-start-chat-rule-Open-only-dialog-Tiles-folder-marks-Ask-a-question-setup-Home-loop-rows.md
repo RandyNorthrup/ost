@@ -6,7 +6,6 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-27T21:01:00Z'
-updated_date: '2026-11-28T04:27:00Z'
 labels:
   - desktop
   - files
@@ -27,9 +26,3 @@ Follow-up from TASK-0358 (PR #50). Left different or unverified: the Store quick
 - [ ] #4 Copilot Ask a question goes through OneDrive's knowledge-agent setup when Teams does
 - [ ] #5 Files Home lists Loop thread rows (loop_loopThread) as Teams does
 <!-- AC:END -->
-
-## Implementation Notes
-
-<!-- SECTION:NOTES:BEGIN -->
-Built so far: PR #78 (merged 2026-11-27) built AC #2 (Open-only quick-start dialog, verified against Teams with Avatars), AC #3 (Tiles view people/shortcut marks), AC #5 (Home merges Teams' second recent-files request, so loop_loopThread and recap rows match Teams). Open: AC #1 (Store quick-start chat list: Teams' rule applied, but OST still shows 'OST large chat test' that Teams leaves out; likely Teams' local chat cache) and AC #4 (Copilot Ask a question knowledge-agent setup needs OneDrive's agent tools first, TASK-0379).
-<!-- SECTION:NOTES:END -->
