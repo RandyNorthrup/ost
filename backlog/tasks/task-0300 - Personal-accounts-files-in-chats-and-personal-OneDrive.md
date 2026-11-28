@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@tperF'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T09:29:00Z'
+updated_date: '2026-11-28T10:16:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -49,6 +49,8 @@ Files sent in personal-account chats go to the Microsoft Teams Chat Files folder
 - Not verified live: a really full OneDrive (5 GB free; the banner and its trigger are unit-tested and drawn in the harness), files in a group chat, the Files tab's Upload button (it sends like the compose box), videos through Attach media (sent as files without a preview; Teams' handling of videos not captured).
 
 - Review (PR #87): Codex rounds 1-4 fixed (Files tab uploads to its own chat, picker folders from any place and every page, stale picker answers dropped, picks kept across folders, all Files pages, Attach media in a new chat and only personal accounts get the wider list, the viewer steps through one message's pictures, Show message loads older pages, chat windows get the picture viewer, side-by-side pictures fit the bubble, a picture without its cached preview stays a file chip, Photos and Files tabs refresh as the chat changes, selection by file, narrow Files tab). After the rebase the research section is §11 of the protocol doc (§10 is calls and meetings).
+
+- Rebased again: the research section is now §12 of docs/research/personal-accounts-protocol.md (§11 is People, from TASK-0295).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
