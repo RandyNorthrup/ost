@@ -471,6 +471,20 @@ Item {
         loading = false
         availabilityWanted(allMails())
     }
+    /// The event turns out to be all day (a team calendar's meeting is
+    /// listed without it): all day on its own dates, keeping any edits
+    /// already made (their times too).
+    function markAllDay(startFloating, endFloating) {
+        if (allDay) return
+        const was = loading; loading = true
+        event = Object.assign({}, event, { is_all_day: true, start_utc: startFloating, end_utc: endFloating })
+        allDay = true
+        if (!dirty) {
+            startAt = dayStart(new Date(startFloating)); endAt = dayStart(new Date(new Date(endFloating).getTime() - 1))
+            atLoad = Object.assign({}, atLoad, { start: startAt.getTime(), end: endAt.getTime() })
+        }
+        loading = was
+    }
     function dayStart(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
 
     // ── recurrence ──────────────────────────────────────────────────
