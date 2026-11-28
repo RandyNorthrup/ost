@@ -1,11 +1,11 @@
 ---
 id: TASK-0293
 title: 'Personal accounts: chat list, messages and chat requests'
-status: In Progress
+status: To Do
 assignee:
   - '@tperB'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T05:35:00Z'
+updated_date: '2026-11-28T06:40:00Z'
 labels:
   - personal-accounts
 dependencies:
