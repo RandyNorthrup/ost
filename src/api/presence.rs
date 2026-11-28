@@ -81,6 +81,75 @@ pub async fn set_presence(status: &str) -> Result<()> {
 /// Presence service audience and front door.
 const PRESENCE_SCOPE: &str = "https://presence.teams.microsoft.com/.default";
 const PRESENCE_URL: &str = "https://presence.teams.microsoft.com";
+/// Teams free's unified presence (UPS) front door, when the account's
+/// regional URLs don't name one (`presenceUPS`; the web client's
+/// `defaultPresenceAfdRegionGTM`).
+const CONSUMER_PRESENCE_URL: &str = "https://teams.live.com/ups/global";
+
+/// Where the signed-in account's presence requests go and how they are
+/// signed. A work account's go to the presence service with its token;
+/// a personal account's to Teams free's unified presence with the
+/// middle tier's token and the Skype token, named as Teams free's client
+/// (`x-ms-client-consumer-type: teams4life`; without it the service
+/// answers 400 "Consumer client type header must not be empty"). The
+/// paths are the same (captured on teams.live.com 2026-11-27).
+struct Target {
+    base: String,
+    bearer: String,
+    /// A personal account's Skype token.
+    skype: Option<String>,
+}
+
+impl Target {
+    async fn current() -> Result<Self> {
+        let personal = crate::config::Config::load()
+            .ok()
+            .is_some_and(|c| crate::auth::is_personal_flow(c.auth_flow.as_deref()));
+        if personal {
+            let c = TeamsClient::new().await?;
+            return Ok(Self {
+                base: consumer_base(c.region_endpoint("presenceUPS")),
+                bearer: c.access_token_value()?,
+                skype: Some(c.skype_token_value()?),
+            });
+        }
+        Ok(Self {
+            base: PRESENCE_URL.to_string(),
+            bearer: crate::auth::oauth::access_token_for(PRESENCE_SCOPE).await?,
+            skype: None,
+        })
+    }
+
+    fn url(&self, path: &str) -> String {
+        format!("{}{path}", self.base)
+    }
+
+    fn sign(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        let req = req.bearer_auth(&self.bearer);
+        match &self.skype {
+            Some(s) => req
+                .header("x-skypetoken", s)
+                .header("x-ms-client-consumer-type", "teams4life"),
+            None => req,
+        }
+    }
+}
+
+/// A personal account's presence front door: its regional `presenceUPS`
+/// when that is a Microsoft https address, else Teams free's default.
+fn consumer_base(regional: Option<String>) -> String {
+    regional
+        .filter(|u| {
+            url::Url::parse(u).is_ok_and(|p| {
+                p.scheme() == "https"
+                    && p.host_str()
+                        .is_some_and(|h| h == "teams.live.com" || h.ends_with(".teams.live.com"))
+            })
+        })
+        .unwrap_or_else(|| CONSUMER_PRESENCE_URL.to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
 
 /// Set your status as Teams' profile menu does ("Available", "Busy",
 /// "DoNotDisturb", "BeRightBack", "Away", "Offline"), or `None` to reset it
@@ -132,10 +201,8 @@ pub async fn force_availability_until(
     {
         bail!("Unknown status: {a}");
     }
-    let token = crate::auth::oauth::access_token_for(PRESENCE_SCOPE).await?;
-    let mut req = http
-        .put(format!("{PRESENCE_URL}/v1/me/forceavailability/"))
-        .bearer_auth(token);
+    let target = Target::current().await?;
+    let mut req = target.sign(http.put(target.url("/v1/me/forceavailability/")));
     // Teams sends "activity":"OffWork" with Offline (its check rejects
     // Offline without it).
     let expiry = until.map(|t| crate::clock::iso_ms(t.timestamp()));
@@ -165,10 +232,9 @@ pub async fn force_availability_until(
 /// clearing `{"location":0}`.
 pub async fn set_work_location(http: &reqwest::Client, location: Option<&str>) -> Result<()> {
     let body = work_location_body(location, &crate::clock::local_now())?;
-    let token = crate::auth::oauth::access_token_for(PRESENCE_SCOPE).await?;
-    let resp = http
-        .put(format!("{PRESENCE_URL}/v1/me/workLocation/"))
-        .bearer_auth(token)
+    let target = Target::current().await?;
+    let resp = target
+        .sign(http.put(target.url("/v1/me/workLocation/")))
         .json(&body)
         .send()
         .await
@@ -311,17 +377,17 @@ async fn put_endpoint(
     body: String,
     caller: &str,
 ) -> Result<()> {
-    let token = crate::auth::oauth::access_token_for(PRESENCE_SCOPE).await?;
-    let resp = headers(
-        http.put(format!("{PRESENCE_URL}/v1/me/endpoints/")),
-        Some(epid),
-        caller,
-    )
-    .bearer_auth(&token)
-    .body(body)
-    .send()
-    .await
-    .context("Presence endpoint PUT failed to send")?;
+    let target = Target::current().await?;
+    let resp = target
+        .sign(headers(
+            http.put(target.url("/v1/me/endpoints/")),
+            Some(epid),
+            caller,
+        ))
+        .body(body)
+        .send()
+        .await
+        .context("Presence endpoint PUT failed to send")?;
     let status = resp.status();
     if !status.is_success() {
         bail!("Presence endpoint PUT failed: HTTP {status}");
@@ -386,17 +452,21 @@ pub async fn heartbeat(http: &reqwest::Client) -> Result<()> {
     let Some(epid) = s.epid.filter(|_| !s.locked) else {
         return Ok(());
     };
-    let token = crate::auth::oauth::access_token_for(PRESENCE_SCOPE).await?;
-    let resp = headers(
-        http.post(format!("{PRESENCE_URL}/v1/me/reportmyactivity/")),
-        Some(&epid),
-        "presence-heartbeat",
-    )
-    .bearer_auth(&token)
-    .body(serde_json::json!({ "endpointId": epid, "isActive": true }).to_string())
-    .send()
-    .await
-    .context("Presence heartbeat failed to send")?;
+    let target = Target::current().await?;
+    // Teams free reports activity over the socket only (user.activity).
+    if target.skype.is_some() {
+        return Ok(());
+    }
+    let resp = target
+        .sign(headers(
+            http.post(target.url("/v1/me/reportmyactivity/")),
+            Some(&epid),
+            "presence-heartbeat",
+        ))
+        .body(serde_json::json!({ "endpointId": epid, "isActive": true }).to_string())
+        .send()
+        .await
+        .context("Presence heartbeat failed to send")?;
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
         // Teams re-creates the endpoint after a 404.
         *last_success().lock().unwrap() = None;
@@ -413,17 +483,17 @@ pub async fn delete_endpoint(http: &reqwest::Client) -> Result<()> {
     let Some(epid) = state().borrow().epid.clone() else {
         return Ok(());
     };
-    let token = crate::auth::oauth::access_token_for(PRESENCE_SCOPE).await?;
+    let target = Target::current().await?;
     let enc: String = url::form_urlencoded::byte_serialize(epid.as_bytes()).collect();
-    headers(
-        http.delete(format!("{PRESENCE_URL}/v1/me/endpoints/{enc}")),
-        Some(&epid),
-        "sign-out",
-    )
-    .bearer_auth(&token)
-    .send()
-    .await
-    .context("Presence endpoint DELETE failed to send")?;
+    target
+        .sign(headers(
+            http.delete(target.url(&format!("/v1/me/endpoints/{enc}"))),
+            Some(&epid),
+            "sign-out",
+        ))
+        .send()
+        .await
+        .context("Presence endpoint DELETE failed to send")?;
     Ok(())
 }
 
@@ -464,18 +534,22 @@ pub async fn publish_note(
     pinned: bool,
     until: Option<jiff::ZonedDateTime>,
 ) -> Result<()> {
-    let token = crate::auth::oauth::access_token_for(PRESENCE_SCOPE).await?;
-    let body = note_body(message, pinned, until);
-    let resp = headers(
-        http.put(format!("{PRESENCE_URL}/v1/me/publishnote")),
-        None,
-        "set-status-note",
-    )
-    .bearer_auth(&token)
-    .body(body.to_string())
-    .send()
-    .await
-    .context("Status note request failed")?;
+    let target = Target::current().await?;
+    let body = if target.skype.is_some() {
+        personal_note_body(message, until)
+    } else {
+        note_body(message, pinned, until)
+    };
+    let resp = target
+        .sign(headers(
+            http.put(target.url("/v1/me/publishnote")),
+            None,
+            "set-status-note",
+        ))
+        .body(body.to_string())
+        .send()
+        .await
+        .context("Status note request failed")?;
     if !resp.status().is_success() {
         bail!(
             "Setting the status message failed: HTTP {}",
@@ -626,6 +700,29 @@ pub fn note_body(
         None => never_expiry(&crate::clock::local_zone()),
     };
     serde_json::json!({ "expiry": expiry, "message": html })
+}
+
+/// The longest status message Teams free takes.
+pub const PERSONAL_NOTE_MAX_CHARS: usize = 280;
+
+/// A personal account's publishnote body, as Teams free's web client sends
+/// it (captured 2026-11-28): the message as plain text (no mentions, no
+/// "show when people message me"), at most 280 characters, with the same
+/// expiry (Never: 9999-12-31 local); `{"message": ""}` clears it.
+pub fn personal_note_body(message: &str, until: Option<jiff::ZonedDateTime>) -> serde_json::Value {
+    let text: String = note_plain(message)
+        .trim()
+        .chars()
+        .take(PERSONAL_NOTE_MAX_CHARS)
+        .collect();
+    if text.is_empty() {
+        return serde_json::json!({ "message": "" });
+    }
+    let expiry = match until {
+        Some(t) => Some(crate::clock::iso_ms(t.timestamp())),
+        None => never_expiry(&crate::clock::local_zone()),
+    };
+    serde_json::json!({ "expiry": expiry, "message": text })
 }
 
 /// A note that doesn't expire: 9999-12-31 00:00 local, in UTC (past the
@@ -872,14 +969,13 @@ pub async fn get_presences(http: &reqwest::Client, mris: &[String]) -> Result<Ve
     if mris.is_empty() {
         return Ok(Vec::new());
     }
-    let token = crate::auth::oauth::access_token_for(PRESENCE_SCOPE).await?;
+    let target = Target::current().await?;
     let body: Vec<serde_json::Value> = mris
         .iter()
         .map(|m| serde_json::json!({ "mri": m }))
         .collect();
-    let resp = http
-        .post(format!("{PRESENCE_URL}/v1/presence/getpresence/"))
-        .bearer_auth(&token)
+    let resp = target
+        .sign(http.post(target.url("/v1/presence/getpresence/")))
         .json(&body)
         .send()
         .await
@@ -971,6 +1067,55 @@ fn parse_presences(v: &serde_json::Value) -> Vec<UserPresence> {
 #[cfg(test)]
 mod presence_tests {
     use super::*;
+
+    #[test]
+    fn a_personal_status_message_is_plain_text() {
+        assert_eq!(
+            personal_note_body("  ", None),
+            serde_json::json!({"message": ""})
+        );
+        let b = personal_note_body("Out <today> & tomorrow", None);
+        assert_eq!(b["message"], "Out <today> & tomorrow");
+        assert!(b["expiry"].as_str().unwrap().starts_with("9999-12-3"));
+        let long = "x".repeat(400);
+        assert_eq!(
+            personal_note_body(&long, None)["message"]
+                .as_str()
+                .unwrap()
+                .len(),
+            PERSONAL_NOTE_MAX_CHARS
+        );
+        let at = crate::clock::utc(jiff::Timestamp::from_second(1_800_000_000).unwrap());
+        assert_eq!(
+            personal_note_body("hi", Some(at))["expiry"],
+            "2027-01-15T08:00:00.000Z"
+        );
+    }
+
+    #[test]
+    fn personal_presence_goes_to_teams_free() {
+        assert_eq!(
+            consumer_base(Some("https://teams.live.com/ups/global/".into())),
+            "https://teams.live.com/ups/global"
+        );
+        assert_eq!(consumer_base(None), CONSUMER_PRESENCE_URL);
+        // Never another host with the account's tokens.
+        assert_eq!(
+            consumer_base(Some("https://evil.example/ups".into())),
+            CONSUMER_PRESENCE_URL
+        );
+        assert_eq!(
+            consumer_base(Some("http://teams.live.com/ups/global".into())),
+            CONSUMER_PRESENCE_URL
+        );
+        // A personal user's presence (§7.8 of the protocol notes).
+        let v = serde_json::json!([{"mri": "8:live:.cid.ca2738c364862c6", "presence": {"sourceNetwork": "Unknown", "availability": "Away", "activity": "Away"}}]);
+        let p = &parse_presences(&v)[0];
+        assert_eq!(
+            (p.availability.as_str(), p.activity.as_str()),
+            ("Away", "Away")
+        );
+    }
 
     #[test]
     fn reads_status_notes_with_mentions() {

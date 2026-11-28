@@ -1751,6 +1751,8 @@ Rectangle {
             }
             Item {
                 x: 16; y: 341; width: 238; height: 39
+                // Teams free has no "Show when people message me".
+                visible: !backend.personalAccount
                 Rectangle {
                     id: pinBox
                     property bool checked: false
@@ -1767,6 +1769,7 @@ Rectangle {
             }
             Rectangle {
                 x: 254; y: 349; width: 24; height: 24; radius: 4
+                visible: !backend.personalAccount
                 color: "transparent"
                 FluentIcon { x: 2; y: 2; name: "info-20"; size: 20; color: theme.textStrong }
                 HoverHandler { id: infoHover }
@@ -1794,7 +1797,7 @@ Rectangle {
                 x: 191; y: 474
                 label: notePage.saving ? qsTr("Saving...") : qsTr("Done")
                 enabled: !notePage.saving && (noteText.getText(0, noteText.length).trim().length > 0 || root.statusNote.length > 0)
-                onClicked: { notePage.saving = true; root.setStatusNote(noteText.getText(0, noteText.length).trim().length ? noteText.text : "", pinBox.checked, notePage.clearAfter[clearPick.current].key) }
+                onClicked: { notePage.saving = true; root.setStatusNote(noteText.getText(0, noteText.length).trim().length ? noteText.text : "", pinBox.checked && !backend.personalAccount, notePage.clearAfter[clearPick.current].key) }
             }
         }
     }
