@@ -7157,12 +7157,12 @@ Window {
     // --premium-test: Teams Premium as it stands for the account (PREMIUM
     // line with the mode and days left), the title bar's button, then each
     // page of the Premium dialog in turn (offer, pending, active, home,
-    // licensed, benefits scrolled half way, cancel). Pictures in /tmp/act.
+    // licensed, ended, benefits scrolled half way, cancel). Pictures in /tmp/act.
     Timer {
         running: Qt.application.arguments.indexOf("--premium-test") >= 0 && backend.signedIn
         interval: 1500; repeat: true
         property int step: 0
-        readonly property var pages: ["offer", "pending", "active", "home", "licensed", "benefits", "cancel"]
+        readonly property var pages: ["offer", "pending", "active", "home", "licensed", "ended", "benefits", "cancel"]
         onTriggered: {
             const st = step++
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile("/tmp/act/premium-" + n + ".png"))
