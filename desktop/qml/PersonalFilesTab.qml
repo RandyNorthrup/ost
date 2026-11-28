@@ -30,7 +30,7 @@ Item {
     property var selected: ({})
     readonly property var selectedFiles: files.filter(f => !!selected[keyOf(f)])
     readonly property string tag: "pfiles-" + Math.floor(Math.random() * 1e9) + ":"
-    function keyOf(f) { return f.message_id + "|" + f.name }
+    function keyOf(f) { return f.message_id + "|" + (f.share_url || f.object_url || f.name) }
     function load() {
         if (!chatId) return
         loading = true
@@ -179,8 +179,12 @@ Item {
         function popup(anchor, dx, dy) { const p = anchor.mapToItem(root, dx, dy); x = p.x; y = p.y; open() }
     }
 
-    readonly property real sharedX: width - 431
-    readonly property real sentX: width - 232
+    // The columns as room allows: Sent by goes first, then Shared on, so
+    // the name keeps at least ~200 px.
+    readonly property bool showSent: width >= 760
+    readonly property bool showShared: width >= 560
+    readonly property real sentX: showSent ? width - 232 : width
+    readonly property real sharedX: showShared ? (showSent ? width - 431 : width - 200) : width - 14
     // The header.
     Item {
         id: head
@@ -191,12 +195,13 @@ Item {
         FluentIcon { x: 96; anchors.verticalCenter: parent.verticalCenter; size: 16; name: "document-16"; color: theme.textSecondary }
         Text { x: 172; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Name"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
         Row {
+            visible: root.showShared
             x: root.sharedX; anchors.verticalCenter: parent.verticalCenter
             spacing: 2
             Text { text: qsTr("Shared on"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
             FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 12; name: "arrow-down-12"; color: theme.textSecondary }
         }
-        Text { x: root.sentX; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Sent by"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+        Text { visible: root.showSent; x: root.sentX; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Sent by"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
         Rectangle { y: parent.height - 1; width: parent.width - 14; height: 1; color: theme.divider }
     }
     ListView {
@@ -232,8 +237,8 @@ Item {
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("More options")
             }
-            Text { x: root.sharedX + 10; anchors.verticalCenter: parent.verticalCenter; text: root.stamp(row.modelData.time); font.family: theme.font; font.pixelSize: 14; color: theme.text }
-            Text { x: root.sentX + 10; anchors.verticalCenter: parent.verticalCenter; width: parent.width - x - 8; elide: Text.ElideRight
+            Text { visible: root.showShared; x: root.sharedX + 10; anchors.verticalCenter: parent.verticalCenter; text: root.stamp(row.modelData.time); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Text { visible: root.showSent; x: root.sentX + 10; anchors.verticalCenter: parent.verticalCenter; width: parent.width - x - 8; elide: Text.ElideRight
                 text: row.modelData.sender; font.family: theme.font; font.pixelSize: 14; color: theme.text }
             Rectangle { y: parent.height - 1; width: parent.width; height: 1; color: theme.divider }
             HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }

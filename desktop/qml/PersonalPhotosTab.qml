@@ -32,6 +32,14 @@ Item {
     }
     // Where the next page starts (the search counts messages).
     property int pageBase: 0
+    // A picture sent while the tab is open: the newest page again (4 s
+    // later, for the search index), its new pictures put first.
+    property int messageCount: 0
+    onMessageCountChanged: if (loaded) refreshSoon.restart()
+    Timer {
+        id: refreshSoon; interval: 4000
+        onTriggered: backend.driveAction(root.tag + "personal_photos_new", "{}", JSON.stringify({ chat: root.chatId, base: 0 }))
+    }
     function reset() { photos = []; more = true; loaded = false; pageBase = 0; thumbs = ({}); loadMore() }
     onChatIdChanged: reset()
     Component.onCompleted: loadMore()
@@ -70,6 +78,18 @@ Item {
                 root.more = !!v.more
                 // Fill the view before waiting for a scroll.
                 if (root.more && grid.contentHeight < grid.height) root.loadMore()
+            } else if (kind === "personal_photos_new") {
+                if (error || !result) return
+                const v = JSON.parse(result)
+                if (v.chat !== root.chatId) return
+                const seen = {}
+                for (const p of root.photos) seen[p.preview_url] = true
+                const fresh = (v.photos || []).filter(p => !seen[p.preview_url])
+                if (!fresh.length) return
+                root.photos = fresh.concat(root.photos)
+                // (The older pages moved down by as many messages.)
+                root.pageBase += new Set(fresh.map(p => p.message_id)).size
+                root.askThumbs(fresh)
             } else if (kind === "personal_thumb") {
                 if (error || !result) return
                 const v = JSON.parse(result)

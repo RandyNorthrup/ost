@@ -31880,7 +31880,7 @@ impl qobject::Backend {
                     // photo's tile (the media store's small thumbnail,
                     // cached here) and the OneDrive picker's places.
                     "personal_files" => json!({ "chat": s("chat"), "files": api::personal_files::chat_files(&client, &s("chat")).await? }),
-                    "personal_photos" => {
+                    "personal_photos" | "personal_photos_new" => {
                         let base = args["base"].as_u64().unwrap_or(0) as u32;
                         let (photos, more) = api::personal_files::chat_photos(&client, &s("chat"), base, 5).await?;
                         json!({ "chat": s("chat"), "base": base, "photos": photos, "more": more })
