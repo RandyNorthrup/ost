@@ -3666,7 +3666,7 @@ pub async fn cancel_meeting(
             "fetchEventContract": {
                 "eventType": kind,
                 "eventTimeZone": "UTC",
-                "startTime": s("start_utc").replace('Z', ".000Z"),
+                "startTime": mt_start(&s("start_utc"))?,
             }
         });
         let group = format!("smtp:{mail}");
@@ -3830,11 +3830,7 @@ pub async fn update_team_meeting(
     // supported yet").
     // (Milliseconds, as Teams sends it; the team calendar's start carries
     // Graph's seven-digit fractions.)
-    let start = crate::clock::iso_ms(
-        start_utc
-            .parse::<jiff::Timestamp>()
-            .with_context(|| format!("Not a time: {start_utc}"))?,
-    );
+    let start = mt_start(start_utc)?;
     let get = crate::auth::token_hosts::service_url(
         &base,
         crate::auth::token_hosts::Audience::Teams,
@@ -3950,8 +3946,20 @@ fn team_event_changes(
     if form.body_changed {
         ev["bodyContent"] = changes["bodyContent"].clone();
     }
-    if !form.location.is_empty() || !form.online {
-        ev["location"] = serde_json::json!(form.location);
+    // (The form hides an online meeting's own "Microsoft Teams Meeting";
+    // emptied, the place goes back to it.)
+    let place = if form.location.is_empty() && form.online {
+        "Microsoft Teams Meeting"
+    } else {
+        form.location.as_str()
+    };
+    if ev["location"].as_str() != Some(place) {
+        ev["location"] = serde_json::json!(place);
+        ev["meetingLocations"] = if place.is_empty() {
+            serde_json::json!([])
+        } else {
+            serde_json::json!([{ "locationType": "Default", "displayName": place }])
+        };
     }
     let wanted: Vec<&FormAttendee> = form
         .attendees
@@ -4018,6 +4026,24 @@ fn team_event_changes(
         }
     }
     ev["attendees"] = serde_json::Value::Array(people);
+}
+
+/// An event's start as the middle tier's `fetchEventContract` takes it
+/// (UTC with milliseconds, as Teams sends it): from Graph's UTC start (seven
+/// fraction digits or none), or an all-day event's floating local midnight
+/// (no offset, as `parse_events` keeps it) in your zone.
+fn mt_start(start: &str) -> Result<String> {
+    let t = start
+        .parse::<jiff::Timestamp>()
+        .ok()
+        .or_else(|| {
+            crate::clock::parse_naive(start, "%Y-%m-%dT%H:%M:%S%.f")
+                .or_else(|| crate::clock::parse_naive(start, "%Y-%m-%dT%H:%M:%S"))
+                .and_then(crate::clock::local_earliest)
+                .map(|z| z.timestamp())
+        })
+        .with_context(|| format!("Not a time: {start}"))?;
+    Ok(crate::clock::iso_ms(t))
 }
 
 /// A team event's kind as the middle tier names it (Graph's `type`).
@@ -5115,12 +5141,44 @@ mod older_tests {
 
     #[test]
     fn a_team_start_goes_in_milliseconds() {
-        let t = |s: &str| crate::clock::iso_ms(s.parse::<jiff::Timestamp>().unwrap());
+        let t = |s: &str| super::mt_start(s).unwrap();
         assert_eq!(
             t("2026-12-01T22:00:00.0000000Z"),
             "2026-12-01T22:00:00.000Z"
         );
         assert_eq!(t("2026-12-01T22:00:00Z"), "2026-12-01T22:00:00.000Z");
+        // An all-day event's floating midnight, in your zone.
+        let local = crate::clock::local_earliest(
+            crate::clock::parse_naive("2026-12-01T00:00:00", "%Y-%m-%dT%H:%M:%S").unwrap(),
+        )
+        .unwrap()
+        .timestamp();
+        assert_eq!(t("2026-12-01T00:00:00"), crate::clock::iso_ms(local));
+        assert!(super::mt_start("soon").is_err());
+    }
+
+    #[test]
+    fn a_team_update_clears_a_removed_place() {
+        let mut ev = serde_json::json!({"location": "Room 4", "meetingLocations": [{"displayName": "Room 4"}], "attendees": []});
+        let form = super::MeetingForm {
+            subject: "Design review".into(),
+            start: "2026-12-01T14:00:00-08:00".into(),
+            end: "2026-12-01T14:30:00-08:00".into(),
+            online: true,
+            ..Default::default()
+        };
+        let me = super::Me {
+            name: "OST Test 1".into(),
+            mail: "ost-test1@scnetsolutions.com".into(),
+            mri: "8:orgid:4287e791-1b98-4963-8b94-281c50472683".into(),
+        };
+        let changes = super::mt_event(&form, &me, Some("OSTTestTeam@scnetsolutions.com")).unwrap();
+        super::team_event_changes(&mut ev, &changes, &form, "OSTTestTeam@scnetsolutions.com");
+        assert_eq!(ev["location"], "Microsoft Teams Meeting");
+        assert_eq!(
+            ev["meetingLocations"][0]["displayName"],
+            "Microsoft Teams Meeting"
+        );
     }
 
     #[test]

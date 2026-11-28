@@ -32042,12 +32042,21 @@ impl qobject::Backend {
                         match &form.channel {
                             None => api::calendar::send_event_update(&client, &s("id"), &form).await?,
                             Some(c) if !s("icalUid").is_empty() => {
-                                let team_event = api::calendar::TeamEventRef {
+                                let mut team_event = api::calendar::TeamEventRef {
                                     team_id: c.team_id.clone(),
                                     ical_uid: s("icalUid"),
                                     start_utc: s("startUtc"),
                                     event_type: s("eventType"),
                                 };
+                                // Edit series: the series master (its iCalUId and start).
+                                if form.scope == "series"
+                                    && let Some(master) = args["seriesMasterId"].as_str().filter(|m| !m.is_empty() && !m.contains(['/', '?', '#']))
+                                {
+                                    let v: serde_json::Value = client.graph_get(&format!("/me/events/{master}?$select=iCalUId,start")).await?.json().await?;
+                                    team_event.ical_uid = v["iCalUId"].as_str().unwrap_or_default().to_string();
+                                    team_event.start_utc = v.pointer("/start/dateTime").and_then(|t| t.as_str()).map(|t| format!("{}Z", t.split('.').next().unwrap_or(t))).unwrap_or_default();
+                                    team_event.event_type = "seriesMaster".into();
+                                }
                                 api::calendar::update_team_meeting(&client, &team_event, &form, &me).await?
                             }
                             Some(_) => api::calendar::update_meeting(&client, &s("id"), &form, &me, &s("joinUrl"), &s("eventType")).await?,

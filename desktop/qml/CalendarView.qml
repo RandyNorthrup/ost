@@ -3522,7 +3522,7 @@ Item {
                 // (A channel meeting's update goes to its team's calendar by
                 // its iCalUId and start, as Teams' form sends a team event's.)
                 if (out.editingId) root.calendarAction("update", JSON.stringify({ id: out.editingId, form: out, joinUrl: form.event.join_url || "", eventType: form.event.event_type || "",
-                                                                                  icalUid: out.channel ? form.event.ical_uid || "" : "", startUtc: form.event.start_utc || "" }))
+                                                                                  icalUid: out.channel ? form.event.ical_uid || "" : "", startUtc: form.event.start_utc || "", seriesMasterId: form.event.series_master_id || "" }))
                 else root.calendarAction("schedule", JSON.stringify({ form: out }))
             }
             onCancelMeeting: (note, scope) => {
