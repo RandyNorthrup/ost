@@ -1,9 +1,11 @@
 ---
 id: TASK-0290
 title: 'Several accounts: add a personal account, switch, sign out one'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@t290'
 created_date: '2026-11-25T15:26:00Z'
+updated_date: '2026-11-28T00:56:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -22,8 +24,32 @@ Teams desktop runs one personal account next to work accounts: the profile menu 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The profile menu lists the signed-in accounts with Add another account and Sign out, matching Teams desktop (verified side by side on winpc)
-- [ ] #2 Each account keeps its own tokens, settings and caches; switching shows the other account without signing in again
-- [ ] #3 Only one personal account can be added, with Teams' message when a second is tried
-- [ ] #4 Signing out of one account leaves the others signed in
+- [x] #1 The profile menu lists the signed-in accounts with Add another account and Sign out, matching Teams desktop (verified side by side on winpc)
+- [x] #2 Each account keeps its own tokens, settings and caches; switching shows the other account without signing in again
+- [x] #3 Only one personal account can be added, with Teams' message when a second is tried
+- [x] #4 Signing out of one account leaves the others signed in
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Reuse the work multi-account machinery (profiles, switch_account, add_account, MtmaHub, Accounts and orgs). New: a personal (MSA) account as one of the profiles.
+1. Sign-in: Microsoft's page opens at the common authority, so a personal email is accepted as in Teams' Add another account; OST catches the hand-off to login.live.com and continues with Teams free's web sign-in (client 4b3e8f46, consumers, return https://teams.live.com/v2/authv2, Origin https://teams.live.com) with the same email.
+2. Personal tokens: redeem the code, identity from the id_token (name, email, oid -> 8:live:.cid.<hex>), consumer authz v2 for the Skype token and regionGtms; refresh() renews them for the personal flow (TASK-0292 keeps the silent 24 h renewal, teams-cli and the rest).
+3. Accounts list: kind per account; a second personal account is refused after its sign-in with Teams' dialog (Multiple personal accounts aren't supported in Teams yet. / Open Teams on the web / Cancel), and its tokens, profile folder and web storage are removed.
+4. Profile menu as Teams: personal window header Personal + Sign out, My Microsoft account, no Pause notifications or Set work location; work window keeps the round avatar when the only other account is personal; window titles gain Personal/org and email once a second account exists.
+5. Sign out of one account: only that profile's tokens and storage go; with other accounts signed in, its window closes instead of returning to sign-in.
+6. Personal window loads its shell without the work-only calls failing it (chat list etc. come in TASK-0293).
+7. Tests (spa, identity, config, skype parsing), build on a build box, live: two work profiles (test2+test3) for AC1/2/4, OST Personal 1 + 2 for AC3 and the personal menu; Teams desktop reference on testpc2.
+8. TASK-0291: check its ACs live against Teams on a test PC; check off what holds, note the rest, build small gaps.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- 2026-11-27 (t290) PR #69. Built: personal sign-in route (work page's hand-off to login.live.com through Azure AD's MSA federation client 51483342…, or its "can't sign in here with a personal account" refusal + realm discovery, then Teams free web's sign-in for that address); personal tokens (id_token identity 8:live:.cid, consumer authz v2 Skype token + regionGtms + skypeid, MT and Graph tokens, refresh); account kind in accounts.json; second personal refused with Teams' dialog (PersonalRefusedDialog.qml) and its profile removed; personal profile menu (Personal header, My Microsoft account, no Pause notifications / work location); org pill only beside another work account; window titles name the account; Accounts and orgs "Personal"; sign-out of one account closes its window and removes its profile, others stay; quit via exit() (Qt 6 quit() was swallowed by keep-running's hide); app-definition load backoff (Avatars app looped on a refused token).
+- Gotcha: OST Personal 1 is a B2B guest in scnetsolutions (TASK-0287), so the plain work sign-in signed it in as a guest (GuestUserNotRedeemed). The hand-off catch prevents that.
+- Live on linuxlt (isolated XDG dirs, profiles t290w=ost-test2, t290x=ost-test3, t290p=OST Personal 1, t290q=OST Personal 2): AC1 flyouts and Accounts and orgs match Teams 26304 on testpc2 (ac2-02/ac2-11/ac2-set-04); AC2 switch raises the running window with no sign-in, the personal account survives a restart; AC3 Personal 2 gets Teams' dialog after its sign-in, Cancel closes the window and removes profile/web storage/keyring entry; AC4 signing out of t290x and then t290p closed each window and removed its profile while the others stayed signed in.
+- The AC says side by side on winpc; the Teams reference used is testpc2 (Teams 26304, OST Test 2 + OST Personal 2, the primary reference), since winpc's Teams has no personal account and other agents use it.
+- Not live: Open Teams on the web (opens a browser); the first profile's sign-out with others left (it shares the real default keyring entry on linuxlt). Email codes for the personal accounts were read with ~/ost-coord/graph_beta_get (ost-test1 / OST_PROFILE=test2).
+<!-- SECTION:NOTES:END -->
