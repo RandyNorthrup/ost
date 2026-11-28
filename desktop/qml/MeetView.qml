@@ -55,8 +55,9 @@ Item {
         if (isNaN(t.getTime())) return ""
         const mins = Math.round((Date.now() - t.getTime()) / 60000)
         if (mins < 1) return qsTr("Created just now")
-        if (mins < 60) return qsTr("Created %n minute(s) ago", "", mins)
-        if (mins < 24 * 60) return qsTr("Created %n hour(s) ago", "", Math.round(mins / 60))
+        if (mins < 60) return mins === 1 ? qsTr("Created 1 minute ago") : qsTr("Created %1 minutes ago").arg(mins)
+        const hours = Math.round(mins / 60)
+        if (mins < 24 * 60) return hours === 1 ? qsTr("Created 1 hour ago") : qsTr("Created %1 hours ago").arg(hours)
         return qsTr("Created %1").arg(t.toLocaleDateString(Qt.locale(), Locale.ShortFormat))
     }
 
