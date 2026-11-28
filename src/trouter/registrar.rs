@@ -217,3 +217,128 @@ pub async fn register_cdl(
     tracing::info!("Registrar CDL {} registration succeeded", template_key);
     Ok(())
 }
+
+/// Teams free's chat registrar (its web client's `registrarDefaultEndpoint`;
+/// a work account's comes from the Trouter negotiate).
+pub const PERSONAL_REGISTRAR: &str = "https://edge.skype.com/registrar/prod/v2/registrations";
+/// How long a personal account's registrations last, as Teams free's web
+/// client asks (re-registered before then).
+pub const PERSONAL_TTL_SECS: u64 = 3600;
+/// Teams free's web client version, as its registrations name it.
+const PERSONAL_UI_VERSION: &str = "1415/26101516645";
+
+/// The two chat registrations Teams free's web client makes for a
+/// personal account's socket (captured on teams.live.com 2026-11-27/28;
+/// it answers 202): the
+/// chat worker under template `TeamsCDLWebWorker_2.7` with product
+/// context `TFL` (whose pushes carry personal chats' messages, typing
+/// and read receipts), and `<epid>_GG` under `TeamsCDLWebWorker_2.3` with
+/// no context.
+pub fn personal_registrations(surl: &str, epid: &str) -> Vec<serde_json::Value> {
+    let entry =
+        |id: String, template: &str, context: &str, language: &str, path: &str, ttl: u64| {
+            serde_json::json!({
+                "clientDescription": {
+                    "appId": "TeamsCDLWebWorker",
+                    "aesKey": "",
+                    "languageId": language,
+                    "platform": "edge",
+                    "templateKey": template,
+                    "platformUIVersion": PERSONAL_UI_VERSION,
+                    "productContext": context
+                },
+                "registrationId": id,
+                "nodeId": "",
+                "transports": {"TROUTER": [{"context": "", "path": path, "ttl": ttl}]}
+            })
+        };
+    let with_slash = format!("{}/", surl.trim_end_matches('/'));
+    vec![
+        entry(
+            epid.to_string(),
+            "TeamsCDLWebWorker_2.7",
+            "TFL",
+            "en-US",
+            &with_slash,
+            PERSONAL_TTL_SECS,
+        ),
+        // (as the web client sends it: no language, the path without its
+        // trailing slash)
+        entry(
+            format!("{epid}_GG"),
+            "TeamsCDLWebWorker_2.3",
+            "",
+            "",
+            surl.trim_end_matches('/'),
+            86523,
+        ),
+    ]
+}
+
+/// Register a personal account's Trouter socket for its chat pushes at
+/// Teams free's registrar ([`personal_registrations`]), with the headers
+/// its web client sends.
+pub async fn register_personal(
+    http: &reqwest::Client,
+    skype_token: &str,
+    trouter_surl: &str,
+    epid: &str,
+) -> Result<()> {
+    for payload in personal_registrations(trouter_surl, epid) {
+        let template = payload["clientDescription"]["templateKey"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+        let resp = http
+            .post(PERSONAL_REGISTRAR)
+            .header("X-Skypetoken", skype_token)
+            .header("X-MS-Migration", "True")
+            .header("x-ms-test-user", "False")
+            .json(&payload)
+            .send()
+            .await
+            .context("Registrar POST failed")?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Registrar {template} returned {status}: {}",
+                crate::feedback::scrub_secrets(&body)
+            );
+        }
+        tracing::info!("Registrar {template} registration succeeded (personal)");
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_personal_socket_registers_as_teams_free() {
+        let r = personal_registrations("https://pub-csm-x-f.trouter.skype.com:3443/v4/f/A/", "ep");
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[0]["registrationId"], "ep");
+        assert_eq!(
+            r[0]["clientDescription"]["templateKey"],
+            "TeamsCDLWebWorker_2.7"
+        );
+        assert_eq!(r[0]["clientDescription"]["productContext"], "TFL");
+        assert_eq!(r[0]["transports"]["TROUTER"][0]["ttl"], 3600);
+        assert_eq!(
+            r[0]["transports"]["TROUTER"][0]["path"],
+            "https://pub-csm-x-f.trouter.skype.com:3443/v4/f/A/"
+        );
+        assert_eq!(r[1]["registrationId"], "ep_GG");
+        assert_eq!(
+            r[1]["clientDescription"]["templateKey"],
+            "TeamsCDLWebWorker_2.3"
+        );
+        assert_eq!(r[1]["clientDescription"]["productContext"], "");
+        assert_eq!(
+            r[1]["transports"]["TROUTER"][0]["path"],
+            "https://pub-csm-x-f.trouter.skype.com:3443/v4/f/A"
+        );
+    }
+}
