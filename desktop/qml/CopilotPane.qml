@@ -30,27 +30,44 @@ Rectangle {
     signal openLink(string url)
     property var launch: null
     property string requested: ""
-    /// Ask Copilot on a message ({id, promptText, text, chatId}): handed to
-    /// the app as Teams' processPromptInput does (830567: the frame's
-    /// updatePromptInputData with the prompt, not a draft, and the message
-    /// as a client-annotated Chat annotation), once it is up.
+    /// Ask Copilot on a message ({id, promptText, text, chatId}, and for a
+    /// channel's post view `channel` {channelId, teamId, groupId,
+    /// replyChainId, tenantId}): handed to the app as Teams' processPromptInput
+    /// does (830567: the frame's updatePromptInputData with the prompt, not
+    /// a draft, and the message as a client-annotated Chat annotation, or
+    /// in a channel a Channel one naming the channel, team, group, reply
+    /// chain and tenant), once it is up.
     property var ask: null
     property var askSent: null
     property bool appReady: false
+    function askFitsRequest(a) {
+        const r = pane.request
+        if (!r) return false
+        if (a.channel) return !!r.thread && r.thread.channelId === a.channel.channelId && r.thread.replyChainId === a.channel.replyChainId
+        return r.chat === a.chatId
+    }
     function sendAsk() {
         const a = pane.ask
         // Only into the conversation it was asked in.
-        if (!a || !app.item || !pane.appReady || pane.askSent === a.id || !pane.request || pane.request.chat !== a.chatId) return
+        if (!a || !app.item || !pane.appReady || pane.askSent === a.id || !askFitsRequest(a)) return
         pane.askSent = a.id
         const now = Date.now()
         const ref = "teams-msg-" + Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2) + "-" + now
+        const selected = { selectedContents: [{ "@type": "Text", selectedContent: a.text }] }
+        const c = a.channel
+        const annotation = c
+            ? { queryAnnotationType: "Channel", id: c.channelId, text: a.text, messageAnnotationSource: "ClientAnnotated",
+                messageAnnotationMetadata: Object.assign({ "@type": "Channel", channelId: c.channelId, teamId: c.teamId },
+                    c.groupId ? { groupId: c.groupId } : {}, c.replyChainId ? { replyChainId: c.replyChainId } : {},
+                    c.tenantId ? { tenantId: c.tenantId } : {}, { selectedContentContext: selected }) }
+            : { queryAnnotationType: "Chat", id: a.chatId, text: a.text, messageAnnotationSource: "ClientAnnotated",
+                messageAnnotationMetadata: { "@type": "Chat", selectedContentContext: selected } }
         app.item.sendFrameMessage("updatePromptInputData", [{
             promptText: a.promptText, isDraft: false, promptTimestamp: now,
-            rawEntityData: [{ type: "Chat", data: { id: a.chatId, referenceId: ref, name: a.text } }],
-            queryAnnotations: [{ queryAnnotationType: "Chat", id: a.chatId, text: a.text, messageAnnotationSource: "ClientAnnotated",
-                messageAnnotationMetadata: { "@type": "Chat", selectedContentContext: { selectedContents: [{ "@type": "Text", selectedContent: a.text }] } } }]
+            rawEntityData: [{ type: "Chat", data: { id: c ? c.channelId : a.chatId, referenceId: ref, name: a.text } }],
+            queryAnnotations: [annotation]
         }])
-        console.info("COPILOTPANE ask sent")
+        console.info("COPILOTPANE ask sent", c ? "channel" : "chat")
     }
     onAskChanged: Qt.callLater(sendAsk)
     readonly property string tag: "copilotpane-" + Math.floor(Math.random() * 1e9).toString(36)

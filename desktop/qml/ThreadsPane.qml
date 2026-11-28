@@ -148,6 +148,22 @@ Rectangle {
         onReact: (id, key, on) => backend.toggleReaction(id, key, on)
         onDeleteMessage: id => backend.deleteMessage(id)
         onEditMessage: (id, text) => backend.editMessage(id, text)
+        // Ask Copilot in the thread (Teams' channel L2: the thread's
+        // Copilot opens with the prompt, openThreadsCopilot).
+        askCopilotHere: pane.copilotAvailable && !!pane.rootId
+        onAskCopilotElsewhere: m => pane.askCopilot(m, thread.askableTextFor(m))
+    }
+    property var copilotAsk: null
+    function askCopilot(m, text) {
+        if (!text || !copilotAvailable || !rootId) return
+        const prompt = qsTr("Search for more context and explain this in more detail")
+        const brief = text.split(/\s+/).filter(w => w).length <= 3 && text.length <= 40
+        const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+        const t = teams.find(t => t.id === pane.teamId) || teams.find(t => (t.channels || []).some(c => c.id === pane.channelId)) || {}
+        copilotAsk = { id: Date.now(), promptText: brief ? prompt + " \"" + text + "\"" : prompt, text: text, chatId: pane.channelId,
+                       channel: { channelId: pane.channelId, teamId: t.thread_id || "", groupId: t.id || pane.teamId, replyChainId: pane.rootId, tenantId: backend.tenantId() } }
+        copilotOpen = true
+        console.info("COPILOT ask on thread message", m.id)
     }
 
     // The header (over the conversation's own).
@@ -270,6 +286,7 @@ Rectangle {
         z: 1
         open: pane.copilotOpen && !!pane.rootId
         request: pane.copilotRequest
+        ask: pane.copilotAsk
         x: parent.width - width; y: theme.headerHeight
         width: open ? 360 : 0; height: parent.height - y
         onClosed: pane.copilotOpen = false

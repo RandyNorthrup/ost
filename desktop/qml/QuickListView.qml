@@ -39,7 +39,9 @@ import QtQuick.Controls.Basic
 // 4, 6 in, brandBackground2 with the 16 px alarm and 12/600 brand text:
 // the time today or month/day else, "Due …" once due, "Completed");
 // on hover Mark as completed (a circle check) and More options (Edit
-// reminder ▸, Remove reminder, Go to conversation) at the end, 10 down;
+// reminder ▸, Remove reminder, Save / Unsave this message, Go to
+// conversation, Open in new window, each with its icon; Teams desktop
+// 26304, 2026-11-27) at the end, 10 down;
 // "You have no new reminders." with none.
 Rectangle {
     id: root
@@ -50,6 +52,9 @@ Rectangle {
     property string selectedKey: ""
     property string chip: ""
     signal openItem(var item)
+    /// A reminder's More options ▸ Open in new window: its chat, or its
+    /// post's conversation, in a window of its own.
+    signal openInWindow(var item)
     property bool compact: false
     readonly property real paneWidth: compact ? 320 : 380
     signal backRequested()
@@ -319,9 +324,16 @@ Rectangle {
                             onTapped: {
                                 const t = presets.times(new Date())
                                 remMenu.times = t
-                                remMenu.items = [{ key: "edit", label: qsTr("Edit reminder"), submenu: presets.submenu(t, false) },
-                                                 { key: "remove", label: qsTr("Remove reminder") },
-                                                 { key: "open", label: qsTr("Go to conversation") }]
+                                // (Teams desktop 26304, OST Test 2, 2026-11-27:
+                                // with icons; Save or Unsave this message as
+                                // the message is; Open in new window last.)
+                                remMenu.items = [{ key: "edit", label: qsTr("Edit reminder"), icon: "edit-20", submenu: presets.submenu(t, false) },
+                                                 { key: "remove", label: qsTr("Remove reminder"), icon: "delete-20" },
+                                                 row.modelData.saved
+                                                     ? { key: "unsave", label: qsTr("Unsave this message"), icon: "bookmark-20" }
+                                                     : { key: "save", label: qsTr("Save this message"), icon: "bookmark-20" },
+                                                 { key: "open", label: qsTr("Go to conversation"), icon: "chat-20" },
+                                                 { key: "window", label: qsTr("Open in new window"), icon: "window-new-20" }]
                                 remMenu.open()
                             }
                         }
@@ -330,13 +342,17 @@ Rectangle {
                         MenuPopup {
                             id: remMenu
                             property var times: null
-                            y: parent.height + 4
+                            // End-aligned under the button.
+                            x: parent.width - width; y: parent.height + 2
                             chevronSize: 20; chevronMargin: 5.6
+                            labelInset: 32
                             submenuMinWidth: 162
                             onPicked: i => {
-                                const m = row.modelData
-                                if (items[i].key === "remove") backend.removeReminderAt(m.thread_id, m.message_id, m.reply_chain || "")
-                                else if (items[i].key === "open") { root.selectedKey = root.key(m); root.openItem(m) }
+                                const m = row.modelData, k = items[i].key
+                                if (k === "remove") backend.removeReminderAt(m.thread_id, m.message_id, m.reply_chain || "")
+                                else if (k === "save" || k === "unsave") backend.setSavedAt(m.thread_id, m.message_id, m.reply_chain || "", k === "save")
+                                else if (k === "open") { root.selectedKey = root.key(m); root.openItem(m) }
+                                else if (k === "window") root.openInWindow(m)
                             }
                             onSubPicked: (i, j) => {
                                 const m = row.modelData, k = items[i].submenu[j].key, t = remMenu.times

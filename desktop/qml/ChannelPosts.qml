@@ -15,6 +15,16 @@ Item {
     property bool busy: false
     // The Conversation: its hover-bar rules, menus, pickers and edit state.
     property var host: null
+    /// Forward ▸ Multiple messages (Teams' enableForwardMultiselectChannelPane,
+    /// seen on Teams desktop 26304 as OST Test 2, 2026-11-27): the
+    /// Conversation's ForwardSelection. While picking, each card shows only
+    /// its post (no reactions, replies or Reply in thread), the post's
+    /// content 32 further in and the checkbox 13 in, centred on the card;
+    /// a click on the card toggles it; Post in channel gives way to the
+    /// selection bar. A meeting's post can't be picked ("This message
+    /// can't be forwarded.").
+    property var selection: null
+    readonly property bool selecting: !!selection && selection.selecting
     signal reply(string rootId, string text)
     signal startPost()
     /// The post composer is open (Teams then hides Post in channel).
@@ -215,7 +225,7 @@ Item {
         id: list
         // Post in channel is hidden at the top or while composing; then the
         // list goes down to the bottom.
-        anchors { top: parent.top; left: parent.left; right: parent.right; bottom: root.newestAtTop || root.posting ? parent.bottom : postButton.top; bottomMargin: root.newestAtTop || root.posting ? 0 : 16 }
+        anchors { top: parent.top; left: parent.left; right: parent.right; bottom: root.newestAtTop || root.posting || root.selecting ? parent.bottom : postButton.top; bottomMargin: root.newestAtTop || root.posting || root.selecting ? 0 : 16 }
         clip: true
         spacing: 12
         // Newest activity at the bottom: posts sit at the top while they
@@ -224,7 +234,7 @@ Item {
         model: root.posts
         onCountChanged: Qt.callLater(() => root.newestAtTop ? positionViewAtBeginning() : positionViewAtEnd())
         topMargin: root.newestAtTop ? 0 : 8; bottomMargin: 8
-        header: root.newestAtTop ? topCard : null
+        header: root.newestAtTop && !root.selecting ? topCard : null
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
         readonly property real cardW: root.compact ? width - 62 : Math.min(1100, width - 2 * (width > 480 ? 88 : 16))
         delegate: Item {
@@ -246,6 +256,8 @@ Item {
             readonly property bool live: !!liveStart
             readonly property string meetingTitle: !meeting ? "" : (post.meeting_title || qsTr("Meeting in \"%1\"").arg(root.channelName))
             readonly property string subjectText: meeting ? meetingTitle + (live ? "" : " ended") : (post && post.subject ? post.subject : "")
+            // Picking messages: the post's content moves 32 in.
+            readonly property real sx: root.selecting ? 32 : 0
             x: root.compact ? 30 : (list.width - width) / 2
             width: list.cardW
             height: col.height
@@ -258,11 +270,11 @@ Item {
                 // The post
                 Item {
                     width: parent.width
-                    height: !card.post ? 44 : postEdit.active ? (postEdit.item ? postEdit.item.height : 0) + 8 : postBody.y + postBody.height + postActions.extra + 51
+                    height: !card.post ? 44 : postEdit.active ? (postEdit.item ? postEdit.item.height : 0) + 8 : root.selecting ? postBody.y + postBody.height + 20 : postBody.y + postBody.height + postActions.extra + 51
                     readonly property var mark: postEdit.active ? null : root.highlight(card.post)
                     // Teams' indicator bar: 4 x 32 at (4, 16), rounded 2.
                     Rectangle {
-                        visible: !!parent.mark
+                        visible: !!parent.mark && !root.selecting
                         x: 4; y: 16; width: 4; height: 32; radius: 2
                         color: parent.mark ? parent.mark.color : "transparent"
                     }
@@ -270,7 +282,7 @@ Item {
                     // edge, 20 down, with a white 16 px icon (shadow 2/4).
                     Item {
                         id: nubbin
-                        visible: !!parent.mark && parent.mark.icon !== ""
+                        visible: !!parent.mark && parent.mark.icon !== "" && !root.selecting
                         x: card.width - 12; y: 20; z: 6
                         width: 24; height: 24
                         FluentSurface { anchors.fill: parent; depth: 4; radius: 12; color: nubbin.parent.mark ? nubbin.parent.mark.color : "transparent" }
@@ -282,14 +294,14 @@ Item {
                     Avatar {
                         id: av
                         visible: !!card.post && !postEdit.active
-                        x: 18; y: 16; size: 32
+                        x: 18 + card.sx; y: 16; size: 32
                         name: card.post ? root.senderOf(card.post) : ""
                         photoId: card.post ? card.post.sender_mri + (card.post.sender_app ? "#" + card.post.sender_app : "") : ""
                         opensProfile: true
                     }
                     Text {
                         visible: !postEdit.active
-                        x: card.post ? 60 : 18; y: !card.post ? 14 : root.compact ? 13.4 : 22
+                        x: (card.post ? 60 : 18) + card.sx; y: !card.post ? 14 : root.compact ? 13.4 : 22
                         text: card.post ? root.senderOf(card.post) : qsTr("Earlier post")
                         font.family: theme.font; font.pixelSize: theme.base
                         lineHeight: root.compact ? 20 : 1; lineHeightMode: root.compact ? Text.FixedHeight : Text.ProportionalHeight
@@ -323,6 +335,11 @@ Item {
                                 font.family: theme.font; font.pixelSize: theme.small
                                 color: theme.textSecondary
                             }
+                            // Saved by you and your reminder (Teams' channel
+                            // status-bar, 395276 `v`: after Edited, the
+                            // Berry 16 px bookmark and alarm; seen on Teams
+                            // desktop 26304, 2026-11-27).
+                            MessageStatusIcons { y: -1; message: card.post || ({}) }
                         }
                     }
                     // Teams' post header: an announcement's banner (680 wide at
@@ -332,7 +349,7 @@ Item {
                     Column {
                         id: postHead
                         visible: !!card.post && !postEdit.active
-                        x: 18; y: 64; width: card.width - 36
+                        x: 18 + card.sx; y: 64; width: card.width - 36 - card.sx
                         readonly property var ann: card.post ? card.post.announcement || null : null
                         // A picture banner: the card's width less 32, Teams'
                         // fixed ratio (684 x 190.08 at a 716 card, whatever
@@ -390,7 +407,7 @@ Item {
                         // 4 wider, 12 above it).
                         Item {
                             readonly property var sm: card.post ? card.post.scheduled_meeting || null : null
-                            visible: !!sm
+                            visible: !!sm && !root.selecting
                             width: parent.width; height: visible ? meetingCard.height + 12 : 0
                             ScheduledMeetingCard {
                                 id: meetingCard
@@ -415,7 +432,7 @@ Item {
                         readonly property real full: contentH
                         onFullChanged: if (card.post) root.seeMoreFull[card.post.id] = full
                         visible: postText.visible
-                        x: 18; y: 64 + postHead.height; width: card.width - 36
+                        x: 18 + card.sx; y: 64 + postHead.height; width: card.width - 36 - card.sx
                         height: card.meeting ? 0 : !cut ? contentH : (open ? contentH : limit) + 20
                         Item {
                             width: parent.width
@@ -456,7 +473,7 @@ Item {
                     OdslBlock {
                         id: postOdsl
                         readonly property real extra: visible ? height + 8 : 0
-                        visible: !!card.post && !postEdit.active && !card.post.mine && !card.post.deleted && shown
+                        visible: !!card.post && !postEdit.active && !card.post.mine && !card.post.deleted && shown && !root.selecting
                         x: 18; y: postBody.y + postBody.height + (postActions.visible ? Math.max(31.3, postActions.height) + 8 : 0) + 8
                         width: card.width - 36
                         message: card.post || ({})
@@ -465,7 +482,7 @@ Item {
                     SuggestedActionsRow {
                         id: postActions
                         readonly property real extra: (visible ? Math.max(31.3, height) + 8 : 0) + postOdsl.extra
-                        visible: !!card.post && !postEdit.active && !card.post.mine && !card.post.deleted && shown
+                        visible: !!card.post && !postEdit.active && !card.post.mine && !card.post.deleted && shown && !root.selecting
                         x: 16; y: postBody.y + postBody.height + 8
                         message: card.post || ({})
                         host: root.host
@@ -474,7 +491,7 @@ Item {
                     // Teams' reaction summary, 17 under the body; posts show the
                     // add button even with no reactions.
                     ReactionSummary {
-                        visible: !!card.post && !postEdit.active
+                        visible: !!card.post && !postEdit.active && !root.selecting
                         x: 18; y: postBody.y + postBody.height + postActions.extra + 17
                         host: root.host
                         messageId: card.post ? card.post.id : ""
@@ -494,7 +511,7 @@ Item {
                     HoverHandler { id: postHover }
                     HoverBar {
                         id: postBar
-                        visible: !!card.post && !!root.host && !card.post.deleted && !postEdit.active
+                        visible: !!card.post && !!root.host && !card.post.deleted && !postEdit.active && !root.selecting
                             && (postHover.hovered || postBar.hovered || root.host.menuOpenFor(card.post.id, "post"))
                         host: root.host
                         message: card.post || ({})
@@ -506,7 +523,7 @@ Item {
                     }
                     TapHandler {
                         acceptedButtons: Qt.RightButton
-                        enabled: !!card.post && !!root.host
+                        enabled: !!card.post && !!root.host && !root.selecting
                         onTapped: point => root.host.openMessageMenu(card.post, card, true, point.position.x, point.position.y, "post")
                     }
                 }
@@ -517,7 +534,7 @@ Item {
                 // right: Join (96 x 32), the people in it (28 px, 18 apart)
                 // 15 before it, the time since it started 15 before them.
                 Item {
-                    visible: card.live
+                    visible: card.live && !root.selecting
                     width: card.width; height: visible ? 68 : 0
                     Rectangle {
                         y: -6; width: parent.width; height: 70; radius: 4
@@ -572,7 +589,7 @@ Item {
                 // An ended meeting's "See details" (response-summary-button,
                 // 12 px brand, 18 in and 12 down in a 40.7 row): its thread.
                 Item {
-                    visible: card.meeting && !card.live && card.modelData.events.length > 0 && card.replies.length === 0
+                    visible: card.meeting && !card.live && card.modelData.events.length > 0 && card.replies.length === 0 && !root.selecting
                     width: card.width; height: visible ? 40.7 : 0
                     Rectangle { width: parent.width; height: 0.67; color: theme.quoteBorder }
                     Text {
@@ -588,7 +605,7 @@ Item {
                 }
                 // Earlier replies, collapsed.
                 Item {
-                    visible: card.replies.length > card.shown.length
+                    visible: card.replies.length > card.shown.length && !root.selecting
                     width: parent.width; height: visible ? 40 : 0
                     Rectangle { width: parent.width; height: 1; color: theme.dividerSoft }
                     Text {
@@ -611,7 +628,7 @@ Item {
                 // top, 8.7 in; each reply a 20 px avatar at 18, the name and
                 // time (12 px) at 50, the text 20 down, then 16 to the next.
                 Item {
-                    visible: card.shown.length > 0
+                    visible: card.shown.length > 0 && !root.selecting
                     width: card.width
                     height: visible ? 8.7 + replyCol.height - 16 + 8 : 0
                     Rectangle {
@@ -643,7 +660,9 @@ Item {
                                 // "bottom" reply): "Edited" on a line of its
                                 // own where the name would be.
                                 readonly property bool groupedEdited: grouped && modelData.edited === true && !modelData.deleted
-                                readonly property real headH: grouped ? (groupedEdited ? 20 : 0) : root.compact ? 34.2 : 20
+                                // (And its Saved and reminder icons.)
+                                readonly property bool groupedStatus: grouped && !modelData.deleted && (modelData.edited === true || modelData.saved === true || (modelData.reminder_due || 0) > 0)
+                                readonly property real headH: grouped ? (groupedStatus ? 20 : 0) : root.compact ? 34.2 : 20
                                 width: card.width
                                 // Editing, Teams' compose spans the card in the reply's
                                 // place, from the line above it.
@@ -663,10 +682,11 @@ Item {
                                     name: rep.modelData.sender; photoId: rep.modelData.sender_mri + (rep.modelData.sender_app ? "#" + rep.modelData.sender_app : "")
                                     opensProfile: true
                                 }
-                                Text {
-                                    visible: rep.groupedEdited && !rep.editing
-                                    x: 50; y: 1.4
-                                    text: qsTr("Edited"); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary
+                                Row {
+                                    visible: rep.groupedStatus && !rep.editing
+                                    x: 50; y: 1.4; spacing: 8
+                                    Text { visible: rep.groupedEdited; text: qsTr("Edited"); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                                    MessageStatusIcons { y: -1; message: rep.modelData }
                                 }
                                 Text {
                                     visible: !rep.editing && !rep.grouped
@@ -679,6 +699,7 @@ Item {
                                         spacing: 8
                                         Text { text: root.conversationStamp(rep.modelData.time); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
                                         Text { visible: rep.modelData.edited === true; text: qsTr("Edited"); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                                        MessageStatusIcons { y: -1; message: rep.modelData }
                                     }
                                 }
                                 // Cut at 80 (a Channel Agent's at 140), as
@@ -763,8 +784,9 @@ Item {
                 }
                 // Reply in thread / the reply box.
                 Item {
+                    visible: !root.selecting
                     width: card.width
-                    height: card.open ? 74 : 47
+                    height: !visible ? 0 : card.open ? 74 : 47
                     Rectangle { width: parent.width; height: 1; color: theme.dividerSoft }
                     Avatar {
                         x: 18; anchors.verticalCenter: parent.verticalCenter
@@ -864,6 +886,11 @@ Item {
                     }
                 }
             }
+            SelectCheck {
+                anchors.fill: parent
+                selection: root.selection
+                message: card.post
+            }
             Accessible.role: Accessible.Grouping
             Accessible.name: card.post ? qsTr("Post by %1").arg(card.post.sender) : qsTr("Replies")
         }
@@ -941,7 +968,7 @@ Item {
     // Post in channel
     Rectangle {
         id: postButton
-        visible: !root.posting && !root.newestAtTop
+        visible: !root.posting && !root.newestAtTop && !root.selecting
         x: root.compact ? 30 : (root.width - list.cardW) / 2
         anchors.bottom: parent.bottom; anchors.bottomMargin: 25
         width: pbRow.implicitWidth + 32; height: 32; radius: theme.radius
