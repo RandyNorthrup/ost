@@ -4149,6 +4149,9 @@ pub struct BackendRust {
     /// when each was last set here (Teams skips a banner within 60 s).
     reminders_due_seen: HashSet<String>,
     reminders_set_at: HashMap<String, i64>,
+    /// Reminders rows' saves still on their way (message id → saved), so
+    /// a read of the reminders meanwhile doesn't put the old mark back.
+    reminders_saving: HashMap<String, bool>,
     pinned_json: QString,
     report_result: QString,
     quick_reactions_json: QString,
@@ -25117,19 +25120,12 @@ impl qobject::Backend {
                 }
             }
         }
-        // A shown copy of the message knows best whether it is saved (a
-        // save made here a moment ago).
+        // A save from a row that is still on its way wins over what was
+        // read (the read may have started before it).
         let mut items = items;
-        {
-            let timelines = server_timelines().lock().unwrap();
-            for r in items.iter_mut() {
-                if let Some(m) = timelines
-                    .values()
-                    .flat_map(|t| t.iter())
-                    .find(|m| m.id == r.item.message_id)
-                {
-                    r.saved = m.saved;
-                }
+        for r in items.iter_mut() {
+            if let Some(&save) = self.rust().reminders_saving.get(&r.item.message_id) {
+                r.saved = save;
             }
         }
         self.as_mut().refresh_lies();
@@ -25171,6 +25167,10 @@ impl qobject::Backend {
         let chain = if chain == id { String::new() } else { chain };
         self.as_mut().mark_reminder_saved(&conv, &id, save);
         self.as_mut().update_shown(&id, |m| m.saved = save);
+        self.as_mut()
+            .rust_mut()
+            .reminders_saving
+            .insert(id.clone(), save);
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -25178,6 +25178,10 @@ impl qobject::Backend {
                 api::msgactions::set_saved(&client, &conv, &chain, &id, save).await
             }
             .await;
+            let done = id.clone();
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().rust_mut().reminders_saving.remove(&done);
+            });
             if let Err(e) = result {
                 tracing::warn!("save failed: {}", short_error(&e));
                 let _ = qt.queue(move |mut this| {
