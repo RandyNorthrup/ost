@@ -1,7 +1,7 @@
 ---
 id: TASK-0293
 title: 'Personal accounts: chat list, messages and chat requests'
-status: In Progress
+status: Done
 assignee:
   - '@tperF'
 created_date: '2026-11-25T15:26:00Z'
@@ -74,4 +74,6 @@ Changes:
 - Layout: Teams free's chat list sections and pills, the work-user header and banner, start-of-chat card, compose toolbar and + menu (no apps, polls or tasks), message menu, Chat and Files tabs.
 
 Verified live with OST Personal 2 beside Teams 26304 on testpc2 and OST Personal 1 on teams.live.com: list, send/edit/react/delete, new group chat by email, Requests, group and 1:1 Accept; Block against the service. Not verified: attachments (TASK-0300), phone search, Block pressed in the UI.
+
+Attachments (AC #1, with TASK-0300): files and photos in personal chats as Teams free sends them (OneDrive Chat Files, anyone edit link, picture previews, cloud files), opened in the browser and downloaded by redeeming the link; verified live between OST Personal 2 in OST and OST Personal 1 on teams.live.com.
 <!-- SECTION:FINAL_SUMMARY:END -->

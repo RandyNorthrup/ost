@@ -1,7 +1,7 @@
 ---
 id: TASK-0300
 title: 'Personal accounts: files in chats and personal OneDrive'
-status: In Progress
+status: Done
 assignee:
   - '@tperF'
 created_date: '2026-11-25T15:26:00Z'
@@ -48,3 +48,18 @@ Files sent in personal-account chats go to the Microsoft Teams Chat Files folder
 - Seen during the checks: the chat service once refused a message with HTTP 403 errorCode 209 SpamMessageDetected (a cloud file re-sent minutes after the same file's upload; Teams' own record shape gave the same answer from a script), and Personal 1's copy of the 1:1 went back to inQuarantine (hidden, no Requests row); re-adding Personal 2 to Personal 1's contacts (managebuddies, as Teams free's Accept does) brought it back. The retry later went through.
 - Not verified live: a really full OneDrive (5 GB free; the banner and its trigger are unit-tested and drawn in the harness), files in a group chat, the Files tab's Upload button (it sends like the compose box), videos through Attach media (sent as files without a preview; Teams' handling of videos not captured).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+A personal (Teams free) account's chats now send, show and open files and photos as Teams for personal use does, with its Files and Photos tabs and storage-full banner.
+
+Changes:
+- Engine (src/api/personal_files.rs): upload to Microsoft Teams Chat Files with Teams free's record, an anyone edit link (createLink) and personalFileSite; pictures also stored in the media store (sharingMode Attached) for the preview (filePreview, amsreferences); cloud files as references with their own link; Download by redeeming the link; the message search queries behind the Files and Photos tabs; the OneDrive picker's places; storage-full detection (HTTP 507 / quotaLimitReached).
+- UI: Chat/Files/Photos tabs (PersonalFilesTab, PersonalPhotosTab), Teams free's file chip and picture preview in messages and their ··· menu, the two-item Attach menu, the native OneDrive picker (PersonalCloudPicker), compose chips with "Anyone with the link can edit", Attach media sending pictures as files, the "Attachment storage is full" banner with Manage and Get more storage.
+- Research: docs/research/personal-accounts-protocol.md §10 (captured on teams.live.com).
+
+Tests: personal_files unit tests (records, search answers, picture sizes, share ids, picker rows, storage full). Live: OST Personal 2 in OST on testpc2 with OST Personal 1 on teams.live.com (send file + picture + cloud file, both directions shown, open, download, Files and Photos tabs, viewer).
+
+Not verified live: a really full OneDrive, a group chat, the Files tab's Upload button, videos via Attach media.
+<!-- SECTION:FINAL_SUMMARY:END -->
