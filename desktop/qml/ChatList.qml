@@ -707,6 +707,17 @@ Rectangle {
         HoverHandler { id: hbHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: hb.clicked() }
         FluentIcon { id: hbIcon; anchors.centerIn: parent; size: hb.iconSize; color: theme.onFill(hb, hb.iconColor) }
+        // The keyboard's: a menu it opened gives it the focus back (Esc,
+        // Shift+Tab), with Fluent's outline; Enter / Space press it.
+        Rectangle {
+            visible: hb.activeFocus
+            anchors.fill: parent; radius: theme.radius; color: "transparent"
+            border.width: 2; border.color: theme.pick("#000000", "#FFFFFF", "#FFFFFF")
+        }
+        Keys.onPressed: e => {
+            if (e.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return
+            if (e.key === Qt.Key_Return || e.key === Qt.Key_Enter || e.key === Qt.Key_Space) { e.accepted = true; hb.clicked() }
+        }
         ToolTip.visible: hb.tip !== "" && hbHover.hovered
         ToolTip.delay: 600
         ToolTip.text: hb.tip

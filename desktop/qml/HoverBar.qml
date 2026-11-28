@@ -21,7 +21,10 @@ Item {
     // Which menu ··· opens: "chat", "post" or "reply" (Teams' ChatMessage,
     // ChannelPost and ChannelReply).
     property string context: "chat"
-    readonly property bool hovered: barHover.hovered
+    // Hovered, or its ··· has the keyboard (its menu's Esc gives it back;
+    // Teams keeps the bar up, its tooltip showing, until the focus leaves).
+    readonly property bool hovered: barHover.hovered || moreButton.activeFocus
+    readonly property alias moreButtonForTest: moreButton
     readonly property var quick: host.quickReactions
     height: 32
     width: 7 + (reactionsShown ? (quick.length + 1) * 32 + 8 : 0) + acts.length * 32 + 32 + 6
@@ -113,6 +116,8 @@ Item {
                 onClicked: modelData.key === "edit" ? host.startEdit(bar.message) : modelData.key === "thread" ? bar.threadRequested(bar.message) : host.replyWithQuote(bar.message)
             }
         }
+        // Focused after its menu's Esc: a second Esc leaves the bar (the
+        // bar's Keys: Teams goes to the message; here the compose box).
         BarButton { id: moreButton; icon: "more-horizontal-20"; tip: qsTr("More options"); height: 32; onClicked: host.openMessageMenu(bar.message, moreButton, false, 0, moreButton.height, bar.context) }
     }
 }
