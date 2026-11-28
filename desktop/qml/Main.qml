@@ -2254,8 +2254,16 @@ Window {
             const j = window.linkJump
             if (!j || backend.currentChatId !== j.thread || !backend.messagesJson || backend.messagesJson === "[]") return
             window.linkJump = null
-            // After the chat's view has taken the new messages.
-            Qt.callLater(() => conversation.showFound(j.message, [], j.parent))
+            // After the chat's view has taken the new messages. A channel
+            // reply opens its post's whole thread (the threads pane in a
+            // threads channel, the post view in a posts channel), where the
+            // replies a post folds away are shown.
+            Qt.callLater(() => {
+                conversation.showFound(j.message, [], j.parent)
+                if (!j.parent || !conversation.isChannel) return
+                if (conversation.threadsLayout) { threadsPane.channelId = backend.currentChatId; threadsPane.openThread(j.parent) }
+                else conversation.openPostView(j.parent)
+            })
         }
     }
     /// A Join with an ID started by a short link: its failure is told (the
