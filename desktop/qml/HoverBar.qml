@@ -46,7 +46,13 @@ Item {
     Keys.onReturnPressed: kbReact()
     Keys.onEnterPressed: kbReact()
     Keys.onSpacePressed: kbReact()
-    Keys.onEscapePressed: keyboardDone()
+    // Esc leaves the bar: the host takes the focus (Conversation: the
+    // compose box); a host that doesn't (channel posts, threads, Discover)
+    // still gets the bar to let go of it, so it hides.
+    Keys.onEscapePressed: {
+        keyboardDone()
+        if (moreButton.activeFocus || bar.activeFocus) { moreButton.focus = false; bar.focus = false }
+    }
     FluentSurface { anchors.fill: parent; depth: 16; radius: 4 }
     // The bar overlaps the message above (or the post's card edge): the
     // pointer on the bar hovers only the bar, so that message doesn't
