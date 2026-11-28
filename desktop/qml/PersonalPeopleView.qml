@@ -323,37 +323,46 @@ Item {
                 onManage: root.view = "blocked"
             }
         }
-        Column {
+        // (Scrolls when there are more blocked people than fit.)
+        Flickable {
             visible: root.view === "blocked"
-            x: 20; y: 80; width: Math.min(700, parent.width - 40); spacing: 0
-            Text {
-                width: parent.width; wrapMode: Text.Wrap
-                text: qsTr("Blocking a user prevents you from seeing their messages. They will still be able to see any content you send in a group with them, including messages, files.")
-                font.family: theme.font; font.pixelSize: 14; color: theme.text
-            }
-            Item { width: 1; height: 24 }
-            Text {
-                visible: root.blockedPeople.length === 0
-                text: qsTr("When you block people, you'll see them listed below.")
-                font.family: theme.font; font.pixelSize: 14; color: theme.text
-            }
-            Repeater {
-                model: root.blockedPeople
-                Item {
-                    id: brow
-                    required property var modelData
-                    width: parent.width; height: 46
-                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF") }
-                    Avatar { x: 6; y: 7; size: 32; name: brow.modelData.name || "?"; photoId: brow.modelData.mri; presence: "Blocked" }
-                    Text { x: 52; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 52 - 210; elide: Text.ElideRight
-                           text: brow.modelData.name || brow.modelData.mri; font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                    Row {
-                        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 6
-                        DialogButton { label: qsTr("Unblock"); onClicked: root.op("tflBlock", { mri: brow.modelData.mri, on: false }) }
-                        DialogButton { label: qsTr("Delete"); onClicked: root.op("tflForget", { mri: brow.modelData.mri }) }
+            anchors { fill: parent; topMargin: 60 }
+            contentHeight: blockedCol.height + 40
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            Column {
+                id: blockedCol
+                x: 20; y: 20; width: Math.min(700, settingsPage.width - 40); spacing: 0
+                Text {
+                    width: parent.width; wrapMode: Text.Wrap
+                    text: qsTr("Blocking a user prevents you from seeing their messages. They will still be able to see any content you send in a group with them, including messages, files.")
+                    font.family: theme.font; font.pixelSize: 14; color: theme.text
+                }
+                Item { width: 1; height: 24 }
+                Text {
+                    visible: root.blockedPeople.length === 0
+                    text: qsTr("When you block people, you'll see them listed below.")
+                    font.family: theme.font; font.pixelSize: 14; color: theme.text
+                }
+                Repeater {
+                    model: root.blockedPeople
+                    Item {
+                        id: brow
+                        required property var modelData
+                        width: parent.width; height: 46
+                        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF") }
+                        Avatar { x: 6; y: 7; size: 32; name: brow.modelData.name || "?"; photoId: brow.modelData.mri; presence: "Blocked" }
+                        Text { x: 52; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 52 - 210; elide: Text.ElideRight
+                               text: brow.modelData.name || brow.modelData.mri; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        Row {
+                            anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 6
+                            DialogButton { label: qsTr("Unblock"); onClicked: root.op("tflBlock", { mri: brow.modelData.mri, on: false }) }
+                            DialogButton { label: qsTr("Delete"); onClicked: root.op("tflForget", { mri: brow.modelData.mri }) }
+                        }
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: brow.modelData.name || ""
                     }
-                    Accessible.role: Accessible.ListItem
-                    Accessible.name: brow.modelData.name || ""
                 }
             }
         }
