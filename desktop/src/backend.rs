@@ -11712,15 +11712,18 @@ impl qobject::Backend {
         self.as_mut().set_sign_in_page(QString::from(url.as_str()));
     }
 
+    /// A work sign-in is showing Microsoft's page (one a personal
+    /// address may hand off from).
+    fn work_sign_in_pending(&self) -> bool {
+        self.rust()
+            .browser_sign_in
+            .as_ref()
+            .is_some_and(|p| !p.is_personal())
+    }
+
     pub fn sign_in_address_refused(self: Pin<&mut Self>, address: &QString) {
         let address = address.to_string().trim().to_string();
-        if address.is_empty()
-            || !self
-                .rust()
-                .browser_sign_in
-                .as_ref()
-                .is_some_and(|p| !p.is_personal())
-        {
+        if address.is_empty() || !self.work_sign_in_pending() {
             return;
         }
         let qt = self.qt_thread();
@@ -11731,12 +11734,7 @@ impl qobject::Backend {
                 Ok(true) => {
                     let _ = qt.queue(move |mut this| {
                         // (only while that work sign-in is still the one shown)
-                        if !this
-                            .rust()
-                            .browser_sign_in
-                            .as_ref()
-                            .is_some_and(|p| !p.is_personal())
-                        {
+                        if !this.work_sign_in_pending() {
                             return;
                         }
                         tracing::info!("browser sign-in: a personal account");
@@ -11760,11 +11758,7 @@ impl qobject::Backend {
         // (Teams on the web for personal use's sign-in) for that address,
         // not as a guest of a work tenant.
         if !silent
-            && self
-                .rust()
-                .browser_sign_in
-                .as_ref()
-                .is_some_and(|p| !p.is_personal())
+            && self.work_sign_in_pending()
             && let Some(hint) = teams_cli::auth::spa::personal_hand_off(&url)
         {
             tracing::info!("browser sign-in: a personal account");
