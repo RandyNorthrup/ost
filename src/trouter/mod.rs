@@ -143,7 +143,8 @@ where
         && config.get_refresh_token().is_some()
     {
         tracing::info!("Skype token expired; refreshing before reconnecting");
-        crate::auth::oauth::refresh()
+        // (a personal account renews just its 8-hour Skype token)
+        crate::auth::oauth::refresh_expired()
             .await
             .context("Token refresh failed")?;
         config = Config::load().context("Failed to load config")?;
@@ -159,9 +160,22 @@ where
 
     let skype_token_str = &skype_token.token;
     let http = reqwest::Client::new();
+    // A personal account's pushes come over the Skype Trouter and its own
+    // registrar, as Teams free's web client gets them.
+    let personal = crate::auth::is_personal_flow(config.auth_flow.as_deref());
+    // (paired phones are a work feature)
+    let opts = ListenOptions {
+        better_together: opts.better_together && !personal,
+        ..opts
+    };
 
     // 1. Negotiate session (returns session info + epid)
-    let (session, epid) = session::negotiate(&http, skype_token_str).await?;
+    let host = if personal {
+        session::PERSONAL_HOST
+    } else {
+        session::WORK_HOST
+    };
+    let (session, epid) = session::negotiate_at(&http, skype_token_str, host).await?;
     *CURRENT_ENDPOINT.lock().unwrap_or_else(|e| e.into_inner()) =
         Some((session.surl.clone(), epid.clone()));
 
@@ -184,8 +198,18 @@ where
     }
 
     // 5. Register with registrar
-    let registrar_ttl_secs: u64 = 86400;
-    if let Some(ref reg_url) = session.registrar_url
+    let registrar_ttl_secs: u64 = if personal {
+        registrar::PERSONAL_TTL_SECS
+    } else {
+        86400
+    };
+    if personal {
+        if let Err(e) =
+            registrar::register_personal(&http, skype_token_str, &session.surl, &epid).await
+        {
+            tracing::warn!("Initial registrar registration failed: {:#}", e);
+        }
+    } else if let Some(ref reg_url) = session.registrar_url
         && let Err(e) = registrar::register_all(
             &http,
             skype_token_str,
@@ -266,7 +290,7 @@ where
                         // On the first message_loss after connect, re-register
                         // the chat (CDL) entry with the 1.9 template, as the
                         // Teams clients do. (eisbaw/ost#88)
-                        if !cdl_reregistered && text.contains("trouter.message_loss") {
+                        if !personal && !cdl_reregistered && text.contains("trouter.message_loss") {
                             cdl_reregistered = true;
                             if let Some(ref reg_url) = session.registrar_url {
                                 let (h, tok, reg, surl, ep) = (
@@ -356,7 +380,19 @@ where
             }
             _ = &mut re_register_deadline => {
                 tracing::info!("Re-registering with registrar (TTL refresh)");
-                if let Some(ref reg_url) = session.registrar_url {
+                if personal {
+                    let (h, tok, surl, ep) = (
+                        http.clone(),
+                        skype_token_str.to_string(),
+                        session.surl.clone(),
+                        epid.clone(),
+                    );
+                    tokio::spawn(async move {
+                        if let Err(e) = registrar::register_personal(&h, &tok, &surl, &ep).await {
+                            tracing::warn!("Re-registration failed: {:#}", e);
+                        }
+                    });
+                } else if let Some(ref reg_url) = session.registrar_url {
                     let http2 = http.clone();
                     let tok = skype_token_str.to_string();
                     let surl = session.surl.clone();
