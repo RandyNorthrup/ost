@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@tperB'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T04:43:00Z'
+updated_date: '2026-11-28T05:16:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -50,4 +50,21 @@ Personal accounts use the consumer chat service (msgapi.teams.live.com) with con
 - Live (OST Personal 2 in OST on testpc2, build of 7c076fdf): chat list with names/pictures and Teams free's sections/pills/Requests row; send, edit, react and delete in the 1:1 with OST Test 3 (seen in Teams desktop too); new group chat with OST Test 1 and OST Test 3 found by email and made through the groups service; Requests pane, request view, preview bar and group request view; Accept on the group request (inQuarantine false) and on the 1:1 (OST Personal 1 put in contacts, chat opened); Block checked against the service only (blocklist add then remove; no second non-contact test account could send a new request after the 1:1 was accepted).
 - Not verified: file and photo attachments in personal chats (the upload path is the work one; Teams free shares files with "Anyone with the link can edit": TASK-0300, Photos tab added there); phone search (Teams free sends a phone number as a keyword search; no test account has a number). Without push (TASK-0294) an answered request can stay in the Requests pane until the next list reload.
 - PR #81.
+
+- Codex review (PR #81): Attach media now sends a copy (the upload removes pasted pictures); picking yourself opens your notes chat; a chat opened from search/activity closes the Requests pane. CodeQL cleartext alert #40 (moved code of #38 on main) dismissed as false positive. CI green; Codex re-review: no major issues.
+- Left open: AC #1 stays unchecked only for attachments (file and photo sending in personal chats were not exercised live; TASK-0300 owns Teams free's file sharing and has the Photos tab AC).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+A personal (Teams free) account's chats now work as in Teams for personal use (PR #81).
+
+Changes:
+- Engine: Teams free's chat service front door with its product headers; folders from Teams free's CSA; middle-tier calls with the mtsvc.fl token plus the Skype token; names from fetchShortProfile (ggEnabled) and fetchFederated; pictures with the imageauth cookie; Skype-name MRIs count as consumers.
+- New chats: searchUsers by name, email or phone; 1:1 and group chats through teams.live.com/api/groups, the person added to contacts.
+- Requests: Teams free's Requests row and pane, request and group-request views and preview bar; Accept (contacts for a 1:1, relationshipState=Accepted for a group) and Block (block list) as Teams free's worker does them.
+- Layout: Teams free's chat list sections and pills, the work-user header and banner, start-of-chat card, compose toolbar and + menu (no apps, polls or tasks), message menu, Chat and Files tabs.
+
+Verified live with OST Personal 2 beside Teams 26304 on testpc2 and OST Personal 1 on teams.live.com: list, send/edit/react/delete, new group chat by email, Requests, group and 1:1 Accept; Block against the service. Not verified: attachments (TASK-0300), phone search, Block pressed in the UI.
+<!-- SECTION:FINAL_SUMMARY:END -->
