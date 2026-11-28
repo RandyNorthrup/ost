@@ -164,10 +164,13 @@ Rectangle {
     }
     // `f`: the search box's KQL filters (TitleBar.resultFilters: person,
     // inPlace, fileType, mentions, attachment), which replace the tab's.
+    property bool boxFilters: false
     function search(q, t, f) {
         query = q
         personKeywords = ""
         if (t && t !== tab) { tab = t; clearFilters(false) }
+        // (The box's filters stand until a search without them clears
+        // them; ones set here on the page stay.)
         if (f) {
             clearFilters(false)
             if (f.person) person = f.person
@@ -175,6 +178,10 @@ Rectangle {
             if (f.fileType) fileType = f.fileType
             mentions = !!f.mentions
             attachment = !!f.attachment
+            boxFilters = true
+        } else if (boxFilters) {
+            clearFilters(false)
+            boxFilters = false
         }
         run()
     }

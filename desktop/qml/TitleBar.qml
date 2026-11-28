@@ -39,7 +39,7 @@ Rectangle {
     signal openPerson(string oid, string name)
     /// Rows' secondary actions: a person's or chat's Open in new window,
     /// Show Contact Card, a meeting's Join and Meeting Recap.
-    signal popOutPerson(string mri, string name)
+    signal popOutPerson(string mri, string name, string thread)
     signal popOutChat(string id, string name)
     signal showContactCard(string mri)
     signal joinMeeting(string url, string subject)
@@ -472,7 +472,13 @@ Rectangle {
             seen[k] = true
             people.push(p)
         }
-        for (const p of topPeople.slice(0, 2)) if (match(p.plain_name || p.name, p.sub, p.mail || p.upn)) addPerson(Object.assign({}, p, { kind: "person" }))
+        // (A person with a chat opens that chat: your own is the notes one.)
+        const chatOf = mri => chats.find(c => !c.isGroup && !c.meeting && String(c.peerMri || "").toLowerCase() === String(mri || "").toLowerCase())
+        for (const p of topPeople.slice(0, 2)) {
+            if (!match(p.plain_name || p.name, p.sub, p.mail || p.upn)) continue
+            const c = chatOf(p.mri)
+            addPerson(Object.assign({}, p, { kind: "person" }, c ? { chat: c.id } : {}))
+        }
         for (const c of chats) {
             if (c.isGroup || c.meeting || !c.peerMri) continue
             if (!words.length && !c.isSelf) continue
@@ -604,8 +610,8 @@ Rectangle {
             const d = k.data || {}
             if (k.kw === "from") f.person = { name: d.name, mail: d.mail || "", mri: d.mri || "", from: true }
             else if (k.kw === "in" && d.kind === "person") {
-                const c = root.chats.find(c => String(c.peerMri || "").toLowerCase() === String(d.mri || "").toLowerCase())
-                if (c) f.inPlace = { kind: "chat", thread: c.id, group: "", name: d.name }
+                const thread = root.oneOnOneThread(d.mri || ("8:orgid:" + d.oid))
+                if (thread) f.inPlace = { kind: "chat", thread: thread, group: "", name: d.name }
             } else if (k.kw === "in") f.inPlace = { kind: d.kind, thread: d.thread, group: d.group || "", name: d.name }
             else if (k.kw === "filetype") f.fileType = (root.fileTypes.find(t => t.value === k.value) || {}).key || ""
             else if (k.token === "has:@Mentions") f.mentions = true
@@ -617,6 +623,11 @@ Rectangle {
     function enter() {
         const o = suggestions.current >= 0 ? suggestions.options[suggestions.current] : null
         if (o) { root.pick(o); return }
+        root.submitResults()
+    }
+    // The results for the box (the footer's Press Enter, Enter with no row
+    // picked), with its filters.
+    function submitResults() {
         if (root.gotoOn) { const t = field.text.trim(); if (t) { root.gotoOn = false; root.submit(t) } return }
         if (root.kqlMode) {
             const f = root.resultFilters()
@@ -630,12 +641,25 @@ Rectangle {
         if (!root.searchWords) return
         root.submit(field.text)
     }
+    // A person's 1:1 chat: the one in the chat list (yours: the notes), else
+    // Teams' id for it (19:<oid>_<oid>@unq.gbl.spaces, the two object ids
+    // in order).
+    function oneOnOneThread(mri) {
+        const m = String(mri || "").toLowerCase()
+        const c = root.chats.find(c => !c.isGroup && !c.meeting && String(c.peerMri || "").toLowerCase() === m)
+        if (c) return c.id
+        const me = root.chats.find(c => c.isSelf)
+        const mine = me ? String(me.peerMri || "").split(":").pop().toLowerCase() : ""
+        const theirs = m.indexOf("8:orgid:") === 0 ? m.split(":").pop() : ""
+        if (!mine || !theirs) return ""
+        return "19:" + [mine, theirs].sort().join("_") + "@unq.gbl.spaces"
+    }
     // A row's secondary action (Teams' hostAppActions for them).
     function rowAction(item, act) {
         const close = () => { root.keepSuggestionsOpen = false; field.text = ""; root.kqlPicks = []; field.focus = false }
         switch (act) {
         case "popout":
-            if (item.kind === "person") root.popOutPerson(item.mri || ("8:orgid:" + item.oid), item.plain_name || item.name)
+            if (item.kind === "person") root.popOutPerson(item.mri || ("8:orgid:" + item.oid), item.plain_name || item.name, root.oneOnOneThread(item.mri || ("8:orgid:" + item.oid)))
             else root.popOutChat(item.thread, item.kind === "chat" ? suggestions.chatName(item) : item.title)
             break
         case "card": root.showContactCard(item.mri || ("8:orgid:" + item.oid)); break
@@ -684,7 +708,7 @@ Rectangle {
         case "seemore":
             if (item.from) { root.keepSuggestionsOpen = false; field.focus = false; root.searchSubmitted((item.query + " is:Messages").trim(), root.resultFilters()); return }
             root.submit(item.query + " is:Messages"); return
-        case "enter": root.enter(); return
+        case "enter": root.submitResults(); return
         case "tip": root.gotoMode(); return
         default: return
         }
