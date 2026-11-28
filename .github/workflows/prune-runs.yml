@@ -37,7 +37,8 @@ jobs:
           gh api --paginate "repos/$REPO/actions/runs?per_page=100" \
             --jq '.workflow_runs[] | [.id, (.workflow_id|tostring), .head_branch // "", .status, .conclusion // "", .created_at, .path, (.head_repository.full_name // ""), .event, ([.pull_requests[]?.number|tostring]|join(","))] | @tsv' > runs.tsv
           python3 - <<'EOF'
-          import csv, os
+          import csv, os, datetime
+          cutoff = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
           repo = os.environ["REPO"]
           prs = list(csv.reader(open("open-prs.tsv"), delimiter="\t", quoting=csv.QUOTE_NONE))
           open_nums = {n for n, _, _ in prs}
@@ -66,6 +67,8 @@ jobs:
               rid, wf, _, status, concl, _, path = r[:7]
               if status != "completed" or path.split("@", 1)[0].endswith("/release.yml"):
                   continue                         # never a Release run (path may carry @ref)
+              if path.split("@", 1)[0].endswith("/agent-build.yml") and r[5] > cutoff:
+                  continue                         # an agent build's binary may still be downloading
               c = ctx(r)
               if concl == "cancelled":
                   out.append(rid)
