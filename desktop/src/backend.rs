@@ -11686,7 +11686,7 @@ impl qobject::Backend {
             let _ = self.qt_thread().queue(|_| quit_application());
             return;
         }
-        if stored && teams_cli::auth::browser_sign_in() {
+        if stored && teams_cli::auth::browser_session().is_some() {
             // A browser sign-in's refresh token lasts 24 hours: renew it
             // silently first (the renewal refreshes the app).
             self.renew_sign_in();
@@ -11905,13 +11905,23 @@ impl qobject::Backend {
     }
 
     pub fn renew_sign_in(mut self: Pin<&mut Self>) {
-        if !teams_cli::auth::browser_sign_in() || !self.rust().renew_page.is_empty() {
+        let Some(personal) = teams_cli::auth::browser_session() else {
+            return;
+        };
+        if !self.rust().renew_page.is_empty() {
             return;
         }
         let hint = teams_cli::config::Config::load()
             .ok()
             .and_then(|c| c.user_principal_name());
-        let pending = teams_cli::auth::spa::BrowserSignIn::new(hint.as_deref(), true);
+        // A personal account renews with Teams on the web for personal
+        // use's sign-in (login.live.com's session), a work one with Teams
+        // on the web's.
+        let pending = if personal {
+            teams_cli::auth::spa::BrowserSignIn::personal(hint.as_deref(), true)
+        } else {
+            teams_cli::auth::spa::BrowserSignIn::new(hint.as_deref(), true)
+        };
         let url = pending.url.clone();
         self.as_mut().rust_mut().renew_sign_in_pending = Some(pending);
         self.as_mut().set_renew_page(QString::from(url.as_str()));

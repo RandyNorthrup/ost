@@ -110,11 +110,16 @@ impl AccountIdentity {
     }
 
     /// The personal identity with the MRI from the Skype token's `skypeid`
-    /// (`live:.cid.…`, or an old Skype name).
+    /// (`live:.cid.…`, or an old Skype name, whose MRI is `8:<name>`; never
+    /// a work account's `8:orgid:`).
     pub fn with_skype_id(mut self, skype_id: &str) -> Self {
         let id = skype_id.trim();
         if self.is_personal() && !id.is_empty() {
-            self.mri = user_mri(id);
+            self.mri = if has_type_prefix(id) {
+                id.to_string()
+            } else {
+                format!("8:{id}")
+            };
         }
         self
     }
@@ -314,6 +319,11 @@ mod tests {
         assert_eq!(me.upn.as_deref(), Some("ost-personal2-0238@outlook.com"));
         let me = me.with_skype_id("live:.cid.ca2738c364862c6");
         assert_eq!(me.mri, "8:live:.cid.ca2738c364862c6");
+        // An old Skype name stays a consumer ID, not 8:orgid:.
+        assert_eq!(
+            me.clone().with_skype_id("ost.skype.name").mri,
+            "8:ost.skype.name"
+        );
         // A work account's OpenID token isn't a personal identity.
         let work = jwt_with(&format!(r#"{{"oid":"{OID}","name":"x"}}"#));
         assert_eq!(AccountIdentity::from_personal_id_token(&work), None);

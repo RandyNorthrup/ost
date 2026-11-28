@@ -12,8 +12,9 @@ pub mod token_hosts;
 pub mod tokens;
 
 pub use oauth::{
-    PendingSignIn, begin_sign_in, brokered_token, brokered_tokens, browser_sign_in,
-    finish_browser_sign_in, finish_sign_in, has_credentials, login, logout, sign_out, status,
+    PendingSignIn, begin_sign_in, brokered_token, brokered_tokens, browser_session,
+    browser_sign_in, finish_browser_sign_in, finish_sign_in, has_credentials, login, logout,
+    sign_out, status,
 };
 pub use tokens::{StoredToken, TokenStore};
 
