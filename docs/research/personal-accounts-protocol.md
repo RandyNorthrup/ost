@@ -118,7 +118,7 @@ The leftover `personal()` config would not work as written, for two reasons:
 | Other scopes the web client warms | `service::api.fl.teams.microsoft.com::MBI_SSL`, `service::api.fl.sms-free.spaces.skype.com::MBI_SSL`, `https://chatsvcagg.teams.microsoft.com` | TFL-cfg `criticalResources`, `prefetchTokens` | Confirmed (bundle) |
 | Groups service scope | `https://groupssvc.fl.teams.microsoft.com/teams.readwrite` | TFL-js constant `GROUPS_SERVICE`; TM `config.ts:47` | Confirmed (bundle) |
 | Profile card (Loki) audience | `liveprofilecard.access` | TFL-js `LOKI_TFL_AUTH_TOKEN_AUDIENCE` | Confirmed (bundle), unused |
-| Refresh token | 24 hours (`refresh_token_expires_in` 86400), with the same silent `prompt=none` renewal OST already does for work (`src/auth/spa.rs:12-15`). Refresh tokens rotate; store the new one each time. | Live capture; [MS refresh tokens](https://learn.microsoft.com/en-us/entra/identity-platform/refresh-tokens) | Verified live |
+| Refresh token | 24 hours (`refresh_token_expires_in` 86400), with the same silent `prompt=none` renewal OST already does for work (`src/auth/spa.rs:12-15`): MSAL.js renews in a hidden frame once the refresh token ends, carried by login.live.com's persistent "Stay signed in" cookie `__Host-MSAAUTHP` (§9.1). Refresh tokens rotate; store the new one each time. | Live capture; [MS refresh tokens](https://learn.microsoft.com/en-us/entra/identity-platform/refresh-tokens) | Verified live (§9.1) |
 
 ### 1.3 Native client (alternative, not what Teams free web uses)
 
@@ -679,3 +679,143 @@ Foundations first; each item can ship and be tested on its own:
     dialect. The largest item; it depends on the live check in §7.10.
 14. **Communities** (Teams free's replacement for teams). Needs protocol
     research first.
+
+## 9. Session renewal, teams-cli sign-in, push and presence (verified 2026-11-28)
+
+Checked live for TASK-0292, 0294 and 0296 with OST Personal 1 and 2: an
+isolated headless Chrome on linuxlt on teams.live.com (web client
+`1415/26101516645`, msal.js browser 5.6.3) with a network capture that kept
+only token shapes, plus direct calls.
+
+### 9.1 How Teams on the web keeps a personal session past 24 hours
+
+- **Cookies.** Answering "Stay signed in?" with Yes sets persistent
+  cookies for about 390 days (Secure, SameSite=None): `__Host-MSAAUTHP`
+  on login.live.com (HttpOnly), and `MSPAuth`, `MSPProf` and `WLSSC` on
+  `.live.com`. The session-only twin `__Host-MSAAUTH` is deleted then.
+- **MSAL's cache.** The refresh token's `expiresOn` is its cache time plus
+  86,400 s. The OpenID token has no `login_hint` or `sid` claim (claims:
+  `ver iss sub aud exp iat nbf name preferred_username oid tid
+  signin_state puid ageGroup idtyp xms_idrel aio`). Teams also keeps its
+  own encrypted copies of the tokens (`tmp.auth.v1.<oid>.Token.<resource>`,
+  `…Discover.SKYPE-TOKEN`).
+- **Renewal.** With the refresh token expired, MSAL logs
+  `refresh_token_expired` and loads, in a hidden iframe,
+  `login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/oauth2/v2.0/authorize`
+  with `client_id=4b3e8f46-…`, `scope=https://auth.fl.teams.microsoft.com/teams.auth.readwrite openid profile offline_access`,
+  `redirect_uri=https://teams.live.com/v2/authv2`, `response_mode=fragment`,
+  `response_type=code`, PKCE, **`prompt=none`**, `login_hint=<email>`,
+  `X-AnchorMailbox=Oid:<oid>@<tid>`, `client_info=1`, `clidata=1`, `nopa=2`,
+  `coa=1`, `nonce`, `state`, `client-request-id`, `x-client-SKU`/`-VER`.
+  login.microsoftonline.com 302s to `login.live.com/oauth20_authorize.srf`,
+  which, sent the cookies above, 302s straight to
+  `teams.live.com/v2/authv2#code=…`. The code is redeemed at
+  `login.microsoftonline.com/<tid>/oauth2/v2.0/token`, giving a new
+  24-hour refresh token.
+- **OST's own silent URL works.** In the same browser, top-level
+  navigations to the URL OST builds (`/consumers`, `openid profile
+  offline_access`, `login_hint`, `prompt=none`) returned a code, as did
+  every variant tried (no `login_hint`; the web client's exact set; the
+  tenant GUID; `response_mode=query`; a QtWebEngine user agent).
+- **What decides it.** In fresh browser contexts: no cookies, session
+  cookies only, or everything but the four persistent ones answer
+  `login_required: Silent authentication was denied`; the persistent
+  cookies alone, or `__Host-MSAAUTHP` alone, give a code; a `login_hint`
+  for another account gives `login_required`.
+- **PR #69's `interaction_required`.** Not reproduced. A sign-in that
+  answered login.live.com's "Verify your email" with "Don't ask me again
+  on this device" unticked (an untrusted device) still renewed silently in
+  Chrome, and OST's own web view, signed in through the email code and
+  "Stay signed in", holds `__Host-MSAAUTHP` (to 2027-12-23) across
+  restarts and renews silently ("browser sign-in renewed", also with its
+  refresh token made unusable). Without those cookies the answer is
+  `login_required`.
+- **OST now:** a personal account renews silently like a work one (at
+  start and every 12 hours, `BrowserSignIn::personal(hint, prompt=none)`
+  in the shared web profile). When login.live.com wants the user, OST
+  carries on with the refresh token and opens the sign-in page once that
+  is refused.
+
+### 9.2 teams-cli: device code with Teams' native client
+
+Teams on the web for personal use's client is a single-page app, which
+Microsoft refuses a device code (AADSTS70002). Teams' native client for
+personal accounts, `8ec6bc83-69c8-4392-8f08-b3c986009232` ("Microsoft
+Teams-T4L" on the consent page), gets one at
+`login.microsoftonline.com/consumers/oauth2/v2.0/devicecode` with
+`https://auth.fl.teams.microsoft.com/teams.auth.readwrite openid profile offline_access`
+(verification page `https://www.microsoft.com/link`, which hands off to
+`login.live.com/oauth20_remoteconnect.srf`). Its tokens: the `auth.fl`
+token works at authz v2 (`consumer` Skype token, 28,799 s); the same
+refresh token (no Origin needed, no `refresh_token_expires_in`: not held to
+24 hours) mints `mtsvc.fl` (28,799 s; MT `users/me` and
+`fetchShortProfile` answer 200 with it plus the Skype token), Graph
+(3,599 s) and `groupssvc.fl`. Its OpenID token has the same claims as the
+web client's (`oid` `00000000-0000-0000-<cid>`, `tid` 9188040d-…).
+`teams-cli login --personal` uses it (`auth_flow = "teams-live-device"`).
+
+### 9.3 Trouter
+
+- `GET https://go.trouter.skype.com/v4/a?epid=<uuid>` with the consumer
+  `X-Skypetoken` answers 200 like the work negotiate: `socketio`
+  `https://pub-csm-<region>-t.trouter.skype.com:443/`, `surl`/`url`
+  `https://pub-csm-<region>-f.trouter.skype.com:3443|8443/v4/f/<id>/`,
+  `ttl`, `ccid`, `connectparams`, `registrarUrl`
+  `https://edge.skype.com/registrar/prod/V3/registrations`. (The same
+  token at `go.trouter.teams.microsoft.com` gives an enterprise socket and
+  the `communications.svc.cloud.microsoft` registrar.)
+- The web client itself skips the HTTP negotiate: `GET
+  go.trouter.skype.com/?check=<ms>&cor_id=…&epid=…&tc=…` (answer
+  `Trouter`), then `wss://go.trouter.skype.com/v4/c?tc=…&timeout=40&epid=…&ccid=&cor_id=…&con_num=<ms>_0`;
+  after `1::` it sends `5:::{"name":"user.authenticate","args":[{"headers":{"X-Ms-Test-User":"False","X-Skypetoken":…,"X-MS-Migration":"True"}}]}`
+  and gets `trouter.connected` with `id`, `ccid`, `url`, `surl`, `ttl`,
+  `reconnectUrl` (`wss://pub-csm-<region>-t.trouter.skype.com:443/v4/c`),
+  `registrarUrl` and `connectparams`. It reconnects to `reconnectUrl` with
+  the saved `connectparams` in `user.authenticate`. `tc` is
+  `{"cv":"2026.40.01.1","ua":"TeamsCDL","hr":"","v":"1415/26101516645"}`.
+  Pings are `5:<n>+::{"name":"ping"}` about every 40 s.
+- Chat registrations, `POST https://edge.skype.com/registrar/prod/v2/registrations`
+  (`X-Skypetoken`, `x-ms-test-user: False`, `X-MS-Migration: True`; 202):
+  `{"clientDescription":{"appId":"TeamsCDLWebWorker","aesKey":"","languageId":"en-US","platform":"chrome","templateKey":"TeamsCDLWebWorker_2.7","platformUIVersion":"1415/26101516645","productContext":"TFL"},"registrationId":"<epid>","nodeId":"","transports":{"TROUTER":[{"context":"","path":"<surl>","ttl":3600}]}}`
+  and the same with `registrationId` `<epid>_GG`, `templateKey`
+  `TeamsCDLWebWorker_2.3`, `languageId` and `productContext` empty, the
+  path without its trailing slash and `ttl` 86523.
+- Calling uses a second socket (`ua SkypeSpaces`) on
+  `go.trouter.teams.microsoft.com` (`…/v4/c?…&dom=teams.live.com`), whose
+  `user.authenticate` has only `X-Skypetoken`, registered at
+  `https://teams.microsoft.com/registrar/prod/v2/registrations` as
+  `SkypeSpacesWeb` / `TFLSkypeSpacesWeb_2.0`, transport context `TFL`,
+  ttl 3600, twice (`<uuid>` and `<uuid>-gg`).
+- Chat pushes arrive as `/v4/f/<id>/messaging` requests from
+  Skype-NotificationHub with `{"type":"EventMessage","resourceType":"NewMessage"|"ThreadUpdate"|"ConversationUpdate","resourceLink":…,"resource":{…}}`,
+  the work shape. No timed re-registration was seen in about 18 minutes.
+
+### 9.4 Presence (UPS)
+
+All on `https://teams.live.com/ups/global/v1/…` with `Authorization:
+Bearer <mtsvc.fl>`, `x-skypetoken`, `x-ms-endpoint-id: <chat socket
+epid>`, **`x-ms-client-consumer-type: teams4life`** (without it:
+400 "Consumer client type header must not be empty"),
+`x-ms-client-type: cdlworker`, `x-ms-client-user-agent: Teams-V2-Web`,
+`x-ms-client-version`, `x-ms-client-caller`, `behavioroverride:
+redirectAs404`, `x-ms-correlation-id`, `x-ms-session-id`.
+
+- After Trouter connects: `POST pubsub/subscriptions/<epid>`
+  `{"trouterUri":"<surl>unifiedPresenceService","shouldPurgePreviousSubscriptions":true,"subscriptionsToAdd":[{"mri":"8:live:.cid.<me>","source":"ups"}],"subscriptionsToRemove":[]}`
+  (contacts are added later with `false`); `POST presence/getpresence/`
+  `[{"mri":…,"source":"ups"}]`; `PUT me/endpoints/`
+  `{"id":"<epid>","availability":"Available","activity":"Available","activityReporting":"Transport","deviceType":"Web"}`
+  (201), re-PUT once about 3 minutes later. No `reportmyactivity`:
+  activity goes over the socket as `user.activity`.
+- Set status: `PUT me/forceavailability/` with `{"availability":"Available"|"Busy"|"DoNotDisturb"|"BeRightBack"|"Away"}`,
+  `{"availability":"Offline","activity":"OffWork"}` for Appear offline,
+  and an empty body to reset: the work bodies.
+- Status message: `PUT me/publishnote` with `{"expiry":"9999-12-31T08:00:00.000Z","message":"…"}`
+  (Never: 9999-12-31 local midnight), `{"expiry":"<iso>","message":"…"}`,
+  or `{"message":""}` to clear. Plain text, at most 280 characters; expiry
+  Never, Today, 1 hour, 4 hours or This week; no "Show when people message
+  me".
+- Pushes arrive at `/v4/f/<id>/unifiedPresenceService` (sender
+  Microsoft.Skype.Presence.App/1.0) as `{"presence":[{mri,etag,source,presence{…}}],"isSnapshot":…}`,
+  echoing `forcedAvailability` and `note`; the client answers each with
+  status 200.

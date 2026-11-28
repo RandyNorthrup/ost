@@ -22,7 +22,7 @@ const SLOW_DOWN_STEP_SECS: u64 = 5;
 const DEFAULT_POLL_INTERVAL_SECS: u64 = 5;
 
 /// Tokens returned by the token endpoint.
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct TokenSet {
     pub access_token: String,
     #[serde(default)]
@@ -36,7 +36,7 @@ pub struct TokenSet {
 }
 
 /// The device authorization response (RFC 8628 §3.2).
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct DeviceCode {
     device_code: String,
     pub user_code: String,
@@ -45,6 +45,30 @@ pub struct DeviceCode {
     expires_in: Option<u64>,
     #[serde(default, deserialize_with = "seconds")]
     interval: Option<u64>,
+}
+
+impl std::fmt::Debug for TokenSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use super::tokens::{Redacted, redacted};
+        f.debug_struct("TokenSet")
+            .field("access_token", &Redacted(&self.access_token))
+            .field("refresh_token", &redacted(&self.refresh_token))
+            .field("id_token", &redacted(&self.id_token))
+            .field("expires_in", &self.expires_in)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for DeviceCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DeviceCode")
+            .field("device_code", &super::tokens::Redacted(&self.device_code))
+            .field("user_code", &self.user_code)
+            .field("verification_uri", &self.verification_uri)
+            .field("expires_in", &self.expires_in)
+            .field("interval", &self.interval)
+            .finish()
+    }
 }
 
 /// An OAuth2 error body (RFC 6749 §5.2).

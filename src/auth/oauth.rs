@@ -4,7 +4,7 @@
 use anyhow::{Context, Result};
 
 use super::aad::{AadClient, DeviceCode, TokenSet};
-use super::skype::exchange_skype_token;
+use super::skype::{AuthzKind, exchange_skype_token};
 use super::{AuthConfig, TokenStore};
 use crate::config::Config;
 
@@ -84,9 +84,85 @@ fn store_primary(config: &mut Config, tokens: &TokenSet) {
     }
 }
 
+/// One token refresh at a time in this process: a personal account's
+/// refresh token rotates with each use, and two refreshes racing would
+/// each keep a different one.
+static REFRESHING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Which of a personal account's tokens to renew.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Renew {
+    /// All of them (sign-in, or an explicit refresh).
+    All,
+    /// Only those missing or about to expire, each on its own lifetime, as
+    /// Teams on the web for personal use renews them: the Skype token
+    /// lasts 8 hours (28,799 s), the middle tier's token as long, Graph's
+    /// 1 hour.
+    Expired,
+}
+
+/// Whether a stored token should be renewed now (missing, or less than
+/// five minutes left).
+fn lapsed(token: Option<super::StoredToken>) -> bool {
+    token.is_none_or(|t| t.is_expired())
+}
+
+/// Which stored tokens [`refresh_expired`] would renew: (Skype, primary
+/// access token, Graph).
+fn lapsed_tokens(config: &Config) -> (bool, bool, bool) {
+    (
+        lapsed(config.get_skype_token()),
+        lapsed(config.get_access_token()),
+        lapsed(config.get_graph_token()),
+    )
+}
+
+/// Whether the stored sign-in needs [`refresh_expired`]: a token it renews
+/// is missing or about to expire. A work account's Skype token only
+/// counts once it has one (a device-code sign-in can lack it).
+pub fn needs_refresh(config: &Config) -> bool {
+    let (skype, access, graph) = lapsed_tokens(config);
+    let personal = super::is_personal_flow(config.auth_flow.as_deref());
+    access
+        || graph
+        || if personal {
+            skype
+        } else {
+            config.get_skype_token().is_some_and(|t| t.is_expired())
+        }
+}
+
+/// Renew the stored tokens that are missing or about to expire. A
+/// personal account renews each of its tokens on its own expiry (the
+/// 8-hour Skype token from the consumer authz, the middle tier's token,
+/// Graph's); a work account refreshes them all ([`refresh`]). Waits for a
+/// refresh already running in this process and then only renews what is
+/// still lapsed. `Ok(false)` when there is no refresh token.
+pub async fn refresh_expired() -> Result<bool> {
+    let one = REFRESHING.lock().await;
+    let mut config = Config::load()?;
+    if config.get_refresh_token().is_none() {
+        return Ok(false);
+    }
+    if !needs_refresh(&config) {
+        return Ok(true);
+    }
+    if !super::is_personal_flow(config.auth_flow.as_deref()) {
+        drop(one);
+        return refresh().await;
+    }
+    let client = stored_client(&config);
+    // (a middle tier or Graph token that couldn't be had is logged; the
+    // services that need it say so)
+    personal_tokens(&client, &mut config, Renew::Expired).await?;
+    config.save()?;
+    Ok(true)
+}
+
 /// Refresh the AAD access token using a stored refresh_token, then
 /// re-exchange for a Skype token. Returns Ok(true) if refresh succeeded.
 pub async fn refresh() -> Result<bool> {
+    let _one = REFRESHING.lock().await;
     let mut config = Config::load()?;
     let refresh_token_str = match config.get_refresh_token() {
         Some(rt) => rt,
@@ -95,9 +171,9 @@ pub async fn refresh() -> Result<bool> {
 
     let client = stored_client(&config);
 
-    if config.auth_flow.as_deref() == Some(super::TEAMS_LIVE_FLOW) {
+    if super::is_personal_flow(config.auth_flow.as_deref()) {
         tracing::info!("Refreshing the personal account's tokens...");
-        personal_tokens(&client, &mut config).await?;
+        personal_tokens(&client, &mut config, Renew::All).await?;
         config.save()?;
         tracing::info!("Token refresh complete");
         return Ok(true);
@@ -175,11 +251,29 @@ pub async fn refresh() -> Result<bool> {
     Ok(true)
 }
 
-/// Why `teams-cli login` won't start a device-code sign-in for this
-/// profile: it signs in with OST desktop's browser sign-in (the only one
-/// whose tokens broker embedded apps' tokens), and a device-code sign-in
-/// would replace it. `--device-code` (`device_code`) asks for the switch.
-fn device_code_refusal(auth_flow: Option<&str>, device_code: bool) -> Option<&'static str> {
+/// Why `teams-cli login` won't start this device-code sign-in for this
+/// profile. A work profile that uses OST desktop's browser sign-in (the
+/// only one whose tokens broker embedded apps' tokens) is only switched to
+/// a device code with `--device-code` (`device_code`). A personal
+/// account's profile signs in again as a personal account (`--personal`),
+/// and a work account's profile doesn't become a personal one: each
+/// account has its own profile (`OST_PROFILE`).
+fn device_code_refusal(
+    auth_flow: Option<&str>,
+    work_identity: bool,
+    device_code: bool,
+    personal: bool,
+) -> Option<&'static str> {
+    if personal {
+        return (work_identity || auth_flow == Some(super::TEAMS_WEB_FLOW)).then_some(
+            "This profile holds a work or school account. Sign the personal account in under its own profile:              OST_PROFILE=<name> teams-cli login --personal",
+        );
+    }
+    if super::is_personal_flow(auth_flow) {
+        return Some(
+            "This profile holds a personal Microsoft account. Run `teams-cli login --personal` to sign it in again.",
+        );
+    }
     (auth_flow == Some(super::TEAMS_WEB_FLOW) && !device_code).then_some(
         "This profile signs in through OST desktop's browser sign-in, which the desktop's embedded apps need. \
          Run ost-desktop to sign in again, or run `teams-cli login --device-code` to switch this profile to a device-code sign-in.",
@@ -187,17 +281,19 @@ fn device_code_refusal(auth_flow: Option<&str>, device_code: bool) -> Option<&'s
 }
 
 /// Perform OAuth2 login flow. A profile that uses the browser sign-in is
-/// only switched to the device code with `device_code`.
-pub async fn login(force: bool, device_code: bool) -> Result<()> {
+/// only switched to the device code with `device_code`; `personal` signs
+/// in a personal Microsoft account.
+pub async fn login(force: bool, device_code: bool, personal: bool) -> Result<()> {
     {
         let config = Config::load()?;
 
         // Check for existing valid token
         if !force && let Some(token) = config.get_access_token() {
-            if !token.is_expired() {
+            let stored_personal = super::is_personal_flow(config.auth_flow.as_deref());
+            if !token.is_expired() && !needs_refresh(&config) {
                 // Check if any derived tokens are missing; if so, refresh to acquire them
-                let missing_tokens =
-                    config.get_recorder_token().is_none() || config.get_ic3_token().is_none();
+                let missing_tokens = !stored_personal
+                    && (config.get_recorder_token().is_none() || config.get_ic3_token().is_none());
                 if missing_tokens && config.get_refresh_token().is_some() {
                     tracing::info!(
                         "AAD token valid but some derived tokens missing, refreshing..."
@@ -212,8 +308,8 @@ pub async fn login(force: bool, device_code: bool) -> Result<()> {
             }
             // Try refresh before falling through to device code
             if config.get_refresh_token().is_some() {
-                tracing::info!("AAD token expired, attempting refresh...");
-                match refresh().await {
+                tracing::info!("Tokens expired, attempting refresh...");
+                match refresh_expired().await {
                     Ok(true) => {
                         println!("Token refreshed successfully.");
                         return Ok(());
@@ -225,12 +321,22 @@ pub async fn login(force: bool, device_code: bool) -> Result<()> {
                 }
             }
         }
-        if let Some(why) = device_code_refusal(config.auth_flow.as_deref(), device_code) {
+        let work_identity = config.identity().is_some_and(|i| !i.is_personal());
+        if let Some(why) = device_code_refusal(
+            config.auth_flow.as_deref(),
+            work_identity,
+            device_code,
+            personal,
+        ) {
             anyhow::bail!(why);
         }
     }
 
-    let pending = begin_sign_in().await?;
+    let pending = if personal {
+        begin_personal_sign_in().await?
+    } else {
+        begin_sign_in().await?
+    };
 
     println!();
     println!("To sign in, visit: {}", pending.verification_uri());
@@ -257,6 +363,8 @@ pub async fn login(force: bool, device_code: bool) -> Result<()> {
 pub struct PendingSignIn {
     client: AadClient,
     code: DeviceCode,
+    /// A personal account's sign-in ([`begin_personal_sign_in`]).
+    personal: bool,
 }
 
 impl PendingSignIn {
@@ -280,7 +388,30 @@ pub async fn begin_sign_in() -> Result<PendingSignIn> {
         .request_device_code(SKYPE_SCOPE)
         .await
         .context("Failed to request device code")?;
-    Ok(PendingSignIn { client, code })
+    Ok(PendingSignIn {
+        client,
+        code,
+        personal: false,
+    })
+}
+
+/// Start a personal account's device-code sign-in (`teams-cli login
+/// --personal`), with Teams' native client for personal accounts (see
+/// [`AuthConfig::teams_live_device`]). Microsoft's page for the code is
+/// microsoft.com/link.
+pub async fn begin_personal_sign_in() -> Result<PendingSignIn> {
+    let config = AuthConfig::teams_live_device();
+    let client = build_client(&config);
+    tracing::info!("Initiating a personal account's device code flow...");
+    let code = client
+        .request_device_code(config.scope)
+        .await
+        .context("Failed to request device code")?;
+    Ok(PendingSignIn {
+        client,
+        code,
+        personal: true,
+    })
 }
 
 /// Teams' broker for embedded apps (nested app authentication): a token
@@ -350,6 +481,8 @@ pub fn browser_sign_in() -> bool {
 /// account's (Teams on the web for personal use's). `Some(true)` for the
 /// personal one.
 pub fn browser_session() -> Option<bool> {
+    // (a personal account's device-code sign-in renews from its own,
+    // longer-lived refresh token: None)
     match Config::load().ok().and_then(|c| c.auth_flow).as_deref() {
         Some(super::TEAMS_WEB_FLOW) => Some(false),
         Some(super::TEAMS_LIVE_FLOW) => Some(true),
@@ -357,15 +490,30 @@ pub fn browser_session() -> Option<bool> {
     }
 }
 
+/// Whether the stored sign-in is a personal account's (in OST's web view
+/// or with `teams-cli login --personal`).
+pub fn personal_session() -> bool {
+    Config::load()
+        .ok()
+        .is_some_and(|c| super::is_personal_flow(c.auth_flow.as_deref()))
+}
+
 /// Wait for the user to approve the sign-in, then store every token OST
 /// needs. Returns the names of the secondary tokens that could not be
 /// acquired (empty on full success); fails if sign-in itself failed.
 pub async fn finish_sign_in(pending: PendingSignIn) -> Result<Vec<&'static str>> {
-    let PendingSignIn { client, code } = pending;
+    let PendingSignIn {
+        client,
+        code,
+        personal,
+    } = pending;
     let tokens = client
         .poll_device_token(&code)
         .await
         .context("Failed to exchange device code for token")?;
+    if personal {
+        return store_personal_sign_in(&client, tokens, super::TEAMS_LIVE_DEVICE_FLOW).await;
+    }
     store_sign_in(&client, &tokens, None).await
 }
 
@@ -415,21 +563,37 @@ async fn finish_personal_sign_in(
         )
         .await
         .context("Failed to redeem the sign-in")?;
+    store_personal_sign_in(&client, tokens, super::TEAMS_LIVE_FLOW).await
+}
+
+/// Store a personal account's sign-in (`flow`: in OST's web view, or a
+/// device code): the account's identity from the OpenID token, its
+/// refresh token, then its service tokens ([`personal_tokens`]).
+async fn store_personal_sign_in(
+    client: &AadClient,
+    tokens: TokenSet,
+    flow: &str,
+) -> Result<Vec<&'static str>> {
     let identity = tokens
         .id_token
         .as_deref()
         .and_then(crate::identity::AccountIdentity::from_personal_id_token)
         .context("The sign-in didn't name a personal Microsoft account")?;
     let mut config = Config::load()?;
-    config.auth_flow = Some(super::TEAMS_LIVE_FLOW.to_string());
+    config.auth_flow = Some(flow.to_string());
     config.set_refresh_token(
         tokens
             .refresh_token
-            .clone()
             .context("The sign-in gave no refresh token")?,
     );
     config.set_identity(identity);
-    let missing = personal_tokens(&client, &mut config).await?;
+    // A new sign-in: none of an earlier sign-in's tokens are kept.
+    config.skype_token = None;
+    config.access_token = None;
+    config.graph_token = None;
+    config.ic3_token = None;
+    config.recorder_token = None;
+    let missing = personal_tokens(client, &mut config, Renew::All).await?;
     config.save()?;
     Ok(missing)
 }
@@ -450,40 +614,63 @@ async fn mint_personal(client: &AadClient, config: &mut Config, scope: &str) -> 
 /// A personal account's tokens from its refresh token (rotated with each
 /// use, so each new one is kept): the consumer authz token for the Skype
 /// token and regional URLs (which also give the account's `skypeid`), the
-/// middle tier's as the primary token, and Graph. Fails when the Skype
-/// token can't be had (nothing works without it).
-async fn personal_tokens(client: &AadClient, config: &mut Config) -> Result<Vec<&'static str>> {
+/// middle tier's as the primary token, and Graph. With [`Renew::Expired`]
+/// only the ones missing or about to expire. Fails when the Skype token
+/// can't be had (nothing works without it).
+async fn personal_tokens(
+    client: &AadClient,
+    config: &mut Config,
+    renew: Renew,
+) -> Result<Vec<&'static str>> {
+    let (skype, access, graph) = match renew {
+        Renew::All => (true, true, true),
+        Renew::Expired => lapsed_tokens(config),
+    };
     let mut missing = Vec::new();
-    let authz = mint_personal(
-        client,
-        config,
-        &format!("{} offline_access", super::skype::PERSONAL_AUTHZ_SCOPE),
-    )
-    .await
-    .context("Failed to get the personal account's authz token")?;
-    let x = exchange_skype_token(&authz.access_token, true).await?;
-    config.set_skype_token(x.skype_token, x.expires_in);
-    if let Some(gtms) = x.region_gtms {
-        config.set_region_gtms(gtms);
+    if skype {
+        let authz = mint_personal(
+            client,
+            config,
+            &format!("{} offline_access", super::skype::PERSONAL_AUTHZ_SCOPE),
+        )
+        .await
+        .context("Failed to get the personal account's authz token")?;
+        // Teams on the web for personal use names a renewal TokenRefresh,
+        // a sign-in ExplicitLogin.
+        let kind = if config.get_skype_token().is_some() {
+            AuthzKind::TokenRefresh
+        } else {
+            AuthzKind::ExplicitLogin
+        };
+        let x = super::skype::exchange_personal_skype_token(&authz.access_token, kind).await?;
+        config.set_skype_token(x.skype_token, x.expires_in);
+        if let Some(gtms) = x.region_gtms {
+            config.set_region_gtms(gtms);
+        }
+        if let Some(l) = x.license_details {
+            config.set_license_details(l);
+        }
+        if let (Some(me), Some(id)) = (config.identity().cloned(), x.skype_id.as_deref()) {
+            config.set_identity(me.with_skype_id(id));
+        }
+        tracing::info!("Personal account's Skype token renewed");
     }
-    if let Some(l) = x.license_details {
-        config.set_license_details(l);
-    }
-    if let (Some(me), Some(id)) = (config.identity().cloned(), x.skype_id.as_deref()) {
-        config.set_identity(me.with_skype_id(id));
-    }
-    match mint_personal(client, config, PERSONAL_MT_SCOPE).await {
-        Ok(t) => config.set_access_token(t.access_token, t.expires_in),
-        Err(e) => {
-            tracing::warn!("Middle tier token acquisition failed: {:#}", e);
-            missing.push("Middle tier");
+    if access {
+        match mint_personal(client, config, PERSONAL_MT_SCOPE).await {
+            Ok(t) => config.set_access_token(t.access_token, t.expires_in),
+            Err(e) => {
+                tracing::warn!("Middle tier token acquisition failed: {:#}", e);
+                missing.push("Middle tier");
+            }
         }
     }
-    match mint_personal(client, config, PERSONAL_GRAPH_SCOPE).await {
-        Ok(t) => config.set_graph_token(t.access_token, t.expires_in),
-        Err(e) => {
-            tracing::warn!("Graph token acquisition failed: {:#}", e);
-            missing.push("Graph");
+    if graph {
+        match mint_personal(client, config, PERSONAL_GRAPH_SCOPE).await {
+            Ok(t) => config.set_graph_token(t.access_token, t.expires_in),
+            Err(e) => {
+                tracing::warn!("Graph token acquisition failed: {:#}", e);
+                missing.push("Graph");
+            }
         }
     }
     Ok(missing)
@@ -685,9 +872,58 @@ mod login_tests {
     #[test]
     fn device_code_login_needs_the_flag_on_a_browser_profile() {
         let web = Some(crate::auth::TEAMS_WEB_FLOW);
-        let why = device_code_refusal(web, false).expect("refused");
+        let why = device_code_refusal(web, true, false, false).expect("refused");
         assert!(why.contains("ost-desktop") && why.contains("--device-code"));
-        assert_eq!(device_code_refusal(web, true), None);
-        assert_eq!(device_code_refusal(None, false), None);
+        assert_eq!(device_code_refusal(web, true, true, false), None);
+        assert_eq!(device_code_refusal(None, false, false, false), None);
+    }
+
+    #[test]
+    fn a_personal_account_signs_in_under_its_own_profile() {
+        let live = Some(crate::auth::TEAMS_LIVE_FLOW);
+        let device = Some(crate::auth::TEAMS_LIVE_DEVICE_FLOW);
+        // A fresh profile, or a personal account's (either sign-in).
+        assert_eq!(device_code_refusal(None, false, false, true), None);
+        assert_eq!(device_code_refusal(live, false, false, true), None);
+        assert_eq!(device_code_refusal(device, false, false, true), None);
+        // A personal profile isn't turned into a work one...
+        let why = device_code_refusal(live, false, true, false).expect("refused");
+        assert!(why.contains("--personal"));
+        assert!(device_code_refusal(device, false, false, false).is_some());
+        // ...nor a work profile into a personal one.
+        let why = device_code_refusal(None, true, false, true).expect("refused");
+        assert!(why.contains("OST_PROFILE"));
+        assert!(
+            device_code_refusal(Some(crate::auth::TEAMS_WEB_FLOW), false, false, true).is_some()
+        );
+    }
+
+    #[test]
+    fn personal_tokens_renew_on_their_own_expiry() {
+        let fresh = |s: u64| Some(crate::auth::StoredToken::new("t".into(), Some(s)));
+        let mut c = Config {
+            auth_flow: Some(crate::auth::TEAMS_LIVE_FLOW.into()),
+            refresh_token: Some("r".into()),
+            access_token: fresh(28_799),
+            graph_token: fresh(3_599),
+            skype_token: fresh(28_799),
+            ..Default::default()
+        };
+        assert!(!needs_refresh(&c));
+        // The 8-hour Skype token lapses by itself: only it is renewed.
+        c.skype_token = fresh(60);
+        assert!(needs_refresh(&c));
+        assert_eq!(lapsed_tokens(&c), (true, false, false));
+        // A personal account can't work without it.
+        c.skype_token = None;
+        assert!(needs_refresh(&c));
+        // A work account's device-code sign-in may lack one.
+        c.auth_flow = None;
+        assert!(!needs_refresh(&c));
+        c.skype_token = fresh(60);
+        assert!(needs_refresh(&c));
+        c.skype_token = fresh(28_799);
+        c.graph_token = fresh(10);
+        assert_eq!(lapsed_tokens(&c), (false, false, true));
     }
 }
