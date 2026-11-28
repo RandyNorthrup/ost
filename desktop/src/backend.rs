@@ -19822,9 +19822,9 @@ impl qobject::Backend {
         // (A personal account starts every chat this way, with work users
         // too.)
         let personal = self.rust().personal_account;
-        if !teams_cli::identity::is_consumer_mri(&mri)
-            && !(personal && teams_cli::identity::is_person_mri(&mri))
-        {
+        let allowed = teams_cli::identity::is_consumer_mri(&mri)
+            || (personal && teams_cli::identity::is_person_mri(&mri));
+        if !allowed {
             return;
         }
         self.as_mut().set_busy(true);
