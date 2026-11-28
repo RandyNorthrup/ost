@@ -184,16 +184,35 @@ pub fn redirect_policy() -> reqwest::redirect::Policy {
 }
 
 /// An HTTP client for token-bearing requests (see [`redirect_policy`]).
+/// The HTTP client every Teams, Graph and middle-tier request goes through.
+/// It only speaks https: a request (or a redirect) to an http:// address
+/// fails before anything is sent, so no token, mail address or directory id
+/// can leave in cleartext even if a caller builds a URL from a server-provided
+/// endpoint without checking its scheme. Local helpers that serve
+/// http://127.0.0.1 (live streaming, the diagnostics viewer) build their own
+/// clients.
 pub fn http_client() -> reqwest::Client {
     reqwest::Client::builder()
+        .https_only(true)
         .redirect(redirect_policy())
         .build()
-        .unwrap_or_else(|_| reqwest::Client::new())
+        .expect("the https-only Teams HTTP client")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn the_teams_client_refuses_plain_http() {
+        // Refused by the client itself: nothing is resolved or sent.
+        let err = http_client()
+            .get("http://teams.microsoft.com/api/mt/part/amer-03/beta/me")
+            .send()
+            .await
+            .expect_err("an http:// request must fail");
+        assert!(err.is_builder(), "refused before sending, got {err}");
+    }
 
     #[test]
     fn teams_services_get_the_teams_token() {
