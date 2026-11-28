@@ -222,7 +222,9 @@ fn personal_detail_json(id: &str, v: &serde_json::Value) -> serde_json::Value {
         "id": id,
         "body_html": s(v, "bodyContent"),
         "attendees": attendees,
-        "recurrence": personal_recurrence(v),
+        // (The middle tier's repeat isn't the form's Graph shape; the form
+        // shows none and a save keeps the event's own.)
+        "recurrence": serde_json::Value::Null,
         "conference_id": s(v, "teamsVtcConferenceId"),
         "created": "",
         "reminder": if v.get("isReminderSet").and_then(|r| r.as_bool()).unwrap_or(true) {
@@ -241,7 +243,23 @@ fn personal_detail_json(id: &str, v: &serde_json::Value) -> serde_json::Value {
 /// `{"updatedCalendarEvent": …}`, the form's event plus the event's own
 /// ids and meeting links (204).
 async fn personal_event_update(client: &TeamsClient, id: &str, form: &MeetingForm) -> Result<()> {
-    let cur = personal_event(client, id).await?;
+    if form.scope == "following" {
+        bail!("Editing this and all following events isn't available for this account");
+    }
+    let mut id = id.to_string();
+    let mut cur = personal_event(client, &id).await?;
+    // All events in the series: the series' own event.
+    if form.scope == "series"
+        && let Some(master) = cur
+            .get("seriesMasterId")
+            .and_then(|m| m.as_str())
+            .filter(|m| !m.is_empty())
+            .map(str::to_string)
+    {
+        cur = personal_event(client, &master).await?;
+        id = master;
+    }
+    let id = id.as_str();
     let config = crate::config::Config::load()?;
     let me = Me {
         name: config.display_name().unwrap_or_default(),
@@ -396,18 +414,6 @@ fn personal_event_type(t: &str) -> &'static str {
         "Exception" => "exception",
         "SeriesMaster" | "RecurringMaster" => "seriesMaster",
         _ => "singleInstance",
-    }
-}
-
-/// A middle-tier event's repeat as the form takes it (`{pattern, range}`,
-/// the middle tier's own `eventRecurrencePattern` / `…Range`).
-fn personal_recurrence(v: &serde_json::Value) -> serde_json::Value {
-    match (
-        v.get("eventRecurrencePattern"),
-        v.get("eventRecurrenceRange"),
-    ) {
-        (Some(p), Some(r)) if !p.is_null() => serde_json::json!({ "pattern": p, "range": r }),
-        _ => serde_json::Value::Null,
     }
 }
 
@@ -3587,10 +3593,7 @@ mod tests {
             b["updatedCalendarEvent"]["eventRecurrencePattern"]["type"],
             "Weekly"
         );
-        assert_eq!(
-            super::personal_detail_json("AQMk1", &series)["recurrence"]["pattern"]["type"],
-            "Weekly"
-        );
+        assert!(super::personal_detail_json("AQMk1", &series)["recurrence"].is_null());
         assert_eq!(super::personal_event_type("Occurrence"), "occurrence");
         // A form that holds the invitees decides: one removed stays removed.
         let mut loaded = form.clone();
