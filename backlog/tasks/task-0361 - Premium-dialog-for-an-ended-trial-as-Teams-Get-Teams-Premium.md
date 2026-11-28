@@ -4,7 +4,7 @@ title: Premium dialog for an ended trial as Teams (Get Teams Premium)
 status: To Do
 assignee: []
 created_date: '2026-11-27T18:15:00Z'
-updated_date: '2026-11-27T22:57:00Z'
+updated_date: '2026-11-28T01:04:00Z'
 labels:
   - parity
 dependencies: []
@@ -21,3 +21,9 @@ Found during TASK-0357 (PR #67, which creates this task). After a Teams Premium 
 - [ ] #1 Title-bar Premium pill shows or hides at the same window widths as Teams desktop
 - [ ] #2 Get Teams Premium after an ended trial shows Teams' post-trial page with Teams' strings and geometry, checked side by side without sending a licence request
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Built so far: PR #67 added the post-trial 'ended' page for Get Teams Premium (PremiumDialog.qml) with provisional strings; measuring Teams' page, confirming the string keys and the pill's narrow-width rule (TitleBar.qml shows it whenever premiumPill is set) are left.
+<!-- SECTION:NOTES:END -->

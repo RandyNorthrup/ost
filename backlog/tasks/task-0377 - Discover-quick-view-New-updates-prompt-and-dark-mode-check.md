@@ -4,6 +4,7 @@ title: 'Discover quick view: New updates prompt and dark mode check'
 status: To Do
 assignee: []
 created_date: '2026-11-28T00:08:00Z'
+updated_date: '2026-11-28T01:04:00Z'
 labels:
   - desktop
   - chat
@@ -22,3 +23,9 @@ Follow-up from TASK-0365 (PR #56): Teams' Discover feed shows a New updates prom
 - [ ] #2 Discover matches Teams in dark and high-contrast themes
 - [ ] #3 Replying from a Discover card works as in Teams (checked live with test accounts)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Built so far: replying from a Discover card (DiscoverView.qml replyInput/sendReply, TASK-0365 PR #56) and theme-token colours are built but not checked live; the New updates prompt is left.
+<!-- SECTION:NOTES:END -->
