@@ -220,7 +220,9 @@ Item {
         id: simpleFlyout
         parent: root.Window.contentItem
         width: 340; padding: 0
-        height: simpleCol.implicitHeight
+        // At most ~0.7 of the window, as the work flyout; more scrolls.
+        readonly property real maxHeight: Math.max(200, root.Window.height * 0.702)
+        height: Math.min(simpleCol.implicitHeight, maxHeight)
         modal: false; focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
         function openBeside() {
@@ -232,8 +234,12 @@ Item {
         }
         onHeightChanged: if (opened) { const p = root.mapToItem(root.Window.contentItem, 0, 0); y = Math.max(0, p.y + root.height - height) }
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
-        contentItem: Item {
+        contentItem: Flickable {
         implicitHeight: simpleCol.implicitHeight
+        contentHeight: simpleCol.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
         Column {
             id: simpleCol
             width: 340
