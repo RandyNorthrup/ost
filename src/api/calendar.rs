@@ -161,6 +161,32 @@ async fn personal_event(client: &TeamsClient, id: &str) -> Result<serde_json::Va
     Ok(v.get("value").cloned().unwrap_or(v))
 }
 
+/// Delete (cancel) a personal account's event, as Teams for personal use
+/// does.
+async fn personal_event_delete(client: &TeamsClient, id: &str) -> Result<()> {
+    if id.is_empty() {
+        bail!("No event id");
+    }
+    let (base, token) = crate::api::tabs::middle_tier(client).await?;
+    let url = crate::auth::token_hosts::service_url(
+        &format!("{base}/v2.0/me/calendars/events"),
+        crate::auth::token_hosts::Audience::Teams,
+        &[id],
+        &[],
+    )?;
+    let r = client
+        .http()
+        .delete(url)
+        .headers(mt_headers(client, &token))
+        .send()
+        .await?;
+    let status = r.status();
+    if !status.is_success() {
+        bail!("The meeting wasn't cancelled ({status})");
+    }
+    Ok(())
+}
+
 /// [`event_detail`] for a personal account, from its middle-tier event.
 async fn personal_event_detail(client: &TeamsClient, id: &str) -> Result<serde_json::Value> {
     Ok(personal_detail_json(id, &personal_event(client, id).await?))
@@ -1042,6 +1068,9 @@ pub async fn update_event(
 /// Delete an event; for a meeting you organise this cancels it for
 /// everyone, as Teams' Delete does.
 pub async fn delete_event(client: &TeamsClient, id: &str) -> Result<()> {
+    if client.is_personal() {
+        return personal_event_delete(client, id).await;
+    }
     client
         .graph_delete(&format!("/me/events/{}", event_path_id(id)?))
         .await?;
@@ -3326,6 +3355,12 @@ pub async fn cancel_meeting(
             .unwrap_or_default()
             .to_string()
     };
+    // A personal account's meeting: Teams for personal use's Cancel
+    // meeting deletes it through its middle tier (`DELETE
+    // {mt}/v2.0/me/calendars/events/{objectId}`, 204; captured 2026-11-28).
+    if client.is_personal() {
+        return personal_event_delete(client, &s("id")).await;
+    }
     if !s("channel_id").is_empty() {
         let (base, token) = crate::api::tabs::middle_tier(client).await?;
         let mail = group_mail(client, team_id).await?;
