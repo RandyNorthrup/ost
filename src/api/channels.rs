@@ -895,6 +895,71 @@ pub fn roster_from(v: &serde_json::Value) -> Vec<RosterMember> {
         .collect()
 }
 
+/// A team's people for the channel header's people popover and the
+/// Meetings pane's Organizer filter: the thread's members (two roster
+/// reads) named by one batched fetchShortProfile, kept for five minutes per
+/// team (Manage team's [`team_roster`] looks each person up in Graph,
+/// which a popover can't wait for).
+pub async fn team_people(client: &TeamsClient, team_thread: &str) -> Result<Vec<(String, String)>> {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    type Entry = (std::time::Instant, Vec<(String, String)>);
+    static CACHE: Mutex<Option<HashMap<String, Entry>>> = Mutex::new(None);
+    if let Some((at, v)) = CACHE
+        .lock()
+        .ok()
+        .and_then(|c| c.as_ref()?.get(team_thread).cloned())
+        && at.elapsed() < std::time::Duration::from_secs(300)
+    {
+        return Ok(v);
+    }
+    let mut members = Vec::new();
+    for roles in ["Admin", "User%7CGuest"] {
+        let url = format!(
+            "{}/v1/threads/{}/members?view=msnp24Equivalent&pageSize=100&selectMemberRoles={roles}",
+            client.chat_service_url(),
+            enc(team_thread)
+        );
+        let v: serde_json::Value = client
+            .chat_get(&url)
+            .await?
+            .json()
+            .await
+            .context("Members")?;
+        members.extend(roster_from(&v));
+    }
+    let mris: Vec<String> = members.iter().map(|m| m.mri.clone()).collect();
+    let names: HashMap<String, String> = super::directory::short_profile_records(client, &mris)
+        .await
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|r| {
+            Some((
+                r["mri"].as_str()?.to_lowercase(),
+                r["displayName"].as_str()?.to_string(),
+            ))
+        })
+        .collect();
+    let out: Vec<(String, String)> = members
+        .into_iter()
+        .map(|m| {
+            let name = names
+                .get(&m.mri.to_lowercase())
+                .cloned()
+                .filter(|n| !n.is_empty())
+                .unwrap_or(m.name);
+            (m.mri, name)
+        })
+        .collect();
+    if let Ok(mut c) = CACHE.lock() {
+        c.get_or_insert_with(HashMap::new).insert(
+            team_thread.to_string(),
+            (std::time::Instant::now(), out.clone()),
+        );
+    }
+    Ok(out)
+}
+
 /// Manage team ▸ Members: owners and members and guests as Teams reads them
 /// (`…/threads/{team}/members?…&selectMemberRoles=Admin` and `User|Guest`),
 /// with names, titles and locations (Graph) and their tags (CSA memberTags).

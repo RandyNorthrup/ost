@@ -979,10 +979,15 @@ fn lie_page_id(channel_id: &str) -> String {
 
 /// Teams' stand-in Page (Zm in the channel tab list, module 177792): "Page"
 /// right after the built-in tabs (Posts, Shared), with no page yet.
-fn lie_page(channel_id: &str) -> Tab {
+fn lie_page(channel_id: &str, taken: &[String]) -> Tab {
     Tab {
         id: lie_page_id(channel_id),
-        name: crate::i18n::tr("Page"),
+        // Tabs are picked by name: "Page" gets a number when another tab
+        // already has it.
+        name: super::tab_add::display_name(&super::tab_add::stored_name(
+            &crate::i18n::tr("Page"),
+            taken,
+        )),
         app_id: PAGES_APP.into(),
         kind: Kind::ChannelPage,
         entity_id: String::new(),
@@ -1023,7 +1028,8 @@ fn settle_pages(mut tabs: Vec<Tab>, me: &str, hidden: bool, channel_id: &str) ->
             m.remove(channel_id);
         }
     } else {
-        tabs.push(lie_page(channel_id));
+        let taken: Vec<String> = tabs.iter().map(|t| t.name.clone()).collect();
+        tabs.push(lie_page(channel_id, &taken));
     }
     tabs
 }
@@ -1641,6 +1647,11 @@ mod tests {
         let hidden = settle_pages(base.clone(), me, true, channel);
         assert_eq!(names(&hidden), ["Posts", "Shared", "Notes"]);
         assert!(!is_lie_page(channel, &page.id));
+        // Another tab already named Page: the stand-in gets a number.
+        let named = serde_json::json!({"appId": "0d820ecd-def2-4297-adad-78056cde7c78", "id": "tab::x", "name": "Page", "order": 20.0, "configuration": {"entityId": "X"}});
+        let with_named = tabs_from(&[files.clone(), named], &ctx, true, &HashMap::new());
+        let tabs = settle_pages(with_named, me, false, "19:lie5@thread.tacv2");
+        assert_eq!(tabs.iter().find(|t| t.lie).unwrap().name, "Page (1)");
         // A real Page: no stand-in.
         let real = serde_json::json!({"appId": PAGES_APP, "id": "tab::p", "name": "Page", "order": 10.0, "configuration": {"contentUrl": "https://contoso.sharepoint.com/x.loop"}});
         let with_page = tabs_from(
