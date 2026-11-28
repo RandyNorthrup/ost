@@ -1033,7 +1033,8 @@ pub async fn thread_member_ids(client: &TeamsClient, thread: &str) -> Result<Vec
             .unwrap_or_else(|| c.as_str().is_some_and(|s| s.eq_ignore_ascii_case("true")))
     });
     let mut set = CFET_THREADS.lock().unwrap_or_else(|e| e.into_inner());
-    let set = set.get_or_insert_with(Default::default);
+    let (set, read) = set.get_or_insert_with(Default::default);
+    read.insert(thread.to_string());
     if cfet {
         set.insert(thread.to_string());
     } else {
@@ -1042,16 +1043,48 @@ pub async fn thread_member_ids(client: &TeamsClient, thread: &str) -> Result<Vec
     Ok(ids)
 }
 
-/// Threads whose `cfet` is "true", as `thread_member_ids` read them.
-static CFET_THREADS: std::sync::Mutex<Option<std::collections::HashSet<String>>> =
-    std::sync::Mutex::new(None);
+/// Which of these group chats are external access threads (`cfet`), each
+/// thread read once a session (four at a time); for the Store's quick
+/// start, which offers no app there.
+pub async fn cfet_threads(client: &TeamsClient, chats: &[String]) -> Vec<String> {
+    let unread: Vec<&String> = {
+        let state = CFET_THREADS.lock().unwrap_or_else(|e| e.into_inner());
+        chats
+            .iter()
+            .filter(|c| c.starts_with("19:") && c.ends_with("@thread.v2"))
+            .filter(|c| {
+                !state
+                    .as_ref()
+                    .is_some_and(|(_, read)| read.contains(c.as_str()))
+            })
+            .collect()
+    };
+    for chunk in unread.chunks(4) {
+        let read =
+            futures::future::join_all(chunk.iter().map(|id| thread_member_ids(client, id))).await;
+        for (id, r) in chunk.iter().zip(read) {
+            if let Err(e) = r {
+                tracing::debug!(chat = %id, "chat thread for cfet: {e:#}");
+            }
+        }
+    }
+    chats.iter().filter(|c| cfet_thread(c)).cloned().collect()
+}
+
+/// Threads whose `cfet` is "true", and every thread read, as
+/// `thread_member_ids` read them.
+type ThreadSets = (
+    std::collections::HashSet<String>,
+    std::collections::HashSet<String>,
+);
+static CFET_THREADS: std::sync::Mutex<Option<ThreadSets>> = std::sync::Mutex::new(None);
 
 fn cfet_thread(thread: &str) -> bool {
     CFET_THREADS
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .as_ref()
-        .is_some_and(|s| s.contains(thread))
+        .is_some_and(|(s, _)| s.contains(thread))
 }
 
 pub(crate) fn remember_members(thread: &str, ids: Vec<String>) {
