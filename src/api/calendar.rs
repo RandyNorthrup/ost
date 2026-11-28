@@ -65,6 +65,10 @@ pub struct CalendarEvent {
     /// Someone else's calendar seen through their free/busy: no details,
     /// only the time and how it's shown (Teams words the tile by `show_as`).
     pub free_busy: bool,
+    /// A personal account's meeting chat (`skypeTeamsDataObject.cid`): its
+    /// `teams.live.com/meet` link doesn't name it.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub chat_id: String,
 }
 
 /// One invitee and their answer.
@@ -304,6 +308,109 @@ async fn personal_event_update(client: &TeamsClient, id: &str, form: &MeetingFor
     Ok(())
 }
 
+/// A personal account's event settings (show as, reminder, privacy,
+/// response requests, categories) saved through the middle tier: the event
+/// as it is with those fields changed, sent as Teams for personal use saves
+/// its event page.
+async fn personal_event_patch(
+    client: &TeamsClient,
+    id: &str,
+    patch: &serde_json::Map<String, serde_json::Value>,
+) -> Result<()> {
+    let cur = personal_event(client, id).await?;
+    let body = personal_patch_body(&cur, patch);
+    let (base, token) = crate::api::tabs::middle_tier(client).await?;
+    let url = crate::auth::token_hosts::service_url(
+        &format!("{base}/v2.0/me/calendars/events"),
+        crate::auth::token_hosts::Audience::Teams,
+        &[id],
+        &[("isOnlineMeeting", "false")],
+    )?;
+    let r = client
+        .http()
+        .put(url)
+        .headers(mt_headers(client, &token))
+        .json(&body)
+        .send()
+        .await?;
+    let status = r.status();
+    if !status.is_success() {
+        bail!("The event wasn't updated ({status})");
+    }
+    Ok(())
+}
+
+/// The middle tier's update for [`personal_event_patch`]: Graph's field
+/// names in `patch` mapped onto the middle tier's event.
+fn personal_patch_body(
+    cur: &serde_json::Value,
+    patch: &serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Value {
+    let mut ev = serde_json::Map::new();
+    for k in [
+        "subject",
+        "location",
+        "bodyContent",
+        "startTime",
+        "endTime",
+        "isAllDayEvent",
+        "attendees",
+        "organizerName",
+        "doNotForward",
+        "eventTimeZone",
+        "utcOffset",
+        "isAppointment",
+        "showAs",
+        "isOrganizer",
+        "isPrivate",
+        "isResponseRequested",
+        "isReminderSet",
+        "reminderMinutesBeforeStart",
+        "categories",
+        "objectId",
+        "iCalUID",
+        "schedulingServiceUpdateUrl",
+        "skypeTeamsData",
+        "eventType",
+        "eventRecurrencePattern",
+        "eventRecurrenceRange",
+    ] {
+        if let Some(v) = cur.get(k).filter(|v| !v.is_null()) {
+            ev.insert(k.into(), v.clone());
+        }
+    }
+    let upper_first = |t: &str| {
+        let mut c = t.chars();
+        c.next()
+            .map(|f| f.to_uppercase().chain(c).collect::<String>())
+            .unwrap_or_default()
+    };
+    for (k, v) in patch {
+        match k.as_str() {
+            "showAs" => {
+                ev.insert(
+                    "showAs".into(),
+                    upper_first(v.as_str().unwrap_or("busy")).into(),
+                );
+            }
+            "sensitivity" => {
+                ev.insert("isPrivate".into(), (v.as_str() == Some("private")).into());
+            }
+            "isReminderOn" => {
+                ev.insert("isReminderSet".into(), v.clone());
+            }
+            "responseRequested" => {
+                ev.insert("isResponseRequested".into(), v.clone());
+            }
+            "reminderMinutesBeforeStart" | "categories" => {
+                ev.insert(k.clone(), v.clone());
+            }
+            _ => {}
+        }
+    }
+    serde_json::json!({ "updatedCalendarEvent": ev })
+}
+
 /// `form` with its start and end moved onto the date the series `master`
 /// starts on, keeping the form's time of day and length.
 fn on_series_date(form: &MeetingForm, master: &serde_json::Value) -> Option<MeetingForm> {
@@ -498,6 +605,12 @@ fn parse_mt_events(v: &serde_json::Value) -> Vec<CalendarEvent> {
                 response: response.into(),
                 response_requested: flag("isResponseRequested"),
                 is_cancelled: flag("isCancelled"),
+                chat_id: e
+                    .pointer("/skypeTeamsDataObject/cid")
+                    .and_then(|c| c.as_str())
+                    .filter(|c| c.starts_with("19:"))
+                    .unwrap_or_default()
+                    .to_string(),
                 categories: e
                     .get("categories")
                     .and_then(|c| c.as_array())
@@ -1080,6 +1193,9 @@ pub async fn patch_event(client: &TeamsClient, id: &str, patch: &serde_json::Val
     }
     if body.is_empty() {
         bail!("Nothing to change");
+    }
+    if client.is_personal() {
+        return personal_event_patch(client, id, &body).await;
     }
     client
         .graph_patch(
@@ -3586,6 +3702,20 @@ fn cancel_event_request(ews: &str, scope: &str, note: &str, tz: &str) -> serde_j
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn personal_event_settings_map_onto_the_middle_tier() {
+        let cur = serde_json::json!({"objectId": "AQMk1", "subject": "S", "isReminderSet": true, "showAs": "Busy", "skypeTeamsDataObject": {"cid": "19:meeting_x@thread.v2"}});
+        let patch = serde_json::json!({"isReminderOn": false, "sensitivity": "private", "showAs": "tentative"});
+        let b = super::personal_patch_body(&cur, patch.as_object().unwrap());
+        let e = &b["updatedCalendarEvent"];
+        assert_eq!(e["isReminderSet"], false);
+        assert_eq!(e["isPrivate"], true);
+        assert_eq!(e["showAs"], "Tentative");
+        assert_eq!(e["subject"], "S");
+        let ev = super::parse_mt_events(&serde_json::json!({"value": [cur]}));
+        assert_eq!(ev[0].chat_id, "19:meeting_x@thread.v2");
+    }
+
     #[test]
     fn personal_series_edits_stay_on_the_series_date() {
         let form = super::MeetingForm {

@@ -17836,9 +17836,13 @@ Window {
         // Chat: the meeting's chat thread (from its join link).
         onOpenMeetingChat: (url, subject) => {
             const m = /meetup-join\/([^/?]+)/.exec(url)
-            if (!m) return
+            // (A personal meeting's teams.live.com/meet link doesn't name its
+            // chat; its calendar event does.)
+            const ev = m ? null : (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).find(e => e.join_url === url && e.chat_id)
+            const chat = m ? decodeURIComponent(m[1]) : ev ? ev.chat_id : ""
+            if (!chat) return
             rail.current = "chat"
-            backend.selectChat(decodeURIComponent(m[1]), subject)
+            backend.selectChat(chat, subject)
         }
         // Join: Teams' pre-join window first, then the meeting.
         onJoinMeeting: (url, subject) => {
