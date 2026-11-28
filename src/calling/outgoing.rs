@@ -9,8 +9,8 @@
 use anyhow::{Context, Result, bail};
 use std::time::Duration;
 
+use super::signaling;
 use super::webrtc_audio::{LocalAudio, WebRtcAudioSession, WebRtcOffer, WebRtcStats};
-use super::{call_test, signaling};
 use crate::config::Config;
 use crate::event_hub::{self, EventKind};
 
