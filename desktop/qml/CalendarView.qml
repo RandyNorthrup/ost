@@ -348,7 +348,7 @@ Item {
     /// Teams' toolbar overflow: Filter goes into "More options" when the
     /// toolbar is short of room (measured on winpc: inline from a 1321 px
     /// calendar, 28.5 px or more between the date and the view button).
-    readonly property bool filterInline: !copilotOpen && bar.dabX - 12 - (viewButton.width + filterBtn.width + 32 + 1 + meetRow.width + newRow.width + 5 * rightRow.spacing)
+    readonly property bool filterInline: !copilotOpen && bar.dabX - 12 - (viewButton.width + filterBtn.width + 32 + 1 + (backend.personalAccount ? personalRow.width : meetRow.width + newRow.width) + 5 * rightRow.spacing)
                                          - (leftRow.x + leftRow.width) >= 28.5
     /// Copilot's pane in the calendar (Teams' "Chat with Copilot").
     property bool copilotOpen: false
@@ -1438,6 +1438,7 @@ Item {
             // Teams for personal use's calendar (teams.live.com, measured
             // 2026-11-28): Join with an ID, Meet now and New meeting.
             Row {
+                id: personalRow
                 visible: backend.personalAccount && !root.copilotOpen
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 8
