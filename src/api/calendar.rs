@@ -3970,8 +3970,6 @@ fn team_event_changes(
         "startTime",
         "subject",
         "utcOffset",
-        "eventRecurrencePattern",
-        "eventRecurrenceRange",
     ] {
         if let Some(v) = changes.get(k) {
             ev[k] = v.clone();
@@ -3979,6 +3977,15 @@ fn team_event_changes(
     }
     if form.body_changed {
         ev["bodyContent"] = changes["bodyContent"].clone();
+    }
+    // The repeat as loaded unless the form changed it (the form reads a
+    // relative or numbered repeat lossily).
+    if form.recurrence_changed {
+        for k in ["eventRecurrencePattern", "eventRecurrenceRange"] {
+            if let Some(v) = changes.get(k) {
+                ev[k] = v.clone();
+            }
+        }
     }
     // (The form hides an online meeting's own "Microsoft Teams Meeting";
     // emptied, the place goes back to it.)
@@ -5136,6 +5143,7 @@ mod older_tests {
         let mut ev = serde_json::json!({
             "subject": "Design review", "location": "Microsoft Teams Meeting", "isOnlineMeeting": true,
             "skypeTeamsMeetingUrl": "https://teams.microsoft.com/l/meetup-join/x", "bodyContent": "<p>old</p>",
+            "eventRecurrencePattern": {"patternType": 4, "relativeMonthly": {"interval": 1}},
             "attendees": [
                 {"address": "OSTTestTeam@scnetsolutions.com", "type": "Required", "role": "User"},
                 {"address": "ost-test2@scnetsolutions.com", "type": "Optional", "role": "User", "status": {"response": "Accepted"}},
@@ -5160,6 +5168,8 @@ mod older_tests {
                 },
             ],
             time_zone: "PacificSt".into(),
+            recurrence: Some(serde_json::json!({"pattern": {"patternType": 3}, "range": {}})),
+
             ..Default::default()
         };
         let me = super::Me {
@@ -5171,6 +5181,7 @@ mod older_tests {
         super::team_event_changes(&mut ev, &changes, &form, "OSTTestTeam@scnetsolutions.com");
         assert_eq!(ev["subject"], "Design review (moved)");
         assert_eq!(ev["location"], "Microsoft Teams Meeting");
+        assert_eq!(ev["eventRecurrencePattern"]["patternType"], 4);
         assert_eq!(ev["bodyContent"], "<p>old</p>");
         assert_eq!(ev["isOnlineMeeting"], true);
         let people: Vec<(String, String)> = ev["attendees"]
