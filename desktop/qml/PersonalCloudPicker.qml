@@ -33,7 +33,8 @@ Popup {
     property var items: []
     property bool loading: false
     property var picked: ({})
-    readonly property var pickedItems: items.filter(i => !!picked[i.id])
+    // The picked files themselves (from any folder visited), by id.
+    readonly property var pickedItems: Object.keys(picked).map(k => picked[k])
     readonly property string tag: "ppicker-" + Math.floor(Math.random() * 1e9) + ":"
     readonly property var places: [
         { key: "myfiles", label: qsTr("My files"), icon: "folder-20" },
@@ -64,7 +65,7 @@ Popup {
     function tap(it) {
         if (it.is_folder) { path = path.concat([{ id: it.id, name: it.name, drive: it.drive_id || "" }]); load(); return }
         const m = Object.assign({}, picked)
-        if (m[it.id]) delete m[it.id]; else m[it.id] = true
+        if (m[it.id]) delete m[it.id]; else m[it.id] = it
         picked = m
     }
     function attach() {

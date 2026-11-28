@@ -3747,7 +3747,8 @@ Rectangle {
                             readonly property var linked: tabLink ? root.linkedTabs.find(x => x.id === modelData.item_id) || null : null
                             // Teams free shows a picture file as the picture
                             // (its media store preview).
-                            readonly property bool photo: root.personal && !!modelData.preview_url
+                            // (Without the cached preview it stays a file chip.)
+                            readonly property bool photo: root.personal && !!modelData.preview_url && !!modelData.preview_local
                             width: tabLink ? tabCard.width : photo ? photoBox.width : fileCard.width
                             height: tabLink ? tabCard.height : photo ? photoBox.height : fileCard.height
                             // A picture file (Teams free, measured on
@@ -4693,6 +4694,7 @@ Rectangle {
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
         sourceComponent: PersonalPhotosTab {
             chatId: root.chatId
+            messageCount: root.messages.length
             dayLabel: t => root.dayLabel(t)
             onOpenImage: (list, i, m) => root.openImageViewer(list, i, m)
         }
