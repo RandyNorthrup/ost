@@ -35,8 +35,8 @@ Rectangle {
     /// Calendar and Activity, fixed (no app menu, no Store). OST shows the
     /// ones it can open: Copilot is Teams' upsell page for an account
     /// without a Microsoft 365 plan and Communities its retirement page;
-    /// Meet and Calendar are Teams free's (TASK-0298/0299); People
-    /// (TASK-0295) joins once its personal-account view is built
+    /// Meet and Calendar (TASK-0298/0299) and People (TASK-0295) are
+    /// Teams free's own views; an app without one stays off the bar
     /// (personalReady).
     readonly property var personalApps: [
         { key: "chat", icon: "chat", label: qsTr("Chat"), appId: "86fcd49b-61a2-4701-b771-54728cd291fb" },
@@ -49,7 +49,7 @@ Rectangle {
         { key: "activity", icon: "alert", label: qsTr("Activity"), appId: "14d6962d-6eeb-4f48-8890-de55454bb136" }
     ]
     /// The personal apps OST has a view for (false: left off the bar).
-    property var personalReady: ({ meet: true, people: false, calendar: true })
+    property var personalReady: ({ meet: true, people: true, calendar: true })
     readonly property var personalEntries: personalApps.filter(a => personalReady[a.key] !== false)
     /// The app bar menu's Pin / Unpin (Events).
     signal pinRequested(string key, bool on)
