@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@tperC'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T06:21:00Z'
+updated_date: '2026-11-28T07:42:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -29,7 +29,7 @@ Personal-account calls go through the consumer conversation service with the Sky
 - [ ] #2 Meet now and scheduled personal meetings work, including joining as a guest, with Teams' meeting roles and options
 - [ ] #3 The meeting limits, warnings and upgrade prompts match Teams for a free account
 - [ ] #4 Features Teams doesn't offer personal accounts (breakout rooms, Whiteboard, avatars) are not shown
-- [ ] #5 Incoming calls ring for a personal account: the calling socket on go.trouter.teams.microsoft.com registered as SkypeSpacesWeb / TFLSkypeSpacesWeb_2.0 (TFL), as captured in docs/research/personal-accounts-protocol.md §9.3 (from TASK-0294)
+- [x] #5 Incoming calls ring for a personal account: the calling socket on go.trouter.teams.microsoft.com registered as SkypeSpacesWeb / TFLSkypeSpacesWeb_2.0 (TFL), as captured in docs/research/personal-accounts-protocol.md §9.3 (from TASK-0294)
 <!-- AC:END -->
 
 ## Implementation Plan

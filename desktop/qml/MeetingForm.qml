@@ -681,7 +681,9 @@ Item {
             visible: !root.outlookPage
             x: titleText.x + titleText.width + 4; height: parent.height
             Repeater {
-                model: root.existing ? [["Chat", qsTr("Chat")], ["Details", qsTr("Details")], ["Scheduling Assistant", qsTr("Scheduling Assistant")]] : [["Details", qsTr("Details")], ["Scheduling Assistant", qsTr("Scheduling Assistant")]]
+                // (Teams for personal use's form has no tabs of its own.)
+                model: backend.personalAccount ? [["Details", qsTr("Details")]]
+                    : root.existing ? [["Chat", qsTr("Chat")], ["Details", qsTr("Details")], ["Scheduling Assistant", qsTr("Scheduling Assistant")]] : [["Details", qsTr("Details")], ["Scheduling Assistant", qsTr("Scheduling Assistant")]]
                 Item {
                     id: tabItem
                     required property var modelData
@@ -1312,9 +1314,10 @@ Item {
                         LinkButton { label: qsTr("Open series"); onClicked: root.setScope("series") }
                     }
                 }
-                // Facilitator (not with a channel, not on an invitation)
+                // Facilitator (not with a channel, not on an invitation;
+                // Teams for personal use has none)
                 FieldRow {
-                    visible: !root.channel && !root.readOnly && !root.existing && !root.virtualAppointment
+                    visible: !root.channel && !root.readOnly && !root.existing && !root.virtualAppointment && !backend.personalAccount
                     icon: ""; height: 38
                     Rectangle {
                         width: scroller.fieldW; height: 38; radius: 4
@@ -1452,7 +1455,8 @@ Item {
             // Channel
             FieldRow {
                 icon: "channel-20"; height: 32
-                visible: (!root.readOnly || !!root.channel) && !root.virtualAppointment
+                // (no channels in Teams for personal use)
+                visible: (!root.readOnly || !!root.channel) && !root.virtualAppointment && !backend.personalAccount
                 FieldBox {
                     id: channelBox
                     width: scroller.fieldW; height: 32
@@ -1699,9 +1703,9 @@ Item {
                 }
             }
 
-            // Add an agenda
+            // Add an agenda (not in Teams for personal use's form)
             FieldRow {
-                visible: !root.readOnly
+                visible: !root.readOnly && !backend.personalAccount
                 icon: "clipboard-task-list-20"; height: 44
                 Rectangle {
                     id: agendaBox

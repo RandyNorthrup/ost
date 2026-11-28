@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@tperC'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T07:26:00Z'
+updated_date: '2026-11-28T07:42:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -26,7 +26,7 @@ The Meet app creates meeting links, schedules meetings, joins with an ID and lis
 <!-- AC:BEGIN -->
 - [ ] #1 The Meet app works as in Teams desktop for a personal account
 - [ ] #2 The Calendar shows what Teams shows for a personal account (Outlook.com events or Teams meetings, as verified) with Meet now and New meeting
-- [ ] #3 teams.live.com/meet links open in OST, from any account
+- [x] #3 teams.live.com/meet links open in OST, from any account
 <!-- AC:END -->
 
 ## Implementation Plan
