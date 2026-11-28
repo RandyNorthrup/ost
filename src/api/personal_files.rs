@@ -645,11 +645,20 @@ async fn search(client: &TeamsClient, body: &Value) -> Result<Value> {
     .await
 }
 
-/// The chat's files (Teams free's Files tab asks for 50).
+/// The chat's files, 50 messages at a time as Teams free's Files tab asks,
+/// until a page comes back short (at most 20 pages).
 pub async fn chat_files(client: &TeamsClient, thread: &str) -> Result<Vec<ChatFile>> {
-    Ok(parse_files(
-        &search(client, &files_query(thread, 0, 50)).await?,
-    ))
+    const PAGE: u32 = 50;
+    let mut out = Vec::new();
+    for page in 0..20 {
+        let reply = search(client, &files_query(thread, page * PAGE, PAGE)).await?;
+        let n = reply.as_array().map(|a| a.len()).unwrap_or(0);
+        out.extend(parse_files(&reply));
+        if n < PAGE as usize {
+            break;
+        }
+    }
+    Ok(out)
 }
 
 /// A page of the chat's pictures (Teams free's Photos tab asks for 5 at a
@@ -785,27 +794,34 @@ fn picker_item(v: &Value) -> PickerItem {
     }
 }
 
-/// The picker's rows for a place: "myfiles" (a folder's children, `folder`
-/// an item id or empty for the top), "recent", "photos" (the Pictures
-/// folder) or "shared". Folders first, then by name (My files).
+/// The picker's rows for a place: "myfiles" (the top of your OneDrive),
+/// "recent", "photos" (the Pictures folder) or "shared"; with `folder` (an
+/// item id, on `drive` when it isn't yours: a shared folder), that folder's
+/// children, whichever place it was opened from. Folders first, then by
+/// name (except Recent and Shared, in the service's order).
 pub async fn picker_list(
     client: &TeamsClient,
     place: &str,
     folder: &str,
+    drive: &str,
 ) -> Result<Vec<PickerItem>> {
-    let path = match place {
-        "recent" => "/me/drive/recent?$top=100".to_string(),
-        "shared" => "/me/drive/sharedWithMe?$top=100".to_string(),
-        "photos" => "/me/drive/special/photos/children?$top=200".to_string(),
-        _ if folder.is_empty() => "/me/drive/root/children?$top=200".to_string(),
-        _ => {
-            anyhow::ensure!(
-                folder
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '!' || c == '-'),
-                "Unexpected folder id"
-            );
+    let ok_id = |id: &str| {
+        id.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '!' || c == '-')
+    };
+    let path = if !folder.is_empty() {
+        anyhow::ensure!(ok_id(folder) && ok_id(drive), "Unexpected folder id");
+        if drive.is_empty() {
             format!("/me/drive/items/{folder}/children?$top=200")
+        } else {
+            format!("/drives/{drive}/items/{folder}/children?$top=200")
+        }
+    } else {
+        match place {
+            "recent" => "/me/drive/recent?$top=100".to_string(),
+            "shared" => "/me/drive/sharedWithMe?$top=100".to_string(),
+            "photos" => "/me/drive/special/photos/children?$top=200".to_string(),
+            _ => "/me/drive/root/children?$top=200".to_string(),
         }
     };
     let v: Value = client
@@ -821,7 +837,7 @@ pub async fn picker_list(
         .map(picker_item)
         .filter(|i| !i.id.is_empty())
         .collect();
-    if place == "myfiles" || place.is_empty() || place == "photos" {
+    if !folder.is_empty() || !matches!(place, "recent" | "shared") {
         items.sort_by(|a, b| {
             b.is_folder
                 .cmp(&a.is_folder)

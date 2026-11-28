@@ -75,11 +75,13 @@ Item {
         onAccepted: {
             const paths = selectedFiles.map(u => decodeURIComponent(u.toString().replace(/^file:\/\//, "")))
             if (!paths.length) return
-            backend.sendFiles(paths.join("\n"), "")
-            reloadSoon.restart()
+            root.upload(paths)
         }
     }
-    function uploadForTest(paths) { backend.sendFiles(paths.join("\n"), ""); reloadSoon.restart() }
+    // To this tab's own chat (a chat window's tab too, not the main
+    // window's open chat).
+    function upload(paths) { backend.sendChatWindowFiles(root.chatId, paths.join("\n"), ""); reloadSoon.restart() }
+    function uploadForTest(paths) { root.upload(paths) }
     function stateForTest() { return { loaded: loaded, files: files.map(f => f.name), selected: selectedFiles.map(f => f.name) } }
 
     Rectangle { anchors.fill: parent; color: theme.surface }
