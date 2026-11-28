@@ -457,6 +457,20 @@ Item {
         loading = false
         availabilityWanted(allMails())
     }
+    /// The invitees from the event's detail, for a page that opened without
+    /// them (your channel meeting read from its team's calendar): its
+    /// people as the form edits them, so an update keeps them.
+    function takeAttendees(list) {
+        if (mode !== "edit" || dirty || required.length + optional.length > 0) return
+        loading = true
+        const atts = (list || []).filter(a => a.kind !== "resource" && [event.organizer_address, event.group_address].every(x => (a.address || "").toLowerCase() !== (x || "").toLowerCase()))
+        required = atts.filter(a => a.kind !== "optional").map(a => ({ address: a.address, name: a.name || a.address, response: a.response }))
+        optional = atts.filter(a => a.kind === "optional").map(a => ({ address: a.address, name: a.name || a.address, response: a.response }))
+        showOptional = optional.length > 0
+        attendeesAtLoad = attendeeKey()
+        loading = false
+        availabilityWanted(allMails())
+    }
     function dayStart(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
 
     // ── recurrence ──────────────────────────────────────────────────

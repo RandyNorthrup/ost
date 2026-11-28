@@ -3828,7 +3828,13 @@ pub async fn update_team_meeting(
     // with the form's changes on it; the service refuses one that doesn't
     // carry the meeting it already is ("Offline to Online conversion not
     // supported yet").
-    let start = start_utc.replace('Z', ".000Z");
+    // (Milliseconds, as Teams sends it; the team calendar's start carries
+    // Graph's seven-digit fractions.)
+    let start = crate::clock::iso_ms(
+        start_utc
+            .parse::<jiff::Timestamp>()
+            .with_context(|| format!("Not a time: {start_utc}"))?,
+    );
     let get = crate::auth::token_hosts::service_url(
         &base,
         crate::auth::token_hosts::Audience::Teams,
@@ -5105,6 +5111,16 @@ mod older_tests {
             ]
         );
         assert_eq!(ev["attendees"][2]["status"]["response"], "Accepted");
+    }
+
+    #[test]
+    fn a_team_start_goes_in_milliseconds() {
+        let t = |s: &str| crate::clock::iso_ms(s.parse::<jiff::Timestamp>().unwrap());
+        assert_eq!(
+            t("2026-12-01T22:00:00.0000000Z"),
+            "2026-12-01T22:00:00.000Z"
+        );
+        assert_eq!(t("2026-12-01T22:00:00Z"), "2026-12-01T22:00:00.000Z");
     }
 
     #[test]

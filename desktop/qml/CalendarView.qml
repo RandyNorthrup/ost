@@ -516,6 +516,9 @@ Item {
             const team = String(form.event.group_address || "").toLowerCase()
             if (team) r.attendees = (r.attendees || []).filter(a => String(a.address || "").toLowerCase() !== team)
             form.detail = r
+            // (Your channel meeting from its team's calendar opened without
+            // its people: the detail's, so Send update keeps them.)
+            if (!(form.event.attendees || []).length) form.takeAttendees(r.attendees)
         }
         else if (op === "outlookEvent") { if (!error && form.event && r.id === form.event.id) form.outlookInfo = r }
         else if (["findTimes", "attachFile", "deleteAttachment", "attachmentFile", "eventOptions", "setEventOptions", "eventFacilitator",
