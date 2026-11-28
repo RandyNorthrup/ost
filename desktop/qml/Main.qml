@@ -1319,6 +1319,8 @@ Window {
             if (st === 0) { rail.current = "chat"; chatList.openQuick("discover") }
             else if (st === 5) {
                 console.warn("DISCOVER poll interval", discoverView.pollInterval, "state", JSON.stringify(discoverView.newUpdatesForTest()))
+                // --discover-timer: leave it to the 5-minute timer (quits after 6 minutes).
+                if (Qt.application.arguments.indexOf("--discover-timer") >= 0) { console.warn("DISCOVER waiting for the timer"); step = 1000; return }
                 if (!poll) { step = 11; return }
                 discoverView.setTopPostForTest("stale"); discoverView.pollForTest()
             }
@@ -1341,6 +1343,7 @@ Window {
                 shot("reply-deleted")
             }
             else if (st === 22) Qt.quit()
+            else if (st === 1120) { console.warn("DISCOVER after the timer", JSON.stringify(discoverView.newUpdatesForTest())); Qt.quit() }
         }
     }
 
