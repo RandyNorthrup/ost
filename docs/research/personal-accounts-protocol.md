@@ -944,3 +944,58 @@ socket.
 The 60-minute end of a free meeting and any warning before it (a meeting
 with two people was not kept running for an hour), a group call from a
 chat, video calls, and the Windows desktop client's calling dialect.
+
+## 11. People app, profile cards, block list and invites (verified 2026-11-28)
+
+Captured on teams.live.com (web client `1415/26101516645`) as OST Personal 1
+and checked against Teams `26304.1207.5384.858` (OST Personal 2's window on
+testpc2) for TASK-0295. All middle-tier calls carry the `mtsvc.fl` bearer
+plus `x-skypetoken` (§7.7) and go through Teams free's web worker
+(`x-ms-client-type: cdlworker`).
+
+- **Contacts:** `GET {mt}/beta/contacts/buddylist?migrationRequested=true&federatedContactsSupported=true&ggEnabled=true`
+  (`If-None-Match` with the last ETag; 304 when nothing changed). The
+  answer is `{"value": [buddy group, …]}`; a group is `{id, displayName,
+  groupType, buddies}` with `groupType` one of Custom, Favorites,
+  SfBFavorites, Tagged, OtherContacts, **TflContacts** (your contacts) and
+  TflBlocked, and a buddy is `{mri, displayName, email, phone, phones,
+  companyName, jobTitle, isFederated, isIbBarred}`. The People app then
+  reads names through `fetchShortProfile` and presence through UPS.
+- **Delete** (People ▸ ··· ▸ Delete, "Delete this person?"): first
+  `POST {mt}/beta/userSettings/blocklist/manage?ggEnabled=true`
+  `{"add": [mri]}` (202 `{"value":{"status":"InProgress"}}`), then
+  `POST {mt}/beta/contacts/buddylist/TflContacts/managebuddies?ggEnabled=true&skipBuddylistFetch=true`
+  `{"delete": [{"mri": mri, "displayName": mri}]}`, which answers the group
+  (`{"id":"TflContacts",…,"buddies":[…]}`) and also clears the block list
+  entry (the dialog: "…will be removed from your blocked list").
+- **Block** (People ▸ ··· ▸ Block, or the card's ··· ▸ Block contact, "Block
+  this person?"): `blocklist/manage` `{"add": [mri]}`; **Unblock**
+  (Settings ▸ People ▸ Blocked users): `{"remove": [mri]}`. The list:
+  `GET {mt}/beta/userSettings/blocklist?ggEnabled=true` →
+  `{"value": [mri, …]}`. Blocked users' **Delete** is the managebuddies
+  delete alone.
+- **Adding a contact:** there is no Add contact in Teams free's desktop
+  People app; a person joins your contacts when you start a chat with
+  them or accept their request (`managebuddies` `{"add":[{mri, displayName}]}`,
+  TASK-0293). Opening an existing chat from New message adds nothing.
+- **Invite to Teams:** `POST {mt}/beta/join/template` `{"messageType":"general"}`
+  → `{"joinUrl":"https://teams.live.com/l/invite/<id>?v=g1","template":"Let's chat on Microsoft Teams! … %%joinurl%%","statusCode":"OK"}`;
+  the People app copies the link (toast "Link copied to clipboard", or
+  "Failed to copy the link").
+- **Active now** lists the contacts that aren't off-network and whose
+  presence isn't offline (contacts app bundle).
+- **Off-network contacts** (synced from Outlook or a phone, not on Teams)
+  show a single Invite button ("Invite via link") instead of Chat, Call and
+  More. Neither test account has any, so this row wasn't seen live.
+- **Sync settings:** `GET {mt}/beta/contacts/syncSettings` lists the synced
+  sources (`{source: "Outlook"|"Skype", accountId, isSyncAllowed, …}`);
+  removal is `beta/contacts/unsync/{source}?accountId=…` (bundle, not
+  exercised).
+- **Profile card** of a Teams free person: no service call beyond the
+  short profile and presence. Header: picture with presence, name, Start
+  a chat, Start a video call, Start an audio call, Find LinkedIn profile
+  and More options (Report a concern, Block contact); tabs Overview,
+  Contact, LinkedIn; the availability box, then "Contact information" with
+  the shared email and phone, or "<name>'s contact details are hidden in
+  Teams." (`emailsInfo[].visibility` "Private"). People's compact card
+  (clicking a contact's picture) has the same content without tabs.

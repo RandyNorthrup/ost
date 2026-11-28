@@ -11160,6 +11160,67 @@ Window {
     // and the Add contact form. With --people-live: saves OST Test 2 as a
     // test contact, then speed dial, favorite, a test category and Edit
     // (Company) on it, each undone, and deletes it. Logs PEOPLE lines.
+    // --tfl-people-test (a personal account, TASK-0295/0296): the People
+    // app (All contacts, Active now, People settings, Blocked users), the
+    // first contact's profile card, Invite to Teams, and the chat list's
+    // 1:1 presence; --tfl-people-live=<name> also blocks, unblocks,
+    // deletes and re-adds that contact. Logs TFLPEOPLE lines, pictures in
+    // --shots=<dir>.
+    Timer {
+        running: Qt.application.arguments.indexOf("--tfl-people-test") >= 0 && backend.signedIn && backend.personalAccount
+        interval: 2500; repeat: true
+        property int step: 0
+        property int wait: 0
+        onTriggered: {
+            const shots = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=/tmp").slice(8)
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(shots + "/tflpeople-" + tag + ".png"))
+            const liveArg = Qt.application.arguments.find(a => a.startsWith("--tfl-people-live="))
+            const target = liveArg ? liveArg.slice(18) : ""
+            const v = personalPeople.item
+            const st = tag => console.warn("TFLPEOPLE", tag, JSON.stringify(v ? v.stateForTest() : null))
+            const ready = () => v && !v.busy && !!v.data_.personal
+            const mriOf = () => { const c = v && v.find(target); return c ? c.mri : "" }
+            const addArg = Qt.application.arguments.find(a => a.startsWith("--tfl-add="))
+            if (step === 0) { if (addArg) backend.contactsOp("tflAdd", JSON.stringify({ mri: addArg.slice(10) })); rail.openApp("people") }
+            else if (step === 1 && !ready() && ++wait < 60) return
+            else if (step === 1) { wait = 0; v.view = "all"; st("all"); cap("all") }
+            else if (step === 2) { v.view = "active"; st("active"); cap("active") }
+            else if (step === 3) { v.view = "settings"; cap("settings") }
+            else if (step === 4) { v.view = "blocked"; st("blocked"); cap("blocked") }
+            else if (step === 5) { v.view = "all"; const c = v.shown[0]; if (c) profileCard.show(c.mri) }
+            else if (step === 6 && JSON.parse(backend.profileCardJson || "{}").loading && ++wait < 20) return
+            else if (step === 6) { wait = 0; console.warn("TFLPEOPLE card", backend.profileCardJson); cap("card") }
+            else if (step === 7) { profileCard.tab = "contact"; cap("card-contact") }
+            else if (step === 8) { profileCard.close(); backend.peopleInviteLink() }
+            else if (step === 9) { console.warn("TFLPEOPLE toast", backend.toastJson); cap("invite") }
+            else if (step === 10) {
+                rail.current = "chat"
+                console.warn("TFLPEOPLE chats", JSON.stringify(chatList.chats.filter(c => !c.isGroup && !c.isSelf).map(c => ({ name: c.name, peer: c.peerMri, presence: c.presence || "" }))))
+                const c = chatList.chats.find(c => !c.isGroup && !c.isSelf && Mri.isConsumer(c.peerMri || ""))
+                if (c) backend.selectChat(c.id, c.name)
+            }
+            else if (step === 11) { cap("chat"); backend.newChatPeople(Qt.application.arguments.find(a => a.startsWith("--tfl-search=")) ? Qt.application.arguments.find(a => a.startsWith("--tfl-search=")).slice(13) : "ost-test3@scnetsolutions.com") }
+            else if (step === 12 && ++wait < 4) return
+            else if (step === 12) { wait = 0; console.warn("TFLPEOPLE search", backend.newChatPeopleJson); backend.newChatPeople("OST Test") }
+            else if (step === 13 && ++wait < 4) return
+            else if (step === 13) { wait = 0; console.warn("TFLPEOPLE search2", backend.newChatPeopleJson); if (!target) { console.warn("TFLPEOPLE done"); running = false } else rail.openApp("people") }
+            // ---- live: block, unblock, delete, add back ----
+            else if (step === 14 && !ready() && ++wait < 30) return
+            else if (step === 14) { wait = 0; const m = mriOf(); console.warn("TFLPEOPLE target", target, m); if (!m) { running = false; return }; v.op("tflBlock", { mri: m, on: true }) }
+            else if (step === 15 && (!ready() || !(v.data_.blocked || []).length) && ++wait < 20) { if (ready()) v.load(); return }
+            else if (step === 15) { wait = 0; st("after-block"); v.view = "blocked"; cap("after-block") }
+            else if (step === 16) { v.op("tflBlock", { mri: v.data_.blocked[0].mri, on: false }) }
+            else if (step === 17 && (!ready() || (v.data_.blocked || []).length) && ++wait < 20) { if (ready()) v.load(); return }
+            else if (step === 17) { wait = 0; st("after-unblock"); v.view = "all" }
+            else if (step === 18) { const m = mriOf(); window.tflTarget = m; v.op("tflDelete", { mri: m }) }
+            else if (step === 19 && (!ready() || v.find(target)) && ++wait < 20) { if (ready()) v.load(); return }
+            else if (step === 19) { wait = 0; st("after-delete"); cap("after-delete"); v.op("tflAdd", { mri: window.tflTarget }) }
+            else if (step === 20 && (!ready() || !v.find(target)) && ++wait < 20) { if (ready()) v.load(); return }
+            else if (step === 20) { st("after-add"); console.warn("TFLPEOPLE done"); running = false }
+            step++
+        }
+    }
+    property string tflTarget: ""
     Timer {
         running: Qt.application.arguments.indexOf("--people-test") >= 0 && backend.signedIn
         interval: 2000; repeat: true
@@ -17191,7 +17252,19 @@ Window {
     // A person's profile card, from their picture anywhere it opens one.
     ProfileCard {
         id: profileCard
-        onStartChat: (mri, name) => { rail.current = "chat"; window.composing = false; backend.openChatWith(mri.replace("8:orgid:", ""), name) }
+        onStartChat: (mri, name) => {
+            rail.current = "chat"
+            // Someone on Teams free, or anyone from a personal account:
+            // their chat (a thread), or a new chat to them.
+            if (Mri.isConsumer(mri) || backend.personalAccount) {
+                const existing = newChat.chatWith(mri)
+                if (existing) { window.composing = false; backend.selectChat(existing, name); return }
+                window.composing = true
+                Qt.callLater(() => { newChat.picked = [{ id: mri, name: name }] })
+                return
+            }
+            window.composing = false; backend.openChatWith(mri.replace("8:orgid:", ""), name)
+        }
         // (the person's 1:1 chat may already be the open one: its id then
         // doesn't change, so act on it at once)
         onStartCall: (mri, name, video) => {
@@ -18177,7 +18250,7 @@ Window {
     }
     PeopleView {
         id: peopleApp
-        visible: rail.current === "people"
+        visible: rail.current === "people" && !backend.personalAccount
         anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
         data_: backend.contactsJson ? JSON.parse(backend.contactsJson) : ({})
         busy: backend.contactsBusy
@@ -18186,6 +18259,31 @@ Window {
         onRemove: id => backend.contactsDelete(id)
         onChatWith: (mri, name) => profileCard.startChat(mri, name)
         onCallPerson: (mri, name) => profileCard.startCall(mri, name, false)
+    }
+    // A personal account's People app (Teams for personal use's).
+    Loader {
+        id: personalPeople
+        property bool opened: false
+        visible: rail.current === "people" && backend.personalAccount
+        onVisibleChanged: if (visible) opened = true
+        active: opened && backend.personalAccount
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+        sourceComponent: PersonalPeopleView {
+            data_: backend.contactsJson ? JSON.parse(backend.contactsJson) : ({})
+            busy: backend.contactsBusy
+            onLoad: backend.contactsLoad()
+            onChange: (op, json) => backend.contactsOp(op, json)
+            onOpenProfile: mri => profileCard.show(mri)
+            // Chat: their chat, or a new one to them (Teams' chatWithUser).
+            onChatWith: (mri, name) => {
+                rail.current = "chat"
+                const existing = newChat.chatWith(mri)
+                if (existing) { window.composing = false; backend.selectChat(existing, name); return }
+                window.composing = true
+                Qt.callLater(() => { newChat.picked = [{ id: mri, name: name }] })
+            }
+            onCallPerson: (mri, name) => profileCard.startCall(mri, name, false)
+        }
     }
     // Teams' Events app, drawn natively from the virtual events service
     // (docs/spec/events.md); made when first opened and kept.

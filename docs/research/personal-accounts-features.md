@@ -456,6 +456,30 @@ Screenshots are kept outside the repo (coordinator PC,
 16. **Missed-activity email and notification settings. Verified.** The
     desktop Notifications and activity page has no missed-activity email
     setting (its contents are under item 4).
+17. **People app. Verified (2026-11-28, TASK-0295).** Desktop (OST Personal
+    2's window) and teams.live.com (OST Personal 1) match. The pane:
+    "People" with People settings (gear), All contacts, Active now, a rule,
+    "Your profile" (picture with presence, name, "Your profile", ··· with
+    Edit name and Change profile picture) and Invite to Teams at the
+    bottom. The content: the view's title, "Find a contact", and a table
+    with Name ↑, Email and Phone; a contact row shows the picture with
+    presence, the name over the status ("Available"), and Chat, Call and
+    More options (Block, Delete). Delete asks "Delete this person?" (its
+    two paragraphs, Learn more, Cancel/Delete); Block asks "Block this
+    person?". Empty views: "Bring your contacts with you" / "Sync your
+    device contacts, or invite folks to Teams." / Sync device contacts;
+    Active now: "No active contacts at this time" / "Check back later!".
+    People settings: Sync contacts (Manage: "Synced contacts", From your
+    mobile device, Already synced: From Outlook <account> Remove) and
+    Blocked users (Manage: "Blocking a user prevents you from seeing their
+    messages…", rows with Unblock and Delete, or "When you block people,
+    you'll see them listed below."). A Teams free person's profile card:
+    Chat, Video call, Audio call, LinkedIn and ··· (Report a concern, Block
+    contact); Overview, Contact and LinkedIn tabs; the availability box and
+    "Contact information" ("<name>'s contact details are hidden in Teams."
+    when they share nothing). There is no Add contact: people join your
+    contacts when a chat starts or a request is accepted. Protocol:
+    personal-accounts-protocol.md §11.
 
 ## Open questions
 

@@ -94,6 +94,7 @@ pub mod tabs;
 pub mod team_create;
 pub mod teams;
 pub mod teams_strings;
+pub mod tfl_people;
 pub mod translation;
 pub mod updates;
 pub mod url_preview;

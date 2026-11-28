@@ -3293,6 +3293,10 @@ pub mod qobject {
         #[qinvokable]
         fn contacts_op(self: Pin<&mut Backend>, op: &QString, json: &QString);
 
+        /// People (a personal account): copy your Invite to Teams link.
+        #[qinvokable]
+        fn people_invite_link(self: Pin<&mut Backend>);
+
         /// OneDrive: load a view into drive_json. `view` is "recent",
         /// "shared", "libraries" or "folder" (with `drive_id` and
         /// `item_id`; both empty for your OneDrive's root).
@@ -11401,6 +11405,133 @@ async fn rooms_json(client: &TeamsClient, rooms: Vec<(String, String, String)>) 
         })
         .collect();
     serde_json::Value::Array(out).to_string()
+}
+
+/// The profile card of someone on Teams free, as Teams for personal use
+/// shows it: `{id, mri, tfl: true, displayName, mail, phone, contact,
+/// blocked, presence}`; `mail` only when they share it (else the card says
+/// their contact details are hidden).
+async fn tfl_profile_card(client: &TeamsClient, mri: &str) -> anyhow::Result<serde_json::Value> {
+    let mris = [mri.to_string()];
+    let (records, presences) = tokio::join!(
+        api::directory::short_profile_records(client, &mris),
+        teams_cli::api::presence::get_presences(client.http(), &mris)
+    );
+    let r = records?
+        .into_iter()
+        .find(|r| {
+            r["mri"]
+                .as_str()
+                .is_some_and(|m| m.eq_ignore_ascii_case(mri))
+        })
+        .unwrap_or_default();
+    let shared = |v: &serde_json::Value| v.as_str().filter(|e| e.contains('@')).map(str::to_string);
+    let mail = if r["emailPrivate"].as_bool().unwrap_or(false) {
+        None
+    } else {
+        shared(&r["email"])
+    };
+    let mut card = json!({
+        "id": teams_cli::identity::mri_id(mri),
+        "mri": mri,
+        "tfl": true,
+        "displayName": r["displayName"].as_str().unwrap_or_default(),
+        "mail": mail.unwrap_or_default(),
+        "phone": r["phones"].as_array().and_then(|l| l.first()).and_then(|p| p["number"].as_str()).unwrap_or_default(),
+        "federated": r["type"].as_str() == Some("Federated"),
+    });
+    if let Ok(p) = presences
+        && let Some(p) = p.into_iter().next()
+    {
+        card["presence"] = json!({
+            "availability": p.availability, "activity": p.activity, "lastActive": p.last_active,
+            "note": p.note_text, "noteHtml": p.note_html, "outOfOffice": p.out_of_office,
+        });
+    }
+    // Whether they're in your contacts and on your block list (a personal
+    // account's card offers Block contact).
+    if client.is_personal() {
+        let (contacts, blocked) = tokio::join!(
+            api::tfl_people::contacts(client),
+            api::tfl_people::blocked(client)
+        );
+        card["contact"] =
+            json!(contacts.is_ok_and(|l| l.iter().any(|c| c.mri.eq_ignore_ascii_case(mri))));
+        card["blocked"] =
+            json!(blocked.is_ok_and(|l| l.iter().any(|b| b.eq_ignore_ascii_case(mri))));
+    }
+    Ok(card)
+}
+
+/// A personal account's People app as JSON for QML: `{personal, contacts:
+/// [{mri, name, email, phone, company, job_title, federated, presence,
+/// blocked}], blocked: [{mri, name}], notice, at}` (Teams free's buddy
+/// list, block list and its contacts' presence).
+async fn personal_people_json(
+    client: &TeamsClient,
+    notice: String,
+) -> anyhow::Result<serde_json::Value> {
+    let (contacts, blocked) = tokio::join!(
+        api::tfl_people::contacts(client),
+        api::tfl_people::blocked(client)
+    );
+    let contacts = contacts?;
+    let blocked = blocked.unwrap_or_else(|e| {
+        tracing::warn!("block list: {}", short_error(&e));
+        Vec::new()
+    });
+    let mris: Vec<String> = contacts.iter().map(|c| c.mri.clone()).collect();
+    let presences = teams_cli::api::presence::get_presences(client.http(), &mris)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::info!("contacts' presence: {}", short_error(&e));
+            Vec::new()
+        });
+    let is_blocked = |m: &str| blocked.iter().any(|b| b.eq_ignore_ascii_case(m));
+    let list: Vec<serde_json::Value> = contacts
+        .iter()
+        .map(|c| {
+            let mut v = json!(c);
+            v["presence"] = json!(
+                presences
+                    .iter()
+                    .find(|p| p.mri.eq_ignore_ascii_case(&c.mri))
+                    .map(|p| p.availability.clone())
+                    .unwrap_or_default()
+            );
+            v["blocked"] = json!(is_blocked(&c.mri));
+            v
+        })
+        .collect();
+    // The blocked people's names (Blocked users).
+    let records = if blocked.is_empty() {
+        Vec::new()
+    } else {
+        api::directory::short_profile_records(client, &blocked)
+            .await
+            .unwrap_or_default()
+    };
+    let blocked: Vec<serde_json::Value> = blocked
+        .iter()
+        .map(|m| {
+            let name = records
+                .iter()
+                .find(|r| r["mri"].as_str().is_some_and(|x| x.eq_ignore_ascii_case(m)))
+                .and_then(|r| r["displayName"].as_str())
+                .or_else(|| {
+                    contacts
+                        .iter()
+                        .find(|c| c.mri.eq_ignore_ascii_case(m))
+                        .map(|c| c.name.as_str())
+                })
+                .unwrap_or_default();
+            json!({ "mri": m, "name": name })
+        })
+        .collect();
+    Ok(
+        json!({ "personal": true, "contacts": list, "blocked": blocked, "notice": notice,
+               "at": teams_cli::clock::now_ms() }),
+    )
 }
 
 /// The width a focused tile's video is asked for: the main stream at
@@ -30503,6 +30634,10 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
+                // A personal account: Teams free's buddy list and block list.
+                if client.is_personal() {
+                    return personal_people_json(&client, notice).await;
+                }
                 // Teams' contacts service: the contacts and their categories.
                 let (contacts, categories) = api::contacts::list(&client).await?;
                 anyhow::Ok(
@@ -30581,6 +30716,9 @@ impl qobject::Backend {
         // strings).
         let notice = match op.as_str() {
             "add" | "edit" => "Contact saved.",
+            // A personal account's People app (Teams free shows no toast
+            // for these).
+            "tflBlock" | "tflDelete" | "tflForget" | "tflAdd" => "",
             "speedDial" if on => "Added to speed dial.",
             "speedDial" => "Removed from speed dial.",
             _ => "",
@@ -30604,6 +30742,17 @@ impl qobject::Backend {
                     api::contacts::set_speed_dial(&c, &contact.id, &contact.mri, &contact.email, on)
                         .await
                 }
+                "tflBlock" => {
+                    api::tfl_people::set_blocked(&c, v["mri"].as_str().unwrap_or_default(), on)
+                        .await
+                }
+                "tflDelete" => {
+                    api::tfl_people::delete(&c, v["mri"].as_str().unwrap_or_default()).await
+                }
+                "tflForget" => {
+                    api::tfl_people::forget(&c, v["mri"].as_str().unwrap_or_default()).await
+                }
+                "tflAdd" => api::tfl_people::add(&c, v["mri"].as_str().unwrap_or_default()).await,
                 "category" => {
                     api::contacts::set_category(
                         &c,
@@ -30616,6 +30765,34 @@ impl qobject::Backend {
                 }
                 _ => anyhow::bail!("Unknown contacts change"),
             }
+        });
+    }
+
+    /// Teams free's Invite to Teams: your invite link, copied ("Link
+    /// copied to clipboard", or "Failed to copy the link").
+    pub fn people_invite_link(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::tfl_people::invite_link(&client).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| match result {
+                Ok(link) => {
+                    if let Ok(t) = std::ffi::CString::new(link) {
+                        // SAFETY: a NUL-terminated string, copied by Qt
+                        // before returning.
+                        unsafe { ost_set_clipboard(t.as_ptr(), c"".as_ptr()) };
+                    }
+                    this.as_mut()
+                        .toast(&tr("Link copied to clipboard"), "success");
+                }
+                Err(e) => {
+                    tracing::warn!("Invite link: {}", short_error(&e));
+                    this.as_mut().toast(&tr("Failed to copy the link"), "error");
+                }
+            });
         });
     }
 
@@ -32798,6 +32975,11 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
+                // Someone on Teams free (8:live:…): Teams' consumer card,
+                // from their short profile and presence.
+                if teams_cli::identity::is_consumer_mri(&mri) {
+                    return tfl_profile_card(&client, &mri).await;
+                }
                 let mut card = api::profile::profile_card(&client, &oid).await?;
                 let http = reqwest::Client::new();
                 if let Ok(list) = teams_cli::api::presence::get_presences(&http, &[mri]).await
