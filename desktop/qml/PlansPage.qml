@@ -27,7 +27,9 @@ Item {
     readonly property string cdn: "https://tflteams.public.onecdn.static.microsoft/evergreen-assets/fre/monetization/"
     readonly property int minutes: (license.teamsFree || license).maxMeetingDurationMinutes || 60
     readonly property int participants: (license.teamsFree || license).maxMeetingParticipants || 100
-    height: cards.y + planCard.height + 20
+    /// Narrower than the two cards: the free card goes under the plan's.
+    readonly property bool narrow: width < 722
+    height: cards.y + cards.height + 20
 
     Image {
         id: banner
@@ -39,16 +41,17 @@ Item {
     Item {
         id: cards
         y: banner.height + 24
-        width: 718; height: planCard.height
+        width: root.narrow ? 359 : 720
+        height: root.narrow ? planCard.height + 12 + freeCard.height : planCard.height
         anchors.horizontalCenter: parent.horizontalCenter
         // The free card first, so the plan card's shadow falls over it.
         Rectangle {
             id: freeCard
-            x: 361; y: 18; width: 359; height: 520
+            x: root.narrow ? 0 : 361; y: root.narrow ? planCard.height + 12 : 18; width: 359; height: 520
             color: theme.pick("#F0F0F0", "#292929", "#000000")
             radius: 12
             // (only the right corners rounded)
-            Rectangle { width: 12; height: parent.height; color: parent.color }
+            Rectangle { visible: !root.narrow; width: 12; height: parent.height; color: parent.color }
             Image { x: (parent.width - 48) / 2; y: 16; width: 48; height: 48; sourceSize: Qt.size(96, 96); source: root.cdn + "plans/Teams2Icon_48.svg"; asynchronous: true }
             Text { y: 80; width: parent.width; horizontalAlignment: Text.AlignHCenter; text: qsTr("Your free benefits"); font.family: theme.font; font.pixelSize: 16; font.bold: true; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
             Column {

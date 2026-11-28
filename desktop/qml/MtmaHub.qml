@@ -220,7 +220,7 @@ Item {
         id: simpleFlyout
         parent: root.Window.contentItem
         width: 340; padding: 0
-        height: simpleCol.height
+        height: simpleCol.implicitHeight
         modal: false; focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
         function openBeside() {
@@ -230,8 +230,11 @@ Item {
             open()
             y = Math.max(0, p.y + root.height - height)
         }
+        onHeightChanged: if (opened) { const p = root.mapToItem(root.Window.contentItem, 0, 0); y = Math.max(0, p.y + root.height - height) }
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
-        contentItem: Column {
+        contentItem: Item {
+        implicitHeight: simpleCol.implicitHeight
+        Column {
             id: simpleCol
             width: 340
             Item {
@@ -304,6 +307,7 @@ Item {
                     Item { width: 1; height: 6 }
                 }
             }
+        }
         }
     }
 
