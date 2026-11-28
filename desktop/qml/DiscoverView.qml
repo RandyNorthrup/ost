@@ -147,6 +147,9 @@ Rectangle {
                 if (!r.ok || !root.visible || page.req !== root.pollReq || root.hasNewUpdates) return
                 const first = (page.items || [])[0]
                 if (!first) return
+                // (Teams draws its prompt only over cards: an empty feed
+                // that now has posts loads them.)
+                if (root.items.length === 0 && root.loaded && !root.loading) { console.info("DISCOVER poll found posts for the empty feed"); root.load(false); return }
                 if (first.post_id !== root.topPostId) root.hasNewUpdates = true
                 console.info("DISCOVER poll answered", page.req, "new updates", root.hasNewUpdates)
                 root.topPostId = first.post_id
@@ -159,7 +162,9 @@ Rectangle {
                 root.loading = false
                 const wasRefresh = root.refreshing
                 root.refreshing = false
-                if (!r.ok) { if (!wasRefresh) root.failed = true; return }
+                // (A failed New updates refresh keeps the cards and offers
+                // the prompt again.)
+                if (!r.ok) { if (wasRefresh) root.hasNewUpdates = true; else root.failed = true; return }
                 const firstPage = wasRefresh || !root.loaded || root.items.length === 0
                 if (wasRefresh) {
                     // The new first page takes the cards' place; posts still
