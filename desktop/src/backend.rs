@@ -31739,6 +31739,7 @@ impl qobject::Backend {
             "schedule" => tr("Scheduling..."),
             "update" => tr("Sending update…"),
             "cancel" => tr("Cancelling…"),
+            "forward" => tr("Forwarding…"),
             "propose" => tr("Sending your proposal…"),
             _ => String::new(),
         };
@@ -32036,12 +32037,29 @@ impl qobject::Backend {
                         // Outlook, as Teams' event page sends them (captured
                         // 2026-11-23); a channel meeting through the middle
                         // tier.
-                        if form.channel.is_none() {
-                            api::calendar::send_event_update(&client, &s("id"), &form).await?;
-                        } else {
-                            api::calendar::update_meeting(&client, &s("id"), &form, &me, &s("joinUrl"), &s("eventType")).await?;
+                        // (A channel meeting goes to its team's calendar, as
+                        // Teams' form sends a team event's update.)
+                        match &form.channel {
+                            None => api::calendar::send_event_update(&client, &s("id"), &form).await?,
+                            Some(c) if !s("icalUid").is_empty() => {
+                                let team_event = api::calendar::TeamEventRef {
+                                    team_id: c.team_id.clone(),
+                                    ical_uid: s("icalUid"),
+                                    start_utc: s("startUtc"),
+                                    event_type: s("eventType"),
+                                };
+                                api::calendar::update_team_meeting(&client, &team_event, &form, &me).await?
+                            }
+                            Some(_) => api::calendar::update_meeting(&client, &s("id"), &form, &me, &s("joinUrl"), &s("eventType")).await?,
                         }
                         Ok(json!({}))
+                    }
+                    // A channel meeting's Forward: {team (its team's
+                    // calendar's event, else yours), id, people, note}.
+                    "forward" => {
+                        let people: Vec<api::calendar::ForwardTo> = serde_json::from_value(args["people"].clone()).unwrap_or_default();
+                        api::calendar::forward_meeting(&client, &s("team"), &s("id"), &people, &s("note")).await?;
+                        Ok(json!({ "id": s("id") }))
                     }
                     "cancel" => {
                         api::calendar::cancel_meeting(&client, &args["event"], &s("teamId"), &s("note"), &s("scope")).await?;
@@ -32069,7 +32087,7 @@ impl qobject::Backend {
                         (String::new(), short_error(&e))
                     }
                 };
-                if ["respond", "addToMyCalendar", "schedule", "update", "cancel", "propose", "charm", "patchEvent", "emailReminders", "newCategory"].contains(&op2.as_str()) {
+                if ["respond", "addToMyCalendar", "schedule", "update", "cancel", "forward", "propose", "charm", "patchEvent", "emailReminders", "newCategory"].contains(&op2.as_str()) {
                     this.as_mut().set_status_text(QString::from(error.as_str()));
                     if error.is_empty() {
                         this.as_mut().refresh_calendar();

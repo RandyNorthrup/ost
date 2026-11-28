@@ -1951,7 +1951,9 @@ Item {
     /// calendar card). False when the calendar doesn't have it.
     /// Test hook (--meetings-pane-test): the event page's event.
     function addToCalendarForTest() { form.addToCalendar() }
-    function openPageForTest() { return { open: formLayer.visible, subject: form.event.subject || "", calendar: form.event.calendar_id || "", readOnly: form.readOnly, team: form.teamCalendarEvent, body: (form.detail.body_html || "").length } }
+    function openPageForTest() { return { open: formLayer.visible, subject: form.event.subject || "", calendar: form.event.calendar_id || "", readOnly: form.readOnly, mode: form.mode, team: form.teamCalendarEvent,
+                                          organizer: form.event.organizer || "", forwardable: form.forwardable, required: form.required.map(p => p.name), optional: form.optional.map(p => p.name), body: (form.detail.body_html || "").length } }
+    function pageFormForTest() { return form }
     /// A meeting from a channel's Meetings pane (the team's group
     /// calendar's): its page from your calendar when it is in yours (asked
     /// by iCalUId), else the team calendar's.
@@ -1974,7 +1976,9 @@ Item {
             id: m.id, subject: m.subject || "", start_utc: m.start, end_utc: m.end, is_all_day: false,
             location: m.location || "", organizer: m.organizer_name || "", organizer_address: m.organizer_address || "",
             is_online_meeting: !!m.join_url, join_url: m.join_url || null, show_as: "busy", preview: "",
-            is_organizer: false, ical_uid: m.ical_uid || "", event_type: "singleInstance", series_master_id: "",
+            // (You set it up: its editable page, as Teams opens yours.)
+            is_organizer: !!m.organizer_mri && String(m.organizer_mri).toLowerCase() === String(backend.userMri || "").toLowerCase(),
+            ical_uid: m.ical_uid || "", event_type: "singleInstance", series_master_id: "",
             response: "none", response_requested: false, attendees: [], is_cancelled: !!m.cancelled,
             categories: [], sensitivity: "normal", channel_id: j ? decodeURIComponent(j[1]) : "",
             channel_message_id: j && j[2] ? j[2] : "", calendar_id: "group:" + groupId,
@@ -3512,7 +3516,10 @@ Item {
                     if (r.range && r.range.endDate) range.endDate = root.isoLocal(root.midnight(r.range.endDate))
                     out.recurrence = { pattern: pattern, range: range }
                 }
-                if (out.editingId) root.calendarAction("update", JSON.stringify({ id: out.editingId, form: out, joinUrl: form.event.join_url || "", eventType: form.event.event_type || "" }))
+                // (A channel meeting's update goes to its team's calendar by
+                // its iCalUId and start, as Teams' form sends a team event's.)
+                if (out.editingId) root.calendarAction("update", JSON.stringify({ id: out.editingId, form: out, joinUrl: form.event.join_url || "", eventType: form.event.event_type || "",
+                                                                                  icalUid: out.channel ? form.event.ical_uid || "" : "", startUtc: form.event.start_utc || "" }))
                 else root.calendarAction("schedule", JSON.stringify({ form: out }))
             }
             onCancelMeeting: (note, scope) => {
@@ -3528,6 +3535,12 @@ Item {
             onJoin: root.joinMeeting(form.event.join_url, form.event.subject || qsTr("Meeting"))
             onOpenChat: root.openMeetingChat(form.event.join_url, form.event.subject || qsTr("Meeting"))
             onCopyLink: { textCopy.text = form.event.join_url || ""; textCopy.selectAll(); textCopy.copy() }
+            // Forward: a team calendar's event by its id there, your
+            // invitation by yours.
+            onForwardMeeting: (people, note) => {
+                const team = String(form.event.calendar_id || "").startsWith("group:") ? String(form.event.calendar_id).replace(/^group:/, "") : ""
+                root.calendarAction("forward", JSON.stringify({ team: team, id: form.event.id || "", people: people, note: note }))
+            }
             onAddToCalendar: root.calendarAction("addToMyCalendar", JSON.stringify({ group: String(form.event.calendar_id || "").replace(/^group:/, ""), id: form.event.id }))
         }
     }

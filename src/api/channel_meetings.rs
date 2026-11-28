@@ -189,7 +189,7 @@ pub fn meetings_from(v: &serde_json::Value) -> Vec<ChannelMeeting> {
 }
 
 /// The organizer's MRI from an event's SkypeTeamsProperties (`uid`).
-fn teams_uid(e: &serde_json::Value) -> String {
+pub(crate) fn teams_uid(e: &serde_json::Value) -> String {
     let props: serde_json::Value = e
         .pointer("/singleValueExtendedProperties/0/value")
         .and_then(|v| v.as_str())

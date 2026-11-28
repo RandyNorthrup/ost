@@ -49,6 +49,9 @@ Item {
     signal respond(string response, bool sendResponse, string note, bool series)
     /// Add to calendar (a team calendar's meeting, Teams' AddToMyCalendar).
     signal addToCalendar()
+    /// Forward meeting's Forward: the people ([{address, name}]) and the
+    /// optional note.
+    signal forwardMeeting(var people, string note)
     signal join()
     signal openChat()
     signal copyLink()
@@ -124,6 +127,9 @@ Item {
     /// Meetings pane's): Teams' channel event page, Add to calendar and
     /// Copy link in place of the answers.
     readonly property bool teamCalendarEvent: String(event.calendar_id || "").startsWith("group:")
+    /// A channel meeting someone else set up (an invitation, or read from
+    /// its team's calendar): Teams' page has Copy link and Forward.
+    readonly property bool forwardable: readOnly && (teamCalendarEvent || !!channel)
     readonly property bool outlookRead: outlookPage && readOnly
     readonly property bool outlookEdit: outlookPage && !readOnly
     readonly property bool readOnly: mode === "view"
@@ -425,7 +431,7 @@ Item {
         startAt = new Date(ev.start_utc); endAt = new Date(ev.end_utc)
         allDay = !!ev.is_all_day
         if (allDay) { startAt = dayStart(startAt); endAt = dayStart(new Date(endAt.getTime() - 1)) }
-        const atts = (ev.attendees || []).filter(a => a.kind !== "resource" && (a.address || "").toLowerCase() !== (ev.organizer_address || "").toLowerCase())
+        const atts = (ev.attendees || []).filter(a => a.kind !== "resource" && [ev.organizer_address, ev.group_address].every(x => (a.address || "").toLowerCase() !== (x || "").toLowerCase()))
         required = atts.filter(a => a.kind !== "optional").map(a => ({ address: a.address, name: a.name || a.address, response: a.response }))
         optional = atts.filter(a => a.kind === "optional").map(a => ({ address: a.address, name: a.name || a.address, response: a.response }))
         showOptional = optional.length > 0
@@ -588,10 +594,10 @@ Item {
         const entry = { address: mail, name: p.name || mail }
         if (opt) optional = optional.concat([entry]); else required = required.concat([entry])
     }
-    function suggestionsFor(text) {
+    function suggestionsFor(text, forwarding) {
         const t = (text || "").trim().toLowerCase()
         if (t.length < 2) return []
-        const taken = required.concat(optional).map(p => (p.address || "").toLowerCase())
+        const taken = (forwarding ? forwardDialog.people : required.concat(optional)).map(p => (p.address || "").toLowerCase())
         return (people || []).filter(p => p.mail && taken.indexOf(p.mail.toLowerCase()) < 0).slice(0, 8)
     }
     function alias(mail) { return "(" + ((mail || "").split("@")[0] || "").toUpperCase() + ")" }
@@ -937,16 +943,18 @@ Item {
                     onPicked: i => root.openCancel(["occurrence", "following", "series"][i])
                 }
             }
+            // (Your channel meeting's page, Teams desktop on testpc1 as
+            // ost-test1, 2026-11-27: Cancel meeting, a line, Copy link,
+            // Show as greyed, ···.)
+            Rectangle { visible: root.mode === "edit"; width: 1; height: 20; y: 10; color: theme.divider }
             // A team calendar's meeting (Teams' channel event page: Add to
-            // calendar, a line, Copy link, Show as greyed).
+            // calendar, a line, Copy link, Forward, Show as greyed).
             BarButton2 {
                 visible: root.readOnly && root.teamCalendarEvent
                 icon: "add-20"; iconColor: theme.brand; label: qsTr("Add to calendar"); strong: true
                 onClicked: root.addToCalendar()
             }
             Rectangle { visible: root.readOnly && root.teamCalendarEvent; width: 1; height: 20; y: 10; color: theme.divider }
-            BarButton2 { visible: (root.mode === "edit" || root.teamCalendarEvent) && !!root.event.join_url; icon: "link-20"; label: qsTr("Copy link"); onClicked: root.copyLink() }
-            Rectangle { visible: root.mode === "edit"; width: 1; height: 20; y: 10; color: theme.divider }
             // An invitation.
             Repeater {
                 model: root.readOnly && !root.teamCalendarEvent ? [
@@ -967,10 +975,15 @@ Item {
             }
             BarButton2 { visible: root.readOnly && !root.teamCalendarEvent; icon: "note-edit-20"; label: qsTr("RSVP with note"); onClicked: rsvpDialog.openFor() }
             Rectangle { visible: root.readOnly && !root.teamCalendarEvent; width: 1; height: 20; y: 10; color: theme.divider }
+            BarButton2 { visible: (root.mode === "edit" || root.forwardable) && !!root.event.join_url; icon: "link-20"; label: qsTr("Copy link"); onClicked: root.copyLink() }
+            // A channel meeting you're invited to or read from its team's
+            // calendar: Forward (Teams desktop on testpc2 as OST Test 2,
+            // 2026-11-27: "→ Forward" after Copy link; Forward meeting).
+            BarButton2 { visible: root.forwardable; icon: "arrow-right-20"; label: qsTr("Forward"); onClicked: forwardDialog.openFor() }
             BarButton2 {
                 id: showAsBtn
                 label: qsTr("Show as: %1").arg(root.showAsLabels[root.showAs] || qsTr("Busy")); chevron: true
-                enabledState: !root.readOnly
+                enabledState: !root.readOnly && !(root.existing && root.channel)
                 onClicked: showAsMenu.open()
                 MenuPopup {
                     id: showAsMenu
@@ -981,7 +994,7 @@ Item {
             }
             BarButton2 {
                 id: categoryBtn
-                visible: !root.readOnly
+                visible: !root.readOnly && !(root.existing && root.channel)
                 label: qsTr("Category: %n selected", "calendar:k2kxygcv5_mf", 0); chevron: true
                 enabledState: !root.channel
                 onClicked: categoryMenu.open()
@@ -2686,7 +2699,7 @@ Item {
         }
     }
     readonly property var trackPeople: ((detail && detail.attendees) || event.attendees || [])
-        .filter(a => a.kind !== "resource" && (a.address || "").toLowerCase() !== (event.organizer_address || "").toLowerCase())
+        .filter(a => a.kind !== "resource" && [event.organizer_address, event.group_address].every(x => (a.address || "").toLowerCase() !== (x || "").toLowerCase()))
     function responseKey(r) { return ["accepted", "tentativelyAccepted", "declined", "following"].indexOf(r) >= 0 ? r : "none" }
     /// Tracking's people as Outlook lists them (searched, sorted).
     readonly property var trackList: {
@@ -2753,26 +2766,28 @@ Item {
         id: suggest
         property Item target: null
         property bool optionalField: false
-        readonly property var list: target ? root.suggestionsFor(target.text) : []
+        // (Not `list`: compiled, a property of that name read as empty.)
+        readonly property var hits: target ? root.suggestionsFor(target.text, false) : []
+        function add(p) { root.addPerson(p, optionalField) }
         function pickFirst(field, opt) {
-            const l = root.suggestionsFor(field.text)
-            if (l.length) root.addPerson({ address: l[0].mail, name: l[0].name }, opt)
-            else if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(field.text.trim())) root.addPerson({ address: field.text.trim(), name: field.text.trim() }, opt)
+            const l = root.suggestionsFor(field.text, false)
+            if (l.length) add({ address: l[0].mail, name: l[0].name })
+            else if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(field.text.trim())) add({ address: field.text.trim(), name: field.text.trim() })
             else return
             field.text = ""; close()
         }
-        visible: !!target && target.activeFocus && list.length > 0
+        visible: !!target && target.activeFocus && hits.length > 0
         parent: root
         x: target ? target.mapToItem(root, 0, 0).x - 8 : 0
         y: target ? target.mapToItem(root, 0, target.height).y + 4 : 0
         width: 444; padding: 0
-        height: list.length * 56 + 8
+        height: hits.length * 56 + 8
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
         background: FluentSurface { depth: 16; radius: 4 }
         contentItem: Column {
             topPadding: 4
             Repeater {
-                model: suggest.list
+                model: suggest.hits
                 Rectangle {
                     id: sugRow
                     required property var modelData
@@ -2788,7 +2803,7 @@ Item {
                     HoverHandler { id: sugHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler {
                         onTapped: {
-                            root.addPerson({ address: sugRow.modelData.mail, name: sugRow.modelData.name }, suggest.optionalField)
+                            suggest.add({ address: sugRow.modelData.mail, name: sugRow.modelData.name })
                             if (suggest.target) { suggest.target.text = ""; suggest.target.forceActiveFocus() }
                         }
                     }
@@ -3076,6 +3091,173 @@ Item {
         }
     }
 
+    // Forward meeting (Teams desktop on testpc2 as OST Test 2, a channel
+    // meeting read from its team's calendar, 2026-11-27, CSS px): 500 wide,
+    // padding 32 (24 above the title), radius 8; "Forward meeting" 20/600
+    // and Close; 14 under it Add people (436 x 50, filled, a 2 px brand
+    // line when focused, the people as chips, the directory's
+    // suggestions: name and (ALIAS)); "At least one recipient is needed."
+    // there when Forward has nobody; 8 under it "Add an optional note"
+    // (34 tall, filled); 14 under it an info line (a 16 px glyph, 8, 12 px
+    // text): "The organizer will receive a notification that this meeting
+    // was forwarded."; Forward (primary, 32 tall) at the right 26 under it.
+    Popup {
+        id: forwardDialog
+        property var people: []
+        property bool needSomeone: false
+        function openFor() { people = []; needSomeone = false; forwardNote.text = ""; forwardInput.text = ""; open() }
+        function add(p) {
+            const mail = (p.address || "").trim()
+            if (!mail || people.some(x => x.address.toLowerCase() === mail.toLowerCase())) return
+            people = people.concat([{ address: mail, name: p.name || mail }])
+            needSomeone = false
+            root.availabilityWanted(root.allMails().concat(people.map(x => x.address)))
+        }
+        function send() {
+            if (!people.length) { needSomeone = true; return }
+            root.forwardMeeting(people, forwardNote.text.trim())
+            close()
+        }
+        parent: Overlay.overlay
+        anchors.centerIn: Overlay.overlay
+        modal: true; focus: true
+        width: 500; padding: 32; topPadding: 24
+        closePolicy: Popup.CloseOnEscape
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
+        onOpened: forwardInput.forceActiveFocus()
+        contentItem: Column {
+            spacing: 0
+            Item {
+                width: 436; height: 28
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: root.isSeries ? (root.scope === "occurrence" ? qsTr("Forward occurrence") : qsTr("Forward series")) : qsTr("Forward meeting")
+                    font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
+                }
+                Item {
+                    anchors.right: parent.right; anchors.rightMargin: -2
+                    width: 20; height: 28
+                    FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: forwardDialog.close() }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("Close")
+                }
+            }
+            Item { width: 1; height: 14 }
+            FieldBox {
+                id: fwdField
+                width: 436; height: Math.max(50, fwdFlow.height + 8)
+                focused: forwardInput.activeFocus
+                // The directory's suggestions under it (as the form's; an
+                // item inside the dialog, not a popup of the form's).
+                z: 2
+                FluentSurface {
+                    id: fwdSuggest
+                    readonly property var hits: root.suggestionsFor(forwardInput.text, true)
+                    function pick(p) { forwardDialog.add({ address: p.mail, name: p.name }); forwardInput.text = ""; forwardInput.forceActiveFocus() }
+                    function pickFirst() {
+                        const t = forwardInput.text.trim()
+                        if (hits.length) pick(hits[0])
+                        else if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(t)) { forwardDialog.add({ address: t, name: t }); forwardInput.text = "" }
+                    }
+                    visible: forwardInput.activeFocus && hits.length > 0
+                    y: fwdField.height + 4; width: 444
+                    height: hits.length * 56 + 8
+                    depth: 16; radius: 4
+                    Column {
+                        topPadding: 4
+                        Repeater {
+                            model: fwdSuggest.hits
+                            Rectangle {
+                                id: fwdRow
+                                required property var modelData
+                                required property int index
+                                width: 444; height: 56
+                                color: fwdRowHover.hovered || index === 0 ? theme.menuHover : "transparent"
+                                Avatar { x: 16; anchors.verticalCenter: parent.verticalCenter; size: 32; name: fwdRow.modelData.name; photoId: fwdRow.modelData.id || "" }
+                                Column {
+                                    x: 60; anchors.verticalCenter: parent.verticalCenter
+                                    Text { text: fwdRow.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(fwdRow, theme.text) }
+                                    Text { text: root.alias(fwdRow.modelData.mail); font.family: theme.font; font.pixelSize: 12; color: theme.onFill(fwdRow, theme.textSecondary) }
+                                }
+                                HoverHandler { id: fwdRowHover; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: fwdSuggest.pick(fwdRow.modelData) }
+                                Accessible.role: Accessible.ListItem
+                                Accessible.name: fwdRow.modelData.name
+                            }
+                        }
+                    }
+                }
+                Flow {
+                    id: fwdFlow
+                    x: 8; y: 4; width: parent.width - 16
+                    spacing: 4
+                    Repeater {
+                        model: forwardDialog.people
+                        PersonChip {
+                            required property var modelData
+                            required property int index
+                            name: modelData.name; mail: modelData.address
+                            status: root.availabilityText(root.availability(modelData.address))
+                            statusColor: root.availabilityColor(root.availability(modelData.address))
+                            onRemove: forwardDialog.people = forwardDialog.people.filter((_, j) => j !== index)
+                        }
+                    }
+                    TextInput {
+                        id: forwardInput
+                        // (After the people on their line, as Teams'.)
+                        width: forwardDialog.people.length ? 160 : fwdFlow.width - 8; height: 42
+                        verticalAlignment: TextInput.AlignVCenter
+                        leftPadding: 4
+                        font.family: theme.font; font.pixelSize: 14; color: theme.text
+                        clip: true; selectByMouse: true
+                        onTextEdited: if (text.trim().length >= 2) root.searchPeople(text.trim())
+                        Keys.onReturnPressed: fwdSuggest.pickFirst()
+                        Keys.onEnterPressed: fwdSuggest.pickFirst()
+                        Keys.onPressed: e => { if (e.key === Qt.Key_Backspace && !text && forwardDialog.people.length) { forwardDialog.people = forwardDialog.people.slice(0, -1); e.accepted = true } }
+                        Accessible.name: qsTr("Add people")
+                        Text { visible: !forwardInput.text && forwardDialog.people.length === 0; anchors.verticalCenter: parent.verticalCenter; x: 4; text: qsTr("Add people"); color: theme.textSecondary; font: forwardInput.font }
+                    }
+                }
+            }
+            Item { visible: forwardDialog.needSomeone; width: 1; height: 14 }
+            InfoLine { visible: forwardDialog.needSomeone; text: qsTr("At least one recipient is needed.") }
+            Item { width: 1; height: 8 }
+            FieldBox {
+                width: 436; height: Math.max(34, forwardNote.contentHeight + 16)
+                focused: forwardNote.activeFocus
+                TextEdit {
+                    id: forwardNote
+                    x: 12; y: 8; width: parent.width - 24
+                    wrapMode: TextEdit.Wrap
+                    font.family: theme.font; font.pixelSize: 14; color: theme.text
+                    selectByMouse: true
+                    Keys.onTabPressed: e => { nextItemInFocusChain().forceActiveFocus(); e.accepted = true }
+                    Accessible.role: Accessible.EditableText
+                    Accessible.name: qsTr("Add an optional note")
+                    Text { visible: !forwardNote.text; text: qsTr("Add an optional note"); color: theme.textSecondary; font: forwardNote.font }
+                }
+            }
+            Item { width: 1; height: 14 }
+            InfoLine { text: qsTr("The organizer will receive a notification that this meeting was forwarded.") }
+            Item { width: 1; height: 26 }
+            Item {
+                width: 436; height: 32
+                FormButton { anchors.right: parent.right; primary: true; label: qsTr("Forward"); width: 84; onClicked: forwardDialog.send() }
+            }
+        }
+    }
+    // An info line (a 16 px glyph, 8, the 12 px text), as Teams' dialogs
+    // write a notice.
+    component InfoLine: Row {
+        property alias text: infoText.text
+        x: 8; height: 20; spacing: 8
+        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "info-16-regular"; size: 16; color: theme.textStrong }
+        Text { id: infoText; anchors.verticalCenter: parent.verticalCenter; width: 420 - 24; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+    }
+
     // Cancel meeting (Outlook's dialog on Teams' event page, measured on
     // winpc 2026-11-23): 600 wide, radius 8, padding 24; "Cancel meeting"
     // 20/600; "Cancel … and notify attendees" (14/600 #616161, a 17 px brand
@@ -3299,6 +3481,12 @@ Item {
     function setLocationForTest(t) { locationInput.text = t; commitLocation() }
     function typeBodyForTest(t) { setBody(t); markDirty() }
     function submitForTest() { primaryAction() }
+    function openForwardForTest() { forwardDialog.openFor() }
+    function addForwardForTest(mail, name) { forwardDialog.add({ address: mail, name: name || mail }) }
+    function typeForwardForTest(t) { forwardInput.forceActiveFocus(); forwardInput.text = t; root.searchPeople(t) }
+    function sendForwardForTest(note) { forwardNote.text = note || ""; forwardDialog.send() }
+    readonly property var forwardForTest: ({ open: forwardDialog.opened, people: forwardDialog.people, needSomeone: forwardDialog.needSomeone, suggestions: fwdSuggest.visible ? fwdSuggest.hits.map(p => p.name) : [], hits: fwdSuggest.hits.length, shown: fwdSuggest.visible,
+                                          found: suggestionsFor(forwardInput.text, true).map(p => p.name), typing: forwardInput.activeFocus, directory: (people || []).length })
     function openCancelForTest(scope) { if (channel) cancelDialog.open(); else openCancel(scope || "") }
     function confirmCancelForTest(note) { if (channel) { cancelMeeting(note || "", ""); cancelDialog.close() } else { cancelMeeting(note || "", cancelScope); outlookCancel.close() } }
     readonly property bool cancelOpenForTest: outlookCancel.opened || cancelDialog.opened
