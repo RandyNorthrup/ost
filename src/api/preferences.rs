@@ -559,35 +559,108 @@ pub async fn set_voice_setting(
     Ok(())
 }
 
-/// Teams' calling policy as Settings ▸ Calls uses it (the effective
-/// teamsCallingPolicy with Teams' defaults, CallingPolicySettingStore) and
-/// whether you're an Enterprise Voice (Teams Phone) user.
+/// Teams' calling policy as Settings ▸ Calls and the Calls app use it (the
+/// effective teamsCallingPolicy and teamsCallParkPolicy with Teams'
+/// defaults, CallingPolicySettingStore), whether you're an Enterprise Voice
+/// (Teams Phone) user, and what Teams' callingSupportService works out from
+/// them: `pstn` (isPSTNCallingAllowed: the Calls app's dial pad), `park`
+/// (isCallParkEnabled: its Parked calls button) and `forwarding`
+/// (isForwardingAllowed: its forwarding menu).
 pub async fn calling_policy(
     client: &TeamsClient,
     voice_admin: &serde_json::Value,
 ) -> serde_json::Value {
-    let p = super::custom_emoji::effective_policies(client, &["teamsCallingPolicy"])
-        .await
-        .unwrap_or_default();
-    calling_policy_of(&p, voice_admin)
+    let p = super::custom_emoji::effective_policies(
+        client,
+        &["teamsCallingPolicy", "teamsCallParkPolicy"],
+    )
+    .await
+    .unwrap_or_default();
+    let voice = voice_aggregates(client).await.unwrap_or_default();
+    calling_policy_of(&p, voice_admin, &voice)
 }
 
+/// The middle tier's voice aggregates Teams' PSTN check reads
+/// (tenantVoiceSettings, userResourcesSettings, policySettings).
+async fn voice_aggregates(client: &TeamsClient) -> Result<serde_json::Value> {
+    let mt = client.middle_tier_url().context("No middle-tier address")?;
+    let token = super::directory::middle_tier_token().await?;
+    let resp = client
+        .http()
+        .post(format!("{mt}/beta/users/useraggregatesettings"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({
+            "tenantVoiceSettings": true, "userResourcesSettings": true, "policySettings": true,
+        }))
+        .send()
+        .await
+        .context("Voice aggregates request")?;
+    if !resp.status().is_success() {
+        anyhow::bail!("HTTP {} reading voice aggregates", resp.status().as_u16());
+    }
+    resp.json().await.context("Voice aggregates reply")
+}
+
+/// [`calling_policy`] from the effective policies, the voice admin settings
+/// (`voiceAdminSettings.value`) and the other voice aggregates
+/// ([`voice_aggregates`]' reply).
 pub fn calling_policy_of(
     policies: &serde_json::Value,
     voice_admin: &serde_json::Value,
+    voice: &serde_json::Value,
 ) -> serde_json::Value {
     let v = policies
         .pointer("/teamsCallingPolicy/value")
         .cloned()
         .unwrap_or_default();
     let b = |k: &str, d: bool| v.get(k).and_then(|x| x.as_bool()).unwrap_or(d);
+    let ev = voice_admin
+        .get("isEvEnabled")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let allow_voicemail = v
+        .get("allowVoicemail")
+        .and_then(|x| x.as_str())
+        .unwrap_or("UserOverride");
+    // Teams' calculateIsPstnCallingAllowed: a cloud (isSfbCloud) Enterprise
+    // Voice user, with Microsoft's calling (pstnType Online), its own
+    // trunk (byot) or hybrid voice not turned off; and calling allowed at
+    // all (recalculateIsCallingAllowed: allowPrivateCalling).
+    let sfb_cloud = voice_admin
+        .get("isSfbCloud")
+        .or_else(|| voice.pointer("/userResourcesSettings/value/isSfbCloud"))
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let online = voice
+        .pointer("/tenantVoiceSettings/value/pstnType")
+        .and_then(|x| x.as_str())
+        == Some("Online");
+    let byot = voice
+        .pointer("/policySettings/value/byot/isByotEnabled")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let hybrid_off = super::ecs::setting("calling", "disableCallingForHybridVoice")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let private_calling = b("allowPrivateCalling", false);
+    let pstn = private_calling && sfb_cloud && ev && (online || !hybrid_off || byot);
+    // Each forwarding target needs PSTN calling too (recalculateIs…Allowed).
+    let voicemail = allow_voicemail != "AlwaysDisabled" && pstn;
+    let to_user = b("allowCallForwardingToUser", false) && pstn;
+    let to_phone = b("allowCallForwardingToPhone", false) && pstn;
+    let groups = b("allowCallGroups", false) && pstn;
+    let delegation = b("allowDelegation", false) && pstn;
     serde_json::json!({
-        "ev": voice_admin.get("isEvEnabled").and_then(|x| x.as_bool()).unwrap_or(false),
+        "ev": ev,
+        "pstn": pstn,
+        "park": policies.pointer("/teamsCallParkPolicy/value/allowCallPark").and_then(|x| x.as_bool()) == Some(true),
+        "forwarding": voicemail || to_user || to_phone || groups || delegation,
+        "allowPrivateCalling": private_calling,
         "allowCallGroups": b("allowCallGroups", false),
         "allowDelegation": b("allowDelegation", false),
         "allowCallForwardingToUser": b("allowCallForwardingToUser", false),
         "allowCallForwardingToPhone": b("allowCallForwardingToPhone", false),
-        "allowVoicemail": v.get("allowVoicemail").and_then(|x| x.as_str()).unwrap_or("UserOverride"),
+        "allowVoicemail": allow_voicemail,
     })
 }
 
@@ -745,6 +818,59 @@ mod tests {
             &serde_json::json!({ "teamsCallParkPolicy": { "value": {} } }),
             &ev
         ));
+    }
+
+    #[test]
+    fn calls_app_controls_follow_teams_policy_checks() {
+        // ost-test1 on 2026-11-27: a Teams Phone (trial) user in a tenant
+        // with its own trunk, calling and call park allowed.
+        let policies = serde_json::json!({
+            "teamsCallingPolicy": { "value": { "allowPrivateCalling": true, "allowCallForwardingToUser": true, "allowCallForwardingToPhone": true, "allowVoicemail": "UserOverride" } },
+            "teamsCallParkPolicy": { "value": { "allowCallPark": true } },
+        });
+        let admin =
+            serde_json::json!({ "accountType": "User", "isEvEnabled": true, "isSfbCloud": true });
+        let voice = serde_json::json!({
+            "policySettings": { "value": { "byot": { "isByotEnabled": true } } },
+            "tenantVoiceSettings": { "value": { "pstnType": "OnPrem" } },
+        });
+        let p = calling_policy_of(&policies, &admin, &voice);
+        assert_eq!(
+            (
+                p["ev"].as_bool(),
+                p["pstn"].as_bool(),
+                p["park"].as_bool(),
+                p["forwarding"].as_bool()
+            ),
+            (Some(true), Some(true), Some(true), Some(true))
+        );
+        // No Teams Phone licence: no dial pad, and nothing to forward to.
+        let no_ev = serde_json::json!({ "isEvEnabled": false, "isSfbCloud": true });
+        let p = calling_policy_of(&policies, &no_ev, &voice);
+        assert_eq!(
+            (p["pstn"].as_bool(), p["forwarding"].as_bool()),
+            (Some(false), Some(false))
+        );
+        // Calling turned off by policy turns PSTN calling off too.
+        let off = serde_json::json!({ "teamsCallingPolicy": { "value": { "allowPrivateCalling": false } } });
+        assert_eq!(
+            calling_policy_of(&off, &admin, &voice)["pstn"].as_bool(),
+            Some(false)
+        );
+        // Not a cloud user (isSfbCloud from userResourcesSettings when the
+        // voice admin settings leave it out).
+        let admin2 = serde_json::json!({ "isEvEnabled": true });
+        let onprem =
+            serde_json::json!({ "userResourcesSettings": { "value": { "isSfbCloud": false } } });
+        assert_eq!(
+            calling_policy_of(&policies, &admin2, &onprem)["pstn"].as_bool(),
+            Some(false)
+        );
+        // No park policy read: Teams' default (off).
+        assert_eq!(
+            calling_policy_of(&serde_json::json!({}), &admin, &voice)["park"].as_bool(),
+            Some(false)
+        );
     }
 
     #[test]

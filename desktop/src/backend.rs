@@ -2069,6 +2069,12 @@ pub mod qobject {
         /// Retrieve a parked call with its pickup code.
         #[qinvokable]
         fn unpark_call(self: Pin<&mut Backend>, code: &QString);
+        /// Call a phone number typed in the Calls app (Teams' dial pad).
+        #[qinvokable]
+        fn call_phone_number(self: Pin<&mut Backend>, text: &QString);
+        /// Read your dial plan for the Calls app's dial pad.
+        #[qinvokable]
+        fn prepare_dial_pad(self: Pin<&mut Backend>);
 
         /// Send a dial-pad key (0-9, *, #) as a tone in the call.
         #[qinvokable]
@@ -5044,6 +5050,16 @@ fn dial_plan() -> teams_cli::calling::phone_audio::DialPlan {
         .unwrap_or_default()
 }
 
+/// What Teams' dial pad dials for typed text (its `Ll`: anything but
+/// digits, letters and `,;+*#` removed), or None when nothing is left.
+fn dial_pad_target(text: &str) -> Option<String> {
+    let raw: String = text
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || ",;+*#".contains(*c))
+        .collect();
+    (!raw.is_empty()).then_some(raw)
+}
+
 /// Read your dial plan (effective policy tenantDialPlan) once.
 async fn load_dial_plan() {
     if DIAL_PLAN.read().is_ok_and(|p| p.is_some()) {
@@ -5935,6 +5951,8 @@ enum Placement {
     },
     /// Retrieving a parked call with its pickup code.
     Unpark(i64),
+    /// A phone number from the Calls app's dial pad (its `4:` id).
+    Phone(String),
     /// Your own voicemail, to record your greeting.
     Voicemail,
     /// Your intelligent call delegation, as a test call.
@@ -11709,6 +11727,33 @@ impl qobject::Backend {
         );
     }
 
+    /// Call what's typed in the Calls app's dial pad (Teams' dial pad
+    /// `onStartCall` with no one picked): the text with anything but
+    /// digits, letters and `,;+*#` taken out, normalized by your dial plan
+    /// into the number's `4:` id, and titled with the number as Teams
+    /// shows it.
+    pub fn call_phone_number(self: Pin<&mut Self>, text: &QString) {
+        if !self.rust().call_state.is_empty() {
+            return;
+        }
+        let Some(raw) = dial_pad_target(&text.to_string()) else {
+            return;
+        };
+        let plan = dial_plan();
+        let mri = plan.phone_mri(&raw);
+        let shown = plan.display(&raw);
+        tracing::info!("calling a phone number from the dial pad");
+        self.place_and_show(
+            Placement::Phone(mri.clone()),
+            QString::from(shown.as_str()),
+            mri,
+        );
+    }
+
+    pub fn prepare_dial_pad(self: Pin<&mut Self>) {
+        runtime().spawn(load_dial_plan());
+    }
+
     /// Teams' Record a greeting (`startVoicemailCall`): a call to your own
     /// voicemail, titled as Teams titles it (voicemail_call_title).
     pub fn record_voicemail_greeting(self: Pin<&mut Self>) {
@@ -11808,6 +11853,7 @@ impl qobject::Backend {
                     video,
                 } => outgoing::place_call(&chat_id, &callee, video, cancel_rx).await,
                 Placement::Unpark(code) => outgoing::unpark_call("", code, cancel_rx).await,
+                Placement::Phone(mri) => outgoing::call_phone(&mri, cancel_rx).await,
                 Placement::Voicemail => outgoing::call_own_voicemail(cancel_rx).await,
                 Placement::Attendant => outgoing::call_personal_attendant(cancel_rx).await,
             };
@@ -29826,8 +29872,14 @@ impl qobject::Backend {
     pub fn audio_devices(self: Pin<&mut Self>) -> QString {
         let (inputs, outputs) = teams_cli::calling::audio::list_devices();
         let (default_input, default_output) = teams_cli::calling::audio::default_devices();
+        // Teams' audio devices (the Calls app's menu): cards whose
+        // microphone and speaker are both listed.
+        let groups: Vec<_> = teams_cli::calling::pw_defaults::device_groups()
+            .into_iter()
+            .filter(|g| inputs.contains(&g.mic) && outputs.contains(&g.speaker))
+            .collect();
         QString::from(
-            json!({ "inputs": inputs, "outputs": outputs, "defaultInput": default_input, "defaultOutput": default_output })
+            json!({ "inputs": inputs, "outputs": outputs, "defaultInput": default_input, "defaultOutput": default_output, "groups": groups })
                 .to_string()
                 .as_str(),
         )
@@ -31324,6 +31376,9 @@ impl qobject::Backend {
                 if api::ecs::setting("calling", "enablePersonalAttendant").and_then(|v| v.as_bool()).unwrap_or(false) {
                     let p = api::custom_emoji::effective_policies(&client, &["teamsPersonalAttendantPolicy"]).await.unwrap_or_default();
                     mt["attendantPolicy"] = p.pointer("/teamsPersonalAttendantPolicy/value").cloned().unwrap_or_default();
+                    // The Calls app offers it with a Copilot licence (Teams'
+                    // isUserPAEligible, unless ECS disablePALicenseCheck).
+                    mt["copilot"] = json!(api::ecs::license(&client).await.and_then(|l| l["isCopilot"].as_bool()).unwrap_or(false));
                 }
                 anyhow::Ok(json!({ "props": props, "mt": mt, "loaded": true }))
             }
@@ -32574,4 +32629,18 @@ fn channel_agent_prompt() -> String {
         "Write a status report for [business stakeholders] that includes an [executive summary, progress update, blockers, risks, and next steps]. The report should be written from the perspective of a [project manager].",
         "messaging:kbmb490vo",
     )
+}
+
+#[cfg(test)]
+mod dial_pad_tests {
+    // Teams' dial pad dials the typed text with formatting taken out.
+    #[test]
+    fn dial_pad_keeps_what_teams_dials() {
+        assert_eq!(
+            super::dial_pad_target("+1 (425) 555-0100").as_deref(),
+            Some("+14255550100")
+        );
+        assert_eq!(super::dial_pad_target("*11#").as_deref(), Some("*11#"));
+        assert_eq!(super::dial_pad_target(" - () ").as_deref(), None);
+    }
 }

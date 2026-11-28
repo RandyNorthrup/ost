@@ -12,6 +12,29 @@ Item {
     signal openChatWith(string mri, string name)
     signal callPerson(string oid, string name)
     signal searchPeople(string query)
+    /// Open Settings at Teams' section id (launchSection).
+    signal openSettings(string id)
+
+    // Teams' calling settings (SettingsView's synced settings), loaded when
+    // the app first shows.
+    readonly property var synced: backend.settingsJson ? JSON.parse(backend.settingsJson) : ({ props: {}, mt: {} })
+    readonly property var mt: synced.mt || {}
+    onVisibleChanged: if (visible && !synced.loaded) backend.loadSettings()
+    // Intelligent call delegation (Teams' isUserPAEligible: ECS
+    // enablePersonalAttendant, a Copilot licence unless ECS
+    // disablePALicenseCheck, and the policy offering it) and its status
+    // (the banner's: Active when on, Inactive once set up, else Requires
+    // setup).
+    readonly property var paPolicy: mt.attendantPolicy || {}
+    readonly property bool paEligible: backend.ecsSetting("calling", "enablePersonalAttendant") === "true"
+        && (mt.copilot === true || backend.ecsSetting("calling", "disablePALicenseCheck") === "true")
+        && (paPolicy.personalAttendant === "Enabled" || paPolicy.personalAttendant === "EnabledUserOverride")
+    readonly property bool paOn: paEligible && (paPolicy.personalAttendant === "Enabled" || (paPolicy.personalAttendant === "EnabledUserOverride" && (mt.attendant || {}).isEnabled === true))
+    readonly property bool paCompleted: (((((synced.props || {}).userPersonalSettings) || {}).callingUserSettings) || {}).paOnboardingCompleted === true
+    readonly property string paStatus: paOn ? "active" : paCompleted ? "inactive" : "requiresSetup"
+    property bool paOpen: false
+    function dialPaneForTest() { return dialPane }
+    function paPaneForTest() { return paPane }
 
     property string filter: "all"   // all | missed | incoming | outgoing
     readonly property var filterLabels: ({ all: qsTr("All"), missed: qsTr("Missed"), incoming: qsTr("Incoming"), outgoing: qsTr("Outgoing") })
@@ -96,148 +119,88 @@ Item {
             Accessible.name: qsTr("View contacts")
         }
         Rectangle {
-            id: hcFillMore
-            x: parent.width - 81; y: 15; width: 32; height: 31; radius: theme.radius
-            color: mot.hovered ? theme.rowHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(hcFillMore, theme.textStrong) }
-            HoverHandler { id: mot; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: callsMore.open() }
-            Accessible.role: Accessible.Button
-            Accessible.name: qsTr("More calls options")
-            MenuPopup {
-                id: callsMore
-                width: 240
-                y: parent.height + 4
-                items: [{ label: qsTr("Pick up a parked call"), icon: "call-park-20" }]
-                onPicked: i => { if (i === 0) unparkDialog.start() }
-            }
-        }
-        Rectangle {
             id: hcFill3
             x: parent.width - 43; y: 15; width: 32; height: 31; radius: theme.radius
             color: sdt.hovered ? theme.rowHover : "transparent"
-            FluentIcon { anchors.centerIn: parent; name: "people"; size: 20; color: theme.onFill(hcFill3, root.speedDialShown ? theme.brand : theme.textStrong) }
+            FluentIcon { anchors.centerIn: parent; name: "people"; size: 20; color: theme.onFill(hcFill3, root.speedDialShown && !root.paOpen ? theme.brand : theme.textStrong) }
             HoverHandler { id: sdt; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: root.speedDialShown = !root.speedDialShown }
+            TapHandler { onTapped: { if (root.paOpen) { root.paOpen = false; root.speedDialShown = true } else root.speedDialShown = !root.speedDialShown } }
             Accessible.role: Accessible.Button
-            Accessible.name: root.speedDialShown ? qsTr("Close speed dial") : qsTr("Open speed dial")
+            Accessible.name: root.speedDialShown && !root.paOpen ? qsTr("Close speed dial") : qsTr("Open speed dial")
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.dividerSoft }
     }
 
-    // Dial: find someone, then call.
+    // Dial: find someone or a number, then call (CallsDialPane).
     Item {
         id: dial
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left }
         width: 380
         Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: theme.dividerSoft }
-        property var chosen: null
-        Rectangle {
-            id: nameBox
-            x: 16; y: 11; width: 347; height: 40; radius: theme.radius
-            color: theme.input
-            border.color: theme.stroke
-            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: nameField.activeFocus ? 2 : 1; color: nameField.activeFocus ? theme.brand : theme.textStrong }
-            TextInput {
-                id: nameField
-                x: 12; width: parent.width - 24
-                anchors.verticalCenter: parent.verticalCenter
-                font.family: theme.font; font.pixelSize: theme.base
-                color: theme.text
-                clip: true
-                onTextEdited: { dial.chosen = null; if (text.trim().length > 1) searchDelay.restart() }
-                Text { visible: !nameField.text; text: qsTr("Type a name"); color: theme.textTertiary; font: nameField.font }
-                Accessible.name: qsTr("Type a name")
-            }
-            Timer { id: searchDelay; interval: 300; onTriggered: root.searchPeople(nameField.text.trim()) }
-        }
-        // Matches while typing.
-        Rectangle {
-            visible: nameField.activeFocus && nameField.text.trim().length > 1 && !dial.chosen && root.people.length > 0
-            z: 10
-            x: 16; y: nameBox.y + nameBox.height + 2; width: nameBox.width
-            height: Math.min(240, pplCol.implicitHeight + 8); radius: 8
-            color: theme.menu
-            border.color: theme.dividerSoft
-            Column {
-                id: pplCol
-                x: 4; y: 4; width: parent.width - 8
-                Repeater {
-                    model: root.people.slice(0, 5)
-                    Rectangle {
-                        id: hcFill4
-                        required property var modelData
-                        width: pplCol.width; height: 44; radius: theme.radius
-                        color: ph.hovered ? theme.rowHover : "transparent"
-                        Avatar { x: 8; anchors.verticalCenter: parent.verticalCenter; size: 28; name: parent.modelData.name; photoId: parent.modelData.id }
-                        Column {
-                            x: 46; anchors.verticalCenter: parent.verticalCenter
-                            Text { text: parent.parent.modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(hcFill4, theme.text) }
-                            Text { text: parent.parent.modelData.mail || parent.parent.modelData.job_title || ""; font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(hcFill4, theme.textSecondary) }
-                        }
-                        HoverHandler { id: ph; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: { dial.chosen = parent.modelData; nameField.text = parent.modelData.name } }
-                    }
-                }
-            }
-        }
-        Rectangle {
-            id: hcFill5
-            x: 16; y: 82; width: 347; height: 32; radius: theme.radius
-            readonly property bool ready: dial.chosen !== null
-            color: ready ? (cbh.hovered ? theme.brandHover : theme.brandFill) : (theme.dark ? theme.hc("#2E2E2E", "#000000") : theme.hc("#F0F0F0", "#000000"))
-            Row {
-                anchors.centerIn: parent
-                spacing: 6
-                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "call-20"; size: 16; color: theme.onFill(hcFill5, parent.parent.ready ? "white" : theme.disabled) }
-                Text { text: qsTr("Call", "calling:ka2l734dq"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, parent.parent.ready ? "white" : theme.disabled) }
-            }
-            HoverHandler { id: cbh; cursorShape: parent.ready ? Qt.PointingHandCursor : Qt.ArrowCursor }
-            TapHandler { enabled: parent.ready; onTapped: root.callPerson(dial.chosen.id, dial.chosen.name) }
-            Accessible.role: Accessible.Button
-            Accessible.name: qsTr("Call", "calling:ka2l734dq")
-        }
-        // The speaker calls use, as Teams shows at the bottom of this pane.
-        Rectangle {
-            id: deviceRow
-            x: 16; y: parent.height - 52; height: 36; radius: theme.radius
-            width: Math.min(300, deviceText.implicitWidth + 64)
-            color: dvh.hovered ? theme.rowHover : "transparent"
-            FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; name: "headset-20"; size: 20; color: theme.onFill(deviceRow, theme.textStrong) }
-            Text {
-                id: deviceText
-                x: 36; anchors.verticalCenter: parent.verticalCenter
-                width: Math.min(implicitWidth, 230); elide: Text.ElideRight
-                text: { const d = backend.setting("speakerDevice"); return d && d !== "default" ? d : qsTr("Default speaker") }
-                font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(deviceRow, theme.text)
-            }
-            FluentIcon { anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.onFill(deviceRow, theme.textStrong) }
-            HoverHandler { id: dvh; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: { deviceMenu.devices = JSON.parse(backend.audioDevices()).outputs; deviceMenu.open() } }
-            Accessible.role: Accessible.Button
-            Accessible.name: qsTr("Speaker: %1").arg(deviceText.text)
-            MenuPopup {
-                id: deviceMenu
-                property var devices: []
-                width: 320
-                y: -height - 4
-                items: [{ label: qsTr("Default speaker") }].concat(devices.map(d => ({ label: d, checked: backend.setting("speakerDevice") === d })))
-                onPicked: i => {
-                    const v = i === 0 ? "default" : devices[i - 1]
-                    backend.setSetting("speakerDevice", v)
-                    deviceText.text = i === 0 ? qsTr("Default speaker") : v
-                }
-            }
+        CallsDialPane {
+            id: dialPane
+            anchors.fill: parent
+            people: root.people
+            mt: root.mt
+            attendantOn: root.paOn
+            onCallPerson: (oid, name) => root.callPerson(oid, name)
+            onSearchPeople: q => root.searchPeople(q)
+            onOpenSettings: id => root.openSettings(id)
+            onUnpark: unparkDialog.start()
         }
     }
 
     // History
     Item {
         id: history
-        anchors { top: header.bottom; bottom: parent.bottom; left: dial.right; right: speedPane.visible ? speedPane.left : parent.right }
+        anchors { top: header.bottom; bottom: parent.bottom; left: dial.right; right: speedPane.visible ? speedPane.left : paPane.visible ? paPane.left : parent.right }
         Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: theme.dividerSoft }
+        // Teams' Intelligent call delegation banner (calls-main-app's
+        // PA onboarding banner, for a user it's offered to: ECS
+        // enablePersonalAttendant, a Copilot licence and the policy): its
+        // glyph (24 at 20), the title (14/700, 10 after it), the status
+        // badge 10 after that (10/600 #616161 on #F0F0F0, 16 tall, radius
+        // 4: Requires setup, Inactive once set up, Active when on) and the
+        // pane toggle at the end (padding 20); 49.3 tall over a #F0F0F0
+        // line (measured over CDP on winpc 2026-11-27), #EBEBEB while the
+        // pane is open.
+        Rectangle {
+            id: paBanner
+            visible: root.paEligible
+            width: parent.width; height: visible ? 50 : 0
+            color: root.paOpen ? theme.pick("#EBEBEB", "#2E2E2E", "#000000") : pbh.hovered ? theme.rowHover : "transparent"
+            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#F0F0F0", "#2E2E2E", "#FFFFFF") }
+            Image { x: 20; anchors.verticalCenter: parent.verticalCenter; width: 24; height: 24; source: "../assets/illustrations/personal-attendant-avatar.svg"; sourceSize: Qt.size(48, 48) }
+            Text {
+                id: paTitle
+                x: 54; anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("Intelligent call delegation")
+                font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; color: theme.onFill(paBanner, theme.text)
+            }
+            Rectangle {
+                id: paBadge
+                x: paTitle.x + paTitle.implicitWidth + 10; anchors.verticalCenter: parent.verticalCenter
+                height: 16; radius: 4; width: badgeRow.implicitWidth + 8
+                color: root.paStatus === "active" ? theme.pick("#F1FAF1", "#052505", "#000000") : theme.pick("#F0F0F0", "#3D3D3D", "#000000")
+                border.color: root.paStatus === "active" ? theme.pick("#9FD89F", "#107C10", "#FFFFFF") : "transparent"
+                Row {
+                    id: badgeRow
+                    anchors.centerIn: parent; spacing: 4
+                    Rectangle { visible: root.paStatus !== "requiresSetup"; anchors.verticalCenter: parent.verticalCenter; width: 6; height: 6; radius: 3; color: root.paStatus === "active" ? theme.pick("#107C10", "#54B054", "#FFFFFF") : theme.textSecondary }
+                    Text { text: root.paStatus === "active" ? qsTr("Active") : root.paStatus === "inactive" ? qsTr("Inactive") : qsTr("Requires setup"); font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; color: theme.onFill(paBadge, theme.textSecondary) }
+                }
+            }
+            FluentIcon { anchors.right: parent.right; anchors.rightMargin: 20; anchors.verticalCenter: parent.verticalCenter; name: root.paOpen ? "panel-right-contract-20-filled" : "panel-right-expand-20"; size: 20; color: theme.onFill(paBanner, theme.textStrong) }
+            HoverHandler { id: pbh; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.paOpen = !root.paOpen }
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("Toggle intelligent call delegation settings panel")
+            Accessible.checkable: true
+            Accessible.checked: root.paOpen
+        }
         Item {
             id: histHead
+            y: paBanner.height
             width: parent.width; height: 48
             Rectangle {
                 id: hcFill6
@@ -370,7 +333,7 @@ Item {
     // Speed dial
     Item {
         id: speedPane
-        visible: root.speedDialShown
+        visible: root.speedDialShown && !root.paOpen
         anchors { top: header.bottom; bottom: parent.bottom; right: parent.right }
         width: 360
         Text { x: 20.7; y: 14.6; text: qsTr("Speed dial"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text }
@@ -470,13 +433,25 @@ Item {
         Column {
             visible: !root.addingSpeedDial && root.speedDial.length === 0
             anchors.centerIn: parent
-            spacing: 12
-            FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; name: "people"; size: 48; color: theme.brand }
-            Text {
-                width: 260; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-                text: qsTr("Add people to speed dial for quick access.")
-                font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text
+            // Teams' speed dial empty state (Nova speed dial): its
+            // avatar-add-multiple illustration 20rem (200) tall with 3rem
+            // under it, the text bold at 75% of the pane with 1rem under.
+            Image {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: 200; height: 200
+                source: "../assets/illustrations/avatar-add-multiple-" + (theme.dark || theme.highContrast ? "d" : "l") + "-standard.svg"
+                sourceSize: Qt.size(400, 400)
+                fillMode: Image.PreserveAspectFit
+                Accessible.role: Accessible.Graphic
+                Accessible.name: qsTr("Add to speed dial icon")
             }
+            Item { width: 1; height: 30 }
+            Text {
+                width: 270; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                text: qsTr("Add people to speed dial for quick access.")
+                font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.Bold; color: theme.text
+            }
+            Item { width: 1; height: 10 }
             Rectangle {
                 id: hcFill13
                 anchors.horizontalCenter: parent.horizontalCenter
@@ -495,7 +470,19 @@ Item {
             }
         }
     }
+    // Intelligent call delegation's pane, in speed dial's place.
+    PaPane {
+        id: paPane
+        visible: root.paOpen && root.paEligible
+        anchors { top: header.bottom; bottom: parent.bottom; right: parent.right }
+        width: 360
+        props: root.synced.props || {}
+        mt: root.mt
+        onClosed: root.paOpen = false
+        onOpenSettings: id => root.openSettings(id)
+    }
     UnparkDialog { id: unparkDialog }
     function openUnparkForTest() { unparkDialog.start() }
+    function closeUnparkForTest() { unparkDialog.close() }
 
 }

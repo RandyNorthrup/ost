@@ -4077,6 +4077,27 @@ pub async fn unpark_call(
     .await
 }
 
+/// Call a phone number (Teams' Calls app dial pad, `startCall` with a
+/// PSTN dial-out target): a 1:1 call to the number's participant id
+/// (`4:+14255550100`, normalized by your dial plan), audio only, with no
+/// chat thread.
+pub async fn call_phone(
+    phone_mri: &str,
+    cancel: tokio::sync::oneshot::Receiver<()>,
+) -> Result<OutgoingCall> {
+    anyhow::ensure!(
+        phone_mri.starts_with("4:") && phone_mri.len() > 2,
+        "Not a phone number"
+    );
+    start_tagged(
+        "",
+        Target::PersonWith(phone_mri, &signaling::CallExtras::default()),
+        None,
+        cancel,
+    )
+    .await
+}
+
 /// Call your own voicemail (Teams' `startVoicemailCall`, from Settings ▸
 /// Calls ▸ Record a greeting): a 1:1 call to yourself whose callee is your
 /// voicemail endpoint, asking for its greeting resource, so the voicemail
