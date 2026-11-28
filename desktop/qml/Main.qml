@@ -18480,6 +18480,17 @@ Window {
     }
     // Quick views ▸ Followed threads / Saved: the list, and the picked
     // item's chat or channel beside it.
+    // A chat opened from anywhere else (search, activity, a link) closes
+    // the Requests pane unless it is one of the requests.
+    Connections {
+        target: backend
+        function onCurrentChatIdChanged() {
+            if (!chatList.requestsOpen) return
+            const id = backend.currentChatId
+            if (chatList.requests.some(r => r.id === id)) requestsView.selectedId = id
+            else chatList.requestsOpen = false
+        }
+    }
     RequestsView {
         id: requestsView
         visible: rail.current === "chat" && chatList.requestsOpen
