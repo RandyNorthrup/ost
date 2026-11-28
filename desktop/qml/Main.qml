@@ -5177,6 +5177,21 @@ Window {
                     aiShot.phase = 0
                     aiShot.restart()
                 }
+            } else if (step >= 8 && step <= 14 && Qt.application.arguments.indexOf("--join-nsi-feedback") >= 0) {
+                // --join-nsi-feedback (with --cqf-always to opt in and ask
+                // every time): the bars and their popover with "Was this
+                // accurate?" (captured), then "This was not accurate", which
+                // opens Report a problem (its text and details logged); the
+                // popover again (the prompt is back), "This was accurate".
+                const pop = callWindow.networkPopoverItemForTest()
+                const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-nsi-" + n + ".png")))
+                if (step === 8) { console.warn("JOIN nsifb visible", callWindow.nsiVisible, "always", callWindow.nsiAlways, "prompt", callWindow.nsiFeedback); grab("tile"); callWindow.networkPopoverForTest() }
+                else if (step === 9) { console.warn("JOIN nsifb popover", pop.opened, "x,y,w,h", pop.x, pop.y, pop.width, pop.height, "prompt", pop.prompt); grab("popover") }
+                else if (step === 10) pop.answerForTest(false)
+                else if (step === 11) { console.warn("JOIN nsifb report", !!window.feedbackWindow, window.feedbackWindow ? window.feedbackWindow.kind + " | " + window.feedbackWindow.area + " | " + window.feedbackWindow.initialText + " | " + window.feedbackWindow.context.replace(/\n/g, " / ") : ""); if (window.feedbackWindow) window.feedbackWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-nsi-report.png"))) }
+                else if (step === 12) { if (window.feedbackWindow) window.feedbackWindow.close(); callWindow.networkPopoverForTest() }
+                else if (step === 13) { console.warn("JOIN nsifb again prompt", pop.prompt); grab("again"); pop.answerForTest(true) }
+                else { console.warn("JOIN nsifb answered prompt", pop.prompt, "report", !!window.feedbackWindow); grab("answered") }
             } else if (step >= 8 && step <= 60 && Qt.application.arguments.indexOf("--join-nsi") >= 0) {
                 // --join-nsi: log the network strength each step while loss
                 // is applied from outside; capture the bars and popover once
@@ -7518,10 +7533,33 @@ Window {
             else if (st === 4) shot("menu")
             else if (st >= 5 && st < 5 + pages.length * 2) {
                 const i = Math.floor((st - 5) / 2), pg = pages[i]
-                if ((st - 5) % 2 === 0) { titleBar.moreMenuForTest(false); premiumDialog.page = pg; if (!premiumDialog.opened) premiumDialog.open() }
+                if ((st - 5) % 2 === 0) { titleBar.moreMenuForTest(false); if (pg === "benefits") premiumDialog.backTo = premiumDialog.st.mode === "ended" ? "ended" : "home"; premiumDialog.page = pg; if (!premiumDialog.opened) premiumDialog.open() }
                 else { if (pg === "benefits") premiumDialog.contentItem.parent && 0; shot(pg) }
             }
             else if (st > 5 + pages.length * 2) { premiumDialog.close(); Qt.quit() }
+        }
+    }
+    // --premium-pill-test: the title bar's Premium pill against Teams'
+    // rule (only from 1280 px wide and 120 s on): PILL lines with the
+    // title bar's width and whether the pill shows, early (75% and 100%
+    // zoom), then after 120 s at 100%, 80% and 75% (a 1000 px window's
+    // title bar is then 1000, 1250 and 1333 wide). Pictures in /tmp/act.
+    Timer {
+        running: Qt.application.arguments.indexOf("--premium-pill-test") >= 0 && backend.signedIn
+        interval: 5000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const st = step++
+            const log = n => console.warn("PILL", n, "width", titleBar.width, "zoom", window.zoomPercent, "pill", titleBar.premiumPill, "shown", titleBar.premiumPillShown)
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile("/tmp/act/pill-" + n + ".png"))
+            if (st === 1) { window.setZoom(75); log("early-75"); shot("early-75") }
+            else if (st === 2) { window.setZoom(100); log("early-100") }
+            else if (st === 26) { log("late-100"); shot("late-100") }
+            else if (st === 27) window.setZoom(80)
+            else if (st === 28) { log("late-80"); shot("late-80") }
+            else if (st === 29) window.setZoom(75)
+            else if (st === 30) { log("late-75"); shot("late-75") }
+            else if (st === 31) { window.setZoom(100); Qt.quit() }
         }
     }
     // --zoom-test: hold 150% for 12 s (for a screen capture), open the
@@ -16594,6 +16632,13 @@ Window {
         premiumBenefitsRow: !!premium.benefitsRow
         premiumDaysLeft: premium.daysLeft || 0
         onOpenPremium: kind => premiumDialog.openFor(kind)
+        onPremiumPillShowed: backend.premiumPillShown()
+        // A newer reading while the pill shows (a trial started or
+        // cancelled) keeps its marks too.
+        Connections {
+            target: backend
+            function onPremiumJsonChanged() { Qt.callLater(() => { if (titleBar.premiumPillShown) backend.premiumPillShown() }) }
+        }
         onOpenCast: castWindow.start()
         onOpenDownloads: downloadsFlyout.open()
         onOpenMobileApp: mobileAppDialog.open()

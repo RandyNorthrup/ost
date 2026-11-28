@@ -104,6 +104,16 @@ pub fn policy_name(v: i64) -> &'static str {
     }
 }
 
+/// Teams' Buy now link (ECS teamsPremiumCenterSelfPurchaseLink's default).
+pub const SELF_PURCHASE_LINK: &str = "https://signup.microsoft.com/get-started/signup?products=CFQ7TTC0RM8K%3a0007&fOfferId=a8a931ff-8672-48ce-b5db-8d70f738012c";
+
+/// Whether the self-serve policy lets you buy Premium (Teams' policy
+/// isSelfPurchaseAllowed: not DISABLED nor trials only; an unknown policy
+/// gives Teams no policy, so no Buy now).
+pub fn self_purchase_allowed(policy: &str) -> bool {
+    !policy.is_empty() && policy != "DISABLED" && policy != "ONLY_TRIALS_WITHOUT_PAYMENT_METHOD"
+}
+
 /// The tenant's self-serve policy ("ENABLED",
 /// "ONLY_TRIALS_WITHOUT_PAYMENT_METHOD" or "DISABLED"; "" when the
 /// service says no, as Teams' FORBIDDEN or THROTTLED).
@@ -511,6 +521,14 @@ pub fn entry(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn buy_now_as_teams_policy() {
+        assert!(self_purchase_allowed("ENABLED"));
+        assert!(!self_purchase_allowed("ONLY_TRIALS_WITHOUT_PAYMENT_METHOD"));
+        assert!(!self_purchase_allowed("DISABLED"));
+        assert!(!self_purchase_allowed(""));
+    }
 
     fn ecs() -> EntryConfig {
         // ost-test1's ECS premium settings (2026-11-27).
