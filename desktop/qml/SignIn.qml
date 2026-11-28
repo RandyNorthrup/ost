@@ -24,7 +24,39 @@ Rectangle {
         anchors.fill: parent
         // OST's shared web profile, once it exists (see WebApp).
         property bool ready: false
-        Component.onCompleted: Qt.callLater(() => { if (root.webProfile) profile = root.webProfile.instance(); ready = true })
+        Component.onCompleted: Qt.callLater(() => {
+            if (root.webProfile) profile = root.webProfile.instance()
+            // Teams desktop's sign-in takes a work or a personal address.
+            // Microsoft's work page refuses a personal one ("You can't sign
+            // in here with a personal account"): its refusal (the
+            // #usernameError box beside the address) is reported, and OST
+            // goes on with the personal sign-in when it is a Microsoft
+            // account's address.
+            const watch = WebEngine.script()
+            watch.name = "ost-sign-in-address"
+            watch.injectionPoint = WebEngineScript.DocumentReady
+            watch.worldId = WebEngineScript.ApplicationWorld
+            watch.runsOnSubFrames = false
+            watch.sourceCode = "(function () {\n"
+                + "  if (location.hostname !== 'login.microsoftonline.com') return;\n"
+                + "  var sent = '';\n"
+                + "  setInterval(function () {\n"
+                + "    var e = document.getElementById('usernameError');\n"
+                + "    var u = document.querySelector('input[name=loginfmt]');\n"
+                + "    var v = u ? (u.value || '').trim() : '';\n"
+                + "    if (e && e.offsetParent !== null && (e.textContent || '').trim() && v && v !== sent) {\n"
+                + "      sent = v; console.log('ost-sign-in-address-refused ' + v);\n"
+                + "    }\n"
+                + "  }, 300);\n"
+                + "})();"
+            userScripts.insert(watch)
+            ready = true
+        })
+        onJavaScriptConsoleMessage: (level, message, line, source) => {
+            const tag = "ost-sign-in-address-refused "
+            if (!message.startsWith(tag) || !url.toString().startsWith("https://login.microsoftonline.com/")) return
+            backend.signInAddressRefused(message.slice(tag.length))
+        }
         url: ready && root.page ? root.page : "about:blank"
         settings.javascriptCanOpenWindows: false
         onNavigationRequested: req => {

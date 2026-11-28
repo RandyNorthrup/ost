@@ -505,9 +505,15 @@ Rectangle {
     // accounts (Teams' MTMA, measured on winpc 2026-11-22) it is a 140 x 28
     // pill with the organisation's name (12/16 #424242 at 6.7, cut at
     // 107.9) before the avatar.
+    // A personal account's window (Teams for personal use): its profile
+    // menu says "Personal" and has no Pause notifications or work location.
+    property bool personal: false
     Rectangle {
         id: profile
-        readonly property bool multi: root.otherAccounts.length > 0
+        // The pill names the org: only a work window next to another work
+        // account has one (with only a personal account beside it, Teams
+        // keeps the round picture; testpc2, 2026-11-27).
+        readonly property bool multi: !root.personal && root.otherAccounts.some(a => !a.personal)
         width: multi ? 140 : 40; height: multi ? 28 : 40; radius: height / 2
         anchors.right: controls.left; anchors.rightMargin: root.windowButtons ? 8 : 0
         anchors.verticalCenter: parent.verticalCenter
@@ -686,7 +692,7 @@ Rectangle {
                 Text {
                     x: 18; anchors.verticalCenter: parent.verticalCenter
                     width: parent.width - 120; elide: Text.ElideRight
-                    text: root.orgName || qsTr("Signed in")
+                    text: root.personal ? qsTr("Personal") : (root.orgName || qsTr("Signed in"))
                     font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
                     color: theme.text
                 }
@@ -709,15 +715,18 @@ Rectangle {
                     width: parent.width - 100
                     Text { width: parent.width; elide: Text.ElideRight; text: root.userName; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
                     Text { visible: root.userMail.length > 0; width: parent.width; elide: Text.ElideRight; text: root.userMail; font.family: theme.font; font.pixelSize: theme.small; color: theme.textStrong }
-                    // View account ↗ (opens the Microsoft account page in the browser, as Teams does).
+                    // View account ↗ (opens the Microsoft account page in the
+                    // browser, as Teams does); a personal account's is "My
+                    // Microsoft account" (account.microsoft.com).
                     Row {
                         spacing: 4
-                        Text { text: qsTr("View account"); font.family: theme.font; font.pixelSize: theme.small; color: theme.textStrong }
+                        readonly property string label: root.personal ? qsTr("My Microsoft account") : qsTr("View account")
+                        Text { text: parent.label; font.family: theme.font; font.pixelSize: theme.small; color: theme.textStrong }
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-16"; size: 12; color: theme.textStrong }
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: { menu.visible = false; backend.openExternal("https://myaccount.microsoft.com/") } }
+                        TapHandler { onTapped: { menu.visible = false; backend.openExternal(root.personal ? "https://account.microsoft.com/" : "https://myaccount.microsoft.com/") } }
                         Accessible.role: Accessible.Link
-                        Accessible.name: qsTr("View account")
+                        Accessible.name: parent.label
                     }
                 }
             }
@@ -754,7 +763,7 @@ Rectangle {
             // left, its top at the row's).
             FlyoutRow {
                 id: pauseRow
-                visible: !root.paused
+                visible: !root.paused && !root.personal
                 icon: pauseMenu.opened || pauseRowHover.hovered ? "alert-20-filled" : "alert-20"
                 iconColor: pauseMenu.opened || pauseRowHover.hovered ? theme.brand : theme.textStrong
                 label: qsTr("Pause notifications")
@@ -779,7 +788,7 @@ Rectangle {
             // Resume notifications (16 px icons in 20 px buttons, 184 and
             // 206 in, 17 down).
             Item {
-                visible: root.paused
+                visible: root.paused && !root.personal
                 width: parent.width; height: 58
                 Rectangle {
                     id: pausedCard
@@ -834,6 +843,7 @@ Rectangle {
             // (delete, 6 / 32 in). Picking sets it until the end of today.
             FlyoutRow {
                 id: workRow
+                visible: !root.personal
                 readonly property string loc: root.workLocation
                 // A check-in's (or a building you picked) names its
                 // building: Teams' status string "In <building>", or

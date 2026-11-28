@@ -118,7 +118,7 @@ Item {
             required property var modelData
             required property int index
             readonly property bool isOpen: flyout.opened && !!flyout.tenant && flyout.tenant.upn === modelData.upn
-            readonly property string orgName: modelData.org || modelData.upn || ""
+            readonly property string orgName: modelData.personal ? qsTr("Personal") : (modelData.org || modelData.upn || "")
             readonly property string tip: modelData.current ? qsTr("Current org") : orgName
             x: 8; y: index * 48; width: 52; height: 48; radius: 8
             color: isOpen ? theme.surface : pinHover.hovered ? theme.hover : "transparent"
@@ -425,7 +425,7 @@ Item {
                                     HubMenuRow {
                                         required property var modelData
                                         width: 232
-                                        label: modelData.org || modelData.upn; checkable: true
+                                        label: modelData.personal ? qsTr("Personal") : (modelData.org || modelData.upn); checkable: true
                                         checked: root.hiddenOrgs.indexOf(modelData.profile) < 0
                                         onClicked: {
                                             const l = root.hiddenOrgs.filter(p => p !== modelData.profile)

@@ -17,6 +17,15 @@ you use for Teams.
    keyring. (Without a keyring, see **Fix sign-in problems**.)
 
 To add another account, select your picture in the top-right corner, then
-**Add another account**. To use a different account instead, sign out there
-and sign in again. Signing out restarts OST and clears its sign-in and the
-web data of the pages it shows, so the next sign-in starts fresh.
+**Add another account**. Each account opens in its own window, and the same
+menu lists your other accounts: select one to switch to its window. You can
+add one personal Microsoft account (outlook.com, hotmail.com and other
+Microsoft account addresses) next to any number of work or school accounts.
+Enter its address on Microsoft's sign-in page and OST continues with the
+personal account's sign-in. A second personal account isn't supported, as in
+Teams: OST tells you so and offers to open Teams on the web instead.
+
+**Sign out** in the same menu signs out of that account only. If other
+accounts are signed in, its window closes and they stay signed in. With no
+other account, OST restarts at the sign-in page. Either way OST clears that
+account's sign-in and the web data of the pages it showed.

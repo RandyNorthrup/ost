@@ -390,6 +390,8 @@ fn main() {
     // QML engine (windows, Backend and its callbacks) first, then the app.
     drop(engine);
     drop(app);
+    // An added account that signed out (or was refused) leaves nothing.
+    backend::remove_profile_if_requested();
     // Quit: later launches start afresh.
     if single && let Some(path) = instance_socket() {
         let _ = std::fs::remove_file(path);

@@ -238,10 +238,14 @@ extern "C" size_t ost_language_display(const char *code, char *out, size_t cap)
     return size_t(b.size());
 }
 
-// Quit the application (Teams' Save and restart: main.rs starts OST again).
+// Quit the application (Teams' Save and restart and Sign out: main.rs
+// starts OST again, or removes a signed-out account's profile). exit(), not
+// quit(): Qt 6's quit() first asks every window to close, and the main
+// window's close only hides it while "keep running" is on, so the app
+// never quit.
 extern "C" void ost_quit_application()
 {
-    QGuiApplication::quit();
+    QGuiApplication::exit(0);
 }
 
 #include <QtCore/QMargins>

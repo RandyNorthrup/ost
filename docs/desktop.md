@@ -230,7 +230,9 @@ Signing out also clears the embedded pages' web storage (cookies, local
 storage, IndexedDB, cache and service workers of the sign-in page, apps,
 Loop and viewers): OST restarts and removes it before the web profile opens
 again, so the next sign-in starts clean. Each profile (`OST_PROFILE`) has
-its own web storage.
+its own web storage. With other accounts still signed in, signing out of an
+added account closes its window instead, and OST then removes that profile
+(its config folder, keyring entry, web storage and state files).
 
 Files OST keeps:
 
@@ -438,6 +440,7 @@ account.
 | `--status-test` | Set Busy from the profile menu, then reset. |
 | `--settings-test` | Switch the theme and read receipts and back. |
 | `--setf-test` | With `--shots=<dir>` (ost-test1, a Copilot licence): Teams 26304's new Settings items (General's window-mode table, Chats' private chats in meetings and Compose, Notifications' Reminders and Channel Notifications with its Manage page, Privacy's Delete Copilot activity history), the chat list's Copilot, the search box's Copilot placeholder and "Ask Copilot about …", then the results with Copilot asked. Logs SETF lines; pictures `sf-*.png`. |
+| `--accounts-cmd=<file>` | Or `OST_ACCOUNTS_CMD=<file>` in the environment, which keeps the launch plain (one instance per account, as the account switcher needs). TASK-0290: runs the commands appended to `<file>`, one per line (`flyout`, `close`, `settings`, `chat`, `shot <name>`, `title`, `switch <profile>`, `add`, `signout`, `refused-open`, `refused-cancel`, `hub`, `hub-hide`, `hub-pick`, `hub-state`, `pin`, `unpin`), so a live check can drive the accounts UI of several windows. Needs `QML_XHR_ALLOW_FILE_READ=1`. Pictures go to `--shots=<dir>`, else next to the file. ACCT lines. |
 | `--seth-test` | With `--shots=<dir>` (TASK-0088): Settings ▸ Calls' Teams 26304 additions (Intelligent call delegation card and page, Viewing incoming calls, Call group and Delegates cards and pages), Notifications ▸ Apps opened, About's ring line. `--seth-saves` also saves and reads back, then puts back: `--seth-member=<mri>` (default OST Test 2) added to and removed from the call group and as a delegate (Join active calls on), Small then Large window, a ringtone, the unanswered delay, the first app row Off and back. `--seth-accounts` (TASK-0078): the profile flyout with the other accounts on this device and Add another account, Settings ▸ Accounts and orgs, then Add another account (a new profile's OST). `--seti-signin` (with `--shots`): a fresh profile logs and pictures Microsoft's sign-in page once it has loaded, then quits. SETH lines; pictures `sh-*.png`. |
 | `--seti-test` | With `--shots=<dir>` (TASK-0088 AC3): the links into Settings, each through its own handler: Settings and more ▸ Settings, Ctrl+, after another page, the DND banner's Change settings, Pause notifications ▸ Notifications settings, Customize view, the compose Enter hint, a notification dialog's link, the auto-follow card's link, the Editor card's two links, Schedule out of office, a `teams.microsoft.com/l/settings/…` link and Customize app bar (its highlight read at once and 4 s later). SETI lines (page, sub-page, highlight, focused control, scroll); pictures `si-*.png`. |
 | `--seti-pa` | With `--shots=<dir>` (TASK-0242): turns Intelligent call delegation on when it is off, shows its page, Voice and greeting (and the greeting dialog), Custom instructions (Conversation's suggestions) and Follow-ups; saves and reads back a greeting, instructions with a person, the default language and the follow-up length, then puts each back; `--seti-pa-call` also makes the test call (about 25 s); turns the feature off again if it was off. SETIPA lines; pictures `sp-*.png`. |

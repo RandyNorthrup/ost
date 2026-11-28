@@ -803,6 +803,19 @@ pub struct Account {
     /// Its organisation's name (Teams' Accounts and orgs list).
     #[serde(default)]
     pub org: String,
+    /// Work or personal: Teams runs one personal account next to any
+    /// number of work accounts.
+    #[serde(default)]
+    pub kind: crate::identity::AccountKind,
+}
+
+/// The personal account already signed in on this device in another
+/// profile than `me`, if any: Teams desktop takes only one ("Multiple
+/// personal accounts aren't supported in Teams yet.").
+pub fn other_personal_account<'a>(list: &'a [Account], me: &str) -> Option<&'a Account> {
+    list.iter().find(|a| {
+        a.profile != me && a.kind == crate::identity::AccountKind::Personal && !a.upn.is_empty()
+    })
 }
 
 fn accounts_path() -> Result<PathBuf> {
@@ -856,6 +869,17 @@ pub fn new_profile_name(list: &[Account], taken: &[String]) -> String {
         .map(|n| format!("account{n}"))
         .find(|p| !list.iter().any(|a| &a.profile == p) && !taken.contains(p))
         .expect("a free name")
+}
+
+/// Remove this profile's keyring entry for good (an added account's
+/// profile being removed: signing out leaves an empty entry behind).
+pub fn delete_profile_secrets() {
+    if let Some(entry) = keyring_entry()
+        && let Err(e) = SecretStore::delete(&entry)
+    {
+        tracing::warn!("Could not remove the keyring entry: {e}");
+    }
+    memory_set(&keyring_account(), None);
 }
 
 /// A profile's config folder ("" is the first account's).
@@ -973,6 +997,34 @@ mod account_tests {
         assert_eq!(again.len(), 2);
         assert_eq!(again[1].availability, "Busy");
         assert_eq!(new_profile_name(&again, &["account3".into()]), "account4");
+    }
+
+    #[test]
+    fn only_one_personal_account_next_to_work_accounts() {
+        use crate::identity::AccountKind;
+        let work = Account {
+            profile: String::new(),
+            upn: "ost-test2@x".into(),
+            ..Default::default()
+        };
+        let personal = Account {
+            profile: "account2".into(),
+            upn: "ost-personal2-0238@outlook.com".into(),
+            kind: AccountKind::Personal,
+            ..Default::default()
+        };
+        let list = vec![work, personal];
+        // A new profile (account3) signing in a personal account meets the
+        // one in account2; account2 itself (signing in again) doesn't.
+        assert_eq!(
+            other_personal_account(&list, "account3").map(|a| a.profile.as_str()),
+            Some("account2")
+        );
+        assert!(other_personal_account(&list, "account2").is_none());
+        // Accounts recorded before the kind was kept are work accounts.
+        let old: Account =
+            serde_json::from_str(r#"{"profile":"","upn":"a@x","name":"A"}"#).unwrap();
+        assert_eq!(old.kind, AccountKind::Work);
     }
 
     #[test]
