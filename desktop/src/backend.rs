@@ -32931,7 +32931,17 @@ impl qobject::Backend {
     }
 
     pub fn premium_pill_shown(mut self: Pin<&mut Self>) {
-        if let Some((user, marks)) = self.as_mut().rust_mut().premium_pending_marks.take() {
+        if let Some((user, mut marks)) = self.as_mut().rust_mut().premium_pending_marks.take() {
+            // A promo's first view is when the pill shows (Teams writes it
+            // as it renders), not when the entry was read.
+            let saved = premium_marks(&user);
+            let now = jiff::Timestamp::now().to_string();
+            if saved.first_view_post.is_none() && marks.first_view_post.is_some() {
+                marks.first_view_post = Some(now.clone());
+            }
+            if saved.first_view_pre.is_none() && marks.first_view_pre.is_some() {
+                marks.first_view_pre = Some(now);
+            }
             save_premium_marks(&user, &marks);
         }
     }
