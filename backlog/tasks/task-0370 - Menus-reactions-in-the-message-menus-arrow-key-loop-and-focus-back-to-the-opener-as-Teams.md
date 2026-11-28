@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@t370'
 created_date: '2026-11-27T20:53:00Z'
-updated_date: '2026-11-28T01:57:00Z'
+updated_date: '2026-11-28T03:36:00Z'
 labels:
   - desktop
   - accessibility
@@ -54,6 +54,8 @@ Implementation:
 
 Live (testpc2 WSLg, OST Test 3, own test-harness build of this branch, QML iterated with OST_QML_DIR): --menu-keys-test 80 ok / 0 FAIL. Red drill (origin/main's MenuPopup.qml, rest of this branch): 18 FAIL, all new checks. Screens: More reactions outlined in the right-click strip; ··· outlined with the bar up after Esc. Mic: ost_t370_mic only (no alsa_input streams; WSL has none).
 Not checked live: Enter/Space on a real reaction in the strip (would react on a test chat); covered by the harness's header test, the strip's activate() is the same code its tap runs.
+
+Codex review on #73 (P2): a second Esc on the ··· of a channel post / reply / thread / Discover hover bar didn't release the focus (only Conversation handles keyboardDone), so the bar stayed up. Fixed in HoverBar: after keyboardDone, if the bar or its ··· still has the focus it lets go, so the bar hides. Rebuilt on the rebased branch (ghbuild, GitHub Actions) and reran --menu-keys-test on testpc2 (OST Test 3): 80 ok / 0 FAIL.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
