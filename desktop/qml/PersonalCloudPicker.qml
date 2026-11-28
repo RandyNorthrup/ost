@@ -96,9 +96,11 @@ Popup {
     function stateForTest() { return { place: place, path: path.map(p => p.name), items: items.map(i => i.name), picked: pickedItems.map(i => i.name) } }
     function tapForTest(name) { const it = items.find(i => i.name === name); if (it) tap(it); return !!it }
 
+    // Narrow (a chat window): a slimmer place list and fewer columns.
+    readonly property real side: width < 700 ? 160 : 224
     // The places.
     Rectangle {
-        width: 224; height: parent.height
+        width: root.side; height: parent.height
         topLeftRadius: 8; bottomLeftRadius: 8
         color: theme.pick("#F5F5F5", "#292929", "#000000")
         Text { x: 24; y: 22; text: qsTr("OneDrive"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight; color: theme.text }
@@ -126,7 +128,7 @@ Popup {
     }
     // The place.
     Item {
-        x: 224; width: parent.width - 224; height: parent.height
+        x: root.side; width: parent.width - root.side; height: parent.height
         Row {
             x: 23; y: 30
             spacing: 6
@@ -152,12 +154,18 @@ Popup {
             }
         }
         readonly property bool recentCols: root.place === "recent"
+        // Columns: the type glyph and name, then Modified / Accessed, then
+        // Modified by while there is room.
+        readonly property bool showBy: cols.width >= 480 && !recentCols
+        readonly property real iconX: cols.width < 420 ? 8 : 56
+        readonly property real nameX: iconX + 44
+        readonly property real timeX: cols.width < 420 ? cols.width - 120 : cols.width * 0.42
         Item {
             id: cols
             x: 16; y: 96; width: parent.width - 46; height: 44
-            Text { x: 100; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Name"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
-            Text { x: parent.width * 0.42; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.recentCols ? qsTr("Accessed") : qsTr("Modified"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
-            Text { visible: !parent.parent.recentCols; x: parent.width * 0.62; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Modified by"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
+            Text { x: parent.parent.nameX; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Name"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
+            Text { x: parent.parent.timeX; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.recentCols ? qsTr("Accessed") : qsTr("Modified"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
+            Text { visible: parent.parent.showBy; x: parent.width * 0.62; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Modified by"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
             Rectangle { y: parent.height - 1; width: parent.width; height: 1; color: theme.divider }
         }
         ListView {
@@ -172,15 +180,15 @@ Popup {
                 readonly property bool sel: !!root.picked[modelData.id]
                 width: rows.width; height: 58
                 color: sel ? theme.pick("#EBEBEB", "#3D3D3D", "#1AEBFF") : rwHover.hovered ? theme.menuHover : "transparent"
-                FluentIcon { x: 56; anchors.verticalCenter: parent.verticalCenter; size: 32; name: root.typeIcon(rw.modelData) }
+                FluentIcon { x: rows.parent.iconX; anchors.verticalCenter: parent.verticalCenter; size: 32; name: root.typeIcon(rw.modelData) }
                 Column {
-                    x: 100; anchors.verticalCenter: parent.verticalCenter
-                    width: cols.width * 0.42 - 110
+                    x: rows.parent.nameX; anchors.verticalCenter: parent.verticalCenter
+                    width: Math.max(60, rows.parent.timeX - rows.parent.nameX - 10)
                     Text { width: parent.width; text: rw.modelData.name; elide: Text.ElideMiddle; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                     Text { visible: rw.modelData.size > 0 && root.place === "myfiles"; text: root.size(rw.modelData.size); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                 }
-                Text { x: cols.width * 0.42; anchors.verticalCenter: parent.verticalCenter; text: root.ago(rw.modelData.time); font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                Text { visible: root.place !== "recent"; x: cols.width * 0.62; anchors.verticalCenter: parent.verticalCenter; width: parent.width - x - 8; elide: Text.ElideRight
+                Text { x: rows.parent.timeX; anchors.verticalCenter: parent.verticalCenter; text: root.ago(rw.modelData.time); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { visible: rows.parent.showBy; x: cols.width * 0.62; anchors.verticalCenter: parent.verticalCenter; width: parent.width - x - 8; elide: Text.ElideRight
                     text: rw.modelData.modified_by; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 Rectangle { y: parent.height - 1; width: parent.width; height: 1; color: theme.divider }
                 HoverHandler { id: rwHover; cursorShape: Qt.PointingHandCursor }
