@@ -18420,7 +18420,7 @@ Window {
         onJoinTeam: window.openTeamPage("join")
         onNewTeam: createTeamDialog.startScratch()
         mentionsUnread: mentionsView.mentions.filter(m => m.unread).length
-        onOpenCopilot: window.leaving(() => { window.composing = false; draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; quickOpen = ""; window.manage = null; window.manageTeamId = ""; copilotOpen = true })
+        onOpenCopilot: window.leaving(() => { window.composing = false; draftsOpen = false; mentionsOpen = false; requestsOpen = false; yourTeamsOpen = false; quickOpen = ""; window.manage = null; window.manageTeamId = ""; copilotOpen = true })
         onOpenYourTeams: window.leaving(() => window.openYourTeams("teams"))
         onOpenChatWindow: (id, name, photo, presence) => window.openChatWindow(id, name, photo, presence)
         onManageChatApps: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; if (backend.currentChatId !== id) backend.selectChat(id, name); conversation.manageApps = true }
