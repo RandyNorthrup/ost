@@ -5721,7 +5721,7 @@ Rectangle {
     // 26304, settings-app Ar/LV): no id is General; a category with a
     // setting id opens that page with the setting brought into view; a
     // sub-page's id opens "Page › Sub-page"; any other id is a page.
-    readonly property var teamsPages: ({ plans: "plans", plans_and_upgrades: "plans", teams_insider: "insider", people: "people", general: "general", appearance: "appearance", chats_and_channels: "chats", notifications: "notifications", accounts: "accounts", privacy: "privacy", accessibility: "accessibility", devices: "devices", calls: "calls", files_and_links: "files", app_permissions: "apppermissions", recognition: "recognition", about: "about" })
+    readonly property var teamsPages: ({ plans: "plans", plans_and_upgrades: "plans", insider: "insider", teams_insider: "insider", people: "people", general: "general", appearance: "appearance", chats_and_channels: "chats", notifications: "notifications", accounts: "accounts", privacy: "privacy", accessibility: "accessibility", devices: "devices", calls: "calls", files_and_links: "files", app_permissions: "apppermissions", recognition: "recognition", about: "about" })
     readonly property var teamsSubPages: ({
         general_settings_oof_settings_page_title: ["general", "oof"],
         general_settings_editor_sdk_manage_spellcheck_languages_page_title: ["general", "spellcheck"],

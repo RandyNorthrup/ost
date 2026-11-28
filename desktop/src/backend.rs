@@ -34172,13 +34172,21 @@ impl qobject::Backend {
         let item: Option<api::drive::DriveItem> = serde_json::from_str(&item_json.to_string())
             .ok()
             .filter(|i: &api::drive::DriveItem| !i.id.is_empty());
-        // Unset: Teams' default choice, Teams.
+        // Unset: Teams' default choice, Teams. Teams for personal use has
+        // no Teams choice (Settings ▸ Files and links offers Browser), so a
+        // personal account's Teams choice opens in the browser.
+        let personal = self.rust().personal_account;
         let choice = load_settings()
             .get("fileOpenIn")
             .and_then(|v| v.as_str())
             .filter(|v| !v.is_empty())
             .unwrap_or("teams")
             .to_string();
+        let choice = if personal && choice == "teams" {
+            "web".to_string()
+        } else {
+            choice
+        };
         // Teams' "Teams" choice: Office for the web inside OST.
         if choice == "teams" && api::office_open::app_for(&name).is_some() {
             let (u, n, j) = (

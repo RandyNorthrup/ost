@@ -16959,7 +16959,7 @@ Window {
         onOpenMobileApp: mobileAppDialog.open()
         // A personal account's Upgrade, Teams Insider and What's new.
         onOpenUpgrade: window.openPlans(true)
-        onOpenInsider: { rail.current = "settings"; settingsView.launchSection("insider") }
+        onOpenInsider: { rail.current = "settings"; settingsView.launchSection("teams_insider") }
         onOpenWhatsNew: backend.openExternal("https://support.microsoft.com/en-us/teams/personal/get-started/what-s-new-in-microsoft-teams-personal")
     }
     // Settings and more's dialogs and windows.
