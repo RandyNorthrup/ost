@@ -72,10 +72,14 @@ Popup {
     /// Group chats whose thread is an external access one (`cfet`), read
     /// as the dialog opens (the chat list doesn't carry the mark).
     property var cfetIds: []
+    /// The marks came back (Go waits for them on a group chat).
+    property bool cfetChecked: false
+    /// Go is allowed: something picked, and a picked group chat's mark read.
+    readonly property bool pickReady: !!picked && !(picked.kind === "chat" && !!picked.chat && picked.chat.isGroup === true && !cfetChecked)
     readonly property string chatsTag: meetingsTag + "c"
 
     function show(a) {
-        app = a; expanded = ""; picked = null; query = ""; search.text = ""
+        app = a; expanded = ""; picked = null; query = ""; search.text = ""; cfetIds = []; cfetChecked = false
         flick.contentY = 0
         backend.appDetailsLoad(a.id)
         backend.eventsRequest("appPlaceMeetings", meetingsTag, "{}")
@@ -85,7 +89,13 @@ Popup {
     Connections {
         target: backend
         function onEventsReply(id, json) {
-            if (id === root.chatsTag) { try { root.cfetIds = JSON.parse(json).cfet || [] } catch (e) { root.cfetIds = [] } return }
+            if (id === root.chatsTag) {
+                try { root.cfetIds = JSON.parse(json).cfet || [] } catch (e) { root.cfetIds = [] }
+                root.cfetChecked = true
+                // (A chat picked meanwhile that turns out to be one is let go.)
+                if (root.picked && root.picked.kind === "chat" && root.cfetIds.indexOf(root.picked.id) >= 0) root.picked = null
+                return
+            }
             if (id !== root.meetingsTag) return
             try { const v = JSON.parse(json); root.meetings = v.meetings || [] } catch (e) { root.meetings = [] }
         }
@@ -173,7 +183,7 @@ Popup {
     readonly property bool sticky: !expanded && flick.contentY > (personal ? 240 : 220)
 
     function go() {
-        if (!picked || !app) return
+        if (!pickReady || !app) return
         // (Cards from Your agents and apps carry no configuration page:
         // the definition's is used.)
         const a = Object.assign({}, app, { team_tab: !!places.team_tab, chat_tab: !!places.chat_tab, meeting_tab: !!places.meeting_tab, icon: app.icon || (d ? d.icon : ""),
@@ -417,10 +427,11 @@ Popup {
             visible: !!root.picked
             anchors.right: parent.right; anchors.rightMargin: 0; anchors.verticalCenter: parent.verticalCenter
             width: 96; height: 40; radius: 4
-            color: goHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: qsTr("Go"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand }
-            HoverHandler { id: goHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: root.go() }
+            // (Disabled until a picked group chat's mark is read.)
+            color: !root.pickReady ? theme.pick("#F0F0F0", "#141414", "#3FF23F") : goHover.hovered ? theme.brandHover : theme.brandFill
+            Text { anchors.centerIn: parent; text: qsTr("Go"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.pickReady ? theme.textOnBrand : theme.pick("#BDBDBD", "#5C5C5C", "#000000") }
+            HoverHandler { id: goHover; enabled: root.pickReady; cursorShape: Qt.PointingHandCursor }
+            TapHandler { enabled: root.pickReady; onTapped: root.go() }
             Accessible.role: Accessible.Button; Accessible.name: qsTr("Go")
         }
     }
