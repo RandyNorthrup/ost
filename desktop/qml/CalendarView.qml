@@ -1988,7 +1988,7 @@ Item {
             is_online_meeting: !!m.join_url, join_url: m.join_url || null, show_as: "busy", preview: "",
             // (You set it up: its editable page, as Teams opens yours.)
             is_organizer: !!m.organizer_mri && String(m.organizer_mri).toLowerCase() === String(backend.userMri || "").toLowerCase(),
-            ical_uid: m.ical_uid || "", event_type: "singleInstance", series_master_id: "",
+            ical_uid: m.ical_uid || "", event_type: m.event_type || "singleInstance", series_master_id: m.series_master_id || "",
             response: "none", response_requested: false, attendees: [], is_cancelled: !!m.cancelled,
             categories: [], sensitivity: "normal", channel_id: j ? decodeURIComponent(j[1]) : "",
             channel_message_id: j && j[2] ? j[2] : "", calendar_id: "group:" + groupId,
@@ -3529,7 +3529,7 @@ Item {
                 // (A channel meeting's update goes to its team's calendar by
                 // its iCalUId and start, as Teams' form sends a team event's.)
                 if (out.editingId) root.calendarAction("update", JSON.stringify({ id: out.editingId, form: out, joinUrl: form.event.join_url || "", eventType: form.event.event_type || "",
-                                                                                  icalUid: out.channel ? form.event.ical_uid || "" : "", startUtc: form.event.start_utc || "", seriesMasterId: form.event.series_master_id || "" }))
+                                                                                  icalUid: out.channel ? form.event.ical_uid || "" : "", startUtc: form.event.start_utc || "", seriesMasterId: form.event.series_master_id || "", calendar: form.event.calendar_id || "" }))
                 else root.calendarAction("schedule", JSON.stringify({ form: out }))
             }
             onCancelMeeting: (note, scope) => {

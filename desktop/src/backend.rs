@@ -32048,11 +32048,12 @@ impl qobject::Backend {
                                     start_utc: s("startUtc"),
                                     event_type: s("eventType"),
                                 };
-                                // Edit series: the series master (its iCalUId and start).
+                                // Edit series: the series master (its iCalUId and start; in its
+                                // team's calendar for a page read from there).
                                 if form.scope == "series"
                                     && let Some(master) = args["seriesMasterId"].as_str().filter(|m| !m.is_empty() && !m.contains(['/', '?', '#']))
                                 {
-                                    let v: serde_json::Value = client.graph_get(&format!("/me/events/{master}?$select=iCalUId,start")).await?.json().await?;
+                                    let v: serde_json::Value = client.graph_get(&format!("{}?$select=iCalUId,start", api::calendar::event_path_in(&s("calendar"), master)?)).await?.json().await?;
                                     team_event.ical_uid = v["iCalUId"].as_str().unwrap_or_default().to_string();
                                     team_event.start_utc = v.pointer("/start/dateTime").and_then(|t| t.as_str()).map(|t| format!("{}Z", t.split('.').next().unwrap_or(t))).unwrap_or_default();
                                     team_event.event_type = "seriesMaster".into();
