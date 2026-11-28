@@ -33,6 +33,10 @@ Item {
         calendarAction("meetingLinks", JSON.stringify({ threads: meetingChats }))
     }
     onVisibleChanged: if (visible) reload()
+    // A new meeting chat (a link made here or elsewhere) comes with the
+    // chat list: read the links again once it settles.
+    onMeetingChatsChanged: if (visible) chatsSettled.restart()
+    Timer { id: chatsSettled; interval: 800; onTriggered: root.reload() }
     /// Calendar actions' answers (Main forwards "meetingLinks" and
     /// "meetLink" here).
     function actionDone(op, result, error) {

@@ -929,6 +929,16 @@ socket.
   bodyPreview, isOrganizer, isAppointment, skypeTeamsMeetingUrl
   (teams.live.com/meet/…), skypeTeamsDataObject.cid, iCalUID, …}]}`.
 
+- **Event page:** `GET {mt}/v2.0/me/calendars/events/{objectId}` (the
+  calendarView fields plus `attendees` [{type, name, address, mri, role}],
+  `bodyContent`, `isReminderSet`, `reminderMinutesBeforeStart`). Save:
+  `PUT …/events/{objectId}?isOnlineMeeting=false` with
+  `{"updatedCalendarEvent": {subject, location, bodyContent, startTime,
+  endTime, attendees, …, objectId, iCalUID, schedulingServiceUpdateUrl,
+  skypeTeamsData}}` (204). Cancel meeting ("Do you want to cancel this
+  meeting? This will cancel the meeting for all participants."):
+  `DELETE …/events/{objectId}` (204).
+
 ### 10.4 Not seen
 
 The 60-minute end of a free meeting and any warning before it (a meeting

@@ -17808,7 +17808,8 @@ Window {
             if (m) { window.linkJoinById = true; calendarView.joinWithId(m[1], m[2] ? decodeURIComponent(m[2]) : "") }
             else calendarView.joinMeeting(url, title)
         }
-        onJoinWithId: (id, pass) => calendarView.joinWithId(id, pass)
+        // (its failure is told, as a link's Join with an ID's is)
+        onJoinWithId: (id, pass) => { window.linkJoinById = true; calendarView.joinWithId(id, pass) }
         onScheduleMeeting: { rail.current = "calendar"; calendarView.newMeeting() }
         onOpenCalls: rail.current = "calls"
         onToast: text => window.showToast({ text: text, intent: "success" })
