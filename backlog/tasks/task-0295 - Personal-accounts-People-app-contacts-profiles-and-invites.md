@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@tperD'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T09:07:00Z'
+updated_date: '2026-11-28T09:48:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -48,6 +48,8 @@ Teams for personal use has a People app in the left rail: contacts (synced from 
 - Not verified/not built: off-network (synced, not on Teams) contacts' row Invite button (no such contacts on the test accounts, their source call not captured); phone search (no test account has a number); Your profile's ··· (Edit name, Change profile picture) and Report a concern on the card (not built); Sync contacts Manage shows Teams' mobile-sync dialog rather than the Synced contacts page; Call from People uses OST's call path, which for personal accounts is TASK-0299. People is opened from View more apps until Teams free's rail (TASK-0297).
 
 - Protocol notes: personal-accounts-protocol.md §11 (renumbered on rebase; §10 is the calls section).
+
+- Codex review (PR #89): Blocked users scrolls; Call for a Teams free person / from a personal account goes in their chat thread (existing, or made with the groups service) instead of a 1:1 id from the MRIs; a personal account's cards for work users come from fetchFederated (Graph /users isn't open to it) and use the Teams free layout; the live harness unblocks only its target. Live after the fixes: OST Test 3's card from OST Personal 1 shows their picture, ost-test3@scnetsolutions.com and Offline (UPS PresenceUnknown before a work user accepts). CI green; Codex: no major issues.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
