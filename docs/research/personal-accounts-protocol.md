@@ -614,9 +614,8 @@ open and why).
     after `GET /beta/me/settings/storage/quota` and `GET /v1.0/me/drive`,
     and the client stores `personalFileSite` = `{"driveId":"<cid>"}` with
     `PUT chatsvc/…/users/ME/properties?name=personalFileSite`. The compose
-    box showed "Anyone with the link can edit". **Open:** the send of that
-    file message never completed in the headless web client, so the
-    message's `files` property and the link-creation call were not seen.
+    box showed "Anyone with the link can edit". The send, the link call and
+    the message's `files` record were captured on 2026-11-28: see §13.
 13. **Federation from the work side. Verified.** Search: the work client
     calls `GET mt/…/beta/users/<email>/externalsearchv3?includeTFLUsers=true`
     (`x-ms-client-caller: newChat`). For personal accounts whose email
@@ -1052,3 +1051,70 @@ Every setting changed for the capture was put back.
   (no auth, no licence filters) answers a desktop-flavoured `TflNorthstar`
   (for example `monetization.enableRefreshPlansAndUpgrades`,
   `communities.disableCommunitiesCreation`, `ai.enableCopilotChatConsumerApp`).
+
+## 13. Files and photos in chats (verified 2026-11-28, TASK-0300)
+
+Captured on teams.live.com (web client 1415/26101516645) as OST Personal 1
+and OST Personal 2 in isolated headless Chromes on linuxlt (CDP network
+log, tokens redacted), sending small test files between the two accounts.
+OST implements this in `src/api/personal_files.rs`.
+
+- **Attach** (paperclip) offers only Attach cloud files and Upload from
+  this device. Opening it reads `GET graph/v1.0/me/drive` and stores the
+  drive as the user property `PUT chatsvc/…/users/ME/properties?name=personalFileSite`
+  `{"personalFileSite":"{\"driveId\":\"<cid>\"}"}`; the compose box
+  also reads `GET graph/beta/me/settings/storage/quota`.
+- **Upload from this device**: `PUT graph/v1.0/me/drive/root:/Microsoft%20Teams%20Chat%20Files/<name>:/content?@microsoft.graph.conflictBehavior=rename&select=*,sharepointIds`
+  (headers `scenario: UploadFile_TeamsMSAFile`, `prefer: pacToken=N`) as
+  soon as the file is picked; the chip says "Anyone with the link can
+  edit". A picture (png, jpg, … also through Upload from this device) is
+  also put in the media store: `POST {amsV2}/v1/objects/`
+  `{"type":"pish/image","permissions":{"<thread>":["read"]},"sharingMode":"Attached","filename":…}`
+  (header `x-ams-post-sharing-mode: Attached`), then `PUT …/content/imgpsh`.
+- **Send**: `POST graph/v1.0/drive/items/<id>/createLink {"type":"edit"}`
+  (`scenario: Share_TeamsMSA`) answers an anonymous edit link
+  (`https://1drv.ms/t/c/<cid>/…`) and its `shareId`; the message's
+  `properties.files` entry has `fileInfo.fileUrl` = `objectUrl` =
+  `{siteUrl}/Documents/Microsoft Teams Chat Files/<name>` (spaces as is),
+  `siteUrl`/`baseUrl` = `https://my.microsoftpersonalcontent.com/personal/<cid>`
+  (no slash), `shareUrl`/`shareId` from the link, `fileChicletState.state`
+  and `state` `active`, `permissionScope` null, and for a picture
+  `filePreview {previewUrl: "{ams}/v1/objects/<id>/views/imgo", previewWidth, previewHeight}`
+  with the object in the message's `amsreferences`.
+- **Attach cloud files** embeds OneDrive's consumer picker
+  (`POST onedrive.live.com/picker?app=Teams.Chat&scenario=FilesPersonalPicker`,
+  File Picker SDK 8: My files, Recent, Photos, Shared). Attach then sends
+  `POST graph/v1.0/drives/<cid>/items/<id>/createLink {"type":"edit"}`;
+  the record is a `reference` with an encoded `objectUrl` (`%20`) and
+  `sharepointIds {"driveId": "<cid>", others null}`.
+- **Receiving**: a file shows as a 48 tall chip (glyph, name, ···); a
+  picture as the picture fitted to 180 tall (smaller ones at their own
+  size in a 180 x 180 grey box). Clicking a file opens it in the browser
+  (the share link, onedrive.live.com); a picture opens the picture viewer.
+  The ··· menu has Open in Browser, Download and Copy link. Download reads
+  `GET graph/v1.0/shares/<shareId>/driveItem?select=restricted,webDavUrl,@microsoft.graph.downloadUrl,file,name`
+  with `prefer: redeemSharingLink` and fetches the download address.
+- **Files tab**: `POST https://msgsearch.skype.com/v3/query` (x-skypetoken)
+  `{"OPTION":{"RESULTBASE":0,"RESULTCOUNT":50},"QUERYSTRING":{"and":[{"ThreadId":…},{"or":[{"Annotation":{"TYPE":"files"}},{"Annotation":{"TYPE":"URIObject","VALUE":{"type":"File.1"}}},{"Annotation":{"TYPE":"URIObject","VALUE":{"type":"Video.1"}}}]},{"not":{"Annotation":{"TYPE":"files","VALUE":{"fileType":"deeplinkChiclet"}}}}]}}`;
+  the answer lists messages with `MetadataList` `files` (`fileName`,
+  `fileType`, `fileInfofileUrl`, `fileInfoshareUrl`, `filePreviewpreviewUrl`, …).
+  Columns Name, Shared on, Sent by; Upload; selection bar Open ▾ (Open in
+  Browser), Copy link, Download, "N selected". Empty: "Share files in this
+  chat" / "When you upload files to this files tab, they will show up in
+  chat." with the `illustrations/v2/folder-files-l-standard.svg` picture.
+- **Photos tab**: the same service, 5 at a time, with `images`, png/jpg/jpeg
+  files and `Picture.1` URI objects; tiles are `{amsV2}/v1/objects/<id>/views/img_thumb_small?v=1`
+  under day headings; a tile opens the picture viewer. Empty: "No photos
+  shared in the chat" / "Photos added to chat automatically show up here."
+  (`illustrations/v2/photos-l-standard.svg`).
+- **Storage full**: an upload failing with HTTP 507 or Graph's
+  `quotaLimitReached` (Teams' SpQuotaReached) shows, for a personal
+  account (`enableComposeBoxOdStorageFullBannerV2` on for web and
+  desktop), the compose banner `files_onedrive_storage_full` "Attachment
+  storage is full" with Manage (`tflOneDriveLoginUrl`,
+  `https://onedrive.live.com/?gologin=true`) and Get more storage
+  (`https://aka.ms/GetMoreStorage` for a subscriber, else Teams' purchase
+  flow). Not reproduced live (a free OneDrive holds 5 GB).
+- Note: the support page says photos sent through Media aren't stored in
+  OneDrive; the web client does store them there (and in the media store
+  for the preview).

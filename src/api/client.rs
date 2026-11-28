@@ -683,6 +683,30 @@ impl TeamsClient {
         bytes: Vec<u8>,
         filename: &str,
     ) -> Result<String> {
+        self.ams_upload_image_mode(conv, bytes, filename, None)
+            .await
+    }
+
+    /// As ams_upload_image, as Teams free stores a picture file's preview
+    /// (captured 2026-11-28): `sharingMode: Attached`, also in the
+    /// `x-ams-post-sharing-mode` header.
+    pub async fn ams_upload_image_attached(
+        &self,
+        conv: &str,
+        bytes: Vec<u8>,
+        filename: &str,
+    ) -> Result<String> {
+        self.ams_upload_image_mode(conv, bytes, filename, Some("Attached"))
+            .await
+    }
+
+    async fn ams_upload_image_mode(
+        &self,
+        conv: &str,
+        bytes: Vec<u8>,
+        filename: &str,
+        sharing_mode: Option<&str>,
+    ) -> Result<String> {
         let token = self.skype_token()?;
         let base = self
             .ams_url()
@@ -693,16 +717,22 @@ impl TeamsClient {
         // `Teams/{version}/{platform}` part (Teams desktop sends …/49) and
         // refuses a request without it; OST is platform 1415 elsewhere.
         const UA: &str = TEAMS_WEB_UA;
-        let created = self
+        let mut body = serde_json::json!({
+            "type": "pish/image",
+            "permissions": { conv: ["read"] },
+            "filename": filename,
+        });
+        let mut req = self
             .http
             .post(format!("{base}/v1/objects/"))
             .header("Authorization", &auth)
-            .header(reqwest::header::USER_AGENT, UA)
-            .json(&serde_json::json!({
-                "type": "pish/image",
-                "permissions": { conv: ["read"] },
-                "filename": filename,
-            }))
+            .header(reqwest::header::USER_AGENT, UA);
+        if let Some(mode) = sharing_mode {
+            body["sharingMode"] = serde_json::Value::String(mode.to_string());
+            req = req.header("x-ams-post-sharing-mode", mode);
+        }
+        let created = req
+            .json(&body)
             .send()
             .await
             .context("Media create failed")?;

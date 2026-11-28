@@ -47,7 +47,11 @@ Popup {
     signal picked(var file)
 
     parent: Overlay.overlay
-    width: 305; height: 437; padding: 0
+    /// A personal account's (Teams free, teams.live.com 2026-11-28): only
+    /// Attach cloud files and Upload from this device, 308 x 80 (28 tall
+    /// rows 32 apart from 8), no search or suggestions.
+    readonly property bool personal: backend.personalAccount
+    width: personal ? 308 : 305; height: personal ? 80 : 437; padding: 0
     /// Open above the anchor at its end (a suggested reply's Share a file,
     /// Teams' "above-end"), until closed.
     property bool alignEnd: false
@@ -68,7 +72,7 @@ Popup {
         { key: "upload", label: qsTr("Upload from this device"), icon: "arrow-upload-20", size: 16 }
     ].filter(i => !i.hidden)
     readonly property bool noResults: !!query && !loading && hits.length === 0
-    readonly property real firstRowY: 399.6 - (items.length - 1) * 32
+    readonly property real firstRowY: personal ? 10 : 399.6 - (items.length - 1) * 32
     readonly property real lineY: firstRowY - 9.3
 
     function ask() {
@@ -76,7 +80,7 @@ Popup {
         loading = true
         backend.driveAction(tag + seq + ":attach_suggest", "{}", JSON.stringify({ query: query, chat_id: chatId, context: context }))
     }
-    onOpened: { field.text = ""; query = ""; hits = []; ask(); field.forceActiveFocus() }
+    onOpened: { field.text = ""; query = ""; hits = []; if (personal) return; ask(); field.forceActiveFocus() }
     function act(key) {
         close()
         if (key === "cloud") attachCloud()
@@ -96,6 +100,7 @@ Popup {
 
     Rectangle {
         id: box
+        visible: !pop.personal
         x: 10; y: 7; width: 285; height: 32; radius: 4
         color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
         Rectangle {
@@ -178,7 +183,7 @@ Popup {
 
     // No recent suggestions yet.
     Item {
-        visible: !pop.query && !pop.loading && pop.hits.length === 0
+        visible: !pop.personal && !pop.query && !pop.loading && pop.hits.length === 0
         y: 44; width: pop.width; height: pop.lineY - 44
         Column {
             anchors.centerIn: parent
@@ -248,7 +253,7 @@ Popup {
     }
 
     Rectangle {
-        visible: !pop.noResults
+        visible: !pop.noResults && !pop.personal
         y: pop.lineY; width: pop.width; height: Math.max(0.67, 1 / Screen.devicePixelRatio)
         color: theme.divider
     }
@@ -268,7 +273,7 @@ Popup {
             Text {
                 x: 35; anchors.verticalCenter: parent.verticalCenter
                 text: row.modelData.label
-                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(row, theme.pick("#424242", "#D6D6D6", "#FFFFFF"))
+                font.family: theme.font; font.pixelSize: 14; font.weight: pop.personal ? Font.Normal : Font.DemiBold; color: theme.onFill(row, theme.pick("#424242", "#D6D6D6", "#FFFFFF"))
             }
             HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: pop.act(row.modelData.key) }

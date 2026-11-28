@@ -1,11 +1,11 @@
 ---
 id: TASK-0293
 title: 'Personal accounts: chat list, messages and chat requests'
-status: To Do
+status: In Progress
 assignee:
-  - '@tperB'
+  - '@tperF'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T06:40:00Z'
+updated_date: '2026-11-28T08:13:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -24,7 +24,7 @@ Personal accounts use the consumer chat service (msgapi.teams.live.com) with con
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The chat list, reading, sending, editing, deleting, reactions and attachments work for 1:1 and group chats with a personal account, with Teams' layout
+- [x] #1 The chat list, reading, sending, editing, deleting, reactions and attachments work for 1:1 and group chats with a personal account, with Teams' layout
 - [x] #2 New 1:1 and group chats can be started by name, email or phone, as Teams for personal use does
 - [x] #3 Chat requests show with Preview, Accept and Block as on Teams desktop, and the sender sees the pending state
 - [x] #4 Features Microsoft retired for personal accounts (polls, tasks, location sharing, SMS) are not shown
@@ -37,6 +37,7 @@ Personal accounts use the consumer chat service (msgapi.teams.live.com) with con
 2. Engine: consumer chat service front door and product headers, middle-tier bearer + Skype token, personal short profiles (fetchShortProfile / fetchFederated), pictures with the imageauth cookie, consumer CSA folders, searchUsers people search, chat creation through the groups service, accept/block with the Skype token.
 3. UI: Teams free chat list (no Quick views / Teams and channels, pills Unread / Meeting chats / Unmuted, Requests row and pane), request view variant, work-user header/banner, compose toolbar and + menu, tabs.
 4. Live-check in OST Personal 2 on testpc2 beside Teams desktop; Personal 1 on the web as the other side.
+5. AC #1 attachments (with TASK-0300, same branch): files and photos sent as Teams free does (OneDrive Chat Files, anyone edit link, picture previews in the media store).
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -57,6 +58,8 @@ Personal accounts use the consumer chat service (msgapi.teams.live.com) with con
 Built so far: personal accounts' chat list (Teams free sections, pills, Requests row and pane), reading, sending, editing, deleting and reactions in 1:1 and group chats, new 1:1 and group chats by name, email or phone (searchUsers, groups service), chat requests with Preview, Accept and Block (1:1 and group) and the sender's start card, and the retired features (polls, tasks, apps, location, SMS) left out; verified live (PR #81). Missing: AC #1's attachments, i.e. sending files and photos in a personal chat as Teams free does (OneDrive "Anyone with the link" sharing; the Photos tab is on TASK-0300). The personal window keeps OST's default app bar (Teams free's rail is TASK-0297). (2026-11-28)
 
 - 2026-11-28 coordinator follow-up: the personal window's rail drew Teams free's app icons as black squares once this PR's middle-tier auth let aggregatedEntitlements answer; app_bar::load now refuses for personal accounts, so the window keeps OST's default bar as before (Teams free's rail: TASK-0297). Live (testpc2, fresh OST Personal 2 sign-in, build of 67a09488's code): the rail draws Activity, Chat, Calendar, Calls, OneDrive, Apps and More icons; the 1:1 with OST Personal 1 is named in full.
+
+- 2026-11-28 (tperF, with TASK-0300 on branch task-0300-0293-personal-files): attachments in personal chats now work as Teams free sends them (OneDrive Chat Files upload, anyone edit link, picture previews, cloud files, Download, Open in Browser); verified live between OST Personal 2 in OST (testpc2) and OST Personal 1 on teams.live.com.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

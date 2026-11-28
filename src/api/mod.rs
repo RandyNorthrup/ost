@@ -64,6 +64,7 @@ pub mod messages;
 pub mod msgactions;
 pub mod office_open;
 pub mod outbox;
+pub mod personal_files;
 pub mod personal_settings;
 pub mod places;
 pub mod playlists;

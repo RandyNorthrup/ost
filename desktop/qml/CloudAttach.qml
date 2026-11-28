@@ -85,7 +85,7 @@ Item {
     readonly property alias picker: cloudPicker
     AttachMenu {
         id: attachMenu
-        onAttachCloud: { cloudPicker.entry = "home"; cloudPicker.open() }
+        onAttachCloud: { if (backend.personalAccount) { personalPicker.open(); return } cloudPicker.entry = "home"; cloudPicker.open() }
         onBrowseChannels: { cloudPicker.entry = { team: ca.teamName, team_id: ca.teamId, channel_id: ca.chatId }; cloudPicker.open() }
         onUpload: ca.uploadRequested()
         onPicked: f => ca.attach([f])
@@ -94,6 +94,12 @@ Item {
         id: cloudPicker
         onAttached: files => ca.attach(files)
     }
+    // A personal account's OneDrive (Teams free's picker).
+    PersonalCloudPicker {
+        id: personalPicker
+        onAttached: files => ca.attach(files)
+    }
+    readonly property alias personalPickerView: personalPicker
 
     // Link settings.
     property string linkKey: ""

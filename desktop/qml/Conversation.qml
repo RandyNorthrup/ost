@@ -395,7 +395,7 @@ Rectangle {
         if (i < 0 || i >= builtInTabCount) return n
         return ({ Conversation: qsTr("Conversation"), Posts: qsTr("Posts"), Shared: qsTr("Shared"), Chat: qsTr("Chat"), Notes: qsTr("Notes"),
                   Recap: qsTr("Recap"), Storyline: qsTr("Storyline"), Attendance: qsTr("Attendance"), "Breakout Rooms": qsTr("Breakout Rooms"),
-                  "Q&A": qsTr("Q&A"), "Meeting Whiteboard": qsTr("Meeting Whiteboard") })[n] || n
+                  "Q&A": qsTr("Q&A"), "Meeting Whiteboard": qsTr("Meeting Whiteboard"), Files: qsTr("Files"), Photos: qsTr("Photos") })[n] || n
     }
     function tabLabelOf(name) { const i = tabNames.indexOf(name); return i >= 0 ? tabLabel(i) : name }
     readonly property var tabNames: isChannel ? (channelTabs.length ? channelTabs.map((t, i) => i === 0 && threadsLayout ? "Conversation" : t.name) : [threadsLayout ? "Conversation" : "Posts", "Shared"])
@@ -403,9 +403,9 @@ Rectangle {
         // notes chat, which has Notes but no Recap; Teams on the web,
         // 2026-11-16). Then the chat's own tabs (its thread properties),
         // in their order.
-        // A personal account's chats (Teams free): Chat and Files (its
-        // Photos tab is TASK-0300's); none with a work user.
-        : personal && !isMeetingChat ? (externalOneOnOne ? [] : ["Chat", "Files"])
+        // A personal account's chats (Teams free): Chat, Files and Photos;
+        // none with a work user.
+        : personal && !isMeetingChat ? (externalOneOnOne ? [] : ["Chat", "Files", "Photos"])
         : (isSelf ? ["Chat", "Shared", "Notes", "Storyline"] : isMeetingChat ? meetingTabNames : isGroup ? ["Chat", "Shared", "Notes", "Recap"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"])
             .concat(channelTabs.map(t => t.name))
     readonly property bool isMeetingChat: chatId.indexOf("19:meeting_") === 0
@@ -1099,6 +1099,7 @@ Rectangle {
     function chatAppsForTest() { return chatApps }
     function insertTextForTest(t) { compose.insertText(t) }
     onChatIdChanged: {
+        compose.storageFull = false
         requestPreview = false
         requestBusy = false
         meetingsOpen = false
@@ -3730,10 +3731,12 @@ Rectangle {
                 }
                 // File cards (FileCard: Teams' card with its location, Share
                 // and More actions over the preview) and channel tab links.
-                Column {
+                // (Teams free puts a message's files side by side.)
+                Grid {
                     id: fileCol
                     x: bubble.pad; y: bubble.filesTop
                     spacing: 8
+                    columns: root.personal ? Math.max(1, Math.min(bubble.files.length, Math.floor((msg.maxBubble - 2 * bubble.pad + 8) / 262))) : 1
                     Repeater {
                         model: bubble.files
                         Item {
@@ -3742,18 +3745,54 @@ Rectangle {
                             readonly property string t: (modelData.file_type || "").toLowerCase()
                             readonly property bool tabLink: t === "deeplink"
                             readonly property var linked: tabLink ? root.linkedTabs.find(x => x.id === modelData.item_id) || null : null
-                            width: tabLink ? tabCard.width : fileCard.width
-                            height: tabLink ? tabCard.height : fileCard.height
+                            // Teams free shows a picture file as the picture
+                            // (its media store preview).
+                            readonly property bool photo: root.personal && !!modelData.preview_url
+                            width: tabLink ? tabCard.width : photo ? photoBox.width : fileCard.width
+                            height: tabLink ? tabCard.height : photo ? photoBox.height : fileCard.height
+                            // A picture file (Teams free, measured on
+                            // teams.live.com 2026-11-28): fitted to 180 tall
+                            // (an 800 x 600 one showed 240 x 180), a smaller
+                            // one at its own size in a 180 x 180 #F0F0F0 box;
+                            // clicking opens the picture viewer.
+                            Rectangle {
+                                id: photoBox
+                                visible: fc.photo
+                                readonly property real pw: fc.modelData.preview_width || photoPic.implicitWidth || 180
+                                readonly property real ph: fc.modelData.preview_height || photoPic.implicitHeight || 180
+                                readonly property real scale: Math.min(1, 180 / ph, (msg.maxBubble - 2 * bubble.pad) / pw)
+                                width: Math.max(180, pw * scale); height: 180
+                                radius: 4
+                                color: theme.pick("#F0F0F0", "#292929", "#000000")
+                                clip: true
+                                Image {
+                                    id: photoPic
+                                    anchors.centerIn: parent
+                                    width: photoBox.pw * photoBox.scale; height: photoBox.ph * photoBox.scale
+                                    source: fc.photo ? fc.modelData.preview_local || "" : ""
+                                    fillMode: Image.PreserveAspectFit
+                                    asynchronous: true
+                                }
+                                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                TapHandler {
+                                    onTapped: if (fc.modelData.preview_local) root.openImageViewer([{ local_path: fc.modelData.preview_local, width: photoBox.pw, height: photoBox.ph }], 0, msg.modelData)
+                                }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: fc.modelData.name || qsTr("Image")
+                            }
                             FileCard {
                                 id: fileCard
-                                visible: !fc.tabLink
-                                width: Math.min(320, msg.maxBubble - 2 * bubble.pad)
+                                visible: !fc.tabLink && !fc.photo
+                                compact: root.personal
+                                width: Math.min(root.personal ? 254 : 320, msg.maxBubble - 2 * bubble.pad)
                                 file: fc.modelData
                                 thumbnail: {
                                     root.thumbsRev
-                                    return fc.tabLink ? "" : backend.fileThumbnail(fc.modelData.object_url || "")
+                                    return fc.tabLink || root.personal ? "" : backend.fileThumbnail(fc.modelData.object_url || "")
                                 }
-                                onOpenRequested: root.openFileRequested(fc.modelData)
+                                // Teams free opens a file in the browser (its
+                                // OneDrive page, through the chat's link).
+                                onOpenRequested: root.personal ? backend.openExternal(fc.modelData.share_url || fc.modelData.object_url) : root.openFileRequested(fc.modelData)
                                 onShareRequested: root.fileCardAct(fc.modelData, "Share")
                                 onMenuRequested: anchor => root.openFileCardMenu(fc.modelData, anchor)
                                 Component.onCompleted: if (!fc.tabLink) root.cardViewsForTest[fc.modelData.object_url] = fileCard
@@ -4552,7 +4591,7 @@ Rectangle {
     // Shared: the files and links in this chat.
     Item {
         id: sharedPane
-        visible: (root.tab === "Shared" && !root.isChannel) || root.tab === "Files"
+        visible: (root.tab === "Shared" && !root.isChannel) || (root.tab === "Files" && !root.personal)
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
         readonly property var files: root.messages.reduce((a, m) => a.concat((m.files || []).map(f => Object.assign({ from: m.sender, time: m.time }, f))), []).reverse()
         readonly property var links: root.messages.reduce((a, m) => {
@@ -4627,6 +4666,32 @@ Rectangle {
                     }
                 }
             }
+        }
+    }
+    // A personal account's Files and Photos tabs (Teams free's, from its
+    // message search; PersonalFilesTab, PersonalPhotosTab).
+    function personalFilesForTest() { return personalFilesLoader.item }
+    function personalPhotosForTest() { return personalPhotosLoader.item }
+    Loader {
+        id: personalFilesLoader
+        active: root.personal && root.tab === "Files" && !root.isChannel
+        visible: active
+        anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
+        sourceComponent: PersonalFilesTab {
+            chatId: root.chatId
+            stamp: t => root.stamp(t)
+            onToastRequested: d => root.toastRequested(d)
+        }
+    }
+    Loader {
+        id: personalPhotosLoader
+        active: root.personal && root.tab === "Photos" && !root.isChannel
+        visible: active
+        anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
+        sourceComponent: PersonalPhotosTab {
+            chatId: root.chatId
+            dayLabel: t => root.dayLabel(t)
+            onOpenImage: (list, i, m) => root.openImageViewer(list, i, m)
         }
     }
     // A channel's Page: Teams' header and the page in Loop's own page
@@ -5363,6 +5428,12 @@ Rectangle {
         target: backend
         function onThumbnailReady(url) { root.thumbsRev++ }
         function onDriveActionDone(op, result, error) {
+            // A full OneDrive (Teams free): the compose box's banner.
+            if (op === "personal-storage-full") {
+                const v = JSON.parse(result || "{}")
+                if (v.chat === root.chatId) compose.storageFull = true
+                return
+            }
             if (!op.startsWith(root.cardTag)) return
             const kind = op.slice(root.cardTag.length)
             const v = result ? JSON.parse(result) : null
@@ -5392,6 +5463,10 @@ Rectangle {
         return root.cardMenuFile && root.cardMenuFile.object_url === url ? root.cardMenuFile : null
     }
     function cardMenuItems(file) {
+        // Teams free's menu: Open in Browser, Download, Copy link.
+        if (root.personal)
+            return [{ act: "Open in Browser", label: qsTr("Open in Browser"), icon: "globe-20" }, { act: "Download", label: qsTr("Download"), icon: "arrow-download-20" },
+                    { act: "Copy link", label: qsTr("Copy link"), icon: "link-20" }]
         const known = root.cardItems[file.object_url]
         const fav = !!known && known.favorite
         return [{ act: "Open in Browser", label: qsTr("Open in Browser"), icon: "globe-20" }, { act: "Download", label: qsTr("Download"), icon: "arrow-download-20" },
@@ -5399,6 +5474,7 @@ Rectangle {
                 fav ? { act: "Unfavorite", label: qsTr("Unfavorite"), icon: "star-20-filled" } : { act: "Favorite", label: qsTr("Favorite"), icon: "star-20" }]
     }
     function lookUpCard(file) {
+        if (root.personal) return
         if (file.object_url) backend.driveAction(root.cardTag + "card_item", "{}", JSON.stringify({ url: file.object_url }))
     }
     /// Teams' menu, its top-right under the ··· button.
@@ -5421,6 +5497,8 @@ Rectangle {
         if (label === "Open in Browser") { backend.openExternal(file.share_url || file.object_url); return }
         if (label === "Download") { backend.downloadFile(JSON.stringify(file)); return }
         if (label === "Favorite" || label === "Unfavorite") { root.setCardFavorite(file, label === "Favorite"); return }
+        // Teams free copies the chat's link.
+        if (label === "Copy link" && root.personal) { backend.copyText(file.share_url || file.object_url); root.toastRequested({ text: qsTr("Link copied"), intent: "success" }); return }
         // Share and Copy link need the file's SharePoint address.
         const known = root.cardItems[file.object_url]
         if (!known) { root.cardPending = { file: file, label: label }; root.lookUpCard(file); return }
@@ -5462,6 +5540,7 @@ Rectangle {
     function addFiles(urls) {
         const paths = urls.map(u => decodeURIComponent(u.toString().replace(/^file:\/\//, "")))
         pendingFiles = pendingFiles.concat(paths.filter(p => pendingFiles.indexOf(p) < 0))
+        compose.storageFull = false
     }
     // Send what's in the compose box: text, files, or both.
     function sendCompose() {
@@ -5846,6 +5925,9 @@ Rectangle {
         onCloudRemoved: key => cloudAttach.remove(key)
         onCloudLinkRequested: key => cloudAttach.openLink(key)
         onAttachRequested: a => root.openAttach(a)
+        // Teams free's Attach media: the pictures go as files (OneDrive and
+        // their media store previews).
+        onMediaPicked: urls => root.addFiles(urls)
         // Record video clip: in a chat's or channel's own compose box.
         canRecordClip: root.canRecordClips && !root.externalChat
         onRecordClipRequested: { root.clipBox = compose; clipRecorder.openFor(root.chatId) }
