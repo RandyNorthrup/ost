@@ -103,6 +103,7 @@ Rectangle {
     function poll() {
         if (hasNewUpdates || loading) return
         pollReq++
+        console.info("DISCOVER poll", pollReq)
         // (Channel "poll" marks the answer, a failed one too.)
         backend.channelAction("discover-feed", "", "poll", JSON.stringify({ continuation: "", req: pollReq }))
     }
@@ -147,6 +148,7 @@ Rectangle {
                 const first = (page.items || [])[0]
                 if (!first) return
                 if (first.post_id !== root.topPostId) root.hasNewUpdates = true
+                console.info("DISCOVER poll answered", page.req, "new updates", root.hasNewUpdates)
                 root.topPostId = first.post_id
             } else if (r.op === "discover-feed") {
                 // Only the latest load's answer counts (an older visit's, or
