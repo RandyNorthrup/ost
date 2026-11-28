@@ -488,7 +488,7 @@ Item {
         formLayer.visible = true
         form.detail = ({})
         form.openEvent(ev, !!ev.is_organizer, scope || "")
-        calendarAction("detail", JSON.stringify({ id: ev.id }))
+        calendarAction("detail", JSON.stringify({ id: ev.id, calendar: ev.calendar_id || "" }))
         // Outlook's form reads the rest from Outlook (GetCalendarEvent) and
         // a Teams meeting's options (Facilitator).
         if (ev.is_organizer && !ev.channel_id) {
@@ -510,7 +510,13 @@ Item {
     property string mtTimeZone: ""
     function actionDone(op, result, error) {
         const r = result ? JSON.parse(result) : {}
-        if (op === "detail" && !error && formLayer.visible && form.event && r.id === form.event.id) form.detail = r
+        if (op === "detail" && !error && formLayer.visible && form.event && r.id === form.event.id) {
+            // A team calendar's meeting invites the team itself: Teams'
+            // page tracks the people.
+            const team = String(form.event.group_address || "").toLowerCase()
+            if (team) r.attendees = (r.attendees || []).filter(a => String(a.address || "").toLowerCase() !== team)
+            form.detail = r
+        }
         else if (op === "outlookEvent") { if (!error && form.event && r.id === form.event.id) form.outlookInfo = r }
         else if (["findTimes", "attachFile", "deleteAttachment", "attachmentFile", "eventOptions", "setEventOptions", "eventFacilitator",
                   "uploadShare", "shareLink", "graphics", "graphicsThemes", "graphicsFile", "emailReminders", "newCategory",
@@ -543,7 +549,7 @@ Item {
         else if (op === "deleteView" && !error) { savedViews = savedViews.filter(x => x.id !== r.id); if (currentViewId === r.id) currentViewId = "" }
         else if (op === "propose" && !error) details.close()
         else if (op === "availability" && !error) { form.freeBusy = r.freeBusy || {}; if (r.timeZone) mtTimeZone = r.timeZone }
-        else if ((op === "schedule" || op === "update" || op === "cancel") && !error) formLayer.visible = false
+        else if ((op === "schedule" || op === "update" || op === "cancel" || op === "addToMyCalendar") && !error) formLayer.visible = false
         else if (op === "joinById" && !error && r.joinUrl) root.joinMeeting(r.joinUrl, r.subject || qsTr("Meeting"))
         else if (op === "meetNow" && !error && r.joinUrl) {
             if (meetNowDialog.linkOnly) { meetNowDialog.link = r.joinUrl } else { meetNowDialog.close(); root.startMeetNow(r.joinUrl, r.subject || qsTr("Meeting")) }
@@ -1925,6 +1931,41 @@ Item {
     /// Show a meeting's card (from its chat's Meeting details): its week,
     /// then its card (with `page`, its event page: a channel meeting's
     /// calendar card). False when the calendar doesn't have it.
+    /// Test hook (--meetings-pane-test): the event page's event.
+    function addToCalendarForTest() { form.addToCalendar() }
+    function openPageForTest() { return { open: formLayer.visible, subject: form.event.subject || "", calendar: form.event.calendar_id || "", readOnly: form.readOnly, team: form.teamCalendarEvent, body: (form.detail.body_html || "").length } }
+    /// A meeting from a channel's Meetings pane (the team's group
+    /// calendar's): its page from your calendar when it is in yours (by
+    /// iCalUId, once its week has loaded), else the team calendar's.
+    function showChannelMeeting(groupId, m) {
+        const e = root.events.find(x => m.ical_uid && x.ical_uid === m.ical_uid)
+        const d = new Date(m.start)
+        if (e || isNaN(d)) { pendingMeeting = null; if (e) { root.start = root.startFor(new Date(e.start_utc)); openPage(e, "") } else showGroupMeeting(groupId, m); return }
+        const s = root.startFor(d)
+        if (s.getTime() === root.start.getTime()) { pendingMeeting = null; showGroupMeeting(groupId, m); return }
+        pendingMeeting = { joinUrl: "", icalUid: m.ical_uid || "", page: true, group: groupId, meeting: m }
+        root.start = s
+    }
+    /// A channel meeting that isn't in your calendar (the Meetings pane's
+    /// meetings are the team's group calendar's): its page from the team's
+    /// calendar, as Teams opens a channel event (calendarType Channel), with
+    /// Add to calendar in place of the answers.
+    function showGroupMeeting(groupId, m) {
+        if (!groupId || !m || !m.id) return
+        const s = new Date(m.start)
+        if (!isNaN(s)) root.start = root.startFor(s)
+        const j = /meetup-join\/([^/?]+)(?:\/([0-9]+))?/.exec(m.join_url || "")
+        openPage({
+            id: m.id, subject: m.subject || "", start_utc: m.start, end_utc: m.end, is_all_day: false,
+            location: m.location || "", organizer: m.organizer_name || "", organizer_address: m.organizer_address || "",
+            is_online_meeting: !!m.join_url, join_url: m.join_url || null, show_as: "busy", preview: "",
+            is_organizer: false, ical_uid: m.ical_uid || "", event_type: "singleInstance", series_master_id: "",
+            response: "none", response_requested: false, attendees: [], is_cancelled: !!m.cancelled,
+            categories: [], sensitivity: "normal", channel_id: j ? decodeURIComponent(j[1]) : "",
+            channel_message_id: j && j[2] ? j[2] : "", calendar_id: "group:" + groupId,
+            group_address: m.group_address || ""
+        }, "")
+    }
     function showMeeting(joinUrl, icalUid, startIso, page) {
         const e = root.events.find(x => (joinUrl && x.join_url === joinUrl) || (icalUid && x.ical_uid === icalUid))
         if (e) {
@@ -1945,6 +1986,8 @@ Item {
             const p = pendingMeeting
             const e = root.events.find(x => (p.joinUrl && x.join_url === p.joinUrl) || (p.icalUid && x.ical_uid === p.icalUid))
             if (e) { pendingMeeting = null; if (p.page) openPage(e, ""); else details.show(e, null) }
+            // (A channel meeting not in your calendar: the team's copy.)
+            else if (p.group) { pendingMeeting = null; showGroupMeeting(p.group, p.meeting) }
         }
         // Keep an open card on the event's new state (after an answer).
         if (details.visible && details.ev.id) {
@@ -3472,6 +3515,7 @@ Item {
             onJoin: root.joinMeeting(form.event.join_url, form.event.subject || qsTr("Meeting"))
             onOpenChat: root.openMeetingChat(form.event.join_url, form.event.subject || qsTr("Meeting"))
             onCopyLink: { textCopy.text = form.event.join_url || ""; textCopy.selectAll(); textCopy.copy() }
+            onAddToCalendar: root.calendarAction("addToMyCalendar", JSON.stringify({ group: String(form.event.calendar_id || "").replace(/^group:/, ""), id: form.event.id }))
         }
     }
     /// A command of the event page (Outlook's event form, MeetingForm's

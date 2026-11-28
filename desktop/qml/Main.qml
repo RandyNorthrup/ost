@@ -15119,6 +15119,78 @@ Window {
         }
     }
 
+    // --channel-window-test with --open-chat=<channel id> --shots=<dir>
+    // (TASK-0374): the channel's pop-out window's header (cw-hdr.png), its
+    // meeting menu (cw-meet.png), people popover (cw-people.png) and View
+    // meetings (cw-meetings.png); logged as CWIN; then quit.
+    Timer {
+        running: Qt.application.arguments.indexOf("--channel-window-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        property var w: null
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            if (!w) { w = window.openChannelWindow(id); return }
+            const log = (tag, what) => console.warn("CWIN", tag, JSON.stringify(w.headerForTest(what || "")))
+            if (step === 1) { log("header"); w.grabForTest(dir + "cw-hdr.png") }
+            else if (step === 2) log("meet", "meet")
+            else if (step === 3) w.grabForTest(dir + "cw-meet.png")
+            else if (step === 4) { log("close", "close"); log("people", "people") }
+            else if (step === 5) { log("people loaded"); w.grabForTest(dir + "cw-people.png") }
+            else if (step === 6) { log("close", "close"); log("view", "view") }
+            else if (step === 8) { log("meetings"); w.grabForTest(dir + "cw-meetings.png") }
+            else if (step === 9) { w.close(); Qt.quit() }
+            step++
+        }
+    }
+
+    // --meetings-pane-test with --open-chat=<channel id> --shots=<dir>
+    // (TASK-0374): the channel's Meetings pane (mp-pane.png), its Date
+    // popup (mp-date.png), the Organizer suggestions (mp-org.png) and a
+    // search ("ost", mp-search.png), the first meeting's More options
+    // its filters (OST Test 1, This week, Nov 1 to today; mp-range.png), and the first
+    // meeting's page (mp-page.png); logged as MPANE; then quit.
+    Timer {
+        running: Qt.application.arguments.indexOf("--meetings-pane-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                if (ch) { rail.current = "chat"; backend.selectChat(ch.id, ch.name) }
+                return
+            }
+            const log = (tag, what, arg) => console.warn("MPANE", tag, JSON.stringify(channelMeetings.forTest(what || "", arg || "")))
+            if (step === 0) { if (!conversation.teamName) return; conversation.openMeetings() }
+            else if (step === 2) { log("pane"); shot("mp-pane") }
+            else if (step === 3) log("date", "date")
+            else if (step === 4) shot("mp-date")
+            else if (step === 5) { log("close", "close"); log("organizer", "organizer") }
+            else if (step === 6) { log("suggestions"); shot("mp-org") }
+            else if (step === 7) log("type", "type", "ost")
+            else if (step === 8) { log("search"); shot("mp-search") }
+            else if (step === 9) log("pick", "pick", "OST Test 1")
+            else if (step === 10) { log("by OST Test 1"); shot("mp-picked"); log("week", "week") }
+            else if (step === 11) { log("this week"); log("range", "range", "2026-11-01T00:00:00") }
+            else if (step === 12) { log("Nov 1 to today"); shot("mp-range") }
+            else if (step === 13) log("clear", "clear")
+            else if (step === 15) {
+                const m = channelMeetings.meetings[0]
+                if (!m) { console.warn("MPANE no meetings"); Qt.quit(); return }
+                window.openChannelMeeting(channelMeetings.withOrganizer(m), conversation.teamId)
+            }
+            else if (step === 18) { console.warn("MPANE page", rail.current, JSON.stringify(calendarView.openPageForTest())); shot("mp-page")
+                // --add-to-calendar: its Add to calendar.
+                if (Qt.application.arguments.indexOf("--add-to-calendar") >= 0) calendarView.addToCalendarForTest() }
+            else if (step === 22) Qt.quit()
+            step++
+        }
+    }
+
     // --thread-window-view=<post id> with --open-chat=<channel id>
     // --shots=<dir>: open that post's window, capture it at the top
     // (view-top.png) and with the newest reply's hover bar up (view-bar.png).
@@ -18036,6 +18108,12 @@ Window {
     }
     // A channel in a window of its own (its menu's Open in new window), one
     // per channel: opening it again brings it forward.
+    /// A meeting from a channel's Meetings pane: its page in Calendar, from
+    /// your calendar when it is there, else from the team's (`group`).
+    function openChannelMeeting(m, group) {
+        rail.current = "calendar"
+        calendarView.showChannelMeeting(group, m)
+    }
     Component { id: channelWindowComponent; ChannelWindow {} }
     property var channelWindows: ({})
     function openChannelWindow(channelId) {
@@ -18051,6 +18129,20 @@ Window {
         // Schedule a meeting: Teams' form with this channel filled in.
         w.scheduleMeeting.connect(() => { rail.current = "calendar"; calendarView.newChannelMeeting(w.teamId, w.teamName, w.channelId, w.channelName) })
         w.manageChannel.connect(id => window.openManageChannel(id))
+        w.manageTeamMembers.connect(id => window.openManageTeam(id, "members"))
+        w.openAgentStore.connect(id => agentStore.show(id, true))
+        w.openAppDetails.connect(id => appDetails.show(id))
+        w.openMeeting.connect(m => { window.raise(); window.requestActivate(); window.openChannelMeeting(m, w.teamId) })
+        // Chat with participants: the meeting's conversation (a channel
+        // meeting's is its post, which the window shows).
+        w.openMeetingChat.connect(m => {
+            const j = /meetup-join\/([^/?]+)(?:\/([0-9]+))?/.exec(m.join_url || "")
+            if (!j) return
+            if (decodeURIComponent(j[1]) === w.channelId && j[2]) { w.meetingsOpen = false; w.showPost(j[2]); return }
+            window.raise(); window.requestActivate()
+            rail.current = "chat"
+            backend.selectChat(decodeURIComponent(j[1]), m.subject || "")
+        })
         w.closing.connect(() => { const rest = Object.assign({}, window.channelWindows); delete rest[channelId]; window.channelWindows = rest; w.destroy() })
         w.show()
         return w
@@ -19691,13 +19783,14 @@ Window {
         readonly property bool shown: conversation.visible && conversation.isChannel && conversation.meetingsOpen
         visible: shown
         anchors { top: appBanner.bottom; bottom: statusBar.top; right: tabConversation.left }
-        width: shown ? 360 : 0
+        width: shown ? theme.endSlotWidth(window.width, chatList.x + chatList.width) : 0
         teamId: conversation.isChannel ? conversation.teamId : ""
         channelId: conversation.isChannel ? conversation.chatId : ""
         onClosed: conversation.meetingsOpen = false
-        // A meeting's details open in Calendar when it is in yours (the
-        // pane's meetings are the team's group calendar's).
-        onOpenMeeting: m => { if (channelMeetings.inMyCalendar(m)) conversation.openMeetingDetails(m.join_url || "", m.ical_uid || "", m.start || "") }
+        // A meeting's details: in Calendar when it is in yours, otherwise
+        // the team calendar's event (Teams' channel event details).
+        onOpenMeeting: m => window.openChannelMeeting(m, conversation.teamId)
+        onEditMeeting: m => window.openChannelMeeting(m, conversation.teamId)
         // Chat with participants: the meeting's conversation (a channel
         // meeting's is its post in the channel).
         onOpenChat: m => {

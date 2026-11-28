@@ -113,6 +113,16 @@ QtObject {
     /// month and day names, AM/PM and digits: Arabic-Indic in ar-SA, as
     /// Teams' Intl formatting shows them).
     function fmtTime(d, f) { return new Date(d).toLocaleTimeString(Qt.locale(), f) }
+    /// Teams' end slot (the contextual panes on the right, such as View
+    /// meetings): its width for the window's (--slot-width per breakpoint,
+    /// measured in Teams on the web 2026-11-27: 1280 → 360, 1600 → 420,
+    /// 1700 → 480, 1920 → 600), narrowed so the main area keeps its 320
+    /// (--main-slot-min-width) beside what is left of it.
+    function endSlotWidth(windowWidth, leftWidth) {
+        const w = windowWidth
+        const slot = w >= 2560 ? 720 : w >= 1920 ? 600 : w >= 1680 ? 480 : w >= 1440 ? 420 : w >= 947 ? 360 : 320
+        return Math.max(0, Math.min(slot, w - leftWidth - 320))
+    }
     function fmtDate(d, f) { return new Date(d).toLocaleDateString(Qt.locale(), f) }
     function fmtDateTime(d, f) { return new Date(d).toLocaleString(Qt.locale(), f) }
     function time(d) { return fmtTime(d, regional.shortTime) }
