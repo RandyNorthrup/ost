@@ -27,7 +27,8 @@ enum Commands {
     /// Signs in with a device code. A profile that signs in through OST
     /// desktop's browser sign-in (which the desktop's embedded apps need)
     /// isn't switched: run ost-desktop to sign it in again, or pass
-    /// --device-code.
+    /// --device-code. --personal signs in a personal Microsoft account
+    /// (outlook.com, hotmail.com, live.com and the like).
     Login {
         /// Force interactive login even if cached token exists
         #[arg(short, long)]
@@ -36,6 +37,10 @@ enum Commands {
         /// desktop's browser sign-in (switches the profile to the device code)
         #[arg(long)]
         device_code: bool,
+        /// Sign in a personal Microsoft account (Teams free) with a device
+        /// code, as Teams' own app for personal accounts does
+        #[arg(long)]
+        personal: bool,
     },
 
     /// Log out and clear cached credentials
@@ -172,9 +177,13 @@ async fn main() -> Result<()> {
         .init();
 
     match cli.command {
-        Commands::Login { force, device_code } => {
+        Commands::Login {
+            force,
+            device_code,
+            personal,
+        } => {
             tracing::info!("Starting authentication flow...");
-            auth::login(force, device_code).await?;
+            auth::login(force, device_code, personal).await?;
         }
         Commands::Logout => {
             tracing::info!("Logging out...");

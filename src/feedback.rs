@@ -219,8 +219,10 @@ pub fn scrub_secrets(text: &str) -> String {
                 format!(r#"(?i)([?&#;]|\b)({PARAMS})=[^&#\s"'<>]+"#),
                 "$1$2=<redacted>",
             ),
+            // JWTs (three parts) and JWEs (five: a personal account's
+            // service tokens).
             (
-                r"eyJ[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]*){1,2}".to_string(),
+                r"eyJ[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]*){1,4}".to_string(),
                 "<token>",
             ),
             (r"\b[01]\.A[A-Za-z0-9_.-]{40,}".to_string(), "<token>"),
@@ -483,6 +485,49 @@ mod tests {
             scrub_secrets("WARN Authentication failed: HTTP 401"),
             "WARN Authentication failed: HTTP 401"
         );
+    }
+
+    #[test]
+    fn personal_accounts_tokens_never_reach_the_log() {
+        // The shapes a personal account's sign-in gives (captured
+        // 2026-11-27): JWE service tokens with five parts, MSA tickets,
+        // MSA refresh tokens, the consumer authz's answer.
+        let part = |c: char, n: usize| c.to_string().repeat(n);
+        let jwe = format!(
+            "eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2Q0JDLUhTNTEyIiwiemlwIjoiREVGIn0..{}.{}.{}",
+            part('i', 22),
+            part('C', 120),
+            part('t', 43)
+        );
+        let lines = [
+            format!("x-skypetoken {jwe}"),
+            format!("minted {jwe} for mtsvc"),
+            format!("Authorization: Bearer {jwe}"),
+            format!("Graph ticket Ew{}=", part('B', 140)),
+            "refresh M.C540_SN1.0.U.-CsecretMSArefreshTokenXXXXXXXXXXXXXX!fz*abc$".to_string(),
+            format!(
+                r#"{{"skypeToken":{{"skypetoken":"{jwe}","expiresIn":28799,"skypeid":"live:.cid.ca2738c364862c6"}}}}"#
+            ),
+            format!(
+                r#"{{"access_token":"{jwe}","refresh_token":"M.C540_x","id_token":"eyJabc.def.ghi"}}"#
+            ),
+        ];
+        for (i, l) in lines.iter().enumerate() {
+            let s = scrub_secrets(l);
+            for marker in [
+                "eyJ",
+                "secret",
+                "CCCCCCCCCC",
+                "BBBBBBBBBB",
+                "tttttttttt",
+                "iiiiiiiiii",
+                "M.C540",
+            ] {
+                assert!(!s.contains(marker), "{marker} left in line {i}: {s}");
+            }
+        }
+        // The account's Skype ID isn't a secret and stays readable.
+        assert!(scrub_secrets(&lines[5]).contains("live:.cid.ca2738c364862c6"));
     }
 
     #[test]
