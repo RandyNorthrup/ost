@@ -1394,7 +1394,12 @@ fn backfill_suggestion(r: &Value) -> Value {
         s(&src["Preview"])
     };
     json!({
-        "From": { "MRI": e("FromSkypeInternalId"), "EmailAddress": src["Sender"]["EmailAddress"].clone() },
+        // (The sender: From, as the search page reads it, else Sender.)
+        "From": { "MRI": e("FromSkypeInternalId"), "EmailAddress": if src["From"]["EmailAddress"].is_object() {
+            src["From"]["EmailAddress"].clone()
+        } else {
+            src["Sender"]["EmailAddress"].clone()
+        } },
         "ThreadType": thread_type, "ThreadSubType": sub_type,
         "Topic": e("Topic"), "Team": s(&src["TeamName"]), "Channel": s(&src["ChannelName"]),
         "GroupId": s(&src["GroupId"]), "ClientThreadId": s(&src["ClientThreadId"]),
@@ -2028,7 +2033,7 @@ mod tests {
             { "Type": "Message", "HitHighlightedSummary": "The meeting &quot;OST CAL&quot; is cancelled",
               "Source": { "InternetMessageId": "1794919274462", "ClientThreadId": "19:7826@thread.tacv2", "DateTimeSent": "2026-11-17T12:41:14.462Z",
                 "DisplayTo": "OST Test Team", "TeamName": "OST Test Team", "ChannelName": "OST test channel", "GroupId": "g",
-                "Sender": { "EmailAddress": { "Name": "OST Test 1" } },
+                "From": { "EmailAddress": { "Name": "OST Test 1" } },
                 "Extensions": { "SkypeSpaces_ConversationPost_Extension_ThreadType": "topic", "SkypeSpaces_ConversationPost_Extension_FromSkypeInternalId": "8:orgid:me",
                   "SkypeSpaces_ConversationPost_Extension_ParentMessageId": "1794919204110" } } }
         ]}]}]});
@@ -2042,6 +2047,7 @@ mod tests {
         assert_eq!(rows[0]["prefix"], "OST: ");
         assert_eq!(rows[0]["icons"], json!(["mention"]));
         assert_eq!(rows[1]["place"], "OST Test Team > OST test channel");
+        assert_eq!(rows[1]["prefix"], "OST: ");
         assert_eq!(rows[1]["title"], "The meeting \"OST CAL\" is cancelled");
         assert_eq!(rows[1]["parent"], "1794919204110");
         assert_eq!(rows[1]["channel"], true);
