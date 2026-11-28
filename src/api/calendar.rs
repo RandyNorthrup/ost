@@ -264,6 +264,121 @@ async fn calendar_folders() -> Result<serde_json::Value> {
     .await
 }
 
+/// A Microsoft 365 group's calendar under Groups (`group:<group id>`).
+fn group_calendar(id: &str, name: &str) -> CalendarInfo {
+    CalendarInfo {
+        id: format!("group:{id}"),
+        name: name.to_string(),
+        section: "Groups".into(),
+        section_kind: "groups".into(),
+        group_id: "groups".into(),
+        ..Default::default()
+    }
+}
+
+/// Teams' hosted calendar asks Outlook for your groups' sets this way
+/// (GetUserUnifiedGroups; its HostedCalendarFunctionalBoot read on winpc
+/// and the request captured from it, TASK-0375): your favourites (FilterType 1), then the rest (2), each by
+/// SortType 4, newest first.
+fn user_unified_groups_request() -> serde_json::Value {
+    let set = |filter: i64| serde_json::json!({ "FilterType": filter, "SortType": 4, "SortDirection": "Descending" });
+    serde_json::json!({
+        "__type": "GetUserUnifiedGroupsJsonRequest:#Exchange",
+        "Header": { "__type": "JsonRequestHeaders:#Exchange", "RequestServerVersion": "V2018_01_08" },
+        "Body": {
+            "__type": "GetUserUnifiedGroupsRequest:#Exchange",
+            "RequestedGroupsSets": [set(1), set(2)],
+        },
+    })
+}
+
+/// The Groups section from Outlook's GetUserUnifiedGroups answer as the
+/// hosted calendar builds it (HostedCalendarFunctionalBoot, read on winpc
+/// 2026-11-27): every set's groups in order (favourites first), each one
+/// that has a mail address, a name and a mailbox, once. Outlook already
+/// leaves out what Teams doesn't list: for ost-test1, of three unified
+/// groups only OST Test Team (Secure Coast Network Solutions is hidden from
+/// Outlook clients; OST Test Community isn't returned either). OST reads a
+/// group's events from Graph, so it keys them by the directory id.
+fn unified_group_calendars(v: &serde_json::Value) -> Vec<CalendarInfo> {
+    let mut out: Vec<CalendarInfo> = Vec::new();
+    let sets = v
+        .pointer("/Body/GroupsSets")
+        .and_then(|s| s.as_array())
+        .into_iter()
+        .flatten();
+    let text = |g: &serde_json::Value, k: &str| g[k].as_str().unwrap_or_default().to_string();
+    for g in sets.flat_map(|s| s["Groups"].as_array().into_iter().flatten()) {
+        let (id, name) = (text(g, "ExternalDirectoryObjectId"), text(g, "DisplayName"));
+        if id.is_empty()
+            || name.is_empty()
+            || text(g, "SmtpAddress").is_empty()
+            || text(g, "MailboxGuid").is_empty()
+        {
+            continue;
+        }
+        let c = group_calendar(&id, &name);
+        if !out.iter().any(|o| o.id.eq_ignore_ascii_case(&c.id)) {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Your groups' calendars as Teams lists them: Outlook's
+/// GetUserUnifiedGroups (with a browser sign-in), else Graph's unified
+/// groups you're a member of, without the ones hidden from Outlook clients
+/// (Graph gives `hideFromOutlookClients` only for one group at a time).
+async fn group_calendars(client: &TeamsClient) -> Vec<CalendarInfo> {
+    if crate::auth::oauth::browser_sign_in() {
+        match owa_action("GetUserUnifiedGroups", &user_unified_groups_request()).await {
+            Ok(v) if v.pointer("/Body/GroupsSets").is_some() => return unified_group_calendars(&v),
+            Ok(_) => tracing::debug!("calendar groups: GetUserUnifiedGroups gave no sets"),
+            Err(e) => tracing::debug!("calendar groups: {e:#}"),
+        }
+    }
+    let Ok(r) = client
+        .graph_get("/me/memberOf/microsoft.graph.group?$select=id,displayName,groupTypes&$top=100")
+        .await
+    else {
+        return Vec::new();
+    };
+    let Ok(g) = r.json::<serde_json::Value>().await else {
+        return Vec::new();
+    };
+    let unified: Vec<CalendarInfo> = g["value"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|x| {
+            x["groupTypes"]
+                .as_array()
+                .is_some_and(|t| t.iter().any(|t| t.as_str() == Some("Unified")))
+        })
+        .map(|x| {
+            group_calendar(
+                x["id"].as_str().unwrap_or_default(),
+                x["displayName"].as_str().unwrap_or_default(),
+            )
+        })
+        .collect();
+    let hidden = futures::future::join_all(unified.iter().map(|c| async move {
+        let id = c.id.trim_start_matches("group:");
+        let r = client
+            .graph_get(&format!("/groups/{id}?$select=hideFromOutlookClients"))
+            .await
+            .ok()?;
+        r.json::<serde_json::Value>().await.ok()?["hideFromOutlookClients"].as_bool()
+    }))
+    .await;
+    unified
+        .into_iter()
+        .zip(hidden)
+        .filter(|(_, h)| *h != Some(true))
+        .map(|(c, _)| c)
+        .collect()
+}
+
 pub async fn calendars(client: &TeamsClient) -> Result<Vec<CalendarInfo>> {
     let v: serde_json::Value = client
         .graph_get(
@@ -301,30 +416,7 @@ pub async fn calendars(client: &TeamsClient) -> Result<Vec<CalendarInfo>> {
             Err(e) => tracing::debug!("calendar groups: {e:#}"),
         }
     }
-    if let Ok(r) = client
-        .graph_get("/me/memberOf/microsoft.graph.group?$select=id,displayName,groupTypes&$top=100")
-        .await
-        && let Ok(g) = r.json::<serde_json::Value>().await
-    {
-        for x in g["value"].as_array().into_iter().flatten() {
-            let unified = x["groupTypes"]
-                .as_array()
-                .is_some_and(|t| t.iter().any(|t| t.as_str() == Some("Unified")));
-            if unified {
-                out.push(CalendarInfo {
-                    id: format!("group:{}", x["id"].as_str().unwrap_or_default()),
-                    name: x["displayName"].as_str().unwrap_or_default().to_string(),
-                    section: "Groups".into(),
-                    section_kind: "groups".into(),
-                    group_id: "groups".into(),
-                    is_default: false,
-                    color: String::new(),
-                    can_share: false,
-                    owner: String::new(),
-                });
-            }
-        }
-    }
+    out.extend(group_calendars(client).await);
     Ok(out)
 }
 
@@ -2873,6 +2965,59 @@ fn cancel_event_request(ews: &str, scope: &str, note: &str, tz: &str) -> serde_j
 
 #[cfg(test)]
 mod tests {
+    /// Outlook's GetUserUnifiedGroups answer as it came for ost-test1
+    /// (2026-11-27, ids shortened; one favourite added): favourites first,
+    /// then the rest; one without a mailbox is left out, as Teams' hosted
+    /// calendar does. Graph's memberOf has three unified groups; Outlook
+    /// returns only OST Test Team, which is all Teams lists.
+    #[test]
+    fn groups_are_outlooks_unified_groups_as_teams_lists_them() {
+        let request = super::user_unified_groups_request();
+        assert_eq!(
+            request["Body"]["RequestedGroupsSets"],
+            serde_json::json!([
+                {"FilterType": 1, "SortType": 4, "SortDirection": "Descending"},
+                {"FilterType": 2, "SortType": 4, "SortDirection": "Descending"}
+            ])
+        );
+        assert_eq!(
+            request["__type"],
+            "GetUserUnifiedGroupsJsonRequest:#Exchange"
+        );
+        let group = |id: &str, name: &str, smtp: &str, mailbox: &str| {
+            serde_json::json!({"IsFavorite": false, "ExternalDirectoryObjectId": id, "SmtpAddress": smtp, "MailboxGuid": mailbox,
+                               "DisplayName": name, "AccessType": 1, "ExpiryStatus": 3})
+        };
+        let answer = serde_json::json!({"Body": {"__type": "GetUserUnifiedGroupsResponseMessage:#Exchange", "GroupsSets": [
+            {"FilterType": 1, "Groups": [group("f1", "Favourite group", "fav@x.com", "m0")]},
+            {"FilterType": 2, "TotalGroups": 3, "Groups": [
+                group("1fac3ae3", "OST Test Team", "OSTTestTeam@x.com", "367bd8fc"),
+                group("f1", "Favourite group", "fav@x.com", "m0"),
+                group("nobox", "No mailbox", "nobox@x.com", "")
+            ]}
+        ], "ResponseCode": "NoError", "ResponseClass": "Success"}});
+        let got = super::unified_group_calendars(&answer);
+        let rows: Vec<_> = got
+            .iter()
+            .map(|c| {
+                (
+                    c.id.as_str(),
+                    c.name.as_str(),
+                    c.section_kind.as_str(),
+                    c.group_id.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                ("group:f1", "Favourite group", "groups", "groups"),
+                ("group:1fac3ae3", "OST Test Team", "groups", "groups")
+            ]
+        );
+        assert!(super::unified_group_calendars(&serde_json::json!({})).is_empty());
+    }
+
     #[test]
     fn calendars_sit_in_outlooks_groups_as_teams_shows_them() {
         let graph = |id: &str, name: &str, owner: &str| super::CalendarInfo {
