@@ -11686,7 +11686,9 @@ impl qobject::Backend {
             let _ = self.qt_thread().queue(|_| quit_application());
             return;
         }
-        if stored && teams_cli::auth::browser_session().is_some() {
+        // (a personal account's is renewed from its refresh token: Teams
+        // free's client can't sign in silently, see renew_sign_in)
+        if stored && teams_cli::auth::browser_session() == Some(false) {
             // A browser sign-in's refresh token lasts 24 hours: renew it
             // silently first (the renewal refreshes the app).
             self.renew_sign_in();
@@ -11905,23 +11907,18 @@ impl qobject::Backend {
     }
 
     pub fn renew_sign_in(mut self: Pin<&mut Self>) {
-        let Some(personal) = teams_cli::auth::browser_session() else {
-            return;
-        };
-        if !self.rust().renew_page.is_empty() {
+        // Only a work sign-in renews silently. login.live.com refuses Teams
+        // on the web for personal use's prompt=none sign-in
+        // ("interaction_required: Silent authentication was denied", tried
+        // live 2026-11-27), so a personal account whose 24-hour session has
+        // ended goes back to the sign-in page (refresh's error, below).
+        if teams_cli::auth::browser_session() != Some(false) || !self.rust().renew_page.is_empty() {
             return;
         }
         let hint = teams_cli::config::Config::load()
             .ok()
             .and_then(|c| c.user_principal_name());
-        // A personal account renews with Teams on the web for personal
-        // use's sign-in (login.live.com's session), a work one with Teams
-        // on the web's.
-        let pending = if personal {
-            teams_cli::auth::spa::BrowserSignIn::personal(hint.as_deref(), true)
-        } else {
-            teams_cli::auth::spa::BrowserSignIn::new(hint.as_deref(), true)
-        };
+        let pending = teams_cli::auth::spa::BrowserSignIn::new(hint.as_deref(), true);
         let url = pending.url.clone();
         self.as_mut().rust_mut().renew_sign_in_pending = Some(pending);
         self.as_mut().set_renew_page(QString::from(url.as_str()));
@@ -20634,6 +20631,17 @@ impl qobject::Backend {
                     }
                     Err(e) => {
                         this.as_mut().set_signed_in(false);
+                        // A personal account's ended 24-hour session (its
+                        // refresh token refused): Microsoft's sign-in page
+                        // again, as Teams on the web for personal use asks.
+                        if teams_cli::auth::browser_session() == Some(true)
+                            && teams_cli::auth::spa::needs_renewal(&e)
+                        {
+                            tracing::info!("personal account's session ended: signing in again");
+                            this.as_mut().set_has_credentials(false);
+                            this.as_mut().begin_sign_in();
+                            return;
+                        }
                         this.as_mut()
                             .set_status_text(QString::from(short_error(&e).as_str()));
                     }
