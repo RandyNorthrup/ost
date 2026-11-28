@@ -516,6 +516,13 @@ Item {
             const team = String(form.event.group_address || "").toLowerCase()
             if (team) r.attendees = (r.attendees || []).filter(a => String(a.address || "").toLowerCase() !== team)
             form.detail = r
+            // (A team calendar's meeting is listed without its all-day flag:
+            // an all-day one opens again as one, on its own dates.)
+            if (form.mode === "edit" && r.is_all_day && !form.event.is_all_day) {
+                const floating = t => String(t || "").replace(/(\.\d+)?Z$/, "")
+                form.openEvent(Object.assign({}, form.event, { is_all_day: true, start_utc: floating(form.event.start_utc), end_utc: floating(form.event.end_utc) }), true, form.scope)
+                form.detail = r
+            }
             // (Your channel meeting from its team's calendar opened without
             // its people: the detail's, so Send update keeps them.)
             if (!(form.event.attendees || []).length) form.takeAttendees(r.attendees)

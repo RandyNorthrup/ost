@@ -1682,7 +1682,7 @@ pub async fn event_detail(
     }
     let group = calendar.starts_with("group:");
     let path = format!(
-        "{}?$select=body,attendees,recurrence,onlineMeeting,type,seriesMasterId,createdDateTime,isReminderOn,reminderMinutesBeforeStart,responseRequested,hideAttendees",
+        "{}?$select=body,attendees,recurrence,onlineMeeting,type,seriesMasterId,createdDateTime,isReminderOn,reminderMinutesBeforeStart,responseRequested,hideAttendees,isAllDay",
         event_path_in(calendar, id)?
     );
     // (A group calendar's ids are the ones its calendarView gave, not
@@ -1730,6 +1730,8 @@ pub async fn event_detail(
         "reminder": if v.get("isReminderOn").and_then(|r| r.as_bool()).unwrap_or(true) { v.get("reminderMinutesBeforeStart").and_then(|m| m.as_i64()).unwrap_or(15) } else { -1 },
         "response_requested": v.get("responseRequested").and_then(|r| r.as_bool()).unwrap_or(true),
         "hide_attendees": v.get("hideAttendees").and_then(|r| r.as_bool()).unwrap_or(false),
+        // (A team calendar's meeting is listed without it.)
+        "is_all_day": v.get("isAllDay").and_then(|r| r.as_bool()).unwrap_or(false),
     }))
 }
 
@@ -3865,6 +3867,15 @@ pub async fn update_team_meeting(
         .cloned()
         .unwrap_or(loaded);
     anyhow::ensure!(ev.is_object(), "Not a channel meeting");
+    // Edit series from an occurrence: the form's times on the series' own
+    // first date, as Outlook's Edit series sends them.
+    let on_master;
+    let form = if event_type == "seriesMaster" {
+        on_master = on_date_of(form, ev["startTime"].as_str().unwrap_or_default());
+        &on_master
+    } else {
+        form
+    };
     let changes = mt_event(form, me, Some(&mail))?;
     team_event_changes(&mut ev, &changes, form, &mail);
     let kind = team_event_kind(event_type);
@@ -4044,6 +4055,45 @@ fn mt_start(start: &str) -> Result<String> {
         })
         .with_context(|| format!("Not a time: {start}"))?;
     Ok(crate::clock::iso_ms(t))
+}
+
+/// The form with its start moved to `date_of`'s date (an ISO time), at
+/// the same wall-clock time in the form's offset, and its end the same
+/// length after; unchanged when either doesn't read.
+fn on_date_of(form: &MeetingForm, date_of: &str) -> MeetingForm {
+    let mut f = form.clone();
+    let (Ok(start), Ok(end), Some(day)) = (
+        crate::clock::parse_rfc3339(&form.start),
+        crate::clock::parse_rfc3339(&form.end),
+        crate::clock::parse_instant(date_of),
+    ) else {
+        return f;
+    };
+    let offset = start.offset();
+    let day = day
+        .to_zoned_datetime(jiff::tz::TimeZone::fixed(offset))
+        .date();
+    let Ok(moved) = offset.to_timestamp(day.to_datetime(start.time())) else {
+        return f;
+    };
+    let Ok(moved_end) = moved.checked_add(end.timestamp().duration_since(start.timestamp())) else {
+        return f;
+    };
+    f.start = rfc3339_at(moved, offset);
+    f.end = rfc3339_at(moved_end, offset);
+    f
+}
+
+/// `t` as RFC 3339 at `offset` ("2026-12-01T14:00:00-08:00").
+fn rfc3339_at(t: jiff::Timestamp, offset: jiff::tz::Offset) -> String {
+    let secs = offset.seconds();
+    let (sign, a) = if secs < 0 { ('-', -secs) } else { ('+', secs) };
+    format!(
+        "{}{sign}{:02}:{:02}",
+        crate::clock::format(offset.to_datetime(t), "%Y-%m-%dT%H:%M:%S"),
+        a / 3600,
+        a % 3600 / 60
+    )
 }
 
 /// A team event's kind as the middle tier names it (Graph's `type`).
@@ -5179,6 +5229,22 @@ mod older_tests {
             ev["meetingLocations"][0]["displayName"],
             "Microsoft Teams Meeting"
         );
+    }
+
+    /// Edit series from a later occurrence: the form's times on the
+    /// series' first date.
+    #[test]
+    fn edit_series_keeps_the_series_date() {
+        let form = super::MeetingForm {
+            start: "2026-12-08T15:00:00-08:00".into(),
+            end: "2026-12-08T15:45:00-08:00".into(),
+            ..Default::default()
+        };
+        let f = super::on_date_of(&form, "2026-12-01T22:00:00+00:00");
+        assert_eq!(f.start, "2026-12-01T15:00:00-08:00");
+        assert_eq!(f.end, "2026-12-01T15:45:00-08:00");
+        let f = super::on_date_of(&form, "garbled");
+        assert_eq!(f.start, form.start);
     }
 
     #[test]
