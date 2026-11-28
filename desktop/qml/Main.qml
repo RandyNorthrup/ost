@@ -2298,8 +2298,10 @@ Window {
                 }
                 return true
             }
-            const personal = backend.personalAccountProfile()
-            if (personal !== "") { backend.openLinkInAccount(personal, l.url); return true }
+            // (The first account's profile is "".)
+            let personal = { found: false, profile: "" }
+            try { personal = JSON.parse(backend.personalAccountProfile()) } catch (e) {}
+            if (personal.found) { backend.openLinkInAccount(personal.profile, l.url); return true }
             cant(qsTr("Add a personal account to join this Teams (free) meeting."), l.url)
             return true
         }
