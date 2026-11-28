@@ -978,7 +978,7 @@ fn scheduled_meeting(meeting: &serde_json::Value) -> Option<ScheduledMeeting> {
     // (TASK-0378) carries the meeting with no title and the .NET zero date
     // ("0001-01-01T00:00:00"): its post is the call's "Meeting in … ended",
     // without a card.
-    if !utc_instant(info.get("startTime")).is_some_and(|t| crate::clock::millis(t) > 1) {
+    if utc_instant(info.get("startTime")).is_none_or(|t| crate::clock::millis(t) <= 1) {
         return None;
     }
     let flag = |k: &str| {
