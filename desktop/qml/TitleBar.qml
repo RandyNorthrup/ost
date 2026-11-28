@@ -706,7 +706,8 @@ Rectangle {
             root.searchPerson({ name: item.title, mail: item.mail || "", mri: item.mri || "", from: false })
             return
         case "seemore":
-            if (item.from) { root.keepSuggestionsOpen = false; field.focus = false; root.searchSubmitted((item.query + " is:Messages").trim(), root.resultFilters()); return }
+            // (With the box's filters: a person's or a place's messages.)
+            if (item.from || root.kqlMode) { root.keepSuggestionsOpen = false; field.focus = false; root.searchSubmitted((item.query + " is:Messages").trim(), root.resultFilters()); return }
             root.submit(item.query + " is:Messages"); return
         case "enter": root.submitResults(); return
         case "tip": root.gotoMode(); return
