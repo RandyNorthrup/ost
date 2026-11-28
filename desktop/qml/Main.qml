@@ -2183,17 +2183,19 @@ Window {
         if (!json) return false
         let l
         try { l = JSON.parse(json) } catch (e) { return false }
-        const chats = chatList.chats || []
-        const channels = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat((t.channels || []).map(c => Object.assign({ team: t.name }, c))), [])
-        const nameOf = id => { const c = chats.find(c => c.id === id) || channels.find(c => c.id === id); return c ? c.name : "" }
+        const nameOf = window.linkChatName
         // As picking it in the chat list: Drafts, Copilot and the like
-        // close, and the chat shows its messages (not a tab left open). A
-        // chat the lists don't have yet still gets a name, or the view
-        // stays on "Select a chat".
-        const toChat = (id, name) => {
+        // close, and the chat shows its messages (not a tab left open or a
+        // post's details). Its name comes from OST's own lists, never from
+        // the link: one the lists don't have yet shows a plain "Chat" or
+        // "Channel" until they name it (linkNameFor).
+        const toChat = id => {
             rail.current = "chat"
-            chatList.chatSelected(id, name || nameOf(id) || (id.indexOf("19:meeting_") === 0 ? qsTr("Meeting chat") : qsTr("Chat")))
+            const known = nameOf(id)
+            window.linkNameFor = known ? "" : id
+            chatList.chatSelected(id, known || (id.endsWith("@thread.tacv2") || id.endsWith("@thread.skype") ? qsTr("Channel") : id.indexOf("19:meeting_") === 0 ? qsTr("Meeting chat") : qsTr("Chat")))
             conversation.tab = ""
+            conversation.postViewRoot = ""
         }
         const cant = (text, url) => window.showToast({ text: text, intent: "error", duration: 10000, action: url ? qsTr("Open in browser") : "", onAction: url ? () => backend.openExternal(url) : null })
         switch (l.kind) {
@@ -2220,16 +2222,12 @@ Window {
             // Teams free's meetings need a personal account (TASK-0298).
             cant(qsTr("OST can't join Teams (free) meetings yet."), l.url)
             return true
-        case "chat": toChat(l.thread, ""); return true
-        case "channel": {
-            const ch = channels.find(c => c.id === l.thread)
-            toChat(l.thread, ch ? ch.name : (l.name || qsTr("General")))
-            return true
-        }
+        case "chat": toChat(l.thread); return true
+        case "channel": toChat(l.thread); return true
         case "message":
             // Shown once the chat's messages are in (they load afresh).
             window.linkJump = { thread: l.thread, message: l.message, parent: l.parent || "" }
-            toChat(l.thread, "")
+            toChat(l.thread)
             return true
         case "newChat":
             rail.current = "chat"
@@ -2245,6 +2243,30 @@ Window {
         case "unsupported": cant(qsTr("OST can't open this kind of Teams link yet."), l.url); return true
         }
         return false
+    }
+    /// A chat's or channel's name from OST's own lists ("" when they don't
+    /// have it).
+    function linkChatName(id) {
+        const c = (chatList.chats || []).find(c => c.id === id)
+        if (c) return c.name
+        for (const t of (backend.teamsJson ? JSON.parse(backend.teamsJson) : [])) {
+            const ch = (t.channels || []).find(c => c.id === id)
+            if (ch) return ch.name
+        }
+        return ""
+    }
+    /// A chat a link opened before the lists named it: named once they do.
+    property string linkNameFor: ""
+    function fixLinkName() {
+        if (!window.linkNameFor) return
+        if (backend.currentChatId !== window.linkNameFor) { window.linkNameFor = ""; return }
+        const n = window.linkChatName(window.linkNameFor)
+        if (n) { window.linkNameFor = ""; backend.currentChatName = n }
+    }
+    Connections {
+        target: backend
+        function onTeamsJsonChanged() { window.fixLinkName() }
+        function onChatsJsonChanged() { window.fixLinkName() }
     }
     /// A message link's message, shown once its chat's messages load.
     property var linkJump: null
