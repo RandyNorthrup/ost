@@ -33,7 +33,9 @@ Window {
         // "Chat | <org> | <email> | …".
         const who = window.otherAccounts.length > 0 && backend.signedIn
             ? [backend.personalAccount ? qsTr("Personal") : backend.orgName, backend.userMail] : []
-        return [app ? app.label : "", item].concat(who).concat(["OST"]).filter(Boolean).join(" | ")
+        // Settings: "<page> | Settings | …", as Teams titles it.
+        const settings = rail.current === "settings" ? [((settingsView.pages || []).find(p => p.key === settingsView.page) || {}).label || "", qsTr("Settings")] : []
+        return (app ? [app.label] : settings).concat([item]).concat(who).concat(["OST"]).filter(Boolean).join(" | ")
     }
     color: theme.surface
     // Teams desktop draws its own title bar and window buttons.
