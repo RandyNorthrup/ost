@@ -95,6 +95,14 @@ pub async fn refresh() -> Result<bool> {
 
     let client = stored_client(&config);
 
+    if config.auth_flow.as_deref() == Some(super::TEAMS_LIVE_FLOW) {
+        tracing::info!("Refreshing the personal account's tokens...");
+        personal_tokens(&client, &mut config).await?;
+        config.save()?;
+        tracing::info!("Token refresh complete");
+        return Ok(true);
+    }
+
     tracing::info!("Refreshing AAD token...");
 
     let tokens = client
@@ -355,6 +363,9 @@ pub async fn finish_browser_sign_in(
     pending: &super::spa::BrowserSignIn,
     code: &str,
 ) -> Result<Vec<&'static str>> {
+    if pending.is_personal() {
+        return finish_personal_sign_in(pending, code).await;
+    }
     let client = build_client(&AuthConfig::teams_web());
     let tokens = client
         .redeem_code(
@@ -366,6 +377,104 @@ pub async fn finish_browser_sign_in(
         .await
         .context("Failed to redeem the sign-in")?;
     store_sign_in(&client, &tokens, Some(super::TEAMS_WEB_FLOW)).await
+}
+
+/// The Graph scope Teams free's client asks for: its token can reach the
+/// user's OneDrive only (`Files.ReadWrite`).
+const PERSONAL_GRAPH_SCOPE: &str = "https://graph.microsoft.com/.default offline_access";
+/// Teams free's middle tier, the personal account's primary token.
+const PERSONAL_MT_SCOPE: &str =
+    "https://mtsvc.fl.teams.microsoft.com/teams.mt.readwrite offline_access";
+
+/// Redeem a personal account's sign-in (Teams on the web for personal
+/// use's, see [`super::spa`]): the account's identity from the OpenID
+/// token, then its service tokens ([`personal_tokens`]).
+async fn finish_personal_sign_in(
+    pending: &super::spa::BrowserSignIn,
+    code: &str,
+) -> Result<Vec<&'static str>> {
+    let client = build_client(&AuthConfig::teams_live());
+    let tokens = client
+        .redeem_code(
+            code,
+            pending.verifier(),
+            super::spa::PERSONAL_REDIRECT_URI,
+            super::spa::PERSONAL_SIGN_IN_SCOPE,
+        )
+        .await
+        .context("Failed to redeem the sign-in")?;
+    let identity = tokens
+        .id_token
+        .as_deref()
+        .and_then(crate::identity::AccountIdentity::from_personal_id_token)
+        .context("The sign-in didn't name a personal Microsoft account")?;
+    let mut config = Config::load()?;
+    config.auth_flow = Some(super::TEAMS_LIVE_FLOW.to_string());
+    config.set_refresh_token(
+        tokens
+            .refresh_token
+            .clone()
+            .context("The sign-in gave no refresh token")?,
+    );
+    config.set_identity(identity);
+    let missing = personal_tokens(&client, &mut config).await?;
+    config.save()?;
+    Ok(missing)
+}
+
+/// A token for `scope` from a personal account's refresh token, keeping
+/// the rotated refresh token that comes with it.
+async fn mint_personal(client: &AadClient, config: &mut Config, scope: &str) -> Result<TokenSet> {
+    let rt = config
+        .get_refresh_token()
+        .context("Not signed in (no refresh token)")?;
+    let t = client.refresh(&rt, scope).await?;
+    if let Some(new_rt) = &t.refresh_token {
+        config.set_refresh_token(new_rt.clone());
+    }
+    Ok(t)
+}
+
+/// A personal account's tokens from its refresh token (rotated with each
+/// use, so each new one is kept): the consumer authz token for the Skype
+/// token and regional URLs (which also give the account's `skypeid`), the
+/// middle tier's as the primary token, and Graph. Fails when the Skype
+/// token can't be had (nothing works without it).
+async fn personal_tokens(client: &AadClient, config: &mut Config) -> Result<Vec<&'static str>> {
+    let mut missing = Vec::new();
+    let authz = mint_personal(
+        client,
+        config,
+        &format!("{} offline_access", super::skype::PERSONAL_AUTHZ_SCOPE),
+    )
+    .await
+    .context("Failed to get the personal account's authz token")?;
+    let x = exchange_skype_token(&authz.access_token, true).await?;
+    config.set_skype_token(x.skype_token, x.expires_in);
+    if let Some(gtms) = x.region_gtms {
+        config.set_region_gtms(gtms);
+    }
+    if let Some(l) = x.license_details {
+        config.set_license_details(l);
+    }
+    if let (Some(me), Some(id)) = (config.identity().cloned(), x.skype_id.as_deref()) {
+        config.set_identity(me.with_skype_id(id));
+    }
+    match mint_personal(client, config, PERSONAL_MT_SCOPE).await {
+        Ok(t) => config.set_access_token(t.access_token, t.expires_in),
+        Err(e) => {
+            tracing::warn!("Middle tier token acquisition failed: {:#}", e);
+            missing.push("Middle tier");
+        }
+    }
+    match mint_personal(client, config, PERSONAL_GRAPH_SCOPE).await {
+        Ok(t) => config.set_graph_token(t.access_token, t.expires_in),
+        Err(e) => {
+            tracing::warn!("Graph token acquisition failed: {:#}", e);
+            missing.push("Graph");
+        }
+    }
+    Ok(missing)
 }
 
 /// Store a sign-in's tokens and mint the other audiences from it.

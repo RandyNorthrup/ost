@@ -188,6 +188,14 @@ pub mod qobject {
         /// A silent renewal of the browser sign-in, loaded in a hidden web
         /// view on the same web profile; empty when none is running.
         #[qproperty(QString, renew_page)]
+        /// The signed-in account is a personal Microsoft account (Teams
+        /// for personal use): its profile menu and shell are Teams'
+        /// personal ones.
+        #[qproperty(bool, personal_account)]
+        /// A second personal account that just signed in, which Teams
+        /// refuses ("Multiple personal accounts aren't supported in Teams
+        /// yet."): {name, upn} as JSON, "" when none.
+        #[qproperty(QString, personal_refused)]
         /// OST runs as a Teams Rooms device (the account has a Teams Rooms
         /// licence, or --room): the front-of-room home instead of the app.
         #[qproperty(bool, room_mode)]
@@ -759,6 +767,20 @@ pub mod qobject {
         /// Forget the stored credentials and return to the sign-in screen.
         #[qinvokable]
         fn sign_out(self: Pin<&mut Backend>);
+
+        /// The refused second personal account's dialog was answered:
+        /// "Open Teams on the web" (`open_web`) or Cancel. Either way the
+        /// sign-in is dropped: an added account's window closes, the
+        /// first account's sign-in starts over.
+        #[qinvokable]
+        fn dismiss_personal_refused(self: Pin<&mut Backend>, open_web: bool);
+
+        /// Microsoft's work sign-in page refused the address typed in it
+        /// ("You can't sign in here with a personal account"): when it is
+        /// a personal Microsoft account's, the sign-in goes on with Teams'
+        /// personal sign-in for it, as Teams desktop's sign-in takes both.
+        #[qinvokable]
+        fn sign_in_address_refused(self: Pin<&mut Backend>, address: &QString);
         /// The embedded pages' web profile storage name (one per OST
         /// profile).
         #[qinvokable]
@@ -769,6 +791,11 @@ pub mod qobject {
         /// it as well as their flags.
         #[qinvokable]
         fn test_harness(self: &Backend) -> bool;
+        /// Test-harness builds: the accounts harness's command file
+        /// (`OST_ACCOUNTS_CMD`), so a plain launch (one instance per
+        /// account, as the switcher needs) can be driven; "" otherwise.
+        #[qinvokable]
+        fn accounts_cmd_file(self: &Backend) -> QString;
         /// Where the sign-in is kept: {storage: keyring|file|memory,
         /// optIn: the file opt-in is on, forced: OST_NO_KEYRING=1}.
         #[qinvokable]
@@ -3833,6 +3860,8 @@ pub struct BackendRust {
     has_credentials: bool,
     sign_in_page: QString,
     renew_page: QString,
+    personal_account: bool,
+    personal_refused: QString,
     /// The visible browser sign-in waiting for its return address.
     browser_sign_in: Option<teams_cli::auth::spa::BrowserSignIn>,
     /// The silent renewal waiting for its return address.
@@ -7246,7 +7275,17 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
     let client = TeamsClient::new().await?;
     let my_oid = client.object_id().unwrap_or_default();
     let me = api::whoami_data(&client).await?;
-    let chats = api::list_chats_data(&client, CHAT_LIMIT).await?;
+    // A personal account's window opens with its shell while its chats
+    // aren't read yet (Teams free's chat list comes in TASK-0293).
+    let personal = client.identity().is_some_and(|i| i.is_personal());
+    let chats = match api::list_chats_data(&client, CHAT_LIMIT).await {
+        Ok(c) => c,
+        Err(e) if personal => {
+            tracing::warn!("personal account's chats: {}", short_error(&e));
+            Vec::new()
+        }
+        Err(e) => return Err(e),
+    };
     if let Ok(mut g) = UNNAMED_GROUP_CHATS.lock() {
         *g = chats
             .iter()
@@ -7773,6 +7812,8 @@ fn launch_profile(profile: &str) {
         return;
     };
     let mut cmd = std::process::Command::new(exe);
+    // (the test harness's command file is this window's, not the other's)
+    cmd.env_remove("OST_ACCOUNTS_CMD");
     if profile.is_empty() {
         cmd.env_remove("OST_PROFILE");
     } else {
@@ -7999,6 +8040,30 @@ fn proofing_settings() -> &'static std::sync::Mutex<Option<api::editor::Proofing
 
 /// Teams' "Save and restart": main.rs starts OST again after it quits.
 static RESTART: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Remove this profile (its config folder, web storage and state files)
+/// once the app has quit: its account signed out, or was never added.
+static REMOVE_PROFILE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// When an app definition last failed to load: its "ready" signal makes
+/// the page ask again, so a failure waits a minute before the next try.
+struct AppLoadBackoff(std::sync::Mutex<Option<std::time::Instant>>);
+
+impl AppLoadBackoff {
+    const fn new() -> Self {
+        Self(std::sync::Mutex::new(None))
+    }
+    fn may_retry(&self) -> bool {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(60))
+    }
+    fn note_failure(&self) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
+    }
+}
+
+/// Teams on the web for personal use ("Open Teams on the web").
+const TEAMS_PERSONAL_WEB: &str = "https://teams.live.com/v2/";
 /// The desktop's own settings page for Teams' "Manage Windows settings"
 /// links: date and time ("timezone") or region and language ("region"),
 /// in KDE Plasma or GNOME; None elsewhere (the link is then not shown).
@@ -8184,6 +8249,43 @@ pub fn wipe_web_storage_if_signed_out() {
         }
     }
     let _ = std::fs::remove_file(marker);
+}
+
+/// After the app quit (Qt WebEngine closed): remove an added profile whose
+/// account signed out or was refused, so nothing of it stays on the device
+/// and its name can be used again. The first account's folder holds the
+/// device's account list and is never removed.
+pub fn remove_profile_if_requested() {
+    if !REMOVE_PROFILE.load(std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let Some(p) = teams_cli::config::profile() else {
+        return;
+    };
+    teams_cli::config::delete_profile_secrets();
+    let mut dirs = web_storage_dirs();
+    if let Ok(d) = teams_cli::config::profile_dir(&p) {
+        dirs.push(d);
+    }
+    for dir in dirs {
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) => tracing::info!("removed {}", dir.display()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => tracing::warn!("couldn't remove {}: {e}", dir.display()),
+        }
+    }
+    // Its state files ("<stem>-<profile>.json", as state_file names them).
+    let state = state_file("x");
+    if let Some(dir) = state.parent()
+        && let Ok(rd) = std::fs::read_dir(dir)
+    {
+        let suffix = format!("-{p}.json");
+        for e in rd.flatten() {
+            if e.file_name().to_string_lossy().ends_with(&suffix) {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
 }
 
 fn quit_application() {
@@ -11560,6 +11662,28 @@ impl qobject::Backend {
         self.as_mut().publish_drafts();
         let stored = teams_cli::auth::has_credentials();
         self.as_mut().set_has_credentials(stored);
+        self.as_mut().set_personal_account(
+            teams_cli::config::Config::load()
+                .ok()
+                .and_then(|c| c.identity().map(|i| i.is_personal()))
+                .unwrap_or(false),
+        );
+        // The first account signed out while others stayed signed in (as
+        // Teams, its window closed): a plain start opens another
+        // account's window instead of the sign-in.
+        if !stored
+            && teams_cli::config::profile().is_none()
+            && std::env::args().len() <= 1
+            && let Some(other) = teams_cli::config::accounts()
+                .into_iter()
+                .find(|a| !a.profile.is_empty() && !a.upn.is_empty())
+        {
+            tracing::info!("first account signed out: opening another account's window");
+            launch_profile(&other.profile);
+            // (once the event loop runs: this is before it starts)
+            let _ = self.qt_thread().queue(|_| quit_application());
+            return;
+        }
         if stored && teams_cli::auth::browser_sign_in() {
             // A browser sign-in's refresh token lasts 24 hours: renew it
             // silently first (the renewal refreshes the app).
@@ -11586,8 +11710,75 @@ impl qobject::Backend {
         self.as_mut().set_sign_in_page(QString::from(url.as_str()));
     }
 
+    pub fn sign_in_address_refused(self: Pin<&mut Self>, address: &QString) {
+        let address = address.to_string().trim().to_string();
+        if address.is_empty()
+            || !self
+                .rust()
+                .browser_sign_in
+                .as_ref()
+                .is_some_and(|p| !p.is_personal())
+        {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let personal =
+                teams_cli::auth::spa::is_personal_address(&reqwest::Client::new(), &address).await;
+            match personal {
+                Ok(true) => {
+                    let _ = qt.queue(move |mut this| {
+                        // (only while that work sign-in is still the one shown)
+                        if !this
+                            .rust()
+                            .browser_sign_in
+                            .as_ref()
+                            .is_some_and(|p| !p.is_personal())
+                        {
+                            return;
+                        }
+                        tracing::info!("browser sign-in: a personal account");
+                        let pending =
+                            teams_cli::auth::spa::BrowserSignIn::personal(Some(&address), false);
+                        let next = pending.url.clone();
+                        this.as_mut().rust_mut().browser_sign_in = Some(pending);
+                        this.as_mut().set_sign_in_page(QString::from(next.as_str()));
+                    });
+                }
+                Ok(false) => {}
+                Err(e) => tracing::warn!("sign-in realm discovery: {}", short_error(&e)),
+            }
+        });
+    }
+
     pub fn sign_in_navigated(mut self: Pin<&mut Self>, url: &QString, silent: bool) -> bool {
         let url = url.to_string();
+        // A personal address on Microsoft's work sign-in page, handed on to
+        // login.live.com: Teams' sign-in goes on with the personal account
+        // (Teams on the web for personal use's sign-in) for that address,
+        // not as a guest of a work tenant.
+        if !silent
+            && self
+                .rust()
+                .browser_sign_in
+                .as_ref()
+                .is_some_and(|p| !p.is_personal())
+            && let Some(hint) = teams_cli::auth::spa::personal_hand_off(&url)
+        {
+            tracing::info!("browser sign-in: a personal account");
+            let pending = teams_cli::auth::spa::BrowserSignIn::personal(
+                Some(hint.as_str()).filter(|h| !h.is_empty()),
+                false,
+            );
+            let next = pending.url.clone();
+            self.as_mut().rust_mut().browser_sign_in = Some(pending);
+            // (not from inside this navigation request: see below)
+            let qt = self.qt_thread();
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_sign_in_page(QString::from(next.as_str()));
+            });
+            return true;
+        }
         if !teams_cli::auth::spa::BrowserSignIn::is_redirect(&url) {
             return false;
         }
@@ -11641,6 +11832,9 @@ impl qobject::Backend {
                             "browser sign-in {}",
                             if silent { "renewed" } else { "complete" }
                         );
+                        if !silent && this.as_mut().refuse_second_personal() {
+                            return;
+                        }
                         this.as_mut().set_has_credentials(true);
                         this.as_mut().refresh();
                     }
@@ -11658,6 +11852,60 @@ impl qobject::Backend {
             });
         });
         true
+    }
+
+    /// After a sign-in: a personal account when another profile already
+    /// has one is refused as Teams refuses it (its dialog, `personal_refused`)
+    /// and its tokens are dropped. True when refused.
+    fn refuse_second_personal(mut self: Pin<&mut Self>) -> bool {
+        let Some(me) = teams_cli::config::Config::load()
+            .ok()
+            .and_then(|c| c.identity().cloned())
+            .filter(|i| i.is_personal())
+        else {
+            return false;
+        };
+        let mine = teams_cli::config::profile().unwrap_or_default();
+        if teams_cli::config::other_personal_account(&teams_cli::config::accounts(), &mine)
+            .is_none()
+        {
+            return false;
+        }
+        tracing::info!("a second personal account signed in: refused, as Teams");
+        if let Err(e) = teams_cli::auth::sign_out() {
+            tracing::warn!("couldn't drop the refused sign-in: {}", short_error(&e));
+        }
+        let refused = json!({
+            "name": me.display_name.unwrap_or_default(),
+            "upn": me.upn.unwrap_or_default(),
+        });
+        self.as_mut()
+            .set_personal_refused(QString::from(refused.to_string().as_str()));
+        true
+    }
+
+    pub fn dismiss_personal_refused(mut self: Pin<&mut Self>, open_web: bool) {
+        if open_web {
+            let _ = self.open_external(&QString::from(TEAMS_PERSONAL_WEB));
+        }
+        self.as_mut().set_personal_refused(QString::default());
+        // The personal account's Microsoft session is in this profile's web
+        // storage: it goes, with the profile when it was a new one (Add
+        // another account's window closes, as Teams' sign-in dialog does).
+        if teams_cli::config::profile().is_some() {
+            REMOVE_PROFILE.store(true, std::sync::atomic::Ordering::SeqCst);
+            quit_application();
+        } else if let Some(marker) = web_wipe_marker() {
+            if let Some(dir) = marker.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            if std::fs::write(&marker, b"").is_ok() {
+                RESTART.store(true, std::sync::atomic::Ordering::SeqCst);
+                quit_application();
+            } else {
+                self.as_mut().begin_sign_in();
+            }
+        }
     }
 
     pub fn renew_sign_in(mut self: Pin<&mut Self>) {
@@ -11700,7 +11948,7 @@ impl qobject::Backend {
             .iter()
             .enumerate()
             .filter(|(_, a)| a.profile != me && !a.upn.is_empty() && seen.insert(a.upn.to_lowercase()))
-            .map(|(i, a)| json!({ "profile": a.profile, "upn": a.upn, "name": a.name, "objectId": a.object_id, "availability": a.availability, "org": if a.org.is_empty() { org_of(&a.upn) } else { a.org.clone() }, "before": i < mine }))
+            .map(|(i, a)| json!({ "profile": a.profile, "upn": a.upn, "name": a.name, "objectId": a.object_id, "availability": a.availability, "org": if a.org.is_empty() { org_of(&a.upn) } else { a.org.clone() }, "before": i < mine, "personal": a.kind == teams_cli::identity::AccountKind::Personal }))
             .collect();
         QString::from(serde_json::Value::Array(list).to_string().as_str())
     }
@@ -11851,6 +12099,17 @@ impl qobject::Backend {
         cfg!(feature = "test-harness")
     }
 
+    pub fn accounts_cmd_file(&self) -> QString {
+        if !cfg!(feature = "test-harness") {
+            return QString::default();
+        }
+        QString::from(
+            std::env::var("OST_ACCOUNTS_CMD")
+                .unwrap_or_default()
+                .as_str(),
+        )
+    }
+
     pub fn web_storage_name(&self) -> QString {
         QString::from(web_storage_name().as_str())
     }
@@ -11893,6 +12152,25 @@ impl qobject::Backend {
         if let Err(e) = teams_cli::auth::sign_out() {
             self.as_mut()
                 .set_status_text(QString::from(short_error(&e).as_str()));
+            return;
+        }
+        // Other accounts stay signed in, as Teams: this account's window
+        // closes (an added account's profile is removed once it has; the
+        // first account's web storage goes at its next start).
+        let others = teams_cli::config::accounts()
+            .into_iter()
+            .any(|a| !a.upn.is_empty());
+        if others {
+            tracing::info!("signed out of this account; the others stay signed in");
+            if teams_cli::config::profile().is_some() {
+                REMOVE_PROFILE.store(true, std::sync::atomic::Ordering::SeqCst);
+            } else if let Some(marker) = web_wipe_marker() {
+                if let Some(dir) = marker.parent() {
+                    let _ = std::fs::create_dir_all(dir);
+                }
+                let _ = std::fs::write(&marker, b"");
+            }
+            quit_application();
             return;
         }
         // The embedded pages' cookies and site data go too: Qt WebEngine
@@ -13119,8 +13397,12 @@ impl qobject::Backend {
     pub fn video_filters(self: Pin<&mut Self>) -> QString {
         static CACHE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
         static LOADING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        static FAILED: AppLoadBackoff = AppLoadBackoff::new();
         if let Some(json) = CACHE.lock().unwrap().clone() {
             return QString::from(json.as_str());
+        }
+        if !FAILED.may_retry() {
+            return QString::from("{}");
         }
         if !LOADING.swap(true, std::sync::atomic::Ordering::SeqCst) {
             let qt = self.qt_thread();
@@ -13139,7 +13421,10 @@ impl qobject::Backend {
                             .collect();
                         *CACHE.lock().unwrap() = Some(serde_json::json!({ "url": url, "filters": filters }).to_string());
                     }
-                    Err(e) => tracing::warn!("filters app: {}", short_error(&e)),
+                    Err(e) => {
+                        FAILED.note_failure();
+                        tracing::warn!("filters app: {}", short_error(&e))
+                    }
                 }
                 LOADING.store(false, std::sync::atomic::Ordering::SeqCst);
                 let _ = qt.queue(|this| this.video_filters_ready());
@@ -13155,8 +13440,14 @@ impl qobject::Backend {
     pub fn avatars_app(self: Pin<&mut Self>) -> QString {
         static CACHE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
         static LOADING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        static FAILED: AppLoadBackoff = AppLoadBackoff::new();
         if let Some(json) = CACHE.lock().unwrap().clone() {
             return QString::from(json.as_str());
+        }
+        // (a failure is answered by "ready" too, and the page asks again:
+        // not straight away, or a personal account's refused token loops)
+        if !FAILED.may_retry() {
+            return QString::from("{}");
         }
         if !LOADING.swap(true, std::sync::atomic::Ordering::SeqCst) {
             let qt = self.qt_thread();
@@ -13171,7 +13462,10 @@ impl qobject::Backend {
                     Ok(def) => {
                         *CACHE.lock().unwrap() = Some(crate::avatars::app_info(&def).to_string())
                     }
-                    Err(e) => tracing::warn!("Avatars app: {}", short_error(&e)),
+                    Err(e) => {
+                        FAILED.note_failure();
+                        tracing::warn!("Avatars app: {}", short_error(&e))
+                    }
                 }
                 LOADING.store(false, std::sync::atomic::Ordering::SeqCst);
                 let _ = qt.queue(|this| this.avatars_app_ready());
@@ -20227,6 +20521,11 @@ impl qobject::Backend {
                 match result {
                     Ok((name, chats)) => {
                         this.as_mut().set_signed_in(true);
+                        let personal = teams_cli::config::Config::load()
+                            .ok()
+                            .and_then(|c| c.identity().map(|i| i.is_personal()))
+                            .unwrap_or(false);
+                        this.as_mut().set_personal_account(personal);
                         this.as_mut().set_user_name(QString::from(name.as_str()));
                         this.as_mut().load_profile();
                         this.as_mut().load_engagement();
@@ -20247,6 +20546,7 @@ impl qobject::Backend {
                                     name: c.display_name().unwrap_or_default(),
                                     object_id: c.object_id().unwrap_or_default(),
                                     org,
+                                    kind: c.identity().map(|i| i.kind).unwrap_or_default(),
                                     ..Default::default()
                                 },
                             ));

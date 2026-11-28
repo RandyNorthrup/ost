@@ -28,7 +28,12 @@ Window {
         const item = rail.current !== "chat" || !conversation.visible || !backend.currentChatName ? ""
             : conversation.isChannel && conversation.teamName ? conversation.teamName + " | " + backend.currentChatName
             : backend.currentChatName
-        return [app ? app.label : "", item, "OST"].filter(Boolean).join(" | ")
+        // With another account on the device each window also names its
+        // account, as Teams: "Chat | Personal | <email> | …" or
+        // "Chat | <org> | <email> | …".
+        const who = window.otherAccounts.length > 0 && backend.signedIn
+            ? [backend.personalAccount ? qsTr("Personal") : backend.orgName, backend.userMail] : []
+        return [app ? app.label : "", item].concat(who).concat(["OST"]).filter(Boolean).join(" | ")
     }
     color: theme.surface
     // Teams desktop draws its own title bar and window buttons.
@@ -14331,6 +14336,51 @@ Window {
         }
     }
 
+    // --accounts-cmd=<file> --shots=<dir> (TASK-0290, test-harness builds;
+    // needs QML_XHR_ALLOW_FILE_READ=1; shots go next to the file without
+    // --shots): runs the commands appended to
+    // <file>, one per line, so a live check can drive the accounts UI:
+    // flyout | close | settings | chat | shot <name> | title | switch <profile>
+    // | add | signout | refused-open | refused-cancel | hub | hub-hide |
+    // hub-pick | hub-state | pin | unpin. ACCT lines in the log.
+    Timer {
+        id: accountsCmd
+        // (or OST_ACCOUNTS_CMD=<file>, which keeps the launch plain)
+        readonly property string file: (Qt.application.arguments.find(a => a.startsWith("--accounts-cmd=")) || "").slice(15) || backend.accountsCmdFile()
+        running: file.length > 0 && backend.testHarness()
+        interval: 1000; repeat: true
+        property int done: 0
+        onTriggered: {
+            const x = new XMLHttpRequest()
+            x.open("GET", "file://" + file, false)
+            try { x.send() } catch (e) { return }
+            const lines = (x.responseText || "").split("\n").filter(l => l.trim().length > 0)
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || ("--shots=" + file.replace(/\/[^/]*$/, ""))).slice(8) + "/"
+            while (done < lines.length) {
+                const parts = lines[done++].trim().split(/\s+/)
+                const c = parts[0], arg = parts.slice(1).join(" ")
+                console.warn("ACCT run", c, arg)
+                if (c === "flyout") { titleBar.refreshAccounts(); titleBar.pauseForTest("flyout") }
+                else if (c === "close") titleBar.closeProfileForTest()
+                else if (c === "settings") { titleBar.closeProfileForTest(); rail.current = "settings"; settingsView.pageForTest("accounts") }
+                else if (c === "chat") rail.current = "chat"
+                else if (c === "shot") window.contentItem.grabToImage(r => { r.saveToFile(dir + arg + ".png"); console.warn("ACCT shot", arg) })
+                else if (c === "title") console.warn("ACCT title", JSON.stringify(window.title), "signedIn", backend.signedIn, "personal", backend.personalAccount, "accounts", backend.otherAccountsJson())
+                else if (c === "switch") backend.switchAccount(arg)
+                else if (c === "add") backend.addAccount()
+                else if (c === "signout") backend.signOut()
+                else if (c === "refused-open") backend.dismissPersonalRefused(true)
+                else if (c === "refused-cancel") backend.dismissPersonalRefused(false)
+                else if (c === "hub") mtmaHub.show()
+                else if (c === "hub-hide") mtmaHub.hide()
+                else if (c === "hub-pick") console.warn("ACCT hub picked", mtmaHub.pickFirstChatForTest())
+                else if (c === "hub-state") console.warn("ACCT hub", JSON.stringify(mtmaHub.pinStateForTest()))
+                else if (c === "pin") console.warn("ACCT pinned", mtmaHub.pinFirstForTest())
+                else if (c === "unpin") mtmaHub.unpinAllForTest()
+            }
+        }
+    }
+
     // --seth-test --shots=<dir> (TASK-0088): Settings ▸ Calls' Teams 26304
     // additions (Intelligent call delegation card and page, Viewing incoming
     // calls, Call group and Delegates cards and pages), Notifications ▸
@@ -16467,6 +16517,7 @@ Window {
         onSuggestFeature: backend.openExternal(backend.feedbackLink("ideas"))
         userMail: backend.userMail
         orgName: backend.orgName
+        personal: backend.personalAccount
         onSetStatus: st => backend.setMyStatus(st)
         onSetStatusUntil: (st, dur) => backend.setMyStatusUntil(st, dur, "")
         onSetStatusNote: (msg, pinned, clearAfter) => backend.setStatusNote(msg, pinned, clearAfter, "")
@@ -17177,6 +17228,14 @@ Window {
         busy: backend.busy
         error: backend.statusText
         onSignIn: backend.beginSignIn()
+    }
+    // A second personal account signed in: Teams' "Multiple personal
+    // accounts aren't supported in Teams yet." (the sign-in is dropped).
+    PersonalRefusedDialog {
+        id: personalRefused
+        readonly property string info: backend.personalRefused
+        onInfoChanged: if (info) { try { account = JSON.parse(info) } catch (e) { account = {} } open() }
+        onAnswered: openWeb => backend.dismissPersonalRefused(openWeb)
     }
 
     AppRail {

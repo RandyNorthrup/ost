@@ -85,6 +85,40 @@ impl AccountIdentity {
         ))
     }
 
+    /// A personal account's identity from its sign-in's OpenID token
+    /// (`name`, `preferred_username`, `oid`): the `oid` is
+    /// `00000000-0000-0000-<cid>`, and the MRI is `8:live:.cid.<cid>` with
+    /// the cid's leading zeros dropped, as Teams writes it (OST Personal 2:
+    /// oid `…-0ca2-738c364862c6`, MRI `8:live:.cid.ca2738c364862c6`). The
+    /// Skype token's `skypeid` replaces the MRI once known
+    /// ([`Self::with_skype_id`]). None for a token that isn't a personal
+    /// account's (no such `oid`).
+    pub fn from_personal_id_token(id_token: &str) -> Option<Self> {
+        let oid = jwt_claim(id_token, "oid").filter(|o| is_guid(o))?;
+        let cid = personal_cid(&oid)?;
+        let email = jwt_claim(id_token, "preferred_username")
+            .or_else(|| jwt_claim(id_token, "email"))
+            .filter(|e| !e.trim().is_empty());
+        Some(Self {
+            kind: AccountKind::Personal,
+            mri: format!("{PERSONAL_PREFIX}.cid.{cid}"),
+            object_id: oid,
+            tenant_id: None,
+            display_name: jwt_claim(id_token, "name").filter(|n| !n.trim().is_empty()),
+            upn: email,
+        })
+    }
+
+    /// The personal identity with the MRI from the Skype token's `skypeid`
+    /// (`live:.cid.…`, or an old Skype name).
+    pub fn with_skype_id(mut self, skype_id: &str) -> Self {
+        let id = skype_id.trim();
+        if self.is_personal() && !id.is_empty() {
+            self.mri = user_mri(id);
+        }
+        self
+    }
+
     pub fn is_personal(&self) -> bool {
         self.kind == AccountKind::Personal
     }
@@ -96,6 +130,19 @@ impl AccountIdentity {
         !s.is_empty()
             && (s.eq_ignore_ascii_case(&self.mri) || s.eq_ignore_ascii_case(&self.object_id))
     }
+}
+
+/// The cid (lower-case hex, no leading zeros) in a personal account's
+/// `oid` (`00000000-0000-0000-<cid as 4+12 hex>`); None for a work
+/// account's object ID.
+fn personal_cid(oid: &str) -> Option<String> {
+    let hex: String = oid.chars().filter(|c| *c != '-').collect();
+    let (zeros, cid) = hex.split_at(16);
+    if zeros.chars().any(|c| c != '0') {
+        return None;
+    }
+    let cid = cid.trim_start_matches('0').to_ascii_lowercase();
+    (!cid.is_empty()).then_some(cid)
 }
 
 /// A work user's MRI from their Entra object ID (`8:orgid:{oid}`).
@@ -251,6 +298,25 @@ mod tests {
         assert_eq!(me.upn.as_deref(), Some("ost-test1@x.com"));
         assert!(me.is_me(&me.mri.to_uppercase()) && me.is_me(OID) && !me.is_me("8:orgid:x"));
         assert!(!me.is_me(""));
+    }
+
+    #[test]
+    fn personal_identity_from_the_id_token() {
+        // OST Personal 2's (captured 2026-11-27): the cid drops its zero.
+        let t = jwt_with(
+            r#"{"oid":"00000000-0000-0000-0ca2-738c364862c6","tid":"9188040d-6c67-4c5b-b112-36a304b66dad","name":"OST Personal 2","preferred_username":"ost-personal2-0238@outlook.com"}"#,
+        );
+        let me = AccountIdentity::from_personal_id_token(&t).unwrap();
+        assert!(me.is_personal());
+        assert_eq!(me.mri, "8:live:.cid.ca2738c364862c6");
+        assert_eq!(me.tenant_id, None);
+        assert_eq!(me.display_name.as_deref(), Some("OST Personal 2"));
+        assert_eq!(me.upn.as_deref(), Some("ost-personal2-0238@outlook.com"));
+        let me = me.with_skype_id("live:.cid.ca2738c364862c6");
+        assert_eq!(me.mri, "8:live:.cid.ca2738c364862c6");
+        // A work account's OpenID token isn't a personal identity.
+        let work = jwt_with(&format!(r#"{{"oid":"{OID}","name":"x"}}"#));
+        assert_eq!(AccountIdentity::from_personal_id_token(&work), None);
     }
 
     #[test]

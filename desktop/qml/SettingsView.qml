@@ -1976,6 +1976,8 @@ Rectangle {
                 }
                 Rectangle {
                     id: refreshBtn
+                    // A personal account's card has Manage only (testpc2).
+                    visible: !backend.personalAccount
                     x: parent.width - 158.7; y: 21.2
                     width: 32; height: 32; radius: 4
                     color: refreshHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface
@@ -2004,7 +2006,7 @@ Rectangle {
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-16"; size: 14; color: theme.onFill(hcFill5, theme.text) }
                     }
                     HoverHandler { id: manageHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: backend.openExternal("https://myaccount.microsoft.com/?login_hint=" + encodeURIComponent(backend.userMail)) }
+                    TapHandler { onTapped: backend.openExternal(backend.personalAccount ? "https://account.microsoft.com/" : "https://myaccount.microsoft.com/?login_hint=" + encodeURIComponent(backend.userMail)) }
                     Accessible.role: Accessible.Link
                     Accessible.name: qsTr("Manage Account for %1 (opens in new tab)").arg(backend.userName)
                 }
@@ -2013,9 +2015,10 @@ Rectangle {
                     x: 0.67; y: 72.67; width: parent.width - 1.33; height: 47.3
                     color: theme.pick("#FAFAFA", "#242424", "#000000")
                     Rectangle { x: 2; y: 4; width: 3; height: parent.height - 8; radius: 1.5; color: theme.brand }
-                    Text { x: 10; anchors.verticalCenter: parent.verticalCenter; text: backend.orgName; font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; color: theme.text }
+                    // A personal account is listed under "Personal" (Teams).
+                    Text { x: 10; anchors.verticalCenter: parent.verticalCenter; text: backend.personalAccount ? qsTr("Personal") : backend.orgName; font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; color: theme.text }
                     Accessible.role: Accessible.ListItem
-                    Accessible.name: backend.orgName
+                    Accessible.name: backend.personalAccount ? qsTr("Personal") : backend.orgName
                 }
             }
 
@@ -5185,7 +5188,7 @@ Rectangle {
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-16"; size: 14; color: theme.onFill(oacManage, theme.text) }
             }
             HoverHandler { id: oacHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: backend.openExternal("https://myaccount.microsoft.com/?login_hint=" + encodeURIComponent(oac.modelData.upn)) }
+            TapHandler { onTapped: backend.openExternal(oac.modelData.personal ? "https://account.microsoft.com/" : "https://myaccount.microsoft.com/?login_hint=" + encodeURIComponent(oac.modelData.upn)) }
             Accessible.role: Accessible.Link
             Accessible.name: qsTr("Manage Account for %1 (opens in new tab)").arg(oac.modelData.name || oac.modelData.upn)
         }
@@ -5193,9 +5196,9 @@ Rectangle {
         Rectangle {
             x: 0.67; y: 72.67; width: parent.width - 1.33; height: 47.3
             color: theme.pick("#FAFAFA", "#242424", "#000000")
-            Text { x: 10; anchors.verticalCenter: parent.verticalCenter; text: oac.modelData.org || ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Text { x: 10; anchors.verticalCenter: parent.verticalCenter; text: oac.modelData.personal ? qsTr("Personal") : (oac.modelData.org || ""); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             Accessible.role: Accessible.ListItem
-            Accessible.name: oac.modelData.org || ""
+            Accessible.name: oac.modelData.personal ? qsTr("Personal") : (oac.modelData.org || "")
         }
     }
     component CollapseButton: Rectangle {

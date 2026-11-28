@@ -42,17 +42,6 @@ impl AuthConfig {
             scope: "https://api.spaces.skype.com/.default offline_access",
         }
     }
-
-    /// Config for personal (consumer) accounts
-    pub fn personal() -> Self {
-        Self {
-            client_id: "8ec6bc83-69c8-4392-8f08-b3c986009232",
-            redirect_uri: "https://login.microsoftonline.com/common/oauth2/nativeclient",
-            origin: None,
-            tenant: "consumers",
-            scope: "https://api.spaces.skype.com/.default offline_access",
-        }
-    }
 }
 
 impl AuthConfig {
@@ -67,11 +56,24 @@ impl AuthConfig {
         }
     }
 
+    /// Teams on the web for personal use's sign-in, for a personal
+    /// Microsoft account (see [`spa`]).
+    pub fn teams_live() -> Self {
+        Self {
+            client_id: spa::PERSONAL_CLIENT_ID,
+            redirect_uri: spa::PERSONAL_REDIRECT_URI,
+            origin: Some(spa::PERSONAL_ORIGIN),
+            tenant: "consumers",
+            scope: spa::PERSONAL_SIGN_IN_SCOPE,
+        }
+    }
+
     /// The client the stored sign-in belongs to: refresh tokens only work
     /// with the client (and origin) that got them.
     pub fn for_flow(flow: Option<&str>) -> Self {
         match flow {
             Some(TEAMS_WEB_FLOW) => Self::teams_web(),
+            Some(TEAMS_LIVE_FLOW) => Self::teams_live(),
             _ => Self::work(),
         }
     }
@@ -79,6 +81,9 @@ impl AuthConfig {
 
 /// [`crate::config::Config::auth_flow`] for a browser (Teams on the web) sign-in.
 pub const TEAMS_WEB_FLOW: &str = "teams-web";
+/// [`crate::config::Config::auth_flow`] for a personal account's browser
+/// sign-in (Teams on the web for personal use).
+pub const TEAMS_LIVE_FLOW: &str = "teams-live";
 
 impl Default for AuthConfig {
     fn default() -> Self {
