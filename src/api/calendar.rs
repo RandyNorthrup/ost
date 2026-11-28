@@ -1017,6 +1017,24 @@ fn attendees_of(e: &serde_json::Value) -> Vec<Attendee> {
         .collect()
 }
 
+/// Whether your calendar has the event with this iCalUId (a channel
+/// meeting from its team's calendar: your copy, if you have one).
+pub async fn have_ical_uid(client: &TeamsClient, ical_uid: &str) -> Result<bool> {
+    anyhow::ensure!(
+        !ical_uid.is_empty() && ical_uid.bytes().all(|b| b.is_ascii_hexdigit()),
+        "Not an iCalUId"
+    );
+    let v: serde_json::Value = client
+        .graph_get(&format!(
+            "/me/events?$filter=iCalUId%20eq%20'{ical_uid}'&$select=id&$top=1"
+        ))
+        .await?
+        .json()
+        .await
+        .context("Calendar")?;
+    Ok(v["value"].as_array().is_some_and(|a| !a.is_empty()))
+}
+
 /// The path of an event in `calendar`: yours (`""` or one of your
 /// calendars' ids, as `/me/events`), or a team's group calendar
 /// (`group:<id>`, the Meetings pane's channel meetings).

@@ -27181,6 +27181,7 @@ impl qobject::Backend {
                         // earlier answer can be told apart.
                         let mut out = json!(m);
                         out["gen"] = a["gen"].clone();
+                        out["pane"] = a["pane"].clone();
                         Ok(out)
                     }
                     // The channel header's people button (Teams' channel
@@ -30958,6 +30959,8 @@ impl qobject::Backend {
                 let client = TeamsClient::new().await?;
                 match op.as_str() {
                     "detail" => api::calendar::event_detail(&client, &s("calendar"), &s("id")).await,
+                    // A channel meeting: is it in your calendar? {ical}.
+                    "haveIcal" => Ok(json!({ "ical": s("ical"), "found": api::calendar::have_ical_uid(&client, &s("ical")).await? })),
                     // A team calendar's meeting into yours: {group, id}.
                     "addToMyCalendar" => api::channel_meetings::add_to_my_calendar(&client, &s("group"), &s("id")).await.map(|_| json!({ "id": s("id") })),
                     // Outlook's event form: what it reads of the event

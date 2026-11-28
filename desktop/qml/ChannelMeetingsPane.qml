@@ -51,6 +51,9 @@ Rectangle {
     property var meetings: []
     property int pastCount: 0
     property int generation: 0
+    /// This pane's own requests (the main window's and a pop-out's panes
+    /// share backend.channelActionResult).
+    readonly property string instanceKey: Math.random().toString(36).slice(2)
 
     function dayStart(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
     // Teams' date filter ranges (getDateRange): local days, the week from
@@ -71,7 +74,7 @@ Rectangle {
         if (!teamId || !channelId) return
         loading = true; failed = false; generation++
         const r = range()
-        const arg = { organizer: organizer ? organizer.mri : "", gen: generation }
+        const arg = { organizer: organizer ? organizer.mri : "", gen: generation, pane: instanceKey }
         if (r) { arg.from = r[0].getTime(); arg.to = r[1].getTime() }
         backend.channelAction("channel-meetings", teamId, channelId, JSON.stringify(arg))
         // The team's members once per channel, not on every filter change.
@@ -92,7 +95,8 @@ Rectangle {
             if (r.op !== "channel-meetings") return
             // Only the answer to the latest request (filters changed while
             // an earlier one ran).
-            if (r.ok && r.data && r.data.gen !== pane.generation) return
+            if (r.ok && r.data && (r.data.gen !== pane.generation || r.data.pane !== pane.instanceKey)) return
+            if (!r.ok && !pane.loading) return
             pane.loading = false
             pane.failed = !r.ok
             pane.meetings = r.ok && r.data ? (r.data.meetings || []) : []
@@ -334,7 +338,9 @@ Rectangle {
         id: organizerPop
         y: filters.y + 24
         width: 254; padding: 0
-        height: 66.7 + (people.length ? people.length * 50 + 8 : 0)
+        // At most what the pane has below it; the rest scroll.
+        readonly property real listHeight: Math.min(people.length * 50, Math.max(150, pane.height - y - 66.7 - 24))
+        height: 66.7 + (people.length ? listHeight + 8 : 0)
         onOpened: { who.text = ""; who.forceActiveFocus() }
         readonly property var people: {
             const q = who.text.trim().toLowerCase()
@@ -357,8 +363,10 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 font.family: theme.font; font.pixelSize: 14; color: theme.text
                 clip: true
-                onTextChanged: if (text.trim()) whoTimer.restart()
-                Keys.onReturnPressed: if (organizerPop.people.length) organizerPop.pick(organizerPop.people[0])
+                onTextChanged: { personList.currentIndex = 0; if (text.trim()) whoTimer.restart() }
+                Keys.onReturnPressed: if (organizerPop.people.length) organizerPop.pick(organizerPop.people[Math.max(0, personList.currentIndex)])
+                Keys.onDownPressed: personList.currentIndex = Math.min(personList.currentIndex + 1, organizerPop.people.length - 1)
+                Keys.onUpPressed: personList.currentIndex = Math.max(personList.currentIndex - 1, 0)
                 Keys.onEscapePressed: organizerPop.close()
                 Text { visible: !who.text; text: qsTr("Filter by person"); font: who.font; color: theme.textSecondary }
                 Accessible.role: Accessible.EditableText
@@ -366,16 +374,21 @@ Rectangle {
             }
             Timer { id: whoTimer; interval: 250; onTriggered: backend.findPeople(pane.channelId, who.text) }
         }
-        Column {
-            x: 16.7; y: 54; width: 222
-            Repeater {
-                model: organizerPop.people
-                Rectangle {
+        ListView {
+            id: personList
+            x: 16.7; y: 54; width: 222; height: organizerPop.listHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            model: organizerPop.people
+            currentIndex: 0
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            delegate: Rectangle {
                     id: personRow
                     required property var modelData
+                    required property int index
                     readonly property bool me: String(modelData.mri || "").toLowerCase() === String(backend.userMri || "").toLowerCase()
                     width: 222; height: 50; radius: 4
-                    color: personHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : "transparent"
+                    color: personHover.hovered || (personList.currentIndex === index && who.text.trim() !== "") ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : "transparent"
                     Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32; name: personRow.modelData.name || ""; photoId: personRow.modelData.mri || "" }
                     Text {
                         x: 60; y: 7; width: parent.width - 68
@@ -394,7 +407,6 @@ Rectangle {
                     Accessible.role: Accessible.ListItem
                     Accessible.name: (modelData.name || "") + ", " + (modelData.mail || "")
                 }
-            }
         }
     }
     function escaped(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
