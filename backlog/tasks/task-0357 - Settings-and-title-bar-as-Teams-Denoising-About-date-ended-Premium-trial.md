@@ -1,7 +1,7 @@
 ---
 id: TASK-0357
 title: 'Settings and title bar as Teams: Denoising, About date, ended Premium trial'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-27T17:32:00Z'
