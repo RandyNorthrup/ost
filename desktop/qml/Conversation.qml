@@ -1057,6 +1057,15 @@ Rectangle {
     function mentionBot(name, mri) { compose.focusEditor(); compose.insertMentionOf({ mri: mri, name: name }) }
     function closePickerForTest() { msgHost.reactionPicker.close() }
     function closeMessageMenuForTest() { msgHost.messageMenu.close() }
+    function messageMenuForTest() { return msgHost.messageMenu }
+    /// A message's hover bar, while its delegate exists.
+    function hoverBarForTest(id) {
+        for (let i = 0; i < list.count; i++) {
+            const d = list.itemAtIndex(i)
+            if (d && d.modelData && d.modelData.id === id && d.hoverBarForTest) return d.hoverBarForTest()
+        }
+        return null
+    }
     function forwardDialogForTest() { return msgHost.forwardDialog }
     function reportDialogForTest() { return msgHost.reportDialog }
     function escapeHtml(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>") }
@@ -2884,6 +2893,7 @@ Rectangle {
                 MessageStatusIcons { anchors.verticalCenter: parent.verticalCenter; message: msg.modelData }
             }
             function editBoxForTest() { return editLoader.item }
+            function hoverBarForTest() { return actions }
             Loader {
                 id: editLoader
                 active: msg.editingThis
@@ -3814,7 +3824,7 @@ Rectangle {
                 onThreadRequested: m => root.openThread(m.root_id || m.id)
                 onKeyboardDone: root.focusCompose()
                 onActiveFocusChanged: if (!activeFocus && root.forceBarId === msg.modelData.id) root.forceBarId = ""
-                visible: can && (msgHover.hovered || actions.hovered || (msgHost.messageMenu.opened && !msgHost.messageMenu.rightClick && msgHost.messageMenu.message && msgHost.messageMenu.message.id === msg.modelData.id) || root.forceBarId === msg.modelData.id)
+                visible: can && (msgHover.hovered || actions.hovered || ((msgHost.messageMenu.opened || msgHost.messageMenu.closing) && !msgHost.messageMenu.rightClick && msgHost.messageMenu.message && msgHost.messageMenu.message.id === msg.modelData.id) || root.forceBarId === msg.modelData.id)
                 z: 5
                 y: bubble.y - height
                 x: bubble.x + bubble.width - width
