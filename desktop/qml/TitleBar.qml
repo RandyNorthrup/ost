@@ -23,7 +23,7 @@ Rectangle {
     signal searchPeople(string query)
     /// Enter in search: Teams' results page for the text (with any
     /// "is:Messages" style tab in it).
-    signal searchSubmitted(string text)
+    signal searchSubmitted(string text, var filters)
     /// Copilot in search (Teams' Serp catalyst, a licensed user with ECS
     /// autosuggest.enableSerpCatalystEntrySuggestion): the placeholders
     /// name Copilot and a query of two words or more is offered as "Ask
@@ -37,6 +37,13 @@ Rectangle {
     function chooseForTest(i) { suggestions.choose(suggestions.items[i]) }
     signal openChat(string id, string name)
     signal openPerson(string oid, string name)
+    /// Rows' secondary actions: a person's or chat's Open in new window,
+    /// Show Contact Card, a meeting's Join and Meeting Recap.
+    signal popOutPerson(string mri, string name)
+    signal popOutChat(string id, string name)
+    signal showContactCard(string mri)
+    signal joinMeeting(string url, string subject)
+    signal openMeetingRecap(string thread, string subject, string uid, string start, string end)
     /// A meeting suggestion: its details (join link, iCal uid, start).
     signal openMeeting(string joinUrl, string uid, string start)
     /// A message (or image) suggestion: the chat or channel at it.
@@ -83,6 +90,39 @@ Rectangle {
     // where the window never has focus.
     property bool keepSuggestionsOpen: false
     function typeSearch(t) { keepSuggestionsOpen = true; field.text = t; peopleDebounce.restart() }
+    // --search-steps: one step ("focus", "type:<text>", "pill:<label>",
+    // "pick:<n>", "hover:<n>", "action:<n>:<act>", "tab", "enter", "esc",
+    // "backspace", "goto", "down").
+    function searchStepForTest(step) {
+        const i = step.indexOf(":"), op = i < 0 ? step : step.slice(0, i), arg = i < 0 ? "" : step.slice(i + 1)
+        if (op === "focus") { keepSuggestionsOpen = true; field.forceActiveFocus(); askSuggestions() }
+        else if (op === "type") { keepSuggestionsOpen = true; field.insert(field.cursorPosition, arg); peopleDebounce.restart() }
+        else if (op === "pill") {
+            const list = suggestions.pillList.length ? suggestions.pillList : suggestions.pills.map(p => Object.assign({ kind: "scope" }, p))
+            const p = list.find(p => p.label === arg) || list.find(p => p.label.indexOf(arg) === 0)
+            if (p && suggestions.pillList.length) suggestions.pickPill(p)
+            else if (p) suggestions.pickScope(p.key)
+        }
+        else if (op === "pick") root.pick(suggestions.options[Number(arg)])
+        else if (op === "hover") suggestions.current = Number(arg)
+        else if (op === "action") { const j = arg.indexOf(":"); root.rowAction(suggestions.options[Number(arg.slice(0, j))], arg.slice(j + 1)) }
+        else if (op === "tab") { if (box.picker && suggestions.current >= 0) root.pick(suggestions.options[suggestions.current]) }
+        else if (op === "enter") root.enter()
+        else if (op === "esc") { if (gotoOn) leaveGoto(); else { field.text = ""; kqlPicks = [] } }
+        else if (op === "backspace") { if (gotoOn && !field.text) leaveGoto(); else field.remove(field.text.length - 1, field.text.length) }
+        else if (op === "goto") { keepSuggestionsOpen = true; gotoMode() }
+        else if (op === "down") suggestions.move(1)
+    }
+    function searchStateForTest() {
+        const row = it => [it.kql ? it.kql + ":" : "", it.kind, it.plain_name || it.name || it.title || "", it.sub || it.who || it.place || ""].join("|")
+        const cur = suggestions.current >= 0 ? suggestions.options[suggestions.current] : null
+        return JSON.stringify({ text: field.text, styled: boxStyled !== "", mode: suggestMode, ghost: ghost, placeholder: gotoOn ? "goto" : "",
+            pills: (suggestions.pillList.length ? suggestions.pillList : suggestions.showPills ? suggestions.pills : []).map(p => p.label + (p.chosen ? "*" : "")),
+            groups: suggestions.groups.map(g => [g.id, g.title, g.items.map(row)]),
+            current: suggestions.current, actions: cur ? suggestions.actionsFor(cur).map(a => a.label) : [],
+            enter: suggestions.showEnter ? suggestions.enterLabel : "", feedback: suggestions.showPills,
+            reply: [String(reply.query || ""), (reply.groups || []).length] })
+    }
     color: theme.titleBar
     height: theme.titleBarHeight
 
@@ -157,18 +197,35 @@ Rectangle {
         anchors.verticalCenter: parent.verticalCenter
         color: theme.titleSearchFill
         border.color: field.activeFocus ? theme.brand : "transparent"
-        FluentIcon { name: "search-20"; size: 16; x: 25; anchors.verticalCenter: parent.verticalCenter; color: theme.onFill(search, theme.titleSearchIcon) }
+        FluentIcon { visible: !root.gotoOn; name: "search-20"; size: 16; x: 25; anchors.verticalCenter: parent.verticalCenter; color: theme.onFill(search, theme.titleSearchIcon) }
+        // Go-to mode's "/goto" (Teams' command chip: the box's left, a line
+        // after it).
+        Rectangle {
+            id: gotoChip
+            visible: root.gotoOn
+            x: 1; y: 1; height: parent.height - 2; width: gotoText.implicitWidth + 20
+            radius: theme.radius; color: "transparent"
+            Text { id: gotoText; anchors.centerIn: parent; text: "/" + qsTr("goto"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(search, theme.text) }
+            Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF") }
+        }
         TextInput {
             id: field
             // The input starts at 51 px with 8.5 px of padding, as in Teams.
-            x: 60; width: parent.width - 70
+            x: root.gotoOn ? gotoChip.width + 10 : 60
+            width: parent.width - x - (clearButton.visible ? 42 : 10)
             anchors.verticalCenter: parent.verticalCenter
             font.family: theme.font; font.pixelSize: theme.base
-            color: theme.onFill(search, theme.text)
+            // A scope and the picked filters show in the brand colour
+            // (drawn by boxText over the box's own).
+            color: boxText.visible ? "transparent" : theme.onFill(search, theme.text)
+            selectedTextColor: boxText.visible ? "transparent" : theme.textOnBrand
             clip: true
             onTextEdited: peopleDebounce.restart()
-            Keys.onEscapePressed: { text = ""; focus = false; root.searchOpen = false }
-            onActiveFocusChanged: if (!activeFocus && text.length === 0) root.searchOpen = false
+            Keys.onEscapePressed: {
+                if (root.gotoOn) { root.leaveGoto(); return }
+                text = ""; root.kqlPicks = []; focus = false; root.searchOpen = false
+            }
+            onActiveFocusChanged: if (!activeFocus) { if (root.gotoOn && !root.keepSuggestionsOpen) root.leaveGoto(); if (text.length === 0) root.searchOpen = false }
             // The arrows move through the suggestions; Enter opens the one
             // picked, else the results.
             Keys.onDownPressed: suggestions.move(1)
@@ -176,14 +233,45 @@ Rectangle {
             // Alt+arrows scroll the scope pills that don't fit.
             Keys.onLeftPressed: e => { if (e.modifiers & Qt.AltModifier) suggestions.scrollPills(-1); else e.accepted = false }
             Keys.onRightPressed: e => { if (e.modifiers & Qt.AltModifier) suggestions.scrollPills(1); else e.accepted = false }
-            Keys.onReturnPressed: {
-                if (suggestions.current >= 0 && suggestions.options[suggestions.current]) { root.pick(suggestions.options[suggestions.current]); return }
-                if (!root.searchWords) return
-                root.submit(field.text)
+            // Tab takes a picker's pick (its name shows after the cursor).
+            Keys.onTabPressed: e => {
+                if (root.box.picker && suggestions.current >= 0 && suggestions.options[suggestions.current]) root.pick(suggestions.options[suggestions.current])
+                else e.accepted = false
+            }
+            // Backspace in an empty go-to box leaves go-to mode.
+            Keys.onPressed: e => { if (e.key === Qt.Key_Backspace && root.gotoOn && !text) { root.leaveGoto(); e.accepted = true } }
+            Keys.onReturnPressed: root.enter()
+            Keys.onEnterPressed: root.enter()
+            Text {
+                id: boxText
+                visible: root.boxStyled !== ""
+                // (Asked again as the box scrolls with the text.)
+                x: { field.text; field.cursorPosition; field.width; return field.positionToRectangle(0).x }
+                height: field.height
+                textFormat: Text.StyledText
+                text: root.boxStyled
+                font: field.font
+                color: theme.onFill(search, theme.text)
+            }
+            // A picker's first pick: the rest of its name after the cursor
+            // and the Tab key.
+            Row {
+                visible: root.ghost !== "" && field.cursorPosition === field.text.length
+                x: { field.text; field.cursorPosition; return field.positionToRectangle(field.text.length).x }
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 8
+                Text { text: root.ghost; font: field.font; color: theme.onFill(search, theme.textTertiary) }
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: tabText.implicitWidth + 17.3; height: 20; radius: 2; color: "transparent"
+                    border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
+                    Text { id: tabText; anchors.centerIn: parent; text: qsTr("Tab"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                }
             }
             Text {
                 visible: !field.text
-                text: root.copilotSearch
+                text: root.gotoOn ? qsTr("Type a chat or channel")
+                    : root.copilotSearch
                     ? (field.activeFocus ? qsTr("Look for people, messages, files and more or ask Copilot") : qsTr("Search or ask Copilot (%1)").arg("Ctrl+E"))
                     : field.activeFocus ? qsTr("Press %1 to go right to a chat or channel").arg("Ctrl+G") : qsTr("Search (%1)").arg("Ctrl+E")
                 color: theme.onFill(search, theme.textTertiary)
@@ -191,18 +279,221 @@ Rectangle {
             }
             Accessible.name: qsTr("Search")
         }
+        // Teams' Clear query (Clear command in go-to mode).
+        Rectangle {
+            id: clearButton
+            visible: !!field.text || root.gotoOn
+            anchors.right: parent.right; anchors.rightMargin: 1; anchors.verticalCenter: parent.verticalCenter
+            width: 32; height: 30; radius: theme.radius
+            color: clh.hovered ? theme.titleHover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.onFill(search, theme.titleSearchIcon) }
+            HoverHandler { id: clh; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: { if (root.gotoOn && !field.text) root.leaveGoto(); else { field.text = ""; root.kqlPicks = [] } field.forceActiveFocus(); root.askSuggestions() } }
+            Accessible.role: Accessible.Button
+            Accessible.name: root.gotoOn ? qsTr("Clear command") : qsTr("Clear query")
+        }
     }
 
-    // What's typed, without an "is:<Tab>" scope (a scope pill puts one
-    // in the box, as Teams does).
+    // The box, as Teams reads it: "is:<Domain>" (a scope pill puts it
+    // there), the picked filters (each a token Teams writes into the box,
+    // "from:OST Test 2", with what it stands for in kqlPicks), a from:, in:
+    // or filetype: being typed (its picker), and the words.
     readonly property var scopeKeys: ({ messages: "Messages", files: "Files", channels: "Channels", groupchats: "Group chats", meetings: "Meetings", images: "Images" })
-    readonly property string searchScope: {
-        const m = field.text.match(/\bis:(messages|files|channels|groupchats|group chats|meetings|images)\b/i)
-        return m ? m[1].toLowerCase().replace(" ", "") : ""
+    readonly property var scopeRe: /\bis:(messages|files|channels|groupchats|group chats|meetings|images)\b/i
+    /// Picked filters: {kw: "from"|"in"|"filetype"|"has", token, label,
+    /// data (a person or place), value (a type), photo, icon, square}.
+    property var kqlPicks: []
+    function parseBox(text, picks) {
+        let rest = String(text)
+        let scope = "", scopeToken = ""
+        const m = rest.match(root.scopeRe)
+        if (m) { scope = m[1].toLowerCase().replace(" ", ""); scopeToken = m[0]; rest = rest.replace(m[0], " ") }
+        const active = []
+        for (const k of picks.slice().sort((a, b) => b.token.length - a.token.length)) {
+            const i = rest.indexOf(k.token)
+            if (i < 0) continue
+            active.push(k)
+            rest = rest.slice(0, i) + " " + rest.slice(i + k.token.length)
+        }
+        active.sort((a, b) => picks.indexOf(a) - picks.indexOf(b))
+        let picker = null
+        const pm = rest.match(/(?:^|\s)(from|in|filetype):(.*)$/i)
+        if (pm) { picker = { kw: pm[1].toLowerCase(), q: pm[2].replace(/^\s+/, "") }; rest = rest.slice(0, pm.index) }
+        return { scope: scope, scopeToken: scopeToken, active: active, picker: picker, words: rest.replace(/\s+/g, " ").trim() }
     }
-    readonly property string searchWords: field.text.replace(/\bis:(messages|files|channels|groupchats|group chats|meetings|images)\b/i, "").trim()
-    function askSuggestions() { backend.searchSuggest(root.searchWords) }
+    readonly property var box: parseBox(field.text, kqlPicks)
+    readonly property string searchScope: box.scope
+    readonly property string searchWords: box.words
+    readonly property bool kqlMode: !!box.scope || box.active.length > 0 || !!box.picker
+    readonly property string suggestMode: gotoOn ? "goto" : box.picker ? "picker" : kqlMode ? "scoped" : "plain"
+    readonly property string suggestKey: gotoOn ? "goto:" + field.text.trim() : kqlMode ? "kql:" + field.text.trim() : searchWords
+    // The box with the scope and picked filters in the brand colour.
+    readonly property string boxStyled: {
+        if (!box.scopeToken && !box.active.length) return ""
+        const t = field.text, marks = []
+        const add = tok => { const i = t.indexOf(tok); if (i >= 0) marks.push([i, i + tok.length]) }
+        if (box.scopeToken) add(box.scopeToken)
+        for (const k of box.active) add(k.token)
+        marks.sort((a, b) => a[0] - b[0])
+        const esc = x => x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/ /g, "&nbsp;")
+        let out = "", at = 0
+        for (const [a, b] of marks) {
+            if (a < at) continue
+            out += esc(t.slice(at, a)) + "<font color='" + theme.brand + "'>" + esc(t.slice(a, b)) + "</font>"
+            at = b
+        }
+        return out + esc(t.slice(at))
+    }
+    // The rest of a picker's first name ("from:ost" → " Test 2").
+    readonly property string ghost: {
+        if (!box.picker || !box.picker.q || suggestions.current !== 0) return ""
+        const o = suggestions.options[0]
+        const n = o ? String(o.plain_name || o.name || o.title || "") : ""
+        return n.toLowerCase().startsWith(box.picker.q.toLowerCase()) ? n.slice(box.picker.q.length) : ""
+    }
+    // What a scoped request says (api::autosuggest::kql_request's spec).
+    function kqlSpec() {
+        const b = box
+        const ft = b.active.find(k => k.kw === "filetype")
+        // (Teams' query string has the scope, the words, then the filters
+        // — the order its box has them when the words came first; the
+        // service reads words after a has: as part of it.)
+        const canonical = [b.scopeToken, b.words].concat(b.active.map(k => k.token)).filter(x => !!x).join(" ") + " "
+        return { key: suggestKey, text: b.picker ? field.text : canonical, words: b.words, scope: b.scope,
+                 picks: b.active.filter(k => k.kw === "from" || k.kw === "in").map(k => k.data),
+                 filetype: ft ? ft.value : "", mentions: b.active.some(k => k.token === "has:@Mentions"), attachments: b.active.some(k => k.token === "has:Attachments"),
+                 picker: b.picker ? b.picker.kw : "", picker_query: b.picker ? b.picker.q : "" }
+    }
+    function askSuggestions() {
+        if (root.gotoOn) {
+            // Teams' own list first; the service only when nothing matches
+            // (your top people come with the empty box's suggestions).
+            if (!field.text.trim()) { if (!root.topPeople.length) backend.searchSuggest(""); return }
+            if (!root.gotoLocal.length) backend.searchSuggestKql(JSON.stringify({ key: suggestKey, goto: true, words: field.text.trim() }))
+            return
+        }
+        if (!kqlMode) { backend.searchSuggest(root.searchWords); return }
+        if (box.picker && box.picker.kw === "filetype") return
+        backend.searchSuggestKql(JSON.stringify(kqlSpec()))
+    }
     Timer { id: peopleDebounce; interval: 150; onTriggered: root.askSuggestions() }
+
+    // The scope pills (Teams' domainPillsOrder) and each one's filters
+    // (ECS autosuggest.nestedFiltersConfig).
+    readonly property var scopeOrder: ["messages", "files", "channels", "groupchats", "meetings", "images"]
+    readonly property var nestedFilters: ({ messages: ["from", "in", "has:@Mentions", "has:Attachments"], files: ["from", "in", "filetype"] })
+    function filterLabel(f) { return f === "has:@Mentions" ? qsTr("@Mentions") : f === "has:Attachments" ? qsTr("Has attachments") : f + ":" }
+    function personPill(p, chosen) {
+        return { kind: chosen ? "chosen" : "pcs", chosen: chosen, label: "from:" + (p.plain_name || p.name || p.title || ""), name: p.plain_name || p.name || p.title || "", photo: p.mri || "", person: p }
+    }
+    readonly property var reply: backend.suggestJson ? JSON.parse(backend.suggestJson) : ({})
+    // The from:<person> pill Teams offers for a person in the words.
+    readonly property var pcsPerson: {
+        if (suggestMode === "plain" && searchWords) {
+            if (String(reply.query || "") !== searchWords) return null
+            for (const g of (reply.groups || [])) for (const it of g.items) if (it.kind === "pcs") return { kind: "person", name: it.title, plain_name: it.title, mail: it.mail, mri: it.mri, oid: String(it.mri || "").split(":").pop() }
+            return null
+        }
+        if (suggestMode === "scoped" && box.words && String(reply.query || "") === suggestKey && reply.pcs && !box.active.some(k => k.kw === "from")) return reply.pcs
+        return null
+    }
+    readonly property var pillList: {
+        const b = box, out = []
+        const chosenPill = k => ({ kind: "chosen", chosen: true, token: k.token, label: k.label, name: k.name || "", photo: k.photo || "", icon: k.icon || "", square: !!k.square })
+        if (suggestMode !== "scoped" && suggestMode !== "plain") return []
+        if (b.scope) {
+            out.push({ kind: "scope", key: b.scope, chosen: true, label: suggestions.pills.find(p => p.key === b.scope).label })
+            for (const k of b.active) out.push(chosenPill(k))
+            if (pcsPerson) out.push(personPill(pcsPerson, false))
+            for (const f of (nestedFilters[b.scope] || [])) {
+                if (b.active.some(k => k.token === f || k.kw === f)) continue
+                if (f === "from" && pcsPerson) continue
+                out.push({ kind: "nested", kw: f, label: filterLabel(f) })
+            }
+            return out
+        }
+        // A person picked with no scope (people-centric search): them, then
+        // the scopes but Channels.
+        for (const k of b.active) out.push(chosenPill(k))
+        if (!b.active.length && pcsPerson) out.push(personPill(pcsPerson, false))
+        for (const p of suggestions.pills) if (!(b.active.length && p.key === "channels")) out.push({ kind: "scope", key: p.key, label: p.label })
+        return out
+    }
+    // Everything Teams' Select a file type offers (its names; the filter
+    // is Teams' ExtensionType, the results page's File Type key).
+    readonly property var fileTypes: [
+        { label: qsTr("Excel"), value: "Excel", key: "excel", ext: "xlsx" }, { label: qsTr("Loop"), value: "Loop", key: "loop", ext: "loop" },
+        { label: qsTr("PDF"), value: "Pdf", key: "pdf", ext: "pdf" }, { label: qsTr("PowerPoint"), value: "Powerpoint", key: "powerpoint", ext: "pptx" },
+        { label: qsTr("Text file"), value: "Text", key: "text", ext: "txt" }, { label: qsTr("Word"), value: "Word", key: "word", ext: "docx" }]
+    readonly property var localGroups: {
+        if (gotoOn) {
+            const list = gotoLocal
+            if (list.length || !field.text.trim()) return [{ id: "GOTO", title: "", items: list }]
+            return null
+        }
+        if (box.picker && box.picker.kw === "filetype") {
+            const q = box.picker.q.toLowerCase()
+            return [{ id: "FILETYPES", title: qsTr("Select a file type"), items: fileTypes.filter(t => t.label.toLowerCase().indexOf(q) >= 0).map(t => Object.assign({ kind: "filetype", title: t.label }, t)) }]
+        }
+        return null
+    }
+
+    // Go-to mode (Ctrl+G, the tip): Teams' local list of the people,
+    // chats and channels you have (two of your top people, then 1:1
+    // chats as people — five people at most once something is typed —
+    // then group and meeting chats and channels by when they were last
+    // active), ten in all; a name matches when each typed word starts one
+    // of its words (or a team's, or an address's).
+    property bool gotoOn: false
+    property var teams: []
+    property var topPeople: []
+    Connections {
+        target: backend
+        function onSuggestJsonChanged() {
+            const r = root.reply
+            if (String(r.query || "") !== "") return
+            const g = (r.groups || []).find(g => g.id === "PEOPLE")
+            if (g) root.topPeople = g.items
+        }
+    }
+    readonly property var gotoLocal: {
+        if (!gotoOn) return []
+        const words = field.text.toLowerCase().split(/\s+/).filter(w => !!w)
+        const match = function () {
+            if (!words.length) return true
+            const parts = [].slice.call(arguments).join(" ").toLowerCase().split(/[\s@._\-]+/).filter(x => !!x)
+            return words.every(w => parts.some(x => x.startsWith(w)))
+        }
+        const people = [], seen = {}
+        const most = words.length ? 5 : 3
+        const addPerson = p => {
+            const k = String(p.mri || "").toLowerCase()
+            if (!k || seen[k] || people.length >= most) return
+            seen[k] = true
+            people.push(p)
+        }
+        for (const p of topPeople.slice(0, 2)) if (match(p.plain_name || p.name, p.sub, p.mail || p.upn)) addPerson(Object.assign({}, p, { kind: "person" }))
+        for (const c of chats) {
+            if (c.isGroup || c.meeting || !c.peerMri) continue
+            if (!words.length && !c.isSelf) continue
+            if (!match(c.plain_name || c.name)) continue
+            addPerson({ kind: "person", oid: String(c.peerMri).split(":").pop(), mri: c.peerMri, name: c.name, plain_name: c.plain_name || c.name, you: !!c.isSelf, sub: "", chat: c.id })
+        }
+        const convs = []
+        for (const c of chats) if ((c.isGroup || c.meeting) && !c.hidden && match(c.name)) convs.push({ kind: "chat", thread: c.id, title: c.name, meeting: !!c.meeting, named: !!c.named, time: c.time || "" })
+        for (const t of teams) for (const ch of (t.channels || [])) if (ch.shown !== false && !ch.archived && match(ch.name, t.name))
+            convs.push({ kind: "channel", thread: ch.id, group: t.id, title: ch.name, sub: t.name, time: ch.last_active || "" })
+        convs.sort((a, b) => (Date.parse(b.time) || 0) - (Date.parse(a.time) || 0))
+        return people.concat(convs).slice(0, 10)
+    }
+    function gotoMode() {
+        root.gotoOn = true
+        field.text = ""; root.kqlPicks = []
+        root.searchOpen = true
+        field.forceActiveFocus()
+        root.askSuggestions()
+    }
+    function leaveGoto() { root.gotoOn = false; field.text = ""; root.askSuggestions() }
 
     // Search suggestions (Teams' powerbar, SearchSuggest.qml): asked as the
     // box gets focus with nothing typed, and as you type.
@@ -213,42 +504,170 @@ Rectangle {
         x: search.x; y: search.y + search.height + 2
         width: search.width
         maxHeight: Math.round((root.Window.window ? root.Window.window.height : 680) * 0.7)
-        query: root.searchWords
+        query: root.box.picker ? root.box.picker.q : root.gotoOn ? field.text.trim() : root.searchWords
         scope: root.searchScope
-        reply: backend.suggestJson ? JSON.parse(backend.suggestJson) : ({})
+        mode: root.suggestMode
+        key: root.suggestKey
+        pillList: root.suggestMode === "plain" && !root.pcsPerson ? [] : root.pillList
+        local: root.localGroups
+        enterShown: !!root.searchWords || root.box.active.some(k => k.kw === "from" || k.kw === "in" || k.kw === "filetype")
+        reply: root.reply
         chats: root.chats
         copilot: root.copilotSearch
         readonly property var items: options
         // Opening asks again: nothing typed (Teams asks on every focus), or
         // words the last answer wasn't for (a picked search put them there).
-        onVisibleChanged: if (visible && (!root.searchWords || String((reply || {}).query || "").trim() !== root.searchWords)) root.askSuggestions()
+        onVisibleChanged: if (visible && (!field.text.trim() || String((reply || {}).query || "").trim() !== root.suggestKey.trim())) root.askSuggestions()
         function choose(item) { root.pick(item) }
         onActivate: item => root.pick(item)
-        onPickScope: key => {
-            // With words typed, the pill opens that tab of the results;
-            // with none, the box keeps the scope ("is:Files") for them.
-            if (key && root.searchWords) { root.submit(root.searchWords + " is:" + root.scopeKeys[key]); return }
-            field.text = key ? "is:" + root.scopeKeys[key] + " " : root.searchWords
-            field.forceActiveFocus()
+        onPickScope: key => root.setScope(key)
+        onPickPill: p => {
+            if (p.kind === "scope") root.setScope(p.chosen ? "" : p.key)
+            else if (p.kind === "chosen") root.removeToken(p.token)
+            else if (p.kind === "pcs") root.addPick(root.personPick(p.person, "from"), true)
+            else if (p.kind === "nested") {
+                if (p.kw.indexOf("has:") === 0) root.addPick({ kw: "has", token: p.kw, label: root.filterLabel(p.kw) }, false)
+                else root.setBox(field.text.replace(/\s+$/, "") + " " + p.kw + ":")
+            }
         }
+        onAction: (item, act) => root.rowAction(item, act)
         onFeedback: kind => root.searchFeedback(kind, root.searchWords)
     }
-    function submit(text) {
+    // Put text in the box (a pill, a pick) and ask for its suggestions.
+    function setBox(t) {
+        field.text = t
+        field.cursorPosition = t.length
+        field.forceActiveFocus()
+        root.askSuggestions()
+    }
+    // A scope pill: "is:<Domain>" after what's there (Teams writes it
+    // after the words); its ×: the scope and its own filters go.
+    function setScope(key) {
+        if (key) {
+            const rest = field.text.replace(root.scopeRe, " ").replace(/\s+$/, "")
+            root.setBox((rest.trim() ? rest + " " : "") + "is:" + root.scopeKeys[key] + " ")
+            return
+        }
+        let t = field.text.replace(root.scopeRe, " ")
+        for (const k of root.box.active) if (k.kw === "filetype" || k.kw === "has") t = t.replace(k.token, " ")
+        root.kqlPicks = root.kqlPicks.filter(k => k.kw === "from" || k.kw === "in")
+        root.setBox(t.replace(/\s+/g, " ").replace(/^\s+/, ""))
+    }
+    function removeToken(token) {
+        root.kqlPicks = root.kqlPicks.filter(k => k.token !== token)
+        root.setBox(field.text.replace(token, " ").replace(/\s+/g, " ").replace(/^\s+/, ""))
+    }
+    // A picked person or place as a filter (a picker's row; the
+    // from:<person> pill).
+    function personPick(p, kw) {
+        const name = p.plain_name || p.name || p.title || ""
+        return { kw: kw, token: kw + ":" + name, label: kw + ":" + name, name: name, photo: p.mri || "",
+                 data: { kw: kw, kind: "person", name: name, mail: p.mail || p.upn || "", mri: p.mri || "", oid: p.oid || String(p.mri || "").split(":").pop(), sub: p.sub || "" } }
+    }
+    function placePick(it) {
+        const kind = it.kind === "person" ? "person" : it.kind === "channel" ? "channel" : it.kind === "team" ? "team" : "chat"
+        if (kind === "person") return root.personPick(it, "in")
+        const name = kind === "chat" ? suggestions.chatName(it) : (it.title || "")
+        return { kw: "in", token: "in:" + name, label: "in:" + name, name: name, square: kind !== "chat",
+                 photo: kind === "chat" ? (it.meeting ? "" : "chat:" + it.thread) : it.group ? "team:" + it.group : "",
+                 data: { kw: "in", kind: kind, name: name, thread: it.thread || "", group: it.group || "", ctype: it.ctype || "" } }
+    }
+    // A filter picked: its token replaces what the picker had in the box
+    // (`replaceWords`: the from:<person> pill takes the words' place).
+    function addPick(k, replaceWords) {
+        let t = field.text
+        const b = root.box
+        if (b.picker) {
+            // (The picker is the box's last operator; picked ones before it
+            // may use the same word.)
+            const i = t.toLowerCase().lastIndexOf(b.picker.kw + ":")
+            if (i >= 0) t = t.slice(0, i)
+        } else if (replaceWords && b.words) {
+            const i = t.lastIndexOf(b.words)
+            if (i >= 0) t = t.slice(0, i) + t.slice(i + b.words.length)
+        }
+        root.kqlPicks = root.kqlPicks.filter(x => x.token !== k.token).concat([k])
+        t = t.replace(/\s+$/, "")
+        root.setBox((t.trim() ? t + " " : "") + k.token + " ")
+    }
+    function submit(text, filters) {
         root.keepSuggestionsOpen = false
         field.text = text
         field.focus = false
-        root.searchSubmitted(text)
+        root.searchSubmitted(text, filters || null)
+    }
+    // The results page's filters for the picked KQL filters (Person ▾,
+    // In ▾, File Type ▾, More ▾).
+    function resultFilters() {
+        const b = root.box, f = {}
+        for (const k of b.active) {
+            const d = k.data || {}
+            if (k.kw === "from") f.person = { name: d.name, mail: d.mail || "", mri: d.mri || "", from: true }
+            else if (k.kw === "in" && d.kind === "person") {
+                const c = root.chats.find(c => String(c.peerMri || "").toLowerCase() === String(d.mri || "").toLowerCase())
+                if (c) f.inPlace = { kind: "chat", thread: c.id, group: "", name: d.name }
+            } else if (k.kw === "in") f.inPlace = { kind: d.kind, thread: d.thread, group: d.group || "", name: d.name }
+            else if (k.kw === "filetype") f.fileType = (root.fileTypes.find(t => t.value === k.value) || {}).key || ""
+            else if (k.token === "has:@Mentions") f.mentions = true
+            else if (k.token === "has:Attachments") f.attachment = true
+        }
+        return Object.keys(f).length ? f : null
+    }
+    // Enter: the picked row, else the results (with the filters).
+    function enter() {
+        const o = suggestions.current >= 0 ? suggestions.options[suggestions.current] : null
+        if (o) { root.pick(o); return }
+        if (root.gotoOn) { const t = field.text.trim(); if (t) { root.gotoOn = false; root.submit(t) } return }
+        if (root.kqlMode) {
+            const f = root.resultFilters()
+            if (!root.searchWords && !f) return
+            const words = root.searchWords + (root.searchScope ? " is:" + root.scopeKeys[root.searchScope] : "")
+            root.keepSuggestionsOpen = false
+            field.focus = false
+            root.searchSubmitted(words.trim(), f)
+            return
+        }
+        if (!root.searchWords) return
+        root.submit(field.text)
+    }
+    // A row's secondary action (Teams' hostAppActions for them).
+    function rowAction(item, act) {
+        const close = () => { root.keepSuggestionsOpen = false; field.text = ""; root.kqlPicks = []; field.focus = false }
+        switch (act) {
+        case "popout":
+            if (item.kind === "person") root.popOutPerson(item.mri || ("8:orgid:" + item.oid), item.plain_name || item.name)
+            else root.popOutChat(item.thread, item.kind === "chat" ? suggestions.chatName(item) : item.title)
+            break
+        case "card": root.showContactCard(item.mri || ("8:orgid:" + item.oid)); break
+        case "pcs":
+            close(); field.text = item.plain_name || item.name
+            root.searchPerson({ name: item.plain_name || item.name, mail: item.mail || item.upn || "", mri: item.mri || "", from: false })
+            return
+        case "copylink":
+            if (item.kind === "file") backend.copyText(item.url)
+            else backend.copyText("https://teams.microsoft.com/l/channel/" + encodeURIComponent(item.thread) + "/" + encodeURIComponent(item.title) + "?groupId=" + (item.group || ""))
+            return
+        case "meetingchat": root.openChat(item.thread, item.title); break
+        case "join": root.joinMeeting(item.join, item.title); break
+        case "recap": root.openMeetingRecap(item.thread, item.title, item.uid || "", item.start || "", item.end || ""); break
+        default: return
+        }
+        close()
     }
     // A suggestion picked (Teams' hostAppActions): people and chats open
     // their chat, teams and channels the channel, files the file, meetings
     // their details, messages the chat at the message; a recent or
-    // suggested search, "See more messages" and Enter run the search.
+    // suggested search, "See more messages" and Enter run the search. A
+    // picker's row becomes a filter; go-to mode's opens and leaves.
     function pick(item) {
-        const done = () => { root.keepSuggestionsOpen = false; field.text = ""; field.focus = false }
+        if (item.kql === "from") { root.addPick(root.personPick(item, "from"), false); return }
+        if (item.kql === "in") { root.addPick(root.placePick(item), false); return }
+        if (item.kind === "filetype") { root.addPick({ kw: "filetype", token: "filetype:" + item.label, label: "filetype:" + item.value, value: item.value, icon: suggestions.fileIcon(item.ext) }, false); return }
+        const done = () => { root.keepSuggestionsOpen = false; field.text = ""; root.kqlPicks = []; root.gotoOn = false; field.focus = false }
         const terms = root.searchWords.split(/\s+/).filter(w => !!w)
         switch (item.kind) {
         case "copilot": root.keepSuggestionsOpen = false; field.focus = false; root.askCopilot(item.title); return
-        case "person": root.openPerson(item.oid, item.plain_name || item.name); break
+        case "person": if (item.chat) root.openChat(item.chat, item.plain_name || item.name); else root.openPerson(item.oid, item.plain_name || item.name); break
         case "chat": root.openChat(item.thread, suggestions.chatName(item)); break
         case "team": case "channel": root.openChat(item.thread, item.title); break
         case "file": backend.openFile(item.url, item.title, ""); break
@@ -262,15 +681,15 @@ Rectangle {
             root.keepSuggestionsOpen = false; field.text = item.title; field.focus = false
             root.searchPerson({ name: item.title, mail: item.mail || "", mri: item.mri || "", from: false })
             return
-        case "seemore": root.submit(item.query + " is:Messages"); return
-        case "enter": if (field.text.trim()) root.submit(field.text); return
+        case "seemore":
+            if (item.from) { root.keepSuggestionsOpen = false; field.focus = false; root.searchSubmitted((item.query + " is:Messages").trim(), root.resultFilters()); return }
+            root.submit(item.query + " is:Messages"); return
+        case "enter": root.enter(); return
         case "tip": root.gotoMode(); return
         default: return
         }
         done()
     }
-    // The tip's Ctrl+G: the box, focused for a chat or channel's name.
-    function gotoMode() { field.forceActiveFocus() }
 
     BarButton {
         id: moreButton

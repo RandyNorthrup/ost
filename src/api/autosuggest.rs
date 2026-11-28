@@ -44,21 +44,11 @@ pub fn typed_body(query: &str, cvid: &str, logical_id: &str) -> Value {
     let q = json!({ "QueryString": query, "NormalizedQueryString": query });
     json!({
         "EntityRequests": [
-            {
-                "Query": { "QueryString": query, "DisplayQueryString": query, "NormalizedQueryString": query },
-                "EntityType": "People", "Size": 5,
-                "Fields": ["Id", "MRI", "DisplayName", "EmailAddresses", "PeopleType", "PeopleSubtype", "Phones", "UserPrincipalName", "GivenName", "Surname", "Cid", "CompanyName", "JobTitle", "ImAddress", "ExternalDirectoryObjectId", "ConcatenatedId", "Department"],
-                "Filter": { "And": [
-                    { "Or": [{ "Term": { "PeopleType": "Person" } }, { "Term": { "PeopleType": "Other" } }] },
-                    { "Or": [{ "Term": { "PeopleSubtype": "OrganizationUser" } }, { "Term": { "PeopleSubtype": "MTOUser" } }, { "Term": { "PeopleSubtype": "PersonalContact" } }, { "Term": { "PeopleSubtype": "Guest" } }] },
-                    { "Or": [{ "Term": { "Flags": "NonHidden" } }] }
-                ] },
-                "Provenances": ["Mailbox", "Directory"], "From": 0
-            },
+            people_request(json!({ "QueryString": query, "DisplayQueryString": query, "NormalizedQueryString": query }), 5, true),
             { "Query": q, "EntityType": "File", "Size": 3 },
             { "Query": q, "EntityType": "Chat", "Size": 5 },
             { "Query": q, "EntityType": "Team", "Size": 3 },
-            { "Query": q, "EntityType": "Channel", "Size": 4, "Filter": { "Or": [{ "Term": { "ChannelType": "Standard" } }, { "Term": { "ChannelType": "Shared" } }] } },
+            { "Query": q, "EntityType": "Channel", "Size": 4, "Filter": channel_filter() },
             { "Query": q, "EntityType": "Text", "Size": 2 },
             { "Query": q, "EntityType": "Message", "Size": 11 },
             { "Query": q, "EntityType": "Event", "Size": 3 },
@@ -72,26 +62,90 @@ pub fn typed_body(query: &str, cvid: &str, logical_id: &str) -> Value {
     })
 }
 
+/// The fields Teams asks for of each person.
+const PEOPLE_FIELDS: [&str; 17] = [
+    "Id",
+    "MRI",
+    "DisplayName",
+    "EmailAddresses",
+    "PeopleType",
+    "PeopleSubtype",
+    "Phones",
+    "UserPrincipalName",
+    "GivenName",
+    "Surname",
+    "Cid",
+    "CompanyName",
+    "JobTitle",
+    "ImAddress",
+    "ExternalDirectoryObjectId",
+    "ConcatenatedId",
+    "Department",
+];
+
+/// A People request: people and guests in the directory, with your
+/// personal contacts unless it's a KQL picker's (from:, in:).
+fn people_request(query: Value, size: u64, contacts: bool) -> Value {
+    let mut sub = vec![
+        json!({ "Term": { "PeopleSubtype": "OrganizationUser" } }),
+        json!({ "Term": { "PeopleSubtype": "MTOUser" } }),
+    ];
+    if contacts {
+        sub.push(json!({ "Term": { "PeopleSubtype": "PersonalContact" } }));
+    }
+    sub.push(json!({ "Term": { "PeopleSubtype": "Guest" } }));
+    json!({
+        "Query": query, "EntityType": "People", "Size": size, "Fields": PEOPLE_FIELDS,
+        "Filter": { "And": [
+            { "Or": [{ "Term": { "PeopleType": "Person" } }, { "Term": { "PeopleType": "Other" } }] },
+            { "Or": sub },
+            { "Or": [{ "Term": { "Flags": "NonHidden" } }] }
+        ] },
+        "Provenances": ["Mailbox", "Directory"], "From": 0
+    })
+}
+
+/// Standard and shared channels (private ones aren't suggested).
+fn channel_filter() -> Value {
+    json!({ "Or": [{ "Term": { "ChannelType": "Standard" } }, { "Term": { "ChannelType": "Shared" } }] })
+}
+
 /// Ask the suggestions service, with Teams' headers: the zero-query GET
 /// for an empty `query`, else the typed POST.
 pub async fn fetch(query: &str, me: &Me, tenant: &str) -> Result<Value> {
-    let token = crate::auth::oauth::access_token_for(SCOPE)
-        .await
-        .context("Suggestions token")?;
     let (cvid, logical) = (
         uuid::Uuid::new_v4().to_string(),
         uuid::Uuid::new_v4().to_string(),
     );
+    if query.trim().is_empty() {
+        send(
+            &format!("{URL}?scenario=powerbar&query=&cvid={cvid}&logicalId={logical}"),
+            None,
+            me,
+            tenant,
+        )
+        .await
+    } else {
+        send(
+            &format!("{URL}?scenario=powerbar&setflight={SET_FLIGHT}"),
+            Some(typed_body(query, &cvid, &logical)),
+            me,
+            tenant,
+        )
+        .await
+    }
+}
+
+/// One request to the suggestions service (a POST when there's a body).
+async fn send(url: &str, body: Option<Value>, me: &Me, tenant: &str) -> Result<Value> {
+    let token = crate::auth::oauth::access_token_for(SCOPE)
+        .await
+        .context("Suggestions token")?;
     let request_id = uuid::Uuid::new_v4().to_string();
     let client = reqwest::Client::new();
-    let mut req = if query.trim().is_empty() {
-        client.get(format!(
-            "{URL}?scenario=powerbar&query=&cvid={cvid}&logicalId={logical}"
-        ))
-    } else {
-        client
-            .post(format!("{URL}?scenario=powerbar&setflight={SET_FLIGHT}"))
-            .json(&typed_body(query, &cvid, &logical))
+    let mut req = match body {
+        None => client.get(url),
+        Some(b) => client.post(url).json(&b),
     };
     req = req
         .bearer_auth(token)
@@ -117,6 +171,58 @@ pub async fn fetch(query: &str, me: &Me, tenant: &str) -> Result<Value> {
         text.chars().take(300).collect::<String>()
     );
     serde_json::from_str(&text).context("Suggestions reply")
+}
+
+/// Names for people the service names only by their Teams id: personal
+/// (Teams free, `8:live:`) accounts, by MRI (lowercase), as
+/// `directory::tfl_profiles` finds them (TASK-0376).
+pub type Names = std::collections::HashMap<String, String>;
+
+/// The `8:live:` people a reply names only by their id (a message's
+/// `ToPreview`, a chat's members): who to look up for [`Names`].
+pub fn unnamed_people(reply: &Value) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for g in reply["Groups"].as_array().into_iter().flatten() {
+        for r in g["Suggestions"].as_array().into_iter().flatten() {
+            let people = r["ToPreview"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .chain(r["ChatMembers"].as_array().into_iter().flatten())
+                .chain(r["MatchingMembers"].as_array().into_iter().flatten());
+            for p in people {
+                let name = s(&p["DisplayName"]);
+                let mri = s(&p["MRI"]);
+                for m in [name.as_str(), mri.as_str()] {
+                    if crate::identity::is_consumer_mri(m)
+                        && (name.is_empty() || name == m)
+                        && !out.iter().any(|o| o.eq_ignore_ascii_case(m))
+                    {
+                        out.push(m.to_string());
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// A person's name in a reply: their DisplayName, or the name [`Names`]
+/// has for a personal account the service names by its id.
+fn display_name(p: &Value, names: &Names) -> String {
+    let name = s(&p["DisplayName"]);
+    let mri = s(&p["MRI"]);
+    let key = if crate::identity::is_consumer_mri(&name) {
+        name.clone()
+    } else if name.is_empty() {
+        mri
+    } else {
+        return name;
+    };
+    names
+        .get(&key.to_ascii_lowercase())
+        .cloned()
+        .unwrap_or(name)
 }
 
 fn s(v: &Value) -> String {
@@ -177,9 +283,9 @@ fn person(r: &Value, me: &Me) -> Option<Value> {
 
 /// A chat: its name, or its members' first names (you left out); a named
 /// chat's members under it. Meeting chats have Teams' calendar picture.
-fn chat(r: &Value, me: &Me) -> Value {
+fn chat(r: &Value, me: &Me, names: &Names) -> Value {
     let total = r["TotalChatMembersCount"].as_u64().unwrap_or(0) as usize;
-    let names: Vec<String> = r["MatchingMembers"]
+    let people: Vec<String> = r["MatchingMembers"]
         .as_array()
         .into_iter()
         .flatten()
@@ -190,10 +296,11 @@ fn chat(r: &Value, me: &Me) -> Value {
                 .unwrap_or_default()
                 .eq_ignore_ascii_case(&me.mri)
         })
-        .filter_map(|m| m["DisplayName"].as_str().filter(|n| !n.is_empty()))
-        .map(first_name)
+        .map(|m| display_name(m, names))
+        .filter(|n| !n.is_empty())
+        .map(|n| first_name(&n))
         .collect();
-    let members = join_names(&names, total.saturating_sub(1));
+    let members = join_names(&people, total.saturating_sub(1));
     let name = s(&r["Name"]);
     let (title, sub) = if name.is_empty() {
         (members, String::new())
@@ -387,7 +494,7 @@ fn event(r: &Value, query: &str, me: &Me) -> Value {
 /// A message: "<sender's first name>[ (You)]: [subject - ]preview", where it
 /// was said (a channel's "Team > Channel"; a group chat's topic and
 /// members; a 1:1's other person), its date and identifier icons.
-fn message(r: &Value, me: &Me) -> Value {
+fn message(r: &Value, me: &Me, names: &Names) -> Value {
     let sender_mri = s(&r["From"]["MRI"]);
     let sender = s(&r["From"]["EmailAddress"]["Name"]);
     let me_sent = !me.mri.is_empty() && sender_mri.eq_ignore_ascii_case(&me.mri);
@@ -426,11 +533,11 @@ fn message(r: &Value, me: &Me) -> Value {
                 !mri.eq_ignore_ascii_case(&me.mri)
             }
         })
-        .filter_map(|t| t["DisplayName"].as_str().map(str::to_string))
+        .map(|t| display_name(t, names))
         .collect();
     let people = match r["ToPreview"].as_array().map(|a| a.len()).unwrap_or(0) {
         1 => {
-            let n = s(&r["ToPreview"][0]["DisplayName"]);
+            let n = display_name(&r["ToPreview"][0], names);
             if sub_type == "PersonalNotes" || sub_type == "SelfChat" {
                 format!(
                     "{n} {}",
@@ -497,16 +604,16 @@ fn text(r: &Value) -> Value {
     })
 }
 
-fn convert(group: &str, r: &Value, query: &str, me: &Me) -> Option<Value> {
+fn convert(group: &str, r: &Value, query: &str, me: &Me, names: &Names) -> Option<Value> {
     Some(match group {
         "People" => person(r, me)?,
-        "Chat" => chat(r, me),
+        "Chat" => chat(r, me, names),
         "Team" => team(r),
         "Channel" => channel(r),
         "File" => file(r),
         "Event" => event(r, query, me),
         "Text" => text(r),
-        "Message" => message(r, me),
+        "Message" => message(r, me, names),
         _ => return None,
     })
 }
@@ -518,7 +625,13 @@ fn group(id: &str, title: String, items: Vec<Value>) -> Value {
 
 /// The suggestions in Teams' groups; see the module comment. Empty groups
 /// are left out. `people` is the zero-query People row (Teams' top-N).
-pub fn arrange(reply: &Value, query: &str, me: &Me, people: Vec<Value>) -> Vec<Value> {
+pub fn arrange(
+    reply: &Value,
+    query: &str,
+    me: &Me,
+    people: Vec<Value>,
+    names: &Names,
+) -> Vec<Value> {
     // Every suggestion by group, with its reference.
     let mut by_group: Vec<(String, Vec<(String, Value)>)> = Vec::new();
     for g in reply["Groups"].as_array().into_iter().flatten() {
@@ -527,7 +640,7 @@ pub fn arrange(reply: &Value, query: &str, me: &Me, people: Vec<Value>) -> Vec<V
             .as_array()
             .into_iter()
             .flatten()
-            .filter_map(|r| Some((s(&r["ReferenceId"]), convert(&name, r, query, me)?)))
+            .filter_map(|r| Some((s(&r["ReferenceId"]), convert(&name, r, query, me, names)?)))
             .collect();
         by_group.push((name, items));
     }
@@ -622,20 +735,7 @@ pub fn arrange(reply: &Value, query: &str, me: &Me, people: Vec<Value>) -> Vec<V
             rest("Event"),
         ));
         // Recent images: the messages' pictures.
-        let images: Vec<Value> = all_messages
-            .iter()
-            .filter(|m| m["image"].as_bool() == Some(true))
-            .flat_map(|m| {
-                m["images"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|a| a.as_str())
-                    .map(|a| json!({ "kind": "image", "ams": a, "thread": m["thread"], "id": m["id"], "parent": m["parent"], "channel": m["channel"], "title": m["title"] }))
-                    .collect::<Vec<_>>()
-            })
-            .take(IMAGES)
-            .collect();
+        let images = image_tiles(&all_messages, IMAGES);
         out.push(group(
             "IMAGES",
             crate::i18n::tr_id("Recent images", "autosuggest:k2vpagigo"),
@@ -650,6 +750,451 @@ pub fn arrange(reply: &Value, query: &str, me: &Me, people: Vec<Value>) -> Vec<V
                 .unwrap_or(false)
         })
         .collect()
+}
+
+// ---------------------------------------------------------------------------
+// A scope pill, KQL filters and go-to mode (TASK-0371; Teams desktop 26304
+// on winpc, 2026-11-27).
+// - A scope pill puts "is:<Domain>" in the box: Teams asks
+//   `?scenario=powerbar&setflight=TurnOffMPLSuppressionTeams…&domain=<entity>`
+//   for that entity alone (ECS autosuggest.domainScopingConfig's count),
+//   with the domain and every picked filter as QueryAnnotations; with
+//   words typed, also one person (the from:<person> pill Teams offers).
+// - A from: or in: pill opens Teams' picker: people (from:), or group
+//   chats, channels, teams and people (in:), asked with the operator as
+//   KqlKeyword. filetype: is a list of types; has: (Messages) a filter.
+// - A from:<person> pill with no scope: that person's chats, files and
+//   messages (Teams' people-centric search).
+// - Go-to mode (Ctrl+G): Teams' local chats, channels and people, and
+//   when none match `?scenario=powerbar.goto` (people, chats, teams,
+//   channels).
+// ---------------------------------------------------------------------------
+
+/// A scope pill's domain, as Teams asks for it and shows it.
+struct Domain {
+    /// The QueryAnnotation's DomainType and Text (Meetings has none).
+    annotation: Option<(&'static str, &'static str)>,
+    entity: &'static str,
+    /// `domain=` in the address, and the flights after Teams' own.
+    url: &'static str,
+    flights: &'static str,
+    /// ECS autosuggest.domainScopingConfig (zqCount and qfCount agree).
+    size: u64,
+    /// Words typed: ask for a person too (the from:<person> pill).
+    person: bool,
+    group: &'static str,
+    /// The heading with nothing typed.
+    heading: (&'static str, &'static str),
+}
+
+fn domain(key: &str) -> Option<Domain> {
+    let d = |annotation, entity, url, flights, size, person, group, heading| Domain {
+        annotation,
+        entity,
+        url,
+        flights,
+        size,
+        person,
+        group,
+        heading,
+    };
+    Some(match key {
+        "messages" => d(
+            Some(("Message", "Messages")),
+            "Message",
+            "Message",
+            "",
+            10,
+            true,
+            "MESSAGES",
+            ("Suggested messages", "autosuggest:kasjwn81c"),
+        ),
+        "files" => d(
+            Some(("File", "Files")),
+            "File",
+            "File",
+            "",
+            10,
+            true,
+            "FILES",
+            ("Suggested files", "autosuggest:k3e34yeuw"),
+        ),
+        "channels" => d(
+            Some(("Teamschannel", "Channels")),
+            "TeamsChannel",
+            "TeamsChannel",
+            ",EnableTeamsChannelDomainPowerbar",
+            8,
+            false,
+            "TEAMSANDCHANNELS",
+            ("Suggested channels", "autosuggest:katfx1kvg"),
+        ),
+        "groupchats" => d(
+            Some(("Groupchat", "Group Chats")),
+            "Chat",
+            "Chat",
+            "",
+            10,
+            true,
+            "GROUPCHATS",
+            ("Suggested group chats", "autosuggest:kbhfa9xuf"),
+        ),
+        "meetings" => d(
+            None,
+            "Event",
+            "Event",
+            "",
+            10,
+            false,
+            "EVENTS",
+            ("Suggested meetings", "autosuggest:k15fn11i4"),
+        ),
+        "images" => d(
+            Some(("Message", "Images")),
+            "Message",
+            "Message",
+            ",EnableMessageImageSearch",
+            18,
+            true,
+            "IMAGES",
+            ("Recent images", "autosuggest:k2vpagigo"),
+        ),
+        _ => return None,
+    })
+}
+
+/// A picked from: or in: filter's QueryAnnotation (Teams' shapes): a
+/// person (`{kind: "person", name, mail, mri, oid}`), a channel or team
+/// (`thread`, `group`, `ctype`) or a chat (`thread`).
+pub fn annotation(p: &Value, tenant: &str) -> Value {
+    let kw = if p["kw"] == "in" { "In" } else { "From" };
+    let name = s(&p["name"]);
+    match p["kind"].as_str().unwrap_or_default() {
+        "person" => {
+            let mail = s(&p["mail"]);
+            let oid = s(&p["oid"]);
+            let emails: Vec<&str> = if mail.is_empty() {
+                Vec::new()
+            } else {
+                vec![mail.as_str()]
+            };
+            let id = if tenant.is_empty() || oid.is_empty() {
+                oid.clone()
+            } else {
+                format!("{oid}@{tenant}")
+            };
+            json!({
+                "AdditionalEmailList": emails, "DisplayName": name, "Email": mail, "Id": id,
+                "Mri": s(&p["mri"]), "Text": name, "Type": "People", "KqlKeyword": kw,
+            })
+        }
+        "channel" => {
+            let mut ctype = s(&p["ctype"]);
+            if ctype.is_empty() {
+                ctype = "Standard".into();
+            }
+            json!({
+                "ChannelType": ctype,
+                "GroupId": s(&p["group"]), "Name": name, "TenantId": tenant, "Text": name,
+                "ThreadId": s(&p["thread"]), "Type": "Channel", "KqlKeyword": kw,
+            })
+        }
+        "team" => json!({
+            "GroupId": s(&p["group"]), "Name": name, "TenantId": tenant, "Text": name,
+            "ThreadId": s(&p["thread"]), "Type": "Team", "KqlKeyword": kw,
+        }),
+        _ => json!({
+            "Name": name, "Text": name, "ThreadId": s(&p["thread"]), "Type": "Chat", "KqlKeyword": kw,
+        }),
+    }
+}
+
+/// The request for a scoped or KQL box (`spec`: `text` the box, `words`
+/// what's typed besides the filters, `scope` the pill's key, `picks` the
+/// from:/in: filters, `filetype` (Teams' ExtensionType, "Pdf"), `mentions`,
+/// `attachments`, `picker` ("from" / "in") with `picker_query`, or `goto`):
+/// its address and body.
+pub fn kql_request(spec: &Value, tenant: &str, cvid: &str, logical: &str) -> (String, Value) {
+    let text = s(&spec["text"]);
+    let words = s(&spec["words"]).trim().to_string();
+    if spec["goto"].as_bool() == Some(true) {
+        let q = json!({ "QueryString": words, "NormalizedQueryString": words });
+        let body = json!({
+            "EntityRequests": [
+                people_request(json!({ "QueryString": words, "DisplayQueryString": words, "NormalizedQueryString": words }), 5, true),
+                { "Query": q, "EntityType": "Chat", "Size": 5 },
+                { "Query": q, "EntityType": "Team", "Size": 3 },
+                { "Query": q, "EntityType": "Channel", "Size": 4, "Filter": channel_filter() }
+            ],
+            "Scenario": { "Name": "powerbar.goto" },
+            "Cvid": cvid, "AppName": "Microsoft Teams", "LogicalId": logical,
+        });
+        return (
+            format!("{URL}?scenario=powerbar.goto&setflight={SET_FLIGHT}"),
+            body,
+        );
+    }
+    let scope = s(&spec["scope"]);
+    let d = domain(&scope);
+    let mut annotations: Vec<Value> = Vec::new();
+    if let Some((t, label)) = d.as_ref().and_then(|d| d.annotation) {
+        annotations
+            .push(json!({ "DomainType": t, "Text": label, "Type": "Domain", "KqlKeyword": "Is" }));
+    }
+    annotations.extend(
+        spec["picks"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|p| annotation(p, tenant)),
+    );
+    let query = |kw: Option<&str>, normalized: &str| {
+        let mut q = json!({ "QueryString": text, "NormalizedQueryString": normalized });
+        if let Some(k) = kw {
+            q["KqlKeyword"] = json!(k);
+        }
+        if !annotations.is_empty() {
+            q["QueryAnnotations"] = json!(annotations);
+        }
+        q
+    };
+    let body = |requests: Vec<Value>| {
+        json!({
+            "EntityRequests": requests,
+            "Scenario": { "Name": "powerbar", "Dimensions": [{ "DimensionName": "QueryType", "DimensionValue": "PeopleCentricSearch" }] },
+            "Cvid": cvid, "AppName": "Microsoft Teams", "LogicalId": logical, "dataSource": "personScoped",
+        })
+    };
+    let picker = s(&spec["picker"]);
+    if picker == "from" || picker == "in" {
+        let pq = s(&spec["picker_query"]).trim().to_string();
+        let q = query(Some(if picker == "in" { "In" } else { "From" }), &pq);
+        let mut requests = Vec::new();
+        if picker == "in" {
+            requests.push(json!({ "Query": q, "EntityType": "Chat", "Size": 2 }));
+            requests.push(json!({ "Query": q, "EntityType": "Channel", "Size": 2, "Filter": channel_filter() }));
+            requests.push(json!({ "Query": q, "EntityType": "Team", "Size": 2 }));
+        }
+        requests.push(people_request(q, 5, false));
+        return (
+            format!("{URL}?scenario=powerbar&setflight=TurnOffMPLSuppressionTeams"),
+            body(requests),
+        );
+    }
+    let person = |q: &Value| {
+        let mut pq = q.clone();
+        pq["DisplayQueryString"] = json!(words);
+        people_request(pq, 1, true)
+    };
+    match d {
+        Some(d) => {
+            let q = if d.annotation.is_none() {
+                json!({ "QueryString": words, "NormalizedQueryString": words })
+            } else {
+                query(None, &words)
+            };
+            let mut main = json!({ "Query": q, "EntityType": d.entity, "Size": d.size });
+            let mut terms: Vec<Value> = Vec::new();
+            let filetype = s(&spec["filetype"]);
+            if d.entity == "File" && !filetype.is_empty() {
+                terms.push(json!({ "Or": [{ "Term": { "FileType": filetype } }] }));
+            }
+            if scope == "messages" {
+                if spec["attachments"].as_bool() == Some(true) {
+                    terms.push(json!({ "Or": [{ "Term": { "HasAttachments": "True" } }] }));
+                }
+                if spec["mentions"].as_bool() == Some(true) {
+                    terms.push(json!({ "Or": [{ "Term": { "HasMentions": "True" } }] }));
+                }
+            }
+            if scope == "channels" {
+                main["Filter"] = channel_filter();
+            } else if !terms.is_empty() {
+                main["Filter"] = json!({ "And": terms });
+            }
+            let mut requests = vec![main];
+            if d.person && !words.is_empty() {
+                requests.push(person(&q));
+            }
+            (
+                format!(
+                    "{URL}?scenario=powerbar&setflight=TurnOffMPLSuppressionTeams{}&domain={}",
+                    d.flights, d.url
+                ),
+                body(requests),
+            )
+        }
+        // From a person with no scope: their chats, files and messages.
+        None => {
+            let q = query(None, &words);
+            let requests = vec![
+                json!({ "Query": q, "EntityType": "Chat", "Size": 5 }),
+                json!({ "Query": q, "EntityType": "File", "Size": 3 }),
+                json!({ "Query": q, "EntityType": "Message", "Size": MESSAGES }),
+                person(&q),
+            ];
+            (
+                format!("{URL}?scenario=powerbar&setflight={SET_FLIGHT}"),
+                body(requests),
+            )
+        }
+    }
+}
+
+/// Ask for a scoped or KQL box (see [`kql_request`]).
+pub async fn fetch_kql(spec: &Value, me: &Me, tenant: &str) -> Result<Value> {
+    let (url, body) = kql_request(
+        spec,
+        tenant,
+        &uuid::Uuid::new_v4().to_string(),
+        &uuid::Uuid::new_v4().to_string(),
+    );
+    send(&url, Some(body), me, tenant).await
+}
+
+/// A message's pictures as Recent images tiles.
+fn image_tiles(messages: &[Value], max: usize) -> Vec<Value> {
+    messages
+        .iter()
+        .filter(|m| m["image"].as_bool() == Some(true))
+        .flat_map(|m| {
+            m["images"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|a| a.as_str())
+                .map(|a| json!({ "kind": "image", "ams": a, "thread": m["thread"], "id": m["id"], "parent": m["parent"], "channel": m["channel"], "title": m["title"] }))
+                .collect::<Vec<_>>()
+        })
+        .take(max)
+        .collect()
+}
+
+/// A scoped or KQL reply in Teams' groups (`{groups, pcs}`; `pcs` is the
+/// person for the from:<person> pill, or null).
+pub fn arrange_kql(reply: &Value, spec: &Value, me: &Me, names: &Names) -> Value {
+    let words = s(&spec["words"]).trim().to_string();
+    let scope = s(&spec["scope"]);
+    let picker = s(&spec["picker"]);
+    let items = |g: &str| -> Vec<Value> {
+        reply["Groups"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|x| x["Type"] == g)
+            .flat_map(|x| x["Suggestions"].as_array().into_iter().flatten())
+            .filter_map(|r| convert(g, r, &words, me, names))
+            .collect()
+    };
+    let keyword = |list: Vec<Value>, kw: &str| -> Vec<Value> {
+        list.into_iter()
+            .map(|mut v| {
+                v["kql"] = json!(kw);
+                v
+            })
+            .collect()
+    };
+    let mut groups: Vec<Value> = Vec::new();
+    let mut pcs = Value::Null;
+    if spec["goto"].as_bool() == Some(true) {
+        let mut all = items("People");
+        for g in ["Chat", "Team", "Channel"] {
+            all.extend(items(g));
+        }
+        groups.push(group("GOTO", String::new(), all));
+    } else if picker == "from" {
+        groups.push(group(
+            "PEOPLE",
+            String::new(),
+            keyword(items("People"), "from"),
+        ));
+    } else if picker == "in" {
+        for (id, g) in [
+            ("GROUPCHATS", "Chat"),
+            ("CHANNELS", "Channel"),
+            ("TEAMS", "Team"),
+            ("PEOPLE", "People"),
+        ] {
+            groups.push(group(id, String::new(), keyword(items(g), "in")));
+        }
+    } else if let Some(d) = domain(&scope) {
+        let list: Vec<Value> = match scope.as_str() {
+            "channels" => reply["Groups"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .flat_map(|x| x["Suggestions"].as_array().into_iter().flatten())
+                .map(|r| {
+                    if r["EntityType"] == "TeamSuggestion" {
+                        team(r)
+                    } else {
+                        channel(r)
+                    }
+                })
+                .collect(),
+            "images" => image_tiles(&items("Message"), d.size as usize),
+            _ => items(d.entity),
+        };
+        let heading = if words.is_empty() {
+            crate::i18n::tr_id(d.heading.0, d.heading.1)
+        } else {
+            String::new()
+        };
+        groups.push(group(d.group, heading, list));
+        if d.person && !words.is_empty() {
+            pcs = items("People").into_iter().next().unwrap_or(Value::Null);
+        }
+    } else {
+        // From a person, no scope: them, their messages (and "See more
+        // messages from …"), files and group chats.
+        let from = spec["picks"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|p| p["kw"] == "from" && p["kind"] == "person");
+        if let Some(p) = from {
+            if words.is_empty() {
+                groups.push(group(
+                    "TOPHITS",
+                    String::new(),
+                    vec![json!({
+                        "kind": "person", "oid": s(&p["oid"]), "name": s(&p["name"]), "mail": s(&p["mail"]),
+                        "mri": s(&p["mri"]), "sub": s(&p["sub"]),
+                    })],
+                ));
+            } else {
+                groups.push(group(
+                    "TOPHITS",
+                    String::new(),
+                    items("People").into_iter().take(1).collect(),
+                ));
+            }
+            let mut messages: Vec<Value> = items("Message").into_iter().take(MESSAGES).collect();
+            if !messages.is_empty() {
+                messages.push(json!({ "kind": "seemore", "query": words, "from": s(&p["name"]) }));
+            }
+            groups.push(group(
+                "MESSAGES",
+                crate::i18n::tr_id("Recent messages", "autosuggest:kbwxzlnau"),
+                messages,
+            ));
+            groups.push(group(
+                "FILES",
+                crate::i18n::tr_id("Files", "autosuggest:kckk9oukc"),
+                items("File"),
+            ));
+            groups.push(group(
+                "GROUPCHATS",
+                crate::i18n::tr_id("Group Chats", "autosuggest:k3xy694dn"),
+                items("Chat"),
+            ));
+        }
+    }
+    let groups: Vec<Value> = groups
+        .into_iter()
+        .filter(|g| g["items"].as_array().is_some_and(|a| !a.is_empty()))
+        .collect();
+    json!({ "groups": groups, "pcs": pcs })
 }
 
 /// Teams' Communities group (Viva Engage's communities matching the
@@ -767,7 +1312,7 @@ mod tests {
 
     #[test]
     fn typed_groups_in_teams_order_without_top_hits() {
-        let g = arrange(&reply(), "release", &me(), vec![]);
+        let g = arrange(&reply(), "release", &me(), vec![], &Names::new());
         let ids: Vec<&str> = g.iter().map(|g| g["id"].as_str().unwrap()).collect();
         assert_eq!(
             ids,
@@ -824,7 +1369,7 @@ mod tests {
     #[test]
     fn zero_query_people_then_suggestions() {
         let people = vec![json!({ "kind": "person", "oid": "b", "name": "Bob Smith" })];
-        let g = arrange(&reply(), "", &me(), people);
+        let g = arrange(&reply(), "", &me(), people, &Names::new());
         let ids: Vec<&str> = g.iter().map(|g| g["id"].as_str().unwrap()).collect();
         assert_eq!(ids, ["PEOPLE", "HISTORY"]);
         assert_eq!(g[0]["title"], "People");
@@ -867,5 +1412,159 @@ mod tests {
             "OST test channel"
         );
         assert_eq!(channel_folder("https://x/personal/a/Documents/a.loop"), "");
+    }
+
+    #[test]
+    fn scoped_requests_are_teams() {
+        // Files with a person and a type picked.
+        let spec = json!({ "text": "is:Files from:OST Test 2 filetype:PDF ", "words": "", "scope": "files",
+            "picks": [{ "kw": "from", "kind": "person", "name": "OST Test 2", "mail": "t2@x.test", "mri": "8:orgid:b", "oid": "b" }],
+            "filetype": "Pdf" });
+        let (url, b) = kql_request(&spec, "ten", "c", "l");
+        assert!(url.ends_with("setflight=TurnOffMPLSuppressionTeams&domain=File"));
+        let r = &b["EntityRequests"];
+        assert_eq!(r.as_array().unwrap().len(), 1);
+        assert_eq!(r[0]["EntityType"], "File");
+        assert_eq!(r[0]["Size"], 10);
+        assert_eq!(r[0]["Filter"]["And"][0]["Or"][0]["Term"]["FileType"], "Pdf");
+        let a = &r[0]["Query"]["QueryAnnotations"];
+        assert_eq!(a[0]["Type"], "Domain");
+        assert_eq!(a[0]["DomainType"], "File");
+        assert_eq!(a[1]["Type"], "People");
+        assert_eq!(a[1]["KqlKeyword"], "From");
+        assert_eq!(a[1]["Id"], "b@ten");
+        // Messages with words: the domain, has: filters, and one person.
+        let spec = json!({ "text": "is:Messages release has:@Mentions ", "words": "release", "scope": "messages", "mentions": true });
+        let (url, b) = kql_request(&spec, "ten", "c", "l");
+        assert!(url.ends_with("&domain=Message"));
+        assert_eq!(
+            b["EntityRequests"][0]["Filter"]["And"][0]["Or"][0]["Term"]["HasMentions"],
+            "True"
+        );
+        assert_eq!(b["EntityRequests"][1]["EntityType"], "People");
+        assert_eq!(b["EntityRequests"][1]["Size"], 1);
+        assert_eq!(
+            b["EntityRequests"][1]["Query"]["DisplayQueryString"],
+            "release"
+        );
+        // Meetings: the words alone; channels: the channel domain.
+        let (url, b) = kql_request(
+            &json!({ "text": "is:Meetings ", "words": "", "scope": "meetings" }),
+            "",
+            "c",
+            "l",
+        );
+        assert!(url.ends_with("&domain=Event"));
+        assert_eq!(b["EntityRequests"][0]["Query"]["QueryString"], "");
+        let (url, b) = kql_request(
+            &json!({ "text": "is:Channels ost", "words": "ost", "scope": "channels" }),
+            "",
+            "c",
+            "l",
+        );
+        assert!(url.contains("EnableTeamsChannelDomainPowerbar&domain=TeamsChannel"));
+        assert_eq!(b["EntityRequests"][0]["Size"], 8);
+        assert_eq!(b["EntityRequests"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn pickers_and_goto_requests() {
+        let spec = json!({ "text": "is:Files in:ost", "words": "", "scope": "files", "picker": "in", "picker_query": "ost" });
+        let (url, b) = kql_request(&spec, "", "c", "l");
+        assert!(url.ends_with("setflight=TurnOffMPLSuppressionTeams"));
+        let types: Vec<&str> = b["EntityRequests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["EntityType"].as_str().unwrap())
+            .collect();
+        assert_eq!(types, ["Chat", "Channel", "Team", "People"]);
+        assert_eq!(b["EntityRequests"][0]["Query"]["KqlKeyword"], "In");
+        assert_eq!(
+            b["EntityRequests"][0]["Query"]["NormalizedQueryString"],
+            "ost"
+        );
+        // A picker's people leave out personal contacts.
+        let sub = b["EntityRequests"][3]["Filter"]["And"][1]["Or"].to_string();
+        assert!(!sub.contains("PersonalContact"));
+        let (url, b) = kql_request(&json!({ "goto": true, "words": "ost" }), "", "c", "l");
+        assert!(url.contains("scenario=powerbar.goto"));
+        assert_eq!(b["Scenario"]["Name"], "powerbar.goto");
+        let types: Vec<&str> = b["EntityRequests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["EntityType"].as_str().unwrap())
+            .collect();
+        assert_eq!(types, ["People", "Chat", "Team", "Channel"]);
+    }
+
+    #[test]
+    fn scoped_replies_in_teams_groups() {
+        let files = arrange_kql(
+            &reply(),
+            &json!({ "scope": "files", "words": "" }),
+            &me(),
+            &Names::new(),
+        );
+        assert_eq!(files["groups"][0]["id"], "FILES");
+        assert_eq!(files["groups"][0]["title"], "Suggested files");
+        assert_eq!(files["groups"][0]["items"].as_array().unwrap().len(), 3);
+        // Typed: no heading.
+        let typed = arrange_kql(
+            &reply(),
+            &json!({ "scope": "messages", "words": "release" }),
+            &me(),
+            &Names::new(),
+        );
+        assert_eq!(typed["groups"][0]["title"], "");
+        assert_eq!(typed["groups"][0]["items"][0]["kind"], "message");
+        // The in: picker: chats as in: places.
+        let picker = arrange_kql(
+            &reply(),
+            &json!({ "scope": "files", "picker": "in" }),
+            &me(),
+            &Names::new(),
+        );
+        assert_eq!(picker["groups"][0]["id"], "GROUPCHATS");
+        assert_eq!(picker["groups"][0]["items"][0]["kql"], "in");
+        // From a person, no scope: them first, then their messages.
+        let pcs = arrange_kql(
+            &reply(),
+            &json!({ "words": "", "picks": [{ "kw": "from", "kind": "person", "name": "Bob Smith", "oid": "b", "mri": "8:orgid:b" }] }),
+            &me(),
+            &Names::new(),
+        );
+        let ids: Vec<&str> = pcs["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|g| g["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, ["TOPHITS", "MESSAGES", "FILES", "GROUPCHATS"]);
+        assert_eq!(
+            pcs["groups"][1]["items"]
+                .as_array()
+                .unwrap()
+                .last()
+                .unwrap()["from"],
+            "Bob Smith"
+        );
+    }
+
+    #[test]
+    fn personal_accounts_named() {
+        // The service names a Teams free person by their id (TASK-0376).
+        let r = json!({ "Groups": [{ "Type": "Message", "Suggestions": [
+            { "ClientThreadId": "19:uni01_x@thread.v2", "ThreadType": "Chat", "ThreadSubType": "OneOnOneChat", "ToPreview": [{ "DisplayName": "8:live:.cid.abc" }],
+              "RecipientsCount": 1, "Preview": "hi", "From": { "EmailAddress": { "Name": "Ada Lovelace" }, "MRI": "8:orgid:aaaa" }, "ReferenceId": "m1" }]}]});
+        assert_eq!(unnamed_people(&r), ["8:live:.cid.abc"]);
+        let mut names = Names::new();
+        names.insert("8:live:.cid.abc".into(), "OST Personal 2".into());
+        let g = arrange(&r, "hi", &me(), vec![], &names);
+        assert_eq!(g[0]["items"][0]["place"], "OST Personal 2");
+        // Not found: the id stays, as Teams shows it.
+        let g = arrange(&r, "hi", &me(), vec![], &Names::new());
+        assert_eq!(g[0]["items"][0]["place"], "8:live:.cid.abc");
     }
 }
