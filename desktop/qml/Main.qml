@@ -16693,9 +16693,10 @@ Window {
         onSearchFeedback: (kind, q) => backend.requestFeedback(kind, "Search", "Search suggestions: “" + q + "”")
         onSearchSubmitted: (text, filters) => window.openSearch(text, filters)
         teams: { try { return JSON.parse(backend.teamsJson || "[]") } catch (e) { return [] } }
-        onPopOutPerson: (mri, name) => {
-            const c = chatList.chats.find(c => String(c.peerMri || "").toLowerCase() === String(mri).toLowerCase())
-            if (c) window.openChatWindow(c.id, c.name, mri, c.presence || "")
+        // (`thread`: their 1:1 chat, listed or by Teams' id for it.)
+        onPopOutPerson: (mri, name, thread) => {
+            const c = chatList.chats.find(c => c.id === thread)
+            if (thread) window.openChatWindow(thread, c ? c.name : name, mri, c ? c.presence || "" : "")
             else { rail.current = "chat"; window.composing = false; backend.openChatWith(String(mri).split(":").pop(), name) }
         }
         onPopOutChat: (id, name) => {
