@@ -3951,8 +3951,8 @@ pub struct TeamEventRef {
 }
 
 /// The form's changes on a team event as the middle tier loaded it: the
-/// title, times (in the form's zone), all day, show as, the repeat, the
-/// details when they changed, the place unless it's the Teams meeting's
+/// title, times (in the form's zone), all day, the repeat and the details
+/// when they changed (show as stays: Teams greys it for a team event), the place unless it's the Teams meeting's
 /// own, and the people (the loaded ones the form kept, with their answers
 /// and kinds as the form has them, then the ones it added; the team and
 /// the organizer stay).
@@ -3966,7 +3966,6 @@ fn team_event_changes(
         "endTime",
         "eventTimeZone",
         "isAllDayEvent",
-        "showAs",
         "startTime",
         "subject",
         "utcOffset",
