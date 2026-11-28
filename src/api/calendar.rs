@@ -1018,21 +1018,45 @@ fn attendees_of(e: &serde_json::Value) -> Vec<Attendee> {
 }
 
 /// Whether your calendar has the event with this iCalUId (a channel
-/// meeting from its team's calendar: your copy, if you have one).
-pub async fn have_ical_uid(client: &TeamsClient, ical_uid: &str) -> Result<bool> {
+/// meeting from its team's calendar: your copy, if you have one), looked
+/// for in your calendar view over its time, so a series' occurrences (each
+/// with an iCalUId of its own, which `/me/events` doesn't list) count.
+/// `start` / `end`: the meeting's, ISO in UTC.
+pub async fn have_ical_uid(
+    client: &TeamsClient,
+    ical_uid: &str,
+    start: &str,
+    end: &str,
+) -> Result<bool> {
     anyhow::ensure!(
         !ical_uid.is_empty() && ical_uid.bytes().all(|b| b.is_ascii_hexdigit()),
         "Not an iCalUId"
     );
+    let t = |s: &str| s.parse::<jiff::Timestamp>().context("Meeting time");
+    let (s0, e0) = (t(start)?, t(end)?);
+    let day = jiff::SignedDuration::from_hours(24);
+    let (from, to) = (
+        crate::clock::iso_ms(s0.checked_sub(day)?),
+        crate::clock::iso_ms(e0.checked_add(day)?),
+    );
+    let enc = super::tabs::encode_uri_component;
     let v: serde_json::Value = client
         .graph_get(&format!(
-            "/me/events?$filter=iCalUId%20eq%20'{ical_uid}'&$select=id&$top=1"
+            "/me/calendarView?startDateTime={}&endDateTime={}&$select=iCalUId&$top=250",
+            enc(&from),
+            enc(&to)
         ))
         .await?
         .json()
         .await
         .context("Calendar")?;
-    Ok(v["value"].as_array().is_some_and(|a| !a.is_empty()))
+    Ok(v["value"].as_array().is_some_and(|a| {
+        a.iter().any(|e| {
+            e["iCalUId"]
+                .as_str()
+                .is_some_and(|u| u.eq_ignore_ascii_case(ical_uid))
+        })
+    }))
 }
 
 /// The path of an event in `calendar`: yours (`""` or one of your

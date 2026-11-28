@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@t374'
 created_date: '2026-11-27T23:15:00Z'
-updated_date: '2026-11-28T03:21:00Z'
+updated_date: '2026-11-28T04:05:00Z'
 labels:
   - desktop
   - channels
@@ -66,6 +66,8 @@ Live (linuxlt, harness builds with OST_QML_DIR, 1600x900):
 - Unit tests: recent contributors order/cap/fill, channel agents (OST Test Team's entitlements -> Forms), team calendar event paths.
 
 Codex round 1 (5 findings, fixed): a listed meeting asks Graph whether it is in your calendar (haveIcal: /me/events?$filter=iCalUId eq …) instead of waiting for the week's events to change; the Organizer suggestions scroll (capped to the pane, Up/Down/Enter); each pane tags its requests (main window and pop-out panes share channelActionResult); the pop-out composer sits beside the Meetings pane; Chat with participants in the pop-out opens the post's own window when the post isn't loaded. Re-checked live (GitHub Actions harness build): OST Test 2 -> haveIcal found:false -> team calendar page; ost-test1 -> found:true -> own copy; pop-out harness as before.
+
+Codex round 2 (1 finding, fixed): haveIcal looks in /me/calendarView a day either side of the meeting (a series' occurrences have iCalUIds of their own that /me/events doesn't list). Re-checked live on the GitHub Actions build 21bd27be: OST Test 2 -> found:false -> team calendar page; ost-test1 -> found:true -> own copy; pop-out harness unchanged.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
