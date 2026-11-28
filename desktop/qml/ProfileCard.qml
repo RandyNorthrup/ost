@@ -34,7 +34,9 @@ Popup {
     /// personal account); Overview, Contact and LinkedIn; the availability
     /// box, then "Contact information" with what they share, or "<name>'s
     /// contact details are hidden in Teams.".
-    readonly property bool tfl: Mri.isConsumer(who) || !!card.tfl
+    /// (A personal account sees everyone, work users too, on this card:
+    /// Teams free reads them from its short profiles, not Graph.)
+    readonly property bool tfl: Mri.isConsumer(who) || backend.personalAccount || !!card.tfl
     readonly property string mri: tfl ? (card.mri || who) : card.id ? Mri.work(card.id) : who
     readonly property var p: card.presence || ({})
     function show(id) { who = id; tab = "overview"; moreContact = false; quick.text = ""; history = [id]; historyAt = 0; backend.loadProfileCard(id); open() }

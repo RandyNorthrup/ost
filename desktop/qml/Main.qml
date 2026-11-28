@@ -11163,7 +11163,8 @@ Window {
     // --tfl-people-test (a personal account, TASK-0295/0296): the People
     // app (All contacts, Active now, People settings, Blocked users), the
     // first contact's profile card, Invite to Teams, and the chat list's
-    // 1:1 presence; --tfl-people-live=<name> also blocks, unblocks,
+    // 1:1 presence (--tfl-card=<mri>: that person's card instead of the
+    // first contact's); --tfl-people-live=<name> also blocks, unblocks,
     // deletes and re-adds that contact. Logs TFLPEOPLE lines, pictures in
     // --shots=<dir>.
     Timer {
@@ -11180,6 +11181,8 @@ Window {
             const st = tag => console.warn("TFLPEOPLE", tag, JSON.stringify(v ? v.stateForTest() : null))
             const ready = () => v && !v.busy && !!v.data_.personal
             const mriOf = () => { const c = v && v.find(target); return c ? c.mri : "" }
+            // (Only the target's block: anyone else on the list stays blocked.)
+            const isBlocked = () => (v.data_.blocked || []).some(b => String(b.mri).toLowerCase() === window.tflTarget.toLowerCase())
             const addArg = Qt.application.arguments.find(a => a.startsWith("--tfl-add="))
             if (step === 0) { if (addArg) backend.contactsOp("tflAdd", JSON.stringify({ mri: addArg.slice(10) })); rail.openApp("people") }
             else if (step === 1 && !ready() && ++wait < 60) return
@@ -11187,7 +11190,12 @@ Window {
             else if (step === 2) { v.view = "active"; st("active"); cap("active") }
             else if (step === 3) { v.view = "settings"; cap("settings") }
             else if (step === 4) { v.view = "blocked"; st("blocked"); cap("blocked") }
-            else if (step === 5) { v.view = "all"; const c = v.shown[0]; if (c) profileCard.show(c.mri) }
+            else if (step === 5) {
+                v.view = "all"
+                const cardArg = Qt.application.arguments.find(a => a.startsWith("--tfl-card="))
+                const c = v.shown[0]
+                if (cardArg) profileCard.show(cardArg.slice(11)); else if (c) profileCard.show(c.mri)
+            }
             else if (step === 6 && JSON.parse(backend.profileCardJson || "{}").loading && ++wait < 20) return
             else if (step === 6) { wait = 0; console.warn("TFLPEOPLE card", backend.profileCardJson); cap("card") }
             else if (step === 7) { profileCard.tab = "contact"; cap("card-contact") }
@@ -11206,13 +11214,13 @@ Window {
             else if (step === 13) { wait = 0; console.warn("TFLPEOPLE search2", backend.newChatPeopleJson); if (!target) { console.warn("TFLPEOPLE done"); running = false } else rail.openApp("people") }
             // ---- live: block, unblock, delete, add back ----
             else if (step === 14 && !ready() && ++wait < 30) return
-            else if (step === 14) { wait = 0; const m = mriOf(); console.warn("TFLPEOPLE target", target, m); if (!m) { running = false; return }; v.op("tflBlock", { mri: m, on: true }) }
-            else if (step === 15 && (!ready() || !(v.data_.blocked || []).length) && ++wait < 20) { if (ready()) v.load(); return }
+            else if (step === 14) { wait = 0; const m = mriOf(); console.warn("TFLPEOPLE target", target, m); if (!m) { running = false; return }; window.tflTarget = m; v.op("tflBlock", { mri: m, on: true }) }
+            else if (step === 15 && (!ready() || !isBlocked()) && ++wait < 20) { if (ready()) v.load(); return }
             else if (step === 15) { wait = 0; st("after-block"); v.view = "blocked"; cap("after-block") }
-            else if (step === 16) { v.op("tflBlock", { mri: v.data_.blocked[0].mri, on: false }) }
-            else if (step === 17 && (!ready() || (v.data_.blocked || []).length) && ++wait < 20) { if (ready()) v.load(); return }
+            else if (step === 16) { v.op("tflBlock", { mri: window.tflTarget, on: false }) }
+            else if (step === 17 && (!ready() || isBlocked()) && ++wait < 20) { if (ready()) v.load(); return }
             else if (step === 17) { wait = 0; st("after-unblock"); v.view = "all" }
-            else if (step === 18) { const m = mriOf(); window.tflTarget = m; v.op("tflDelete", { mri: m }) }
+            else if (step === 18) { v.op("tflDelete", { mri: window.tflTarget }) }
             else if (step === 19 && (!ready() || v.find(target)) && ++wait < 20) { if (ready()) v.load(); return }
             else if (step === 19) { wait = 0; st("after-delete"); cap("after-delete"); v.op("tflAdd", { mri: window.tflTarget }) }
             else if (step === 20 && (!ready() || !v.find(target)) && ++wait < 20) { if (ready()) v.load(); return }
@@ -17270,7 +17278,16 @@ Window {
         onStartCall: (mri, name, video) => {
             rail.current = "chat"; window.composing = false
             if (window.isOpenChatWith(mri)) { if (video) backend.startVideoCall(); else backend.startCall(); return }
-            window.pendingCall = video ? "video" : "audio"; backend.openChatWith(mri.replace("8:orgid:", ""), name)
+            window.pendingCall = video ? "video" : "audio"
+            // Someone on Teams free, or anyone from a personal account: the
+            // call goes in their chat thread (made first when there's none),
+            // not a 1:1 id built from the two MRIs.
+            if (Mri.isConsumer(mri) || backend.personalAccount) {
+                const existing = newChat.chatWith(mri)
+                if (existing) backend.selectChat(existing, name); else backend.startExternalChat(mri, name)
+                return
+            }
+            backend.openChatWith(mri.replace("8:orgid:", ""), name)
         }
         onQuickMessage: (mri, name, text) => {
             if (window.isOpenChatWith(mri)) { backend.sendQuickMessage(mri, text); return }

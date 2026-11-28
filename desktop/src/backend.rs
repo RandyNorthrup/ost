@@ -32977,7 +32977,9 @@ impl qobject::Backend {
                 let client = TeamsClient::new().await?;
                 // Someone on Teams free (8:live:…): Teams' consumer card,
                 // from their short profile and presence.
-                if teams_cli::identity::is_consumer_mri(&mri) {
+                // (A personal account reads work users' too: Graph's
+                // /users isn't open to it; Teams free's fetchFederated is.)
+                if teams_cli::identity::is_consumer_mri(&mri) || client.is_personal() {
                     return tfl_profile_card(&client, &mri).await;
                 }
                 let mut card = api::profile::profile_card(&client, &oid).await?;
