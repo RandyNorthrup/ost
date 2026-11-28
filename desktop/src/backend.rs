@@ -31885,7 +31885,7 @@ impl qobject::Backend {
                         let (photos, more) = api::personal_files::chat_photos(&client, &s("chat"), base, 5).await?;
                         json!({ "chat": s("chat"), "base": base, "photos": photos, "more": more })
                     }
-                    "personal_thumb" => {
+                    "personal_thumb" | "personal_full" => {
                         let url = s("url");
                         let thumb = s("thumb") == "1";
                         let id = api::personal_files::ams_object_id(&url).context("Not a media store picture")?;

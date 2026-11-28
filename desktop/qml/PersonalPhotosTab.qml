@@ -23,7 +23,9 @@ Item {
     /// Cached thumbnails and full pictures: url -> file URL.
     property var thumbs: ({})
     property var fulls: ({})
-    property string wantFull: ""
+    /// The picture asked for and its message's pictures still loading.
+    property var wanted: null
+    property var waiting: ({})
     readonly property string tag: "pphotos-" + Math.floor(Math.random() * 1e9) + ":"
     function loadMore() {
         if (!chatId || loading || !more) return
@@ -50,10 +52,23 @@ Item {
     function askThumbs(list) {
         for (const p of list) backend.driveAction(tag + "personal_thumb", "{}", JSON.stringify({ url: p.preview_url, thumb: "1" }))
     }
+    // The clicked picture and the others of its message, loaded before the
+    // viewer opens so Left / Right reach them all.
     function open(p) {
-        if (fulls[p.preview_url]) { show(p); return }
-        wantFull = p.preview_url
-        backend.driveAction(tag + "personal_thumb", "{}", JSON.stringify({ url: p.preview_url, thumb: "0" }))
+        const need = photos.filter(x => x.message_id === p.message_id && !fulls[x.preview_url])
+        if (!need.length) { show(p); return }
+        wanted = p
+        const w = {}
+        for (const x of need) {
+            w[x.preview_url] = true
+            backend.driveAction(tag + encodeURIComponent(x.preview_url) + ":personal_full", "{}", JSON.stringify({ url: x.preview_url, thumb: "0" }))
+        }
+        waiting = w
+    }
+    function fullDone(url) {
+        if (!waiting[url]) return
+        const w = Object.assign({}, waiting); delete w[url]; waiting = w
+        if (Object.keys(w).length === 0 && wanted) { const p = wanted; wanted = null; if (fulls[p.preview_url]) show(p) }
     }
     // The viewer steps through the pictures of the clicked one's message
     // (its sender, time and Show message are that message's).
@@ -66,7 +81,15 @@ Item {
         target: backend
         function onDriveActionDone(op, result, error) {
             if (!op.startsWith(root.tag)) return
-            const kind = op.slice(root.tag.length)
+            const rest = op.slice(root.tag.length)
+            // A full picture ("<url>:personal_full"): done, or failed.
+            if (rest.endsWith(":personal_full")) {
+                const url = decodeURIComponent(rest.slice(0, rest.length - ":personal_full".length))
+                if (!error && result) { const v = JSON.parse(result); const m = Object.assign({}, root.fulls); m[v.url] = v.path; root.fulls = m }
+                root.fullDone(url)
+                return
+            }
+            const kind = rest
             if (kind === "personal_photos") {
                 root.loading = false
                 root.loaded = true
@@ -105,10 +128,6 @@ Item {
                 if (error || !result) return
                 const v = JSON.parse(result)
                 if (v.thumb) { const m = Object.assign({}, root.thumbs); m[v.url] = v.path; root.thumbs = m }
-                else {
-                    const m = Object.assign({}, root.fulls); m[v.url] = v.path; root.fulls = m
-                    if (root.wantFull === v.url) { root.wantFull = ""; const p = root.photos.find(x => x.preview_url === v.url); if (p) root.show(p) }
-                }
             }
         }
     }
