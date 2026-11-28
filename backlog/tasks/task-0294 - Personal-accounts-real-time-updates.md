@@ -1,11 +1,11 @@
 ---
 id: TASK-0294
 title: 'Personal accounts: real-time updates'
-status: In Progress
+status: To Do
 assignee:
   - '@tperA'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T04:25:00Z'
+updated_date: '2026-11-28T05:37:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -44,4 +44,6 @@ Messages, typing, read receipts and calls arrive for work accounts over Trouter.
 - Live on linuxlt (OST Personal 1 in OST, profile tperAp1; OST Personal 2 sending through the chat service): both registrations succeeded, Trouter connected; Control/Typing and NewMessage pushes reached the socket within a second (OST_TROUTER_DUMP_DIR frames), and OST showed its notification banner for the message ("OST Personal 2: OST TASK-0294 banner check"; the chat's name is "Unknown" until TASK-0293 resolves personal chats' members). Chat messages do arrive by push, so no polling fallback is needed (AC #2).
 - Not verified: read receipts. A consumption horizon PUT by OST Personal 2 gave no push, and the consumer chat service's /threads/{id}/consumptionhorizons answered an empty list; how Teams free shows Seen needs a capture with both accounts (TASK-0293's chat view).
 - Not built: incoming calls. Teams free rings over a second socket on go.trouter.teams.microsoft.com registered as SkypeSpacesWeb / TFLSkypeSpacesWeb_2.0 at teams.microsoft.com/registrar/prod/v2 (captured, §9.3); answering needs the consumer calling stack (flightproxy cpconv), which is TASK-0299. Moved there as an AC.
+
+Built so far: push connects for personal accounts (Skype Trouter negotiate at go.trouter.skype.com) and registers at Teams free's registrar (TeamsCDLWebWorker_2.7/TFL + <epid>_GG 2.3, renewed before the 3600 s ttl); new-message and typing pushes verified live within a second, with OST's notification banner; no polling fallback needed (AC #2). Left: read receipts are unverified (no push seen for a read horizon; the consumer consumptionhorizons list was empty); incoming calls need Teams free's calling socket (captured in protocol doc §9.3) and the consumer calling stack, TASK-0299.
 <!-- SECTION:NOTES:END -->
