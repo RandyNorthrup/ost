@@ -337,10 +337,7 @@ fn listed_favorite_body(reply: &serde_json::Value, unique_id: &str) -> Option<se
 /// A favorite listed without Graph's ids (its row carries SharePoint's
 /// unique id as its id): the favorites body from its own entry, and your
 /// OneDrive's host.
-async fn listed_favorite(
-    client: &TeamsClient,
-    unique_id: &str,
-) -> Option<(serde_json::Value, String)> {
+async fn listed_favorite(client: &TeamsClient, unique_id: &str) -> Option<serde_json::Value> {
     let personal = super::quick_access::personal_site(client).await.ok()?;
     let reply = super::sharing::get_with(
         &format!("{personal}/_api/sp.FavoriteItemCollection.GetFavoriteItems?top=500"),
@@ -348,10 +345,14 @@ async fn listed_favorite(
     )
     .await
     .ok()?;
-    Some((
-        listed_favorite_body(&reply, unique_id)?,
-        favorites_host(&personal)?,
-    ))
+    listed_favorite_body(&reply, unique_id)
+}
+
+/// Where your favorites live: your own OneDrive's host (the collection
+/// `favorites` reads), whoever's item it is.
+async fn my_favorites_host(client: &TeamsClient) -> Result<String> {
+    let personal = super::quick_access::personal_site(client).await?;
+    favorites_host(&personal).ok_or_else(|| anyhow::anyhow!("Your OneDrive's address is unknown"))
 }
 
 /// The entries of a GetFavoriteItems reply (its JSON text, under `value`
@@ -375,24 +376,22 @@ pub async fn set_favorite(
     item_id: &str,
     on: bool,
 ) -> Result<()> {
-    let (body, host) = match item_path(drive_id, item_id) {
+    // (Always your own OneDrive's host, as OneDrive posts to its page's
+    // web: the item's site and ids go in the body, even for an item of
+    // another tenant.)
+    let body = match item_path(drive_id, item_id) {
         Ok(path) => match client
             .graph_get(&format!("{path}?$select=id,webUrl,sharepointIds"))
             .await
         {
-            Ok(r) => {
-                let v: serde_json::Value = r.json().await?;
-                let site = v["sharepointIds"]["siteUrl"].as_str().unwrap_or_default();
-                let host = favorites_host(site)
-                    .ok_or_else(|| anyhow::anyhow!("Not a SharePoint item: {item_id}"))?;
-                (favorite_body(&v), host)
-            }
+            Ok(r) => favorite_body(&r.json::<serde_json::Value>().await?),
             Err(e) if drive_id.is_empty() => listed_favorite(client, item_id).await.ok_or(e)?,
             Err(e) => return Err(e),
         },
         Err(e) if drive_id.is_empty() => listed_favorite(client, item_id).await.ok_or(e)?,
         Err(e) => return Err(e),
     };
+    let host = my_favorites_host(client).await?;
     let action = if on { "add" } else { "remove" };
     let json = [
         ("accept", "application/json"),
@@ -441,9 +440,16 @@ pub fn favorites_host(site_url: &str) -> Option<String> {
 /// Teams' Favorite / Unfavorite on a message's file card: OneDrive's
 /// `favorites/followedListItems/oneDrive.add` (or `.remove`) with the
 /// file's site and address.
-pub async fn set_favorite_by_url(site_url: &str, url: &str, on: bool) -> Result<()> {
-    let host = favorites_host(site_url)
-        .ok_or_else(|| anyhow::anyhow!("Not a SharePoint address: {site_url}"))?;
+pub async fn set_favorite_by_url(
+    client: &TeamsClient,
+    site_url: &str,
+    url: &str,
+    on: bool,
+) -> Result<()> {
+    if favorites_host(site_url).is_none() {
+        anyhow::bail!("Not a SharePoint address: {site_url}");
+    }
+    let host = my_favorites_host(client).await?;
     let action = if on { "add" } else { "remove" };
     let body = serde_json::json!({ "value": [{ "siteUrl": format!("{}/", site_url.trim_end_matches('/')), "url": url }] });
     let json = [
