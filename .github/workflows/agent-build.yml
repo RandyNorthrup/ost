@@ -65,7 +65,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Install build dependencies
-        run: sh desktop/packaging/build-deb.sh --deps-only
+        run: |
+          sh desktop/packaging/build-deb.sh --deps-only
+          if [ "$KIND" = clippy ]; then
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends rust-clippy
+          fi
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: agent-build
@@ -85,7 +89,8 @@ jobs:
               cargo clippy --locked --workspace --all-targets -- -D warnings 2>&1 | tee out/clippy.log
               cargo clippy --locked -p ost-desktop --all-targets --features test-harness -- -D warnings 2>&1 | tee -a out/clippy.log ;;
             example)
-              cargo build --locked --example "$FILTER" --features test-harness 2>&1 | tail -n 40
+              # examples belong to the engine crate (teams-cli); test-harness is desktop-only
+              cargo build --locked --example "$FILTER" --features audio,video 2>&1 | tail -n 40
               cp "target/debug/examples/$FILTER" out/ ;;
           esac
           git rev-parse HEAD > out/commit.txt
