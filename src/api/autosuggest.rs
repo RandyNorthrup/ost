@@ -1325,6 +1325,8 @@ pub fn backfill_body(
         "queryString": super::search::message_query(&words, &f, my_oid, false),
         "displayQueryString": words,
     });
+    // (No Sharer subtype for from:, unlike the results page's Person ▾
+    // From: Teams' search box sends none, captured on winpc 2026-11-28.)
     if !f.person_mail.is_empty() {
         query["queryAnnotations"] = json!([{
             "type": "People", "text": f.person_mail, "userId": f.person_oid, "tenantId": tenant,
