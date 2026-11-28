@@ -726,6 +726,14 @@ pub async fn download_shared(client: &TeamsClient, share_url: &str) -> Result<Ve
     Ok(resp.bytes().await.context("Download")?.to_vec())
 }
 
+/// A Graph continuation link as a path for `graph_get` (only Graph's own
+/// v1.0 addresses).
+fn graph_path(link: &str) -> Option<String> {
+    link.strip_prefix("https://graph.microsoft.com/v1.0")
+        .filter(|p| p.starts_with('/'))
+        .map(str::to_string)
+}
+
 /// A row of the personal OneDrive picker (Attach cloud files: My files,
 /// Recent, Photos, Shared).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -824,19 +832,31 @@ pub async fn picker_list(
             _ => "/me/drive/root/children?$top=200".to_string(),
         }
     };
-    let v: Value = client
-        .graph_get(&path)
-        .await?
-        .json()
-        .await
-        .context("Folder reply")?;
-    let mut items: Vec<PickerItem> = v["value"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .map(picker_item)
-        .filter(|i| !i.id.is_empty())
-        .collect();
+    // Every page (Graph's nextLink), up to 2,000 rows.
+    let mut items: Vec<PickerItem> = Vec::new();
+    let mut next = Some(path);
+    let mut pages = 0;
+    while let Some(p) = next.take() {
+        let v: Value = client
+            .graph_get(&p)
+            .await?
+            .json()
+            .await
+            .context("Folder reply")?;
+        items.extend(
+            v["value"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(picker_item)
+                .filter(|i| !i.id.is_empty()),
+        );
+        pages += 1;
+        next = v["@odata.nextLink"]
+            .as_str()
+            .and_then(graph_path)
+            .filter(|_| pages < 10);
+    }
     if !folder.is_empty() || !matches!(place, "recent" | "shared") {
         items.sort_by(|a, b| {
             b.is_folder
@@ -1020,6 +1040,17 @@ mod tests {
             photos_query("19:x@thread.v2", 5, 5)["OPTION"]["RESULTBASE"],
             5
         );
+    }
+
+    #[test]
+    fn continuation_links_stay_on_graph() {
+        assert_eq!(
+            graph_path("https://graph.microsoft.com/v1.0/me/drive/root/children?$skiptoken=x")
+                .as_deref(),
+            Some("/me/drive/root/children?$skiptoken=x")
+        );
+        assert_eq!(graph_path("https://evil.example/v1.0/me"), None);
+        assert_eq!(graph_path("https://graph.microsoft.com/v1.0.evil/x"), None);
     }
 
     #[test]

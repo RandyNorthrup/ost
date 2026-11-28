@@ -3760,8 +3760,10 @@ Rectangle {
                                 visible: fc.photo
                                 readonly property real pw: fc.modelData.preview_width || photoPic.implicitWidth || 180
                                 readonly property real ph: fc.modelData.preview_height || photoPic.implicitHeight || 180
-                                readonly property real scale: Math.min(1, 180 / ph, (msg.maxBubble - 2 * bubble.pad) / pw)
-                                width: Math.max(180, pw * scale); height: 180
+                                // Its share of the bubble when the files sit side by side.
+                                readonly property real cell: (msg.maxBubble - 2 * bubble.pad - 8 * (fileCol.columns - 1)) / Math.max(1, fileCol.columns)
+                                readonly property real scale: Math.min(1, 180 / ph, cell / pw)
+                                width: Math.min(cell, Math.max(180, pw * scale)); height: 180
                                 radius: 4
                                 color: theme.pick("#F0F0F0", "#292929", "#000000")
                                 clip: true

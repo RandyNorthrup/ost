@@ -2016,7 +2016,7 @@ Item {
         title: qsTr("Attach media")
         fileMode: FileDialog.OpenFiles
         // Teams free's list (pictures and videos).
-        nameFilters: [qsTr("Images") + " (*.webp *.jpg *.png *.jpeg *.heic *.tif *.jfif *.bmp *.gif *.3g2 *.3gp *.3gpp *.asf *.avi *.m2ts *.m4v *.mkv *.mp4v *.mts *.ts *.mp4 *.mov *.wmv *.webm)"]
+        nameFilters: [qsTr("Images") + (root.personal ? " (*.webp *.jpg *.png *.jpeg *.heic *.tif *.jfif *.bmp *.gif *.3g2 *.3gp *.3gpp *.asf *.avi *.m2ts *.m4v *.mkv *.mp4v *.mts *.ts *.mp4 *.mov *.wmv *.webm)" : " (*.png *.jpg *.jpeg *.gif *.bmp *.webp)")]
         onAccepted: {
             if (root.personal) { root.mediaPicked(selectedFiles.map(u => u.toString())); return }
             // (A copy: the upload removes the pasted picture it sends.)

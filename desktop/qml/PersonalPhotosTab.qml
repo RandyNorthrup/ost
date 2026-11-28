@@ -43,10 +43,12 @@ Item {
         wantFull = p.preview_url
         backend.driveAction(tag + "personal_thumb", "{}", JSON.stringify({ url: p.preview_url, thumb: "0" }))
     }
+    // The viewer steps through the pictures of the clicked one's message
+    // (its sender, time and Show message are that message's).
     function show(p) {
-        const list = photos.filter(x => !!fulls[x.preview_url]).map(x => ({ local_path: fulls[x.preview_url], width: x.width, height: x.height }))
-        const i = Math.max(0, photos.filter(x => !!fulls[x.preview_url]).indexOf(p))
-        root.openImage(list, i, { sender: p.sender, time: p.time, id: p.message_id })
+        const same = photos.filter(x => x.message_id === p.message_id && !!fulls[x.preview_url])
+        const list = same.map(x => ({ local_path: fulls[x.preview_url], width: x.width, height: x.height }))
+        root.openImage(list, Math.max(0, same.indexOf(p)), { sender: p.sender, time: p.time, id: p.message_id })
     }
     Connections {
         target: backend
