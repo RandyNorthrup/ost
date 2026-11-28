@@ -574,6 +574,9 @@ async fn store_personal_sign_in(
     tokens: TokenSet,
     flow: &str,
 ) -> Result<Vec<&'static str>> {
+    // A refresh running meanwhile (it loaded the earlier session) must not
+    // save over the new sign-in.
+    let _one = REFRESHING.lock().await;
     let identity = tokens
         .id_token
         .as_deref()
@@ -655,9 +658,15 @@ async fn personal_tokens(
         }
         tracing::info!("Personal account's Skype token renewed");
     }
+    // An ended session (the refresh token refused) is the caller's error,
+    // as when the Skype token is renewed, so the app can sign in again; any
+    // other failure leaves that one token out.
     if access {
         match mint_personal(client, config, PERSONAL_MT_SCOPE).await {
             Ok(t) => config.set_access_token(t.access_token, t.expires_in),
+            Err(e) if super::spa::needs_renewal(&e) => {
+                return Err(e.context("Failed to renew the personal account's middle tier token"));
+            }
             Err(e) => {
                 tracing::warn!("Middle tier token acquisition failed: {:#}", e);
                 missing.push("Middle tier");
@@ -667,6 +676,9 @@ async fn personal_tokens(
     if graph {
         match mint_personal(client, config, PERSONAL_GRAPH_SCOPE).await {
             Ok(t) => config.set_graph_token(t.access_token, t.expires_in),
+            Err(e) if super::spa::needs_renewal(&e) => {
+                return Err(e.context("Failed to renew the personal account's Graph token"));
+            }
             Err(e) => {
                 tracing::warn!("Graph token acquisition failed: {:#}", e);
                 missing.push("Graph");

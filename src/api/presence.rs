@@ -985,10 +985,17 @@ pub async fn get_presences(http: &reqwest::Client, mris: &[String]) -> Result<Ve
         bail!("Presence lookup failed: HTTP {status}");
     }
     let v: serde_json::Value = resp.json().await.context("Presence lookup reply")?;
-    Ok(parse_presences(&v))
+    Ok(parse_presences(&v, target.skype.is_some()))
 }
 
-fn parse_presences(v: &serde_json::Value) -> Vec<UserPresence> {
+/// Whether a presence answer's status message is plain text: Teams free's
+/// (a personal account's, read through its UPS) is; a work account's is
+/// Teams' note HTML.
+fn plain_note(consumer: bool, mri: &str) -> bool {
+    consumer && !mri.to_ascii_lowercase().starts_with("8:orgid:")
+}
+
+fn parse_presences(v: &serde_json::Value, consumer: bool) -> Vec<UserPresence> {
     v.as_array()
         .into_iter()
         .flatten()
@@ -1005,8 +1012,25 @@ fn parse_presences(v: &serde_json::Value) -> Vec<UserPresence> {
                 .pointer("/note/message")
                 .and_then(|m| m.as_str())
                 .unwrap_or_default();
-            let pinned = message.contains("<pinnednote>");
-            let body = message.replace("<pinnednote></pinnednote>", "");
+            let plain = plain_note(consumer, &mri);
+            let pinned = !plain && message.contains("<pinnednote>");
+            let (body, text) = if plain {
+                // Kept as typed; escaped for the rich-text view.
+                let t = message.trim().to_string();
+                let html = if t.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "<p>{}</p>",
+                        super::messages::escape(&t.replace('&', "&amp;"))
+                    )
+                };
+                (html, t)
+            } else {
+                let b = message.replace("<pinnednote></pinnednote>", "");
+                let t = super::strip_html(&b).trim().to_string();
+                (b, t)
+            };
             Some(UserPresence {
                 mri,
                 availability: field("availability"),
@@ -1016,7 +1040,7 @@ fn parse_presences(v: &serde_json::Value) -> Vec<UserPresence> {
                 } else {
                     super::messages::sanitize_note_html(&body)
                 },
-                note_text: super::strip_html(&body).trim().to_string(),
+                note_text: text,
                 note_pinned: pinned,
                 note_expiry: p
                     .pointer("/note/expiry")
@@ -1093,6 +1117,26 @@ mod presence_tests {
     }
 
     #[test]
+    fn personal_status_messages_are_read_as_typed() {
+        let v = serde_json::json!([
+            {"mri": "8:live:.cid.ca2738c364862c6", "presence": {"availability": "Busy",
+                "note": {"message": "Out <today> & tomorrow", "expiry": "9999-12-31T08:00:00Z"}}},
+            {"mri": "8:orgid:a", "presence": {"note": {"message": "<p>Work &amp; play</p><pinnednote></pinnednote>"}}}
+        ]);
+        let p = parse_presences(&v, true);
+        assert_eq!(p[0].note_text, "Out <today> & tomorrow");
+        assert!(!p[0].note_pinned);
+        assert!(
+            p[0].note_html.contains("&lt;today&gt;") && p[0].note_html.contains("&amp;"),
+            "{}",
+            p[0].note_html
+        );
+        // A work user's note seen from a personal account stays Teams' HTML.
+        assert_eq!(p[1].note_text, "Work & play");
+        assert!(p[1].note_pinned);
+    }
+
+    #[test]
     fn personal_presence_goes_to_teams_free() {
         assert_eq!(
             consumer_base(Some("https://teams.live.com/ups/global/".into())),
@@ -1110,7 +1154,7 @@ mod presence_tests {
         );
         // A personal user's presence (§7.8 of the protocol notes).
         let v = serde_json::json!([{"mri": "8:live:.cid.ca2738c364862c6", "presence": {"sourceNetwork": "Unknown", "availability": "Away", "activity": "Away"}}]);
-        let p = &parse_presences(&v)[0];
+        let p = &parse_presences(&v, true)[0];
         assert_eq!(
             (p.availability.as_str(), p.activity.as_str()),
             ("Away", "Away")
@@ -1122,7 +1166,7 @@ mod presence_tests {
         // The service's reply after OST set a note (2026-11-09).
         let v = serde_json::json!([{"mri": "8:orgid:a", "presence": {"availability": "Available", "activity": "Available",
             "note": {"expiry": "9999-12-31T08:00:00Z", "message": "<p>OST probe <span itemtype=\"http://schema.skype.com/Mention\" itemscope=\"\" itemid=\"0\" data-itemprops=\"{&quot;mri&quot;:&quot;8:orgid:a&quot;,&quot;mentionType&quot;:&quot;person&quot;}\">OST Test 1</span></p><pinnednote></pinnednote>"}}}]);
-        let p = &parse_presences(&v)[0];
+        let p = &parse_presences(&v, false)[0];
         assert!(p.note_pinned);
         assert_eq!(p.note_text, "OST probe OST Test 1");
         assert!(
@@ -1139,13 +1183,13 @@ mod presence_tests {
         let v = serde_json::json!([{"mri": "8:orgid:a", "presence": {"availability": "Available", "workLocation": {
             "location": "Office", "locationSource": "VerifiedLocation",
             "approximateDetails": {"id": "a93350e7", "idType": "Directory", "name": "OST Test Building"}}}}]);
-        let p = &parse_presences(&v)[0];
+        let p = &parse_presences(&v, false)[0];
         assert_eq!(p.work_location, "Office");
         assert_eq!(p.work_location_source, "VerifiedLocation");
         assert_eq!(p.work_location_building, "OST Test Building");
         assert_eq!(p.work_location_building_id, "a93350e7");
         let v = serde_json::json!([{"mri": "8:orgid:a", "presence": {"workLocation": {"location": "Remote"}}}]);
-        let p = &parse_presences(&v)[0];
+        let p = &parse_presences(&v, false)[0];
         assert_eq!(
             (
                 p.work_location_source.as_str(),
@@ -1162,7 +1206,7 @@ mod presence_tests {
             {"mri": "8:orgid:b", "presence": {"availability": "Busy", "activity": "InACall"}},
             {"nomri": true}
         ]);
-        let p = parse_presences(&v);
+        let p = parse_presences(&v, false);
         assert_eq!(p.len(), 2);
         assert_eq!(p[1].availability, "Busy");
         assert_eq!(p[1].activity, "InACall");
