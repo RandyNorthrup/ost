@@ -345,6 +345,18 @@ pub fn browser_sign_in() -> bool {
     Config::load().ok().and_then(|c| c.auth_flow).as_deref() == Some(super::TEAMS_WEB_FLOW)
 }
 
+/// Whether the stored sign-in is a browser sign-in whose 24-hour refresh
+/// token is renewed through the web view: Teams on the web's, or a personal
+/// account's (Teams on the web for personal use's). `Some(true)` for the
+/// personal one.
+pub fn browser_session() -> Option<bool> {
+    match Config::load().ok().and_then(|c| c.auth_flow).as_deref() {
+        Some(super::TEAMS_WEB_FLOW) => Some(false),
+        Some(super::TEAMS_LIVE_FLOW) => Some(true),
+        _ => None,
+    }
+}
+
 /// Wait for the user to approve the sign-in, then store every token OST
 /// needs. Returns the names of the secondary tokens that could not be
 /// acquired (empty on full success); fails if sign-in itself failed.
