@@ -31088,7 +31088,7 @@ impl qobject::Backend {
                     }
                     "card_favorite" => {
                         let on = args["on"].as_bool().unwrap_or(true);
-                        api::drive::set_favorite_by_url(&s("site"), &s("url"), on).await?;
+                        api::drive::set_favorite_by_url(&client, &s("site"), &s("url"), on).await?;
                         json!({ "url": s("url"), "name": s("name"), "on": on })
                     }
                     // The compose card's Link settings, applied: the chosen
