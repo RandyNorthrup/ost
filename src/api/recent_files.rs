@@ -6,8 +6,10 @@
 //! DeltaSync?top=500` (captured on winpc 2026-11-25), and leaves out what
 //! OneDrive's `isInvalidOdbRecentItem` rejects: hidden or deleted files,
 //! files never opened, folders other than OneNote notebooks, images,
-//! classic attachments, other sources and a few file types. The rows come
-//! newest opened first.
+//! classic attachments, other sources and a few file types. Home also
+//! shows the service's top files (`GetRecentFiles?top=40`), which hold a
+//! few DeltaSync leaves out (`merge_home`). The rows come newest opened
+//! first.
 
 use anyhow::{Context, Result};
 use serde::Serialize;
@@ -404,6 +406,68 @@ pub async fn fetch_reply(client: &TeamsClient) -> Result<(Value, String)> {
     Ok((reply, personal))
 }
 
+/// The file types OneDrive's Home asks the recent service for (its
+/// `recentEdgeworthSupport.odb` apps).
+pub const HOME_APPS: &str =
+    "Word,Excel,PowerPoint,OneNote,Pdf,Video,Visio,Fluid,Playlist,Whiteboard,Lists";
+
+/// The entries of `sp.RecentFileCollection.GetRecentFiles` (its `value`
+/// is JSON text of an array; DeltaSync's holds `{files}`).
+pub fn top_entries(reply: &Value) -> Vec<Value> {
+    let v: Value = match &reply["value"] {
+        Value::String(t) => serde_json::from_str(t).unwrap_or_default(),
+        other => other.clone(),
+    };
+    match v {
+        Value::Array(a) => a,
+        other => other["files"].as_array().cloned().unwrap_or_default(),
+    }
+}
+
+/// OneDrive's Home list (RecentDataManager, file browser bundle
+/// 2026-11-13): it shows the recent service's top files
+/// (`GetRecentFiles?top=40`) and adds DeltaSync's, each file once (by its
+/// `Id`). The top files hold some DeltaSync leaves out: a chat's Loop
+/// notes (`loop_loopThread.loop` in its chat's container) and a recap's
+/// Highlights pages in Meeting Artifacts (seen with ost-test1 2026-11-27).
+/// The result is shaped as DeltaSync's reply.
+pub fn merge_home(delta: &Value, top: &Value) -> Value {
+    let mut files = entries(delta);
+    let mut seen: std::collections::HashSet<String> = files
+        .iter()
+        .map(|e| s(&e["file"]["Id"]))
+        .filter(|id| !id.is_empty())
+        .collect();
+    for e in top_entries(top) {
+        let id = s(&e["file"]["Id"]);
+        if id.is_empty() || seen.insert(id) {
+            files.push(e);
+        }
+    }
+    json!({ "value": json!({ "files": files }).to_string() })
+}
+
+/// Your OneDrive's Home as Teams' OneDrive app fills it (see
+/// `merge_home`), and your OneDrive's site.
+pub async fn fetch_home_reply(client: &TeamsClient) -> Result<(Value, String)> {
+    let personal = super::quick_access::personal_site(client).await?;
+    let prefer = format!("useSmartCache, filetypes=\"{HOME_APPS}\"");
+    let delta_url = format!("{personal}/_api/sp.RecentFileCollection.DeltaSync?top=500");
+    let top_url = format!("{personal}/_api/sp.RecentFileCollection.GetRecentFiles?top=40");
+    let delta_headers = [("accept", "application/json")];
+    let top_headers = [("accept", "application/json"), ("prefer", prefer.as_str())];
+    let (delta, top) = tokio::join!(
+        sharing::get_with(&delta_url, &delta_headers),
+        sharing::get_with(&top_url, &top_headers)
+    );
+    let delta = delta.context("Recent files")?;
+    let top = top.unwrap_or_else(|e| {
+        tracing::warn!("Recent files (top): {e:#}");
+        Value::Null
+    });
+    Ok((merge_home(&delta, &top), personal))
+}
+
 /// Your recent files from your OneDrive's recent files service.
 pub async fn fetch(client: &TeamsClient) -> Result<Vec<Recent>> {
     let (reply, personal) = fetch_reply(client).await?;
@@ -653,6 +717,45 @@ mod tests {
                 Some("ClassicAttachment")
             ]
         );
+    }
+
+    #[test]
+    fn home_adds_the_top_files_delta_sync_leaves_out() {
+        let thread = |id: &str, opened: &str| {
+            json!({ "file": { "Id": id, "FileName": "loop_loopThread.loop", "FileExtension": "loop",
+            "SharePointOnlineFacetStatus": "Present",
+            "SharePointItem": { "SiteId": "86beb970-8c88-4ae2-acce-d51c851ec061", "WebId": "a3305c60-5edd-4721-8f56-1352f4b64bcf",
+                                "ListId": "c300f6d2-5ee5-4f38-a11c-6a78cbe2bf1d", "UniqueId": "77c386ff-1917-48b7-82ee-65ffe353bd56",
+                                "SitePath": "https://scnetsolutions.sharepoint.com/contentstorage/CSP_77c386ff-1917-48b7-82ee-65ffe353bd56",
+                                "ContentClass": "STS_ListItem_DocumentLibrary" },
+            "UserRelationship": { "LastAccessDateTime": opened },
+            "Visualization": { "Title": "loop_loopThread", "Type": "Fluid", "ContainerUrl": "https://aka.ms/spe-openfilelocation",
+                               "ContainerTitle": "IC3_TeamsContainerType_41f5f6b8-cc09-4ce4-8ad2-314170d862cd" },
+            "Document": { "Author": "SharePoint App" } } })
+        };
+        let mut delta: Value = serde_json::from_str(reply()["value"].as_str().unwrap()).unwrap();
+        delta["files"][0]["file"]["Id"] = json!("SPO@t,checklist");
+        let delta = json!({ "value": delta.to_string() });
+        // GetRecentFiles' value is an array; the checklist is in both.
+        let top = json!({ "value": json!([thread("SPO@t,thread", "2026-11-25T21:44:21Z"),
+                                          { "file": { "Id": "SPO@t,checklist" } }]).to_string() });
+        let rows = listed(&merge_home(&delta, &top), ME);
+        assert_eq!(
+            rows.iter().map(|r| r.title.as_str()).collect::<Vec<_>>(),
+            [
+                "loop_loopThread",
+                "0.2.0 release checklist",
+                "ost-share-test",
+                "OST Notebook"
+            ]
+        );
+        assert_eq!(
+            rows[0].location,
+            "IC3_TeamsContainerType_41f5f6b8-cc09-4ce4-8ad2-314170d862cd"
+        );
+        assert_eq!(rows[0].owner, "SharePoint App");
+        // Without the top files Home is DeltaSync's.
+        assert_eq!(listed(&merge_home(&delta, &Value::Null), ME).len(), 3);
     }
 
     #[test]

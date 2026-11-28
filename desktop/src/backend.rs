@@ -7407,6 +7407,8 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
                 "liveCall": c.live_call,
                 "muted": c.muted,
                 "messagingDisabled": c.messaging_disabled,
+                "cfet": c.cfet,
+                "bot": c.bot,
                 "empty": c.empty,
                 "unlisted": c.unlisted,
                 "hidden": c.hidden,
@@ -30584,12 +30586,15 @@ impl qobject::Backend {
                 // Which items are favorites (the menu's Add to / Remove
                 // from favorites).
                 if out.get("items").is_some() {
+                    // (By Graph id and by SharePoint id: a favorite Graph
+                    // couldn't find keeps its SharePoint one.)
                     out["favorite_ids"] = json!(
                         api::drive::favorites(&client)
                             .await
                             .unwrap_or_default()
                             .into_iter()
-                            .map(|f| f.id)
+                            .flat_map(|f| [f.id, f.sp_item.to_ascii_lowercase()])
+                            .filter(|id| !id.is_empty())
                             .collect::<Vec<_>>()
                     );
                 }

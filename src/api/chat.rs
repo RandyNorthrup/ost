@@ -50,6 +50,35 @@ fn unlisted(
         || left(thread)
 }
 
+/// Whether a one-on-one chat is a bot's (see `ChatInfo::bot`).
+fn bot_one_on_one(id: &str, conv: &Conversation) -> bool {
+    let Some(pair) = id
+        .strip_prefix("19:")
+        .and_then(|s| s.strip_suffix("@unq.gbl.spaces"))
+    else {
+        return false;
+    };
+    let ends: Vec<String> = pair
+        .split('_')
+        .map(|g| format!("28:{}", g.to_ascii_lowercase()))
+        .collect();
+    let from = conv
+        .last_message
+        .as_ref()
+        .and_then(|m| m.from.as_deref())
+        .and_then(|f| f.rsplit('/').next())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let added = conv
+        .properties
+        .as_ref()
+        .and_then(|p| p.get("addedBy"))
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    ends.iter().any(|e| *e == from || *e == added)
+}
+
 /// Whether you left the chat (or were only let in for a while, as into a
 /// meeting's lobby): Teams' isCurrentUserMember for a chat whose roster it
 /// doesn't hold (worker 3398 `sn`): you last left it after you last
@@ -323,6 +352,9 @@ struct NativeMessage {
     im_display_name: Option<String>,
     content: Option<String>,
     messagetype: Option<String>,
+    /// Who sent it (`…/contacts/8:orgid:…` or `…/contacts/28:…`).
+    #[serde(default)]
+    from: Option<String>,
     #[serde(default)]
     properties: Option<serde_json::Value>,
 }
@@ -995,7 +1027,31 @@ pub async fn thread_member_ids(client: &TeamsClient, thread: &str) -> Result<Vec
         .collect();
     tracing::debug!(thread, members = ids.len(), "chat members read");
     remember_members(thread, ids.clone());
+    // The thread's `cfet` (the chat list's conversations leave it out).
+    let cfet = v.pointer("/properties/cfet").is_some_and(|c| {
+        c.as_bool()
+            .unwrap_or_else(|| c.as_str().is_some_and(|s| s.eq_ignore_ascii_case("true")))
+    });
+    let mut set = CFET_THREADS.lock().unwrap_or_else(|e| e.into_inner());
+    let set = set.get_or_insert_with(Default::default);
+    if cfet {
+        set.insert(thread.to_string());
+    } else {
+        set.remove(thread);
+    }
     Ok(ids)
+}
+
+/// Threads whose `cfet` is "true", as `thread_member_ids` read them.
+static CFET_THREADS: std::sync::Mutex<Option<std::collections::HashSet<String>>> =
+    std::sync::Mutex::new(None);
+
+fn cfet_thread(thread: &str) -> bool {
+    CFET_THREADS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .is_some_and(|s| s.contains(thread))
 }
 
 pub(crate) fn remember_members(thread: &str, ids: Vec<String>) {
@@ -1612,6 +1668,16 @@ pub struct ChatInfo {
     /// A bot's 1:1 chat you blocked (Teams' Block bot conversation sets
     /// the thread's `messagingdisabled` to "true").
     pub messaging_disabled: bool,
+    /// A one-on-one chat with a bot (`19:{you}_{bot}@unq.gbl.spaces`, the
+    /// bot showing as `28:{its id}` as the last message's sender or as who
+    /// added you): Teams' chat list keeps it, its quick-start dialog doesn't
+    /// (worker 3398 `LN`).
+    pub bot: bool,
+    /// The thread's `cfet` is "true" (a chat of external access, as one
+    /// that once held someone on Teams free): Teams' quick-start dialog
+    /// offers no app there (shared worker 40799 `we`, with
+    /// enableExternalChatAppAccess).
+    pub cfet: bool,
     /// Unread as Teams counts it: someone else's message newer than your
     /// read horizon, or marked unread (see `messages::is_unread`).
     pub unread: bool,
@@ -2034,6 +2100,17 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
         };
 
         let named = has_topic(conv);
+        let bot = bot_one_on_one(&id, conv);
+        let cfet = cfet_thread(&id)
+            || conv
+                .thread_properties
+                .as_ref()
+                .and_then(|p| p.extra.get("cfet"))
+                .is_some_and(|v| {
+                    v.as_bool().unwrap_or_else(|| {
+                        v.as_str().is_some_and(|s| s.eq_ignore_ascii_case("true"))
+                    })
+                });
         chats.push(ChatInfo {
             id,
             name,
@@ -2054,6 +2131,8 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
                 .and_then(|p| p.extra.get("messagingdisabled"))
                 .and_then(|v| v.as_str())
                 .is_some_and(|v| v.eq_ignore_ascii_case("true")),
+            bot,
+            cfet,
             empty: conv
                 .properties
                 .as_ref()
@@ -2269,6 +2348,36 @@ fn refresh_older(older: &mut Vec<serde_json::Value>, first: &[serde_json::Value]
         }
     }
     changed
+}
+
+#[cfg(test)]
+mod bot_chat_tests {
+    use super::{Conversation, bot_one_on_one};
+    use serde_json::json;
+
+    fn conv(v: serde_json::Value) -> Conversation {
+        serde_json::from_value(v).unwrap()
+    }
+
+    #[test]
+    fn a_bots_one_on_one_is_known_by_its_sender_or_who_added_you() {
+        let id = "19:4287e791-1b98-4963-8b94-281c50472683_358f0194-6b0e-4dd3-af35-c24fe8a9ec87@unq.gbl.spaces";
+        // Workflows (ost-test1, 2026-11-27): the bot wrote last.
+        let sent = conv(
+            json!({ "id": id, "lastMessage": { "from": "https://amer.ng.msg.teams.microsoft.com/v1/users/ME/contacts/28:358f0194-6b0e-4dd3-af35-c24fe8a9ec87" } }),
+        );
+        assert!(bot_one_on_one(id, &sent));
+        let added = conv(
+            json!({ "id": id, "properties": { "addedBy": "28:358F0194-6B0E-4DD3-AF35-C24FE8A9EC87" } }),
+        );
+        assert!(bot_one_on_one(id, &added));
+        // A person's 1:1 and a group chat aren't.
+        let person = conv(
+            json!({ "id": id, "lastMessage": { "from": "https://x/v1/users/ME/contacts/8:orgid:358f0194-6b0e-4dd3-af35-c24fe8a9ec87" } }),
+        );
+        assert!(!bot_one_on_one(id, &person));
+        assert!(!bot_one_on_one("19:abc@thread.v2", &added));
+    }
 }
 
 #[cfg(test)]

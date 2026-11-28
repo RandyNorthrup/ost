@@ -6,7 +6,9 @@ import QtQuick.Controls.Basic
 // app you have opens it (Teams 26304, measured on testpc1 2026-11-27 over
 // read-only CDP; docs/spec/store.md §5). CSS px, dialog coordinates:
 // - 520 wide, 720 tall (less when the window is lower), radius 8; 620
-//   tall when the app can't be used in a channel, chat or meeting; the
+//   tall when the app can't be used in a channel, chat or meeting (Teams'
+//   isShortDialog: no contextless install scope but personal), where
+//   "Let's go" and what follows sit 54 lower (Avatars, 2026-11-27); the
 //   close button (32) at (432, 24).
 // - A 486 x 136 band at (16, 0) shaded from the app's accent colour (0 to
 //   20% alpha, top to bottom; #242424 for a white or missing accent) under
@@ -111,9 +113,15 @@ Popup {
         return out.sort((a, b) => b.read - a.read || (b.favorite - a.favorite) || (b.general - a.general) || a.order - b.order || a.name.localeCompare(b.name))
     }
     function isMeetingChat(c) { return !!c.meeting || String(c.id).indexOf("19:meeting_") === 0 }
-    // (Teams leaves out hidden, bot, system and interop threads; an empty
-    // chat has nothing to add the app to yet.)
-    readonly property var chats: chatsList.filter(c => !c.isSelf && !c.hidden && !c.empty && !String(c.id).startsWith("48:") && !String(c.id).startsWith("19:uni01_")
+    // Teams' rule (its worker's appInstallOptions with the conversations
+    // manager, shared worker 40799 `_e`/`we` and 80647 `Q9`, then the
+    // dialog's `zd`; read 2026-11-27): the chats its chat list shows —
+    // not hidden (Hide, Remove chat history), not one you left, not a lobby,
+    // dead or empty one, no bot chat, no 1:1 with a phone number — and
+    // not a meeting's chat (those are meetings), not an external access
+    // thread (`cfet`, as a chat that once held someone on Teams free). A
+    // 1:1 with someone on Teams free stays.
+    readonly property var chats: chatsList.filter(c => !c.isSelf && !c.hidden && !c.empty && !c.unlisted && !c.cfet && !c.bot && !String(c.id).startsWith("48:")
                                                     && !isMeetingChat(c) && !String(c.peerMri || "").startsWith("28:"))
                                           .map((c, i) => ({ kind: "chat", id: c.id, name: c.name || "", sub: "", chat: c, muted: !!c.muted, i: i }))
                                           .sort((a, b) => (a.muted - b.muted) || a.i - b.i)
@@ -279,14 +287,23 @@ Popup {
                 x: (parent.width - 96) / 2 - 1; y: 56; width: 96; height: 96
                 Rectangle { anchors.fill: parent; radius: 48; color: theme.quoteFill }
                 Image { anchors.fill: parent; source: root.app ? (root.app.icon || (root.d ? root.d.icon : "")) : ""; sourceSize: Qt.size(192, 192); fillMode: Image.PreserveAspectFit; asynchronous: true; smooth: true }
-                RoundedCorners { anchors.fill: parent; squircle: true; background: theme.surface }
+                // (Its corners take the band's shade: the accent at 20% of
+                // the way down the band, the veil's fifth at the edges.)
+                RoundedCorners {
+                    anchors.fill: parent; squircle: true; background: theme.surface
+                    readonly property real a: theme.highContrast ? 0 : 0.2 * 0.8
+                    function mix(f) { const s = theme.surface, c = root.accent; return Qt.rgba(s.r + (c.r - s.r) * f, s.g + (c.g - s.g) * f, s.b + (c.b - s.b) * f, 1) }
+                    stops: [{ at: 0, color: mix(a * 56 / 136) }, { at: 80 / 96, color: mix(a) }, { at: 80.5 / 96, color: theme.surface }, { at: 1, color: theme.surface }]
+                }
             }
             Column {
                 id: headCol
                 visible: !root.expanded
                 y: 164; width: parent.width
                 Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight; text: root.app ? root.app.name : ""; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; lineHeight: 22.86; lineHeightMode: Text.FixedHeight; color: theme.text }
-                Item { width: 1; height: 46 }
+                // (The short dialog, Open only, sets "Let's go" 54 lower:
+                // at 286.8, measured with Avatars on testpc1 2026-11-27.)
+                Item { width: 1; height: root.shortDialog ? 100 : 46 }
                 Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: qsTr("Let's go"); font.family: theme.font; font.pixelSize: 28; font.weight: Font.DemiBold; lineHeight: 40; lineHeightMode: Text.FixedHeight; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
                 Item { width: 1; height: 8 }
                 Text { x: (parent.width - width) / 2; width: 350; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; text: root.subText; font.family: theme.font; font.pixelSize: 15; lineHeight: 21.43; lineHeightMode: Text.FixedHeight; color: theme.text }

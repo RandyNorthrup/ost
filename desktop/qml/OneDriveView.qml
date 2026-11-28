@@ -555,7 +555,7 @@ Item {
             x: 0; y: 16; width: parent.width - 16; height: 52
             radius: 12; depth: 8; color: theme.surface
             readonly property var one: root.selection.length === 1 ? root.selection[0] : null
-            readonly property bool fav: !!one && root.favoriteIds.indexOf(one.id) >= 0
+            readonly property bool fav: !!one && actions.isFavorite(one)
             // One file: Open ▾, Share, Copy link, Delete, ···; one folder: the
             // same without Open; several: Delete, Add to favorites, Download, ···.
             readonly property var commands: {
@@ -567,7 +567,7 @@ Item {
                     if (root.canWrite) L.push({ label: qsTr("Delete"), icon: "delete-16" })
                 } else {
                     if (root.canWrite) L.push({ label: qsTr("Delete"), icon: "delete-16" })
-                    if (root.selection.some(i => !i.is_folder)) L.push({ label: qsTr("Add to favorites"), icon: "star-16" })
+                    if (actions.canFavoriteMany(root.selection)) L.push({ label: qsTr("Add to favorites"), icon: "star-16" })
                     L.push({ label: qsTr("Download"), icon: "arrow-download-16" })
                 }
                 if (more.length) L.push({ label: "", tip: qsTr("More"), icon: "more-horizontal-16" })
@@ -580,7 +580,7 @@ Item {
                 const it = one, L = []
                 const sp = root.selection.every(i => !!i.sp_item)
                 if (it) {
-                    if (!it.is_folder) L.push({ label: fav ? qsTr("Remove from favorites") : qsTr("Add to favorites"), icon: "star-16" })
+                    if (fav || actions.canFavorite(it)) L.push({ label: fav ? qsTr("Remove from favorites") : qsTr("Add to favorites"), icon: "star-16" })
                     L.push({ label: qsTr("Download"), icon: "arrow-download-16" })
                 }
                 if (root.canWrite && sp) L.push({ label: qsTr("Duplicate"), icon: "add-square-16" })
@@ -1013,7 +1013,7 @@ Item {
                         required property int index
                         readonly property bool sel: root.selectedIds.indexOf(modelData.id) >= 0
                         readonly property bool hot: fh.hovered || actions.item === modelData && actions.menuOpen || root.hoverForTest === index
-                        readonly property bool fav: root.favoriteIds.indexOf(modelData.id) >= 0
+                        readonly property bool fav: actions.isFavorite(modelData)
                         // Compact List: 34 tall rows, 20 px icons.
                         readonly property bool compact: root.listView === "compact" && !table.narrow && root.view === "folder"
                         readonly property real ty: compact ? 7.67 : 14
@@ -1055,7 +1055,7 @@ Item {
                             Text {
                                 id: nameText
                                 x: newMark.visible ? 19.92 : 12; y: frow.ty
-                                width: Math.min(implicitWidth, nameCell.width - x - 8 - (nameCell.tools ? 101 : 0))
+                                width: Math.min(implicitWidth, nameCell.width - x - 8 - (nameCell.tools || frow.fav ? 101 : 0))
                                 elide: Text.ElideRight
                                 text: frow.modelData.title || frow.modelData.name
                                 font.family: theme.font; font.pixelSize: 14; font.weight: frow.sel ? Font.DemiBold : Font.Normal
@@ -1073,17 +1073,22 @@ Item {
                                 text: qsTr("Modified by %1").arg(frow.modelData.modified_by || root.userName) + " · " + (frow.modelData.is_folder ? root.itemCount(frow.modelData.child_count) : root.size(frow.modelData.size))
                                 font.family: theme.font; font.pixelSize: 12; color: theme.onFill([hcFill6, card], theme.pick("#5E5E5D", "#ADADAD", "#FFFFFF"))
                             }
+                            // (A favorite keeps its filled star where the
+                            // hover tools put it: OneDrive's hero command
+                            // with format "show".)
                             Row {
-                                visible: nameCell.tools
+                                visible: nameCell.tools || frow.fav
                                 x: nameText.x + nameText.width + 8; y: frow.ty - 5; spacing: 4.5
                                 RowTool {
                                     id: moreButton
+                                    opacity: nameCell.tools ? 1 : 0; enabled: nameCell.tools
                                     icon: "more-horizontal-16"; tip: qsTr("More Actions")
                                     onClicked: actions.popup(frow.modelData, moreButton, 0, moreButton.height)
                                 }
-                                RowTool { visible: !!frow.modelData.sp_item; icon: "share-16"; tip: qsTr("Share"); onClicked: { actions.item = frow.modelData; actions.act("Share") } }
+                                RowTool { visible: !!frow.modelData.sp_item; opacity: nameCell.tools ? 1 : 0; enabled: nameCell.tools; icon: "share-16"; tip: qsTr("Share"); onClicked: { actions.item = frow.modelData; actions.act("Share") } }
+                                // (OneDrive's hero star: canFavoriteItem / canUnfavoriteItem.)
                                 RowTool {
-                                    visible: !frow.modelData.is_folder
+                                    visible: frow.fav || actions.canFavorite(frow.modelData)
                                     icon: frow.fav ? "star-16-filled" : "star-16"
                                     tip: frow.fav ? qsTr("Remove this item from Favorites") : qsTr("Add this item to Favorites")
                                     onClicked: root.favorite(frow.modelData.drive_id, frow.modelData.id, !frow.fav)
@@ -1942,12 +1947,42 @@ Item {
             Accessible.name: tile.modelData.name
             Accessible.checked: tile.sel
         }
-        // A folder: the art and its count.
+        // A folder: the art and its count. OneDrive's FolderCover signal
+        // (its tiles' bundle, measured beside Teams on testpc1 2026-11-27):
+        // a shared folder or a shortcut carries the 16 px People glyph in
+        // the count's shade 7 inside the drawing's bottom right corner (the
+        // drawing spans 7 to 105 across and ends 78.5 down); a shortcut
+        // also the 20 px shortcut badge 10 past that corner; the Shortcuts
+        // folder is the blue company folder with its building there and
+        // the count in #032F54.
         Item {
+            id: cover
             visible: tile.modelData.is_folder
-            x: 32; y: 24; width: 112; height: 80; clip: true
-            FluentIcon { x: 0; y: -16; size: 112; name: "ft-folder-32"; swaps: root.folderSwaps(tile.modelData.folder_color) }
-            Text { x: 14; y: 56; text: tile.modelData.child_count || 0; font.family: theme.font; font.pixelSize: 14; color: actions.colorFor(tile.modelData.folder_color).shades[5] }
+            x: 32; y: 24; width: 112; height: 80
+            readonly property bool company: tile.modelData.special === "shortcuts"
+            readonly property bool shortcut: tile.modelData.special === "shortcut"
+            readonly property bool shared: !company && (shortcut || tile.modelData.sharing === "Shared")
+            readonly property color ink: company ? "#032F54" : actions.colorFor(tile.modelData.folder_color).shades[5]
+            Item {
+                anchors.fill: parent; clip: true
+                FluentIcon {
+                    x: 0; y: -16; size: 112
+                    name: cover.company ? "ft-companyfolder-32" : "ft-folder-32"
+                    swaps: cover.company ? ({ "#FAFAFA": "none" }) : root.folderSwaps(tile.modelData.folder_color)
+                }
+            }
+            Text { x: 14; y: 56; text: tile.modelData.child_count || 0; font.family: theme.font; font.pixelSize: 14; color: cover.ink }
+            FluentIcon {
+                visible: cover.shared || cover.company
+                x: 82; y: 56; size: 16; name: cover.company ? "building-20" : "people-16"
+                color: theme.highContrast ? "#000000" : cover.ink
+            }
+            Image {
+                visible: cover.shortcut
+                x: 95; y: 68.5; width: 20; height: 20
+                sourceSize: Qt.size(40, 40); smooth: true
+                source: visible ? (backend.emoticonsVersion, backend.cardImage("https://res.public.onecdn.static.microsoft/files/sp-client/odsp-media-5cc1cecc/images/addtoonedrive/shortcutbadge_20" + (theme.dark || theme.highContrast ? "_dark" : "") + ".svg")) : ""
+            }
         }
         // A file: its picture (or type icon) with the app's badge.
         Rectangle {

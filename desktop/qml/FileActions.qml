@@ -54,13 +54,29 @@ Item {
         menu.open()
     }
     function ref(it) { return { site: it.sp_site, list: it.sp_list, item: it.sp_item } }
+    /// One of your favorites (by its Graph id or its SharePoint id, as
+    /// OneDrive's favorites list it).
+    function isFavorite(it) {
+        return !!it && (favoriteIds.indexOf(it.id) >= 0 || !!it.sp_item && favoriteIds.indexOf(String(it.sp_item).toLowerCase()) >= 0)
+    }
+    /// OneDrive's canFavoriteItem (its favorites need no folder check): any
+    /// file or folder but a shortcut (a mount point) or a .url link.
+    function canFavorite(it) {
+        return !!it && it.special !== "shortcut" && String(it.kind || "").toLowerCase() !== "url" && !/\.url$/i.test(String(it.name || ""))
+    }
+    /// The selection bar's Add to favorites (OneDrive's FavoriteAction):
+    /// 1 to 20 items, each one you can favorite or a favorite already.
+    function canFavoriteMany(list) {
+        const add = list.filter(i => canFavorite(i) && !isFavorite(i)).length
+        return add > 0 && add <= 20 && list.every(i => isFavorite(i) || canFavorite(i))
+    }
     /// Copy link straight to "Link copied" (a message's file card).
     function copyLinkNow(it) { copyLink.auto = true; copyLink.start(it) }
     function closeCopyLinkForTest() { copyLink.close() }
     function copyLinkStateForTest() { return { open: copyLink.opened, copied: copyLink.copied, url: copyLink.url, sentence: copyLink.sentence, kind: copyLink.kind, shareId: copyLink.shareId } }
     function itemsFor(it) {
         const sp = !!it.sp_item
-        const fav = root.favoriteIds.indexOf(it.id) >= 0
+        const fav = isFavorite(it)
         const L = []
         if (!it.is_folder) {
             const text = textKinds.indexOf(it.kind) >= 0
@@ -75,8 +91,9 @@ Item {
         if (sp) L.push({ label: qsTr("Manage access"), icon: "person-16" })
         L.push({ separator: true })
         if (canWrite) L.push({ label: qsTr("Delete"), icon: "delete-16" })
-        // Graph's favorites (followed items) hold files, not folders.
-        if (!it.is_folder) L.push({ label: fav ? qsTr("Remove from favorites") : qsTr("Add to favorites"), icon: "star-16" })
+        // OneDrive's canFavoriteItem: files and folders, not shortcuts or
+        // .url links.
+        if (fav || canFavorite(it)) L.push({ label: fav ? qsTr("Remove from favorites") : qsTr("Add to favorites"), icon: "star-16" })
         if (!it.is_folder && sp) L.push({ label: qsTr("Add shortcut"), icon: "link-square-16", submenu: [{ label: qsTr("Shortcuts") }, { label: qsTr("My files") }, { label: qsTr("Other locations") }] })
         L.push({ label: qsTr("Download"), icon: "arrow-download-16" })
         if (canWrite) L.push({ label: qsTr("Rename"), icon: "rename-16" })
@@ -123,7 +140,7 @@ Item {
         if (list.length === 1) { item = list[0]; others = []; act(label); return }
         item = list[0]; others = list.slice(1)
         if (label === "Delete") deleteDialog.openForMany(list)
-        else if (label === "Add to favorites") list.filter(i => !i.is_folder).forEach(i => favoriteItem(i, true))
+        else if (label === "Add to favorites") list.filter(i => canFavorite(i) && !isFavorite(i)).forEach(i => favoriteItem(i, true))
         else if (label === "Download") zip(list)
         else if (label === "Move to") { picker.shortcut = false; picker.openFor(item, true) }
         else if (label === "Copy to") { picker.shortcut = false; picker.openFor(item, false) }
