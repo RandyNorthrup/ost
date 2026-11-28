@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@tperB'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T05:16:00Z'
+updated_date: '2026-11-28T05:21:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -53,6 +53,8 @@ Personal accounts use the consumer chat service (msgapi.teams.live.com) with con
 
 - Codex review (PR #81): Attach media now sends a copy (the upload removes pasted pictures); picking yourself opens your notes chat; a chat opened from search/activity closes the Requests pane. CodeQL cleartext alert #40 (moved code of #38 on main) dismissed as false positive. CI green; Codex re-review: no major issues.
 - Left open: AC #1 stays unchecked only for attachments (file and photo sending in personal chats were not exercised live; TASK-0300 owns Teams free's file sharing and has the Photos tab AC).
+
+Built so far: personal accounts' chat list (Teams free sections, pills, Requests row and pane), reading, sending, editing, deleting and reactions in 1:1 and group chats, new 1:1 and group chats by name, email or phone (searchUsers, groups service), chat requests with Preview, Accept and Block (1:1 and group) and the sender's start card, and the retired features (polls, tasks, apps, location, SMS) left out; verified live (PR #81). Missing: AC #1's attachments, i.e. sending files and photos in a personal chat as Teams free does (OneDrive "Anyone with the link" sharing; the Photos tab is on TASK-0300). The personal window keeps OST's default app bar (Teams free's rail is TASK-0297). (2026-11-28)
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

@@ -331,6 +331,15 @@ pub fn pinned_body(apps: &[BarApp], changes: &[(String, Option<i64>)]) -> Value 
 
 /// Your personal apps (the bar's and the flyout's).
 pub async fn load(client: &TeamsClient) -> Result<Vec<BarApp>> {
+    // A personal account keeps OST's default bar: Teams free's own apps
+    // (Meet, People, Communities, its Copilot page) and their icons aren't
+    // OST views yet (TASK-0297). Its middle tier answers this call now that
+    // personal accounts send it their token, and its app icons drew as
+    // black squares.
+    anyhow::ensure!(
+        !client.is_personal(),
+        "Teams free's app bar isn't built yet"
+    );
     let (base, token) = tabs::middle_tier(client).await?;
     let v: Value = client
         .http()
