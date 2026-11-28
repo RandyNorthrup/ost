@@ -433,7 +433,7 @@ FluentSurface {
                     visible: !pr.glyph && pr.sub.length > 0
                     width: parent.width; elide: Text.ElideRight; textFormat: Text.StyledText
                     lineHeight: 16; lineHeightMode: Text.FixedHeight
-                    text: pr.kind === "person" ? root.bold(pr.sub) : root.esc(pr.sub)
+                    text: pr.kind === "person" || (pr.kind === "chat" && root.mode === "goto") ? root.bold(pr.sub) : root.esc(pr.sub)
                     font.family: theme.font; font.pixelSize: pr.kind === "person" ? 12 : 11
                     color: theme.onFill(pr, pr.kind === "person" ? theme.text : theme.textStrong)
                 }
@@ -503,6 +503,10 @@ FluentSurface {
             Row {
                 x: 58; y: mtext.y + mtext.height + 5; spacing: 4
                 readonly property var chat: root.chats.find(c => c.id === mr.it.thread)
+                // A named group chat's people as Teams names the chat after
+                // them (its member line: "Release planning | OST and OST
+                // Test 3"); a one-on-one's other person; else the message's.
+                readonly property string place: !mr.it.channel && !mr.it.one_on_one && mr.it.topic && chat && chat.memberTitle ? chat.memberTitle : (mr.it.place || "")
                 Avatar {
                     visible: !mr.it.one_on_one && (!!mr.it.topic || !!mr.it.channel)
                     anchors.verticalCenter: parent.verticalCenter; size: 18
@@ -512,8 +516,8 @@ FluentSurface {
                     group: !mr.it.channel
                 }
                 Text { visible: !!mr.it.topic; textFormat: Text.StyledText; text: root.bold(mr.it.topic || ""); font.family: theme.font; font.pixelSize: 11; color: theme.textSecondary }
-                Rectangle { visible: !!mr.it.topic && !!mr.it.place; anchors.verticalCenter: parent.verticalCenter; width: 0.67; height: 12; color: theme.pick("#D1D1D1", "#666666", "#FFFFFF") }
-                Text { textFormat: Text.StyledText; text: root.bold(mr.it.place || ""); font.family: theme.font; font.pixelSize: 11; color: theme.textSecondary }
+                Rectangle { visible: !!mr.it.topic && !!parent.place; anchors.verticalCenter: parent.verticalCenter; width: 0.67; height: 12; color: theme.pick("#D1D1D1", "#666666", "#FFFFFF") }
+                Text { textFormat: Text.StyledText; text: root.bold(parent.place); font.family: theme.font; font.pixelSize: 11; color: theme.textSecondary }
             }
             Column {
                 anchors.right: parent.right; anchors.rightMargin: 12; y: 7

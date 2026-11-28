@@ -689,6 +689,10 @@ pub mod qobject {
         /// The title bar search's suggestions (Teams' powerbar): {query,
         /// groups: [{id, title, items}]} (teams_cli::api::autosuggest).
         #[qproperty(QString, suggest_json)]
+        /// Your affinity with your chats, channels and teams, for Teams'
+        /// go-to ranking: {scores: {thread: 0…1}, means: {UCMean, UGCMean,
+        /// UTMean}} (api::autosuggest::affinity_scores).
+        #[qproperty(QString, goto_affinity_json)]
         /// The open chat's members (Teams' roster): [{mri, name, mail, me}].
         #[qproperty(QString, chat_members_json)]
         /// The call's chat members, with presence (People pane: "People
@@ -1879,6 +1883,10 @@ pub mod qobject {
         /// answer's `query`) into suggest_json.
         #[qinvokable]
         fn search_suggest_kql(self: Pin<&mut Backend>, spec: &QString);
+        /// Read your affinity scores into goto_affinity_json (go-to mode;
+        /// once a day, as Teams keeps them).
+        #[qinvokable]
+        fn load_goto_affinity(self: Pin<&mut Backend>);
         /// As search_people, with you among the results (the status
         /// message picker).
         #[qinvokable]
@@ -4216,6 +4224,9 @@ pub struct BackendRust {
     new_chat_people_generation: u64,
     suggest_json: QString,
     suggest_generation: u64,
+    goto_affinity_json: QString,
+    /// When goto_affinity_json was last asked for.
+    goto_affinity_at: Option<std::time::Instant>,
     chat_members_json: QString,
     call_chat_members_json: QString,
     chat_meeting_json: QString,
@@ -7399,6 +7410,7 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
         "preview": notes.and_then(|c| c.last_message_preview.clone()),
         "previewSystem": notes.is_some_and(|c| c.last_message_system),
         "peerMri": client.self_mri().unwrap_or_default(),
+        "horizon": notes.map_or(0, |c| c.horizon_ms),
         "favorite": fav_rank("48:notes").is_some(),
         "favoriteRank": fav_rank("48:notes"),
     })];
@@ -7432,6 +7444,14 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
                 "backroom": c.backroom,
                 "topic": c.topic,
                 "named": c.named,
+                // Teams' go-to: when you last read it, when it was made,
+                // a named group chat's members (shown and matched).
+                "horizon": c.horizon_ms,
+                "created": c.created_ms,
+                "memberTitle": c.member_title,
+                "memberNames": c.member_names,
+                "alone": c.alone,
+                "left": c.left,
                 "peerMri": c.peer.clone().or_else(|| outgoing::callee_mri_for_chat(&c.id, &my_oid)),
                 // A chat request (Teams' "… wants to chat with you"), and
                 // a chat with someone on Teams free (External).
@@ -19642,6 +19662,25 @@ impl qobject::Backend {
                 // The suggestions at once; a scoped Images answer's pictures
                 // follow (as Recent images').
                 publish(&qt, v.clone());
+                // Fewer than the Messages pill's ten: the search service's
+                // messages after them, as Teams backfills.
+                if api::autosuggest::wants_backfill(&spec, &v) {
+                    let reply = api::autosuggest::fetch_backfill(
+                        &spec,
+                        &me.oid,
+                        &tenant,
+                        &api::find::local_timezone(),
+                    )
+                    .await?;
+                    let extra = api::autosuggest::backfill_messages(&reply, &me, &names);
+                    tracing::debug!(
+                        "message backfill: {} from the search service ({})",
+                        extra.len(),
+                        reply["EntitySets"][0]["ResultSets"][0]["Total"]
+                    );
+                    api::autosuggest::merge_backfill(&mut v, extra);
+                    publish(&qt, v.clone());
+                }
                 if spec["scope"] == "images" {
                     let ams = client
                         .ams_url()
@@ -19676,6 +19715,60 @@ impl qobject::Backend {
             .await;
             if let Err(e) = result {
                 tracing::warn!("search suggestions failed: {}", short_error(&e));
+            }
+        });
+    }
+
+    pub fn load_goto_affinity(mut self: Pin<&mut Self>) {
+        // Teams keeps the scores a day (its cache expiry).
+        if self
+            .rust()
+            .goto_affinity_at
+            .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(86_400))
+        {
+            return;
+        }
+        self.as_mut().rust_mut().goto_affinity_at = Some(std::time::Instant::now());
+        let upn = self.rust().user_mail.to_string();
+        let me = api::autosuggest::Me {
+            oid: String::new(),
+            mri: self.rust().user_mri.to_string(),
+            mail: upn.clone(),
+            name: self.rust().user_name.to_string(),
+        };
+        if upn.is_empty() {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let me = api::autosuggest::Me {
+                    oid: client.object_id().unwrap_or_default(),
+                    ..me
+                };
+                let tenant = client.tenant_id().unwrap_or_default();
+                let reply = api::autosuggest::fetch_affinity(&upn, &me, &tenant).await?;
+                tracing::debug!(
+                    "go-to affinity reply: {}",
+                    reply.to_string().chars().take(600).collect::<String>()
+                );
+                anyhow::Ok(api::autosuggest::affinity_scores(&reply))
+            }
+            .await;
+            match result {
+                Ok(v) => {
+                    tracing::info!(
+                        "go-to affinity: {} scores",
+                        v["scores"].as_object().map_or(0, |o| o.len())
+                    );
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut()
+                            .set_goto_affinity_json(QString::from(v.to_string().as_str()));
+                    });
+                }
+                // (Not asked again today: go-to ranks without them.)
+                Err(e) => tracing::warn!("go-to affinity scores failed: {}", short_error(&e)),
             }
         });
     }
