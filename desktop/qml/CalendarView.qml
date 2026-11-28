@@ -1947,7 +1947,7 @@ Item {
     function showChannelMeeting(groupId, m) {
         if (!m.ical_uid) { showGroupMeeting(groupId, m); return }
         channelMeetingAsked = { group: groupId, meeting: m }
-        calendarAction("haveIcal", JSON.stringify({ ical: m.ical_uid }))
+        calendarAction("haveIcal", JSON.stringify({ ical: m.ical_uid, start: m.start || "", end: m.end || m.start || "" }))
     }
     /// A channel meeting that isn't in your calendar (the Meetings pane's
     /// meetings are the team's group calendar's): its page from the team's
