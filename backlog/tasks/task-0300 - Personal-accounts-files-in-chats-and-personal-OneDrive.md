@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@tperF'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T08:13:00Z'
+updated_date: '2026-11-28T09:29:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -47,6 +47,8 @@ Files sent in personal-account chats go to the Microsoft Teams Chat Files folder
 - Live (OST Personal 2 in OST on testpc2, build of this branch with OST_QML_DIR, beside OST Personal 1 on teams.live.com): OST sent a text file and a 400 x 300 PNG in one message (Chat Files upload, anyone link, media store preview) and a cloud file from My files > Microsoft Teams Chat Files; Teams free (Personal 1) showed the file chip and the picture, its link opened the file on onedrive.live.com; OST showed Personal 1's files and pictures as Teams free does, its ··· menu, Download saved Personal 1's file with the right content, the Files tab listed all 7 files with sender and time, the Photos tab the 3 pictures under their day, a tile opened the picture viewer; the storage-full banner was drawn (forced in the harness).
 - Seen during the checks: the chat service once refused a message with HTTP 403 errorCode 209 SpamMessageDetected (a cloud file re-sent minutes after the same file's upload; Teams' own record shape gave the same answer from a script), and Personal 1's copy of the 1:1 went back to inQuarantine (hidden, no Requests row); re-adding Personal 2 to Personal 1's contacts (managebuddies, as Teams free's Accept does) brought it back. The retry later went through.
 - Not verified live: a really full OneDrive (5 GB free; the banner and its trigger are unit-tested and drawn in the harness), files in a group chat, the Files tab's Upload button (it sends like the compose box), videos through Attach media (sent as files without a preview; Teams' handling of videos not captured).
+
+- Review (PR #87): Codex rounds 1-4 fixed (Files tab uploads to its own chat, picker folders from any place and every page, stale picker answers dropped, picks kept across folders, all Files pages, Attach media in a new chat and only personal accounts get the wider list, the viewer steps through one message's pictures, Show message loads older pages, chat windows get the picture viewer, side-by-side pictures fit the bubble, a picture without its cached preview stays a file chip, Photos and Files tabs refresh as the chat changes, selection by file, narrow Files tab). After the rebase the research section is §11 of the protocol doc (§10 is calls and meetings).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
