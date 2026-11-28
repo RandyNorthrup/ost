@@ -222,7 +222,7 @@ fn personal_detail_json(id: &str, v: &serde_json::Value) -> serde_json::Value {
         "id": id,
         "body_html": s(v, "bodyContent"),
         "attendees": attendees,
-        "recurrence": serde_json::Value::Null,
+        "recurrence": personal_recurrence(v),
         "conference_id": s(v, "teamsVtcConferenceId"),
         "created": "",
         "reminder": if v.get("isReminderSet").and_then(|r| r.as_bool()).unwrap_or(true) {
@@ -304,9 +304,22 @@ fn personal_update_body(
             "reminderMinutesBeforeStart",
             "isResponseRequested",
             "doNotForward",
+            "seriesMasterId",
         ] {
             if let Some(v) = cur.get(k) {
                 o.insert(k.into(), v.clone());
+            }
+        }
+        // A series keeps its type and repeat unless the form changed it.
+        if form.recurrence.is_none() || !form.recurrence_changed {
+            for k in [
+                "eventType",
+                "eventRecurrencePattern",
+                "eventRecurrenceRange",
+            ] {
+                if let Some(v) = cur.get(k).filter(|v| !v.is_null()) {
+                    o.insert(k.into(), v.clone());
+                }
             }
         }
         // The invitees: the form's once it holds the event's own (it was
@@ -376,6 +389,28 @@ async fn personal_calendar_view(
     Ok(parse_mt_events(&v))
 }
 
+/// Graph's event type for the middle tier's `eventType`.
+fn personal_event_type(t: &str) -> &'static str {
+    match t {
+        "Occurrence" => "occurrence",
+        "Exception" => "exception",
+        "SeriesMaster" | "RecurringMaster" => "seriesMaster",
+        _ => "singleInstance",
+    }
+}
+
+/// A middle-tier event's repeat as the form takes it (`{pattern, range}`,
+/// the middle tier's own `eventRecurrencePattern` / `…Range`).
+fn personal_recurrence(v: &serde_json::Value) -> serde_json::Value {
+    match (
+        v.get("eventRecurrencePattern"),
+        v.get("eventRecurrenceRange"),
+    ) {
+        (Some(p), Some(r)) if !p.is_null() => serde_json::json!({ "pattern": p, "range": r }),
+        _ => serde_json::Value::Null,
+    }
+}
+
 /// The middle tier's calendar events (Teams free's calendarView).
 fn parse_mt_events(v: &serde_json::Value) -> Vec<CalendarEvent> {
     let s = |e: &serde_json::Value, k: &str| {
@@ -425,7 +460,8 @@ fn parse_mt_events(v: &serde_json::Value) -> Vec<CalendarEvent> {
                 preview: s(e, "bodyPreview"),
                 is_organizer: flag("isOrganizer"),
                 ical_uid: s(e, "iCalUID"),
-                event_type: "singleInstance".into(),
+                event_type: personal_event_type(&s(e, "eventType")).into(),
+                series_master_id: s(e, "seriesMasterId"),
                 response: response.into(),
                 response_requested: flag("isResponseRequested"),
                 is_cancelled: flag("isCancelled"),
@@ -3540,6 +3576,22 @@ mod tests {
         assert_eq!(e["isPrivate"], true);
         let people = e["attendees"].as_array().unwrap();
         assert!(people.iter().any(|a| a["address"] == "p2@outlook.com"));
+        // A series' type and repeat stay through a title edit.
+        let mut series = cur.clone();
+        series["eventType"] = "RecurringMaster".into();
+        series["eventRecurrencePattern"] = serde_json::json!({"type": "Weekly", "interval": 1});
+        series["eventRecurrenceRange"] = serde_json::json!({"type": "NoEnd"});
+        let b = super::personal_update_body(&form, &me, &series).unwrap();
+        assert_eq!(b["updatedCalendarEvent"]["eventType"], "RecurringMaster");
+        assert_eq!(
+            b["updatedCalendarEvent"]["eventRecurrencePattern"]["type"],
+            "Weekly"
+        );
+        assert_eq!(
+            super::personal_detail_json("AQMk1", &series)["recurrence"]["pattern"]["type"],
+            "Weekly"
+        );
+        assert_eq!(super::personal_event_type("Occurrence"), "occurrence");
         // A form that holds the invitees decides: one removed stays removed.
         let mut loaded = form.clone();
         loaded.attendees = vec![super::FormAttendee {
