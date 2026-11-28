@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@t289'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T00:04:00Z'
+updated_date: '2026-11-28T00:31:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -68,6 +68,8 @@ Personal-account users can already chat with work users when the tenant allows i
 - Codex review: 4 findings (busy state across chats, short-window request pane, attachments into a new Teams free chat, edit box files) fixed in a13b4dd4 / b53a8ef6 (after rebase), threads answered. Rebased twice onto main (conflicts with the Mail photo owner, selection bar, reminders tests); rebased build + 107 lib tests pass on macbook; final live check as ost-test1 shows the accepted chat with no "added to the chat" line.
 
 Built so far: everything in PR #68 (merged 2026-11-27): names/pictures via fetchTflProfiles, 1:1 chats, External UI, disabled calls/share/attach, Block/Accept chat requests (Accept verified live), messages both ways, new chat by Teams ID. Left for AC #2: starting a chat from a typed personal email address, end to end. Teams' external people search returns nothing for both test personal accounts (discoverability on for OST Personal 2 since 2026-11-27 ~14:00); retry when search finds them. Block was built from Teams' code but not run.
+
+2026-11-27: lookup check with a real personal account (Randy's, search only, nothing sent): externalsearchv3 found it from ost-test1, OST Test 2 and OST Test 3 (TflConsumer, 8:live:<skype name> MRI, email visibility Public), and OST's To: box listed it with the External tag. So OST's email lookup works; AC #2 waits only on a test personal account whose email Teams' search returns (both test accounts' emails come back Private or not at all). Never test the chat itself with a real person's account.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
