@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@t371'
 created_date: '2026-11-27T20:58:00Z'
-updated_date: '2026-11-28T03:02:00Z'
+updated_date: '2026-11-28T04:41:00Z'
 labels: []
 dependencies: []
 priority: low
@@ -52,6 +52,8 @@ Follow-up of TASK-0366 (title bar search suggestions). Teams desktop (winpc, 263
 - Row actions live: person Open in new window (opened the 1:1 chat window), Show Contact Card (profile card), All results from; channel Copy link + Open in new window; meeting Chat with participants (opened the meeting chat) and Meeting Recap on a past one.
 - Go-to live: Ctrl+G path (gotoMode) shows /goto, Type a chat or channel, people then chats/channels, first row ringed; "ost" lists 5 people + 5 conversations; nothing local ("zzqxv") asks powerbar.goto and shows Press Enter; Enter opened OST Test 3's 1:1 chat.
 - Differences left: "release" with has:@Mentions shows nothing (the service answers empty for Teams too; Teams adds a local hit); go-to's named group chats have no member line (OST's chat list has no members); the go-to order is OST's recency, not Teams' affinity scores.
+
+- Codex round 2: suggestions for an in: filter with no scope (messages, files, group chats), scoped Images publish before their thumbnails. Checked on winpc: for is:Messages in:<channel> the service answers only KQL text options for Teams too; the two messages Teams shows come from its local index, which OST doesn't have (same as has:@Mentions + words).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

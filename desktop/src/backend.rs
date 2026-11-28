@@ -19584,6 +19584,15 @@ impl qobject::Backend {
             name: self.rust().user_name.to_string(),
         };
         let qt = self.qt_thread();
+        // Show what's in hand (a newer box since drops it).
+        let publish = move |qt: &cxx_qt::CxxQtThread<qobject::Backend>, v: serde_json::Value| {
+            let _ = qt.queue(move |mut this| {
+                if this.rust().suggest_generation == generation {
+                    this.as_mut()
+                        .set_suggest_json(QString::from(v.to_string().as_str()));
+                }
+            });
+        };
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
@@ -19595,7 +19604,10 @@ impl qobject::Backend {
                 let reply = api::autosuggest::fetch_kql(&spec, &me, &tenant).await?;
                 let names = suggest_names(&client, &reply).await;
                 let mut v = api::autosuggest::arrange_kql(&reply, &spec, &me, &names);
-                // A scoped Images answer's pictures, as Recent images'.
+                v["query"] = json!(key);
+                // The suggestions at once; a scoped Images answer's pictures
+                // follow (as Recent images').
+                publish(&qt, v.clone());
                 if spec["scope"] == "images" {
                     let ams = client
                         .ams_url()
@@ -19623,21 +19635,13 @@ impl qobject::Backend {
                             }
                         }
                     }
+                    publish(&qt, v);
                 }
-                v["query"] = json!(key);
-                anyhow::Ok(v)
+                anyhow::Ok(())
             }
             .await;
-            match result {
-                Ok(v) => {
-                    let _ = qt.queue(move |mut this| {
-                        if this.rust().suggest_generation == generation {
-                            this.as_mut()
-                                .set_suggest_json(QString::from(v.to_string().as_str()));
-                        }
-                    });
-                }
-                Err(e) => tracing::warn!("search suggestions failed: {}", short_error(&e)),
+            if let Err(e) = result {
+                tracing::warn!("search suggestions failed: {}", short_error(&e));
             }
         });
     }
