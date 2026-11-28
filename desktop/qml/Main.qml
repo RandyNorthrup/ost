@@ -17771,6 +17771,28 @@ Window {
             calendarView.actionDone(op, result, error)
         }
     }
+    // --personal-meet-test <shot.png> (TASK-0298): a personal account's
+    // Meet app, a meeting link made there (Create and copy link), the
+    // calendar and its New meeting form, each captured (no clicks).
+    Timer {
+        property int step: 0
+        running: Qt.application.arguments.indexOf("--personal-meet-test") >= 0 && backend.signedIn
+        interval: 3000; repeat: true
+        onTriggered: {
+            const shot = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            const log = (...a) => console.warn("PMEET", ...a)
+            step++
+            if (step === 3) { rail.current = "meet"; log("links", meetView.links.length) }
+            else if (step === 5) { log("links", JSON.stringify(meetView.links.map(l => l.title))); shot("meet") }
+            else if (step === 6) backend.calendarAction("meetLink", JSON.stringify({ subject: "OST TEST 299 link " + new Date().toISOString().slice(11, 16), start: false }))
+            else if (step === 10) { log("links after", JSON.stringify(meetView.links.map(l => [l.title, l.join_url.slice(0, 32)]))); shot("meet-created") }
+            else if (step === 11) rail.current = "calendar"
+            else if (step === 13) { log("calendar", calendarView.events.length); shot("calendar") }
+            else if (step === 14) calendarView.newMeeting()
+            else if (step === 16) shot("new-meeting")
+            else if (step === 17) { calendarView.formOpen = false; Qt.quit() }
+        }
+    }
     // Teams for personal use's Meet app (TASK-0298).
     MeetView {
         id: meetView
