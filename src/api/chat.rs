@@ -2306,6 +2306,14 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
                 .unwrap_or_else(|| crate::i18n::tr_id("Unknown", "messaging:k7k6gmhup")),
             None => conversation_name(conv),
         };
+        // A 1:1 thread is named after the other person in full (the
+        // generated names use given names, as a group's do).
+        if one_on_one_thread
+            && !has_topic(conv)
+            && let Some(full) = peer.as_deref().and_then(known_person_name)
+        {
+            name = full;
+        }
         let mut backroom = conv
             .thread_properties
             .as_ref()
