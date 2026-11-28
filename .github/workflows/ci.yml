@@ -51,19 +51,24 @@ jobs:
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.event.pull_request.head.sha }}
           ACTION: ${{ github.event.action }}
+          BASE: ${{ github.event.pull_request.base.sha }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           code=true
           if [ "$GITHUB_EVENT_NAME" = pull_request ] && [ "$ACTION" = synchronize ] \
              && git cat-file -e "$BEFORE^{commit}" 2>/dev/null && git merge-base --is-ancestor "$BEFORE" "$AFTER" \
-             && ! git diff --name-only "$BEFORE" "$AFTER" | grep -qvE '^(backlog|docs)/|\.md$'; then
+             && ! git diff --no-renames --name-only "$BEFORE" "$AFTER" | grep -qvE '^(backlog|docs)/|\.md$'; then
             # Only skip when the previous head's required checks finished and succeeded (a run
             # still going, failed or cancelled by this push's concurrency group runs everything).
             ok=$(gh api "repos/$REPO/commits/$BEFORE/check-runs?per_page=100" \
                    --jq '[.check_runs[]|select(.name as $n|["Dependency audit","Format","JavaScript tests","Clippy","Build and test","Release build refuses test-harness flags"]|index($n))
                           |select(.status=="completed" and .conclusion=="success")|.name]|unique|length')
-            if [ "$ok" = 6 ]; then code=false; else echo "previous head ${BEFORE:0:8} hasn't passed every job this would skip ($ok/6), running everything"; fi
+            # CI tests the PR merged onto its base: the earlier run must have used the same base commit.
+            prev_base=$(gh api "repos/$REPO/actions/runs?head_sha=$BEFORE&event=pull_request&per_page=20" \
+                          --jq '[.workflow_runs[]|select(.path|startswith(".github/workflows/ci.yml"))|select(.conclusion=="success")][0].pull_requests[0].base.sha // ""')
+            if [ "$ok" = 6 ] && [ -n "$prev_base" ] && [ "$prev_base" = "$BASE" ]; then code=false
+            else echo "previous head ${BEFORE:0:8}: $ok/6 jobs passed, tested on base ${prev_base:0:8} vs now ${BASE:0:8}; running everything"; fi
           fi
           echo "code=$code" | tee -a "$GITHUB_OUTPUT"
   audit:
