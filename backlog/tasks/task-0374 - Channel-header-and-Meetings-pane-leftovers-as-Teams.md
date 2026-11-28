@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@t374'
 created_date: '2026-11-27T23:15:00Z'
-updated_date: '2026-11-28T02:39:00Z'
+updated_date: '2026-11-28T03:21:00Z'
 labels:
   - desktop
   - channels
@@ -64,6 +64,8 @@ Live (linuxlt, harness builds with OST_QML_DIR, 1600x900):
 - --add-to-calendar as OST Test 2: addtomycalendar answered OK, the event appeared in OST Test 2's calendar (organizer OST Test Team, accepted) and the pane then opened that copy; the added copy was deleted again afterwards (examples/delete_event), leaving their calendar as it was.
 - --channel-window-test as OST Test 2 (OST test channel 2): the pop-out header has people (34) + meeting (32) buttons, the menu Meet now / Schedule meeting / View meetings, the popover as the main window's, View meetings opens the pane (268 wide).
 - Unit tests: recent contributors order/cap/fill, channel agents (OST Test Team's entitlements -> Forms), team calendar event paths.
+
+Codex round 1 (5 findings, fixed): a listed meeting asks Graph whether it is in your calendar (haveIcal: /me/events?$filter=iCalUId eq …) instead of waiting for the week's events to change; the Organizer suggestions scroll (capped to the pane, Up/Down/Enter); each pane tags its requests (main window and pop-out panes share channelActionResult); the pop-out composer sits beside the Meetings pane; Chat with participants in the pop-out opens the post's own window when the post isn't loaded. Re-checked live (GitHub Actions harness build): OST Test 2 -> haveIcal found:false -> team calendar page; ost-test1 -> found:true -> own copy; pop-out harness as before.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

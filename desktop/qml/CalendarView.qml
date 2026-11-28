@@ -524,6 +524,12 @@ Item {
             form.actionDone(op, r, error)
             if (op === "newCategory" && !error) loadPrefs()
         }
+        else if (op === "haveIcal" && channelMeetingAsked && (error || r.ical === channelMeetingAsked.meeting.ical_uid)) {
+            const a = channelMeetingAsked
+            channelMeetingAsked = null
+            if (!error && r.found) showMeeting("", a.meeting.ical_uid, a.meeting.start || "", true)
+            else showGroupMeeting(a.group, a.meeting)
+        }
         else if (op === "prefs" && !error) applyPrefs(r)
         else if (op === "calendars" && !error) {
             calendarList = r.calendars || []
@@ -1935,16 +1941,13 @@ Item {
     function addToCalendarForTest() { form.addToCalendar() }
     function openPageForTest() { return { open: formLayer.visible, subject: form.event.subject || "", calendar: form.event.calendar_id || "", readOnly: form.readOnly, team: form.teamCalendarEvent, body: (form.detail.body_html || "").length } }
     /// A meeting from a channel's Meetings pane (the team's group
-    /// calendar's): its page from your calendar when it is in yours (by
-    /// iCalUId, once its week has loaded), else the team calendar's.
+    /// calendar's): its page from your calendar when it is in yours (asked
+    /// by iCalUId), else the team calendar's.
+    property var channelMeetingAsked: null
     function showChannelMeeting(groupId, m) {
-        const e = root.events.find(x => m.ical_uid && x.ical_uid === m.ical_uid)
-        const d = new Date(m.start)
-        if (e || isNaN(d)) { pendingMeeting = null; if (e) { root.start = root.startFor(new Date(e.start_utc)); openPage(e, "") } else showGroupMeeting(groupId, m); return }
-        const s = root.startFor(d)
-        if (s.getTime() === root.start.getTime()) { pendingMeeting = null; showGroupMeeting(groupId, m); return }
-        pendingMeeting = { joinUrl: "", icalUid: m.ical_uid || "", page: true, group: groupId, meeting: m }
-        root.start = s
+        if (!m.ical_uid) { showGroupMeeting(groupId, m); return }
+        channelMeetingAsked = { group: groupId, meeting: m }
+        calendarAction("haveIcal", JSON.stringify({ ical: m.ical_uid }))
     }
     /// A channel meeting that isn't in your calendar (the Meetings pane's
     /// meetings are the team's group calendar's): its page from the team's
@@ -1986,8 +1989,6 @@ Item {
             const p = pendingMeeting
             const e = root.events.find(x => (p.joinUrl && x.join_url === p.joinUrl) || (p.icalUid && x.ical_uid === p.icalUid))
             if (e) { pendingMeeting = null; if (p.page) openPage(e, ""); else details.show(e, null) }
-            // (A channel meeting not in your calendar: the team's copy.)
-            else if (p.group) { pendingMeeting = null; showGroupMeeting(p.group, p.meeting) }
         }
         // Keep an open card on the event's new state (after an answer).
         if (details.visible && details.ev.id) {

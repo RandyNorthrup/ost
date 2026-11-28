@@ -260,7 +260,8 @@ Window {
         id: compose
         visible: win.posting
         readonly property bool atTop: backend.channelPostsAtTop
-        anchors { left: parent.left; right: parent.right }
+        // (Beside the Meetings pane when it is open, as the posts are.)
+        anchors { left: parent.left; right: meetingsPane.left }
         y: atTop ? posts.y + posts.composerY : parent.height - height - 8.7
         anchors.leftMargin: 28; anchors.rightMargin: 30
         placeholder: qsTr("Type a message")
@@ -290,7 +291,7 @@ Window {
     }
 
     /// Show a post (Chat with participants on one of its meetings).
-    function showPost(id) { posts.showPost(id) }
+    function showPost(id) { return posts.showPost(id) }
 
     // Test hooks.
     /// --channel-window-test: open the meeting menu, the people popover,

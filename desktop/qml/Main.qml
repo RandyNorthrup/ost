@@ -18138,7 +18138,9 @@ Window {
         w.openMeetingChat.connect(m => {
             const j = /meetup-join\/([^/?]+)(?:\/([0-9]+))?/.exec(m.join_url || "")
             if (!j) return
-            if (decodeURIComponent(j[1]) === w.channelId && j[2]) { w.meetingsOpen = false; w.showPost(j[2]); return }
+            // (A post older than the window's loaded page: its own window,
+            // which loads it.)
+            if (decodeURIComponent(j[1]) === w.channelId && j[2]) { w.meetingsOpen = false; if (!w.showPost(j[2])) w.openThread({ id: j[2], root_id: j[2] }); return }
             window.raise(); window.requestActivate()
             rail.current = "chat"
             backend.selectChat(decodeURIComponent(j[1]), m.subject || "")
