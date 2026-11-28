@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-28T02:55:00Z'
+updated_date: '2026-11-28T04:00:00Z'
 labels: []
 dependencies: []
 priority: medium
@@ -26,5 +27,11 @@ Differences seen beside Teams desktop 26304 (testpc2 as OST Test 2, testpc1 as o
 - [ ] #1 A channel message's row in Chat > Reminders looks as in Teams (channel, post subject, sender line, chip styles; two-line text for chats), checked side by side
 - [ ] #2 The posts list's replies line reads as Teams' does
 - [ ] #3 Channel post and reply menus include Share to Outlook, Immersive Reader and Report this message where Teams shows them
-- [ ] #4 A channel meeting's post shows no calendar card with an empty date
+- [x] #4 A channel meeting's post shows no calendar card with an empty date
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Built so far: AC #4 is met by TASK-0378 (PR #72, merged 2026-11-27): ended channel-meeting posts with the .NET zero date no longer get a calendar card (src/api/messages.rs, Teams' after-1970 rule, unit test). TASK-0373's agent saw the '-0001' card on a build from before that merge.
+<!-- SECTION:NOTES:END -->
