@@ -28933,6 +28933,18 @@ impl qobject::Backend {
                     "appPlaceMeetings" => {
                         Ok(json!({ "meetings": api::app_places::meetings(&client).await? }))
                     }
+                    // Its chats' external access marks (Teams offers no app
+                    // in a `cfet` thread; the chat list doesn't carry it).
+                    "appPlaceChats" => {
+                        let ids: Vec<String> = p["chats"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|c| c.as_str().map(str::to_string))
+                            .take(200)
+                            .collect();
+                        Ok(json!({ "cfet": api::cfet_threads(&client, &ids).await }))
+                    }
                     "townhallApps" => api::events::townhall_apps(&client, &s("thread")).await,
                     "townhallAppInstall" => api::events::townhall_app_install(&client, &s("thread"), &s("app")).await,
                     "townhallAppRemove" => api::events::townhall_app_remove(&client, &s("thread"), &s("app")).await,

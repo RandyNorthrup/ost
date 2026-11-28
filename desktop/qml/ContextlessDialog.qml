@@ -69,17 +69,23 @@ Popup {
     property string query: ""
     property var meetings: []
     readonly property string meetingsTag: "appplaces" + Math.floor(Math.random() * 1e9).toString(36)
+    /// Group chats whose thread is an external access one (`cfet`), read
+    /// as the dialog opens (the chat list doesn't carry the mark).
+    property var cfetIds: []
+    readonly property string chatsTag: meetingsTag + "c"
 
     function show(a) {
         app = a; expanded = ""; picked = null; query = ""; search.text = ""
         flick.contentY = 0
         backend.appDetailsLoad(a.id)
         backend.eventsRequest("appPlaceMeetings", meetingsTag, "{}")
+        backend.eventsRequest("appPlaceChats", chatsTag, JSON.stringify({ chats: chatsList.filter(c => c.isGroup === true && !c.hidden && !c.unlisted && !isMeetingChat(c)).map(c => c.id) }))
         open()
     }
     Connections {
         target: backend
         function onEventsReply(id, json) {
+            if (id === root.chatsTag) { try { root.cfetIds = JSON.parse(json).cfet || [] } catch (e) { root.cfetIds = [] } return }
             if (id !== root.meetingsTag) return
             try { const v = JSON.parse(json); root.meetings = v.meetings || [] } catch (e) { root.meetings = [] }
         }
@@ -121,7 +127,7 @@ Popup {
     // not a meeting's chat (those are meetings), not an external access
     // thread (`cfet`, as a chat that once held someone on Teams free). A
     // 1:1 with someone on Teams free stays.
-    readonly property var chats: chatsList.filter(c => !c.isSelf && !c.hidden && !c.empty && !c.unlisted && !c.cfet && !c.bot && !String(c.id).startsWith("48:")
+    readonly property var chats: chatsList.filter(c => !c.isSelf && !c.hidden && !c.empty && !c.unlisted && !c.cfet && cfetIds.indexOf(c.id) < 0 && !c.bot && !String(c.id).startsWith("48:")
                                                     && !isMeetingChat(c) && !String(c.peerMri || "").startsWith("28:"))
                                           .map((c, i) => ({ kind: "chat", id: c.id, name: c.name || "", sub: "", chat: c, muted: !!c.muted, i: i }))
                                           .sort((a, b) => (a.muted - b.muted) || a.i - b.i)
