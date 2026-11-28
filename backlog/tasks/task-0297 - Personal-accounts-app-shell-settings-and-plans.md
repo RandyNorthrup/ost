@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@tperE'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T08:37:00Z'
+updated_date: '2026-11-28T08:48:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -61,6 +61,8 @@ For a personal account Teams' left rail is Chat, Meet, People, Calendar and Acti
 - ECS: the personal profile cached ecs-<profile>-life.json with TflNorthstar (core.isPremiumButtonInAppBarEnabled, communities.disableCommunitiesCreation true).
 - Not verified live: the browser opening Microsoft's plans page (WSL has no browser; the URL, fwlink 2360700, resolves to microsoft.com compare-all-microsoft-365-products); Join/Leave Teams Insider, name/email searchability, email visibility and Unblock were not pressed in OST (the same calls were captured from Teams free and put back; changing them would affect other agents' search tests); Verify subscription / Start using Copilot (a Skype-token renewal) not pressed.
 - Left for other tasks: Meet and Calendar (TASK-0298) and People (TASK-0295) stay off the personal bar until their views exist: set AppRail.personalReady.<key> to true there. Synced contacts' Remove and From your mobile device are TASK-0295's (contact sync). Files and links shows Teams free's Browser choice; opening personal files is TASK-0300's.
+
+- PR #88. Codex review: Teams Insider menu row opened General (now teams_insider), the personal hub flyout could outgrow the window (now capped at 0.7 and scrolling), and a personal account's unset file-opening choice still opened Office in OST (now Browser, matching Files and links). Fixed in b25235ef, checked live (Insider page, hub with 3 accounts); threads answered and resolved.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
