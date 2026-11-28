@@ -261,13 +261,17 @@ pub fn app_redirect_uri(app_origin: &str) -> String {
 
 /// Whether an error says the 24-hour browser sign-in must be renewed
 /// (AADSTS700084: the single-page app's refresh token has expired; or an
-/// interaction Azure AD now requires).
+/// interaction Azure AD or login.live.com now requires).
 pub fn needs_renewal(err: &anyhow::Error) -> bool {
     let s = format!("{err:#}");
     s.contains("AADSTS700084")
         || s.contains("AADSTS50173")
         || s.contains("interaction_required")
         || s.contains("AADSTS70043")
+        // login.live.com's answers for a personal account's ended session
+        // (Teams free's interactionRequiredErrorCodes)
+        || s.contains("invalid_grant")
+        || s.contains("login_required")
 }
 
 fn random_token(bytes: usize) -> String {
