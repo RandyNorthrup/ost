@@ -1,11 +1,11 @@
 ---
 id: TASK-0298
 title: 'Personal accounts: Meet app, calendar and meeting links'
-status: In Progress
+status: To Do
 assignee:
   - '@tperC'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T07:42:00Z'
+updated_date: '2026-11-28T08:06:00Z'
 labels:
   - personal-accounts
 dependencies:
@@ -25,7 +25,7 @@ The Meet app creates meeting links, schedules meetings, joins with an ID and lis
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 The Meet app works as in Teams desktop for a personal account
-- [ ] #2 The Calendar shows what Teams shows for a personal account (Outlook.com events or Teams meetings, as verified) with Meet now and New meeting
+- [x] #2 The Calendar shows what Teams shows for a personal account (Outlook.com events or Teams meetings, as verified) with Meet now and New meeting
 - [x] #3 teams.live.com/meet links open in OST, from any account
 <!-- AC:END -->
 
@@ -49,4 +49,8 @@ Built so far: OST takes teams.live.com/meet, meetup-join and fqdn=teams.live.com
 - 2026-11-28 (tperC): captured the Meet app, Calendar, Meet now and New meeting on teams.live.com (docs/research/personal-accounts-protocol.md §10.3): meeting links are Meet now chats (privateMeeting/schedulingService/create {meetingType: MeetNow}, then the chat's topic and meeting property); the calendar is the middle tier's v2.0/me/calendars/default/calendarView; event pages read and save v2.0/me/calendars/events/{objectId}.
 - Built: MeetView.qml (Meeting links from api::calendar::meeting_links, Create a meeting link, Join with a meeting ID, Schedule a meeting, Calls) on a personal account's rail (Chat, Meet, Calendar, Activity); the calendar, event page and edits through the middle tier with the Skype token; the personal toolbar (Join with an ID, Meet now, New meeting); teams.live.com links joined in a personal account and handed over from a work account (Backend::open_link_in_account, personal_account_profile).
 - Live: the Meet app listed Personal 1's link made on the web ("Meeting with OST Personal 1"); Create a meeting link's popup matches Teams; the calendar week loaded from the middle tier (1 event); OST Test 3's window, started with a teams.live.com/meet link, started Personal 1's window with it and the meeting resolved. That run opened the link in the browser too: the calendar's join handler only took teams.microsoft.com short links (fixed).
+
+- Live (--personal-meet-test, PR #84): the Meet app listed 4 links (made on the web, by Meet now and here) and Create a meeting link added one; the calendar toolbar had Join with an ID, Meet now and New meeting; New meeting showed "With your current Teams plan, you get up to 60 minutes per meeting with up to 100 participants." (Facilitator, channel, agenda and Scheduling Assistant left out for a personal account; the Options pane is still the work one). Event page, save and Cancel meeting go through the middle tier (GET/PUT/DELETE v2.0/me/calendars/events/{objectId}, captured; unit-tested, not run from OST).
+
+Built so far (PR #84): AC #2 and #3 done. Left for AC #1: Meet ▸ Calls opens OST's Calls app (Teams free's recent-calls list wasn't captured), and the Meet app's Join and Share link weren't clicked live (they use the checked join path); the New meeting form's Options pane should offer only Bypass lobby and Share screen.
 <!-- SECTION:NOTES:END -->
