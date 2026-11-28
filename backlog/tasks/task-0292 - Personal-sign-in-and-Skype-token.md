@@ -1,10 +1,11 @@
 ---
 id: TASK-0292
 title: Personal sign-in and Skype token
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@tperA'
 created_date: '2026-11-25T15:26:00Z'
-updated_date: '2026-11-28T01:04:00Z'
+updated_date: '2026-11-28T02:44:00Z'
 labels:
   - personal-accounts
 dependencies:

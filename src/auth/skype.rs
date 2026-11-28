@@ -30,7 +30,7 @@ pub struct AuthzResponse {
 }
 
 /// The consumer authz's `skypeToken` object.
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct ConsumerSkypeToken {
     pub skypetoken: Option<String>,
     #[serde(rename = "expiresIn")]
@@ -51,12 +51,32 @@ pub struct Exchanged {
     pub skype_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct AuthzTokens {
     #[serde(rename = "skypeToken")]
     pub skype_token: Option<String>,
     #[serde(rename = "expiresIn")]
     pub expires_in: Option<u64>,
+}
+
+impl std::fmt::Debug for ConsumerSkypeToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConsumerSkypeToken")
+            .field("skypetoken", &super::tokens::redacted(&self.skypetoken))
+            .field("expires_in", &self.expires_in)
+            .field("skypeid", &self.skypeid)
+            .field("signinname", &self.signinname)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for AuthzTokens {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthzTokens")
+            .field("skype_token", &super::tokens::redacted(&self.skype_token))
+            .field("expires_in", &self.expires_in)
+            .finish()
+    }
 }
 
 const AUTHZ_URL_WORK: &str = "https://teams.microsoft.com/api/authsvc/v1.0/authz";
@@ -69,11 +89,40 @@ pub const PERSONAL_AUTHZ_SCOPE: &str = "https://auth.fl.teams.microsoft.com/team
 /// authz requests name them.
 const PERSONAL_CLIENT_VERSION: &str = "1415/26101516645";
 
+/// Why a personal account asks the consumer authz for a Skype token, as
+/// Teams on the web for personal use names it (`ms-teams-authz-type`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AuthzKind {
+    /// A sign-in.
+    ExplicitLogin,
+    /// Renewing a token that is about to expire.
+    TokenRefresh,
+}
+
+impl AuthzKind {
+    fn header(self) -> &'static str {
+        match self {
+            Self::ExplicitLogin => "ExplicitLogin",
+            Self::TokenRefresh => "TokenRefresh",
+        }
+    }
+}
+
 /// Exchange an AAD access token for a Skype token: a work account's at
 /// authsvc, or (`personal`) a personal account's `auth.fl` token at the
-/// consumer authz.
+/// consumer authz (as a sign-in).
 pub async fn exchange_skype_token(aad_token: &str, personal: bool) -> Result<Exchanged> {
-    let url = if personal {
+    exchange(aad_token, personal.then_some(AuthzKind::ExplicitLogin)).await
+}
+
+/// A personal account's Skype token from its `auth.fl` token, at the
+/// consumer authz.
+pub async fn exchange_personal_skype_token(aad_token: &str, kind: AuthzKind) -> Result<Exchanged> {
+    exchange(aad_token, Some(kind)).await
+}
+
+async fn exchange(aad_token: &str, personal: Option<AuthzKind>) -> Result<Exchanged> {
+    let url = if personal.is_some() {
         AUTHZ_URL_PERSONAL
     } else {
         AUTHZ_URL_WORK
@@ -86,9 +135,9 @@ pub async fn exchange_skype_token(aad_token: &str, personal: bool) -> Result<Exc
         .post(url)
         .bearer_auth(aad_token)
         .header("Content-Length", "0");
-    if personal {
+    if let Some(kind) = personal {
         req = req
-            .header("ms-teams-authz-type", "ExplicitLogin")
+            .header("ms-teams-authz-type", kind.header())
             .header("x-ms-client-type", "web")
             .header("x-ms-client-version", PERSONAL_CLIENT_VERSION)
             .header("claimschallengecapable", "true");
@@ -104,7 +153,7 @@ pub async fn exchange_skype_token(aad_token: &str, personal: bool) -> Result<Exc
         bail!(
             "Skype token exchange failed (HTTP {}): {}",
             status.as_u16(),
-            body
+            crate::feedback::scrub_secrets(&body)
         );
     }
 

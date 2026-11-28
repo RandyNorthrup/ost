@@ -10,7 +10,7 @@ use crate::auth::{StoredToken, TokenStore};
 use crate::identity::{AccountIdentity, tenant_id_from_jwt};
 
 /// Application configuration
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct Config {
     /// Stored AAD access token (audience: api.spaces.skype.com)
     pub access_token: Option<StoredToken>,
@@ -49,6 +49,34 @@ pub struct Config {
     /// and refresh). Not a secret: it is what the app shows as "you".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<AccountIdentity>,
+}
+
+/// A config's debug print names its tokens (redacted: length only) and
+/// shows the rest, so it can't put a token in a log.
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("access_token", &self.access_token)
+            .field(
+                "refresh_token",
+                &crate::auth::tokens::redacted(&self.refresh_token),
+            )
+            .field("tenant_id", &self.tenant_id)
+            .field("skype_token", &self.skype_token)
+            .field("graph_token", &self.graph_token)
+            .field("ic3_token", &self.ic3_token)
+            .field("recorder_token", &self.recorder_token)
+            .field("region_gtms", &self.region_gtms.as_ref().map(|_| "…"))
+            .field("auth_flow", &self.auth_flow)
+            .field(
+                "license_details",
+                &self.license_details.as_ref().map(|_| "…"),
+            )
+            .field("tokens_in_keyring", &self.tokens_in_keyring)
+            .field("allow_token_file", &self.allow_token_file)
+            .field("identity", &self.identity)
+            .finish()
+    }
 }
 
 /// Every secret in [`Config`], stored as one keyring entry.
@@ -1301,6 +1329,51 @@ mod storage_tests {
             let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
             assert_eq!(mode, 0o600);
         }
+    }
+
+    /// A personal account's sign-in (TASK-0292): its tokens go to the
+    /// keyring like a work account's, the file keeps only who it is and how
+    /// it signed in, and a debug print of the config holds no token.
+    #[test]
+    fn a_personal_accounts_tokens_stay_out_of_the_file_and_debug_prints() {
+        let path = dir("personal");
+        let account = format!("test-personal-{}", uuid::Uuid::new_v4());
+        let store = FakeStore::new(true);
+        let me = AccountIdentity::from_personal_id_token(&format!(
+            "x.{}.y",
+            base64::Engine::encode(
+                &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+                r#"{"oid":"00000000-0000-0000-0ca2-738c364862c6","name":"OST Personal 2","preferred_username":"p2@outlook.com"}"#
+            )
+        ))
+        .unwrap();
+        let mut c = Config {
+            access_token: Some(StoredToken::new("mt-jwe-secret".into(), Some(28799))),
+            refresh_token: Some("M.C540-msa-refresh-secret".into()),
+            skype_token: Some(StoredToken::new("skype-jwt-secret".into(), Some(28799))),
+            graph_token: Some(StoredToken::new("EwB-graph-secret".into(), Some(3600))),
+            region_gtms: Some(r#"{"presenceUPS":"https://teams.live.com/ups/global"}"#.into()),
+            auth_flow: Some(crate::auth::TEAMS_LIVE_FLOW.into()),
+            ..Default::default()
+        };
+        c.set_identity(me.with_skype_id("live:.cid.ca2738c364862c6"));
+        let debug = format!("{c:?}");
+        assert!(
+            !debug.contains("secret"),
+            "a token in the debug print: {debug}"
+        );
+        assert!(debug.contains("redacted") && debug.contains("teams-live"));
+        c.save_to(&path, Some(&store), false, &account).unwrap();
+        let text = on_disk(&path);
+        assert!(!text.contains("secret"), "a token in the file: {text}");
+        assert!(text.contains("tokens_in_keyring = true"));
+        assert!(text.contains("live:.cid.ca2738c364862c6") && text.contains("teams-live"));
+        let back = Config::load_from(&path, Some(&store), false, &account).unwrap();
+        assert_eq!(
+            back.refresh_token.as_deref(),
+            Some("M.C540-msa-refresh-secret")
+        );
+        assert_eq!(back.skype_token.unwrap().token, "skype-jwt-secret");
     }
 
     #[test]

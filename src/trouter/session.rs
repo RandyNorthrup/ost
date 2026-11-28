@@ -111,13 +111,29 @@ impl SessionResponse {
     }
 }
 
+/// Teams' Trouter for work and school accounts.
+pub const WORK_HOST: &str = "go.trouter.teams.microsoft.com";
+/// The Skype Trouter, where Teams free's web client gets a personal
+/// account's chat pushes (`pub-csm-…-t.trouter.skype.com` sockets; checked
+/// live 2026-11-27/28: its `v4/a` negotiate takes the consumer Skype token).
+pub const PERSONAL_HOST: &str = "go.trouter.skype.com";
+
 /// Negotiate a Trouter session, returning connection parameters.
 pub async fn negotiate(
     http: &reqwest::Client,
     skype_token: &str,
 ) -> Result<(SessionResponse, String)> {
+    negotiate_at(http, skype_token, WORK_HOST).await
+}
+
+/// [`negotiate`] at a Trouter host ([`WORK_HOST`] or [`PERSONAL_HOST`]).
+pub async fn negotiate_at(
+    http: &reqwest::Client,
+    skype_token: &str,
+    host: &str,
+) -> Result<(SessionResponse, String)> {
     let epid = uuid::Uuid::new_v4().to_string();
-    let url = format!("https://go.trouter.teams.microsoft.com/v4/a?epid={}", epid);
+    let url = format!("https://{host}/v4/a?epid={}", epid);
 
     tracing::info!("Negotiating trouter session (epid={})", epid);
 

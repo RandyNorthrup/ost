@@ -59,17 +59,17 @@ impl TeamsClient {
         self.config.self_mri()
     }
 
-    /// Load config and build client. Attempts token refresh if AAD token is expired.
+    /// Load config and build client. Renews the tokens that are missing or
+    /// about to expire first: the access and Graph tokens, and the Skype
+    /// token on its own expiry (a personal account's lasts 8 hours, less
+    /// than its other tokens; see [`crate::auth::oauth::refresh_expired`]).
     pub async fn new() -> Result<Self> {
         let mut config = Config::load()?;
 
-        // Auto-refresh if any token is expired but refresh token exists
-        let needs_refresh = config.get_access_token().is_none_or(|t| t.is_expired())
-            || config.get_graph_token().is_none_or(|t| t.is_expired());
-        if needs_refresh {
+        if crate::auth::oauth::needs_refresh(&config) {
             if config.get_refresh_token().is_some() {
                 tracing::info!("Tokens missing or expired, refreshing...");
-                match crate::auth::oauth::refresh().await {
+                match crate::auth::oauth::refresh_expired().await {
                     Ok(true) => {
                         config = Config::load()?;
                         tracing::info!("Token refreshed");
@@ -99,6 +99,20 @@ impl TeamsClient {
             .context("No Graph token. Run 'teams-cli login' first.")?;
         if token.is_expired() {
             bail!("Graph token expired. Run 'teams-cli login'.");
+        }
+        Ok(token.token)
+    }
+
+    /// The primary access token (a work account's Teams token, a personal
+    /// account's middle tier token), for services that take it as a
+    /// bearer next to the Skype token.
+    pub fn access_token_value(&self) -> Result<String> {
+        let token = self
+            .config
+            .get_access_token()
+            .context("Not signed in. Run 'teams-cli login' first.")?;
+        if token.is_expired() {
+            bail!("Access token expired. Run 'teams-cli login'.");
         }
         Ok(token.token)
     }

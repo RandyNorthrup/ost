@@ -20634,7 +20634,7 @@ impl qobject::Backend {
                         // A personal account's ended 24-hour session (its
                         // refresh token refused): Microsoft's sign-in page
                         // again, as Teams on the web for personal use asks.
-                        if teams_cli::auth::browser_session() == Some(true)
+                        if teams_cli::auth::personal_session()
                             && teams_cli::auth::spa::needs_renewal(&e)
                         {
                             tracing::info!("personal account's session ended: signing in again");
