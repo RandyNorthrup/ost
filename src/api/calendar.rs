@@ -3951,11 +3951,11 @@ pub struct TeamEventRef {
 }
 
 /// The form's changes on a team event as the middle tier loaded it: the
-/// title, times (in the form's zone), all day, the repeat and the details
-/// when they changed (show as stays: Teams greys it for a team event), the place unless it's the Teams meeting's
-/// own, and the people (the loaded ones the form kept, with their answers
-/// and kinds as the form has them, then the ones it added; the team and
-/// the organizer stay).
+/// title, times (in the form's zone) and all day; the repeat and the
+/// details when they changed; the place; and the people (the loaded ones
+/// the form kept, with their answers and kinds as the form has them, then
+/// the ones it added; you, the team and rooms stay). Show as stays as
+/// loaded: Teams greys it on a team event's page.
 fn team_event_changes(
     ev: &mut serde_json::Value,
     changes: &serde_json::Value,
